@@ -34,6 +34,7 @@ import stroom.query.api.Column;
 import stroom.query.api.DateTimeSettings;
 import stroom.query.api.ExpressionOperator;
 import stroom.query.api.ExpressionUtil;
+import stroom.query.api.GroupSelection;
 import stroom.query.api.OffsetRange;
 import stroom.query.api.Param;
 import stroom.query.api.Query;
@@ -58,7 +59,7 @@ import stroom.query.common.v2.DataSourceProviderRegistry;
 import stroom.query.common.v2.DataStore;
 import stroom.query.common.v2.ExpressionContextFactory;
 import stroom.query.common.v2.ExpressionPredicateFactory;
-import stroom.query.common.v2.Key;
+import stroom.query.common.v2.OpenGroups;
 import stroom.query.common.v2.OpenGroupsImpl;
 import stroom.query.common.v2.ResultCreator;
 import stroom.query.common.v2.ResultStoreManager;
@@ -362,7 +363,8 @@ class QueryServiceImpl implements QueryService, QueryFieldProvider {
                             request.getFilter(),
                             dateTimeSettings);
 
-                    final Set<Key> openGroups = dataStore.getKeyFactory().decodeSet(resultRequest.getOpenGroups());
+                    final OpenGroups openGroups = OpenGroupsImpl.fromGroupSelection(
+                            resultRequest.getGroupSelection(), dataStore.getKeyFactory());
 
                     final int index = dataStore
                             .getColumns()
@@ -374,7 +376,7 @@ class QueryServiceImpl implements QueryService, QueryFieldProvider {
                         dataStore.fetch(
                                 dataStore.getColumns(),
                                 OffsetRange.UNBOUNDED,
-                                new OpenGroupsImpl(openGroups),
+                                openGroups,
                                 timeFilter,
                                 item -> {
                                     final Val val = item.getValue(index);
@@ -557,7 +559,7 @@ class QueryServiceImpl implements QueryService, QueryFieldProvider {
                 // Modify result request to open grouped rows and change result display range.
                 modified = modified
                         .copy()
-                        .openGroups(searchRequest.getOpenGroups())
+                        .groupSelection(searchRequest.getGroupSelection())
                         .requestedRange(range)
                         .build();
 
