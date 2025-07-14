@@ -112,6 +112,26 @@ public class PipelineServiceImpl implements PipelineService {
     }
 
     @Override
+    public Boolean renamePipeline(final DocRef pipeline, final String newName) {
+        return securityContext.secureResult(() -> {
+            try {
+                final PipelineDoc pipelineDoc = pipelineStore.readDocument(pipeline);
+                if (pipelineDoc == null) {
+                    return false;
+                }
+
+                pipelineDoc.setName(newName);
+                pipelineStore.writeDocument(pipelineDoc);
+                return true;
+            } catch (final PermissionException e) {
+                throw new PermissionException(
+                        e.getUser(),
+                        e.getMessage().replaceAll("permission to read", "permission to write"));
+            }
+        });
+    }
+
+    @Override
     public List<PipelineLayer> fetchPipelineLayers(final DocRef pipeline) {
         return securityContext.secureResult(() -> {
             try {

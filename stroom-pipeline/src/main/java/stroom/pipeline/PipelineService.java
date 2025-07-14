@@ -30,6 +30,8 @@ public interface PipelineService {
 
     Boolean savePipelineJson(final DocRef pipeline, String json);
 
+    Boolean renamePipeline(final DocRef pipeline, final String newName);
+
     String fetchPipelineJson(final DocRef pipeline);
 
     List<PipelineLayer> fetchPipelineLayers(final DocRef pipeline);
