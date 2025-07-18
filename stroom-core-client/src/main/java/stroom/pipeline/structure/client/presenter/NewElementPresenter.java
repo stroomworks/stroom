@@ -31,10 +31,13 @@ import com.google.web.bindery.event.shared.EventBus;
 import com.gwtplatform.mvp.client.MyPresenterWidget;
 import com.gwtplatform.mvp.client.View;
 
+import java.util.UUID;
+
 public class NewElementPresenter extends MyPresenterWidget<NewElementPresenter.NewElementView> {
 
     private PipelineElementType elementType;
     private HidePopupRequestEvent.Handler handler;
+    private String generatedId;
 
     @Inject
     public NewElementPresenter(final EventBus eventBus, final NewElementView view) {
@@ -45,7 +48,7 @@ public class NewElementPresenter extends MyPresenterWidget<NewElementPresenter.N
     protected void onBind() {
         super.onBind();
 
-        registerHandler(getView().getIdBox().addKeyDownHandler(event -> {
+        registerHandler(getView().getNameBox().addKeyDownHandler(event -> {
             if (event.getNativeKeyCode() == KeyCodes.KEY_ENTER) {
                 if (handler != null) {
                     HidePopupRequestEvent.builder(this).fire();
@@ -56,11 +59,11 @@ public class NewElementPresenter extends MyPresenterWidget<NewElementPresenter.N
 
     public void show(final PipelineElementType elementType,
                      final HidePopupRequestEvent.Handler handler,
-                     final String suggestedId) {
+                     final String name) {
         this.elementType = elementType;
         this.handler = handler;
-        getView().getId().setText(suggestedId);
-
+        this.generatedId = UUID.randomUUID().toString();
+        getView().getName().setText(name != null ? name : "");
         final PopupSize popupSize = PopupSize.resizableX();
         ShowPopupEvent.builder(this)
                 .popupType(PopupType.OK_CANCEL_DIALOG)
@@ -75,8 +78,12 @@ public class NewElementPresenter extends MyPresenterWidget<NewElementPresenter.N
         return elementType;
     }
 
-    public String getElementId() {
-        return getView().getId().getText();
+//    public String getElementId() {
+//        return getView().getId().getText();
+//    }
+
+    public String getElementName() {
+        return getView().getName().getText();
     }
 
 
@@ -85,8 +92,8 @@ public class NewElementPresenter extends MyPresenterWidget<NewElementPresenter.N
 
     public interface NewElementView extends View, Focus {
 
-        HasText getId();
+        HasText getName();
 
-        HasKeyDownHandlers getIdBox();
+        HasKeyDownHandlers getNameBox();
     }
 }

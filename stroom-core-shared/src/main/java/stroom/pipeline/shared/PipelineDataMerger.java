@@ -51,7 +51,7 @@ public class PipelineDataMerger {
                     PipelineElementType.ROLE_SOURCE, PipelineElementType.ROLE_HAS_TARGETS,
                     PipelineElementType.VISABILITY_SIMPLE},
             null);
-    private static final PipelineElement SOURCE_ELEMENT = new PipelineElement(SOURCE, SOURCE);
+    private static final PipelineElement SOURCE_ELEMENT = new PipelineElement(SOURCE, SOURCE, null);
 
     private final Map<String, PipelineElement> elementMap = new HashMap<>();
     private final Map<String, Map<String, PipelineProperty>> propertyMap = new HashMap<>();

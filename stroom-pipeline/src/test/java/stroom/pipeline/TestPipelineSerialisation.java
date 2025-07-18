@@ -43,7 +43,7 @@ class TestPipelineSerialisation {
     @Test
     void testElements() {
         final PipelineData pipelineData = new PipelineDataBuilder()
-                .addElement(new PipelineElement("test1", ELEM_TYPE.getType()))
+                .addElement(new PipelineElement("test1", ELEM_TYPE.getType(), "test1Name"))
                 .build();
         final String string = JsonUtil.writeValueAsString(pipelineData);
         assertThat(string.trim()).isEqualTo("""

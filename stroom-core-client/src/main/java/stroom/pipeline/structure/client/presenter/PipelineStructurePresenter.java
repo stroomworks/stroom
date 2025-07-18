@@ -296,6 +296,23 @@ public class PipelineStructurePresenter extends DocumentEditPresenter<PipelineSt
         }
     }
 
+    private void onRenameElement() {
+        final PipelineElement selected = pipelineTreePresenter.getSelectionModel().getSelectedObject();
+        if (selected != null) {
+            String newName = com.google.gwt.user.client.Window.prompt(
+                    "Enter new name for element:", selected.getName() != null ? selected.getName() : selected.getId());
+            if (newName != null && !newName.trim().isEmpty()) {
+                try {
+                    PipelineElement renamedElement = pipelineModel.renameElement(selected, newName.trim());
+                    pipelineTreePresenter.getSelectionModel().setSelected(renamedElement, true);
+                    setDirty(true);
+                } catch (final RuntimeException e) {
+                    AlertEvent.fireError(this, e.getMessage(), null);
+                }
+            }
+        }
+    }
+
     private List<Item> addPipelineActionsToMenu() {
         final PipelineElement selected = pipelineTreePresenter.getSelectionModel().getSelectedObject();
 
@@ -321,6 +338,13 @@ public class PipelineStructurePresenter extends DocumentEditPresenter<PipelineSt
                 .text("Remove")
                 .enabled(selected != null)
                 .command(() -> onRemove(null))
+                .build());
+        menuItems.add(new IconMenuItem.Builder()
+                .priority(3)
+                .icon(SvgImage.EDIT)
+                .text("Rename")
+                .enabled(selected != null)
+                .command(this::onRenameElement)
                 .build());
 
         return menuItems;
@@ -645,14 +669,15 @@ public class PipelineStructurePresenter extends DocumentEditPresenter<PipelineSt
         @Override
         public void execute() {
             final PipelineElement selectedElement = pipelineTreePresenter.getSelectionModel().getSelectedObject();
+            final String name = newElementPresenter.getElementName();
             if (selectedElement != null && elementType != null) {
                 final HidePopupRequestEvent.Handler handler = e -> {
                     if (e.isOk()) {
-                        final String id = newElementPresenter.getElementId();
+                        final String id = newElementPresenter.getElementName();
                         final PipelineElementType elementType = newElementPresenter.getElementInfo();
                         try {
                             final PipelineElement newElement = pipelineModel.addElement(selectedElement,
-                                    elementType, id);
+                                    elementType, id, name);
                             pipelineTreePresenter.getSelectionModel().setSelected(newElement, true);
                             setDirty(true);
                         } catch (final RuntimeException ex) {
@@ -678,7 +703,7 @@ public class PipelineStructurePresenter extends DocumentEditPresenter<PipelineSt
                     } while (existingIds.contains(suggestedId));
                 }
 
-                newElementPresenter.show(elementType, handler, suggestedId);
+                newElementPresenter.show(elementType, handler, name);
             }
         }
     }

@@ -55,8 +55,7 @@ import java.util.function.Consumer;
 public class PipelineModel implements HasChangeDataHandlers<PipelineModel> {
 
     private static final String SOURCE = "Source";
-    public static final PipelineElement SOURCE_ELEMENT = new PipelineElement(SOURCE, SOURCE);
-
+    public static final PipelineElement SOURCE_ELEMENT = new PipelineElement(SOURCE, SOURCE, null);
     private final PipelineElementTypes elementTypes;
     private final EventBus eventBus = new SimpleEventBus();
     private Map<PipelineElement, List<PipelineElement>> childMap;
@@ -144,6 +143,18 @@ public class PipelineModel implements HasChangeDataHandlers<PipelineModel> {
         }
 
         return new PipelineLayer(pipelineLayer.getSourcePipeline(), pipelineData);
+    }
+
+    public PipelineElement renameElement(final PipelineElement element, final String newName) throws PipelineModelException {
+        final PipelineElement renamedElement = new PipelineElement(element.getId(), element.getType(), newName);
+        final PipelineDataBuilder builder = new PipelineDataBuilder(pipelineLayer.getPipelineData());
+        builder.addElement(renamedElement);
+
+        pipelineLayer = new PipelineLayer(pipelineLayer.getSourcePipeline(), builder.build());
+        buildCombinedData();
+        refresh();
+
+        return renamedElement;
     }
 
     private void buildCombinedData() throws PipelineModelException {
@@ -322,7 +333,7 @@ public class PipelineModel implements HasChangeDataHandlers<PipelineModel> {
 
     public PipelineElement addElement(final PipelineElement parent,
                                       final PipelineElementType elementType,
-                                      final String id) throws PipelineModelException {
+                                      final String id, final String name) throws PipelineModelException {
         final PipelineElement element;
 
         if (id == null || id.isEmpty()) {
@@ -337,7 +348,7 @@ public class PipelineModel implements HasChangeDataHandlers<PipelineModel> {
             }
 
             PipelineData pipelineData = pipelineLayer.getPipelineData();
-            element = PipelineDataUtil.createElement(id, elementType.getType());
+            element = PipelineDataUtil.createElement(id, elementType.getType(), name);
             if (pipelineData.getRemovedElements().contains(element)) {
                 throw new PipelineModelException("Attempt to add an element with an id that matches a hidden " +
                                                  "element. Restore the existing element if required or change " +
