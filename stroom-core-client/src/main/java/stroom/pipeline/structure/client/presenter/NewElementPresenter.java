@@ -59,7 +59,8 @@ public class NewElementPresenter extends MyPresenterWidget<NewElementPresenter.N
 
     public void show(final PipelineElementType elementType,
                      final HidePopupRequestEvent.Handler handler,
-                     final String name) {
+                     final String name,
+                     final String caption) {
         this.elementType = elementType;
         this.handler = handler;
         this.generatedId = UUID.randomUUID().toString();
@@ -68,7 +69,7 @@ public class NewElementPresenter extends MyPresenterWidget<NewElementPresenter.N
         ShowPopupEvent.builder(this)
                 .popupType(PopupType.OK_CANCEL_DIALOG)
                 .popupSize(popupSize)
-                .caption("Create Element")
+                .caption(caption)
                 .onShow(e -> getView().focus())
                 .onHideRequest(handler)
                 .fire();
@@ -84,6 +85,10 @@ public class NewElementPresenter extends MyPresenterWidget<NewElementPresenter.N
 
     public String getElementName() {
         return getView().getName().getText();
+    }
+
+    public String getGeneratedId() {
+        return generatedId;
     }
 
 

@@ -146,8 +146,10 @@ public class PipelineModel implements HasChangeDataHandlers<PipelineModel> {
     }
 
     public PipelineElement renameElement(final PipelineElement element, final String newName) throws PipelineModelException {
-        final PipelineElement renamedElement = new PipelineElement(element.getId(), element.getType(), newName);
         final PipelineDataBuilder builder = new PipelineDataBuilder(pipelineLayer.getPipelineData());
+
+        builder.getElements().getAddList().remove(element);
+        final PipelineElement renamedElement = new PipelineElement(element.getId(), element.getType(), newName);
         builder.addElement(renamedElement);
 
         pipelineLayer = new PipelineLayer(pipelineLayer.getSourcePipeline(), builder.build());
