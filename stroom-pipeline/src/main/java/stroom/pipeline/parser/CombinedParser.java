@@ -242,7 +242,7 @@ public class CombinedParser extends AbstractParser implements SupportsCodeInject
                 locationHolderProvider.get().setFragmentXml(true);
             }
         } else {
-            storedErrorReceiver.replay(new ErrorReceiverIdDecorator(getElementId(), getErrorReceiverProxy()));
+            storedErrorReceiver.replay(new ErrorReceiverIdDecorator(getElementId().getId(), getErrorReceiverProxy()));
             parser = null;
         }
         return parser;
@@ -341,7 +341,7 @@ public class CombinedParser extends AbstractParser implements SupportsCodeInject
                         getErrorReceiverProxy().log(
                                 Severity.WARNING,
                                 null,
-                                getElementId(),
+                                getElementId().getId(),
                                 message,
                                 null));
         if (docRef == null) {

@@ -30,6 +30,7 @@ import stroom.pipeline.shared.PipelineDoc;
 import stroom.pipeline.shared.PipelineModelException;
 import stroom.pipeline.shared.PipelineResource;
 import stroom.pipeline.shared.SavePipelineJsonRequest;
+import stroom.pipeline.shared.data.ElementId;
 import stroom.pipeline.shared.data.PipelineData;
 import stroom.pipeline.shared.data.PipelineElement;
 import stroom.pipeline.shared.data.PipelineElementType;
@@ -304,7 +305,8 @@ public class PipelineStructurePresenter extends DocumentEditPresenter<PipelineSt
                     final String newName = newElementPresenter.getElementName();
                     if (newName != null && !newName.trim().isEmpty()) {
                         try {
-                            final PipelineElement renamedElement = pipelineModel.renameElement(selected, newName.trim());
+                            final PipelineElement renamedElement =
+                                    pipelineModel.renameElement(selected, newName.trim());
                             pipelineTreePresenter.getSelectionModel().setSelected(renamedElement, true);
                             setDirty(true);
                         } catch (final RuntimeException ex) {
@@ -317,7 +319,7 @@ public class PipelineStructurePresenter extends DocumentEditPresenter<PipelineSt
             newElementPresenter.show(
                     pipelineModel.getElementType(selected),
                     handler,
-                    selected.getName() != null ? selected.getName() : selected.getId(),
+                    selected.getName() != null ? selected.getName() : selected.getId().toString(),
                     "Rename Element"
             );
         }
@@ -682,7 +684,7 @@ public class PipelineStructurePresenter extends DocumentEditPresenter<PipelineSt
             if (selectedElement != null && elementType != null) {
                 final HidePopupRequestEvent.Handler handler = e -> {
                     if (e.isOk()) {
-                        final String id = newElementPresenter.getGeneratedId();
+                        final ElementId id = newElementPresenter.getGeneratedId();
                         final String name = newElementPresenter.getElementName();
                         final PipelineElementType elementType = newElementPresenter.getElementInfo();
                         try {

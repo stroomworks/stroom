@@ -16,6 +16,7 @@
 
 package stroom.pipeline.structure.client.presenter;
 
+import stroom.pipeline.shared.data.ElementId;
 import stroom.pipeline.shared.data.PipelineElementType;
 import stroom.widget.popup.client.event.HidePopupRequestEvent;
 import stroom.widget.popup.client.event.ShowPopupEvent;
@@ -37,7 +38,7 @@ public class NewElementPresenter extends MyPresenterWidget<NewElementPresenter.N
 
     private PipelineElementType elementType;
     private HidePopupRequestEvent.Handler handler;
-    private String generatedId;
+    private ElementId generatedId;
 
     @Inject
     public NewElementPresenter(final EventBus eventBus, final NewElementView view) {
@@ -63,7 +64,7 @@ public class NewElementPresenter extends MyPresenterWidget<NewElementPresenter.N
                      final String caption) {
         this.elementType = elementType;
         this.handler = handler;
-        this.generatedId = UUID.randomUUID().toString();
+        this.generatedId =  new ElementId(UUID.randomUUID().toString(), name);
         getView().getName().setText(name != null ? name : "");
         final PopupSize popupSize = PopupSize.resizableX();
         ShowPopupEvent.builder(this)
@@ -87,7 +88,7 @@ public class NewElementPresenter extends MyPresenterWidget<NewElementPresenter.N
         return getView().getName().getText();
     }
 
-    public String getGeneratedId() {
+    public ElementId getGeneratedId() {
         return generatedId;
     }
 

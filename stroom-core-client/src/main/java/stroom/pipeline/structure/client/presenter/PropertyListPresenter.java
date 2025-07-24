@@ -320,7 +320,7 @@ public class PropertyListPresenter
             if (propertyTypes != null) {
                 for (final PipelinePropertyType propertyType : propertyTypes.values()) {
                     if (!propertyType.isPipelineReference()) {
-                        final PipelineProperty property = createDefaultProperty(currentElement.getId(),
+                        final PipelineProperty property = createDefaultProperty(currentElement.getId().toString(),
                                 propertyType);
                         defaultProperties.add(property);
                     }

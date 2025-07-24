@@ -150,7 +150,7 @@ public class XMLFragmentParser extends AbstractParser implements SupportsCodeInj
                 locationHolderProvider.get().setFragmentXml(true);
             }
         } else {
-            storedErrorReceiver.replay(new ErrorReceiverIdDecorator(getElementId(), getErrorReceiverProxy()));
+            storedErrorReceiver.replay(new ErrorReceiverIdDecorator(getElementId().getId(), getErrorReceiverProxy()));
             parser = null;
         }
         return parser;
@@ -204,7 +204,7 @@ public class XMLFragmentParser extends AbstractParser implements SupportsCodeInj
                 getFeedName(),
                 getPipelineName(),
                 message ->
-                        getErrorReceiverProxy().log(Severity.WARNING, null, getElementId(), message, null));
+                        getErrorReceiverProxy().log(Severity.WARNING, null, getElementId().getId(), message, null));
         if (docRef == null) {
             throw ProcessException.create(
                     "No text converter is configured or can be found to match the provided name pattern");

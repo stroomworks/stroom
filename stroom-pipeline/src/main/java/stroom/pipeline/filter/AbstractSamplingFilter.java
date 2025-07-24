@@ -65,7 +65,7 @@ public abstract class AbstractSamplingFilter extends AbstractXMLFilter {
      */
     @Override
     public void startProcessing() {
-        errorListener = new ErrorListenerAdaptor(getElementId(), locationFactory, errorReceiverProxy);
+        errorListener = new ErrorListenerAdaptor(getElementId().getId(), locationFactory, errorReceiverProxy);
 
         try {
             this.handler = XMLUtil.createTransformerHandler(errorListener, false);
@@ -73,7 +73,7 @@ public abstract class AbstractSamplingFilter extends AbstractXMLFilter {
         } catch (final TransformerConfigurationException e) {
             errorReceiverProxy.log(Severity.FATAL_ERROR,
                     locationFactory.create(e.getLocator().getLineNumber(), e.getLocator().getColumnNumber()),
-                    getElementId(), e.getMessage(), e);
+                    getElementId().getId(), e.getMessage(), e);
             throw LoggedException.wrap(e);
         } finally {
             super.startProcessing();

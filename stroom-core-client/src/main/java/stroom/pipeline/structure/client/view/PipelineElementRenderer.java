@@ -89,7 +89,7 @@ public final class PipelineElementRenderer
             return null;
         } else {
             final PipelineElementBox pipelineElementBox = elementIdToBoxMap.computeIfAbsent(
-                    pipelineElement.getId(),
+                    pipelineElement.getId().id(),
                     k -> pipelineElementBoxFactory.create(pipelineModel, pipelineElement));
             // Refresh any styling on the box based on the PipelineElement state
             pipelineElementBox.refresh(pipelineElement);

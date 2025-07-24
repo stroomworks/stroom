@@ -27,6 +27,7 @@ import stroom.pipeline.parser.CombinedParser;
 import stroom.pipeline.parser.CombinedParser.Mode;
 import stroom.pipeline.parser.XMLParser;
 import stroom.pipeline.reader.ByteStreamDecoder.DecodedChar;
+import stroom.pipeline.shared.data.ElementId;
 import stroom.pipeline.stepping.Recorder;
 import stroom.task.api.TaskTerminatedException;
 import stroom.util.shared.DefaultLocation;
@@ -310,7 +311,7 @@ public class ReaderRecorder extends AbstractIOElement implements TakesInput, Tak
         private final ByteBuffer byteBuffer = new ByteBuffer();
         private final RangeMode rangeMode;
         private final ErrorReceiverProxy errorReceiverProxy;
-        private final String elementId;
+        private final ElementId elementId;
 
         private int lineNo = BASE_LINE_NO;
         private int colNo = BASE_COL_NO;
@@ -319,7 +320,7 @@ public class ReaderRecorder extends AbstractIOElement implements TakesInput, Tak
                     final String encoding,
                     final RangeMode rangeMode,
                     final ErrorReceiverProxy errorReceiverProxy,
-                    final String elementId) {
+                    final ElementId elementId) {
             super(in);
             this.encoding = encoding;
             this.rangeMode = rangeMode;
@@ -444,7 +445,7 @@ public class ReaderRecorder extends AbstractIOElement implements TakesInput, Tak
                     errorReceiverProxy.log(
                             Severity.ERROR,
                             DefaultLocation.of(lineNo, colNo),
-                            elementId,
+                            elementId.id(),
                             msg,
                             ErrorType.INPUT, // Un-decodable is an issue of the input stream
                             null);

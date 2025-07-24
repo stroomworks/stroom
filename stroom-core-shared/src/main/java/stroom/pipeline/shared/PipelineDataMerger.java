@@ -17,6 +17,7 @@
 package stroom.pipeline.shared;
 
 import stroom.docref.DocRef;
+import stroom.pipeline.shared.data.ElementId;
 import stroom.pipeline.shared.data.PipelineData;
 import stroom.pipeline.shared.data.PipelineDataBuilder;
 import stroom.pipeline.shared.data.PipelineElement;
@@ -41,17 +42,21 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 public class PipelineDataMerger {
 
+
     private static final String SOURCE = "Source";
+    private static final ElementId SOURCEID =
+            new ElementId(UUID.randomUUID().toString(), "Source");
     private static final PipelineElementType SOURCE_ELEMENT_TYPE = new PipelineElementType(SOURCE, null,
             new String[]{
                     PipelineElementType.ROLE_SOURCE, PipelineElementType.ROLE_HAS_TARGETS,
                     PipelineElementType.VISABILITY_SIMPLE},
             null);
-    private static final PipelineElement SOURCE_ELEMENT = new PipelineElement(SOURCE, SOURCE, null);
+    private static final PipelineElement SOURCE_ELEMENT = new PipelineElement(SOURCEID, SOURCE, null);
 
     private final Map<String, PipelineElement> elementMap = new HashMap<>();
     private final Map<String, Map<String, PipelineProperty>> propertyMap = new HashMap<>();
@@ -93,8 +98,8 @@ public class PipelineDataMerger {
 
                         final PipelineElement existing = allElementMap.get(element.getId());
                         if (existing == null) {
-                            allElementMap.put(element.getId(), element);
-                            elementMap.put(element.getId(), element);
+                            allElementMap.put(element.getId().toString(), element);
+                            elementMap.put(element.getId().toString(), element);
                         } else if (!existing.getType().equals(element.getType())) {
                             throw new PipelineModelException("Attempt to add element with id=" +
                                                              existing.getId() +

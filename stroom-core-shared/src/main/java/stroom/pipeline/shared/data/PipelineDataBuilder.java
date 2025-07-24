@@ -44,8 +44,8 @@ public class PipelineDataBuilder {
 
     public PipelineDataBuilder addElement(final PipelineElementType elementType,
                                           final String id, final String name) {
-        addElement(new PipelineElement(id, elementType.getType(), name));
-        return this;
+        addElement(new PipelineElement(new ElementId(id, name),
+                elementType.getType(), name));        return this;
     }
 
     public PipelineDataBuilder addElement(final PipelineElement element) {
@@ -60,8 +60,8 @@ public class PipelineDataBuilder {
 
     public PipelineDataBuilder removeElement(final PipelineElementType elementType,
                                              final String id, final String name) {
-        removeElement(new PipelineElement(id, elementType.getType(), name));
-        return this;
+        removeElement(new PipelineElement(new ElementId(id, name),
+                elementType.getType(), name));        return this;
     }
 
     public PipelineDataBuilder removeElement(final PipelineElement element) {
@@ -135,7 +135,7 @@ public class PipelineDataBuilder {
 
     public PipelineDataBuilder addLink(final PipelineElement from,
                                        final PipelineElement to) {
-        addLink(new PipelineLink(from.getId(), to.getId()));
+        addLink(new PipelineLink(from.getId().id(), to.getId().id()));
         return this;
     }
 

@@ -284,7 +284,7 @@ public class SteppingService {
             for (final PipelineProperty property : properties) {
                 PipelineFactory.setProperty(
                         pipelineElementRegistry,
-                        pipelineElement.getId(),
+                        pipelineElement.getId().id(),
                         elementType,
                         elementInstance,
                         property.getName(),

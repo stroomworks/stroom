@@ -83,7 +83,7 @@ public abstract class AbstractWriter extends AbstractXMLFilter implements Target
                     errorReceiver.log(
                             Severity.ERROR,
                             null,
-                            getElementId(),
+                            getElementId().getId(),
                             "Unsupported encoding '" + encoding + "', defaulting to 'UTF-8.'",
                             ErrorType.GENERIC,
                             e);
@@ -236,19 +236,19 @@ public abstract class AbstractWriter extends AbstractXMLFilter implements Target
     }
 
     protected void info(final String message, final Throwable t) {
-        errorReceiver.log(Severity.INFO, null, getElementId(), message, t);
+        errorReceiver.log(Severity.INFO, null, getElementId().getId(), message, t);
     }
 
     protected void warning(final String message, final Throwable t) {
-        errorReceiver.log(Severity.WARNING, null, getElementId(), message, t);
+        errorReceiver.log(Severity.WARNING, null, getElementId().getId(), message, t);
     }
 
     protected void error(final String message, final Throwable t) {
-        errorReceiver.log(Severity.ERROR, null, getElementId(), message, t);
+        errorReceiver.log(Severity.ERROR, null, getElementId().getId(), message, t);
     }
 
     protected void fatal(final String message, final Throwable t) {
-        errorReceiver.log(Severity.FATAL_ERROR, null, getElementId(), message, t);
+        errorReceiver.log(Severity.FATAL_ERROR, null, getElementId().getId(), message, t);
     }
 
     protected void info(final Throwable t) {

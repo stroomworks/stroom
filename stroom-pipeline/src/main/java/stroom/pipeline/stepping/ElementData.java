@@ -16,12 +16,14 @@
 
 package stroom.pipeline.stepping;
 
+import stroom.pipeline.factory.Element;
 import stroom.pipeline.shared.SharedElementData;
+import stroom.pipeline.shared.data.ElementId;
 import stroom.pipeline.shared.data.PipelineElementType;
 import stroom.util.shared.Indicators;
 
 public class ElementData {
-    private final String elementId;
+    private final ElementId elementId;
     private final PipelineElementType elementType;
     private Object input;
     private Object output;
@@ -29,12 +31,12 @@ public class ElementData {
     private boolean formatOutput;
     private Indicators indicators;
 
-    public ElementData(final String elementId, final PipelineElementType elementType) {
+    public ElementData(final ElementId elementId, final PipelineElementType elementType) {
         this.elementId = elementId;
         this.elementType = elementType;
     }
 
-    public String getElementId() {
+    public ElementId getElementId() {
         return elementId;
     }
 

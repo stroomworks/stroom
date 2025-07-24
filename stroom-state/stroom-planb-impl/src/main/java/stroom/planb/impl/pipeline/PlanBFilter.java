@@ -1016,6 +1016,6 @@ public class PlanBFilter extends AbstractXMLFilter {
     }
 
     private void log(final Severity severity, final String message, final Exception e) {
-        errorReceiverProxy.log(severity, locationFactory.create(locator), getElementId(), message, e);
+        errorReceiverProxy.log(severity, locationFactory.create(locator), getElementId().getId(), message, e);
     }
 }

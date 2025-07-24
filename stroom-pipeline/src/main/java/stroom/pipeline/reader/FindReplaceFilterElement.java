@@ -95,7 +95,7 @@ public class FindReplaceFilterElement extends AbstractReaderElement {
             errorReceiver.log(
                     Severity.ERROR,
                     null,
-                    getElementId(),
+                    getElementId().getId(),
                     e.getMessage(),
                     e);
         }
@@ -110,7 +110,7 @@ public class FindReplaceFilterElement extends AbstractReaderElement {
                 errorReceiver.log(
                         Severity.INFO,
                         null,
-                        getElementId(),
+                        getElementId().getId(),
                         "Performed " + textReplacementFilterReader.getTotalReplacementCount() + " replacements",
                         null);
             }

@@ -209,7 +209,7 @@ public abstract class AbstractAppender extends AbstractDestinationProvider imple
 
     protected void error(final String message, final Exception e) {
         if (errorReceiverProxy != null) {
-            errorReceiverProxy.log(Severity.ERROR, null, getElementId(), message, e);
+            errorReceiverProxy.log(Severity.ERROR, null, getElementId().getId(), message, e);
         } else {
             LOGGER.error(message, e);
         }
@@ -221,7 +221,7 @@ public abstract class AbstractAppender extends AbstractDestinationProvider imple
 
     protected void fatal(final String message, final Exception e) {
         if (errorReceiverProxy != null) {
-            errorReceiverProxy.log(Severity.FATAL_ERROR, null, getElementId(), message, e);
+            errorReceiverProxy.log(Severity.FATAL_ERROR, null, getElementId().getId(), message, e);
         } else {
             LOGGER.error(message, e);
         }
@@ -243,7 +243,7 @@ public abstract class AbstractAppender extends AbstractDestinationProvider imple
                 try {
                     sizeBytes = ModelStringUtil.parseIECByteSizeString(size);
                 } catch (final RuntimeException e) {
-                    errorReceiverProxy.log(Severity.ERROR, null, getElementId(),
+                    errorReceiverProxy.log(Severity.ERROR, null, getElementId().getId(),
                             "Unable to parse size: " + size, null);
                 }
             }

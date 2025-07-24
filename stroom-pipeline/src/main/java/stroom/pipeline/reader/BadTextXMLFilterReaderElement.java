@@ -66,7 +66,7 @@ public class BadTextXMLFilterReaderElement extends AbstractReaderElement {
         if (badTextXMLFilterReader.hasModifiedContent()) {
             errorReceiver.log(Severity.WARNING,
                     null,
-                    getElementId(),
+                    getElementId().getId(),
                     "The content was modified",
                     null);
         }

@@ -184,14 +184,14 @@ public abstract class AbstractKafkaProducerFilter extends AbstractSamplingFilter
     protected void error(final Exception e) {
         if (locator != null) {
             errorReceiverProxy.log(Severity.ERROR,
-                    locationFactory.create(locator.getLineNumber(), locator.getColumnNumber()), getElementId(),
+                    locationFactory.create(locator.getLineNumber(), locator.getColumnNumber()), getElementId().getId(),
                     e.getMessage(), e);
         } else {
-            errorReceiverProxy.log(Severity.ERROR, null, getElementId(), e.getMessage(), e);
+            errorReceiverProxy.log(Severity.ERROR, null, getElementId().getId(), e.getMessage(), e);
         }
     }
 
     protected void log(final Severity severity, final String message, final Exception e) {
-        errorReceiverProxy.log(severity, locationFactory.create(locator), getElementId(), message, e);
+        errorReceiverProxy.log(severity, locationFactory.create(locator), getElementId().getId(), message, e);
     }
 }

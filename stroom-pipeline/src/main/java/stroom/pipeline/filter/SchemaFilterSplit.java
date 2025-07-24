@@ -18,6 +18,7 @@ package stroom.pipeline.filter;
 
 import stroom.pipeline.factory.ConfigurableElement;
 import stroom.pipeline.factory.PipelineProperty;
+import stroom.pipeline.shared.data.ElementId;
 import stroom.pipeline.shared.data.PipelineElementType;
 import stroom.pipeline.shared.data.PipelineElementType.Category;
 import stroom.pipeline.xmlschema.FindXMLSchemaCriteria;
@@ -90,12 +91,12 @@ public class SchemaFilterSplit extends AbstractXMLFilter {
     }
 
     @Override
-    public String getElementId() {
+    public ElementId getElementId() {
         return schemaFilter.getElementId();
     }
 
     @Override
-    public void setElementId(final String id) {
+    public void setElementId(final ElementId id) {
         schemaFilter.setElementId(id);
     }
 

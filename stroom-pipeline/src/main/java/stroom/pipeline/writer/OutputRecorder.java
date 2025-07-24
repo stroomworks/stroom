@@ -17,6 +17,7 @@
 package stroom.pipeline.writer;
 
 import stroom.pipeline.destination.Destination;
+import stroom.pipeline.shared.data.ElementId;
 import stroom.pipeline.stepping.Recorder;
 import stroom.util.io.StreamUtil;
 import stroom.util.shared.TextRange;
@@ -32,7 +33,7 @@ public class OutputRecorder extends AbstractDestinationProvider implements Recor
 
     private static final Logger LOGGER = LoggerFactory.getLogger(OutputRecorder.class);
     private final MemoryDestination destination = new MemoryDestination();
-    private String elementId;
+    private ElementId elementId;
 
     @Override
     public void startProcessing() {
@@ -70,12 +71,12 @@ public class OutputRecorder extends AbstractDestinationProvider implements Recor
     }
 
     @Override
-    public String getElementId() {
+    public ElementId getElementId() {
         return elementId;
     }
 
     @Override
-    public void setElementId(final String elementId) {
+    public void setElementId(final ElementId elementId) {
         this.elementId = elementId;
     }
 

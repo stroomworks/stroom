@@ -98,7 +98,7 @@ public class IdEnrichmentFilter extends AbstractXMLFilter {
                 } else {
                     final String msg = "No stream set in stream holder";
                     errorReceiverProxy
-                            .log(Severity.WARNING, null, getElementId(), msg, ProcessException.create(msg));
+                            .log(Severity.WARNING, null, getElementId().getId(), msg, ProcessException.create(msg));
                 }
             }
             depth = 0;
@@ -165,7 +165,7 @@ public class IdEnrichmentFilter extends AbstractXMLFilter {
 
                         LOGGER.debug(() -> msg);
                         LOGGER.trace(() -> Arrays.toString(eventIds));
-                        errorReceiverProxy.log(Severity.WARNING, null, getElementId(), msg, null);
+                        errorReceiverProxy.log(Severity.WARNING, null, getElementId().getId(), msg, null);
 
                         // Double check for duplicated ids.
                         final Set<Long> duplicateSet = new HashSet<>();
@@ -179,7 +179,7 @@ public class IdEnrichmentFilter extends AbstractXMLFilter {
                         if (duplicate) {
                             final String err = "Duplicate id found in event id list: " + Arrays.toString(eventIds);
                             LOGGER.error(() -> err);
-                            errorReceiverProxy.log(Severity.ERROR, null, getElementId(), err, null);
+                            errorReceiverProxy.log(Severity.ERROR, null, getElementId().getId(), err, null);
                         }
                     }
 

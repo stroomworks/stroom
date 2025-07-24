@@ -169,7 +169,7 @@ public class PipelineTreePresenter extends MyPresenterWidget<PipelineTreePresent
                 PipelineData::getAddedElements);
 
         return NullSafe.stream(pipelineElements)
-                .map(PipelineElement::getId)
+                .map(e -> e.getId().id())
                 .collect(Collectors.toSet());
     }
 

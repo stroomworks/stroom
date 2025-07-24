@@ -123,8 +123,8 @@ public class SteppingFilterPresenter extends
                             : BASE_CLASS + "-filterOff";
 
             // Pipe element ID column
-            final Column<PipelineElement, String> textColumn = DataGridUtil.textColumnBuilder(
-                            PipelineElement::getId)
+            final Column<PipelineElement, String> textColumn = DataGridUtil.<PipelineElement>textColumnBuilder(
+                            pipelineElement -> pipelineElement.getId().id())
                     .withStyleName(BASE_CLASS + "-textCell")
                     .build();
             elementChooser.addColumn(textColumn);
@@ -294,7 +294,7 @@ public class SteppingFilterPresenter extends
             settingsMap.put(currentElementId, settings);
         }
 
-        final String elementId = NullSafe.get(element, PipelineElement::getId);
+        final String elementId = NullSafe.get(element, e -> e.getId().id());
         if (elementId != null && !elementId.equals(currentElementId)) {
             getView().setName(element.getDisplayName());
             xPathFilters = xPathListPresenter.getDataProvider().getList();

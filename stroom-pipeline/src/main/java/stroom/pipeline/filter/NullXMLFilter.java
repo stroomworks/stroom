@@ -17,6 +17,7 @@
 package stroom.pipeline.filter;
 
 import stroom.pipeline.factory.Processor;
+import stroom.pipeline.shared.data.ElementId;
 import stroom.task.api.Terminator;
 
 import org.xml.sax.Attributes;
@@ -97,12 +98,12 @@ public class NullXMLFilter implements XMLFilter {
     }
 
     @Override
-    public String getElementId() {
+    public ElementId getElementId() {
         return null;
     }
 
     @Override
-    public void setElementId(final String elementId) {
+    public void setElementId(final ElementId elementId) {
     }
 
     @Override

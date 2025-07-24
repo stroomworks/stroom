@@ -22,7 +22,7 @@ import java.util.Collections;
 
 public class PipelineDataUtil {
 
-    public static PipelineElement createElement(final String id, final String type, final String name) {
+    public static PipelineElement createElement(final ElementId id, final String type, final String name) {
         return new PipelineElement(id, type, name);
     }
 

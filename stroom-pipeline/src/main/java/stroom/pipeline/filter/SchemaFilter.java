@@ -104,7 +104,7 @@ public class SchemaFilter extends AbstractXMLFilter implements Locator {
     public void startProcessing() {
         try {
             if (errorHandler == null) {
-                errorHandler = new ErrorHandlerAdaptor(getElementId(), locationFactory, errorReceiverProxy) {
+                errorHandler = new ErrorHandlerAdaptor(getElementId().getId(), locationFactory, errorReceiverProxy) {
                     @Override
                     protected void log(final Severity severity, final SAXParseException exception) {
                         String message = exception.getMessage();
@@ -591,7 +591,7 @@ public class SchemaFilter extends AbstractXMLFilter implements Locator {
                 for (final StoredError storedError : storedSchema.getErrorReceiver().getList()) {
                     errorReceiverProxy.log(storedError.getSeverity(),
                             locationFactory.create(1, 1),
-                            getElementId(),
+                            getElementId().getId(),
                             storedError.toString(),
                             null);
                 }
@@ -680,7 +680,7 @@ public class SchemaFilter extends AbstractXMLFilter implements Locator {
             }
         }
 
-        errorReceiverProxy.log(Severity.ERROR, null, getElementId(),
+        errorReceiverProxy.log(Severity.ERROR, null, getElementId().getId(),
                 "Unexpected error thrown by schema validator in method " + method + ": " + message, t);
     }
 

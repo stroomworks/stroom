@@ -70,7 +70,7 @@ public class InvalidCharFilterReaderElement extends AbstractReaderElement {
             errorReceiver.log(
                     Severity.WARNING,
                     null,
-                    getElementId(),
+                    getElementId().getId(),
                     "Some characters that are not valid in XML v" + validChars.getXmlVersion()
                             + " were removed from the input stream",
                     null);

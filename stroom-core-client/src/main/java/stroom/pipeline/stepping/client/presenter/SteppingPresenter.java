@@ -31,6 +31,7 @@ import stroom.pipeline.shared.PipelineModelException;
 import stroom.pipeline.shared.PipelineResource;
 import stroom.pipeline.shared.SharedElementData;
 import stroom.pipeline.shared.SourceLocation;
+import stroom.pipeline.shared.data.ElementId;
 import stroom.pipeline.shared.data.PipelineElement;
 import stroom.pipeline.shared.data.PipelineElementType;
 import stroom.pipeline.shared.data.PipelineLayer;
@@ -90,6 +91,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
+import javax.swing.text.Element;
 
 public class SteppingPresenter
         extends MyPresenterWidget<SteppingPresenter.SteppingView>
@@ -361,7 +363,7 @@ public class SteppingPresenter
             updateToggleConsoleBtn(null);
             return sourcePresenter;
         } else {
-            final String elementId = element.getId();
+            final ElementId elementId = element.getId();
             ElementPresenter elementPresenter = elementPresenterMap.get(elementId);
             if (elementPresenter == null) {
                 final DirtyHandler dirtyEditorHandler = event -> {
@@ -379,7 +381,7 @@ public class SteppingPresenter
                 presenter.setFeedName(meta.getFeedName());
                 presenter.setPipelineName(requestBuilder.build().getPipeline().getName());
                 presenter.setClassification(classification);
-                elementPresenterMap.put(elementId, presenter);
+                elementPresenterMap.put(elementId.id(), presenter);
                 presenter.addDirtyHandler(dirtyEditorHandler);
 
                 // Allow step refresh to be called from the editor
@@ -394,7 +396,7 @@ public class SteppingPresenter
             currentElementPresenter = elementPresenter;
 
             // Refresh this editor if it needs it.
-            refreshEditor(elementPresenter, elementId);
+            refreshEditor(elementPresenter, elementId.id());
 
             return elementPresenter;
         }
@@ -627,9 +629,9 @@ public class SteppingPresenter
             final Map<String, String> codeMap = new HashMap<>();
             for (final ElementPresenter editorPresenter : elementPresenterMap.values()) {
                 if (editorPresenter.isDirtyCode()) {
-                    final String elementId = editorPresenter.getElement().getId();
+                    final ElementId elementId = editorPresenter.getElement().getId();
                     final String code = editorPresenter.getCode();
-                    codeMap.put(elementId, code);
+                    codeMap.put(elementId.id(), code);
                 }
             }
             requestBuilder.timeout(40L);
@@ -774,12 +776,12 @@ public class SteppingPresenter
             // Refresh the currently selected editor.
             final PipelineElement selectedElement = getSelectedPipeElement();
             if (selectedElement != null) {
-                final String elementId = selectedElement.getId();
+                final ElementId elementId = selectedElement.getId();
                 final ElementPresenter elementPresenter = elementPresenterMap.get(elementId);
                 if (elementPresenter != null) {
-                    refreshEditor(elementPresenter, elementId);
+                    refreshEditor(elementPresenter, elementId.id());
                 } else {
-                    updateToggleConsoleBtn(elementId);
+                    updateToggleConsoleBtn(elementId.id());
                 }
             }
 
@@ -880,7 +882,7 @@ public class SteppingPresenter
     private void setLogPaneVisibility(final boolean isVisible) {
         final PipelineElement selectedElement = getSelectedPipeElement();
         if (selectedElement != null) {
-            final String elementId = selectedElement.getId();
+            final ElementId elementId = selectedElement.getId();
             final ElementPresenter elementPresenter = elementPresenterMap.get(elementId);
             if (elementPresenter != null) {
                 elementPresenter.setLogPaneVisibility(isVisible);

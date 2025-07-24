@@ -134,7 +134,7 @@ public class DSParser extends AbstractParser implements SupportsCodeInjection {
             return parserFactory.getParser();
         }
 
-        storedErrorReceiver.replay(new ErrorReceiverIdDecorator(getElementId(), getErrorReceiverProxy()));
+        storedErrorReceiver.replay(new ErrorReceiverIdDecorator(getElementId().getId(), getErrorReceiverProxy()));
         throw ProcessException.create("Unable to create parser");
     }
 
@@ -205,7 +205,7 @@ public class DSParser extends AbstractParser implements SupportsCodeInjection {
         final DocRef docRef = findDoc(
                 getFeedName(),
                 getPipelineName(),
-                message -> getErrorReceiverProxy().log(Severity.WARNING, null, getElementId(), message, null));
+                message -> getErrorReceiverProxy().log(Severity.WARNING, null, getElementId().getId(), message, null));
         if (docRef == null) {
             throw ProcessException.create(
                     "No data splitter is configured or can be found to match the provided name pattern");

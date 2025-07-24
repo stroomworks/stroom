@@ -156,7 +156,7 @@ public class XsltFilter extends AbstractXMLFilter implements SupportsCodeInjecti
     @Override
     public void startProcessing() {
         try {
-            errorListener = new ErrorListenerAdaptor(getElementId(), locationFactory, errorReceiverProxy);
+            errorListener = new ErrorListenerAdaptor(getElementId().getId(), locationFactory, errorReceiverProxy);
             maxElementCount = xsltConfig.getMaxElements();
 
             final XsltDoc xslt = loadXsltDoc();
@@ -175,7 +175,7 @@ public class XsltFilter extends AbstractXMLFilter implements SupportsCodeInjecti
                 // XSLT for it.
                 if (xslt.getData() != null && xslt.getData().trim().length() > 0) {
                     // Get compiled XSLT from the pool.
-                    final ErrorReceiver errorReceiver = new ErrorReceiverIdDecorator(getElementId(),
+                    final ErrorReceiver errorReceiver = new ErrorReceiverIdDecorator(getElementId().getId(),
                             errorReceiverProxy);
                     poolItem = xsltPool.borrowConfiguredTemplate(xslt, errorReceiver,
                             locationFactory, pipelineReferences, usePool);
@@ -211,7 +211,7 @@ public class XsltFilter extends AbstractXMLFilter implements SupportsCodeInjecti
                 throw ProcessException.create(msg);
             }
         } catch (final RuntimeException e) {
-            errorReceiverProxy.log(Severity.FATAL_ERROR, null, getElementId(), e.getMessage(), e);
+            errorReceiverProxy.log(Severity.FATAL_ERROR, null, getElementId().getId(), e.getMessage(), e);
             // If we aren't stepping then throw an exception to terminate early.
             if (!pipelineContext.isStepping()) {
                 throw LoggedException.wrap(e);
@@ -283,7 +283,7 @@ public class XsltFilter extends AbstractXMLFilter implements SupportsCodeInjecti
 
             errorReceiverProxy.log(Severity.FATAL_ERROR,
                     getLocation(throwable),
-                    getElementId(),
+                    getElementId().getId(),
                     throwable.toString(),
                     throwable);
             // If we aren't stepping then throw an exception to terminate early.
@@ -309,7 +309,7 @@ public class XsltFilter extends AbstractXMLFilter implements SupportsCodeInjecti
 
                     errorReceiverProxy.log(Severity.FATAL_ERROR,
                             getLocation(throwable),
-                            getElementId(),
+                            getElementId().getId(),
                             throwable.toString(),
                             throwable);
                     // If we aren't stepping then throw an exception to terminate early.
@@ -406,7 +406,7 @@ public class XsltFilter extends AbstractXMLFilter implements SupportsCodeInjecti
         errorReceiverProxy.log(
                 severity,
                 locationFactory.create(locator),
-                getElementId(),
+                getElementId().getId(),
                 msg,
                 ErrorType.CODE,
                 null);
@@ -511,10 +511,11 @@ public class XsltFilter extends AbstractXMLFilter implements SupportsCodeInjecti
 
                 final ProcessException exception = ProcessException.create(message);
                 if (pipelineContext.isStepping()) {
-                    errorReceiverProxy.log(Severity.FATAL_ERROR, null, getElementId(), exception.getMessage(),
+                    errorReceiverProxy.log(Severity.FATAL_ERROR, null, getElementId().getId(), exception.getMessage(),
                             exception);
                 } else {
-                    errorReceiverProxy.log(Severity.FATAL_ERROR, locationFactory.create(locator), getElementId(),
+                    errorReceiverProxy.log(Severity.FATAL_ERROR, locationFactory.create(locator),
+                            getElementId().getId(),
                             exception.getMessage(), exception);
                 }
 
@@ -679,7 +680,7 @@ public class XsltFilter extends AbstractXMLFilter implements SupportsCodeInjecti
         final DocRef docRef = findDoc(
                 getFeedName(),
                 getPipelineName(),
-                message -> errorReceiverProxy.log(Severity.WARNING, null, getElementId(), message, null));
+                message -> errorReceiverProxy.log(Severity.WARNING, null, getElementId().getId(), message, null));
         if (docRef != null) {
             final XsltDoc xsltDoc = xsltStore.readDocument(docRef);
             if (xsltDoc == null) {

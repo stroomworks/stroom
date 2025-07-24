@@ -203,7 +203,7 @@ public class ReferenceDataFilter extends AbstractXMLFilter {
         refDataLoader.setRangePutOutcomeHandler(this::validateRangeValuePutSuccess);
 
         if (!putOutcome.isSuccess()) {
-            errorReceiverProxy.log(Severity.ERROR, null, getElementId(),
+            errorReceiverProxy.log(Severity.ERROR, null, getElementId().getId(),
                     LogUtil.message(
                             "A processing info entry already exists for this reference pipeline {}, " +
                             "version {}, streamId {}",
@@ -225,7 +225,7 @@ public class ReferenceDataFilter extends AbstractXMLFilter {
             errorReceiverProxy.log(
                     Severity.FATAL_ERROR,
                     null,
-                    getElementId(),
+                    getElementId().getId(),
                     "RefDataLoader is missing",
                     null);
         }
@@ -244,7 +244,7 @@ public class ReferenceDataFilter extends AbstractXMLFilter {
             errorReceiverProxy.log(
                     Severity.FATAL_ERROR,
                     null,
-                    getElementId(),
+                    getElementId().getId(),
                     "RefDataLoader is missing",
                     null);
         }
@@ -455,7 +455,7 @@ public class ReferenceDataFilter extends AbstractXMLFilter {
                 try {
                     rangeFrom = Long.parseLong(string);
                 } catch (final RuntimeException e) {
-                    errorReceiverProxy.log(Severity.ERROR, null, getElementId(),
+                    errorReceiverProxy.log(Severity.ERROR, null, getElementId().getId(),
                             "Unable to parse string \"" + string + "\" as long for range from", e);
                 }
             } else if (TO_ELEMENT.equalsIgnoreCase(localName)) {
@@ -464,7 +464,7 @@ public class ReferenceDataFilter extends AbstractXMLFilter {
                 try {
                     rangeTo = Long.parseLong(string);
                 } catch (final RuntimeException e) {
-                    errorReceiverProxy.log(Severity.ERROR, null, getElementId(),
+                    errorReceiverProxy.log(Severity.ERROR, null, getElementId().getId(),
                             "Unable to parse string \"" + string + "\" as long for range to", e);
                 }
 
@@ -541,14 +541,14 @@ public class ReferenceDataFilter extends AbstractXMLFilter {
                     refDataLoaderHolder.getRefDataLoader().put(mapDefinition, key, stagingValueOutputStream);
                 } else if (rangeFrom != null && rangeTo != null) {
                     if (rangeFrom > rangeTo) {
-                        errorReceiverProxy.log(Severity.ERROR, null, getElementId(),
+                        errorReceiverProxy.log(Severity.ERROR, null, getElementId().getId(),
                                 "Range from '" + rangeFrom
                                 + "' must be less than or equal to range to '" + rangeTo + "'",
                                 null);
                     } else if (rangeFrom < 0) {
                         // negative values cause problems for the ordering of data in LMDB so prevent their use
                         // when using byteBuffer.putLong, -10, 0 & 10 will be stored in LMDB as 0, 10, -10
-                        errorReceiverProxy.log(Severity.ERROR, null, getElementId(),
+                        errorReceiverProxy.log(Severity.ERROR, null, getElementId().getId(),
                                 LogUtil.message(
                                         "Only non-negative numbers are supported (from: {}, to: {})",
                                         rangeFrom, rangeTo), null);
@@ -566,10 +566,10 @@ public class ReferenceDataFilter extends AbstractXMLFilter {
             final String msg = LogUtil.message("Value for key {} in map {} is too big for the buffer",
                     key,
                     mapName);
-            errorReceiverProxy.log(Severity.ERROR, null, getElementId(), msg, boe);
+            errorReceiverProxy.log(Severity.ERROR, null, getElementId().getId(), msg, boe);
             LOGGER.error(msg, boe);
         } catch (final RuntimeException e) {
-            errorReceiverProxy.log(Severity.ERROR, null, getElementId(), e.getMessage(), e);
+            errorReceiverProxy.log(Severity.ERROR, null, getElementId().getId(), e.getMessage(), e);
             LOGGER.error("Error putting key {} into map {}: {} {}",
                     key, mapName, e.getClass().getSimpleName(), e.getMessage());
             LOGGER.debug("Error putting key {} into map {}: {}", key, mapName, e.getMessage(), e);
@@ -617,7 +617,7 @@ public class ReferenceDataFilter extends AbstractXMLFilter {
                 && putOutcome.isDuplicate().orElse(false)) {
 
                 final MapDefinition mapDefinition = mapDefSupplier.get();
-                errorReceiverProxy.log(Severity.WARNING, null, getElementId(),
+                errorReceiverProxy.log(Severity.WARNING, null, getElementId().getId(),
                         LogUtil.message(
                                 "Replaced entry for {} in map {} from stream {} as an entry already exists in the " +
                                 "store and overrideExistingValues is set to true on the reference " +
@@ -629,7 +629,7 @@ public class ReferenceDataFilter extends AbstractXMLFilter {
             } else if (!overrideExistingValues
                        && putOutcome.isDuplicate().orElse(false)) {
                 final MapDefinition mapDefinition = mapDefSupplier.get();
-                errorReceiverProxy.log(Severity.WARNING, null, getElementId(),
+                errorReceiverProxy.log(Severity.WARNING, null, getElementId().getId(),
                         LogUtil.message(
                                 "Unable to load entry for {} into map {} from stream {} as an entry already exists " +
                                 "in the store and overrideExistingValues is set to false on the reference " +

@@ -272,7 +272,7 @@ public class StateFilter extends AbstractXMLFilter {
                 list.forEach(state -> byteBufferFactory.release(state.value()));
                 list.clear();
             } catch (final Exception e) {
-                errorReceiverProxy.log(Severity.ERROR, null, getElementId(), e.getMessage(), e);
+                errorReceiverProxy.log(Severity.ERROR, null, getElementId().getId(), e.getMessage(), e);
             }
         });
         stateMap.clear();
@@ -285,7 +285,7 @@ public class StateFilter extends AbstractXMLFilter {
                 list.forEach(state -> byteBufferFactory.release(state.value()));
                 list.clear();
             } catch (final Exception e) {
-                errorReceiverProxy.log(Severity.ERROR, null, getElementId(), e.getMessage(), e);
+                errorReceiverProxy.log(Severity.ERROR, null, getElementId().getId(), e.getMessage(), e);
             }
         });
         temporalStateMap.clear();
@@ -298,7 +298,7 @@ public class StateFilter extends AbstractXMLFilter {
                 list.forEach(state -> byteBufferFactory.release(state.value()));
                 list.clear();
             } catch (final Exception e) {
-                errorReceiverProxy.log(Severity.ERROR, null, getElementId(), e.getMessage(), e);
+                errorReceiverProxy.log(Severity.ERROR, null, getElementId().getId(), e.getMessage(), e);
             }
         });
         rangedStateMap.clear();
@@ -311,7 +311,7 @@ public class StateFilter extends AbstractXMLFilter {
                 list.forEach(state -> byteBufferFactory.release(state.value()));
                 list.clear();
             } catch (final Exception e) {
-                errorReceiverProxy.log(Severity.ERROR, null, getElementId(), e.getMessage(), e);
+                errorReceiverProxy.log(Severity.ERROR, null, getElementId().getId(), e.getMessage(), e);
             }
         });
         temporalRangedStateMap.clear();
@@ -323,7 +323,7 @@ public class StateFilter extends AbstractXMLFilter {
                 new SessionDao(sessionProvider, stateDoc.getName()).insert(list);
                 list.clear();
             } catch (final Exception e) {
-                errorReceiverProxy.log(Severity.ERROR, null, getElementId(), e.getMessage(), e);
+                errorReceiverProxy.log(Severity.ERROR, null, getElementId().getId(), e.getMessage(), e);
             }
         });
         sessionMap.clear();
@@ -903,6 +903,6 @@ public class StateFilter extends AbstractXMLFilter {
     }
 
     private void log(final Severity severity, final String message, final Exception e) {
-        errorReceiverProxy.log(severity, locationFactory.create(locator), getElementId(), message, e);
+        errorReceiverProxy.log(severity, locationFactory.create(locator), getElementId().getId(), message, e);
     }
 }

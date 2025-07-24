@@ -114,7 +114,7 @@ public abstract class AbstractParser extends AbstractElement implements TakesInp
             if (xmlReader != null) {
                 xmlReader.setContentHandler(getFilter());
 
-                final ErrorHandler errorHandler = new ErrorHandlerAdaptor(getElementId(), locationFactory,
+                final ErrorHandler errorHandler = new ErrorHandlerAdaptor(getElementId().getId(), locationFactory,
                         errorReceiverProxy);
                 xmlReader.setErrorHandler(errorHandler);
 
@@ -266,19 +266,19 @@ public abstract class AbstractParser extends AbstractElement implements TakesInp
     }
 
     protected void info(final String message, final Throwable t) {
-        errorReceiverProxy.log(Severity.INFO, getLocation(), getElementId(), message, t);
+        errorReceiverProxy.log(Severity.INFO, getLocation(), getElementId().getId(), message, t);
     }
 
     protected void warning(final String message, final Throwable t) {
-        errorReceiverProxy.log(Severity.WARNING, getLocation(), getElementId(), message, t);
+        errorReceiverProxy.log(Severity.WARNING, getLocation(), getElementId().getId(), message, t);
     }
 
     protected void error(final String message, final Throwable t) {
-        errorReceiverProxy.log(Severity.ERROR, getLocation(), getElementId(), message, t);
+        errorReceiverProxy.log(Severity.ERROR, getLocation(), getElementId().getId(), message, t);
     }
 
     protected void fatal(final String message, final Throwable t) {
-        errorReceiverProxy.log(Severity.FATAL_ERROR, getLocation(), getElementId(), message, t);
+        errorReceiverProxy.log(Severity.FATAL_ERROR, getLocation(), getElementId().getId(), message, t);
     }
 
     protected void info(final Throwable t) {

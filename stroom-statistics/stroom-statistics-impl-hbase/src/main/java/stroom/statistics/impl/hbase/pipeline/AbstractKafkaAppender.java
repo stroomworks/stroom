@@ -254,11 +254,11 @@ public abstract class AbstractKafkaAppender extends AbstractDestinationProvider 
     }
 
     protected void error(final Exception e) {
-        errorReceiverProxy.log(Severity.ERROR, null, getElementId(), e.getMessage(), e);
+        errorReceiverProxy.log(Severity.ERROR, null, getElementId().getId(), e.getMessage(), e);
     }
 
     protected void log(final Severity severity, final String message, final Exception e) {
-        errorReceiverProxy.log(severity, null, getElementId(), message, e);
+        errorReceiverProxy.log(severity, null, getElementId().getId(), message, e);
     }
 
     public abstract String getTopic();

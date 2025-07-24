@@ -16,6 +16,7 @@
 
 package stroom.pipeline.errorhandler;
 
+import stroom.pipeline.shared.data.ElementId;
 import stroom.util.shared.ErrorType;
 import stroom.util.shared.Indicators;
 import stroom.util.shared.Location;
@@ -83,7 +84,7 @@ public class LoggingErrorReceiver implements ErrorReceiver, ErrorStatistics {
     /**
      * All indicators for the element
      */
-    public Indicators getIndicators(final String elementId) {
+    public Indicators getIndicators(final ElementId elementId) {
         return NullSafe.get(
                 indicatorsMap.get(elementId),
                 subMap -> Indicators.combine(subMap.values()));

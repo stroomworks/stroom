@@ -81,7 +81,7 @@ public class PipelineDataValidator {
                 throw new PipelineFactoryException("Element type \"" + element.getType() + "\" is unknown");
             }
 
-            final PipelineElementType existing = elementMap.put(element.getId(), elementType);
+            final PipelineElementType existing = elementMap.put(element.getId().id(), elementType);
             if (existing != null && !existing.getType().equals(elementType.getType())) {
                 throw new PipelineFactoryException("Attempt to add element with id=" + element.getId()
                                                    + " but element already exists with the same id but different type");

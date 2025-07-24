@@ -214,19 +214,21 @@ class StandardKafkaProducer extends AbstractXMLFilter {
                 final ErrorListener errorListener = new ErrorListener() {
                     @Override
                     public void warning(final TransformerException exception) {
-                        errorReceiverProxy.log(Severity.WARNING, locationFactory.create(locator), getElementId(),
+                        errorReceiverProxy.log(Severity.WARNING, locationFactory.create(locator),
+                                getElementId().getId(),
                                 "Kafka XML value parse error", exception);
                     }
 
                     @Override
                     public void error(final TransformerException exception) {
-                        errorReceiverProxy.log(Severity.ERROR, locationFactory.create(locator), getElementId(),
+                        errorReceiverProxy.log(Severity.ERROR, locationFactory.create(locator), getElementId().getId(),
                                 "Kafka XML value parse error", exception);
                     }
 
                     @Override
                     public void fatalError(final TransformerException exception) {
-                        errorReceiverProxy.log(Severity.FATAL_ERROR, locationFactory.create(locator), getElementId(),
+                        errorReceiverProxy.log(Severity.FATAL_ERROR, locationFactory.create(locator),
+                                getElementId().getId(),
                                 "Kafka XML value parse error", exception);
                     }
                 };
@@ -240,7 +242,7 @@ class StandardKafkaProducer extends AbstractXMLFilter {
                 } catch (final TransformerConfigurationException e) {
                     errorReceiverProxy.log(Severity.FATAL_ERROR,
                             locationFactory.create(e.getLocator().getLineNumber(), e.getLocator().getColumnNumber()),
-                            getElementId(), e.getMessage(), e);
+                            getElementId().getId(), e.getMessage(), e);
                     log(Severity.ERROR, "Unable to create XML value handler ", null);
                 }
             }
@@ -414,7 +416,7 @@ class StandardKafkaProducer extends AbstractXMLFilter {
     }
 
     private void log(final Severity severity, final String message, final Exception e) {
-        errorReceiverProxy.log(severity, locationFactory.create(locator), getElementId(), message, e);
+        errorReceiverProxy.log(severity, locationFactory.create(locator), getElementId().getId(), message, e);
         switch (severity) {
             case FATAL_ERROR:
                 LOGGER.error(message, e);

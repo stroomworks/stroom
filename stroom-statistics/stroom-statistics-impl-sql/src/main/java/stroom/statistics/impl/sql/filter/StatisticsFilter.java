@@ -237,20 +237,20 @@ public class StatisticsFilter extends AbstractXMLFilter {
     private void error(final RuntimeException e) {
         if (locator != null) {
             errorReceiverProxy.log(Severity.ERROR,
-                    locationFactory.create(locator.getLineNumber(), locator.getColumnNumber()), getElementId(),
+                    locationFactory.create(locator.getLineNumber(), locator.getColumnNumber()), getElementId().getId(),
                     e.getMessage(), e);
         } else {
-            errorReceiverProxy.log(Severity.ERROR, null, getElementId(), e.getMessage(), e);
+            errorReceiverProxy.log(Severity.ERROR, null, getElementId().getId(), e.getMessage(), e);
         }
     }
 
     private void warn(final String warningText) {
         if (locator != null) {
             errorReceiverProxy.log(Severity.WARNING,
-                    locationFactory.create(locator.getLineNumber(), locator.getColumnNumber()), getElementId(),
+                    locationFactory.create(locator.getLineNumber(), locator.getColumnNumber()), getElementId().getId(),
                     warningText, null);
         } else {
-            errorReceiverProxy.log(Severity.WARNING, null, getElementId(), warningText, null);
+            errorReceiverProxy.log(Severity.WARNING, null, getElementId().getId(), warningText, null);
         }
     }
 
@@ -380,6 +380,6 @@ public class StatisticsFilter extends AbstractXMLFilter {
     }
 
     private void log(final Severity severity, final String message, final Exception e) {
-        errorReceiverProxy.log(severity, locationFactory.create(locator), getElementId(), message, e);
+        errorReceiverProxy.log(severity, locationFactory.create(locator), getElementId().getId(), message, e);
     }
 }

@@ -16,6 +16,7 @@
 
 package stroom.pipeline.errorhandler;
 
+import stroom.pipeline.shared.data.ElementId;
 import stroom.util.shared.ErrorType;
 import stroom.util.shared.Location;
 import stroom.util.shared.Severity;

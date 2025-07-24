@@ -32,6 +32,7 @@ import stroom.document.client.event.DirtyEvent.DirtyHandler;
 import stroom.document.client.event.HasDirtyHandlers;
 import stroom.explorer.shared.ExplorerResource;
 import stroom.pipeline.shared.PipelineDoc;
+import stroom.pipeline.shared.data.ElementId;
 import stroom.pipeline.shared.data.PipelineData;
 import stroom.pipeline.shared.data.PipelineDataBuilder;
 import stroom.pipeline.shared.data.PipelineElement;
@@ -322,7 +323,7 @@ public class PipelineReferenceListPresenter extends MyPresenterWidget<PagerView>
 
     private void onAdd(final ClickEvent event) {
         if (currentElement != null) {
-            final PipelineReference pipelineReference = new PipelineReference(currentElement.getId(),
+            final PipelineReference pipelineReference = new PipelineReference(currentElement.getId().toString(),
                     propertyType.getName(), null, null, StreamTypeNames.REFERENCE);
             showEditor(pipelineReference, true);
         }
@@ -451,7 +452,7 @@ public class PipelineReferenceListPresenter extends MyPresenterWidget<PagerView>
         selectionModel.clear();
 
         if (currentElement != null) {
-            final String id = currentElement.getId();
+            final ElementId id = currentElement.getId();
             if (id != null) {
                 final Map<String, List<PipelineReference>> baseReferences = pipelineModel.getBaseData()
                         .getPipelineReferences().get(id);

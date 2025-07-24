@@ -352,7 +352,7 @@ public class HTTPAppender extends AbstractAppender {
     }
 
     private void warn(final String message) {
-        errorReceiverProxy.log(Severity.WARNING, null, getElementId(), message, null);
+        errorReceiverProxy.log(Severity.WARNING, null, getElementId().getId(), message, null);
     }
 
     @NotNull

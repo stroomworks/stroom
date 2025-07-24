@@ -162,7 +162,7 @@ public class XMLWriter extends AbstractWriter implements XMLFilter {
                 // XSLT for it.
                 if (xslt.getData() != null && xslt.getData().trim().length() > 0) {
                     // Get compiled XSLT from the pool.
-                    final ErrorReceiver errorReceiver = new ErrorReceiverIdDecorator(getElementId(),
+                    final ErrorReceiver errorReceiver = new ErrorReceiverIdDecorator(getElementId().getId(),
                             getErrorReceiver());
                     final PoolItem<StoredXsltExecutable> poolItem = xsltPool.borrowConfiguredTemplate(
                             xslt, errorReceiver, locationFactory, List.of(), true);
@@ -184,7 +184,7 @@ public class XMLWriter extends AbstractWriter implements XMLFilter {
             stringWriter = new CharBufferWriter();
             bufferedWriter = new BufferedWriter(stringWriter);
 
-            final ErrorListener errorListener = new ErrorListenerAdaptor(getElementId(), locationFactory,
+            final ErrorListener errorListener = new ErrorListenerAdaptor(getElementId().getId(), locationFactory,
                     getErrorReceiver());
             final TransformerHandler th = XMLUtil.createTransformerHandler(errorListener, indentOutput);
 
@@ -217,7 +217,7 @@ public class XMLWriter extends AbstractWriter implements XMLFilter {
                         getFeedName(),
                         getPipelineName(),
                         message -> getErrorReceiver().log(
-                                Severity.WARNING, null, getElementId(), message, null),
+                                Severity.WARNING, null, getElementId().getId(), message, null),
                         suppressXSLTNotFoundWarnings);
 
         if (docRef != null) {

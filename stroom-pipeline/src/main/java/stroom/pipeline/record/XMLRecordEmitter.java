@@ -23,6 +23,7 @@ import stroom.pipeline.errorhandler.ErrorReceiver;
 import stroom.pipeline.errorhandler.LoggedException;
 import stroom.pipeline.factory.HasElementId;
 import stroom.pipeline.filter.XMLFilterAdaptor;
+import stroom.pipeline.shared.data.ElementId;
 import stroom.pipeline.xml.event.simple.StartElement;
 import stroom.pipeline.xml.event.simple.StartPrefixMapping;
 import stroom.util.io.ByteSlice;
@@ -60,7 +61,7 @@ public class XMLRecordEmitter extends XMLFilterAdaptor implements HasElementId {
     private final List<DestinationProvider> appenders;
     private final List<StartPrefixMapping> prefixList = new ArrayList<>();
     private LocationFactory locationFactory;
-    private String id;
+    private ElementId id;
 
     private ContentHandler handler;
     private int depth;
@@ -82,7 +83,7 @@ public class XMLRecordEmitter extends XMLFilterAdaptor implements HasElementId {
         ContentHandler handler = null;
 
         try {
-            final ErrorListener errorListener = new ErrorListenerAdaptor(getElementId(), locationFactory,
+            final ErrorListener errorListener = new ErrorListenerAdaptor(getElementId().getId(), locationFactory,
                     errorReceiver);
             transformerFactory.setErrorListener(errorListener);
 
@@ -97,7 +98,7 @@ public class XMLRecordEmitter extends XMLFilterAdaptor implements HasElementId {
                 try {
                     charset = Charset.forName(encoding);
                 } catch (final RuntimeException e) {
-                    errorReceiver.log(Severity.ERROR, null, getElementId(),
+                    errorReceiver.log(Severity.ERROR, null, getElementId().getId(),
                             "Unsupported encoding '" + encoding + "', defaulting to UTF-8", e);
                 }
             }
@@ -107,7 +108,7 @@ public class XMLRecordEmitter extends XMLFilterAdaptor implements HasElementId {
             th.setDocumentLocator(locator);
             handler = th;
         } catch (final TransformerConfigurationException e) {
-            errorReceiver.log(Severity.FATAL_ERROR, null, getElementId(), e.getMessage(), e);
+            errorReceiver.log(Severity.FATAL_ERROR, null, getElementId().getId(), e.getMessage(), e);
             throw LoggedException.wrap(e);
         }
 
@@ -286,12 +287,12 @@ public class XMLRecordEmitter extends XMLFilterAdaptor implements HasElementId {
     }
 
     @Override
-    public String getElementId() {
+    public ElementId getElementId() {
         return id;
     }
 
     @Override
-    public void setElementId(final String id) {
+    public void setElementId(final ElementId id) {
         this.id = id;
     }
 

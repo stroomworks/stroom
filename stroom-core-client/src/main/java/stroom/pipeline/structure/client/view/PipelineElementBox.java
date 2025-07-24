@@ -73,7 +73,7 @@ public class PipelineElementBox extends Box<PipelineElement> {
 
         final String labelText = pipelineElement.getName() != null
                 ? pipelineElement.getName()
-                : pipelineElement.getId();
+                : pipelineElement.getId().id();
         label = new Label(labelText, false);
         label.addStyleName(BASE_CLASS + "-label");
 
@@ -183,7 +183,7 @@ public class PipelineElementBox extends Box<PipelineElement> {
         this.pipelineElement = pipelineElement;
         label.setText(pipelineElement.getName() != null
                 ? pipelineElement.getName()
-                : pipelineElement.getId());
+                : pipelineElement.getId().id());
         updateFilterState();
     }
 

@@ -18,8 +18,6 @@ package stroom.pipeline.shared.data;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonIgnore;
-import com.fasterxml.jackson.annotation.JsonInclude;
-import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 
@@ -30,15 +28,15 @@ import java.util.UUID;
 public class PipelineElement implements Comparable<PipelineElement> {
 
     @JsonProperty
-    private final String id;
+    private ElementId id;
     @JsonProperty
-    private final String type;
+    private String type;
     @JsonProperty
-    private final String name;
+    private String name;
 
     @JsonCreator
     public PipelineElement(
-            @JsonProperty("id") final String id,
+            @JsonProperty("id") final ElementId id,
             @JsonProperty("type") final String type,
             @JsonProperty("name") final String name) {
         this.id = id;
@@ -46,7 +44,10 @@ public class PipelineElement implements Comparable<PipelineElement> {
         this.name = name;
     }
 
-    public String getId() {
+    public PipelineElement() {
+    }
+
+    public ElementId getId() {
         return id;
     }
 
@@ -92,27 +93,30 @@ public class PipelineElement implements Comparable<PipelineElement> {
      */
     @JsonIgnore
     public String getDisplayName() {
-        final String display = (name != null && !name.isBlank()) ? name : id;
+        final String display = (name != null && !name.isBlank()) ? name : id.toString();
         return type + " '" + display + "'";
     }
 
     public static class Builder {
-        private String id = UUID.randomUUID().toString();
         private String type;
         private String name;
+        private ElementId id = new ElementId(UUID.randomUUID().toString(), name);
 
-        public Builder id(final String id) {
+        public Builder id(final ElementId id) {
             this.id = id;
             return this;
         }
+
         public Builder type(final String type) {
             this.type = type;
             return this;
         }
+
         public Builder name(final String name) {
             this.name = name;
             return this;
         }
+
         public PipelineElement build() {
             return new PipelineElement(id, type, name);
         }
