@@ -23,6 +23,7 @@ import stroom.svg.shared.SvgImage;
 import stroom.widget.button.client.ButtonPanel;
 import stroom.widget.button.client.ButtonView;
 import stroom.widget.tickbox.client.view.CustomCheckBox;
+import stroom.util.client.ClipboardUtil;
 
 import com.google.gwt.safehtml.shared.SafeHtml;
 import com.google.gwt.safehtml.shared.SafeHtmlUtils;
@@ -120,7 +121,7 @@ public final class GlobalPropertyEditViewImpl
         );
         copyNameIcon.setHTML(copyIcon.asString());
         copyNameIcon.addClickHandler(event -> {
-            copyToClipboard(name.getText());
+            ClipboardUtil.copy(name.getText());
         });
     }
 
@@ -239,13 +240,4 @@ public final class GlobalPropertyEditViewImpl
     public interface Binder extends UiBinder<Widget, GlobalPropertyEditViewImpl> {
 
     }
-
-    private native void copyToClipboard(String text) /*-{
-    var textarea = $doc.createElement("textarea");
-    textarea.value = text;
-    $doc.body.appendChild(textarea);
-    textarea.select();
-    $doc.execCommand("copy");
-    $doc.body.removeChild(textarea);
-}-*/;
 }
