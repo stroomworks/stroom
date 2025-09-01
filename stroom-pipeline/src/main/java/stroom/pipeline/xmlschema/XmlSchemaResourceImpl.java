@@ -26,6 +26,11 @@ import stroom.xmlschema.shared.XmlSchemaResource;
 import jakarta.inject.Inject;
 import jakarta.inject.Provider;
 
+import java.io.StringReader;
+import javax.xml.XMLConstants;
+import javax.xml.transform.stream.StreamSource;
+import javax.xml.validation.SchemaFactory;
+
 @AutoLogged
 class XmlSchemaResourceImpl implements XmlSchemaResource {
 
@@ -49,7 +54,16 @@ class XmlSchemaResourceImpl implements XmlSchemaResource {
         if (doc.getUuid() == null || !doc.getUuid().equals(uuid)) {
             throw new EntityServiceException("The document UUID must match the update UUID");
         }
+        validateXmlSchema(doc.getData());
         return documentResourceHelperProvider.get().update(xmlSchemaStoreProvider.get(), doc);
+    }
+
+    private void validateXmlSchema(final String schemaData) {
+        try {
+            final SchemaFactory factory = SchemaFactory.newInstance(XMLConstants.W3C_XML_SCHEMA_NS_URI);
+            factory.newSchema(new StreamSource(new StringReader(schemaData)));
+        } catch (Exception e) {
+            throw new EntityServiceException("Invalid XML Schema: " + e.getMessage());        }
     }
 
     private DocRef getDocRef(final String uuid) {
