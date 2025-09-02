@@ -17,6 +17,8 @@
 package stroom.xmlschema.client.gin;
 
 import stroom.core.client.gin.PluginModule;
+import stroom.dispatch.client.RestErrorHandler;
+import stroom.task.client.TaskMonitorFactory;
 import stroom.widget.xsdbrowser.client.presenter.XSDBrowserPresenter;
 import stroom.widget.xsdbrowser.client.presenter.XSDBrowserPresenter.XSDBrowserView;
 import stroom.widget.xsdbrowser.client.view.XSDBrowserViewImpl;
@@ -26,15 +28,42 @@ import stroom.xmlschema.client.presenter.XMLSchemaSettingsPresenter;
 import stroom.xmlschema.client.presenter.XMLSchemaSettingsPresenter.XMLSchemaSettingsView;
 import stroom.xmlschema.client.view.XMLSchemaSettingsViewImpl;
 
+import com.google.gwt.core.client.GWT;
+import com.google.inject.Provider;
+import com.google.inject.Singleton;
+
 public class XMLSchemaModule extends PluginModule {
 
     @Override
     protected void configure() {
+
+        bind(RestErrorHandler.class)
+                .toProvider(RestErrorHandlerGwtProvider.class)
+                .in(Singleton.class);
+
+        bind(TaskMonitorFactory.class)
+                .toProvider(TaskMonitorFactoryGwtProvider.class)
+                .in(Singleton.class);
+
         bindPlugin(XMLSchemaPlugin.class);
 
         bind(XMLSchemaPresenter.class);
         bindPresenterWidget(XMLSchemaSettingsPresenter.class, XMLSchemaSettingsView.class,
                 XMLSchemaSettingsViewImpl.class);
         bindPresenterWidget(XSDBrowserPresenter.class, XSDBrowserView.class, XSDBrowserViewImpl.class);
+    }
+
+    public static class RestErrorHandlerGwtProvider implements Provider<RestErrorHandler> {
+        @Override
+        public RestErrorHandler get() {
+            return GWT.create(RestErrorHandler.class);
+        }
+    }
+
+    public static class TaskMonitorFactoryGwtProvider implements Provider<TaskMonitorFactory> {
+        @Override
+        public TaskMonitorFactory get() {
+            return GWT.create(TaskMonitorFactory.class);
+        }
     }
 }

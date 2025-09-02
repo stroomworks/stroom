@@ -17,6 +17,7 @@
 
 package stroom.xmlschema.client.presenter;
 
+import stroom.dispatch.client.RestErrorHandler;
 import stroom.docref.DocRef;
 import stroom.editor.client.presenter.EditorPresenter;
 import stroom.entity.client.presenter.AbstractTabProvider;
@@ -26,12 +27,20 @@ import stroom.entity.client.presenter.LinkTabPanelView;
 import stroom.entity.client.presenter.MarkdownEditPresenter;
 import stroom.entity.client.presenter.MarkdownTabProvider;
 import stroom.security.client.presenter.DocumentUserPermissionsTabProvider;
+import stroom.svg.client.SvgPresets;
+import stroom.svg.shared.SvgImage;
+import stroom.task.client.TaskMonitorFactory;
+import stroom.widget.button.client.SvgButton;
 import stroom.widget.tab.client.presenter.TabData;
 import stroom.widget.tab.client.presenter.TabDataImpl;
 import stroom.widget.xsdbrowser.client.presenter.XSDBrowserPresenter;
 import stroom.widget.xsdbrowser.client.view.XSDModel;
+import stroom.xmlschema.client.XMLSchemaPlugin;
 import stroom.xmlschema.shared.XmlSchemaDoc;
 
+import com.google.gwt.user.client.Timer;
+import com.google.gwt.user.client.Window;
+import com.google.gwt.user.client.ui.Widget;
 import com.google.inject.Inject;
 import com.google.web.bindery.event.shared.EventBus;
 import com.gwtplatform.mvp.client.PresenterWidget;
@@ -41,6 +50,13 @@ import javax.inject.Provider;
 
 public class XMLSchemaPresenter extends DocumentEditTabPresenter<LinkTabPanelView, XmlSchemaDoc> {
 
+    private boolean isSchemaValid = true;
+    private SvgButton validationIndicator;
+    private final XMLSchemaPlugin xmlSchemaPlugin;
+    private final RestErrorHandler restErrorHandler;
+    private final TaskMonitorFactory taskMonitorFactory;
+    private Timer validationDebounceTimer;
+    private static final int VALIDATION_DEBOUNCE_MS = 300;
     private static final TabData SETTINGS = new TabDataImpl("Settings");
     private static final TabData GRAPHICAL = new TabDataImpl("Graphical");
     private static final TabData TEXT = new TabDataImpl("Text");
@@ -59,9 +75,42 @@ public class XMLSchemaPresenter extends DocumentEditTabPresenter<LinkTabPanelVie
                               final Provider<XSDBrowserPresenter> xsdBrowserPresenterProvider,
                               final Provider<EditorPresenter> codePresenterProvider,
                               final Provider<MarkdownEditPresenter> markdownEditPresenterProvider,
-                              final DocumentUserPermissionsTabProvider<XmlSchemaDoc>
-                                      documentUserPermissionsTabProvider) {
+                              final DocumentUserPermissionsTabProvider<XmlSchemaDoc> documentUserPermissionsTabProvider,
+                              final XMLSchemaPlugin xmlSchemaPlugin,
+                              final RestErrorHandler restErrorHandler,
+                              final TaskMonitorFactory taskMonitorFactory) {
         super(eventBus, view);
+        this.xmlSchemaPlugin = xmlSchemaPlugin;
+        this.restErrorHandler = restErrorHandler;
+        this.taskMonitorFactory = taskMonitorFactory;
+
+        this.validationDebounceTimer = new Timer() {
+            @Override
+            public void run() {
+                final String schemaText;
+                if (codePresenter != null) {
+                    schemaText = codePresenter.getText();
+                } else if (getEntity() != null) {
+                    schemaText = getEntity().getData();
+                } else {
+                    schemaText = "";
+                }
+
+                final String payload = schemaText == null ? "" : schemaText.trim();
+
+                // Call the server validation endpoint. The result consumer runs on success.
+                xmlSchemaPlugin.validateSchema(payload, result -> {
+                    // Update state and UI on the UI thread.
+                    isSchemaValid = Boolean.TRUE.equals(result);
+                    updateValidationIndicator(isSchemaValid);
+                }, restErrorHandler, taskMonitorFactory);
+            }
+        };
+
+        this.validationIndicator = SvgButton.create(SvgPresets.ALERT);
+        this.validationIndicator.setTitle("Schema is valid");
+        this.validationIndicator.setEnabled(false); // indicator only, not clickable
+        toolbar.addButton(this.validationIndicator);
 
         addTab(GRAPHICAL, new AbstractTabProvider<XmlSchemaDoc, XSDBrowserPresenter>(eventBus) {
             @Override
@@ -86,11 +135,6 @@ public class XMLSchemaPresenter extends DocumentEditTabPresenter<LinkTabPanelVie
             }
 
             @Override
-            protected void onBind() {
-                super.onBind();
-            }
-
-            @Override
             public void onRead(final EditorPresenter presenter,
                                final DocRef docRef,
                                final XmlSchemaDoc document,
@@ -101,7 +145,19 @@ public class XMLSchemaPresenter extends DocumentEditTabPresenter<LinkTabPanelVie
                     registerHandler(presenter.addValueChangeHandler(event -> {
                         setDirty(true);
                         updateDiagram = true;
+
+                        // Kick off debounce validation
+                        validationDebounceTimer.cancel();
+                        validationDebounceTimer.schedule(VALIDATION_DEBOUNCE_MS);
                     }));
+
+                    // Run an immediate validation to reflect document state at load time.
+                    validationDebounceTimer.cancel();
+                    validationDebounceTimer.schedule(0);
+                } else {
+                    // Even for read-only, validate once so the indicator is correct.
+                    validationDebounceTimer.cancel();
+                    validationDebounceTimer.schedule(0);
                 }
             }
 
@@ -149,6 +205,31 @@ public class XMLSchemaPresenter extends DocumentEditTabPresenter<LinkTabPanelVie
         }
     }
 
+    private void updateValidationIndicator(final boolean isValid) {
+        this.isSchemaValid = isValid;
+        if (validationIndicator == null) {
+            return;
+        }
+
+        // Update tooltip/title
+        if (isValid) {
+            validationIndicator.setTitle("Schema is valid");
+            // Try to update icon if supported
+            try {
+                validationIndicator.setSvg(SvgImage.ALERT);
+            } catch (Throwable ignored) {
+                // If setSvg is not available, ignore and keep existing icon.
+            }
+        } else {
+            validationIndicator.setTitle("Schema is invalid");
+            try {
+                validationIndicator.setSvg(SvgImage.REFRESH);
+            } catch (Throwable ignored) {
+                // ignore if not supported
+            }
+        }
+    }
+
     @Override
     protected void onRead(final DocRef docRef, final XmlSchemaDoc doc, final boolean readOnly) {
         super.onRead(docRef, doc, readOnly);
@@ -168,5 +249,17 @@ public class XMLSchemaPresenter extends DocumentEditTabPresenter<LinkTabPanelVie
     @Override
     protected TabData getDocumentationTab() {
         return DOCUMENTATION;
+    }
+
+    @Override
+    public void save() {
+        if (!isSchemaValid) {
+            final boolean proceed = Window.confirm(
+                    "The XML schema appears to be invalid. Are you sure you want to save?");
+            if (!proceed) {
+                return;
+            }
+        }
+        super.save();
     }
 }

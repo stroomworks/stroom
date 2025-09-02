@@ -102,4 +102,17 @@ public class XMLSchemaPlugin extends DocumentPlugin<XmlSchemaDoc> {
     protected DocRef getDocRef(final XmlSchemaDoc document) {
         return DocRefUtil.create(document);
     }
+
+    public void validateSchema(final String schemaData,
+                               final Consumer<Boolean> resultConsumer,
+                               final RestErrorHandler errorHandler,
+                               final TaskMonitorFactory taskMonitorFactory) {
+        restFactory
+                .create(XML_SCHEMA_RESOURCE)
+                .method(res -> res.validate(schemaData))
+                .onSuccess(resultConsumer)
+                .onFailure(errorHandler)
+                .taskMonitorFactory(taskMonitorFactory)
+                .exec();
+    }
 }

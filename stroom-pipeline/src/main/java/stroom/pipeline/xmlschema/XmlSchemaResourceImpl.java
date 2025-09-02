@@ -63,7 +63,19 @@ class XmlSchemaResourceImpl implements XmlSchemaResource {
             final SchemaFactory factory = SchemaFactory.newInstance(XMLConstants.W3C_XML_SCHEMA_NS_URI);
             factory.newSchema(new StreamSource(new StringReader(schemaData)));
         } catch (Exception e) {
-            throw new EntityServiceException("Invalid XML Schema: " + e.getMessage());        }
+            throw new EntityServiceException("Invalid XML Schema: " + e.getMessage());
+        }
+    }
+
+    @Override
+    public Boolean validate(final String schemaData) {
+        try {
+            final SchemaFactory factory = SchemaFactory.newInstance(XMLConstants.W3C_XML_SCHEMA_NS_URI);
+            factory.newSchema(new StreamSource(new StringReader(schemaData)));
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     private DocRef getDocRef(final String uuid) {
