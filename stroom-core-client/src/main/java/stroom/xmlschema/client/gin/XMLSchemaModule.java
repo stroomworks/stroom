@@ -18,7 +18,9 @@ package stroom.xmlschema.client.gin;
 
 import stroom.core.client.gin.PluginModule;
 import stroom.dispatch.client.RestErrorHandler;
+import stroom.dispatch.client.RestErrorHandlerImpl;
 import stroom.task.client.TaskMonitorFactory;
+import stroom.task.client.TaskMonitorFactoryImpl;
 import stroom.widget.xsdbrowser.client.presenter.XSDBrowserPresenter;
 import stroom.widget.xsdbrowser.client.presenter.XSDBrowserPresenter.XSDBrowserView;
 import stroom.widget.xsdbrowser.client.view.XSDBrowserViewImpl;
@@ -56,14 +58,14 @@ public class XMLSchemaModule extends PluginModule {
     public static class RestErrorHandlerGwtProvider implements Provider<RestErrorHandler> {
         @Override
         public RestErrorHandler get() {
-            return GWT.create(RestErrorHandler.class);
+            return GWT.create(RestErrorHandlerImpl.class);
         }
     }
 
     public static class TaskMonitorFactoryGwtProvider implements Provider<TaskMonitorFactory> {
         @Override
         public TaskMonitorFactory get() {
-            return GWT.create(TaskMonitorFactory.class);
+            return GWT.create(TaskMonitorFactoryImpl.class);
         }
     }
 }

@@ -17,6 +17,7 @@
 
 package stroom.xmlschema.client.presenter;
 
+import stroom.alert.client.event.ConfirmEvent;
 import stroom.dispatch.client.RestErrorHandler;
 import stroom.docref.DocRef;
 import stroom.editor.client.presenter.EditorPresenter;
@@ -30,6 +31,7 @@ import stroom.security.client.presenter.DocumentUserPermissionsTabProvider;
 import stroom.svg.client.SvgPresets;
 import stroom.svg.shared.SvgImage;
 import stroom.task.client.TaskMonitorFactory;
+import stroom.util.shared.EntityServiceException;
 import stroom.widget.button.client.SvgButton;
 import stroom.widget.tab.client.presenter.TabData;
 import stroom.widget.tab.client.presenter.TabDataImpl;
@@ -211,21 +213,17 @@ public class XMLSchemaPresenter extends DocumentEditTabPresenter<LinkTabPanelVie
             return;
         }
 
-        // Update tooltip/title
         if (isValid) {
             validationIndicator.setTitle("Schema is valid");
-            // Try to update icon if supported
             try {
-                validationIndicator.setSvg(SvgImage.ALERT);
+                validationIndicator.setSvg(SvgImage.TICK);
             } catch (Throwable ignored) {
-                // If setSvg is not available, ignore and keep existing icon.
             }
         } else {
             validationIndicator.setTitle("Schema is invalid");
             try {
-                validationIndicator.setSvg(SvgImage.REFRESH);
+                validationIndicator.setSvg(SvgImage.ALERT);
             } catch (Throwable ignored) {
-                // ignore if not supported
             }
         }
     }
@@ -254,12 +252,19 @@ public class XMLSchemaPresenter extends DocumentEditTabPresenter<LinkTabPanelVie
     @Override
     public void save() {
         if (!isSchemaValid) {
-            final boolean proceed = Window.confirm(
-                    "The XML schema appears to be invalid. Are you sure you want to save?");
-            if (!proceed) {
-                return;
-            }
+            ConfirmEvent.fire(this,
+                    "The XML schema appears to be invalid. Are you sure you want to save?",
+                    confirmed -> {
+                        if (confirmed) {
+                            try {
+                                super.save();
+                            } catch (EntityServiceException e) {
+                            }
+                        }
+                    }
+            );
+        } else {
+            super.save();
         }
-        super.save();
     }
 }
