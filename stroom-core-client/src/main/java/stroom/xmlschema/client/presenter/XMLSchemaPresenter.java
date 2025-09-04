@@ -256,15 +256,18 @@ public class XMLSchemaPresenter extends DocumentEditTabPresenter<LinkTabPanelVie
                     "The XML schema appears to be invalid. Are you sure you want to save?",
                     confirmed -> {
                         if (confirmed) {
-                            try {
-                                super.save();
-                            } catch (EntityServiceException e) {
-                            }
+                            super.save();
+                            // Re-validate after save
+                            validationDebounceTimer.cancel();
+                            validationDebounceTimer.schedule(0);
                         }
                     }
             );
         } else {
             super.save();
+            // Re-validate after save
+            validationDebounceTimer.cancel();
+            validationDebounceTimer.schedule(0);
         }
     }
 }
