@@ -36,6 +36,7 @@ import javax.inject.Provider;
 public class VisualisationPresenter extends DocumentEditTabPresenter<LinkTabPanelView, VisualisationDoc> {
 
     private static final TabData SETTINGS = new TabDataImpl("Settings");
+    private static final TabData ASSETS = new TabDataImpl("Assets");
     private static final TabData DOCUMENTATION = new TabDataImpl("Documentation");
     private static final TabData PERMISSIONS = new TabDataImpl("Permissions");
 
@@ -43,12 +44,14 @@ public class VisualisationPresenter extends DocumentEditTabPresenter<LinkTabPane
     public VisualisationPresenter(final EventBus eventBus,
                                   final LinkTabPanelView view,
                                   final Provider<VisualisationSettingsPresenter> settingsPresenterProvider,
+                                  final Provider<VisualisationAssetsPresenter> assetsPresenterProvider,
                                   final Provider<MarkdownEditPresenter> markdownEditPresenterProvider,
                                   final DocumentUserPermissionsTabProvider<VisualisationDoc>
                                           documentUserPermissionsTabProvider) {
         super(eventBus, view);
 
         addTab(SETTINGS, new DocumentEditTabProvider<>(settingsPresenterProvider::get));
+        addTab(ASSETS, new DocumentEditTabProvider<>(assetsPresenterProvider::get));
         addTab(DOCUMENTATION, new MarkdownTabProvider<VisualisationDoc>(eventBus, markdownEditPresenterProvider) {
             @Override
             public void onRead(final MarkdownEditPresenter presenter,
