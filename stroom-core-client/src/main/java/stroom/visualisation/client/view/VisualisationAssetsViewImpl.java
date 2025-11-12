@@ -19,6 +19,9 @@ import stroom.entity.client.presenter.ReadOnlyChangeHandler;
 import stroom.visualisation.client.presenter.VisualisationAssetsPresenter.VisualisationAssetsView;
 
 import com.google.gwt.uibinder.client.UiBinder;
+import com.google.gwt.uibinder.client.UiField;
+import com.google.gwt.user.cellview.client.CellTree;
+import com.google.gwt.user.client.ui.FlowPanel;
 import com.google.gwt.user.client.ui.Widget;
 import com.google.inject.Inject;
 import com.gwtplatform.mvp.client.ViewImpl;
@@ -27,6 +30,9 @@ public class VisualisationAssetsViewImpl extends ViewImpl
         implements VisualisationAssetsView, ReadOnlyChangeHandler {
 
     private final Widget widget;
+
+    @UiField
+    FlowPanel rootPanel;
 
     @Inject
     public VisualisationAssetsViewImpl(final Binder binder) {
@@ -41,6 +47,11 @@ public class VisualisationAssetsViewImpl extends ViewImpl
     @Override
     public void onReadOnly(final boolean readOnly) {
 
+    }
+
+    @Override
+    public void setCellTree(final CellTree cellTree) {
+        rootPanel.add(cellTree);
     }
 
     // --------------------------------------------------------------------------------

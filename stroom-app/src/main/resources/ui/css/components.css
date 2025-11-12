@@ -2647,3 +2647,9 @@ button.main-menu svg {
 .ColumnValuesFilterViewImpl .cellTableEvenRow:hover {
     background-color: var(--row__background-color--hovered);
 }
+
+/* Visualisation Assets */
+.visualisation-asset-tree-item  {
+    padding-top: 1px;
+    padding-bottom: 1px;
+}
