@@ -2651,5 +2651,14 @@ button.main-menu svg {
 /* Visualisation Assets */
 .visualisation-asset-tree-item  {
     padding-top: 1px;
-    padding-bottom: 1px;
+    padding-bottom: 2px;
+}
+
+.visualisation-asset-tree-item-image {
+    padding-top: 3px;
+    margin-right: 5px;
+}
+
+.visualisation-asset-tree-item-value {
+    margin-left: 8px;
 }

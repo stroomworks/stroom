@@ -20,10 +20,14 @@ import stroom.document.client.event.DirtyEvent;
 import stroom.document.client.event.DirtyEvent.DirtyHandler;
 import stroom.document.client.event.HasDirtyHandlers;
 import stroom.entity.client.presenter.HasToolbar;
+import stroom.util.client.Console;
 import stroom.visualisation.client.presenter.VisualisationAssetsPresenter.VisualisationAssetsView;
 
-import com.google.gwt.cell.client.TextCell;
+import com.google.gwt.cell.client.AbstractCell;
+import com.google.gwt.cell.client.Cell;
+import com.google.gwt.cell.client.IconCellDecorator;
 import com.google.gwt.resources.client.ImageResource;
+import com.google.gwt.safehtml.shared.SafeHtmlBuilder;
 import com.google.gwt.safehtml.shared.SafeUri;
 import com.google.gwt.user.cellview.client.CellTree;
 import com.google.gwt.user.cellview.client.CellTree.Style;
@@ -36,6 +40,8 @@ import com.google.web.bindery.event.shared.HandlerRegistration;
 import com.gwtplatform.mvp.client.MyPresenterWidget;
 import com.gwtplatform.mvp.client.View;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -60,7 +66,19 @@ public class VisualisationAssetsPresenter
         super(eventBus, view);
 
         final TreeViewModel model = new AssetTreeModel();
-        cellTree = new CellTree(model, "Item 1", new AssetTreeResources());
+        final AssetItem rootItem = new AssetItem("root", false);
+
+        // TODO Dummy data needs replacing with live data
+        final AssetItem dir1 = new AssetItem("dir1", false);
+        final AssetItem subdir1 = new AssetItem("dir2", false);
+        final AssetItem file1 = new AssetItem("file1", true);
+        final AssetItem file2 = new AssetItem("file2", true);
+        subdir1.addSubItem(file1);
+        subdir1.addSubItem(file2);
+        dir1.addSubItem(subdir1);
+        rootItem.addSubItem(dir1);
+
+        cellTree = new CellTree(model, rootItem, new AssetTreeResources());
         this.getView().setCellTree(cellTree);
     }
 
@@ -96,22 +114,123 @@ public class VisualisationAssetsPresenter
 
     // --------------------------------------------------------------------------------
     /**
+     * Represents an item in the asset tree.
+     */
+    private static class AssetItem {
+        /** The name to display for the item */
+        private final String name;
+
+        /** Whether this is a leaf (file) or not (folder / directory) */
+        private final boolean isLeaf;
+
+        /** Child items */
+        private final List<AssetItem> directory = new ArrayList<>();
+
+        /** Constructor */
+        public AssetItem(final String name, final boolean isLeaf) {
+            this.name = name;
+            this.isLeaf = isLeaf;
+        }
+
+        /** Returns the name of the item to display */
+        public String getName() {
+            return name;
+        }
+
+        /** Adds a child item to this item. !this.isLeaf() otherwise does nothing. */
+        public void addSubItem(final AssetItem item) {
+            if (!isLeaf) {
+                Console.info("Adding item to " + name + ": " + item.getName());
+                directory.add(item);
+            } else {
+                Console.info("Not adding item to " + name + " as isLeaf");
+            }
+        }
+
+        /** Returns any children of this item */
+        public List<AssetItem> getSubItems() {
+            return Collections.unmodifiableList(directory);
+        }
+
+        /** Returns whether this is a leaf (file) or not (folder/directory) */
+        public boolean isLeaf() {
+            return isLeaf;
+        }
+
+        /** For debugging */
+        public String toString() {
+            return name;
+        }
+    }
+
+    // --------------------------------------------------------------------------------
+    /**
      * Models the assets within the tree.
      */
     private static class AssetTreeModel implements TreeViewModel {
 
+        /** Height and width of the (square) icons */
+        private static final int ICON_DIM = 16;
+
+        /** Folder icon URL */
+        private static final String FOLDER_URL = "/ui/images/background/folder.png";
+
+        /** Folder icon */
+        private static final ImageResource FOLDER_ICON =
+                new AssetImageResource(ICON_DIM, ICON_DIM, FOLDER_URL);
+
         @Override
-        public <T> NodeInfo<?> getNodeInfo(final T value) {
-            final ListDataProvider<String> dataProvider = new ListDataProvider<>();
-            for (int i = 0; i < 2; i++) {
-                dataProvider.getList().add(value + "." + String.valueOf(i));
+        public <T> NodeInfo<?> getNodeInfo(final T parent) {
+            Console.info("getNodeInfo: " + parent + ": " + parent.getClass());
+            final ListDataProvider<AssetItem> dataProvider = new ListDataProvider<>();
+            final Cell<AssetItem> cell;
+
+            if (parent instanceof final AssetItem parentItem) {
+                Console.info("-> isLeaf: " + parentItem.isLeaf());
+                if (!parentItem.isLeaf()) {
+                    // Must be a folder, so find its children and display a folder icon
+                    final List<AssetItem> subItems = parentItem.getSubItems();
+                    for (final AssetItem assetItem : subItems) {
+                        dataProvider.getList().add(assetItem);
+                    }
+                }
+                final Cell<AssetItem> textCell = new AbstractCell<AssetItem>() {
+                    @Override
+                    public void render(final Context context, final AssetItem value, final SafeHtmlBuilder sb) {
+                        if (value != null) {
+                            sb.appendEscaped(value.getName());
+                        }
+                    }
+                };
+                cell = new IconCellDecorator<>(FOLDER_ICON, textCell) {
+                    @Override
+                    protected boolean isIconUsed(final AssetItem assetItem) {
+                        return !assetItem.isLeaf();
+                    }
+                };
+            } else {
+                // Shouldn't happen but keeps final happy
+                cell = new AbstractCell<AssetItem>() {
+                    @Override
+                    public void render(final Context context, final AssetItem value, final SafeHtmlBuilder sb) {
+                        // Do nothing
+                    }
+                };
             }
-            return new DefaultNodeInfo<>(dataProvider, new TextCell());
+
+            return new DefaultNodeInfo<>(dataProvider, cell);
         }
 
         @Override
-        public boolean isLeaf(final Object value) {
-            return value.toString().length() > 10;
+        public boolean isLeaf(final Object objectItem) {
+            Console.info("isLeaf: " + objectItem);
+            if (objectItem instanceof final AssetItem assetItem) {
+                Console.info("-> " + assetItem.isLeaf);
+                return assetItem.isLeaf();
+            } else {
+                // Shouldn't happen
+                return false;
+            }
         }
 
     }
@@ -133,17 +252,25 @@ public class VisualisationAssetsPresenter
         public String asString() {
             return uri;
         }
+
     }
+
     // --------------------------------------------------------------------------------
     /**
      * Implements the ImageResource for the tree.
      */
     private static class AssetImageResource implements ImageResource {
 
+        /** Height of the image in the img tag */
         private final int height;
+
+        /** Width of the image in the img tag */
         private final int width;
+
+        /** The URL of the image to display */
         private final String url;
 
+        /** Constructor */
         public AssetImageResource(final int height,
                                   final int width,
                                   final String url) {
@@ -198,11 +325,11 @@ public class VisualisationAssetsPresenter
      */
     private static class AssetTreeResources implements CellTree.Resources {
 
-        private static final int DIM = 15;
+        private static final int DIM = 10;
         private static final AssetImageResource CELL_CLOSED =
-                new AssetImageResource(DIM, DIM, "/ui/images/arrow-right.svg");
+                new AssetImageResource(DIM, DIM, "/ui/images/background/arrow-right.png");
         private static final AssetImageResource CELL_OPEN =
-                new AssetImageResource(DIM, DIM, "/ui/images/arrow-down.svg");
+                new AssetImageResource(DIM, DIM, "/ui/images/background/arrow-down.png");
         private static final Style STYLE = new AssetTreeStyle();
 
         @Override
@@ -233,7 +360,7 @@ public class VisualisationAssetsPresenter
 
     // --------------------------------------------------------------------------------
     /**
-     * Customises style in the tree.
+     * Customises style in the tree by providing class names.
      */
     private static class AssetTreeStyle implements Style {
 
