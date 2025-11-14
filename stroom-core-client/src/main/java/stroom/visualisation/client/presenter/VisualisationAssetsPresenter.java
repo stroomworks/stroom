@@ -25,7 +25,6 @@ import stroom.visualisation.client.presenter.VisualisationAssetsPresenter.Visual
 
 import com.google.gwt.cell.client.AbstractCell;
 import com.google.gwt.cell.client.Cell;
-import com.google.gwt.cell.client.IconCellDecorator;
 import com.google.gwt.resources.client.ImageResource;
 import com.google.gwt.safehtml.shared.SafeHtmlBuilder;
 import com.google.gwt.safehtml.shared.SafeUri;
@@ -40,9 +39,9 @@ import com.google.web.bindery.event.shared.HandlerRegistration;
 import com.gwtplatform.mvp.client.MyPresenterWidget;
 import com.gwtplatform.mvp.client.View;
 
-import java.util.ArrayList;
-import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Shows the Assets - images, css etc - associated with the Visualisation.
@@ -66,15 +65,37 @@ public class VisualisationAssetsPresenter
         super(eventBus, view);
 
         final TreeViewModel model = new AssetTreeModel();
-        final AssetItem rootItem = new AssetItem("root", false);
+        final VisualisationAssetItem rootItem = new VisualisationAssetItem("root", false);
 
         // TODO Dummy data needs replacing with live data
-        final AssetItem dir1 = new AssetItem("dir1", false);
-        final AssetItem subdir1 = new AssetItem("dir2", false);
-        final AssetItem file1 = new AssetItem("file1", true);
-        final AssetItem file2 = new AssetItem("file2", true);
+        final VisualisationAssetItem dir1 = new VisualisationAssetItem("dir1", false);
+        final VisualisationAssetItem subdir1 = new VisualisationAssetItem("dir2", false);
+        final VisualisationAssetItem file1 = new VisualisationAssetItem("file1.svg", true);
+        final VisualisationAssetItem file2 = new VisualisationAssetItem("file2.png", true);
+        final VisualisationAssetItem file3 = new VisualisationAssetItem("file3.gif", true);
+        final VisualisationAssetItem file4 = new VisualisationAssetItem("file4.jpg", true);
+        final VisualisationAssetItem file5 = new VisualisationAssetItem("file5.jpeg", true);
+        final VisualisationAssetItem file6 = new VisualisationAssetItem("file6.webp", true);
+        final VisualisationAssetItem file7 = new VisualisationAssetItem("file7.css", true);
+        final VisualisationAssetItem file8 = new VisualisationAssetItem("file8.htm", true);
+        final VisualisationAssetItem file9 = new VisualisationAssetItem("file9.html", true);
+        final VisualisationAssetItem file10 = new VisualisationAssetItem("file10.unknown", true);
+        final VisualisationAssetItem file11 = new VisualisationAssetItem("file11.", true);
+        final VisualisationAssetItem file12 = new VisualisationAssetItem("file12", true);
+        final VisualisationAssetItem file13 = new VisualisationAssetItem(".file13", true);
         subdir1.addSubItem(file1);
         subdir1.addSubItem(file2);
+        subdir1.addSubItem(file3);
+        subdir1.addSubItem(file4);
+        subdir1.addSubItem(file5);
+        subdir1.addSubItem(file6);
+        subdir1.addSubItem(file7);
+        subdir1.addSubItem(file8);
+        subdir1.addSubItem(file9);
+        subdir1.addSubItem(file10);
+        subdir1.addSubItem(file11);
+        subdir1.addSubItem(file12);
+        subdir1.addSubItem(file13);
         dir1.addSubItem(subdir1);
         rootItem.addSubItem(dir1);
 
@@ -114,57 +135,6 @@ public class VisualisationAssetsPresenter
 
     // --------------------------------------------------------------------------------
     /**
-     * Represents an item in the asset tree.
-     */
-    private static class AssetItem {
-        /** The name to display for the item */
-        private final String name;
-
-        /** Whether this is a leaf (file) or not (folder / directory) */
-        private final boolean isLeaf;
-
-        /** Child items */
-        private final List<AssetItem> directory = new ArrayList<>();
-
-        /** Constructor */
-        public AssetItem(final String name, final boolean isLeaf) {
-            this.name = name;
-            this.isLeaf = isLeaf;
-        }
-
-        /** Returns the name of the item to display */
-        public String getName() {
-            return name;
-        }
-
-        /** Adds a child item to this item. !this.isLeaf() otherwise does nothing. */
-        public void addSubItem(final AssetItem item) {
-            if (!isLeaf) {
-                Console.info("Adding item to " + name + ": " + item.getName());
-                directory.add(item);
-            } else {
-                Console.info("Not adding item to " + name + " as isLeaf");
-            }
-        }
-
-        /** Returns any children of this item */
-        public List<AssetItem> getSubItems() {
-            return Collections.unmodifiableList(directory);
-        }
-
-        /** Returns whether this is a leaf (file) or not (folder/directory) */
-        public boolean isLeaf() {
-            return isLeaf;
-        }
-
-        /** For debugging */
-        public String toString() {
-            return name;
-        }
-    }
-
-    // --------------------------------------------------------------------------------
-    /**
      * Models the assets within the tree.
      */
     private static class AssetTreeModel implements TreeViewModel {
@@ -173,46 +143,87 @@ public class VisualisationAssetsPresenter
         private static final int ICON_DIM = 16;
 
         /** Folder icon URL */
-        private static final String FOLDER_URL = "/ui/images/background/folder.png";
+        private static final String FOLDER_ICON_URL = "/ui/images/background/folder.png";
+
+        /** File icon URL when nothing else matches */
+        private static final String DEFAULT_ICON_URL = "/ui/images/background/file.png";
+
+        private static final String IMAGE_ICON_URL = "/ui/images/background/file-image.png";
+
+        private static final String CSS_ICON_URL = "/ui/images/background/file-raw.png";
+
+        private static final String HTML_ICON_URL = "/ui/images/background/file-formatted.png";
+
+        /** Map of extension to image */
+        private static final Map<String, ImageResource> FILE_ICON_URLS = new HashMap<>();
 
         /** Folder icon */
         private static final ImageResource FOLDER_ICON =
-                new AssetImageResource(ICON_DIM, ICON_DIM, FOLDER_URL);
+                new AssetImageResource(ICON_DIM, ICON_DIM, FOLDER_ICON_URL);
+
+        /** Icon for image assets */
+        private static final ImageResource IMAGE_ICON =
+                new AssetImageResource(ICON_DIM, ICON_DIM, IMAGE_ICON_URL);
+
+        /** Icon for CSS assets */
+        private static final ImageResource CSS_ICON =
+                new AssetImageResource(ICON_DIM, ICON_DIM, CSS_ICON_URL);
+
+        /** Icon for HTML assets */
+        private static final ImageResource HTML_ICON =
+                new AssetImageResource(ICON_DIM, ICON_DIM, HTML_ICON_URL);
+
+        /** Icon when nothing else matches */
+        private static final ImageResource DEFAULT_ICON =
+                new AssetImageResource(ICON_DIM, ICON_DIM, DEFAULT_ICON_URL);
+
+
+        static {
+            FILE_ICON_URLS.put("png",  IMAGE_ICON);
+            FILE_ICON_URLS.put("jpg",  IMAGE_ICON);
+            FILE_ICON_URLS.put("jpeg", IMAGE_ICON);
+            FILE_ICON_URLS.put("gif",  IMAGE_ICON);
+            FILE_ICON_URLS.put("webp", IMAGE_ICON);
+            FILE_ICON_URLS.put("svg",  IMAGE_ICON);
+            FILE_ICON_URLS.put("css",  CSS_ICON);
+            FILE_ICON_URLS.put("htm",  HTML_ICON);
+            FILE_ICON_URLS.put("html", HTML_ICON);
+        }
 
         @Override
         public <T> NodeInfo<?> getNodeInfo(final T parent) {
             Console.info("getNodeInfo: " + parent + ": " + parent.getClass());
-            final ListDataProvider<AssetItem> dataProvider = new ListDataProvider<>();
-            final Cell<AssetItem> cell;
+            final ListDataProvider<VisualisationAssetItem> dataProvider = new ListDataProvider<>();
+            final Cell<VisualisationAssetItem> cell;
 
-            if (parent instanceof final AssetItem parentItem) {
+            if (parent instanceof final VisualisationAssetItem parentItem) {
                 Console.info("-> isLeaf: " + parentItem.isLeaf());
                 if (!parentItem.isLeaf()) {
                     // Must be a folder, so find its children and display a folder icon
-                    final List<AssetItem> subItems = parentItem.getSubItems();
-                    for (final AssetItem assetItem : subItems) {
+                    final List<VisualisationAssetItem> subItems = parentItem.getSubItems();
+                    for (final VisualisationAssetItem assetItem : subItems) {
                         dataProvider.getList().add(assetItem);
                     }
                 }
-                final Cell<AssetItem> textCell = new AbstractCell<AssetItem>() {
+                final Cell<VisualisationAssetItem> textCell = new AbstractCell<>() {
                     @Override
-                    public void render(final Context context, final AssetItem value, final SafeHtmlBuilder sb) {
+                    public void render(final Context context, final VisualisationAssetItem value, final SafeHtmlBuilder sb) {
                         if (value != null) {
                             sb.appendEscaped(value.getName());
                         }
                     }
                 };
-                cell = new IconCellDecorator<>(FOLDER_ICON, textCell) {
-                    @Override
-                    protected boolean isIconUsed(final AssetItem assetItem) {
-                        return !assetItem.isLeaf();
-                    }
+                cell = new VisualisationAssetsIconCellDecorator(
+                        FOLDER_ICON,
+                        FILE_ICON_URLS,
+                        DEFAULT_ICON,
+                        textCell) {
                 };
             } else {
                 // Shouldn't happen but keeps final happy
-                cell = new AbstractCell<AssetItem>() {
+                cell = new AbstractCell<>() {
                     @Override
-                    public void render(final Context context, final AssetItem value, final SafeHtmlBuilder sb) {
+                    public void render(final Context context, final VisualisationAssetItem value, final SafeHtmlBuilder sb) {
                         // Do nothing
                     }
                 };
@@ -224,8 +235,8 @@ public class VisualisationAssetsPresenter
         @Override
         public boolean isLeaf(final Object objectItem) {
             Console.info("isLeaf: " + objectItem);
-            if (objectItem instanceof final AssetItem assetItem) {
-                Console.info("-> " + assetItem.isLeaf);
+            if (objectItem instanceof final VisualisationAssetItem assetItem) {
+                Console.info("-> " + assetItem.isLeaf());
                 return assetItem.isLeaf();
             } else {
                 // Shouldn't happen
