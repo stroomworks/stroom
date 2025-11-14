@@ -32,6 +32,10 @@ import com.google.gwt.user.cellview.client.CellTree;
 import com.google.gwt.user.cellview.client.CellTree.Style;
 import com.google.gwt.user.client.ui.Widget;
 import com.google.gwt.view.client.ListDataProvider;
+import com.google.gwt.view.client.SelectionChangeEvent;
+import com.google.gwt.view.client.SelectionChangeEvent.Handler;
+import com.google.gwt.view.client.SelectionModel;
+import com.google.gwt.view.client.SingleSelectionModel;
 import com.google.gwt.view.client.TreeViewModel;
 import com.google.inject.Inject;
 import com.google.web.bindery.event.shared.EventBus;
@@ -53,6 +57,9 @@ public class VisualisationAssetsPresenter
     /** Main tree we're displaying */
     private final CellTree cellTree;
 
+    /** Selection model */
+    private final SingleSelectionModel<VisualisationAssetItem> selectionModel = new SingleSelectionModel<>();
+
     /** True if the UI is readonly, false if read-write */
     private boolean readOnly = false;
 
@@ -64,8 +71,15 @@ public class VisualisationAssetsPresenter
                                         final VisualisationAssetsView view) {
         super(eventBus, view);
 
-        final TreeViewModel model = new AssetTreeModel();
+        final TreeViewModel model = new AssetTreeModel(selectionModel);
         final VisualisationAssetItem rootItem = new VisualisationAssetItem("root", false);
+
+        selectionModel.addSelectionChangeHandler(new Handler() {
+            @Override
+            public void onSelectionChange(final SelectionChangeEvent event) {
+                VisualisationAssetsPresenter.this.onSelectionChange(selectionModel.getSelectedObject());
+            }
+        });
 
         // TODO Dummy data needs replacing with live data
         final VisualisationAssetItem dir1 = new VisualisationAssetItem("dir1", false);
@@ -100,6 +114,8 @@ public class VisualisationAssetsPresenter
         rootItem.addSubItem(dir1);
 
         cellTree = new CellTree(model, rootItem, new AssetTreeResources());
+        cellTree.setAnimation(CellTree.SlideAnimation.create());
+        cellTree.setAnimationEnabled(true);
         this.getView().setCellTree(cellTree);
     }
 
@@ -133,11 +149,17 @@ public class VisualisationAssetsPresenter
         // TODO updateState()
     }
 
+    void onSelectionChange(final VisualisationAssetItem item) {
+        // TODO
+    }
+
     // --------------------------------------------------------------------------------
     /**
      * Models the assets within the tree.
      */
     private static class AssetTreeModel implements TreeViewModel {
+
+        private final SelectionModel<VisualisationAssetItem> selectionModel;
 
         /** Height and width of the (square) icons */
         private static final int ICON_DIM = 16;
@@ -148,14 +170,17 @@ public class VisualisationAssetsPresenter
         /** File icon URL when nothing else matches */
         private static final String DEFAULT_ICON_URL = "/ui/images/background/file.png";
 
+        /** URL for image icon */
         private static final String IMAGE_ICON_URL = "/ui/images/background/file-image.png";
 
+        /** URL for CSS icon */
         private static final String CSS_ICON_URL = "/ui/images/background/file-raw.png";
 
+        /** URL for HTML icon */
         private static final String HTML_ICON_URL = "/ui/images/background/file-formatted.png";
 
         /** Map of extension to image */
-        private static final Map<String, ImageResource> FILE_ICON_URLS = new HashMap<>();
+        private static final Map<String, ImageResource> FILE_ICONS = new HashMap<>();
 
         /** Folder icon */
         private static final ImageResource FOLDER_ICON =
@@ -177,17 +202,26 @@ public class VisualisationAssetsPresenter
         private static final ImageResource DEFAULT_ICON =
                 new AssetImageResource(ICON_DIM, ICON_DIM, DEFAULT_ICON_URL);
 
-
+        /*
+         * Initialise the map of extension to file icon.
+         */
         static {
-            FILE_ICON_URLS.put("png",  IMAGE_ICON);
-            FILE_ICON_URLS.put("jpg",  IMAGE_ICON);
-            FILE_ICON_URLS.put("jpeg", IMAGE_ICON);
-            FILE_ICON_URLS.put("gif",  IMAGE_ICON);
-            FILE_ICON_URLS.put("webp", IMAGE_ICON);
-            FILE_ICON_URLS.put("svg",  IMAGE_ICON);
-            FILE_ICON_URLS.put("css",  CSS_ICON);
-            FILE_ICON_URLS.put("htm",  HTML_ICON);
-            FILE_ICON_URLS.put("html", HTML_ICON);
+            FILE_ICONS.put("png",  IMAGE_ICON);
+            FILE_ICONS.put("jpg",  IMAGE_ICON);
+            FILE_ICONS.put("jpeg", IMAGE_ICON);
+            FILE_ICONS.put("gif",  IMAGE_ICON);
+            FILE_ICONS.put("webp", IMAGE_ICON);
+            FILE_ICONS.put("svg",  IMAGE_ICON);
+            FILE_ICONS.put("css",  CSS_ICON);
+            FILE_ICONS.put("htm",  HTML_ICON);
+            FILE_ICONS.put("html", HTML_ICON);
+        }
+
+        /**
+         * Constructor.
+         */
+        public AssetTreeModel(final SelectionModel<VisualisationAssetItem> selectionModel) {
+            this.selectionModel = selectionModel;
         }
 
         @Override
@@ -215,7 +249,7 @@ public class VisualisationAssetsPresenter
                 };
                 cell = new VisualisationAssetsIconCellDecorator(
                         FOLDER_ICON,
-                        FILE_ICON_URLS,
+                        FILE_ICONS,
                         DEFAULT_ICON,
                         textCell) {
                 };
@@ -229,7 +263,7 @@ public class VisualisationAssetsPresenter
                 };
             }
 
-            return new DefaultNodeInfo<>(dataProvider, cell);
+            return new DefaultNodeInfo<>(dataProvider, cell, selectionModel, null);
         }
 
         @Override
@@ -243,6 +277,7 @@ public class VisualisationAssetsPresenter
                 return false;
             }
         }
+
 
     }
 

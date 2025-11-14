@@ -2662,3 +2662,7 @@ button.main-menu svg {
 .visualisation-asset-tree-item-value {
     margin-left: 8px;
 }
+
+.visualisation-asset-tree-selected-item {
+    background-color: var(--row__background-color--selected);
+}
