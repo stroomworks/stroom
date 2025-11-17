@@ -203,7 +203,9 @@ public class VisualisationAssetsPresenter
                 }
                 final Cell<VisualisationAssetItem> textCell = new AbstractCell<>() {
                     @Override
-                    public void render(final Context context, final VisualisationAssetItem value, final SafeHtmlBuilder sb) {
+                    public void render(final Context context,
+                                       final VisualisationAssetItem value,
+                                       final SafeHtmlBuilder sb) {
                         if (value != null) {
                             sb.appendEscaped(value.getName());
                         }
@@ -219,7 +221,9 @@ public class VisualisationAssetsPresenter
                 // Shouldn't happen but keeps final happy
                 cell = new AbstractCell<>() {
                     @Override
-                    public void render(final Context context, final VisualisationAssetItem value, final SafeHtmlBuilder sb) {
+                    public void render(final Context context,
+                                       final VisualisationAssetItem value,
+                                       final SafeHtmlBuilder sb) {
                         // Do nothing
                     }
                 };
