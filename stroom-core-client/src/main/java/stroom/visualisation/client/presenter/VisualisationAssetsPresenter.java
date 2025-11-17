@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 Crown Copyright
+ * Copyright 2025 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import stroom.document.client.event.DirtyEvent;
 import stroom.document.client.event.DirtyEvent.DirtyHandler;
 import stroom.document.client.event.HasDirtyHandlers;
 import stroom.entity.client.presenter.HasToolbar;
+import stroom.svg.shared.SvgImage;
 import stroom.util.client.Console;
 import stroom.visualisation.client.presenter.VisualisationAssetsPresenter.VisualisationAssetsView;
 
@@ -27,7 +28,6 @@ import com.google.gwt.cell.client.AbstractCell;
 import com.google.gwt.cell.client.Cell;
 import com.google.gwt.resources.client.ImageResource;
 import com.google.gwt.safehtml.shared.SafeHtmlBuilder;
-import com.google.gwt.safehtml.shared.SafeUri;
 import com.google.gwt.user.cellview.client.CellTree;
 import com.google.gwt.user.cellview.client.CellTree.Style;
 import com.google.gwt.user.client.ui.Widget;
@@ -161,60 +161,22 @@ public class VisualisationAssetsPresenter
 
         private final SelectionModel<VisualisationAssetItem> selectionModel;
 
-        /** Height and width of the (square) icons */
-        private static final int ICON_DIM = 16;
-
-        /** Folder icon URL */
-        private static final String FOLDER_ICON_URL = "/ui/images/background/folder.png";
-
-        /** File icon URL when nothing else matches */
-        private static final String DEFAULT_ICON_URL = "/ui/images/background/file.png";
-
-        /** URL for image icon */
-        private static final String IMAGE_ICON_URL = "/ui/images/background/file-image.png";
-
-        /** URL for CSS icon */
-        private static final String CSS_ICON_URL = "/ui/images/background/file-raw.png";
-
-        /** URL for HTML icon */
-        private static final String HTML_ICON_URL = "/ui/images/background/file-formatted.png";
-
         /** Map of extension to image */
-        private static final Map<String, ImageResource> FILE_ICONS = new HashMap<>();
-
-        /** Folder icon */
-        private static final ImageResource FOLDER_ICON =
-                new AssetImageResource(ICON_DIM, ICON_DIM, FOLDER_ICON_URL);
-
-        /** Icon for image assets */
-        private static final ImageResource IMAGE_ICON =
-                new AssetImageResource(ICON_DIM, ICON_DIM, IMAGE_ICON_URL);
-
-        /** Icon for CSS assets */
-        private static final ImageResource CSS_ICON =
-                new AssetImageResource(ICON_DIM, ICON_DIM, CSS_ICON_URL);
-
-        /** Icon for HTML assets */
-        private static final ImageResource HTML_ICON =
-                new AssetImageResource(ICON_DIM, ICON_DIM, HTML_ICON_URL);
-
-        /** Icon when nothing else matches */
-        private static final ImageResource DEFAULT_ICON =
-                new AssetImageResource(ICON_DIM, ICON_DIM, DEFAULT_ICON_URL);
+        private static final Map<String, SvgImage> FILE_ICONS = new HashMap<>();
 
         /*
          * Initialise the map of extension to file icon.
          */
         static {
-            FILE_ICONS.put("png",  IMAGE_ICON);
-            FILE_ICONS.put("jpg",  IMAGE_ICON);
-            FILE_ICONS.put("jpeg", IMAGE_ICON);
-            FILE_ICONS.put("gif",  IMAGE_ICON);
-            FILE_ICONS.put("webp", IMAGE_ICON);
-            FILE_ICONS.put("svg",  IMAGE_ICON);
-            FILE_ICONS.put("css",  CSS_ICON);
-            FILE_ICONS.put("htm",  HTML_ICON);
-            FILE_ICONS.put("html", HTML_ICON);
+            FILE_ICONS.put("png",  SvgImage.FILE_IMAGE);
+            FILE_ICONS.put("jpg",  SvgImage.FILE_IMAGE);
+            FILE_ICONS.put("jpeg", SvgImage.FILE_IMAGE);
+            FILE_ICONS.put("gif",  SvgImage.FILE_IMAGE);
+            FILE_ICONS.put("webp", SvgImage.FILE_IMAGE);
+            FILE_ICONS.put("svg",  SvgImage.FILE_IMAGE);
+            FILE_ICONS.put("css",  SvgImage.FILE_RAW);
+            FILE_ICONS.put("htm",  SvgImage.FILE_FORMATTED);
+            FILE_ICONS.put("html", SvgImage.FILE_FORMATTED);
         }
 
         /**
@@ -248,9 +210,9 @@ public class VisualisationAssetsPresenter
                     }
                 };
                 cell = new VisualisationAssetsIconCellDecorator(
-                        FOLDER_ICON,
+                        SvgImage.FOLDER,
                         FILE_ICONS,
-                        DEFAULT_ICON,
+                        SvgImage.FILE,
                         textCell) {
                 };
             } else {
@@ -278,93 +240,8 @@ public class VisualisationAssetsPresenter
             }
         }
 
-
     }
 
-    // --------------------------------------------------------------------------------
-    /**
-     * Implementation of the SafeUri class for the tree.
-     * Doesn't do any filtering or checking.
-     */
-    private static class AssetSafeUri implements SafeUri {
-
-        private final String uri;
-
-        public AssetSafeUri(final String uri) {
-            this.uri = uri;
-        }
-
-        @Override
-        public String asString() {
-            return uri;
-        }
-
-    }
-
-    // --------------------------------------------------------------------------------
-    /**
-     * Implements the ImageResource for the tree.
-     */
-    private static class AssetImageResource implements ImageResource {
-
-        /** Height of the image in the img tag */
-        private final int height;
-
-        /** Width of the image in the img tag */
-        private final int width;
-
-        /** The URL of the image to display */
-        private final String url;
-
-        /** Constructor */
-        public AssetImageResource(final int height,
-                                  final int width,
-                                  final String url) {
-            this.height = height;
-            this.width = width;
-            this.url = url;
-        }
-
-        @Override
-        public int getHeight() {
-            return height;
-        }
-
-        @Override
-        public int getLeft() {
-            return 0;
-        }
-
-        @Override
-        public SafeUri getSafeUri() {
-            return new AssetSafeUri(url);
-        }
-
-        @Override
-        public int getTop() {
-            return 0;
-        }
-
-        @Override
-        public String getURL() {
-            return url;
-        }
-
-        @Override
-        public int getWidth() {
-            return width;
-        }
-
-        @Override
-        public boolean isAnimated() {
-            return false;
-        }
-
-        @Override
-        public String getName() {
-            return "";
-        }
-    }
     // --------------------------------------------------------------------------------
     /**
      * Provides the images for the CellTree
@@ -372,10 +249,10 @@ public class VisualisationAssetsPresenter
     private static class AssetTreeResources implements CellTree.Resources {
 
         private static final int DIM = 10;
-        private static final AssetImageResource CELL_CLOSED =
-                new AssetImageResource(DIM, DIM, "/ui/images/background/arrow-right.png");
-        private static final AssetImageResource CELL_OPEN =
-                new AssetImageResource(DIM, DIM, "/ui/images/background/arrow-down.png");
+        private static final VisualisationAssetsImageResource CELL_CLOSED =
+                new VisualisationAssetsImageResource(DIM, DIM, "/ui/background-images/arrow-right.png");
+        private static final VisualisationAssetsImageResource CELL_OPEN =
+                new VisualisationAssetsImageResource(DIM, DIM, "/ui/background-images/arrow-down.png");
         private static final Style STYLE = new AssetTreeStyle();
 
         @Override
