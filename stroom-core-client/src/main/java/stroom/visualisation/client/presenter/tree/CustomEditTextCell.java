@@ -250,7 +250,7 @@ public class CustomEditTextCell extends AbstractEditableCell<UpdatableTreeNode, 
             }
         }
 
-        if (toRender != null && toRender.isBlank()) {
+        if (toRender != null && !toRender.isBlank()) {
             sb.append(renderer.render(toRender));
         } else {
             /*
