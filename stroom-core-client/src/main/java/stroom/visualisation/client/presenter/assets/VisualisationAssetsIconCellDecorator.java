@@ -1,6 +1,7 @@
-package stroom.visualisation.client.presenter;
+package stroom.visualisation.client.presenter.assets;
 
 import stroom.svg.shared.SvgImage;
+import stroom.visualisation.client.presenter.tree.UpdatableTreeNode;
 import stroom.widget.util.client.SvgImageUtil;
 
 import com.google.gwt.cell.client.Cell;
@@ -15,7 +16,7 @@ import java.util.Map;
 /**
  * Presents an icon chosen based on the state of the VisualisationAssetItem.
  */
-public class VisualisationAssetsIconCellDecorator extends IconCellDecorator<VisualisationAssetItem> {
+public class VisualisationAssetsIconCellDecorator extends IconCellDecorator<UpdatableTreeNode> {
 
     interface Template extends SafeHtmlTemplates {
 
@@ -48,7 +49,7 @@ public class VisualisationAssetsIconCellDecorator extends IconCellDecorator<Visu
     public VisualisationAssetsIconCellDecorator(final SvgImage folderIcon,
                                                 final Map<String, SvgImage> fileIcons,
                                                 final SvgImage defaultIcon,
-                                                final Cell<VisualisationAssetItem> cell) {
+                                                final Cell<UpdatableTreeNode> cell) {
         super(DUMMY_IMG, cell);
 
         if (template == null) {
@@ -62,12 +63,13 @@ public class VisualisationAssetsIconCellDecorator extends IconCellDecorator<Visu
     /**
      * Called from superclass to get the HTML for a given value.
      */
-    protected SafeHtml getIconHtml(final VisualisationAssetItem value) {
+    protected SafeHtml getIconHtml(final UpdatableTreeNode value) {
+
         final String cssClassName = "visualisation-assets-icon";
 
         if (value.isLeaf()) {
             // Look for the file extension
-            final String filename = value.getName();
+            final String filename = value.getLabel();
             final int dotIndex = filename.lastIndexOf('.');
             if (dotIndex != -1) {
                 // Got an extension - look it up

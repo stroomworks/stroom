@@ -23,29 +23,26 @@ import stroom.entity.client.presenter.HasToolbar;
 import stroom.svg.shared.SvgImage;
 import stroom.util.client.Console;
 import stroom.visualisation.client.presenter.VisualisationAssetsPresenter.VisualisationAssetsView;
+import stroom.visualisation.client.presenter.assets.VisualisationAssetItem;
+import stroom.visualisation.client.presenter.assets.VisualisationAssetTreeModel;
+import stroom.visualisation.client.presenter.assets.VisualisationAssetsImageResource;
+import stroom.visualisation.client.presenter.tree.UpdatableTreeModel;
+import stroom.visualisation.client.presenter.tree.UpdatableTreeNode;
+import stroom.widget.button.client.ButtonPanel;
+import stroom.widget.button.client.InlineSvgButton;
 
-import com.google.gwt.cell.client.AbstractCell;
-import com.google.gwt.cell.client.Cell;
 import com.google.gwt.resources.client.ImageResource;
-import com.google.gwt.safehtml.shared.SafeHtmlBuilder;
 import com.google.gwt.user.cellview.client.CellTree;
 import com.google.gwt.user.cellview.client.CellTree.Style;
 import com.google.gwt.user.client.ui.Widget;
-import com.google.gwt.view.client.ListDataProvider;
-import com.google.gwt.view.client.SelectionChangeEvent;
-import com.google.gwt.view.client.SelectionChangeEvent.Handler;
-import com.google.gwt.view.client.SelectionModel;
 import com.google.gwt.view.client.SingleSelectionModel;
-import com.google.gwt.view.client.TreeViewModel;
 import com.google.inject.Inject;
 import com.google.web.bindery.event.shared.EventBus;
 import com.google.web.bindery.event.shared.HandlerRegistration;
 import com.gwtplatform.mvp.client.MyPresenterWidget;
 import com.gwtplatform.mvp.client.View;
 
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * Shows the Assets - images, css etc - associated with the Visualisation.
@@ -57,11 +54,19 @@ public class VisualisationAssetsPresenter
     /** Main tree we're displaying */
     private final CellTree cellTree;
 
+    private final UpdatableTreeModel treeModel;
+
     /** Selection model */
-    private final SingleSelectionModel<VisualisationAssetItem> selectionModel = new SingleSelectionModel<>();
+    private final SingleSelectionModel<UpdatableTreeNode> selectionModel = new SingleSelectionModel<>();
 
     /** True if the UI is readonly, false if read-write */
     private boolean readOnly = false;
+
+    /** Button to add stuff to the tree */
+    private final InlineSvgButton addButton = new InlineSvgButton();
+
+    /** Button to delete stuff from the tree */
+    private final InlineSvgButton deleteButton = new InlineSvgButton();
 
     /**
      * Injected constructor.
@@ -71,15 +76,11 @@ public class VisualisationAssetsPresenter
                                         final VisualisationAssetsView view) {
         super(eventBus, view);
 
-        final TreeViewModel model = new AssetTreeModel(selectionModel);
+        treeModel = new VisualisationAssetTreeModel(selectionModel);
         final VisualisationAssetItem rootItem = new VisualisationAssetItem("root", false);
 
-        selectionModel.addSelectionChangeHandler(new Handler() {
-            @Override
-            public void onSelectionChange(final SelectionChangeEvent event) {
-                VisualisationAssetsPresenter.this.onSelectionChange(selectionModel.getSelectedObject());
-            }
-        });
+        selectionModel.addSelectionChangeHandler(event ->
+                VisualisationAssetsPresenter.this.onSelectionChange(selectionModel.getSelectedObject()));
 
         // TODO Dummy data needs replacing with live data
         final VisualisationAssetItem dir1 = new VisualisationAssetItem("dir1", false);
@@ -97,23 +98,23 @@ public class VisualisationAssetsPresenter
         final VisualisationAssetItem file11 = new VisualisationAssetItem("file11.", true);
         final VisualisationAssetItem file12 = new VisualisationAssetItem("file12", true);
         final VisualisationAssetItem file13 = new VisualisationAssetItem(".file13", true);
-        subdir1.addSubItem(file1);
-        subdir1.addSubItem(file2);
-        subdir1.addSubItem(file3);
-        subdir1.addSubItem(file4);
-        subdir1.addSubItem(file5);
-        subdir1.addSubItem(file6);
-        subdir1.addSubItem(file7);
-        subdir1.addSubItem(file8);
-        subdir1.addSubItem(file9);
-        subdir1.addSubItem(file10);
-        subdir1.addSubItem(file11);
-        subdir1.addSubItem(file12);
-        subdir1.addSubItem(file13);
-        dir1.addSubItem(subdir1);
-        rootItem.addSubItem(dir1);
+        treeModel.add(subdir1, file1);
+        treeModel.add(subdir1, file2);
+        treeModel.add(subdir1, file3);
+        treeModel.add(subdir1, file4);
+        treeModel.add(subdir1, file5);
+        treeModel.add(subdir1, file6);
+        treeModel.add(subdir1, file7);
+        treeModel.add(subdir1, file8);
+        treeModel.add(subdir1, file9);
+        treeModel.add(subdir1, file10);
+        treeModel.add(subdir1, file11);
+        treeModel.add(subdir1, file12);
+        treeModel.add(subdir1, file13);
+        treeModel.add(dir1, subdir1);
+        treeModel.add(rootItem, dir1);
 
-        cellTree = new CellTree(model, rootItem, new AssetTreeResources());
+        cellTree = new CellTree(treeModel, rootItem, new AssetTreeResources());
         cellTree.setAnimation(CellTree.SlideAnimation.create());
         cellTree.setAnimationEnabled(true);
         this.getView().setCellTree(cellTree);
@@ -137,7 +138,24 @@ public class VisualisationAssetsPresenter
      */
     @Override
     public List<Widget> getToolbars() {
-        return List.of();
+        addButton.setSvg(SvgImage.ADD);
+        addButton.setTitle("Add file");
+        addButton.setVisible(true);
+        addButton.addClickHandler(event -> VisualisationAssetsPresenter.this.onAddButtonClick());
+
+        deleteButton.setSvg(SvgImage.DELETE);
+        deleteButton.setTitle("Delete");
+        deleteButton.setVisible(true);
+        deleteButton.addClickHandler(event -> VisualisationAssetsPresenter.this.onDeleteButtonClick());
+
+        final ButtonPanel toolbar = new ButtonPanel();
+        toolbar.addButton(addButton);
+        toolbar.addButton(deleteButton);
+
+        // Ensure state is set correctly
+        updateState();
+
+        return List.of(toolbar);
     }
 
     /**
@@ -149,102 +167,51 @@ public class VisualisationAssetsPresenter
         // TODO updateState()
     }
 
-    void onSelectionChange(final VisualisationAssetItem item) {
+    private void onSelectionChange(final UpdatableTreeNode item) {
+        Console.info("Selection changed to " + item);
+        updateState();
+    }
+
+    /**
+     * Called when the Add button is clicked.
+     * Inserts a new item within the currently selected folder.
+     */
+    private void onAddButtonClick() {
         // TODO
+        Console.info("Add button clicked");
+    }
+
+    /**
+     * Called when the Delete button is clicked.
+     * Deletes the currently selected item.
+     */
+    private void onDeleteButtonClick() {
+        Console.info("Delete button clicked");
+        final UpdatableTreeNode item = selectionModel.getSelectedObject();
+        if (item != null) {
+            Console.info("Deleting " + item.getLabel());
+            final UpdatableTreeNode parentItem = item.getParent();
+            parentItem.removeChild(item);
+        }
+    }
+
+    /**
+     * Sets the state of the UI when things have changed.
+     */
+    private void updateState() {
+        final UpdatableTreeNode item = selectionModel.getSelectedObject();
+        if (item == null) {
+            Console.info("Nothing selected");
+            addButton.setEnabled(false);
+            deleteButton.setEnabled(false);
+        } else {
+            Console.info("Something selected: " + item.getLabel());
+            addButton.setEnabled(true);
+            deleteButton.setEnabled(true);
+        }
     }
 
     // --------------------------------------------------------------------------------
-    /**
-     * Models the assets within the tree.
-     */
-    private static class AssetTreeModel implements TreeViewModel {
-
-        private final SelectionModel<VisualisationAssetItem> selectionModel;
-
-        /** Map of extension to image */
-        private static final Map<String, SvgImage> FILE_ICONS = new HashMap<>();
-
-        /*
-         * Initialise the map of extension to file icon.
-         */
-        static {
-            FILE_ICONS.put("png",  SvgImage.FILE_IMAGE);
-            FILE_ICONS.put("jpg",  SvgImage.FILE_IMAGE);
-            FILE_ICONS.put("jpeg", SvgImage.FILE_IMAGE);
-            FILE_ICONS.put("gif",  SvgImage.FILE_IMAGE);
-            FILE_ICONS.put("webp", SvgImage.FILE_IMAGE);
-            FILE_ICONS.put("svg",  SvgImage.FILE_IMAGE);
-            FILE_ICONS.put("css",  SvgImage.FILE_RAW);
-            FILE_ICONS.put("htm",  SvgImage.FILE_FORMATTED);
-            FILE_ICONS.put("html", SvgImage.FILE_FORMATTED);
-        }
-
-        /**
-         * Constructor.
-         */
-        public AssetTreeModel(final SelectionModel<VisualisationAssetItem> selectionModel) {
-            this.selectionModel = selectionModel;
-        }
-
-        @Override
-        public <T> NodeInfo<?> getNodeInfo(final T parent) {
-            Console.info("getNodeInfo: " + parent + ": " + parent.getClass());
-            final ListDataProvider<VisualisationAssetItem> dataProvider = new ListDataProvider<>();
-            final Cell<VisualisationAssetItem> cell;
-
-            if (parent instanceof final VisualisationAssetItem parentItem) {
-                Console.info("-> isLeaf: " + parentItem.isLeaf());
-                if (!parentItem.isLeaf()) {
-                    // Must be a folder, so find its children and display a folder icon
-                    final List<VisualisationAssetItem> subItems = parentItem.getSubItems();
-                    for (final VisualisationAssetItem assetItem : subItems) {
-                        dataProvider.getList().add(assetItem);
-                    }
-                }
-                final Cell<VisualisationAssetItem> textCell = new AbstractCell<>() {
-                    @Override
-                    public void render(final Context context,
-                                       final VisualisationAssetItem value,
-                                       final SafeHtmlBuilder sb) {
-                        if (value != null) {
-                            sb.appendEscaped(value.getName());
-                        }
-                    }
-                };
-                cell = new VisualisationAssetsIconCellDecorator(
-                        SvgImage.FOLDER,
-                        FILE_ICONS,
-                        SvgImage.FILE,
-                        textCell) {
-                };
-            } else {
-                // Shouldn't happen but keeps final happy
-                cell = new AbstractCell<>() {
-                    @Override
-                    public void render(final Context context,
-                                       final VisualisationAssetItem value,
-                                       final SafeHtmlBuilder sb) {
-                        // Do nothing
-                    }
-                };
-            }
-
-            return new DefaultNodeInfo<>(dataProvider, cell, selectionModel, null);
-        }
-
-        @Override
-        public boolean isLeaf(final Object objectItem) {
-            Console.info("isLeaf: " + objectItem);
-            if (objectItem instanceof final VisualisationAssetItem assetItem) {
-                Console.info("-> " + assetItem.isLeaf());
-                return assetItem.isLeaf();
-            } else {
-                // Shouldn't happen
-                return false;
-            }
-        }
-
-    }
 
     // --------------------------------------------------------------------------------
     /**
@@ -257,6 +224,8 @@ public class VisualisationAssetsPresenter
                 new VisualisationAssetsImageResource(DIM, DIM, "/ui/background-images/arrow-right.png");
         private static final VisualisationAssetsImageResource CELL_OPEN =
                 new VisualisationAssetsImageResource(DIM, DIM, "/ui/background-images/arrow-down.png");
+        private static final VisualisationAssetsImageResource LOADING =
+                new VisualisationAssetsImageResource(DIM, DIM, "/ui/background-images/ellipses-horizontal.png");
         private static final Style STYLE = new AssetTreeStyle();
 
         @Override
@@ -266,7 +235,7 @@ public class VisualisationAssetsPresenter
 
         @Override
         public ImageResource cellTreeLoading() {
-            return CELL_CLOSED; // TODO
+            return LOADING;
         }
 
         @Override
@@ -276,7 +245,7 @@ public class VisualisationAssetsPresenter
 
         @Override
         public ImageResource cellTreeSelectedBackground() {
-            return CELL_CLOSED; // TODO
+            return null;
         }
 
         @Override

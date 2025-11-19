@@ -1,4 +1,4 @@
-package stroom.visualisation.client.presenter;
+package stroom.visualisation.client.presenter.assets;
 
 import com.google.gwt.resources.client.ImageResource;
 import com.google.gwt.safehtml.shared.SafeUri;
@@ -6,7 +6,7 @@ import com.google.gwt.safehtml.shared.SafeUri;
 /**
  * Implements the ImageResource for the tree.
  */
-class VisualisationAssetsImageResource implements ImageResource {
+public class VisualisationAssetsImageResource implements ImageResource {
 
     /**
      * Height of the image in the img tag
