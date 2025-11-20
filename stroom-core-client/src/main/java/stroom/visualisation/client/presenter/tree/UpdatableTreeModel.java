@@ -33,18 +33,26 @@ public class UpdatableTreeModel implements TreeViewModel {
     ListDataProvider<UpdatableTreeNode> rootDataProvider;
     int inputBoxSize;
     CellTree tree;
+    private final String ignoredCharacters;
 
-    public UpdatableTreeModel(final SingleSelectionModel<UpdatableTreeNode> selectionModelCellTree) {
-        this(selectionModelCellTree, null, 20);
+    public UpdatableTreeModel(final SingleSelectionModel<UpdatableTreeNode> selectionModelCellTree,
+                              final String ignoredCharacters) {
+        this(selectionModelCellTree, ignoredCharacters, null, 20);
     }
 
     public UpdatableTreeModel(final SingleSelectionModel<UpdatableTreeNode> selectionModelCellTree,
+                              final String ignoredCharacters,
                               final ValueUpdater<UpdatableTreeNode> valueUpdater,
                               final int inputBoxSize) {
         this.selectionModelCellTree = selectionModelCellTree;
         this.valueUpdater = valueUpdater;
         this.inputBoxSize = inputBoxSize;
         this.rootDataProvider = new ListDataProvider<>(new ArrayList<>());
+        if (ignoredCharacters != null) {
+            this.ignoredCharacters = ignoredCharacters;
+        } else {
+            this.ignoredCharacters = CustomEditTextCell.NO_IGNORED_CHARACTERS;
+        }
     }
 
     public ListDataProvider<UpdatableTreeNode> getRootDataProvider() {
@@ -155,7 +163,7 @@ public class UpdatableTreeModel implements TreeViewModel {
      * @return A cell to display values. Must not return null.
      */
     protected Cell<UpdatableTreeNode> getCell(final int inputBoxSize, final UpdatableTreeNode value) {
-        return new CustomEditTextCell(inputBoxSize);
+        return new CustomEditTextCell(inputBoxSize, ignoredCharacters);
     }
 
 }

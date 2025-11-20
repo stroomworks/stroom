@@ -143,16 +143,24 @@ public class CustomEditTextCell extends AbstractEditableCell<UpdatableTreeNode, 
 
     private static Template template;
 
-    private int charSize = 20;
+    private final int charSize;
 
     private final SafeHtmlRenderer<String> renderer;
 
+    private final String ignoredCharacters;
+
+    /** Default value for the charSize variable */
+    public static final int DEFAULT_CHAR_SIZE = 20;
+
+    /** Value to indicate that no characters should be ignored on input */
+    public static final String NO_IGNORED_CHARACTERS = "";
+
     /**
      * Construct a new CustomEditTextCell that will use a
-     * {@link SimpleSafeHtmlRenderer}.
+     * {@link SimpleSafeHtmlRenderer} with default charSize and no ignored characters.
      */
     public CustomEditTextCell() {
-        this(SimpleSafeHtmlRenderer.getInstance());
+        this(SimpleSafeHtmlRenderer.getInstance(), DEFAULT_CHAR_SIZE, NO_IGNORED_CHARACTERS);
     }
 
     /**
@@ -161,10 +169,12 @@ public class CustomEditTextCell extends AbstractEditableCell<UpdatableTreeNode, 
      *
      * @param charSize
      *            size of characters the input element will use (default 20)
+     * @param ignoredCharacters
+     *            Characters that are not allowed in the name of the item and
+     *            thus should be ignored on input.
      */
-    public CustomEditTextCell(final int charSize) {
-        this(SimpleSafeHtmlRenderer.getInstance());
-        this.charSize = charSize;
+    public CustomEditTextCell(final int charSize, final String ignoredCharacters) {
+        this(SimpleSafeHtmlRenderer.getInstance(), charSize, ignoredCharacters);
     }
 
     /**
@@ -174,7 +184,9 @@ public class CustomEditTextCell extends AbstractEditableCell<UpdatableTreeNode, 
      * @param renderer
      *            a {@link SafeHtmlRenderer SafeHtmlRenderer<String>} instance
      */
-    public CustomEditTextCell(final SafeHtmlRenderer<String> renderer) {
+    public CustomEditTextCell(final SafeHtmlRenderer<String> renderer,
+                              final int charSize,
+                              final String ignoredCharacters) {
         super(CLICK, DBLCLICK, KEYUP, KEYDOWN, BLUR);
         if (template == null) {
             template = GWT.create(Template.class);
@@ -183,6 +195,8 @@ public class CustomEditTextCell extends AbstractEditableCell<UpdatableTreeNode, 
             throw new IllegalArgumentException("renderer == null");
         }
         this.renderer = renderer;
+        this.charSize = charSize;
+        this.ignoredCharacters = ignoredCharacters;
     }
 
     @Override
@@ -357,6 +371,7 @@ public class CustomEditTextCell extends AbstractEditableCell<UpdatableTreeNode, 
         final String type = event.getType();
         final boolean keyUp = KEYUP.equals(type);
         final boolean keyDown = KEYDOWN.equals(type);
+
         if (keyUp || keyDown) {
             final int keyCode = event.getKeyCode();
             if (keyUp && keyCode == KeyCodes.KEY_ENTER) {
@@ -412,7 +427,14 @@ public class CustomEditTextCell extends AbstractEditableCell<UpdatableTreeNode, 
                                   final ViewData viewData,
                                   final boolean isEditing) {
         final InputElement input = (InputElement) parent.getFirstChild();
-        final String value = input.getValue();
+        String value = input.getValue();
+
+        // Get rid of any ignored characters
+        for (int i = 0; i < ignoredCharacters.length(); i++) {
+            final String ignoredCharacter = ignoredCharacters.substring(i, i + 1);
+            value = value.replace(ignoredCharacter, "");
+        }
+        input.setValue(value);
         viewData.setText(value);
         viewData.setEditing(isEditing);
         return value;
@@ -422,8 +444,8 @@ public class CustomEditTextCell extends AbstractEditableCell<UpdatableTreeNode, 
         return charSize;
     }
 
-    public void setCharSize(final int charSize) {
+    /*public void setCharSize(final int charSize) {
         this.charSize = charSize;
-    }
+    }*/
 
 }

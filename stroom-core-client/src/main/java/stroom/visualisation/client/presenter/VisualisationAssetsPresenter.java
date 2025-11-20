@@ -21,7 +21,6 @@ import stroom.document.client.event.DirtyEvent.DirtyHandler;
 import stroom.document.client.event.HasDirtyHandlers;
 import stroom.entity.client.presenter.HasToolbar;
 import stroom.svg.shared.SvgImage;
-import stroom.util.client.Console;
 import stroom.visualisation.client.presenter.VisualisationAssetsPresenter.VisualisationAssetsView;
 import stroom.visualisation.client.presenter.assets.VisualisationAssetItem;
 import stroom.visualisation.client.presenter.assets.VisualisationAssetTreeModel;
@@ -30,6 +29,7 @@ import stroom.visualisation.client.presenter.tree.UpdatableTreeModel;
 import stroom.visualisation.client.presenter.tree.UpdatableTreeNode;
 import stroom.widget.button.client.ButtonPanel;
 import stroom.widget.button.client.InlineSvgButton;
+import stroom.widget.popup.client.event.ShowPopupEvent;
 
 import com.google.gwt.resources.client.ImageResource;
 import com.google.gwt.user.cellview.client.CellTree;
@@ -42,6 +42,8 @@ import com.google.web.bindery.event.shared.HandlerRegistration;
 import com.gwtplatform.mvp.client.MyPresenterWidget;
 import com.gwtplatform.mvp.client.View;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -68,21 +70,29 @@ public class VisualisationAssetsPresenter
     /** Button to delete stuff from the tree */
     private final InlineSvgButton deleteButton = new InlineSvgButton();
 
+    /** Dialog that appears when the Add button is clicked */
+    private final VisualisationAssetsAddDialogPresenter addDialog;
+
+    /** Hidden root item in the tree. Not displayed. */
+    final static VisualisationAssetItem ROOT_ITEM = new VisualisationAssetItem("root", false);
+
     /**
      * Injected constructor.
      */
     @Inject
     public VisualisationAssetsPresenter(final EventBus eventBus,
-                                        final VisualisationAssetsView view) {
+                                        final VisualisationAssetsView view,
+                                        final VisualisationAssetsAddDialogPresenter addDialog) {
         super(eventBus, view);
+        this.addDialog = addDialog;
 
         treeModel = new VisualisationAssetTreeModel(selectionModel);
-        final VisualisationAssetItem rootItem = new VisualisationAssetItem("root", false);
 
         selectionModel.addSelectionChangeHandler(event ->
                 VisualisationAssetsPresenter.this.onSelectionChange(selectionModel.getSelectedObject()));
 
         // TODO Dummy data needs replacing with live data
+        //final VisualisationAssetItem root = new VisualisationAssetItem("/", false);
         final VisualisationAssetItem dir1 = new VisualisationAssetItem("dir1", false);
         final VisualisationAssetItem subdir1 = new VisualisationAssetItem("dir2", false);
         final VisualisationAssetItem file1 = new VisualisationAssetItem("file1.svg", true);
@@ -98,6 +108,7 @@ public class VisualisationAssetsPresenter
         final VisualisationAssetItem file11 = new VisualisationAssetItem("file11.", true);
         final VisualisationAssetItem file12 = new VisualisationAssetItem("file12", true);
         final VisualisationAssetItem file13 = new VisualisationAssetItem(".file13", true);
+        final VisualisationAssetItem file14 = new VisualisationAssetItem("file14.js", true);
         treeModel.add(subdir1, file1);
         treeModel.add(subdir1, file2);
         treeModel.add(subdir1, file3);
@@ -111,10 +122,11 @@ public class VisualisationAssetsPresenter
         treeModel.add(subdir1, file11);
         treeModel.add(subdir1, file12);
         treeModel.add(subdir1, file13);
+        treeModel.add(subdir1, file14);
         treeModel.add(dir1, subdir1);
-        treeModel.add(rootItem, dir1);
+        treeModel.add(ROOT_ITEM, dir1);
 
-        cellTree = new CellTree(treeModel, rootItem, new AssetTreeResources());
+        cellTree = new CellTree(treeModel, ROOT_ITEM, new AssetTreeResources());
         cellTree.setAnimation(CellTree.SlideAnimation.create());
         cellTree.setAnimationEnabled(true);
         this.getView().setCellTree(cellTree);
@@ -168,7 +180,6 @@ public class VisualisationAssetsPresenter
     }
 
     private void onSelectionChange(final UpdatableTreeNode item) {
-        Console.info("Selection changed to " + item);
         updateState();
     }
 
@@ -177,8 +188,45 @@ public class VisualisationAssetsPresenter
      * Inserts a new item within the currently selected folder.
      */
     private void onAddButtonClick() {
-        // TODO
-        Console.info("Add button clicked");
+
+        UpdatableTreeNode selectedItem = selectionModel.getSelectedObject();
+        // If trying to add to a file then find its parent folder
+        if (selectedItem != null && selectedItem.isLeaf()) {
+            selectedItem = selectedItem.getParent();
+        }
+
+        final String path = getItemPath(selectedItem);
+
+        final ShowPopupEvent.Builder builder = ShowPopupEvent.builder(addDialog);
+        addDialog.setupDialog(builder,
+                path);
+        builder.onHideRequest(event -> {
+                    if (event.isOk()) {
+                        // TODO insert new node
+                        event.hide();
+                    } else {
+                        // Cancel pressed
+                        event.hide();
+                    }
+                })
+                .fire();
+
+    }
+
+    /**
+     * Returns the path to the given item.
+     * @param item The item to find the path to. Can be null if this is the root path.
+     * @return The path as a String, with / separators.
+     */
+    private String getItemPath(final UpdatableTreeNode item) {
+        final List<String> pathList = new ArrayList<>();
+        UpdatableTreeNode node = item;
+        while (node != null && !node.equals(ROOT_ITEM)) {
+            pathList.add(node.getLabel());
+            node = node.getParent();
+        }
+        pathList.sort(Collections.reverseOrder());
+        return "/" + String.join("/", pathList);
     }
 
     /**
@@ -186,12 +234,9 @@ public class VisualisationAssetsPresenter
      * Deletes the currently selected item.
      */
     private void onDeleteButtonClick() {
-        Console.info("Delete button clicked");
         final UpdatableTreeNode item = selectionModel.getSelectedObject();
         if (item != null) {
-            Console.info("Deleting " + item.getLabel());
-            final UpdatableTreeNode parentItem = item.getParent();
-            parentItem.removeChild(item);
+            treeModel.remove(item);
         }
     }
 
@@ -201,11 +246,10 @@ public class VisualisationAssetsPresenter
     private void updateState() {
         final UpdatableTreeNode item = selectionModel.getSelectedObject();
         if (item == null) {
-            Console.info("Nothing selected");
-            addButton.setEnabled(false);
+            // Assume the root item is selected
+            addButton.setEnabled(true);
             deleteButton.setEnabled(false);
         } else {
-            Console.info("Something selected: " + item.getLabel());
             addButton.setEnabled(true);
             deleteButton.setEnabled(true);
         }

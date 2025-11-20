@@ -19,8 +19,15 @@ public class VisualisationAssetTreeModel extends UpdatableTreeModel {
     /** Map of extension to image */
     private static final Map<String, SvgImage> FILE_ICONS = new HashMap<>();
 
+    /** Characters to ignore when input by the user - UNIX defaults */
+    private static final String IGNORE_CHARACTERS = "/:";
+
+    /**
+     * Constructs the tree model.
+     * @param selectionModelCellTree The tree that we're modelling data for.
+     */
     public VisualisationAssetTreeModel(final SingleSelectionModel<UpdatableTreeNode> selectionModelCellTree) {
-        super(selectionModelCellTree);
+        super(selectionModelCellTree, IGNORE_CHARACTERS);
     }
 
     /*
@@ -36,6 +43,7 @@ public class VisualisationAssetTreeModel extends UpdatableTreeModel {
         FILE_ICONS.put("css",  SvgImage.FILE_RAW);
         FILE_ICONS.put("htm",  SvgImage.FILE_FORMATTED);
         FILE_ICONS.put("html", SvgImage.FILE_FORMATTED);
+        FILE_ICONS.put("js",   SvgImage.FILE_SCRIPT);
     }
 
     /**
