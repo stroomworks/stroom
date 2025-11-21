@@ -363,7 +363,7 @@ public class CustomEditTextCell extends AbstractEditableCell<UpdatableTreeNode, 
 
     private void editEvent(final Context context,
                            final Element parent,
-                           final UpdatableTreeNode value,
+                           final UpdatableTreeNode node,
                            final ViewData viewData,
                            final NativeEvent event,
                            final ValueUpdater<UpdatableTreeNode> valueUpdater) {
@@ -376,7 +376,8 @@ public class CustomEditTextCell extends AbstractEditableCell<UpdatableTreeNode, 
             final int keyCode = event.getKeyCode();
             if (keyUp && keyCode == KeyCodes.KEY_ENTER) {
                 // Commit the change.
-                commit(value, context, parent, viewData, valueUpdater);
+                // TODO Need to check that no duplicate names
+                commit(node, context, parent, viewData, valueUpdater);
             } else if (keyUp && keyCode == KeyCodes.KEY_ESCAPE) {
                 // Cancel edit mode.
                 final String originalText = viewData.getOriginal();
@@ -386,20 +387,20 @@ public class CustomEditTextCell extends AbstractEditableCell<UpdatableTreeNode, 
                 } else {
                     setViewData(context.getKey(), null);
                 }
-                cancel(context, parent, value);
+                cancel(context, parent, node);
             } else {
                 // Update the text in the view data on each key.
                 updateViewData(parent, viewData, true);
             }
         } else if (BLUR.equals(type)) {
             // Commit the change. Ensure that we are blurring the input element
-            // and
-            // not the parent element itself.
+            // and not the parent element itself.
             final EventTarget eventTarget = event.getEventTarget();
             if (Element.is(eventTarget)) {
                 final Element target = Element.as(eventTarget);
                 if ("input".equalsIgnoreCase(target.getTagName())) {
-                    commit(value, context, parent, viewData, valueUpdater);
+                    // TODO Ensure no duplicate values
+                    commit(node, context, parent, viewData, valueUpdater);
                 }
             }
         }
@@ -439,13 +440,5 @@ public class CustomEditTextCell extends AbstractEditableCell<UpdatableTreeNode, 
         viewData.setEditing(isEditing);
         return value;
     }
-
-    public int getCharSize() {
-        return charSize;
-    }
-
-    /*public void setCharSize(final int charSize) {
-        this.charSize = charSize;
-    }*/
 
 }

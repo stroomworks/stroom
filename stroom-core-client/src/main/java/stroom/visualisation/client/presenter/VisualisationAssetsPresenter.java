@@ -21,6 +21,8 @@ import stroom.document.client.event.DirtyEvent.DirtyHandler;
 import stroom.document.client.event.HasDirtyHandlers;
 import stroom.entity.client.presenter.HasToolbar;
 import stroom.svg.shared.SvgImage;
+import stroom.util.client.Console;
+import stroom.util.shared.ResourceKey;
 import stroom.visualisation.client.presenter.VisualisationAssetsPresenter.VisualisationAssetsView;
 import stroom.visualisation.client.presenter.assets.VisualisationAssetItem;
 import stroom.visualisation.client.presenter.assets.VisualisationAssetTreeModel;
@@ -29,7 +31,6 @@ import stroom.visualisation.client.presenter.tree.UpdatableTreeModel;
 import stroom.visualisation.client.presenter.tree.UpdatableTreeNode;
 import stroom.widget.button.client.ButtonPanel;
 import stroom.widget.button.client.InlineSvgButton;
-import stroom.widget.popup.client.event.ShowPopupEvent;
 
 import com.google.gwt.resources.client.ImageResource;
 import com.google.gwt.user.cellview.client.CellTree;
@@ -51,7 +52,7 @@ import java.util.List;
  */
 public class VisualisationAssetsPresenter
         extends MyPresenterWidget<VisualisationAssetsView>
-        implements HasDirtyHandlers, HasToolbar {
+        implements HasDirtyHandlers, HasToolbar, VisualisationAssetsAddFileCallback {
 
     /** Main tree we're displaying */
     private final CellTree cellTree;
@@ -72,6 +73,9 @@ public class VisualisationAssetsPresenter
 
     /** Dialog that appears when the Add button is clicked */
     private final VisualisationAssetsAddDialogPresenter addDialog;
+
+    /** List of any resource keys for files that need to be saved */
+    private final List<ResourceKey> uploadedFileResourceKeys = new ArrayList<>();
 
     /** Hidden root item in the tree. Not displayed. */
     final static VisualisationAssetItem ROOT_ITEM = new VisualisationAssetItem("root", false);
@@ -197,20 +201,31 @@ public class VisualisationAssetsPresenter
 
         final String path = getItemPath(selectedItem);
 
-        final ShowPopupEvent.Builder builder = ShowPopupEvent.builder(addDialog);
-        addDialog.setupDialog(builder,
-                path);
-        builder.onHideRequest(event -> {
-                    if (event.isOk()) {
-                        // TODO insert new node
-                        event.hide();
-                    } else {
-                        // Cancel pressed
-                        event.hide();
-                    }
-                })
-                .fire();
+        addDialog.fireShowPopup(this, selectedItem, path);
+    }
 
+    /**
+     * Callback from the Add dialog that adds a file that has been uploaded.
+     * @param parentFolderNode The node that the file has been added to.
+     * @param fileName The name of the file that was uploaded.
+     * @param resourceKey The resource key of the file, so that the server can find it later.
+     */
+    @Override
+    public void addUploadedFile(final UpdatableTreeNode parentFolderNode,
+                                final String fileName,
+                                final ResourceKey resourceKey) {
+
+        Console.info("Adding " + fileName + " to node " + parentFolderNode);
+
+        final UpdatableTreeNode newFileNode = new VisualisationAssetItem(fileName, true);
+        if (parentFolderNode == null) {
+            Console.info("parent node is null - trying to add now...");
+        }
+        treeModel.add(parentFolderNode, newFileNode);
+        uploadedFileResourceKeys.add(resourceKey);
+
+        // Mark the document as dirty
+        DirtyEvent.fire(this, true);
     }
 
     /**

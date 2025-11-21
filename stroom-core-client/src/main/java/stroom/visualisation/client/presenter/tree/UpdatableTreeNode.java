@@ -39,4 +39,6 @@ public interface UpdatableTreeNode {
     ListDataProvider<UpdatableTreeNode> getDataProvider();
 
     boolean isLeaf();
+
+    boolean labelExists(String label);
 }

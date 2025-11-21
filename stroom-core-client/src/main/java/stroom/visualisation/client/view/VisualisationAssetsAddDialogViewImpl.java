@@ -4,14 +4,23 @@ import stroom.visualisation.client.presenter.VisualisationAssetsAddDialogPresent
 
 import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
+import com.google.gwt.user.client.ui.FileUpload;
+import com.google.gwt.user.client.ui.FormPanel;
 import com.google.gwt.user.client.ui.Label;
 import com.google.gwt.user.client.ui.Widget;
 import com.google.inject.Inject;
+import com.gwtplatform.mvp.client.ViewImpl;
 
-public class VisualisationAssetsAddDialogViewImpl implements VisualisationAssetsAddDialogView {
+public class VisualisationAssetsAddDialogViewImpl extends ViewImpl implements VisualisationAssetsAddDialogView {
 
     /** GWT widget */
     private final Widget widget;
+
+    @UiField
+    FormPanel form;
+
+    @UiField
+    FileUpload fileUpload;
 
     @UiField
     Label lblPath;
@@ -26,28 +35,33 @@ public class VisualisationAssetsAddDialogViewImpl implements VisualisationAssets
     }
 
     @Override
-    public void addToSlot(final Object slot, final Widget content) {
-        // TODO
-    }
-
-    @Override
     public Widget asWidget() {
         return widget;
     }
 
-    @Override
-    public void removeFromSlot(final Object slot, final Widget content) {
-        // TODO
-    }
-
-    @Override
-    public void setInSlot(final Object slot, final Widget content) {
-        // TODO
-    }
-
+    /**
+     * Sets the path where this file will be placed. Provided as an aid for the
+     * user so they know where stuff will go.
+     * @param path The path to display to the user.
+     */
     @Override
     public void setPath(final String path) {
         lblPath.setText(path);
+    }
+
+    /**
+     * Gets the file upload widget.
+     */
+    @Override
+    public FileUpload getFileUpload() {
+        return fileUpload;
+    }
+
+    /**
+     * Gets the panel that the file upload widget is in.
+     */
+    public FormPanel getForm() {
+        return form;
     }
 
     /**

@@ -1,6 +1,5 @@
 package stroom.visualisation.client.presenter.assets;
 
-import stroom.util.client.Console;
 import stroom.visualisation.client.presenter.tree.UpdatableTreeNode;
 
 import com.google.gwt.view.client.ListDataProvider;
@@ -76,11 +75,8 @@ public class VisualisationAssetItem implements UpdatableTreeNode {
     @Override
     public void addChild(final UpdatableTreeNode item) {
         if (!isLeaf) {
-            Console.info("Adding item to " + label + ": " + item.getLabel());
             dataProvider.getList().add(item);
             item.setParent(this);
-        } else {
-            Console.info("Not adding item to " + label + " as isLeaf");
         }
     }
 
@@ -108,12 +104,14 @@ public class VisualisationAssetItem implements UpdatableTreeNode {
 
     /**
      * Checks if the name exists within this item, assuming that this item is a folder.
-     * @param name The name to check.
+     *
+     * @param label The name to check.
      * @return true
      */
-    public boolean nameExists(final String name) {
+    @Override
+    public boolean labelExists(final String label) {
         return dataProvider.getList().stream().anyMatch(
-                item -> item.getLabel().equals(name));
+                item -> item.getLabel().equals(label));
     }
 
     /**
