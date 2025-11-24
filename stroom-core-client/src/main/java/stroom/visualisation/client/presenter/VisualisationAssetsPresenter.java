@@ -20,6 +20,7 @@ import stroom.document.client.event.DirtyEvent;
 import stroom.document.client.event.DirtyEvent.DirtyHandler;
 import stroom.document.client.event.HasDirtyHandlers;
 import stroom.entity.client.presenter.HasToolbar;
+import stroom.svg.client.IconColour;
 import stroom.svg.shared.SvgImage;
 import stroom.util.client.Console;
 import stroom.util.shared.ResourceKey;
@@ -31,6 +32,12 @@ import stroom.visualisation.client.presenter.tree.UpdatableTreeModel;
 import stroom.visualisation.client.presenter.tree.UpdatableTreeNode;
 import stroom.widget.button.client.ButtonPanel;
 import stroom.widget.button.client.InlineSvgButton;
+import stroom.widget.menu.client.presenter.IconMenuItem;
+import stroom.widget.menu.client.presenter.Item;
+import stroom.widget.menu.client.presenter.ShowMenuEvent;
+import stroom.widget.popup.client.presenter.PopupPosition;
+import stroom.widget.popup.client.presenter.PopupPosition.PopupLocation;
+import stroom.widget.util.client.Rect;
 
 import com.google.gwt.resources.client.ImageResource;
 import com.google.gwt.user.cellview.client.CellTree;
@@ -74,8 +81,10 @@ public class VisualisationAssetsPresenter
     /** Dialog that appears when the Add button is clicked */
     private final VisualisationAssetsAddDialogPresenter addDialog;
 
-    /** List of any resource keys for files that need to be saved */
+    /** List of any resource keys for files that need to be saved TODO allow items to be overridden */
     private final List<ResourceKey> uploadedFileResourceKeys = new ArrayList<>();
+
+    final List<Item> menuItems = new ArrayList<>();
 
     /** Hidden root item in the tree. Not displayed. */
     final static VisualisationAssetItem ROOT_ITEM = new VisualisationAssetItem("root", false);
@@ -139,6 +148,36 @@ public class VisualisationAssetsPresenter
     @Override
     protected void onBind() {
         // Add listeners for dirty events.
+        super.onBind();
+
+        // Create the Add menu
+        menuItems.add(new IconMenuItem.Builder()
+                .priority(0)
+                .icon(SvgImage.FOLDER)
+                .iconColour(IconColour.BLUE)
+                .text("Add Folder")
+                .command(this::onAddFolder)
+                .enabled(true)
+                .build());
+        menuItems.add(new IconMenuItem.Builder()
+                .priority(1)
+                .icon(SvgImage.FILE)
+                .iconColour(IconColour.BLUE)
+                .text("Upload File")
+                .command(this::onUploadFile)
+                .enabled(true)
+                .build());
+
+        addButton.addClickHandler(event -> {
+            final Rect relativeRect = new Rect(addButton.getElement()).grow(3);
+            final PopupPosition position = new PopupPosition(relativeRect, PopupLocation.RIGHT);
+            ShowMenuEvent.builder()
+                    .items(menuItems)
+                    .popupPosition(position)
+                    .allowCloseOnMoveLeft()
+                    .fire(this);
+        });
+
     }
 
     /**
@@ -157,7 +196,6 @@ public class VisualisationAssetsPresenter
         addButton.setSvg(SvgImage.ADD);
         addButton.setTitle("Add file");
         addButton.setVisible(true);
-        addButton.addClickHandler(event -> VisualisationAssetsPresenter.this.onAddButtonClick());
 
         deleteButton.setSvg(SvgImage.DELETE);
         deleteButton.setTitle("Delete");
@@ -188,11 +226,18 @@ public class VisualisationAssetsPresenter
     }
 
     /**
-     * Called when the Add button is clicked.
+     * Called when Add button / Add Folder is clicked.
+     * Inserts a new folder with the currently selected folder.
+     */
+    private void onAddFolder() {
+        Console.info("onAddFolder");
+    }
+
+    /**
+     * Called when Add Button / Upload File is clicked.
      * Inserts a new item within the currently selected folder.
      */
-    private void onAddButtonClick() {
-
+    private void onUploadFile() {
         UpdatableTreeNode selectedItem = selectionModel.getSelectedObject();
         // If trying to add to a file then find its parent folder
         if (selectedItem != null && selectedItem.isLeaf()) {
