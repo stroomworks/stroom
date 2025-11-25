@@ -35,6 +35,7 @@ import stroom.widget.button.client.InlineSvgButton;
 import stroom.widget.menu.client.presenter.IconMenuItem;
 import stroom.widget.menu.client.presenter.Item;
 import stroom.widget.menu.client.presenter.ShowMenuEvent;
+import stroom.widget.popup.client.event.ShowPopupEvent;
 import stroom.widget.popup.client.presenter.PopupPosition;
 import stroom.widget.popup.client.presenter.PopupPosition.PopupLocation;
 import stroom.widget.util.client.Rect;
@@ -78,8 +79,11 @@ public class VisualisationAssetsPresenter
     /** Button to delete stuff from the tree */
     private final InlineSvgButton deleteButton = new InlineSvgButton();
 
-    /** Dialog that appears when the Add button is clicked */
-    private final VisualisationAssetsAddDialogPresenter addDialog;
+    /** Dialog that appears when user wants to upload a file */
+    private final VisualisationAssetsUploadFileDialogPresenter uploadFileDialog;
+
+    /** Dialog that appears when user wants to add a folder */
+    private final VisualisationAssetsAddFolderDialogPresenter addFolderDialog;
 
     /** List of any resource keys for files that need to be saved TODO allow items to be overridden */
     private final List<ResourceKey> uploadedFileResourceKeys = new ArrayList<>();
@@ -95,17 +99,29 @@ public class VisualisationAssetsPresenter
     @Inject
     public VisualisationAssetsPresenter(final EventBus eventBus,
                                         final VisualisationAssetsView view,
-                                        final VisualisationAssetsAddDialogPresenter addDialog) {
+                                        final VisualisationAssetsUploadFileDialogPresenter uploadFileDialog,
+                                        final VisualisationAssetsAddFolderDialogPresenter addFolderDialog) {
         super(eventBus, view);
-        this.addDialog = addDialog;
+        this.uploadFileDialog = uploadFileDialog;
+        this.addFolderDialog = addFolderDialog;
 
         treeModel = new VisualisationAssetTreeModel(selectionModel);
+        createDummyData();
 
         selectionModel.addSelectionChangeHandler(event ->
-                VisualisationAssetsPresenter.this.onSelectionChange(selectionModel.getSelectedObject()));
+                VisualisationAssetsPresenter.this.onSelectionChange());
 
-        // TODO Dummy data needs replacing with live data
-        //final VisualisationAssetItem root = new VisualisationAssetItem("/", false);
+        cellTree = new CellTree(treeModel, ROOT_ITEM, new AssetTreeResources());
+        cellTree.setAnimation(CellTree.SlideAnimation.create());
+        cellTree.setAnimationEnabled(true);
+        this.getView().setCellTree(cellTree);
+    }
+
+    /**
+     * TODO Dummy data needs replacing with live data
+     */
+    private void createDummyData() {
+        Console.info("Creating dummy data");
         final VisualisationAssetItem dir1 = new VisualisationAssetItem("dir1", false);
         final VisualisationAssetItem subdir1 = new VisualisationAssetItem("dir2", false);
         final VisualisationAssetItem file1 = new VisualisationAssetItem("file1.svg", true);
@@ -139,16 +155,14 @@ public class VisualisationAssetsPresenter
         treeModel.add(dir1, subdir1);
         treeModel.add(ROOT_ITEM, dir1);
 
-        cellTree = new CellTree(treeModel, ROOT_ITEM, new AssetTreeResources());
-        cellTree.setAnimation(CellTree.SlideAnimation.create());
-        cellTree.setAnimationEnabled(true);
-        this.getView().setCellTree(cellTree);
     }
 
     @Override
     protected void onBind() {
         // Add listeners for dirty events.
         super.onBind();
+
+        //createDummyData();
 
         // Create the Add menu
         menuItems.add(new IconMenuItem.Builder()
@@ -221,7 +235,10 @@ public class VisualisationAssetsPresenter
         // TODO updateState()
     }
 
-    private void onSelectionChange(final UpdatableTreeNode item) {
+    /**
+     * Called when the selection changes.
+     */
+    private void onSelectionChange() {
         updateState();
     }
 
@@ -230,7 +247,45 @@ public class VisualisationAssetsPresenter
      * Inserts a new folder with the currently selected folder.
      */
     private void onAddFolder() {
-        Console.info("onAddFolder");
+        final UpdatableTreeNode folderNode = findFolderForSelectedNode();
+        final String path = getItemPath(folderNode);
+        final ShowPopupEvent.Builder popupEventBuilder = new ShowPopupEvent.Builder(addFolderDialog);
+        addFolderDialog.setupPopup(popupEventBuilder, path);
+        popupEventBuilder
+                .onHideRequest(event -> {
+                            if (event.isOk()) {
+                                // Ok pressed
+                                // TODO check valid
+
+                                final UpdatableTreeNode newFolderNode =
+                                        new VisualisationAssetItem(addFolderDialog.getView().getFolderName(),
+                                                false);
+                                treeModel.add(folderNode, newFolderNode);
+                            }
+                            event.hide();
+                        }
+                )
+                .fire();
+
+    }
+
+    /**
+     * @return The node that we're going to add things to.
+     */
+    private UpdatableTreeNode findFolderForSelectedNode() {
+        UpdatableTreeNode selectedFolder = selectionModel.getSelectedObject();
+
+        if (selectedFolder != null) {
+            // If trying to add to a file then find its parent folder
+            if (selectedFolder.isLeaf()) {
+                selectedFolder = selectedFolder.getParent();
+            }
+        } else {
+            // Nothing selected so add item at root
+            selectedFolder = ROOT_ITEM;
+        }
+
+        return selectedFolder;
     }
 
     /**
@@ -238,15 +293,9 @@ public class VisualisationAssetsPresenter
      * Inserts a new item within the currently selected folder.
      */
     private void onUploadFile() {
-        UpdatableTreeNode selectedItem = selectionModel.getSelectedObject();
-        // If trying to add to a file then find its parent folder
-        if (selectedItem != null && selectedItem.isLeaf()) {
-            selectedItem = selectedItem.getParent();
-        }
-
-        final String path = getItemPath(selectedItem);
-
-        addDialog.fireShowPopup(this, selectedItem, path);
+        final UpdatableTreeNode folderNode = findFolderForSelectedNode();
+        final String path = getItemPath(folderNode);
+        uploadFileDialog.fireShowPopup(this, folderNode, path);
     }
 
     /**
@@ -267,6 +316,9 @@ public class VisualisationAssetsPresenter
             Console.info("parent node is null - trying to add now...");
         }
         treeModel.add(parentFolderNode, newFileNode);
+
+        // TODO Use the path as a kind of key to the resourceKey so we can handle overwrites?
+        // TODO What about renames?
         uploadedFileResourceKeys.add(resourceKey);
 
         // Mark the document as dirty

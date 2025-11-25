@@ -7,6 +7,7 @@ import stroom.importexport.client.presenter.ImportUtil;
 import stroom.util.client.Console;
 import stroom.util.shared.NullSafe;
 import stroom.util.shared.ResourceKey;
+import stroom.visualisation.client.presenter.VisualisationAssetsUploadFileDialogPresenter.VisualisationAssetsUploadFileDialogView;
 import stroom.visualisation.client.presenter.tree.UpdatableTreeNode;
 import stroom.widget.popup.client.event.HidePopupRequestEvent;
 import stroom.widget.popup.client.event.ShowPopupEvent;
@@ -22,8 +23,8 @@ import com.google.web.bindery.event.shared.EventBus;
 import com.gwtplatform.mvp.client.MyPresenterWidget;
 import com.gwtplatform.mvp.client.View;
 
-public class VisualisationAssetsAddDialogPresenter
-        extends MyPresenterWidget<VisualisationAssetsAddDialogPresenter.VisualisationAssetsAddDialogView>
+public class VisualisationAssetsUploadFileDialogPresenter
+        extends MyPresenterWidget<VisualisationAssetsUploadFileDialogView>
         implements HasHandlers {
 
     /** Allows us to stop the hide request for the dialog */
@@ -98,7 +99,7 @@ public class VisualisationAssetsAddDialogPresenter
                 @Override
                 protected void onFailure(final String message) {
                     Console.info("Submit handler: onFailure()");
-                    AlertEvent.fireError(VisualisationAssetsAddDialogPresenter.this,
+                    AlertEvent.fireError(VisualisationAssetsUploadFileDialogPresenter.this,
                             message,
                             currentHideRequest::reset);
                 }
@@ -109,9 +110,9 @@ public class VisualisationAssetsAddDialogPresenter
      */
     @SuppressWarnings("unused")
     @Inject
-    public VisualisationAssetsAddDialogPresenter(final EventBus eventBus,
-                                                 final VisualisationAssetsAddDialogView view,
-                                                 final RestFactory restFactory) {
+    public VisualisationAssetsUploadFileDialogPresenter(final EventBus eventBus,
+                                                        final VisualisationAssetsUploadFileDialogView view,
+                                                        final RestFactory restFactory) {
         super(eventBus, view);
         this.restFactory = restFactory;
         final FormPanel form = view.getForm();
@@ -199,7 +200,7 @@ public class VisualisationAssetsAddDialogPresenter
         return filename;
     }
 
-    public interface VisualisationAssetsAddDialogView extends View {
+    public interface VisualisationAssetsUploadFileDialogView extends View {
 
         /**
          * Sets the path where this asset will be added.

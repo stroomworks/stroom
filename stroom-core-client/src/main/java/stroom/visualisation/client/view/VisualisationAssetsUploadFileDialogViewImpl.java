@@ -1,6 +1,6 @@
 package stroom.visualisation.client.view;
 
-import stroom.visualisation.client.presenter.VisualisationAssetsAddDialogPresenter.VisualisationAssetsAddDialogView;
+import stroom.visualisation.client.presenter.VisualisationAssetsUploadFileDialogPresenter.VisualisationAssetsUploadFileDialogView;
 
 import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
@@ -11,7 +11,11 @@ import com.google.gwt.user.client.ui.Widget;
 import com.google.inject.Inject;
 import com.gwtplatform.mvp.client.ViewImpl;
 
-public class VisualisationAssetsAddDialogViewImpl extends ViewImpl implements VisualisationAssetsAddDialogView {
+/**
+ * View for the dialog that uploads files into the Visualisation web asset manager.
+ */
+public class VisualisationAssetsUploadFileDialogViewImpl extends ViewImpl implements
+        VisualisationAssetsUploadFileDialogView {
 
     /** GWT widget */
     private final Widget widget;
@@ -30,7 +34,7 @@ public class VisualisationAssetsAddDialogViewImpl extends ViewImpl implements Vi
      */
     @Inject
     @SuppressWarnings("unused")
-    public VisualisationAssetsAddDialogViewImpl(final Binder binder) {
+    public VisualisationAssetsUploadFileDialogViewImpl(final Binder binder) {
         widget = binder.createAndBindUi(this);
     }
 
@@ -67,7 +71,7 @@ public class VisualisationAssetsAddDialogViewImpl extends ViewImpl implements Vi
     /**
      * Interface to keep GWT UiBinder happy.
      */
-    public interface Binder extends UiBinder<Widget, VisualisationAssetsAddDialogViewImpl> {
+    public interface Binder extends UiBinder<Widget, VisualisationAssetsUploadFileDialogViewImpl> {
         // No code
     }
 }
