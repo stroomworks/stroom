@@ -1,6 +1,7 @@
 package stroom.visualisation.client.presenter.assets;
 
 import stroom.svg.shared.SvgImage;
+import stroom.visualisation.client.presenter.tree.LabelUpdater;
 import stroom.visualisation.client.presenter.tree.UpdatableTreeModel;
 import stroom.visualisation.client.presenter.tree.UpdatableTreeNode;
 
@@ -26,8 +27,9 @@ public class VisualisationAssetTreeModel extends UpdatableTreeModel {
      * Constructs the tree model.
      * @param selectionModelCellTree The tree that we're modelling data for.
      */
-    public VisualisationAssetTreeModel(final SingleSelectionModel<UpdatableTreeNode> selectionModelCellTree) {
-        super(selectionModelCellTree, IGNORE_CHARACTERS);
+    public VisualisationAssetTreeModel(final SingleSelectionModel<UpdatableTreeNode> selectionModelCellTree,
+                                       final LabelUpdater labelUpdater) {
+        super(selectionModelCellTree, IGNORE_CHARACTERS, labelUpdater);
     }
 
     /*

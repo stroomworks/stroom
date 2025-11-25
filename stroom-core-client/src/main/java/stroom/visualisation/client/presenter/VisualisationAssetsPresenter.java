@@ -16,6 +16,7 @@
 
 package stroom.visualisation.client.presenter;
 
+import stroom.alert.client.event.AlertEvent;
 import stroom.document.client.event.DirtyEvent;
 import stroom.document.client.event.DirtyEvent.DirtyHandler;
 import stroom.document.client.event.HasDirtyHandlers;
@@ -105,7 +106,10 @@ public class VisualisationAssetsPresenter
         this.uploadFileDialog = uploadFileDialog;
         this.addFolderDialog = addFolderDialog;
 
-        treeModel = new VisualisationAssetTreeModel(selectionModel);
+        treeModel = new VisualisationAssetTreeModel(selectionModel, (node, label) -> {
+            return VisualisationAssetsPresenter.this.getNonClashingLabel(node.getParent(), label);
+        });
+
         createDummyData();
 
         selectionModel.addSelectionChangeHandler(event ->
@@ -154,7 +158,6 @@ public class VisualisationAssetsPresenter
         treeModel.add(subdir1, file14);
         treeModel.add(dir1, subdir1);
         treeModel.add(ROOT_ITEM, dir1);
-
     }
 
     @Override
@@ -255,19 +258,55 @@ public class VisualisationAssetsPresenter
                 .onHideRequest(event -> {
                             if (event.isOk()) {
                                 // Ok pressed
-                                // TODO check valid
-
-                                final UpdatableTreeNode newFolderNode =
-                                        new VisualisationAssetItem(addFolderDialog.getView().getFolderName(),
-                                                false);
-                                treeModel.add(folderNode, newFolderNode);
+                                if (addFolderDialog.isValid()) {
+                                    final String folderName = getNonClashingLabel(
+                                            folderNode,
+                                            addFolderDialog.getView().getFolderName());
+                                    final UpdatableTreeNode newFolderNode =
+                                            new VisualisationAssetItem(folderName,
+                                                    false);
+                                    treeModel.add(folderNode, newFolderNode);
+                                    event.hide();
+                                } else {
+                                    AlertEvent.fireWarn(this, "Folder name not set", event::reset);
+                                }
+                            } else {
+                                // Cancel pressed
+                                event.hide();
                             }
-                            event.hide();
                         }
                 )
                 .fire();
 
     }
+
+    /**
+     * Generates a label that doesn't clash with other files/folders in the same directory.
+     * Adds an integer to the end, incrementing until an integer is found that doesn't
+     * clash with anything else.
+     * @param parentNode The node that holds the directory.
+     * @param label The label that we're trying to put into the directory.
+     * @return A label that doesn't clash with anything else.
+     */
+    private String getNonClashingLabel(final UpdatableTreeNode parentNode, final String label) {
+        int i = 1;
+        String nonClashingLabel = label;
+        while (parentNode.labelExists(nonClashingLabel)) {
+            final int iDot = label.lastIndexOf('.');
+            String namePart = label;
+            String extPart = "";
+            if (iDot != -1) {
+                namePart = label.substring(0, iDot);
+                extPart = label.substring(iDot);
+            }
+
+            nonClashingLabel = namePart + "-" + i + extPart;
+            i++;
+        }
+
+        return nonClashingLabel;
+    }
+
 
     /**
      * @return The node that we're going to add things to.
@@ -366,8 +405,6 @@ public class VisualisationAssetsPresenter
             deleteButton.setEnabled(true);
         }
     }
-
-    // --------------------------------------------------------------------------------
 
     // --------------------------------------------------------------------------------
     /**

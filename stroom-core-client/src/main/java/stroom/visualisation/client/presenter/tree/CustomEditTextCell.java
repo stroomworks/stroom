@@ -149,18 +149,26 @@ public class CustomEditTextCell extends AbstractEditableCell<UpdatableTreeNode, 
 
     private final String ignoredCharacters;
 
+    private final LabelUpdater labelUpdater;
+
     /** Default value for the charSize variable */
     public static final int DEFAULT_CHAR_SIZE = 20;
 
     /** Value to indicate that no characters should be ignored on input */
     public static final String NO_IGNORED_CHARACTERS = "";
 
+    /** Value to indicate that no updating of values should take place */
+    public static final LabelUpdater NO_LABEL_UPDATES = null;
+
     /**
      * Construct a new CustomEditTextCell that will use a
      * {@link SimpleSafeHtmlRenderer} with default charSize and no ignored characters.
      */
     public CustomEditTextCell() {
-        this(SimpleSafeHtmlRenderer.getInstance(), DEFAULT_CHAR_SIZE, NO_IGNORED_CHARACTERS);
+        this(SimpleSafeHtmlRenderer.getInstance(),
+                DEFAULT_CHAR_SIZE,
+                NO_IGNORED_CHARACTERS,
+                NO_LABEL_UPDATES);
     }
 
     /**
@@ -172,9 +180,14 @@ public class CustomEditTextCell extends AbstractEditableCell<UpdatableTreeNode, 
      * @param ignoredCharacters
      *            Characters that are not allowed in the name of the item and
      *            thus should be ignored on input.
+     * @param labelUpdater
+     *            Thing to update the label when it has been edited. Can be null
+     *            in which case the label will not be updated from the edited value.
      */
-    public CustomEditTextCell(final int charSize, final String ignoredCharacters) {
-        this(SimpleSafeHtmlRenderer.getInstance(), charSize, ignoredCharacters);
+    public CustomEditTextCell(final int charSize,
+                              final String ignoredCharacters,
+                              final LabelUpdater labelUpdater) {
+        this(SimpleSafeHtmlRenderer.getInstance(), charSize, ignoredCharacters, labelUpdater);
     }
 
     /**
@@ -186,7 +199,8 @@ public class CustomEditTextCell extends AbstractEditableCell<UpdatableTreeNode, 
      */
     public CustomEditTextCell(final SafeHtmlRenderer<String> renderer,
                               final int charSize,
-                              final String ignoredCharacters) {
+                              final String ignoredCharacters,
+                              final LabelUpdater labelUpdater) {
         super(CLICK, DBLCLICK, KEYUP, KEYDOWN, BLUR);
         if (template == null) {
             template = GWT.create(Template.class);
@@ -197,6 +211,7 @@ public class CustomEditTextCell extends AbstractEditableCell<UpdatableTreeNode, 
         this.renderer = renderer;
         this.charSize = charSize;
         this.ignoredCharacters = ignoredCharacters;
+        this.labelUpdater = labelUpdater;
     }
 
     @Override
@@ -348,8 +363,15 @@ public class CustomEditTextCell extends AbstractEditableCell<UpdatableTreeNode, 
                         final Element parent,
                         final ViewData viewData,
                         final ValueUpdater<UpdatableTreeNode> valueUpdater) {
+        String value = updateViewData(parent, viewData, false);
 
-        final String value = updateViewData(parent, viewData, false);
+        // Bit of a hack to get the label updater in.
+        // Should be done a bit neater...
+        if (labelUpdater != null && !node.getLabel().equals(value)) {
+            value = labelUpdater.update(node, value);
+            ((InputElement)parent.getFirstChildElement()).setValue(value);
+            viewData.setText(value);
+        }
         clearInput(getInputElement(parent));
         setValue(context, parent, node);
         if (!node.getLabel().equals(value)) {
@@ -376,7 +398,6 @@ public class CustomEditTextCell extends AbstractEditableCell<UpdatableTreeNode, 
             final int keyCode = event.getKeyCode();
             if (keyUp && keyCode == KeyCodes.KEY_ENTER) {
                 // Commit the change.
-                // TODO Need to check that no duplicate names
                 commit(node, context, parent, viewData, valueUpdater);
             } else if (keyUp && keyCode == KeyCodes.KEY_ESCAPE) {
                 // Cancel edit mode.
@@ -399,7 +420,6 @@ public class CustomEditTextCell extends AbstractEditableCell<UpdatableTreeNode, 
             if (Element.is(eventTarget)) {
                 final Element target = Element.as(eventTarget);
                 if ("input".equalsIgnoreCase(target.getTagName())) {
-                    // TODO Ensure no duplicate values
                     commit(node, context, parent, viewData, valueUpdater);
                 }
             }
@@ -415,6 +435,7 @@ public class CustomEditTextCell extends AbstractEditableCell<UpdatableTreeNode, 
 
     /**
      * Update the view data based on the current value.
+     * Called on every key press.
      *
      * @param parent
      *            the parent element

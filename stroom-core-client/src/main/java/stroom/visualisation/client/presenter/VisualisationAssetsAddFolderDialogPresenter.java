@@ -1,6 +1,5 @@
 package stroom.visualisation.client.presenter;
 
-import stroom.alert.client.event.AlertEvent;
 import stroom.util.shared.NullSafe;
 import stroom.widget.popup.client.event.ShowPopupEvent;
 import stroom.widget.popup.client.presenter.PopupSize;
@@ -49,19 +48,22 @@ public class VisualisationAssetsAddFolderDialogPresenter
     }
 
     /**
-     * Checks if the data in the dialog is valid. If not shows a warning dialog and returns false.
-     * @return true if everything is ok. False if not ok.
+     * @return true if the form is valid, false if not.
      */
-    public boolean checkValid() {
-        final String folderName = getView().getFolderName();
-        if (NullSafe.isBlankString(folderName)) {
-            AlertEvent.fireWarn(this, "Folder name not set", null);
-            return false;
+    public boolean isValid() {
+        return getValidationErrorMessage() == null;
+    }
+
+    /**
+     * @return The form validation error message, or null if everything is ok.
+     */
+    public String getValidationErrorMessage() {
+        String retval = null;
+        if (NullSafe.isBlankString(getView().getFolderName())) {
+            retval = "Please set the name of the folder you wish to create";
         }
 
-        // TODO Check name is unique
-
-        return true;
+        return retval;
     }
 
     public interface VisualisationAssetsAddFolderDialogView extends View {

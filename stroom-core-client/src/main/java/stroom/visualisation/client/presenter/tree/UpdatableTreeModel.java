@@ -34,17 +34,24 @@ public class UpdatableTreeModel implements TreeViewModel {
     ListDataProvider<UpdatableTreeNode> rootDataProvider;
     int inputBoxSize;
     CellTree tree;
+
+    /** Characters that must not be in the resulting node label */
     private final String ignoredCharacters;
 
+    /** Function to ensure that committed values are filtered e.g. no clashes of labels */
+    private final LabelUpdater labelUpdater;
+
     public UpdatableTreeModel(final SingleSelectionModel<UpdatableTreeNode> selectionModelCellTree,
-                              final String ignoredCharacters) {
-        this(selectionModelCellTree, ignoredCharacters, null, 20);
+                              final String ignoredCharacters,
+                              final LabelUpdater labelUpdater) {
+        this(selectionModelCellTree, ignoredCharacters, null, 20, labelUpdater);
     }
 
     public UpdatableTreeModel(final SingleSelectionModel<UpdatableTreeNode> selectionModelCellTree,
                               final String ignoredCharacters,
                               final ValueUpdater<UpdatableTreeNode> valueUpdater,
-                              final int inputBoxSize) {
+                              final int inputBoxSize,
+                              final LabelUpdater labelUpdater) {
         this.selectionModelCellTree = selectionModelCellTree;
         this.valueUpdater = valueUpdater;
         this.inputBoxSize = inputBoxSize;
@@ -54,6 +61,7 @@ public class UpdatableTreeModel implements TreeViewModel {
         } else {
             this.ignoredCharacters = CustomEditTextCell.NO_IGNORED_CHARACTERS;
         }
+        this.labelUpdater = labelUpdater;
     }
 
     public ListDataProvider<UpdatableTreeNode> getRootDataProvider() {
@@ -164,7 +172,7 @@ public class UpdatableTreeModel implements TreeViewModel {
      * @return A cell to display values. Must not return null.
      */
     protected Cell<UpdatableTreeNode> getCell(final int inputBoxSize, final UpdatableTreeNode value) {
-        return new CustomEditTextCell(inputBoxSize, ignoredCharacters);
+        return new CustomEditTextCell(inputBoxSize, ignoredCharacters, labelUpdater);
     }
 
 }

@@ -106,7 +106,8 @@ public class VisualisationAssetItem implements UpdatableTreeNode {
      * Checks if the name exists within this item, assuming that this item is a folder.
      *
      * @param label The name to check.
-     * @return true
+     * @return true if the label exists anywhere. Note that this includes if the
+     *         label matches itself.
      */
     @Override
     public boolean labelExists(final String label) {
