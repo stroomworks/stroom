@@ -3,6 +3,7 @@ package stroom.visualisation.client.presenter.tree;
 /*
  * Copyright 2010 Google Inc.
  * Copyright 2013 Grant Slender (improvements to make it work with UpdatableTreeNode and input size)
+ * Copyright 2025 Crown Copyright (additions for Stroom UI)
  *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not
  * use this file except in compliance with the License. You may obtain a copy of
@@ -147,8 +148,10 @@ public class CustomEditTextCell extends AbstractEditableCell<UpdatableTreeNode, 
 
     private final SafeHtmlRenderer<String> renderer;
 
+    /** Characters that cannot be within a label */
     private final String ignoredCharacters;
 
+    /** Allows the node label to be adjusted before committing it. Used to avoid duplicate names in a directory. */
     private final LabelUpdater labelUpdater;
 
     /** Default value for the charSize variable */

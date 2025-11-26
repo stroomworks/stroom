@@ -7,7 +7,7 @@ import com.google.gwt.view.client.ListDataProvider;
 /**
  * Represents an item in the asset tree.
  */
-public class VisualisationAssetItem implements UpdatableTreeNode {
+public class VisualisationAssetTreeNode implements UpdatableTreeNode {
 
     /**
      * The name to display for the item
@@ -32,7 +32,7 @@ public class VisualisationAssetItem implements UpdatableTreeNode {
     /**
      * Constructor
      */
-    public VisualisationAssetItem(final String label, final boolean isLeaf) {
+    public VisualisationAssetTreeNode(final String label, final boolean isLeaf) {
         this.label = label;
         this.isLeaf = isLeaf;
     }

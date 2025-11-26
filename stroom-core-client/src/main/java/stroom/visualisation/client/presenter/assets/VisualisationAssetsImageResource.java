@@ -25,6 +25,9 @@ public class VisualisationAssetsImageResource implements ImageResource {
 
     /**
      * Constructor
+     * @param height Height of the image within the img tag.
+     * @param width  Width of the image within the img tag.
+     * @param url    Url of the image. Not checked or filtered in any way so must be safe.
      */
     public VisualisationAssetsImageResource(final int height,
                                             final int width,

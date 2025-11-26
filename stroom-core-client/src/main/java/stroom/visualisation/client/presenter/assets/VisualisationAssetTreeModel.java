@@ -51,12 +51,12 @@ public class VisualisationAssetTreeModel extends UpdatableTreeModel {
     /**
      * Adds
      * @param inputBoxSize The size of the input box, as set in the constructor.
-     * @param value The node
+     * @param node The node we're trying to display, to be wrapped in icons.
      * @return The decorated cell to display different icons.
      */
     @Override
-    protected Cell<UpdatableTreeNode> getCell(final int inputBoxSize, final UpdatableTreeNode value) {
-        final Cell<UpdatableTreeNode> textCell = super.getCell(inputBoxSize, value);
+    protected Cell<UpdatableTreeNode> getCell(final int inputBoxSize, final UpdatableTreeNode node) {
+        final Cell<UpdatableTreeNode> textCell = super.getCell(inputBoxSize, node);
         return new VisualisationAssetsIconCellDecorator(
                 SvgImage.FOLDER,
                 FILE_ICONS,

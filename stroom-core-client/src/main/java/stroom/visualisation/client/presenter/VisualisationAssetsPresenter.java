@@ -17,6 +17,7 @@
 package stroom.visualisation.client.presenter;
 
 import stroom.alert.client.event.AlertEvent;
+import stroom.alert.client.event.ConfirmEvent;
 import stroom.document.client.event.DirtyEvent;
 import stroom.document.client.event.DirtyEvent.DirtyHandler;
 import stroom.document.client.event.HasDirtyHandlers;
@@ -26,7 +27,7 @@ import stroom.svg.shared.SvgImage;
 import stroom.util.client.Console;
 import stroom.util.shared.ResourceKey;
 import stroom.visualisation.client.presenter.VisualisationAssetsPresenter.VisualisationAssetsView;
-import stroom.visualisation.client.presenter.assets.VisualisationAssetItem;
+import stroom.visualisation.client.presenter.assets.VisualisationAssetTreeNode;
 import stroom.visualisation.client.presenter.assets.VisualisationAssetTreeModel;
 import stroom.visualisation.client.presenter.assets.VisualisationAssetsImageResource;
 import stroom.visualisation.client.presenter.tree.UpdatableTreeModel;
@@ -92,7 +93,7 @@ public class VisualisationAssetsPresenter
     final List<Item> menuItems = new ArrayList<>();
 
     /** Hidden root item in the tree. Not displayed. */
-    final static VisualisationAssetItem ROOT_ITEM = new VisualisationAssetItem("root", false);
+    final static VisualisationAssetTreeNode ROOT_ITEM = new VisualisationAssetTreeNode("root", false);
 
     /**
      * Injected constructor.
@@ -106,10 +107,11 @@ public class VisualisationAssetsPresenter
         this.uploadFileDialog = uploadFileDialog;
         this.addFolderDialog = addFolderDialog;
 
-        treeModel = new VisualisationAssetTreeModel(selectionModel, (node, label) -> {
-            return VisualisationAssetsPresenter.this.getNonClashingLabel(node.getParent(), label);
-        });
+        treeModel = new VisualisationAssetTreeModel(selectionModel,
+                (node, label) ->
+                        VisualisationAssetsPresenter.this.getNonClashingLabel(node.getParent(), label));
 
+        // TODO remove dummy data
         createDummyData();
 
         selectionModel.addSelectionChangeHandler(event ->
@@ -126,22 +128,22 @@ public class VisualisationAssetsPresenter
      */
     private void createDummyData() {
         Console.info("Creating dummy data");
-        final VisualisationAssetItem dir1 = new VisualisationAssetItem("dir1", false);
-        final VisualisationAssetItem subdir1 = new VisualisationAssetItem("dir2", false);
-        final VisualisationAssetItem file1 = new VisualisationAssetItem("file1.svg", true);
-        final VisualisationAssetItem file2 = new VisualisationAssetItem("file2.png", true);
-        final VisualisationAssetItem file3 = new VisualisationAssetItem("file3.gif", true);
-        final VisualisationAssetItem file4 = new VisualisationAssetItem("file4.jpg", true);
-        final VisualisationAssetItem file5 = new VisualisationAssetItem("file5.jpeg", true);
-        final VisualisationAssetItem file6 = new VisualisationAssetItem("file6.webp", true);
-        final VisualisationAssetItem file7 = new VisualisationAssetItem("file7.css", true);
-        final VisualisationAssetItem file8 = new VisualisationAssetItem("file8.htm", true);
-        final VisualisationAssetItem file9 = new VisualisationAssetItem("file9.html", true);
-        final VisualisationAssetItem file10 = new VisualisationAssetItem("file10.unknown", true);
-        final VisualisationAssetItem file11 = new VisualisationAssetItem("file11.", true);
-        final VisualisationAssetItem file12 = new VisualisationAssetItem("file12", true);
-        final VisualisationAssetItem file13 = new VisualisationAssetItem(".file13", true);
-        final VisualisationAssetItem file14 = new VisualisationAssetItem("file14.js", true);
+        final VisualisationAssetTreeNode dir1 = new VisualisationAssetTreeNode("dir1", false);
+        final VisualisationAssetTreeNode subdir1 = new VisualisationAssetTreeNode("dir2", false);
+        final VisualisationAssetTreeNode file1 = new VisualisationAssetTreeNode("file1.svg", true);
+        final VisualisationAssetTreeNode file2 = new VisualisationAssetTreeNode("file2.png", true);
+        final VisualisationAssetTreeNode file3 = new VisualisationAssetTreeNode("file3.gif", true);
+        final VisualisationAssetTreeNode file4 = new VisualisationAssetTreeNode("file4.jpg", true);
+        final VisualisationAssetTreeNode file5 = new VisualisationAssetTreeNode("file5.jpeg", true);
+        final VisualisationAssetTreeNode file6 = new VisualisationAssetTreeNode("file6.webp", true);
+        final VisualisationAssetTreeNode file7 = new VisualisationAssetTreeNode("file7.css", true);
+        final VisualisationAssetTreeNode file8 = new VisualisationAssetTreeNode("file8.htm", true);
+        final VisualisationAssetTreeNode file9 = new VisualisationAssetTreeNode("file9.html", true);
+        final VisualisationAssetTreeNode file10 = new VisualisationAssetTreeNode("file10.unknown", true);
+        final VisualisationAssetTreeNode file11 = new VisualisationAssetTreeNode("file11.", true);
+        final VisualisationAssetTreeNode file12 = new VisualisationAssetTreeNode("file12", true);
+        final VisualisationAssetTreeNode file13 = new VisualisationAssetTreeNode(".file13", true);
+        final VisualisationAssetTreeNode file14 = new VisualisationAssetTreeNode("file14.js", true);
         treeModel.add(subdir1, file1);
         treeModel.add(subdir1, file2);
         treeModel.add(subdir1, file3);
@@ -164,8 +166,6 @@ public class VisualisationAssetsPresenter
     protected void onBind() {
         // Add listeners for dirty events.
         super.onBind();
-
-        //createDummyData();
 
         // Create the Add menu
         menuItems.add(new IconMenuItem.Builder()
@@ -263,7 +263,7 @@ public class VisualisationAssetsPresenter
                                             folderNode,
                                             addFolderDialog.getView().getFolderName());
                                     final UpdatableTreeNode newFolderNode =
-                                            new VisualisationAssetItem(folderName,
+                                            new VisualisationAssetTreeNode(folderName,
                                                     false);
                                     treeModel.add(folderNode, newFolderNode);
                                     event.hide();
@@ -349,12 +349,7 @@ public class VisualisationAssetsPresenter
                                 final String fileName,
                                 final ResourceKey resourceKey) {
 
-        Console.info("Adding " + fileName + " to node " + parentFolderNode);
-
-        final UpdatableTreeNode newFileNode = new VisualisationAssetItem(fileName, true);
-        if (parentFolderNode == null) {
-            Console.info("parent node is null - trying to add now...");
-        }
+        final UpdatableTreeNode newFileNode = new VisualisationAssetTreeNode(fileName, true);
         treeModel.add(parentFolderNode, newFileNode);
 
         // TODO Use the path as a kind of key to the resourceKey so we can handle overwrites?
@@ -388,7 +383,19 @@ public class VisualisationAssetsPresenter
     private void onDeleteButtonClick() {
         final UpdatableTreeNode item = selectionModel.getSelectedObject();
         if (item != null) {
-            treeModel.remove(item);
+            final String message;
+            if (item.isLeaf()) {
+                message = "Are you sure you want to delete the selected file?";
+            } else {
+                message = "Are you sure you want to delete the selected folder and all its descendants?";
+            }
+
+            ConfirmEvent.fire(VisualisationAssetsPresenter.this, message,
+                    result -> {
+                        if (result) {
+                            treeModel.remove(item);
+                        }
+                    });
         }
     }
 
