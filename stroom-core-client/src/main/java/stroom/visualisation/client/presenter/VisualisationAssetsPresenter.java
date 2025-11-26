@@ -288,7 +288,8 @@ public class VisualisationAssetsPresenter
      * @param label The label that we're trying to put into the directory.
      * @return A label that doesn't clash with anything else.
      */
-    private String getNonClashingLabel(final UpdatableTreeNode parentNode, final String label) {
+    @Override
+    public String getNonClashingLabel(final UpdatableTreeNode parentNode, final String label) {
         int i = 1;
         String nonClashingLabel = label;
         while (parentNode.labelExists(nonClashingLabel)) {

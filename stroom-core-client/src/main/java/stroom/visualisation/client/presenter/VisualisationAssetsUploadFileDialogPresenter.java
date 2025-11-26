@@ -2,7 +2,6 @@ package stroom.visualisation.client.presenter;
 
 import stroom.alert.client.event.AlertEvent;
 import stroom.dispatch.client.AbstractSubmitCompleteHandler;
-import stroom.dispatch.client.RestFactory;
 import stroom.importexport.client.presenter.ImportUtil;
 import stroom.util.client.Console;
 import stroom.util.shared.NullSafe;
@@ -30,9 +29,6 @@ public class VisualisationAssetsUploadFileDialogPresenter
     /** Allows us to stop the hide request for the dialog */
     private HidePopupRequestEvent currentHideRequest;
 
-    // TODO
-    private final RestFactory restFactory;
-
     /** What to call when the upload has been successful */
     private VisualisationAssetsAddFileCallback addFileCallback;
 
@@ -44,9 +40,6 @@ public class VisualisationAssetsUploadFileDialogPresenter
 
     /** Height of dialog */
     private static final int DIALOG_HEIGHT = 300;
-
-    /** Server end of REST */
-    //private static final VisualisationResource VISUALISATION_RESOURCE = GWT.create(VisualisationResource.class);
 
     /**
      * Thing that responds to submit events within the page, when the file is uploaded.
@@ -68,32 +61,15 @@ public class VisualisationAssetsUploadFileDialogPresenter
                 @Override
                 protected void onSuccess(final ResourceKey resourceKey) {
                     Console.info("Submit handler: onSuccess(" + resourceKey.getKey() + ")");
-                    final String fileName = parseFakeFilename(getView().getFileUpload().getFilename());
+                    final String fileName =
+                            addFileCallback.getNonClashingLabel(
+                                    parentFolderNode,
+                                    parseFakeFilename(getView().getFileUpload().getFilename()));
+
                     Console.info("Filename: " + fileName + "; name: " + getView().getFileUpload().getName());
 
                     addFileCallback.addUploadedFile(parentFolderNode, fileName, resourceKey);
                     currentHideRequest.hide();
-
-                    // Do REST call so server knows about file uploaded
-                    /*
-                    final UploadFileRequest request = new UploadFileRequest(resourceKey, fileName);
-                    restFactory
-                            .create(VISUALISATION_RESOURCE)
-                            .method(res -> res.upload(request))
-                            .onSuccess(result ->
-                                    AlertEvent.fireInfo(VisualisationAssetsAddDialogPresenter.this,
-                                            "Uploaded file",
-                                            () -> {
-                                                currentHideRequest.hide();
-                                            }))
-                            .onFailure(throwable -> AlertEvent.fireError(
-                                    VisualisationAssetsAddDialogPresenter.this,
-                                    "Error uploading file: " + throwable.getMessage(),
-                                    currentHideRequest::reset))
-                            .taskMonitorFactory(VisualisationAssetsAddDialogPresenter.this)
-                            .exec();
-
-                     */
                 }
 
                 @Override
@@ -111,10 +87,8 @@ public class VisualisationAssetsUploadFileDialogPresenter
     @SuppressWarnings("unused")
     @Inject
     public VisualisationAssetsUploadFileDialogPresenter(final EventBus eventBus,
-                                                        final VisualisationAssetsUploadFileDialogView view,
-                                                        final RestFactory restFactory) {
+                                                        final VisualisationAssetsUploadFileDialogView view) {
         super(eventBus, view);
-        this.restFactory = restFactory;
         final FormPanel form = view.getForm();
 
         // Setup the form for file upload
@@ -122,8 +96,6 @@ public class VisualisationAssetsUploadFileDialogPresenter
         form.setAction(ImportUtil.getImportFileURL());
         form.setEncoding(FormPanel.ENCODING_MULTIPART);
         form.setMethod(FormPanel.METHOD_POST);
-
-
     }
 
     /**

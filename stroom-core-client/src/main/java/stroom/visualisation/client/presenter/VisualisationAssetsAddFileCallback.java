@@ -19,4 +19,14 @@ public interface VisualisationAssetsAddFileCallback {
                          String fileName,
                          ResourceKey resourceKey);
 
+    /**
+     * Generates a label that doesn't clash with other files/folders in the same directory.
+     * Adds an integer to the end, incrementing until an integer is found that doesn't
+     * clash with anything else.
+     * @param parentNode The node that holds the directory.
+     * @param label The label that we're trying to put into the directory.
+     * @return A label that doesn't clash with anything else.
+     */
+    String getNonClashingLabel(UpdatableTreeNode parentNode, String label);
+
 }
