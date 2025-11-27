@@ -154,6 +154,8 @@ public class CustomEditTextCell extends AbstractEditableCell<UpdatableTreeNode, 
     /** Allows the node label to be adjusted before committing it. Used to avoid duplicate names in a directory. */
     private final LabelUpdater labelUpdater;
 
+    private final DirtyCallback dirtyCallback;
+
     /** Default value for the charSize variable */
     public static final int DEFAULT_CHAR_SIZE = 20;
 
@@ -163,6 +165,9 @@ public class CustomEditTextCell extends AbstractEditableCell<UpdatableTreeNode, 
     /** Value to indicate that no updating of values should take place */
     public static final LabelUpdater NO_LABEL_UPDATES = null;
 
+    /** Value to indicate that no dirty callback is installed */
+    public static final DirtyCallback NO_DIRTY_CALLBACK = null;
+
     /**
      * Construct a new CustomEditTextCell that will use a
      * {@link SimpleSafeHtmlRenderer} with default charSize and no ignored characters.
@@ -171,7 +176,8 @@ public class CustomEditTextCell extends AbstractEditableCell<UpdatableTreeNode, 
         this(SimpleSafeHtmlRenderer.getInstance(),
                 DEFAULT_CHAR_SIZE,
                 NO_IGNORED_CHARACTERS,
-                NO_LABEL_UPDATES);
+                NO_LABEL_UPDATES,
+                NO_DIRTY_CALLBACK);
     }
 
     /**
@@ -189,8 +195,9 @@ public class CustomEditTextCell extends AbstractEditableCell<UpdatableTreeNode, 
      */
     public CustomEditTextCell(final int charSize,
                               final String ignoredCharacters,
-                              final LabelUpdater labelUpdater) {
-        this(SimpleSafeHtmlRenderer.getInstance(), charSize, ignoredCharacters, labelUpdater);
+                              final LabelUpdater labelUpdater,
+                              final DirtyCallback dirtyCallback) {
+        this(SimpleSafeHtmlRenderer.getInstance(), charSize, ignoredCharacters, labelUpdater, dirtyCallback);
     }
 
     /**
@@ -203,7 +210,8 @@ public class CustomEditTextCell extends AbstractEditableCell<UpdatableTreeNode, 
     public CustomEditTextCell(final SafeHtmlRenderer<String> renderer,
                               final int charSize,
                               final String ignoredCharacters,
-                              final LabelUpdater labelUpdater) {
+                              final LabelUpdater labelUpdater,
+                              final DirtyCallback dirtyCallback) {
         super(CLICK, DBLCLICK, KEYUP, KEYDOWN, BLUR);
         if (template == null) {
             template = GWT.create(Template.class);
@@ -215,6 +223,7 @@ public class CustomEditTextCell extends AbstractEditableCell<UpdatableTreeNode, 
         this.charSize = charSize;
         this.ignoredCharacters = ignoredCharacters;
         this.labelUpdater = labelUpdater;
+        this.dirtyCallback = dirtyCallback;
     }
 
     @Override
@@ -370,17 +379,21 @@ public class CustomEditTextCell extends AbstractEditableCell<UpdatableTreeNode, 
 
         // Bit of a hack to get the label updater in.
         // Should be done a bit neater...
-        if (labelUpdater != null && !node.getLabel().equals(value)) {
+        if (labelUpdater != NO_LABEL_UPDATES && !node.getLabel().equals(value)) {
             value = labelUpdater.update(node, value);
             ((InputElement)parent.getFirstChildElement()).setValue(value);
             viewData.setText(value);
         }
+
         clearInput(getInputElement(parent));
         setValue(context, parent, node);
         if (!node.getLabel().equals(value)) {
             node.setLabel(value);
             if (valueUpdater != null) {
                 valueUpdater.update(node);
+            }
+            if (dirtyCallback != NO_DIRTY_CALLBACK) {
+                dirtyCallback.setDirty();
             }
         }
 

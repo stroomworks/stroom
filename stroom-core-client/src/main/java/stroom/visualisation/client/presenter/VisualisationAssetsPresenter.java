@@ -18,6 +18,7 @@ package stroom.visualisation.client.presenter;
 
 import stroom.alert.client.event.AlertEvent;
 import stroom.alert.client.event.ConfirmEvent;
+import stroom.docref.DocRef;
 import stroom.document.client.event.DirtyEvent;
 import stroom.document.client.event.DirtyEvent.DirtyHandler;
 import stroom.document.client.event.HasDirtyHandlers;
@@ -32,6 +33,7 @@ import stroom.visualisation.client.presenter.assets.VisualisationAssetTreeModel;
 import stroom.visualisation.client.presenter.assets.VisualisationAssetsImageResource;
 import stroom.visualisation.client.presenter.tree.UpdatableTreeModel;
 import stroom.visualisation.client.presenter.tree.UpdatableTreeNode;
+import stroom.visualisation.shared.VisualisationDoc;
 import stroom.widget.button.client.ButtonPanel;
 import stroom.widget.button.client.InlineSvgButton;
 import stroom.widget.menu.client.presenter.IconMenuItem;
@@ -109,7 +111,8 @@ public class VisualisationAssetsPresenter
 
         treeModel = new VisualisationAssetTreeModel(selectionModel,
                 (node, label) ->
-                        VisualisationAssetsPresenter.this.getNonClashingLabel(node.getParent(), label));
+                        VisualisationAssetsPresenter.this.getNonClashingLabel(node.getParent(), label),
+                this::setDirty);
 
         // TODO remove dummy data
         createDummyData();
@@ -206,6 +209,29 @@ public class VisualisationAssetsPresenter
     }
 
     /**
+     * Called by VisualisationPresenter when the document is loaded.
+     * @param docRef Document reference
+     * @param document Document
+     * @param readOnly Whether this doc is readonly
+     */
+    public void onRead(final DocRef docRef,
+                       final VisualisationDoc document,
+                       final boolean readOnly) {
+        Console.info("Assets presenter: onRead");
+        this.readOnly = readOnly;
+    }
+
+    /**
+     * Called by VisualisationPresenter when the document is saved.
+     * @param document Document to store stuff in
+     * @return The updated document.
+     */
+    public VisualisationDoc onWrite(final VisualisationDoc document) {
+        Console.info("Assets presenter: onWrite");
+        return document;
+    }
+
+    /**
      * Sets up the toolbar for the tab.
      */
     @Override
@@ -227,15 +253,6 @@ public class VisualisationAssetsPresenter
         updateState();
 
         return List.of(toolbar);
-    }
-
-    /**
-     * Called during UI setup to set whether this UI is in readonly state.
-     */
-    public void setReadOnly(final boolean readOnly) {
-        this.readOnly = readOnly;
-
-        // TODO updateState()
     }
 
     /**
@@ -266,6 +283,7 @@ public class VisualisationAssetsPresenter
                                             new VisualisationAssetTreeNode(folderName,
                                                     false);
                                     treeModel.add(folderNode, newFolderNode);
+                                    setDirty();
                                     event.hide();
                                 } else {
                                     AlertEvent.fireWarn(this, "Folder name not set", event::reset);
@@ -307,7 +325,6 @@ public class VisualisationAssetsPresenter
 
         return nonClashingLabel;
     }
-
 
     /**
      * @return The node that we're going to add things to.
@@ -356,7 +373,13 @@ public class VisualisationAssetsPresenter
         // TODO What about renames?
         uploadedFileResourceKeys.add(resourceKey);
 
-        // Mark the document as dirty
+        setDirty();
+    }
+
+    /**
+     * Call to mark the document as dirty and needing saving.
+     */
+    private void setDirty() {
         DirtyEvent.fire(this, true);
     }
 

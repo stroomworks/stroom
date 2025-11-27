@@ -57,15 +57,13 @@ public class VisualisationPresenter extends DocumentEditTabPresenter<LinkTabPane
                                final DocRef docRef,
                                final VisualisationDoc document,
                                final boolean readOnly) {
-                // TODO Pass the tree root data from the document
-                presenter.setReadOnly(readOnly);
+                presenter.onRead(docRef, document, readOnly);
             }
 
             @Override
             public VisualisationDoc onWrite(final VisualisationAssetsPresenter presenter,
                                             final VisualisationDoc document) {
-                // TODO Write the tree data to the document
-                return document;
+                return presenter.onWrite(document);
             }
         });
         addTab(DOCUMENTATION, new MarkdownTabProvider<VisualisationDoc>(eventBus, markdownEditPresenterProvider) {

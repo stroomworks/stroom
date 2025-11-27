@@ -41,17 +41,22 @@ public class UpdatableTreeModel implements TreeViewModel {
     /** Function to ensure that committed values are filtered e.g. no clashes of labels */
     private final LabelUpdater labelUpdater;
 
+    /** Gets called when a node has been edited and needs to be saved */
+    private final DirtyCallback dirtyCallback;
+
     public UpdatableTreeModel(final SingleSelectionModel<UpdatableTreeNode> selectionModelCellTree,
                               final String ignoredCharacters,
-                              final LabelUpdater labelUpdater) {
-        this(selectionModelCellTree, ignoredCharacters, null, 20, labelUpdater);
+                              final LabelUpdater labelUpdater,
+                              final DirtyCallback dirtyCallback) {
+        this(selectionModelCellTree, ignoredCharacters, null, 20, labelUpdater, dirtyCallback);
     }
 
     public UpdatableTreeModel(final SingleSelectionModel<UpdatableTreeNode> selectionModelCellTree,
                               final String ignoredCharacters,
                               final ValueUpdater<UpdatableTreeNode> valueUpdater,
                               final int inputBoxSize,
-                              final LabelUpdater labelUpdater) {
+                              final LabelUpdater labelUpdater,
+                              final DirtyCallback dirtyCallback) {
         this.selectionModelCellTree = selectionModelCellTree;
         this.valueUpdater = valueUpdater;
         this.inputBoxSize = inputBoxSize;
@@ -62,6 +67,7 @@ public class UpdatableTreeModel implements TreeViewModel {
             this.ignoredCharacters = CustomEditTextCell.NO_IGNORED_CHARACTERS;
         }
         this.labelUpdater = labelUpdater;
+        this.dirtyCallback = dirtyCallback;
     }
 
     public ListDataProvider<UpdatableTreeNode> getRootDataProvider() {
@@ -172,7 +178,7 @@ public class UpdatableTreeModel implements TreeViewModel {
      * @return A cell to display values. Must not return null.
      */
     protected Cell<UpdatableTreeNode> getCell(final int inputBoxSize, final UpdatableTreeNode value) {
-        return new CustomEditTextCell(inputBoxSize, ignoredCharacters, labelUpdater);
+        return new CustomEditTextCell(inputBoxSize, ignoredCharacters, labelUpdater, dirtyCallback);
     }
 
 }
