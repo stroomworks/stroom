@@ -28,6 +28,9 @@ import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.Objects;
 
 @Description(
@@ -49,7 +52,8 @@ import java.util.Objects;
         "description",
         "functionName",
         "scriptRef",
-        "settings"})
+        "settings",
+        "assets"})
 @JsonInclude(Include.NON_NULL)
 public class VisualisationDoc extends Doc {
 
@@ -64,6 +68,8 @@ public class VisualisationDoc extends Doc {
     private DocRef scriptRef;
     @JsonProperty
     private String settings;
+    @JsonProperty
+    private List<VisualisationAsset> assets;
 
     public VisualisationDoc() {
     }
@@ -80,12 +86,14 @@ public class VisualisationDoc extends Doc {
                             @JsonProperty("description") final String description,
                             @JsonProperty("functionName") final String functionName,
                             @JsonProperty("scriptRef") final DocRef scriptRef,
-                            @JsonProperty("settings") final String settings) {
+                            @JsonProperty("settings") final String settings,
+                            @JsonProperty("assets") final List<VisualisationAsset> assets) {
         super(type, uuid, name, version, createTimeMs, updateTimeMs, createUser, updateUser);
         this.description = description;
         this.functionName = functionName;
         this.scriptRef = scriptRef;
         this.settings = settings;
+        this.assets = assets;
     }
 
     /**
@@ -136,11 +144,21 @@ public class VisualisationDoc extends Doc {
         this.settings = settings;
     }
 
+    public List<VisualisationAsset> getAssets() {
+        return assets == null ? null : Collections.unmodifiableList(assets);
+    }
+
+    public void setAssets(final List<VisualisationAsset> assets) {
+        if (this.assets == null) {
+            this.assets = new ArrayList<>(assets.size());
+        } else {
+            this.assets.clear();
+        }
+        this.assets.addAll(assets);
+    }
+
     @Override
     public boolean equals(final Object o) {
-        if (this == o) {
-            return true;
-        }
         if (o == null || getClass() != o.getClass()) {
             return false;
         }
@@ -148,14 +166,14 @@ public class VisualisationDoc extends Doc {
             return false;
         }
         final VisualisationDoc that = (VisualisationDoc) o;
-        return Objects.equals(description, that.description) &&
-               Objects.equals(functionName, that.functionName) &&
-               Objects.equals(scriptRef, that.scriptRef) &&
-               Objects.equals(settings, that.settings);
+        return Objects.equals(description, that.description) && Objects.equals(functionName,
+                that.functionName) && Objects.equals(scriptRef, that.scriptRef) && Objects.equals(
+                settings,
+                that.settings) && Objects.equals(assets, that.assets);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(super.hashCode(), description, functionName, scriptRef, settings);
+        return Objects.hash(super.hashCode(), description, functionName, scriptRef, settings, assets);
     }
 }

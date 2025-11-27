@@ -131,10 +131,13 @@ public class UpdatableTreeModel implements TreeViewModel {
             rootDataProvider.getList().remove(objToRemove);
         } else {
             // find open node and close it when last child is to be removed !!!
-            if (objToRemove.getParent().getChildCount() == 1) {
-                final NodeChildToClose nctc = searchTreeNode(tree.getRootTreeNode(), objToRemove);
-                if (nctc != null)
-                    nctc.node.setChildOpen(nctc.childIndex, false);
+            if (tree != null) {
+                if (objToRemove.getParent().getChildCount() == 1) {
+                    final NodeChildToClose nctc = searchTreeNode(tree.getRootTreeNode(), objToRemove);
+                    if (nctc != null) {
+                        nctc.node.setChildOpen(nctc.childIndex, false);
+                    }
+                }
             }
             parent.removeChild(objToRemove);
             if (parent.getParent() == null) {
@@ -144,6 +147,16 @@ public class UpdatableTreeModel implements TreeViewModel {
             }
         }
         selectionModelCellTree.clear();
+    }
+
+    /**
+     * Empties the tree below the given node.
+     * Pass in the Root node to clear the whole tree.
+     */
+    public void clear(final UpdatableTreeNode rootNode) {
+        for (final UpdatableTreeNode node : rootNode.getDataProvider().getList()) {
+            remove(node);
+        }
     }
 
     @Override
