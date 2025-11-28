@@ -485,6 +485,7 @@ public class VisualisationAssetsPresenter
                     result -> {
                         if (result) {
                             treeModel.remove(item);
+                            setDirty();
                         }
                     });
         }
