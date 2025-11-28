@@ -80,4 +80,13 @@ public class VisualisationAsset {
     public int hashCode() {
         return Objects.hash(id, path, isFolder);
     }
+
+    @Override
+    public String toString() {
+        return "VisualisationAsset{" +
+               "id='" + id + '\'' +
+               ", path='" + path + '\'' +
+               ", isFolder=" + isFolder +
+               '}';
+    }
 }

@@ -25,7 +25,6 @@ import stroom.document.client.event.HasDirtyHandlers;
 import stroom.entity.client.presenter.HasToolbar;
 import stroom.svg.client.IconColour;
 import stroom.svg.shared.SvgImage;
-import stroom.util.client.Console;
 import stroom.util.shared.ResourceKey;
 import stroom.visualisation.client.presenter.VisualisationAssetsPresenter.VisualisationAssetsView;
 import stroom.visualisation.client.presenter.assets.VisualisationAssetTreeNode;
@@ -114,7 +113,7 @@ public class VisualisationAssetsPresenter
                                         final VisualisationAssetsUploadFileDialogPresenter uploadFileDialog,
                                         final VisualisationAssetsAddFolderDialogPresenter addFolderDialog) {
         super(eventBus, view);
-        Console.info("Constructor started");
+
         this.uploadFileDialog = uploadFileDialog;
         this.addFolderDialog = addFolderDialog;
 
@@ -126,11 +125,15 @@ public class VisualisationAssetsPresenter
         selectionModel.addSelectionChangeHandler(event ->
                 VisualisationAssetsPresenter.this.onSelectionChange());
 
+        // Hack here - need to add a dummy node in otherwise the tree is broken :-(
+        // This node will be removed later in onRead()
+        final VisualisationAssetTreeNode dummyNode = new VisualisationAssetTreeNode("", false);
+        treeModel.add(ROOT_NODE, dummyNode);
+
         cellTree = new CellTree(treeModel, ROOT_NODE, new AssetTreeResources());
         cellTree.setAnimation(CellTree.SlideAnimation.create());
         cellTree.setAnimationEnabled(true);
         this.getView().setCellTree(cellTree);
-        Console.info("Constructor finished");
     }
 
     /**
@@ -194,7 +197,6 @@ public class VisualisationAssetsPresenter
     public void onRead(final DocRef docRef,
                        final VisualisationDoc document,
                        final boolean readOnly) {
-        Console.info("Assets presenter: onRead");
 
         // Clear any existing content from the tree
         treeModel.clear(ROOT_NODE);
@@ -243,11 +245,9 @@ public class VisualisationAssetsPresenter
                             // Not last item so must be a folder
                             childNode = new VisualisationAssetTreeNode(pathItem, false);
                         }
-                        Console.info("Adding " + node.getLabel() + SLASH + childNode.getLabel());
                         treeModel.add(node, childNode);
                     } else {
                         childNode = existingChildNode.get();
-                        Console.info("Recursing " + node.getLabel() + SLASH + childNode.getLabel());
                     }
                     node = childNode;
                 }
@@ -261,9 +261,7 @@ public class VisualisationAssetsPresenter
      * @return The updated document.
      */
     public VisualisationDoc onWrite(final VisualisationDoc document) {
-        Console.info("Assets presenter: onWrite");
         final List<VisualisationAsset> assets = treeToAssets();
-        Console.info("Assets: " + assets);
         document.setAssets(assets);
         return document;
     }
@@ -464,7 +462,8 @@ public class VisualisationAssetsPresenter
             pathList.add(node.getLabel());
             node = node.getParent();
         }
-        pathList.sort(Collections.reverseOrder());
+        Collections.reverse(pathList);
+
         return SLASH + String.join(SLASH, pathList);
     }
 
