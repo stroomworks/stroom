@@ -25,6 +25,7 @@ import stroom.document.client.event.HasDirtyHandlers;
 import stroom.entity.client.presenter.HasToolbar;
 import stroom.svg.client.IconColour;
 import stroom.svg.shared.SvgImage;
+import stroom.util.client.Console;
 import stroom.util.shared.ResourceKey;
 import stroom.visualisation.client.presenter.VisualisationAssetsPresenter.VisualisationAssetsView;
 import stroom.visualisation.client.presenter.assets.VisualisationAssetTreeNode;
@@ -57,7 +58,9 @@ import com.gwtplatform.mvp.client.View;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -92,13 +95,13 @@ public class VisualisationAssetsPresenter
     private final VisualisationAssetsAddFolderDialogPresenter addFolderDialog;
 
     /** List of any resource keys for files that need to be saved TODO allow items to be overridden */
-    private final List<ResourceKey> uploadedFileResourceKeys = new ArrayList<>();
+    private final Map<String, ResourceKey> uploadedFileResourceKeys = new HashMap<>();
 
     /** Items in the context menu */
     private final List<Item> menuItems = new ArrayList<>();
 
     /** Hidden root item in the tree. Not displayed. */
-    final static VisualisationAssetTreeNode ROOT_NODE = new VisualisationAssetTreeNode("root", false);
+    final static VisualisationAssetTreeNode ROOT_NODE = VisualisationAssetTreeNode.createFolderNode("root");
 
     /** Slash / character */
     private final static String SLASH = "/";
@@ -127,7 +130,7 @@ public class VisualisationAssetsPresenter
 
         // Hack here - need to add a dummy node in otherwise the tree is broken :-(
         // This node will be removed later in onRead()
-        final VisualisationAssetTreeNode dummyNode = new VisualisationAssetTreeNode("", false);
+        final VisualisationAssetTreeNode dummyNode = VisualisationAssetTreeNode.createDummyNode();
         treeModel.add(ROOT_NODE, dummyNode);
 
         cellTree = new CellTree(treeModel, ROOT_NODE, new AssetTreeResources());
@@ -237,13 +240,14 @@ public class VisualisationAssetsPresenter
                                     .filter(n -> n.getLabel().equals(pathItem)).findFirst();
                     final UpdatableTreeNode childNode;
                     if (existingChildNode.isEmpty()) {
-                        // TODO ID here too?
                         if (isLast) {
                             // Last item so set whether it is a folder or not
-                            childNode = new VisualisationAssetTreeNode(pathItem, !asset.isFolder());
+                            // The last item takes the ID of the asset too.
+                            childNode = VisualisationAssetTreeNode.createNodeFromAsset(asset, pathItem);
                         } else {
                             // Not last item so must be a folder
-                            childNode = new VisualisationAssetTreeNode(pathItem, false);
+                            // Its ID isn't important at this stage so it gets a new ID
+                            childNode = VisualisationAssetTreeNode.createFolderNode(pathItem);
                         }
                         treeModel.add(node, childNode);
                     } else {
@@ -262,6 +266,9 @@ public class VisualisationAssetsPresenter
      */
     public VisualisationDoc onWrite(final VisualisationDoc document) {
         final List<VisualisationAsset> assets = treeToAssets();
+        for (final VisualisationAsset asset : assets) {
+            Console.info("Asset: " + asset);
+        }
         document.setAssets(assets);
         return document;
     }
@@ -281,20 +288,26 @@ public class VisualisationAssetsPresenter
      */
     private void recurseTreeToAssets(final UpdatableTreeNode currentNode,
                                      final List<VisualisationAsset> assets) {
+        if (currentNode instanceof final VisualisationAssetTreeNode assetTreeNode) {
 
-        // Don't store the ROOT_NODE, but otherwise store it
-        if (currentNode.getParent() != null && !currentNode.hasChildren()) {
-            // No more nodes so store path
-            final String path = getItemPath(currentNode);
+            // Don't store the ROOT_NODE, but otherwise store anything without children
+            // So we store folders if they don't have any children, and we store files.
+            if (assetTreeNode.getParent() != null && !assetTreeNode.hasChildren()) {
+                // No more nodes so store path
+                final String path = getItemPath(assetTreeNode);
 
-            // TODO Sort out the ID
-            final VisualisationAsset asset = new VisualisationAsset("mock", path, !currentNode.isLeaf());
-            assets.add(asset);
-        } else {
-            // More nodes so recurse
-            for (final UpdatableTreeNode child : currentNode.getDataProvider().getList()) {
-                recurseTreeToAssets(child, assets);
+                final VisualisationAsset asset = new VisualisationAsset(assetTreeNode.getId(),
+                        path,
+                        !assetTreeNode.isLeaf());
+                assets.add(asset);
+            } else {
+                // More nodes so recurse
+                for (final UpdatableTreeNode child : assetTreeNode.getDataProvider().getList()) {
+                    recurseTreeToAssets(child, assets);
+                }
             }
+        } else {
+            Console.error("Tree node is not a VisualisationAssetTreeNode");
         }
     }
 
@@ -347,8 +360,7 @@ public class VisualisationAssetsPresenter
                                             folderNode,
                                             addFolderDialog.getView().getFolderName());
                                     final UpdatableTreeNode newFolderNode =
-                                            new VisualisationAssetTreeNode(folderName,
-                                                    false);
+                                            VisualisationAssetTreeNode.createFolderNode(folderName);
                                     treeModel.add(folderNode, newFolderNode);
                                     setDirty();
                                     event.hide();
@@ -433,12 +445,9 @@ public class VisualisationAssetsPresenter
                                 final String fileName,
                                 final ResourceKey resourceKey) {
 
-        final UpdatableTreeNode newFileNode = new VisualisationAssetTreeNode(fileName, true);
+        final VisualisationAssetTreeNode newFileNode = VisualisationAssetTreeNode.createNewFileNode(fileName);
         treeModel.add(parentFolderNode, newFileNode);
-
-        // TODO Use the path as a kind of key to the resourceKey so we can handle overwrites?
-        // TODO What about renames?
-        uploadedFileResourceKeys.add(resourceKey);
+        uploadedFileResourceKeys.put(newFileNode.getId(), resourceKey);
 
         setDirty();
     }

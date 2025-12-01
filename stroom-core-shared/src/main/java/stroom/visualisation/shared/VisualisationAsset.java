@@ -11,7 +11,8 @@ import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 import java.util.Objects;
 
 /**
- * Holds the data about a web asset within a visualisation.
+ * Holds the data about a web asset within a visualisation,
+ * as part of a VisualisationDoc.
  */
 @Description(
         "Holds the data on a web asset within a visualisation."
