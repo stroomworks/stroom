@@ -18,6 +18,7 @@ package stroom.visualisation.client.presenter;
 
 import stroom.alert.client.event.AlertEvent;
 import stroom.alert.client.event.ConfirmEvent;
+import stroom.dispatch.client.RestFactory;
 import stroom.docref.DocRef;
 import stroom.document.client.event.DirtyEvent;
 import stroom.document.client.event.DirtyEvent.DirtyHandler;
@@ -35,6 +36,7 @@ import stroom.visualisation.client.presenter.tree.UpdatableTreeModel;
 import stroom.visualisation.client.presenter.tree.UpdatableTreeNode;
 import stroom.visualisation.shared.VisualisationAsset;
 import stroom.visualisation.shared.VisualisationDoc;
+import stroom.visualisation.shared.VisualisationResource;
 import stroom.widget.button.client.ButtonPanel;
 import stroom.widget.button.client.InlineSvgButton;
 import stroom.widget.menu.client.presenter.IconMenuItem;
@@ -45,6 +47,7 @@ import stroom.widget.popup.client.presenter.PopupPosition;
 import stroom.widget.popup.client.presenter.PopupPosition.PopupLocation;
 import stroom.widget.util.client.Rect;
 
+import com.google.gwt.core.client.GWT;
 import com.google.gwt.resources.client.ImageResource;
 import com.google.gwt.user.cellview.client.CellTree;
 import com.google.gwt.user.cellview.client.CellTree.Style;
@@ -70,6 +73,9 @@ public class VisualisationAssetsPresenter
         extends MyPresenterWidget<VisualisationAssetsView>
         implements HasDirtyHandlers, HasToolbar, VisualisationAssetsAddFileCallback {
 
+    /** Rest factory to trigger storing file uploads */
+    private final RestFactory restFactory;
+
     /** Main tree we're displaying */
     private final CellTree cellTree;
 
@@ -94,7 +100,7 @@ public class VisualisationAssetsPresenter
     /** Dialog that appears when user wants to add a folder */
     private final VisualisationAssetsAddFolderDialogPresenter addFolderDialog;
 
-    /** List of any resource keys for files that need to be saved TODO allow items to be overridden */
+    /** List of any resource keys for files that need to be saved */
     private final Map<String, ResourceKey> uploadedFileResourceKeys = new HashMap<>();
 
     /** Items in the context menu */
@@ -106,6 +112,8 @@ public class VisualisationAssetsPresenter
     /** Slash / character */
     private final static String SLASH = "/";
 
+    /** Visualisation resource */
+    private final static VisualisationResource VISUALISATION_RESOURCE = GWT.create(VisualisationResource.class);
 
     /**
      * Injected constructor.
@@ -113,10 +121,12 @@ public class VisualisationAssetsPresenter
     @Inject
     public VisualisationAssetsPresenter(final EventBus eventBus,
                                         final VisualisationAssetsView view,
+                                        final RestFactory restFactory,
                                         final VisualisationAssetsUploadFileDialogPresenter uploadFileDialog,
                                         final VisualisationAssetsAddFolderDialogPresenter addFolderDialog) {
         super(eventBus, view);
 
+        this.restFactory = restFactory;
         this.uploadFileDialog = uploadFileDialog;
         this.addFolderDialog = addFolderDialog;
 
@@ -270,7 +280,36 @@ public class VisualisationAssetsPresenter
             Console.info("Asset: " + asset);
         }
         document.setAssets(assets);
+
+        // Kick off storing the uploads
+        storeUploads(document);
+
+        //document.setUploads(uploadedFileResourceKeys);
         return document;
+    }
+
+    /**
+     * Called from onWrite() to register all the uploaded documents
+     * and move them from their temporary storage into permanent storage.
+     */
+    private void storeUploads(final VisualisationDoc document) {
+        if (!uploadedFileResourceKeys.isEmpty()) {
+            restFactory.create(VISUALISATION_RESOURCE)
+                    .method(r -> r.storeUploads(document.getUuid(), uploadedFileResourceKeys))
+                    .onSuccess(result -> {
+                        if (result) {
+                            // Great it worked
+                            Console.info("Visualisation Assets: uploaded files stored");
+                        } else {
+                            Console.info("Visualisation Assets: error storing uploaded files");
+                        }
+                    })
+                    .onFailure(error -> {
+                        Console.error("Visualisation Assets: error storing uploaded files: " + error.getMessage());
+                    })
+                    .taskMonitorFactory(this)
+                    .exec();
+        }
     }
 
     /**
@@ -481,10 +520,10 @@ public class VisualisationAssetsPresenter
      * Deletes the currently selected item.
      */
     private void onDeleteButtonClick() {
-        final UpdatableTreeNode item = selectionModel.getSelectedObject();
-        if (item != null) {
+        final UpdatableTreeNode node = selectionModel.getSelectedObject();
+        if (node != null) {
             final String message;
-            if (item.isLeaf()) {
+            if (node.isLeaf()) {
                 message = "Are you sure you want to delete the selected file?";
             } else {
                 message = "Are you sure you want to delete the selected folder and all its descendants?";
@@ -493,7 +532,13 @@ public class VisualisationAssetsPresenter
             ConfirmEvent.fire(VisualisationAssetsPresenter.this, message,
                     result -> {
                         if (result) {
-                            treeModel.remove(item);
+                            treeModel.remove(node);
+                            if (node instanceof final VisualisationAssetTreeNode assetTreeNode) {
+                                uploadedFileResourceKeys.remove(assetTreeNode.getId());
+                            } else {
+                                Console.error("Unknown tree node type: " + node.getClass());
+                            }
+
                             setDirty();
                         }
                     });

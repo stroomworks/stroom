@@ -144,10 +144,17 @@ public class VisualisationDoc extends Doc {
         this.settings = settings;
     }
 
+    /**
+     * @return The assets associated with this visualisation as an unmodifiable list. May return null.
+     */
     public List<VisualisationAsset> getAssets() {
         return assets == null ? null : Collections.unmodifiableList(assets);
     }
 
+    /**
+     * Sets the assets associated with this visualisation. Copies the assets into a separate array.
+     * @param assets The assets to put into the visualisation. The list is copied.
+     */
     public void setAssets(final List<VisualisationAsset> assets) {
         if (this.assets == null) {
             this.assets = new ArrayList<>(assets.size());
@@ -166,10 +173,11 @@ public class VisualisationDoc extends Doc {
             return false;
         }
         final VisualisationDoc that = (VisualisationDoc) o;
-        return Objects.equals(description, that.description) && Objects.equals(functionName,
-                that.functionName) && Objects.equals(scriptRef, that.scriptRef) && Objects.equals(
-                settings,
-                that.settings) && Objects.equals(assets, that.assets);
+        return Objects.equals(description, that.description)
+               && Objects.equals(functionName, that.functionName)
+               && Objects.equals(scriptRef, that.scriptRef)
+               && Objects.equals(settings, that.settings)
+               && Objects.equals(assets, that.assets);
     }
 
     @Override

@@ -17,6 +17,7 @@
 package stroom.visualisation.shared;
 
 import stroom.util.shared.FetchWithUuid;
+import stroom.util.shared.ResourceKey;
 import stroom.util.shared.ResourcePaths;
 import stroom.util.shared.RestResource;
 
@@ -31,6 +32,8 @@ import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import org.fusesource.restygwt.client.DirectRestService;
+
+import java.util.Map;
 
 @Tag(name = "Visualisations")
 @Path("/visualisation" + ResourcePaths.V1)
@@ -52,4 +55,13 @@ public interface VisualisationResource extends RestResource, DirectRestService, 
             operationId = "updateVisualisation")
     VisualisationDoc update(
             @PathParam("uuid") String uuid, @Parameter(description = "doc", required = true) VisualisationDoc doc);
+
+    @PUT
+    @Path("/storeUploads/{uuid}")
+    @Operation(
+            summary = "Store uploaded files",
+            operationId = "storeUploads")
+    Boolean storeUploads(@PathParam("uuid") String uuid,
+                      @Parameter(description = "uploads", required = true) Map<String, ResourceKey> uploads);
+
 }
