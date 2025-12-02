@@ -77,6 +77,15 @@ class VisualisationResourceImpl implements VisualisationResource {
                 .build();
     }
 
+    /**
+     * To upload files into Stroom, files are first uploaded to the ImportUtil.getImportFileURL().
+     * This puts the file into stroom.resource.api.ResourceStore and returns a ResourceKey.
+     * When the client is ready to keep the file somewhere we call ResourceStore.getTempFile()
+     * to get the file's path, then copy the file to its final destination.
+     * @param uuid The UUID of the document that owns the file.
+     * @param uploads The map of ID to ResourceKey so we can get the uploaded files.
+     * @return TRUE if everything works, FALSE if not.
+     */
     @Override
     public Boolean storeUploads(final String uuid, final Map<String, ResourceKey> uploads) {
         LOGGER.error("Storing uploads for {}", uuid);
