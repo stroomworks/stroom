@@ -77,7 +77,7 @@ public class ProcessorModule extends AbstractModule {
                 .addBinding(ProcessorFilterServiceImpl.class.getName(), ProcessorFilterServiceImpl.class);
 
         DocumentActionHandlerBinder.create(binder())
-                .bind(ProcessorFilterDoc.DOCUMENT_TYPE, ProcessorFilterImportExportHandlerImpl.class);
+                .bind(ProcessorFilterDoc.TYPE, ProcessorFilterImportExportHandlerImpl.class);
 
         HasSystemInfoBinder.create(binder())
                 .bind(ProcessorTaskQueueManagerImpl.class);
@@ -106,6 +106,7 @@ public class ProcessorModule extends AbstractModule {
                         .name("Processor Task Creator")
                         .description("Create Processor Tasks from Processor Filters")
                         .frequencySchedule("10s")
+                        .enabledOnBootstrap(true) // We want processing to start in a test env
                         .enabled(false)
                         .advanced(false));
 

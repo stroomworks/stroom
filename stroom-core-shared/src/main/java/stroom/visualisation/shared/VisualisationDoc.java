@@ -18,7 +18,7 @@ package stroom.visualisation.shared;
 
 import stroom.docref.DocRef;
 import stroom.docs.shared.Description;
-import stroom.docstore.shared.Doc;
+import stroom.docstore.shared.AbstractDoc;
 import stroom.docstore.shared.DocumentType;
 import stroom.docstore.shared.DocumentTypeRegistry;
 
@@ -55,7 +55,7 @@ import java.util.Objects;
         "settings",
         "assets"})
 @JsonInclude(Include.NON_NULL)
-public class VisualisationDoc extends Doc {
+public class VisualisationDoc extends AbstractDoc {
 
     public static final String TYPE = "Visualisation";
     public static final DocumentType DOCUMENT_TYPE = DocumentTypeRegistry.VISUALISATION_DOCUMENT_TYPE;
@@ -71,12 +71,8 @@ public class VisualisationDoc extends Doc {
     @JsonProperty
     private List<VisualisationAsset> assets;
 
-    public VisualisationDoc() {
-    }
-
     @JsonCreator
-    public VisualisationDoc(@JsonProperty("type") final String type,
-                            @JsonProperty("uuid") final String uuid,
+    public VisualisationDoc(@JsonProperty("uuid") final String uuid,
                             @JsonProperty("name") final String name,
                             @JsonProperty("version") final String version,
                             @JsonProperty("createTimeMs") final Long createTimeMs,
@@ -88,7 +84,7 @@ public class VisualisationDoc extends Doc {
                             @JsonProperty("scriptRef") final DocRef scriptRef,
                             @JsonProperty("settings") final String settings,
                             @JsonProperty("assets") final List<VisualisationAsset> assets) {
-        super(type, uuid, name, version, createTimeMs, updateTimeMs, createUser, updateUser);
+        super(TYPE, uuid, name, version, createTimeMs, updateTimeMs, createUser, updateUser);
         this.description = description;
         this.functionName = functionName;
         this.scriptRef = scriptRef;
@@ -183,5 +179,88 @@ public class VisualisationDoc extends Doc {
     @Override
     public int hashCode() {
         return Objects.hash(super.hashCode(), description, functionName, scriptRef, settings, assets);
+    }
+
+    public Builder copy() {
+        return new Builder(this);
+    }
+
+    public static Builder builder() {
+        return new Builder();
+    }
+
+    public static final class Builder
+            extends AbstractDoc.AbstractBuilder<VisualisationDoc, VisualisationDoc.Builder> {
+
+        private String description;
+        private String functionName;
+        private DocRef scriptRef;
+        private String settings;
+        final List<VisualisationAsset> assets = new ArrayList<>();
+
+        private Builder() {
+        }
+
+        private Builder(final VisualisationDoc visualisationDoc) {
+            super(visualisationDoc);
+            this.description = visualisationDoc.description;
+            this.functionName = visualisationDoc.functionName;
+            this.scriptRef = visualisationDoc.scriptRef;
+            this.settings = visualisationDoc.settings;
+            if (visualisationDoc.assets != null) {
+                this.assets.addAll(visualisationDoc.assets);
+            }
+        }
+
+        public Builder description(final String description) {
+            this.description = description;
+            return self();
+        }
+
+        public Builder functionName(final String functionName) {
+            this.functionName = functionName;
+            return self();
+        }
+
+        public Builder scriptRef(final DocRef scriptRef) {
+            this.scriptRef = scriptRef;
+            return self();
+        }
+
+        public Builder settings(final String settings) {
+            this.settings = settings;
+            return self();
+        }
+
+        /**
+         * @param assets Contents is defensively copied. Null is ok.
+         */
+        public Builder assets(final List<VisualisationAsset> assets) {
+            if (assets != null) {
+                this.assets.addAll(assets);
+            }
+            return self();
+        }
+
+        @Override
+        protected Builder self() {
+            return this;
+        }
+
+        public VisualisationDoc build() {
+            return new VisualisationDoc(
+                    uuid,
+                    name,
+                    version,
+                    createTimeMs,
+                    updateTimeMs,
+                    createUser,
+                    updateUser,
+                    description,
+                    functionName,
+                    scriptRef,
+                    settings,
+                    assets);
+        }
     }
 }

@@ -17,6 +17,7 @@
 
 package stroom.planb.impl.db;
 
+import stroom.bytebuffer.impl6.ByteBufferFactory;
 import stroom.bytebuffer.impl6.ByteBufferFactoryImpl;
 import stroom.bytebuffer.impl6.ByteBuffers;
 import stroom.docref.DocRef;
@@ -77,6 +78,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
@@ -206,8 +208,10 @@ class TestStateDb {
 
         final String path = rootDir.toAbsolutePath().toString();
         final PlanBConfig planBConfig = new PlanBConfig(path);
+        final ByteBufferFactory byteBufferFactory = new ByteBufferFactoryImpl();
         final ShardManager shardManager = new ShardManager(
-                new ByteBuffers(new ByteBufferFactoryImpl()),
+                new ByteBuffers(byteBufferFactory),
+                byteBufferFactory,
                 planBDocCache,
                 planBDocStore,
                 null,
@@ -256,7 +260,7 @@ class TestStateDb {
                 DOC,
                 true)) {
             assertThat(db.count()).isEqualTo(2);
-            assertThat(db.getInfo().env().dbNames().size()).isEqualTo(12);
+            assertThat(db.getInfo().env().dbNames().size()).isEqualTo(14);
         }
 
         // Try deletion.
@@ -270,7 +274,7 @@ class TestStateDb {
                 true)) {
             assertThat(db.count()).isEqualTo(0);
             System.err.println(db.getInfoString());
-            assertThat(db.getInfo().env().dbNames().size()).isEqualTo(12);
+            assertThat(db.getInfo().env().dbNames().size()).isEqualTo(14);
         }
 
         // Try compaction.
@@ -284,7 +288,7 @@ class TestStateDb {
                 DOC,
                 true)) {
             assertThat(db.count()).isEqualTo(0);
-            assertThat(db.getInfo().env().stat().entries).isEqualTo(12);
+            assertThat(db.getInfo().env().stat().entries).isEqualTo(14);
         }
     }
 
@@ -778,7 +782,7 @@ class TestStateDb {
     }
 
     private static PlanBDoc getDoc(final StateSettings settings) {
-        return PlanBDoc.builder().name("test").settings(settings).build();
+        return PlanBDoc.builder().uuid(UUID.randomUUID().toString()).name("test").settings(settings).build();
     }
 
     private record KeyFunction(String description,
