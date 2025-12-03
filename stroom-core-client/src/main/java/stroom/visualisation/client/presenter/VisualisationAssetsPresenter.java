@@ -133,7 +133,8 @@ public class VisualisationAssetsPresenter
         treeModel = new VisualisationAssetTreeModel(selectionModel,
                 (node, label) ->
                         VisualisationAssetsPresenter.this.getNonClashingLabel(node.getParent(), label),
-                this::setDirty);
+                this::setDirty,
+                this::isReadOnly);
 
         selectionModel.addSelectionChangeHandler(event ->
                 VisualisationAssetsPresenter.this.onSelectionChange());
@@ -156,6 +157,10 @@ public class VisualisationAssetsPresenter
         return List.of(new VisualisationAsset("1", "/a/b/c/d.gif", false),
                 new VisualisationAsset("2", "/a/b/e/d.css", false),
                 new VisualisationAsset("3", "/a/b/e/f.html", false));
+    }
+
+    public boolean isReadOnly() {
+        return readOnly;
     }
 
     @Override
@@ -224,6 +229,9 @@ public class VisualisationAssetsPresenter
 
         // Set the readonly flag
         this.readOnly = readOnly;
+
+        // Update UI state
+        updateState();
     }
 
     /**
@@ -386,33 +394,35 @@ public class VisualisationAssetsPresenter
      * Inserts a new folder with the currently selected folder.
      */
     private void onAddFolder() {
-        final UpdatableTreeNode folderNode = findFolderForSelectedNode();
-        final String path = getItemPath(folderNode);
-        final ShowPopupEvent.Builder popupEventBuilder = new ShowPopupEvent.Builder(addFolderDialog);
-        addFolderDialog.setupPopup(popupEventBuilder, path);
-        popupEventBuilder
-                .onHideRequest(event -> {
-                            if (event.isOk()) {
-                                // Ok pressed
-                                if (addFolderDialog.isValid()) {
-                                    final String folderName = getNonClashingLabel(
-                                            folderNode,
-                                            addFolderDialog.getView().getFolderName());
-                                    final UpdatableTreeNode newFolderNode =
-                                            VisualisationAssetTreeNode.createFolderNode(folderName);
-                                    treeModel.add(folderNode, newFolderNode);
-                                    setDirty();
-                                    event.hide();
+        if (!readOnly) {
+            final UpdatableTreeNode folderNode = findFolderForSelectedNode();
+            final String path = getItemPath(folderNode);
+            final ShowPopupEvent.Builder popupEventBuilder = new ShowPopupEvent.Builder(addFolderDialog);
+            addFolderDialog.setupPopup(popupEventBuilder, path);
+            popupEventBuilder
+                    .onHideRequest(event -> {
+                                if (event.isOk()) {
+                                    // Ok pressed
+                                    if (addFolderDialog.isValid()) {
+                                        final String folderName = getNonClashingLabel(
+                                                folderNode,
+                                                addFolderDialog.getView().getFolderName());
+                                        final UpdatableTreeNode newFolderNode =
+                                                VisualisationAssetTreeNode.createFolderNode(folderName);
+                                        treeModel.add(folderNode, newFolderNode);
+                                        setDirty();
+                                        event.hide();
+                                    } else {
+                                        AlertEvent.fireWarn(this, "Folder name not set", event::reset);
+                                    }
                                 } else {
-                                    AlertEvent.fireWarn(this, "Folder name not set", event::reset);
+                                    // Cancel pressed
+                                    event.hide();
                                 }
-                            } else {
-                                // Cancel pressed
-                                event.hide();
                             }
-                        }
-                )
-                .fire();
+                    )
+                    .fire();
+        }
 
     }
 
@@ -468,9 +478,11 @@ public class VisualisationAssetsPresenter
      * Inserts a new item within the currently selected folder.
      */
     private void onUploadFile() {
-        final UpdatableTreeNode folderNode = findFolderForSelectedNode();
-        final String path = getItemPath(folderNode);
-        uploadFileDialog.fireShowPopup(this, folderNode, path);
+        if (!readOnly) {
+            final UpdatableTreeNode folderNode = findFolderForSelectedNode();
+            final String path = getItemPath(folderNode);
+            uploadFileDialog.fireShowPopup(this, folderNode, path);
+        }
     }
 
     /**
@@ -520,28 +532,30 @@ public class VisualisationAssetsPresenter
      * Deletes the currently selected item.
      */
     private void onDeleteButtonClick() {
-        final UpdatableTreeNode node = selectionModel.getSelectedObject();
-        if (node != null) {
-            final String message;
-            if (node.isLeaf()) {
-                message = "Are you sure you want to delete the selected file?";
-            } else {
-                message = "Are you sure you want to delete the selected folder and all its descendants?";
-            }
+        if (!readOnly) {
+            final UpdatableTreeNode node = selectionModel.getSelectedObject();
+            if (node != null) {
+                final String message;
+                if (node.isLeaf()) {
+                    message = "Are you sure you want to delete the selected file?";
+                } else {
+                    message = "Are you sure you want to delete the selected folder and all its descendants?";
+                }
 
-            ConfirmEvent.fire(VisualisationAssetsPresenter.this, message,
-                    result -> {
-                        if (result) {
-                            treeModel.remove(node);
-                            if (node instanceof final VisualisationAssetTreeNode assetTreeNode) {
-                                uploadedFileResourceKeys.remove(assetTreeNode.getId());
-                            } else {
-                                Console.error("Unknown tree node type: " + node.getClass());
+                ConfirmEvent.fire(VisualisationAssetsPresenter.this, message,
+                        result -> {
+                            if (result) {
+                                treeModel.remove(node);
+                                if (node instanceof final VisualisationAssetTreeNode assetTreeNode) {
+                                    uploadedFileResourceKeys.remove(assetTreeNode.getId());
+                                } else {
+                                    Console.error("Unknown tree node type: " + node.getClass());
+                                }
+
+                                setDirty();
                             }
-
-                            setDirty();
-                        }
-                    });
+                        });
+            }
         }
     }
 
@@ -549,14 +563,19 @@ public class VisualisationAssetsPresenter
      * Sets the state of the UI when things have changed.
      */
     private void updateState() {
-        final UpdatableTreeNode item = selectionModel.getSelectedObject();
-        if (item == null) {
-            // Assume the root item is selected
-            addButton.setEnabled(true);
+        if (readOnly) {
+            addButton.setEnabled(false);
             deleteButton.setEnabled(false);
         } else {
-            addButton.setEnabled(true);
-            deleteButton.setEnabled(true);
+            final UpdatableTreeNode item = selectionModel.getSelectedObject();
+            if (item == null) {
+                // Assume the root item is selected
+                addButton.setEnabled(true);
+                deleteButton.setEnabled(false);
+            } else {
+                addButton.setEnabled(true);
+                deleteButton.setEnabled(true);
+            }
         }
     }
 

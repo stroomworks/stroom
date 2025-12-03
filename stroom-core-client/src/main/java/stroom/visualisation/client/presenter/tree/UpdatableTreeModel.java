@@ -44,11 +44,21 @@ public class UpdatableTreeModel implements TreeViewModel {
     /** Gets called when a node has been edited and needs to be saved */
     private final DirtyCallback dirtyCallback;
 
+    /** Whether the tree can be edited */
+    private final ReadOnlyCheck readOnlyCheck;
+
     public UpdatableTreeModel(final SingleSelectionModel<UpdatableTreeNode> selectionModelCellTree,
                               final String ignoredCharacters,
                               final LabelUpdater labelUpdater,
-                              final DirtyCallback dirtyCallback) {
-        this(selectionModelCellTree, ignoredCharacters, null, 20, labelUpdater, dirtyCallback);
+                              final DirtyCallback dirtyCallback,
+                              final ReadOnlyCheck readOnlyCheck) {
+        this(selectionModelCellTree,
+                ignoredCharacters,
+                null,
+                20,
+                labelUpdater,
+                dirtyCallback,
+                readOnlyCheck);
     }
 
     public UpdatableTreeModel(final SingleSelectionModel<UpdatableTreeNode> selectionModelCellTree,
@@ -56,7 +66,9 @@ public class UpdatableTreeModel implements TreeViewModel {
                               final ValueUpdater<UpdatableTreeNode> valueUpdater,
                               final int inputBoxSize,
                               final LabelUpdater labelUpdater,
-                              final DirtyCallback dirtyCallback) {
+                              final DirtyCallback dirtyCallback,
+                              final ReadOnlyCheck readOnlyCheck) {
+
         this.selectionModelCellTree = selectionModelCellTree;
         this.valueUpdater = valueUpdater;
         this.inputBoxSize = inputBoxSize;
@@ -68,6 +80,7 @@ public class UpdatableTreeModel implements TreeViewModel {
         }
         this.labelUpdater = labelUpdater;
         this.dirtyCallback = dirtyCallback;
+        this.readOnlyCheck = readOnlyCheck;
     }
 
     public ListDataProvider<UpdatableTreeNode> getRootDataProvider() {
@@ -191,7 +204,7 @@ public class UpdatableTreeModel implements TreeViewModel {
      * @return A cell to display values. Must not return null.
      */
     protected Cell<UpdatableTreeNode> getCell(final int inputBoxSize, final UpdatableTreeNode value) {
-        return new CustomEditTextCell(inputBoxSize, ignoredCharacters, labelUpdater, dirtyCallback);
+        return new CustomEditTextCell(inputBoxSize, ignoredCharacters, labelUpdater, dirtyCallback, readOnlyCheck);
     }
 
 }

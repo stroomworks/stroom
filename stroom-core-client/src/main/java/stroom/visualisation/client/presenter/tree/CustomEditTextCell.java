@@ -154,7 +154,11 @@ public class CustomEditTextCell extends AbstractEditableCell<UpdatableTreeNode, 
     /** Allows the node label to be adjusted before committing it. Used to avoid duplicate names in a directory. */
     private final LabelUpdater labelUpdater;
 
+    /** Call this when things change to mark the Doc as dirty and needing saving */
     private final DirtyCallback dirtyCallback;
+
+    /** If true then don't allow editing of the labels */
+    private final ReadOnlyCheck readOnlyCheck;
 
     /** Default value for the charSize variable */
     public static final int DEFAULT_CHAR_SIZE = 20;
@@ -168,6 +172,9 @@ public class CustomEditTextCell extends AbstractEditableCell<UpdatableTreeNode, 
     /** Value to indicate that no dirty callback is installed */
     public static final DirtyCallback NO_DIRTY_CALLBACK = null;
 
+    /** Value to indicate that document is not readOnly */
+    public static final ReadOnlyCheck DEFAULT_READONLY_CHECK = null;
+
     /**
      * Construct a new CustomEditTextCell that will use a
      * {@link SimpleSafeHtmlRenderer} with default charSize and no ignored characters.
@@ -177,7 +184,8 @@ public class CustomEditTextCell extends AbstractEditableCell<UpdatableTreeNode, 
                 DEFAULT_CHAR_SIZE,
                 NO_IGNORED_CHARACTERS,
                 NO_LABEL_UPDATES,
-                NO_DIRTY_CALLBACK);
+                NO_DIRTY_CALLBACK,
+                DEFAULT_READONLY_CHECK);
     }
 
     /**
@@ -192,12 +200,22 @@ public class CustomEditTextCell extends AbstractEditableCell<UpdatableTreeNode, 
      * @param labelUpdater
      *            Thing to update the label when it has been edited. Can be null
      *            in which case the label will not be updated from the edited value.
+     * @param dirtyCallback
+     *            Thing to call when something changes that will need saving.
+     * @param readOnlyCheck
+     *            If the document shouldn't be edited or changed in any way.
      */
     public CustomEditTextCell(final int charSize,
                               final String ignoredCharacters,
                               final LabelUpdater labelUpdater,
-                              final DirtyCallback dirtyCallback) {
-        this(SimpleSafeHtmlRenderer.getInstance(), charSize, ignoredCharacters, labelUpdater, dirtyCallback);
+                              final DirtyCallback dirtyCallback,
+                              final ReadOnlyCheck readOnlyCheck) {
+        this(SimpleSafeHtmlRenderer.getInstance(),
+                charSize,
+                ignoredCharacters,
+                labelUpdater,
+                dirtyCallback,
+                readOnlyCheck);
     }
 
     /**
@@ -206,12 +224,27 @@ public class CustomEditTextCell extends AbstractEditableCell<UpdatableTreeNode, 
      *
      * @param renderer
      *            a {@link SafeHtmlRenderer SafeHtmlRenderer<String>} instance
+     * @param charSize
+     *            size of characters the input element will use (default 20)
+     * @param ignoredCharacters
+     *            Characters that are not allowed in the name of the item and
+     *            thus should be ignored on input.
+     * @param labelUpdater
+     *            Thing to update the label when it has been edited. Can be null
+     *            in which case the label will not be updated from the edited value.
+     * @param dirtyCallback
+     *            Thing to call when something changes that will need saving.
+     * @param readOnlyCheck
+     *            Thing to call to check if the document shouldn't be edited or
+     *            changed in any way.
      */
     public CustomEditTextCell(final SafeHtmlRenderer<String> renderer,
                               final int charSize,
                               final String ignoredCharacters,
                               final LabelUpdater labelUpdater,
-                              final DirtyCallback dirtyCallback) {
+                              final DirtyCallback dirtyCallback,
+                              final ReadOnlyCheck readOnlyCheck) {
+
         super(CLICK, DBLCLICK, KEYUP, KEYDOWN, BLUR);
         if (template == null) {
             template = GWT.create(Template.class);
@@ -224,6 +257,7 @@ public class CustomEditTextCell extends AbstractEditableCell<UpdatableTreeNode, 
         this.ignoredCharacters = ignoredCharacters;
         this.labelUpdater = labelUpdater;
         this.dirtyCallback = dirtyCallback;
+        this.readOnlyCheck = readOnlyCheck;
     }
 
     @Override
@@ -238,24 +272,27 @@ public class CustomEditTextCell extends AbstractEditableCell<UpdatableTreeNode, 
                                final UpdatableTreeNode value,
                                final NativeEvent event,
                                final ValueUpdater<UpdatableTreeNode> valueUpdater) {
-        final Object key = context.getKey();
-        ViewData viewData = getViewData(key);
-        if (viewData != null && viewData.isEditing()) {
-            // Handle the edit event.
-            editEvent(context, parent, value, viewData, event, valueUpdater);
-        } else {
-            final String type = event.getType();
-            final int keyCode = event.getKeyCode();
-            final boolean enterPressed = KEYUP.equals(type) && keyCode == KeyCodes.KEY_ENTER;
-            if (DBLCLICK.equals(type) || enterPressed) {
-                // Go into edit mode.
-                if (viewData == null) {
-                    viewData = new ViewData(value.getLabel());
-                    setViewData(key, viewData);
-                } else {
-                    viewData.setEditing(true);
+
+        if (!readOnlyCheck.isReadOnly()) {
+            final Object key = context.getKey();
+            ViewData viewData = getViewData(key);
+            if (viewData != null && viewData.isEditing()) {
+                // Handle the edit event.
+                editEvent(context, parent, value, viewData, event, valueUpdater);
+            } else {
+                final String type = event.getType();
+                final int keyCode = event.getKeyCode();
+                final boolean enterPressed = KEYUP.equals(type) && keyCode == KeyCodes.KEY_ENTER;
+                if (DBLCLICK.equals(type) || enterPressed) {
+                    // Go into edit mode.
+                    if (viewData == null) {
+                        viewData = new ViewData(value.getLabel());
+                        setViewData(key, viewData);
+                    } else {
+                        viewData.setEditing(true);
+                    }
+                    edit(context, parent, value);
                 }
-                edit(context, parent, value);
             }
         }
     }
@@ -406,37 +443,39 @@ public class CustomEditTextCell extends AbstractEditableCell<UpdatableTreeNode, 
                            final NativeEvent event,
                            final ValueUpdater<UpdatableTreeNode> valueUpdater) {
 
-        final String type = event.getType();
-        final boolean keyUp = KEYUP.equals(type);
-        final boolean keyDown = KEYDOWN.equals(type);
+        if (!readOnlyCheck.isReadOnly()) {
+            final String type = event.getType();
+            final boolean keyUp = KEYUP.equals(type);
+            final boolean keyDown = KEYDOWN.equals(type);
 
-        if (keyUp || keyDown) {
-            final int keyCode = event.getKeyCode();
-            if (keyUp && keyCode == KeyCodes.KEY_ENTER) {
-                // Commit the change.
-                commit(node, context, parent, viewData, valueUpdater);
-            } else if (keyUp && keyCode == KeyCodes.KEY_ESCAPE) {
-                // Cancel edit mode.
-                final String originalText = viewData.getOriginal();
-                if (viewData.isEditingAgain()) {
-                    viewData.setText(originalText);
-                    viewData.setEditing(false);
-                } else {
-                    setViewData(context.getKey(), null);
-                }
-                cancel(context, parent, node);
-            } else {
-                // Update the text in the view data on each key.
-                updateViewData(parent, viewData, true);
-            }
-        } else if (BLUR.equals(type)) {
-            // Commit the change. Ensure that we are blurring the input element
-            // and not the parent element itself.
-            final EventTarget eventTarget = event.getEventTarget();
-            if (Element.is(eventTarget)) {
-                final Element target = Element.as(eventTarget);
-                if ("input".equalsIgnoreCase(target.getTagName())) {
+            if (keyUp || keyDown) {
+                final int keyCode = event.getKeyCode();
+                if (keyUp && keyCode == KeyCodes.KEY_ENTER) {
+                    // Commit the change.
                     commit(node, context, parent, viewData, valueUpdater);
+                } else if (keyUp && keyCode == KeyCodes.KEY_ESCAPE) {
+                    // Cancel edit mode.
+                    final String originalText = viewData.getOriginal();
+                    if (viewData.isEditingAgain()) {
+                        viewData.setText(originalText);
+                        viewData.setEditing(false);
+                    } else {
+                        setViewData(context.getKey(), null);
+                    }
+                    cancel(context, parent, node);
+                } else {
+                    // Update the text in the view data on each key.
+                    updateViewData(parent, viewData, true);
+                }
+            } else if (BLUR.equals(type)) {
+                // Commit the change. Ensure that we are blurring the input element
+                // and not the parent element itself.
+                final EventTarget eventTarget = event.getEventTarget();
+                if (Element.is(eventTarget)) {
+                    final Element target = Element.as(eventTarget);
+                    if ("input".equalsIgnoreCase(target.getTagName())) {
+                        commit(node, context, parent, viewData, valueUpdater);
+                    }
                 }
             }
         }
