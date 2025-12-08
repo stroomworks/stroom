@@ -35,8 +35,9 @@ import stroom.visualisation.client.presenter.assets.VisualisationAssetsImageReso
 import stroom.visualisation.client.presenter.tree.UpdatableTreeModel;
 import stroom.visualisation.client.presenter.tree.UpdatableTreeNode;
 import stroom.visualisation.shared.VisualisationAsset;
+import stroom.visualisation.shared.VisualisationAssetResource;
+import stroom.visualisation.shared.VisualisationAssets;
 import stroom.visualisation.shared.VisualisationDoc;
-import stroom.visualisation.shared.VisualisationResource;
 import stroom.widget.button.client.ButtonPanel;
 import stroom.widget.button.client.InlineSvgButton;
 import stroom.widget.menu.client.presenter.IconMenuItem;
@@ -76,9 +77,6 @@ public class VisualisationAssetsPresenter
     /** Rest factory to trigger storing file uploads */
     private final RestFactory restFactory;
 
-    /** Main tree we're displaying */
-    private final CellTree cellTree;
-
     /** Model behind the tree */
     private final UpdatableTreeModel treeModel;
 
@@ -112,8 +110,9 @@ public class VisualisationAssetsPresenter
     /** Slash / character */
     private final static String SLASH = "/";
 
-    /** Visualisation resource */
-    private final static VisualisationResource VISUALISATION_RESOURCE = GWT.create(VisualisationResource.class);
+    /** REST interface */
+    private final static VisualisationAssetResource VISUALISATION_ASSET_RESOURCE =
+            GWT.create(VisualisationAssetResource.class);
 
     /**
      * Injected constructor.
@@ -144,19 +143,11 @@ public class VisualisationAssetsPresenter
         final VisualisationAssetTreeNode dummyNode = VisualisationAssetTreeNode.createDummyNode();
         treeModel.add(ROOT_NODE, dummyNode);
 
-        cellTree = new CellTree(treeModel, ROOT_NODE, new AssetTreeResources());
+        // Main tree we're displaying
+        final CellTree cellTree = new CellTree(treeModel, ROOT_NODE, new AssetTreeResources());
         cellTree.setAnimation(CellTree.SlideAnimation.create());
         cellTree.setAnimationEnabled(true);
         this.getView().setCellTree(cellTree);
-    }
-
-    /**
-     * Dummy assets.
-     */
-    private List<VisualisationAsset> getDummyAssets() {
-        return List.of(new VisualisationAsset("1", "/a/b/c/d.gif", false),
-                new VisualisationAsset("2", "/a/b/e/d.css", false),
-                new VisualisationAsset("3", "/a/b/e/f.html", false));
     }
 
     public boolean isReadOnly() {
@@ -216,22 +207,14 @@ public class VisualisationAssetsPresenter
                        final VisualisationDoc document,
                        final boolean readOnly) {
 
-        // Clear any existing content from the tree
-        treeModel.clear(ROOT_NODE);
-
-        // Get the list of assets
-        List<VisualisationAsset> assets = document.getAssets();
-        // TODO Get rid of this dummy call
-        if (assets == null) {
-            assets = getDummyAssets();
-        }
-        addPathsToTree(assets);
-
         // Set the readonly flag
         this.readOnly = readOnly;
 
         // Update UI state
         updateState();
+
+        // Get the assets associated with the document (async)
+        this.fetchAssets(document);
     }
 
     /**
@@ -283,58 +266,89 @@ public class VisualisationAssetsPresenter
      * @return The updated document.
      */
     public VisualisationDoc onWrite(final VisualisationDoc document) {
-        final List<VisualisationAsset> assets = treeToAssets();
-        for (final VisualisationAsset asset : assets) {
-            Console.info("Asset: " + asset);
-        }
-        document.setAssets(assets);
 
-        // Kick off storing the uploads
-        storeUploads(document);
+        // Kick off storing the uploads and assets
+        storeAssets(document);
 
-        //document.setUploads(uploadedFileResourceKeys);
         return document;
+    }
+
+    /**
+     * Called from onRead() to pull down the assets from the server.
+     * Uses REST to grab the assets and display them within the tree control.
+     * Async.
+     * @param document The document received from the server.
+     */
+    private void fetchAssets(final VisualisationDoc document) {
+        final String ownerId = document.getUuid();
+        Console.info("Fetching assets for " + ownerId);
+        restFactory.create(VISUALISATION_ASSET_RESOURCE)
+                .method(r -> r.fetchAssets(ownerId))
+                .onSuccess(assets -> {
+                    // Clear any existing content from the tree
+                    treeModel.clear(ROOT_NODE);
+
+                    // Put the new content in
+                    addPathsToTree(assets.getAssets());
+
+                    // Make sure UI state is correct
+                    updateState();
+                })
+                .onFailure(error -> {
+                    AlertEvent.fireError(this,
+                            "Error downloading assets for this visualisation: " + error.getMessage(),
+                            null);
+                })
+                .taskMonitorFactory(this)
+                .exec();
     }
 
     /**
      * Called from onWrite() to register all the uploaded documents
      * and move them from their temporary storage into permanent storage.
      */
-    private void storeUploads(final VisualisationDoc document) {
-        if (!uploadedFileResourceKeys.isEmpty()) {
-            restFactory.create(VISUALISATION_RESOURCE)
-                    .method(r -> r.storeUploads(document.getUuid(), uploadedFileResourceKeys))
-                    .onSuccess(result -> {
-                        if (result) {
-                            // Great it worked
-                            Console.info("Visualisation Assets: uploaded files stored");
-                        } else {
-                            Console.info("Visualisation Assets: error storing uploaded files");
-                        }
-                    })
-                    .onFailure(error -> {
-                        Console.error("Visualisation Assets: error storing uploaded files: " + error.getMessage());
-                    })
-                    .taskMonitorFactory(this)
-                    .exec();
-        }
+    private void storeAssets(final VisualisationDoc document) {
+
+        final VisualisationAssets assets = new VisualisationAssets(document.getUuid(), uploadedFileResourceKeys);
+        treeToAssets(document, assets);
+
+        restFactory.create(VISUALISATION_ASSET_RESOURCE)
+                .method(r -> r.updateAssets(document.getUuid(), assets))
+                .onSuccess(result -> {
+                    if (result) {
+                        // Great it worked - clear the list of uploaded files
+                        Console.info("Visualisation Assets: uploaded files stored");
+                        uploadedFileResourceKeys.clear();
+                    } else {
+                        AlertEvent.fireError(this,
+                                "Error storing assets",
+                                null);
+                    }
+                })
+                .onFailure(error -> {
+                    AlertEvent.fireError(this,
+                            "Error storing assets: " + error.getMessage(),
+                            null);
+                })
+                .taskMonitorFactory(this)
+                .exec();
     }
 
     /**
      * Convert the tree into a list of assets.
-     * @return The list of assets to send back to the server.
+     * @param document The document which owns the assets
+     * @param assets Where to put the assets
      */
-    private List<VisualisationAsset> treeToAssets() {
-        final List<VisualisationAsset> assets = new ArrayList<>();
-        recurseTreeToAssets(ROOT_NODE, assets);
-        return assets;
+    private void treeToAssets(final VisualisationDoc document, final VisualisationAssets assets) {
+        recurseTreeToAssets(ROOT_NODE, document, assets);
     }
 
     /**
      * Recursive function called from treeToAssets().
      */
     private void recurseTreeToAssets(final UpdatableTreeNode currentNode,
-                                     final List<VisualisationAsset> assets) {
+                                     final VisualisationDoc document,
+                                     final VisualisationAssets assets) {
         if (currentNode instanceof final VisualisationAssetTreeNode assetTreeNode) {
 
             // Don't store the ROOT_NODE, but otherwise store anything without children
@@ -343,14 +357,16 @@ public class VisualisationAssetsPresenter
                 // No more nodes so store path
                 final String path = getItemPath(assetTreeNode);
 
-                final VisualisationAsset asset = new VisualisationAsset(assetTreeNode.getId(),
+                final VisualisationAsset asset = new VisualisationAsset(
+                        document.asDocRef(),
+                        assetTreeNode.getId(),
                         path,
                         !assetTreeNode.isLeaf());
-                assets.add(asset);
+                assets.addAsset(asset);
             } else {
                 // More nodes so recurse
                 for (final UpdatableTreeNode child : assetTreeNode.getDataProvider().getList()) {
-                    recurseTreeToAssets(child, assets);
+                    recurseTreeToAssets(child, document, assets);
                 }
             }
         } else {

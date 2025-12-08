@@ -1,5 +1,6 @@
 package stroom.visualisation.shared;
 
+import stroom.docref.DocRef;
 import stroom.docs.shared.Description;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
@@ -26,6 +27,9 @@ import java.util.Objects;
 public class VisualisationAsset {
 
     @JsonProperty
+    private DocRef ownerDocRef;
+
+    @JsonProperty
     private String id;
 
     @JsonProperty
@@ -35,12 +39,22 @@ public class VisualisationAsset {
     private boolean isFolder;
 
     @JsonCreator
-    public VisualisationAsset(@JsonProperty("id") final String id,
+    public VisualisationAsset(@JsonProperty("ownerDocRef") final DocRef ownerDocRef,
+                              @JsonProperty("id") final String id,
                               @JsonProperty("path") final String path,
                               @JsonProperty("isFolder") final boolean isFolder) {
+        this.ownerDocRef = ownerDocRef;
         this.id = id;
         this.path = path;
         this.isFolder = isFolder;
+    }
+
+    public DocRef getOwnerDocRef() {
+        return ownerDocRef;
+    }
+
+    public void setOwnerDocRef(final DocRef ownerDocRef) {
+        this.ownerDocRef = ownerDocRef;
     }
 
     public String getId() {

@@ -28,9 +28,6 @@ import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
 import java.util.Objects;
 
 @Description(
@@ -52,8 +49,7 @@ import java.util.Objects;
         "description",
         "functionName",
         "scriptRef",
-        "settings",
-        "assets"})
+        "settings"})
 @JsonInclude(Include.NON_NULL)
 public class VisualisationDoc extends AbstractDoc {
 
@@ -68,8 +64,6 @@ public class VisualisationDoc extends AbstractDoc {
     private DocRef scriptRef;
     @JsonProperty
     private String settings;
-    @JsonProperty
-    private List<VisualisationAsset> assets;
 
     @JsonCreator
     public VisualisationDoc(@JsonProperty("uuid") final String uuid,
@@ -82,14 +76,12 @@ public class VisualisationDoc extends AbstractDoc {
                             @JsonProperty("description") final String description,
                             @JsonProperty("functionName") final String functionName,
                             @JsonProperty("scriptRef") final DocRef scriptRef,
-                            @JsonProperty("settings") final String settings,
-                            @JsonProperty("assets") final List<VisualisationAsset> assets) {
+                            @JsonProperty("settings") final String settings) {
         super(TYPE, uuid, name, version, createTimeMs, updateTimeMs, createUser, updateUser);
         this.description = description;
         this.functionName = functionName;
         this.scriptRef = scriptRef;
         this.settings = settings;
-        this.assets = assets;
     }
 
     /**
@@ -140,26 +132,6 @@ public class VisualisationDoc extends AbstractDoc {
         this.settings = settings;
     }
 
-    /**
-     * @return The assets associated with this visualisation as an unmodifiable list. May return null.
-     */
-    public List<VisualisationAsset> getAssets() {
-        return assets == null ? null : Collections.unmodifiableList(assets);
-    }
-
-    /**
-     * Sets the assets associated with this visualisation. Copies the assets into a separate array.
-     * @param assets The assets to put into the visualisation. The list is copied.
-     */
-    public void setAssets(final List<VisualisationAsset> assets) {
-        if (this.assets == null) {
-            this.assets = new ArrayList<>(assets.size());
-        } else {
-            this.assets.clear();
-        }
-        this.assets.addAll(assets);
-    }
-
     @Override
     public boolean equals(final Object o) {
         if (o == null || getClass() != o.getClass()) {
@@ -172,13 +144,12 @@ public class VisualisationDoc extends AbstractDoc {
         return Objects.equals(description, that.description)
                && Objects.equals(functionName, that.functionName)
                && Objects.equals(scriptRef, that.scriptRef)
-               && Objects.equals(settings, that.settings)
-               && Objects.equals(assets, that.assets);
+               && Objects.equals(settings, that.settings);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(super.hashCode(), description, functionName, scriptRef, settings, assets);
+        return Objects.hash(super.hashCode(), description, functionName, scriptRef, settings);
     }
 
     public Builder copy() {
@@ -196,7 +167,6 @@ public class VisualisationDoc extends AbstractDoc {
         private String functionName;
         private DocRef scriptRef;
         private String settings;
-        final List<VisualisationAsset> assets = new ArrayList<>();
 
         private Builder() {
         }
@@ -207,9 +177,6 @@ public class VisualisationDoc extends AbstractDoc {
             this.functionName = visualisationDoc.functionName;
             this.scriptRef = visualisationDoc.scriptRef;
             this.settings = visualisationDoc.settings;
-            if (visualisationDoc.assets != null) {
-                this.assets.addAll(visualisationDoc.assets);
-            }
         }
 
         public Builder description(final String description) {
@@ -232,16 +199,6 @@ public class VisualisationDoc extends AbstractDoc {
             return self();
         }
 
-        /**
-         * @param assets Contents is defensively copied. Null is ok.
-         */
-        public Builder assets(final List<VisualisationAsset> assets) {
-            if (assets != null) {
-                this.assets.addAll(assets);
-            }
-            return self();
-        }
-
         @Override
         protected Builder self() {
             return this;
@@ -259,8 +216,7 @@ public class VisualisationDoc extends AbstractDoc {
                     description,
                     functionName,
                     scriptRef,
-                    settings,
-                    assets);
+                    settings);
         }
     }
 }
