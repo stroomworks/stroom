@@ -3,17 +3,16 @@ package stroom.dashboard.impl.visualisation;
 import stroom.util.logging.LambdaLogger;
 import stroom.util.logging.LambdaLoggerFactory;
 import stroom.util.shared.IsServlet;
-import stroom.util.shared.NullSafe;
 
 import jakarta.inject.Inject;
 import jakarta.servlet.ServletException;
+import jakarta.servlet.ServletOutputStream;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
 import java.io.IOException;
-import java.net.URLDecoder;
-import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -28,7 +27,7 @@ public class VisualisationAssetServlet extends HttpServlet implements IsServlet 
     private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(VisualisationAssetServlet.class);
 
     /** The URL path to this servlet */
-    public static final String PATH_PART = "/assets";
+    public static final String PATH_PART = "/assets/*";
 
     /** Set of paths to access this servlet */
     private static final Set<String> PATH_SPECS = Set.of(PATH_PART);
@@ -48,17 +47,42 @@ public class VisualisationAssetServlet extends HttpServlet implements IsServlet 
     protected void doGet(final HttpServletRequest request, final HttpServletResponse response)
         throws IOException {
 
-        LOGGER.debug("assets: {}", request.getQueryString());
+        final List<String> arguments = splitIntoDocIdAndPath(request.getPathInfo());
+        final String docId = arguments.get(0);
+        final String path = arguments.get(1);
 
-        // TODO Find the owning document UUID in the parameters
-        // TODO Find the path of the file in the parameters
-        // TODO Call VisualisationAssetService.get(ownerDocRef, path)
-        // TODO Return via streaming
-
-        final String query = request.getQueryString();
-        if (NullSafe.isNonBlankString(query)) {
-            final String id = URLDecoder.decode(query, StandardCharsets.UTF_8);
+        try {
+            // TODO Set mimetype
+            final byte[] data = service.get(docId, path);
+            final ServletOutputStream ostr = response.getOutputStream();
+            ostr.write(data);
+            response.setStatus(HttpServletResponse.SC_OK);
+        } catch (final IOException e) {
+            LOGGER.error("Error retrieving asset for docId {}, path '{}'", docId, path);
+            response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
         }
+
+    }
+
+    /**
+     * Takes the pathInfo and splits it into the docId and the path information.
+     * @param pathInfo Request.getPathInfo(). Can be null.
+     * @return List of docId, path. Two elements always present. Neither will be null.
+     */
+    List<String> splitIntoDocIdAndPath(String pathInfo) {
+        String docId = "";
+        String path = "";
+        if (pathInfo != null) {
+            if (pathInfo.startsWith("/")) {
+                pathInfo = pathInfo.substring(1);
+            }
+            final int firstSlash = pathInfo.indexOf('/');
+            if (firstSlash != -1) {
+                docId = pathInfo.substring(0, firstSlash);
+                path = pathInfo.substring(firstSlash);
+            }
+        }
+        return List.of(docId, path);
     }
 
     @Override
