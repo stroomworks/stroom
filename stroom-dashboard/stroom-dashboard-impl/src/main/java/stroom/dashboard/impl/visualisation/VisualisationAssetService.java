@@ -1,11 +1,16 @@
 package stroom.dashboard.impl.visualisation;
 
+import stroom.docref.DocRef;
 import stroom.resource.api.ResourceStore;
+import stroom.security.api.SecurityContext;
+import stroom.security.shared.DocumentPermission;
 import stroom.util.logging.LambdaLogger;
 import stroom.util.logging.LambdaLoggerFactory;
+import stroom.util.shared.PermissionException;
 import stroom.util.shared.ResourceKey;
 import stroom.visualisation.shared.VisualisationAsset;
 import stroom.visualisation.shared.VisualisationAssets;
+import stroom.visualisation.shared.VisualisationDoc;
 
 import com.google.inject.Inject;
 
@@ -28,6 +33,9 @@ public class VisualisationAssetService {
     /** Allows access to uploaded files */
     private final ResourceStore resourceStore;
 
+    /** Security checks */
+    private final SecurityContext securityContext;
+
     /** Logger */
     private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(VisualisationAssetService.class);
 
@@ -37,9 +45,11 @@ public class VisualisationAssetService {
     @SuppressWarnings("unused")
     @Inject
     public VisualisationAssetService(final VisualisationAssetDao dao,
-                                     final ResourceStore resourceStore) {
+                                     final ResourceStore resourceStore,
+                                     final SecurityContext securityContext) {
         this.dao = dao;
         this.resourceStore = resourceStore;
+        this.securityContext = securityContext;
     }
 
     /**
@@ -50,8 +60,14 @@ public class VisualisationAssetService {
      * @throws IOException if something goes wrong.
      */
     VisualisationAssets fetchAssets(final String ownerId) throws IOException {
-        // TODO Permissions
-        return dao.fetchAssets(ownerId);
+        final DocRef docRef = new DocRef(VisualisationDoc.TYPE, ownerId);
+        if (securityContext.hasDocumentPermission(docRef, DocumentPermission.VIEW)) {
+            return dao.fetchAssets(ownerId);
+        } else {
+            // No permission so return empty assets
+            LOGGER.info("User does not have permission to see assets");
+            return new VisualisationAssets(ownerId);
+        }
     }
 
     /**
@@ -66,64 +82,72 @@ public class VisualisationAssetService {
                       final VisualisationAssets assets) throws IOException {
         LOGGER.info("Updating assets for {}, {}", ownerDocId, assets);
 
-        // TODO Permissions
+        final DocRef docRef = new DocRef(VisualisationDoc.TYPE, ownerDocId);
+        if (securityContext.hasDocumentPermission(docRef, DocumentPermission.EDIT)) {
 
-        // Store errors so we can throw one exception at the end
-        final Map<String, Path> uploadsThatDoNotExist = new HashMap<>();
-        final StringBuilder exceptionBuf = new StringBuilder();
-        final Map<String, VisualisationAsset> assetLookup = new HashMap<>();
-        for (final VisualisationAsset asset : assets.getAssets()) {
-            assetLookup.put(asset.getId(), asset);
-        }
+            // Store errors so we can throw one exception at the end
+            final Map<String, Path> uploadsThatDoNotExist = new HashMap<>();
+            final StringBuilder exceptionBuf = new StringBuilder();
+            final Map<String, VisualisationAsset> assetLookup = new HashMap<>();
+            for (final VisualisationAsset asset : assets.getAssets()) {
+                assetLookup.put(asset.getId(), asset);
+            }
 
-        // First store the uploaded files
-        final Map<String, ResourceKey> uploadedFiles = assets.getUploadedFiles();
-        for (final Map.Entry<String, ResourceKey> uploadedFileEntry : uploadedFiles.entrySet()) {
+            // First store the uploaded files
+            final Map<String, ResourceKey> uploadedFiles = assets.getUploadedFiles();
+            for (final Map.Entry<String, ResourceKey> uploadedFileEntry : uploadedFiles.entrySet()) {
 
-            final Path uploadedPath = resourceStore.getTempFile(uploadedFileEntry.getValue());
-            if (!uploadedPath.toFile().exists()) {
-                // File does not exist - maybe it has been deleted already
-                uploadsThatDoNotExist.put(uploadedFileEntry.getKey(), uploadedPath);
-            } else {
-                try {
-                    // Read the data in and store it in the DB
-                    // Note that file could be deleted between checking it exists and copying it.
-                    // TODO Should stream this data into the DB
-                    final byte[] data = Files.readAllBytes(uploadedPath);
-                    dao.storeData(uploadedFileEntry.getKey(), data);
-                } catch (final IOException e) {
-                    exceptionBuf.append("\nError copying '");
-                    final VisualisationAsset asset = assetLookup.get(uploadedFileEntry.getKey());
-                    final String path = asset == null ? "unknown" : asset.getPath();
-                    exceptionBuf.append(path);
-                    exceptionBuf.append("': ");
-                    exceptionBuf.append(e.getMessage());
+                final Path uploadedPath = resourceStore.getTempFile(uploadedFileEntry.getValue());
+                if (!uploadedPath.toFile().exists()) {
+                    // File does not exist - maybe it has been deleted already
+                    uploadsThatDoNotExist.put(uploadedFileEntry.getKey(), uploadedPath);
+                } else {
+                    try {
+                        // Read the data in and store it in the DB
+                        // Note that file could be deleted between checking it exists and copying it.
+                        // TODO Should stream this data into the DB
+                        final byte[] data = Files.readAllBytes(uploadedPath);
+                        dao.storeData(uploadedFileEntry.getKey(), data);
+                    } catch (final IOException e) {
+                        exceptionBuf.append("\nError copying '");
+                        final VisualisationAsset asset = assetLookup.get(uploadedFileEntry.getKey());
+                        final String path = asset == null
+                                ? "unknown"
+                                : asset.getPath();
+                        exceptionBuf.append(path);
+                        exceptionBuf.append("': ");
+                        exceptionBuf.append(e.getMessage());
+                    }
                 }
             }
-        }
 
-        // Now store the assets - the paths and metadata
-        try {
-            dao.storeAssets(ownerDocId, assets);
-        } catch (final IOException e) {
-            exceptionBuf.append("\nError storing assets: ");
-            exceptionBuf.append(e.getMessage());
-        }
-
-        // Did anything go wrong?
-        if (!uploadsThatDoNotExist.isEmpty()) {
-            exceptionBuf.append("\nThese files do not exist; please upload them again:");
-            for (final Map.Entry<String, Path> notExistEntry : uploadsThatDoNotExist.entrySet()) {
-                final VisualisationAsset asset = assetLookup.get(notExistEntry.getKey());
-                exceptionBuf.append("\n");
-                final String path = asset == null ? "unknown" : asset.getPath();
-                exceptionBuf.append(path);
+            // Now store the assets - the paths and metadata
+            try {
+                dao.storeAssets(ownerDocId, assets);
+            } catch (final IOException e) {
+                exceptionBuf.append("\nError storing assets: ");
+                exceptionBuf.append(e.getMessage());
             }
-        }
 
-        // If anything went wrong then throw an overall exception here
-        if (!exceptionBuf.isEmpty()) {
-            throw new IOException(exceptionBuf.toString());
+            // Did anything go wrong?
+            if (!uploadsThatDoNotExist.isEmpty()) {
+                exceptionBuf.append("\nThese files do not exist; please upload them again:");
+                for (final Map.Entry<String, Path> notExistEntry : uploadsThatDoNotExist.entrySet()) {
+                    final VisualisationAsset asset = assetLookup.get(notExistEntry.getKey());
+                    exceptionBuf.append("\n");
+                    final String path = asset == null
+                            ? "unknown"
+                            : asset.getPath();
+                    exceptionBuf.append(path);
+                }
+            }
+
+            // If anything went wrong then throw an overall exception here
+            if (!exceptionBuf.isEmpty()) {
+                throw new IOException(exceptionBuf.toString());
+            }
+        } else {
+            LOGGER.info("User does not have permission to update the assets");
         }
     }
 
@@ -133,11 +157,20 @@ public class VisualisationAssetService {
      * <br>TODO This data should be streamed rather than held in a byte[] in memory.
      * @param assetPath The ID of the visualisation asset we want the data for.
      * @return The data for the asset, or null if the asset is not found.
+     * @throws IOException If something goes wrong with the IO, DB etc.
+     * @throws PermissionException If the user doesn't have view permissions for these assets.
      */
-    byte[] getData(final String documentId, final String assetPath) throws IOException {
+    byte[] getData(final String documentId, final String assetPath)
+            throws IOException, PermissionException {
         LOGGER.info("Returning assets for {}, {}", documentId, assetPath);
-        // TODO Permissions
-        return dao.getData(documentId, assetPath);
+        final DocRef docRef = new DocRef(VisualisationDoc.TYPE, documentId);
+        if (securityContext.hasDocumentPermission(docRef, DocumentPermission.VIEW)) {
+            return dao.getData(documentId, assetPath);
+        } else {
+            // Catch this higher up and return a 401.
+            throw new PermissionException(securityContext.getUserRef(),
+                    "You do not have permission to view this asset");
+        }
     }
 
 }

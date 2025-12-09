@@ -3,6 +3,7 @@ package stroom.dashboard.impl.visualisation;
 import stroom.util.logging.LambdaLogger;
 import stroom.util.logging.LambdaLoggerFactory;
 import stroom.util.shared.IsServlet;
+import stroom.util.shared.PermissionException;
 
 import jakarta.inject.Inject;
 import jakarta.inject.Provider;
@@ -40,6 +41,12 @@ public class VisualisationAssetServlet extends HttpServlet implements IsServlet 
     /** Set of paths to access this servlet */
     private static final Set<String> PATH_SPECS = Set.of(PATH_PART);
 
+    /** Index of DocID in returned value */
+    private static final int DOCID_INDEX = 0;
+
+    /** Index of Path in returned value */
+    private static final int PATH_INDEX = 1;
+
     /**
      * Injected constructor.
      */
@@ -59,8 +66,8 @@ public class VisualisationAssetServlet extends HttpServlet implements IsServlet 
     protected void doGet(final HttpServletRequest request, final HttpServletResponse response) {
 
         final List<String> arguments = splitIntoDocIdAndPath(request.getPathInfo());
-        final String docId = arguments.get(0);
-        final String path = arguments.get(1);
+        final String docId = arguments.get(DOCID_INDEX);
+        final String path = arguments.get(PATH_INDEX);
 
         try {
             final byte[] data = service.getData(docId, path);
@@ -75,9 +82,10 @@ public class VisualisationAssetServlet extends HttpServlet implements IsServlet 
         } catch (final IOException e) {
             LOGGER.error("Error retrieving asset for docId {}, path '{}'", docId, path);
             response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+        } catch (final PermissionException e) {
+            LOGGER.info("User does not have permission to view assets");
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
         }
-        // TODO Handle PermissionException?
-
     }
 
     /**
