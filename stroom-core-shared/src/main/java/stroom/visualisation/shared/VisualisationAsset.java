@@ -21,7 +21,7 @@ import java.util.Objects;
 @JsonPropertyOrder({
         "id",
         "path",
-        "isFolder"
+        "folder"
 })
 @JsonInclude(Include.NON_NULL)
 public class VisualisationAsset {
@@ -36,17 +36,17 @@ public class VisualisationAsset {
     private String path;
 
     @JsonProperty
-    private boolean isFolder;
+    private boolean folder;
 
     @JsonCreator
     public VisualisationAsset(@JsonProperty("ownerDocRef") final DocRef ownerDocRef,
                               @JsonProperty("id") final String id,
                               @JsonProperty("path") final String path,
-                              @JsonProperty("isFolder") final boolean isFolder) {
+                              @JsonProperty("folder") final boolean folder) {
         this.ownerDocRef = ownerDocRef;
         this.id = id;
         this.path = path;
-        this.isFolder = isFolder;
+        this.folder = folder;
     }
 
     public DocRef getOwnerDocRef() {
@@ -74,11 +74,11 @@ public class VisualisationAsset {
     }
 
     public boolean isFolder() {
-        return isFolder;
+        return folder;
     }
 
     public void setFolder(final boolean folder) {
-        isFolder = folder;
+        this.folder = folder;
     }
 
     @Override
@@ -87,13 +87,13 @@ public class VisualisationAsset {
             return false;
         }
         final VisualisationAsset that = (VisualisationAsset) o;
-        return isFolder == that.isFolder && Objects.equals(id, that.id) && Objects.equals(path,
+        return folder == that.folder && Objects.equals(id, that.id) && Objects.equals(path,
                 that.path);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(id, path, isFolder);
+        return Objects.hash(id, path, folder);
     }
 
     @Override
@@ -101,7 +101,7 @@ public class VisualisationAsset {
         return "VisualisationAsset{" +
                "id='" + id + '\'' +
                ", path='" + path + '\'' +
-               ", isFolder=" + isFolder +
+               ", isFolder=" + folder +
                '}';
     }
 }

@@ -130,11 +130,11 @@ public class VisualisationAssetService {
     /**
      * Gets the data for a given asset. Called from the Servlet to get the asset for a given
      * document and path.
-     * TODO This data should be streamed rather than held in a byte[] in memory.
+     * <br>TODO This data should be streamed rather than held in a byte[] in memory.
      * @param assetPath The ID of the visualisation asset we want the data for.
-     * @return The data for the asset.
+     * @return The data for the asset, or null if the asset is not found.
      */
-    byte[] get(final String documentId, final String assetPath) throws IOException {
+    byte[] getData(final String documentId, final String assetPath) throws IOException {
         LOGGER.info("Returning assets for {}, {}", documentId, assetPath);
         // TODO Permissions
         return dao.getData(documentId, assetPath);

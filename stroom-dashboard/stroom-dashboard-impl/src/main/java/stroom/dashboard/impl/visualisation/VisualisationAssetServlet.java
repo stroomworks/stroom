@@ -5,6 +5,7 @@ import stroom.util.logging.LambdaLoggerFactory;
 import stroom.util.shared.IsServlet;
 
 import jakarta.inject.Inject;
+import jakarta.inject.Provider;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.ServletOutputStream;
 import jakarta.servlet.http.HttpServlet;
@@ -13,6 +14,7 @@ import jakarta.servlet.http.HttpServletResponse;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -22,6 +24,12 @@ public class VisualisationAssetServlet extends HttpServlet implements IsServlet 
 
     /** The service that provides the backend to this servlet */
     private final VisualisationAssetService service;
+
+    /** File extension to mimetype */
+    private final Map<String, String> mimetypes;
+
+    /** Default mimetype if nothing else matches */
+    private final String defaultMimetype;
 
     /** Logger */
     private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(VisualisationAssetServlet.class);
@@ -36,31 +44,39 @@ public class VisualisationAssetServlet extends HttpServlet implements IsServlet 
      * Injected constructor.
      */
     @Inject
-    public VisualisationAssetServlet(final VisualisationAssetService service) {
+    public VisualisationAssetServlet(final VisualisationAssetService service,
+                                     final Provider<VisualisationAssetConfig> configProvider) {
         this.service = service;
+        final VisualisationAssetConfig config = configProvider.get();
+        this.mimetypes = config.getMimetypes();
+        this.defaultMimetype = config.getDefaultMimetype();
     }
 
     /**
      * Called to return an asset via HTTP.
      */
     @Override
-    protected void doGet(final HttpServletRequest request, final HttpServletResponse response)
-        throws IOException {
+    protected void doGet(final HttpServletRequest request, final HttpServletResponse response) {
 
         final List<String> arguments = splitIntoDocIdAndPath(request.getPathInfo());
         final String docId = arguments.get(0);
         final String path = arguments.get(1);
 
         try {
-            // TODO Set mimetype
-            final byte[] data = service.get(docId, path);
-            final ServletOutputStream ostr = response.getOutputStream();
-            ostr.write(data);
-            response.setStatus(HttpServletResponse.SC_OK);
+            final byte[] data = service.getData(docId, path);
+            if (data == null) {
+                response.setStatus(HttpServletResponse.SC_NOT_FOUND);
+            } else {
+                response.setContentType(getMimetype(path));
+                response.setStatus(HttpServletResponse.SC_OK);
+                final ServletOutputStream ostr = response.getOutputStream();
+                ostr.write(data);
+            }
         } catch (final IOException e) {
             LOGGER.error("Error retrieving asset for docId {}, path '{}'", docId, path);
             response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
         }
+        // TODO Handle PermissionException?
 
     }
 
@@ -69,7 +85,7 @@ public class VisualisationAssetServlet extends HttpServlet implements IsServlet 
      * @param pathInfo Request.getPathInfo(). Can be null.
      * @return List of docId, path. Two elements always present. Neither will be null.
      */
-    List<String> splitIntoDocIdAndPath(String pathInfo) {
+    private List<String> splitIntoDocIdAndPath(String pathInfo) {
         String docId = "";
         String path = "";
         if (pathInfo != null) {
@@ -83,6 +99,27 @@ public class VisualisationAssetServlet extends HttpServlet implements IsServlet 
             }
         }
         return List.of(docId, path);
+    }
+
+    /**
+     * Given a path to a file, including the filename, uses the extension to
+     * find a suitable mimetype.
+     * @param path The path to the file, including the filename and extension.
+     *             Must not be null.
+     * @return The mimetype. Never returns null.
+     */
+    private String getMimetype(final String path) {
+        String mimetype = defaultMimetype;
+        final int dotIndex = path.lastIndexOf('.');
+        if (dotIndex != -1) {
+            // Got an extension - look it up
+            final String extension = path.substring(dotIndex + 1);
+            if (mimetypes.containsKey(extension)) {
+                mimetype = mimetypes.get(extension);
+            }
+        }
+
+        return mimetype;
     }
 
     @Override

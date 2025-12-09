@@ -34,7 +34,7 @@ public interface VisualisationAssetDao {
      * Gets the data for a given asset.
      * @param documentId The ID of the owner document we want the data for.
      * @param assetPath The path of the asset within the tree.
-     * @return The data for the asset. May return null if the asset is not found.
+     * @return The data for the asset. Returns null if the asset is not found.
      */
     byte[] getData(String documentId, String assetPath) throws IOException;
 

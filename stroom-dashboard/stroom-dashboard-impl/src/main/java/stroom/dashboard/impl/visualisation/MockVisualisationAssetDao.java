@@ -63,7 +63,6 @@ public class MockVisualisationAssetDao implements VisualisationAssetDao {
 
     @Override
     public byte[] getData(final String documentId, final String assetPath) throws IOException {
-        LOGGER.info("MockDB: {}", MOCK_DB);
         final Map<String, VisualisationAsset> assetsMap = MOCK_DB.get(documentId);
         String assetId = null;
         if (assetsMap == null) {
@@ -81,7 +80,8 @@ public class MockVisualisationAssetDao implements VisualisationAssetDao {
                 // Didn't find the path
                 return MOCK_DB_DATA.get(assetId);
             } else {
-                throw new IOException("Could not find an asset matching path '" + assetPath + "'");
+                LOGGER.warn("Could not find an asset matching path '{}'", assetPath);
+                return null;
             }
         }
     }
