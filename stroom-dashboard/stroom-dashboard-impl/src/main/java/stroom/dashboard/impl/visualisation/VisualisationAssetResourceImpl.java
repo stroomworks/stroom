@@ -11,11 +11,13 @@ import jakarta.inject.Provider;
 
 import java.io.IOException;
 
+import static stroom.event.logging.rs.api.AutoLogged.OperationType.UNLOGGED;
+
 /**
  * Serverside REST handling for Visualisation Assets.
- * TODO Add audit logging
+ * <br>TODO Perform audit logging
  */
-@AutoLogged
+@AutoLogged(UNLOGGED)
 public class VisualisationAssetResourceImpl implements VisualisationAssetResource {
 
     /** Service that backs the resource */

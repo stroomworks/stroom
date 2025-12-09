@@ -80,7 +80,6 @@ public class VisualisationAssetService {
      */
     void updateAssets(final String ownerDocId,
                       final VisualisationAssets assets) throws IOException {
-        LOGGER.info("Updating assets for {}, {}", ownerDocId, assets);
 
         final DocRef docRef = new DocRef(VisualisationDoc.TYPE, ownerDocId);
         if (securityContext.hasDocumentPermission(docRef, DocumentPermission.EDIT)) {
