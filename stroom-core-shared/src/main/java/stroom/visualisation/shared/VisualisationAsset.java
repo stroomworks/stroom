@@ -1,6 +1,5 @@
 package stroom.visualisation.shared;
 
-import stroom.docref.DocRef;
 import stroom.docs.shared.Description;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
@@ -12,8 +11,7 @@ import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 import java.util.Objects;
 
 /**
- * Holds the data about a web asset within a visualisation,
- * as part of a VisualisationDoc.
+ * Holds the data about a web asset within a visualisation.
  */
 @Description(
         "Holds the data on a web asset within a visualisation."
@@ -27,9 +25,6 @@ import java.util.Objects;
 public class VisualisationAsset {
 
     @JsonProperty
-    private DocRef ownerDocRef;
-
-    @JsonProperty
     private String id;
 
     @JsonProperty
@@ -39,25 +34,17 @@ public class VisualisationAsset {
     private boolean folder;
 
     @JsonCreator
-    public VisualisationAsset(@JsonProperty("ownerDocRef") final DocRef ownerDocRef,
-                              @JsonProperty("id") final String id,
+    public VisualisationAsset(@JsonProperty("id") final String id,
                               @JsonProperty("path") final String path,
                               @JsonProperty("folder") final boolean folder) {
-        this.ownerDocRef = ownerDocRef;
+        Objects.requireNonNull(id);
         this.id = id;
         this.path = path;
         this.folder = folder;
     }
 
-    public DocRef getOwnerDocRef() {
-        return ownerDocRef;
-    }
-
-    public void setOwnerDocRef(final DocRef ownerDocRef) {
-        this.ownerDocRef = ownerDocRef;
-    }
-
     public String getId() {
+        Objects.requireNonNull(id);
         return id;
     }
 
@@ -87,8 +74,7 @@ public class VisualisationAsset {
             return false;
         }
         final VisualisationAsset that = (VisualisationAsset) o;
-        return folder == that.folder && Objects.equals(id, that.id) && Objects.equals(path,
-                that.path);
+        return folder == that.folder && Objects.equals(id, that.id) && Objects.equals(path, that.path);
     }
 
     @Override

@@ -92,7 +92,15 @@ public class VisualisationAssetService {
                 assetLookup.put(asset.getId(), asset);
             }
 
-            // First store the uploaded files
+            // First store the assets - the paths and metadata
+            try {
+                dao.storeAssets(ownerDocId, assets);
+            } catch (final IOException e) {
+                exceptionBuf.append("\nError storing assets: ");
+                exceptionBuf.append(e.getMessage());
+            }
+
+            // Now store the uploaded files
             final Map<String, ResourceKey> uploadedFiles = assets.getUploadedFiles();
             for (final Map.Entry<String, ResourceKey> uploadedFileEntry : uploadedFiles.entrySet()) {
 
@@ -118,14 +126,6 @@ public class VisualisationAssetService {
                         exceptionBuf.append(e.getMessage());
                     }
                 }
-            }
-
-            // Now store the assets - the paths and metadata
-            try {
-                dao.storeAssets(ownerDocId, assets);
-            } catch (final IOException e) {
-                exceptionBuf.append("\nError storing assets: ");
-                exceptionBuf.append(e.getMessage());
             }
 
             // Did anything go wrong?
@@ -154,7 +154,8 @@ public class VisualisationAssetService {
      * Gets the data for a given asset. Called from the Servlet to get the asset for a given
      * document and path.
      * <br>TODO This data should be streamed rather than held in a byte[] in memory.
-     * @param assetPath The ID of the visualisation asset we want the data for.
+     * @param documentId The ID of the document that owns the asset.
+     * @param assetPath The path of the visualisation asset we want the data for.
      * @return The data for the asset, or null if the asset is not found.
      * @throws IOException If something goes wrong with the IO, DB etc.
      * @throws PermissionException If the user doesn't have view permissions for these assets.

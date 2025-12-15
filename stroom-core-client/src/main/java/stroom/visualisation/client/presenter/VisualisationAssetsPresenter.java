@@ -105,7 +105,7 @@ public class VisualisationAssetsPresenter
     private final List<Item> menuItems = new ArrayList<>();
 
     /** Hidden root item in the tree. Not displayed. */
-    final static VisualisationAssetTreeNode ROOT_NODE = VisualisationAssetTreeNode.createFolderNode("root");
+    final static VisualisationAssetTreeNode ROOT_NODE = VisualisationAssetTreeNode.createNewFolderNode("root");
 
     /** Slash / character */
     private final static String SLASH = "/";
@@ -219,7 +219,7 @@ public class VisualisationAssetsPresenter
 
     /**
      * Convert the paths in the VisualisationAssets into the tree model.
-     * @param assets The list of assets from the VisualisationDoc. Might be null.
+     * @param assets The list of assets from the server. Might be null.
      */
     private void addPathsToTree(final List<VisualisationAsset> assets) {
         if (assets != null) {
@@ -248,7 +248,7 @@ public class VisualisationAssetsPresenter
                         } else {
                             // Not last item so must be a folder
                             // Its ID isn't important at this stage so it gets a new ID
-                            childNode = VisualisationAssetTreeNode.createFolderNode(pathItem);
+                            childNode = VisualisationAssetTreeNode.createNewFolderNode(pathItem);
                         }
                         treeModel.add(node, childNode);
                     } else {
@@ -257,6 +257,7 @@ public class VisualisationAssetsPresenter
                     node = childNode;
                 }
             }
+            sortTree();
         }
     }
 
@@ -310,7 +311,7 @@ public class VisualisationAssetsPresenter
     private void storeAssets(final VisualisationDoc document) {
 
         final VisualisationAssets assets = new VisualisationAssets(document.getUuid(), uploadedFileResourceKeys);
-        treeToAssets(document, assets);
+        treeToAssets(assets);
 
         restFactory.create(VISUALISATION_ASSET_RESOURCE)
                 .method(r -> r.updateAssets(document.getUuid(), assets))
@@ -336,18 +337,16 @@ public class VisualisationAssetsPresenter
 
     /**
      * Convert the tree into a list of assets.
-     * @param document The document which owns the assets
      * @param assets Where to put the assets
      */
-    private void treeToAssets(final VisualisationDoc document, final VisualisationAssets assets) {
-        recurseTreeToAssets(ROOT_NODE, document, assets);
+    private void treeToAssets(final VisualisationAssets assets) {
+        recurseTreeToAssets(ROOT_NODE, assets);
     }
 
     /**
      * Recursive function called from treeToAssets().
      */
     private void recurseTreeToAssets(final UpdatableTreeNode currentNode,
-                                     final VisualisationDoc document,
                                      final VisualisationAssets assets) {
         if (currentNode instanceof final VisualisationAssetTreeNode assetTreeNode) {
 
@@ -358,7 +357,6 @@ public class VisualisationAssetsPresenter
                 final String path = getItemPath(assetTreeNode);
 
                 final VisualisationAsset asset = new VisualisationAsset(
-                        document.asDocRef(),
                         assetTreeNode.getId(),
                         path,
                         !assetTreeNode.isLeaf());
@@ -366,7 +364,7 @@ public class VisualisationAssetsPresenter
             } else {
                 // More nodes so recurse
                 for (final UpdatableTreeNode child : assetTreeNode.getDataProvider().getList()) {
-                    recurseTreeToAssets(child, document, assets);
+                    recurseTreeToAssets(child, assets);
                 }
             }
         } else {
@@ -424,8 +422,9 @@ public class VisualisationAssetsPresenter
                                                 folderNode,
                                                 addFolderDialog.getView().getFolderName());
                                         final UpdatableTreeNode newFolderNode =
-                                                VisualisationAssetTreeNode.createFolderNode(folderName);
+                                                VisualisationAssetTreeNode.createNewFolderNode(folderName);
                                         treeModel.add(folderNode, newFolderNode);
+                                        sortNodeChildren(folderNode);
                                         setDirty();
                                         event.hide();
                                     } else {
@@ -440,6 +439,45 @@ public class VisualisationAssetsPresenter
                     .fire();
         }
 
+    }
+
+    /**
+     * Sorts the whole tree, from root to leaf.
+     */
+    private void sortTree() {
+        recurseSortTree(ROOT_NODE);
+    }
+
+    /**
+     * Called from sortTree() to recurse down the tree, sorting it.
+     * @param node The node to sort and recurse.
+     */
+    private void recurseSortTree(final UpdatableTreeNode node) {
+        sortNodeChildren(node);
+        final List<UpdatableTreeNode> children = node.getDataProvider().getList();
+        for (final UpdatableTreeNode child : children) {
+            recurseSortTree(child);
+        }
+    }
+
+    /**
+     * Sorts the children of a node into folders first, then alphabetical order
+     * @param node The node whose children you want to sort.
+     */
+    private void sortNodeChildren(final UpdatableTreeNode node) {
+        final List<UpdatableTreeNode> children = node.getDataProvider().getList();
+        children.sort((node1, node2) -> {
+            if (!node1.isLeaf() && node2.isLeaf()) {
+                // node1 is folder, node2 is file so node1 comes first
+                return -1;
+            } else if (node1.isLeaf() && !node2.isLeaf()) {
+                // node1 is file, node2 is folder so node2 comes first
+                return 1;
+            } else {
+                // Sort on label
+                return node1.getLabel().compareTo(node2.getLabel());
+            }
+        });
     }
 
     /**
@@ -514,6 +552,7 @@ public class VisualisationAssetsPresenter
 
         final VisualisationAssetTreeNode newFileNode = VisualisationAssetTreeNode.createNewFileNode(fileName);
         treeModel.add(parentFolderNode, newFileNode);
+        sortNodeChildren(parentFolderNode);
         uploadedFileResourceKeys.put(newFileNode.getId(), resourceKey);
 
         setDirty();
@@ -521,8 +560,10 @@ public class VisualisationAssetsPresenter
 
     /**
      * Call to mark the document as dirty and needing saving.
+     * Also sorts the tree, as this is called when a tree node is edited.
      */
     private void setDirty() {
+        sortTree();
         DirtyEvent.fire(this, true);
     }
 
@@ -579,6 +620,7 @@ public class VisualisationAssetsPresenter
      * Sets the state of the UI when things have changed.
      */
     private void updateState() {
+
         if (readOnly) {
             addButton.setEnabled(false);
             deleteButton.setEnabled(false);

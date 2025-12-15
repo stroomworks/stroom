@@ -1,10 +1,14 @@
 package stroom.dashboard.impl.visualisation;
 
+import stroom.config.common.AbstractDbConfig;
+import stroom.config.common.ConnectionConfig;
+import stroom.config.common.ConnectionPoolConfig;
 import stroom.util.config.annotations.RequiresRestart;
 import stroom.util.config.annotations.RequiresRestart.RestartScope;
 import stroom.util.logging.LambdaLogger;
 import stroom.util.logging.LambdaLoggerFactory;
 import stroom.util.shared.AbstractConfig;
+import stroom.util.shared.BootStrapConfig;
 import stroom.util.shared.IsStroomConfig;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
@@ -99,6 +103,27 @@ public class VisualisationAssetConfig extends AbstractConfig implements IsStroom
     @JsonProperty("default")
     public String getDefaultMimetype() {
         return defaultMimetype;
+    }
+
+    /**
+     * DB configuration.
+     */
+    @BootStrapConfig
+    public static class VisualisationAssetDbConfig extends AbstractDbConfig {
+        public VisualisationAssetDbConfig() {
+            super();
+        }
+
+        @JsonCreator
+        @SuppressWarnings("unused")
+        public VisualisationAssetDbConfig(
+                @JsonProperty(AbstractDbConfig.PROP_NAME_CONNECTION)
+                final ConnectionConfig connectionConfig,
+                @JsonProperty(AbstractDbConfig.PROP_NAME_CONNECTION_POOL)
+                final ConnectionPoolConfig connectionPoolConfig) {
+            super(connectionConfig, connectionPoolConfig);
+        }
+
     }
 
 }

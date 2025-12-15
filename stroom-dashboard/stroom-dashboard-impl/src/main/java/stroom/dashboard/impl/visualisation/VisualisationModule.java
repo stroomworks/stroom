@@ -38,9 +38,6 @@ public class VisualisationModule extends AbstractModule {
         bind(VisualisationTokenConsumer.class).to(VisualisationTokenConsumerImpl.class);
         bind(VisualisationDocCache.class).to(VisualisationDocCacheImpl.class);
 
-        // TODO Should only be used for testing
-        bind(VisualisationAssetDao.class).to(MockVisualisationAssetDao.class);
-
         GuiceUtil.buildMultiBinder(binder(), ExplorerActionHandler.class)
                 .addBinding(VisualisationStoreImpl.class);
         GuiceUtil.buildMultiBinder(binder(), ImportExportActionHandler.class)

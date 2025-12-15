@@ -1,10 +1,12 @@
 package stroom.visualisation.client.presenter.assets;
 
+import stroom.util.client.Console;
 import stroom.visualisation.client.presenter.tree.UpdatableTreeNode;
 import stroom.visualisation.shared.VisualisationAsset;
 
 import com.google.gwt.view.client.ListDataProvider;
 
+import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -52,7 +54,8 @@ public class VisualisationAssetTreeNode implements UpdatableTreeNode {
      * This node will have a new UUID.
      * @param label The name of the folder.
      */
-    public static VisualisationAssetTreeNode createFolderNode(final String label) {
+    public static VisualisationAssetTreeNode createNewFolderNode(final String label) {
+        Console.info("Creating new folder node '" + label + "'");
         return new VisualisationAssetTreeNode(UUID.randomUUID().toString(), label, false);
     }
 
@@ -61,6 +64,7 @@ public class VisualisationAssetTreeNode implements UpdatableTreeNode {
      * @param label The name of the file.
      */
     public static VisualisationAssetTreeNode createNewFileNode(final String label) {
+        Console.info("Creating new file node '" + label + "'");
         return new VisualisationAssetTreeNode(UUID.randomUUID().toString(),
                 label,
                 true);
@@ -74,6 +78,7 @@ public class VisualisationAssetTreeNode implements UpdatableTreeNode {
      */
     public static VisualisationAssetTreeNode createNodeFromAsset(final VisualisationAsset asset,
                                                                  final String label) {
+        Console.info("Creating node from asset " + asset);
         return new VisualisationAssetTreeNode(asset.getId(), label, !asset.isFolder());
     }
 
@@ -81,8 +86,8 @@ public class VisualisationAssetTreeNode implements UpdatableTreeNode {
      * Constructor
      */
     private VisualisationAssetTreeNode(final String id,
-                                      final String label,
-                                      final boolean isLeaf) {
+                                       final String label,
+                                       final boolean isLeaf) {
         this.id = id;
         this.label = label;
         this.isLeaf = isLeaf;
@@ -140,7 +145,15 @@ public class VisualisationAssetTreeNode implements UpdatableTreeNode {
 
     @Override
     public void removeChild(final UpdatableTreeNode child) {
-        dataProvider.getList().removeIf(internal -> internal.getLabel().equals(child.getLabel()));
+        Console.info("Node " + this.label + " removing child node " + child.getLabel());
+        if (child instanceof final VisualisationAssetTreeNode childTreeNode) {
+            dataProvider.getList().removeIf(internal -> {
+                final VisualisationAssetTreeNode internalTreeNode = (VisualisationAssetTreeNode) internal;
+                return Objects.equals(internalTreeNode.getId(), childTreeNode.getId());
+            });
+        } else {
+            dataProvider.getList().removeIf(internal -> internal.getLabel().equals(child.getLabel()));
+        }
     }
 
     /**
