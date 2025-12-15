@@ -16,7 +16,6 @@
 
 package stroom.analytics.client.presenter;
 
-import stroom.analytics.shared.AnalyticProcessType;
 import stroom.analytics.shared.QueryLanguageVersion;
 import stroom.analytics.shared.ReportDoc;
 import stroom.explorer.client.presenter.DocSelectionBoxPresenter;
@@ -27,6 +26,8 @@ import com.google.web.bindery.event.shared.EventBus;
 
 public class ReportNotificationPresenter
         extends AbstractNotificationPresenter<ReportDoc> {
+
+    private final ReportNotificationListPresenter notificationListPresenter;
 
 
     @Inject
@@ -40,10 +41,12 @@ public class ReportNotificationPresenter
                 errorFeedPresenter,
                 notificationListPresenter,
                 uiConfigCache);
+        this.notificationListPresenter = notificationListPresenter;
     }
 
     @Override
-    protected ReportDoc onWrite(final ReportDoc reportDoc) {
+    protected ReportDoc onWrite(ReportDoc reportDoc) {
+        reportDoc = notificationListPresenter.onWrite(reportDoc);
         return reportDoc
                 .copy()
                 .languageVersion(QueryLanguageVersion.STROOM_QL_VERSION_0_1)
