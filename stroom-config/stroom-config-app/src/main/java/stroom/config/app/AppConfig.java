@@ -32,6 +32,7 @@ import stroom.core.receive.AutoContentCreationConfig;
 import stroom.credentials.api.CredentialsConfig;
 import stroom.dashboard.impl.DashboardConfig;
 import stroom.dashboard.impl.visualisation.VisualisationAssetConfig;
+import stroom.dashboard.impl.visualisation.VisualisationAssetConfig.VisualisationAssetDbConfig;
 import stroom.docstore.impl.db.DocStoreConfig;
 import stroom.event.logging.impl.LoggingConfig;
 import stroom.explorer.impl.ExplorerConfig;
@@ -135,6 +136,7 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
     public static final String PROP_NAME_UI = "ui";
     public static final String PROP_NAME_UI_URI = "uiUri";
     public static final String PROP_NAME_VISUALISATION_ASSET = "visualisationAsset";
+    public static final String PROP_NAME_VISUALISATION_ASSET_DB = "visualisationAssetDb";
     public static final String PROP_NAME_VOLUMES = "volumes";
 
     private final boolean haltBootOnConfigValidationFailure;
@@ -189,6 +191,7 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
     private final UiConfig uiConfig;
     private final UiUriConfig uiUri;
     private final VisualisationAssetConfig visualisationAssetConfig;
+    private final VisualisationAssetDbConfig visualisationAssetDbConfig;
     private final VolumeConfig volumeConfig;
 
     /**
@@ -246,6 +249,7 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
                 new UiConfig(),
                 new UiUriConfig(),
                 new VisualisationAssetConfig(),
+                new VisualisationAssetDbConfig(),
                 new VolumeConfig());
     }
 
@@ -302,6 +306,7 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
                      @JsonProperty(PROP_NAME_UI) final UiConfig uiConfig,
                      @JsonProperty(PROP_NAME_UI_URI) final UiUriConfig uiUri,
                      @JsonProperty(PROP_NAME_VISUALISATION_ASSET) final VisualisationAssetConfig visualisationAssetConfig,
+                     @JsonProperty(PROP_NAME_VISUALISATION_ASSET_DB) final VisualisationAssetDbConfig visualisationAssetDbConfig,
                      @JsonProperty(PROP_NAME_VOLUMES) final VolumeConfig volumeConfig) {
         this.haltBootOnConfigValidationFailure = haltBootOnConfigValidationFailure;
         this.crossModuleConfig = crossModuleConfig;
@@ -354,6 +359,7 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
         this.uiConfig = uiConfig;
         this.uiUri = uiUri;
         this.visualisationAssetConfig = visualisationAssetConfig;
+        this.visualisationAssetDbConfig = visualisationAssetDbConfig;
         this.volumeConfig = volumeConfig;
     }
 
@@ -635,9 +641,14 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
         return uiUri;
     }
 
-    @JsonProperty
+    @JsonProperty(PROP_NAME_VISUALISATION_ASSET)
     public VisualisationAssetConfig getVisualisationAsset() {
         return visualisationAssetConfig;
+    }
+
+    @JsonProperty(PROP_NAME_VISUALISATION_ASSET_DB)
+    public VisualisationAssetDbConfig getVisualisationAssetDbConfig() {
+        return visualisationAssetDbConfig;
     }
 
     @JsonProperty(PROP_NAME_VOLUMES)

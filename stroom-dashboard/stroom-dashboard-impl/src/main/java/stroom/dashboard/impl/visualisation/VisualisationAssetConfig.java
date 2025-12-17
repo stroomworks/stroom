@@ -9,7 +9,6 @@ import stroom.util.logging.LambdaLogger;
 import stroom.util.logging.LambdaLoggerFactory;
 import stroom.util.shared.AbstractConfig;
 import stroom.util.shared.BootStrapConfig;
-import stroom.util.shared.IsStroomConfig;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -22,7 +21,7 @@ import java.util.Map;
 /**
  * Configuration for Visualisation Asset Management, notably mimetype mapping.
  */
-public class VisualisationAssetConfig extends AbstractConfig implements IsStroomConfig {
+public class VisualisationAssetConfig extends AbstractConfig {
 
     /** Map of filename extension to mimetype */
     private final Map<String, String> mimetypes = new HashMap<>();
