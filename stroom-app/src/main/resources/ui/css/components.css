@@ -2798,3 +2798,8 @@ button.main-menu svg {
 .visualisation-asset-tree-selected-item {
     background-color: var(--row__background-color--selected);
 }
+
+/* Hide the 'Empty' message in the empty asset tree */
+.visualisation-asset-tree-empty-message {
+    visibility: hidden;
+}
