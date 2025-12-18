@@ -130,7 +130,7 @@ public class VisualisationAssetService {
 
             // Did anything go wrong?
             if (!uploadsThatDoNotExist.isEmpty()) {
-                exceptionBuf.append("\nThese files do not exist; please upload them again:");
+                exceptionBuf.append("\nThese files no longer exist; please upload them again:");
                 for (final Map.Entry<String, Path> notExistEntry : uploadsThatDoNotExist.entrySet()) {
                     final VisualisationAsset asset = assetLookup.get(notExistEntry.getKey());
                     exceptionBuf.append("\n");

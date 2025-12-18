@@ -604,7 +604,7 @@ public class VisualisationAssetsPresenter
                             if (result) {
                                 treeModel.remove(node);
                                 if (node instanceof final VisualisationAssetTreeNode assetTreeNode) {
-                                    uploadedFileResourceKeys.remove(assetTreeNode.getId());
+                                    recurseRemoveUploadedFiles(assetTreeNode);
                                 } else {
                                     Console.error("Unknown tree node type: " + node.getClass());
                                 }
@@ -612,6 +612,23 @@ public class VisualisationAssetsPresenter
                                 setDirty();
                             }
                         });
+            }
+        }
+    }
+
+    /**
+     * Recurses down the tree, removing all nodes from the uploadedFileResourceKeys map.
+     * Called from onDeleteButtonClick().
+     * @param assetTreeNode The root node. Remove uploaded files underneath this node.
+     */
+    private void recurseRemoveUploadedFiles(final VisualisationAssetTreeNode assetTreeNode) {
+        uploadedFileResourceKeys.remove(assetTreeNode.getId());
+        final List<UpdatableTreeNode> children = assetTreeNode.getDataProvider().getList();
+        for (final UpdatableTreeNode child : children) {
+            if (child instanceof final VisualisationAssetTreeNode childAssetTreeNode) {
+                recurseRemoveUploadedFiles(childAssetTreeNode);
+            } else {
+                Console.error("Unknown tree node type: " + child.getClass());
             }
         }
     }
@@ -643,6 +660,7 @@ public class VisualisationAssetsPresenter
      */
     private static class AssetTreeResources implements CellTree.Resources {
 
+        /** Height and width of the image in pixels */
         private static final int DIM = 10;
         private static final VisualisationAssetsImageResource CELL_CLOSED =
                 new VisualisationAssetsImageResource(DIM, DIM, "/ui/background-images/arrow-right.png");
