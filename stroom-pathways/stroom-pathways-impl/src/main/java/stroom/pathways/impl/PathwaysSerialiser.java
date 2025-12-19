@@ -19,6 +19,7 @@ package stroom.pathways.impl;
 import stroom.docstore.api.DocumentSerialiser2;
 import stroom.docstore.api.Serialiser2;
 import stroom.docstore.api.Serialiser2Factory;
+import stroom.importexport.api.ImportExportDocument;
 import stroom.pathways.shared.PathwaysDoc;
 
 import jakarta.inject.Inject;
@@ -41,7 +42,7 @@ public class PathwaysSerialiser implements DocumentSerialiser2<PathwaysDoc> {
     }
 
     @Override
-    public Map<String, byte[]> write(final PathwaysDoc document) throws IOException {
+    public ImportExportDocument write(final PathwaysDoc document) throws IOException {
         return delegate.write(document);
     }
 }

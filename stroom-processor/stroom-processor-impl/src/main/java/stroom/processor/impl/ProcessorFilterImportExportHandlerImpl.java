@@ -27,6 +27,7 @@ import stroom.docstore.api.Serialiser2;
 import stroom.docstore.api.Serialiser2Factory;
 import stroom.entity.shared.ExpressionCriteria;
 import stroom.importexport.api.ImportExportActionHandler;
+import stroom.importexport.api.ImportExportDocument;
 import stroom.importexport.api.ImportExportDocumentEventLog;
 import stroom.importexport.api.NonExplorerDocRefProvider;
 import stroom.importexport.shared.ImportSettings;
@@ -257,9 +258,9 @@ public class ProcessorFilterImportExportHandlerImpl
     }
 
     @Override
-    public Map<String, byte[]> exportDocument(final DocRef docRef,
-                                              final boolean omitAuditFields,
-                                              final List<Message> messageList) {
+    public ImportExportDocument exportDocument(final DocRef docRef,
+                                               final boolean omitAuditFields,
+                                               final List<Message> messageList) {
         if (docRef == null) {
             return null;
         }
@@ -277,15 +278,13 @@ public class ProcessorFilterImportExportHandlerImpl
             processorFilter = new AuditFieldFilter<ProcessorFilter>().apply(processorFilter);
         }
 
-        final Map<String, byte[]> data;
         try {
-            data = delegate.write(processorFilter);
+            return delegate.write(processorFilter);
         } catch (final IOException ioex) {
             LOGGER.error("Unable to create meta file for processor filter", ioex);
             importExportDocumentEventLog.exportDocument(docRef, ioex);
             throw new RuntimeException("Unable to create meta file for processor filter", ioex);
         }
-        return data;
     }
 
     @Override

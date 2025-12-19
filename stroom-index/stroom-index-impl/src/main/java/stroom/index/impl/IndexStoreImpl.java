@@ -22,6 +22,7 @@ import stroom.docstore.api.AuditFieldFilter;
 import stroom.docstore.api.Store;
 import stroom.docstore.api.StoreFactory;
 import stroom.docstore.api.UniqueNameUtil;
+import stroom.importexport.api.ImportExportDocument;
 import stroom.importexport.shared.ImportSettings;
 import stroom.importexport.shared.ImportState;
 import stroom.index.api.IndexVolumeGroupService;
@@ -205,7 +206,7 @@ public class IndexStoreImpl implements IndexStore {
             }
 
             if (altered) {
-                effectiveDataMap = serialiser.write(doc);
+                effectiveDataMap = serialiser.write(doc).toDataMap();
             }
 
         } catch (final IOException e) {
@@ -217,9 +218,9 @@ public class IndexStoreImpl implements IndexStore {
     }
 
     @Override
-    public Map<String, byte[]> exportDocument(final DocRef docRef,
-                                              final boolean omitAuditFields,
-                                              final List<Message> messageList) {
+    public ImportExportDocument exportDocument(final DocRef docRef,
+                                               final boolean omitAuditFields,
+                                               final List<Message> messageList) {
         // Get the first 1000 fields.
         final List<LuceneIndexField> fields = getFieldsForExport(docRef);
         if (omitAuditFields) {

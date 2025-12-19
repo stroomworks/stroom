@@ -40,7 +40,7 @@ public interface ImportExportActionHandler extends HasDependencies {
                           ImportState importState,
                           ImportSettings importSettings);
 
-    Map<String, byte[]> exportDocument(DocRef docRef, boolean omitAuditFields, List<Message> messageList);
+    ImportExportDocument exportDocument(DocRef docRef, boolean omitAuditFields, List<Message> messageList);
 
     Set<DocRef> listDocuments();
 

@@ -19,6 +19,7 @@ package stroom.state.impl;
 import stroom.docstore.api.DocumentSerialiser2;
 import stroom.docstore.api.Serialiser2;
 import stroom.docstore.api.Serialiser2Factory;
+import stroom.importexport.api.ImportExportDocument;
 import stroom.state.shared.StateDoc;
 
 import jakarta.inject.Inject;
@@ -43,7 +44,7 @@ public class StateDocSerialiser implements DocumentSerialiser2<StateDoc> {
     }
 
     @Override
-    public Map<String, byte[]> write(final StateDoc document) throws IOException {
+    public ImportExportDocument write(final StateDoc document) throws IOException {
         return delegate.write(document);
     }
 }

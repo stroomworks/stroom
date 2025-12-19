@@ -19,6 +19,7 @@ package stroom.statistics.impl.hbase.entity;
 import stroom.docstore.api.DocumentSerialiser2;
 import stroom.docstore.api.Serialiser2;
 import stroom.docstore.api.Serialiser2Factory;
+import stroom.importexport.api.ImportExportDocument;
 import stroom.statistics.impl.hbase.shared.StroomStatsStoreDoc;
 
 import jakarta.inject.Inject;
@@ -41,7 +42,7 @@ public class StroomStatsStoreSerialiser implements DocumentSerialiser2<StroomSta
     }
 
     @Override
-    public Map<String, byte[]> write(final StroomStatsStoreDoc document) throws IOException {
+    public ImportExportDocument write(final StroomStatsStoreDoc document) throws IOException {
         return delegate.write(document);
     }
 }

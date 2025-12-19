@@ -19,6 +19,7 @@ package stroom.search.elastic;
 import stroom.docstore.api.DocumentSerialiser2;
 import stroom.docstore.api.Serialiser2;
 import stroom.docstore.api.Serialiser2Factory;
+import stroom.importexport.api.ImportExportDocument;
 import stroom.search.elastic.shared.ElasticIndexDoc;
 
 import jakarta.inject.Inject;
@@ -41,7 +42,7 @@ public class ElasticIndexSerialiser implements DocumentSerialiser2<ElasticIndexD
     }
 
     @Override
-    public Map<String, byte[]> write(final ElasticIndexDoc document) throws IOException {
+    public ImportExportDocument write(final ElasticIndexDoc document) throws IOException {
         return delegate.write(document);
     }
 }

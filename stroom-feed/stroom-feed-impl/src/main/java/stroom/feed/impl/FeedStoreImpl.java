@@ -25,6 +25,7 @@ import stroom.docstore.api.StoreFactory;
 import stroom.docstore.api.UniqueNameUtil;
 import stroom.feed.api.FeedStore;
 import stroom.feed.shared.FeedDoc;
+import stroom.importexport.api.ImportExportDocument;
 import stroom.importexport.shared.ImportSettings;
 import stroom.importexport.shared.ImportState;
 import stroom.security.api.SecurityContext;
@@ -239,7 +240,7 @@ public class FeedStoreImpl implements FeedStore {
                                     feedDoc::setVolumeGroup,
                                     () -> feedDoc.setVolumeGroup(null));
 
-                    effectiveDataMap = serialiser.write(feedDoc);
+                    effectiveDataMap = serialiser.write(feedDoc).toDataMap();
                 }
             }
         } catch (final IOException e) {
@@ -251,9 +252,9 @@ public class FeedStoreImpl implements FeedStore {
     }
 
     @Override
-    public Map<String, byte[]> exportDocument(final DocRef docRef,
-                                              final boolean omitAuditFields,
-                                              final List<Message> messageList) {
+    public ImportExportDocument exportDocument(final DocRef docRef,
+                                               final boolean omitAuditFields,
+                                               final List<Message> messageList) {
         if (omitAuditFields) {
             return store.exportDocument(docRef, messageList, new AuditFieldFilter<>());
         }

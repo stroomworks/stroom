@@ -20,6 +20,7 @@ import stroom.analytics.shared.ReportDoc;
 import stroom.docstore.api.DocumentSerialiser2;
 import stroom.docstore.api.Serialiser2;
 import stroom.docstore.api.Serialiser2Factory;
+import stroom.importexport.api.ImportExportDocument;
 
 import jakarta.inject.Inject;
 
@@ -37,13 +38,11 @@ public class ReportSerialiser implements DocumentSerialiser2<ReportDoc> {
 
     @Override
     public ReportDoc read(final Map<String, byte[]> data) throws IOException {
-        final ReportDoc document = delegate.read(data);
-        return document;
+        return delegate.read(data);
     }
 
     @Override
-    public Map<String, byte[]> write(final ReportDoc document) throws IOException {
-        final Map<String, byte[]> data = delegate.write(document);
-        return data;
+    public ImportExportDocument write(final ReportDoc document) throws IOException {
+        return delegate.write(document);
     }
 }

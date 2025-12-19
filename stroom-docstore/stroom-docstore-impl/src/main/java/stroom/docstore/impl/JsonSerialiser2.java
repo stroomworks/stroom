@@ -17,6 +17,8 @@
 package stroom.docstore.impl;
 
 import stroom.docstore.api.Serialiser2;
+import stroom.importexport.api.ImportExportAssetByteArray;
+import stroom.importexport.api.ImportExportDocument;
 import stroom.util.json.JsonUtil;
 import stroom.util.string.EncodingUtil;
 
@@ -26,7 +28,6 @@ import java.io.IOException;
 import java.io.StringReader;
 import java.io.StringWriter;
 import java.io.Writer;
-import java.util.HashMap;
 import java.util.Map;
 
 public class JsonSerialiser2<D> implements Serialiser2<D> {
@@ -53,12 +54,13 @@ public class JsonSerialiser2<D> implements Serialiser2<D> {
     }
 
     @Override
-    public Map<String, byte[]> write(final D document) throws IOException {
+    public ImportExportDocument write(final D document) throws IOException {
         final StringWriter stringWriter = new StringWriter();
         write(stringWriter, document);
-        final Map<String, byte[]> data = new HashMap<>();
-        data.put(META, EncodingUtil.asBytes(stringWriter.toString()));
-        return data;
+        final ImportExportDocument importExportDocument = new ImportExportDocument();
+        importExportDocument.addExtAsset(
+                new ImportExportAssetByteArray(META, EncodingUtil.asBytes(stringWriter.toString())));
+        return importExportDocument;
     }
 
     @Override

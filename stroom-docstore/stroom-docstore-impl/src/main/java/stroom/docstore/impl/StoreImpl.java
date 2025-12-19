@@ -27,6 +27,7 @@ import stroom.docstore.api.Store;
 import stroom.docstore.shared.AbstractDoc;
 import stroom.docstore.shared.AbstractDoc.AbstractBuilder;
 import stroom.docstore.shared.DocRefUtil;
+import stroom.importexport.api.ImportExportDocument;
 import stroom.importexport.shared.ImportSettings;
 import stroom.importexport.shared.ImportSettings.ImportMode;
 import stroom.importexport.shared.ImportState;
@@ -408,9 +409,10 @@ public class StoreImpl<D extends AbstractDoc> implements Store<D> {
                 // Stamp audit data on the imported document.
                 stampAuditData(newDocument);
                 // Convert the document back into a data map.
-                final Map<String, byte[]> finalData = serialiser.write(newDocument);
+                final ImportExportDocument finalData = serialiser.write(newDocument);
+
                 // Write the data.
-                persistence.write(docRef, existingDocument != null, finalData);
+                persistence.write(docRef, existingDocument != null, finalData.toDataMap());
 
                 // Fire an entity event to alert other services of the change.
                 if (existingDocument != null) {
@@ -444,10 +446,11 @@ public class StoreImpl<D extends AbstractDoc> implements Store<D> {
     }
 
     @Override
-    public Map<String, byte[]> exportDocument(final DocRef docRef,
-                                              final List<Message> messageList,
-                                              final Function<D, D> filter) {
-        Map<String, byte[]> data = Collections.emptyMap();
+    public ImportExportDocument exportDocument(final DocRef docRef,
+                                               final List<Message> messageList,
+                                               final Function<D, D> filter) {
+
+        ImportExportDocument importExportDocument = new ImportExportDocument();
 
         try {
             // Check that the user has permission to read this item.
@@ -459,13 +462,13 @@ public class StoreImpl<D extends AbstractDoc> implements Store<D> {
                     throw new IOException("Unable to read " + toDocRefDisplayString(docRef));
                 }
                 document = filter.apply(document);
-                data = serialiser.write(document);
+                importExportDocument = serialiser.write(document);
             }
         } catch (final IOException e) {
             messageList.add(new Message(Severity.ERROR, e.getMessage()));
         }
 
-        return data;
+        return importExportDocument;
     }
 
     private void checkForUpdatedFields(final D existingDoc,
@@ -517,10 +520,10 @@ public class StoreImpl<D extends AbstractDoc> implements Store<D> {
     private D create(final D document) {
         try {
             final DocRef docRef = createDocRef(document);
-            final Map<String, byte[]> data = serialiser.write(document);
+            final ImportExportDocument importExportDocument = serialiser.write(document);
             persistence.getLockFactory().lock(document.getUuid(), () -> {
                 try {
-                    persistence.write(docRef, false, data);
+                    persistence.write(docRef, false, importExportDocument.toDataMap());
                     EntityEvent.fire(entityEventBus, docRef, EntityAction.CREATE);
                 } catch (final IOException e) {
                     throw new UncheckedIOException(e);
@@ -618,7 +621,7 @@ public class StoreImpl<D extends AbstractDoc> implements Store<D> {
             // Add audit data.
             stampAuditData(document);
 
-            final Map<String, byte[]> newData = serialiser.write(document);
+            final ImportExportDocument newData = serialiser.write(document);
 
             persistence.getLockFactory().lock(document.getUuid(), () -> {
                 try {
@@ -640,7 +643,7 @@ public class StoreImpl<D extends AbstractDoc> implements Store<D> {
                                                    + " has already been updated.");
                     }
 
-                    persistence.write(docRef, true, newData);
+                    persistence.write(docRef, true, newData.toDataMap());
                     EntityEvent.fire(entityEventBus, docRef, oldDocRef, EntityAction.UPDATE);
                 } catch (final IOException e) {
                     throw new UncheckedIOException(e);

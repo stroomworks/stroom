@@ -24,6 +24,8 @@ import stroom.explorer.shared.ExplorerNode;
 import stroom.explorer.shared.PermissionInheritance;
 import stroom.importexport.api.ExportSummary;
 import stroom.importexport.api.ImportExportActionHandler;
+import stroom.importexport.api.ImportExportAsset;
+import stroom.importexport.api.ImportExportDocument;
 import stroom.importexport.api.ImportExportDocumentEventLog;
 import stroom.importexport.api.ImportExportSerializer;
 import stroom.importexport.api.ImportExportVersion;
@@ -1406,15 +1408,21 @@ public class ImportExportSerializerImplV2 implements ImportExportSerializer {
             if (handler != null) {
 
                 final List<Message> messages = new ArrayList<>();
-                final Map<String, byte[]> dataMap =
+                final ImportExportDocument importExportDocument =
                         handler.exportDocument(currentDocRef, exportInfo.isOmitAuditFields(), messages);
 
                 final String filePrefix = ImportExportFileNameUtil.createFilePrefix(currentDocRef);
-                for (final Map.Entry<String, byte[]> entry : dataMap.entrySet()) {
-                    final String fileName = filePrefix + "." + entry.getKey();
-                    try (final OutputStream handlerStream = Files.newOutputStream(parentDirPath.resolve(fileName))) {
-                        handlerStream.write(entry.getValue());
-                        LOGGER.debug("Wrote file '{}/{}'", parentDirPath, fileName);
+                for (final ImportExportAsset asset : importExportDocument.getExtAssets()) {
+                    try (asset) {
+                        final String fileName = filePrefix + "." + asset.getKey();
+                        try (final OutputStream handlerStream = Files.newOutputStream(parentDirPath.resolve(fileName))) {
+                            try (final InputStream assetStream = asset.getInputStream()) {
+                                if (assetStream != null) {
+                                    assetStream.transferTo(handlerStream);
+                                }
+                            }
+                            LOGGER.debug("Wrote file '{}/{}'", parentDirPath, fileName);
+                        }
                     }
                 }
             }

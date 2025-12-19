@@ -20,6 +20,7 @@ import stroom.docstore.api.DocumentSerialiser2;
 import stroom.docstore.api.Serialiser2;
 import stroom.docstore.api.Serialiser2Factory;
 import stroom.feed.shared.FeedDoc;
+import stroom.importexport.api.ImportExportDocument;
 
 import jakarta.inject.Inject;
 
@@ -41,7 +42,7 @@ public class FeedSerialiser implements DocumentSerialiser2<FeedDoc> {
     }
 
     @Override
-    public Map<String, byte[]> write(final FeedDoc document) throws IOException {
+    public ImportExportDocument write(final FeedDoc document) throws IOException {
         return delegate.write(document);
     }
 }

@@ -20,6 +20,7 @@ import stroom.analytics.shared.AnalyticRuleDoc;
 import stroom.docstore.api.DocumentSerialiser2;
 import stroom.docstore.api.Serialiser2;
 import stroom.docstore.api.Serialiser2Factory;
+import stroom.importexport.api.ImportExportDocument;
 
 import jakarta.inject.Inject;
 
@@ -42,8 +43,7 @@ public class AnalyticRuleSerialiser implements DocumentSerialiser2<AnalyticRuleD
     }
 
     @Override
-    public Map<String, byte[]> write(final AnalyticRuleDoc document) throws IOException {
-        final Map<String, byte[]> data = delegate.write(document);
-        return data;
+    public ImportExportDocument write(final AnalyticRuleDoc document) throws IOException {
+        return delegate.write(document);
     }
 }

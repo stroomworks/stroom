@@ -19,6 +19,8 @@ package stroom.pipeline;
 import stroom.docstore.api.DocumentSerialiser2;
 import stroom.docstore.api.Serialiser2;
 import stroom.docstore.api.Serialiser2Factory;
+import stroom.importexport.api.ImportExportAssetByteArray;
+import stroom.importexport.api.ImportExportDocument;
 import stroom.pipeline.shared.PipelineDoc;
 import stroom.pipeline.shared.data.PipelineData;
 import stroom.pipeline.shared.data.PipelineDataBuilder;
@@ -55,22 +57,23 @@ public class PipelineSerialiser implements DocumentSerialiser2<PipelineDoc> {
     }
 
     @Override
-    public Map<String, byte[]> write(final PipelineDoc document) throws IOException {
+    public ImportExportDocument write(final PipelineDoc document) throws IOException {
         PipelineData pipelineData = document.getPipelineData();
         document.setPipelineData(null);
 
-        final Map<String, byte[]> data = delegate.write(document);
+        final ImportExportDocument importExportDocument = delegate.write(document);
 
         // If the pipeline doesn't have data, it may be a new pipeline, create a blank one.
         if (pipelineData == null) {
             pipelineData = new PipelineDataBuilder().build();
         }
 
-        data.put(JSON, EncodingUtil.asBytes(getJsonFromPipelineData(pipelineData)));
+        importExportDocument.addExtAsset(
+                new ImportExportAssetByteArray(JSON, EncodingUtil.asBytes(getJsonFromPipelineData(pipelineData))));
 
         document.setPipelineData(pipelineData);
 
-        return data;
+        return importExportDocument;
     }
 
     public PipelineData getPipelineDataFromJson(final String json) {

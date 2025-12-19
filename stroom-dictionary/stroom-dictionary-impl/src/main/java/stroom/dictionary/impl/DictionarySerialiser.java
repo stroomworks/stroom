@@ -20,6 +20,8 @@ import stroom.dictionary.shared.DictionaryDoc;
 import stroom.docstore.api.DocumentSerialiser2;
 import stroom.docstore.api.Serialiser2;
 import stroom.docstore.api.Serialiser2Factory;
+import stroom.importexport.api.ImportExportAssetByteArray;
+import stroom.importexport.api.ImportExportDocument;
 import stroom.util.string.EncodingUtil;
 
 import jakarta.inject.Inject;
@@ -46,13 +48,13 @@ public class DictionarySerialiser implements DocumentSerialiser2<DictionaryDoc> 
     }
 
     @Override
-    public Map<String, byte[]> write(final DictionaryDoc document) throws IOException {
+    public ImportExportDocument write(final DictionaryDoc document) throws IOException {
         final String text = document.getData();
         document.setData(null);
 
-        final Map<String, byte[]> data = delegate.write(document);
+        final ImportExportDocument data = delegate.write(document);
         if (text != null) {
-            data.put(TEXT, EncodingUtil.asBytes(text));
+            data.addExtAsset(new ImportExportAssetByteArray(TEXT, EncodingUtil.asBytes(text)));
             document.setData(text);
         }
 

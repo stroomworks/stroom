@@ -188,7 +188,7 @@ public class V07_08_00_001__IndexFields extends BaseJavaMigration {
     }
 
     private void writeDoc(final Context context, final LuceneIndexDoc doc) throws IOException, SQLException {
-        final Map<String, byte[]> dataMap = indexDocSerialiser.write(doc);
+        final Map<String, byte[]> dataMap = indexDocSerialiser.write(doc).toDataMap();
         final byte[] newData = dataMap.remove("meta");
         // Add the records.
         try (final PreparedStatement ps = context.getConnection().prepareStatement(

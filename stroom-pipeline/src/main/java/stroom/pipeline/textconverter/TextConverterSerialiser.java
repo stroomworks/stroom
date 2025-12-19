@@ -19,6 +19,8 @@ package stroom.pipeline.textconverter;
 import stroom.docstore.api.DocumentSerialiser2;
 import stroom.docstore.api.Serialiser2;
 import stroom.docstore.api.Serialiser2Factory;
+import stroom.importexport.api.ImportExportAssetByteArray;
+import stroom.importexport.api.ImportExportDocument;
 import stroom.pipeline.shared.TextConverterDoc;
 import stroom.util.string.EncodingUtil;
 
@@ -46,16 +48,16 @@ public class TextConverterSerialiser implements DocumentSerialiser2<TextConverte
     }
 
     @Override
-    public Map<String, byte[]> write(final TextConverterDoc document) throws IOException {
+    public ImportExportDocument write(final TextConverterDoc document) throws IOException {
         final String xml = document.getData();
         document.setData(null);
 
-        final Map<String, byte[]> map = delegate.write(document);
+        final ImportExportDocument importExportDocument = delegate.write(document);
         if (xml != null) {
-            map.put(XML, EncodingUtil.asBytes(xml));
+            importExportDocument.addExtAsset(new ImportExportAssetByteArray(XML, EncodingUtil.asBytes(xml)));
             document.setData(xml);
         }
 
-        return map;
+        return importExportDocument;
     }
 }

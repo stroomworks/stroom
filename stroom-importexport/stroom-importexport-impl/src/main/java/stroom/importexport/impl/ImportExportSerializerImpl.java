@@ -24,6 +24,8 @@ import stroom.explorer.shared.ExplorerNode;
 import stroom.explorer.shared.PermissionInheritance;
 import stroom.importexport.api.ExportSummary;
 import stroom.importexport.api.ImportExportActionHandler;
+import stroom.importexport.api.ImportExportAsset;
+import stroom.importexport.api.ImportExportDocument;
 import stroom.importexport.api.ImportExportDocumentEventLog;
 import stroom.importexport.api.ImportExportSerializer;
 import stroom.importexport.api.ImportExportVersion;
@@ -766,7 +768,7 @@ public class ImportExportSerializerImpl implements ImportExportSerializer {
         if (importExportActionHandler != null) {
 
             LOGGER.debug("Exporting: " + initialDocRef);
-            final Map<String, byte[]> dataMap = importExportActionHandler.exportDocument(initialDocRef,
+            final ImportExportDocument importExportDocument = importExportActionHandler.exportDocument(initialDocRef,
                     omitAuditFields,
                     localMessageList);
             final DocRef explorerDocRef;
@@ -828,24 +830,26 @@ public class ImportExportSerializerImpl implements ImportExportSerializer {
                     writeNodeProperties(explorerNode, pathElements, parentDir, filePrefix, localMessageList);
 
                     // Write out all associated data.
-                    dataMap.forEach((k, v) -> {
-                        final String fileName = filePrefix + "." + k;
-                        try {
-                            final OutputStream outputStream = Files.newOutputStream(parentDir.resolve(fileName));
-                            outputStream.write(v);
-                            // POSIX standard is for all files to end with a line end (\n) so add one if not there
-                            if (isMissingLineEndAsLastChar(v)) {
-                                outputStream.write(LINE_END_CHAR_BYTES);
-                            }
-                            outputStream.close();
+                    for (final ImportExportAsset asset : importExportDocument.getExtAssets()) {
+                        try (asset) {
+                            final String fileName = filePrefix + "." + asset.getKey();
+                            try (final InputStream assetStream = asset.getInputStream()) {
+                                if (assetStream != null) {
+                                    try (final OutputStream outputStream =
+                                            new EndsWithNewlineOutputStream(
+                                                    Files.newOutputStream(parentDir.resolve(fileName)))) {
 
-                        } catch (final IOException e) {
-                            localMessageList.add(new Message(
-                                    Severity.ERROR,
-                                    "Failed to write file '" + fileName + "': "
-                                    + LogUtil.exceptionMessage(e)));
+                                        assetStream.transferTo(outputStream);
+                                    }
+                                }
+                            } catch (final IOException e) {
+                                localMessageList.add(new Message(
+                                        Severity.ERROR,
+                                        "Failed to write file '" + fileName + "': "
+                                        + LogUtil.exceptionMessage(e)));
+                            }
                         }
-                    });
+                    }
 
                     final List<Message> errors = localMessageList.stream()
                             .filter(message -> Severity.FATAL_ERROR.equals(message.getSeverity())

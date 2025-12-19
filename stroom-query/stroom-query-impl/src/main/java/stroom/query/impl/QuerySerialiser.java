@@ -19,6 +19,7 @@ package stroom.query.impl;
 import stroom.docstore.api.DocumentSerialiser2;
 import stroom.docstore.api.Serialiser2;
 import stroom.docstore.api.Serialiser2Factory;
+import stroom.importexport.api.ImportExportDocument;
 import stroom.query.shared.QueryDoc;
 
 import jakarta.inject.Inject;
@@ -55,11 +56,11 @@ public class QuerySerialiser implements DocumentSerialiser2<QueryDoc> {
     }
 
     @Override
-    public Map<String, byte[]> write(final QueryDoc document) throws IOException {
+    public ImportExportDocument write(final QueryDoc document) throws IOException {
 //        final QueryConfig dashboardConfig = document.getQueryConfig();
 //        document.setQueryConfig(null);
 
-        final Map<String, byte[]> data = delegate.write(document);
+        final ImportExportDocument importExportDocument = delegate.write(document);
 
 //        if (dashboardConfig != null) {
 //            final StringWriter stringWriter = new StringWriter();
@@ -69,7 +70,7 @@ public class QuerySerialiser implements DocumentSerialiser2<QueryDoc> {
 //        }
 
 
-        return data;
+        return importExportDocument;
     }
 
 //    public QueryConfig getQueryConfigFromJson(final byte[] jsonData) throws IOException {

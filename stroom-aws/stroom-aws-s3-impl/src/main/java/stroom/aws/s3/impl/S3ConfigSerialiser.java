@@ -20,6 +20,7 @@ import stroom.aws.s3.shared.S3ConfigDoc;
 import stroom.docstore.api.DocumentSerialiser2;
 import stroom.docstore.api.Serialiser2;
 import stroom.docstore.api.Serialiser2Factory;
+import stroom.importexport.api.ImportExportDocument;
 
 import jakarta.inject.Inject;
 
@@ -41,7 +42,7 @@ public class S3ConfigSerialiser implements DocumentSerialiser2<S3ConfigDoc> {
     }
 
     @Override
-    public Map<String, byte[]> write(final S3ConfigDoc document) throws IOException {
+    public ImportExportDocument write(final S3ConfigDoc document) throws IOException {
         return delegate.write(document);
     }
 }

@@ -19,6 +19,7 @@ package stroom.planb.impl;
 import stroom.docstore.api.DocumentSerialiser2;
 import stroom.docstore.api.Serialiser2;
 import stroom.docstore.api.Serialiser2Factory;
+import stroom.importexport.api.ImportExportDocument;
 import stroom.planb.shared.PlanBDoc;
 
 import jakarta.inject.Inject;
@@ -41,7 +42,7 @@ public class PlanBDocSerialiser implements DocumentSerialiser2<PlanBDoc> {
     }
 
     @Override
-    public Map<String, byte[]> write(final PlanBDoc document) throws IOException {
+    public ImportExportDocument write(final PlanBDoc document) throws IOException {
         return delegate.write(document);
     }
 }

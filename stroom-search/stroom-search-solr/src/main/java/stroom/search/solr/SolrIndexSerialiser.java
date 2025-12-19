@@ -19,6 +19,7 @@ package stroom.search.solr;
 import stroom.docstore.api.DocumentSerialiser2;
 import stroom.docstore.api.Serialiser2;
 import stroom.docstore.api.Serialiser2Factory;
+import stroom.importexport.api.ImportExportDocument;
 import stroom.search.solr.shared.SolrIndexDoc;
 
 import jakarta.inject.Inject;
@@ -41,7 +42,7 @@ public class SolrIndexSerialiser implements DocumentSerialiser2<SolrIndexDoc> {
     }
 
     @Override
-    public Map<String, byte[]> write(final SolrIndexDoc document) throws IOException {
+    public ImportExportDocument write(final SolrIndexDoc document) throws IOException {
         return delegate.write(document);
     }
 }

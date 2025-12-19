@@ -19,6 +19,8 @@ package stroom.dashboard.impl.visualisation;
 import stroom.docstore.api.DocumentSerialiser2;
 import stroom.docstore.api.Serialiser2;
 import stroom.docstore.api.Serialiser2Factory;
+import stroom.importexport.api.ImportExportAssetByteArray;
+import stroom.importexport.api.ImportExportDocument;
 import stroom.util.string.EncodingUtil;
 import stroom.visualisation.shared.VisualisationDoc;
 
@@ -50,17 +52,17 @@ public class VisualisationSerialiser implements DocumentSerialiser2<Visualisatio
     }
 
     @Override
-    public Map<String, byte[]> write(final VisualisationDoc document) throws IOException {
+    public ImportExportDocument write(final VisualisationDoc document) throws IOException {
         final String settings = document.getSettings();
         document.setSettings(null);
 
-        final Map<String, byte[]> data = delegate.write(document);
+        final ImportExportDocument importExportDocument = delegate.write(document);
 
         if (settings != null) {
-            data.put(JSON, EncodingUtil.asBytes(settings));
+            importExportDocument.addExtAsset(new ImportExportAssetByteArray(JSON, EncodingUtil.asBytes(settings)));
             document.setSettings(settings);
         }
 
-        return data;
+        return importExportDocument;
     }
 }
