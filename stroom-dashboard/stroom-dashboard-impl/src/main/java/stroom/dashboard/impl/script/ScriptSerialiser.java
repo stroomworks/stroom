@@ -19,7 +19,7 @@ package stroom.dashboard.impl.script;
 import stroom.docstore.api.DocumentSerialiser2;
 import stroom.docstore.api.Serialiser2;
 import stroom.docstore.api.Serialiser2Factory;
-import stroom.importexport.api.ImportExportAssetByteArray;
+import stroom.importexport.api.ByteArrayImportExportAsset;
 import stroom.importexport.api.ImportExportDocument;
 import stroom.script.shared.ScriptDoc;
 import stroom.util.string.EncodingUtil;
@@ -59,7 +59,7 @@ public class ScriptSerialiser implements DocumentSerialiser2<ScriptDoc> {
         final ImportExportDocument importExportDocument = delegate.write(document);
 
         if (js != null) {
-            importExportDocument.addExtAsset(new ImportExportAssetByteArray(JS, EncodingUtil.asBytes(js)));
+            importExportDocument.addExtAsset(new ByteArrayImportExportAsset(JS, EncodingUtil.asBytes(js)));
             document.setData(js);
         }
 

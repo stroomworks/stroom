@@ -19,7 +19,7 @@ package stroom.pipeline.xslt;
 import stroom.docstore.api.DocumentSerialiser2;
 import stroom.docstore.api.Serialiser2;
 import stroom.docstore.api.Serialiser2Factory;
-import stroom.importexport.api.ImportExportAssetByteArray;
+import stroom.importexport.api.ByteArrayImportExportAsset;
 import stroom.importexport.api.ImportExportDocument;
 import stroom.pipeline.shared.XsltDoc;
 import stroom.util.string.EncodingUtil;
@@ -54,7 +54,7 @@ public class XsltSerialiser implements DocumentSerialiser2<XsltDoc> {
 
         final ImportExportDocument importExportDocument = delegate.write(document);
         if (xsl != null) {
-            importExportDocument.addExtAsset(new ImportExportAssetByteArray(XSL, EncodingUtil.asBytes(xsl)));
+            importExportDocument.addExtAsset(new ByteArrayImportExportAsset(XSL, EncodingUtil.asBytes(xsl)));
             document.setData(xsl);
         }
 

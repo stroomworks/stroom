@@ -20,7 +20,7 @@ import stroom.dictionary.shared.DictionaryDoc;
 import stroom.docstore.api.DocumentSerialiser2;
 import stroom.docstore.api.Serialiser2;
 import stroom.docstore.api.Serialiser2Factory;
-import stroom.importexport.api.ImportExportAssetByteArray;
+import stroom.importexport.api.ByteArrayImportExportAsset;
 import stroom.importexport.api.ImportExportDocument;
 import stroom.util.string.EncodingUtil;
 
@@ -54,7 +54,7 @@ public class DictionarySerialiser implements DocumentSerialiser2<DictionaryDoc> 
 
         final ImportExportDocument data = delegate.write(document);
         if (text != null) {
-            data.addExtAsset(new ImportExportAssetByteArray(TEXT, EncodingUtil.asBytes(text)));
+            data.addExtAsset(new ByteArrayImportExportAsset(TEXT, EncodingUtil.asBytes(text)));
             document.setData(text);
         }
 

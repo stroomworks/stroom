@@ -17,7 +17,7 @@
 package stroom.docstore.impl;
 
 import stroom.docstore.api.Serialiser2;
-import stroom.importexport.api.ImportExportAssetByteArray;
+import stroom.importexport.api.ByteArrayImportExportAsset;
 import stroom.importexport.api.ImportExportDocument;
 import stroom.util.json.JsonUtil;
 import stroom.util.string.EncodingUtil;
@@ -59,7 +59,7 @@ public class JsonSerialiser2<D> implements Serialiser2<D> {
         write(stringWriter, document);
         final ImportExportDocument importExportDocument = new ImportExportDocument();
         importExportDocument.addExtAsset(
-                new ImportExportAssetByteArray(META, EncodingUtil.asBytes(stringWriter.toString())));
+                new ByteArrayImportExportAsset(META, EncodingUtil.asBytes(stringWriter.toString())));
         return importExportDocument;
     }
 

@@ -28,7 +28,7 @@ import java.io.InputStream;
  * Useful for stuff that is fairly small.
  */
 @NullMarked
-public class ImportExportAssetByteArray implements ImportExportAsset {
+public class ByteArrayImportExportAsset implements ImportExportAsset {
 
     private final String key;
 
@@ -40,7 +40,7 @@ public class ImportExportAssetByteArray implements ImportExportAsset {
      *            a file or the path to a file, depending on context.
      * @param data The contents of the asset.
      */
-    public ImportExportAssetByteArray(final String key, final byte[] data) {
+    public ByteArrayImportExportAsset(final String key, final byte[] data) {
         this.key = key;
         this.data = data;
     }
