@@ -1415,7 +1415,9 @@ public class ImportExportSerializerImplV2 implements ImportExportSerializer {
                 for (final ImportExportAsset asset : importExportDocument.getExtAssets()) {
                     try (asset) {
                         final String fileName = filePrefix + "." + asset.getKey();
-                        try (final OutputStream handlerStream = Files.newOutputStream(parentDirPath.resolve(fileName))) {
+                        try (final OutputStream handlerStream =
+                                new EndsWithNewlineOutputStream(
+                                        Files.newOutputStream(parentDirPath.resolve(fileName)))) {
                             try (final InputStream assetStream = asset.getInputStream()) {
                                 if (assetStream != null) {
                                     assetStream.transferTo(handlerStream);
