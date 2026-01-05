@@ -1,6 +1,8 @@
 package stroom.dashboard.impl.visualisation;
 
 import stroom.docref.DocRef;
+import stroom.importexport.api.ByteArrayImportExportAsset;
+import stroom.importexport.api.ImportExportAsset;
 import stroom.resource.api.ResourceStore;
 import stroom.security.api.SecurityContext;
 import stroom.security.shared.DocumentPermission;
@@ -17,7 +19,10 @@ import com.google.inject.Inject;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -171,6 +176,26 @@ public class VisualisationAssetService {
             throw new PermissionException(securityContext.getUserRef(),
                     "You do not have permission to view this asset");
         }
+    }
+
+    /**
+     * Returns the assets in a form suitable for exporting.
+     * @param documentId The ID of the owning document
+     * @return Assets to export. Never null.
+     * @throws IOException If something goes wrong
+     * @throws PermissionException If the user doesn't have permission
+     */
+    Collection<ImportExportAsset> getAssetsForExport(final String documentId)
+            throws IOException, PermissionException {
+
+        LOGGER.info("Returning assets for export for {}", documentId);
+        final List<ImportExportAsset> importExportAssets = new ArrayList<>();
+        final VisualisationAssets assets = this.fetchAssets(documentId);
+        for (final VisualisationAsset asset : assets.getAssets()) {
+            final byte[] data = this.getData(documentId, asset.getPath());
+            importExportAssets.add(new ByteArrayImportExportAsset(asset.getPath(), data));
+        }
+        return importExportAssets;
     }
 
 }

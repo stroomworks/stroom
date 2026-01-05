@@ -49,11 +49,13 @@ import jakarta.inject.Inject;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 
+import java.io.BufferedOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.DirectoryStream;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
@@ -119,6 +121,9 @@ public class ImportExportSerializerImplV2 implements ImportExportSerializer {
 
     /** Name of the .git directory - to be ignored */
     private static final String GIT_DIRECTORY = ".git";
+
+    /** Name of .gitkeep file so directories get created in GIT */
+    private static final String GIT_KEEP_FILENAME = ".gitkeep";
 
     /** Version 1 implementation */
     private final ImportExportSerializer importExportSerializerV1;
@@ -1417,7 +1422,8 @@ public class ImportExportSerializerImplV2 implements ImportExportSerializer {
                         final String fileName = filePrefix + "." + asset.getKey();
                         try (final OutputStream handlerStream =
                                 new EndsWithNewlineOutputStream(
-                                        Files.newOutputStream(parentDirPath.resolve(fileName)))) {
+                                        new BufferedOutputStream(
+                                            Files.newOutputStream(parentDirPath.resolve(fileName))))) {
                             try (final InputStream assetStream = asset.getInputStream()) {
                                 if (assetStream != null) {
                                     assetStream.transferTo(handlerStream);
@@ -1426,6 +1432,54 @@ public class ImportExportSerializerImplV2 implements ImportExportSerializer {
                             LOGGER.debug("Wrote file '{}/{}'", parentDirPath, fileName);
                         }
                     }
+                }
+
+                // Putting path assets under a <filename>-path-assets/ directory
+                final Path pathAssetRoot = parentDirPath.resolve(filePrefix + "-path-assets");
+                for (final ImportExportAsset asset : importExportDocument.getPathAssets()) {
+                    try (asset) {
+                        // The asset key is the relative path plus the filename
+                        // Need to make sure the key doesn't start with / as otherwise it will be put in root
+                        String assetKey = asset.getKey();
+                        if (assetKey.startsWith(File.separator)) {
+                            assetKey = assetKey.substring(1);
+                        }
+                        final Path pathToAsset = pathAssetRoot.resolve(assetKey);
+                        LOGGER.info("Path to asset: sep {}, key {}, assetKey {}, pathToAsset {}",
+                                File.pathSeparator, asset.getKey(), assetKey, pathToAsset);
+
+                        // Create the directories to provide a parent directory for the new file
+                        Files.createDirectories(pathToAsset.getParent());
+                        try (final InputStream assetStream = asset.getInputStream()) {
+                            if (assetStream != null) {
+                                LOGGER.info("Writing to asset path '{}' within parent '{}' and root '{}'",
+                                        pathToAsset, pathToAsset.getParent(), pathAssetRoot);
+                                try (final OutputStream handlerStream =
+                                        new BufferedOutputStream(Files.newOutputStream(pathToAsset))) {
+                                    assetStream.transferTo(handlerStream);
+                                }
+                            } else {
+                                // assetStream == null => no content, just a directory
+                                Files.createDirectories(pathToAsset);
+                                // Git ignores directories so create a .gitkeep file
+                                try {
+                                    Files.createFile(pathToAsset.resolve(GIT_KEEP_FILENAME));
+                                } catch (final FileAlreadyExistsException e) {
+                                    // Ignore this exception
+                                }
+                            }
+                        }
+                    } catch (final PermissionException e) {
+                        LOGGER.error("Permission exception exporting asset '{}': {}", asset.getKey(), e.getMessage(), e);
+                        throw e;
+                    } catch (final IOException e) {
+                        LOGGER.error("Error exporting asset '{}': {}", asset.getKey(), e.getMessage(), e);
+                        throw e;
+                    } catch (final NullPointerException e) {
+                        LOGGER.error("NullPointerException exporting asset '{}': {}", asset.getKey(), e.getMessage(), e);
+                        throw e;
+                    }
+
                 }
             }
         }

@@ -32,15 +32,16 @@ public class ByteArrayImportExportAsset implements ImportExportAsset {
 
     private final String key;
 
-    private final byte[] data;
+    private final byte @Nullable [] data;
 
     /**
      * Constructor.
      * @param key The key associated with the asset. Might represent the extension of
-     *            a file or the path to a file, depending on context.
-     * @param data The contents of the asset.
+     *            a file or the path to a file, depending on context. Must not be null.
+     * @param data The contents of the asset. Can be null if no data is associated with the asset
+     *             (e.g. this represents a folder).
      */
-    public ByteArrayImportExportAsset(final String key, final byte[] data) {
+    public ByteArrayImportExportAsset(final String key, final byte @Nullable [] data) {
         this.key = key;
         this.data = data;
     }
@@ -52,12 +53,23 @@ public class ByteArrayImportExportAsset implements ImportExportAsset {
 
     @Override
     public @Nullable InputStream getInputStream() throws IOException {
-        return new ByteArrayInputStream(data);
+        if (data == null) {
+            return null;
+        } else {
+            return new ByteArrayInputStream(data);
+        }
     }
 
     @Override
     public void close() {
         // No code
+    }
+
+    @Override
+    public String toString() {
+        return "ByteArrayImportExportAsset{" +
+               "key='" + key + '\'' +
+               '}';
     }
 
 }

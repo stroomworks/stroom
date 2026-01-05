@@ -16,6 +16,8 @@
 
 package stroom.importexport.impl;
 
+import org.jspecify.annotations.NonNull;
+
 import java.io.FilterOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -50,11 +52,11 @@ public class EndsWithNewlineOutputStream extends FilterOutputStream {
      * Intercepts all byte[] writes through the filter and stores the last character.
      */
     @Override
-    public void write(final byte[] b,
+    public void write(final byte @NonNull [] buf,
                       final int off,
                       final int len) throws IOException {
 
-        if (b == null) {
+        if (buf == null) {
             throw new NullPointerException("b is null");
         }
         if (off < 0) {
@@ -63,13 +65,13 @@ public class EndsWithNewlineOutputStream extends FilterOutputStream {
         if (len < 0) {
             throw new IndexOutOfBoundsException("len is negative");
         }
-        if (off + len > b.length) {
+        if (off + len > buf.length) {
             throw new IndexOutOfBoundsException("Offset + length is greater than buffer length");
         }
 
         // Index defined by OutputStream.write(byte[], int, int) documentation
-        lastByte = b[off + len - 1];
-        super.out.write(b, off, len);
+        lastByte = buf[off + len - 1];
+        super.out.write(buf, off, len);
     }
 
     /**
