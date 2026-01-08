@@ -24,6 +24,7 @@ import stroom.explorer.shared.ExplorerNode;
 import stroom.explorer.shared.PermissionInheritance;
 import stroom.importexport.api.ByteArrayImportExportAsset;
 import stroom.importexport.api.ExportSummary;
+import stroom.importexport.api.FileImportExportAsset;
 import stroom.importexport.api.ImportExportActionHandler;
 import stroom.importexport.api.ImportExportAsset;
 import stroom.importexport.api.ImportExportDocument;
@@ -47,6 +48,7 @@ import stroom.util.shared.PermissionException;
 import stroom.util.shared.Severity;
 
 import jakarta.inject.Inject;
+import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 
@@ -57,8 +59,11 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.DirectoryStream;
 import java.nio.file.FileAlreadyExistsException;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -125,6 +130,9 @@ public class ImportExportSerializerImplV2 implements ImportExportSerializer {
 
     /** Name of .gitkeep file so directories get created in GIT */
     private static final String GIT_KEEP_FILENAME = ".gitkeep";
+
+    /** Defines the directory that path assets are stored in */
+    private static final String PATH_ASSETS_DIRECTORY_SUFFIX = "-path-assets";
 
     /** Version 1 implementation */
     private final ImportExportSerializer importExportSerializerV1;
@@ -335,6 +343,9 @@ public class ImportExportSerializerImplV2 implements ImportExportSerializer {
                 if (childPath.endsWith(GIT_DIRECTORY)) {
                     LOGGER.info("{}Ignoring .git directory", indent(docRefPath));
                     continue;
+                } else if (childPath.getFileName().toString().endsWith(PATH_ASSETS_DIRECTORY_SUFFIX)) {
+                    LOGGER.info("{}Ignoring path assets in {}", indent(docRefPath), childPath);
+                    continue;
                 }
                 // Pull the docRef for this directory from the map
                 final DocRef parentDocRef = pathToFolderDocRef.get(childPath.getFileName().toString());
@@ -475,6 +486,9 @@ public class ImportExportSerializerImplV2 implements ImportExportSerializer {
                 LOGGER.info("{}Recursing into '{}'", indent(docRefPath), childPath);
                 if (childPath.endsWith(GIT_DIRECTORY)) {
                     LOGGER.info("{}Ignoring .git directory", indent(docRefPath));
+                    continue;
+                } else if (childPath.getFileName().toString().endsWith(PATH_ASSETS_DIRECTORY_SUFFIX)) {
+                    LOGGER.info("{}Ignoring path assets directory '{}'", indent(docRefPath), childPath);
                     continue;
                 }
 
@@ -632,7 +646,7 @@ public class ImportExportSerializerImplV2 implements ImportExportSerializer {
                 importDocRef,
                 importDocRefPath);
 
-        // Get other associated data.
+        // Get other associated data, starting with the extension keyed files
         final ImportExportDocument importExportDocument = new ImportExportDocument();
         final String filePrefix = ImportExportFileNameUtil.createFilePrefix(importDocRef);
         final Path dir = nodeFile.getParent();
@@ -655,6 +669,9 @@ public class ImportExportSerializerImplV2 implements ImportExportSerializer {
                 }
             }
         }
+
+        // Now look for any path keyed assets
+        importPathAssetsFromDisk(importExportDocument, dir.resolve(filePrefix + PATH_ASSETS_DIRECTORY_SUFFIX));
 
         try {
             // Find the appropriate handler
@@ -696,6 +713,43 @@ public class ImportExportSerializerImplV2 implements ImportExportSerializer {
 
 
         return imported;
+    }
+
+    /**
+     * Reads the path assets (if any) into the importExportDoc, using the relative path as the asset key.
+     * @param importExportDocument Where to put any assets found.
+     * @param pathAssetsRootDirectory The root directory to look for path assets. Doesn't need to exist -
+     *                                if it doesn't exist then there are no assets so no problem.
+     */
+    private void importPathAssetsFromDisk(final ImportExportDocument importExportDocument,
+                                          final Path pathAssetsRootDirectory) throws IOException {
+
+        if (pathAssetsRootDirectory.toFile().exists()) {
+            Files.walkFileTree(pathAssetsRootDirectory, new SimpleFileVisitor<>() {
+                @Override
+                public FileVisitResult visitFile(final @NonNull Path file, final @NonNull BasicFileAttributes attrs) {
+
+                    LOGGER.info("Found path asset '{}' with relative path '{}'",
+                            file, pathAssetsRootDirectory.relativize(file));
+
+                    if (file.endsWith(GIT_KEEP_FILENAME)) {
+                        // Check for .gitkeep - ignore the file and add the folder as an asset
+                        final String key = "/"  + pathAssetsRootDirectory.relativize(file.getParent());
+                        final ImportExportAsset asset = new ByteArrayImportExportAsset(key, null);
+                        importExportDocument.addPathAsset(asset);
+                        LOGGER.info("Added asset for folder '{}'", key);
+                    } else {
+                        // Normal file to import as a path asset
+                        final String key = "/" + pathAssetsRootDirectory.relativize(file);
+                        final ImportExportAsset asset = new FileImportExportAsset(key, file);
+                        importExportDocument.addPathAsset(asset);
+                        LOGGER.info("Added asset with filename '{}'", key);
+                    }
+
+                    return FileVisitResult.CONTINUE;
+                }
+            });
+        }
     }
 
     private DocRef importNonExplorerDoc(final ImportExportActionHandler importExportActionHandler,
@@ -1435,7 +1489,7 @@ public class ImportExportSerializerImplV2 implements ImportExportSerializer {
                 }
 
                 // Putting path assets under a <filename>-path-assets/ directory
-                final Path pathAssetRoot = parentDirPath.resolve(filePrefix + "-path-assets");
+                final Path pathAssetRoot = parentDirPath.resolve(filePrefix + PATH_ASSETS_DIRECTORY_SUFFIX);
                 for (final ImportExportAsset asset : importExportDocument.getPathAssets()) {
                     try {
                         // The asset key is the relative path plus the filename
