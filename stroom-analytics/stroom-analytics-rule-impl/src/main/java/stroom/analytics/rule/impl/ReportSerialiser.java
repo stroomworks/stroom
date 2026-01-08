@@ -25,7 +25,6 @@ import stroom.importexport.api.ImportExportDocument;
 import jakarta.inject.Inject;
 
 import java.io.IOException;
-import java.util.Map;
 
 public class ReportSerialiser implements DocumentSerialiser2<ReportDoc> {
 
@@ -37,8 +36,8 @@ public class ReportSerialiser implements DocumentSerialiser2<ReportDoc> {
     }
 
     @Override
-    public ReportDoc read(final Map<String, byte[]> data) throws IOException {
-        return delegate.read(data);
+    public ReportDoc read(final ImportExportDocument importExportDocument) throws IOException {
+        return delegate.read(importExportDocument);
     }
 
     @Override

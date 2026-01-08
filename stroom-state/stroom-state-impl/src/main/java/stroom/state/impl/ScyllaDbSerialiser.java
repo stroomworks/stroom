@@ -25,7 +25,6 @@ import stroom.state.shared.ScyllaDbDoc;
 import jakarta.inject.Inject;
 
 import java.io.IOException;
-import java.util.Map;
 
 public class ScyllaDbSerialiser implements DocumentSerialiser2<ScyllaDbDoc> {
 
@@ -39,8 +38,8 @@ public class ScyllaDbSerialiser implements DocumentSerialiser2<ScyllaDbDoc> {
     }
 
     @Override
-    public ScyllaDbDoc read(final Map<String, byte[]> data) throws IOException {
-        return delegate.read(data);
+    public ScyllaDbDoc read(final ImportExportDocument importExportDocument) throws IOException {
+        return delegate.read(importExportDocument);
     }
 
     @Override

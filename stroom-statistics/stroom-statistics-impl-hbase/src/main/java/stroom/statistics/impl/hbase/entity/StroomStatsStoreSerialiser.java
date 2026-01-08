@@ -25,7 +25,6 @@ import stroom.statistics.impl.hbase.shared.StroomStatsStoreDoc;
 import jakarta.inject.Inject;
 
 import java.io.IOException;
-import java.util.Map;
 
 public class StroomStatsStoreSerialiser implements DocumentSerialiser2<StroomStatsStoreDoc> {
 
@@ -37,8 +36,8 @@ public class StroomStatsStoreSerialiser implements DocumentSerialiser2<StroomSta
     }
 
     @Override
-    public StroomStatsStoreDoc read(final Map<String, byte[]> data) throws IOException {
-        return delegate.read(data);
+    public StroomStatsStoreDoc read(final ImportExportDocument importExportDocument) throws IOException {
+        return delegate.read(importExportDocument);
     }
 
     @Override

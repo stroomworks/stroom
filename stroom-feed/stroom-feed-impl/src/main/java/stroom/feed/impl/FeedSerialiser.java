@@ -25,7 +25,6 @@ import stroom.importexport.api.ImportExportDocument;
 import jakarta.inject.Inject;
 
 import java.io.IOException;
-import java.util.Map;
 
 public class FeedSerialiser implements DocumentSerialiser2<FeedDoc> {
 
@@ -37,8 +36,8 @@ public class FeedSerialiser implements DocumentSerialiser2<FeedDoc> {
     }
 
     @Override
-    public FeedDoc read(final Map<String, byte[]> data) throws IOException {
-        return delegate.read(data);
+    public FeedDoc read(final ImportExportDocument importExportDocument) throws IOException {
+        return delegate.read(importExportDocument);
     }
 
     @Override

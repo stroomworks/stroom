@@ -25,7 +25,6 @@ import stroom.importexport.api.ImportExportDocument;
 import jakarta.inject.Inject;
 
 import java.io.IOException;
-import java.util.Map;
 
 public class S3ConfigSerialiser implements DocumentSerialiser2<S3ConfigDoc> {
 
@@ -37,8 +36,8 @@ public class S3ConfigSerialiser implements DocumentSerialiser2<S3ConfigDoc> {
     }
 
     @Override
-    public S3ConfigDoc read(final Map<String, byte[]> data) throws IOException {
-        return delegate.read(data);
+    public S3ConfigDoc read(final ImportExportDocument importExportDocument) throws IOException {
+        return delegate.read(importExportDocument);
     }
 
     @Override

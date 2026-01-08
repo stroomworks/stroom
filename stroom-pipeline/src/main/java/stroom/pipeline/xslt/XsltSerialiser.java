@@ -27,7 +27,6 @@ import stroom.util.string.EncodingUtil;
 import jakarta.inject.Inject;
 
 import java.io.IOException;
-import java.util.Map;
 
 public class XsltSerialiser implements DocumentSerialiser2<XsltDoc> {
 
@@ -41,9 +40,9 @@ public class XsltSerialiser implements DocumentSerialiser2<XsltDoc> {
     }
 
     @Override
-    public XsltDoc read(final Map<String, byte[]> data) throws IOException {
-        final XsltDoc document = delegate.read(data);
-        document.setData(EncodingUtil.asString(data.get(XSL)));
+    public XsltDoc read(final ImportExportDocument importExportDocument) throws IOException {
+        final XsltDoc document = delegate.read(importExportDocument);
+        document.setData(EncodingUtil.asString(importExportDocument.getExtAssetData(XSL)));
         return document;
     }
 

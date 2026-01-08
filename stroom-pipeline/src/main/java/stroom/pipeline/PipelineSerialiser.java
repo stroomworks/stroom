@@ -32,7 +32,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.util.Map;
 
 public class PipelineSerialiser implements DocumentSerialiser2<PipelineDoc> {
 
@@ -47,9 +46,9 @@ public class PipelineSerialiser implements DocumentSerialiser2<PipelineDoc> {
     }
 
     @Override
-    public PipelineDoc read(final Map<String, byte[]> data) throws IOException {
-        final PipelineDoc document = delegate.read(data);
-        final String json = EncodingUtil.asString(data.get(JSON));
+    public PipelineDoc read(final ImportExportDocument importExportDocument) throws IOException {
+        final PipelineDoc document = delegate.read(importExportDocument);
+        final String json = EncodingUtil.asString(importExportDocument.getExtAssetData(JSON));
         final PipelineData pipelineData = getPipelineDataFromJson(json);
         document.setPipelineData(pipelineData);
 

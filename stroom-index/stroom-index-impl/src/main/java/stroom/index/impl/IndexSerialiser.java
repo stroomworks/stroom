@@ -25,7 +25,6 @@ import stroom.index.shared.LuceneIndexDoc;
 import jakarta.inject.Inject;
 
 import java.io.IOException;
-import java.util.Map;
 
 public class IndexSerialiser implements DocumentSerialiser2<LuceneIndexDoc> {
 
@@ -37,8 +36,8 @@ public class IndexSerialiser implements DocumentSerialiser2<LuceneIndexDoc> {
     }
 
     @Override
-    public LuceneIndexDoc read(final Map<String, byte[]> data) throws IOException {
-        return delegate.read(data);
+    public LuceneIndexDoc read(final ImportExportDocument importExportDocument) throws IOException {
+        return delegate.read(importExportDocument);
     }
 
     @Override

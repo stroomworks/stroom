@@ -61,8 +61,8 @@ public class ByteArrayImportExportAsset implements ImportExportAsset {
     }
 
     @Override
-    public void close() {
-        // No code
+    public byte @Nullable [] getInputData() {
+        return data;
     }
 
     @Override

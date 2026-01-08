@@ -25,7 +25,6 @@ import stroom.importexport.api.ImportExportDocument;
 import jakarta.inject.Inject;
 
 import java.io.IOException;
-import java.util.Map;
 
 public class GitRepoSerialiser implements DocumentSerialiser2<GitRepoDoc> {
 
@@ -37,8 +36,8 @@ public class GitRepoSerialiser implements DocumentSerialiser2<GitRepoDoc> {
     }
 
     @Override
-    public GitRepoDoc read(final Map<String, byte[]> data) throws IOException {
-        return delegate.read(data);
+    public GitRepoDoc read(final ImportExportDocument importExportDocument) throws IOException {
+        return delegate.read(importExportDocument);
     }
 
     @Override

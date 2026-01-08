@@ -25,7 +25,6 @@ import stroom.planb.shared.PlanBDoc;
 import jakarta.inject.Inject;
 
 import java.io.IOException;
-import java.util.Map;
 
 public class PlanBDocSerialiser implements DocumentSerialiser2<PlanBDoc> {
 
@@ -37,8 +36,8 @@ public class PlanBDocSerialiser implements DocumentSerialiser2<PlanBDoc> {
     }
 
     @Override
-    public PlanBDoc read(final Map<String, byte[]> data) throws IOException {
-        return delegate.read(data);
+    public PlanBDoc read(final ImportExportDocument importExportDocument) throws IOException {
+        return delegate.read(importExportDocument);
     }
 
     @Override

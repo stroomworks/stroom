@@ -25,7 +25,6 @@ import stroom.search.elastic.shared.ElasticClusterDoc;
 import jakarta.inject.Inject;
 
 import java.io.IOException;
-import java.util.Map;
 
 public class ElasticClusterSerialiser implements DocumentSerialiser2<ElasticClusterDoc> {
 
@@ -39,8 +38,8 @@ public class ElasticClusterSerialiser implements DocumentSerialiser2<ElasticClus
     }
 
     @Override
-    public ElasticClusterDoc read(final Map<String, byte[]> data) throws IOException {
-        return delegate.read(data);
+    public ElasticClusterDoc read(final ImportExportDocument importExportDocument) throws IOException {
+        return delegate.read(importExportDocument);
     }
 
     @Override

@@ -29,7 +29,7 @@ import java.io.InputStream;
  * are released.
  */
 @NullMarked
-public interface ImportExportAsset extends AutoCloseable {
+public interface ImportExportAsset {
 
     /**
      * @return The key associated with the asset. Depending on the asset,
@@ -47,9 +47,10 @@ public interface ImportExportAsset extends AutoCloseable {
     @Nullable InputStream getInputStream() throws IOException;
 
     /**
-     * Autocloseable implementation. Close must be called to release any resources
-     * associated with this object (temporary files etc).
+     * Provides a way to get the input stream as a byte array.
+     * Should only be used for 'small' amounts of data.
+     * Convenience method for legacy code.
      */
-    void close();
+    byte @Nullable [] getInputData() throws IOException;
 
 }

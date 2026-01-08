@@ -27,7 +27,6 @@ import stroom.util.string.EncodingUtil;
 import jakarta.inject.Inject;
 
 import java.io.IOException;
-import java.util.Map;
 
 public class DictionarySerialiser implements DocumentSerialiser2<DictionaryDoc> {
 
@@ -41,9 +40,9 @@ public class DictionarySerialiser implements DocumentSerialiser2<DictionaryDoc> 
     }
 
     @Override
-    public DictionaryDoc read(final Map<String, byte[]> data) throws IOException {
-        final DictionaryDoc document = delegate.read(data);
-        document.setData(EncodingUtil.asString(data.get(TEXT)));
+    public DictionaryDoc read(final ImportExportDocument importExportDocument) throws IOException {
+        final DictionaryDoc document = delegate.read(importExportDocument);
+        document.setData(EncodingUtil.asString(importExportDocument.getExtAssetData(TEXT)));
         return document;
     }
 

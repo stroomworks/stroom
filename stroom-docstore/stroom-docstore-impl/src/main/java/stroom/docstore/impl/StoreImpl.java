@@ -27,6 +27,7 @@ import stroom.docstore.api.Store;
 import stroom.docstore.shared.AbstractDoc;
 import stroom.docstore.shared.AbstractDoc.AbstractBuilder;
 import stroom.docstore.shared.DocRefUtil;
+import stroom.importexport.api.ImportExportAsset;
 import stroom.importexport.api.ImportExportDocument;
 import stroom.importexport.shared.ImportSettings;
 import stroom.importexport.shared.ImportSettings.ImportMode;
@@ -54,7 +55,9 @@ import java.io.UncheckedIOException;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -96,7 +99,7 @@ public class StoreImpl<D extends AbstractDoc> implements Store<D> {
         this.builderSupplier = builderSupplier;
     }
 
-    ////////////////////////////////////////////////////////////////////////
+    // //////////////////////////////////////////////////////////////////////
     // START OF ExplorerActionHandler
 
     /// /////////////////////////////////////////////////////////////////////
@@ -226,11 +229,11 @@ public class StoreImpl<D extends AbstractDoc> implements Store<D> {
                 .build();
     }
 
-    ////////////////////////////////////////////////////////////////////////
+    // //////////////////////////////////////////////////////////////////////
     // END OF ExplorerActionHandler
-    ////////////////////////////////////////////////////////////////////////
+    // //////////////////////////////////////////////////////////////////////
 
-    ////////////////////////////////////////////////////////////////////////
+    // //////////////////////////////////////////////////////////////////////
     // START OF HasDependencies
 
     /// /////////////////////////////////////////////////////////////////////
@@ -282,11 +285,11 @@ public class StoreImpl<D extends AbstractDoc> implements Store<D> {
         }
     }
 
-    ////////////////////////////////////////////////////////////////////////
+    // //////////////////////////////////////////////////////////////////////
     // END OF HasDependencies
-    ////////////////////////////////////////////////////////////////////////
+    // //////////////////////////////////////////////////////////////////////
 
-    ////////////////////////////////////////////////////////////////////////
+    // //////////////////////////////////////////////////////////////////////
     // START OF DocumentActionHandler
 
     /// /////////////////////////////////////////////////////////////////////
@@ -308,11 +311,11 @@ public class StoreImpl<D extends AbstractDoc> implements Store<D> {
         return type;
     }
 
-    ////////////////////////////////////////////////////////////////////////
+    // //////////////////////////////////////////////////////////////////////
     // END OF DocumentActionHandler
-    ////////////////////////////////////////////////////////////////////////
+    // //////////////////////////////////////////////////////////////////////
 
-    ////////////////////////////////////////////////////////////////////////
+    // //////////////////////////////////////////////////////////////////////
     // START OF ImportExportActionHandler
 
     /// /////////////////////////////////////////////////////////////////////
@@ -339,10 +342,10 @@ public class StoreImpl<D extends AbstractDoc> implements Store<D> {
 
     @Override
     public DocRef importDocument(DocRef docRef,
-                                 final Map<String, byte[]> dataMap,
+                                 final ImportExportDocument importExportDocument,
                                  final ImportState importState,
                                  final ImportSettings importSettings) {
-        if (dataMap != null) {
+        if (importExportDocument != null) {
             Objects.requireNonNull(docRef);
             final String uuid = docRef.getUuid();
             try {
@@ -364,7 +367,7 @@ public class StoreImpl<D extends AbstractDoc> implements Store<D> {
                         final List<String> updatedFields = importState.getUpdatedFieldList();
                         checkForUpdatedFields(
                                 existingDocument,
-                                dataMap,
+                                importExportDocument,
                                 new AuditFieldFilter<>(),
                                 updatedFields);
                         if (updatedFields.isEmpty()) {
@@ -381,7 +384,7 @@ public class StoreImpl<D extends AbstractDoc> implements Store<D> {
                         }
                     }
 
-                    importDocument(docRef, existingDocument, uuid, dataMap);
+                    importDocument(docRef, existingDocument, uuid, importExportDocument);
                 }
 
             } catch (final RuntimeException e) {
@@ -395,11 +398,11 @@ public class StoreImpl<D extends AbstractDoc> implements Store<D> {
     private void importDocument(final DocRef docRef,
                                 final D existingDocument,
                                 final String uuid,
-                                final Map<String, byte[]> convertedDataMap) {
+                                final ImportExportDocument convertedImportExportDocument) {
         persistence.getLockFactory().lock(uuid, () -> {
             try {
                 // Turn the data map into a document.
-                final D newDocument = serialiser.read(convertedDataMap);
+                final D newDocument = serialiser.read(convertedImportExportDocument);
                 // Copy create time and user from the existing document.
                 if (existingDocument != null) {
                     newDocument.setName(existingDocument.getName());
@@ -412,7 +415,7 @@ public class StoreImpl<D extends AbstractDoc> implements Store<D> {
                 final ImportExportDocument finalData = serialiser.write(newDocument);
 
                 // Write the data.
-                persistence.write(docRef, existingDocument != null, finalData.toDataMap());
+                persistence.write(docRef, existingDocument != null, finalData);
 
                 // Fire an entity event to alert other services of the change.
                 if (existingDocument != null) {
@@ -472,11 +475,11 @@ public class StoreImpl<D extends AbstractDoc> implements Store<D> {
     }
 
     private void checkForUpdatedFields(final D existingDoc,
-                                       final Map<String, byte[]> dataMap,
+                                       final ImportExportDocument importExportDocument,
                                        final Function<D, D> filter,
                                        final List<String> updatedFieldList) {
         try {
-            final D newDoc = serialiser.read(dataMap);
+            final D newDoc = serialiser.read(importExportDocument);
             final D existingDocument = filter.apply(existingDoc);
             final D newDocument = filter.apply(newDoc);
 
@@ -504,7 +507,7 @@ public class StoreImpl<D extends AbstractDoc> implements Store<D> {
         }
     }
 
-    ////////////////////////////////////////////////////////////////////////
+    // //////////////////////////////////////////////////////////////////////
     // END OF ImportExportActionHandler
 
     /// /////////////////////////////////////////////////////////////////////
@@ -523,7 +526,7 @@ public class StoreImpl<D extends AbstractDoc> implements Store<D> {
             final ImportExportDocument importExportDocument = serialiser.write(document);
             persistence.getLockFactory().lock(document.getUuid(), () -> {
                 try {
-                    persistence.write(docRef, false, importExportDocument.toDataMap());
+                    persistence.write(docRef, false, importExportDocument);
                     EntityEvent.fire(entityEventBus, docRef, EntityAction.CREATE);
                 } catch (final IOException e) {
                     throw new UncheckedIOException(e);
@@ -550,10 +553,10 @@ public class StoreImpl<D extends AbstractDoc> implements Store<D> {
                     toDocRefDisplayString(docRef)));
         }
 
-        final Map<String, byte[]> data = readPersistence(docRef);
-        if (data != null) {
+        final ImportExportDocument importExportDocument = readPersistence(docRef);
+        if (importExportDocument != null) {
             try {
-                return serialiser.read(data);
+                return serialiser.read(importExportDocument);
             } catch (final IOException e) {
                 LOGGER.error(e.getMessage(), e);
                 throw new UncheckedIOException(
@@ -626,15 +629,15 @@ public class StoreImpl<D extends AbstractDoc> implements Store<D> {
             persistence.getLockFactory().lock(document.getUuid(), () -> {
                 try {
                     // Read existing data for this document.
-                    final Map<String, byte[]> data = persistence.read(docRef);
+                    final ImportExportDocument importExportDocument = persistence.read(docRef);
 
                     // Perform version check to ensure the item hasn't been updated by somebody
                     // else before we try to update it.
-                    if (data == null) {
+                    if (importExportDocument == null) {
                         throw new DocumentNotFoundException(docRef);
                     }
 
-                    final D existingDocument = serialiser.read(data);
+                    final D existingDocument = serialiser.read(importExportDocument);
 
                     // Perform version check to ensure the item hasn't been updated by somebody
                     // else before we try to update it.
@@ -643,7 +646,7 @@ public class StoreImpl<D extends AbstractDoc> implements Store<D> {
                                                    + " has already been updated.");
                     }
 
-                    persistence.write(docRef, true, newData.toDataMap());
+                    persistence.write(docRef, true, newData);
                     EntityEvent.fire(entityEventBus, docRef, oldDocRef, EntityAction.UPDATE);
                 } catch (final IOException e) {
                     throw new UncheckedIOException(e);
@@ -679,18 +682,35 @@ public class StoreImpl<D extends AbstractDoc> implements Store<D> {
             return Collections.emptyMap();
         }
 
-        final Map<String, byte[]> data = readPersistence(docRef);
-        if (data == null) {
+        final ImportExportDocument importExportDocument = readPersistence(docRef);
+        if (importExportDocument == null) {
             return Collections.emptyMap();
         }
 
-        return data
-                .entrySet()
-                .stream()
-                .collect(Collectors.toMap(Map.Entry::getKey, e -> new String(e.getValue(), StandardCharsets.UTF_8)));
+        final Map<String, String> retval = new HashMap<>();
+        final Collection<ImportExportAsset> extAssets = importExportDocument.getExtAssets();
+        for (final ImportExportAsset asset : extAssets) {
+            final byte[] data;
+            try {
+                data = asset.getInputData();
+            } catch (final IOException e) {
+                throw new UncheckedIOException(LogUtil.message("Error reading {} asset {}: {}",
+                        toDocRefDisplayString(docRef),
+                        asset.getKey(),
+                        e.getMessage()), e);
+            }
+
+            String stringData = "";
+            if (data != null) {
+                stringData = new String(data, StandardCharsets.UTF_8);
+            }
+            retval.put(asset.getKey(), stringData);
+        }
+
+        return retval;
     }
 
-    private Map<String, byte[]> readPersistence(final DocRef docRef) {
+    private ImportExportDocument readPersistence(final DocRef docRef) {
         return persistence.getLockFactory().lockResult(docRef.getUuid(), () -> {
             try {
                 return persistence.read(docRef);
@@ -709,16 +729,24 @@ public class StoreImpl<D extends AbstractDoc> implements Store<D> {
     public void migratePipelines(final Function<Map<String, byte[]>, Optional<Map<String, byte[]>>> function) {
         persistence.list(type).forEach(docRef ->
                 persistence.getLockFactory().lock(docRef.getUuid(), () -> {
-                    final Map<String, byte[]> data = readPersistence(docRef);
-                    if (data != null) {
-                        final Optional<Map<String, byte[]>> migrated = function.apply(data);
-                        migrated.ifPresent(newData -> {
-                            try {
-                                persistence.write(docRef, true, newData);
-                            } catch (final Exception e) {
-                                LOGGER.error(e::getMessage, e);
-                            }
-                        });
+                    final ImportExportDocument importExportDocument = readPersistence(docRef);
+                    if (importExportDocument != null) {
+                        try {
+                            final Map<String, byte[]> mapIn = importExportDocument.toDataMap();
+                            final Optional<Map<String, byte[]>> migrated = function.apply(mapIn);
+                            migrated.ifPresent(newData -> {
+                                try {
+                                    final ImportExportDocument migratedDocument =
+                                            ImportExportDocument.fromDataMap(newData);
+
+                                    persistence.write(docRef, true, migratedDocument);
+                                } catch (final Exception e) {
+                                    LOGGER.error(e::getMessage, e);
+                                }
+                            });
+                        } catch (final Exception e) {
+                            LOGGER.error(e::getMessage, e);
+                        }
                     }
                 }));
     }

@@ -25,7 +25,6 @@ import stroom.statistics.impl.sql.shared.StatisticStoreDoc;
 import jakarta.inject.Inject;
 
 import java.io.IOException;
-import java.util.Map;
 
 public class StatisticStoreSerialiser implements DocumentSerialiser2<StatisticStoreDoc> {
 
@@ -37,8 +36,8 @@ public class StatisticStoreSerialiser implements DocumentSerialiser2<StatisticSt
     }
 
     @Override
-    public StatisticStoreDoc read(final Map<String, byte[]> data) throws IOException {
-        return delegate.read(data);
+    public StatisticStoreDoc read(final ImportExportDocument importExportDocument) throws IOException {
+        return delegate.read(importExportDocument);
     }
 
     @Override

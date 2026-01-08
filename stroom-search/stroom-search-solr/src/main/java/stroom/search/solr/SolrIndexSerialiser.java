@@ -25,7 +25,6 @@ import stroom.search.solr.shared.SolrIndexDoc;
 import jakarta.inject.Inject;
 
 import java.io.IOException;
-import java.util.Map;
 
 public class SolrIndexSerialiser implements DocumentSerialiser2<SolrIndexDoc> {
 
@@ -37,8 +36,8 @@ public class SolrIndexSerialiser implements DocumentSerialiser2<SolrIndexDoc> {
     }
 
     @Override
-    public SolrIndexDoc read(final Map<String, byte[]> data) throws IOException {
-        return delegate.read(data);
+    public SolrIndexDoc read(final ImportExportDocument importExportDocument) throws IOException {
+        return delegate.read(importExportDocument);
     }
 
     @Override

@@ -25,7 +25,6 @@ import stroom.search.elastic.shared.ElasticIndexDoc;
 import jakarta.inject.Inject;
 
 import java.io.IOException;
-import java.util.Map;
 
 public class ElasticIndexSerialiser implements DocumentSerialiser2<ElasticIndexDoc> {
 
@@ -37,8 +36,8 @@ public class ElasticIndexSerialiser implements DocumentSerialiser2<ElasticIndexD
     }
 
     @Override
-    public ElasticIndexDoc read(final Map<String, byte[]> data) throws IOException {
-        return delegate.read(data);
+    public ElasticIndexDoc read(final ImportExportDocument importExportDocument) throws IOException {
+        return delegate.read(importExportDocument);
     }
 
     @Override

@@ -19,6 +19,8 @@ package stroom.docstore.impl.db;
 
 import stroom.docref.DocRef;
 import stroom.docstore.impl.Persistence;
+import stroom.importexport.api.ByteArrayImportExportAsset;
+import stroom.importexport.api.ImportExportDocument;
 import stroom.test.AbstractCoreIntegrationTest;
 
 import jakarta.inject.Inject;
@@ -27,9 +29,7 @@ import org.junit.jupiter.api.Test;
 import java.io.IOException;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -53,25 +53,25 @@ class TestDBPersistence extends AbstractCoreIntegrationTest {
         }
 
         // Create
-        Map<String, byte[]> data = new HashMap<>();
-        data.put("meta", uuid1.getBytes(CHARSET));
-        persistence.write(docRef, false, data);
+        ImportExportDocument importExportDocument = new ImportExportDocument();
+        importExportDocument.addExtAsset(new ByteArrayImportExportAsset("meta", uuid1.getBytes(CHARSET)));
+        persistence.write(docRef, false, importExportDocument);
 
         // Exists
         assertThat(persistence.exists(docRef)).isTrue();
 
         // Read
-        data = persistence.read(docRef);
-        assertThat(new String(data.get("meta"), CHARSET)).isEqualTo(uuid1);
+        importExportDocument = persistence.read(docRef);
+        assertThat(new String(importExportDocument.getExtAssetData("meta"), CHARSET)).isEqualTo(uuid1);
 
         // Update
-        data = new HashMap<>();
-        data.put("meta", uuid2.getBytes(CHARSET));
-        persistence.write(docRef, true, data);
+        importExportDocument = new ImportExportDocument();
+        importExportDocument.addExtAsset(new ByteArrayImportExportAsset("meta", uuid2.getBytes(CHARSET)));
+        persistence.write(docRef, true, importExportDocument);
 
         // Read
-        data = persistence.read(docRef);
-        assertThat(new String(data.get("meta"), CHARSET)).isEqualTo(uuid2);
+        importExportDocument = persistence.read(docRef);
+        assertThat(new String(importExportDocument.getExtAssetData("meta"), CHARSET)).isEqualTo(uuid2);
 
         // List
         final List<DocRef> refs = persistence.list(docRef.getType());

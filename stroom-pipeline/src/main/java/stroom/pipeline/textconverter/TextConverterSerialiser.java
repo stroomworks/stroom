@@ -27,7 +27,6 @@ import stroom.util.string.EncodingUtil;
 import jakarta.inject.Inject;
 
 import java.io.IOException;
-import java.util.Map;
 
 public class TextConverterSerialiser implements DocumentSerialiser2<TextConverterDoc> {
 
@@ -41,9 +40,9 @@ public class TextConverterSerialiser implements DocumentSerialiser2<TextConverte
     }
 
     @Override
-    public TextConverterDoc read(final Map<String, byte[]> data) throws IOException {
-        final TextConverterDoc document = delegate.read(data);
-        document.setData(EncodingUtil.asString(data.get(XML)));
+    public TextConverterDoc read(final ImportExportDocument importExportDocument) throws IOException {
+        final TextConverterDoc document = delegate.read(importExportDocument);
+        document.setData(EncodingUtil.asString(importExportDocument.getExtAssetData(XML)));
         return document;
     }
 

@@ -22,6 +22,7 @@ import stroom.explorer.api.ExplorerService;
 import stroom.explorer.shared.ExplorerConstants;
 import stroom.explorer.shared.ExplorerNode;
 import stroom.explorer.shared.PermissionInheritance;
+import stroom.importexport.api.ByteArrayImportExportAsset;
 import stroom.importexport.api.ExportSummary;
 import stroom.importexport.api.ImportExportActionHandler;
 import stroom.importexport.api.ImportExportAsset;
@@ -632,7 +633,7 @@ public class ImportExportSerializerImplV2 implements ImportExportSerializer {
                 importDocRefPath);
 
         // Get other associated data.
-        final Map<String, byte[]> dataMap = new HashMap<>();
+        final ImportExportDocument importExportDocument = new ImportExportDocument();
         final String filePrefix = ImportExportFileNameUtil.createFilePrefix(importDocRef);
         final Path dir = nodeFile.getParent();
         try (final DirectoryStream<Path> stream = Files.newDirectoryStream(dir, filePrefix + GLOB_STAR)) {
@@ -649,7 +650,7 @@ public class ImportExportSerializerImplV2 implements ImportExportSerializer {
                         final String key = fileName.substring(filePrefix.length() + 1);
                         LOGGER.debug("{}Found path with key '{}'", indent(importDocRefPath), key);
                         final byte[] bytes = Files.readAllBytes(file);
-                        dataMap.put(key, bytes);
+                        importExportDocument.addExtAsset(new ByteArrayImportExportAsset(key, bytes));
                     }
                 }
             }
@@ -670,7 +671,7 @@ public class ImportExportSerializerImplV2 implements ImportExportSerializer {
                         nodeFile,
                         importDocRef,
                         importDocRefPath,
-                        dataMap,
+                        importExportDocument,
                         importState,
                         confirmMap,
                         importSettings);
@@ -683,7 +684,7 @@ public class ImportExportSerializerImplV2 implements ImportExportSerializer {
                         importDocRefPath,
                         importDocRef,
                         tags,
-                        dataMap,
+                        importExportDocument,
                         importState,
                         confirmMap,
                         importSettings);
@@ -701,7 +702,7 @@ public class ImportExportSerializerImplV2 implements ImportExportSerializer {
                                         final Path nodeFile,
                                         final DocRef importDocRef,
                                         final Deque<DocRef> importDocRefPath,
-                                        final Map<String, byte[]> dataMap,
+                                        final ImportExportDocument importExportDocument,
                                         final ImportState importState,
                                         final Map<DocRef, ImportState> confirmMap,
                                         final ImportSettings importSettings)
@@ -711,7 +712,7 @@ public class ImportExportSerializerImplV2 implements ImportExportSerializer {
                 (NonExplorerDocRefProvider) importExportActionHandler;
 
         // Might return null but unlikely - seems it would only be due to code error
-        final DocRef ownerDocument = nonExplorerDocRefProvider.getOwnerDocument(importDocRef, dataMap);
+        final DocRef ownerDocument = nonExplorerDocRefProvider.getOwnerDocument(importDocRef, importExportDocument);
         if (ownerDocument == null) {
             throw new IOException("Owner Document for '" + importDocRef.getName() + "' could not be found");
         }
@@ -734,7 +735,7 @@ public class ImportExportSerializerImplV2 implements ImportExportSerializer {
                 // Do the actual import of the ProcessorFilter
                 final DocRef importedDocRef = importExportActionHandler.importDocument(
                         importDocRef,
-                        dataMap,
+                        importExportDocument,
                         importState,
                         importSettings);
 
@@ -778,7 +779,7 @@ public class ImportExportSerializerImplV2 implements ImportExportSerializer {
      *                         of the thing we're importing.
      * @param importDocRef DocRef created from the .node data on disk
      * @param tags List of tags extracted from .node data on disk
-     * @param dataMap Map of disk file extension to disk file contents
+     * @param importExportDocument Represents the data that is imported or exported.
      * @param importState State of the import for docRef
      * @param confirmMap Accessed to remove docRef from the map if the docRef
      *                   cannot be imported.
@@ -792,7 +793,7 @@ public class ImportExportSerializerImplV2 implements ImportExportSerializer {
             final Deque<DocRef> importDocRefPath,
             final DocRef importDocRef,
             final Set<String> tags,
-            final Map<String, byte[]> dataMap,
+            final ImportExportDocument importExportDocument,
             final ImportState importState,
             final Map<DocRef, ImportState> confirmMap,
             final ImportSettings importSettings)
@@ -871,7 +872,7 @@ public class ImportExportSerializerImplV2 implements ImportExportSerializer {
                     // There may be other implementations.
                     importedDocRef = importExportActionHandler.importDocument(
                             importDocRefState.getImportDocRef(),
-                            dataMap,
+                            importExportDocument,
                             importState,
                             importSettings);
 
@@ -1418,26 +1419,25 @@ public class ImportExportSerializerImplV2 implements ImportExportSerializer {
 
                 final String filePrefix = ImportExportFileNameUtil.createFilePrefix(currentDocRef);
                 for (final ImportExportAsset asset : importExportDocument.getExtAssets()) {
-                    try (asset) {
-                        final String fileName = filePrefix + "." + asset.getKey();
-                        try (final OutputStream handlerStream =
-                                new EndsWithNewlineOutputStream(
-                                        new BufferedOutputStream(
-                                            Files.newOutputStream(parentDirPath.resolve(fileName))))) {
-                            try (final InputStream assetStream = asset.getInputStream()) {
-                                if (assetStream != null) {
-                                    assetStream.transferTo(handlerStream);
-                                }
+                    final String fileName = filePrefix + "." + asset.getKey();
+                    LOGGER.info("Writing file '{}'", fileName);
+                    try (final OutputStream handlerStream =
+                            new EndsWithNewlineOutputStream(
+                                    new BufferedOutputStream(
+                                        Files.newOutputStream(parentDirPath.resolve(fileName))))) {
+                        try (final InputStream assetStream = asset.getInputStream()) {
+                            if (assetStream != null) {
+                                assetStream.transferTo(handlerStream);
                             }
-                            LOGGER.debug("Wrote file '{}/{}'", parentDirPath, fileName);
                         }
+                        LOGGER.debug("Wrote file '{}/{}'", parentDirPath, fileName);
                     }
                 }
 
                 // Putting path assets under a <filename>-path-assets/ directory
                 final Path pathAssetRoot = parentDirPath.resolve(filePrefix + "-path-assets");
                 for (final ImportExportAsset asset : importExportDocument.getPathAssets()) {
-                    try (asset) {
+                    try {
                         // The asset key is the relative path plus the filename
                         // Need to make sure the key doesn't start with / as otherwise it will be put in root
                         String assetKey = asset.getKey();

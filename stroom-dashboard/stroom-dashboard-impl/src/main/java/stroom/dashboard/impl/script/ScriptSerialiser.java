@@ -27,7 +27,6 @@ import stroom.util.string.EncodingUtil;
 import jakarta.inject.Inject;
 
 import java.io.IOException;
-import java.util.Map;
 
 public class ScriptSerialiser implements DocumentSerialiser2<ScriptDoc> {
 
@@ -41,10 +40,10 @@ public class ScriptSerialiser implements DocumentSerialiser2<ScriptDoc> {
     }
 
     @Override
-    public ScriptDoc read(final Map<String, byte[]> data) throws IOException {
-        final ScriptDoc document = delegate.read(data);
+    public ScriptDoc read(final ImportExportDocument importExportDocument) throws IOException {
+        final ScriptDoc document = delegate.read(importExportDocument);
 
-        final String js = EncodingUtil.asString(data.get(JS));
+        final String js = EncodingUtil.asString(importExportDocument.getExtAssetData(JS));
         if (js != null) {
             document.setData(js);
         }

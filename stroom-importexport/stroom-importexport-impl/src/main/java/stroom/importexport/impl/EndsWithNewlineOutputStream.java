@@ -79,6 +79,7 @@ public class EndsWithNewlineOutputStream extends FilterOutputStream {
      */
     @Override
     public void close() throws IOException {
+        super.flush();
         if (lastByte != '\n') {
             super.out.write('\n');
         }

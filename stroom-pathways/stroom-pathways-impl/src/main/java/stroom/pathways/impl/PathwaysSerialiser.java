@@ -25,7 +25,6 @@ import stroom.pathways.shared.PathwaysDoc;
 import jakarta.inject.Inject;
 
 import java.io.IOException;
-import java.util.Map;
 
 public class PathwaysSerialiser implements DocumentSerialiser2<PathwaysDoc> {
 
@@ -37,8 +36,8 @@ public class PathwaysSerialiser implements DocumentSerialiser2<PathwaysDoc> {
     }
 
     @Override
-    public PathwaysDoc read(final Map<String, byte[]> data) throws IOException {
-        return delegate.read(data);
+    public PathwaysDoc read(final ImportExportDocument importExportDocument) throws IOException {
+        return delegate.read(importExportDocument);
     }
 
     @Override

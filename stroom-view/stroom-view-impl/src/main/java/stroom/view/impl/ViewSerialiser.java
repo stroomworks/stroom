@@ -25,7 +25,6 @@ import stroom.view.shared.ViewDoc;
 import jakarta.inject.Inject;
 
 import java.io.IOException;
-import java.util.Map;
 
 public class ViewSerialiser implements DocumentSerialiser2<ViewDoc> {
 
@@ -37,8 +36,8 @@ public class ViewSerialiser implements DocumentSerialiser2<ViewDoc> {
     }
 
     @Override
-    public ViewDoc read(final Map<String, byte[]> data) throws IOException {
-        return delegate.read(data);
+    public ViewDoc read(final ImportExportDocument importExportDocument) throws IOException {
+        return delegate.read(importExportDocument);
     }
 
     @Override

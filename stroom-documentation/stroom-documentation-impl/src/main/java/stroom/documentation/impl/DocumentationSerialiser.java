@@ -27,7 +27,6 @@ import stroom.util.string.EncodingUtil;
 import jakarta.inject.Inject;
 
 import java.io.IOException;
-import java.util.Map;
 
 public class DocumentationSerialiser implements DocumentSerialiser2<DocumentationDoc> {
 
@@ -41,9 +40,10 @@ public class DocumentationSerialiser implements DocumentSerialiser2<Documentatio
     }
 
     @Override
-    public DocumentationDoc read(final Map<String, byte[]> data) throws IOException {
-        final DocumentationDoc document = delegate.read(data);
-        document.setData(EncodingUtil.asString(data.get(TEXT)));
+    public DocumentationDoc read(final ImportExportDocument importExportDocument) throws IOException {
+        final DocumentationDoc document = delegate.read(importExportDocument);
+        document.setData(EncodingUtil.asString(importExportDocument.getExtAssetData(TEXT)));
+
         return document;
     }
 

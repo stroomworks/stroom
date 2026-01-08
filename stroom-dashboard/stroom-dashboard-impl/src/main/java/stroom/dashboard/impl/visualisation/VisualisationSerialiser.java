@@ -31,7 +31,6 @@ import jakarta.inject.Inject;
 
 import java.io.IOException;
 import java.util.Collection;
-import java.util.Map;
 
 public class VisualisationSerialiser implements DocumentSerialiser2<VisualisationDoc> {
 
@@ -52,10 +51,10 @@ public class VisualisationSerialiser implements DocumentSerialiser2<Visualisatio
     }
 
     @Override
-    public VisualisationDoc read(final Map<String, byte[]> data) throws IOException {
-        final VisualisationDoc document = delegate.read(data);
+    public VisualisationDoc read(final ImportExportDocument importExportDocument) throws IOException {
+        final VisualisationDoc document = delegate.read(importExportDocument);
 
-        final String json = EncodingUtil.asString(data.get(JSON));
+        final String json = EncodingUtil.asString(importExportDocument.getExtAssetData(JSON));
         if (json != null) {
             document.setSettings(json);
         }

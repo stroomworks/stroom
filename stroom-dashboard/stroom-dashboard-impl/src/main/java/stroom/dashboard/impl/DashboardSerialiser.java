@@ -22,6 +22,7 @@ import stroom.docstore.api.DocumentSerialiser2;
 import stroom.docstore.api.Serialiser2;
 import stroom.docstore.api.Serialiser2Factory;
 import stroom.importexport.api.ByteArrayImportExportAsset;
+import stroom.importexport.api.ImportExportAsset;
 import stroom.importexport.api.ImportExportDocument;
 import stroom.util.string.EncodingUtil;
 
@@ -31,7 +32,6 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.StringWriter;
-import java.util.Map;
 
 public class DashboardSerialiser implements DocumentSerialiser2<DashboardDoc> {
 
@@ -49,12 +49,12 @@ public class DashboardSerialiser implements DocumentSerialiser2<DashboardDoc> {
     }
 
     @Override
-    public DashboardDoc read(final Map<String, byte[]> data) throws IOException {
-        final DashboardDoc document = delegate.read(data);
-        final byte[] jsonData = data.get(JSON);
-        if (jsonData != null) {
+    public DashboardDoc read(final ImportExportDocument importExportDocument) throws IOException {
+        final DashboardDoc document = delegate.read(importExportDocument);
+        final ImportExportAsset jsonAsset = importExportDocument.getExtAsset(JSON);
+        if (jsonAsset != null) {
             try {
-                final DashboardConfig dashboardConfig = getDashboardConfigFromJson(jsonData);
+                final DashboardConfig dashboardConfig = getDashboardConfigFromJson(jsonAsset);
                 document.setDashboardConfig(dashboardConfig);
             } catch (final RuntimeException e) {
                 LOGGER.error("Unable to unmarshal dashboard config", e);
@@ -82,7 +82,13 @@ public class DashboardSerialiser implements DocumentSerialiser2<DashboardDoc> {
         return importExportDocument;
     }
 
-    public DashboardConfig getDashboardConfigFromJson(final byte[] jsonData) throws IOException {
-        return dashboardConfigSerialiser.read(jsonData);
+    public DashboardConfig getDashboardConfigFromJson(final ImportExportAsset asset) throws IOException {
+        return dashboardConfigSerialiser.read(asset);
+    }
+
+    public DashboardConfig getDashboardConfigFromJson(final byte[] data) throws IOException {
+        // Wrap the data in an asset for the serialiser
+        final ByteArrayImportExportAsset asset = new ByteArrayImportExportAsset("dummy", data);
+        return dashboardConfigSerialiser.read(asset);
     }
 }

@@ -25,7 +25,6 @@ import stroom.kafka.shared.KafkaConfigDoc;
 import jakarta.inject.Inject;
 
 import java.io.IOException;
-import java.util.Map;
 
 public class KafkaConfigSerialiser implements DocumentSerialiser2<KafkaConfigDoc> {
 
@@ -37,8 +36,8 @@ public class KafkaConfigSerialiser implements DocumentSerialiser2<KafkaConfigDoc
     }
 
     @Override
-    public KafkaConfigDoc read(final Map<String, byte[]> data) throws IOException {
-        return delegate.read(data);
+    public KafkaConfigDoc read(final ImportExportDocument importExportDocument) throws IOException {
+        return delegate.read(importExportDocument);
     }
 
     @Override

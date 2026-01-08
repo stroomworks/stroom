@@ -16,9 +16,7 @@
 
 package stroom.importexport.api;
 
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -36,24 +34,90 @@ import java.util.Map;
  *         under the document itself. This is a Path asset.</li>
  * </ul>
  * Use the appropriate methods to add and get such assets from this object.
+ * <p>
+ *     <b>Note:</b> there are important differences between the two assets.
+ * </p>
+ * <p>
+ *     Ext assets are largely handled automatically within the system.
+ *     They will be persisted to the DB for the doc. The system assumes
+ *     that their contents is UTF8 text and will add a newline to the
+ *     end of the file, if that is missing.
+ * </p>
+ * <p>
+ *     Path assets are largely ignored within the system. It is up to
+ *     each Document to persist these to the DB. Their contents can
+ *     be binary.
+ * </p>
  */
 public class ImportExportDocument {
 
-    private final List<ImportExportAsset> extAssets = new ArrayList<>();
+    private final Map<String, ImportExportAsset> extAssets = new HashMap<>();
 
     private final List<ImportExportAsset> pathAssets = new ArrayList<>();
 
+    /**
+     * Adds an asset that should be represented by a file with the key as
+     * an extension.
+     * @param asset The asset to add.
+     */
     public void addExtAsset(final ImportExportAsset asset) {
-        extAssets.add(asset);
+        extAssets.put(asset.getKey(), asset);
     }
 
     /**
      * @return The assets that should be keyed by extension, as an unmodifiable collection.
      */
     public Collection<ImportExportAsset> getExtAssets() {
-        return Collections.unmodifiableList(extAssets);
+        return Collections.unmodifiableCollection(extAssets.values());
     }
 
+    /**
+     * Determines whether an extension asset exists with the given key.
+     * @param key The key to check.
+     * @return true if the key can be found, false if not.
+     */
+    public boolean containsExtAssetWithKey(final String key) {
+        return extAssets.containsKey(key);
+    }
+
+    /**
+     * Returns the extension asset that matches the given key.
+     * @param key The key to search for.
+     * @return The extension asset that has the given key, or null if no such asset.
+     */
+    public ImportExportAsset getExtAsset(final String key) {
+        return extAssets.get(key);
+    }
+
+    /**
+     * Returns and removes the extension asset that matches the given key.
+     * @param key The asset key to find and remove.
+     * @return The extension asset that has the given key, or null if no such asset exists.
+     */
+    public ImportExportAsset removeExtAsset(final String key) {
+        return extAssets.remove(key);
+    }
+
+    /**
+     * Returns the byte[] data for the asset with the given key, or null
+     * if nothing is found. Avoids the client doing lots of null handling.
+     * @param key The key of the required asset.
+     * @return The data, or null if nothing is found.
+     * @throws IOException If there is a problem reading the data.
+     */
+    public byte[] getExtAssetData(final String key) throws IOException {
+        final ImportExportAsset asset = getExtAsset(key);
+        if (asset != null) {
+            return asset.getInputData();
+        }
+        return null;
+    }
+
+    /**
+     * Adds an asset where the key represents a path to the asset in the exported
+     * file structure.
+     * @param asset The asset to add.
+     */
     public void addPathAsset(final ImportExportAsset asset) {
         pathAssets.add(asset);
     }
@@ -66,25 +130,33 @@ public class ImportExportDocument {
     }
 
     /**
-     * Temporary method to convert this to old data format during conversion.
-     * Uncertain whether this deletes assets so delete this method ASAP.
-     * TODO DELETE METHOD
+     * Temporary method to convert extension assets to old data format during conversion.
      */
     public Map<String, byte[]> toDataMap() throws IOException {
         final Map<String, byte[]> dataMap = new HashMap<>();
-        for (final ImportExportAsset asset : extAssets) {
-
-            final ByteArrayOutputStream bostr = new ByteArrayOutputStream();
-            try (final InputStream istr = asset.getInputStream()) {
-                if (istr != null) {
-                    istr.transferTo(bostr);
-                }
-            }
-
-            dataMap.put(asset.getKey(), bostr.toByteArray());
+        for (final ImportExportAsset asset : extAssets.values()) {
+            dataMap.put(asset.getKey(), asset.getInputData());
         }
 
         return dataMap;
+    }
+
+    /**
+     * Converts a dataMap (legacy format) into the new ImportExportDocument.
+     * @param data The data to convert. Can be null.
+     * @return An ImportExportDocument.
+     */
+    public static ImportExportDocument fromDataMap(final Map<String, byte[]> data) {
+        final ImportExportDocument importExportDocument = new ImportExportDocument();
+
+        if (data != null) {
+            for (final Map.Entry<String, byte[]> entry : data.entrySet()) {
+                final ImportExportAsset asset = new ByteArrayImportExportAsset(entry.getKey(), entry.getValue());
+                importExportDocument.addExtAsset(asset);
+            }
+        }
+
+        return importExportDocument;
     }
 
 }

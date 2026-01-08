@@ -22,6 +22,7 @@ import stroom.explorer.api.ExplorerService;
 import stroom.explorer.shared.ExplorerConstants;
 import stroom.explorer.shared.ExplorerNode;
 import stroom.explorer.shared.PermissionInheritance;
+import stroom.importexport.api.ByteArrayImportExportAsset;
 import stroom.importexport.api.ExportSummary;
 import stroom.importexport.api.ImportExportActionHandler;
 import stroom.importexport.api.ImportExportAsset;
@@ -63,7 +64,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.EnumSet;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -198,7 +198,7 @@ public class ImportExportSerializerImpl implements ImportExportSerializer {
 
             try {
                 // Get other associated data.
-                final Map<String, byte[]> dataMap = new HashMap<>();
+                final ImportExportDocument importExportDocument = new ImportExportDocument();
                 final String filePrefix = ImportExportFileNameUtil.createFilePrefix(docRef);
                 final Path dir = nodeFile.getParent();
                 try (final DirectoryStream<Path> stream = Files.newDirectoryStream(dir, filePrefix + "*")) {
@@ -208,7 +208,7 @@ public class ImportExportSerializerImpl implements ImportExportSerializer {
                             if (!file.equals(nodeFile) && !fileName.startsWith(".")) {
                                 final String key = fileName.substring(filePrefix.length() + 1);
                                 final byte[] bytes = Files.readAllBytes(file);
-                                dataMap.put(key, bytes);
+                                importExportDocument.addExtAsset(new ByteArrayImportExportAsset(key, bytes));
                             }
                         } catch (final IOException e) {
                             LOGGER.error(e.getMessage(), e);
@@ -224,7 +224,7 @@ public class ImportExportSerializerImpl implements ImportExportSerializer {
                             nodeFile,
                             docRef,
                             path,
-                            dataMap,
+                            importExportDocument,
                             importState,
                             confirmMap,
                             importSettings);
@@ -236,7 +236,7 @@ public class ImportExportSerializerImpl implements ImportExportSerializer {
                             docRef,
                             tags,
                             path,
-                            dataMap,
+                            importExportDocument,
                             importState,
                             confirmMap,
                             importSettings);
@@ -256,7 +256,7 @@ public class ImportExportSerializerImpl implements ImportExportSerializer {
                                         final Path nodeFile,
                                         final DocRef docRef,
                                         final String path,
-                                        final Map<String, byte[]> dataMap,
+                                        final ImportExportDocument importExportDocument,
                                         final ImportState importState,
                                         final Map<DocRef, ImportState> confirmMap,
                                         final ImportSettings importSettings) {
@@ -266,7 +266,7 @@ public class ImportExportSerializerImpl implements ImportExportSerializer {
         final DocRef importRootDocRef = importSettings.getRootDocRef();
         final String importPath = resolvePath(path, importRootDocRef);
 
-        final DocRef ownerDocument = nonExplorerDocRefProvider.getOwnerDocument(docRef, dataMap);
+        final DocRef ownerDocument = nonExplorerDocRefProvider.getOwnerDocument(docRef, importExportDocument);
         final Optional<ExplorerNode> existingExplorerNode = explorerNodeService.getNode(ownerDocument);
         String destPath = importPath;
         String destName = ownerDocument.getName();
@@ -295,7 +295,7 @@ public class ImportExportSerializerImpl implements ImportExportSerializer {
 
                 final DocRef imported = importExportActionHandler.importDocument(
                         docRef,
-                        dataMap,
+                        importExportDocument,
                         importState,
                         importSettings);
 
@@ -342,7 +342,7 @@ public class ImportExportSerializerImpl implements ImportExportSerializer {
      * @param tags                      List of tags extracted from .node data on disk
      * @param path                      Path to the item in the Explorer Tree, from the .node data
      *                                  on disk
-     * @param dataMap                   Map of disk file extension to disk file contents
+     * @param importExportDocument      Data imported from disk.
      * @param importState               State of the import for docRef
      * @param confirmMap                Accessed to remove docRef from the map if the docRef
      *                                  cannot be imported.
@@ -354,7 +354,7 @@ public class ImportExportSerializerImpl implements ImportExportSerializer {
                                      final DocRef docRef,
                                      final Set<String> tags,
                                      final String path,
-                                     final Map<String, byte[]> dataMap,
+                                     final ImportExportDocument importExportDocument,
                                      final ImportState importState,
                                      final Map<DocRef, ImportState> confirmMap,
                                      final ImportSettings importSettings) {
@@ -427,7 +427,7 @@ public class ImportExportSerializerImpl implements ImportExportSerializer {
 
                 final DocRef imported = importExportActionHandler.importDocument(
                         docRef,
-                        dataMap,
+                        importExportDocument,
                         importState,
                         importSettings);
 
@@ -831,23 +831,21 @@ public class ImportExportSerializerImpl implements ImportExportSerializer {
 
                     // Write out all associated data.
                     for (final ImportExportAsset asset : importExportDocument.getExtAssets()) {
-                        try (asset) {
-                            final String fileName = filePrefix + "." + asset.getKey();
-                            try (final InputStream assetStream = asset.getInputStream()) {
-                                if (assetStream != null) {
-                                    try (final OutputStream outputStream =
-                                            new EndsWithNewlineOutputStream(
-                                                    Files.newOutputStream(parentDir.resolve(fileName)))) {
+                        final String fileName = filePrefix + "." + asset.getKey();
+                        try (final InputStream assetStream = asset.getInputStream()) {
+                            if (assetStream != null) {
+                                try (final OutputStream outputStream =
+                                        new EndsWithNewlineOutputStream(
+                                                Files.newOutputStream(parentDir.resolve(fileName)))) {
 
-                                        assetStream.transferTo(outputStream);
-                                    }
+                                    assetStream.transferTo(outputStream);
                                 }
-                            } catch (final IOException e) {
-                                localMessageList.add(new Message(
-                                        Severity.ERROR,
-                                        "Failed to write file '" + fileName + "': "
-                                        + LogUtil.exceptionMessage(e)));
                             }
+                        } catch (final IOException e) {
+                            localMessageList.add(new Message(
+                                    Severity.ERROR,
+                                    "Failed to write file '" + fileName + "': "
+                                    + LogUtil.exceptionMessage(e)));
                         }
                     }
 

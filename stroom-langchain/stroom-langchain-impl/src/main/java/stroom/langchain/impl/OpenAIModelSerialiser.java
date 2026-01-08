@@ -25,7 +25,6 @@ import stroom.openai.shared.OpenAIModelDoc;
 import jakarta.inject.Inject;
 
 import java.io.IOException;
-import java.util.Map;
 
 public class OpenAIModelSerialiser implements DocumentSerialiser2<OpenAIModelDoc> {
 
@@ -39,8 +38,8 @@ public class OpenAIModelSerialiser implements DocumentSerialiser2<OpenAIModelDoc
     }
 
     @Override
-    public OpenAIModelDoc read(final Map<String, byte[]> data) throws IOException {
-        return delegate.read(data);
+    public OpenAIModelDoc read(final ImportExportDocument importExportDocument) throws IOException {
+        return delegate.read(importExportDocument);
     }
 
     @Override

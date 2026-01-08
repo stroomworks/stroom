@@ -27,7 +27,6 @@ import stroom.xmlschema.shared.XmlSchemaDoc;
 import jakarta.inject.Inject;
 
 import java.io.IOException;
-import java.util.Map;
 
 public class XmlSchemaSerialiser implements DocumentSerialiser2<XmlSchemaDoc> {
 
@@ -41,9 +40,9 @@ public class XmlSchemaSerialiser implements DocumentSerialiser2<XmlSchemaDoc> {
     }
 
     @Override
-    public XmlSchemaDoc read(final Map<String, byte[]> data) throws IOException {
-        final XmlSchemaDoc document = delegate.read(data);
-        document.setData(EncodingUtil.asString(data.get(XSD)));
+    public XmlSchemaDoc read(final ImportExportDocument importExportDocument) throws IOException {
+        final XmlSchemaDoc document = delegate.read(importExportDocument);
+        document.setData(EncodingUtil.asString(importExportDocument.getExtAssetData(XSD)));
         return document;
     }
 

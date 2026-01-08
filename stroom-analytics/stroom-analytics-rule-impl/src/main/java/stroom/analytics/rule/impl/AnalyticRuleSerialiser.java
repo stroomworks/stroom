@@ -25,7 +25,6 @@ import stroom.importexport.api.ImportExportDocument;
 import jakarta.inject.Inject;
 
 import java.io.IOException;
-import java.util.Map;
 
 public class AnalyticRuleSerialiser implements DocumentSerialiser2<AnalyticRuleDoc> {
 
@@ -37,9 +36,8 @@ public class AnalyticRuleSerialiser implements DocumentSerialiser2<AnalyticRuleD
     }
 
     @Override
-    public AnalyticRuleDoc read(final Map<String, byte[]> data) throws IOException {
-        final AnalyticRuleDoc document = delegate.read(data);
-        return document;
+    public AnalyticRuleDoc read(final ImportExportDocument importExportDocument) throws IOException {
+        return delegate.read(importExportDocument);
     }
 
     @Override

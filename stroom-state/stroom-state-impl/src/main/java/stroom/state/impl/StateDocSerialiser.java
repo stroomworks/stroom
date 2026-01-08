@@ -25,7 +25,6 @@ import stroom.state.shared.StateDoc;
 import jakarta.inject.Inject;
 
 import java.io.IOException;
-import java.util.Map;
 
 public class StateDocSerialiser implements DocumentSerialiser2<StateDoc> {
 
@@ -39,8 +38,8 @@ public class StateDocSerialiser implements DocumentSerialiser2<StateDoc> {
     }
 
     @Override
-    public StateDoc read(final Map<String, byte[]> data) throws IOException {
-        return delegate.read(data);
+    public StateDoc read(final ImportExportDocument importExportDocument) throws IOException {
+        return delegate.read(importExportDocument);
     }
 
     @Override
