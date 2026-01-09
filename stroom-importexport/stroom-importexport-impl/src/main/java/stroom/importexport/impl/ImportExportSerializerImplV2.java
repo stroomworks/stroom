@@ -671,7 +671,9 @@ public class ImportExportSerializerImplV2 implements ImportExportSerializer {
         }
 
         // Now look for any path keyed assets
-        importPathAssetsFromDisk(importExportDocument, dir.resolve(filePrefix + PATH_ASSETS_DIRECTORY_SUFFIX));
+        importPathAssetsFromDisk(importExportDocument,
+                dir.resolve(filePrefix + PATH_ASSETS_DIRECTORY_SUFFIX),
+                indent(importDocRefPath));
 
         try {
             // Find the appropriate handler
@@ -722,28 +724,29 @@ public class ImportExportSerializerImplV2 implements ImportExportSerializer {
      *                                if it doesn't exist then there are no assets so no problem.
      */
     private void importPathAssetsFromDisk(final ImportExportDocument importExportDocument,
-                                          final Path pathAssetsRootDirectory) throws IOException {
+                                          final Path pathAssetsRootDirectory,
+                                          final String logIndent) throws IOException {
 
         if (pathAssetsRootDirectory.toFile().exists()) {
             Files.walkFileTree(pathAssetsRootDirectory, new SimpleFileVisitor<>() {
                 @Override
                 public FileVisitResult visitFile(final @NonNull Path file, final @NonNull BasicFileAttributes attrs) {
 
-                    LOGGER.info("Found path asset '{}' with relative path '{}'",
-                            file, pathAssetsRootDirectory.relativize(file));
+                    LOGGER.info("{}Found path asset '{}' with relative path '{}'",
+                            logIndent, file, pathAssetsRootDirectory.relativize(file));
 
                     if (file.endsWith(GIT_KEEP_FILENAME)) {
                         // Check for .gitkeep - ignore the file and add the folder as an asset
                         final String key = "/"  + pathAssetsRootDirectory.relativize(file.getParent());
                         final ImportExportAsset asset = new ByteArrayImportExportAsset(key, null);
                         importExportDocument.addPathAsset(asset);
-                        LOGGER.info("Added asset for folder '{}'", key);
+                        LOGGER.info("{}Added asset for folder '{}'", logIndent, key);
                     } else {
                         // Normal file to import as a path asset
                         final String key = "/" + pathAssetsRootDirectory.relativize(file);
                         final ImportExportAsset asset = new FileImportExportAsset(key, file);
                         importExportDocument.addPathAsset(asset);
-                        LOGGER.info("Added asset with filename '{}'", key);
+                        LOGGER.info("{}Added asset with filename '{}'", logIndent, key);
                     }
 
                     return FileVisitResult.CONTINUE;
