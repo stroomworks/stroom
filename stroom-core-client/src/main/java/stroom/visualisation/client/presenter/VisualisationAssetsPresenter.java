@@ -207,6 +207,8 @@ public class VisualisationAssetsPresenter
                        final VisualisationDoc document,
                        final boolean readOnly) {
 
+        Console.info("***** Visualisation Assets onRead() =========================================");
+
         // Set the readonly flag
         this.readOnly = readOnly;
 
@@ -225,6 +227,7 @@ public class VisualisationAssetsPresenter
         if (assets != null) {
             // Convert list of paths into a tree
             for (final VisualisationAsset asset : assets) {
+                Console.info("Adding asset '" + asset.getPath() + "' to tree");
                 String path = asset.getPath();
                 // Ignore leading slash
                 if (path.startsWith("/")) {
@@ -250,8 +253,10 @@ public class VisualisationAssetsPresenter
                             // Its ID isn't important at this stage so it gets a new ID
                             childNode = VisualisationAssetTreeNode.createNewFolderNode(pathItem);
                         }
+                        Console.info("***** Adding node: " + node + " -> " + childNode);
                         treeModel.add(node, childNode);
                     } else {
+                        Console.info("***** Found existing child node: " + existingChildNode.get().getLabel());
                         childNode = existingChildNode.get();
                     }
                     node = childNode;
@@ -290,6 +295,7 @@ public class VisualisationAssetsPresenter
                     treeModel.clear(ROOT_NODE);
 
                     // Put the new content in
+                    Console.info("Adding assets to tree: " + assets);
                     addPathsToTree(assets.getAssets());
 
                     // Make sure UI state is correct

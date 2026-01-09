@@ -145,13 +145,22 @@ public class VisualisationAssetTreeNode implements UpdatableTreeNode {
 
     @Override
     public void removeChild(final UpdatableTreeNode child) {
-        Console.info("Node " + this.label + " removing child node " + child.getLabel());
+        Console.info("Node '" + this.label + "' removing child node '" + child.getLabel() + "'");
         if (child instanceof final VisualisationAssetTreeNode childTreeNode) {
+            Console.info("  Removing child '" + childTreeNode.getLabel() + "', '" + childTreeNode.getId() + "'");
             dataProvider.getList().removeIf(internal -> {
                 final VisualisationAssetTreeNode internalTreeNode = (VisualisationAssetTreeNode) internal;
-                return Objects.equals(internalTreeNode.getId(), childTreeNode.getId());
+                Console.info("  Checking internal tree node '" + internalTreeNode.getLabel()
+                             + "' with ID " + internalTreeNode.getId());
+
+                // There are nodes with ID==null, and if these are left in then weird things
+                // happen. So we mark these for deletion. Note that all the children will be
+                // checked - it doesn't stop at the first child.
+                return Objects.equals(internalTreeNode.getId(), childTreeNode.getId())
+                       || internalTreeNode.getId() == null;
             });
         } else {
+            Console.info("  Found non VisualisationAssetTreeNode: " + child.getLabel());
             dataProvider.getList().removeIf(internal -> internal.getLabel().equals(child.getLabel()));
         }
     }
@@ -162,6 +171,7 @@ public class VisualisationAssetTreeNode implements UpdatableTreeNode {
      */
     @Override
     public void setParent(final UpdatableTreeNode parent) {
+        Console.info("  Adding parent: '" + parent.getLabel() + "' -> '" + this.getLabel() + "'");
         this.parent = parent;
     }
 

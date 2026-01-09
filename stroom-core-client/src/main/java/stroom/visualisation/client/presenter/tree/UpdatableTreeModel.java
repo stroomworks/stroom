@@ -17,7 +17,10 @@ package stroom.visualisation.client.presenter.tree;
  *
  * */
 
+import stroom.util.client.Console;
+
 import java.util.ArrayList;
+import java.util.List;
 
 import com.google.gwt.cell.client.Cell;
 import com.google.gwt.cell.client.ValueUpdater;
@@ -167,7 +170,19 @@ public class UpdatableTreeModel implements TreeViewModel {
      * Pass in the Root node to clear the whole tree.
      */
     public void clear(final UpdatableTreeNode rootNode) {
-        for (final UpdatableTreeNode node : rootNode.getDataProvider().getList()) {
+        final List<UpdatableTreeNode> children = rootNode.getDataProvider().getList();
+        final StringBuilder buf = new StringBuilder();
+        for (final UpdatableTreeNode child : children) {
+            buf.append(", ");
+            buf.append(child);
+        }
+        Console.info("Node '" + rootNode.getLabel() + "' has children: " + buf);
+        // Clear in reversed order to avoid index issues
+        for (int i = children.size() - 1; i >= 0; --i) {
+            final UpdatableTreeNode node = children.get(i);
+            Console.info("Clearing under node '" + node.getLabel() + "'");
+            clear(node);
+            Console.info("Removing node '" + node.getLabel() + "'");
             remove(node);
         }
     }
