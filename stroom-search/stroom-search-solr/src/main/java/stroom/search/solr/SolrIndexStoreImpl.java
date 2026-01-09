@@ -283,7 +283,7 @@ public class SolrIndexStoreImpl implements SolrIndexStore {
     }
 
     private SolrIndexField fromAttributes(final Map<String, Object> attributes) {
-        final SolrIndexField field = new SolrIndexField();
+        final SolrIndexField field = SolrIndexField.builder().build();
         setString(attributes, "name", field::setFldName);
         setString(attributes, "type", field::setNativeType);
         setString(attributes, "default", field::setDefaultValue);
