@@ -91,6 +91,7 @@ public class UpdatableTreeModel implements TreeViewModel {
     }
 
     public void add(final UpdatableTreeNode parent, final UpdatableTreeNode child) {
+        Console.info("Adding child of node '" + parent + "': " + child);
 
         if (parent == null) {
             // root-node
@@ -108,6 +109,39 @@ public class UpdatableTreeModel implements TreeViewModel {
     public static class NodeChildToClose {
         public TreeNode node;
         public int childIndex;
+    }
+
+    public void searchAllTree() {
+        searchForTreeNode(tree.getRootTreeNode(), null);
+    }
+
+    private void searchForTreeNode(final TreeNode parent,
+                                       final UpdatableTreeNode nodeToFind) {
+        Console.info("***** Searching node " + parent.toString());
+
+        for (int i = 0; i < parent.getChildCount(); ++i) {
+            Console.info("***** Looking at child " + i);
+            // We can't get the child directly, so we need to go via setChildOpen()
+            final boolean isOpen = parent.isChildOpen(i);
+            final TreeNode child = parent.setChildOpen(i, true, false);
+
+            if (child != null) {
+                final UpdatableTreeNode updatableTreeNode = (UpdatableTreeNode) child.getValue();
+                Console.info("***** '" + i + "' Found treeNode matching UpdatableTreeNode '" + updatableTreeNode.getLabel() + "'");
+
+                if (child.getChildCount() > 0) {
+                    Console.info("***** '" + i + "' has children - recursing...");
+                    searchForTreeNode(child, nodeToFind);
+                    Console.info("***** '" + i + "' Back from recursion");
+                }
+            } else {
+                Console.info("***** Child '" + i + "' is null");
+            }
+
+            if (!isOpen) {
+                parent.setChildOpen(i, false, false);
+            }
+        }
     }
 
     private NodeChildToClose searchTreeNode(final TreeNode parent,
@@ -166,23 +200,57 @@ public class UpdatableTreeModel implements TreeViewModel {
     }
 
     /**
+     * Returns whether the given node is open (true) or closed (false).
+     * @param node The tree node that we want to check.
+     * @return true if the node is open; false if not.
+     */
+    public boolean isOpen(final UpdatableTreeNode node) {
+        if (tree != null) {
+            //searchForTreeNode(tree.getRootTreeNode(), node);
+            final NodeChildToClose nctc = searchTreeNode(tree.getRootTreeNode(), node);
+            if (nctc != null) {
+                final int nodeIndex = nctc.node.getIndex();
+                final TreeNode parentNode = nctc.node.getParent();
+                if (parentNode != null) {
+                    return parentNode.isChildOpen(nodeIndex);
+                } else {
+                    Console.info("parentNode of '" + node.getLabel() + "' is null - cannot detect whether open or closed");
+                }
+            } else {
+                Console.info("Node '" + node.getLabel() + "' treeNode not found - cannot detect whether open or closed");
+            }
+        } else {
+            Console.info("Tree is null - can't check for isOpen");
+        }
+
+        return false;
+    }
+
+    /**
+     * Sets whether the given node is open (true) or closed (false).
+     */
+    public void setOpen(final UpdatableTreeNode node, final boolean open) {
+        if (tree != null) {
+            final NodeChildToClose nctc = searchTreeNode(tree.getRootTreeNode(), node);
+            if (nctc != null) {
+                final int nodeIndex = nctc.node.getIndex();
+                final TreeNode parentNode = nctc.node.getParent();
+                parentNode.setChildOpen(nodeIndex, open);
+            }
+        }
+    }
+
+    /**
      * Empties the tree below the given node.
      * Pass in the Root node to clear the whole tree.
      */
     public void clear(final UpdatableTreeNode rootNode) {
         final List<UpdatableTreeNode> children = rootNode.getDataProvider().getList();
-        final StringBuilder buf = new StringBuilder();
-        for (final UpdatableTreeNode child : children) {
-            buf.append(", ");
-            buf.append(child);
-        }
-        Console.info("Node '" + rootNode.getLabel() + "' has children: " + buf);
-        // Clear in reversed order to avoid index issues
+
+        // Clear in reverse order to avoid index issues
         for (int i = children.size() - 1; i >= 0; --i) {
             final UpdatableTreeNode node = children.get(i);
-            Console.info("Clearing under node '" + node.getLabel() + "'");
             clear(node);
-            Console.info("Removing node '" + node.getLabel() + "'");
             remove(node);
         }
     }

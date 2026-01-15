@@ -29,11 +29,8 @@ import stroom.svg.shared.SvgImage;
 import stroom.util.client.Console;
 import stroom.util.shared.ResourceKey;
 import stroom.visualisation.client.presenter.VisualisationAssetsPresenter.VisualisationAssetsView;
-import stroom.visualisation.client.presenter.assets.VisualisationAssetTreeNode;
-import stroom.visualisation.client.presenter.assets.VisualisationAssetTreeModel;
+import stroom.visualisation.client.presenter.assets.VisualisationAssetTreeItem;
 import stroom.visualisation.client.presenter.assets.VisualisationAssetsImageResource;
-import stroom.visualisation.client.presenter.tree.UpdatableTreeModel;
-import stroom.visualisation.client.presenter.tree.UpdatableTreeNode;
 import stroom.visualisation.shared.VisualisationAsset;
 import stroom.visualisation.shared.VisualisationAssetResource;
 import stroom.visualisation.shared.VisualisationAssets;
@@ -50,10 +47,10 @@ import stroom.widget.util.client.Rect;
 
 import com.google.gwt.core.client.GWT;
 import com.google.gwt.resources.client.ImageResource;
-import com.google.gwt.user.cellview.client.CellTree;
 import com.google.gwt.user.cellview.client.CellTree.Style;
+import com.google.gwt.user.client.ui.Tree;
+import com.google.gwt.user.client.ui.TreeItem;
 import com.google.gwt.user.client.ui.Widget;
-import com.google.gwt.view.client.SingleSelectionModel;
 import com.google.inject.Inject;
 import com.google.web.bindery.event.shared.EventBus;
 import com.google.web.bindery.event.shared.HandlerRegistration;
@@ -62,10 +59,12 @@ import com.gwtplatform.mvp.client.View;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
+import java.util.Set;
 
 /**
  * Shows the Assets - images, css etc - associated with the Visualisation.
@@ -77,11 +76,8 @@ public class VisualisationAssetsPresenter
     /** Rest factory to trigger storing file uploads */
     private final RestFactory restFactory;
 
-    /** Model behind the tree */
-    private final UpdatableTreeModel treeModel;
-
-    /** Selection model */
-    private final SingleSelectionModel<UpdatableTreeNode> selectionModel = new SingleSelectionModel<>();
+    /** Tree */
+    Tree tree = new Tree(new AssetTreeResources(), true);
 
     /** True if the UI is readonly, false if read-write */
     private boolean readOnly = false;
@@ -101,11 +97,11 @@ public class VisualisationAssetsPresenter
     /** List of any resource keys for files that need to be saved */
     private final Map<String, ResourceKey> uploadedFileResourceKeys = new HashMap<>();
 
+    /** Set of the node IDs that are open when the document is saved */
+    private final Set<String> nodeIdToOpenState = new HashSet<>();
+
     /** Items in the context menu */
     private final List<Item> menuItems = new ArrayList<>();
-
-    /** Hidden root item in the tree. Not displayed. */
-    final static VisualisationAssetTreeNode ROOT_NODE = VisualisationAssetTreeNode.createNewFolderNode("root");
 
     /** Slash / character */
     private final static String SLASH = "/";
@@ -129,25 +125,20 @@ public class VisualisationAssetsPresenter
         this.uploadFileDialog = uploadFileDialog;
         this.addFolderDialog = addFolderDialog;
 
+        tree.setStylePrimaryName("visualisation-asset-tree");
+        tree.addSelectionHandler(event -> {
+            Console.info("Item selected: " + tree.getSelectedItem());
+            VisualisationAssetsPresenter.this.onSelectionChange();
+        });
+        /*
         treeModel = new VisualisationAssetTreeModel(selectionModel,
                 (node, label) ->
                         VisualisationAssetsPresenter.this.getNonClashingLabel(node.getParent(), label),
                 this::setDirty,
                 this::isReadOnly);
+        */
+        this.getView().setTree(tree);
 
-        selectionModel.addSelectionChangeHandler(event ->
-                VisualisationAssetsPresenter.this.onSelectionChange());
-
-        // Hack here - need to add a dummy node in otherwise the tree is broken :-(
-        // This node will be removed later in onRead()
-        final VisualisationAssetTreeNode dummyNode = VisualisationAssetTreeNode.createDummyNode();
-        treeModel.add(ROOT_NODE, dummyNode);
-
-        // Main tree we're displaying
-        final CellTree cellTree = new CellTree(treeModel, ROOT_NODE, new AssetTreeResources());
-        cellTree.setAnimation(CellTree.SlideAnimation.create());
-        cellTree.setAnimationEnabled(true);
-        this.getView().setCellTree(cellTree);
     }
 
     public boolean isReadOnly() {
@@ -207,8 +198,6 @@ public class VisualisationAssetsPresenter
                        final VisualisationDoc document,
                        final boolean readOnly) {
 
-        Console.info("***** Visualisation Assets onRead() =========================================");
-
         // Set the readonly flag
         this.readOnly = readOnly;
 
@@ -227,39 +216,60 @@ public class VisualisationAssetsPresenter
         if (assets != null) {
             // Convert list of paths into a tree
             for (final VisualisationAsset asset : assets) {
-                Console.info("Adding asset '" + asset.getPath() + "' to tree");
                 String path = asset.getPath();
                 // Ignore leading slash
                 if (path.startsWith("/")) {
                     path = path.substring(1);
                 }
                 final String[] pathItems = path.split(SLASH);
-                UpdatableTreeNode node = ROOT_NODE;
+                //VisualisationAssetTreeNode node = ROOT_NODE;
+                TreeItem treeItem = null;
+
                 for (int iPath = 0; iPath < pathItems.length; ++iPath) {
                     final String pathItem = pathItems[iPath];
                     final boolean isLast = iPath == pathItems.length - 1;
 
-                    final Optional<UpdatableTreeNode> existingChildNode =
-                            node.getDataProvider().getList().stream()
-                                    .filter(n -> n.getLabel().equals(pathItem)).findFirst();
-                    final UpdatableTreeNode childNode;
-                    if (existingChildNode.isEmpty()) {
+                    // Search for anything existing that matches this pathItem
+                    TreeItem existingTreeItem = null;
+                    if (treeItem == null) {
+                        for (int iChild = 0; iChild < tree.getItemCount(); ++iChild) {
+                            final TreeItem item = tree.getItem(iChild);
+                            if (pathItem.equals(item.getText())) {
+                                existingTreeItem = item;
+                                break;
+                            }
+                        }
+                    } else {
+                        for (int iChild = 0; iChild < treeItem.getChildCount(); ++iChild) {
+                            final TreeItem item = treeItem.getChild(iChild);
+                            if (pathItem.equals(item.getText())) {
+                                existingTreeItem = item;
+                                break;
+                            }
+                        }
+                    }
+
+                    final TreeItem newChildItem;
+                    if (existingTreeItem == null) {
                         if (isLast) {
                             // Last item so set whether it is a folder or not
                             // The last item takes the ID of the asset too.
-                            childNode = VisualisationAssetTreeNode.createNodeFromAsset(asset, pathItem);
+                            newChildItem = VisualisationAssetTreeItem.createItemFromAsset(asset, pathItem);
                         } else {
                             // Not last item so must be a folder
                             // Its ID isn't important at this stage so it gets a new ID
-                            childNode = VisualisationAssetTreeNode.createNewFolderNode(pathItem);
+                            newChildItem = VisualisationAssetTreeItem.createNewFolderItem(pathItem);
                         }
-                        Console.info("***** Adding node: " + node + " -> " + childNode);
-                        treeModel.add(node, childNode);
+                        if (treeItem == null) {
+                            tree.addItem(newChildItem);
+                        } else {
+                            treeItem.addItem(newChildItem);
+                        }
                     } else {
-                        Console.info("***** Found existing child node: " + existingChildNode.get().getLabel());
-                        childNode = existingChildNode.get();
+                        newChildItem = existingTreeItem;
                     }
-                    node = childNode;
+
+                    treeItem = newChildItem;
                 }
             }
             sortTree();
@@ -287,15 +297,13 @@ public class VisualisationAssetsPresenter
      */
     private void fetchAssets(final VisualisationDoc document) {
         final String ownerId = document.getUuid();
-        Console.info("Fetching assets for " + ownerId);
         restFactory.create(VISUALISATION_ASSET_RESOURCE)
                 .method(r -> r.fetchAssets(ownerId))
                 .onSuccess(assets -> {
                     // Clear any existing content from the tree
-                    treeModel.clear(ROOT_NODE);
+                    tree.clear();
 
                     // Put the new content in
-                    Console.info("Adding assets to tree: " + assets);
                     addPathsToTree(assets.getAssets());
 
                     // Make sure UI state is correct
@@ -324,7 +332,6 @@ public class VisualisationAssetsPresenter
                 .onSuccess(result -> {
                     if (result) {
                         // Great it worked - clear the list of uploaded files
-                        Console.info("Visualisation Assets: uploaded files stored");
                         uploadedFileResourceKeys.clear();
                     } else {
                         AlertEvent.fireError(this,
@@ -342,35 +349,51 @@ public class VisualisationAssetsPresenter
     }
 
     /**
-     * Convert the tree into a list of assets.
+     * Convert the tree into a list of assets. Also stores the open state of the tree,
+     * so that it can be restored if necessary.
      * @param assets Where to put the assets
      */
     private void treeToAssets(final VisualisationAssets assets) {
-        recurseTreeToAssets(ROOT_NODE, assets);
+        nodeIdToOpenState.clear();
+        //recurseTreeToAssets(ROOT_NODE, assets, nodeIdToOpenState);
+
+        for (int i = 0; i < tree.getItemCount(); ++i) {
+            recurseTreeToAssets(tree.getItem(i), assets, nodeIdToOpenState);
+        }
+
     }
 
     /**
      * Recursive function called from treeToAssets().
      */
-    private void recurseTreeToAssets(final UpdatableTreeNode currentNode,
-                                     final VisualisationAssets assets) {
-        if (currentNode instanceof final VisualisationAssetTreeNode assetTreeNode) {
+    private void recurseTreeToAssets(final TreeItem treeItem,
+                                     final VisualisationAssets assets,
+                                     final Set<String> openIds) {
 
-            // Don't store the ROOT_NODE, but otherwise store anything without children
+        if (treeItem instanceof final VisualisationAssetTreeItem assetTreeItem) {
+
+            // Store the open state of this node
+            if (treeItem.getState()) {
+                openIds.add(assetTreeItem.getId());
+            } else {
+                Console.info("Closed node found: " + assetTreeItem.getId() + " -> " + assetTreeItem.getText());
+            }
+
+            // Store anything without children.
             // So we store folders if they don't have any children, and we store files.
-            if (assetTreeNode.getParent() != null && !assetTreeNode.hasChildren()) {
+            if (!assetTreeItem.hasChildren()) {
                 // No more nodes so store path
-                final String path = getItemPath(assetTreeNode);
+                final String path = getItemPath(assetTreeItem);
 
                 final VisualisationAsset asset = new VisualisationAsset(
-                        assetTreeNode.getId(),
+                        assetTreeItem.getId(),
                         path,
-                        !assetTreeNode.isLeaf());
+                        !assetTreeItem.isLeaf());
                 assets.addAsset(asset);
             } else {
                 // More nodes so recurse
-                for (final UpdatableTreeNode child : assetTreeNode.getDataProvider().getList()) {
-                    recurseTreeToAssets(child, assets);
+                for (int i = 0; i < assetTreeItem.getChildCount(); ++i) {
+                    recurseTreeToAssets(assetTreeItem.getChild(i), assets, openIds);
                 }
             }
         } else {
@@ -415,8 +438,8 @@ public class VisualisationAssetsPresenter
      */
     private void onAddFolder() {
         if (!readOnly) {
-            final UpdatableTreeNode folderNode = findFolderForSelectedNode();
-            final String path = getItemPath(folderNode);
+            final TreeItem folderItem = findFolderForSelectedItem();
+            final String path = getItemPath(folderItem);
             final ShowPopupEvent.Builder popupEventBuilder = new ShowPopupEvent.Builder(addFolderDialog);
             addFolderDialog.setupPopup(popupEventBuilder, path);
             popupEventBuilder
@@ -425,12 +448,16 @@ public class VisualisationAssetsPresenter
                                     // Ok pressed
                                     if (addFolderDialog.isValid()) {
                                         final String folderName = getNonClashingLabel(
-                                                folderNode,
+                                                folderItem,
                                                 addFolderDialog.getView().getFolderName());
-                                        final UpdatableTreeNode newFolderNode =
-                                                VisualisationAssetTreeNode.createNewFolderNode(folderName);
-                                        treeModel.add(folderNode, newFolderNode);
-                                        sortNodeChildren(folderNode);
+                                        final TreeItem newFolderNode =
+                                                VisualisationAssetTreeItem.createNewFolderItem(folderName);
+                                        if (folderItem == null) {
+                                            tree.addItem(newFolderNode);
+                                        } else {
+                                            folderItem.addItem(newFolderNode);
+                                        }
+                                        // TODO Sort the children
                                         setDirty();
                                         event.hide();
                                     } else {
@@ -451,25 +478,65 @@ public class VisualisationAssetsPresenter
      * Sorts the whole tree, from root to leaf.
      */
     private void sortTree() {
-        recurseSortTree(ROOT_NODE);
+        final List<VisualisationAssetTreeItem> childItems = new ArrayList<>();
+        for (int i = 0; i < tree.getItemCount(); ++i) {
+            childItems.add((VisualisationAssetTreeItem) tree.getItem(i));
+        }
+        childItems.sort(new TreeItemComparator());
+        tree.removeItems();
+        for (final VisualisationAssetTreeItem treeItem : childItems) {
+            if (!treeItem.isLeaf()) {
+                recurseSortTree(treeItem);
+            }
+            tree.addItem(treeItem);
+            // TODO DELETE
+            Console.info("Tree item " + treeItem.getText() + " has HTML '" + treeItem.getHTML() + "'");
+        }
     }
 
     /**
      * Called from sortTree() to recurse down the tree, sorting it.
-     * @param node The node to sort and recurse.
+     * @param assetTreeItem The node to sort and recurse.
      */
-    private void recurseSortTree(final UpdatableTreeNode node) {
-        sortNodeChildren(node);
-        final List<UpdatableTreeNode> children = node.getDataProvider().getList();
-        for (final UpdatableTreeNode child : children) {
-            recurseSortTree(child);
+    private void recurseSortTree(final VisualisationAssetTreeItem assetTreeItem) {
+        final List<VisualisationAssetTreeItem> childItems = new ArrayList<>();
+        for (int i  = 0; i < assetTreeItem.getChildCount(); ++i) {
+            childItems.add((VisualisationAssetTreeItem) assetTreeItem.getChild(i));
+        }
+        childItems.sort(new TreeItemComparator());
+        assetTreeItem.removeItems();
+        for (final VisualisationAssetTreeItem childTreeItem : childItems) {
+            if (!childTreeItem.isLeaf()) {
+                recurseSortTree(childTreeItem);
+            }
+            assetTreeItem.addItem(childTreeItem);
+        }
+    }
+
+    /**
+     * Comparator for sorting tree items.
+     */
+    private static class TreeItemComparator implements Comparator<VisualisationAssetTreeItem> {
+
+        @Override
+        public int compare(final VisualisationAssetTreeItem treeItem1, final VisualisationAssetTreeItem treeItem2) {
+            if (!treeItem1.isLeaf() && treeItem2.isLeaf()) {
+                // 1 is folder, 2 is file so 1 comes first
+                return -1;
+            } else if (treeItem1.isLeaf() && !treeItem2.isLeaf()) {
+                // 1 is file, 2 is folder so 2 comes first
+                return 1;
+            } else {
+                // Sort on label
+                return treeItem1.getText().compareTo(treeItem2.getText());
+            }
         }
     }
 
     /**
      * Sorts the children of a node into folders first, then alphabetical order
      * @param node The node whose children you want to sort.
-     */
+     *//*
     private void sortNodeChildren(final UpdatableTreeNode node) {
         final List<UpdatableTreeNode> children = node.getDataProvider().getList();
         children.sort((node1, node2) -> {
@@ -484,53 +551,61 @@ public class VisualisationAssetsPresenter
                 return node1.getLabel().compareTo(node2.getLabel());
             }
         });
-    }
+    }*/
 
     /**
      * Generates a label that doesn't clash with other files/folders in the same directory.
      * Adds an integer to the end, incrementing until an integer is found that doesn't
      * clash with anything else.
-     * @param parentNode The node that holds the directory.
+     * @param parentItem The tree item that holds the directory.
      * @param label The label that we're trying to put into the directory.
      * @return A label that doesn't clash with anything else.
      */
     @Override
-    public String getNonClashingLabel(final UpdatableTreeNode parentNode, final String label) {
-        int i = 1;
+    public String getNonClashingLabel(final TreeItem parentItem, final String label) {
         String nonClashingLabel = label;
-        while (parentNode.labelExists(nonClashingLabel)) {
-            final int iDot = label.lastIndexOf('.');
-            String namePart = label;
-            String extPart = "";
-            if (iDot != -1) {
-                namePart = label.substring(0, iDot);
-                extPart = label.substring(iDot);
-            }
 
-            nonClashingLabel = namePart + "-" + i + extPart;
-            i++;
+        if (parentItem instanceof final VisualisationAssetTreeItem assetParentItem) {
+            int i = 1;
+            while (assetParentItem.labelExists(nonClashingLabel)) {
+                final int iDot = label.lastIndexOf('.');
+                String namePart = label;
+                String extPart = "";
+                if (iDot != -1) {
+                    namePart = label.substring(0, iDot);
+                    extPart = label.substring(iDot);
+                }
+
+                nonClashingLabel = namePart + "-" + i + extPart;
+                i++;
+            }
+        } else {
+            Console.error("Unknown tree item type");
         }
 
         return nonClashingLabel;
     }
 
     /**
-     * @return The node that we're going to add things to.
+     * Finds the treeItem that we're going to add things to. Either the selected folder,
+     * or the parent of the selected file (can't add things to a file).
+     * @return The node that we're going to add things to. Null if we're adding to the root item.
      */
-    private UpdatableTreeNode findFolderForSelectedNode() {
-        UpdatableTreeNode selectedFolder = selectionModel.getSelectedObject();
-
-        if (selectedFolder != null) {
-            // If trying to add to a file then find its parent folder
-            if (selectedFolder.isLeaf()) {
-                selectedFolder = selectedFolder.getParent();
+    private TreeItem findFolderForSelectedItem() {
+        final TreeItem selectedTreeItem = tree.getSelectedItem();
+        if (selectedTreeItem != null) {
+            if (selectedTreeItem instanceof final VisualisationAssetTreeItem assetTreeItem) {
+                if (assetTreeItem.isLeaf()) {
+                    // File so we want the parent folder
+                    return assetTreeItem.getParentItem();
+                } else {
+                    // Folder selected so return it
+                    return assetTreeItem;
+                }
             }
-        } else {
-            // Nothing selected so add item at root
-            selectedFolder = ROOT_NODE;
         }
 
-        return selectedFolder;
+        return selectedTreeItem;
     }
 
     /**
@@ -539,26 +614,31 @@ public class VisualisationAssetsPresenter
      */
     private void onUploadFile() {
         if (!readOnly) {
-            final UpdatableTreeNode folderNode = findFolderForSelectedNode();
-            final String path = getItemPath(folderNode);
-            uploadFileDialog.fireShowPopup(this, folderNode, path);
+            final TreeItem folderItem = findFolderForSelectedItem();
+            final String path = getItemPath(folderItem);
+            uploadFileDialog.fireShowPopup(this, folderItem, path);
         }
     }
 
     /**
      * Callback from the Add dialog that adds a file that has been uploaded.
-     * @param parentFolderNode The node that the file has been added to.
+     * @param parentFolderItem The node that the file has been added to.
      * @param fileName The name of the file that was uploaded.
      * @param resourceKey The resource key of the file, so that the server can find it later.
      */
     @Override
-    public void addUploadedFile(final UpdatableTreeNode parentFolderNode,
+    public void addUploadedFile(final TreeItem parentFolderItem,
                                 final String fileName,
                                 final ResourceKey resourceKey) {
 
-        final VisualisationAssetTreeNode newFileNode = VisualisationAssetTreeNode.createNewFileNode(fileName);
-        treeModel.add(parentFolderNode, newFileNode);
-        sortNodeChildren(parentFolderNode);
+        final VisualisationAssetTreeItem newFileNode = VisualisationAssetTreeItem.createNewFileItem(fileName);
+        if (parentFolderItem == null) {
+            tree.addItem(newFileNode);
+        } else {
+            parentFolderItem.addItem(newFileNode);
+        }
+        // TODO Sort node
+        //sortNodeChildren(parentFolderNode);
         uploadedFileResourceKeys.put(newFileNode.getId(), resourceKey);
 
         setDirty();
@@ -578,12 +658,12 @@ public class VisualisationAssetsPresenter
      * @param item The item to find the path to. Can be null if this is the root path.
      * @return The path as a String, with / separators.
      */
-    private String getItemPath(final UpdatableTreeNode item) {
+    private String getItemPath(final TreeItem item) {
         final List<String> pathList = new ArrayList<>();
-        UpdatableTreeNode node = item;
-        while (node != null && !node.equals(ROOT_NODE)) {
-            pathList.add(node.getLabel());
-            node = node.getParent();
+        TreeItem currentItem = item;
+        while (currentItem != null) {
+            pathList.add(currentItem.getText());
+            currentItem = currentItem.getParentItem();
         }
         Collections.reverse(pathList);
 
@@ -596,45 +676,52 @@ public class VisualisationAssetsPresenter
      */
     private void onDeleteButtonClick() {
         if (!readOnly) {
-            final UpdatableTreeNode node = selectionModel.getSelectedObject();
-            if (node != null) {
-                final String message;
-                if (node.isLeaf()) {
-                    message = "Are you sure you want to delete the selected file?";
-                } else {
-                    message = "Are you sure you want to delete the selected folder and all its descendants?";
-                }
+            final TreeItem item = tree.getSelectedItem();
+            if (item != null) {
+                if (item instanceof final VisualisationAssetTreeItem assetTreeItem) {
+                    final String message;
+                    if (assetTreeItem.isLeaf()) {
+                        message = "Are you sure you want to delete the selected file?";
+                    } else {
+                        message = "Are you sure you want to delete the selected folder and all its descendants?";
+                    }
 
-                ConfirmEvent.fire(VisualisationAssetsPresenter.this, message,
-                        result -> {
-                            if (result) {
-                                treeModel.remove(node);
-                                if (node instanceof final VisualisationAssetTreeNode assetTreeNode) {
-                                    recurseRemoveUploadedFiles(assetTreeNode);
-                                } else {
-                                    Console.error("Unknown tree node type: " + node.getClass());
+                    ConfirmEvent.fire(VisualisationAssetsPresenter.this, message,
+                            result -> {
+                                if (result) {
+                                    final TreeItem parentItem = assetTreeItem.getParentItem();
+                                    if (parentItem == null) {
+                                        tree.removeItem(assetTreeItem);
+                                    } else {
+                                        parentItem.removeItem(assetTreeItem);
+                                    }
+
+                                    recurseRemoveUploadedFiles(assetTreeItem);
+
+                                    setDirty();
                                 }
-
-                                setDirty();
-                            }
-                        });
+                            });
+                } else {
+                    Console.error("Unknown tree node type: " + item.getClass());
+                }
             }
+
         }
     }
 
     /**
      * Recurses down the tree, removing all nodes from the uploadedFileResourceKeys map.
      * Called from onDeleteButtonClick().
-     * @param assetTreeNode The root node. Remove uploaded files underneath this node.
+     * @param assetTreeItem The root node. Remove uploaded files underneath this node.
      */
-    private void recurseRemoveUploadedFiles(final VisualisationAssetTreeNode assetTreeNode) {
-        uploadedFileResourceKeys.remove(assetTreeNode.getId());
-        final List<UpdatableTreeNode> children = assetTreeNode.getDataProvider().getList();
-        for (final UpdatableTreeNode child : children) {
-            if (child instanceof final VisualisationAssetTreeNode childAssetTreeNode) {
-                recurseRemoveUploadedFiles(childAssetTreeNode);
+    private void recurseRemoveUploadedFiles(final VisualisationAssetTreeItem assetTreeItem) {
+        uploadedFileResourceKeys.remove(assetTreeItem.getId());
+        for (int i = 0; i < assetTreeItem.getChildCount(); ++i) {
+            final TreeItem childTreeItem = assetTreeItem.getChild(i);
+            if (childTreeItem instanceof final VisualisationAssetTreeItem childAssetTreeItem) {
+                recurseRemoveUploadedFiles(childAssetTreeItem);
             } else {
-                Console.error("Unknown tree node type: " + child.getClass());
+                Console.error("Unknown tree node type: " + childTreeItem.getClass());
             }
         }
     }
@@ -648,7 +735,7 @@ public class VisualisationAssetsPresenter
             addButton.setEnabled(false);
             deleteButton.setEnabled(false);
         } else {
-            final UpdatableTreeNode item = selectionModel.getSelectedObject();
+            final TreeItem item = tree.getSelectedItem();
             if (item == null) {
                 // Assume the root item is selected
                 addButton.setEnabled(true);
@@ -664,7 +751,7 @@ public class VisualisationAssetsPresenter
     /**
      * Provides the images for the CellTree
      */
-    private static class AssetTreeResources implements CellTree.Resources {
+    private static class AssetTreeResources implements Tree.Resources {
 
         /** Height and width of the image in pixels */
         private static final int DIM = 10;
@@ -672,34 +759,26 @@ public class VisualisationAssetsPresenter
                 new VisualisationAssetsImageResource(DIM, DIM, "/ui/background-images/arrow-right.png");
         private static final VisualisationAssetsImageResource CELL_OPEN =
                 new VisualisationAssetsImageResource(DIM, DIM, "/ui/background-images/arrow-down.png");
-        private static final VisualisationAssetsImageResource LOADING =
-                new VisualisationAssetsImageResource(DIM, DIM, "/ui/background-images/ellipses-horizontal.png");
-        private static final Style STYLE = new AssetTreeStyle();
+
+        /** Tree shows leafs (items without children) with this icon. We need to pretend it is already open. */
+        private static final VisualisationAssetsImageResource LEAF =
+                new VisualisationAssetsImageResource(DIM, DIM, "/ui/background-images/arrow-down.png");
 
         @Override
-        public ImageResource cellTreeClosedItem() {
+        public ImageResource treeClosed() {
             return CELL_CLOSED;
         }
 
         @Override
-        public ImageResource cellTreeLoading() {
-            return LOADING;
+        public ImageResource treeLeaf() {
+            return LEAF;
         }
 
         @Override
-        public ImageResource cellTreeOpenItem() {
+        public ImageResource treeOpen() {
             return CELL_OPEN;
         }
 
-        @Override
-        public ImageResource cellTreeSelectedBackground() {
-            return null;
-        }
-
-        @Override
-        public Style cellTreeStyle() {
-            return STYLE;
-        }
     }
 
     // --------------------------------------------------------------------------------
@@ -799,6 +878,6 @@ public class VisualisationAssetsPresenter
         /**
          * Sets the cell tree within the view.
          */
-        void setCellTree(final CellTree cellTree);
+        void setTree(final Tree cellTree);
     }
 }

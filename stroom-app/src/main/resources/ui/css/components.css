@@ -2767,17 +2767,48 @@ button.main-menu svg {
 }
 
 /* Visualisation Assets */
-.visualisation-asset-tree-item  {
-    padding-top: 1px;
-    padding-bottom: 2px;
+.visualisation-asset-tree table {
+    border-spacing: 2px;
 }
 
-.visualisation-asset-tree-item-image {
+.visualisation-asset-tree .gwt-TreeItem  {
+    padding-top: 1px;
+    padding-bottom: 2px;
+    padding-left: 20px;
+    padding-right: 1px;
+    margin-left: 5px;
+    background-repeat: no-repeat;
+}
+
+.visualisation-asset-tree .asset-type-default .gwt-TreeItem {
+    background-image: url('/ui/background-images/file.png');
+}
+.visualisation-asset-tree .asset-type-folder .gwt-TreeItem {
+    background-image: url('/ui/background-images/folder.png');
+}
+.visualisation-asset-tree .asset-type-image .gwt-TreeItem {
+    background-image: url('/ui/background-images/file-image.png');
+}
+.visualisation-asset-tree .asset-type-css .gwt-TreeItem {
+    background-image: url('/ui/background-images/file-raw.png');
+}
+.visualisation-asset-tree .asset-type-html .gwt-TreeItem {
+    background-image: url('/ui/background-images/file-formatted.png');
+}
+.visualisation-asset-tree .asset-type-javascript .gwt-TreeItem {
+    background-image: url('/ui/background-images/file-script.png');
+}
+
+.visualisation-asset-tree .gwt-TreeItem-selected {
+    background-color: var(--row__background-color--selected);
+}
+
+.visualisation-asset-tree item-image {
     padding-top: 3px;
     margin-right: 5px;
 }
 
-.visualisation-asset-tree-item-value {
+.visualisation-asset-tree item-value {
     margin-left: 8px;
 }
 
@@ -2799,10 +2830,6 @@ button.main-menu svg {
 
 .visualisation-assets-icon-wrapper + div {
     margin-left: 20px;
-}
-
-.visualisation-asset-tree-selected-item {
-    background-color: var(--row__background-color--selected);
 }
 
 /* Hide the 'Empty' message in the empty asset tree */

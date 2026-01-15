@@ -7,7 +7,6 @@ import stroom.util.client.Console;
 import stroom.util.shared.NullSafe;
 import stroom.util.shared.ResourceKey;
 import stroom.visualisation.client.presenter.VisualisationAssetsUploadFileDialogPresenter.VisualisationAssetsUploadFileDialogView;
-import stroom.visualisation.client.presenter.tree.UpdatableTreeNode;
 import stroom.widget.popup.client.event.HidePopupRequestEvent;
 import stroom.widget.popup.client.event.ShowPopupEvent;
 import stroom.widget.popup.client.presenter.PopupSize;
@@ -17,6 +16,7 @@ import com.google.gwt.event.shared.HasHandlers;
 import com.google.gwt.user.client.ui.FileUpload;
 import com.google.gwt.user.client.ui.FormPanel;
 import com.google.gwt.user.client.ui.FormPanel.SubmitEvent;
+import com.google.gwt.user.client.ui.TreeItem;
 import com.google.inject.Inject;
 import com.google.web.bindery.event.shared.EventBus;
 import com.gwtplatform.mvp.client.MyPresenterWidget;
@@ -33,7 +33,7 @@ public class VisualisationAssetsUploadFileDialogPresenter
     private VisualisationAssetsAddFileCallback addFileCallback;
 
     /** Where this file is being added */
-    private UpdatableTreeNode parentFolderNode;
+    private TreeItem parentFolderItem;
 
     /** Width of dialog */
     private static final int DIALOG_WIDTH = 300;
@@ -63,12 +63,12 @@ public class VisualisationAssetsUploadFileDialogPresenter
                     Console.info("Submit handler: onSuccess(" + resourceKey.getKey() + ")");
                     final String fileName =
                             addFileCallback.getNonClashingLabel(
-                                    parentFolderNode,
+                                    parentFolderItem,
                                     parseFakeFilename(getView().getFileUpload().getFilename()));
 
                     Console.info("Filename: " + fileName + "; name: " + getView().getFileUpload().getName());
 
-                    addFileCallback.addUploadedFile(parentFolderNode, fileName, resourceKey);
+                    addFileCallback.addUploadedFile(parentFolderItem, fileName, resourceKey);
                     currentHideRequest.hide();
                 }
 
@@ -104,11 +104,11 @@ public class VisualisationAssetsUploadFileDialogPresenter
      * @param path The path that we're adding the item at.
      */
     public void fireShowPopup(final VisualisationAssetsAddFileCallback addFileCallback,
-                              final UpdatableTreeNode parentFolderNode,
+                              final TreeItem parentFolderItem,
                               final String path) {
 
         this.getView().setPath(path);
-        this.parentFolderNode = parentFolderNode;
+        this.parentFolderItem = parentFolderItem;
         this.addFileCallback = addFileCallback;
         this.currentHideRequest = null;
 
