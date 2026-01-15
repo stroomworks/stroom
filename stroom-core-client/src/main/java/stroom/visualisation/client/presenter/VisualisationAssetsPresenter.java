@@ -47,7 +47,6 @@ import stroom.widget.util.client.Rect;
 
 import com.google.gwt.core.client.GWT;
 import com.google.gwt.resources.client.ImageResource;
-import com.google.gwt.user.cellview.client.CellTree.Style;
 import com.google.gwt.user.client.ui.Tree;
 import com.google.gwt.user.client.ui.TreeItem;
 import com.google.gwt.user.client.ui.Widget;
@@ -78,6 +77,7 @@ public class VisualisationAssetsPresenter
 
     /** Tree */
     Tree tree = new Tree(new AssetTreeResources(), true);
+    //Tree tree = new Tree();
 
     /** True if the UI is readonly, false if read-write */
     private boolean readOnly = false;
@@ -98,7 +98,7 @@ public class VisualisationAssetsPresenter
     private final Map<String, ResourceKey> uploadedFileResourceKeys = new HashMap<>();
 
     /** Set of the node IDs that are open when the document is saved */
-    private final Set<String> nodeIdToOpenState = new HashSet<>();
+    private final Set<String> treeItemIdToOpenState = new HashSet<>();
 
     /** Items in the context menu */
     private final List<Item> menuItems = new ArrayList<>();
@@ -274,6 +274,7 @@ public class VisualisationAssetsPresenter
             }
             sortTree();
         }
+
     }
 
     /**
@@ -306,6 +307,9 @@ public class VisualisationAssetsPresenter
                     // Put the new content in
                     addPathsToTree(assets.getAssets());
 
+                    // Restore the open/closed state of the tree
+                    restoreOpenClosedState();
+
                     // Make sure UI state is correct
                     updateState();
                 })
@@ -326,6 +330,7 @@ public class VisualisationAssetsPresenter
 
         final VisualisationAssets assets = new VisualisationAssets(document.getUuid(), uploadedFileResourceKeys);
         treeToAssets(assets);
+        storeOpenClosedState();
 
         restFactory.create(VISUALISATION_ASSET_RESOURCE)
                 .method(r -> r.updateAssets(document.getUuid(), assets))
@@ -349,35 +354,49 @@ public class VisualisationAssetsPresenter
     }
 
     /**
+     * Stores the state of the tree in the variable treeItemIdToOpenState.
+     */
+    private void storeOpenClosedState() {
+        Console.info("Storing open/closed state");
+        treeItemIdToOpenState.clear();
+
+        for (int i = 0; i < tree.getItemCount(); ++i) {
+            final VisualisationAssetTreeItem treeItem = (VisualisationAssetTreeItem) tree.getItem(i);
+            treeItem.storeState(treeItemIdToOpenState);
+        }
+    }
+
+    /**
+     * Sets the state of the tree from the variable treeItemIdToOpenState.
+     */
+    private void restoreOpenClosedState() {
+        Console.info("Restoring open/closed state from " + treeItemIdToOpenState.toString());
+        for (int i = 0; i < tree.getItemCount(); ++i) {
+            final VisualisationAssetTreeItem treeItem = (VisualisationAssetTreeItem) tree.getItem(i);
+            treeItem.restoreState(treeItemIdToOpenState);
+        }
+    }
+
+    /**
      * Convert the tree into a list of assets. Also stores the open state of the tree,
      * so that it can be restored if necessary.
      * @param assets Where to put the assets
      */
     private void treeToAssets(final VisualisationAssets assets) {
-        nodeIdToOpenState.clear();
-        //recurseTreeToAssets(ROOT_NODE, assets, nodeIdToOpenState);
 
         for (int i = 0; i < tree.getItemCount(); ++i) {
-            recurseTreeToAssets(tree.getItem(i), assets, nodeIdToOpenState);
+            final VisualisationAssetTreeItem treeItem = (VisualisationAssetTreeItem) tree.getItem(i);
+            recurseTreeToAssets(treeItem, assets);
         }
-
     }
 
     /**
      * Recursive function called from treeToAssets().
      */
     private void recurseTreeToAssets(final TreeItem treeItem,
-                                     final VisualisationAssets assets,
-                                     final Set<String> openIds) {
+                                     final VisualisationAssets assets) {
 
         if (treeItem instanceof final VisualisationAssetTreeItem assetTreeItem) {
-
-            // Store the open state of this node
-            if (treeItem.getState()) {
-                openIds.add(assetTreeItem.getId());
-            } else {
-                Console.info("Closed node found: " + assetTreeItem.getId() + " -> " + assetTreeItem.getText());
-            }
 
             // Store anything without children.
             // So we store folders if they don't have any children, and we store files.
@@ -393,7 +412,7 @@ public class VisualisationAssetsPresenter
             } else {
                 // More nodes so recurse
                 for (int i = 0; i < assetTreeItem.getChildCount(); ++i) {
-                    recurseTreeToAssets(assetTreeItem.getChild(i), assets, openIds);
+                    recurseTreeToAssets(assetTreeItem.getChild(i), assets);
                 }
             }
         } else {
@@ -450,14 +469,14 @@ public class VisualisationAssetsPresenter
                                         final String folderName = getNonClashingLabel(
                                                 folderItem,
                                                 addFolderDialog.getView().getFolderName());
-                                        final TreeItem newFolderNode =
+                                        final VisualisationAssetTreeItem newFolderNode =
                                                 VisualisationAssetTreeItem.createNewFolderItem(folderName);
                                         if (folderItem == null) {
                                             tree.addItem(newFolderNode);
                                         } else {
                                             folderItem.addItem(newFolderNode);
                                         }
-                                        // TODO Sort the children
+                                        recurseSortTree((VisualisationAssetTreeItem) newFolderNode.getParentItem());
                                         setDirty();
                                         event.hide();
                                     } else {
@@ -478,38 +497,42 @@ public class VisualisationAssetsPresenter
      * Sorts the whole tree, from root to leaf.
      */
     private void sortTree() {
-        final List<VisualisationAssetTreeItem> childItems = new ArrayList<>();
-        for (int i = 0; i < tree.getItemCount(); ++i) {
-            childItems.add((VisualisationAssetTreeItem) tree.getItem(i));
-        }
-        childItems.sort(new TreeItemComparator());
-        tree.removeItems();
-        for (final VisualisationAssetTreeItem treeItem : childItems) {
-            if (!treeItem.isLeaf()) {
-                recurseSortTree(treeItem);
-            }
-            tree.addItem(treeItem);
-            // TODO DELETE
-            Console.info("Tree item " + treeItem.getText() + " has HTML '" + treeItem.getHTML() + "'");
-        }
+        recurseSortTree(null);
     }
 
     /**
      * Called from sortTree() to recurse down the tree, sorting it.
-     * @param assetTreeItem The node to sort and recurse.
+     * @param assetTreeItem The node to sort and recurse. If null then will start at the root of the tree.
      */
     private void recurseSortTree(final VisualisationAssetTreeItem assetTreeItem) {
-        final List<VisualisationAssetTreeItem> childItems = new ArrayList<>();
-        for (int i  = 0; i < assetTreeItem.getChildCount(); ++i) {
-            childItems.add((VisualisationAssetTreeItem) assetTreeItem.getChild(i));
-        }
-        childItems.sort(new TreeItemComparator());
-        assetTreeItem.removeItems();
-        for (final VisualisationAssetTreeItem childTreeItem : childItems) {
-            if (!childTreeItem.isLeaf()) {
-                recurseSortTree(childTreeItem);
+        if (assetTreeItem == null) {
+            // We're at the root of the tree so look at the tree widget
+            final List<VisualisationAssetTreeItem> childItems = new ArrayList<>();
+            for (int i = 0; i < tree.getItemCount(); ++i) {
+                childItems.add((VisualisationAssetTreeItem) tree.getItem(i));
             }
-            assetTreeItem.addItem(childTreeItem);
+            childItems.sort(new TreeItemComparator());
+            tree.removeItems();
+            for (final VisualisationAssetTreeItem treeItem : childItems) {
+                if (!treeItem.isLeaf()) {
+                    recurseSortTree(treeItem);
+                }
+                tree.addItem(treeItem);
+            }
+        } else {
+            // Not at the root so look at the item
+            final List<VisualisationAssetTreeItem> childItems = new ArrayList<>();
+            for (int i = 0; i < assetTreeItem.getChildCount(); ++i) {
+                childItems.add((VisualisationAssetTreeItem) assetTreeItem.getChild(i));
+            }
+            childItems.sort(new TreeItemComparator());
+            assetTreeItem.removeItems();
+            for (final VisualisationAssetTreeItem childTreeItem : childItems) {
+                if (!childTreeItem.isLeaf()) {
+                    recurseSortTree(childTreeItem);
+                }
+                assetTreeItem.addItem(childTreeItem);
+            }
         }
     }
 
@@ -532,26 +555,6 @@ public class VisualisationAssetsPresenter
             }
         }
     }
-
-    /**
-     * Sorts the children of a node into folders first, then alphabetical order
-     * @param node The node whose children you want to sort.
-     *//*
-    private void sortNodeChildren(final UpdatableTreeNode node) {
-        final List<UpdatableTreeNode> children = node.getDataProvider().getList();
-        children.sort((node1, node2) -> {
-            if (!node1.isLeaf() && node2.isLeaf()) {
-                // node1 is folder, node2 is file so node1 comes first
-                return -1;
-            } else if (node1.isLeaf() && !node2.isLeaf()) {
-                // node1 is file, node2 is folder so node2 comes first
-                return 1;
-            } else {
-                // Sort on label
-                return node1.getLabel().compareTo(node2.getLabel());
-            }
-        });
-    }*/
 
     /**
      * Generates a label that doesn't clash with other files/folders in the same directory.
@@ -637,8 +640,8 @@ public class VisualisationAssetsPresenter
         } else {
             parentFolderItem.addItem(newFileNode);
         }
-        // TODO Sort node
-        //sortNodeChildren(parentFolderNode);
+
+        recurseSortTree((VisualisationAssetTreeItem) parentFolderItem);
         uploadedFileResourceKeys.put(newFileNode.getId(), resourceKey);
 
         setDirty();
@@ -754,117 +757,23 @@ public class VisualisationAssetsPresenter
     private static class AssetTreeResources implements Tree.Resources {
 
         /** Height and width of the image in pixels */
-        private static final int DIM = 10;
-        private static final VisualisationAssetsImageResource CELL_CLOSED =
-                new VisualisationAssetsImageResource(DIM, DIM, "/ui/background-images/arrow-right.png");
-        private static final VisualisationAssetsImageResource CELL_OPEN =
-                new VisualisationAssetsImageResource(DIM, DIM, "/ui/background-images/arrow-down.png");
-
-        /** Tree shows leafs (items without children) with this icon. We need to pretend it is already open. */
-        private static final VisualisationAssetsImageResource LEAF =
-                new VisualisationAssetsImageResource(DIM, DIM, "/ui/background-images/arrow-down.png");
+        private static final int DIM = 16;
+        private static final VisualisationAssetsImageResource TRANSPARENT =
+                new VisualisationAssetsImageResource(DIM, DIM, "/ui/background-images/transparent-16x16.png");
 
         @Override
         public ImageResource treeClosed() {
-            return CELL_CLOSED;
+            return TRANSPARENT;
         }
 
         @Override
         public ImageResource treeLeaf() {
-            return LEAF;
+            return TRANSPARENT;
         }
 
         @Override
         public ImageResource treeOpen() {
-            return CELL_OPEN;
-        }
-
-    }
-
-    // --------------------------------------------------------------------------------
-    /**
-     * Customises style in the tree by providing class names.
-     */
-    private static class AssetTreeStyle implements Style {
-
-        @Override
-        public String cellTreeEmptyMessage() {
-            return "visualisation-asset-tree-empty-message";
-        }
-
-        @Override
-        public String cellTreeItem() {
-            return "visualisation-asset-tree-item";
-        }
-
-        @Override
-        public String cellTreeItemImage() {
-            return "visualisation-asset-tree-item-image";
-        }
-
-        @Override
-        public String cellTreeItemImageValue() {
-            return "visualisation-asset-tree-item-image-value";
-        }
-
-        @Override
-        public String cellTreeItemValue() {
-            return "visualisation-asset-tree-item-value";
-        }
-
-        @Override
-        public String cellTreeKeyboardSelectedItem() {
-            return "visualisation-asset-tree-keyboard-selected-item";
-        }
-
-        @Override
-        public String cellTreeOpenItem() {
-            return "visualisation-asset-tree-open-item";
-        }
-
-        @Override
-        public String cellTreeSelectedItem() {
-            return "visualisation-asset-tree-selected-item";
-        }
-
-        @Override
-        public String cellTreeShowMoreButton() {
-            return "visualisation-asset-tree-show-more-button";
-        }
-
-        @Override
-        public String cellTreeTopItem() {
-            return "visualisation-asset-tree-top-item";
-        }
-
-        @Override
-        public String cellTreeTopItemImage() {
-            return "visualisation-asset-tree-top-item-image";
-        }
-
-        @Override
-        public String cellTreeTopItemImageValue() {
-            return "visualisation-asset-tree-top-item-image-value";
-        }
-
-        @Override
-        public String cellTreeWidget() {
-            return "visualisation-asset-tree-widget";
-        }
-
-        @Override
-        public boolean ensureInjected() {
-            return false;
-        }
-
-        @Override
-        public String getText() {
-            return "visualisation-asset-tree-text";
-        }
-
-        @Override
-        public String getName() {
-            return "visualisation-asset-tree-name";
+            return TRANSPARENT;
         }
 
     }

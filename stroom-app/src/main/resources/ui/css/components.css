@@ -2768,35 +2768,90 @@ button.main-menu svg {
 
 /* Visualisation Assets */
 .visualisation-asset-tree table {
-    border-spacing: 2px;
+    border-spacing: 3px;
 }
 
 .visualisation-asset-tree .gwt-TreeItem  {
     padding-top: 1px;
     padding-bottom: 2px;
-    padding-left: 20px;
+    padding-left: 2px;
     padding-right: 1px;
     margin-left: 5px;
-    background-repeat: no-repeat;
 }
-
-.visualisation-asset-tree .asset-type-default .gwt-TreeItem {
-    background-image: url('/ui/background-images/file.png');
+/* Put in our own tree controls by positioning them on top of the GWT tree controls */
+.visualisation-asset-type-folder>table>tbody>tr>td:first-child {
+    position: relative;
 }
-.visualisation-asset-tree .asset-type-folder .gwt-TreeItem {
-    background-image: url('/ui/background-images/folder.png');
+.visualisation-asset-type-folder>table>tbody>tr>td>img {
+    position: relative;
+    z-index: 10;
 }
-.visualisation-asset-tree .asset-type-image .gwt-TreeItem {
-    background-image: url('/ui/background-images/file-image.png');
+.visualisation-asset-folder-open>table>tbody>tr>td:first-child::before {
+    content: url('/ui/background-images/arrow-down.png') / "Folder is showing its children";
+    position: absolute;
+    top: 0;
+    left: 0;
 }
-.visualisation-asset-tree .asset-type-css .gwt-TreeItem {
-    background-image: url('/ui/background-images/file-raw.png');
+.visualisation-asset-folder-closed>table>tbody>tr>td:first-child::before {
+    content: url('/ui/background-images/arrow-right.png') / "Folder is hiding its children";
+    position: absolute;
+    top: 0;
+    left: 0;
 }
-.visualisation-asset-tree .asset-type-html .gwt-TreeItem {
-    background-image: url('/ui/background-images/file-formatted.png');
+/*.visualisation-asset-tree .gwt-TreeItem::before {
+    content: url('/ui/background-images/file.png') / "Alt Text";
+    width: 16px;
+    height: 16px;
+    display: inline-block;
+    vertical-align: middle;
+}*/
+.visualisation-asset-type-default .gwt-TreeItem::before {
+    content: url('/ui/background-images/file.png') / "File";
+    width: 16px;
+    height: 16px;
+    display: inline-block;
+    vertical-align: middle;
+    margin-right: 8px;
 }
-.visualisation-asset-tree .asset-type-javascript .gwt-TreeItem {
-    background-image: url('/ui/background-images/file-script.png');
+.visualisation-asset-type-folder .gwt-TreeItem::before {
+    content: url('/ui/background-images/folder.png') / "Folder";
+    width: 16px;
+    height: 16px;
+    display: inline-block;
+    vertical-align: middle;
+    margin-right: 8px;
+}
+.visualisation-asset-type-image .gwt-TreeItem::before {
+    content: url('/ui/background-images/file-image.png') / "Image file";
+    width: 16px;
+    height: 16px;
+    display: inline-block;
+    vertical-align: middle;
+    margin-right: 8px;
+}
+.visualisation-asset-type-css .gwt-TreeItem {
+    content: url('/ui/background-images/file-raw.png') / "CSS file";
+    width: 16px;
+    height: 16px;
+    display: inline-block;
+    vertical-align: middle;
+    margin-right: 8px;
+}
+.visualisation-asset-type-html .gwt-TreeItem {
+    content: url('/ui/background-images/file-formatted.png') / "HTML file";
+    width: 16px;
+    height: 16px;
+    display: inline-block;
+    vertical-align: middle;
+    margin-right: 8px;
+}
+.visualisation-asset-type-javascript .gwt-TreeItem {
+    content: url('/ui/background-images/file-script.png') / "Javascript file";
+    width: 16px;
+    height: 16px;
+    display: inline-block;
+    vertical-align: middle;
+    margin-right: 8px;
 }
 
 .visualisation-asset-tree .gwt-TreeItem-selected {
