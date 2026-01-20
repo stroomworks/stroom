@@ -20,6 +20,8 @@ import stroom.core.client.gin.PluginModule;
 import stroom.visualisation.client.VisualisationPlugin;
 import stroom.visualisation.client.presenter.VisualisationAssetsAddFolderDialogPresenter;
 import stroom.visualisation.client.presenter.VisualisationAssetsAddFolderDialogPresenter.VisualisationAssetsAddFolderDialogView;
+import stroom.visualisation.client.presenter.VisualisationAssetsEditAssetDialogPresenter;
+import stroom.visualisation.client.presenter.VisualisationAssetsEditAssetDialogPresenter.VisualisationAssetsEditAssetDialogView;
 import stroom.visualisation.client.presenter.VisualisationAssetsUploadFileDialogPresenter;
 import stroom.visualisation.client.presenter.VisualisationAssetsUploadFileDialogPresenter.VisualisationAssetsUploadFileDialogView;
 import stroom.visualisation.client.presenter.VisualisationAssetsPresenter;
@@ -28,6 +30,7 @@ import stroom.visualisation.client.presenter.VisualisationPresenter;
 import stroom.visualisation.client.presenter.VisualisationSettingsPresenter;
 import stroom.visualisation.client.presenter.VisualisationSettingsPresenter.VisualisationSettingsView;
 import stroom.visualisation.client.view.VisualisationAssetsAddFolderDialogViewImpl;
+import stroom.visualisation.client.view.VisualisationAssetsEditAssetDialogViewImpl;
 import stroom.visualisation.client.view.VisualisationAssetsUploadFileDialogViewImpl;
 import stroom.visualisation.client.view.VisualisationAssetsViewImpl;
 import stroom.visualisation.client.view.VisualisationSettingsViewImpl;
@@ -47,5 +50,8 @@ public class VisualisationModule extends PluginModule {
         bindPresenterWidget(VisualisationAssetsAddFolderDialogPresenter.class,
                 VisualisationAssetsAddFolderDialogView.class,
                 VisualisationAssetsAddFolderDialogViewImpl.class);
+        bindPresenterWidget(VisualisationAssetsEditAssetDialogPresenter.class,
+                VisualisationAssetsEditAssetDialogView.class,
+                VisualisationAssetsEditAssetDialogViewImpl.class);
     }
 }

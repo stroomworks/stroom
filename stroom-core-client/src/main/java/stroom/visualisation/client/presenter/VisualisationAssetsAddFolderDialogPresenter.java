@@ -15,6 +15,8 @@ public class VisualisationAssetsAddFolderDialogPresenter
         extends MyPresenterWidget<VisualisationAssetsAddFolderDialogPresenter.VisualisationAssetsAddFolderDialogView>
         implements HasHandlers {
 
+    private String illegalAssetNameCharacters;
+
     /** Width of dialog */
     private static final int DIALOG_WIDTH = 300;
 
@@ -37,7 +39,8 @@ public class VisualisationAssetsAddFolderDialogPresenter
      * @param path The path that we're adding the item at.
      */
     public void setupPopup(final ShowPopupEvent.Builder builder,
-                           final String path) {
+                           final String path,
+                           final String illegalAssetNameCharacters) {
 
         this.getView().setPath(path);
 
@@ -45,6 +48,7 @@ public class VisualisationAssetsAddFolderDialogPresenter
                 .popupSize(PopupSize.resizable(DIALOG_WIDTH, DIALOG_HEIGHT))
                 .caption("Add Folder")
                 .modal(true);
+        this.illegalAssetNameCharacters = illegalAssetNameCharacters;
     }
 
     /**
@@ -59,8 +63,18 @@ public class VisualisationAssetsAddFolderDialogPresenter
      */
     public String getValidationErrorMessage() {
         String retval = null;
-        if (NullSafe.isBlankString(getView().getFolderName())) {
+        final String folderName = getView().getFolderName();
+        if (NullSafe.isBlankString(folderName)) {
             retval = "Please set the name of the folder you wish to create";
+        } else {
+            if (illegalAssetNameCharacters != null) {
+                for (int i = 0; i < illegalAssetNameCharacters.length(); ++i) {
+                    final CharSequence subSequence = illegalAssetNameCharacters.subSequence(i, i + 1);
+                    if (folderName.contains(subSequence)) {
+                        retval = "Folder names must not contain the character '" + subSequence + "'";
+                    }
+                }
+            }
         }
 
         return retval;

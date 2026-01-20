@@ -7,6 +7,7 @@ import stroom.util.client.Console;
 import stroom.util.shared.NullSafe;
 import stroom.util.shared.ResourceKey;
 import stroom.visualisation.client.presenter.VisualisationAssetsUploadFileDialogPresenter.VisualisationAssetsUploadFileDialogView;
+import stroom.visualisation.client.presenter.assets.VisualisationAssetTreeItem;
 import stroom.widget.popup.client.event.HidePopupRequestEvent;
 import stroom.widget.popup.client.event.ShowPopupEvent;
 import stroom.widget.popup.client.presenter.PopupSize;
@@ -34,6 +35,9 @@ public class VisualisationAssetsUploadFileDialogPresenter
 
     /** Where this file is being added */
     private TreeItem parentFolderItem;
+
+    /** Characters that are illegal in filenames */
+    private String illegalAssetNameCharacters;
 
     /** Width of dialog */
     private static final int DIALOG_WIDTH = 300;
@@ -63,8 +67,9 @@ public class VisualisationAssetsUploadFileDialogPresenter
                     Console.info("Submit handler: onSuccess(" + resourceKey.getKey() + ")");
                     final String fileName =
                             addFileCallback.getNonClashingLabel(
-                                    parentFolderItem,
-                                    parseFakeFilename(getView().getFileUpload().getFilename()));
+                                    (VisualisationAssetTreeItem) parentFolderItem,
+                                    parseFakeFilename(getView().getFileUpload().getFilename()),
+                                    null);
 
                     Console.info("Filename: " + fileName + "; name: " + getView().getFileUpload().getName());
 
@@ -101,15 +106,20 @@ public class VisualisationAssetsUploadFileDialogPresenter
     /**
      * Call to prepare and show the dialog.
      *
+     * @param addFileCallback Something to call when the file has been uploaded
+     * @param parentFolderItem Where the item is going to be added in the tree. Can be null if adding at the root.
      * @param path The path that we're adding the item at.
+     * @param illegalAssetNameCharacters Characters that we don't accept in the filename.
      */
     public void fireShowPopup(final VisualisationAssetsAddFileCallback addFileCallback,
                               final TreeItem parentFolderItem,
-                              final String path) {
+                              final String path,
+                              final String illegalAssetNameCharacters) {
 
         this.getView().setPath(path);
         this.parentFolderItem = parentFolderItem;
         this.addFileCallback = addFileCallback;
+        this.illegalAssetNameCharacters = illegalAssetNameCharacters;
         this.currentHideRequest = null;
 
         // Register the handler that gets events about the upload of the file
@@ -159,6 +169,9 @@ public class VisualisationAssetsUploadFileDialogPresenter
      * Removes any paths from the filename returned by the browser.
      * Chrome returns a path like C:\fakepath\actual-filename.ext on Linux.
      * Not sure about other browsers.
+     * <p>
+     *     Also removes any illegal characters, deleting them from the filename.
+     * </p>
      * @param fakeFilename The filename given by the browser.
      * @return The filename part of the path.
      */
@@ -169,6 +182,15 @@ public class VisualisationAssetsUploadFileDialogPresenter
         if ((iSlash != -1) && (iSlash + 1 < fakeFilename.length())) {
             filename = fakeFilename.substring(iSlash + 1);
         }
+
+        // Strip out any illegal characters
+        if (illegalAssetNameCharacters != null) {
+            for (int i = 0; i < illegalAssetNameCharacters.length(); ++i) {
+                final CharSequence c = illegalAssetNameCharacters.subSequence(i, i + 1);
+                filename = filename.replace(c, "");
+            }
+        }
+
         return filename;
     }
 

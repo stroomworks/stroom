@@ -7,6 +7,7 @@ import com.google.gwt.user.client.ui.TreeItem;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -158,14 +159,15 @@ public class VisualisationAssetTreeItem extends TreeItem {
     /**
      * Checks if the name exists within this item, assuming that this item is a folder.
      *
-     * @param text The name to check.
-     * @return true if the label exists anywhere. Note that this includes if the
-     *         label matches itself.
+     * @param itemText The name to check.
+     * @param itemId The ID of the item with the given name, to avoid self-matching
+     * @return true if the label exists anywhere except the item with the matching ID.
      */
-    public boolean labelExists(final String text) {
+    public boolean labelExists(final String itemText, final String itemId) {
         for (int i = 0; i < super.getChildCount(); ++i) {
-            final TreeItem item = super.getChild(i);
-            if (text.equals(item.getText())) {
+            final VisualisationAssetTreeItem assetTreeItem = (VisualisationAssetTreeItem) super.getChild(i);
+            if (!Objects.equals(assetTreeItem.getId(), itemId)
+                && Objects.equals(itemText, assetTreeItem.getText())) {
                 return true;
             }
         }

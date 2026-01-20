@@ -63,6 +63,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -87,11 +88,17 @@ public class VisualisationAssetsPresenter
     /** Button to delete stuff from the tree */
     private final InlineSvgButton deleteButton = new InlineSvgButton();
 
+    /** Button to edit stuff from the tree */
+    private final InlineSvgButton editButton = new InlineSvgButton();
+
     /** Dialog that appears when user wants to upload a file */
     private final VisualisationAssetsUploadFileDialogPresenter uploadFileDialog;
 
     /** Dialog that appears when user wants to add a folder */
     private final VisualisationAssetsAddFolderDialogPresenter addFolderDialog;
+
+    /** Dialog that appears when user wants to edit the tree item */
+    private final VisualisationAssetsEditAssetDialogPresenter editAssetDialog;
 
     /** List of any resource keys for files that need to be saved */
     private final Map<String, ResourceKey> uploadedFileResourceKeys = new HashMap<>();
@@ -105,6 +112,9 @@ public class VisualisationAssetsPresenter
     /** Slash / character */
     private final static String SLASH = "/";
 
+    /** Illegal asset name characters - not allowed in any file or folder name */
+    private final static String ILLEGAL_ASSET_NAME_CHARACTERS = "/:";
+
     /** REST interface */
     private final static VisualisationAssetResource VISUALISATION_ASSET_RESOURCE =
             GWT.create(VisualisationAssetResource.class);
@@ -117,12 +127,14 @@ public class VisualisationAssetsPresenter
                                         final VisualisationAssetsView view,
                                         final RestFactory restFactory,
                                         final VisualisationAssetsUploadFileDialogPresenter uploadFileDialog,
-                                        final VisualisationAssetsAddFolderDialogPresenter addFolderDialog) {
+                                        final VisualisationAssetsAddFolderDialogPresenter addFolderDialog,
+                                        final VisualisationAssetsEditAssetDialogPresenter editAssetDialog) {
         super(eventBus, view);
 
         this.restFactory = restFactory;
         this.uploadFileDialog = uploadFileDialog;
         this.addFolderDialog = addFolderDialog;
+        this.editAssetDialog = editAssetDialog;
 
         tree.setStylePrimaryName("visualisation-asset-tree");
         tree.addSelectionHandler(event -> {
@@ -455,9 +467,15 @@ public class VisualisationAssetsPresenter
         deleteButton.setVisible(true);
         deleteButton.addClickHandler(event -> VisualisationAssetsPresenter.this.onDeleteButtonClick());
 
+        editButton.setSvg(SvgImage.EDIT);
+        editButton.setTitle("Rename");
+        editButton.setVisible(true);
+        editButton.addClickHandler(event -> VisualisationAssetsPresenter.this.onEditFilename());
+
         final ButtonPanel toolbar = new ButtonPanel();
         toolbar.addButton(addButton);
         toolbar.addButton(deleteButton);
+        toolbar.addButton(editButton);
 
         // Ensure state is set correctly
         updateState();
@@ -481,15 +499,16 @@ public class VisualisationAssetsPresenter
             final TreeItem folderItem = findFolderForSelectedItem();
             final String path = getItemPath(folderItem);
             final ShowPopupEvent.Builder popupEventBuilder = new ShowPopupEvent.Builder(addFolderDialog);
-            addFolderDialog.setupPopup(popupEventBuilder, path);
+            addFolderDialog.setupPopup(popupEventBuilder, path, ILLEGAL_ASSET_NAME_CHARACTERS);
             popupEventBuilder
                     .onHideRequest(event -> {
                                 if (event.isOk()) {
                                     // Ok pressed
                                     if (addFolderDialog.isValid()) {
                                         final String folderName = getNonClashingLabel(
-                                                folderItem,
-                                                addFolderDialog.getView().getFolderName());
+                                                (VisualisationAssetTreeItem) folderItem,
+                                                addFolderDialog.getView().getFolderName(),
+                                                null);
                                         final VisualisationAssetTreeItem newFolderNode =
                                                 VisualisationAssetTreeItem.createNewFolderItem(folderName);
                                         if (folderItem == null) {
@@ -581,33 +600,65 @@ public class VisualisationAssetsPresenter
      * Generates a label that doesn't clash with other files/folders in the same directory.
      * Adds an integer to the end, incrementing until an integer is found that doesn't
      * clash with anything else.
-     * @param parentItem The tree item that holds the directory.
+     * @param assetParentItem The tree item that holds the directory.
      * @param label The label that we're trying to put into the directory.
+     * @param itemId The ID of the item with this label. Can be null if this is a new item with no ID yet.
      * @return A label that doesn't clash with anything else.
      */
     @Override
-    public String getNonClashingLabel(final TreeItem parentItem, final String label) {
+    public String getNonClashingLabel(final VisualisationAssetTreeItem assetParentItem,
+                                      final String label,
+                                      final String itemId) {
         String nonClashingLabel = label;
 
-        if (parentItem instanceof final VisualisationAssetTreeItem assetParentItem) {
+        if (assetParentItem != null) {
             int i = 1;
-            while (assetParentItem.labelExists(nonClashingLabel)) {
-                final int iDot = label.lastIndexOf('.');
-                String namePart = label;
-                String extPart = "";
-                if (iDot != -1) {
-                    namePart = label.substring(0, iDot);
-                    extPart = label.substring(iDot);
-                }
-
-                nonClashingLabel = namePart + "-" + i + extPart;
+            while (assetParentItem.labelExists(nonClashingLabel, itemId)) {
+                nonClashingLabel = generateNonClashingLabel(label, i);
                 i++;
             }
         } else {
-            Console.error("Unknown tree item type");
+            // Parent is the Tree itself
+            int i = 1;
+            while (labelClashesInTreeRoot(nonClashingLabel, itemId)) {
+                nonClashingLabel = generateNonClashingLabel(label, i);
+                i++;
+            }
         }
 
         return nonClashingLabel;
+    }
+
+    /**
+     * Generates a potentially non-classing label for an asset. Called from getNonClashingLabel().
+     */
+    private String generateNonClashingLabel(final String label, final int i) {
+        final int iDot = label.lastIndexOf('.');
+        String namePart = label;
+        String extPart = "";
+        if (iDot != -1) {
+            namePart = label.substring(0, iDot);
+            extPart = label.substring(iDot);
+        }
+
+        return namePart + "-" + i + extPart;
+    }
+
+    /**
+     * Returns true if the given label clashes in the tree root.
+     * @param itemLabel The label to test.
+     * @param itemId The ID of the item with the label. Ensures the label doesn't clash with itself.
+     * @return true if there is a clash, false if not.
+     */
+    private boolean labelClashesInTreeRoot(final String itemLabel, final String itemId) {
+        for (int i = 0; i < tree.getItemCount(); ++i) {
+            final VisualisationAssetTreeItem assetTreeItem = (VisualisationAssetTreeItem) tree.getItem(i);
+            if (!Objects.equals(assetTreeItem.getId(), itemId)
+                && Objects.equals(assetTreeItem.getText(), itemLabel)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -640,7 +691,7 @@ public class VisualisationAssetsPresenter
         if (!readOnly) {
             final TreeItem folderItem = findFolderForSelectedItem();
             final String path = getItemPath(folderItem);
-            uploadFileDialog.fireShowPopup(this, folderItem, path);
+            uploadFileDialog.fireShowPopup(this, folderItem, path, ILLEGAL_ASSET_NAME_CHARACTERS);
         }
     }
 
@@ -666,6 +717,46 @@ public class VisualisationAssetsPresenter
         uploadedFileResourceKeys.put(newFileNode.getId(), resourceKey);
 
         setDirty();
+    }
+
+    /**
+     * Called when the EDIT button is pressed. Allows users to change the text of
+     * a TreeItem.
+     */
+    private void onEditFilename() {
+        if (!readOnly) {
+            final VisualisationAssetTreeItem selectedItem = (VisualisationAssetTreeItem) tree.getSelectedItem();
+            if (selectedItem != null) {
+                Console.info("Editing item " + selectedItem.getText());
+                final ShowPopupEvent.Builder popupEventBuilder = new ShowPopupEvent.Builder(editAssetDialog);
+                editAssetDialog.setupPopup(popupEventBuilder, selectedItem, ILLEGAL_ASSET_NAME_CHARACTERS);
+                popupEventBuilder
+                        .onHideRequest(event -> {
+                                    if (event.isOk()) {
+                                        if (editAssetDialog.isValid()) {
+                                            final VisualisationAssetTreeItem parentItem =
+                                                    (VisualisationAssetTreeItem) selectedItem.getParentItem();
+                                            final String text = getNonClashingLabel(parentItem,
+                                                    editAssetDialog.getView().getText(),
+                                                    editAssetDialog.getView().getId());
+                                            selectedItem.setText(text);
+                                            recurseSortTree(parentItem);
+                                            setDirty();
+                                            event.hide();
+                                        } else {
+                                            AlertEvent.fireWarn(this,
+                                                    editAssetDialog.getValidationErrorMessage(),
+                                                    event::reset);
+                                        }
+                                    } else {
+                                        // Cancel pressed
+                                        event.hide();
+                                    }
+                                }
+                        )
+                        .fire();
+            }
+        }
     }
 
     /**
@@ -758,15 +849,18 @@ public class VisualisationAssetsPresenter
         if (readOnly) {
             addButton.setEnabled(false);
             deleteButton.setEnabled(false);
+            editButton.setEnabled(false);
         } else {
             final TreeItem item = tree.getSelectedItem();
             if (item == null) {
                 // Assume the root item is selected
                 addButton.setEnabled(true);
                 deleteButton.setEnabled(false);
+                editButton.setEnabled(false);
             } else {
                 addButton.setEnabled(true);
                 deleteButton.setEnabled(true);
+                editButton.setEnabled(true);
             }
         }
     }

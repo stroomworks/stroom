@@ -1,6 +1,7 @@
 package stroom.visualisation.client.presenter;
 
 import stroom.util.shared.ResourceKey;
+import stroom.visualisation.client.presenter.assets.VisualisationAssetTreeItem;
 
 import com.google.gwt.user.client.ui.TreeItem;
 
@@ -24,10 +25,12 @@ public interface VisualisationAssetsAddFileCallback {
      * Generates a label that doesn't clash with other files/folders in the same directory.
      * Adds an integer to the end, incrementing until an integer is found that doesn't
      * clash with anything else.
-     * @param parentItem The node that holds the directory.
-     * @param label The label that we're trying to put into the directory.
+     * @param parentItem The node that holds the directory. Can be null
+     * @param itemLabel The label that we're trying to put into the directory.
+     * @param itemId The ID of the item owning the label, so we don't signal a clash with ourselves.
+     *               Can be null if this is a new item with no ID yet.
      * @return A label that doesn't clash with anything else.
      */
-    String getNonClashingLabel(TreeItem parentItem, String label);
+    String getNonClashingLabel(VisualisationAssetTreeItem parentItem, String itemLabel, String itemId);
 
 }
