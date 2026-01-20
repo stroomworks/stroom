@@ -77,7 +77,6 @@ public class VisualisationAssetsPresenter
 
     /** Tree */
     Tree tree = new Tree(new AssetTreeResources(), true);
-    //Tree tree = new Tree();
 
     /** True if the UI is readonly, false if read-write */
     private boolean readOnly = false;
@@ -98,7 +97,7 @@ public class VisualisationAssetsPresenter
     private final Map<String, ResourceKey> uploadedFileResourceKeys = new HashMap<>();
 
     /** Set of the node IDs that are open when the document is saved */
-    private final Set<String> treeItemIdToOpenState = new HashSet<>();
+    private final Set<String> treeItemPathToOpenState = new HashSet<>();
 
     /** Items in the context menu */
     private final List<Item> menuItems = new ArrayList<>();
@@ -127,16 +126,8 @@ public class VisualisationAssetsPresenter
 
         tree.setStylePrimaryName("visualisation-asset-tree");
         tree.addSelectionHandler(event -> {
-            Console.info("Item selected: " + tree.getSelectedItem());
             VisualisationAssetsPresenter.this.onSelectionChange();
         });
-        /*
-        treeModel = new VisualisationAssetTreeModel(selectionModel,
-                (node, label) ->
-                        VisualisationAssetsPresenter.this.getNonClashingLabel(node.getParent(), label),
-                this::setDirty,
-                this::isReadOnly);
-        */
         this.getView().setTree(tree);
 
     }
@@ -222,7 +213,6 @@ public class VisualisationAssetsPresenter
                     path = path.substring(1);
                 }
                 final String[] pathItems = path.split(SLASH);
-                //VisualisationAssetTreeNode node = ROOT_NODE;
                 TreeItem treeItem = null;
 
                 for (int iPath = 0; iPath < pathItems.length; ++iPath) {
@@ -354,15 +344,30 @@ public class VisualisationAssetsPresenter
     }
 
     /**
-     * Stores the state of the tree in the variable treeItemIdToOpenState.
+     * Stores the state of the tree in the variable treeItemPathToOpenState.
      */
     private void storeOpenClosedState() {
         Console.info("Storing open/closed state");
-        treeItemIdToOpenState.clear();
+        treeItemPathToOpenState.clear();
 
         for (int i = 0; i < tree.getItemCount(); ++i) {
             final VisualisationAssetTreeItem treeItem = (VisualisationAssetTreeItem) tree.getItem(i);
-            treeItem.storeState(treeItemIdToOpenState);
+            recurseStoreOpenClosedState(treeItem);
+        }
+    }
+
+    /**
+     * Recurses down the TreeItems, storing the open/closed state in treeItemPathToOpenState.
+     * @param assetTreeItem The item to recurse.
+     */
+    private void recurseStoreOpenClosedState(final TreeItem assetTreeItem) {
+        if (assetTreeItem.getState()) {
+            // Item is open so store its state and everything under it
+            treeItemPathToOpenState.add(getItemPath(assetTreeItem));
+            for (int i = 0; i < assetTreeItem.getChildCount(); ++i) {
+                final TreeItem child = assetTreeItem.getChild(i);
+                recurseStoreOpenClosedState(child);
+            }
         }
     }
 
@@ -370,10 +375,26 @@ public class VisualisationAssetsPresenter
      * Sets the state of the tree from the variable treeItemIdToOpenState.
      */
     private void restoreOpenClosedState() {
-        Console.info("Restoring open/closed state from " + treeItemIdToOpenState.toString());
+        Console.info("Restoring open/closed state from " + treeItemPathToOpenState.toString());
         for (int i = 0; i < tree.getItemCount(); ++i) {
             final VisualisationAssetTreeItem treeItem = (VisualisationAssetTreeItem) tree.getItem(i);
-            treeItem.restoreState(treeItemIdToOpenState);
+            recurseRestoreOpenClosedState(treeItem);
+        }
+    }
+
+    /**
+     * Recurses down the TreeItems, restoring the open/closed state from
+     * treeItemPathToOpenState.
+     * @param treeItem The item to recurse.
+     */
+    private void recurseRestoreOpenClosedState(final TreeItem treeItem) {
+        final String itemPath = getItemPath(treeItem);
+        if (treeItemPathToOpenState.contains(itemPath)) {
+            treeItem.setState(true);
+            for (int i = 0; i < treeItem.getChildCount(); ++i) {
+                final TreeItem child = treeItem.getChild(i);
+                recurseRestoreOpenClosedState(child);
+            }
         }
     }
 
@@ -758,12 +779,16 @@ public class VisualisationAssetsPresenter
 
         /** Height and width of the image in pixels */
         private static final int DIM = 16;
+        private static final VisualisationAssetsImageResource CLOSED =
+                new VisualisationAssetsImageResource(DIM, DIM, "/ui/background-images/arrow-right.png");
+        private static final VisualisationAssetsImageResource OPEN =
+                new VisualisationAssetsImageResource(DIM, DIM, "/ui/background-images/arrow-down.png");
         private static final VisualisationAssetsImageResource TRANSPARENT =
                 new VisualisationAssetsImageResource(DIM, DIM, "/ui/background-images/transparent-16x16.png");
 
         @Override
         public ImageResource treeClosed() {
-            return TRANSPARENT;
+            return CLOSED;
         }
 
         @Override
@@ -773,7 +798,7 @@ public class VisualisationAssetsPresenter
 
         @Override
         public ImageResource treeOpen() {
-            return TRANSPARENT;
+            return OPEN;
         }
 
     }
