@@ -1,6 +1,5 @@
 package stroom.visualisation.client.presenter.assets;
 
-import stroom.util.client.Console;
 import stroom.visualisation.shared.VisualisationAsset;
 
 import com.google.gwt.user.client.ui.TreeItem;
@@ -75,7 +74,6 @@ public class VisualisationAssetTreeItem extends TreeItem {
      */
     public static VisualisationAssetTreeItem createItemFromAsset(final VisualisationAsset asset,
                                                                  final String text) {
-        Console.info("Creating tree item from asset: " + asset.getId() + ": " + text);
         return new VisualisationAssetTreeItem(asset.getId(), text, !asset.isFolder());
     }
 

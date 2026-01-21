@@ -3,7 +3,6 @@ package stroom.visualisation.client.presenter;
 import stroom.alert.client.event.AlertEvent;
 import stroom.dispatch.client.AbstractSubmitCompleteHandler;
 import stroom.importexport.client.presenter.ImportUtil;
-import stroom.util.client.Console;
 import stroom.util.shared.NullSafe;
 import stroom.util.shared.ResourceKey;
 import stroom.visualisation.client.presenter.VisualisationAssetsUploadFileDialogPresenter.VisualisationAssetsUploadFileDialogView;
@@ -53,7 +52,6 @@ public class VisualisationAssetsUploadFileDialogPresenter
 
                 @Override
                 public void onSubmit(final SubmitEvent event) {
-                    Console.info("Submit handler: onSubmit()");
                     if (!checkValid()) {
                         event.cancel();
                         currentHideRequest.reset();
@@ -64,14 +62,11 @@ public class VisualisationAssetsUploadFileDialogPresenter
 
                 @Override
                 protected void onSuccess(final ResourceKey resourceKey) {
-                    Console.info("Submit handler: onSuccess(" + resourceKey.getKey() + ")");
                     final String fileName =
                             addFileCallback.getNonClashingLabel(
                                     (VisualisationAssetTreeItem) parentFolderItem,
                                     parseFakeFilename(getView().getFileUpload().getFilename()),
                                     null);
-
-                    Console.info("Filename: " + fileName + "; name: " + getView().getFileUpload().getName());
 
                     addFileCallback.addUploadedFile(parentFolderItem, fileName, resourceKey);
                     currentHideRequest.hide();
@@ -79,7 +74,6 @@ public class VisualisationAssetsUploadFileDialogPresenter
 
                 @Override
                 protected void onFailure(final String message) {
-                    Console.info("Submit handler: onFailure()");
                     AlertEvent.fireError(VisualisationAssetsUploadFileDialogPresenter.this,
                             message,
                             currentHideRequest::reset);
@@ -97,7 +91,6 @@ public class VisualisationAssetsUploadFileDialogPresenter
         final FormPanel form = view.getForm();
 
         // Setup the form for file upload
-        Console.info("Posting files to " + ImportUtil.getImportFileURL());
         form.setAction(ImportUtil.getImportFileURL());
         form.setEncoding(FormPanel.ENCODING_MULTIPART);
         form.setMethod(FormPanel.METHOD_POST);
@@ -134,13 +127,10 @@ public class VisualisationAssetsUploadFileDialogPresenter
                 .caption("Add File")
                 .modal(true)
                 .onHideRequest(e -> {
-                    Console.info("Hide request");
                     currentHideRequest = e;
                     if (e.isOk()) {
-                        Console.info("OK button pressed");
                         if (checkValid()) {
                             // Submit the form
-                            Console.info("Submitting form");
                             getView().getForm().submit();
                         } else {
                             e.reset();

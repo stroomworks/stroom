@@ -47,6 +47,7 @@ import stroom.widget.util.client.Rect;
 
 import com.google.gwt.core.client.GWT;
 import com.google.gwt.resources.client.ImageResource;
+import com.google.gwt.user.client.Window;
 import com.google.gwt.user.client.ui.Tree;
 import com.google.gwt.user.client.ui.TreeItem;
 import com.google.gwt.user.client.ui.Widget;
@@ -73,6 +74,9 @@ public class VisualisationAssetsPresenter
         extends MyPresenterWidget<VisualisationAssetsView>
         implements HasDirtyHandlers, HasToolbar, VisualisationAssetsAddFileCallback {
 
+    /** Current document - may be null */
+    private VisualisationDoc document;
+
     /** Rest factory to trigger storing file uploads */
     private final RestFactory restFactory;
 
@@ -90,6 +94,9 @@ public class VisualisationAssetsPresenter
 
     /** Button to edit stuff from the tree */
     private final InlineSvgButton editButton = new InlineSvgButton();
+
+    /** Button to view stuff */
+    private final InlineSvgButton viewButton = new InlineSvgButton();
 
     /** Dialog that appears when user wants to upload a file */
     private final VisualisationAssetsUploadFileDialogPresenter uploadFileDialog;
@@ -114,6 +121,9 @@ public class VisualisationAssetsPresenter
 
     /** Illegal asset name characters - not allowed in any file or folder name */
     private final static String ILLEGAL_ASSET_NAME_CHARACTERS = "/:";
+
+    /** Servlet path - start of the URL for the asset as retrieved via the Servlet */
+    private final static String ASSET_SERVLET_PATH_PREFIX = "/assets/";
 
     /** REST interface */
     private final static VisualisationAssetResource VISUALISATION_ASSET_RESOURCE =
@@ -200,6 +210,8 @@ public class VisualisationAssetsPresenter
     public void onRead(final DocRef docRef,
                        final VisualisationDoc document,
                        final boolean readOnly) {
+
+        this.document = document;
 
         // Set the readonly flag
         this.readOnly = readOnly;
@@ -387,7 +399,6 @@ public class VisualisationAssetsPresenter
      * Sets the state of the tree from the variable treeItemIdToOpenState.
      */
     private void restoreOpenClosedState() {
-        Console.info("Restoring open/closed state from " + treeItemPathToOpenState.toString());
         for (int i = 0; i < tree.getItemCount(); ++i) {
             final VisualisationAssetTreeItem treeItem = (VisualisationAssetTreeItem) tree.getItem(i);
             recurseRestoreOpenClosedState(treeItem);
@@ -472,10 +483,16 @@ public class VisualisationAssetsPresenter
         editButton.setVisible(true);
         editButton.addClickHandler(event -> VisualisationAssetsPresenter.this.onEditFilename());
 
+        viewButton.setSvg(SvgImage.EYE);
+        viewButton.setTitle("View in browser");
+        viewButton.setVisible(true);
+        viewButton.addClickHandler(event -> VisualisationAssetsPresenter.this.onViewAsset());
+
         final ButtonPanel toolbar = new ButtonPanel();
         toolbar.addButton(addButton);
         toolbar.addButton(deleteButton);
         toolbar.addButton(editButton);
+        toolbar.addButton(viewButton);
 
         // Ensure state is set correctly
         updateState();
@@ -760,6 +777,22 @@ public class VisualisationAssetsPresenter
     }
 
     /**
+     * Called when the user wants to view an asset.
+     * Opens a new Browser window (tab) pointing to the asset via the Servlet.
+     */
+    public void onViewAsset() {
+        final TreeItem selectedItem = tree.getSelectedItem();
+        if (selectedItem != null)  {
+            // Find the document ID
+            if (document != null) {
+                final String docId = document.getUuid();
+                final String relativePath = ASSET_SERVLET_PATH_PREFIX + docId + getItemPath(selectedItem);
+                Window.open(relativePath, "_blank", null);
+            }
+        }
+    }
+
+    /**
      * Call to mark the document as dirty and needing saving.
      * Also sorts the tree, as this is called when a tree node is edited.
      */
@@ -850,17 +883,21 @@ public class VisualisationAssetsPresenter
             addButton.setEnabled(false);
             deleteButton.setEnabled(false);
             editButton.setEnabled(false);
+            viewButton.setEnabled(false);
         } else {
-            final TreeItem item = tree.getSelectedItem();
+            final VisualisationAssetTreeItem item = (VisualisationAssetTreeItem) tree.getSelectedItem();
             if (item == null) {
-                // Assume the root item is selected
+                // Assume the root item is selected so enable 'add'
                 addButton.setEnabled(true);
                 deleteButton.setEnabled(false);
                 editButton.setEnabled(false);
+                viewButton.setEnabled(false);
             } else {
                 addButton.setEnabled(true);
                 deleteButton.setEnabled(true);
                 editButton.setEnabled(true);
+                // Only enable this button if the file has been uploaded to the server
+                viewButton.setEnabled(!uploadedFileResourceKeys.containsKey(item.getId()));
             }
         }
     }
