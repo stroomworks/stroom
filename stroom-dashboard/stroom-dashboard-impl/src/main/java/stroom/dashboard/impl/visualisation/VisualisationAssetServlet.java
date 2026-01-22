@@ -84,7 +84,6 @@ public class VisualisationAssetServlet extends HttpServlet implements IsServlet,
     public VisualisationAssetServlet(final VisualisationAssetService service,
                                      final Provider<VisualisationAssetConfig> configProvider,
                                      final PathCreator pathCreator) {
-        LOGGER.error("Constructing VisualisationAssetServlet");
         this.service = service;
         final VisualisationAssetConfig config = configProvider.get();
         this.mimetypes = config.getMimetypes();
@@ -118,7 +117,6 @@ public class VisualisationAssetServlet extends HttpServlet implements IsServlet,
      */
     private Lock getLock(final String docId) {
         final String safeDocId = makePathSafe(docId);
-        LOGGER.info("Getting lock for '{}'", safeDocId);
         docLocks.computeIfAbsent(safeDocId, k -> new ReentrantLock());
         return docLocks.get(safeDocId);
     }
@@ -162,9 +160,7 @@ public class VisualisationAssetServlet extends HttpServlet implements IsServlet,
                 if (data == null) {
                     throw new FileNotFoundException("Asset '" + assetPath + "' does not exist");
                 }
-                LOGGER.info("Writing cache file '{}'", tempCachedAssetPath);
                 Files.write(tempCachedAssetPath, data, StandardOpenOption.TRUNCATE_EXISTING);
-                LOGGER.info("Moving cache file to '{}'", cachedAssetPath);
                 Files.move(tempCachedAssetPath,
                         cachedAssetPath,
                         StandardCopyOption.REPLACE_EXISTING,
@@ -250,6 +246,18 @@ public class VisualisationAssetServlet extends HttpServlet implements IsServlet,
     }
 
     @Override
+    public void lockCacheForDoc(final String docId) {
+        final Lock docLock = getLock(docId);
+        docLock.lock();
+    }
+
+    @Override
+    public void unlockCacheForDoc(final String docId) {
+        final Lock docLock = getLock(docId);
+        docLock.unlock();
+    }
+
+    @Override
     public void invalidateCacheForDoc(final String docId) {
         final Lock docLock = getLock(docId);
         docLock.lock();
@@ -261,7 +269,6 @@ public class VisualisationAssetServlet extends HttpServlet implements IsServlet,
                         public @NonNull FileVisitResult visitFile(final @NonNull Path file,
                                                                   final @NonNull BasicFileAttributes attrs)
                                 throws IOException {
-                            LOGGER.info("Invalidating cache file '{}'", file);
                             Files.delete(file);
                             return FileVisitResult.CONTINUE;
                         }
@@ -272,7 +279,6 @@ public class VisualisationAssetServlet extends HttpServlet implements IsServlet,
                                 throws IOException {
 
                             if (e == null) {
-                                LOGGER.info("Invalidating cache directory '{}'", dir);
                                 Files.delete(dir);
                                 return FileVisitResult.CONTINUE;
                             } else {

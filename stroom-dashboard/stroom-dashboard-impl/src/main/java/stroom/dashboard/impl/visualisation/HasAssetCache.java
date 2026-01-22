@@ -22,7 +22,22 @@ package stroom.dashboard.impl.visualisation;
 public interface HasAssetCache {
 
     /**
+     * Locks the cache to prevent any access to the cache.
+     * BE CAREFUL and ensure that this gets unlocked again!
+     * Lock is re-entrant so safe to lock more than once.
+     */
+    void lockCacheForDoc(String docId);
+
+    /**
+     * Unlocks the cache to allow access to the cache.
+     * BE CAREFUL and ensure this was locked.
+     * Lock is re-entrant so safe to lock more than once.
+     */
+    void unlockCacheForDoc(String docId);
+
+    /**
      * Invalidates the cache for the given document ID.
+     * Lock is re-entrant so safe to lock more than once.
      */
     void invalidateCacheForDoc(String docId);
 }
