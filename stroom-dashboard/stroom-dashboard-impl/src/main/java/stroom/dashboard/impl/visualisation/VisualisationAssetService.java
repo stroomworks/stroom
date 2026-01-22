@@ -41,6 +41,9 @@ public class VisualisationAssetService {
     /** Security checks */
     private final SecurityContext securityContext;
 
+    /** Servlet so we can invalidate the cache */
+    private final HasAssetCache assetCache;
+
     /** Logger */
     private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(VisualisationAssetService.class);
 
@@ -51,10 +54,12 @@ public class VisualisationAssetService {
     @Inject
     public VisualisationAssetService(final VisualisationAssetDao dao,
                                      final ResourceStore resourceStore,
-                                     final SecurityContext securityContext) {
+                                     final SecurityContext securityContext,
+                                     final HasAssetCache assetCache) {
         this.dao = dao;
         this.resourceStore = resourceStore;
         this.securityContext = securityContext;
+        this.assetCache = assetCache;
     }
 
     /**
@@ -132,6 +137,9 @@ public class VisualisationAssetService {
                     }
                 }
             }
+
+            // Invalidate the cache for this doc
+            assetCache.invalidateCacheForDoc(ownerDocId);
 
             // Did anything go wrong?
             if (!uploadsThatDoNotExist.isEmpty()) {
