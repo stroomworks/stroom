@@ -19,6 +19,7 @@ import org.jspecify.annotations.NonNull;
 import java.io.BufferedInputStream;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.io.IOException;
@@ -26,20 +27,16 @@ import java.io.InputStream;
 import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardCopyOption;
-import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.BasicFileAttributes;
-import java.util.List;
+import java.time.Instant;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * Allows access to the visualisation assets over HTTP, so that the UI can pull in assets as necessary.
  */
 @Singleton
-public class VisualisationAssetServlet extends HttpServlet implements IsServlet, HasAssetCache {
+public class VisualisationAssetServlet extends HttpServlet implements IsServlet {
 
     /** The service that provides the backend to this servlet */
     private final VisualisationAssetService service;
@@ -53,9 +50,6 @@ public class VisualisationAssetServlet extends HttpServlet implements IsServlet,
     /** Where we're caching assets */
     private final Path assetCacheDir;
 
-    /** Synchronisation locks */
-    private final Map<String, Lock> docLocks = new ConcurrentHashMap<>();
-
     /** Logger */
     private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(VisualisationAssetServlet.class);
 
@@ -65,17 +59,14 @@ public class VisualisationAssetServlet extends HttpServlet implements IsServlet,
     /** Set of paths to access this servlet */
     private static final Set<String> PATH_SPECS = Set.of(PATH_PART);
 
-    /** Index of DocID in returned value */
-    private static final int DOCID_INDEX = 0;
-
-    /** Index of Path in returned value */
-    private static final int PATH_INDEX = 1;
-
     /** Prefix for temporary files, so we can delete them if necessary */
     private static final String ASSET_CACHE_TEMP_PREFIX = "asset-temp-";
 
     /** Suffix for temporary files */
     private static final String ASSET_CACHE_TEMP_SUFFIX = ".tmp";
+
+    /** Name of metadata directory within each document's cache */
+    private static final String METADATA_DIR = ".meta";
 
     /**
      * Injected constructor.
@@ -106,19 +97,7 @@ public class VisualisationAssetServlet extends HttpServlet implements IsServlet,
      * @return The path to the root of the cache for that document. Probably doesn't exist on disk.
      */
     private Path getCachePathForDoc(final String docId) {
-
         return assetCacheDir.resolve(makePathSafe(docId));
-    }
-
-    /**
-     * Returns the lock for the given docId.
-     * @param docId The document that we're locking against.
-     * @return A lock. Never returns null.
-     */
-    private Lock getLock(final String docId) {
-        final String safeDocId = makePathSafe(docId);
-        docLocks.computeIfAbsent(safeDocId, k -> new ReentrantLock());
-        return docLocks.get(safeDocId);
     }
 
     /**
@@ -132,10 +111,36 @@ public class VisualisationAssetServlet extends HttpServlet implements IsServlet,
         return getCachePathForDoc(docId).resolve(makePathSafe(assetPath));
     }
 
+    private Path getCachePathForMetadata(final String docId,
+                                         final String assetPath) {
+        return getCachePathForDoc(docId).resolve(METADATA_DIR).resolve(makePathSafe(assetPath));
+    }
+
+    /**
+     * Performs a safe write to file, so if the system crashes half-way through writing
+     * we don't have a corrupted version of the file.
+     * @param filePath The path to the file we want to create.
+     * @param data The data to write to the file
+     * @throws IOException If something goes wrong.
+     */
+    private void saveDataSafely(final Path filePath, final byte[] data) throws IOException {
+        final Path fileDir = filePath.getParent();
+        Files.createDirectories(fileDir);
+        final Path tempFilePath = Files.createTempFile(fileDir,
+                ASSET_CACHE_TEMP_PREFIX,
+                ASSET_CACHE_TEMP_SUFFIX);
+
+        Files.write(tempFilePath, data);
+
+        Files.move(tempFilePath,
+                filePath,
+                StandardCopyOption.REPLACE_EXISTING,
+                StandardCopyOption.ATOMIC_MOVE);
+    }
+
     /**
      * Returns an input stream reading from a cached copy of the asset.
-     * Uses a temporary file atomically moved to the cache file to ensure
-     * that bad cache files are not created in the event of errors.
+     * Uses the
      * @param docId The document ID that owns the asset
      * @param assetPath The path of the asset within the owning document
      * @return InputStream (buffered) that reads the file. Must be closed.
@@ -144,35 +149,44 @@ public class VisualisationAssetServlet extends HttpServlet implements IsServlet,
      */
     private InputStream getInputStreamForAsset(final String docId,
                                                final String assetPath)
-    throws IOException, PermissionException {
+            throws IOException, PermissionException {
 
-        final Lock docLock = getLock(docId);
-        docLock.lock();
-        try {
-            final Path cachedAssetPath = getCachePathForAsset(docId, assetPath);
-            if (!cachedAssetPath.toFile().exists()) {
-                final Path cachedAssetDir = cachedAssetPath.getParent();
-                Files.createDirectories(cachedAssetDir);
-                final Path tempCachedAssetPath = Files.createTempFile(cachedAssetDir,
-                        ASSET_CACHE_TEMP_PREFIX,
-                        ASSET_CACHE_TEMP_SUFFIX);
-                final byte[] data = service.getData(docId, assetPath);
-                if (data == null) {
-                    throw new FileNotFoundException("Asset '" + assetPath + "' does not exist");
-                }
-                Files.write(tempCachedAssetPath, data, StandardOpenOption.TRUNCATE_EXISTING);
-                Files.move(tempCachedAssetPath,
-                        cachedAssetPath,
-                        StandardCopyOption.REPLACE_EXISTING,
-                        StandardCopyOption.ATOMIC_MOVE);
+        final Path cachedAssetPath = getCachePathForAsset(docId, assetPath);
+
+        // What timestamp is in the DB?
+        final Instant dbTimestamp = service.getModifiedTimestamp(docId, assetPath);
+        if (dbTimestamp == null) {
+            throw new FileNotFoundException("Asset '" + assetPath + "' does not exist");
+        }
+
+        // Synchronise to prevent race conditions.
+        // Not the most efficient way to do this but can be optimised if necessary.
+        synchronized (this) {
+            // What timestamp do we have on disk?
+            Instant cacheTimestamp = Instant.MIN;
+            final Path metaPath = getCachePathForMetadata(docId, assetPath);
+            if (metaPath.toFile().exists()) {
+                final String metaString = Files.readString(metaPath);
+                cacheTimestamp = Instant.ofEpochMilli(Long.parseLong(metaString));
             }
 
-            // File must exist now, so return an InputStream attached to it
-            // UNIX won't delete the file underneath us, so it is OK to release the lock now
-            return new BufferedInputStream(new FileInputStream(cachedAssetPath.toFile()));
-        } finally {
-            docLock.unlock();
+            if (dbTimestamp.isAfter(cacheTimestamp)) {
+                // Update the cache as the DB is more recent
+
+                // Write the data onto the disk file
+                final byte[] data = service.getData(docId, assetPath);
+                saveDataSafely(cachedAssetPath, data);
+
+                // Write the dbTimestamp to disk
+                saveDataSafely(metaPath,
+                        Long.toString(dbTimestamp.toEpochMilli()).getBytes(StandardCharsets.UTF_8));
+            }
         }
+
+        // Cached file must exist now and must be up-to-date, so return an InputStream attached to it
+        // Note: UNIX allows a valid read from a file that was deleted after we opened it
+        // Note: Writing a new version is atomic, so the either old version or new version is always there
+        return new BufferedInputStream(new FileInputStream(cachedAssetPath.toFile()));
     }
 
     /**
@@ -181,9 +195,9 @@ public class VisualisationAssetServlet extends HttpServlet implements IsServlet,
     @Override
     protected void doGet(final HttpServletRequest request, final HttpServletResponse response) {
 
-        final List<String> arguments = splitIntoDocIdAndPath(request.getPathInfo());
-        final String docId = arguments.get(DOCID_INDEX);
-        final String path = arguments.get(PATH_INDEX);
+        final DocIdAndPath docIdAndPath = splitIntoDocIdAndPath(request.getPathInfo());
+        final String docId = docIdAndPath.docId();
+        final String path = docIdAndPath.path();
 
         try (final InputStream istr = getInputStreamForAsset(docId, path)) {
             response.setContentType(getMimetype(path));
@@ -208,7 +222,7 @@ public class VisualisationAssetServlet extends HttpServlet implements IsServlet,
      * @param pathInfo Request.getPathInfo(). Can be null.
      * @return List of docId, path. Two elements always present. Neither will be null.
      */
-    private List<String> splitIntoDocIdAndPath(String pathInfo) {
+    private DocIdAndPath splitIntoDocIdAndPath(String pathInfo) {
         String docId = "";
         String path = "";
         if (pathInfo != null) {
@@ -221,7 +235,10 @@ public class VisualisationAssetServlet extends HttpServlet implements IsServlet,
                 path = pathInfo.substring(firstSlash);
             }
         }
-        return List.of(docId, path);
+        return new DocIdAndPath(docId, path);
+    }
+
+    private record DocIdAndPath(String docId, String path) {
     }
 
     /**
@@ -243,58 +260,6 @@ public class VisualisationAssetServlet extends HttpServlet implements IsServlet,
         }
 
         return mimetype;
-    }
-
-    @Override
-    public void lockCacheForDoc(final String docId) {
-        final Lock docLock = getLock(docId);
-        docLock.lock();
-    }
-
-    @Override
-    public void unlockCacheForDoc(final String docId) {
-        final Lock docLock = getLock(docId);
-        docLock.unlock();
-    }
-
-    @Override
-    public void invalidateCacheForDoc(final String docId) {
-        final Lock docLock = getLock(docId);
-        docLock.lock();
-        LOGGER.info("Invalidating cache for document '{}'", docId);
-        try {
-            Files.walkFileTree(getCachePathForDoc(docId),
-                    new SimpleFileVisitor<>() {
-                        @Override
-                        public @NonNull FileVisitResult visitFile(final @NonNull Path file,
-                                                                  final @NonNull BasicFileAttributes attrs)
-                                throws IOException {
-                            Files.delete(file);
-                            return FileVisitResult.CONTINUE;
-                        }
-
-                        @Override
-                        public @NonNull FileVisitResult postVisitDirectory(final @NonNull Path dir,
-                                                                           final IOException e)
-                                throws IOException {
-
-                            if (e == null) {
-                                Files.delete(dir);
-                                return FileVisitResult.CONTINUE;
-                            } else {
-                                throw e;
-                            }
-                        }
-                    });
-        } catch (final IOException e) {
-            LOGGER.error("Failed to invalidate visualisation asset cache for document '{}': {}",
-                    docId,
-                    e.getMessage(),
-                    e);
-        }
-        finally {
-            docLock.unlock();
-        }
     }
 
     /**

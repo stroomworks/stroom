@@ -3,6 +3,7 @@ package stroom.dashboard.impl.visualisation;
 import stroom.visualisation.shared.VisualisationAssets;
 
 import java.io.IOException;
+import java.time.Instant;
 
 /**
  * Provides a way to store visualisation assets within the database.
@@ -37,5 +38,14 @@ public interface VisualisationAssetDao {
      * @return The data for the asset. Returns null if the asset is not found.
      */
     byte[] getData(String documentId, String assetPath) throws IOException;
+
+    /**
+     * Gets the timestamp for the entry for the asset. Returns null if the asset isn't found.
+     * @param documentId The ID of the owner document we want the data for.
+     * @param assetPath The path of the asset within the tree.
+     * @return The timestamp for the asset. Returns null if the asset isn't found.
+     * @throws IOException If something goes wrong.
+     */
+    Instant getModifiedTimestamp(String documentId, String assetPath) throws IOException;
 
 }

@@ -37,7 +37,6 @@ public class VisualisationModule extends AbstractModule {
         bind(VisualisationStore.class).to(VisualisationStoreImpl.class);
         bind(VisualisationTokenConsumer.class).to(VisualisationTokenConsumerImpl.class);
         bind(VisualisationDocCache.class).to(VisualisationDocCacheImpl.class);
-        bind(HasAssetCache.class).to(VisualisationAssetServlet.class);
 
         GuiceUtil.buildMultiBinder(binder(), ExplorerActionHandler.class)
                 .addBinding(VisualisationStoreImpl.class);

@@ -19,6 +19,7 @@ import com.google.inject.Inject;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -41,9 +42,6 @@ public class VisualisationAssetService {
     /** Security checks */
     private final SecurityContext securityContext;
 
-    /** Servlet so we can invalidate the cache */
-    private final HasAssetCache assetCache;
-
     /** Logger */
     private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(VisualisationAssetService.class);
 
@@ -54,12 +52,10 @@ public class VisualisationAssetService {
     @Inject
     public VisualisationAssetService(final VisualisationAssetDao dao,
                                      final ResourceStore resourceStore,
-                                     final SecurityContext securityContext,
-                                     final HasAssetCache assetCache) {
+                                     final SecurityContext securityContext) {
         this.dao = dao;
         this.resourceStore = resourceStore;
         this.securityContext = securityContext;
-        this.assetCache = assetCache;
     }
 
     /**
@@ -94,76 +90,66 @@ public class VisualisationAssetService {
         final DocRef docRef = new DocRef(VisualisationDoc.TYPE, ownerDocId);
         if (securityContext.hasDocumentPermission(docRef, DocumentPermission.EDIT)) {
 
-            // Prevent cache access during update
-            assetCache.lockCacheForDoc(ownerDocId);
+            // Store errors so we can throw one exception at the end
+            final Map<String, Path> uploadsThatDoNotExist = new HashMap<>();
+            final StringBuilder exceptionBuf = new StringBuilder();
+            final Map<String, VisualisationAsset> assetLookup = new HashMap<>();
+            for (final VisualisationAsset asset : assets.getAssets()) {
+                assetLookup.put(asset.getId(), asset);
+            }
 
+            // First store the assets - the paths and metadata
             try {
-                // Store errors so we can throw one exception at the end
-                final Map<String, Path> uploadsThatDoNotExist = new HashMap<>();
-                final StringBuilder exceptionBuf = new StringBuilder();
-                final Map<String, VisualisationAsset> assetLookup = new HashMap<>();
-                for (final VisualisationAsset asset : assets.getAssets()) {
-                    assetLookup.put(asset.getId(), asset);
-                }
+                dao.storeAssets(ownerDocId, assets);
+            } catch (final IOException e) {
+                exceptionBuf.append("\nError storing assets: ");
+                exceptionBuf.append(e.getMessage());
+            }
 
-                // First store the assets - the paths and metadata
-                try {
-                    dao.storeAssets(ownerDocId, assets);
-                } catch (final IOException e) {
-                    exceptionBuf.append("\nError storing assets: ");
-                    exceptionBuf.append(e.getMessage());
-                }
+            // Now store the uploaded files
+            final Map<String, ResourceKey> uploadedFiles = assets.getUploadedFiles();
+            for (final Map.Entry<String, ResourceKey> uploadedFileEntry : uploadedFiles.entrySet()) {
 
-                // Now store the uploaded files
-                final Map<String, ResourceKey> uploadedFiles = assets.getUploadedFiles();
-                for (final Map.Entry<String, ResourceKey> uploadedFileEntry : uploadedFiles.entrySet()) {
-
-                    final Path uploadedPath = resourceStore.getTempFile(uploadedFileEntry.getValue());
-                    if (!uploadedPath.toFile().exists()) {
-                        // File does not exist - maybe it has been deleted already
-                        uploadsThatDoNotExist.put(uploadedFileEntry.getKey(), uploadedPath);
-                    } else {
-                        try {
-                            // Read the data in and store it in the DB
-                            // Note that file could be deleted between checking it exists and copying it.
-                            // TODO Should stream this data into the DB
-                            final byte[] data = Files.readAllBytes(uploadedPath);
-                            dao.storeData(uploadedFileEntry.getKey(), data);
-                        } catch (final IOException e) {
-                            exceptionBuf.append("\nError copying '");
-                            final VisualisationAsset asset = assetLookup.get(uploadedFileEntry.getKey());
-                            final String path = asset == null
-                                    ? "unknown"
-                                    : asset.getPath();
-                            exceptionBuf.append(path);
-                            exceptionBuf.append("': ");
-                            exceptionBuf.append(e.getMessage());
-                        }
-                    }
-                }
-
-                // Invalidate the cache for this doc
-                assetCache.invalidateCacheForDoc(ownerDocId);
-
-                // Did anything go wrong?
-                if (!uploadsThatDoNotExist.isEmpty()) {
-                    exceptionBuf.append("\nThese files no longer exist; please upload them again:");
-                    for (final Map.Entry<String, Path> notExistEntry : uploadsThatDoNotExist.entrySet()) {
-                        final VisualisationAsset asset = assetLookup.get(notExistEntry.getKey());
-                        exceptionBuf.append("\n");
+                final Path uploadedPath = resourceStore.getTempFile(uploadedFileEntry.getValue());
+                if (!uploadedPath.toFile().exists()) {
+                    // File does not exist - maybe it has been deleted already
+                    uploadsThatDoNotExist.put(uploadedFileEntry.getKey(), uploadedPath);
+                } else {
+                    try {
+                        // Read the data in and store it in the DB
+                        // Note that file could be deleted between checking it exists and copying it.
+                        // TODO Should stream this data into the DB
+                        final byte[] data = Files.readAllBytes(uploadedPath);
+                        dao.storeData(uploadedFileEntry.getKey(), data);
+                    } catch (final IOException e) {
+                        exceptionBuf.append("\nError copying '");
+                        final VisualisationAsset asset = assetLookup.get(uploadedFileEntry.getKey());
                         final String path = asset == null
                                 ? "unknown"
                                 : asset.getPath();
                         exceptionBuf.append(path);
+                        exceptionBuf.append("': ");
+                        exceptionBuf.append(e.getMessage());
                     }
                 }
+            }
 
-                // If anything went wrong then throw an overall exception here
-                if (!exceptionBuf.isEmpty()) {
-                    throw new IOException(exceptionBuf.toString());
+            // Did anything go wrong?
+            if (!uploadsThatDoNotExist.isEmpty()) {
+                exceptionBuf.append("\nThese files no longer exist; please upload them again:");
+                for (final Map.Entry<String, Path> notExistEntry : uploadsThatDoNotExist.entrySet()) {
+                    final VisualisationAsset asset = assetLookup.get(notExistEntry.getKey());
+                    exceptionBuf.append("\n");
+                    final String path = asset == null
+                            ? "unknown"
+                            : asset.getPath();
+                    exceptionBuf.append(path);
                 }
-            } finally {
-                assetCache.unlockCacheForDoc(ownerDocId);
+            }
+
+            // If anything went wrong then throw an overall exception here
+            if (!exceptionBuf.isEmpty()) {
+                throw new IOException(exceptionBuf.toString());
             }
         } else {
             LOGGER.info("User does not have permission to update the assets");
@@ -182,10 +168,32 @@ public class VisualisationAssetService {
      */
     byte[] getData(final String documentId, final String assetPath)
             throws IOException, PermissionException {
-        LOGGER.info("Returning assets for {}, {}", documentId, assetPath);
+        LOGGER.info("Returning asset for {}, {}", documentId, assetPath);
         final DocRef docRef = new DocRef(VisualisationDoc.TYPE, documentId);
         if (securityContext.hasDocumentPermission(docRef, DocumentPermission.VIEW)) {
             return dao.getData(documentId, assetPath);
+        } else {
+            // Catch this higher up and return a 401.
+            throw new PermissionException(securityContext.getUserRef(),
+                    "You do not have permission to view this asset");
+        }
+    }
+
+    /**
+     * Returns the timestamp when the given asset was modified. Called from the Servlet
+     * so we know if we need to invalidate the cache.
+     * @param documentId The ID of the document that owns the asset.
+     *      * @param assetPath The path of the visualisation asset we want the data for.
+     *      * @return The data for the asset, or null if the asset is not found.
+     *      * @throws IOException If something goes wrong with the IO, DB etc.
+     *      * @throws PermissionException If the user doesn't have view permissions for these assets.
+     */
+    Instant getModifiedTimestamp(final String documentId, final String assetPath)
+        throws IOException, PermissionException {
+        LOGGER.info("Returning asset timestamp for {}, {}", documentId, assetPath);
+        final DocRef docRef = new DocRef(VisualisationDoc.TYPE, documentId);
+        if (securityContext.hasDocumentPermission(docRef, DocumentPermission.VIEW)) {
+            return dao.getModifiedTimestamp(documentId, assetPath);
         } else {
             // Catch this higher up and return a 401.
             throw new PermissionException(securityContext.getUserRef(),

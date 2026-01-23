@@ -6,6 +6,7 @@ import stroom.visualisation.shared.VisualisationAsset;
 import stroom.visualisation.shared.VisualisationAssets;
 
 import java.io.IOException;
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -85,4 +86,13 @@ public class MockVisualisationAssetDao implements VisualisationAssetDao {
             }
         }
     }
+
+    /**
+     * Always returns now()
+     */
+    @Override
+    public Instant getModifiedTimestamp(final String documentId, final String assetPath) throws IOException {
+        return Instant.now();
+    }
+
 }

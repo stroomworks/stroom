@@ -16,6 +16,7 @@ import org.jooq.Result;
 import org.jooq.exception.DataAccessException;
 
 import java.io.IOException;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -84,6 +85,9 @@ public class VisualisationAssetDaoImpl implements VisualisationAssetDao {
             // Do everything in one transaction
             JooqUtil.transaction(connProvider, txnContext -> {
 
+                // Timestamp
+                final long timestamp = Instant.now().toEpochMilli();
+
                 // Get a list of the existing assets
                 final Set<String> existingAssetIds = new HashSet<>();
                 try {
@@ -108,15 +112,18 @@ public class VisualisationAssetDaoImpl implements VisualisationAssetDao {
                     try {
                         txnContext
                                 .insertInto(Tables.VISUALISATION_ASSETS,
+                                        Tables.VISUALISATION_ASSETS.MODIFIED,
                                         Tables.VISUALISATION_ASSETS.OWNER_DOC_UUID,
                                         Tables.VISUALISATION_ASSETS.ASSET_UUID,
                                         Tables.VISUALISATION_ASSETS.PATH,
                                         Tables.VISUALISATION_ASSETS.IS_FOLDER)
-                                .values(ownerDocId,
+                                .values(timestamp,
+                                        ownerDocId,
                                         asset.getId(),
                                         asset.getPath(),
                                         asset.isFolder() ? BYTE_TRUE : BYTE_FALSE)
                                 .onDuplicateKeyUpdate()
+                                .set(Tables.VISUALISATION_ASSETS.MODIFIED, timestamp)
                                 .set(Tables.VISUALISATION_ASSETS.PATH, asset.getPath())
                                 .set(Tables.VISUALISATION_ASSETS.IS_FOLDER, asset.isFolder() ? BYTE_TRUE : BYTE_FALSE)
                                 .where(Tables.VISUALISATION_ASSETS.OWNER_DOC_UUID.eq(ownerDocId)
@@ -154,10 +161,14 @@ public class VisualisationAssetDaoImpl implements VisualisationAssetDao {
     public void storeData(final String assetId, final byte[] data) throws IOException {
         LOGGER.info("Storing data for asset {}", assetId);
         try {
+            // Timestamp
+            final long timestamp = Instant.now().toEpochMilli();
+
             // Always called after storeAssets(), so the row will already exist
             JooqUtil.context(connProvider, context -> context
                     .update(Tables.VISUALISATION_ASSETS)
                     .set(Tables.VISUALISATION_ASSETS.DATA, data)
+                    .set(Tables.VISUALISATION_ASSETS.MODIFIED, timestamp)
                     .where(Tables.VISUALISATION_ASSETS.ASSET_UUID.eq(assetId))
                     .execute());
         } catch (final DataAccessException e) {
@@ -186,6 +197,29 @@ public class VisualisationAssetDaoImpl implements VisualisationAssetDao {
             LOGGER.error("Error getting data for document '{}', path '{}': {}",
                     documentId, assetPath, e.getMessage(), e);
             throw new IOException("Error getting data for document: " + e.getMessage(), e);
+        }
+    }
+
+    @Override
+    public Instant getModifiedTimestamp(final String documentId, final String assetPath) throws IOException {
+        try {
+            final Result<Record1<Long>> result = JooqUtil.contextResult(connProvider, context -> context
+                    .select(Tables.VISUALISATION_ASSETS.MODIFIED))
+                    .from(Tables.VISUALISATION_ASSETS)
+                    .where(Tables.VISUALISATION_ASSETS.OWNER_DOC_UUID.eq(documentId)
+                            .and(Tables.VISUALISATION_ASSETS.PATH.eq(assetPath)))
+                    .fetch();
+            if (result.isEmpty()) {
+                // Return null to indicate not found
+                return null;
+            } else {
+                final Long timestamp = result.getFirst().value1();
+                return Instant.ofEpochMilli(timestamp);
+            }
+        } catch (final DataAccessException e) {
+            LOGGER.error("Error getting timestamp for document '{}', path '{}': {}",
+                    documentId, assetPath, e.getMessage(), e);
+            throw new IOException("Error getting timestamp for document: " + e.getMessage(), e);
         }
     }
 
