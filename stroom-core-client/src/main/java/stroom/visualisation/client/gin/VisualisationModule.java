@@ -18,8 +18,8 @@ package stroom.visualisation.client.gin;
 
 import stroom.core.client.gin.PluginModule;
 import stroom.visualisation.client.VisualisationPlugin;
-import stroom.visualisation.client.presenter.VisualisationAssetsAddFolderDialogPresenter;
-import stroom.visualisation.client.presenter.VisualisationAssetsAddFolderDialogPresenter.VisualisationAssetsAddFolderDialogView;
+import stroom.visualisation.client.presenter.VisualisationAssetsAddItemDialogPresenter;
+import stroom.visualisation.client.presenter.VisualisationAssetsAddItemDialogPresenter.VisualisationAssetsAddFolderDialogView;
 import stroom.visualisation.client.presenter.VisualisationAssetsEditAssetDialogPresenter;
 import stroom.visualisation.client.presenter.VisualisationAssetsEditAssetDialogPresenter.VisualisationAssetsEditAssetDialogView;
 import stroom.visualisation.client.presenter.VisualisationAssetsUploadFileDialogPresenter;
@@ -29,7 +29,7 @@ import stroom.visualisation.client.presenter.VisualisationAssetsPresenter.Visual
 import stroom.visualisation.client.presenter.VisualisationPresenter;
 import stroom.visualisation.client.presenter.VisualisationSettingsPresenter;
 import stroom.visualisation.client.presenter.VisualisationSettingsPresenter.VisualisationSettingsView;
-import stroom.visualisation.client.view.VisualisationAssetsAddFolderDialogViewImpl;
+import stroom.visualisation.client.view.VisualisationAssetsAddItemDialogViewImpl;
 import stroom.visualisation.client.view.VisualisationAssetsEditAssetDialogViewImpl;
 import stroom.visualisation.client.view.VisualisationAssetsUploadFileDialogViewImpl;
 import stroom.visualisation.client.view.VisualisationAssetsViewImpl;
@@ -47,9 +47,9 @@ public class VisualisationModule extends PluginModule {
         bindPresenterWidget(VisualisationAssetsUploadFileDialogPresenter.class,
                 VisualisationAssetsUploadFileDialogView.class,
                 VisualisationAssetsUploadFileDialogViewImpl.class);
-        bindPresenterWidget(VisualisationAssetsAddFolderDialogPresenter.class,
+        bindPresenterWidget(VisualisationAssetsAddItemDialogPresenter.class,
                 VisualisationAssetsAddFolderDialogView.class,
-                VisualisationAssetsAddFolderDialogViewImpl.class);
+                VisualisationAssetsAddItemDialogViewImpl.class);
         bindPresenterWidget(VisualisationAssetsEditAssetDialogPresenter.class,
                 VisualisationAssetsEditAssetDialogView.class,
                 VisualisationAssetsEditAssetDialogViewImpl.class);

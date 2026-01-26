@@ -28,6 +28,7 @@ import stroom.svg.client.IconColour;
 import stroom.svg.shared.SvgImage;
 import stroom.util.client.Console;
 import stroom.util.shared.ResourceKey;
+import stroom.visualisation.client.presenter.VisualisationAssetsAddItemDialogPresenter.DialogType;
 import stroom.visualisation.client.presenter.VisualisationAssetsPresenter.VisualisationAssetsView;
 import stroom.visualisation.client.presenter.assets.VisualisationAssetTreeItem;
 import stroom.visualisation.client.presenter.assets.VisualisationAssetsImageResource;
@@ -102,7 +103,7 @@ public class VisualisationAssetsPresenter
     private final VisualisationAssetsUploadFileDialogPresenter uploadFileDialog;
 
     /** Dialog that appears when user wants to add a folder */
-    private final VisualisationAssetsAddFolderDialogPresenter addFolderDialog;
+    private final VisualisationAssetsAddItemDialogPresenter addItemDialog;
 
     /** Dialog that appears when user wants to edit the tree item */
     private final VisualisationAssetsEditAssetDialogPresenter editAssetDialog;
@@ -137,13 +138,13 @@ public class VisualisationAssetsPresenter
                                         final VisualisationAssetsView view,
                                         final RestFactory restFactory,
                                         final VisualisationAssetsUploadFileDialogPresenter uploadFileDialog,
-                                        final VisualisationAssetsAddFolderDialogPresenter addFolderDialog,
+                                        final VisualisationAssetsAddItemDialogPresenter addItemDialog,
                                         final VisualisationAssetsEditAssetDialogPresenter editAssetDialog) {
         super(eventBus, view);
 
         this.restFactory = restFactory;
         this.uploadFileDialog = uploadFileDialog;
-        this.addFolderDialog = addFolderDialog;
+        this.addItemDialog = addItemDialog;
         this.editAssetDialog = editAssetDialog;
 
         tree.setStylePrimaryName("visualisation-asset-tree");
@@ -168,12 +169,19 @@ public class VisualisationAssetsPresenter
                 .priority(0)
                 .icon(SvgImage.FOLDER)
                 .iconColour(IconColour.BLUE)
-                .text("Add Folder")
-                .command(this::onAddFolder)
+                .text("Add New Folder")
+                .command(() -> {this.onCreateNewItem(false);})
                 .enabled(true)
                 .build());
         menuItems.add(new IconMenuItem.Builder()
                 .priority(1)
+                .icon(SvgImage.FILE)
+                .text("Add New File")
+                .command(() -> this.onCreateNewItem(true))
+                .enabled(true)
+                .build());
+        menuItems.add(new IconMenuItem.Builder()
+                .priority(2)
                 .icon(SvgImage.FILE)
                 .iconColour(IconColour.BLUE)
                 .text("Upload File")
@@ -511,33 +519,38 @@ public class VisualisationAssetsPresenter
      * Called when Add button / Add Folder is clicked.
      * Inserts a new folder with the currently selected folder.
      */
-    private void onAddFolder() {
+    private void onCreateNewItem(final boolean addFile) {
         if (!readOnly) {
-            final TreeItem folderItem = findFolderForSelectedItem();
-            final String path = getItemPath(folderItem);
-            final ShowPopupEvent.Builder popupEventBuilder = new ShowPopupEvent.Builder(addFolderDialog);
-            addFolderDialog.setupPopup(popupEventBuilder, path, ILLEGAL_ASSET_NAME_CHARACTERS);
+            final TreeItem parentItem = findFolderForSelectedItem();
+            final String path = getItemPath(parentItem);
+            final ShowPopupEvent.Builder popupEventBuilder = new ShowPopupEvent.Builder(addItemDialog);
+            final DialogType dialogType = addFile ? DialogType.FILE_DIALOG : DialogType.FOLDER_DIALOG;
+            addItemDialog.setupPopup(popupEventBuilder, path, ILLEGAL_ASSET_NAME_CHARACTERS, dialogType);
             popupEventBuilder
                     .onHideRequest(event -> {
                                 if (event.isOk()) {
                                     // Ok pressed
-                                    if (addFolderDialog.isValid()) {
-                                        final String folderName = getNonClashingLabel(
-                                                (VisualisationAssetTreeItem) folderItem,
-                                                addFolderDialog.getView().getFolderName(),
+                                    if (addItemDialog.isValid()) {
+                                        final String itemName = getNonClashingLabel(
+                                                (VisualisationAssetTreeItem) parentItem,
+                                                addItemDialog.getView().getName(),
                                                 null);
-                                        final VisualisationAssetTreeItem newFolderNode =
-                                                VisualisationAssetTreeItem.createNewFolderItem(folderName);
-                                        if (folderItem == null) {
-                                            tree.addItem(newFolderNode);
+                                        final VisualisationAssetTreeItem newNode;
+                                        if (addFile) {
+                                            newNode = VisualisationAssetTreeItem.createNewFileItem(itemName);
                                         } else {
-                                            folderItem.addItem(newFolderNode);
+                                            newNode = VisualisationAssetTreeItem.createNewFolderItem(itemName);
                                         }
-                                        recurseSortTree((VisualisationAssetTreeItem) newFolderNode.getParentItem());
+                                        if (parentItem == null) {
+                                            tree.addItem(newNode);
+                                        } else {
+                                            parentItem.addItem(newNode);
+                                        }
+                                        recurseSortTree((VisualisationAssetTreeItem) parentItem);
                                         setDirty();
                                         event.hide();
                                     } else {
-                                        AlertEvent.fireWarn(this, "Folder name not set", event::reset);
+                                        AlertEvent.fireWarn(this, "Item name not set", event::reset);
                                     }
                                 } else {
                                     // Cancel pressed
@@ -897,7 +910,10 @@ public class VisualisationAssetsPresenter
                 deleteButton.setEnabled(true);
                 editButton.setEnabled(true);
                 // Only enable this button if the file has been uploaded to the server
-                viewButton.setEnabled(!uploadedFileResourceKeys.containsKey(item.getId()));
+                // and the thing isn't a folder
+                viewButton.setEnabled(
+                        !uploadedFileResourceKeys.containsKey(item.getId())
+                        && item.isLeaf());
             }
         }
     }

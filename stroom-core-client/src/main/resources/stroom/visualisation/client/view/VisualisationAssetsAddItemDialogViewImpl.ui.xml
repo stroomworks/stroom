@@ -4,14 +4,14 @@
              xmlns:form="urn:import:stroom.widget.form.client">
     <g:FormPanel ui:field="form" styleName="max">
         <g:FlowPanel styleName="max visualisation-assets-add-dialog">
-            <form:FormGroup identity="visualisationAssetsUploadFileTo"
-                            label="Upload to">
+            <form:FormGroup identity="visualisationAssetsCreateIn"
+                            label="Create in">
                 <g:Label ui:field="lblPath"/>
             </form:FormGroup>
-            <form:FormGroup identity="visualisationAssetsFolderName"
-                            label="Folder name"
+            <form:FormGroup identity="visualisationAssetsName"
+                            label="Name"
                             addStyleNames="dock-min">
-                <g:TextBox ui:field="txtFolderName" addStyleNames="stroom-control" name="folderName"/>
+                <g:TextBox ui:field="txtName" addStyleNames="stroom-control" name="name"/>
             </form:FormGroup>
         </g:FlowPanel>
     </g:FormPanel>

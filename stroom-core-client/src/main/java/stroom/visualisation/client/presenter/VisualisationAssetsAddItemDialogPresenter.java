@@ -11,11 +11,16 @@ import com.google.web.bindery.event.shared.EventBus;
 import com.gwtplatform.mvp.client.MyPresenterWidget;
 import com.gwtplatform.mvp.client.View;
 
-public class VisualisationAssetsAddFolderDialogPresenter
-        extends MyPresenterWidget<VisualisationAssetsAddFolderDialogPresenter.VisualisationAssetsAddFolderDialogView>
+/**
+ * Dialog box used when adding a file or folder to the tree.
+ */
+public class VisualisationAssetsAddItemDialogPresenter
+        extends MyPresenterWidget<VisualisationAssetsAddItemDialogPresenter.VisualisationAssetsAddFolderDialogView>
         implements HasHandlers {
 
     private String illegalAssetNameCharacters;
+
+    private DialogType dialogType;
 
     /** Width of dialog */
     private static final int DIALOG_WIDTH = 300;
@@ -23,13 +28,33 @@ public class VisualisationAssetsAddFolderDialogPresenter
     /** Height of dialog */
     private static final int DIALOG_HEIGHT = 300;
 
+    /** Type of this dialog - adding Folder or File */
+    public enum DialogType {
+
+        FOLDER_DIALOG("folder"),
+        FILE_DIALOG("file");
+
+        private final String name;
+
+        DialogType(final String name) {
+            this.name = name;
+        }
+        public String toString() {
+            return name;
+        }
+        public String toTitleCaseString() {
+            return name.substring(0, 1).toUpperCase() +
+                   name.substring(1);
+        }
+    }
+
     /**
      * Injected constructor.
      */
     @SuppressWarnings("unused")
     @Inject
-    public VisualisationAssetsAddFolderDialogPresenter(final EventBus eventBus,
-                                                       final VisualisationAssetsAddFolderDialogView view) {
+    public VisualisationAssetsAddItemDialogPresenter(final EventBus eventBus,
+                                                     final VisualisationAssetsAddFolderDialogView view) {
         super(eventBus, view);
     }
 
@@ -40,13 +65,15 @@ public class VisualisationAssetsAddFolderDialogPresenter
      */
     public void setupPopup(final ShowPopupEvent.Builder builder,
                            final String path,
-                           final String illegalAssetNameCharacters) {
+                           final String illegalAssetNameCharacters,
+                           final DialogType dialogType) {
 
         this.getView().setPath(path);
+        this.dialogType = dialogType;
 
         builder.popupType(PopupType.OK_CANCEL_DIALOG)
                 .popupSize(PopupSize.resizable(DIALOG_WIDTH, DIALOG_HEIGHT))
-                .caption("Add Folder")
+                .caption("New " + dialogType.toTitleCaseString())
                 .modal(true);
         this.illegalAssetNameCharacters = illegalAssetNameCharacters;
     }
@@ -63,15 +90,18 @@ public class VisualisationAssetsAddFolderDialogPresenter
      */
     public String getValidationErrorMessage() {
         String retval = null;
-        final String folderName = getView().getFolderName();
+        final String folderName = getView().getName();
         if (NullSafe.isBlankString(folderName)) {
-            retval = "Please set the name of the folder you wish to create";
+            retval = "Please set the name of the "
+                     + dialogType
+                     + "you wish to create";
         } else {
             if (illegalAssetNameCharacters != null) {
                 for (int i = 0; i < illegalAssetNameCharacters.length(); ++i) {
                     final CharSequence subSequence = illegalAssetNameCharacters.subSequence(i, i + 1);
                     if (folderName.contains(subSequence)) {
-                        retval = "Folder names must not contain the character '" + subSequence + "'";
+                        retval = dialogType.toTitleCaseString()
+                                 + " names must not contain the character '" + subSequence + "'";
                     }
                 }
             }
@@ -90,7 +120,7 @@ public class VisualisationAssetsAddFolderDialogPresenter
         /**
          * Gets the file upload widget.
          */
-        String getFolderName();
+        String getName();
 
     }
 
