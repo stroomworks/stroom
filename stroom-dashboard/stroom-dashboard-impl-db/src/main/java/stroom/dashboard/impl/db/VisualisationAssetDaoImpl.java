@@ -204,11 +204,11 @@ public class VisualisationAssetDaoImpl implements VisualisationAssetDao {
     public Instant getModifiedTimestamp(final String documentId, final String assetPath) throws IOException {
         try {
             final Result<Record1<Long>> result = JooqUtil.contextResult(connProvider, context -> context
-                    .select(Tables.VISUALISATION_ASSETS.MODIFIED))
+                    .select(Tables.VISUALISATION_ASSETS.MODIFIED)
                     .from(Tables.VISUALISATION_ASSETS)
                     .where(Tables.VISUALISATION_ASSETS.OWNER_DOC_UUID.eq(documentId)
                             .and(Tables.VISUALISATION_ASSETS.PATH.eq(assetPath)))
-                    .fetch();
+                    .fetch());
             if (result.isEmpty()) {
                 // Return null to indicate not found
                 return null;
