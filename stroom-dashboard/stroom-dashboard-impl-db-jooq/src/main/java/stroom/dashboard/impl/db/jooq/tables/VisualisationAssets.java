@@ -52,6 +52,11 @@ public class VisualisationAssets extends TableImpl<VisualisationAssetsRecord> {
     }
 
     /**
+     * The column <code>stroom.visualisation_assets.modified</code>.
+     */
+    public final TableField<VisualisationAssetsRecord, Long> MODIFIED = createField(DSL.name("modified"), SQLDataType.BIGINT.nullable(false), this, "");
+
+    /**
      * The column <code>stroom.visualisation_assets.owner_doc_uuid</code>.
      */
     public final TableField<VisualisationAssetsRecord, String> OWNER_DOC_UUID = createField(DSL.name("owner_doc_uuid"), SQLDataType.VARCHAR(255).nullable(false), this, "");

@@ -23,6 +23,7 @@ SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0;
 -- Thus the path is limited to 512 characters.
 --
 CREATE TABLE IF NOT EXISTS visualisation_assets (
+  modified              BIGINT NOT NULL,
   owner_doc_uuid        varchar(255) NOT NULL,
   asset_uuid            varchar(255) NOT NULL,
   path                  varchar(512) NOT NULL,

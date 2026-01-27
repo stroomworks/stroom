@@ -19,6 +19,7 @@ import com.google.inject.Inject;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -167,10 +168,32 @@ public class VisualisationAssetService {
      */
     byte[] getData(final String documentId, final String assetPath)
             throws IOException, PermissionException {
-        LOGGER.info("Returning assets for {}, {}", documentId, assetPath);
+        LOGGER.info("Returning asset for {}, {}", documentId, assetPath);
         final DocRef docRef = new DocRef(VisualisationDoc.TYPE, documentId);
         if (securityContext.hasDocumentPermission(docRef, DocumentPermission.VIEW)) {
             return dao.getData(documentId, assetPath);
+        } else {
+            // Catch this higher up and return a 401.
+            throw new PermissionException(securityContext.getUserRef(),
+                    "You do not have permission to view this asset");
+        }
+    }
+
+    /**
+     * Returns the timestamp when the given asset was modified. Called from the Servlet
+     * so we know if we need to invalidate the cache.
+     * @param documentId The ID of the document that owns the asset.
+     *      * @param assetPath The path of the visualisation asset we want the data for.
+     *      * @return The data for the asset, or null if the asset is not found.
+     *      * @throws IOException If something goes wrong with the IO, DB etc.
+     *      * @throws PermissionException If the user doesn't have view permissions for these assets.
+     */
+    Instant getModifiedTimestamp(final String documentId, final String assetPath)
+        throws IOException, PermissionException {
+        LOGGER.info("Returning asset timestamp for {}, {}", documentId, assetPath);
+        final DocRef docRef = new DocRef(VisualisationDoc.TYPE, documentId);
+        if (securityContext.hasDocumentPermission(docRef, DocumentPermission.VIEW)) {
+            return dao.getModifiedTimestamp(documentId, assetPath);
         } else {
             // Catch this higher up and return a 401.
             throw new PermissionException(securityContext.getUserRef(),

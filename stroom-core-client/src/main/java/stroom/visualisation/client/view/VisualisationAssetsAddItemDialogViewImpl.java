@@ -1,6 +1,6 @@
 package stroom.visualisation.client.view;
 
-import stroom.visualisation.client.presenter.VisualisationAssetsAddFolderDialogPresenter.VisualisationAssetsAddFolderDialogView;
+import stroom.visualisation.client.presenter.VisualisationAssetsAddItemDialogPresenter.VisualisationAssetsAddFolderDialogView;
 
 import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
@@ -13,14 +13,14 @@ import com.gwtplatform.mvp.client.ViewImpl;
 /**
  * View for the dialog that uploads files into the Visualisation web asset manager.
  */
-public class VisualisationAssetsAddFolderDialogViewImpl extends ViewImpl implements
+public class VisualisationAssetsAddItemDialogViewImpl extends ViewImpl implements
         VisualisationAssetsAddFolderDialogView {
 
     /** GWT widget */
     private final Widget widget;
 
     @UiField
-    TextBox txtFolderName;
+    TextBox txtName;
 
     @UiField
     Label lblPath;
@@ -30,7 +30,7 @@ public class VisualisationAssetsAddFolderDialogViewImpl extends ViewImpl impleme
      */
     @Inject
     @SuppressWarnings("unused")
-    public VisualisationAssetsAddFolderDialogViewImpl(final Binder binder) {
+    public VisualisationAssetsAddItemDialogViewImpl(final Binder binder) {
         widget = binder.createAndBindUi(this);
     }
 
@@ -53,14 +53,14 @@ public class VisualisationAssetsAddFolderDialogViewImpl extends ViewImpl impleme
      * Gets the name entered for the folder.
      */
     @Override
-    public String getFolderName() {
-        return txtFolderName.getText();
+    public String getName() {
+        return txtName.getText();
     }
 
     /**
      * Interface to keep GWT UiBinder happy.
      */
-    public interface Binder extends UiBinder<Widget, VisualisationAssetsAddFolderDialogViewImpl> {
+    public interface Binder extends UiBinder<Widget, VisualisationAssetsAddItemDialogViewImpl> {
         // No code
     }
 }

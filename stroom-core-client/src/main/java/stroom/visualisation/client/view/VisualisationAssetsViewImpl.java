@@ -21,8 +21,8 @@ import stroom.visualisation.client.presenter.VisualisationAssetsPresenter.Visual
 
 import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
-import com.google.gwt.user.cellview.client.CellTree;
 import com.google.gwt.user.client.ui.FlowPanel;
+import com.google.gwt.user.client.ui.Tree;
 import com.google.gwt.user.client.ui.Widget;
 import com.google.inject.Inject;
 import com.gwtplatform.mvp.client.ViewImpl;
@@ -51,8 +51,8 @@ public class VisualisationAssetsViewImpl extends ViewImpl
     }
 
     @Override
-    public void setCellTree(final CellTree cellTree) {
-        rootPanel.add(cellTree);
+    public void setTree(final Tree tree) {
+        rootPanel.add(tree);
     }
 
     // --------------------------------------------------------------------------------

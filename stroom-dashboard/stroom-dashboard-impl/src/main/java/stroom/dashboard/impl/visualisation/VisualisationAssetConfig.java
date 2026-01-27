@@ -35,6 +35,16 @@ public class VisualisationAssetConfig extends AbstractConfig {
     /** Mimetype if nothing else matches */
     private static final String DEFAULT_MIMETYPE = "application/octet-stream";
 
+    /**
+     * Default location where assets will be cached
+     */
+    static final String DEFAULT_ASSET_CACHE_DIR = "asset_cache";
+
+    /**
+     * Where assets will be cached
+     */
+    private final String assetCacheDir;
+
     /** Logger */
     private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(VisualisationAssetConfig.class);
 
@@ -67,6 +77,7 @@ public class VisualisationAssetConfig extends AbstractConfig {
     public VisualisationAssetConfig() {
         this.mimetypes.putAll(DEFAULT_MIMETYPES);
         this.defaultMimetype = DEFAULT_MIMETYPE;
+        this.assetCacheDir = DEFAULT_ASSET_CACHE_DIR;
     }
 
     /**
@@ -75,7 +86,8 @@ public class VisualisationAssetConfig extends AbstractConfig {
     @SuppressWarnings("unused")
     @JsonCreator
     public VisualisationAssetConfig(@JsonProperty("mimetypes") final Map<String, String> mimetypes,
-                                    @JsonProperty("default") final String defaultMimetype) {
+                                    @JsonProperty("default") final String defaultMimetype,
+                                    @JsonProperty("assetCacheDir") final String assetCacheDir) {
         if (mimetypes == null || mimetypes.isEmpty()) {
             LOGGER.info("No mimetypes supplied in the configuration file; using default values");
         } else {
@@ -87,6 +99,13 @@ public class VisualisationAssetConfig extends AbstractConfig {
             this.defaultMimetype = DEFAULT_MIMETYPE;
         } else {
             this.defaultMimetype = defaultMimetype;
+        }
+
+        if (assetCacheDir == null || assetCacheDir.isEmpty()) {
+            LOGGER.info("No default asset cache directory supplied in the configuration file; using default value");
+            this.assetCacheDir = DEFAULT_ASSET_CACHE_DIR;
+        } else {
+            this.assetCacheDir = assetCacheDir;
         }
     }
 
@@ -102,6 +121,14 @@ public class VisualisationAssetConfig extends AbstractConfig {
     @JsonProperty("default")
     public String getDefaultMimetype() {
         return defaultMimetype;
+    }
+
+    @RequiresRestart(RestartScope.SYSTEM)
+    @JsonPropertyDescription("The path relative to the home directory to use "
+                             + "for storing cached assets.")
+    @JsonProperty("assetCacheDir")
+    public String getAssetCacheDir() {
+        return assetCacheDir;
     }
 
     /**

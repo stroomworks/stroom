@@ -19,73 +19,87 @@ public class VisualisationAssetsRecord extends UpdatableRecordImpl<Visualisation
     private static final long serialVersionUID = 1L;
 
     /**
+     * Setter for <code>stroom.visualisation_assets.modified</code>.
+     */
+    public void setModified(Long value) {
+        set(0, value);
+    }
+
+    /**
+     * Getter for <code>stroom.visualisation_assets.modified</code>.
+     */
+    public Long getModified() {
+        return (Long) get(0);
+    }
+
+    /**
      * Setter for <code>stroom.visualisation_assets.owner_doc_uuid</code>.
      */
     public void setOwnerDocUuid(String value) {
-        set(0, value);
+        set(1, value);
     }
 
     /**
      * Getter for <code>stroom.visualisation_assets.owner_doc_uuid</code>.
      */
     public String getOwnerDocUuid() {
-        return (String) get(0);
+        return (String) get(1);
     }
 
     /**
      * Setter for <code>stroom.visualisation_assets.asset_uuid</code>.
      */
     public void setAssetUuid(String value) {
-        set(1, value);
+        set(2, value);
     }
 
     /**
      * Getter for <code>stroom.visualisation_assets.asset_uuid</code>.
      */
     public String getAssetUuid() {
-        return (String) get(1);
+        return (String) get(2);
     }
 
     /**
      * Setter for <code>stroom.visualisation_assets.path</code>.
      */
     public void setPath(String value) {
-        set(2, value);
+        set(3, value);
     }
 
     /**
      * Getter for <code>stroom.visualisation_assets.path</code>.
      */
     public String getPath() {
-        return (String) get(2);
+        return (String) get(3);
     }
 
     /**
      * Setter for <code>stroom.visualisation_assets.is_folder</code>.
      */
     public void setIsFolder(Byte value) {
-        set(3, value);
+        set(4, value);
     }
 
     /**
      * Getter for <code>stroom.visualisation_assets.is_folder</code>.
      */
     public Byte getIsFolder() {
-        return (Byte) get(3);
+        return (Byte) get(4);
     }
 
     /**
      * Setter for <code>stroom.visualisation_assets.data</code>.
      */
     public void setData(byte[] value) {
-        set(4, value);
+        set(5, value);
     }
 
     /**
      * Getter for <code>stroom.visualisation_assets.data</code>.
      */
     public byte[] getData() {
-        return (byte[]) get(4);
+        return (byte[]) get(5);
     }
 
     // -------------------------------------------------------------------------
@@ -111,9 +125,10 @@ public class VisualisationAssetsRecord extends UpdatableRecordImpl<Visualisation
     /**
      * Create a detached, initialised VisualisationAssetsRecord
      */
-    public VisualisationAssetsRecord(String ownerDocUuid, String assetUuid, String path, Byte isFolder, byte[] data) {
+    public VisualisationAssetsRecord(Long modified, String ownerDocUuid, String assetUuid, String path, Byte isFolder, byte[] data) {
         super(VisualisationAssets.VISUALISATION_ASSETS);
 
+        setModified(modified);
         setOwnerDocUuid(ownerDocUuid);
         setAssetUuid(assetUuid);
         setPath(path);
