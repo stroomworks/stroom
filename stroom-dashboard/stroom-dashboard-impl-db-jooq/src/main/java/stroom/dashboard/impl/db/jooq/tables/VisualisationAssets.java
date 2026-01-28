@@ -72,6 +72,11 @@ public class VisualisationAssets extends TableImpl<VisualisationAssetsRecord> {
     public final TableField<VisualisationAssetsRecord, String> PATH = createField(DSL.name("path"), SQLDataType.VARCHAR(512).nullable(false), this, "");
 
     /**
+     * The column <code>stroom.visualisation_assets.path_hash</code>.
+     */
+    public final TableField<VisualisationAssetsRecord, byte[]> PATH_HASH = createField(DSL.name("path_hash"), SQLDataType.BINARY(32).nullable(false), this, "");
+
+    /**
      * The column <code>stroom.visualisation_assets.is_folder</code>.
      */
     public final TableField<VisualisationAssetsRecord, Byte> IS_FOLDER = createField(DSL.name("is_folder"), SQLDataType.TINYINT.nullable(false), this, "");

@@ -1,7 +1,6 @@
 package stroom.dashboard.impl.visualisation;
 
 import stroom.docref.DocRef;
-import stroom.importexport.api.ByteArrayImportExportAsset;
 import stroom.importexport.api.ImportExportAsset;
 import stroom.resource.api.ResourceStore;
 import stroom.security.api.SecurityContext;
@@ -20,10 +19,8 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 /**
@@ -63,12 +60,13 @@ public class VisualisationAssetService {
      * @param ownerId The ID of the document that owns these assets.
      * @return An object that holds all the metadata about the assets. Note that
      *         getUploadedFiles() will always return an empty map.
+     *         This will be the draft assets for the user logged in.
      * @throws IOException if something goes wrong.
      */
-    VisualisationAssets fetchAssets(final String ownerId) throws IOException {
+    VisualisationAssets fetchDraftAssets(final String ownerId) throws IOException {
         final DocRef docRef = new DocRef(VisualisationDoc.TYPE, ownerId);
         if (securityContext.hasDocumentPermission(docRef, DocumentPermission.VIEW)) {
-            return dao.fetchAssets(ownerId);
+            return dao.fetchDraftAssets(securityContext.getUserRef().getUuid(), ownerId);
         } else {
             // No permission so return empty assets
             LOGGER.info("User does not have permission to see assets");
@@ -78,17 +76,19 @@ public class VisualisationAssetService {
 
     /**
      * Called from the UI to put assets into the system.
+     * Assets will be stored as draft under the ID of the user.
      * @param ownerDocId   The ID of the document that owns these assets.
      * @param assets       The object wrapping all the assets that we need to update in the system.
      * @throws IOException If something goes wrong. The method will try to do as much as
      *                     possible, throwing an error at the end of the update with a message
      *                     covering all the issues found.
      */
-    void updateAssets(final String ownerDocId,
-                      final VisualisationAssets assets) throws IOException {
+    void updateDraftAssets(final String ownerDocId,
+                           final VisualisationAssets assets) throws IOException {
 
         final DocRef docRef = new DocRef(VisualisationDoc.TYPE, ownerDocId);
         if (securityContext.hasDocumentPermission(docRef, DocumentPermission.EDIT)) {
+            final String userUuid = securityContext.getUserRef().getUuid();
 
             // Store errors so we can throw one exception at the end
             final Map<String, Path> uploadsThatDoNotExist = new HashMap<>();
@@ -100,7 +100,7 @@ public class VisualisationAssetService {
 
             // First store the assets - the paths and metadata
             try {
-                dao.storeAssets(ownerDocId, assets);
+                dao.storeDraftAssets(userUuid, ownerDocId, assets);
             } catch (final IOException e) {
                 exceptionBuf.append("\nError storing assets: ");
                 exceptionBuf.append(e.getMessage());
@@ -120,7 +120,7 @@ public class VisualisationAssetService {
                         // Note that file could be deleted between checking it exists and copying it.
                         // TODO Should stream this data into the DB
                         final byte[] data = Files.readAllBytes(uploadedPath);
-                        dao.storeData(uploadedFileEntry.getKey(), data);
+                        dao.storeDraftData(userUuid, uploadedFileEntry.getKey(), data);
                     } catch (final IOException e) {
                         exceptionBuf.append("\nError copying '");
                         final VisualisationAsset asset = assetLookup.get(uploadedFileEntry.getKey());
@@ -157,6 +157,32 @@ public class VisualisationAssetService {
     }
 
     /**
+     * Copies all draft information into the main storage so it is live.
+     * @param ownerDocId The document that owns these assets.
+     * @throws IOException If something goes wrong.
+     */
+    public void saveDraftToLive(final String ownerDocId) throws IOException {
+        final DocRef docRef = new DocRef(VisualisationDoc.TYPE, ownerDocId);
+        if (securityContext.hasDocumentPermission(docRef, DocumentPermission.EDIT)) {
+            dao.saveDraftToLive(securityContext.getUserRef().getUuid(), ownerDocId);
+        }
+    }
+
+    /**
+     * Empties the draft data so fetchDraftAssets() will return the Live data again.
+     * @param ownerDocId The document that owns these assets.
+     * @throws IOException If something goes wrong.
+     */
+    public void revertDraftFromLive(final String ownerDocId) throws IOException {
+        final DocRef docRef = new DocRef(VisualisationDoc.TYPE, ownerDocId);
+        if (securityContext.hasDocumentPermission(docRef, DocumentPermission.EDIT)) {
+            dao.revertDraftFromLive(securityContext.getUserRef().getUuid(), ownerDocId);
+        }
+    }
+
+
+
+    /**
      * Gets the data for a given asset. Called from the Servlet to get the asset for a given
      * document and path.
      * <br>TODO This data should be streamed rather than held in a byte[] in memory.
@@ -166,12 +192,12 @@ public class VisualisationAssetService {
      * @throws IOException If something goes wrong with the IO, DB etc.
      * @throws PermissionException If the user doesn't have view permissions for these assets.
      */
-    byte[] getData(final String documentId, final String assetPath)
+    byte[] getLiveData(final String documentId, final String assetPath)
             throws IOException, PermissionException {
         LOGGER.info("Returning asset for {}, {}", documentId, assetPath);
         final DocRef docRef = new DocRef(VisualisationDoc.TYPE, documentId);
         if (securityContext.hasDocumentPermission(docRef, DocumentPermission.VIEW)) {
-            return dao.getData(documentId, assetPath);
+            return dao.getLiveData(documentId, assetPath);
         } else {
             // Catch this higher up and return a 401.
             throw new PermissionException(securityContext.getUserRef(),
@@ -188,12 +214,12 @@ public class VisualisationAssetService {
      *      * @throws IOException If something goes wrong with the IO, DB etc.
      *      * @throws PermissionException If the user doesn't have view permissions for these assets.
      */
-    Instant getModifiedTimestamp(final String documentId, final String assetPath)
+    Instant getLiveModifiedTimestamp(final String documentId, final String assetPath)
         throws IOException, PermissionException {
         LOGGER.info("Returning asset timestamp for {}, {}", documentId, assetPath);
         final DocRef docRef = new DocRef(VisualisationDoc.TYPE, documentId);
         if (securityContext.hasDocumentPermission(docRef, DocumentPermission.VIEW)) {
-            return dao.getModifiedTimestamp(documentId, assetPath);
+            return dao.getLiveModifiedTimestamp(documentId, assetPath);
         } else {
             // Catch this higher up and return a 401.
             throw new PermissionException(securityContext.getUserRef(),
@@ -212,13 +238,19 @@ public class VisualisationAssetService {
             throws IOException, PermissionException {
 
         LOGGER.info("Returning assets for export for {}", documentId);
+        /*
+        TODO
+
         final List<ImportExportAsset> importExportAssets = new ArrayList<>();
-        final VisualisationAssets assets = this.fetchAssets(documentId);
+        final VisualisationAssets assets = this.fetchLiveAssets(documentId);
         for (final VisualisationAsset asset : assets.getAssets()) {
-            final byte[] data = this.getData(documentId, asset.getPath());
+            final byte[] data = this.getLiveData(documentId, asset.getPath());
             importExportAssets.add(new ByteArrayImportExportAsset(asset.getPath(), data));
         }
         return importExportAssets;
+
+         */
+        return null; // TODO
     }
 
 }

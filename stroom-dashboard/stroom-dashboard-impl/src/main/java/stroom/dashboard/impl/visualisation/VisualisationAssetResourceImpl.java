@@ -36,10 +36,10 @@ public class VisualisationAssetResourceImpl implements VisualisationAssetResourc
     }
 
     @Override
-    public VisualisationAssets fetchAssets(final String ownerId) throws RuntimeException {
+    public VisualisationAssets fetchDraftAssets(final String ownerId) throws RuntimeException {
         LOGGER.info("ResourceImpl: fetchAssets with ownerId {}", ownerId);
         try {
-            return serviceProvider.get().fetchAssets(ownerId);
+            return serviceProvider.get().fetchDraftAssets(ownerId);
         } catch (final IOException e) {
             throw new RuntimeException(e);
         }
@@ -54,11 +54,31 @@ public class VisualisationAssetResourceImpl implements VisualisationAssetResourc
      * @return TRUE if everything works, FALSE if not.
      */
     @Override
-    public Boolean updateAssets(final String ownerId,
-                                final VisualisationAssets assets)
+    public Boolean updateDraftAssets(final String ownerId,
+                                     final VisualisationAssets assets)
             throws RuntimeException {
         try {
-            serviceProvider.get().updateAssets(ownerId, assets);
+            serviceProvider.get().updateDraftAssets(ownerId, assets);
+        } catch (final IOException e) {
+            throw new RuntimeException(e);
+        }
+        return Boolean.TRUE;
+    }
+
+    @Override
+    public Boolean saveDraftToLive(final String ownerDocId) throws RuntimeException {
+        try {
+            serviceProvider.get().saveDraftToLive(ownerDocId);
+        } catch (final IOException e) {
+            throw new RuntimeException(e);
+        }
+        return Boolean.TRUE;
+    }
+
+    @Override
+    public Boolean revertDraftFromLive(final String ownerDocId) throws RuntimeException {
+        try {
+            serviceProvider.get().revertDraftFromLive(ownerDocId);
         } catch (final IOException e) {
             throw new RuntimeException(e);
         }

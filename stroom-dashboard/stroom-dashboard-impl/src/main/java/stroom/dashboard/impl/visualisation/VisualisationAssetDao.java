@@ -12,24 +12,62 @@ public interface VisualisationAssetDao {
 
     /**
      * Returns all the assets for a given docRef.
-     * @param ownerId The owner of the assets
+     * @param userUuid The user ID that we want draft info for
+     * @param ownerId The document that owns the assets
      * @return Assets to display in UI.
+     * @throws IOException If something goes wrong.
      */
-    VisualisationAssets fetchAssets(String ownerId) throws IOException;
+    VisualisationAssets fetchDraftAssets(String userUuid,
+                                         String ownerId) throws IOException;
 
     /**
-     * Stores all assets for a given DocRef.
-     * @param ownerDocId The document which owns the assets.
-     * @param visAssets  The assets that need to be stored.
+     * Stores a draft version of all assets under the given username.
+     * @param userUuid The user ID that we want draft info for
+     * @param ownerDocId The document that owns the assets.
+     * @param visAssets The assets to store.
+     * @throws IOException If something goes wrong.
      */
-    void storeAssets(String ownerDocId, VisualisationAssets visAssets) throws IOException;
+    void storeDraftAssets(String userUuid,
+                          String ownerDocId,
+                          VisualisationAssets visAssets)
+            throws IOException;
 
     /**
-     * Stores the given data in the database.
-     * @param assetId The ID of the visualisation asset we're storing data for.
+     * Stores a draft version of the asset.
+     * @param userUuid The user ID that we're setting draft data for.
+     * @param assetId The UUID of the asset.
      * @param data The data to store.
+     * @throws IOException If something goes wrong.
      */
-    void storeData(String assetId,  byte[] data) throws IOException;
+    void storeDraftData(String userUuid,
+                        String assetId,
+                        byte[] data)
+            throws IOException;
+
+    /**
+     * Copies all draft information into the main storage so it is live.
+     * @param userUuid The user to copy draft information for.
+     * @param documentId The document ID that owns the draft information.
+     * @throws IOException If something goes wrong.
+     */
+    void saveDraftToLive(String userUuid, String documentId) throws IOException;
+
+    /**
+     * Empties the draft data so fetchDraftAssets() will return the Live data again.
+     * @param userUuid Username to revert draft data for.
+     * @param documentId The document ID that owns the draft information.
+     * @throws IOException If something goes wrong.
+     */
+    void revertDraftFromLive(String userUuid, String documentId) throws IOException;
+
+    /**
+     * TODO
+     * Returns all the live assets for a given docRef.
+     * @param ownerId The document that owns the assets
+     * @return Assets to display in UI.
+     * @throws IOException If something goes wrong.
+     */
+    //VisualisationAssets fetchLiveAssets(String ownerId) throws IOException;
 
     /**
      * Gets the data for a given asset.
@@ -37,7 +75,7 @@ public interface VisualisationAssetDao {
      * @param assetPath The path of the asset within the tree.
      * @return The data for the asset. Returns null if the asset is not found.
      */
-    byte[] getData(String documentId, String assetPath) throws IOException;
+    byte[] getLiveData(String documentId, String assetPath) throws IOException;
 
     /**
      * Gets the timestamp for the entry for the asset. Returns null if the asset isn't found.
@@ -46,6 +84,6 @@ public interface VisualisationAssetDao {
      * @return The timestamp for the asset. Returns null if the asset isn't found.
      * @throws IOException If something goes wrong.
      */
-    Instant getModifiedTimestamp(String documentId, String assetPath) throws IOException;
+    Instant getLiveModifiedTimestamp(String documentId, String assetPath) throws IOException;
 
 }

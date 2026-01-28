@@ -86,9 +86,6 @@ public class VisualisationAssetServlet extends HttpServlet implements IsServlet 
         } catch (final IOException e) {
             LOGGER.error("Error creating asset cache directory: {}", e.getMessage(), e);
         }
-
-        // Get rid of any temporary files that may be left over
-        deleteTempFiles();
     }
 
     /**
@@ -154,7 +151,7 @@ public class VisualisationAssetServlet extends HttpServlet implements IsServlet 
         final Path cachedAssetPath = getCachePathForAsset(docId, assetPath);
 
         // What timestamp is in the DB?
-        final Instant dbTimestamp = service.getModifiedTimestamp(docId, assetPath);
+        final Instant dbTimestamp = service.getLiveModifiedTimestamp(docId, assetPath);
         if (dbTimestamp == null) {
             throw new FileNotFoundException("Asset '" + assetPath + "' does not exist");
         }
@@ -174,7 +171,7 @@ public class VisualisationAssetServlet extends HttpServlet implements IsServlet 
                 // Update the cache as the DB is more recent
 
                 // Write the data onto the disk file
-                final byte[] data = service.getData(docId, assetPath);
+                final byte[] data = service.getLiveData(docId, assetPath);
                 saveDataSafely(cachedAssetPath, data);
 
                 // Write the dbTimestamp to disk
@@ -264,6 +261,7 @@ public class VisualisationAssetServlet extends HttpServlet implements IsServlet 
 
     /**
      * Deletes all the temporary files. These should only exist if something went wrong.
+     * Called when the Servlet is created and destroyed to ensure the filesystem stays clean.
      */
     private void deleteTempFiles() {
         try {
@@ -294,12 +292,14 @@ public class VisualisationAssetServlet extends HttpServlet implements IsServlet 
     public void init() throws ServletException {
         LOGGER.debug("Creating VisualisationAssetServlet");
         super.init();
+        deleteTempFiles();
     }
 
     @Override
     public void destroy() {
         LOGGER.debug("Destroying VisualisationAssetServlet");
         super.destroy();
+        deleteTempFiles();
     }
 
     @Override

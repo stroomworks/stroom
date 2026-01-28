@@ -23,6 +23,7 @@ import stroom.docref.DocRef;
 import stroom.document.client.event.DirtyEvent;
 import stroom.document.client.event.DirtyEvent.DirtyHandler;
 import stroom.document.client.event.HasDirtyHandlers;
+import stroom.editor.client.presenter.EditorPresenter;
 import stroom.entity.client.presenter.HasToolbar;
 import stroom.svg.client.IconColour;
 import stroom.svg.shared.SvgImage;
@@ -57,6 +58,7 @@ import com.google.web.bindery.event.shared.EventBus;
 import com.google.web.bindery.event.shared.HandlerRegistration;
 import com.gwtplatform.mvp.client.MyPresenterWidget;
 import com.gwtplatform.mvp.client.View;
+import edu.ycp.cs.dh.acegwt.client.ace.AceEditorMode;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -67,6 +69,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import javax.inject.Provider;
 
 /**
  * Shows the Assets - images, css etc - associated with the Visualisation.
@@ -108,6 +111,9 @@ public class VisualisationAssetsPresenter
     /** Dialog that appears when user wants to edit the tree item */
     private final VisualisationAssetsEditAssetDialogPresenter editAssetDialog;
 
+    /** Editor widget */
+    private final EditorPresenter editorPresenter;
+
     /** List of any resource keys for files that need to be saved */
     private final Map<String, ResourceKey> uploadedFileResourceKeys = new HashMap<>();
 
@@ -139,19 +145,25 @@ public class VisualisationAssetsPresenter
                                         final RestFactory restFactory,
                                         final VisualisationAssetsUploadFileDialogPresenter uploadFileDialog,
                                         final VisualisationAssetsAddItemDialogPresenter addItemDialog,
-                                        final VisualisationAssetsEditAssetDialogPresenter editAssetDialog) {
+                                        final VisualisationAssetsEditAssetDialogPresenter editAssetDialog,
+                                        final Provider<EditorPresenter> editorPresenterProvider) {
         super(eventBus, view);
 
         this.restFactory = restFactory;
         this.uploadFileDialog = uploadFileDialog;
         this.addItemDialog = addItemDialog;
         this.editAssetDialog = editAssetDialog;
+        this.editorPresenter = editorPresenterProvider.get();
 
         tree.setStylePrimaryName("visualisation-asset-tree");
         tree.addSelectionHandler(event -> {
             VisualisationAssetsPresenter.this.onSelectionChange();
         });
-        this.getView().setTree(tree);
+        this.getView().setTreeAndEditor(tree, editorPresenter);
+
+
+        // TODO register handler for ValueChangeHandler -> dirty
+        // TODO register handler for FormatHandler -> dirty
 
     }
 
@@ -321,7 +333,7 @@ public class VisualisationAssetsPresenter
     private void fetchAssets(final VisualisationDoc document) {
         final String ownerId = document.getUuid();
         restFactory.create(VISUALISATION_ASSET_RESOURCE)
-                .method(r -> r.fetchAssets(ownerId))
+                .method(r -> r.fetchDraftAssets(ownerId))
                 .onSuccess(assets -> {
                     // Clear any existing content from the tree
                     tree.clear();
@@ -355,7 +367,7 @@ public class VisualisationAssetsPresenter
         storeOpenClosedState();
 
         restFactory.create(VISUALISATION_ASSET_RESOURCE)
-                .method(r -> r.updateAssets(document.getUuid(), assets))
+                .method(r -> r.updateDraftAssets(document.getUuid(), assets))
                 .onSuccess(result -> {
                     if (result) {
                         // Great it worked - clear the list of uploaded files
@@ -512,6 +524,16 @@ public class VisualisationAssetsPresenter
      * Called when the selection changes.
      */
     private void onSelectionChange() {
+        final VisualisationAssetTreeItem selectedItem = (VisualisationAssetTreeItem) tree.getSelectedItem();
+        final String label = selectedItem.getText();
+        if (label.endsWith(".html")) {
+            editorPresenter.setText("<html><body></body></html>");
+            editorPresenter.setMode(AceEditorMode.HTML);
+            editorPresenter.setReadOnly(isReadOnly());
+        } else {
+            editorPresenter.setText("");
+            editorPresenter.setReadOnly(true);
+        }
         updateState();
     }
 
@@ -959,6 +981,6 @@ public class VisualisationAssetsPresenter
         /**
          * Sets the cell tree within the view.
          */
-        void setTree(final Tree cellTree);
+        void setTreeAndEditor(final Tree cellTree, final EditorPresenter editor);
     }
 }
