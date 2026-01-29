@@ -68,7 +68,9 @@ public class ReportDoc extends AbstractAnalyticRuleDoc {
                      @JsonProperty("rememberNotifications") final boolean rememberNotifications,
                      @JsonProperty("suppressDuplicateNotifications") final boolean suppressDuplicateNotifications,
                      @JsonProperty("duplicateNotificationConfig") final DuplicateNotificationConfig duplicateNotificationConfig,
-                     @JsonProperty("reportSettings") final ReportSettings reportSettings) {
+                     @JsonProperty("reportSettings") final ReportSettings reportSettings,
+                     @JsonProperty("level") final String level,
+                     @JsonProperty("status") final String status) {
         super(TYPE, uuid,
                 name,
                 version,
@@ -89,7 +91,9 @@ public class ReportDoc extends AbstractAnalyticRuleDoc {
                 errorFeed,
                 rememberNotifications,
                 suppressDuplicateNotifications,
-                duplicateNotificationConfig);
+                duplicateNotificationConfig,
+                level,
+                status);
         this.reportSettings = reportSettings;
     }
 
@@ -185,7 +189,9 @@ public class ReportDoc extends AbstractAnalyticRuleDoc {
                     false,
                     false,
                     duplicateNotificationConfig,
-                    reportSettings);
+                    reportSettings,
+                    level,
+                    status);
         }
     }
 }
