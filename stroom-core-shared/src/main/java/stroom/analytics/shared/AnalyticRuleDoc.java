@@ -67,7 +67,9 @@ public class AnalyticRuleDoc extends AbstractAnalyticRuleDoc {
                            @JsonProperty("errorFeed") final DocRef errorFeed,
                            @JsonProperty("rememberNotifications") final boolean rememberNotifications,
                            @JsonProperty("suppressDuplicateNotifications") final boolean suppressDuplicateNotifications,
-                           @JsonProperty("duplicateNotificationConfig") final DuplicateNotificationConfig duplicateNotificationConfig) {
+                           @JsonProperty("duplicateNotificationConfig") final DuplicateNotificationConfig duplicateNotificationConfig,
+                           @JsonProperty("level") final String level,
+                           @JsonProperty("status") final String status) {
         super(TYPE, uuid,
                 name,
                 version,
@@ -88,7 +90,9 @@ public class AnalyticRuleDoc extends AbstractAnalyticRuleDoc {
                 errorFeed,
                 rememberNotifications,
                 suppressDuplicateNotifications,
-                duplicateNotificationConfig);
+                duplicateNotificationConfig,
+                level,
+                status);
     }
 
     /**
@@ -143,7 +147,9 @@ public class AnalyticRuleDoc extends AbstractAnalyticRuleDoc {
                     errorFeed,
                     false,
                     false,
-                    duplicateNotificationConfig);
+                    duplicateNotificationConfig,
+                    level,
+                    status);
         }
     }
 }
