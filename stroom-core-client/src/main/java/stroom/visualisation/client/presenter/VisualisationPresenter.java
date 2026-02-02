@@ -50,7 +50,7 @@ public class VisualisationPresenter extends DocumentEditTabPresenter<LinkTabPane
         super(eventBus, view);
 
         addTab(SETTINGS, new DocumentEditTabProvider<>(settingsPresenterProvider::get));
-        addTab(ASSETS, new VisualisationAssetsProvider<VisualisationDoc>(eventBus, assetsPresenterProvider) {
+        addTab(ASSETS, new VisualisationAssetsProvider<>(eventBus, assetsPresenterProvider) {
             @Override
             public void onRead(final VisualisationAssetsPresenter presenter,
                                final DocRef docRef,
@@ -65,7 +65,7 @@ public class VisualisationPresenter extends DocumentEditTabPresenter<LinkTabPane
                 return presenter.onWrite(document);
             }
         });
-        addTab(DOCUMENTATION, new MarkdownTabProvider<VisualisationDoc>(eventBus, markdownEditPresenterProvider) {
+        addTab(DOCUMENTATION, new MarkdownTabProvider<>(eventBus, markdownEditPresenterProvider) {
             @Override
             public void onRead(final MarkdownEditPresenter presenter,
                                final DocRef docRef,

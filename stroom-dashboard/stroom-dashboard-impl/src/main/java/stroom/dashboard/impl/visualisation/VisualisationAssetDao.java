@@ -1,9 +1,11 @@
 package stroom.dashboard.impl.visualisation;
 
+import stroom.importexport.api.ImportExportAsset;
 import stroom.visualisation.shared.VisualisationAssets;
 
 import java.io.IOException;
 import java.time.Instant;
+import java.util.List;
 
 /**
  * Provides a way to store visualisation assets within the database.
@@ -61,13 +63,12 @@ public interface VisualisationAssetDao {
     void revertDraftFromLive(String userUuid, String documentId) throws IOException;
 
     /**
-     * TODO
-     * Returns all the live assets for a given docRef.
+     * Returns live assets for serialising the assets for a document ID.
      * @param ownerId The document that owns the assets
-     * @return Assets to display in UI.
+     * @return ImportExportAssets holding the relevant Import/Export data.
      * @throws IOException If something goes wrong.
      */
-    //VisualisationAssets fetchLiveAssets(String ownerId) throws IOException;
+    List<ImportExportAsset> getExportAssets(String ownerId) throws IOException;
 
     /**
      * Gets the data for a given asset.

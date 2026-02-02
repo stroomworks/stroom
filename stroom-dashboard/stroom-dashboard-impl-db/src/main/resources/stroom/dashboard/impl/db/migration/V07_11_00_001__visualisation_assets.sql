@@ -22,7 +22,7 @@ SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0;
 -- Note max key length in MySQL InnoDB is 3072 bytes or 768 utf8 characters.
 -- Thus the path is limited to 512 characters.
 --
-CREATE TABLE IF NOT EXISTS (
+CREATE TABLE IF NOT EXISTS visualisation_assets (
   modified              bigint NOT NULL,
   owner_doc_uuid        varchar(255) NOT NULL,
   asset_uuid            varchar(255) NOT NULL,

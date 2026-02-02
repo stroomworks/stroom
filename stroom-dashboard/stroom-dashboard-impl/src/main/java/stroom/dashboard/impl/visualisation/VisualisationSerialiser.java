@@ -76,7 +76,6 @@ public class VisualisationSerialiser implements DocumentSerialiser2<Visualisatio
         // Get all the assets to be exported to sub-paths
         final Collection<ImportExportAsset> assets = visualisationAssetService.getAssetsForExport(document.getUuid());
         for (final ImportExportAsset asset : assets) {
-            LOGGER.info("Exporting asset {}", asset);
             importExportDocument.addPathAsset(asset);
         }
         return importExportDocument;

@@ -2777,16 +2777,16 @@ button.main-menu svg {
     padding-left: 2px;
     padding-right: 1px;
 }
-.visualisation-asset-type-default .gwt-TreeItem::before {
-    content: url('/ui/background-images/file.png') / "File";
+.visualisation-asset-type-folder .gwt-TreeItem::before {
+    content: url('/ui/background-images/folder.png') / "Folder";
     width: 16px;
     height: 16px;
     display: inline-block;
     vertical-align: middle;
     margin-right: 8px;
 }
-.visualisation-asset-type-folder .gwt-TreeItem::before {
-    content: url('/ui/background-images/folder.png') / "Folder";
+.visualisation-asset-type-default .gwt-TreeItem::before {
+    content: url('/ui/background-images/file.png') / "File";
     width: 16px;
     height: 16px;
     display: inline-block;

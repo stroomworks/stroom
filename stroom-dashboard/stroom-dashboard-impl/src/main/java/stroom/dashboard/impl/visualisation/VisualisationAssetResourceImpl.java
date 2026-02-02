@@ -10,6 +10,7 @@ import jakarta.inject.Inject;
 import jakarta.inject.Provider;
 
 import java.io.IOException;
+import java.util.Objects;
 
 import static stroom.event.logging.rs.api.AutoLogged.OperationType.UNLOGGED;
 
@@ -20,15 +21,11 @@ import static stroom.event.logging.rs.api.AutoLogged.OperationType.UNLOGGED;
 @AutoLogged(UNLOGGED)
 public class VisualisationAssetResourceImpl implements VisualisationAssetResource {
 
+    private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(VisualisationAssetResourceImpl.class);
+
     /** Service that backs the resource */
     private final Provider<VisualisationAssetService> serviceProvider;
 
-    /** Logger */
-    private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(VisualisationAssetResourceImpl.class);
-
-    /**
-     * Injected constructor.
-     */
     @SuppressWarnings("unused")
     @Inject
     VisualisationAssetResourceImpl(final Provider<VisualisationAssetService> serviceProvider) {
@@ -42,6 +39,9 @@ public class VisualisationAssetResourceImpl implements VisualisationAssetResourc
             return serviceProvider.get().fetchDraftAssets(ownerId);
         } catch (final IOException e) {
             throw new RuntimeException(e);
+        } catch (final Throwable t) {
+            LOGGER.error("Error in fetchDraftAssets: {}", t.getMessage(), t);
+            throw t;
         }
     }
 
@@ -58,9 +58,14 @@ public class VisualisationAssetResourceImpl implements VisualisationAssetResourc
                                      final VisualisationAssets assets)
             throws RuntimeException {
         try {
+            Objects.requireNonNull(ownerId);
+            Objects.requireNonNull(assets);
             serviceProvider.get().updateDraftAssets(ownerId, assets);
         } catch (final IOException e) {
             throw new RuntimeException(e);
+        } catch (final Throwable t) {
+            LOGGER.error("Error in updateDraftAssets: {}", t.getMessage(), t);
+            throw t;
         }
         return Boolean.TRUE;
     }
@@ -71,6 +76,9 @@ public class VisualisationAssetResourceImpl implements VisualisationAssetResourc
             serviceProvider.get().saveDraftToLive(ownerDocId);
         } catch (final IOException e) {
             throw new RuntimeException(e);
+        } catch (final Throwable t) {
+            LOGGER.error("Error in saveDraftToLive: {}", t.getMessage(), t);
+            throw t;
         }
         return Boolean.TRUE;
     }
@@ -81,6 +89,9 @@ public class VisualisationAssetResourceImpl implements VisualisationAssetResourc
             serviceProvider.get().revertDraftFromLive(ownerDocId);
         } catch (final IOException e) {
             throw new RuntimeException(e);
+        } catch (final Throwable t) {
+            LOGGER.error("Error in revertDraftFromLive: {}", t.getMessage(), t);
+            throw t;
         }
         return Boolean.TRUE;
     }

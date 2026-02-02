@@ -38,19 +38,6 @@ import java.util.Set;
 @Singleton
 public class VisualisationAssetServlet extends HttpServlet implements IsServlet {
 
-    /** The service that provides the backend to this servlet */
-    private final VisualisationAssetService service;
-
-    /** File extension to mimetype */
-    private final Map<String, String> mimetypes;
-
-    /** Default mimetype if nothing else matches */
-    private final String defaultMimetype;
-
-    /** Where we're caching assets */
-    private final Path assetCacheDir;
-
-    /** Logger */
     private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(VisualisationAssetServlet.class);
 
     /** The URL path to this servlet */
@@ -68,9 +55,18 @@ public class VisualisationAssetServlet extends HttpServlet implements IsServlet 
     /** Name of metadata directory within each document's cache */
     private static final String METADATA_DIR = ".meta";
 
-    /**
-     * Injected constructor.
-     */
+    /** The service that provides the backend to this servlet */
+    private final VisualisationAssetService service;
+
+    /** File extension to mimetype */
+    private final Map<String, String> mimetypes;
+
+    /** Default mimetype if nothing else matches */
+    private final String defaultMimetype;
+
+    /** Where we're caching assets */
+    private final Path assetCacheDir;
+
     @Inject
     public VisualisationAssetServlet(final VisualisationAssetService service,
                                      final Provider<VisualisationAssetConfig> configProvider,
@@ -82,7 +78,9 @@ public class VisualisationAssetServlet extends HttpServlet implements IsServlet 
         this.assetCacheDir = pathCreator.toAppPath(config.getAssetCacheDir());
 
         try {
-            Files.createDirectory(this.assetCacheDir);
+            if (!this.assetCacheDir.toFile().exists()) {
+                Files.createDirectory(this.assetCacheDir);
+            }
         } catch (final IOException e) {
             LOGGER.error("Error creating asset cache directory: {}", e.getMessage(), e);
         }
@@ -108,6 +106,9 @@ public class VisualisationAssetServlet extends HttpServlet implements IsServlet 
         return getCachePathForDoc(docId).resolve(makePathSafe(assetPath));
     }
 
+    /**
+     * Returns the path within the asset cache to the metadata (timestamp) about the file.
+     */
     private Path getCachePathForMetadata(final String docId,
                                          final String assetPath) {
         return getCachePathForDoc(docId).resolve(METADATA_DIR).resolve(makePathSafe(assetPath));
@@ -117,7 +118,7 @@ public class VisualisationAssetServlet extends HttpServlet implements IsServlet 
      * Performs a safe write to file, so if the system crashes half-way through writing
      * we don't have a corrupted version of the file.
      * @param filePath The path to the file we want to create.
-     * @param data The data to write to the file
+     * @param data The data to write to the file. Might be null.
      * @throws IOException If something goes wrong.
      */
     private void saveDataSafely(final Path filePath, final byte[] data) throws IOException {
@@ -127,7 +128,9 @@ public class VisualisationAssetServlet extends HttpServlet implements IsServlet 
                 ASSET_CACHE_TEMP_PREFIX,
                 ASSET_CACHE_TEMP_SUFFIX);
 
-        Files.write(tempFilePath, data);
+        if (data != null) {
+            Files.write(tempFilePath, data);
+        }
 
         Files.move(tempFilePath,
                 filePath,

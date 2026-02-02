@@ -236,21 +236,14 @@ public class VisualisationAssetService {
      */
     Collection<ImportExportAsset> getAssetsForExport(final String documentId)
             throws IOException, PermissionException {
-
         LOGGER.info("Returning assets for export for {}", documentId);
-        /*
-        TODO
-
-        final List<ImportExportAsset> importExportAssets = new ArrayList<>();
-        final VisualisationAssets assets = this.fetchLiveAssets(documentId);
-        for (final VisualisationAsset asset : assets.getAssets()) {
-            final byte[] data = this.getLiveData(documentId, asset.getPath());
-            importExportAssets.add(new ByteArrayImportExportAsset(asset.getPath(), data));
+        final DocRef docRef = new DocRef(VisualisationDoc.TYPE, documentId);
+        if (securityContext.hasDocumentPermission(docRef, DocumentPermission.VIEW)) {
+            return dao.getExportAssets(documentId);
+        } else {
+            throw new PermissionException(securityContext.getUserRef(),
+                    "You do not have permission to view this asset");
         }
-        return importExportAssets;
-
-         */
-        return null; // TODO
     }
 
 }

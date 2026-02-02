@@ -2,6 +2,8 @@ package stroom.dashboard.impl.db;
 
 import stroom.dashboard.impl.visualisation.VisualisationAssetDao;
 import stroom.db.util.JooqUtil;
+import stroom.importexport.api.ByteArrayImportExportAsset;
+import stroom.importexport.api.ImportExportAsset;
 import stroom.util.logging.LambdaLogger;
 import stroom.util.logging.LambdaLoggerFactory;
 import stroom.visualisation.shared.VisualisationAsset;
@@ -15,6 +17,7 @@ import org.jooq.Record2;
 import org.jooq.Record3;
 import org.jooq.Result;
 import org.jooq.exception.DataAccessException;
+import org.jooq.impl.DSL;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -41,13 +44,41 @@ public class VisualisationAssetDaoImpl implements VisualisationAssetDao {
     /** Byte value for false */
     private static final byte BYTE_FALSE = 0;
 
-    /**
-     * Injected constructor.
-     */
     @SuppressWarnings("unused")
     @Inject
     VisualisationAssetDaoImpl(final VisualisationAssetDbConnProvider connProvider) {
         this.connProvider = connProvider;
+    }
+
+    /**
+     * Utility method to convert a Result set into a list of assets.
+     * @param result The result from Jooq
+     * @return A list of assets;
+     */
+    private List<VisualisationAsset> resultToAssets(final Result<Record3<String, String, Byte>> result) {
+        final List<VisualisationAsset> assets = new ArrayList<>(result.size());
+        for (final Record3<String, String, Byte> record : result) {
+            final VisualisationAsset asset = new VisualisationAsset(record.value1(),
+                    record.value2(),
+                    record.value3() == BYTE_TRUE);
+            assets.add(asset);
+            LOGGER.info("    Fetching asset: {}", asset);
+        }
+
+        return assets;
+    }
+
+    /**
+     * Utility method to convert a Result into a list of ImportExportAssets.
+     */
+    private List<ImportExportAsset> resultToImportExportAssets(final Result<Record2<String, byte[]>> result) {
+        final List<ImportExportAsset> assets = new ArrayList<>(result.size());
+        for (final Record2<String, byte[]> record: result) {
+            final ImportExportAsset asset = new ByteArrayImportExportAsset(record.value1(), record.value2());
+            LOGGER.info("result -> assets: {}", asset);
+            assets.add(asset);
+        }
+        return assets;
     }
 
     @Override
@@ -57,6 +88,8 @@ public class VisualisationAssetDaoImpl implements VisualisationAssetDao {
         try {
             // Do everything in one transaction
             final List<VisualisationAsset> assets = new ArrayList<>();
+            final boolean[] dirty = new boolean[1];
+            dirty[0] = true;
 
             JooqUtil.transaction(connProvider, txnContext -> {
                 Result<Record3<String, String, Byte>> result = txnContext
@@ -70,6 +103,8 @@ public class VisualisationAssetDaoImpl implements VisualisationAssetDao {
 
                 if (result.isEmpty()) {
                     // No results so try looking in the live table instead
+                    LOGGER.info("No draft assets - getting from live table");
+                    dirty[0] = false;
                     result = txnContext
                             .select(Tables.VISUALISATION_ASSETS.ASSET_UUID,
                                     Tables.VISUALISATION_ASSETS.PATH,
@@ -79,16 +114,10 @@ public class VisualisationAssetDaoImpl implements VisualisationAssetDao {
                             .fetch();
                 }
 
-                for (final Record3<String, String, Byte> record : result) {
-                    final VisualisationAsset asset = new VisualisationAsset(record.value1(),
-                            record.value2(),
-                            record.value3() == BYTE_TRUE);
-                    assets.add(asset);
-                    LOGGER.info("    Fetching asset: {}", asset);
-                }
+                assets.addAll(resultToAssets(result));
             });
-
-            return new VisualisationAssets(ownerDocId, null, assets);
+            LOGGER.info("Dirty is {}", dirty[0]);
+            return new VisualisationAssets(ownerDocId, dirty[0], null, assets);
         } catch (final DataAccessException e) {
             LOGGER.error("Error fetching draft visualisation assets for user {}, document {}: {}",
                     userUuid, ownerDocId, e.getMessage(), e);
@@ -102,7 +131,7 @@ public class VisualisationAssetDaoImpl implements VisualisationAssetDao {
                                  final String ownerDocId,
                                  final VisualisationAssets visAssets)
             throws IOException {
-
+        LOGGER.info("storeDraftAssets(): {}", visAssets);
         try {
             // Do everything in one transaction
             JooqUtil.transaction(connProvider, txnContext -> {
@@ -190,9 +219,6 @@ public class VisualisationAssetDaoImpl implements VisualisationAssetDao {
                                final byte[] data) throws IOException {
         LOGGER.info("Storing data for asset {}", assetId);
         try {
-            // Timestamp
-            final long timestamp = Instant.now().toEpochMilli();
-
             // Always called after storeAssets(), so the row will already exist
             JooqUtil.context(connProvider, context -> context
                     .update(Tables.VISUALISATION_ASSETS_DRAFT)
@@ -208,44 +234,57 @@ public class VisualisationAssetDaoImpl implements VisualisationAssetDao {
 
     @Override
     public void saveDraftToLive(final String userUuid, final String documentId) throws IOException {
+        LOGGER.info("saveDraftToLive({}, {})", userUuid, documentId);
+
         // Timestamp
         final long timestamp = Instant.now().toEpochMilli();
 
-        // TODO This could probably be more efficient to avoid copying lots of data when it hasn't changed
+        // This could probably be more efficient to avoid copying lots of data when it hasn't changed
+        // However this version works, and it all happens inside the DB, so shouldn't be too bad.
 
         try {
             // Do everything in one transaction
             JooqUtil.transaction(connProvider, txnContext -> {
-                // Delete all existing live content for the owning document ID
-                txnContext
-                        .deleteFrom(Tables.VISUALISATION_ASSETS)
-                        .where(Tables.VISUALISATION_ASSETS.OWNER_DOC_UUID.eq(documentId))
-                        .execute();
+                    LOGGER.info("Deleting existing live assets");
+                    // Delete all existing live content for the owning document ID
+                    int recordCount = txnContext
+                            .deleteFrom(Tables.VISUALISATION_ASSETS)
+                            .where(Tables.VISUALISATION_ASSETS.OWNER_DOC_UUID.eq(documentId))
+                            .execute();
+                    LOGGER.info("{} records deleted in live", recordCount);
 
-                // Copy all relevant data from the user draft table into the live table
-                txnContext
-                        .insertInto(Tables.VISUALISATION_ASSETS,
-                                Tables.VISUALISATION_ASSETS.OWNER_DOC_UUID,
-                                Tables.VISUALISATION_ASSETS.ASSET_UUID,
-                                Tables.VISUALISATION_ASSETS.PATH,
-                                Tables.VISUALISATION_ASSETS.PATH_HASH,
-                                Tables.VISUALISATION_ASSETS.IS_FOLDER,
-                                Tables.VISUALISATION_ASSETS.DATA)
-                        .select(txnContext.select(Tables.VISUALISATION_ASSETS_DRAFT.OWNER_DOC_UUID,
-                                        Tables.VISUALISATION_ASSETS_DRAFT.ASSET_UUID,
-                                        Tables.VISUALISATION_ASSETS_DRAFT.PATH,
-                                        Tables.VISUALISATION_ASSETS_DRAFT.PATH_HASH,
-                                        Tables.VISUALISATION_ASSETS_DRAFT.IS_FOLDER,
-                                        Tables.VISUALISATION_ASSETS_DRAFT.DATA)
-                                .where(Tables.VISUALISATION_ASSETS_DRAFT.DRAFT_USER_UUID.eq(userUuid)
-                                        .and(Tables.VISUALISATION_ASSETS_DRAFT.OWNER_DOC_UUID.eq(documentId))))
-                        .execute();
+                    LOGGER.info("Copying data into Live");
+                    // Copy all relevant data from the user draft table into the live table
+                    recordCount = txnContext
+                            .insertInto(Tables.VISUALISATION_ASSETS,
+                                    Tables.VISUALISATION_ASSETS.MODIFIED,
+                                    Tables.VISUALISATION_ASSETS.OWNER_DOC_UUID,
+                                    Tables.VISUALISATION_ASSETS.ASSET_UUID,
+                                    Tables.VISUALISATION_ASSETS.PATH,
+                                    Tables.VISUALISATION_ASSETS.PATH_HASH,
+                                    Tables.VISUALISATION_ASSETS.IS_FOLDER,
+                                    Tables.VISUALISATION_ASSETS.DATA)
+                            .select(txnContext.select(
+                                            DSL.val(timestamp),
+                                            Tables.VISUALISATION_ASSETS_DRAFT.OWNER_DOC_UUID,
+                                            Tables.VISUALISATION_ASSETS_DRAFT.ASSET_UUID,
+                                            Tables.VISUALISATION_ASSETS_DRAFT.PATH,
+                                            Tables.VISUALISATION_ASSETS_DRAFT.PATH_HASH,
+                                            Tables.VISUALISATION_ASSETS_DRAFT.IS_FOLDER,
+                                            Tables.VISUALISATION_ASSETS_DRAFT.DATA)
+                                    .from(Tables.VISUALISATION_ASSETS_DRAFT)
+                                    .where(Tables.VISUALISATION_ASSETS_DRAFT.DRAFT_USER_UUID.eq(userUuid)
+                                            .and(Tables.VISUALISATION_ASSETS_DRAFT.OWNER_DOC_UUID.eq(documentId))))
+                            .execute();
+                    LOGGER.info("Copied {} records from draft into Live", recordCount);
 
-                // Set the timestamp on the live table
-                txnContext.update(Tables.VISUALISATION_ASSETS)
-                        .set(Tables.VISUALISATION_ASSETS.MODIFIED, timestamp)
-                        .where(Tables.VISUALISATION_ASSETS.OWNER_DOC_UUID.eq(documentId))
-                        .execute();
+                    // Delete everything in the draft table so next time we'll get clean live data
+                    recordCount = txnContext
+                            .deleteFrom(Tables.VISUALISATION_ASSETS_DRAFT)
+                            .where(Tables.VISUALISATION_ASSETS_DRAFT.DRAFT_USER_UUID.eq(userUuid)
+                                    .and(Tables.VISUALISATION_ASSETS_DRAFT.OWNER_DOC_UUID.eq(documentId)))
+                            .execute();
+                LOGGER.info("Deleted {} records in the draft table", recordCount);
             });
         } catch (final DataAccessException e) {
             LOGGER.error("Error saving draft assets to live for user {}, doc {}: {}",
@@ -256,7 +295,7 @@ public class VisualisationAssetDaoImpl implements VisualisationAssetDao {
 
     @Override
     public void revertDraftFromLive(final String userUuid, final String documentId) throws IOException {
-        // TODO
+        LOGGER.info("revertDraftFromLive()");
         try {
             JooqUtil.context(connProvider, context -> context
                     .deleteFrom(Tables.VISUALISATION_ASSETS_DRAFT)
@@ -266,6 +305,25 @@ public class VisualisationAssetDaoImpl implements VisualisationAssetDao {
         } catch (final DataAccessException e) {
             LOGGER.error("Error reverting draft from live: {}", e.getMessage(), e);
             throw new IOException("Error reverting draft: " + e.getMessage(), e);
+        }
+    }
+
+    @Override
+    public List<ImportExportAsset> getExportAssets(final String documentId) throws IOException {
+        LOGGER.info("Getting export assets for document {}", documentId);
+        try {
+            final Result<Record2<String, byte[]>> result =
+                    JooqUtil.contextResult(connProvider, context -> context
+                    .select(Tables.VISUALISATION_ASSETS.PATH,
+                            Tables.VISUALISATION_ASSETS.DATA)
+                    .from(Tables.VISUALISATION_ASSETS)
+                    .where(Tables.VISUALISATION_ASSETS.OWNER_DOC_UUID.eq(documentId))
+                    .fetch());
+            return resultToImportExportAssets(result);
+        } catch (final DataAccessException e) {
+            LOGGER.error("Error getting export assets for document '{}': {}",
+                    documentId, e.getMessage(), e);
+            throw new IOException("Error getting export assets for document: " + e.getMessage(), e);
         }
     }
 
@@ -296,6 +354,7 @@ public class VisualisationAssetDaoImpl implements VisualisationAssetDao {
 
     @Override
     public Instant getLiveModifiedTimestamp(final String documentId, final String assetPath) throws IOException {
+        LOGGER.info("getLiveModifiedTimestamp");
         try {
             final byte[] assetPathHash = Hashing.sha256().hashString(assetPath, StandardCharsets.UTF_8).asBytes();
             final Result<Record1<Long>> result = JooqUtil.contextResult(connProvider, context -> context

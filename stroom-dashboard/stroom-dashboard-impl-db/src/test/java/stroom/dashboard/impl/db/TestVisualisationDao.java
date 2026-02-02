@@ -33,17 +33,18 @@ public class TestVisualisationDao {
 
     @Test
     public void testDao() throws IOException {
-        final String ownerUuid = "123456";
+        final String ownerDocUuid = "123456";
+        final String userUuid = "abcdef";
 
-        final VisualisationAssets assets = assetDao.fetchAssets(ownerUuid);
+        final VisualisationAssets assets = assetDao.fetchDraftAssets(ownerDocUuid, userUuid);
         assertThat(assets.getAssets().size()).isEqualTo(0);
 
         final VisualisationAsset assetOne =
                 new VisualisationAsset("assetOne", "/assetOne/one.html", false);
         assets.addAsset(assetOne);
-        assetDao.storeAssets(ownerUuid, assets);
+        assetDao.storeDraftAssets(ownerDocUuid, userUuid, assets);
 
-        final VisualisationAssets updatedAssets = assetDao.fetchAssets(ownerUuid);
+        final VisualisationAssets updatedAssets = assetDao.fetchDraftAssets(ownerDocUuid, userUuid);
         assertThat(updatedAssets.getAssets().size()).isEqualTo(1);
         assertThat(updatedAssets.getAssets().getFirst().getPath()).isEqualTo("/assetOne/one.html");
     }

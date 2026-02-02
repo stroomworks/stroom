@@ -26,10 +26,10 @@ public interface VisualisationAssetResource extends RestResource, DirectRestServ
      * @return Assets associated with the doc.
      */
     @GET
-    @Path("/fetchAssets/{ownerDocId}")
+    @Path("/fetchDraftAssets/{ownerDocId}")
     @Operation(
             summary = "Fetch the assets belonging to a visualisation doc by the doc's UUID",
-            operationId = "fetchVisualisationAssets")
+            operationId = "fetchDraftAssets")
     VisualisationAssets fetchDraftAssets(@PathParam("ownerDocId") String ownerDocId)
             throws RuntimeException;
 
@@ -40,10 +40,10 @@ public interface VisualisationAssetResource extends RestResource, DirectRestServ
      * @return Whether it worked.
      */
     @PUT
-    @Path("/updateAssets/{ownerId}")
+    @Path("/updateDraftAssets/{ownerDocId}")
     @Operation(
             summary = "Update all asset information and store uploaded files",
-            operationId = "updateAssets")
+            operationId = "updateDraftAssets")
     Boolean updateDraftAssets(@PathParam("ownerDocId") String ownerDocId,
                               @Parameter(description = "assets", required = true) VisualisationAssets assets)
             throws RuntimeException;

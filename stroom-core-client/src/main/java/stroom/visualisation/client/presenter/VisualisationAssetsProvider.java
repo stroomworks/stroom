@@ -24,7 +24,7 @@ public abstract class VisualisationAssetsProvider<D> extends AbstractTabProvider
     @Override
     protected final VisualisationAssetsPresenter createPresenter() {
         final VisualisationAssetsPresenter assetsPresenter = presenterProvider.get();
-        registerHandler(assetsPresenter.addDirtyHandler(event -> fireDirtyEvent(true)));
+        registerHandler(assetsPresenter.addDirtyHandler(event -> fireDirtyEvent(assetsPresenter.isDirty())));
         return assetsPresenter;
     }
 }
