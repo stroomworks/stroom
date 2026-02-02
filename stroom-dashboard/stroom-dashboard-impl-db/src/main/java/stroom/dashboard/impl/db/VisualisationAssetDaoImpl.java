@@ -23,9 +23,11 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 
 /**
  * DB implementation of the DAO.
@@ -309,7 +311,7 @@ public class VisualisationAssetDaoImpl implements VisualisationAssetDao {
     }
 
     @Override
-    public List<ImportExportAsset> getExportAssets(final String documentId) throws IOException {
+    public List<ImportExportAsset> getAssetsForExport(final String documentId) throws IOException {
         LOGGER.info("Getting export assets for document {}", documentId);
         try {
             final Result<Record2<String, byte[]>> result =
@@ -324,6 +326,61 @@ public class VisualisationAssetDaoImpl implements VisualisationAssetDao {
             LOGGER.error("Error getting export assets for document '{}': {}",
                     documentId, e.getMessage(), e);
             throw new IOException("Error getting export assets for document: " + e.getMessage(), e);
+        }
+    }
+
+    @Override
+    public void setAssetsFromImport(final String documentId, final Collection<ImportExportAsset> pathAssets)
+            throws IOException {
+        LOGGER.info("Setting import assets for document {}", documentId);
+
+        final long timestamp = Instant.now().toEpochMilli();
+
+        try {
+            JooqUtil.transaction(connProvider, txnContext -> {
+                try {
+                    // Delete all existing live content for the owning document ID
+                    final int recordCount = txnContext
+                            .deleteFrom(Tables.VISUALISATION_ASSETS)
+                            .where(Tables.VISUALISATION_ASSETS.OWNER_DOC_UUID.eq(documentId))
+                            .execute();
+                    LOGGER.info("{} records deleted in live before import", recordCount);
+
+                    for (final ImportExportAsset asset : pathAssets) {
+                        final String assetUuid = UUID.randomUUID().toString();
+                        final String path = asset.getKey();
+                        final byte[] pathHash = Hashing.sha256().hashString(path, StandardCharsets.UTF_8).asBytes();
+                        final byte[] data = asset.getInputData();
+                        final boolean isFolder = data == null;
+
+                        txnContext
+                                .insertInto(Tables.VISUALISATION_ASSETS,
+                                        Tables.VISUALISATION_ASSETS.MODIFIED,
+                                        Tables.VISUALISATION_ASSETS.OWNER_DOC_UUID,
+                                        Tables.VISUALISATION_ASSETS.ASSET_UUID,
+                                        Tables.VISUALISATION_ASSETS.PATH,
+                                        Tables.VISUALISATION_ASSETS.PATH_HASH,
+                                        Tables.VISUALISATION_ASSETS.DATA,
+                                        Tables.VISUALISATION_ASSETS.IS_FOLDER)
+                                .values(timestamp,
+                                        documentId,
+                                        assetUuid,
+                                        path,
+                                        pathHash,
+                                        data,
+                                        isFolder
+                                                ? BYTE_TRUE
+                                                : BYTE_FALSE)
+                                .execute();
+                    }
+                } catch (final IOException e) {
+                    throw new DataAccessException("Error reading data from asset: " + e.getMessage(), e);
+                }
+            });
+        } catch (final DataAccessException e) {
+            LOGGER.error("Error setting import assets for document '{}': {}",
+                    documentId, e.getMessage(), e);
+            throw new IOException("Error setting import assets for document: " + e.getMessage(), e);
         }
     }
 

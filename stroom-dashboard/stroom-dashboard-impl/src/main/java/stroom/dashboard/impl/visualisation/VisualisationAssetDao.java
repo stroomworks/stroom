@@ -5,6 +5,7 @@ import stroom.visualisation.shared.VisualisationAssets;
 
 import java.io.IOException;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 
 /**
@@ -68,7 +69,15 @@ public interface VisualisationAssetDao {
      * @return ImportExportAssets holding the relevant Import/Export data.
      * @throws IOException If something goes wrong.
      */
-    List<ImportExportAsset> getExportAssets(String ownerId) throws IOException;
+    List<ImportExportAsset> getAssetsForExport(String ownerId) throws IOException;
+
+    /**
+     * Imports live assets during import. Called from VisualisationStoreImpl.
+     * @param ownerId The ID of the document that owns these assets.
+     * @param pathAssets The assets that are stored under paths during import/export.
+     * @throws IOException If something goes wrong.
+     */
+    void setAssetsFromImport(String ownerId, Collection<ImportExportAsset> pathAssets) throws IOException;
 
     /**
      * Gets the data for a given asset.

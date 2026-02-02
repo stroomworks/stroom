@@ -229,20 +229,39 @@ public class VisualisationAssetService {
 
     /**
      * Returns the assets in a form suitable for exporting.
-     * @param documentId The ID of the owning document
+     * @param docRef The ref of the owning document
      * @return Assets to export. Never null.
      * @throws IOException If something goes wrong
      * @throws PermissionException If the user doesn't have permission
      */
-    Collection<ImportExportAsset> getAssetsForExport(final String documentId)
+    Collection<ImportExportAsset> getAssetsForExport(final DocRef docRef)
             throws IOException, PermissionException {
-        LOGGER.info("Returning assets for export for {}", documentId);
-        final DocRef docRef = new DocRef(VisualisationDoc.TYPE, documentId);
+        LOGGER.info("Returning assets for export for {}", docRef);
         if (securityContext.hasDocumentPermission(docRef, DocumentPermission.VIEW)) {
-            return dao.getExportAssets(documentId);
+            return dao.getAssetsForExport(docRef.getUuid());
         } else {
             throw new PermissionException(securityContext.getUserRef(),
                     "You do not have permission to view this asset");
+        }
+    }
+
+    /**
+     * Sets assets for this visualisation during import.
+     * @param docRef The document that owns these assets.
+     * @param pathAssets The assets associated with the doc.
+     * @throws IOException If something goes wrong.
+     * @throws PermissionException If the user doesn't have EDIT permission.
+     */
+    void setAssetsFromImport(final DocRef docRef,
+                             final Collection<ImportExportAsset> pathAssets)
+        throws IOException, PermissionException {
+
+        LOGGER.info("Setting assets from import for {}", docRef);
+        if (securityContext.hasDocumentPermission(docRef, DocumentPermission.EDIT)) {
+            dao.setAssetsFromImport(docRef.getUuid(), pathAssets);
+        } else {
+            throw new PermissionException(securityContext.getUserRef(),
+                    "You do not have permission to import these assets");
         }
     }
 
