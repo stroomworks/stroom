@@ -187,6 +187,8 @@ public class VisualisationAssetsPresenter
         final String path = VisualisationAssetsPresenterUtils.getNewItemPath(parentFolderItem, fileName);
         Console.info("Adding uploaded file at " + path);
         // TODO Allow mimetype to be variable. null selects auto-mimetype.
+
+        VisualisationAssetsPresenterUtils.markOpenClosedStateOpen(parentFolderItem, treeItemPathToOpenState);
         doUpdateNewUploadedFile(path, resourceKey, null);
     }
 
@@ -328,6 +330,8 @@ public class VisualisationAssetsPresenter
                                         final String itemName = getNonClashingLabel(parentItem,
                                                 addItemDialog.getView().getName(),
                                                 null);
+                                        VisualisationAssetsPresenterUtils.
+                                                markOpenClosedStateOpen(parentItem, treeItemPathToOpenState);
                                         final String newItemPath =
                                                 VisualisationAssetsPresenterUtils.getNewItemPath(parentItem, itemName);
                                         final VisualisationAssetUpdateNewFile update;
@@ -467,8 +471,6 @@ public class VisualisationAssetsPresenter
      * Gets rid of draft changes and goes back to the live version of the assets.
      */
     private void onRevertButtonClick() {
-        VisualisationAssetsPresenterUtils.storeOpenClosedState(tree, treeItemPathToOpenState);
-
         restFactory.create(VISUALISATION_ASSET_RESOURCE)
                 .method(r -> r.revertDraftFromLive(document.getUuid()))
                 .onSuccess(result -> {
@@ -552,8 +554,6 @@ public class VisualisationAssetsPresenter
 
         // Run this section after the main document has been saved to the server
         Scheduler.get().scheduleFinally(() -> {
-
-            VisualisationAssetsPresenterUtils.storeOpenClosedState(tree, treeItemPathToOpenState);
 
             // Transfer draft saves to live
             restFactory.create(VISUALISATION_ASSET_RESOURCE)
@@ -791,6 +791,8 @@ public class VisualisationAssetsPresenter
     private void fetchDraftAssets(final VisualisationDoc document) {
         Console.info("fetchDraftAssets() start");
         final String ownerId = document.getUuid();
+        VisualisationAssetsPresenterUtils.storeOpenClosedState(tree, treeItemPathToOpenState);
+
         restFactory.create(VISUALISATION_ASSET_RESOURCE)
                 .method(r -> r.fetchDraftAssets(ownerId))
                 .onSuccess(assets -> {

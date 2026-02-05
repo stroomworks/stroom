@@ -114,8 +114,6 @@ public class VisualisationAssetsPresenterUtils {
      */
     static void storeOpenClosedState(final Tree tree, final Set<String> treeItemPathToOpenState) {
         Console.info("Storing open/closed state");
-        treeItemPathToOpenState.clear();
-
         for (int i = 0; i < tree.getItemCount(); ++i) {
             final VisualisationAssetTreeItem treeItem = (VisualisationAssetTreeItem) tree.getItem(i);
             recurseStoreOpenClosedState(treeItem, treeItemPathToOpenState);
@@ -146,6 +144,7 @@ public class VisualisationAssetsPresenterUtils {
             final VisualisationAssetTreeItem treeItem = (VisualisationAssetTreeItem) tree.getItem(i);
             recurseRestoreOpenClosedState(treeItem, treeItemPathToOpenState);
         }
+        treeItemPathToOpenState.clear();
     }
 
     /**
@@ -162,6 +161,15 @@ public class VisualisationAssetsPresenterUtils {
                 recurseRestoreOpenClosedState(child, treeItemPathToOpenState);
             }
         }
+    }
+
+    /**
+     * Marks the tree item as open, so it will be opened on the next load.
+     * @param treeItem The tree item that needs to be open
+     * @param treeItemPathToOpenState Where to store the state
+     */
+    public static void markOpenClosedStateOpen(final TreeItem treeItem, final Set<String> treeItemPathToOpenState) {
+        treeItemPathToOpenState.add(getItemPath(treeItem));
     }
 
     /**
