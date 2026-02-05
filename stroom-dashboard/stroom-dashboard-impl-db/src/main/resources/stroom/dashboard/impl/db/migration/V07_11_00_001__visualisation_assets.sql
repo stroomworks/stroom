@@ -23,6 +23,7 @@ SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0;
 -- Thus the path is limited to 512 characters.
 --
 CREATE TABLE IF NOT EXISTS visualisation_assets (
+  id                    int NOT NULL AUTO_INCREMENT PRIMARY KEY,
   modified              bigint NOT NULL,
   owner_doc_uuid        varchar(255) NOT NULL,
   asset_uuid            varchar(255) NOT NULL,
@@ -30,7 +31,7 @@ CREATE TABLE IF NOT EXISTS visualisation_assets (
   path_hash             binary(32) NOT NULL,
   is_folder             bool NOT NULL,
   data                  longblob NULL,
-  CONSTRAINT pk_visualisation_assets PRIMARY KEY (owner_doc_uuid, path_hash),
+  INDEX k_visualisation_assets (owner_doc_uuid, path_hash),
   CONSTRAINT k_asset_uuid UNIQUE KEY (asset_uuid)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
 

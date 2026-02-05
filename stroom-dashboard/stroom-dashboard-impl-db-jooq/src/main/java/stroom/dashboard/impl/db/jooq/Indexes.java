@@ -9,6 +9,7 @@ import org.jooq.OrderField;
 import org.jooq.impl.DSL;
 import org.jooq.impl.Internal;
 
+import stroom.dashboard.impl.db.jooq.tables.VisualisationAssets;
 import stroom.dashboard.impl.db.jooq.tables.VisualisationAssetsDraft;
 
 
@@ -22,5 +23,6 @@ public class Indexes {
     // INDEX definitions
     // -------------------------------------------------------------------------
 
+    public static final Index VISUALISATION_ASSETS_K_VISUALISATION_ASSETS = Internal.createIndex(DSL.name("k_visualisation_assets"), VisualisationAssets.VISUALISATION_ASSETS, new OrderField[] { VisualisationAssets.VISUALISATION_ASSETS.OWNER_DOC_UUID, VisualisationAssets.VISUALISATION_ASSETS.PATH_HASH }, false);
     public static final Index VISUALISATION_ASSETS_DRAFT_K_VISUALISATION_ASSETS_DRAFT = Internal.createIndex(DSL.name("k_visualisation_assets_draft"), VisualisationAssetsDraft.VISUALISATION_ASSETS_DRAFT, new OrderField[] { VisualisationAssetsDraft.VISUALISATION_ASSETS_DRAFT.DRAFT_USER_UUID, VisualisationAssetsDraft.VISUALISATION_ASSETS_DRAFT.OWNER_DOC_UUID, VisualisationAssetsDraft.VISUALISATION_ASSETS_DRAFT.PATH_HASH }, false);
 }

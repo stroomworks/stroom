@@ -27,7 +27,7 @@ public class Keys {
     // -------------------------------------------------------------------------
 
     public static final UniqueKey<VisualisationAssetsRecord> KEY_VISUALISATION_ASSETS_K_ASSET_UUID = Internal.createUniqueKey(VisualisationAssets.VISUALISATION_ASSETS, DSL.name("KEY_visualisation_assets_k_asset_uuid"), new TableField[] { VisualisationAssets.VISUALISATION_ASSETS.ASSET_UUID }, true);
-    public static final UniqueKey<VisualisationAssetsRecord> KEY_VISUALISATION_ASSETS_PRIMARY = Internal.createUniqueKey(VisualisationAssets.VISUALISATION_ASSETS, DSL.name("KEY_visualisation_assets_PRIMARY"), new TableField[] { VisualisationAssets.VISUALISATION_ASSETS.OWNER_DOC_UUID, VisualisationAssets.VISUALISATION_ASSETS.PATH_HASH }, true);
+    public static final UniqueKey<VisualisationAssetsRecord> KEY_VISUALISATION_ASSETS_PRIMARY = Internal.createUniqueKey(VisualisationAssets.VISUALISATION_ASSETS, DSL.name("KEY_visualisation_assets_PRIMARY"), new TableField[] { VisualisationAssets.VISUALISATION_ASSETS.ID }, true);
     public static final UniqueKey<VisualisationAssetsDraftRecord> KEY_VISUALISATION_ASSETS_DRAFT_K_ASSET_UUID = Internal.createUniqueKey(VisualisationAssetsDraft.VISUALISATION_ASSETS_DRAFT, DSL.name("KEY_visualisation_assets_draft_k_asset_uuid"), new TableField[] { VisualisationAssetsDraft.VISUALISATION_ASSETS_DRAFT.ASSET_UUID }, true);
     public static final UniqueKey<VisualisationAssetsDraftRecord> KEY_VISUALISATION_ASSETS_DRAFT_PRIMARY = Internal.createUniqueKey(VisualisationAssetsDraft.VISUALISATION_ASSETS_DRAFT, DSL.name("KEY_visualisation_assets_draft_PRIMARY"), new TableField[] { VisualisationAssetsDraft.VISUALISATION_ASSETS_DRAFT.ID }, true);
 }
