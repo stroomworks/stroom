@@ -12,6 +12,7 @@ import stroom.dashboard.impl.db.jooq.Tables;
 
 import com.google.common.hash.Hashing;
 import com.google.inject.Inject;
+import org.jooq.DSLContext;
 import org.jooq.Record1;
 import org.jooq.Record2;
 import org.jooq.Record3;
@@ -20,13 +21,14 @@ import org.jooq.exception.DataAccessException;
 import org.jooq.impl.DSL;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.sql.PreparedStatement;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -34,10 +36,6 @@ import java.util.UUID;
  */
 public class VisualisationAssetDaoImpl implements VisualisationAssetDao {
 
-    /** Boostraps connection */
-    private final VisualisationAssetDbConnProvider connProvider;
-
-    /** Logger */
     private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(VisualisationAssetDaoImpl.class);
 
     /** Byte value for true */
@@ -45,6 +43,15 @@ public class VisualisationAssetDaoImpl implements VisualisationAssetDao {
 
     /** Byte value for false */
     private static final byte BYTE_FALSE = 0;
+
+    /** Empty file content */
+    private static final byte[] EMPTY_CONTENT = new byte[0];
+
+    /** First character in a SQL SUBSTRING function */
+    private static final int START_OF_SUBSTRING = 1;
+
+    /** Bootstraps connection */
+    private final VisualisationAssetDbConnProvider connProvider;
 
     @SuppressWarnings("unused")
     @Inject
@@ -57,7 +64,8 @@ public class VisualisationAssetDaoImpl implements VisualisationAssetDao {
      * @param result The result from Jooq
      * @return A list of assets;
      */
-    private List<VisualisationAsset> resultToAssets(final Result<Record3<String, String, Byte>> result) {
+    private List<VisualisationAsset>
+    resultToAssets(final Result<Record3<String, String, Byte>> result) {
         final List<VisualisationAsset> assets = new ArrayList<>(result.size());
         for (final Record3<String, String, Byte> record : result) {
             final VisualisationAsset asset = new VisualisationAsset(record.value1(),
@@ -73,7 +81,8 @@ public class VisualisationAssetDaoImpl implements VisualisationAssetDao {
     /**
      * Utility method to convert a Result into a list of ImportExportAssets.
      */
-    private List<ImportExportAsset> resultToImportExportAssets(final Result<Record2<String, byte[]>> result) {
+    private List<ImportExportAsset>
+    resultToImportExportAssets(final Result<Record2<String, byte[]>> result) {
         final List<ImportExportAsset> assets = new ArrayList<>(result.size());
         for (final Record2<String, byte[]> record: result) {
             final ImportExportAsset asset = new ByteArrayImportExportAsset(record.value1(), record.value2());
@@ -83,9 +92,29 @@ public class VisualisationAssetDaoImpl implements VisualisationAssetDao {
         return assets;
     }
 
+    /**
+     * Process a path to ensure it has / for queries
+     */
+    private String slashPath(String in, final boolean isFolder) {
+        LOGGER.info("Adding slashes to path '{}'; is folder = {}", in, isFolder);
+        if (!in.startsWith("/")) {
+            in = "/" + in;
+        }
+
+        if (isFolder && !in.endsWith("/")) {
+            in = in + "/";
+        }
+
+        LOGGER.info("Slashed path is '{}'", in);
+        return in;
+    }
+
     @Override
     public VisualisationAssets fetchDraftAssets(final String userUuid,
                                                 final String ownerDocId) throws IOException {
+        Objects.requireNonNull(userUuid);
+        Objects.requireNonNull(ownerDocId);
+
         LOGGER.info("Fetching assets for user {}, document {}", userUuid, ownerDocId);
         try {
             // Do everything in one transaction
@@ -94,7 +123,9 @@ public class VisualisationAssetDaoImpl implements VisualisationAssetDao {
             dirty[0] = true;
 
             JooqUtil.transaction(connProvider, txnContext -> {
-                Result<Record3<String, String, Byte>> result = txnContext
+                dirty[0] = populateDraft(userUuid, ownerDocId, txnContext);
+
+                final Result<Record3<String, String, Byte>> result = txnContext
                         .select(Tables.VISUALISATION_ASSETS_DRAFT.ASSET_UUID,
                                 Tables.VISUALISATION_ASSETS_DRAFT.PATH,
                                 Tables.VISUALISATION_ASSETS_DRAFT.IS_FOLDER)
@@ -102,19 +133,6 @@ public class VisualisationAssetDaoImpl implements VisualisationAssetDao {
                         .where(Tables.VISUALISATION_ASSETS_DRAFT.OWNER_DOC_UUID.eq(ownerDocId)
                                 .and(Tables.VISUALISATION_ASSETS_DRAFT.DRAFT_USER_UUID.eq(userUuid)))
                         .fetch();
-
-                if (result.isEmpty()) {
-                    // No results so try looking in the live table instead
-                    LOGGER.info("No draft assets - getting from live table");
-                    dirty[0] = false;
-                    result = txnContext
-                            .select(Tables.VISUALISATION_ASSETS.ASSET_UUID,
-                                    Tables.VISUALISATION_ASSETS.PATH,
-                                    Tables.VISUALISATION_ASSETS.IS_FOLDER)
-                            .from(Tables.VISUALISATION_ASSETS)
-                            .where(Tables.VISUALISATION_ASSETS.OWNER_DOC_UUID.eq(ownerDocId))
-                            .fetch();
-                }
 
                 assets.addAll(resultToAssets(result));
             });
@@ -125,118 +143,321 @@ public class VisualisationAssetDaoImpl implements VisualisationAssetDao {
                     userUuid, ownerDocId, e.getMessage(), e);
             throw new IOException("Error fetching visualisation assets: " + e.getMessage(), e);
         }
+    }
 
+    /**
+     * Utility to populate the draft table from the live table, if necessary.
+     * @param userUuid The user ID we're operating under
+     * @param ownerDocId The ID of the doc that owns these resources.
+     * @param txnContext The context for the query.
+     * @return true if draft was populated (data is clean); false if not (data is dirty).
+     */
+    private boolean populateDraft(final String userUuid,
+                                  final String ownerDocId,
+                                  final DSLContext txnContext) {
+
+        final int rowsCopied = txnContext.insertInto(Tables.VISUALISATION_ASSETS_DRAFT)
+                .columns(Tables.VISUALISATION_ASSETS_DRAFT.DRAFT_USER_UUID,
+                        Tables.VISUALISATION_ASSETS_DRAFT.OWNER_DOC_UUID,
+                        Tables.VISUALISATION_ASSETS_DRAFT.ASSET_UUID,
+                        Tables.VISUALISATION_ASSETS_DRAFT.PATH,
+                        Tables.VISUALISATION_ASSETS_DRAFT.PATH_HASH,
+                        Tables.VISUALISATION_ASSETS_DRAFT.IS_FOLDER,
+                        Tables.VISUALISATION_ASSETS_DRAFT.DATA)
+                .select(txnContext.select(DSL.val(userUuid),
+                                Tables.VISUALISATION_ASSETS.OWNER_DOC_UUID,
+                                Tables.VISUALISATION_ASSETS.ASSET_UUID,
+                                Tables.VISUALISATION_ASSETS.PATH,
+                                Tables.VISUALISATION_ASSETS.PATH_HASH,
+                                Tables.VISUALISATION_ASSETS.IS_FOLDER,
+                                Tables.VISUALISATION_ASSETS.DATA)
+                        .from(Tables.VISUALISATION_ASSETS)
+                        .whereNotExists(
+                                txnContext.selectOne()
+                                        .from(Tables.VISUALISATION_ASSETS_DRAFT)
+                                        .where(Tables.VISUALISATION_ASSETS_DRAFT.DRAFT_USER_UUID.eq(userUuid)
+                                                .and(Tables.VISUALISATION_ASSETS_DRAFT.OWNER_DOC_UUID.eq(ownerDocId))
+                                        )
+                        )
+                ).execute();
+
+        boolean liveEmpty = false;
+
+        if (rowsCopied == 0) {
+            // It is possible that the live table is empty; we don't want to return
+            // false in this case as this would indicate that the data is dirty
+            // so check live now
+            liveEmpty = !txnContext.fetchExists(
+                    txnContext.selectOne()
+                            .from(Tables.VISUALISATION_ASSETS)
+                            .where(Tables.VISUALISATION_ASSETS.OWNER_DOC_UUID.eq(ownerDocId))
+            );
+        }
+
+        // Data is clean if rows were copied from live
+        // or if live is empty and there are no rows to copy
+        return (rowsCopied > 0) || liveEmpty;
     }
 
     @Override
-    public void storeDraftAssets(final String userUuid,
-                                 final String ownerDocId,
-                                 final VisualisationAssets visAssets)
-            throws IOException {
-        LOGGER.info("storeDraftAssets(): {}", visAssets);
-        try {
-            // Do everything in one transaction
-            JooqUtil.transaction(connProvider, txnContext -> {
+    public void updateNewFolder(final String userUuid,
+                                final String ownerDocId,
+                                final String path)
+            throws IOException, DataAccessException {
 
-                // Get a list of the existing assets
-                final Set<String> existingAssetIds = new HashSet<>();
-                try {
-                    final Result<Record2<String, String>> result = txnContext
-                            .select(Tables.VISUALISATION_ASSETS_DRAFT.ASSET_UUID,
-                                    Tables.VISUALISATION_ASSETS_DRAFT.PATH)
-                            .from(Tables.VISUALISATION_ASSETS_DRAFT)
-                            .where(Tables.VISUALISATION_ASSETS_DRAFT.OWNER_DOC_UUID.eq(ownerDocId)
-                                    .and(Tables.VISUALISATION_ASSETS_DRAFT.DRAFT_USER_UUID.eq(userUuid)))
-                            .fetch();
-                    for (final Record2<String, String> record : result) {
-                        existingAssetIds.add(record.value1());
-                        LOGGER.info("Found existing asset {}:{}", record.value1(), record.value2());
+        Objects.requireNonNull(userUuid);
+        Objects.requireNonNull(ownerDocId);
+        Objects.requireNonNull(path);
+
+        JooqUtil.transaction(connProvider, txnContext -> {
+            populateDraft(userUuid, ownerDocId, txnContext);
+
+            final String recordPath = slashPath(path, true);
+            final byte[] hashRecordPath =
+                    Hashing.sha256().hashString(recordPath, StandardCharsets.UTF_8).asBytes();
+
+            final int rowsInserted = txnContext
+                    .insertInto(Tables.VISUALISATION_ASSETS_DRAFT)
+                    .columns(Tables.VISUALISATION_ASSETS_DRAFT.DRAFT_USER_UUID,
+                            Tables.VISUALISATION_ASSETS_DRAFT.OWNER_DOC_UUID,
+                            Tables.VISUALISATION_ASSETS_DRAFT.ASSET_UUID,
+                            Tables.VISUALISATION_ASSETS_DRAFT.PATH,
+                            Tables.VISUALISATION_ASSETS_DRAFT.PATH_HASH,
+                            Tables.VISUALISATION_ASSETS_DRAFT.IS_FOLDER,
+                            Tables.VISUALISATION_ASSETS_DRAFT.DATA)
+                    .values(userUuid,
+                            ownerDocId,
+                            UUID.randomUUID().toString(),
+                            recordPath,
+                            hashRecordPath,
+                            BYTE_TRUE,
+                            null)
+                    .execute();
+            if (rowsInserted != 1) {
+                throw new DataAccessException("1 row should have been inserted for '"
+                                              + recordPath + "' but "
+                                              + rowsInserted + " rows were inserted");
+            }
+        });
+    }
+
+    @Override
+    public void updateNewFile(final String userUuid,
+                              final String ownerDocId,
+                              final String path,
+                              final String mimetype)
+            throws IOException, DataAccessException {
+
+        Objects.requireNonNull(userUuid);
+        Objects.requireNonNull(ownerDocId);
+        Objects.requireNonNull(path);
+
+        // TODO Store mimetype in the DB
+
+        JooqUtil.transaction(connProvider, txnContext -> {
+            populateDraft(userUuid, ownerDocId, txnContext);
+
+            final String recordPath = slashPath(path, false);
+            final byte[] hashRecordPath =
+                    Hashing.sha256().hashString(recordPath, StandardCharsets.UTF_8).asBytes();
+
+            final int rowsInserted = txnContext
+                    .insertInto(Tables.VISUALISATION_ASSETS_DRAFT)
+                    .columns(Tables.VISUALISATION_ASSETS_DRAFT.DRAFT_USER_UUID,
+                            Tables.VISUALISATION_ASSETS_DRAFT.OWNER_DOC_UUID,
+                            Tables.VISUALISATION_ASSETS_DRAFT.ASSET_UUID,
+                            Tables.VISUALISATION_ASSETS_DRAFT.PATH,
+                            Tables.VISUALISATION_ASSETS_DRAFT.PATH_HASH,
+                            Tables.VISUALISATION_ASSETS_DRAFT.IS_FOLDER,
+                            Tables.VISUALISATION_ASSETS_DRAFT.DATA)
+                    .values(userUuid,
+                            ownerDocId,
+                            UUID.randomUUID().toString(),
+                            recordPath,
+                            hashRecordPath,
+                            BYTE_FALSE,
+                            EMPTY_CONTENT)
+                    .execute();
+            if (rowsInserted != 1) {
+                throw new DataAccessException("1 row should have been inserted for '"
+                                              + recordPath + "' but "
+                                              + rowsInserted + " rows were inserted");
+            }
+        });
+    }
+
+    @Override
+    public void updateNewUploadedFile(final String userUuid,
+                                      final String ownerDocId,
+                                      final String path,
+                                      final String mimetype,
+                                      final InputStream uploadStream)
+        throws DataAccessException {
+
+        Objects.requireNonNull(userUuid);
+        Objects.requireNonNull(ownerDocId);
+        Objects.requireNonNull(path);
+        Objects.requireNonNull(uploadStream);
+
+        // TODO Store mimetype in the database
+
+        // Jooq doesn't support InputStreams so need to use JDBC
+        final String INSERT_SQL = "INSERT INTO visualisation_assets_draft ( "
+        + "draft_user_uuid, owner_doc_uuid, asset_uuid, path, path_hash, is_folder, data"
+        + " ) values ( "
+        + "?, ?, ?, ?, ?, ?, ?"
+        + " )";
+
+        final String recordPath = slashPath(path, false);
+        final byte[] hashRecordPath =
+                Hashing.sha256().hashString(recordPath, StandardCharsets.UTF_8).asBytes();
+        final String assetUuid = UUID.randomUUID().toString();
+
+        JooqUtil.transaction(connProvider, txnContext -> {
+            populateDraft(userUuid, ownerDocId, txnContext);
+            txnContext.connection(connection -> {
+                try (final PreparedStatement stmt = connection.prepareStatement(INSERT_SQL)) {
+                    stmt.setString(1, userUuid);
+                    stmt.setString(2, ownerDocId);
+                    stmt.setString(3, assetUuid);
+                    stmt.setString(4, recordPath);
+                    stmt.setBytes(5, hashRecordPath);
+                    stmt.setByte(6, BYTE_FALSE);
+                    stmt.setBinaryStream(7, uploadStream);
+                    final int rowsInserted = stmt.executeUpdate();
+                    if (rowsInserted != 1) {
+                        throw new DataAccessException("1 row should have been inserted for "
+                                                      + "uploaded content for '" + recordPath
+                                                      + "' but " + rowsInserted
+                                                      + " rows were inserted");
                     }
-                } catch (final DataAccessException e) {
-                    LOGGER.error("Error getting list of existing assets: {}", e.getMessage(), e);
-                    throw new DataAccessException("Error getting list of existing assets: " +e.getMessage(), e);
                 }
-
-                // Then store the updated assets
-                final List<VisualisationAsset> assets = visAssets.getAssets();
-                for (final VisualisationAsset asset : assets) {
-                    LOGGER.info("Storing asset: {}", asset);
-                    final byte[] assetPathHash =
-                            Hashing.sha256().hashString(asset.getPath(), StandardCharsets.UTF_8).asBytes();
-
-                    try {
-                        txnContext
-                                .insertInto(Tables.VISUALISATION_ASSETS_DRAFT,
-                                        Tables.VISUALISATION_ASSETS_DRAFT.DRAFT_USER_UUID,
-                                        Tables.VISUALISATION_ASSETS_DRAFT.OWNER_DOC_UUID,
-                                        Tables.VISUALISATION_ASSETS_DRAFT.ASSET_UUID,
-                                        Tables.VISUALISATION_ASSETS_DRAFT.PATH,
-                                        Tables.VISUALISATION_ASSETS_DRAFT.PATH_HASH,
-                                        Tables.VISUALISATION_ASSETS_DRAFT.IS_FOLDER)
-                                .values(userUuid,
-                                        ownerDocId,
-                                        asset.getId(),
-                                        asset.getPath(),
-                                        assetPathHash,
-                                        asset.isFolder() ? BYTE_TRUE : BYTE_FALSE)
-                                .onDuplicateKeyUpdate()
-                                .set(Tables.VISUALISATION_ASSETS_DRAFT.PATH, asset.getPath())
-                                .set(Tables.VISUALISATION_ASSETS_DRAFT.PATH_HASH, assetPathHash)
-                                .set(Tables.VISUALISATION_ASSETS_DRAFT.IS_FOLDER, asset.isFolder() ? BYTE_TRUE : BYTE_FALSE)
-                                .where(Tables.VISUALISATION_ASSETS_DRAFT.DRAFT_USER_UUID.eq(userUuid)
-                                        .and(Tables.VISUALISATION_ASSETS_DRAFT.OWNER_DOC_UUID.eq(ownerDocId))
-                                        .and(Tables.VISUALISATION_ASSETS_DRAFT.ASSET_UUID.eq(asset.getId())))
-                                .execute();
-                        existingAssetIds.remove(asset.getId());
-                    } catch (final DataAccessException e) {
-                        LOGGER.error("Error storing asset '{}': {}", asset, e.getMessage(), e);
-                        throw new DataAccessException("Error storing asset: " + e.getMessage(), e);
-                    }
-                }
-
-                // Finally delete any excess assets
-                for (final String assetId : existingAssetIds) {
-                    try {
-                        LOGGER.info("Removing extra asset {}", assetId);
-                        txnContext
-                                .delete(Tables.VISUALISATION_ASSETS)
-                                .where(Tables.VISUALISATION_ASSETS.ASSET_UUID.eq(assetId))
-                                .execute();
-                    } catch (final DataAccessException e) {
-                        LOGGER.error("Error deleting excess assets: {}", e.getMessage(), e);
-                        throw new DataAccessException("Error deleting asset: " + e.getMessage(), e);
-                    }
-                }
-
             });
-        } catch (final DataAccessException e) {
-            // Message already modified by the time the exception gets here
-            throw new IOException(e.getMessage(), e);
-        }
+        });
     }
 
     @Override
-    public void storeDraftData(final String userUuid,
-                               final String assetId,
-                               final byte[] data) throws IOException {
-        LOGGER.info("Storing data for asset {}", assetId);
-        try {
-            // Always called after storeAssets(), so the row will already exist
-            JooqUtil.context(connProvider, context -> context
-                    .update(Tables.VISUALISATION_ASSETS_DRAFT)
-                    .set(Tables.VISUALISATION_ASSETS_DRAFT.DATA, data)
-                    .where(Tables.VISUALISATION_ASSETS_DRAFT.ASSET_UUID.eq(assetId)
-                            .and(Tables.VISUALISATION_ASSETS_DRAFT.DRAFT_USER_UUID.eq(userUuid)))
-                    .execute());
-        } catch (final DataAccessException e) {
-            LOGGER.error("Error storing visualisation asset data: {}", e.getMessage(), e);
-            throw new IOException("Error storing data: " + e.getMessage(), e);
-        }
+    public void updateRename(final String userUuid,
+                             final String ownerDocId,
+                             final String oldPath,
+                             final String newPath,
+                             final boolean isFolder)
+        throws DataAccessException {
+        Objects.requireNonNull(userUuid);
+        Objects.requireNonNull(ownerDocId);
+        Objects.requireNonNull(oldPath);
+        Objects.requireNonNull(newPath);
+
+        // Make sure values have / before and after the name, except if this refers to a file name
+        final String slashedOldPath = slashPath(oldPath, isFolder);
+        final String slashedNewPath = slashPath(newPath, isFolder);
+
+        // This could all be run in one query using variables or Common Table Expressions.
+        // However, the resulting Jooq would be completely incomprehensible, even if the underlying
+        // SQL is readable. So in the interests of maintainability, this uses multiple queries.
+        // Renames won't be common and will only affect a few files
+        // so maximum efficiency isn't required here.
+        JooqUtil.transaction(connProvider, txnContext -> {
+            populateDraft(userUuid, ownerDocId, txnContext);
+
+            // Get a list of the paths to update
+            final Result<Record2<Integer, String>> result = txnContext
+                    .select(Tables.VISUALISATION_ASSETS_DRAFT.ID,
+                            Tables.VISUALISATION_ASSETS_DRAFT.PATH)
+                    .from(Tables.VISUALISATION_ASSETS_DRAFT)
+                    .where(Tables.VISUALISATION_ASSETS_DRAFT.DRAFT_USER_UUID.eq(userUuid)
+                            .and(Tables.VISUALISATION_ASSETS_DRAFT.OWNER_DOC_UUID.eq(ownerDocId)))
+                    .fetch();
+
+            // Update all the paths we've received
+            for (final Record2<Integer, String> record : result) {
+                final Integer id = record.value1();
+                final String recordOldPath = record.value2();
+
+                // Does this path need updating? The old and new paths always start at the root
+                if (recordOldPath.startsWith(slashedOldPath)) {
+                    final String recordNewPath = slashedNewPath + recordOldPath.substring(slashedOldPath.length());
+                    final byte[] hashedRecordNewPath =
+                            Hashing.sha256().hashString(recordNewPath, StandardCharsets.UTF_8).asBytes();
+                    final int rowsUpdated = txnContext.update(Tables.VISUALISATION_ASSETS_DRAFT)
+                            .set(Tables.VISUALISATION_ASSETS_DRAFT.PATH, recordNewPath)
+                            .set(Tables.VISUALISATION_ASSETS_DRAFT.PATH_HASH, hashedRecordNewPath)
+                            .where(Tables.VISUALISATION_ASSETS_DRAFT.ID.eq(id))
+                            .execute();
+                    if (rowsUpdated != 1) {
+                        throw new DataAccessException("1 row should have been updated for '"
+                                                      + recordOldPath + "' but "
+                                                      + rowsUpdated + " rows were updated");
+                    }
+                }
+            }
+        });
+    }
+
+    @Override
+    public void updateDelete(final String userUuid,
+                             final String ownerDocId,
+                             final String path,
+                             final boolean isFolder)
+        throws DataAccessException {
+
+        Objects.requireNonNull(userUuid);
+        Objects.requireNonNull(ownerDocId);
+        Objects.requireNonNull(path);
+
+        final String deletedPath = slashPath(path, isFolder);
+
+        JooqUtil.transaction(connProvider, txnContext -> {
+            populateDraft(userUuid, ownerDocId, txnContext);
+            final int rowsDeleted = txnContext.deleteFrom(Tables.VISUALISATION_ASSETS_DRAFT)
+                    .where(Tables.VISUALISATION_ASSETS_DRAFT.DRAFT_USER_UUID.eq(userUuid)
+                            .and(Tables.VISUALISATION_ASSETS_DRAFT.OWNER_DOC_UUID.eq(ownerDocId))
+                            .and(DSL.substring(Tables.VISUALISATION_ASSETS_DRAFT.PATH,
+                                    DSL.val(START_OF_SUBSTRING), DSL.length(DSL.val(deletedPath))).eq(deletedPath))
+                    )
+                    .execute();
+            if (rowsDeleted != 1) {
+                throw new DataAccessException("1 row should have been deleted for '"
+                                              + deletedPath
+                                              + "' but " + rowsDeleted + " rows were deleted.");
+            }
+        });
+    }
+
+    @Override
+    public void updateContent(final String userUuid,
+                              final String ownerDocId,
+                              final String path,
+                              final byte[] content)
+        throws DataAccessException {
+
+        Objects.requireNonNull(userUuid);
+        Objects.requireNonNull(ownerDocId);
+        Objects.requireNonNull(path);
+        Objects.requireNonNull(content);
+
+        final String slashedPath = slashPath(path, false);
+        final byte[] pathHash = Hashing.sha256().hashString(slashedPath, StandardCharsets.UTF_8).asBytes();
+
+        JooqUtil.transaction(connProvider, txnContext -> {
+            populateDraft(userUuid, ownerDocId, txnContext);
+            final int rowsUpdated = txnContext.update(Tables.VISUALISATION_ASSETS_DRAFT)
+                    .set(Tables.VISUALISATION_ASSETS_DRAFT.DATA, content)
+                    .where(Tables.VISUALISATION_ASSETS_DRAFT.PATH.eq(slashedPath)
+                            .and(Tables.VISUALISATION_ASSETS_DRAFT.PATH_HASH.eq(pathHash)))
+                    .execute();
+            if (rowsUpdated != 1) {
+                throw new DataAccessException("1 row should have been updated: " + rowsUpdated);
+            }
+        });
     }
 
     @Override
     public void saveDraftToLive(final String userUuid, final String documentId) throws IOException {
         LOGGER.info("saveDraftToLive({}, {})", userUuid, documentId);
+
+        Objects.requireNonNull(userUuid);
+        Objects.requireNonNull(documentId);
 
         // Timestamp
         final long timestamp = Instant.now().toEpochMilli();
@@ -297,6 +518,10 @@ public class VisualisationAssetDaoImpl implements VisualisationAssetDao {
 
     @Override
     public void revertDraftFromLive(final String userUuid, final String documentId) throws IOException {
+
+        Objects.requireNonNull(userUuid);
+        Objects.requireNonNull(documentId);
+
         LOGGER.info("revertDraftFromLive()");
         try {
             JooqUtil.context(connProvider, context -> context
@@ -312,6 +537,8 @@ public class VisualisationAssetDaoImpl implements VisualisationAssetDao {
 
     @Override
     public List<ImportExportAsset> getAssetsForExport(final String documentId) throws IOException {
+        Objects.requireNonNull(documentId);
+
         LOGGER.info("Getting export assets for document {}", documentId);
         try {
             final Result<Record2<String, byte[]>> result =
@@ -332,12 +559,18 @@ public class VisualisationAssetDaoImpl implements VisualisationAssetDao {
     @Override
     public void setAssetsFromImport(final String documentId, final Collection<ImportExportAsset> pathAssets)
             throws IOException {
+        Objects.requireNonNull(documentId);
+        Objects.requireNonNull(pathAssets);
+
         LOGGER.info("Setting import assets for document {}", documentId);
 
         final long timestamp = Instant.now().toEpochMilli();
 
         try {
             JooqUtil.transaction(connProvider, txnContext -> {
+                // TODO Should we delete all Draft data for all users
+                // TODO as we're directly putting stuff into Live?
+
                 try {
                     // Delete all existing live content for the owning document ID
                     final int recordCount = txnContext
@@ -386,6 +619,9 @@ public class VisualisationAssetDaoImpl implements VisualisationAssetDao {
 
     @Override
     public byte[] getLiveData(final String documentId, final String assetPath) throws IOException {
+        Objects.requireNonNull(documentId);
+        Objects.requireNonNull(assetPath);
+
         LOGGER.info("Getting data for document {}, path {}", documentId, assetPath);
         try {
             final byte[] assetPathHash = Hashing.sha256().hashString(assetPath, StandardCharsets.UTF_8).asBytes();
@@ -411,6 +647,9 @@ public class VisualisationAssetDaoImpl implements VisualisationAssetDao {
 
     @Override
     public Instant getLiveModifiedTimestamp(final String documentId, final String assetPath) throws IOException {
+        Objects.requireNonNull(documentId);
+        Objects.requireNonNull(assetPath);
+
         LOGGER.info("getLiveModifiedTimestamp");
         try {
             final byte[] assetPathHash = Hashing.sha256().hashString(assetPath, StandardCharsets.UTF_8).asBytes();

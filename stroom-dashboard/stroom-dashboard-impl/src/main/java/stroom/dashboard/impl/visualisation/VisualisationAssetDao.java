@@ -4,6 +4,7 @@ import stroom.importexport.api.ImportExportAsset;
 import stroom.visualisation.shared.VisualisationAssets;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
@@ -24,28 +25,99 @@ public interface VisualisationAssetDao {
                                          String ownerId) throws IOException;
 
     /**
-     * Stores a draft version of all assets under the given username.
-     * @param userUuid The user ID that we want draft info for
-     * @param ownerDocId The document that owns the assets.
-     * @param visAssets The assets to store.
+     * Creates a new folder.
+     * The updates are stored in the Draft table and made live by calling saveDraftToLive().
+     * @param userUuid The user ID that is doing the update
+     * @param ownerDocId The document that owns the assets
+     * @param path The path to the folder, including the folder name.
      * @throws IOException If something goes wrong.
      */
-    void storeDraftAssets(String userUuid,
-                          String ownerDocId,
-                          VisualisationAssets visAssets)
-            throws IOException;
+    void updateNewFolder(String userUuid,
+                         String ownerDocId,
+                         String path)
+        throws IOException;
 
     /**
-     * Stores a draft version of the asset.
-     * @param userUuid The user ID that we're setting draft data for.
-     * @param assetId The UUID of the asset.
-     * @param data The data to store.
+     * Creates a new file.
+     * The updates are stored in the Draft table and made live by calling saveDraftToLive().
+     * @param userUuid The user ID that is doing the update
+     * @param ownerDocId The document that owns the assets
+     * @param path The path to the file, including the file name and extension.
+     * @param mimetype The mimetype of the file. Can be null in which case the extension
+     *                 will be used to derive the mimetype in the Servlet.
      * @throws IOException If something goes wrong.
      */
-    void storeDraftData(String userUuid,
-                        String assetId,
-                        byte[] data)
-            throws IOException;
+    void updateNewFile(String userUuid,
+                       String ownerDocId,
+                       String path,
+                       String mimetype)
+        throws IOException;
+
+    /**
+     * Creates a new file from a file upload.
+     * The updates are stored in the Draft table and made live by calling saveDraftToLive().
+     * @param userUuid The user ID that is doing the update
+     * @param ownerDocId The document that owns the assets
+     * @param path The path to the file, including the file name and extension.
+     * @param mimetype The mimetype of the file. Can be null in which case the extension
+     *                 will be used to derive the mimetype in the Servlet.
+     * @param uploadStream The stream to read the file contents from.
+     *                     Must not be null.
+     * @throws IOException If something goes wrong.
+     */
+    void updateNewUploadedFile(String userUuid,
+                               String ownerDocId,
+                               String path,
+                               String mimetype,
+                               InputStream uploadStream)
+        throws IOException;
+
+    /**
+     * Deletes a folder or file.
+     * The updates are stored in the Draft table and made live by calling saveDraftToLive().
+     * @param userUuid The user ID that is doing the update
+     * @param ownerDocId The document that owns the assets
+     * @param path The path to the folder or file to be deleted, including the item name.
+     * @param isFolder Whether the thing being deleted is a file or folder.
+     * @throws IOException If something goes wrong.
+     */
+    void updateDelete(String userUuid,
+                      String ownerDocId,
+                      String path,
+                      boolean isFolder)
+        throws IOException;
+
+    /**
+     * Renames a file or folder.
+     * The updates are stored in the Draft table and made live by calling saveDraftToLive().
+     * @param userUuid The user ID that is doing the update
+     * @param ownerDocId The document that owns the assets
+     * @param oldPath The existing path to the folder or file, including the item name.
+     * @param newPath What the path needs to be changed to.
+     * @param isFolder true if the thing being renamed is a folder, false if it is a file.
+     * @throws IOException If something goes wrong.
+     */
+    void updateRename(String userUuid,
+                      String ownerDocId,
+                      String oldPath,
+                      String newPath,
+                      boolean isFolder)
+        throws IOException;
+
+    /**
+     * Updates the content in a file.
+     * The updates are stored in the Draft table and made live by calling saveDraftToLive().
+     * @param userUuid The user ID that is doing the update
+     * @param ownerDocId The document that owns the assets
+     * @param path The path to the file, including the file name and extension.
+     * @param content The new content for the file.
+     * @throws IOException If something goes wrong.
+     */
+    void updateContent(String userUuid,
+                       String ownerDocId,
+                       String path,
+                       byte[] content)
+        throws IOException;
 
     /**
      * Copies all draft information into the main storage so it is live.

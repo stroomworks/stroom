@@ -10,6 +10,8 @@ import java.util.List;
 
 import org.jooq.Condition;
 import org.jooq.Field;
+import org.jooq.Identity;
+import org.jooq.Index;
 import org.jooq.Name;
 import org.jooq.PlainSQL;
 import org.jooq.QueryPart;
@@ -25,6 +27,7 @@ import org.jooq.impl.DSL;
 import org.jooq.impl.SQLDataType;
 import org.jooq.impl.TableImpl;
 
+import stroom.dashboard.impl.db.jooq.Indexes;
 import stroom.dashboard.impl.db.jooq.Keys;
 import stroom.dashboard.impl.db.jooq.Stroom;
 import stroom.dashboard.impl.db.jooq.tables.records.VisualisationAssetsDraftRecord;
@@ -50,6 +53,11 @@ public class VisualisationAssetsDraft extends TableImpl<VisualisationAssetsDraft
     public Class<VisualisationAssetsDraftRecord> getRecordType() {
         return VisualisationAssetsDraftRecord.class;
     }
+
+    /**
+     * The column <code>stroom.visualisation_assets_draft.id</code>.
+     */
+    public final TableField<VisualisationAssetsDraftRecord, Integer> ID = createField(DSL.name("id"), SQLDataType.INTEGER.nullable(false).identity(true), this, "");
 
     /**
      * The column
@@ -121,6 +129,16 @@ public class VisualisationAssetsDraft extends TableImpl<VisualisationAssetsDraft
     @Override
     public Schema getSchema() {
         return aliased() ? null : Stroom.STROOM;
+    }
+
+    @Override
+    public List<Index> getIndexes() {
+        return Arrays.asList(Indexes.VISUALISATION_ASSETS_DRAFT_K_VISUALISATION_ASSETS_DRAFT);
+    }
+
+    @Override
+    public Identity<VisualisationAssetsDraftRecord, Integer> getIdentity() {
+        return (Identity<VisualisationAssetsDraftRecord, Integer>) super.getIdentity();
     }
 
     @Override

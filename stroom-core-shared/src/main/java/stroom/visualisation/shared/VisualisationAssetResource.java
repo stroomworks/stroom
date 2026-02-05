@@ -33,20 +33,58 @@ public interface VisualisationAssetResource extends RestResource, DirectRestServ
     VisualisationAssets fetchDraftAssets(@PathParam("ownerDocId") String ownerDocId)
             throws RuntimeException;
 
-    /**
-     * Puts the assets into the database.
-     * @param ownerDocId The ID of the document that owns the assets.
-     * @param assets The assets to store in the database.
-     * @return Whether it worked.
-     */
     @PUT
-    @Path("/updateDraftAssets/{ownerDocId}")
+    @Path("/updateNewFolder/{ownerDocId}")
     @Operation(
-            summary = "Update all asset information and store uploaded files",
-            operationId = "updateDraftAssets")
-    Boolean updateDraftAssets(@PathParam("ownerDocId") String ownerDocId,
-                              @Parameter(description = "assets", required = true) VisualisationAssets assets)
-            throws RuntimeException;
+            summary = "Create new folder",
+            operationId = "updateNewFolder")
+    Boolean updateNewFolder(@PathParam("ownerDocId") String ownerDocId,
+                            @Parameter(description = "Path") String path);
+
+    @PUT
+    @Path("/updateNewFile/{ownerDocId}")
+    @Operation(
+            summary = "Creates a new text file",
+            operationId = "updateNewFile")
+    Boolean updateNewFile(@PathParam("ownerDocId") String ownerDocId,
+                          @Parameter(description="Path and Mimetype", required = false)
+                          VisualisationAssetUpdateNewFile update);
+
+    @PUT
+    @Path("/updateNewUploadedFile/{ownerDocId}")
+    @Operation(
+            summary = "Creates a new uploaded file",
+            operationId = "updateNewUploadedFile")
+    Boolean updateNewUploadedFile(@PathParam("ownerDocId") String ownerDocId,
+                                  @Parameter(description="Path, ResourceKey and Mimetype", required = true)
+                                  VisualisationAssetUpdateNewFile update);
+
+    @PUT
+    @Path("/updateDelete/{ownerDocId}")
+    @Operation(
+            summary = "Deletes an asset",
+            operationId = "updateDelete")
+    Boolean updateDelete(@PathParam("ownerDocId") String ownerDocId,
+                         @Parameter(description="Path and isFolder", required = true)
+                         VisualisationAssetUpdateDelete update);
+
+    @PUT
+    @Path("/updateRename/{ownerDocId}")
+    @Operation(
+            summary = "Renames an asset",
+            operationId = "updateRename")
+    Boolean updateRename(@PathParam("ownerDocId") String ownerDocId,
+                         @Parameter(description = "Old Path, New Path and isFolder", required = true)
+                         VisualisationAssetUpdateRename update);
+
+    @PUT
+    @Path("/updateContent/{ownerDocId}")
+    @Operation(
+            summary = "Updates the content of an asset",
+            operationId = "updateContent")
+    Boolean updateContent(@PathParam("ownerDocId") String ownerDocId,
+                          @Parameter(description="Path and Content", required = true)
+                          VisualisationAssetUpdateContent update);
 
     @PUT
     @Path("/saveDraftToLive/{ownerDocId}")

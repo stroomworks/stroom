@@ -34,7 +34,10 @@ import stroom.visualisation.client.presenter.VisualisationAssetsPresenter.Visual
 import stroom.visualisation.client.presenter.assets.VisualisationAssetTreeItem;
 import stroom.visualisation.client.presenter.assets.VisualisationAssetsImageResource;
 import stroom.visualisation.shared.VisualisationAssetResource;
-import stroom.visualisation.shared.VisualisationAssets;
+import stroom.visualisation.shared.VisualisationAssetUpdateContent;
+import stroom.visualisation.shared.VisualisationAssetUpdateDelete;
+import stroom.visualisation.shared.VisualisationAssetUpdateNewFile;
+import stroom.visualisation.shared.VisualisationAssetUpdateRename;
 import stroom.visualisation.shared.VisualisationDoc;
 import stroom.widget.button.client.ButtonPanel;
 import stroom.widget.button.client.InlineSvgButton;
@@ -61,10 +64,9 @@ import com.gwtplatform.mvp.client.View;
 import edu.ycp.cs.dh.acegwt.client.ace.AceEditorMode;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import javax.inject.Provider;
 
@@ -117,9 +119,6 @@ public class VisualisationAssetsPresenter
 
     /** Editor widget */
     private final EditorPresenter editorPresenter;
-
-    /** List of any resource keys for files that need to be saved */
-    private final Map<String, ResourceKey> uploadedFileResourceKeys = new HashMap<>();
 
     /** Set of the node paths that are open when the document is saved */
     private final Set<String> treeItemPathToOpenState = new HashSet<>();
@@ -185,17 +184,10 @@ public class VisualisationAssetsPresenter
                                 final String fileName,
                                 final ResourceKey resourceKey) {
 
-        final VisualisationAssetTreeItem newFileNode = VisualisationAssetTreeItem.createNewFileItem(fileName);
-        if (parentFolderItem == null) {
-            tree.addItem(newFileNode);
-        } else {
-            parentFolderItem.addItem(newFileNode);
-        }
-
-        VisualisationAssetsPresenterUtils.recurseSortTree(tree, (VisualisationAssetTreeItem) parentFolderItem);
-        uploadedFileResourceKeys.put(newFileNode.getId(), resourceKey);
-
-        setDirty(true);
+        final String path = VisualisationAssetsPresenterUtils.getNewItemPath(parentFolderItem, fileName);
+        Console.info("Adding uploaded file at " + path);
+        // TODO Allow mimetype to be variable. null selects auto-mimetype.
+        doUpdateNewUploadedFile(path, resourceKey, null);
     }
 
     /**
@@ -336,19 +328,15 @@ public class VisualisationAssetsPresenter
                                         final String itemName = getNonClashingLabel(parentItem,
                                                 addItemDialog.getView().getName(),
                                                 null);
-                                        final VisualisationAssetTreeItem newNode;
+                                        final String newItemPath =
+                                                VisualisationAssetsPresenterUtils.getNewItemPath(parentItem, itemName);
+                                        final VisualisationAssetUpdateNewFile update;
                                         if (addFile) {
-                                            newNode = VisualisationAssetTreeItem.createNewFileItem(itemName);
+                                            // TODO read in the mimetype from somewhere
+                                            doUpdateNewFile(newItemPath, "text/plain");
                                         } else {
-                                            newNode = VisualisationAssetTreeItem.createNewFolderItem(itemName);
+                                            doUpdateNewFolder(newItemPath);
                                         }
-                                        if (parentItem == null) {
-                                            tree.addItem(newNode);
-                                        } else {
-                                            parentItem.addItem(newNode);
-                                        }
-                                        VisualisationAssetsPresenterUtils.recurseSortTree(tree, parentItem);
-                                        setDirty(true);
                                         event.hide();
                                     } else {
                                         AlertEvent.fireWarn(this, "Item name not set", event::reset);
@@ -370,35 +358,22 @@ public class VisualisationAssetsPresenter
      */
     private void onDeleteButtonClick() {
         if (!readOnly) {
-            final TreeItem item = tree.getSelectedItem();
-            if (item != null) {
-                if (item instanceof final VisualisationAssetTreeItem assetTreeItem) {
-                    final String message;
-                    if (assetTreeItem.isLeaf()) {
-                        message = "Are you sure you want to delete the selected file?";
-                    } else {
-                        message = "Are you sure you want to delete the selected folder and all its descendants?";
-                    }
-
-                    ConfirmEvent.fire(VisualisationAssetsPresenter.this, message,
-                            result -> {
-                                if (result) {
-                                    final TreeItem parentItem = assetTreeItem.getParentItem();
-                                    if (parentItem == null) {
-                                        tree.removeItem(assetTreeItem);
-                                    } else {
-                                        parentItem.removeItem(assetTreeItem);
-                                    }
-
-                                    VisualisationAssetsPresenterUtils.recurseRemoveUploadedFiles(assetTreeItem,
-                                            uploadedFileResourceKeys);
-
-                                    setDirty(true);
-                                }
-                            });
+            final VisualisationAssetTreeItem assetTreeItem = (VisualisationAssetTreeItem) tree.getSelectedItem();
+            if (assetTreeItem != null) {
+                final String message;
+                if (assetTreeItem.isLeaf()) {
+                    message = "Are you sure you want to delete the selected file?";
                 } else {
-                    Console.error("Unknown tree node type: " + item.getClass());
+                    message = "Are you sure you want to delete the selected folder and all its descendants?";
                 }
+
+                ConfirmEvent.fire(VisualisationAssetsPresenter.this, message,
+                        result -> {
+                            if (result) {
+                                final String path = VisualisationAssetsPresenterUtils.getItemPath(assetTreeItem);
+                                doUpdateDelete(path, !assetTreeItem.isLeaf());
+                            }
+                        });
             }
 
         }
@@ -427,14 +402,16 @@ public class VisualisationAssetsPresenter
                         .onHideRequest(event -> {
                                     if (event.isOk()) {
                                         if (editAssetDialog.isValid()) {
+                                            final String oldPath =
+                                                    VisualisationAssetsPresenterUtils.getItemPath(selectedItem);
                                             final VisualisationAssetTreeItem parentItem =
                                                     (VisualisationAssetTreeItem) selectedItem.getParentItem();
                                             final String text = getNonClashingLabel(parentItem,
                                                     editAssetDialog.getView().getText(),
                                                     editAssetDialog.getView().getId());
-                                            selectedItem.setText(text);
-                                            VisualisationAssetsPresenterUtils.recurseSortTree(tree, parentItem);
-                                            setDirty(true);
+                                            final String newPath =
+                                                    VisualisationAssetsPresenterUtils.getNewItemPath(parentItem, text);
+                                            doUpdateRename(oldPath, newPath, !selectedItem.isLeaf());
                                             event.hide();
                                         } else {
                                             AlertEvent.fireWarn(this,
@@ -458,7 +435,7 @@ public class VisualisationAssetsPresenter
      * @param document Document
      * @param readOnly Whether this doc is readonly
      */
-    public void onRead(final DocRef docRef,
+    public void onRead(@SuppressWarnings("unused") final DocRef docRef,
                        final VisualisationDoc document,
                        final boolean readOnly) {
         Console.info("onRead()");
@@ -607,6 +584,205 @@ public class VisualisationAssetsPresenter
     }
 
     /**
+     * Does the REST call to the server to create a new folder.
+     * Then calls fetchDraftAssets() to reload the tree.
+     * @param path Where the folder must be created.
+     */
+    private void doUpdateNewFolder(final String path) {
+        Objects.requireNonNull(path);
+
+        restFactory.create(VISUALISATION_ASSET_RESOURCE)
+                .method(r -> r.updateNewFolder(document.getUuid(), path))
+                .onSuccess(result -> {
+                    if (result) {
+                        // OK - get the assets again
+                        fetchDraftAssets(document);
+                    } else {
+                        AlertEvent.fireError(this,
+                                "There was an error creating a new folder",
+                                null);
+                    }
+                })
+                .onFailure(error -> {
+                    AlertEvent.fireError(this,
+                            "There was an error creating a new folder: " + error.getMessage(),
+                            null);
+                })
+                .taskMonitorFactory(this)
+                .exec();
+    }
+
+    /**
+     * Does the REST call to create a new file.
+     * @param path The path and name of the file.
+     * @param mimetype The mimetype associated with the file.
+     */
+    private void doUpdateNewFile(final String path,
+                                 final String mimetype) {
+        Objects.requireNonNull(path);
+        Objects.requireNonNull(mimetype);
+
+        final VisualisationAssetUpdateNewFile update =
+                new VisualisationAssetUpdateNewFile(path, null, mimetype);
+
+        restFactory.create(VISUALISATION_ASSET_RESOURCE)
+                .method(r -> r.updateNewFile(document.getUuid(), update))
+                .onSuccess(result -> {
+                    if (result) {
+                        // OK - get the assets again
+                        fetchDraftAssets(document);
+                    } else {
+                        AlertEvent.fireError(this,
+                                "There was an error creating a new file",
+                                null);
+                    }
+                })
+                .onFailure(error -> {
+                    AlertEvent.fireError(this,
+                            "There was an error creating a new file: " + error.getMessage(),
+                            null);
+                })
+                .taskMonitorFactory(this)
+                .exec();
+    }
+
+    /**
+     * Does the REST call to create a new file, where the user has uploaded a file.
+     * @param path Where to put the file
+     * @param resourceKey The resource key associated with the upload
+     */
+    private void doUpdateNewUploadedFile(final String path,
+                                         final ResourceKey resourceKey,
+                                         final String mimetype) {
+        Objects.requireNonNull(path);
+        Objects.requireNonNull(resourceKey);
+
+        final VisualisationAssetUpdateNewFile update =
+                new VisualisationAssetUpdateNewFile(path, resourceKey, mimetype);
+
+        restFactory.create(VISUALISATION_ASSET_RESOURCE)
+                .method(r ->
+                        r.updateNewUploadedFile(document.getUuid(), update))
+                .onSuccess(result -> {
+                    if (result) {
+                        // OK - get the assets again
+                        fetchDraftAssets(document);
+                    } else {
+                        AlertEvent.fireError(this,
+                                "There was an error uploading a new file",
+                                null);
+                    }
+                })
+                .onFailure(error -> {
+                    AlertEvent.fireError(this,
+                            "There was an error uploading a new file: " + error.getMessage(),
+                            null);
+                })
+                .taskMonitorFactory(this)
+                .exec();
+    }
+
+    /**
+     * Does the REST call to delete a file or folder
+     * @param path The path to delete. The terminal name in the path will be deleted.
+     * @param isFolder Whether the path refers to a folder or a file.
+     */
+    private void doUpdateDelete(final String path,
+                                final boolean isFolder) {
+        Objects.requireNonNull(path);
+
+        final VisualisationAssetUpdateDelete update = new VisualisationAssetUpdateDelete(path, isFolder);
+
+        restFactory.create(VISUALISATION_ASSET_RESOURCE)
+                .method(r ->
+                        r.updateDelete(document.getUuid(), update))
+                .onSuccess(result -> {
+                    if (result) {
+                        // OK - get the assets again
+                        fetchDraftAssets(document);
+                    } else {
+                        AlertEvent.fireError(this,
+                                "There was an error deleting an item",
+                                null);
+                    }
+                })
+                .onFailure(error -> {
+                    AlertEvent.fireError(this,
+                            "There was an error deleting an item: " + error.getMessage(),
+                            null);
+                })
+                .taskMonitorFactory(this)
+                .exec();
+    }
+
+    /**
+     * Does the REST call to rename a file or folder.
+     * @param oldPath The thing we want to rename
+     * @param newPath The new path to replace the old path
+     * @param isFolder Whether the thing being renamed is a folder.
+     */
+    private void doUpdateRename(final String oldPath,
+                                final String newPath,
+                                final boolean isFolder) {
+        Objects.requireNonNull(oldPath);
+        Objects.requireNonNull(newPath);
+        final VisualisationAssetUpdateRename update = new VisualisationAssetUpdateRename(oldPath, newPath, isFolder);
+        restFactory.create(VISUALISATION_ASSET_RESOURCE)
+                .method(r ->
+                        r.updateRename(document.getUuid(), update))
+                .onSuccess(result -> {
+                    if (result) {
+                        // OK - get the assets again
+                        fetchDraftAssets(document);
+                    } else {
+                        AlertEvent.fireError(this,
+                                "There was an error renaming an item",
+                                null);
+                    }
+                })
+                .onFailure(error -> {
+                    AlertEvent.fireError(this,
+                            "There was an error renaming an item: " + error.getMessage(),
+                            null);
+                })
+                .taskMonitorFactory(this)
+                .exec();
+    }
+
+    /**
+     * Does the REST update for the content of a file.
+     * @param path The path to the file.
+     * @param content The new content for a file. Must not be null but can be empty.
+     */
+    private void doUpdateContent(final String path,
+                                 final byte[] content) {
+        Objects.requireNonNull(path);
+        Objects.requireNonNull(content);
+
+        final VisualisationAssetUpdateContent update = new VisualisationAssetUpdateContent(path, content);
+        restFactory.create(VISUALISATION_ASSET_RESOURCE)
+                .method(r ->
+                        r.updateContent(document.getUuid(), update))
+                .onSuccess(result -> {
+                    if (result) {
+                        // OK - get the assets again
+                        fetchDraftAssets(document);
+                    } else {
+                        AlertEvent.fireError(this,
+                                "There was an error updating content",
+                                null);
+                    }
+                })
+                .onFailure(error -> {
+                    AlertEvent.fireError(this,
+                            "There was an error updating content: " + error.getMessage(),
+                            null);
+                })
+                .taskMonitorFactory(this)
+                .exec();
+    }
+
+    /**
      * Called from onRead() to pull down the assets from the server.
      * Uses REST to grab the assets and display them within the tree control.
      * Async.
@@ -648,36 +824,6 @@ public class VisualisationAssetsPresenter
     }
 
     /**
-     * Called when anything changes to register all the changes & uploaded documents
-     * and move them from the ResourceStore into Draft storage in the database.
-     */
-    private void storeDraftAssets(final VisualisationDoc document) {
-
-        final VisualisationAssets assets = new VisualisationAssets(document.getUuid(), uploadedFileResourceKeys);
-        VisualisationAssetsPresenterUtils.treeToAssets(tree, assets);
-
-        restFactory.create(VISUALISATION_ASSET_RESOURCE)
-                .method(r -> r.updateDraftAssets(document.getUuid(), assets))
-                .onSuccess(result -> {
-                    if (result) {
-                        // Great it worked - clear the list of uploaded files
-                        uploadedFileResourceKeys.clear();
-                    } else {
-                        AlertEvent.fireError(this,
-                                "Error storing assets",
-                                null);
-                    }
-                })
-                .onFailure(error -> {
-                    AlertEvent.fireError(this,
-                            "Error storing assets: " + error.getMessage(),
-                            null);
-                })
-                .taskMonitorFactory(this)
-                .exec();
-    }
-
-    /**
      * Sets the state of the UI when things have changed.
      */
     private void updateState() {
@@ -712,9 +858,6 @@ public class VisualisationAssetsPresenter
      */
     private void setDirty(final boolean dirty) {
         Console.info("Setting dirty to: " + dirty);
-        if (dirty) {
-            storeDraftAssets(document); // Async
-        }
         // Try firing later to avoid issues
         Scheduler.get().scheduleFinally(() -> {
             DirtyEvent.fire(this, dirty);

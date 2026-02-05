@@ -17,10 +17,8 @@
 package stroom.visualisation.client.presenter;
 
 import stroom.util.client.Console;
-import stroom.util.shared.ResourceKey;
 import stroom.visualisation.client.presenter.assets.VisualisationAssetTreeItem;
 import stroom.visualisation.shared.VisualisationAsset;
-import stroom.visualisation.shared.VisualisationAssets;
 
 import com.google.gwt.user.client.ui.Tree;
 import com.google.gwt.user.client.ui.TreeItem;
@@ -29,7 +27,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
@@ -168,44 +165,6 @@ public class VisualisationAssetsPresenterUtils {
     }
 
     /**
-     * Convert the tree into a list of assets. Also stores the open state of the tree,
-     * so that it can be restored if necessary.
-     * @param assets Where to put the assets
-     */
-    static void treeToAssets(final Tree tree, final VisualisationAssets assets) {
-
-        for (int i = 0; i < tree.getItemCount(); ++i) {
-            final VisualisationAssetTreeItem treeItem = (VisualisationAssetTreeItem) tree.getItem(i);
-            recurseTreeToAssets(treeItem, assets);
-        }
-    }
-
-    /**
-     * Recursive function called from treeToAssets().
-     */
-    private static void recurseTreeToAssets(final VisualisationAssetTreeItem assetTreeItem,
-                                     final VisualisationAssets assets) {
-
-        // Store anything without children.
-        // So we store folders if they don't have any children, and we store files.
-        if (!assetTreeItem.hasChildren()) {
-            // No more nodes so store path
-            final String path = getItemPath(assetTreeItem);
-
-            final VisualisationAsset asset = new VisualisationAsset(
-                    assetTreeItem.getId(),
-                    path,
-                    !assetTreeItem.isLeaf());
-            assets.addAsset(asset);
-        } else {
-            // More nodes so recurse
-            for (int i = 0; i < assetTreeItem.getChildCount(); ++i) {
-                recurseTreeToAssets((VisualisationAssetTreeItem) assetTreeItem.getChild(i), assets);
-            }
-        }
-    }
-
-    /**
      * Sorts the whole tree, from root to leaf.
      * @param tree The tree to sort.
      */
@@ -270,6 +229,21 @@ public class VisualisationAssetsPresenterUtils {
     }
 
     /**
+     * Returns a path to a new item in the tree.
+     * @param parent Where the new item is going
+     * @param newItemLabel The label of the new item
+     * @return A string for the path to the new item.
+     */
+    static String getNewItemPath(final TreeItem parent, final String newItemLabel) {
+        final String parentPath = getItemPath(parent);
+        if (parentPath.equals(SLASH)) {
+            return newItemLabel;
+        } else {
+            return parentPath + SLASH + newItemLabel;
+        }
+    }
+
+    /**
      * Generates a potentially non-classing label for an asset.
      */
     static String generateNonClashingLabel(final String label, final int i) {
@@ -318,21 +292,6 @@ public class VisualisationAssetsPresenterUtils {
         }
 
         return null;
-    }
-
-    /**
-     * Recurses down the tree, removing all nodes from the uploadedFileResourceKeys map.
-     * Called from onDeleteButtonClick().
-     * @param assetTreeItem The root node. Remove uploaded files underneath this node.
-     */
-    static void recurseRemoveUploadedFiles(final VisualisationAssetTreeItem assetTreeItem,
-                                           final Map<String, ResourceKey> uploadedFileResourceKeys) {
-
-        uploadedFileResourceKeys.remove(assetTreeItem.getId());
-        for (int i = 0; i < assetTreeItem.getChildCount(); ++i) {
-            final VisualisationAssetTreeItem child = (VisualisationAssetTreeItem) assetTreeItem.getChild(i);
-            recurseRemoveUploadedFiles(child, uploadedFileResourceKeys);
-        }
     }
 
     /**

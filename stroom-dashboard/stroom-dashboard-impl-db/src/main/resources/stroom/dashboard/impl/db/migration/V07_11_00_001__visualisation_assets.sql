@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS visualisation_assets (
 ) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
 
 CREATE TABLE IF NOT EXISTS visualisation_assets_draft (
+  id                    INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
   draft_user_uuid       varchar(255) NOT NULL,
   owner_doc_uuid        varchar(255) NOT NULL,
   asset_uuid            varchar(255) NOT NULL,
@@ -42,7 +43,7 @@ CREATE TABLE IF NOT EXISTS visualisation_assets_draft (
   path_hash             binary(32) NOT NULL,
   is_folder             bool NOT NULL,
   data                  longblob NULL,
-  CONSTRAINT pk_visualisation_assets_draft PRIMARY KEY (draft_user_uuid, owner_doc_uuid, path_hash),
+  INDEX k_visualisation_assets_draft (draft_user_uuid, owner_doc_uuid, path_hash),
   CONSTRAINT k_asset_uuid UNIQUE KEY (asset_uuid)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
 

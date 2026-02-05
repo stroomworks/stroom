@@ -4,7 +4,7 @@
 package stroom.dashboard.impl.db.jooq.tables.records;
 
 
-import org.jooq.Record3;
+import org.jooq.Record1;
 import org.jooq.impl.UpdatableRecordImpl;
 
 import stroom.dashboard.impl.db.jooq.tables.VisualisationAssetsDraft;
@@ -19,11 +19,25 @@ public class VisualisationAssetsDraftRecord extends UpdatableRecordImpl<Visualis
     private static final long serialVersionUID = 1L;
 
     /**
+     * Setter for <code>stroom.visualisation_assets_draft.id</code>.
+     */
+    public void setId(Integer value) {
+        set(0, value);
+    }
+
+    /**
+     * Getter for <code>stroom.visualisation_assets_draft.id</code>.
+     */
+    public Integer getId() {
+        return (Integer) get(0);
+    }
+
+    /**
      * Setter for
      * <code>stroom.visualisation_assets_draft.draft_user_uuid</code>.
      */
     public void setDraftUserUuid(String value) {
-        set(0, value);
+        set(1, value);
     }
 
     /**
@@ -31,91 +45,91 @@ public class VisualisationAssetsDraftRecord extends UpdatableRecordImpl<Visualis
      * <code>stroom.visualisation_assets_draft.draft_user_uuid</code>.
      */
     public String getDraftUserUuid() {
-        return (String) get(0);
+        return (String) get(1);
     }
 
     /**
      * Setter for <code>stroom.visualisation_assets_draft.owner_doc_uuid</code>.
      */
     public void setOwnerDocUuid(String value) {
-        set(1, value);
+        set(2, value);
     }
 
     /**
      * Getter for <code>stroom.visualisation_assets_draft.owner_doc_uuid</code>.
      */
     public String getOwnerDocUuid() {
-        return (String) get(1);
+        return (String) get(2);
     }
 
     /**
      * Setter for <code>stroom.visualisation_assets_draft.asset_uuid</code>.
      */
     public void setAssetUuid(String value) {
-        set(2, value);
+        set(3, value);
     }
 
     /**
      * Getter for <code>stroom.visualisation_assets_draft.asset_uuid</code>.
      */
     public String getAssetUuid() {
-        return (String) get(2);
+        return (String) get(3);
     }
 
     /**
      * Setter for <code>stroom.visualisation_assets_draft.path</code>.
      */
     public void setPath(String value) {
-        set(3, value);
+        set(4, value);
     }
 
     /**
      * Getter for <code>stroom.visualisation_assets_draft.path</code>.
      */
     public String getPath() {
-        return (String) get(3);
+        return (String) get(4);
     }
 
     /**
      * Setter for <code>stroom.visualisation_assets_draft.path_hash</code>.
      */
     public void setPathHash(byte[] value) {
-        set(4, value);
+        set(5, value);
     }
 
     /**
      * Getter for <code>stroom.visualisation_assets_draft.path_hash</code>.
      */
     public byte[] getPathHash() {
-        return (byte[]) get(4);
+        return (byte[]) get(5);
     }
 
     /**
      * Setter for <code>stroom.visualisation_assets_draft.is_folder</code>.
      */
     public void setIsFolder(Byte value) {
-        set(5, value);
+        set(6, value);
     }
 
     /**
      * Getter for <code>stroom.visualisation_assets_draft.is_folder</code>.
      */
     public Byte getIsFolder() {
-        return (Byte) get(5);
+        return (Byte) get(6);
     }
 
     /**
      * Setter for <code>stroom.visualisation_assets_draft.data</code>.
      */
     public void setData(byte[] value) {
-        set(6, value);
+        set(7, value);
     }
 
     /**
      * Getter for <code>stroom.visualisation_assets_draft.data</code>.
      */
     public byte[] getData() {
-        return (byte[]) get(6);
+        return (byte[]) get(7);
     }
 
     // -------------------------------------------------------------------------
@@ -123,8 +137,8 @@ public class VisualisationAssetsDraftRecord extends UpdatableRecordImpl<Visualis
     // -------------------------------------------------------------------------
 
     @Override
-    public Record3<String, String, byte[]> key() {
-        return (Record3) super.key();
+    public Record1<Integer> key() {
+        return (Record1) super.key();
     }
 
     // -------------------------------------------------------------------------
@@ -141,9 +155,10 @@ public class VisualisationAssetsDraftRecord extends UpdatableRecordImpl<Visualis
     /**
      * Create a detached, initialised VisualisationAssetsDraftRecord
      */
-    public VisualisationAssetsDraftRecord(String draftUserUuid, String ownerDocUuid, String assetUuid, String path, byte[] pathHash, Byte isFolder, byte[] data) {
+    public VisualisationAssetsDraftRecord(Integer id, String draftUserUuid, String ownerDocUuid, String assetUuid, String path, byte[] pathHash, Byte isFolder, byte[] data) {
         super(VisualisationAssetsDraft.VISUALISATION_ASSETS_DRAFT);
 
+        setId(id);
         setDraftUserUuid(draftUserUuid);
         setOwnerDocUuid(ownerDocUuid);
         setAssetUuid(assetUuid);

@@ -9,19 +9,19 @@ import stroom.util.logging.LambdaLogger;
 import stroom.util.logging.LambdaLoggerFactory;
 import stroom.util.shared.PermissionException;
 import stroom.util.shared.ResourceKey;
-import stroom.visualisation.shared.VisualisationAsset;
 import stroom.visualisation.shared.VisualisationAssets;
 import stroom.visualisation.shared.VisualisationDoc;
 
 import com.google.inject.Inject;
 
+import java.io.BufferedInputStream;
+import java.io.FileInputStream;
 import java.io.IOException;
-import java.nio.file.Files;
+import java.io.InputStream;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.Collection;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.Objects;
 
 /**
  * Intermediates between VisualisationAssetResource and VisualisationAssetDao.
@@ -75,84 +75,163 @@ public class VisualisationAssetService {
     }
 
     /**
-     * Called from the UI to put assets into the system.
-     * Assets will be stored as draft under the ID of the user.
-     * @param ownerDocId   The ID of the document that owns these assets.
-     * @param assets       The object wrapping all the assets that we need to update in the system.
-     * @throws IOException If something goes wrong. The method will try to do as much as
-     *                     possible, throwing an error at the end of the update with a message
-     *                     covering all the issues found.
+     * Creates a new folder at the given path.
+     * @param ownerDocId Document that owns the assets. Must not be null.
+     * @param path Path and name of the new file. Must not be null.
+     * @throws IOException If something goes wrong.
      */
-    void updateDraftAssets(final String ownerDocId,
-                           final VisualisationAssets assets) throws IOException {
+    void updateNewFolder(final String ownerDocId, final String path) throws IOException {
+        Objects.requireNonNull(ownerDocId);
+        Objects.requireNonNull(path);
 
         final DocRef docRef = new DocRef(VisualisationDoc.TYPE, ownerDocId);
         if (securityContext.hasDocumentPermission(docRef, DocumentPermission.EDIT)) {
-            final String userUuid = securityContext.getUserRef().getUuid();
+            dao.updateNewFolder(
+                    securityContext.getUserRef().getUuid(),
+                    ownerDocId,
+                    path);
+        } else {
+            LOGGER.info("User does not have permission to create a new folder '{}'", path);
+        }
 
-            // Store errors so we can throw one exception at the end
-            final Map<String, Path> uploadsThatDoNotExist = new HashMap<>();
-            final StringBuilder exceptionBuf = new StringBuilder();
-            final Map<String, VisualisationAsset> assetLookup = new HashMap<>();
-            for (final VisualisationAsset asset : assets.getAssets()) {
-                assetLookup.put(asset.getId(), asset);
+    }
+
+    /**
+     * Creates a new file at the given path.
+     * @param ownerDocId Document that owns the assets. Must not be null.
+     * @param path Path and name of the new file. Must not be null.
+     * @param mimetype Mimetype of the file. Can be null in which case the file extension
+     *                 will be used to derive mimetype.
+     * @throws IOException If something goes wrong.
+     */
+    void updateNewFile(final String ownerDocId,
+                       final String path,
+                       final String mimetype) throws IOException {
+        Objects.requireNonNull(ownerDocId);
+        Objects.requireNonNull(path);
+
+        final DocRef docRef = new DocRef(VisualisationDoc.TYPE, ownerDocId);
+        if (securityContext.hasDocumentPermission(docRef, DocumentPermission.EDIT)) {
+            dao.updateNewFile(
+                    securityContext.getUserRef().getUuid(),
+                    ownerDocId,
+                    path,
+                    mimetype);
+        } else {
+            LOGGER.info("User does not have permission to create a new file '{}'", path);
+        }
+    }
+
+    /**
+     * Creates a new file at the given path from a file upload.
+     * @param ownerDocId Document that owns the assets. Must not be null.
+     * @param path Path and name of the new file. Must not be null.
+     * @param resourceKey The resourceKey associated with the upload. Must not be null.
+     * @param mimetype The optional mimetype. Can be null.
+     * @throws IOException If something goes wrong.
+     */
+    void updateNewUploadedFile(final String ownerDocId,
+                               final String path,
+                               final ResourceKey resourceKey,
+                               final String mimetype) throws IOException {
+        Objects.requireNonNull(ownerDocId);
+        Objects.requireNonNull(path);
+        Objects.requireNonNull(resourceKey);
+
+        final DocRef docRef = new DocRef(VisualisationDoc.TYPE, ownerDocId);
+        if (securityContext.hasDocumentPermission(docRef, DocumentPermission.EDIT)) {
+            final Path uploadPath = resourceStore.getTempFile(resourceKey);
+            if (!uploadPath.toFile().exists()) {
+                throw new IOException("The uploaded file does not exist");
             }
-
-            // First store the assets - the paths and metadata
-            try {
-                dao.storeDraftAssets(userUuid, ownerDocId, assets);
-            } catch (final IOException e) {
-                exceptionBuf.append("\nError storing assets: ");
-                exceptionBuf.append(e.getMessage());
-            }
-
-            // Now store the uploaded files
-            final Map<String, ResourceKey> uploadedFiles = assets.getUploadedFiles();
-            for (final Map.Entry<String, ResourceKey> uploadedFileEntry : uploadedFiles.entrySet()) {
-
-                final Path uploadedPath = resourceStore.getTempFile(uploadedFileEntry.getValue());
-                if (!uploadedPath.toFile().exists()) {
-                    // File does not exist - maybe it has been deleted already
-                    uploadsThatDoNotExist.put(uploadedFileEntry.getKey(), uploadedPath);
-                } else {
-                    try {
-                        // Read the data in and store it in the DB
-                        // Note that file could be deleted between checking it exists and copying it.
-                        // TODO Should stream this data into the DB
-                        final byte[] data = Files.readAllBytes(uploadedPath);
-                        dao.storeDraftData(userUuid, uploadedFileEntry.getKey(), data);
-                    } catch (final IOException e) {
-                        exceptionBuf.append("\nError copying '");
-                        final VisualisationAsset asset = assetLookup.get(uploadedFileEntry.getKey());
-                        final String path = asset == null
-                                ? "unknown"
-                                : asset.getPath();
-                        exceptionBuf.append(path);
-                        exceptionBuf.append("': ");
-                        exceptionBuf.append(e.getMessage());
-                    }
-                }
-            }
-
-            // Did anything go wrong?
-            if (!uploadsThatDoNotExist.isEmpty()) {
-                exceptionBuf.append("\nThese files no longer exist; please upload them again:");
-                for (final Map.Entry<String, Path> notExistEntry : uploadsThatDoNotExist.entrySet()) {
-                    final VisualisationAsset asset = assetLookup.get(notExistEntry.getKey());
-                    exceptionBuf.append("\n");
-                    final String path = asset == null
-                            ? "unknown"
-                            : asset.getPath();
-                    exceptionBuf.append(path);
-                }
-            }
-
-            // If anything went wrong then throw an overall exception here
-            if (!exceptionBuf.isEmpty()) {
-                throw new IOException(exceptionBuf.toString());
+            // Stream the data into the database from the temp file
+            try (final InputStream uploadStream = new BufferedInputStream(new FileInputStream(uploadPath.toFile()))) {
+                dao.updateNewUploadedFile(
+                        securityContext.getUserRef().getUuid(),
+                        ownerDocId,
+                        path,
+                        mimetype,
+                        uploadStream);
+                resourceStore.deleteTempFile(resourceKey);
             }
         } else {
-            LOGGER.info("User does not have permission to update the assets");
+            LOGGER.info("User does not have permission to create a new file from an upload: '{}'", path);
+        }
+    }
+
+    /**
+     * Deletes a file or folder at the given path, and everything underneath that path.
+     * @param ownerDocId Document that owns the assets. Must not be null.
+     * @param path Path and name of the file or folder to delete. Must not be null.
+     * @param isFolder Whether the thing to delete is a file or folder.
+     */
+    void updateDelete(final String ownerDocId,
+                      final String path,
+                      final boolean isFolder) throws IOException {
+        Objects.requireNonNull(ownerDocId);
+        Objects.requireNonNull(path);
+
+        final DocRef docRef = new DocRef(VisualisationDoc.TYPE, ownerDocId);
+        if (securityContext.hasDocumentPermission(docRef, DocumentPermission.EDIT)) {
+            dao.updateDelete(
+                    securityContext.getUserRef().getUuid(),
+                    ownerDocId,
+                    path,
+                    isFolder);
+        } else {
+            LOGGER.info("User does not have permission to delete an item '{}'", path);
+        }
+    }
+
+    /**
+     * Renames a file or folder at the oldPath.
+     * @param ownerDocId Document that owns the assets. Must not be null.
+     * @param oldPath Where the thing used to be.
+     * @param newPath Where the thing needs to be.
+     * @param isFolder true if the thing is a folder, false if it is a file.
+     */
+    void updateRename(final String ownerDocId,
+                      final String oldPath,
+                      final String newPath,
+                      final boolean isFolder) throws IOException {
+        Objects.requireNonNull(ownerDocId);
+        Objects.requireNonNull(oldPath);
+        Objects.requireNonNull(newPath);
+
+        final DocRef docRef = new DocRef(VisualisationDoc.TYPE, ownerDocId);
+        if (securityContext.hasDocumentPermission(docRef, DocumentPermission.EDIT)) {
+            dao.updateRename(
+                    securityContext.getUserRef().getUuid(),
+                    ownerDocId,
+                    oldPath,
+                    newPath,
+                    isFolder);
+        } else {
+            LOGGER.info("User does not have permission to rename an item '{}'", oldPath);
+        }
+    }
+
+    /**
+     * Updates the content in a file.
+     * @param ownerDocId Document that owns the assets. Must not be null.
+     * @param path Location of the document to update the content for.
+     *
+     */
+    void updateContent(final String ownerDocId,
+                       final String path,
+                       final byte[] content) throws IOException {
+        Objects.requireNonNull(ownerDocId);
+        Objects.requireNonNull(path);
+
+        final DocRef docRef = new DocRef(VisualisationDoc.TYPE, ownerDocId);
+        if (securityContext.hasDocumentPermission(docRef, DocumentPermission.EDIT)) {
+            dao.updateContent(
+                    securityContext.getUserRef().getUuid(),
+                    ownerDocId,
+                    path,
+                    content);
+        } else {
+            LOGGER.info("User does not have permission to update the content of an item '{}'", path);
         }
     }
 
@@ -179,8 +258,6 @@ public class VisualisationAssetService {
             dao.revertDraftFromLive(securityContext.getUserRef().getUuid(), ownerDocId);
         }
     }
-
-
 
     /**
      * Gets the data for a given asset. Called from the Servlet to get the asset for a given
