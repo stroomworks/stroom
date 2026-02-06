@@ -157,9 +157,6 @@ public class VisualisationAssetServlet extends HttpServlet implements IsServlet 
         // Not the most efficient way to do this but can be optimised if necessary.
         synchronized (this) {
             // What timestamp do we have on disk?
-            // Can't use Instant.MIN as the default value
-            // as that will overflow when we try to convert to millis, so
-            // go with start of epoch
             Instant cacheTimestamp = Instant.EPOCH;
             final Path metaPath = getCachePathForMetadata(docId, assetPath);
             if (metaPath.toFile().exists()) {
