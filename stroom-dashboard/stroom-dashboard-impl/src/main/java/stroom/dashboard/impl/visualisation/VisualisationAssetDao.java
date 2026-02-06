@@ -5,6 +5,7 @@ import stroom.visualisation.shared.VisualisationAssets;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
@@ -147,19 +148,28 @@ public interface VisualisationAssetDao {
 
     /**
      * Gets the data for a given asset.
-     * @param documentId The ID of the owner document we want the data for.
+     * @param tempFilePrefix The prefix for the temporary file we'll create.
+     *                       Needed so temporary files can be cleaned up if necessary.
+     * @param tempFileSuffix The suffix for the temporary file we'll create.
+     *                       Needed so temporary files can be cleaned up if necessary.
+     * @param ownerDocId The ID of the owner document we want the data for.
      * @param assetPath The path of the asset within the tree.
-     * @return The data for the asset. Returns null if the asset is not found.
+     * @param cacheTimestamp The timestamp of the file in the cache. We're only
+     *                       interested in files that are later than this.
+     * @param cachedPath The path to the file that we want in the
+     *                   VisualisationAssetServlet cache. This method will write
+     *                   the file content to the cached path, if the data in the
+     *                   database is after the cacheTimestamp.
+     * @return If the file is written then returns the latest DB timestamp.
+     *         Otherwise, returns null.
+     * @throws IOException if something goes wrong.
      */
-    byte[] getLiveData(String documentId, String assetPath) throws IOException;
-
-    /**
-     * Gets the timestamp for the entry for the asset. Returns null if the asset isn't found.
-     * @param documentId The ID of the owner document we want the data for.
-     * @param assetPath The path of the asset within the tree.
-     * @return The timestamp for the asset. Returns null if the asset isn't found.
-     * @throws IOException If something goes wrong.
-     */
-    Instant getLiveModifiedTimestamp(String documentId, String assetPath) throws IOException;
+    Instant writeLiveToServletCache(
+            String tempFilePrefix,
+            String tempFileSuffix,
+            String ownerDocId,
+            String assetPath,
+            Instant cacheTimestamp,
+            Path cachedPath) throws IOException;
 
 }

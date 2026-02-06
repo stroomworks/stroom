@@ -13,7 +13,6 @@ import stroom.dashboard.impl.db.jooq.Tables;
 import com.google.common.hash.Hashing;
 import com.google.inject.Inject;
 import org.jooq.DSLContext;
-import org.jooq.Record1;
 import org.jooq.Record2;
 import org.jooq.Record3;
 import org.jooq.Result;
@@ -23,7 +22,11 @@ import org.jooq.impl.DSL;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -162,8 +165,8 @@ public class VisualisationAssetDaoImpl implements VisualisationAssetDao {
      * @param txnContext The context for the query.
      */
     private void populateDraft(final String userUuid,
-                                  final String ownerDocId,
-                                  final DSLContext txnContext) {
+                               final String ownerDocId,
+                               final DSLContext txnContext) {
 
         txnContext.insertInto(Tables.VISUALISATION_ASSETS_DRAFT)
                 .columns(Tables.VISUALISATION_ASSETS_DRAFT.DRAFT_USER_UUID,
@@ -280,7 +283,7 @@ public class VisualisationAssetDaoImpl implements VisualisationAssetDao {
                                       final String ownerDocId,
                                       final String path,
                                       final InputStream uploadStream)
-        throws DataAccessException {
+            throws DataAccessException {
 
         Objects.requireNonNull(userUuid);
         Objects.requireNonNull(ownerDocId);
@@ -289,10 +292,10 @@ public class VisualisationAssetDaoImpl implements VisualisationAssetDao {
 
         // Jooq doesn't support InputStreams so need to use JDBC
         final String INSERT_SQL = "INSERT INTO visualisation_assets_draft ( "
-        + "draft_user_uuid, owner_doc_uuid, asset_uuid, path, path_hash, is_folder, data"
-        + " ) values ( "
-        + "?, ?, ?, ?, ?, ?, ?"
-        + " )";
+                                  + "draft_user_uuid, owner_doc_uuid, asset_uuid, path, path_hash, is_folder, data"
+                                  + " ) values ( "
+                                  + "?, ?, ?, ?, ?, ?, ?"
+                                  + " )";
 
         final String recordPath = slashPath(path, false);
         final byte[] hashRecordPath =
@@ -328,7 +331,7 @@ public class VisualisationAssetDaoImpl implements VisualisationAssetDao {
                              final String oldPath,
                              final String newPath,
                              final boolean isFolder)
-        throws DataAccessException {
+            throws DataAccessException {
         Objects.requireNonNull(userUuid);
         Objects.requireNonNull(ownerDocId);
         Objects.requireNonNull(oldPath);
@@ -385,7 +388,7 @@ public class VisualisationAssetDaoImpl implements VisualisationAssetDao {
                              final String ownerDocId,
                              final String path,
                              final boolean isFolder)
-        throws DataAccessException {
+            throws DataAccessException {
 
         Objects.requireNonNull(userUuid);
         Objects.requireNonNull(ownerDocId);
@@ -417,7 +420,7 @@ public class VisualisationAssetDaoImpl implements VisualisationAssetDao {
                               final String ownerDocId,
                               final String path,
                               final byte[] content)
-        throws DataAccessException {
+            throws DataAccessException {
 
         Objects.requireNonNull(userUuid);
         Objects.requireNonNull(ownerDocId);
@@ -456,45 +459,45 @@ public class VisualisationAssetDaoImpl implements VisualisationAssetDao {
         try {
             // Do everything in one transaction
             JooqUtil.transaction(connProvider, txnContext -> {
-                    LOGGER.info("Deleting existing live assets");
-                    // Delete all existing live content for the owning document ID
-                    int recordCount = txnContext
-                            .deleteFrom(Tables.VISUALISATION_ASSETS)
-                            .where(Tables.VISUALISATION_ASSETS.OWNER_DOC_UUID.eq(documentId))
-                            .execute();
-                    LOGGER.info("{} records deleted in live", recordCount);
+                LOGGER.info("Deleting existing live assets");
+                // Delete all existing live content for the owning document ID
+                int recordCount = txnContext
+                        .deleteFrom(Tables.VISUALISATION_ASSETS)
+                        .where(Tables.VISUALISATION_ASSETS.OWNER_DOC_UUID.eq(documentId))
+                        .execute();
+                LOGGER.info("{} records deleted in live", recordCount);
 
-                    LOGGER.info("Copying data into Live");
-                    // Copy all relevant data from the user draft table into the live table
-                    recordCount = txnContext
-                            .insertInto(Tables.VISUALISATION_ASSETS,
-                                    Tables.VISUALISATION_ASSETS.MODIFIED,
-                                    Tables.VISUALISATION_ASSETS.OWNER_DOC_UUID,
-                                    Tables.VISUALISATION_ASSETS.ASSET_UUID,
-                                    Tables.VISUALISATION_ASSETS.PATH,
-                                    Tables.VISUALISATION_ASSETS.PATH_HASH,
-                                    Tables.VISUALISATION_ASSETS.IS_FOLDER,
-                                    Tables.VISUALISATION_ASSETS.DATA)
-                            .select(txnContext.select(
-                                            DSL.val(timestamp),
-                                            Tables.VISUALISATION_ASSETS_DRAFT.OWNER_DOC_UUID,
-                                            Tables.VISUALISATION_ASSETS_DRAFT.ASSET_UUID,
-                                            Tables.VISUALISATION_ASSETS_DRAFT.PATH,
-                                            Tables.VISUALISATION_ASSETS_DRAFT.PATH_HASH,
-                                            Tables.VISUALISATION_ASSETS_DRAFT.IS_FOLDER,
-                                            Tables.VISUALISATION_ASSETS_DRAFT.DATA)
-                                    .from(Tables.VISUALISATION_ASSETS_DRAFT)
-                                    .where(Tables.VISUALISATION_ASSETS_DRAFT.DRAFT_USER_UUID.eq(userUuid)
-                                            .and(Tables.VISUALISATION_ASSETS_DRAFT.OWNER_DOC_UUID.eq(documentId))))
-                            .execute();
-                    LOGGER.info("Copied {} records from draft into Live", recordCount);
+                LOGGER.info("Copying data into Live");
+                // Copy all relevant data from the user draft table into the live table
+                recordCount = txnContext
+                        .insertInto(Tables.VISUALISATION_ASSETS,
+                                Tables.VISUALISATION_ASSETS.MODIFIED,
+                                Tables.VISUALISATION_ASSETS.OWNER_DOC_UUID,
+                                Tables.VISUALISATION_ASSETS.ASSET_UUID,
+                                Tables.VISUALISATION_ASSETS.PATH,
+                                Tables.VISUALISATION_ASSETS.PATH_HASH,
+                                Tables.VISUALISATION_ASSETS.IS_FOLDER,
+                                Tables.VISUALISATION_ASSETS.DATA)
+                        .select(txnContext.select(
+                                        DSL.val(timestamp),
+                                        Tables.VISUALISATION_ASSETS_DRAFT.OWNER_DOC_UUID,
+                                        Tables.VISUALISATION_ASSETS_DRAFT.ASSET_UUID,
+                                        Tables.VISUALISATION_ASSETS_DRAFT.PATH,
+                                        Tables.VISUALISATION_ASSETS_DRAFT.PATH_HASH,
+                                        Tables.VISUALISATION_ASSETS_DRAFT.IS_FOLDER,
+                                        Tables.VISUALISATION_ASSETS_DRAFT.DATA)
+                                .from(Tables.VISUALISATION_ASSETS_DRAFT)
+                                .where(Tables.VISUALISATION_ASSETS_DRAFT.DRAFT_USER_UUID.eq(userUuid)
+                                        .and(Tables.VISUALISATION_ASSETS_DRAFT.OWNER_DOC_UUID.eq(documentId))))
+                        .execute();
+                LOGGER.info("Copied {} records from draft into Live", recordCount);
 
-                    // Delete everything in the draft table so next time we'll get clean live data
-                    recordCount = txnContext
-                            .deleteFrom(Tables.VISUALISATION_ASSETS_DRAFT)
-                            .where(Tables.VISUALISATION_ASSETS_DRAFT.DRAFT_USER_UUID.eq(userUuid)
-                                    .and(Tables.VISUALISATION_ASSETS_DRAFT.OWNER_DOC_UUID.eq(documentId)))
-                            .execute();
+                // Delete everything in the draft table so next time we'll get clean live data
+                recordCount = txnContext
+                        .deleteFrom(Tables.VISUALISATION_ASSETS_DRAFT)
+                        .where(Tables.VISUALISATION_ASSETS_DRAFT.DRAFT_USER_UUID.eq(userUuid)
+                                .and(Tables.VISUALISATION_ASSETS_DRAFT.OWNER_DOC_UUID.eq(documentId)))
+                        .execute();
                 LOGGER.info("Deleted {} records in the draft table", recordCount);
             });
         } catch (final DataAccessException e) {
@@ -531,11 +534,11 @@ public class VisualisationAssetDaoImpl implements VisualisationAssetDao {
         try {
             final Result<Record2<String, byte[]>> result =
                     JooqUtil.contextResult(connProvider, context -> context
-                    .select(Tables.VISUALISATION_ASSETS.PATH,
-                            Tables.VISUALISATION_ASSETS.DATA)
-                    .from(Tables.VISUALISATION_ASSETS)
-                    .where(Tables.VISUALISATION_ASSETS.OWNER_DOC_UUID.eq(documentId))
-                    .fetch());
+                            .select(Tables.VISUALISATION_ASSETS.PATH,
+                                    Tables.VISUALISATION_ASSETS.DATA)
+                            .from(Tables.VISUALISATION_ASSETS)
+                            .where(Tables.VISUALISATION_ASSETS.OWNER_DOC_UUID.eq(documentId))
+                            .fetch());
             return resultToImportExportAssets(result);
         } catch (final DataAccessException e) {
             LOGGER.error("Error getting export assets for document '{}': {}",
@@ -603,60 +606,97 @@ public class VisualisationAssetDaoImpl implements VisualisationAssetDao {
     }
 
     @Override
-    public byte[] getLiveData(final String documentId, final String assetPath) throws IOException {
-        Objects.requireNonNull(documentId);
-        Objects.requireNonNull(assetPath);
+    public Instant writeLiveToServletCache(final String tempFilePrefix,
+                                           final String tempFileSuffix,
+                                           final String ownerDocId,
+                                           final String assetPath,
+                                           final Instant cacheTimestamp,
+                                           final Path cachedPath) throws IOException {
 
-        LOGGER.info("Getting data for document {}, path {}", documentId, assetPath);
+        Objects.requireNonNull(ownerDocId);
+        Objects.requireNonNull(assetPath);
+        Objects.requireNonNull(cacheTimestamp);
+        Objects.requireNonNull(cachedPath);
+
         try {
-            final byte[] assetPathHash = Hashing.sha256().hashString(assetPath, StandardCharsets.UTF_8).asBytes();
-            final Result<Record1<byte[]>> result = JooqUtil.contextResult(connProvider, context -> context
-                    .select(Tables.VISUALISATION_ASSETS.DATA)
-                    .from(Tables.VISUALISATION_ASSETS)
-                    .where(Tables.VISUALISATION_ASSETS.OWNER_DOC_UUID.eq(documentId)
-                            .and(Tables.VISUALISATION_ASSETS.PATH_HASH.eq(assetPathHash))
-                            .and(Tables.VISUALISATION_ASSETS.PATH.eq(assetPath)))
-                    .fetch());
-            if (result.isEmpty()) {
-                // Return null to indicate not found
-                return null;
-            } else {
-                return result.getFirst().value1();
-            }
-        } catch (final DataAccessException e) {
-            LOGGER.error("Error getting data for document '{}', path '{}': {}",
-                    documentId, assetPath, e.getMessage(), e);
-            throw new IOException("Error getting data for document: " + e.getMessage(), e);
+            // Using JDBC so we can use InputStream to get file contents
+            final String SELECT_SQL = "SELECT modified, data "
+                                      + "FROM visualisation_assets "
+                                      + "WHERE modified > ? AND owner_doc_uuid = ? AND path = ? AND path_hash = ?";
+
+            final String recordPath = slashPath(assetPath, false);
+            final byte[] hashRecordPath =
+                    Hashing.sha256().hashString(recordPath, StandardCharsets.UTF_8).asBytes();
+            final Instant[] dbTimestamp = new Instant[1];
+            dbTimestamp[0] = null;
+
+            JooqUtil.transaction(connProvider, txnContext -> {
+                txnContext.connection(connection -> {
+                    try (final PreparedStatement stmt = connection.prepareStatement(SELECT_SQL)) {
+                        stmt.setLong(1, cacheTimestamp.toEpochMilli());
+                        stmt.setString(2, ownerDocId);
+                        stmt.setString(3, recordPath);
+                        stmt.setBytes(4, hashRecordPath);
+                        final ResultSet resultSet = stmt.executeQuery();
+                        if (resultSet.next()) {
+                            // Got data
+                            final long epochMillis = resultSet.getLong(1);
+                            LOGGER.info("Got epochMillis: {}", epochMillis);
+                            dbTimestamp[0] = Instant.ofEpochMilli(epochMillis);
+                            try (final InputStream dataStream = resultSet.getBinaryStream(2)) {
+                                saveDataSafely(tempFilePrefix,
+                                        tempFileSuffix,
+                                        cachedPath,
+                                        dataStream);
+                            }
+                        } else {
+                            // No result - either doesn't exist or cache is valid
+                            LOGGER.info("No result found for {}:{}", ownerDocId, assetPath);
+                        }
+                    }
+                });
+            });
+
+            return dbTimestamp[0];
+        } catch (final Throwable t) {
+            LOGGER.error("Error writing asset data to Servlet cache: {}", t.getMessage(), t);
+            throw t;
         }
+
     }
 
-    @Override
-    public Instant getLiveModifiedTimestamp(final String documentId, final String assetPath) throws IOException {
-        Objects.requireNonNull(documentId);
-        Objects.requireNonNull(assetPath);
+    /**
+     * Performs a safe write to file, so if the system crashes half-way through writing
+     * we don't have a corrupted version of the file.
+     * @param tempFilePrefix The prefix for the temporary file we'll create.
+     *                       Needed so temporary files can be cleaned up if necessary.
+     * @param tempFileSuffix The suffix for the temporary file we'll create.
+     *                       Needed so temporary files can be cleaned up if necessary.
+     * @param filePath The path to the file we want to create.
+     * @param dataStream The data to write to the file. Might be null.
+     * @throws IOException If something goes wrong.
+     */
+    private void saveDataSafely(final String tempFilePrefix,
+                                final String tempFileSuffix,
+                                final Path filePath,
+                                final InputStream dataStream) throws IOException {
 
-        LOGGER.info("getLiveModifiedTimestamp");
-        try {
-            final byte[] assetPathHash = Hashing.sha256().hashString(assetPath, StandardCharsets.UTF_8).asBytes();
-            final Result<Record1<Long>> result = JooqUtil.contextResult(connProvider, context -> context
-                    .select(Tables.VISUALISATION_ASSETS.MODIFIED)
-                    .from(Tables.VISUALISATION_ASSETS)
-                    .where(Tables.VISUALISATION_ASSETS.OWNER_DOC_UUID.eq(documentId)
-                            .and(Tables.VISUALISATION_ASSETS.PATH_HASH.eq(assetPathHash))
-                            .and(Tables.VISUALISATION_ASSETS.PATH.eq(assetPath)))
-                    .fetch());
-            if (result.isEmpty()) {
-                // Return null to indicate not found
-                return null;
-            } else {
-                final Long timestamp = result.getFirst().value1();
-                return Instant.ofEpochMilli(timestamp);
-            }
-        } catch (final DataAccessException e) {
-            LOGGER.error("Error getting timestamp for document '{}', path '{}': {}",
-                    documentId, assetPath, e.getMessage(), e);
-            throw new IOException("Error getting timestamp for document: " + e.getMessage(), e);
+        final Path fileDir = filePath.getParent();
+        Files.createDirectories(fileDir);
+        final Path tempFilePath = Files.createTempFile(fileDir,
+                tempFilePrefix,
+                tempFileSuffix);
+
+        if (dataStream != null) {
+            final long bytesCopied = Files.copy(dataStream, tempFilePath, StandardCopyOption.REPLACE_EXISTING);
+            LOGGER.info("Copied {} bytes to path '{}'", bytesCopied, filePath);
         }
+
+        Files.move(tempFilePath,
+                filePath,
+                StandardCopyOption.REPLACE_EXISTING,
+                StandardCopyOption.ATOMIC_MOVE);
+        LOGGER.info("Copied to '{}': size is now {}", filePath, filePath.toFile().length());
     }
 
 }

@@ -255,41 +255,38 @@ public class VisualisationAssetService {
     /**
      * Gets the data for a given asset. Called from the Servlet to get the asset for a given
      * document and path.
-     * <br>TODO This data should be streamed rather than held in a byte[] in memory.
-     * @param documentId The ID of the document that owns the asset.
-     * @param assetPath The path of the visualisation asset we want the data for.
-     * @return The data for the asset, or null if the asset is not found.
-     * @throws IOException If something goes wrong with the IO, DB etc.
-     * @throws PermissionException If the user doesn't have view permissions for these assets.
+     * @param tempFilePrefix The prefix for the temporary file we'll create.
+     *                       Needed so temporary files can be cleaned up if necessary.
+     * @param tempFileSuffix The suffix for the temporary file we'll create.
+     *                       Needed so temporary files can be cleaned up if necessary.
+     * @param ownerDocId The ID of the owner document we want the data for.
+     * @param assetPath The path of the asset within the tree.
+     * @param cacheTimestamp The timestamp of the file in the cache. We're only
+     *                       interested in files that are later than this.
+     * @param cachedPath The path to the file that we want in the
+     *                   VisualisationAssetServlet cache. This method will write
+     *                   the file content to the cached path, if the data in the
+     *                   database is after the cacheTimestamp.
+     * @return If the file is written then returns the latest DB timestamp.
+     *         Otherwise, returns null.
+     * @throws IOException if something goes wrong.
      */
-    byte[] getLiveData(final String documentId, final String assetPath)
+    Instant writeLiveToServletCache(final String tempFilePrefix,
+                                    final String tempFileSuffix,
+                                    final String ownerDocId,
+                                    final String assetPath,
+                                    final Instant cacheTimestamp,
+                                    final Path cachedPath)
             throws IOException, PermissionException {
-        LOGGER.info("Returning asset for {}, {}", documentId, assetPath);
-        final DocRef docRef = new DocRef(VisualisationDoc.TYPE, documentId);
+        LOGGER.info("Returning asset for {}, {}", ownerDocId, assetPath);
+        final DocRef docRef = new DocRef(VisualisationDoc.TYPE, ownerDocId);
         if (securityContext.hasDocumentPermission(docRef, DocumentPermission.VIEW)) {
-            return dao.getLiveData(documentId, assetPath);
-        } else {
-            // Catch this higher up and return a 401.
-            throw new PermissionException(securityContext.getUserRef(),
-                    "You do not have permission to view this asset");
-        }
-    }
-
-    /**
-     * Returns the timestamp when the given asset was modified. Called from the Servlet
-     * so we know if we need to invalidate the cache.
-     * @param documentId The ID of the document that owns the asset.
-     *      * @param assetPath The path of the visualisation asset we want the data for.
-     *      * @return The data for the asset, or null if the asset is not found.
-     *      * @throws IOException If something goes wrong with the IO, DB etc.
-     *      * @throws PermissionException If the user doesn't have view permissions for these assets.
-     */
-    Instant getLiveModifiedTimestamp(final String documentId, final String assetPath)
-        throws IOException, PermissionException {
-        LOGGER.info("Returning asset timestamp for {}, {}", documentId, assetPath);
-        final DocRef docRef = new DocRef(VisualisationDoc.TYPE, documentId);
-        if (securityContext.hasDocumentPermission(docRef, DocumentPermission.VIEW)) {
-            return dao.getLiveModifiedTimestamp(documentId, assetPath);
+            return dao.writeLiveToServletCache(tempFilePrefix,
+                    tempFileSuffix,
+                    ownerDocId,
+                    assetPath,
+                    cacheTimestamp,
+                    cachedPath);
         } else {
             // Catch this higher up and return a 401.
             throw new PermissionException(securityContext.getUserRef(),
