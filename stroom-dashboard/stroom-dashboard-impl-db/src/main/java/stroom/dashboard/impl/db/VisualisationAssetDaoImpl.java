@@ -123,9 +123,7 @@ public class VisualisationAssetDaoImpl implements VisualisationAssetDao {
             dirty[0] = true;
 
             JooqUtil.transaction(connProvider, txnContext -> {
-                dirty[0] = populateDraft(userUuid, ownerDocId, txnContext);
-
-                final Result<Record3<String, String, Byte>> result = txnContext
+                Result<Record3<String, String, Byte>> result = txnContext
                         .select(Tables.VISUALISATION_ASSETS_DRAFT.ASSET_UUID,
                                 Tables.VISUALISATION_ASSETS_DRAFT.PATH,
                                 Tables.VISUALISATION_ASSETS_DRAFT.IS_FOLDER)
@@ -134,6 +132,18 @@ public class VisualisationAssetDaoImpl implements VisualisationAssetDao {
                                 .and(Tables.VISUALISATION_ASSETS_DRAFT.DRAFT_USER_UUID.eq(userUuid)))
                         .fetch();
 
+                if (result.isEmpty()) {
+                    // No results so try looking in the live table instead
+                    LOGGER.info("No draft assets - getting from live table");
+                    dirty[0] = false;
+                    result = txnContext
+                            .select(Tables.VISUALISATION_ASSETS.ASSET_UUID,
+                                    Tables.VISUALISATION_ASSETS.PATH,
+                                    Tables.VISUALISATION_ASSETS.IS_FOLDER)
+                            .from(Tables.VISUALISATION_ASSETS)
+                            .where(Tables.VISUALISATION_ASSETS.OWNER_DOC_UUID.eq(ownerDocId))
+                            .fetch();
+                }
                 assets.addAll(resultToAssets(result));
             });
             LOGGER.info("Dirty is {}", dirty[0]);
@@ -150,13 +160,12 @@ public class VisualisationAssetDaoImpl implements VisualisationAssetDao {
      * @param userUuid The user ID we're operating under
      * @param ownerDocId The ID of the doc that owns these resources.
      * @param txnContext The context for the query.
-     * @return true if draft was populated (data is clean); false if not (data is dirty).
      */
-    private boolean populateDraft(final String userUuid,
+    private void populateDraft(final String userUuid,
                                   final String ownerDocId,
                                   final DSLContext txnContext) {
 
-        final int rowsCopied = txnContext.insertInto(Tables.VISUALISATION_ASSETS_DRAFT)
+        txnContext.insertInto(Tables.VISUALISATION_ASSETS_DRAFT)
                 .columns(Tables.VISUALISATION_ASSETS_DRAFT.DRAFT_USER_UUID,
                         Tables.VISUALISATION_ASSETS_DRAFT.OWNER_DOC_UUID,
                         Tables.VISUALISATION_ASSETS_DRAFT.ASSET_UUID,
@@ -180,23 +189,6 @@ public class VisualisationAssetDaoImpl implements VisualisationAssetDao {
                                         )
                         )
                 ).execute();
-
-        boolean liveEmpty = false;
-
-        if (rowsCopied == 0) {
-            // It is possible that the live table is empty; we don't want to return
-            // false in this case as this would indicate that the data is dirty
-            // so check live now
-            liveEmpty = !txnContext.fetchExists(
-                    txnContext.selectOne()
-                            .from(Tables.VISUALISATION_ASSETS)
-                            .where(Tables.VISUALISATION_ASSETS.OWNER_DOC_UUID.eq(ownerDocId))
-            );
-        }
-
-        // Data is clean if rows were copied from live
-        // or if live is empty and there are no rows to copy
-        return (rowsCopied > 0) || liveEmpty;
     }
 
     @Override
@@ -244,15 +236,12 @@ public class VisualisationAssetDaoImpl implements VisualisationAssetDao {
     @Override
     public void updateNewFile(final String userUuid,
                               final String ownerDocId,
-                              final String path,
-                              final String mimetype)
+                              final String path)
             throws IOException, DataAccessException {
 
         Objects.requireNonNull(userUuid);
         Objects.requireNonNull(ownerDocId);
         Objects.requireNonNull(path);
-
-        // TODO Store mimetype in the DB
 
         JooqUtil.transaction(connProvider, txnContext -> {
             populateDraft(userUuid, ownerDocId, txnContext);
@@ -290,7 +279,6 @@ public class VisualisationAssetDaoImpl implements VisualisationAssetDao {
     public void updateNewUploadedFile(final String userUuid,
                                       final String ownerDocId,
                                       final String path,
-                                      final String mimetype,
                                       final InputStream uploadStream)
         throws DataAccessException {
 
@@ -298,8 +286,6 @@ public class VisualisationAssetDaoImpl implements VisualisationAssetDao {
         Objects.requireNonNull(ownerDocId);
         Objects.requireNonNull(path);
         Objects.requireNonNull(uploadStream);
-
-        // TODO Store mimetype in the database
 
         // Jooq doesn't support InputStreams so need to use JDBC
         final String INSERT_SQL = "INSERT INTO visualisation_assets_draft ( "
@@ -416,7 +402,9 @@ public class VisualisationAssetDaoImpl implements VisualisationAssetDao {
                                     DSL.val(START_OF_SUBSTRING), DSL.length(DSL.val(deletedPath))).eq(deletedPath))
                     )
                     .execute();
-            if (rowsDeleted != 1) {
+
+            // If deleting the root of a tree then more than 1 rows will be deleted
+            if (rowsDeleted < 1) {
                 throw new DataAccessException("1 row should have been deleted for '"
                                               + deletedPath
                                               + "' but " + rowsDeleted + " rows were deleted.");
@@ -568,9 +556,6 @@ public class VisualisationAssetDaoImpl implements VisualisationAssetDao {
 
         try {
             JooqUtil.transaction(connProvider, txnContext -> {
-                // TODO Should we delete all Draft data for all users
-                // TODO as we're directly putting stuff into Live?
-
                 try {
                     // Delete all existing live content for the owning document ID
                     final int recordCount = txnContext

@@ -36,8 +36,7 @@ import java.util.Objects;
 )
 @JsonPropertyOrder({
         "path",
-        "resourceKey",
-        "mimetype"
+        "resourceKey"
 })
 @JsonInclude(Include.NON_NULL)
 public class VisualisationAssetUpdateNewFile {
@@ -48,17 +47,12 @@ public class VisualisationAssetUpdateNewFile {
     @JsonProperty
     private final ResourceKey resourceKey;
 
-    @JsonProperty
-    private final String mimetype;
-
     @JsonCreator
     public VisualisationAssetUpdateNewFile(
             @JsonProperty("path") final String path,
-            @JsonProperty("resourceKey") final ResourceKey resourceKey,
-            @JsonProperty("mimetype") final String mimetype) {
+            @JsonProperty("resourceKey") final ResourceKey resourceKey) {
         this.path = path;
         this.resourceKey = resourceKey;
-        this.mimetype = mimetype;
     }
 
     public String getPath() {
@@ -69,10 +63,6 @@ public class VisualisationAssetUpdateNewFile {
         return resourceKey;
     }
 
-    public String getMimetype() {
-        return mimetype;
-    }
-
     @Override
     public boolean equals(final Object o) {
         if (o == null || getClass() != o.getClass()) {
@@ -80,13 +70,12 @@ public class VisualisationAssetUpdateNewFile {
         }
         final VisualisationAssetUpdateNewFile that = (VisualisationAssetUpdateNewFile) o;
         return Objects.equals(path, that.path)
-               && Objects.equals(resourceKey, that.resourceKey)
-               && Objects.equals(mimetype, that.mimetype);
+               && Objects.equals(resourceKey, that.resourceKey);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(path, resourceKey, mimetype);
+        return Objects.hash(path, resourceKey);
     }
 
     @Override
@@ -94,7 +83,6 @@ public class VisualisationAssetUpdateNewFile {
         return "VisualisationAssetUpdateNewFile{" +
                "path=" + path +
                ", resourceKey=" + resourceKey +
-               ", mimetype='" + mimetype + '\'' +
                '}';
     }
 }

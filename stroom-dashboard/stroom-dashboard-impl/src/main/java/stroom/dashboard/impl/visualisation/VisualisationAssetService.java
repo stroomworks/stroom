@@ -100,13 +100,10 @@ public class VisualisationAssetService {
      * Creates a new file at the given path.
      * @param ownerDocId Document that owns the assets. Must not be null.
      * @param path Path and name of the new file. Must not be null.
-     * @param mimetype Mimetype of the file. Can be null in which case the file extension
-     *                 will be used to derive mimetype.
      * @throws IOException If something goes wrong.
      */
     void updateNewFile(final String ownerDocId,
-                       final String path,
-                       final String mimetype) throws IOException {
+                       final String path) throws IOException {
         Objects.requireNonNull(ownerDocId);
         Objects.requireNonNull(path);
 
@@ -115,8 +112,7 @@ public class VisualisationAssetService {
             dao.updateNewFile(
                     securityContext.getUserRef().getUuid(),
                     ownerDocId,
-                    path,
-                    mimetype);
+                    path);
         } else {
             LOGGER.info("User does not have permission to create a new file '{}'", path);
         }
@@ -127,13 +123,11 @@ public class VisualisationAssetService {
      * @param ownerDocId Document that owns the assets. Must not be null.
      * @param path Path and name of the new file. Must not be null.
      * @param resourceKey The resourceKey associated with the upload. Must not be null.
-     * @param mimetype The optional mimetype. Can be null.
      * @throws IOException If something goes wrong.
      */
     void updateNewUploadedFile(final String ownerDocId,
                                final String path,
-                               final ResourceKey resourceKey,
-                               final String mimetype) throws IOException {
+                               final ResourceKey resourceKey) throws IOException {
         Objects.requireNonNull(ownerDocId);
         Objects.requireNonNull(path);
         Objects.requireNonNull(resourceKey);
@@ -150,7 +144,6 @@ public class VisualisationAssetService {
                         securityContext.getUserRef().getUuid(),
                         ownerDocId,
                         path,
-                        mimetype,
                         uploadStream);
                 resourceStore.deleteTempFile(resourceKey);
             }

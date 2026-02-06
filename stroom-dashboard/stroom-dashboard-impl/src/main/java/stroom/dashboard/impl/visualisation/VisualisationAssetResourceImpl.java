@@ -70,7 +70,7 @@ public class VisualisationAssetResourceImpl implements VisualisationAssetResourc
             throws RuntimeException {
         LOGGER.info("updateNewFile: {}", update.getPath());
         try {
-            serviceProvider.get().updateNewFile(ownerDocId, update.getPath(), update.getMimetype());
+            serviceProvider.get().updateNewFile(ownerDocId, update.getPath());
         } catch (final IOException e) {
             throw new RuntimeException(e);
         } catch (final Throwable t) {
@@ -90,8 +90,7 @@ public class VisualisationAssetResourceImpl implements VisualisationAssetResourc
             serviceProvider.get().updateNewUploadedFile(
                     ownerDocId,
                     update.getPath(),
-                    update.getResourceKey(),
-                    update.getMimetype());
+                    update.getResourceKey());
 
         } catch (final IOException e) {
             throw new RuntimeException(e);

@@ -185,11 +185,8 @@ public class VisualisationAssetsPresenter
                                 final ResourceKey resourceKey) {
 
         final String path = VisualisationAssetsPresenterUtils.getNewItemPath(parentFolderItem, fileName);
-        Console.info("Adding uploaded file at " + path);
-        // TODO Allow mimetype to be variable. null selects auto-mimetype.
-
         VisualisationAssetsPresenterUtils.markOpenClosedStateOpen(parentFolderItem, treeItemPathToOpenState);
-        doUpdateNewUploadedFile(path, resourceKey, null);
+        doUpdateNewUploadedFile(path, resourceKey);
     }
 
     /**
@@ -336,8 +333,7 @@ public class VisualisationAssetsPresenter
                                                 VisualisationAssetsPresenterUtils.getNewItemPath(parentItem, itemName);
                                         final VisualisationAssetUpdateNewFile update;
                                         if (addFile) {
-                                            // TODO read in the mimetype from somewhere
-                                            doUpdateNewFile(newItemPath, "text/plain");
+                                            doUpdateNewFile(newItemPath);
                                         } else {
                                             doUpdateNewFolder(newItemPath);
                                         }
@@ -615,15 +611,12 @@ public class VisualisationAssetsPresenter
     /**
      * Does the REST call to create a new file.
      * @param path The path and name of the file.
-     * @param mimetype The mimetype associated with the file.
      */
-    private void doUpdateNewFile(final String path,
-                                 final String mimetype) {
+    private void doUpdateNewFile(final String path) {
         Objects.requireNonNull(path);
-        Objects.requireNonNull(mimetype);
 
         final VisualisationAssetUpdateNewFile update =
-                new VisualisationAssetUpdateNewFile(path, null, mimetype);
+                new VisualisationAssetUpdateNewFile(path, null);
 
         restFactory.create(VISUALISATION_ASSET_RESOURCE)
                 .method(r -> r.updateNewFile(document.getUuid(), update))
@@ -652,13 +645,12 @@ public class VisualisationAssetsPresenter
      * @param resourceKey The resource key associated with the upload
      */
     private void doUpdateNewUploadedFile(final String path,
-                                         final ResourceKey resourceKey,
-                                         final String mimetype) {
+                                         final ResourceKey resourceKey) {
         Objects.requireNonNull(path);
         Objects.requireNonNull(resourceKey);
 
         final VisualisationAssetUpdateNewFile update =
-                new VisualisationAssetUpdateNewFile(path, resourceKey, mimetype);
+                new VisualisationAssetUpdateNewFile(path, resourceKey);
 
         restFactory.create(VISUALISATION_ASSET_RESOURCE)
                 .method(r ->

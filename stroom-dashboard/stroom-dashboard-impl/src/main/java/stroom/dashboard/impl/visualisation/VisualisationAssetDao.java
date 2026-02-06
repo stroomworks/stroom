@@ -43,14 +43,11 @@ public interface VisualisationAssetDao {
      * @param userUuid The user ID that is doing the update
      * @param ownerDocId The document that owns the assets
      * @param path The path to the file, including the file name and extension.
-     * @param mimetype The mimetype of the file. Can be null in which case the extension
-     *                 will be used to derive the mimetype in the Servlet.
      * @throws IOException If something goes wrong.
      */
     void updateNewFile(String userUuid,
                        String ownerDocId,
-                       String path,
-                       String mimetype)
+                       String path)
         throws IOException;
 
     /**
@@ -59,8 +56,6 @@ public interface VisualisationAssetDao {
      * @param userUuid The user ID that is doing the update
      * @param ownerDocId The document that owns the assets
      * @param path The path to the file, including the file name and extension.
-     * @param mimetype The mimetype of the file. Can be null in which case the extension
-     *                 will be used to derive the mimetype in the Servlet.
      * @param uploadStream The stream to read the file contents from.
      *                     Must not be null.
      * @throws IOException If something goes wrong.
@@ -68,7 +63,6 @@ public interface VisualisationAssetDao {
     void updateNewUploadedFile(String userUuid,
                                String ownerDocId,
                                String path,
-                               String mimetype,
                                InputStream uploadStream)
         throws IOException;
 
