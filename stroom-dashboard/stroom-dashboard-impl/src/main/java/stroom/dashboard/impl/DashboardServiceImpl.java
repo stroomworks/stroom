@@ -700,6 +700,11 @@ class DashboardServiceImpl implements DashboardService {
     }
 
     @Override
+    public List<DocRef> findByType(final String dashboardType) {
+        return dashboardStore.findByType(dashboardType);
+    }
+
+    @Override
     public String getBestNode(final String nodeName, final DashboardSearchRequest request) {
         if (nodeName == null || nodeName.equals("null")) {
             if (queryNodeResolver == null) {

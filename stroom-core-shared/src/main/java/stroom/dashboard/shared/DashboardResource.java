@@ -16,6 +16,7 @@
 
 package stroom.dashboard.shared;
 
+import stroom.docref.DocRef;
 import stroom.util.shared.FetchWithUuid;
 import stroom.util.shared.ResourceGeneration;
 import stroom.util.shared.ResourcePaths;
@@ -31,8 +32,11 @@ import jakarta.ws.rs.PUT;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 import org.fusesource.restygwt.client.DirectRestService;
+
+import java.util.List;
 
 @Tag(name = "Dashboards")
 @Path(DashboardResource.BASE_PATH)
@@ -53,6 +57,13 @@ public interface DashboardResource extends RestResource, DirectRestService, Fetc
             summary = "Fetch a dashboard doc by its UUID",
             operationId = "fetchDashboard")
     DashboardDoc fetch(@PathParam("uuid") String uuid);
+
+    @GET
+    @Path("/findByType")
+    @Operation(
+            summary = "Find dashboards by dashboard type",
+            operationId = "findDashboardsByType")
+    List<DocRef> findByType(@QueryParam("dashboardType") String dashboardType);
 
     @PUT
     @Path("/{uuid}")

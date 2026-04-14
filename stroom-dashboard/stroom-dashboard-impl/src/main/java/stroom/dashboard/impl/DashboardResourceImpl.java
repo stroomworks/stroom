@@ -38,6 +38,8 @@ import jakarta.inject.Inject;
 import jakarta.inject.Provider;
 import jakarta.ws.rs.client.Entity;
 
+import java.util.List;
+
 @AutoLogged
 class DashboardResourceImpl implements DashboardResource {
 
@@ -64,6 +66,11 @@ class DashboardResourceImpl implements DashboardResource {
             throw new EntityServiceException("The document UUID must match the update UUID");
         }
         return dashboardServiceProvider.get().update(doc);
+    }
+
+    @Override
+    public List<DocRef> findByType(final String dashboardType) {
+        return dashboardServiceProvider.get().findByType(dashboardType);
     }
 
     private DocRef getDocRef(final String uuid) {

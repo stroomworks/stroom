@@ -49,7 +49,9 @@ import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 @Singleton
 class DashboardStoreImpl implements DashboardStore {
@@ -325,6 +327,16 @@ class DashboardStoreImpl implements DashboardStore {
     @Override
     public List<DocRef> list() {
         return store.list();
+    }
+
+    @Override
+    public List<DocRef> findByType(final String dashboardType) {
+        return store.list().stream()
+                .filter(docRef -> {
+                    final DashboardDoc doc = store.readDocument(docRef);
+                    return doc != null && Objects.equals(doc.getDashboardType(), dashboardType);
+                })
+                .collect(Collectors.toList());
     }
 
     @Override

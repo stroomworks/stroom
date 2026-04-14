@@ -14,17 +14,10 @@
  * limitations under the License.
  */
 
-package stroom.dashboard.impl;
+package stroom.dashboard.client.main;
 
-import stroom.dashboard.shared.DashboardDoc;
-import stroom.docref.DocRef;
-import stroom.docstore.api.DocumentStore;
+import com.gwtplatform.mvp.client.UiHandlers;
 
-import java.util.List;
-
-public interface DashboardStore extends DocumentStore<DashboardDoc> {
-
-    List<DocRef> list();
-
-    List<DocRef> findByType(String dashboardType);
+public interface DashboardSettingsUiHandlers extends UiHandlers {
+    void onDirty();
 }

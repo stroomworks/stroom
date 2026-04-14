@@ -45,6 +45,7 @@ public class DashboardSuperPresenter
         implements HasToolbar, HasMultipleInstances {
 
     private static final TabData DASHBOARD = new TabDataImpl("Dashboard", DashboardDoc.TYPE);
+    private static final TabData SETTINGS = new TabDataImpl("Settings");
     private static final TabData DOCUMENTATION = new TabDataImpl("Documentation");
     private static final TabData PERMISSIONS = new TabDataImpl("Permissions");
 
@@ -55,6 +56,7 @@ public class DashboardSuperPresenter
     public DashboardSuperPresenter(final EventBus eventBus,
                                    final LinkTabPanelView view,
                                    final DashboardPresenter dashboardPresenter,
+                                   final Provider<DashboardSettingsPresenter> settingsPresenterProvider,
                                    final Provider<MarkdownEditPresenter> markdownEditPresenterProvider,
                                    final DocumentUserPermissionsTabProvider<DashboardDoc>
                                            documentUserPermissionsTabProvider) {
@@ -62,6 +64,7 @@ public class DashboardSuperPresenter
         this.dashboardPresenter = dashboardPresenter;
 
         addTab(DASHBOARD, new DocTabProvider<>(() -> dashboardPresenter));
+        addTab(SETTINGS, new DocTabProvider<>(settingsPresenterProvider::get));
         addTab(DOCUMENTATION, new MarkdownTabProvider<DashboardDoc>(eventBus, markdownEditPresenterProvider) {
             @Override
             public void onRead(final MarkdownEditPresenter presenter,

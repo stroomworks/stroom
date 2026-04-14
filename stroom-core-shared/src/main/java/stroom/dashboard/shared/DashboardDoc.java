@@ -54,6 +54,7 @@ import java.util.Objects;
         "createUser",
         "updateUser",
         "description",
+        "dashboardType",
         "dashboardConfig"})
 @JsonInclude(Include.NON_NULL)
 public class DashboardDoc extends AbstractDoc {
@@ -63,6 +64,8 @@ public class DashboardDoc extends AbstractDoc {
 
     @JsonProperty
     private final String description;
+    @JsonProperty
+    private final String dashboardType;
     @JsonProperty
     private final DashboardConfig dashboardConfig;
 
@@ -75,9 +78,11 @@ public class DashboardDoc extends AbstractDoc {
                         @JsonProperty("createUser") final String createUser,
                         @JsonProperty("updateUser") final String updateUser,
                         @JsonProperty("description") final String description,
+                        @JsonProperty("dashboardType") final String dashboardType,
                         @JsonProperty("dashboardConfig") final DashboardConfig dashboardConfig) {
         super(TYPE, uuid, name, version, createTimeMs, updateTimeMs, createUser, updateUser);
         this.description = description;
+        this.dashboardType = dashboardType;
         this.dashboardConfig = dashboardConfig;
     }
 
@@ -101,6 +106,10 @@ public class DashboardDoc extends AbstractDoc {
         return description;
     }
 
+    public String getDashboardType() {
+        return dashboardType;
+    }
+
     public DashboardConfig getDashboardConfig() {
         return dashboardConfig;
     }
@@ -120,18 +129,20 @@ public class DashboardDoc extends AbstractDoc {
 //        final boolean b2 = Objects.equals(dashboardConfig, that.dashboardConfig);
 
         return Objects.equals(description, that.description) &&
+               Objects.equals(dashboardType, that.dashboardType) &&
                Objects.equals(dashboardConfig, that.dashboardConfig);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(super.hashCode(), description, dashboardConfig);
+        return Objects.hash(super.hashCode(), description, dashboardType, dashboardConfig);
     }
 
     @Override
     public String toString() {
         return "DashboardDoc{" +
                "description='" + description + '\'' +
+               ", dashboardType='" + dashboardType + '\'' +
                ", dashboardConfig=" + dashboardConfig +
                '}';
     }
@@ -147,6 +158,7 @@ public class DashboardDoc extends AbstractDoc {
     public static final class Builder extends AbstractBuilder<DashboardDoc, Builder> {
 
         private String description;
+        private String dashboardType;
         private DashboardConfig dashboardConfig;
 
         private Builder() {
@@ -155,11 +167,17 @@ public class DashboardDoc extends AbstractDoc {
         private Builder(final DashboardDoc dashboardDoc) {
             super(dashboardDoc);
             this.description = dashboardDoc.description;
+            this.dashboardType = dashboardDoc.dashboardType;
             this.dashboardConfig = dashboardDoc.dashboardConfig;
         }
 
         public Builder description(final String description) {
             this.description = description;
+            return self();
+        }
+
+        public Builder dashboardType(final String dashboardType) {
+            this.dashboardType = dashboardType;
             return self();
         }
 
@@ -183,6 +201,7 @@ public class DashboardDoc extends AbstractDoc {
                     createUser,
                     updateUser,
                     description,
+                    dashboardType,
                     dashboardConfig);
         }
     }
