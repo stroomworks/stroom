@@ -38,5 +38,9 @@ public interface IndexField extends Field {
         return false;
     }
 
+    default String getDashboardType() {
+        return null;
+    }
+
     DenseVectorFieldConfig getDenseVectorFieldConfig();
 }

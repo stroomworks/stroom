@@ -174,6 +174,7 @@ public class IndexFieldListPresenter
         addTermVectorColumn();
         addAnalyzerColumn();
         addCaseSensitiveColumn();
+        addDashboardTypeColumn();
         dataGrid.addEndColumn(new EndColumn<>());
     }
 
@@ -238,6 +239,15 @@ public class IndexFieldListPresenter
                         .withSorting(IndexFieldFields.CASE_SENSITIVE)
                         .build(),
                 "Case Sensitive",
+                100);
+    }
+
+    private void addDashboardTypeColumn() {
+        dataGrid.addResizableColumn(
+                DataGridUtil.textColumnBuilder(IndexFieldImpl::getDashboardType)
+                        .withSorting(IndexFieldFields.DASHBOARD_TYPE)
+                        .build(),
+                "Type",
                 100);
     }
 
@@ -306,7 +316,7 @@ public class IndexFieldListPresenter
 
     private void onRemove() {
         final List<IndexFieldImpl> list = selectionModel.getSelectedItems();
-        if (list != null && list.size() > 0) {
+        if (list != null && !list.isEmpty()) {
             String message = "Are you sure you want to delete the selected field?";
             if (list.size() > 1) {
                 message = "Are you sure you want to delete the selected fields?";

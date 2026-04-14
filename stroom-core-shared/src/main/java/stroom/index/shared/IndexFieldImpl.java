@@ -38,6 +38,8 @@ public class IndexFieldImpl implements IndexField {
     @JsonProperty
     private final FieldType fldType;
     @JsonProperty
+    private final String dashboardType;
+    @JsonProperty
     private final AnalyzerType analyzerType;
     @JsonProperty
     private final boolean indexed;
@@ -53,6 +55,7 @@ public class IndexFieldImpl implements IndexField {
     @JsonCreator
     public IndexFieldImpl(@JsonProperty("fldName") final String fldName,
                           @JsonProperty("fldType") final FieldType fldType,
+                          @JsonProperty("dashboardType") final String dashboardType,
                           @JsonProperty("analyzerType") final AnalyzerType analyzerType,
                           @JsonProperty("indexed") final boolean indexed,
                           @JsonProperty("stored") final boolean stored,
@@ -61,6 +64,7 @@ public class IndexFieldImpl implements IndexField {
                           @JsonProperty("denseVectorFieldConfig") final DenseVectorFieldConfig denseVectorFieldConfig) {
         this.fldName = fldName;
         this.fldType = fldType;
+        this.dashboardType = dashboardType;
         this.analyzerType = analyzerType;
         this.stored = stored;
         this.indexed = indexed;
@@ -77,6 +81,11 @@ public class IndexFieldImpl implements IndexField {
     @Override
     public FieldType getFldType() {
         return fldType;
+    }
+
+    @Override
+    public String getDashboardType() {
+        return dashboardType;
     }
 
     @Override
@@ -132,6 +141,7 @@ public class IndexFieldImpl implements IndexField {
                caseSensitive == that.caseSensitive &&
                Objects.equals(fldName, that.fldName) &&
                fldType == that.fldType &&
+               Objects.equals(dashboardType, that.dashboardType) &&
                analyzerType == that.analyzerType &&
                Objects.equals(denseVectorFieldConfig, that.denseVectorFieldConfig);
     }
@@ -141,6 +151,7 @@ public class IndexFieldImpl implements IndexField {
         return Objects.hash(
                 fldName,
                 fldType,
+                dashboardType,
                 analyzerType,
                 indexed, stored,
                 termPositions,
@@ -174,6 +185,7 @@ public class IndexFieldImpl implements IndexField {
 
         private String fldName;
         private FieldType fldType = FieldType.TEXT;
+        private String dashboardType;
         private AnalyzerType analyzerType = AnalyzerType.KEYWORD;
         private boolean indexed = true;
         private boolean stored;
@@ -187,6 +199,7 @@ public class IndexFieldImpl implements IndexField {
         public Builder(final IndexField indexField) {
             this.fldName = indexField.getFldName();
             this.fldType = indexField.getFldType();
+            this.dashboardType = indexField.getDashboardType();
             this.analyzerType = indexField.getAnalyzerType();
             this.indexed = indexField.isIndexed();
             this.stored = indexField.isStored();
@@ -202,6 +215,11 @@ public class IndexFieldImpl implements IndexField {
 
         public Builder fldType(final FieldType fldType) {
             this.fldType = fldType;
+            return this;
+        }
+
+        public Builder dashboardType(final String dashboardType) {
+            this.dashboardType = dashboardType;
             return this;
         }
 
@@ -239,6 +257,7 @@ public class IndexFieldImpl implements IndexField {
             return new IndexFieldImpl(
                     fldName,
                     fldType,
+                    dashboardType,
                     analyzerType,
                     indexed,
                     stored,

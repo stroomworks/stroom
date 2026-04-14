@@ -69,6 +69,11 @@ public class IndexField extends TableImpl<IndexFieldRecord> {
     public final TableField<IndexFieldRecord, String> NAME = createField(DSL.name("name"), SQLDataType.VARCHAR(512).nullable(false), this, "");
 
     /**
+     * The column <code>stroom.index_field.dashboard_type</code>.
+     */
+    public final TableField<IndexFieldRecord, String> DASHBOARD_TYPE = createField(DSL.name("dashboard_type"), SQLDataType.VARCHAR(255), this, "");
+
+    /**
      * The column <code>stroom.index_field.analyzer</code>.
      */
     public final TableField<IndexFieldRecord, String> ANALYZER = createField(DSL.name("analyzer"), SQLDataType.VARCHAR(255).nullable(false), this, "");

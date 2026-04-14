@@ -45,6 +45,8 @@ public class IndexFieldEditViewImpl
     @UiField
     TextBox name;
     @UiField
+    TextBox dashboardType;
+    @UiField
     CustomCheckBox stored;
     @UiField
     CustomCheckBox indexed;
@@ -93,6 +95,16 @@ public class IndexFieldEditViewImpl
     @Override
     public void setFieldName(final String fieldName) {
         name.setText(fieldName);
+    }
+
+    @Override
+    public String getDashboardType() {
+        return dashboardType.getText();
+    }
+
+    @Override
+    public void setDashboardType(final String dashboardType) {
+        this.dashboardType.setText(dashboardType);
     }
 
     @Override
