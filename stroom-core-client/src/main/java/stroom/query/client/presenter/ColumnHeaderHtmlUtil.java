@@ -141,6 +141,10 @@ public class ColumnHeaderHtmlUtil {
             hb.append("Column Filter: ").append(column.getColumnFilter().getFilter()).append('\n');
         }
 
+        if (column.getDashboardType() != null) {
+            hb.append("Type: ").append(column.getDashboardType()).append('\n');
+        }
+
         return hb.toSafeHtml();
     }
 }

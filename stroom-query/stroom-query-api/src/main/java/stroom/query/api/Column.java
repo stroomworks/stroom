@@ -33,6 +33,7 @@ import java.util.Objects;
         "id",
         "name",
         "expression",
+        "dashboardType",
         "sort",
         "filter",
         "format",
@@ -58,6 +59,9 @@ public final class Column implements HasDisplayValue {
             example = "SUM(${count})")
     @JsonProperty
     private final String expression;
+
+    @JsonProperty
+    private final String dashboardType;
 
     @JsonProperty
     private final Sort sort;
@@ -95,6 +99,7 @@ public final class Column implements HasDisplayValue {
     public Column(@JsonProperty("id") final String id,
                   @JsonProperty("name") final String name,
                   @JsonProperty("expression") final String expression,
+                  @JsonProperty("dashboardType") final String dashboardType,
                   @JsonProperty("sort") final Sort sort,
                   @JsonProperty("filter") final IncludeExcludeFilter filter,
                   @JsonProperty("format") final Format format,
@@ -107,6 +112,7 @@ public final class Column implements HasDisplayValue {
         this.id = id;
         this.name = name;
         this.expression = expression;
+        this.dashboardType = dashboardType;
         this.sort = sort;
         this.filter = filter;
         this.format = format;
@@ -140,6 +146,10 @@ public final class Column implements HasDisplayValue {
 
     public String getExpression() {
         return expression;
+    }
+
+    public String getDashboardType() {
+        return dashboardType;
     }
 
     public Sort getSort() {
@@ -200,23 +210,10 @@ public final class Column implements HasDisplayValue {
         }
         final Column column = (Column) o;
 
-//        // TODO : REMOVE - GWT DEBUG
-//        final boolean b1 = Objects.equals(id, column.id);
-//        final boolean b2 = Objects.equals(name, column.name);
-//        final boolean b3 = Objects.equals(expression, column.expression);
-//        final boolean b4 = Objects.equals(sort, column.sort);
-//        final boolean b5 = Objects.equals(filter, column.filter);
-//        final boolean b6 = Objects.equals(format, column.format);
-//        final boolean b7 = Objects.equals(group, column.group);
-//        final boolean b8 = Objects.equals(width, column.width);
-//        final boolean b9 = Objects.equals(visible, column.visible);
-//        final boolean b10 = Objects.equals(special, column.special);
-//        final boolean b11 = Objects.equals(columnFilter, column.columnFilter);
-//        final boolean b12 = Objects.equals(columnValueSelection, column.columnValueSelection);
-
         return Objects.equals(id, column.id) &&
                Objects.equals(name, column.name) &&
                Objects.equals(expression, column.expression) &&
+               Objects.equals(dashboardType, column.dashboardType) &&
                Objects.equals(sort, column.sort) &&
                Objects.equals(filter, column.filter) &&
                Objects.equals(format, column.format) &&
@@ -233,6 +230,7 @@ public final class Column implements HasDisplayValue {
         return Objects.hash(id,
                 name,
                 expression,
+                dashboardType,
                 sort,
                 filter,
                 format,
@@ -250,6 +248,7 @@ public final class Column implements HasDisplayValue {
                "id='" + id + '\'' +
                ", name='" + name + '\'' +
                ", expression='" + expression + '\'' +
+               ", dashboardType='" + dashboardType + '\'' +
                ", sort=" + sort +
                ", filter=" + filter +
                ", format=" + format +
@@ -278,6 +277,7 @@ public final class Column implements HasDisplayValue {
         private String id;
         private String name;
         private String expression;
+        private String dashboardType;
         private Sort sort;
         private IncludeExcludeFilter filter;
         private Format format;
@@ -308,6 +308,7 @@ public final class Column implements HasDisplayValue {
             this.id = column.id;
             this.name = column.name;
             this.expression = column.expression;
+            this.dashboardType = column.dashboardType;
             this.sort = column.sort;
             this.filter = column.filter;
             this.format = column.format;
@@ -343,6 +344,11 @@ public final class Column implements HasDisplayValue {
          */
         public Builder expression(final String value) {
             this.expression = value;
+            return this;
+        }
+
+        public Builder dashboardType(final String value) {
+            this.dashboardType = value;
             return this;
         }
 
@@ -414,6 +420,7 @@ public final class Column implements HasDisplayValue {
                     id,
                     name,
                     expression,
+                    dashboardType,
                     sort,
                     filter,
                     format,

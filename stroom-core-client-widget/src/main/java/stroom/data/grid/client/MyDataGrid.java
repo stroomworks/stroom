@@ -424,6 +424,20 @@ public class MyDataGrid<R> extends DataGrid<R> implements NativePreviewHandler {
 
         menuItems.add(aiSupport.createContextMenu(rowIndex, colIndex));
 
+        // Dashboard type list
+        final List<Item> dashboardTypeMenuItems = new ArrayList<>();
+        // TODO Dynamically populate this
+        dashboardTypeMenuItems.add(new IconMenuItem.Builder()
+                        .icon(SvgImage.QUESTION)
+                        .text("Dummy")
+                        .build());
+        // TODO Fix the icon and menu title for this sub menu
+        menuItems.add(new IconParentMenuItem.Builder()
+                .icon(SvgImage.ARROW_RIGHT)
+                .text("Jump to ")
+                .children(dashboardTypeMenuItems)
+                .build());
+
         ShowMenuEvent.builder()
                 .items(menuItems)
                 .popupPosition(new PopupPosition(x, y))

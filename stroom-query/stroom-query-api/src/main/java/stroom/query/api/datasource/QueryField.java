@@ -38,6 +38,7 @@ import java.util.stream.Collectors;
 
         "fldName",
         "fldType",
+        "dashboardType",
         "docRefType",
         "queryable",
         "conditionSet"
@@ -57,6 +58,8 @@ public class QueryField implements Field, HasDisplayValue {
     @JsonProperty
     private final FieldType fldType;
     @JsonProperty
+    private final String dashboardType;
+    @JsonProperty
     private final ConditionSet conditionSet;
     @JsonProperty
     private final String docRefType;
@@ -68,6 +71,7 @@ public class QueryField implements Field, HasDisplayValue {
                       @Deprecated @JsonProperty("name") final String name,
                       @JsonProperty("fldName") final String fldName,
                       @JsonProperty("fldType") final FieldType fldType,
+                      @JsonProperty("dashboardType") final String dashboardType,
                       @JsonProperty("conditionSet") final ConditionSet conditionSet,
                       @JsonProperty("docRefType") final String docRefType,
                       @JsonProperty("queryable") final Boolean queryable) {
@@ -76,6 +80,7 @@ public class QueryField implements Field, HasDisplayValue {
                 ? fldName
                 : name;
         this.fldType = convertLegacyType(fldType, type);
+        this.dashboardType = dashboardType;
         this.conditionSet = conditionSet;
         this.docRefType = docRefType;
         this.queryable = queryable;
@@ -334,6 +339,10 @@ public class QueryField implements Field, HasDisplayValue {
         return fldType;
     }
 
+    public String getDashboardType() {
+        return dashboardType;
+    }
+
     public ConditionSet getConditionSet() {
         return conditionSet;
     }
@@ -384,12 +393,13 @@ public class QueryField implements Field, HasDisplayValue {
             return false;
         }
         final QueryField that = (QueryField) o;
-        return Objects.equals(fldName, that.fldName);
+        return Objects.equals(fldName, that.fldName) &&
+                Objects.equals(dashboardType, that.dashboardType);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(fldName);
+        return Objects.hash(fldName, dashboardType);
     }
 
     @Override
@@ -420,6 +430,7 @@ public class QueryField implements Field, HasDisplayValue {
 
         private String fldName;
         private FieldType fldType;
+        private String dashboardType;
         private ConditionSet conditionSet;
         private String docRefType;
         private Boolean queryable;
@@ -430,6 +441,7 @@ public class QueryField implements Field, HasDisplayValue {
         private Builder(final QueryField queryField) {
             this.fldName = queryField.fldName;
             this.fldType = queryField.fldType;
+            this.dashboardType = queryField.dashboardType;
             this.conditionSet = queryField.conditionSet;
             this.docRefType = queryField.docRefType;
             this.queryable = queryField.queryable;
@@ -442,6 +454,11 @@ public class QueryField implements Field, HasDisplayValue {
 
         public Builder fldType(final FieldType fldType) {
             this.fldType = fldType;
+            return this;
+        }
+
+        public Builder dashboardType(final String dashboardType) {
+            this.dashboardType = dashboardType;
             return this;
         }
 
@@ -469,6 +486,7 @@ public class QueryField implements Field, HasDisplayValue {
                     null,
                     fldName,
                     fldType,
+                    dashboardType,
                     conditionSet,
                     docRefType,
                     queryable);
