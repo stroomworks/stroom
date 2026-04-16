@@ -78,6 +78,7 @@ public class MyDataGrid<R> extends DataGrid<R> implements NativePreviewHandler {
     private final SimplePanel loadingTableWidget = new SimplePanel();
     private final List<ColSettings> colSettings = new ArrayList<>();
     private final MyDataGridAiSupport<R> aiSupport;
+    private MyDataGridDashboardTypeSupport dashboardTypeSupport;
     private final HasHandlers globalEventBus;
 
     private HeadingListener headingListener;
@@ -138,6 +139,10 @@ public class MyDataGrid<R> extends DataGrid<R> implements NativePreviewHandler {
         sinkEvents(Event.ONCONTEXTMENU);
 
         aiSupport = new MyDataGridAiSupport<>(globalEventBus, this);
+    }
+
+    public void setDashboardTypeSupport(final MyDataGridDashboardTypeSupport dashboardTypeSupport) {
+        this.dashboardTypeSupport = dashboardTypeSupport;
     }
 
     public MultiSelectionModelImpl<R> addDefaultSelectionModel(final boolean allowMultiSelect) {
@@ -424,19 +429,12 @@ public class MyDataGrid<R> extends DataGrid<R> implements NativePreviewHandler {
 
         menuItems.add(aiSupport.createContextMenu(rowIndex, colIndex));
 
-        // Dashboard type list
-        final List<Item> dashboardTypeMenuItems = new ArrayList<>();
-        // TODO Dynamically populate this
-        dashboardTypeMenuItems.add(new IconMenuItem.Builder()
-                        .icon(SvgImage.QUESTION)
-                        .text("Dummy")
-                        .build());
-        // TODO Fix the icon and menu title for this sub menu
-        menuItems.add(new IconParentMenuItem.Builder()
-                .icon(SvgImage.ARROW_RIGHT)
-                .text("Jump to ")
-                .children(dashboardTypeMenuItems)
-                .build());
+        if (dashboardTypeSupport != null) {
+            final Item dashboardTypeMenu = dashboardTypeSupport.createContextMenu(colIndex);
+            if (dashboardTypeMenu != null) {
+                menuItems.add(dashboardTypeMenu);
+            }
+        }
 
         ShowMenuEvent.builder()
                 .items(menuItems)
@@ -454,6 +452,16 @@ public class MyDataGrid<R> extends DataGrid<R> implements NativePreviewHandler {
             }
         }
         return "";
+    }
+
+    public String getDashboardType(final int colIndex) {
+        if (colIndex >= 0 && colIndex < colSettings.size()) {
+            final ColSettings settings = colSettings.get(colIndex);
+            if (settings != null) {
+                return settings.getDashboardType();
+            }
+        }
+        return null;
     }
 
     private String escapeCsv(final String text) {
@@ -995,10 +1003,17 @@ public class MyDataGrid<R> extends DataGrid<R> implements NativePreviewHandler {
 
     public void addResizableColumn(final Column<R, ?> column,
                                    final Header<?> header,
-                                   final int width) {
-        colSettings.add(new ColSettings(true, true));
+                                   final int width,
+                                   final String dashboardType) {
+        colSettings.add(new ColSettings(true, true, false, 0, 0, dashboardType));
         super.addColumn(column, header);
         setColumnWidth(column, width, Unit.PX);
+    }
+
+    public void addResizableColumn(final Column<R, ?> column,
+                                   final Header<?> header,
+                                   final int width) {
+        addResizableColumn(column, header, width, null);
     }
 
     public void addEndColumn(final EndColumn<R> column) {

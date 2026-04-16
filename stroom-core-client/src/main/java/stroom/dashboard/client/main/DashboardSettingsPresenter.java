@@ -50,7 +50,7 @@ public class DashboardSettingsPresenter
 
     @Override
     public void onDirty() {
-        super.onDirty();
+        onChange();
     }
 
     public interface DashboardSettingsView

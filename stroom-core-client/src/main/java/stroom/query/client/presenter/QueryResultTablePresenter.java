@@ -41,16 +41,14 @@ import stroom.dashboard.client.table.cf.RulesPresenter;
 import stroom.data.client.event.AskStroomAiEvent;
 import stroom.data.grid.client.MessagePanel;
 import stroom.data.grid.client.MyDataGrid;
+import stroom.data.grid.client.MyDataGridDashboardTypeSupportImpl;
 import stroom.data.grid.client.PagerView;
 import stroom.dispatch.client.ExportFileCompleteUtil;
 import stroom.dispatch.client.RestFactory;
 import stroom.docref.DocRef;
 import stroom.document.client.event.ChangeEvent;
 import stroom.document.client.event.ChangeEvent.ChangeHandler;
-import stroom.document.client.event.DirtyEvent;
-import stroom.document.client.event.DirtyEvent.DirtyHandler;
 import stroom.document.client.event.HasChangeHandlers;
-import stroom.document.client.event.HasDirtyHandlers;
 import stroom.hyperlink.client.HyperlinkEvent;
 import stroom.preferences.client.UserPreferencesManager;
 import stroom.query.api.Column;
@@ -183,6 +181,7 @@ public class QueryResultTablePresenter
 
         this.pagerView = pagerView;
         this.dataGrid = new MyDataGrid<>(this);
+        dataGrid.setDashboardTypeSupport(new MyDataGridDashboardTypeSupportImpl<>(restFactory, this, this, dataGrid));
         dataGrid.addStyleName("TablePresenter");
         dataGrid.setRowStyles(rowStyles);
         selectionModel = dataGrid.addDefaultSelectionModel(true);
@@ -209,7 +208,7 @@ public class QueryResultTablePresenter
                 return row.getExpander();
             }
         };
-        expanderColumn.setFieldUpdater((index, row, value) -> {
+        expanderColumn.setFieldUpdater((final int index, final TableRow row, final Expander value) -> {
             toggle(row);
             refresh();
         });

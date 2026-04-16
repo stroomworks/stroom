@@ -70,7 +70,9 @@ class DashboardResourceImpl implements DashboardResource {
 
     @Override
     public List<DocRef> findByType(final String dashboardType) {
-        return dashboardServiceProvider.get().findByType(dashboardType);
+        final List<DocRef> dashboardDocRefs = dashboardServiceProvider.get().findByType(dashboardType);
+        LOGGER.info("Found dashboardDocRefs: {}", dashboardDocRefs);
+        return dashboardDocRefs;
     }
 
     private DocRef getDocRef(final String uuid) {
