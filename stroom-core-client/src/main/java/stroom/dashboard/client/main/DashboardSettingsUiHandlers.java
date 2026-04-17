@@ -19,5 +19,5 @@ package stroom.dashboard.client.main;
 import com.gwtplatform.mvp.client.UiHandlers;
 
 public interface DashboardSettingsUiHandlers extends UiHandlers {
-    void onDirty();
+    void triggerDirty();
 }

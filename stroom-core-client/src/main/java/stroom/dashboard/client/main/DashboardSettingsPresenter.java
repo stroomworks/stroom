@@ -21,6 +21,7 @@ import stroom.dashboard.shared.DashboardDoc;
 import stroom.docref.DocRef;
 import stroom.entity.client.presenter.DocPresenter;
 import stroom.entity.client.presenter.ReadOnlyChangeHandler;
+import stroom.util.client.Console;
 
 import com.google.inject.Inject;
 import com.google.web.bindery.event.shared.EventBus;
@@ -49,8 +50,9 @@ public class DashboardSettingsPresenter
     }
 
     @Override
-    public void onDirty() {
-        onChange();
+    public void triggerDirty() {
+        Console.info("***************** trigger dirty *********************");
+        // TODO
     }
 
     public interface DashboardSettingsView

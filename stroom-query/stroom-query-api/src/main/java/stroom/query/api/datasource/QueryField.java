@@ -393,13 +393,12 @@ public class QueryField implements Field, HasDisplayValue {
             return false;
         }
         final QueryField that = (QueryField) o;
-        return Objects.equals(fldName, that.fldName) &&
-                Objects.equals(dashboardType, that.dashboardType);
+        return Objects.equals(fldName, that.fldName);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(fldName, dashboardType);
+        return Objects.hash(fldName);
     }
 
     @Override

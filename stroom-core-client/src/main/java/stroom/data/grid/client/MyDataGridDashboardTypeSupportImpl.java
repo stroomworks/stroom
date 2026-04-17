@@ -1,5 +1,6 @@
 package stroom.data.grid.client;
 
+import stroom.dashboard.client.main.DashboardSuperPresenter;
 import stroom.dashboard.shared.DashboardResource;
 import stroom.dispatch.client.RestFactory;
 import stroom.docref.DocRef;
@@ -17,7 +18,7 @@ import com.google.gwt.event.shared.HasHandlers;
 import java.util.List;
 import java.util.stream.Collectors;
 
-public class MyDataGridDashboardTypeSupportImpl<T> implements MyDataGridDashboardTypeSupport {
+public class MyDataGridDashboardTypeSupportImpl<T> implements MyDataGridDashboardTypeSupport<T> {
 
     private static final DashboardResource DASHBOARD_RESOURCE = GWT.create(DashboardResource.class);
 
@@ -37,9 +38,10 @@ public class MyDataGridDashboardTypeSupportImpl<T> implements MyDataGridDashboar
     }
 
     @Override
-    public Item createContextMenu(final int colIndex) {
+    public Item createContextMenu(final int rowIndex, final int colIndex) {
         final String dashboardType = dataGrid.getDashboardType(colIndex);
         if (dashboardType != null) {
+            final String cellValue = dataGrid.getCellText(rowIndex, colIndex);
             final FutureImpl<List<Item>> future = new FutureImpl<>();
             restFactory
                     .create(DASHBOARD_RESOURCE)
@@ -49,7 +51,7 @@ public class MyDataGridDashboardTypeSupportImpl<T> implements MyDataGridDashboar
                                 .map(docRef -> (Item) new IconMenuItem.Builder()
                                         .icon(SvgImage.DOCUMENT_DASHBOARD)
                                         .text(docRef.getName())
-                                        .command(() -> jumpTo(docRef))
+                                        .command(() -> jumpTo(docRef, dashboardType, cellValue))
                                         .build())
                                 .collect(Collectors.toList());
                         future.setResult(menuItems);
@@ -66,7 +68,14 @@ public class MyDataGridDashboardTypeSupportImpl<T> implements MyDataGridDashboar
         return null;
     }
 
-    private void jumpTo(final DocRef docRef) {
-        OpenDocumentEvent.fire(globalEventBus, docRef, true);
+    private void jumpTo(final DocRef docRef, final String dashboardType, final String cellValue) {
+        final String params = dashboardType + "=" + cellValue;
+        OpenDocumentEvent.builder(globalEventBus, docRef)
+                .callbackOnOpen(presenter -> {
+                    if (presenter instanceof final DashboardSuperPresenter dashboardSuperPresenter) {
+                        dashboardSuperPresenter.setParamsFromLink(params);
+                    }
+                })
+                .fire();
     }
 }

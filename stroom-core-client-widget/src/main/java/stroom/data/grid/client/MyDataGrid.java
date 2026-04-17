@@ -78,7 +78,7 @@ public class MyDataGrid<R> extends DataGrid<R> implements NativePreviewHandler {
     private final SimplePanel loadingTableWidget = new SimplePanel();
     private final List<ColSettings> colSettings = new ArrayList<>();
     private final MyDataGridAiSupport<R> aiSupport;
-    private MyDataGridDashboardTypeSupport dashboardTypeSupport;
+    private MyDataGridDashboardTypeSupport<R> dashboardTypeSupport;
     private final HasHandlers globalEventBus;
 
     private HeadingListener headingListener;
@@ -141,7 +141,7 @@ public class MyDataGrid<R> extends DataGrid<R> implements NativePreviewHandler {
         aiSupport = new MyDataGridAiSupport<>(globalEventBus, this);
     }
 
-    public void setDashboardTypeSupport(final MyDataGridDashboardTypeSupport dashboardTypeSupport) {
+    public void setDashboardTypeSupport(final MyDataGridDashboardTypeSupport<R> dashboardTypeSupport) {
         this.dashboardTypeSupport = dashboardTypeSupport;
     }
 
@@ -430,7 +430,7 @@ public class MyDataGrid<R> extends DataGrid<R> implements NativePreviewHandler {
         menuItems.add(aiSupport.createContextMenu(rowIndex, colIndex));
 
         if (dashboardTypeSupport != null) {
-            final Item dashboardTypeMenu = dashboardTypeSupport.createContextMenu(colIndex);
+            final Item dashboardTypeMenu = dashboardTypeSupport.createContextMenu(rowIndex, colIndex);
             if (dashboardTypeMenu != null) {
                 menuItems.add(dashboardTypeMenu);
             }
@@ -582,7 +582,7 @@ public class MyDataGrid<R> extends DataGrid<R> implements NativePreviewHandler {
      */
     private void addNewLine(final StringBuilder sb) {
         // GWT does not allow isEmpty()
-        if (sb.length() > 0) {
+        if (!sb.isEmpty()) {
             sb.append("\n");
         }
     }

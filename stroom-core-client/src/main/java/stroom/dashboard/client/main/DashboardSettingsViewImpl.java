@@ -61,10 +61,11 @@ public class DashboardSettingsViewImpl
         dashboardType.setEnabled(!readOnly);
     }
 
+    @SuppressWarnings("unused")
     @UiHandler("dashboardType")
     public void onDashboardTypeKeyUp(final KeyUpEvent event) {
         if (getUiHandlers() != null) {
-            getUiHandlers().onDirty();
+            getUiHandlers().triggerDirty();
         }
     }
 
