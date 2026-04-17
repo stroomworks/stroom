@@ -77,6 +77,7 @@ import stroom.query.language.functions.Values;
 import stroom.resource.api.ResourceStore;
 import stroom.security.api.SecurityContext;
 import stroom.security.shared.AppPermission;
+import stroom.security.shared.DocumentPermission;
 import stroom.storedquery.api.StoredQueryService;
 import stroom.task.api.ExecutorProvider;
 import stroom.task.api.TaskContextFactory;
@@ -701,7 +702,10 @@ class DashboardServiceImpl implements DashboardService {
 
     @Override
     public List<DocRef> findByType(final String dashboardType) {
-        return dashboardStore.findByType(dashboardType);
+        return dashboardStore.findByType(dashboardType)
+                .stream()
+                .filter(docRef -> securityContext.hasDocumentPermission(docRef, DocumentPermission.VIEW))
+                .toList();
     }
 
     @Override
