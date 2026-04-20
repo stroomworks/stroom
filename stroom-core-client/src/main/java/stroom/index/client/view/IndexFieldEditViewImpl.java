@@ -45,7 +45,7 @@ public class IndexFieldEditViewImpl
     @UiField
     TextBox name;
     @UiField
-    TextBox dashboardType;
+    TextBox domainType;
     @UiField
     CustomCheckBox stored;
     @UiField
@@ -98,13 +98,13 @@ public class IndexFieldEditViewImpl
     }
 
     @Override
-    public String getDashboardType() {
-        return dashboardType.getText();
+    public String getDomainType() {
+        return domainType.getText();
     }
 
     @Override
-    public void setDashboardType(final String dashboardType) {
-        this.dashboardType.setText(dashboardType);
+    public void setDomainType(final String domainType) {
+        this.domainType.setText(domainType);
     }
 
     @Override

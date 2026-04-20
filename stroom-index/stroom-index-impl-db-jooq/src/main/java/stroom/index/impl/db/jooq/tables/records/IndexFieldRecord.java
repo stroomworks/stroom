@@ -64,14 +64,14 @@ public class IndexFieldRecord extends UpdatableRecordImpl<IndexFieldRecord> {
     /**
      * Setter for <code>stroom.index_field.dashboard_type</code>.
      */
-    public void setDashboardType(String value) {
+    public void setDomainType(String value) {
         set(3, value);
     }
 
     /**
      * Getter for <code>stroom.index_field.dashboard_type</code>.
      */
-    public String getDashboardType() {
+    public String getDomainType() {
         return (String) get(3);
     }
 
@@ -185,7 +185,7 @@ public class IndexFieldRecord extends UpdatableRecordImpl<IndexFieldRecord> {
     public IndexFieldRecord(Integer fkIndexFieldSourceId,
                             Byte type,
                             String name,
-                            String dashboardType,
+                            String domainType,
                             String analyzer,
                             Boolean indexed,
                             Boolean stored,
@@ -197,7 +197,7 @@ public class IndexFieldRecord extends UpdatableRecordImpl<IndexFieldRecord> {
         setFkIndexFieldSourceId(fkIndexFieldSourceId);
         setType(type);
         setName(name);
-        setDashboardType(dashboardType);
+        setDomainType(domainType);
         setAnalyzer(analyzer);
         setIndexed(indexed);
         setStored(stored);

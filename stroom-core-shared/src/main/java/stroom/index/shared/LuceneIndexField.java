@@ -47,7 +47,7 @@ import java.util.Objects;
         "stored",
         "termPositions",
         "caseSensitive",
-        "dashboardType",
+        "domainType",
         "denseVectorFieldConfig"
 })
 @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -65,7 +65,7 @@ public class LuceneIndexField implements IndexField {
     @JsonProperty
     private final FieldType fldType;
     @JsonProperty
-    private final String dashboardType;
+    private final String domainType;
     @JsonProperty
     private final AnalyzerType analyzerType;
     @JsonProperty
@@ -90,7 +90,7 @@ public class LuceneIndexField implements IndexField {
                             @JsonProperty("stored") final boolean stored,
                             @JsonProperty("termPositions") final boolean termPositions,
                             @JsonProperty("caseSensitive") final boolean caseSensitive,
-                            @JsonProperty("dashboardType") final String dashboardType,
+                            @JsonProperty("domainType") final String domainType,
                             @JsonProperty("denseVectorFieldConfig") final DenseVectorFieldConfig denseVectorFieldConfig) {
         this.fldName = convertLegacyName(fldName, fieldName);
         this.fldType = convertLegacyType(fldType, fieldType);
@@ -99,7 +99,7 @@ public class LuceneIndexField implements IndexField {
         this.indexed = indexed;
         this.termPositions = termPositions;
         this.caseSensitive = caseSensitive;
-        this.dashboardType = dashboardType;
+        this.domainType = domainType;
         this.denseVectorFieldConfig = denseVectorFieldConfig;
     }
 
@@ -112,7 +112,7 @@ public class LuceneIndexField implements IndexField {
                 .indexed(indexField.isIndexed())
                 .stored(indexField.isStored())
                 .caseSensitive(indexField.isCaseSensitive())
-                .dashboardType(indexField.getDashboardType())
+                .domainType(indexField.getDomainType())
                 .termPositions(indexField.isTermPositions())
                 .build();
     }
@@ -237,8 +237,8 @@ public class LuceneIndexField implements IndexField {
     }
 
     @Override
-    public String getDashboardType() {
-        return dashboardType;
+    public String getDomainType() {
+        return domainType;
     }
 
     public AnalyzerType getAnalyzerType() {
@@ -289,7 +289,7 @@ public class LuceneIndexField implements IndexField {
                caseSensitive == that.caseSensitive &&
                Objects.equals(fldName, that.fldName) &&
                fldType == that.fldType &&
-               Objects.equals(dashboardType, that.dashboardType) &&
+               Objects.equals(domainType, that.domainType) &&
                analyzerType == that.analyzerType;
     }
 
@@ -302,7 +302,7 @@ public class LuceneIndexField implements IndexField {
                 stored,
                 termPositions,
                 caseSensitive,
-                dashboardType);
+                domainType);
     }
 
     @Override
@@ -336,7 +336,7 @@ public class LuceneIndexField implements IndexField {
         private boolean stored;
         private boolean termPositions;
         private boolean caseSensitive;
-        private String dashboardType;
+        private String domainType;
         private DenseVectorFieldConfig denseVectorFieldConfig;
 
         private Builder() {
@@ -350,7 +350,7 @@ public class LuceneIndexField implements IndexField {
             this.stored = indexField.isStored();
             this.termPositions = indexField.isTermPositions();
             this.caseSensitive = indexField.isCaseSensitive();
-            this.dashboardType = indexField.getDashboardType();
+            this.domainType = indexField.getDomainType();
             this.denseVectorFieldConfig = indexField.getDenseVectorFieldConfig();
         }
 
@@ -362,7 +362,7 @@ public class LuceneIndexField implements IndexField {
             this.stored = indexField.stored;
             this.termPositions = indexField.termPositions;
             this.caseSensitive = indexField.caseSensitive;
-            this.dashboardType = indexField.dashboardType;
+            this.domainType = indexField.domainType;
             this.denseVectorFieldConfig = indexField.denseVectorFieldConfig;
         }
 
@@ -401,8 +401,8 @@ public class LuceneIndexField implements IndexField {
             return this;
         }
 
-        public Builder dashboardType(final String dashboardType) {
-            this.dashboardType = dashboardType;
+        public Builder domainType(final String domainType) {
+            this.domainType = domainType;
             return this;
         }
 
@@ -422,7 +422,7 @@ public class LuceneIndexField implements IndexField {
                     stored,
                     termPositions,
                     caseSensitive,
-                    dashboardType,
+                    domainType,
                     denseVectorFieldConfig);
         }
     }

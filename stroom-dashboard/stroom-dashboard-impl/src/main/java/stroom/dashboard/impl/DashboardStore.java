@@ -26,5 +26,5 @@ public interface DashboardStore extends DocumentStore<DashboardDoc> {
 
     List<DocRef> list();
 
-    List<DocRef> findByType(String dashboardType);
+    List<DocRef> findByType(String domainType);
 }

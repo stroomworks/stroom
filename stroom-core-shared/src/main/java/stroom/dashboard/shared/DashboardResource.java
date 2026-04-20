@@ -63,7 +63,7 @@ public interface DashboardResource extends RestResource, DirectRestService, Fetc
     @Operation(
             summary = "Find dashboards by dashboard type",
             operationId = "findDashboardsByType")
-    List<DocRef> findByType(@QueryParam("dashboardType") String dashboardType);
+    List<DocRef> findByType(@QueryParam("domainType") String domainType);
 
     @PUT
     @Path("/{uuid}")

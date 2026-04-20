@@ -141,8 +141,8 @@ public class ColumnHeaderHtmlUtil {
             hb.append("Column Filter: ").append(column.getColumnFilter().getFilter()).append('\n');
         }
 
-        if (column.getDashboardType() != null) {
-            hb.append("Type: ").append(column.getDashboardType()).append('\n');
+        if (column.getDomainType() != null) {
+            hb.append("Type: ").append(column.getDomainType()).append('\n');
         }
 
         return hb.toSafeHtml();

@@ -41,7 +41,7 @@ import stroom.dashboard.client.table.cf.RulesPresenter;
 import stroom.data.client.event.AskStroomAiEvent;
 import stroom.data.grid.client.MessagePanel;
 import stroom.data.grid.client.MyDataGrid;
-import stroom.data.grid.client.MyDataGridDashboardTypeSupportImpl;
+import stroom.data.grid.client.MyDataGridDomainTypeSupportImpl;
 import stroom.data.grid.client.PagerView;
 import stroom.dispatch.client.ExportFileCompleteUtil;
 import stroom.dispatch.client.RestFactory;
@@ -181,7 +181,7 @@ public class QueryResultTablePresenter
 
         this.pagerView = pagerView;
         this.dataGrid = new MyDataGrid<>(this);
-        dataGrid.setDashboardTypeSupport(new MyDataGridDashboardTypeSupportImpl<>(restFactory, this, this, dataGrid));
+        dataGrid.setDomainTypeSupport(new MyDataGridDomainTypeSupportImpl<>(restFactory, this, this, dataGrid));
         dataGrid.addStyleName("TablePresenter");
         dataGrid.setRowStyles(rowStyles);
         selectionModel = dataGrid.addDefaultSelectionModel(true);

@@ -57,7 +57,7 @@ public class IndexFieldEditPresenter
     public void read(final IndexFieldImpl indexField) {
         getView().setType(indexField.getFldType());
         getView().setFieldName(indexField.getFldName());
-        getView().setDashboardType(indexField.getDashboardType());
+        getView().setDomainType(indexField.getDomainType());
         getView().setStored(indexField.isStored());
         getView().setIndexed(indexField.isIndexed());
         getView().setTermPositions(indexField.isTermPositions());
@@ -82,7 +82,7 @@ public class IndexFieldEditPresenter
                 .builder()
                 .fldType(getView().getType())
                 .fldName(name)
-                .dashboardType(getView().getDashboardType())
+                .domainType(getView().getDomainType())
                 .indexed(getView().isIndexed())
                 .stored(getView().isStored())
                 .termPositions(getView().isTermPositions())
@@ -118,9 +118,9 @@ public class IndexFieldEditPresenter
 
         void setFieldName(final String fieldName);
 
-        String getDashboardType();
+        String getDomainType();
 
-        void setDashboardType(String dashboardType);
+        void setDomainType(String domainType);
 
         boolean isStored();
 

@@ -38,7 +38,7 @@ public interface IndexField extends Field {
         return false;
     }
 
-    default String getDashboardType() {
+    default String getDomainType() {
         return null;
     }
 

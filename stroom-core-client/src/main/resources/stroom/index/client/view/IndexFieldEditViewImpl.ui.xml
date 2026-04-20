@@ -26,8 +26,8 @@
         <form:FormGroup>
             <tickbox:CustomCheckBox ui:field="caseSensitive" identity="indexFieldCaseSensitive" label="Case Sensitive"/>
         </form:FormGroup>
-        <form:FormGroup identity="indexFieldDashboardType" label="Type">
-            <g:TextBox ui:field="dashboardType" addStyleNames="w-100"/>
+        <form:FormGroup identity="indexFieldDomainType" label="Type">
+            <g:TextBox ui:field="domainType" addStyleNames="w-100"/>
         </form:FormGroup>
         <g:SimplePanel ui:field="denseVectorOptions"/>
 

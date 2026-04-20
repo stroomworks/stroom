@@ -330,11 +330,11 @@ class DashboardStoreImpl implements DashboardStore {
     }
 
     @Override
-    public List<DocRef> findByType(final String dashboardType) {
+    public List<DocRef> findByType(final String domainType) {
         return store.list().stream()
                 .filter(docRef -> {
                     final DashboardDoc doc = store.readDocument(docRef);
-                    return doc != null && Objects.equals(doc.getDashboardType(), dashboardType);
+                    return doc != null && Objects.equals(doc.getDomainType(), domainType);
                 })
                 .collect(Collectors.toList());
     }

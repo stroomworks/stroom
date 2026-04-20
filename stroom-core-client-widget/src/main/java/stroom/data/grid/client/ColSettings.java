@@ -23,7 +23,7 @@ public class ColSettings {
     private final boolean fill;
     private final double fillWeight;
     private final Integer minWidth;
-    private final String dashboardType;
+    private final String domainType;
 
     public ColSettings(final boolean resizable, final boolean movable) {
         this(resizable, movable, false, 0, 0, null);
@@ -42,7 +42,7 @@ public class ColSettings {
                        final boolean fill,
                        final double fillWeight,
                        final Integer minWidth,
-                       final String dashboardType) {
+                       final String domainType) {
         if (fillWeight < 0) {
             throw new RuntimeException("Invalid fillWeight: " + fillWeight);
         }
@@ -52,7 +52,7 @@ public class ColSettings {
         this.fill = fill;
         this.fillWeight = fillWeight;
         this.minWidth = minWidth;
-        this.dashboardType = dashboardType;
+        this.domainType = domainType;
     }
 
     public boolean isResizable() {
@@ -75,8 +75,8 @@ public class ColSettings {
         return minWidth;
     }
 
-    public String getDashboardType() {
-        return dashboardType;
+    public String getDomainType() {
+        return domainType;
     }
 
     public Builder copy() {
@@ -94,7 +94,7 @@ public class ColSettings {
         private boolean fill;
         private double fillWeight = 0;
         private Integer minWidth = 0;
-        private String dashboardType;
+        private String domainType;
 
         public Builder() {
 
@@ -106,7 +106,7 @@ public class ColSettings {
             this.fill = colSettings.fill;
             this.fillWeight = colSettings.fillWeight;
             this.minWidth = colSettings.minWidth;
-            this.dashboardType = colSettings.dashboardType;
+            this.domainType = colSettings.domainType;
         }
 
         public Builder resizable(final boolean resizable) {
@@ -135,7 +135,7 @@ public class ColSettings {
         }
 
         public ColSettings build() {
-            return new ColSettings(resizable, movable, fill, fillWeight, minWidth, dashboardType);
+            return new ColSettings(resizable, movable, fill, fillWeight, minWidth, domainType);
         }
     }
 }

@@ -78,7 +78,7 @@ public class IndexFieldDaoImpl implements IndexFieldDao {
     private static final Map<String, Field<?>> FIELD_MAP = Map.of(
             IndexFieldFields.NAME, INDEX_FIELD.NAME,
             IndexFieldFields.TYPE, INDEX_FIELD.TYPE,
-            IndexFieldFields.DASHBOARD_TYPE, INDEX_FIELD.DASHBOARD_TYPE,
+            IndexFieldFields.DOMAIN_TYPE, INDEX_FIELD.DOMAIN_TYPE,
             IndexFieldFields.STORE, INDEX_FIELD.STORED,
             IndexFieldFields.INDEX, INDEX_FIELD.INDEXED,
             IndexFieldFields.POSITIONS, INDEX_FIELD.TERM_POSITIONS,
@@ -96,7 +96,7 @@ public class IndexFieldDaoImpl implements IndexFieldDao {
         expressionMapper.map(IndexFieldFields.NAME_FIELD, INDEX_FIELD.NAME, string -> string);
         expressionMapper.map(IndexFieldFields.TYPE_FIELD, INDEX_FIELD.TYPE, string ->
                 NullSafe.get(FieldType.fromDisplayValue(string), FieldType::getPrimitiveValue));
-        expressionMapper.map(IndexFieldFields.DASHBOARD_TYPE_FIELD, INDEX_FIELD.DASHBOARD_TYPE, string -> string);
+        expressionMapper.map(IndexFieldFields.DOMAIN_TYPE_FIELD, INDEX_FIELD.DOMAIN_TYPE, string -> string);
         expressionMapper.map(IndexFieldFields.STORE_FIELD, INDEX_FIELD.STORED, Boolean::valueOf);
         expressionMapper.map(IndexFieldFields.INDEX_FIELD, INDEX_FIELD.INDEXED, Boolean::valueOf);
         expressionMapper.map(IndexFieldFields.POSITIONS_FIELD, INDEX_FIELD.TERM_POSITIONS, Boolean::valueOf);
@@ -185,7 +185,7 @@ public class IndexFieldDaoImpl implements IndexFieldDao {
                                 INDEX_FIELD.FK_INDEX_FIELD_SOURCE_ID,
                                 INDEX_FIELD.TYPE,
                                 INDEX_FIELD.NAME,
-                                INDEX_FIELD.DASHBOARD_TYPE,
+                                INDEX_FIELD.DOMAIN_TYPE,
                                 INDEX_FIELD.ANALYZER,
                                 INDEX_FIELD.INDEXED,
                                 INDEX_FIELD.STORED,
@@ -200,7 +200,7 @@ public class IndexFieldDaoImpl implements IndexFieldDao {
                                         fieldSourceId,
                                         field.getFldType().getPrimitiveValue(),
                                         field.getFldName(),
-                                        field.getDashboardType(),
+                                        field.getDomainType(),
                                         field.getAnalyzerType().getDisplayValue(),
                                         field.isIndexed(),
                                         field.isStored(),
@@ -283,7 +283,7 @@ public class IndexFieldDaoImpl implements IndexFieldDao {
                 .contextResult(queryDatasourceDbConnProvider, context -> context
                         .select(INDEX_FIELD.TYPE,
                                 INDEX_FIELD.NAME,
-                                INDEX_FIELD.DASHBOARD_TYPE,
+                                INDEX_FIELD.DOMAIN_TYPE,
                                 INDEX_FIELD.ANALYZER,
                                 INDEX_FIELD.INDEXED,
                                 INDEX_FIELD.STORED,
@@ -298,7 +298,7 @@ public class IndexFieldDaoImpl implements IndexFieldDao {
                 .map(r -> {
                     final byte typeId = r.get(INDEX_FIELD.TYPE);
                     final String name = r.get(INDEX_FIELD.NAME);
-                    final String dashboardType = r.get(INDEX_FIELD.DASHBOARD_TYPE);
+                    final String domainType = r.get(INDEX_FIELD.DOMAIN_TYPE);
                     final String analyzer = r.get(INDEX_FIELD.ANALYZER);
                     final boolean indexed = r.get(INDEX_FIELD.INDEXED);
                     final boolean stored = r.get(INDEX_FIELD.STORED);
@@ -312,7 +312,7 @@ public class IndexFieldDaoImpl implements IndexFieldDao {
                             .builder()
                             .fldName(name)
                             .fldType(fieldType)
-                            .dashboardType(dashboardType)
+                            .domainType(domainType)
                             .analyzerType(analyzerType)
                             .indexed(indexed)
                             .stored(stored)
@@ -380,7 +380,7 @@ public class IndexFieldDaoImpl implements IndexFieldDao {
                             INDEX_FIELD.FK_INDEX_FIELD_SOURCE_ID,
                             INDEX_FIELD.TYPE,
                             INDEX_FIELD.NAME,
-                            INDEX_FIELD.DASHBOARD_TYPE,
+                            INDEX_FIELD.DOMAIN_TYPE,
                             INDEX_FIELD.ANALYZER,
                             INDEX_FIELD.INDEXED,
                             INDEX_FIELD.STORED,
@@ -390,7 +390,7 @@ public class IndexFieldDaoImpl implements IndexFieldDao {
                     .values(fieldSourceId,
                             field.getFldType().getPrimitiveValue(),
                             field.getFldName(),
-                            field.getDashboardType(),
+                            field.getDomainType(),
                             field.getAnalyzerType().getDisplayValue(),
                             field.isIndexed(),
                             field.isStored(),
@@ -418,7 +418,7 @@ public class IndexFieldDaoImpl implements IndexFieldDao {
                     .update(INDEX_FIELD)
                     .set(INDEX_FIELD.TYPE, field.getFldType().getPrimitiveValue())
                     .set(INDEX_FIELD.NAME, field.getFldName())
-                    .set(INDEX_FIELD.DASHBOARD_TYPE, field.getDashboardType())
+                    .set(INDEX_FIELD.DOMAIN_TYPE, field.getDomainType())
                     .set(INDEX_FIELD.ANALYZER, field.getAnalyzerType().getDisplayValue())
                     .set(INDEX_FIELD.INDEXED, field.isIndexed())
                     .set(INDEX_FIELD.STORED, field.isStored())
@@ -480,7 +480,7 @@ public class IndexFieldDaoImpl implements IndexFieldDao {
                     .columns(INDEX_FIELD.FK_INDEX_FIELD_SOURCE_ID,
                             INDEX_FIELD.TYPE,
                             INDEX_FIELD.NAME,
-                            INDEX_FIELD.DASHBOARD_TYPE,
+                            INDEX_FIELD.DOMAIN_TYPE,
                             INDEX_FIELD.ANALYZER,
                             INDEX_FIELD.INDEXED,
                             INDEX_FIELD.STORED,
@@ -491,7 +491,7 @@ public class IndexFieldDaoImpl implements IndexFieldDao {
                                     DSL.val(destId),
                                     INDEX_FIELD.TYPE,
                                     INDEX_FIELD.NAME,
-                                    INDEX_FIELD.DASHBOARD_TYPE,
+                                    INDEX_FIELD.DOMAIN_TYPE,
                                     INDEX_FIELD.ANALYZER,
                                     INDEX_FIELD.INDEXED,
                                     INDEX_FIELD.STORED,

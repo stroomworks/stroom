@@ -701,8 +701,8 @@ class DashboardServiceImpl implements DashboardService {
     }
 
     @Override
-    public List<DocRef> findByType(final String dashboardType) {
-        return dashboardStore.findByType(dashboardType)
+    public List<DocRef> findByType(final String domainType) {
+        return dashboardStore.findByType(domainType)
                 .stream()
                 .filter(docRef -> securityContext.hasDocumentPermission(docRef, DocumentPermission.VIEW))
                 .toList();

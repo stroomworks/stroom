@@ -46,7 +46,7 @@ public interface DashboardService {
 
     ColumnValues getColumnValues(ColumnValuesRequest request);
 
-    List<DocRef> findByType(String dashboardType);
+    List<DocRef> findByType(String domainType);
 
     String getBestNode(String nodeName, DashboardSearchRequest request);
 }

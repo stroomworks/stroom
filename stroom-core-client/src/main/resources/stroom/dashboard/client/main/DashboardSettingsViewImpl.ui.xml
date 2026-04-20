@@ -4,7 +4,7 @@
              xmlns:form="urn:import:stroom.widget.form.client">
     <g:FlowPanel styleName="max form-padding form">
         <form:FormGroup identity="dashboardSettingsType" label="Dashboard Type">
-            <g:TextBox ui:field="dashboardType" addStyleNames="w-100"/>
+            <g:TextBox ui:field="domainType" addStyleNames="w-100"/>
         </form:FormGroup>
     </g:FlowPanel>
 </ui:UiBinder>

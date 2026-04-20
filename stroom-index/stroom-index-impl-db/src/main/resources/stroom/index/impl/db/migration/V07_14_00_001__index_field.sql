@@ -27,10 +27,10 @@ BEGIN
     FROM information_schema.columns
     WHERE table_schema = database()
     AND table_name = 'index_field'
-    AND column_name = 'dashboard_type';
+    AND column_name = 'domain_type';
 
     IF object_count = 0 THEN
-        ALTER TABLE `index_field` ADD COLUMN `dashboard_type` varchar(255) DEFAULT NULL;
+        ALTER TABLE `index_field` ADD COLUMN `domain_type` varchar(255) DEFAULT NULL;
     END IF;
 END $$
 

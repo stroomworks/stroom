@@ -34,7 +34,7 @@ public class DashboardSettingsViewImpl
     private final Widget widget;
 
     @UiField
-    TextBox dashboardType;
+    TextBox domainType;
 
     @Inject
     public DashboardSettingsViewImpl(final Binder binder) {
@@ -47,23 +47,23 @@ public class DashboardSettingsViewImpl
     }
 
     @Override
-    public String getDashboardType() {
-        return dashboardType.getText();
+    public String getDomainType() {
+        return domainType.getText();
     }
 
     @Override
-    public void setDashboardType(final String dashboardType) {
-        this.dashboardType.setText(dashboardType);
+    public void setDomainType(final String domainType) {
+        this.domainType.setText(domainType);
     }
 
     @Override
     public void onReadOnly(final boolean readOnly) {
-        dashboardType.setEnabled(!readOnly);
+        domainType.setEnabled(!readOnly);
     }
 
     @SuppressWarnings("unused")
-    @UiHandler("dashboardType")
-    public void onDashboardTypeKeyUp(final KeyUpEvent event) {
+    @UiHandler("domainType")
+    public void onDomainTypeKeyUp(final KeyUpEvent event) {
         if (getUiHandlers() != null) {
             getUiHandlers().triggerDirty();
         }

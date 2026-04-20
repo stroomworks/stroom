@@ -33,7 +33,7 @@ import java.util.Objects;
         "id",
         "name",
         "expression",
-        "dashboardType",
+        "domainType",
         "sort",
         "filter",
         "format",
@@ -61,7 +61,7 @@ public final class Column implements HasDisplayValue {
     private final String expression;
 
     @JsonProperty
-    private final String dashboardType;
+    private final String domainType;
 
     @JsonProperty
     private final Sort sort;
@@ -99,7 +99,7 @@ public final class Column implements HasDisplayValue {
     public Column(@JsonProperty("id") final String id,
                   @JsonProperty("name") final String name,
                   @JsonProperty("expression") final String expression,
-                  @JsonProperty("dashboardType") final String dashboardType,
+                  @JsonProperty("domainType") final String domainType,
                   @JsonProperty("sort") final Sort sort,
                   @JsonProperty("filter") final IncludeExcludeFilter filter,
                   @JsonProperty("format") final Format format,
@@ -112,7 +112,7 @@ public final class Column implements HasDisplayValue {
         this.id = id;
         this.name = name;
         this.expression = expression;
-        this.dashboardType = dashboardType;
+        this.domainType = domainType;
         this.sort = sort;
         this.filter = filter;
         this.format = format;
@@ -148,8 +148,8 @@ public final class Column implements HasDisplayValue {
         return expression;
     }
 
-    public String getDashboardType() {
-        return dashboardType;
+    public String getDomainType() {
+        return domainType;
     }
 
     public Sort getSort() {
@@ -213,7 +213,7 @@ public final class Column implements HasDisplayValue {
         return Objects.equals(id, column.id) &&
                Objects.equals(name, column.name) &&
                Objects.equals(expression, column.expression) &&
-               Objects.equals(dashboardType, column.dashboardType) &&
+               Objects.equals(domainType, column.domainType) &&
                Objects.equals(sort, column.sort) &&
                Objects.equals(filter, column.filter) &&
                Objects.equals(format, column.format) &&
@@ -230,7 +230,7 @@ public final class Column implements HasDisplayValue {
         return Objects.hash(id,
                 name,
                 expression,
-                dashboardType,
+                domainType,
                 sort,
                 filter,
                 format,
@@ -248,7 +248,7 @@ public final class Column implements HasDisplayValue {
                "id='" + id + '\'' +
                ", name='" + name + '\'' +
                ", expression='" + expression + '\'' +
-               ", dashboardType='" + dashboardType + '\'' +
+               ", domainType='" + domainType + '\'' +
                ", sort=" + sort +
                ", filter=" + filter +
                ", format=" + format +
@@ -277,7 +277,7 @@ public final class Column implements HasDisplayValue {
         private String id;
         private String name;
         private String expression;
-        private String dashboardType;
+        private String domainType;
         private Sort sort;
         private IncludeExcludeFilter filter;
         private Format format;
@@ -287,16 +287,6 @@ public final class Column implements HasDisplayValue {
         private Boolean special;
         private ColumnFilter columnFilter;
         private ColumnValueSelection columnValueSelection;
-
-//        /**
-//         * @param name       The name of the field for display purposes
-//         * @param expression The expression to use to generate the value for this field
-//         */
-//        private Builder(final String name,
-//                       final String expression) {
-//            this.name = name;
-//            this.expression = expression;
-//        }
 
         /**
          * No args constructor, allow all building using chained methods
@@ -308,7 +298,7 @@ public final class Column implements HasDisplayValue {
             this.id = column.id;
             this.name = column.name;
             this.expression = column.expression;
-            this.dashboardType = column.dashboardType;
+            this.domainType = column.domainType;
             this.sort = column.sort;
             this.filter = column.filter;
             this.format = column.format;
@@ -347,8 +337,8 @@ public final class Column implements HasDisplayValue {
             return this;
         }
 
-        public Builder dashboardType(final String value) {
-            this.dashboardType = value;
+        public Builder domainType(final String value) {
+            this.domainType = value;
             return this;
         }
 
@@ -420,7 +410,7 @@ public final class Column implements HasDisplayValue {
                     id,
                     name,
                     expression,
-                    dashboardType,
+                    domainType,
                     sort,
                     filter,
                     format,

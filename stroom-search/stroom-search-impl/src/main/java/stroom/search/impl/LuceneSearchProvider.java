@@ -104,7 +104,7 @@ public class LuceneSearchProvider implements SearchProvider {
                             .builder()
                             .fldName(indexField.getFldName())
                             .fldType(indexField.getFldType())
-                            .dashboardType(indexField.getDashboardType())
+                            .domainType(indexField.getDomainType())
                             .conditionSet(ConditionSet.getDefault(indexField.getFldType()))
                             .queryable(indexField.isIndexed())
                             .build())

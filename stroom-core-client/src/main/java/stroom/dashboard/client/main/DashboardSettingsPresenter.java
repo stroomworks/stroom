@@ -39,13 +39,13 @@ public class DashboardSettingsPresenter
 
     @Override
     protected void onRead(final DocRef docRef, final DashboardDoc dashboard, final boolean readOnly) {
-        getView().setDashboardType(dashboard.getDashboardType());
+        getView().setDomainType(dashboard.getDomainType());
         getView().onReadOnly(readOnly);
     }
 
     @Override
     protected DashboardDoc onWrite(final DashboardDoc dashboard) {
-        return dashboard.copy().dashboardType(getView().getDashboardType()).build();
+        return dashboard.copy().domainType(getView().getDomainType()).build();
     }
 
     @Override
@@ -56,8 +56,8 @@ public class DashboardSettingsPresenter
     public interface DashboardSettingsView
             extends View, ReadOnlyChangeHandler, HasUiHandlers<DashboardSettingsUiHandlers> {
 
-        String getDashboardType();
+        String getDomainType();
 
-        void setDashboardType(String dashboardType);
+        void setDomainType(String domainType);
     }
 }

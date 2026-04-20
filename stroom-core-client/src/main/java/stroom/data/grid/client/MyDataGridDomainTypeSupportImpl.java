@@ -18,7 +18,7 @@ import com.google.gwt.event.shared.HasHandlers;
 import java.util.List;
 import java.util.stream.Collectors;
 
-public class MyDataGridDashboardTypeSupportImpl<T> implements MyDataGridDashboardTypeSupport<T> {
+public class MyDataGridDomainTypeSupportImpl<T> implements MyDataGridDomainTypeSupport<T> {
 
     private static final DashboardResource DASHBOARD_RESOURCE = GWT.create(DashboardResource.class);
 
@@ -27,7 +27,7 @@ public class MyDataGridDashboardTypeSupportImpl<T> implements MyDataGridDashboar
     private final TaskMonitorFactory taskMonitorFactory;
     private final MyDataGrid<T> dataGrid;
 
-    public MyDataGridDashboardTypeSupportImpl(final RestFactory restFactory,
+    public MyDataGridDomainTypeSupportImpl(final RestFactory restFactory,
                                               final HasHandlers globalEventBus,
                                               final TaskMonitorFactory taskMonitorFactory,
                                               final MyDataGrid<T> dataGrid) {
@@ -39,19 +39,19 @@ public class MyDataGridDashboardTypeSupportImpl<T> implements MyDataGridDashboar
 
     @Override
     public Item createContextMenu(final int rowIndex, final int colIndex) {
-        final String dashboardType = dataGrid.getDashboardType(colIndex);
-        if (dashboardType != null) {
+        final String domainType = dataGrid.getDomainType(colIndex);
+        if (domainType != null) {
             final String cellValue = dataGrid.getCellText(rowIndex, colIndex);
             final FutureImpl<List<Item>> future = new FutureImpl<>();
             restFactory
                     .create(DASHBOARD_RESOURCE)
-                    .method(res -> res.findByType(dashboardType))
+                    .method(res -> res.findByType(domainType))
                     .onSuccess(docRefs -> {
                         final List<Item> menuItems = docRefs.stream()
                                 .map(docRef -> (Item) new IconMenuItem.Builder()
                                         .icon(SvgImage.DOCUMENT_DASHBOARD)
                                         .text(docRef.getName())
-                                        .command(() -> jumpTo(docRef, dashboardType, cellValue))
+                                        .command(() -> jumpTo(docRef, domainType, cellValue))
                                         .build())
                                 .collect(Collectors.toList());
                         future.setResult(menuItems);
@@ -68,8 +68,8 @@ public class MyDataGridDashboardTypeSupportImpl<T> implements MyDataGridDashboar
         return null;
     }
 
-    private void jumpTo(final DocRef docRef, final String dashboardType, final String cellValue) {
-        final String params = dashboardType + "=" + cellValue;
+    private void jumpTo(final DocRef docRef, final String domainType, final String cellValue) {
+        final String params = domainType + "=" + cellValue;
         OpenDocumentEvent.builder(globalEventBus, docRef)
                 .callbackOnOpen(presenter -> {
                     if (presenter instanceof final DashboardSuperPresenter dashboardSuperPresenter) {

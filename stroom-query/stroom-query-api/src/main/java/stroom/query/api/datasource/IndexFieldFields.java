@@ -23,12 +23,12 @@ public class IndexFieldFields extends FieldFields {
     public static final String POSITIONS = "Positions";
     public static final String ANALYSER = "Analyser";
     public static final String CASE_SENSITIVE = "CaseSensitive";
-    public static final String DASHBOARD_TYPE = "DashboardType";
+    public static final String DOMAIN_TYPE = "DomainType";
 
     public static final QueryField STORE_FIELD = QueryField.createBoolean(STORE);
     public static final QueryField INDEX_FIELD = QueryField.createBoolean(INDEX);
     public static final QueryField POSITIONS_FIELD = QueryField.createBoolean(POSITIONS);
     public static final QueryField ANALYSER_FIELD = QueryField.createText(ANALYSER);
     public static final QueryField CASE_SENSITIVE_FIELD = QueryField.createBoolean(CASE_SENSITIVE);
-    public static final QueryField DASHBOARD_TYPE_FIELD = QueryField.createText(DASHBOARD_TYPE);
+    public static final QueryField DOMAIN_TYPE_FIELD = QueryField.createText(DOMAIN_TYPE);
 }

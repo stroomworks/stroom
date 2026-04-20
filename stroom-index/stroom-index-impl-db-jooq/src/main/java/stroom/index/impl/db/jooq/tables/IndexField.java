@@ -71,7 +71,7 @@ public class IndexField extends TableImpl<IndexFieldRecord> {
     /**
      * The column <code>stroom.index_field.dashboard_type</code>.
      */
-    public final TableField<IndexFieldRecord, String> DASHBOARD_TYPE = createField(DSL.name("dashboard_type"), SQLDataType.VARCHAR(255), this, "");
+    public final TableField<IndexFieldRecord, String> DOMAIN_TYPE = createField(DSL.name("domain_type"), SQLDataType.VARCHAR(255), this, "");
 
     /**
      * The column <code>stroom.index_field.analyzer</code>.

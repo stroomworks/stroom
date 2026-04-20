@@ -38,7 +38,7 @@ import java.util.stream.Collectors;
 
         "fldName",
         "fldType",
-        "dashboardType",
+        "domainType", 
         "docRefType",
         "queryable",
         "conditionSet"
@@ -58,7 +58,7 @@ public class QueryField implements Field, HasDisplayValue {
     @JsonProperty
     private final FieldType fldType;
     @JsonProperty
-    private final String dashboardType;
+    private final String domainType;
     @JsonProperty
     private final ConditionSet conditionSet;
     @JsonProperty
@@ -71,7 +71,7 @@ public class QueryField implements Field, HasDisplayValue {
                       @Deprecated @JsonProperty("name") final String name,
                       @JsonProperty("fldName") final String fldName,
                       @JsonProperty("fldType") final FieldType fldType,
-                      @JsonProperty("dashboardType") final String dashboardType,
+                      @JsonProperty("domainType") final String domainType,
                       @JsonProperty("conditionSet") final ConditionSet conditionSet,
                       @JsonProperty("docRefType") final String docRefType,
                       @JsonProperty("queryable") final Boolean queryable) {
@@ -80,7 +80,7 @@ public class QueryField implements Field, HasDisplayValue {
                 ? fldName
                 : name;
         this.fldType = convertLegacyType(fldType, type);
-        this.dashboardType = dashboardType;
+        this.domainType = domainType;
         this.conditionSet = conditionSet;
         this.docRefType = docRefType;
         this.queryable = queryable;
@@ -339,8 +339,8 @@ public class QueryField implements Field, HasDisplayValue {
         return fldType;
     }
 
-    public String getDashboardType() {
-        return dashboardType;
+    public String getDomainType() {
+        return domainType;
     }
 
     public ConditionSet getConditionSet() {
@@ -429,7 +429,7 @@ public class QueryField implements Field, HasDisplayValue {
 
         private String fldName;
         private FieldType fldType;
-        private String dashboardType;
+        private String domainType;
         private ConditionSet conditionSet;
         private String docRefType;
         private Boolean queryable;
@@ -440,7 +440,7 @@ public class QueryField implements Field, HasDisplayValue {
         private Builder(final QueryField queryField) {
             this.fldName = queryField.fldName;
             this.fldType = queryField.fldType;
-            this.dashboardType = queryField.dashboardType;
+            this.domainType = queryField.domainType;
             this.conditionSet = queryField.conditionSet;
             this.docRefType = queryField.docRefType;
             this.queryable = queryField.queryable;
@@ -456,8 +456,8 @@ public class QueryField implements Field, HasDisplayValue {
             return this;
         }
 
-        public Builder dashboardType(final String dashboardType) {
-            this.dashboardType = dashboardType;
+        public Builder domainType(final String domainType) {
+            this.domainType = domainType;
             return this;
         }
 
@@ -485,7 +485,7 @@ public class QueryField implements Field, HasDisplayValue {
                     null,
                     fldName,
                     fldType,
-                    dashboardType,
+                    domainType,
                     conditionSet,
                     docRefType,
                     queryable);

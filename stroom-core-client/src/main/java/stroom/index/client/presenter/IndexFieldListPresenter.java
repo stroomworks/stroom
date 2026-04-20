@@ -174,7 +174,7 @@ public class IndexFieldListPresenter
         addTermVectorColumn();
         addAnalyzerColumn();
         addCaseSensitiveColumn();
-        addDashboardTypeColumn();
+        addDomainTypeColumn();
         dataGrid.addEndColumn(new EndColumn<>());
     }
 
@@ -242,10 +242,10 @@ public class IndexFieldListPresenter
                 100);
     }
 
-    private void addDashboardTypeColumn() {
+    private void addDomainTypeColumn() {
         dataGrid.addResizableColumn(
-                DataGridUtil.textColumnBuilder(IndexFieldImpl::getDashboardType)
-                        .withSorting(IndexFieldFields.DASHBOARD_TYPE)
+                DataGridUtil.textColumnBuilder(IndexFieldImpl::getDomainType)
+                        .withSorting(IndexFieldFields.DOMAIN_TYPE)
                         .build(),
                 "Type",
                 100);
