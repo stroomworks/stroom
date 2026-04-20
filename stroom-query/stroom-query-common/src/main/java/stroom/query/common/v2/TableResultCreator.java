@@ -18,7 +18,6 @@ package stroom.query.common.v2;
 
 import stroom.query.api.Column;
 import stroom.query.api.OffsetRange;
-import stroom.query.api.ParamUtil;
 import stroom.query.api.Result;
 import stroom.query.api.ResultRequest;
 import stroom.query.api.ResultRequest.Fetch;
@@ -33,9 +32,7 @@ import stroom.util.shared.NullSafe;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.stream.Collectors;
 
 public class TableResultCreator implements ResultCreator {
 
@@ -90,7 +87,8 @@ public class TableResultCreator implements ResultCreator {
             // maxResults defines the max number of records to come back and the paging can happen up to
             // that maxResults threshold
             final TableSettings tableSettings = resultRequest.getMappings().getFirst();
-            final List<Column> columns = enrichColumns(dataStore, tableSettings);
+            final List<Column> columns = new ArrayList<>(NullSafe.list(
+                    NullSafe.get(tableSettings, TableSettings::getColumns)));
             resultBuilder.columns(columns);
 
             if (RowValueFilter.matches(columns)) {
@@ -164,36 +162,4 @@ public class TableResultCreator implements ResultCreator {
         return result;
     }
 
-    private List<Column> enrichColumns(final DataStore dataStore, final TableSettings tableSettings) {
-        final List<Column> columns = new ArrayList<>(NullSafe.list(
-                NullSafe.get(tableSettings, TableSettings::getColumns)));
-
-        if (dataStore != null) {
-            final List<Column> dataStoreColumns = dataStore.getColumns();
-            if (dataStoreColumns != null) {
-                final Map<String, String> fieldToTypeMap = dataStoreColumns.stream()
-                        .filter(c -> c.getName() != null && c.getDomainType() != null)
-                        .collect(Collectors.toMap(Column::getName, Column::getDomainType, (v1, v2) -> v1));
-
-                if (!fieldToTypeMap.isEmpty()) {
-                    return columns.stream()
-                            .map(column -> {
-                                if (column.getDomainType() == null && column.getExpression() != null) {
-                                    final List<String> keys = ParamUtil.getKeys(column.getExpression());
-                                    if (keys.size() == 1) {
-                                        final String fieldName = keys.getFirst();
-                                        final String domainType = fieldToTypeMap.get(fieldName);
-                                        if (domainType != null) {
-                                            return column.copy().domainType(domainType).build();
-                                        }
-                                    }
-                                }
-                                return column;
-                            })
-                            .collect(Collectors.toList());
-                }
-            }
-        }
-        return columns;
-    }
 }
