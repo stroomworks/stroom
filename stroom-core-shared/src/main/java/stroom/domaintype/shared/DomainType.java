@@ -58,7 +58,7 @@ public class DomainType {
     }
 
     @JsonCreator
-    public DomainType(@JsonProperty("classPart") final String classPart, 
+    public DomainType(@JsonProperty("classPart") final String classPart,
                       @JsonProperty("attributePart") final String attributePart) {
         Objects.requireNonNull(classPart);
         Objects.requireNonNull(attributePart);
@@ -66,9 +66,11 @@ public class DomainType {
         this.attributePart = attributePart;
     }
 
-    /**
-     * @return Never returns null.
-     */
+    @Override
+    public String toString() {
+        return classPart + "." + attributePart;
+    }
+
     public String getClassPart() {
         return classPart;
     }
@@ -80,32 +82,19 @@ public class DomainType {
         return attributePart;
     }
 
-    /**
-     * Checks if this domain type matches the other domain type, allowing for wildcard matches.
-     * The accepting domain type supports wildcards, but wildcards in the other domain type are
-     * not considered.
-     * @return true if it matches, false if not.
-     */
     public boolean canAccept(final DomainType other) {
-        if (this.classPart.equals(other.classPart)
-            && this.attributePart.equals(other.attributePart)) {
-            return true;
-        } else if (this.classPart.equals("*")
-            && this.attributePart.equals(other.attributePart)) {
-            return true;
-        } else {
-            return this.classPart.equals(other.classPart)
-                   && this.attributePart.equals("*");
-        }
+        return matches(classPart, other.classPart) && matches(attributePart, other.attributePart);
     }
 
-    @Override
-    public String toString() {
-        return classPart + "." + attributePart;
+    private boolean matches(final String pattern, final String value) {
+        return pattern.equals("*") || pattern.equals(value);
     }
 
     @Override
     public boolean equals(final Object o) {
+        if (this == o) {
+            return true;
+        }
         if (o == null || getClass() != o.getClass()) {
             return false;
         }
@@ -118,4 +107,5 @@ public class DomainType {
     public int hashCode() {
         return Objects.hash(classPart, attributePart);
     }
+
 }

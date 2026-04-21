@@ -38,7 +38,7 @@ import java.util.stream.Collectors;
 
         "fldName",
         "fldType",
-        "domainType", 
+        "domainType",
         "docRefType",
         "queryable",
         "conditionSet"
