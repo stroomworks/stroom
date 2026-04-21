@@ -80,6 +80,11 @@ public class DocumentTypeRegistry {
             "Dictionary",
             "Dictionary",
             SvgImage.DOCUMENT_DICTIONARY);
+    public static final DocumentType DOMAIN_TYPE_DOCUMENT_TYPE = new DocumentType(
+            DocumentTypeGroup.CONFIGURATION,
+            "DomainType",
+            "Domain Type",
+            SvgImage.DOCUMENT_DOMAIN_TYPE);
     public static final DocumentType LUCENE_DOCUMENT_TYPE = new DocumentType(
             DocumentTypeGroup.INDEXING,
             "Index",
@@ -256,6 +261,7 @@ public class DocumentTypeRegistry {
         put(ANNOTATION_DOCUMENT_TYPE);
         put(DASHBOARD_DOCUMENT_TYPE);
         put(DICTIONARY_DOCUMENT_TYPE);
+        put(DOMAIN_TYPE_DOCUMENT_TYPE);
         put(DOCUMENTATION_DOCUMENT_TYPE);
         put(ELASTIC_CLUSTER_DOCUMENT_TYPE);
         put(ELASTIC_INDEX_DOCUMENT_TYPE);

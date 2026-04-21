@@ -16,9 +16,10 @@
 
 package stroom.domaintype.shared;
 
-import java.util.Objects;
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
-import org.jspecify.annotations.NullMarked;
+import java.util.Objects;
 
 /**
  * Represents a Domain Type within Stroom.
@@ -27,11 +28,12 @@ import org.jspecify.annotations.NullMarked;
  * *.ipaddress or Host.*.
  * </p>
  */
-@NullMarked
 public class DomainType {
 
+    @JsonProperty
     private final String classPart;
 
+    @JsonProperty
     private final String attributePart;
 
     /**
@@ -55,7 +57,9 @@ public class DomainType {
         }
     }
 
-    public DomainType(final String classPart, final String attributePart) {
+    @JsonCreator
+    public DomainType(@JsonProperty("classPart") final String classPart, 
+                      @JsonProperty("attributePart") final String attributePart) {
         Objects.requireNonNull(classPart);
         Objects.requireNonNull(attributePart);
         this.classPart = classPart;
@@ -89,11 +93,9 @@ public class DomainType {
         } else if (this.classPart.equals("*")
             && this.attributePart.equals(other.attributePart)) {
             return true;
-        } else if (this.classPart.equals(other.classPart)
-            && this.attributePart.equals("*")) {
-            return true;
         } else {
-            return false;
+            return this.classPart.equals(other.classPart)
+                   && this.attributePart.equals("*");
         }
     }
 

@@ -93,6 +93,7 @@
     <!-- Additional -->
     <inherits name="stroom.folder.Folder" />
     <inherits name="stroom.dictionary.Dictionary" />
+    <inherits name="stroom.domaintype.DomainType" />
     <inherits name="stroom.documentation.Documentation" />
     <inherits name="stroom.index.Index" />
     <inherits name="stroom.search.elastic.ElasticCluster" />

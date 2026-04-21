@@ -53,6 +53,8 @@ import stroom.datagen.client.gin.DataGenGinjector;
 import stroom.datagen.client.gin.DataGenModule;
 import stroom.dictionary.client.gin.DictionaryGinjector;
 import stroom.dictionary.client.gin.DictionaryModule;
+import stroom.domaintype.client.gin.DomainTypeGinjector;
+import stroom.domaintype.client.gin.DomainTypeModule;
 import stroom.dispatch.client.RestModule;
 import stroom.documentation.client.gin.DocumentationGinjector;
 import stroom.documentation.client.gin.DocumentationModule;
@@ -143,6 +145,7 @@ import com.gwtplatform.mvp.client.proxy.PlaceManager;
         RestModule.class,
         DashboardModule.class,
         DictionaryModule.class,
+        DomainTypeModule.class,
         DocumentationModule.class,
         EntityModule.class,
         FsVolumeModule.class,
@@ -192,6 +195,7 @@ public interface AppGinjectorUser extends
         ContentTemplateGinjector,
         DashboardGinjector,
         DictionaryGinjector,
+        DomainTypeGinjector,
         DocumentationGinjector,
         EntityGinjector,
         FsVolumeGinjector,
