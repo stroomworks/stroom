@@ -31,6 +31,7 @@ import stroom.docstore.api.DependencyRemapper;
 import stroom.docstore.api.Store;
 import stroom.docstore.api.StoreFactory;
 import stroom.docstore.api.UniqueNameUtil;
+import stroom.domaintype.shared.DomainType;
 import stroom.importexport.api.ImportExportDocument;
 import stroom.importexport.shared.ImportSettings;
 import stroom.importexport.shared.ImportState;
@@ -49,7 +50,6 @@ import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -331,10 +331,16 @@ class DashboardStoreImpl implements DashboardStore {
 
     @Override
     public List<DocRef> findByType(final String domainType) {
+        final DomainType searchDomainType = new DomainType(domainType);
         return store.list().stream()
                 .filter(docRef -> {
                     final DashboardDoc doc = store.readDocument(docRef);
-                    return doc != null && Objects.equals(doc.getDomainType(), domainType);
+                    if (doc == null) {
+                        return false;
+                    } else {
+                        final DomainType dashboardDomainType = new DomainType(doc.getDomainType());
+                        return dashboardDomainType.canAccept(searchDomainType);
+                    }
                 })
                 .collect(Collectors.toList());
     }
