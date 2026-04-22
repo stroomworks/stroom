@@ -24,23 +24,24 @@ import stroom.event.logging.rs.api.AutoLogged;
 import stroom.event.logging.rs.api.AutoLogged.OperationType;
 
 import jakarta.inject.Inject;
+import jakarta.inject.Provider;
 
 @AutoLogged(OperationType.UNLOGGED)
 public class DomainTypeResourceImpl implements DomainTypeResource {
 
-    private final DomainTypeStore domainTypeStore;
-    private final DocumentResourceHelper documentResourceHelper;
+    private final Provider<DomainTypeStore> domainTypeStore;
+    private final Provider<DocumentResourceHelper> documentResourceHelper;
 
     @Inject
-    public DomainTypeResourceImpl(final DomainTypeStore domainTypeStore,
-                                  final DocumentResourceHelper documentResourceHelper) {
+    public DomainTypeResourceImpl(final Provider<DomainTypeStore> domainTypeStore,
+                                  final Provider<DocumentResourceHelper> documentResourceHelper) {
         this.domainTypeStore = domainTypeStore;
         this.documentResourceHelper = documentResourceHelper;
     }
 
     @Override
     public DomainTypeDoc fetch(final String uuid) {
-        return documentResourceHelper.read(domainTypeStore, getDocRef(uuid));
+        return documentResourceHelper.get().read(domainTypeStore.get(), getDocRef(uuid));
     }
 
     @Override
@@ -48,7 +49,7 @@ public class DomainTypeResourceImpl implements DomainTypeResource {
         if (doc.getUuid() == null || !doc.getUuid().equals(uuid)) {
             throw new IllegalArgumentException("Unexpected UUID");
         }
-        return documentResourceHelper.update(domainTypeStore, doc);
+        return documentResourceHelper.get().update(domainTypeStore.get(), doc);
     }
 
     private DocRef getDocRef(final String uuid) {

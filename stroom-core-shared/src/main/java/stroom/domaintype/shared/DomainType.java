@@ -17,6 +17,8 @@
 package stroom.domaintype.shared;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.Objects;
@@ -28,6 +30,7 @@ import java.util.Objects;
  * *.ipaddress or Host.*.
  * </p>
  */
+@JsonInclude(Include.NON_NULL)
 public class DomainType {
 
     @JsonProperty
