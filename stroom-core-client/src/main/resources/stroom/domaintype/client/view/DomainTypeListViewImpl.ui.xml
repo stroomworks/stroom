@@ -1,12 +1,26 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
-             xmlns:g="urn:import:com.google.gwt.user.client.ui">
-    <g:SplitLayoutPanel styleName="max">
+             xmlns:g="urn:import:com.google.gwt.user.client.ui"
+             xmlns:b="urn:import:stroom.widget.button.client">
+    <g:ThinSplitLayoutPanel styleName="max">
         <g:west size="300">
-            <g:SimplePanel ui:field="masterContainer" styleName="max" />
-        </g:west>
-        <g:center>
-            <g:SimplePanel ui:field="detailContainer" styleName="max" />
+            <g:FlowPanel addStyleNames="max dock-container-vertical">
+                <g:FlowPanel addStyleNames="domainTypeListView-header dock-min dock-container-horizontal align-center">
+                    <g:Label text="Class" addStyleNames="dock-max form-group-label domainTypeListView-label"/>
+                    <b:ButtonPanel ui:field="masterButtonPanel" addStyleNames="dock-min"/>
+                </g:FlowPanel>
+                <g:SimplePanel ui:field="masterContainer" styleName="dock-max hide-grid-header" />
+                </g:FlowPanel>
+                </g:west>
+                <g:center>
+                <g:FlowPanel addStyleNames="max dock-container-vertical">
+                <g:FlowPanel addStyleNames="domainTypeListView-header dock-min dock-container-horizontal align-center">
+                    <g:Label text="Attribute Type" addStyleNames="dock-max form-group-label domainTypeListView-label"/>
+                    <b:ButtonPanel ui:field="detailButtonPanel" addStyleNames="dock-min"/>
+                </g:FlowPanel>
+                <g:SimplePanel ui:field="detailContainer" styleName="dock-max hide-grid-header" />
+                </g:FlowPanel>
+
         </g:center>
-    </g:SplitLayoutPanel>
+    </g:ThinSplitLayoutPanel>
 </ui:UiBinder>

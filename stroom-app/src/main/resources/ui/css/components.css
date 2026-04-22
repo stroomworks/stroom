@@ -572,6 +572,20 @@
     white-space: nowrap;
 }
 
+.domainTypeListView-header {
+    background-color: var(--control__background-color);
+    border-bottom: 1px solid var(--control__border-color);
+}
+
+.domainTypeListView-label {
+    padding-left: 5px;
+    margin-bottom: 0;
+}
+
+.hide-grid-header > div > table > thead {
+    display: none;
+}
+
 .pipelineStructureViewImpl-bar {
 	display: flex;
 	align-items: top;

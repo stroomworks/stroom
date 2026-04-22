@@ -23,11 +23,9 @@ import stroom.document.client.event.DirtyEvent;
 import stroom.domaintype.shared.DomainType;
 import stroom.domaintype.shared.DomainTypeDoc;
 import stroom.entity.client.presenter.DocPresenter;
-import stroom.entity.client.presenter.HasToolbar;
+import stroom.svg.client.Preset;
 import stroom.svg.client.SvgPresets;
-import stroom.widget.button.client.ButtonPanel;
 import stroom.widget.button.client.ButtonView;
-import stroom.widget.button.client.SvgButton;
 import stroom.widget.popup.client.presenter.TextBoxPopup;
 import stroom.widget.util.client.MultiSelectionModelImpl;
 
@@ -43,9 +41,10 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.function.Consumer;
 
 public class DomainTypeListPresenter extends
-        DocPresenter<DomainTypeListPresenter.DomainTypeListView, DomainTypeDoc> implements HasToolbar {
+        DocPresenter<DomainTypeListPresenter.DomainTypeListView, DomainTypeDoc> {
 
     private final MyDataGrid<String> masterGrid;
     private final MultiSelectionModelImpl<String> masterSelectionModel;
@@ -54,10 +53,10 @@ public class DomainTypeListPresenter extends
     private final MultiSelectionModelImpl<String> detailSelectionModel;
 
     private final ButtonView addClassButton;
+    private final ButtonView removeClassButton;
     private final ButtonView addAttributeButton;
-    private final ButtonView removeButton;
+    private final ButtonView removeAttributeButton;
     private final TextBoxPopup textBoxPopup;
-    private final ButtonPanel toolbar;
 
     private final Map<String, List<String>> data = new TreeMap<>();
     private String selectedClass;
@@ -70,47 +69,46 @@ public class DomainTypeListPresenter extends
         super(eventBus, view);
         this.textBoxPopup = textBoxPopup;
 
-        masterGrid = new MyDataGrid<String>(this);
+        masterGrid = new MyDataGrid<>(this);
         masterSelectionModel = masterGrid.addDefaultSelectionModel(false);
-        masterGrid.addColumn(new Column<String, String>(new TextCell()) {
+        masterGrid.addColumn(new Column<>(new TextCell()) {
             @Override
             public String getValue(final String object) {
                 return object;
             }
-        }, "Class");
+        }, "");
         view.setMasterView(masterGrid);
 
-        detailGrid = new MyDataGrid<String>(this);
+        detailGrid = new MyDataGrid<>(this);
         detailSelectionModel = detailGrid.addDefaultSelectionModel(false);
-        detailGrid.addColumn(new Column<String, String>(new TextCell()) {
+        detailGrid.addColumn(new Column<>(new TextCell()) {
             @Override
             public String getValue(final String object) {
                 return object;
             }
-        }, "Attribute");
+        }, "");
         view.setDetailView(detailGrid);
 
-        addClassButton = SvgButton.create(SvgPresets.ADD);
+        addClassButton = view.addButtonMaster(SvgPresets.ADD);
         addClassButton.setTitle("Add Class");
 
-        addAttributeButton = SvgButton.create(SvgPresets.ADD);
+        removeClassButton = view.addButtonMaster(SvgPresets.DELETE);
+        removeClassButton.setTitle("Remove Class");
+
+        addAttributeButton = view.addButtonDetail(SvgPresets.ADD);
         addAttributeButton.setTitle("Add Attribute");
 
-        removeButton = SvgButton.create(SvgPresets.DELETE);
-        removeButton.setTitle("Remove");
-
-        toolbar = new ButtonPanel();
-        toolbar.addButton(addClassButton);
-        toolbar.addButton(addAttributeButton);
-        toolbar.addButton(removeButton);
+        removeAttributeButton = view.addButtonDetail(SvgPresets.DELETE);
+        removeAttributeButton.setTitle("Remove Attribute");
     }
 
     @Override
     protected void onBind() {
         super.onBind();
         registerHandler(addClassButton.addClickHandler(event -> onAddClass()));
+        registerHandler(removeClassButton.addClickHandler(event -> onRemoveClass()));
         registerHandler(addAttributeButton.addClickHandler(event -> onAddAttribute()));
-        registerHandler(removeButton.addClickHandler(event -> onRemove()));
+        registerHandler(removeAttributeButton.addClickHandler(event -> onRemoveAttribute()));
 
         registerHandler(masterSelectionModel.addSelectionHandler(event -> {
             selectedClass = masterSelectionModel.getSelected();
@@ -123,54 +121,67 @@ public class DomainTypeListPresenter extends
 
     private void onAddClass() {
         textBoxPopup.setText("");
-        textBoxPopup.show("Add Class", value -> {
-            if (value != null && !value.trim().isEmpty()) {
-                final String trimmed = value.trim();
-                data.putIfAbsent(trimmed, new ArrayList<>());
-                refreshMaster();
-                masterSelectionModel.setSelected(trimmed);
-                fireDirty();
-            }
-        });
+        textBoxPopup.show("Add Class",
+                new Consumer<>() {
+                    @Override
+                    public void accept(final String value) {
+                        if (value != null && !value.trim().isEmpty()) {
+                            final String trimmed = value.trim();
+                            data.putIfAbsent(trimmed, new ArrayList<>());
+                            DomainTypeListPresenter.this.refreshMaster();
+                            masterSelectionModel.setSelected(trimmed);
+                            DomainTypeListPresenter.this.fireDirty();
+                        }
+                    }
+                });
     }
 
     private void onAddAttribute() {
         if (selectedClass != null) {
             textBoxPopup.setText("");
-            textBoxPopup.show("Add Attribute to " + selectedClass, value -> {
-                if (value != null && !value.trim().isEmpty()) {
-                    final String trimmed = value.trim();
-                    final List<String> attrs = data.get(selectedClass);
-                    if (!attrs.contains(trimmed)) {
-                        attrs.add(trimmed);
-                        Collections.sort(attrs);
-                        refreshDetail();
-                        detailSelectionModel.setSelected(trimmed);
-                        fireDirty();
-                    }
-                }
-            });
+            textBoxPopup.show("Add Attribute to " + selectedClass,
+                    new Consumer<>() {
+                        @Override
+                        public void accept(final String value) {
+                            if (value != null && !value.trim().isEmpty()) {
+                                final String trimmed = value.trim();
+                                final List<String> attrs = data.get(selectedClass);
+                                if (!attrs.contains(trimmed)) {
+                                    attrs.add(trimmed);
+                                    Collections.sort(attrs);
+                                    DomainTypeListPresenter.this.refreshDetail();
+                                    detailSelectionModel.setSelected(trimmed);
+                                    DomainTypeListPresenter.this.fireDirty();
+                                }
+                            }
+                        }
+                    });
         }
     }
 
-    private void onRemove() {
-        final String selAttr = detailSelectionModel.getSelected();
+    private void onRemoveClass() {
         final String selClass = masterSelectionModel.getSelected();
-
-        if (selAttr != null) {
-            ConfirmEvent.fire(this, "Are you sure you want to remove attribute '" + selAttr + "'?", result -> {
-                if (result) {
-                    data.get(selectedClass).remove(selAttr);
-                    refreshDetail();
-                    fireDirty();
-                }
-            });
-        } else if (selClass != null) {
-            ConfirmEvent.fire(this, "Are you sure you want to remove class '" + selClass + "' and all its attributes?",
+        if (selClass != null) {
+            ConfirmEvent.fire(this,
+                    "Are you sure you want to remove class '" + selClass + "' and all its attributes?",
                     result -> {
                         if (result) {
                             data.remove(selClass);
                             refreshMaster();
+                            fireDirty();
+                        }
+                    });
+        }
+    }
+
+    private void onRemoveAttribute() {
+        final String selAttr = detailSelectionModel.getSelected();
+        if (selAttr != null) {
+            ConfirmEvent.fire(this,
+                    "Are you sure you want to remove attribute '" + selAttr + "'?", result -> {
+                        if (result) {
+                            data.get(selectedClass).remove(selAttr);
+                            refreshDetail();
                             fireDirty();
                         }
                     });
@@ -184,10 +195,9 @@ public class DomainTypeListPresenter extends
 
     private void updateButtons() {
         addClassButton.setEnabled(!readOnly);
+        removeClassButton.setEnabled(!readOnly && masterSelectionModel.getSelected() != null);
         addAttributeButton.setEnabled(!readOnly && selectedClass != null);
-        final boolean hasSelection = masterSelectionModel.getSelected() != null ||
-                                     detailSelectionModel.getSelected() != null;
-        removeButton.setEnabled(!readOnly && hasSelection);
+        removeAttributeButton.setEnabled(!readOnly && detailSelectionModel.getSelected() != null);
     }
 
     private void refreshMaster() {
@@ -241,16 +251,15 @@ public class DomainTypeListPresenter extends
         return document.copy().domainTypes(domainTypes).build();
     }
 
-    @Override
-    public List<Widget> getToolbars() {
-        return Collections.singletonList(toolbar);
-    }
-
     public interface DomainTypeListView extends View {
 
         void setMasterView(Widget widget);
 
         void setDetailView(Widget widget);
+
+        ButtonView addButtonMaster(Preset preset);
+
+        ButtonView addButtonDetail(Preset preset);
     }
 
 }

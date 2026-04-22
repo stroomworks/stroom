@@ -55,7 +55,7 @@ public class DomainTypePresenter extends DocTabPresenter<LinkTabPanelView, Domai
 
         addTab(DOMAIN_TYPES, new DocTabProvider<>(domainTypeListPresenterProvider::get));
 
-        addTab(DOCUMENTATION, new MarkdownTabProvider<DomainTypeDoc>(eventBus, markdownEditPresenterProvider) {
+        addTab(DOCUMENTATION, new MarkdownTabProvider<>(eventBus, markdownEditPresenterProvider) {
             @Override
             public void onRead(final MarkdownEditPresenter presenter,
                                final DocRef docRef,
@@ -90,6 +90,7 @@ public class DomainTypePresenter extends DocTabPresenter<LinkTabPanelView, Domai
         return DOCUMENTATION;
     }
 
+    @SuppressWarnings("unused")
     public interface DomainTypeView extends LinkTabPanelView {
     }
 }

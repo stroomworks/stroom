@@ -17,6 +17,9 @@
 package stroom.domaintype.client.view;
 
 import stroom.domaintype.client.presenter.DomainTypeListPresenter.DomainTypeListView;
+import stroom.svg.client.Preset;
+import stroom.widget.button.client.ButtonPanel;
+import stroom.widget.button.client.ButtonView;
 
 import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
@@ -33,6 +36,10 @@ public class DomainTypeListViewImpl extends ViewImpl implements DomainTypeListVi
     SimplePanel masterContainer;
     @UiField
     SimplePanel detailContainer;
+    @UiField
+    ButtonPanel masterButtonPanel;
+    @UiField
+    ButtonPanel detailButtonPanel;
 
     @Inject
     public DomainTypeListViewImpl(final Binder binder) {
@@ -52,6 +59,16 @@ public class DomainTypeListViewImpl extends ViewImpl implements DomainTypeListVi
     @Override
     public void setDetailView(final Widget widget) {
         detailContainer.setWidget(widget);
+    }
+
+    @Override
+    public ButtonView addButtonMaster(final Preset preset) {
+        return masterButtonPanel.addButton(preset);
+    }
+
+    @Override
+    public ButtonView addButtonDetail(final Preset preset) {
+        return detailButtonPanel.addButton(preset);
     }
 
     public interface Binder extends UiBinder<Widget, DomainTypeListViewImpl> {
