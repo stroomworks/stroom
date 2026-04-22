@@ -16,12 +16,13 @@
 
 package stroom.index.client.view;
 
-import stroom.document.client.event.DirtyUiHandlers;
+import stroom.index.client.presenter.IndexFieldEditUiHandlers;
 import stroom.index.client.presenter.IndexFieldEditPresenter.IndexFieldEditView;
 import stroom.index.shared.LuceneFieldTypes;
 import stroom.item.client.SelectionBox;
 import stroom.query.api.datasource.AnalyzerType;
 import stroom.query.api.datasource.FieldType;
+import stroom.util.client.Console;
 import stroom.widget.tickbox.client.view.CustomCheckBox;
 
 import com.google.gwt.event.logical.shared.ValueChangeEvent;
@@ -35,9 +36,17 @@ import com.google.inject.Inject;
 import com.gwtplatform.mvp.client.View;
 import com.gwtplatform.mvp.client.ViewWithUiHandlers;
 
+import java.util.List;
+
 public class IndexFieldEditViewImpl
-        extends ViewWithUiHandlers<DirtyUiHandlers>
+        extends ViewWithUiHandlers<IndexFieldEditUiHandlers>
         implements IndexFieldEditView {
+
+    /** Empty entry for domain type */
+    private static final String EMPTY = "";
+
+    /** Wildcard entry for domain type attribute part */
+    private static final String WILDCARD = "*";
 
     private final Widget widget;
     @UiField
@@ -45,7 +54,9 @@ public class IndexFieldEditViewImpl
     @UiField
     TextBox name;
     @UiField
-    TextBox domainType;
+    SelectionBox<String> domainTypeClassPart;
+    @UiField
+    SelectionBox<String> domainTypeAttributePart;
     @UiField
     CustomCheckBox stored;
     @UiField
@@ -65,6 +76,9 @@ public class IndexFieldEditViewImpl
 
         type.addItems(LuceneFieldTypes.FIELD_TYPES);
         analyser.addItems(AnalyzerType.values());
+
+        domainTypeClassPart.setNonSelectString(EMPTY);
+        domainTypeAttributePart.setNonSelectString(EMPTY);
     }
 
     @Override
@@ -98,13 +112,43 @@ public class IndexFieldEditViewImpl
     }
 
     @Override
-    public String getDomainType() {
-        return domainType.getText();
+    public String getDomainTypeClassPart() {
+        return domainTypeClassPart.getValue();
     }
 
     @Override
-    public void setDomainType(final String domainType) {
-        this.domainType.setText(domainType);
+    public void setDomainTypeClassPart(final String domainTypeClassPart) {
+        this.domainTypeClassPart.setValue(domainTypeClassPart);
+    }
+
+    @Override
+    public void setDomainClasses(final List<String> domainClasses) {
+        this.domainTypeClassPart.clear();
+        if (domainClasses != null) {
+            this.domainTypeClassPart.addItem(EMPTY);
+            this.domainTypeClassPart.addItem(WILDCARD);
+            Console.info("Added Wildcard to domain classes");
+            this.domainTypeClassPart.addItems(domainClasses);
+        }
+    }
+
+    @Override
+    public String getDomainTypeAttributePart() {
+        return domainTypeAttributePart.getValue();
+    }
+
+    @Override
+    public void setDomainTypeAttributePart(final String domainTypeAttributePart) {
+        this.domainTypeAttributePart.setValue(domainTypeAttributePart);
+    }
+
+    @Override
+    public void setDomainAttributes(final List<String> domainAttributes) {
+        this.domainTypeAttributePart.clear();
+        if (domainAttributes != null) {
+            this.domainTypeAttributePart.addItem(EMPTY);
+            this.domainTypeAttributePart.addItems(domainAttributes);
+        }
     }
 
     @Override
@@ -168,7 +212,24 @@ public class IndexFieldEditViewImpl
     }
 
     @UiHandler("type")
-    public void onChange(final ValueChangeEvent<?> event) {
+    @SuppressWarnings("unused")
+    public void onTypeChange(final ValueChangeEvent<?> event) {
+        if (getUiHandlers() != null) {
+            getUiHandlers().onDirty();
+        }
+    }
+
+    @UiHandler("domainTypeClassPart")
+    @SuppressWarnings("unused")
+    public void onDomainClassChange(final ValueChangeEvent<String> event) {
+        if (getUiHandlers() != null) {
+            getUiHandlers().onClassChange(event.getValue());
+        }
+    }
+
+    @UiHandler("domainTypeAttributePart")
+    @SuppressWarnings("unused")
+    public void onDomainAttributeChange(final ValueChangeEvent<String> event) {
         if (getUiHandlers() != null) {
             getUiHandlers().onDirty();
         }

@@ -27,7 +27,10 @@
             <tickbox:CustomCheckBox ui:field="caseSensitive" identity="indexFieldCaseSensitive" label="Case Sensitive"/>
         </form:FormGroup>
         <form:FormGroup identity="indexFieldDomainType" label="Type">
-            <g:TextBox ui:field="domainType" addStyleNames="w-100"/>
+            <g:FlowPanel addStyleNames="dock-container-horizontal w-100">
+                <l:SelectionBox ui:field="domainTypeClassPart" addStyleNames="dock-max w-50"/>
+                <l:SelectionBox ui:field="domainTypeAttributePart" addStyleNames="dock-max w-50"/>
+            </g:FlowPanel>
         </form:FormGroup>
         <g:SimplePanel ui:field="denseVectorOptions"/>
 

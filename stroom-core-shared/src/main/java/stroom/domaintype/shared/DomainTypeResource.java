@@ -32,6 +32,8 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import org.fusesource.restygwt.client.DirectRestService;
 
+import java.util.List;
+
 @Tag(name = "DomainTypes (v1)")
 @Path("/domainType" + ResourcePaths.V1)
 @Produces(MediaType.APPLICATION_JSON)
@@ -52,4 +54,18 @@ public interface DomainTypeResource extends RestResource, DirectRestService, Fet
             operationId = "updateDomainType")
     DomainTypeDoc update(@PathParam("uuid") String uuid,
                          @Parameter(description = "doc", required = true) DomainTypeDoc doc);
+
+    @GET
+    @Path("/classParts")
+    @Operation(
+            summary = "Fetch a list of available ClassParts across all DomainTypeDocs in the document store",
+            operationId = "fetchClassParts")
+    List<String> fetchClassParts();
+
+    @GET
+    @Path("/attributeParts/{classPart}")
+    @Operation(
+            summary = "Fetch a list of available AttributeParts for a given ClassPart across all DomainTypeDocs",
+            operationId = "fetchAttributeParts")
+    List<String> fetchAttributeParts(@PathParam("classPart") String classPart);
 }

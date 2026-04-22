@@ -16,7 +16,8 @@
 
 package stroom.index.client.presenter;
 
-import stroom.document.client.event.DirtyUiHandlers;
+import stroom.domaintype.client.DomainTypeClient;
+import stroom.domaintype.shared.DomainType;
 import stroom.index.client.presenter.IndexFieldEditPresenter.IndexFieldEditView;
 import stroom.index.shared.IndexFieldImpl;
 import stroom.query.api.datasource.AnalyzerType;
@@ -36,28 +37,42 @@ import com.gwtplatform.mvp.client.HasUiHandlers;
 import com.gwtplatform.mvp.client.MyPresenterWidget;
 import com.gwtplatform.mvp.client.View;
 
+import java.util.List;
 import javax.validation.ValidationException;
 
 public class IndexFieldEditPresenter
         extends MyPresenterWidget<IndexFieldEditView>
-        implements DirtyUiHandlers {
+        implements IndexFieldEditUiHandlers {
 
     private final DenseVectorFieldPresenter denseVectorFieldPresenter;
+    private final DomainTypeClient domainTypeClient;
 
     @Inject
     public IndexFieldEditPresenter(final EventBus eventBus,
                                    final IndexFieldEditView view,
-                                   final DenseVectorFieldPresenter denseVectorFieldPresenter) {
+                                   final DenseVectorFieldPresenter denseVectorFieldPresenter,
+                                   final DomainTypeClient domainTypeClient) {
         super(eventBus, view);
         this.denseVectorFieldPresenter = denseVectorFieldPresenter;
+        this.domainTypeClient = domainTypeClient;
         view.setDenseVectorOptions(denseVectorFieldPresenter.getView());
         view.setUiHandlers(this);
+
+        domainTypeClient.fetchClassParts(view::setDomainClasses);
     }
 
     public void read(final IndexFieldImpl indexField) {
         getView().setType(indexField.getFldType());
         getView().setFieldName(indexField.getFldName());
-        getView().setDomainType(indexField.getDomainType());
+
+        final String domainTypeStr = indexField.getDomainType();
+        if (domainTypeStr != null && !domainTypeStr.isBlank()) {
+            final DomainType domainType = new DomainType(domainTypeStr);
+            getView().setDomainTypeClassPart(domainType.getClassPart());
+            onClassChange(domainType.getClassPart());
+            getView().setDomainTypeAttributePart(domainType.getAttributePart());
+        }
+
         getView().setStored(indexField.isStored());
         getView().setIndexed(indexField.isIndexed());
         getView().setTermPositions(indexField.isTermPositions());
@@ -74,15 +89,29 @@ public class IndexFieldEditPresenter
         String name = getView().getFieldName();
         name = name.trim();
 
-        if (name.length() == 0) {
+        if (name.isEmpty()) {
             throw new ValidationException("An index field must have a name");
+        }
+
+        final String domainClass = getView().getDomainTypeClassPart();
+        final String domainAttribute = getView().getDomainTypeAttributePart();
+
+        if (domainClass != null && !domainClass.isBlank() && (domainAttribute == null || domainAttribute.isBlank())) {
+            throw new ValidationException("An attribute must be selected if a class is specified");
+        }
+
+        String domainType = null;
+        if (domainClass != null && !domainClass.isBlank()) {
+            domainType = domainClass + "." + (domainAttribute != null ? domainAttribute : "");
+        } else if (domainAttribute != null && !domainAttribute.isBlank()) {
+            domainType = domainAttribute;
         }
 
         return IndexFieldImpl
                 .builder()
                 .fldType(getView().getType())
                 .fldName(name)
-                .domainType(getView().getDomainType())
+                .domainType(domainType)
                 .indexed(getView().isIndexed())
                 .stored(getView().isStored())
                 .termPositions(getView().isTermPositions())
@@ -90,6 +119,17 @@ public class IndexFieldEditPresenter
                 .caseSensitive(getView().isCaseSensitive())
                 .denseVectorFieldConfig(denseVectorFieldPresenter.write())
                 .build();
+    }
+
+    @Override
+    public void onClassChange(final String classPart) {
+        getView().setDomainTypeAttributePart(null);
+        if (classPart != null && !classPart.isBlank()) {
+            domainTypeClient.fetchAttributeParts(classPart, getView()::setDomainAttributes);
+        } else {
+            getView().setDomainAttributes(null);
+        }
+        onDirty();
     }
 
     public void show(final String caption, final HidePopupRequestEvent.Handler handler) {
@@ -108,7 +148,7 @@ public class IndexFieldEditPresenter
         getView().setDenseVectorOptionsVisible(FieldType.DENSE_VECTOR.equals(getView().getType()));
     }
 
-    public interface IndexFieldEditView extends View, Focus, HasUiHandlers<DirtyUiHandlers> {
+    public interface IndexFieldEditView extends View, Focus, HasUiHandlers<IndexFieldEditUiHandlers> {
 
         FieldType getType();
 
@@ -118,9 +158,17 @@ public class IndexFieldEditPresenter
 
         void setFieldName(final String fieldName);
 
-        String getDomainType();
+        String getDomainTypeClassPart();
 
-        void setDomainType(String domainType);
+        void setDomainTypeClassPart(String domainTypeClassPart);
+
+        void setDomainClasses(List<String> domainClasses);
+
+        String getDomainTypeAttributePart();
+
+        void setDomainTypeAttributePart(String domainTypeAttributePart);
+
+        void setDomainAttributes(List<String> domainAttributes);
 
         boolean isStored();
 
