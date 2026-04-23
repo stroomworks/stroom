@@ -85,6 +85,9 @@ import stroom.widget.dropdowntree.client.view.DropDownView;
 import stroom.widget.dropdowntree.client.view.DropDownViewImpl;
 import stroom.widget.dropdowntree.client.view.ExplorerPopupView;
 import stroom.widget.dropdowntree.client.view.ExplorerPopupViewImpl;
+import stroom.widget.popup.client.presenter.TextBoxPopup;
+import stroom.widget.popup.client.presenter.TextBoxPopup.TextBoxView;
+import stroom.widget.popup.client.view.TextBoxViewImpl;
 import stroom.widget.progress.client.presenter.ProgressPresenter;
 import stroom.widget.progress.client.presenter.ProgressPresenter.ProgressView;
 import stroom.widget.progress.client.view.ProgressViewImpl;
@@ -195,5 +198,7 @@ public class DashboardAppModule extends AbstractPresenterModule {
         bindSharedView(WrapperView.class, WrapperViewImpl.class);
         bindSharedView(ClassificationWrapperView.class, ClassificationWrapperViewImpl.class);
         bindSharedView(LinkTabPanelView.class, LinkTabPanelViewImpl.class);
+
+        bindPresenterWidget(TextBoxPopup.class, TextBoxView.class, TextBoxViewImpl.class);
     }
 }

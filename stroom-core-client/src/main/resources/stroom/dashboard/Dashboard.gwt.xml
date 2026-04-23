@@ -28,6 +28,7 @@
     <inherits name="stroom.datasource.DataSource"/>
     <inherits name="stroom.script.Script"/>
     <inherits name="stroom.visualisation.Visualisation"/>
+    <inherits name="stroom.domaintype.DomainType"/>
 
     <source path="client"/>
     <source path="shared"/>

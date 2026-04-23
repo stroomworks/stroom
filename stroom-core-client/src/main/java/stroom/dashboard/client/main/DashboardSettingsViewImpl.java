@@ -17,41 +17,26 @@
 package stroom.dashboard.client.main;
 
 import stroom.dashboard.client.main.DashboardSettingsPresenter.DashboardSettingsView;
-import stroom.item.client.SelectionBox;
 
-import com.google.gwt.event.logical.shared.ValueChangeEvent;
 import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
-import com.google.gwt.uibinder.client.UiHandler;
+import com.google.gwt.user.client.ui.SimplePanel;
 import com.google.gwt.user.client.ui.Widget;
 import com.google.inject.Inject;
 import com.gwtplatform.mvp.client.ViewWithUiHandlers;
-
-import java.util.List;
 
 public class DashboardSettingsViewImpl
         extends ViewWithUiHandlers<DashboardSettingsUiHandlers>
         implements DashboardSettingsView {
 
-    /** Empty entry for domain type */
-    private static final String EMPTY = "";
-
-    /** Wildcard entry for domain type attribute part */
-    private static final String WILDCARD = "*";
-
     private final Widget widget;
 
     @UiField
-    SelectionBox<String> domainTypeClassPart;
-    @UiField
-    SelectionBox<String> domainTypeAttributePart;
+    SimplePanel container;
 
     @Inject
     public DashboardSettingsViewImpl(final Binder binder) {
         widget = binder.createAndBindUi(this);
-
-        domainTypeClassPart.setNonSelectString(EMPTY);
-        domainTypeAttributePart.setNonSelectString(EMPTY);
     }
 
     @Override
@@ -60,64 +45,13 @@ public class DashboardSettingsViewImpl
     }
 
     @Override
-    public String getDomainTypeClassPart() {
-        return domainTypeClassPart.getValue();
-    }
-
-    @Override
-    public void setDomainTypeClassPart(final String domainTypeClassPart) {
-        this.domainTypeClassPart.setValue(domainTypeClassPart);
-    }
-
-    @Override
-    public void setDomainClasses(final List<String> domainClasses) {
-        this.domainTypeClassPart.clear();
-        if (domainClasses != null) {
-            this.domainTypeClassPart.addItem(EMPTY);
-            this.domainTypeClassPart.addItem(WILDCARD);
-            this.domainTypeClassPart.addItems(domainClasses);
-        }
-    }
-
-    @Override
-    public String getDomainTypeAttributePart() {
-        return domainTypeAttributePart.getValue();
-    }
-
-    @Override
-    public void setDomainTypeAttributePart(final String domainTypeAttributePart) {
-        this.domainTypeAttributePart.setValue(domainTypeAttributePart);
-    }
-
-    @Override
-    public void setDomainAttributes(final List<String> domainAttributes) {
-        this.domainTypeAttributePart.clear();
-        if (domainAttributes != null) {
-            this.domainTypeAttributePart.addItem(EMPTY);
-            this.domainTypeAttributePart.addItems(domainAttributes);
-        }
+    public void setView(final Widget widget) {
+        container.setWidget(widget);
     }
 
     @Override
     public void onReadOnly(final boolean readOnly) {
-        domainTypeClassPart.setEnabled(!readOnly);
-        domainTypeAttributePart.setEnabled(!readOnly);
-    }
-
-    @UiHandler("domainTypeClassPart")
-    @SuppressWarnings("unused")
-    public void onDomainClassChange(final ValueChangeEvent<String> event) {
-        if (getUiHandlers() != null) {
-            getUiHandlers().onClassChange(event.getValue());
-        }
-    }
-
-    @UiHandler("domainTypeAttributePart")
-    @SuppressWarnings("unused")
-    public void onDomainAttributeChange(final ValueChangeEvent<String> event) {
-        if (getUiHandlers() != null) {
-            getUiHandlers().triggerDirty();
-        }
+        // Handled by buttons in presenter
     }
 
     public interface Binder extends UiBinder<Widget, DashboardSettingsViewImpl> {

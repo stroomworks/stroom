@@ -338,8 +338,11 @@ class DashboardStoreImpl implements DashboardStore {
                     if (doc == null) {
                         return false;
                     } else {
-                        final DomainType dashboardDomainType = new DomainType(doc.getDomainType());
-                        return dashboardDomainType.canAccept(searchDomainType);
+                        final List<DomainType> domainTypes = doc.getDomainTypes();
+                        if (domainTypes == null) {
+                            return false;
+                        }
+                        return domainTypes.stream().anyMatch(dt -> dt.canAccept(searchDomainType));
                     }
                 })
                 .collect(Collectors.toList());
