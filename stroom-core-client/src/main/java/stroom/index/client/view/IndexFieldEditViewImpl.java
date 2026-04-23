@@ -16,8 +16,8 @@
 
 package stroom.index.client.view;
 
-import stroom.index.client.presenter.IndexFieldEditUiHandlers;
 import stroom.index.client.presenter.IndexFieldEditPresenter.IndexFieldEditView;
+import stroom.index.client.presenter.IndexFieldEditUiHandlers;
 import stroom.index.shared.LuceneFieldTypes;
 import stroom.item.client.SelectionBox;
 import stroom.query.api.datasource.AnalyzerType;
