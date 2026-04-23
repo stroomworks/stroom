@@ -22,7 +22,6 @@ import stroom.index.shared.LuceneFieldTypes;
 import stroom.item.client.SelectionBox;
 import stroom.query.api.datasource.AnalyzerType;
 import stroom.query.api.datasource.FieldType;
-import stroom.util.client.Console;
 import stroom.widget.tickbox.client.view.CustomCheckBox;
 
 import com.google.gwt.event.logical.shared.ValueChangeEvent;
@@ -127,7 +126,6 @@ public class IndexFieldEditViewImpl
         if (domainClasses != null) {
             this.domainTypeClassPart.addItem(EMPTY);
             this.domainTypeClassPart.addItem(WILDCARD);
-            Console.info("Added Wildcard to domain classes");
             this.domainTypeClassPart.addItems(domainClasses);
         }
     }

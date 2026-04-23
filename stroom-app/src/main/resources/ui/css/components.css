@@ -2808,3 +2808,8 @@ button.main-menu svg {
 .visualisation-asset-tree .gwt-TreeItem-selected {
     background-color: var(--row__background-color--selected);
 }
+
+/* Dashboard settings */
+.dashboard-settings .dock-container-horizontal {
+    width: 400px;
+}

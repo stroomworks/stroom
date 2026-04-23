@@ -17,28 +17,41 @@
 package stroom.dashboard.client.main;
 
 import stroom.dashboard.client.main.DashboardSettingsPresenter.DashboardSettingsView;
+import stroom.item.client.SelectionBox;
 
-import com.google.gwt.event.dom.client.KeyUpEvent;
+import com.google.gwt.event.logical.shared.ValueChangeEvent;
 import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
 import com.google.gwt.uibinder.client.UiHandler;
-import com.google.gwt.user.client.ui.TextBox;
 import com.google.gwt.user.client.ui.Widget;
 import com.google.inject.Inject;
 import com.gwtplatform.mvp.client.ViewWithUiHandlers;
+
+import java.util.List;
 
 public class DashboardSettingsViewImpl
         extends ViewWithUiHandlers<DashboardSettingsUiHandlers>
         implements DashboardSettingsView {
 
+    /** Empty entry for domain type */
+    private static final String EMPTY = "";
+
+    /** Wildcard entry for domain type attribute part */
+    private static final String WILDCARD = "*";
+
     private final Widget widget;
 
     @UiField
-    TextBox domainType;
+    SelectionBox<String> domainTypeClassPart;
+    @UiField
+    SelectionBox<String> domainTypeAttributePart;
 
     @Inject
     public DashboardSettingsViewImpl(final Binder binder) {
         widget = binder.createAndBindUi(this);
+
+        domainTypeClassPart.setNonSelectString(EMPTY);
+        domainTypeAttributePart.setNonSelectString(EMPTY);
     }
 
     @Override
@@ -47,23 +60,61 @@ public class DashboardSettingsViewImpl
     }
 
     @Override
-    public String getDomainType() {
-        return domainType.getText();
+    public String getDomainTypeClassPart() {
+        return domainTypeClassPart.getValue();
     }
 
     @Override
-    public void setDomainType(final String domainType) {
-        this.domainType.setText(domainType);
+    public void setDomainTypeClassPart(final String domainTypeClassPart) {
+        this.domainTypeClassPart.setValue(domainTypeClassPart);
+    }
+
+    @Override
+    public void setDomainClasses(final List<String> domainClasses) {
+        this.domainTypeClassPart.clear();
+        if (domainClasses != null) {
+            this.domainTypeClassPart.addItem(EMPTY);
+            this.domainTypeClassPart.addItem(WILDCARD);
+            this.domainTypeClassPart.addItems(domainClasses);
+        }
+    }
+
+    @Override
+    public String getDomainTypeAttributePart() {
+        return domainTypeAttributePart.getValue();
+    }
+
+    @Override
+    public void setDomainTypeAttributePart(final String domainTypeAttributePart) {
+        this.domainTypeAttributePart.setValue(domainTypeAttributePart);
+    }
+
+    @Override
+    public void setDomainAttributes(final List<String> domainAttributes) {
+        this.domainTypeAttributePart.clear();
+        if (domainAttributes != null) {
+            this.domainTypeAttributePart.addItem(EMPTY);
+            this.domainTypeAttributePart.addItems(domainAttributes);
+        }
     }
 
     @Override
     public void onReadOnly(final boolean readOnly) {
-        domainType.setEnabled(!readOnly);
+        domainTypeClassPart.setEnabled(!readOnly);
+        domainTypeAttributePart.setEnabled(!readOnly);
     }
 
+    @UiHandler("domainTypeClassPart")
     @SuppressWarnings("unused")
-    @UiHandler("domainType")
-    public void onDomainTypeKeyUp(final KeyUpEvent event) {
+    public void onDomainClassChange(final ValueChangeEvent<String> event) {
+        if (getUiHandlers() != null) {
+            getUiHandlers().onClassChange(event.getValue());
+        }
+    }
+
+    @UiHandler("domainTypeAttributePart")
+    @SuppressWarnings("unused")
+    public void onDomainAttributeChange(final ValueChangeEvent<String> event) {
         if (getUiHandlers() != null) {
             getUiHandlers().triggerDirty();
         }
