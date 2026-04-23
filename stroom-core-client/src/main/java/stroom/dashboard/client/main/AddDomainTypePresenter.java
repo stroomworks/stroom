@@ -16,13 +16,15 @@
 
 package stroom.dashboard.client.main;
 
-import stroom.alert.client.event.AlertEvent;
 import stroom.domaintype.client.DomainTypeClient;
 import stroom.domaintype.shared.DomainType;
 import stroom.item.client.SelectionBox;
+import stroom.widget.popup.client.event.DisablePopupEvent;
+import stroom.widget.popup.client.event.EnablePopupEvent;
 import stroom.widget.popup.client.event.ShowPopupEvent;
 import stroom.widget.popup.client.presenter.PopupSize;
 import stroom.widget.popup.client.presenter.PopupType;
+import stroom.widget.popup.client.view.DialogAction;
 
 import com.google.inject.Inject;
 import com.google.web.bindery.event.shared.EventBus;
@@ -53,6 +55,10 @@ public class AddDomainTypePresenter extends MyPresenterWidget<AddDomainTypePrese
         super.onBind();
         registerHandler(getView().getClassPart().addValueChangeHandler(event -> {
             onClassChange(event.getValue(), null);
+            validate();
+        }));
+        registerHandler(getView().getAttributePart().addValueChangeHandler(event -> {
+            validate();
         }));
     }
 
@@ -62,6 +68,16 @@ public class AddDomainTypePresenter extends MyPresenterWidget<AddDomainTypePrese
             domainTypeClient.fetchAttributeParts(classPart, getView()::setDomainAttributes);
         } else {
             getView().setDomainAttributes(null);
+        }
+    }
+
+    private void validate() {
+        final String classPart = getView().getClassPart().getValue();
+        final String attributePart = getView().getAttributePart().getValue();
+        if (classPart != null && !classPart.isBlank() && attributePart != null && !attributePart.isBlank()) {
+            EnablePopupEvent.builder(this).action(DialogAction.OK).fire();
+        } else {
+            DisablePopupEvent.builder(this).action(DialogAction.OK).fire();
         }
     }
 
@@ -84,7 +100,10 @@ public class AddDomainTypePresenter extends MyPresenterWidget<AddDomainTypePrese
                 .popupType(PopupType.OK_CANCEL_DIALOG)
                 .popupSize(popupSize)
                 .caption(title)
-                .onShow(e -> getView().focus())
+                .onShow(e -> {
+                    getView().focus();
+                    validate();
+                })
                 .onHideRequest(e -> {
                     if (e.isOk()) {
                         final String classPart = getView().getClassPart().getValue();
@@ -92,8 +111,6 @@ public class AddDomainTypePresenter extends MyPresenterWidget<AddDomainTypePrese
                         if (classPart != null && !classPart.isBlank() && attributePart != null && !attributePart.isBlank()) {
                             consumer.accept(new DomainType(classPart, attributePart));
                             e.hide();
-                        } else {
-                            AlertEvent.fireError(this, "Both Host and Attribute Types must be specified.", null);
                         }
                     } else {
                         e.hide();
