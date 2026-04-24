@@ -41,6 +41,7 @@ public class MyDataGridDomainTypeSupportImpl<T> implements MyDataGridDomainTypeS
     public Item createContextMenu(final int rowIndex, final int colIndex) {
         final String domainType = dataGrid.getDomainType(colIndex);
         if (domainType != null) {
+            final String paramName = convertToParamName(domainType);
             final String cellValue = dataGrid.getCellText(rowIndex, colIndex);
             final FutureImpl<List<Item>> future = new FutureImpl<>();
             restFactory
@@ -51,7 +52,7 @@ public class MyDataGridDomainTypeSupportImpl<T> implements MyDataGridDomainTypeS
                                 .map(docRef -> (Item) new IconMenuItem.Builder()
                                         .icon(SvgImage.DOCUMENT_DASHBOARD)
                                         .text(docRef.getName())
-                                        .command(() -> jumpTo(docRef, domainType, cellValue))
+                                        .command(() -> jumpTo(docRef, paramName, cellValue))
                                         .build())
                                 .collect(Collectors.toList());
                         future.setResult(menuItems);
@@ -68,8 +69,28 @@ public class MyDataGridDomainTypeSupportImpl<T> implements MyDataGridDomainTypeS
         return null;
     }
 
-    private void jumpTo(final DocRef docRef, final String domainType, final String cellValue) {
-        final String params = domainType + "=" + cellValue;
+    /**
+     * Convert any character that isn't a letter or digit to _.
+     * Can't use streams or codepoints as this is running in GWT.
+     * @param domainType The string to sanitise.
+     * @return A sanitised version of the string.
+     */
+    private String convertToParamName(final String domainType) {
+        final StringBuilder buf = new StringBuilder();
+        for (int i = 0; i < domainType.length(); i++) {
+            final char c = domainType.charAt(i);
+            if (Character.isLetterOrDigit(c)) {
+                buf.append(c);
+            } else {
+                buf.append("_");
+            }
+        }
+
+        return buf.toString();
+    }
+
+    private void jumpTo(final DocRef docRef, final String paramName, final String cellValue) {
+        final String params = paramName + "=" + cellValue;
         OpenDocumentEvent.builder(globalEventBus, docRef)
                 .callbackOnOpen(presenter -> {
                     if (presenter instanceof final DashboardSuperPresenter dashboardSuperPresenter) {
