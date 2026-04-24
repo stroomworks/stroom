@@ -49,6 +49,7 @@ public abstract class AbstractFieldFilter extends AbstractXMLFilter {
     private static final String STORED = "stored";
     private static final String TERM_POSITIONS = "termPositions";
     private static final String CASE_SENSITIVE = "caseSensitive";
+    private static final String DOMAIN_TYPE = "domainType";
     private static final String DENSE_VECTOR = "denseVector";
     private static final String VALUE = "value";
 
@@ -163,6 +164,8 @@ public abstract class AbstractFieldFilter extends AbstractXMLFilter {
             } else if (TYPE.equals(localName)) {
                 final FieldType type = FieldType.fromDisplayValue(content.toString());
                 currentFieldBuilder.fldType(type);
+            } else if (DOMAIN_TYPE.equals(localName)) {
+                currentFieldBuilder.domainType(content.toString());
             } else if (ANALYSER.equals(localName)) {
                 final AnalyzerType analyzerType = AnalyzerType.fromDisplayValue(content.toString());
                 currentFieldBuilder.analyzerType(analyzerType);
