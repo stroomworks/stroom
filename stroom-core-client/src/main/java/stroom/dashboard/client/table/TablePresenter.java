@@ -232,7 +232,11 @@ public class TablePresenter extends AbstractComponentPresenter<TableView>
         annotationManager.setTaskMonitorFactory(this);
 
         dataGrid = new MyDataGrid<>(this);
-        dataGrid.setDomainTypeSupport(new MyDataGridDomainTypeSupportImpl<>(restFactory, this, this, dataGrid));
+        dataGrid.setDomainTypeSupport(new MyDataGridDomainTypeSupportImpl<>(restFactory,
+                this,
+                this,
+                dataGrid,
+                this::getDashboardContext));
         dataGrid.addStyleName("TablePresenter");
         dataGrid.setRowStyles(rowStyles);
         selectionModel = dataGrid.addDefaultSelectionModel(true);

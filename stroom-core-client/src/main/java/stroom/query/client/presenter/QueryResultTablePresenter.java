@@ -180,9 +180,13 @@ public class QueryResultTablePresenter
         annotationManager.setTaskMonitorFactory(this);
 
         this.pagerView = pagerView;
-        this.dataGrid = new MyDataGrid<>(this);
-        dataGrid.setDomainTypeSupport(new MyDataGridDomainTypeSupportImpl<>(restFactory, this, this, dataGrid));
-        dataGrid.addStyleName("TablePresenter");
+        dataGrid = new MyDataGrid<>(this);
+        dataGrid.setDomainTypeSupport(new MyDataGridDomainTypeSupportImpl<>(restFactory,
+                this,
+                this,
+                dataGrid,
+                this::getDashboardContext));
+        dataGrid.addStyleName("QueryResultTablePresenter");
         dataGrid.setRowStyles(rowStyles);
         selectionModel = dataGrid.addDefaultSelectionModel(true);
         pagerView.setDataWidget(dataGrid);
