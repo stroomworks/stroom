@@ -35,6 +35,7 @@ import javax.inject.Provider;
 public class FloorMapPresenter
         extends DocTabPresenter<LinkTabPanelView, FloorMapDoc> {
 
+    private static final TabData MAP = new TabDataImpl("Map");
     private static final TabData SETTINGS = new TabDataImpl("Settings");
     private static final TabData EXECUTION = new TabDataImpl("Execution");
     private static final TabData DOCUMENTATION = new TabDataImpl("Documentation");
@@ -43,17 +44,14 @@ public class FloorMapPresenter
     @Inject
     public FloorMapPresenter(final EventBus eventBus,
                              final LinkTabPanelView view,
+                             final Provider<FloorMapMapPresenter> floorMapMapPresenterProvider,
                              final Provider<FloorMapSettingsPresenter> floorMapSettingsPresenterProvider,
-                             final Provider<FloorMapProcessingPresenter> floorMapProcessingPresenterProvider,
                              final Provider<MarkdownEditPresenter> markdownEditPresenterProvider,
                              final DocumentUserPermissionsTabProvider<FloorMapDoc> documentUserPermissionsTabProvider) {
         super(eventBus, view);
 
-        final FloorMapProcessingPresenter floorMapProcessingPresenter = floorMapProcessingPresenterProvider.get();
-        floorMapProcessingPresenter.setDocumentEditPresenter(this);
-
+        addTab(MAP, new DocTabProvider<>(floorMapMapPresenterProvider::get));
         addTab(SETTINGS, new DocTabProvider<>(floorMapSettingsPresenterProvider::get));
-        addTab(EXECUTION, new DocTabProvider<>(() -> floorMapProcessingPresenter));
         addTab(DOCUMENTATION, new MarkdownTabProvider<FloorMapDoc>(eventBus, markdownEditPresenterProvider) {
             @Override
             public void onRead(final MarkdownEditPresenter presenter,
@@ -71,7 +69,7 @@ public class FloorMapPresenter
             }
         });
         addTab(PERMISSIONS, documentUserPermissionsTabProvider);
-        selectTab(SETTINGS);
+        selectTab(MAP);
     }
 
     @Override

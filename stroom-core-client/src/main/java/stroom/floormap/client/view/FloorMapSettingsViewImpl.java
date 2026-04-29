@@ -35,10 +35,7 @@ public class FloorMapSettingsViewImpl
     private final Widget widget;
 
     @UiField
-    SimplePanel destinationFeed;
-
-    @UiField
-    SimplePanel templateEditor;
+    SimplePanel sourceFeed;
 
     @Inject
     public FloorMapSettingsViewImpl(final Binder binder) {
@@ -51,13 +48,8 @@ public class FloorMapSettingsViewImpl
     }
 
     @Override
-    public void setDestinationFeed(final View view) {
-        this.destinationFeed.setWidget(view.asWidget());
-    }
-
-    @Override
-    public void setTemplateEditor(final View view) {
-        templateEditor.setWidget(view.asWidget());
+    public void setSourceFeed(final View view) {
+        this.sourceFeed.setWidget(view.asWidget());
     }
 
     @Override

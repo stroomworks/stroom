@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2016-2026 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,28 +16,24 @@
 
 package stroom.floormap.client.view;
 
-import stroom.analytics.client.presenter.AnalyticProcessingUiHandlers;
-import stroom.floormap.client.presenter.FloorMapProcessingPresenter.FloorMapProcessingView;
+import stroom.floormap.client.presenter.FloorMapMapPresenter.FloorMapMapView;
 
 import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
 import com.google.gwt.user.client.ui.SimplePanel;
 import com.google.gwt.user.client.ui.Widget;
 import com.google.inject.Inject;
-import com.gwtplatform.mvp.client.View;
-import com.gwtplatform.mvp.client.ViewWithUiHandlers;
+import com.gwtplatform.mvp.client.ViewImpl;
 
-public class FloorMapProcessingViewImpl
-        extends ViewWithUiHandlers<AnalyticProcessingUiHandlers>
-        implements FloorMapProcessingView {
+public class FloorMapMapViewImpl extends ViewImpl implements FloorMapMapView {
 
     private final Widget widget;
 
     @UiField
-    SimplePanel processSettings;
+    SimplePanel mapPanel;
 
     @Inject
-    public FloorMapProcessingViewImpl(final Binder binder) {
+    public FloorMapMapViewImpl(final Binder binder) {
         widget = binder.createAndBindUi(this);
     }
 
@@ -46,12 +42,7 @@ public class FloorMapProcessingViewImpl
         return widget;
     }
 
-    @Override
-    public void setProcessSettings(final View view) {
-        this.processSettings.setWidget(view.asWidget());
-    }
-
-    public interface Binder extends UiBinder<Widget, FloorMapProcessingViewImpl> {
+    public interface Binder extends UiBinder<Widget, FloorMapMapViewImpl> {
 
     }
 }

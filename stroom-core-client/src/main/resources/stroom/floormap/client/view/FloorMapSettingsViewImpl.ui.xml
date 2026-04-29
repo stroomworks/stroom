@@ -3,20 +3,11 @@
              xmlns:g="urn:import:com.google.gwt.user.client.ui"
              xmlns:form="urn:import:stroom.widget.form.client">
     <g:FlowPanel styleName="max dock-container-vertical form-padding form">
-
-        <form:FormGroup identity="floorMapDestinationFeed"
-                        label="Destination Feed"
+        <form:FormGroup identity="floorMapSourceFeed"
+                        label="Source Feed"
                         helpText="The feed that the generated data will be sent to."
                         addStyleNames="dock-min">
-            <g:SimplePanel ui:field="destinationFeed"/>
+            <g:SimplePanel ui:field="sourceFeed"/>
         </form:FormGroup>
-
-        <form:FormGroup identity="floorMapSettingsTemplate"
-                        label="Template"
-                        helpText="The data that will be sent into this Feed."
-                        addStyleNames="dock-max">
-            <g:SimplePanel ui:field="templateEditor" styleName="max form-control-border"/>
-        </form:FormGroup>
-
     </g:FlowPanel>
 </ui:UiBinder>

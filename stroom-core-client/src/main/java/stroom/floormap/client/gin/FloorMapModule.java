@@ -17,13 +17,13 @@
 package stroom.floormap.client.gin;
 
 import stroom.core.client.gin.PluginModule;
-import stroom.floormap.client.presenter.FloorMapProcessingPresenter.FloorMapProcessingView;
+import stroom.floormap.client.presenter.FloorMapMapPresenter;
+import stroom.floormap.client.presenter.FloorMapMapPresenter.FloorMapMapView;
 import stroom.floormap.client.presenter.FloorMapSettingsPresenter.FloorMapSettingsView;
 import stroom.floormap.client.FloorMapPlugin;
 import stroom.floormap.client.presenter.FloorMapPresenter;
-import stroom.floormap.client.presenter.FloorMapProcessingPresenter;
 import stroom.floormap.client.presenter.FloorMapSettingsPresenter;
-import stroom.floormap.client.view.FloorMapProcessingViewImpl;
+import stroom.floormap.client.view.FloorMapMapViewImpl;
 import stroom.floormap.client.view.FloorMapSettingsViewImpl;
 
 public class FloorMapModule extends PluginModule {
@@ -34,11 +34,11 @@ public class FloorMapModule extends PluginModule {
 
         bind(FloorMapPresenter.class);
 
+        bindPresenterWidget(FloorMapMapPresenter.class,
+                FloorMapMapView.class,
+                FloorMapMapViewImpl.class);
         bindPresenterWidget(FloorMapSettingsPresenter.class,
                 FloorMapSettingsView.class,
                 FloorMapSettingsViewImpl.class);
-        bindPresenterWidget(FloorMapProcessingPresenter.class,
-                FloorMapProcessingView.class,
-                FloorMapProcessingViewImpl.class);
     }
 }

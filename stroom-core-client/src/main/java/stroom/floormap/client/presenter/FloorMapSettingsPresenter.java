@@ -35,32 +35,28 @@ import javax.inject.Provider;
 public class FloorMapSettingsPresenter
         extends DocPresenter<FloorMapSettingsView, FloorMapDoc> {
 
-    final DocSelectionBoxPresenter destinationFeedPresenter;
+    final DocSelectionBoxPresenter sourceFeedPresenter;
     private final UiConfigCache uiConfigCache;
-    private final EditorPresenter templatePresenter;
 
     @Inject
     public FloorMapSettingsPresenter(final EventBus eventBus,
                                      final FloorMapSettingsView view,
-                                     final DocSelectionBoxPresenter destinationFeedPresenter,
+                                     final DocSelectionBoxPresenter sourceFeedPresenter,
                                      final UiConfigCache uiConfigcache,
                                      final Provider<EditorPresenter> editorPresenterProvider) {
         super(eventBus, view);
-        this.destinationFeedPresenter = destinationFeedPresenter;
+        this.sourceFeedPresenter = sourceFeedPresenter;
         this.uiConfigCache = uiConfigcache;
-        this.templatePresenter = editorPresenterProvider.get();
 
-        view.setTemplateEditor(templatePresenter.getView());
-        destinationFeedPresenter.setIncludedTypes(FeedDoc.TYPE);
-        destinationFeedPresenter.setRequiredPermissions(DocumentPermission.VIEW);
-        view.setDestinationFeed(destinationFeedPresenter.getView());
+        sourceFeedPresenter.setIncludedTypes(FeedDoc.TYPE);
+        sourceFeedPresenter.setRequiredPermissions(DocumentPermission.VIEW);
+        view.setSourceFeed(sourceFeedPresenter.getView());
     }
 
     @Override
     protected void onBind() {
         super.onBind();
-        registerHandler(destinationFeedPresenter.addDataSelectionHandler(e -> onChange()));
-        registerHandler(templatePresenter.addValueChangeHandler(e -> onChange()));
+        registerHandler(sourceFeedPresenter.addDataSelectionHandler(e -> onChange()));
     }
 
     @Override
@@ -70,11 +66,8 @@ public class FloorMapSettingsPresenter
                 final DocRef selectedDocRef = floorMapDoc.getFeed();
 
                 if (selectedDocRef != null) {
-                    destinationFeedPresenter.setSelectedEntityReference(selectedDocRef, true);
+                    sourceFeedPresenter.setSelectedEntityReference(selectedDocRef, true);
                 }
-                templatePresenter.setText(floorMapDoc.getTemplate());
-                templatePresenter.setReadOnly(false);
-                templatePresenter.getFormatAction().setAvailable(!readOnly);
             }
         }, this);
     }
@@ -83,15 +76,12 @@ public class FloorMapSettingsPresenter
     protected FloorMapDoc onWrite(final FloorMapDoc doc) {
         return doc
                 .copy()
-                .template(templatePresenter.getText())
-                .feed(destinationFeedPresenter.getSelectedEntityReference())
+                .feed(sourceFeedPresenter.getSelectedEntityReference())
                 .build();
     }
 
     public interface FloorMapSettingsView extends View {
 
-        void setDestinationFeed(View view);
-
-        void setTemplateEditor(View view);
+        void setSourceFeed(View view);
     }
 }
