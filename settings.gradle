@@ -120,6 +120,9 @@ include 'stroom-data:stroom-data-zip'
 // DataGen
 include 'stroom-datagen:stroom-datagen-impl'
 
+// Floor Map
+include 'stroom-floormap:stroom-floormap-impl'
+
 // DB Utilities
 include 'stroom-db-util'
 
