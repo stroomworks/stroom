@@ -21,17 +21,20 @@ import stroom.floormap.client.presenter.FloorMapMapPresenter.FloorMapMapView;
 
 import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
+import com.google.gwt.user.client.ui.ProvidesResize;
+import com.google.gwt.user.client.ui.RequiresResize;
+import com.google.gwt.user.client.ui.ResizeLayoutPanel;
 import com.google.gwt.user.client.ui.SimplePanel;
 import com.google.gwt.user.client.ui.Widget;
 import com.google.inject.Inject;
 import com.gwtplatform.mvp.client.ViewImpl;
 
-public class FloorMapMapViewImpl extends ViewImpl implements FloorMapMapView {
+public class FloorMapMapViewImpl extends ViewImpl implements FloorMapMapView, RequiresResize, ProvidesResize {
 
     private final Widget widget;
 
     @UiField
-    SimplePanel mapPanel;
+    ResizeLayoutPanel mapPanel;
     @UiField
     SimplePanel logPanel;
 
@@ -47,10 +50,18 @@ public class FloorMapMapViewImpl extends ViewImpl implements FloorMapMapView {
 
     @Override
     public void setInSlot(final Object slot, final Widget content) {
-        if (FloorMapMapPresenter.LOG_DATA.equals(slot)) {
-            logPanel.setWidget(content);
-        } else if (FloorMapMapPresenter.MAP.equals(slot)) {
+        if (FloorMapMapPresenter.MAP.equals(slot)) {
             mapPanel.setWidget(content);
+        } else if (FloorMapMapPresenter.LOG_DATA.equals(slot)) {
+            logPanel.setWidget(content);
+        }
+    }
+
+    @Override
+    public void onResize() {
+        // Ensures the signal reaches ResizeLayoutPanel which then passes it to the canvas.
+        if (widget instanceof  RequiresResize) {
+            ((RequiresResize) widget).onResize();
         }
     }
 

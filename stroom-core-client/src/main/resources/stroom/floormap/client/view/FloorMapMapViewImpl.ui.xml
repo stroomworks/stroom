@@ -19,9 +19,9 @@
              xmlns:g="urn:import:com.google.gwt.user.client.ui">
     <g:ThinSplitLayoutPanel vSplits="0.5" styleName="max">
         <g:north size="200">
-            <g:SimplePanel ui:field="mapPanel" addStyleNames="max">
+            <g:ResizeLayoutPanel ui:field="mapPanel" addStyleNames="max">
                 <g:Label text="Map Placeholder"/>
-            </g:SimplePanel>
+            </g:ResizeLayoutPanel>
         </g:north>
         <g:center>
             <g:SimplePanel ui:field="logPanel" addStyleNames="max">

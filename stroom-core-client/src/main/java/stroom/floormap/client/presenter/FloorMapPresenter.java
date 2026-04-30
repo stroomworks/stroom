@@ -37,7 +37,6 @@ public class FloorMapPresenter
 
     private static final TabData MAP = new TabDataImpl("Map");
     private static final TabData SETTINGS = new TabDataImpl("Settings");
-    private static final TabData EXECUTION = new TabDataImpl("Execution");
     private static final TabData DOCUMENTATION = new TabDataImpl("Documentation");
     private static final TabData PERMISSIONS = new TabDataImpl("Permissions");
 

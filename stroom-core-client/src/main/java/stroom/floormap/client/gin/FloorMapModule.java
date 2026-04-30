@@ -17,6 +17,8 @@
 package stroom.floormap.client.gin;
 
 import stroom.core.client.gin.PluginModule;
+import stroom.floormap.client.presenter.FloorMapCanvasPresenter;
+import stroom.floormap.client.presenter.FloorMapCanvasPresenter.FloorMapCanvasView;
 import stroom.floormap.client.presenter.FloorMapMapPresenter;
 import stroom.floormap.client.presenter.FloorMapMapPresenter.FloorMapMapView;
 import stroom.floormap.client.presenter.FloorMapSettingsPresenter.FloorMapSettingsView;
@@ -25,6 +27,7 @@ import stroom.floormap.client.presenter.FloorMapPresenter;
 import stroom.floormap.client.presenter.FloorMapSettingsPresenter;
 import stroom.floormap.client.presenter.FloorMapTempPresenter;
 import stroom.floormap.client.presenter.FloorMapTempPresenter.FloorMapTempView;
+import stroom.floormap.client.view.FloorMapCanvasViewImpl;
 import stroom.floormap.client.view.FloorMapMapViewImpl;
 import stroom.floormap.client.view.FloorMapSettingsViewImpl;
 import stroom.floormap.client.view.FloorMapTempViewImpl;
@@ -46,5 +49,8 @@ public class FloorMapModule extends PluginModule {
         bindPresenterWidget(FloorMapTempPresenter.class,
                 FloorMapTempView.class,
                 FloorMapTempViewImpl.class);
+        bindPresenterWidget(FloorMapCanvasPresenter.class,
+                FloorMapCanvasView.class,
+                FloorMapCanvasViewImpl.class);
     }
 }

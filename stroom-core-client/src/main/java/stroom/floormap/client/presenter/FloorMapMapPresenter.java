@@ -26,6 +26,7 @@ import stroom.widget.tab.client.presenter.LinkTabsPresenter;
 import stroom.widget.tab.client.presenter.TabData;
 
 import com.google.inject.Inject;
+import com.google.inject.Provider;
 import com.google.web.bindery.event.shared.EventBus;
 import com.gwtplatform.mvp.client.View;
 
@@ -38,6 +39,7 @@ public class FloorMapMapPresenter
     public static final Object LOG_DATA = new Object();
 
     private final MetaPresenter metaPresenter;
+    private final Provider<FloorMapCanvasPresenter> floorMapCanvasPresenterProvider;
 
     private DocRef currentFeed;
 
@@ -46,15 +48,18 @@ public class FloorMapMapPresenter
                                 final FloorMapMapView view,
                                 final LinkTabsPresenter linkTabsPresenter,
                                 final MetaPresenter metaPresenter,
-                                final FloorMapTempPresenter floorMapTempPresenter) {
+                                final FloorMapTempPresenter floorMapTempPresenter,
+                                final Provider<FloorMapCanvasPresenter> floorMapCanvasPresenterProvider) {
         super(eventBus, view);
         this.metaPresenter = metaPresenter;
+        this.floorMapCanvasPresenterProvider = floorMapCanvasPresenterProvider;
 
         final TabData dataTab = linkTabsPresenter.addTab("Data", metaPresenter);
         linkTabsPresenter.addTab("Temp", floorMapTempPresenter);
         linkTabsPresenter.changeSelectedTab(dataTab);
 
         setInSlot(LOG_DATA, linkTabsPresenter);
+        setInSlot(MAP, floorMapCanvasPresenterProvider.get());
     }
 
     @Override
