@@ -23,8 +23,11 @@ import stroom.floormap.client.presenter.FloorMapSettingsPresenter.FloorMapSettin
 import stroom.floormap.client.FloorMapPlugin;
 import stroom.floormap.client.presenter.FloorMapPresenter;
 import stroom.floormap.client.presenter.FloorMapSettingsPresenter;
+import stroom.floormap.client.presenter.FloorMapTempPresenter;
+import stroom.floormap.client.presenter.FloorMapTempPresenter.FloorMapTempView;
 import stroom.floormap.client.view.FloorMapMapViewImpl;
 import stroom.floormap.client.view.FloorMapSettingsViewImpl;
+import stroom.floormap.client.view.FloorMapTempViewImpl;
 
 public class FloorMapModule extends PluginModule {
 
@@ -40,5 +43,8 @@ public class FloorMapModule extends PluginModule {
         bindPresenterWidget(FloorMapSettingsPresenter.class,
                 FloorMapSettingsView.class,
                 FloorMapSettingsViewImpl.class);
+        bindPresenterWidget(FloorMapTempPresenter.class,
+                FloorMapTempView.class,
+                FloorMapTempViewImpl.class);
     }
 }

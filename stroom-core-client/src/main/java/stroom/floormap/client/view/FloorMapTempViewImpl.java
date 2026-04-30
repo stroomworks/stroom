@@ -16,27 +16,19 @@
 
 package stroom.floormap.client.view;
 
-import stroom.floormap.client.presenter.FloorMapMapPresenter;
-import stroom.floormap.client.presenter.FloorMapMapPresenter.FloorMapMapView;
+import stroom.floormap.client.presenter.FloorMapTempPresenter.FloorMapTempView;
 
 import com.google.gwt.uibinder.client.UiBinder;
-import com.google.gwt.uibinder.client.UiField;
-import com.google.gwt.user.client.ui.SimplePanel;
 import com.google.gwt.user.client.ui.Widget;
 import com.google.inject.Inject;
 import com.gwtplatform.mvp.client.ViewImpl;
 
-public class FloorMapMapViewImpl extends ViewImpl implements FloorMapMapView {
+public class FloorMapTempViewImpl extends ViewImpl implements FloorMapTempView {
 
     private final Widget widget;
 
-    @UiField
-    SimplePanel mapPanel;
-    @UiField
-    SimplePanel logPanel;
-
     @Inject
-    public FloorMapMapViewImpl(final Binder binder) {
+    public FloorMapTempViewImpl(final Binder binder) {
         widget = binder.createAndBindUi(this);
     }
 
@@ -45,16 +37,7 @@ public class FloorMapMapViewImpl extends ViewImpl implements FloorMapMapView {
         return widget;
     }
 
-    @Override
-    public void setInSlot(final Object slot, final Widget content) {
-        if (FloorMapMapPresenter.LOG_DATA.equals(slot)) {
-            logPanel.setWidget(content);
-        } else if (FloorMapMapPresenter.MAP.equals(slot)) {
-            mapPanel.setWidget(content);
-        }
-    }
-
-    public interface Binder extends UiBinder<Widget, FloorMapMapViewImpl> {
+    public interface Binder extends UiBinder<Widget, FloorMapTempViewImpl> {
 
     }
 }

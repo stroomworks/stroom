@@ -16,27 +16,56 @@
 
 package stroom.floormap.client.presenter;
 
-import stroom.floormap.client.presenter.FloorMapMapPresenter.FloorMapMapView;
-import stroom.floormap.shared.FloorMapDoc;
+import stroom.data.client.presenter.MetaPresenter;
 import stroom.docref.DocRef;
 import stroom.entity.client.presenter.DocPresenter;
+import stroom.floormap.client.presenter.FloorMapMapPresenter.FloorMapMapView;
+import stroom.floormap.shared.FloorMapDoc;
+import stroom.meta.shared.MetaExpressionUtil;
+import stroom.widget.tab.client.presenter.LinkTabsPresenter;
+import stroom.widget.tab.client.presenter.TabData;
 
 import com.google.inject.Inject;
 import com.google.web.bindery.event.shared.EventBus;
 import com.gwtplatform.mvp.client.View;
 
+import java.util.Objects;
+
 public class FloorMapMapPresenter
         extends DocPresenter<FloorMapMapView, FloorMapDoc> {
 
+    public static final Object MAP = new Object();
+    public static final Object LOG_DATA = new Object();
+
+    private final MetaPresenter metaPresenter;
+
+    private DocRef currentFeed;
+
     @Inject
     public FloorMapMapPresenter(final EventBus eventBus,
-                                final FloorMapMapView view) {
+                                final FloorMapMapView view,
+                                final LinkTabsPresenter linkTabsPresenter,
+                                final MetaPresenter metaPresenter,
+                                final FloorMapTempPresenter floorMapTempPresenter) {
         super(eventBus, view);
+        this.metaPresenter = metaPresenter;
+
+        final TabData dataTab = linkTabsPresenter.addTab("Data", metaPresenter);
+        linkTabsPresenter.addTab("Temp", floorMapTempPresenter);
+        linkTabsPresenter.changeSelectedTab(dataTab);
+
+        setInSlot(LOG_DATA, linkTabsPresenter);
     }
 
     @Override
     protected void onRead(final DocRef docRef, final FloorMapDoc document, final boolean readOnly) {
-
+        if (!Objects.equals(currentFeed, document.getFeed())) {
+            currentFeed = document.getFeed();
+            if (currentFeed != null) {
+                metaPresenter.getCriteria().setExpression(MetaExpressionUtil.createFeedExpression(currentFeed));
+                metaPresenter.refresh();
+            }
+        }
     }
 
     @Override
