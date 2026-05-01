@@ -19,20 +19,22 @@ package stroom.floormap.client.view;
 import stroom.document.client.event.DirtyUiHandlers;
 import stroom.entity.client.presenter.ReadOnlyChangeHandler;
 import stroom.floormap.client.presenter.FloorMapCanvasPresenter.FloorMapCanvasView;
-import stroom.floormap.client.presenter.FloorMapSettingsPresenter.FloorMapSettingsView;
 
 import com.google.gwt.canvas.client.Canvas;
 import com.google.gwt.canvas.dom.client.Context2d;
 import com.google.gwt.core.client.GWT;
 import com.google.gwt.core.client.Scheduler;
 import com.google.gwt.dom.client.Element;
+import com.google.gwt.event.dom.client.HasMouseDownHandlers;
+import com.google.gwt.event.dom.client.HasMouseMoveHandlers;
+import com.google.gwt.event.dom.client.HasMouseUpHandlers;
+import com.google.gwt.event.dom.client.HasMouseWheelHandlers;
 import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiFactory;
 import com.google.gwt.uibinder.client.UiField;
-import com.google.gwt.user.client.ui.SimplePanel;
+import com.google.gwt.user.client.ui.FocusPanel;
 import com.google.gwt.user.client.ui.Widget;
 import com.google.inject.Inject;
-import com.gwtplatform.mvp.client.View;
 import com.gwtplatform.mvp.client.ViewWithUiHandlers;
 
 public class FloorMapCanvasViewImpl
@@ -43,6 +45,9 @@ public class FloorMapCanvasViewImpl
 
     @UiField
     Canvas canvas;
+
+    @UiField
+    FocusPanel focusPanel;
 
     @Inject
     public FloorMapCanvasViewImpl(final Binder binder) {
@@ -87,6 +92,50 @@ public class FloorMapCanvasViewImpl
     @UiFactory
     public Canvas createCanvas() {
         return Canvas.createIfSupported();
+    }
+
+    @Override
+    public HasMouseDownHandlers getFocusPanel() {
+        return focusPanel;
+    }
+
+    @Override
+    public HasMouseMoveHandlers getMouseMoveHandlers() {
+        return focusPanel;
+    }
+
+    @Override
+    public HasMouseUpHandlers getMouseUpHandlers() {
+        return focusPanel;
+    }
+
+    @Override
+    public HasMouseWheelHandlers getMouseWheelHandlers() {
+        return focusPanel;
+    }
+
+    @Override
+    public void draw(final double scale, final double x, final double y) {
+        final Context2d context2d = canvas.getContext2d();
+        final int width = canvas.getCoordinateSpaceWidth();
+        final int height = canvas.getCoordinateSpaceHeight();
+
+        // Clear the canvas
+        context2d.clearRect(0, 0, width, height);
+
+        // Save the normal state (no zoom/pan)
+        context2d.save();
+
+        // Apply the translation
+        context2d.translate(x, y);
+        context2d.scale(scale, scale);
+
+        // Draw the map
+        context2d.setFillStyle("#FFFFFF");
+        context2d.fillRect(0, 0, 1000, 1000);
+
+        // Restore back to normal for next frame
+        context2d.restore();
     }
 
 
