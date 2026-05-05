@@ -16,12 +16,12 @@
 
 package stroom.document.asset.client.gin;
 
-import stroom.docstore.shared.AbstractDoc;
 import stroom.document.asset.client.presenter.DocumentAssetPresenter;
 
 import com.google.inject.Provider;
 
-public interface DocumentAssetGinjector<D extends AbstractDoc> {
+@SuppressWarnings({"rawtypes", "unused"})
+public interface DocumentAssetGinjector {
 
-    Provider<DocumentAssetPresenter<D>> getDocumentAssetPresenter();
+    Provider<DocumentAssetPresenter> getDocumentAssetPresenter();
 }
