@@ -1,7 +1,7 @@
 package stroom.document.asset.client.presenter;
 
-import stroom.util.shared.ResourceKey;
 import stroom.document.asset.client.presenter.assets.DocumentAssetTreeItem;
+import stroom.util.shared.ResourceKey;
 
 /**
  * Callback interface, so that the Add File dialog can record what it has done back

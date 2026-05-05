@@ -16,9 +16,9 @@
 
 package stroom.document.asset.client.view;
 
+import stroom.document.asset.client.presenter.DocumentAssetPresenter.DocumentAssetView;
 import stroom.editor.client.presenter.EditorPresenter;
 import stroom.entity.client.presenter.ReadOnlyChangeHandler;
-import stroom.document.asset.client.presenter.DocumentAssetPresenter.DocumentAssetView;
 
 import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;

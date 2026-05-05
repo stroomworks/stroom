@@ -16,8 +16,8 @@
 
 package stroom.document.asset.client.presenter;
 
-import stroom.document.asset.shared.DocumentAsset;
 import stroom.document.asset.client.presenter.assets.DocumentAssetTreeItem;
+import stroom.document.asset.shared.DocumentAsset;
 
 import com.google.gwt.user.client.ui.Tree;
 import com.google.gwt.user.client.ui.TreeItem;

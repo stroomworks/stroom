@@ -2,11 +2,11 @@ package stroom.document.asset.client.presenter;
 
 import stroom.alert.client.event.AlertEvent;
 import stroom.dispatch.client.AbstractSubmitCompleteHandler;
+import stroom.document.asset.client.presenter.DocumentAssetUploadFileDialogPresenter.DocumentAssetUploadFileDialogView;
+import stroom.document.asset.client.presenter.assets.DocumentAssetTreeItem;
 import stroom.importexport.client.presenter.ImportUtil;
 import stroom.util.shared.NullSafe;
 import stroom.util.shared.ResourceKey;
-import stroom.document.asset.client.presenter.DocumentAssetUploadFileDialogPresenter.DocumentAssetUploadFileDialogView;
-import stroom.document.asset.client.presenter.assets.DocumentAssetTreeItem;
 import stroom.widget.popup.client.event.HidePopupRequestEvent;
 import stroom.widget.popup.client.event.ShowPopupEvent;
 import stroom.widget.popup.client.presenter.PopupSize;

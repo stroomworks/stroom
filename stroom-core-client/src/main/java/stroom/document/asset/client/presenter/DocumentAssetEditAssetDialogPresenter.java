@@ -16,8 +16,8 @@
 
 package stroom.document.asset.client.presenter;
 
-import stroom.util.shared.NullSafe;
 import stroom.document.asset.client.presenter.assets.DocumentAssetTreeItem;
+import stroom.util.shared.NullSafe;
 import stroom.widget.popup.client.event.ShowPopupEvent;
 import stroom.widget.popup.client.presenter.PopupSize;
 import stroom.widget.popup.client.presenter.PopupType;
