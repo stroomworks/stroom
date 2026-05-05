@@ -17,6 +17,7 @@
 package stroom.visualisation.client.presenter;
 
 import stroom.docref.DocRef;
+import stroom.document.asset.client.presenter.DocumentAssetPresenter;
 import stroom.entity.client.presenter.DocTabPresenter;
 import stroom.entity.client.presenter.DocTabProvider;
 import stroom.entity.client.presenter.LinkTabPanelView;
@@ -41,21 +42,21 @@ public class VisualisationPresenter extends DocTabPresenter<LinkTabPanelView, Vi
     private static final TabData DOCUMENTATION = new TabDataImpl("Documentation");
     private static final TabData PERMISSIONS = new TabDataImpl("Permissions");
 
-    private final VisualisationAssetsPresenter visualisationAssetsPresenter;
+    private final DocumentAssetPresenter<VisualisationDoc> documentAssetPresenter;
 
     @Inject
     public VisualisationPresenter(final EventBus eventBus,
                                   final LinkTabPanelView view,
                                   final Provider<VisualisationSettingsPresenter> settingsPresenterProvider,
-                                  final VisualisationAssetsPresenter visualisationAssetsPresenter,
+                                  final DocumentAssetPresenter<VisualisationDoc> documentAssetPresenter,
                                   final Provider<MarkdownEditPresenter> markdownEditPresenterProvider,
                                   final DocumentUserPermissionsTabProvider<VisualisationDoc>
                                           documentUserPermissionsTabProvider) {
         super(eventBus, view);
-        this.visualisationAssetsPresenter = visualisationAssetsPresenter;
+        this.documentAssetPresenter = documentAssetPresenter;
 
         addTab(SETTINGS, new DocTabProvider<>(settingsPresenterProvider::get));
-        addTab(ASSETS, new DocTabProvider<>(() -> visualisationAssetsPresenter));
+        addTab(ASSETS, new DocTabProvider<>(() -> documentAssetPresenter));
         addTab(DOCUMENTATION, new MarkdownTabProvider<>(eventBus, markdownEditPresenterProvider) {
             @Override
             public void onRead(final MarkdownEditPresenter presenter,
@@ -92,6 +93,11 @@ public class VisualisationPresenter extends DocTabPresenter<LinkTabPanelView, Vi
         return DOCUMENTATION;
     }
 
+    @Override
+    protected boolean hasAssociatedDirty() {
+        return super.hasAssociatedDirty() || (documentAssetPresenter != null && documentAssetPresenter.isDirty());
+    }
+
     /**
      * Provide a callback to be inserted into the save chain after the save is complete.
      * @return The consumer for the callback. The second parameter will be the
@@ -120,7 +126,7 @@ public class VisualisationPresenter extends DocTabPresenter<LinkTabPanelView, Vi
      * @param callback Thing to call when the assets have been saved.
      */
     public void saveAssets(final VisualisationDoc document, final Consumer<VisualisationDoc> callback) {
-        visualisationAssetsPresenter.onSave(document, callback);
+        documentAssetPresenter.onSave(document, callback);
     }
 
     /**
@@ -130,6 +136,6 @@ public class VisualisationPresenter extends DocTabPresenter<LinkTabPanelView, Vi
      * @param callback Thing to call when the assets have been saved.
      */
     public void saveAsAssets(final VisualisationDoc document, final Consumer<VisualisationDoc> callback) {
-        visualisationAssetsPresenter.onSaveAs(document, callback);
+        documentAssetPresenter.onSaveAs(document, callback);
     }
 }
