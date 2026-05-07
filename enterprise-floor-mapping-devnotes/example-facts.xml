@@ -1,0 +1,188 @@
+<!--
+  ~ Copyright 2016-2026 Crown Copyright
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~     http://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+  -->
+
+<records>
+    <!-- Facts about a person -->
+    <record>
+        <data name="type" value="person"/>
+        <data name="valid-from" value="2007-04-05T12:30.045Z"/>
+        <data name="id" value="joe.blogs@example.org"/>
+        <data name="name" value="Joe Blogs"/>
+        <data name="icon" value="/assets/1234-567-890/joe.png"/>
+    </record>
+    <record>
+        <data name="type" value="person"/>
+        <data name="valid-from" value="2007-04-05T12:30.045Z"/>
+        <data name="id" value="jane.doe@stroomworks.io"/>
+        <data name="name" value="Jane Doe"/>
+        <data name="icon" value="/assets/1234-567-890/jane.png"/>
+    </record>
+    <record>
+        <data name="type" value="person"/>
+        <data name="valid-from" value="2007-04-05T12:30.045Z"/>
+        <data name="id" value="tech.support@example.net"/>
+        <data name="name" value="Tech Support"/>
+        <data name="icon" value="/assets/1234-567-890/tech-support.png"/>
+    </record>
+    <record>
+        <data name="type" value="person"/>
+        <data name="valid-from" value="2007-04-05T12:30.045Z"/>
+        <data name="id" value="admin.one@corp.local"/>
+        <data name="name" value="Admin 1"/>
+        <data name="icon" value="/assets/1234-567-890/admin1.png"/>
+    </record>
+    <record>
+        <data name="type" value="person"/>
+        <data name="valid-from" value="2007-04-05T12:30.045Z"/>
+        <data name="id" value="guest.user.742@outside.com"/>
+        <data name="name" value="Guest User 742"/>
+        <data name="icon" value="/assets/1234-567-890/guest.png"/>
+    </record>
+    <record>
+        <data name="type" value="person"/>
+        <data name="valid-from" value="2007-04-05T12:30.045Z"/>
+        <data name="id" value="dev.lead@example.com"/>
+        <data name="name" value="Dev Lead"/>
+        <data name="icon" value="/assets/1234-567-890/dev-lead.png"/>
+    </record>
+    <record>
+        <data name="type" value="person"/>
+        <data name="valid-from" value="2007-04-05T12:30.045Z"/>
+        <data name="id" value="facility.mgr@stroom.gov"/>
+        <data name="name" value="Facilities"/>
+        <data name="icon" value="/assets/1234-567-890/facilities.png"/>
+    </record>
+    <record>
+        <data name="type" value="person"/>
+        <data name="valid-from" value="2007-04-05T12:30.045Z"/>
+        <data name="id" value="audit.team@example.org"/>
+        <data name="name" value="Audit"/>
+        <data name="icon" value="/assets/1234-567-890/audit.png"/>
+    </record>
+
+    <record>
+        <data name="type" value="gate"/>
+        <data name="valid-from" value="2007-04-05T12:30.045Z"/>
+        <data name="id" value="G-NORTH-01"/>
+        <data name="name" value="North Entrance"/>
+        <data name="location" value="map3, 57.2, 17.1"/>
+    </record>
+    <record>
+        <data name="type" value="gate"/>
+        <data name="valid-from" value="2007-04-05T12:30.045Z"/>
+        <data name="id" value="G-SOUTH-22"/>
+        <data name="name" value="South Entrance"/>
+        <data name="location" value="map3, 57.2, 17.1"/>
+    </record>
+    <record>
+        <data name="type" value="gate"/>
+        <data name="valid-from" value="2007-04-05T12:30.045Z"/>
+        <data name="id" value="G-EAST-04"/>
+        <data name="name" value="East Entrance"/>
+        <data name="location" value="map3, 57.2, 17.1"/>
+    </record>
+    <record>
+        <data name="type" value="gate"/>
+        <data name="valid-from" value="2007-04-05T12:30.045Z"/>
+        <data name="id" value="G-MAIN_ENTRANCE"/>
+        <data name="name" value="Main Entrance"/>
+        <data name="location" value="map3, 57.2, 17.1"/>
+    </record>
+    <record>
+        <data name="type" value="gate"/>
+        <data name="valid-from" value="2007-04-05T12:30.045Z"/>
+        <data name="id" value="G-SEC-RECEPTION"/>
+        <data name="name" value="Security Reception"/>
+        <data name="location" value="map3, 57.2, 17.1"/>
+    </record>
+
+    <record>
+        <data name="type" value="network-device"/>
+        <data name="valid-from" value="2007-04-05T12:30.045Z"/>
+        <data name="id" value="P-L3-RM4"/>
+        <data name="name" value="Main Office Printer"/>
+        <data name="icon" value="/assets/1234-567-890/office-printer.png"/>
+        <data name="location" value="map3, 57.2, 17.1"/>
+    </record>
+    <record>
+        <data name="type" value="network-device"/>
+        <data name="valid-from" value="2007-04-05T12:30.045Z"/>
+        <data name="id" value="P-L1-CAFETERIA"/>
+        <data name="name" value="Cafeteria Printer"/>
+        <data name="icon" value="/assets/1234-567-890/office-printer.png"/>
+        <data name="location" value="map3, 57.2, 17.1"/>
+    </record>
+    <record>
+        <data name="type" value="network-device"/>
+        <data name="valid-from" value="2007-04-05T12:30.045Z"/>
+        <data name="id" value="P-L2-CORRIDOR"/>
+        <data name="name" value="Top Floor Printer"/>
+        <data name="icon" value="/assets/1234-567-890/office-printer.png"/>
+        <data name="location" value="map3, 57.2, 17.1"/>
+    </record>
+    <record>
+        <data name="type" value="network-device"/>
+        <data name="valid-from" value="2007-04-05T12:30.045Z"/>
+        <data name="id" value="P-EXEC-OFFICE"/>
+        <data name="name" value="Executive Printer"/>
+        <data name="icon" value="/assets/1234-567-890/office-printer.png"/>
+        <data name="location" value="map3, 57.2, 17.1"/>
+    </record>
+
+    <record>
+        <data name="type" value="network-device"/>
+        <data name="valid-from" value="2007-04-05T12:30.045Z"/>
+        <data name="id" value="C-office-1"/>
+        <data name="name" value="Office computer 1"/>
+        <data name="icon" value="/assets/1234-567-890/wifi-ap.png"/>
+        <data name="location" value="map3, 57.2, 17.1"/>
+    </record>
+    <record>
+        <data name="type" value="network-device"/>
+        <data name="valid-from" value="2007-04-05T12:30.045Z"/>
+        <data name="id" value="C-office-2"/>
+        <data name="name" value="Office computer 2"/>
+        <data name="icon" value="/assets/1234-567-890/wifi-ap.png"/>
+        <data name="location" value="map3, 57.2, 17.1"/>
+    </record>
+    <record>
+        <data name="type" value="network-device"/>
+        <data name="valid-from" value="2007-04-05T12:30.045Z"/>
+        <data name="id" value="C-office-3"/>
+        <data name="name" value="Office computer 3"/>
+        <data name="icon" value="/assets/1234-567-890/console.png"/>
+        <data name="location" value="map3, 57.2, 17.1"/>
+    </record>
+    <record>
+        <data name="type" value="network-device"/>
+        <data name="valid-from" value="2007-04-05T12:30.045Z"/>
+        <data name="id" value="C-office-4"/>
+        <data name="name" value="Console for Database Cluster"/>
+        <data name="icon" value="/assets/1234-567-890/console.png"/>
+        <data name="location" value="map3, 57.2, 17.1"/>
+    </record>
+
+    <!-- Facts about a map background-->
+    <record>
+        <data name="type" value="background-image"/>
+        <data name="valid-from" value="2007-04-05T12:30.045Z"/>
+        <data name="id" value="B-123"/>
+        <data name="name" value="Ground Floor, Banbury Office"/>
+        <data name="icon" value="/assets/1234-567-890/bby-gnd-plan.png"/>
+        <data name="location" value="map3, 57.2, 17.1"/>
+    </record>
+
+</records>
