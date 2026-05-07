@@ -1,0 +1,6 @@
+ext.moduleName = 'stroom.document.asset.impl.db.jooq'
+
+dependencies {
+    implementation libs.jooq
+    implementation libs.jakarta.annotation.api
+}

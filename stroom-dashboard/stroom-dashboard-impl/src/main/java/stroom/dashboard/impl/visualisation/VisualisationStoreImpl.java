@@ -22,6 +22,7 @@ import stroom.docstore.api.DependencyRemapFunction;
 import stroom.docstore.api.Store;
 import stroom.docstore.api.StoreFactory;
 import stroom.docstore.api.UniqueNameUtil;
+import stroom.document.asset.impl.DocumentAssetService;
 import stroom.importexport.api.ImportExportAsset;
 import stroom.importexport.api.ImportExportDocument;
 import stroom.importexport.shared.ImportSettings;
@@ -43,18 +44,18 @@ class VisualisationStoreImpl implements VisualisationStore {
 
     private final Store<VisualisationDoc> store;
 
-    private final VisualisationAssetService visualisationAssetService;
+    private final DocumentAssetService documentAssetService;
 
     @Inject
     VisualisationStoreImpl(final StoreFactory storeFactory,
                            final VisualisationSerialiser serialiser,
-                           final VisualisationAssetService assetService) {
+                           final DocumentAssetService assetService) {
         this.store = storeFactory.createStore(
                 serialiser,
                 VisualisationDoc.TYPE,
                 VisualisationDoc::builder,
                 VisualisationDoc::copy);
-        this.visualisationAssetService = assetService;
+        this.documentAssetService = assetService;
     }
 
     // ---------------------------------------------------------------------
@@ -74,7 +75,7 @@ class VisualisationStoreImpl implements VisualisationStore {
         final String newName = UniqueNameUtil.getCopyName(name, makeNameUnique, existingNames);
         final DocRef copyDocRef = store.copyDocument(docRef.getUuid(), newName);
         try {
-            visualisationAssetService.copyAssetsToDoc(docRef, copyDocRef);
+            documentAssetService.copyAssetsToDoc(docRef, copyDocRef);
         } catch (final IOException e) {
             throw new RuntimeException(e);
         }
@@ -95,7 +96,7 @@ class VisualisationStoreImpl implements VisualisationStore {
     public void deleteDocument(final DocRef docRef) {
         store.deleteDocument(docRef);
         try {
-            visualisationAssetService.deleteAssetsForDoc(docRef);
+            documentAssetService.deleteAssetsForDoc(docRef);
         } catch (final IOException e) {
             throw new RuntimeException(e);
         }
@@ -176,7 +177,7 @@ class VisualisationStoreImpl implements VisualisationStore {
 
         // Import the path assets
         try {
-            visualisationAssetService.setAssetsFromImport(docRef, importExportDocument.getPathAssets());
+            documentAssetService.setAssetsFromImport(docRef, importExportDocument.getPathAssets());
         } catch (final IOException e) {
             throw new RuntimeException(e);
         }
@@ -192,7 +193,7 @@ class VisualisationStoreImpl implements VisualisationStore {
 
         // Get all the assets to be exported to sub-paths
         try {
-            final Collection<ImportExportAsset> assets = visualisationAssetService.getAssetsForExport(docRef);
+            final Collection<ImportExportAsset> assets = documentAssetService.getAssetsForExport(docRef);
             for (final ImportExportAsset asset : assets) {
                 importExportDocument.addPathAsset(asset);
             }

@@ -252,10 +252,10 @@ public class ConfigProvidersModule extends AbstractModule {
     @Generated("stroom.config.global.impl.GenerateConfigProvidersModule")
     @Provides
     @SuppressWarnings("unused")
-    stroom.dashboard.impl.visualisation.VisualisationAssetConfig getVisualisationAssetConfig(
+    stroom.document.asset.impl.DocumentAssetConfig getDocumentAssetConfig(
             final ConfigMapper configMapper) {
         return configMapper.getConfigObject(
-                stroom.dashboard.impl.visualisation.VisualisationAssetConfig.class);
+                stroom.document.asset.impl.DocumentAssetConfig.class);
     }
 
     @Generated("stroom.config.global.impl.GenerateConfigProvidersModule")

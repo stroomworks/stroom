@@ -105,6 +105,11 @@ include 'stroom-dashboard:stroom-storedquery-impl'
 include 'stroom-dashboard:stroom-storedquery-impl-db'
 include 'stroom-dashboard:stroom-storedquery-impl-db-jooq'
 
+// Document Asset
+include 'stroom-document-asset:stroom-document-asset-impl'
+include 'stroom-document-asset:stroom-document-asset-impl-db'
+include 'stroom-document-asset:stroom-document-asset-impl-db-jooq'
+
 // Data projects
 include 'stroom-data:stroom-data-retention-api'
 include 'stroom-data:stroom-data-retention-impl'
@@ -332,5 +337,3 @@ include 'stroom-gitrepo:stroom-gitrepo-mock'
 
 include 'stroom-credentials:stroom-credentials-impl'
 include 'stroom-credentials:stroom-credentials-impl-db-jooq'
-include 'stroom-dashboard:stroom-dashboard-impl-db'
-include 'stroom-dashboard:stroom-dashboard-impl-db-jooq'
