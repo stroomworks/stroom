@@ -30,6 +30,7 @@ import stroom.widget.tab.client.presenter.TabDataImpl;
 
 import com.google.inject.Inject;
 import com.google.web.bindery.event.shared.EventBus;
+import com.gwtplatform.mvp.client.PresenterWidget;
 
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
@@ -76,6 +77,13 @@ public class VisualisationPresenter extends DocTabPresenter<LinkTabPanelView, Vi
         addTab(PERMISSIONS, documentUserPermissionsTabProvider);
 
         selectTab(SETTINGS);
+    }
+
+    @Override
+    protected void afterSelectTab(final PresenterWidget<?> content) {
+        if (content == documentAssetPresenter) {
+            onChange();
+        }
     }
 
     @Override

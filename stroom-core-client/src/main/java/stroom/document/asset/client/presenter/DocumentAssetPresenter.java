@@ -32,6 +32,7 @@ import stroom.document.asset.shared.DocumentAssetUpdateContent;
 import stroom.document.asset.shared.DocumentAssetUpdateDelete;
 import stroom.document.asset.shared.DocumentAssetUpdateNewFile;
 import stroom.document.asset.shared.DocumentAssetUpdateRename;
+import stroom.document.client.event.DirtyEvent;
 import stroom.document.client.event.RefreshDocumentEvent;
 import stroom.editor.client.presenter.EditorPresenter;
 import stroom.entity.client.presenter.DocPresenter;
@@ -576,6 +577,9 @@ public class DocumentAssetPresenter<D extends AbstractDoc>
     private void onEditorContentChanged() {
         assetDirtyState.onAssetContentChanged();
         onChange();
+        // Force fire a dirty event to ensure parents re-evaluate their dirty state
+        // even if our own dirty state hasn't transitioned.
+        DirtyEvent.fire(this, isDirty());
     }
 
     /**

@@ -181,6 +181,7 @@ public class DocumentAssetService {
 
         final DocRef docRef = getDocRef(ownerDocId);
         if (securityContext.hasDocumentPermission(docRef, DocumentPermission.EDIT)) {
+            LOGGER.info("User has permission to delete an asset {}", docRef);
             dao.updateDelete(
                     securityContext.getUserRef().getUuid(),
                     ownerDocId,

@@ -317,7 +317,7 @@ public class DocumentAssetDaoImpl implements DocumentAssetDao {
                     .execute();
 
             // Copy all relevant data from the user draft table into the live table
-            txnContext
+            final int rows = txnContext
                     .insertInto(Tables.VISUALISATION_ASSETS,
                             Tables.VISUALISATION_ASSETS.MODIFIED,
                             Tables.VISUALISATION_ASSETS.OWNER_DOC_UUID,
@@ -387,7 +387,7 @@ public class DocumentAssetDaoImpl implements DocumentAssetDao {
 
     @Override
     public DocumentAssets fetchDraftAssets(final String userUuid,
-                                                final String ownerDocId) throws IOException {
+                                           final String ownerDocId) throws IOException {
         Objects.requireNonNull(userUuid);
         Objects.requireNonNull(ownerDocId);
 
@@ -407,7 +407,9 @@ public class DocumentAssetDaoImpl implements DocumentAssetDao {
                                 .and(Tables.VISUALISATION_ASSETS_DRAFT.DRAFT_USER_UUID.eq(userUuid)))
                         .fetch();
 
-                if (result.isEmpty()) {
+                // If the last operation was a delete then we don't want to look in live table
+                // as the draft table might be empty because the last item was deleted
+                if (result.isEmpty() && !isLastUpdateDelete(userUuid, ownerDocId, txnContext)) {
                     // No results so try looking in the live table instead
                     dirty[0] = false;
                     result = txnContext
@@ -632,7 +634,10 @@ public class DocumentAssetDaoImpl implements DocumentAssetDao {
                                 Tables.VISUALISATION_ASSETS_DRAFT.PATH)
                         .from(Tables.VISUALISATION_ASSETS_DRAFT)
                         .where(Tables.VISUALISATION_ASSETS_DRAFT.DRAFT_USER_UUID.eq(userUuid)
-                                .and(Tables.VISUALISATION_ASSETS_DRAFT.OWNER_DOC_UUID.eq(ownerDocId)))
+                                .and(Tables.VISUALISATION_ASSETS_DRAFT.OWNER_DOC_UUID.eq(ownerDocId))
+                                .and(isFolder
+                                        ? Tables.VISUALISATION_ASSETS_DRAFT.PATH.startsWith(slashedOldPath)
+                                        : Tables.VISUALISATION_ASSETS_DRAFT.PATH.eq(slashedOldPath)))
                         .fetch();
 
                 // Update all the paths we've received
@@ -687,11 +692,12 @@ public class DocumentAssetDaoImpl implements DocumentAssetDao {
         try {
             JooqUtil.transaction(connProvider, txnContext -> {
                 populateDraft(userUuid, ownerDocId, txnContext);
+                final String startsWithPattern = isFolder ? deletedPath : deletedPath + "/";
                 final int rowsDeleted = txnContext.deleteFrom(Tables.VISUALISATION_ASSETS_DRAFT)
                         .where(Tables.VISUALISATION_ASSETS_DRAFT.DRAFT_USER_UUID.eq(userUuid)
                                 .and(Tables.VISUALISATION_ASSETS_DRAFT.OWNER_DOC_UUID.eq(ownerDocId))
-                                .and(DSL.substring(Tables.VISUALISATION_ASSETS_DRAFT.PATH,
-                                        DSL.val(START_OF_SUBSTRING), DSL.length(DSL.val(deletedPath))).eq(deletedPath))
+                                .and(Tables.VISUALISATION_ASSETS_DRAFT.PATH.eq(deletedPath)
+                                        .or(Tables.VISUALISATION_ASSETS_DRAFT.PATH.startsWith(startsWithPattern)))
                         )
                         .execute();
 
@@ -732,8 +738,8 @@ public class DocumentAssetDaoImpl implements DocumentAssetDao {
                             .execute();
 
 
-                    if (rowsInserted != 1) {
-                        throw new DataAccessException("1 row should have been inserted for '"
+                    if (rowsInserted != 1 && rowsInserted != 0) {
+                        throw new DataAccessException("1 row should have been inserted (or ignored) for '"
                                                       + parentPath + "' but "
                                                       + rowsInserted + " rows were inserted");
                     }
@@ -808,23 +814,23 @@ public class DocumentAssetDaoImpl implements DocumentAssetDao {
 
                 final Result<Record1<Integer>> resultDraftLength =
                         txnContext.select(draftDataLength)
-                        .from(Tables.VISUALISATION_ASSETS_DRAFT)
-                        .where(Tables.VISUALISATION_ASSETS_DRAFT.DRAFT_USER_UUID.eq(userUuid)
-                                .and(Tables.VISUALISATION_ASSETS_DRAFT.OWNER_DOC_UUID.eq(ownerDocId))
-                                .and(Tables.VISUALISATION_ASSETS_DRAFT.PATH.eq(slashedPath))
-                                .and(Tables.VISUALISATION_ASSETS_DRAFT.PATH_HASH.eq(pathHash)))
-                        .fetch();
+                                .from(Tables.VISUALISATION_ASSETS_DRAFT)
+                                .where(Tables.VISUALISATION_ASSETS_DRAFT.DRAFT_USER_UUID.eq(userUuid)
+                                        .and(Tables.VISUALISATION_ASSETS_DRAFT.OWNER_DOC_UUID.eq(ownerDocId))
+                                        .and(Tables.VISUALISATION_ASSETS_DRAFT.PATH.eq(slashedPath))
+                                        .and(Tables.VISUALISATION_ASSETS_DRAFT.PATH_HASH.eq(pathHash)))
+                                .fetch();
                 if (resultDraftLength.isNotEmpty()) {
                     dataInDraft = true;
                     dataLength = resultDraftLength.getFirst().value1();
                 } else {
                     final Result<Record1<Integer>> resultLiveLength =
                             txnContext.select(liveDataLength)
-                            .from(Tables.VISUALISATION_ASSETS)
-                            .where(Tables.VISUALISATION_ASSETS.OWNER_DOC_UUID.eq(ownerDocId)
-                                    .and(Tables.VISUALISATION_ASSETS.PATH.eq(slashedPath))
-                                    .and(Tables.VISUALISATION_ASSETS.PATH_HASH.eq(pathHash)))
-                            .fetch();
+                                    .from(Tables.VISUALISATION_ASSETS)
+                                    .where(Tables.VISUALISATION_ASSETS.OWNER_DOC_UUID.eq(ownerDocId)
+                                            .and(Tables.VISUALISATION_ASSETS.PATH.eq(slashedPath))
+                                            .and(Tables.VISUALISATION_ASSETS.PATH_HASH.eq(pathHash)))
+                                    .fetch();
                     if (resultLiveLength.isNotEmpty()) {
                         dataInLive = true;
                         dataLength = resultLiveLength.getFirst().value1();
@@ -845,11 +851,11 @@ public class DocumentAssetDaoImpl implements DocumentAssetDao {
                         content[0] = decodeToUtf8String(result.getFirst().value1());
                     } else if (dataInLive) {
                         final Result<Record1<byte[]>> result = txnContext.select(Tables.VISUALISATION_ASSETS.DATA)
-                            .from(Tables.VISUALISATION_ASSETS)
-                            .where(Tables.VISUALISATION_ASSETS.OWNER_DOC_UUID.eq(ownerDocId)
-                                    .and(Tables.VISUALISATION_ASSETS.PATH.eq(slashedPath))
-                                    .and(Tables.VISUALISATION_ASSETS.PATH_HASH.eq(pathHash)))
-                            .fetch();
+                                .from(Tables.VISUALISATION_ASSETS)
+                                .where(Tables.VISUALISATION_ASSETS.OWNER_DOC_UUID.eq(ownerDocId)
+                                        .and(Tables.VISUALISATION_ASSETS.PATH.eq(slashedPath))
+                                        .and(Tables.VISUALISATION_ASSETS.PATH_HASH.eq(pathHash)))
+                                .fetch();
                         content[0] = decodeToUtf8String(result.getFirst().value1());
                     }
                 }
@@ -1203,13 +1209,13 @@ public class DocumentAssetDaoImpl implements DocumentAssetDao {
         try {
             final boolean[] exists = new boolean[1];
             JooqUtil.transaction(connProvider, txnContext -> {
-                final int rowCount = txnContext.selectOne()
-                        .from(Tables.VISUALISATION_ASSETS)
-                        .where(Tables.VISUALISATION_ASSETS.OWNER_DOC_UUID.eq(ownerDocId)
-                                .and(Tables.VISUALISATION_ASSETS.PATH.eq(path))
-                                .and(Tables.VISUALISATION_ASSETS.PATH_HASH.eq(pathHash)))
-                        .execute();
-                exists[0] = rowCount > 0;
+                final boolean rowExists = txnContext.fetchExists(
+                        txnContext.selectOne()
+                                .from(Tables.VISUALISATION_ASSETS)
+                                .where(Tables.VISUALISATION_ASSETS.OWNER_DOC_UUID.eq(ownerDocId)
+                                        .and(Tables.VISUALISATION_ASSETS.PATH.eq(path))
+                                        .and(Tables.VISUALISATION_ASSETS.PATH_HASH.eq(pathHash))));
+                exists[0] = rowExists;
             });
             return exists[0];
 
@@ -1225,11 +1231,13 @@ public class DocumentAssetDaoImpl implements DocumentAssetDao {
         }
     }
 
-        /**
+    /**
      * Goes through the draft assets and removes any duplicate assets.
      * For example, given the assets "/folder/", "/folder/subfolder/",
      * "/folder/subfolder/file.ext" we only want "/folder/subfolder/file.ext".
      * The rest can be deleted as they are not necessary.
+     * Note that we only delete folders - these are the only thing that will need to be deleted
+     * and this avoids partial matches on filenames. Folder names always end in '/'.
      * @param userUuid The user who owns the draft assets
      * @param ownerDocId The document which owns the assets
      * @param txnContext JooQ transaction
@@ -1243,6 +1251,8 @@ public class DocumentAssetDaoImpl implements DocumentAssetDao {
         final Table<?> tmp = txnContext.select(Tables.VISUALISATION_ASSETS_DRAFT.PATH,
                         Tables.VISUALISATION_ASSETS_DRAFT.PATH_HASH)
                 .from(Tables.VISUALISATION_ASSETS_DRAFT)
+                .where(Tables.VISUALISATION_ASSETS_DRAFT.DRAFT_USER_UUID.eq(userUuid)
+                        .and(Tables.VISUALISATION_ASSETS_DRAFT.OWNER_DOC_UUID.eq(ownerDocId)))
                 .asTable("tmp");
         final Field<String> tmpPath = tmp.field(Tables.VISUALISATION_ASSETS_DRAFT.PATH);
 
@@ -1250,10 +1260,11 @@ public class DocumentAssetDaoImpl implements DocumentAssetDao {
             txnContext.deleteFrom(Tables.VISUALISATION_ASSETS_DRAFT)
                     .where(DSL.exists(txnContext.selectOne()
                             .from(tmp)
-                            .where(DSL.function("LOCATE",
+                            .where(Tables.VISUALISATION_ASSETS_DRAFT.IS_FOLDER.eq(BYTE_TRUE)
+                                    .and(DSL.function("LOCATE",
                                             Integer.class,
                                             Tables.VISUALISATION_ASSETS_DRAFT.PATH,
-                                            tmpPath).eq(1)
+                                            tmpPath).eq(1))
                                     .and(tmpPath.ne(Tables.VISUALISATION_ASSETS_DRAFT.PATH)))))
                     .and(Tables.VISUALISATION_ASSETS_DRAFT.DRAFT_USER_UUID.eq(userUuid)
                             .and(Tables.VISUALISATION_ASSETS_DRAFT.OWNER_DOC_UUID.eq(ownerDocId)))
