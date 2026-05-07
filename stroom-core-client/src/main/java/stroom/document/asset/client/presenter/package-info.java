@@ -40,18 +40,19 @@
  * </pre>
  *
  * <h3>4. Aggregate Dirty State</h3>
- * <p>Ensure the parent presenter considers the asset manager's dirty state when determining if the document
- * as a whole has unsaved changes.</p>
+ * <p>Ensure the parent presenter considers the asset manager's dirty state when determining
+ * if the document as a whole has unsaved changes.</p>
  * <pre>
  * &#64;Override
  * protected boolean hasAssociatedDirty() {
- *     return super.hasAssociatedDirty() || (documentAssetPresenter != null &amp;&amp; documentAssetPresenter.isDirty());
+ *     return super.hasAssociatedDirty()
+ *         || (documentAssetPresenter != null &amp;&amp; documentAssetPresenter.isDirty());
  * }
  * </pre>
  *
  * <h3>5. Hook into the Save Lifecycle</h3>
- * <p>Provide callbacks for the standard <b>Save</b> and <b>Save As</b> operations by overriding the
- * respective callback methods.</p>
+ * <p>Provide callbacks for the standard <b>Save</b> and <b>Save As</b> operations by
+ * overriding the respective callback methods.</p>
  * <pre>
  * &#64;Override
  * public BiConsumer&lt;MyDoc, Consumer&lt;MyDoc&gt;&gt; getPostSaveCallback() {
