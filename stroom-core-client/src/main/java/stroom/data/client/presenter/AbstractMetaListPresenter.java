@@ -292,10 +292,10 @@ public abstract class AbstractMetaListPresenter
             };
             dataGrid.addColumn(column, header, ColumnSizeConstants.CHECKBOX_COL);
 
-            header.setUpdater(value -> {
-                if (value.equals(TickBoxState.UNTICK)) {
+            header.setUpdater(val -> {
+                if (val.equals(TickBoxState.UNTICK)) {
                     setMatchAll(false);
-                } else if (value.equals(TickBoxState.TICK)) {
+                } else if (val.equals(TickBoxState.TICK)) {
                     setMatchAll(true);
                 }
             });
@@ -308,8 +308,8 @@ public abstract class AbstractMetaListPresenter
         }
 
         // Add Handlers
-        column.setFieldUpdater((index, row, value) -> {
-            if (value.toBoolean()) {
+        column.setFieldUpdater((index, row, val) -> {
+            if (val.toBoolean()) {
                 selection.add(row.getMeta().getId());
 
             } else {
@@ -392,17 +392,12 @@ public abstract class AbstractMetaListPresenter
     }
 
     private String getFeed(final MetaRow metaRow) {
-        if (metaRow.getMeta() != null && metaRow.getMeta().getFeedName() != null) {
-            return metaRow.getMeta().getFeedName();
-        }
-        return null;
+        return NullSafe.get(metaRow, MetaRow::getMeta, Meta::getFeedName);
     }
 
     private DocRef getPipeline(final MetaRow metaRow) {
-        if (metaRow.getMeta().getProcessorUuid() != null) {
-            if (metaRow.getPipeline() != null) {
-                return metaRow.getPipeline();
-            }
+        if (NullSafe.nonNull(metaRow, MetaRow::getMeta, Meta::getProcessorUuid)) {
+            return metaRow.getPipeline();
         }
         return null;
     }
@@ -410,9 +405,7 @@ public abstract class AbstractMetaListPresenter
     void addPipelineColumn() {
         dataGrid.addResizableColumn(
                 DataGridUtil.docRefColumnBuilder((MetaRow metaRow) ->
-                                        Optional.ofNullable(metaRow)
-                                                .map(this::getPipeline)
-                                                .orElse(null),
+                                        NullSafe.get(metaRow, this::getPipeline),
                                 getEventBus())
                         .withSorting(MetaFields.PIPELINE_NAME)
                         .build(),
@@ -465,11 +458,11 @@ public abstract class AbstractMetaListPresenter
                                         final int size) {
 
         final Function<MetaRow, String> extractor = metaRow -> {
-            final String value = metaRow.getAttributeValue(attribute.getFldName());
-            if (value == null) {
+            final String val = metaRow.getAttributeValue(attribute.getFldName());
+            if (val == null) {
                 return null;
             } else {
-                return formatter.apply(value);
+                return formatter.apply(val);
             }
         };
 
@@ -489,11 +482,11 @@ public abstract class AbstractMetaListPresenter
                                         final int size) {
 
         final Function<MetaRow, String> extractor = metaRow -> {
-            final String value = metaRow.getAttributeValue(attribute.getFldName());
-            if (value == null) {
+            final String val = metaRow.getAttributeValue(attribute.getFldName());
+            if (val == null) {
                 return null;
             } else {
-                return formatter.apply(value);
+                return formatter.apply(val);
             }
         };
 
