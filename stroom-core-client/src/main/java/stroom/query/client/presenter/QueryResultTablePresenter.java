@@ -19,6 +19,7 @@ package stroom.query.client.presenter;
 import stroom.ai.shared.QueryTableContext;
 import stroom.alert.client.event.ConfirmEvent;
 import stroom.annotation.client.AnnotationChangeEvent;
+import stroom.annotation.client.AnnotationTagNameChangeEvent;
 import stroom.annotation.shared.AnnotationDecorationFields;
 import stroom.annotation.shared.AnnotationFields;
 import stroom.cell.expander.client.ExpanderCell;
@@ -180,9 +181,13 @@ public class QueryResultTablePresenter
         annotationManager.setTaskMonitorFactory(this);
 
         this.pagerView = pagerView;
-        this.dataGrid = new MyDataGrid<>(this);
-        dataGrid.setDomainTypeSupport(new MyDataGridDomainTypeSupportImpl<>(restFactory, this, this, dataGrid));
-        dataGrid.addStyleName("TablePresenter");
+        dataGrid = new MyDataGrid<>(this);
+        dataGrid.setDomainTypeSupport(new MyDataGridDomainTypeSupportImpl<>(restFactory,
+                this,
+                this,
+                dataGrid,
+                this::getDashboardContext));
+        dataGrid.addStyleName("QueryResultTablePresenter");
         dataGrid.setRowStyles(rowStyles);
         selectionModel = dataGrid.addDefaultSelectionModel(true);
         pagerView.setDataWidget(dataGrid);
@@ -327,7 +332,7 @@ public class QueryResultTablePresenter
             }
         }));
 
-        registerHandler(valueFilterButton.addClickHandler(event -> toggleApplyValueFilters()));
+        registerHandler(valueFilterButton.addClickHandler(event -> toggleShowValueFilters()));
 
         registerHandler(resetButton.addClickHandler(event -> {
             if (MouseUtil.isPrimary(event)) {
@@ -370,8 +375,12 @@ public class QueryResultTablePresenter
             }
         }));
 
-        registerHandler(getEventBus().addHandler(AnnotationChangeEvent.getType(), e ->
-                onAnnotationChange()));
+        registerHandler(getEventBus().addHandler(
+                AnnotationChangeEvent.getType(),
+                ignored -> onAnnotationChange()));
+        registerHandler(getEventBus().addHandler(
+                AnnotationTagNameChangeEvent.getType(),
+                ignored -> onAnnotationChange()));
     }
 
     private void onAnnotationChange() {
@@ -398,21 +407,21 @@ public class QueryResultTablePresenter
         }
     }
 
-    public void toggleApplyValueFilters() {
+    public void toggleShowValueFilters() {
         final QueryTablePreferences queryTablePreferences = getQueryTablePreferences();
-        final boolean applyValueFilters = !queryTablePreferences.applyValueFilters();
-        setQueryTablePreferences(queryTablePreferences.copy().applyValueFilters(applyValueFilters).build());
+        final boolean showValueFilters = !queryTablePreferences.showValueFilters();
+        setQueryTablePreferences(queryTablePreferences.copy().showValueFilters(showValueFilters).build());
         onChange();
         refresh();
-        setApplyValueFilters(applyValueFilters);
+        setShowValueFilters(showValueFilters);
     }
 
-    private void setApplyValueFilters(final boolean applyValueFilters) {
-        valueFilterButton.setState(applyValueFilters);
-        if (applyValueFilters) {
-            dataGrid.addStyleName("applyValueFilters");
+    private void setShowValueFilters(final boolean showValueFilters) {
+        valueFilterButton.setState(showValueFilters);
+        if (showValueFilters) {
+            dataGrid.addStyleName("showValueFilters");
         } else {
-            dataGrid.removeStyleName("applyValueFilters");
+            dataGrid.removeStyleName("showValueFilters");
         }
     }
 
@@ -893,6 +902,32 @@ public class QueryResultTablePresenter
         setQueryTablePreferences(getQueryTablePreferences().copy().columns(columns).build());
         currentColumns = columns;
         onChange();
+
+
+
+
+        // Remove existing columns.
+        removeAllColumns();
+
+        // Add expander column.
+        addExpanderColumn();
+
+        // Add columns.
+        for (final Column column : columns) {
+            // Only include the field if it is supposed to be visible.
+            if (column.isVisible()) {
+                addColumn(column);
+            }
+        }
+
+//                dataGrid.redrawHeaders();
+        dataGrid.resizeTableToFitColumns();
+
+
+
+
+
+
         fireColumnAndDataUpdate();
     }
 
@@ -924,9 +959,9 @@ public class QueryResultTablePresenter
     }
 
     public void updateQueryTablePreferences() {
-        // Change value filter state.
+        // Change value filter visible state.
         final QueryTablePreferences queryTablePreferences = queryTablePreferencesSupplier.get();
-        setApplyValueFilters(queryTablePreferences.applyValueFilters());
+        setShowValueFilters(queryTablePreferences.showValueFilters());
         updatePageSize(queryTablePreferences);
         refresh();
     }

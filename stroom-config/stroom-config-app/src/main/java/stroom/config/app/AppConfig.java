@@ -32,9 +32,9 @@ import stroom.contentstore.impl.ContentStoreConfig;
 import stroom.core.receive.AutoContentCreationConfig;
 import stroom.credentials.impl.CredentialsConfig;
 import stroom.dashboard.impl.DashboardConfig;
-import stroom.dashboard.impl.visualisation.VisualisationAssetConfig;
-import stroom.dashboard.impl.visualisation.VisualisationAssetConfig.VisualisationAssetDbConfig;
 import stroom.docstore.impl.db.DocStoreConfig;
+import stroom.document.asset.impl.DocumentAssetConfig;
+import stroom.document.asset.impl.DocumentAssetConfig.DocumentAssetDbConfig;
 import stroom.event.logging.impl.LoggingConfig;
 import stroom.explorer.impl.ExplorerConfig;
 import stroom.feed.impl.FeedConfig;
@@ -133,8 +133,8 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
     public static final String PROP_NAME_STATISTICS = "statistics";
     public static final String PROP_NAME_UI = "ui";
     public static final String PROP_NAME_UI_URI = "uiUri";
-    public static final String PROP_NAME_VISUALISATION_ASSET = "visualisationAsset";
-    public static final String PROP_NAME_VISUALISATION_ASSET_DB = "visualisationAssetDb";
+    public static final String PROP_NAME_DOCUMENT_ASSET = "documentAsset";
+    public static final String PROP_NAME_DOCUMENT_ASSET_DB = "documentAssetDb";
     public static final String PROP_NAME_VOLUMES = "volumes";
 
     private final boolean haltBootOnConfigValidationFailure;
@@ -187,8 +187,8 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
     private final StroomPathConfig pathConfig;
     private final UiConfig uiConfig;
     private final UiUriConfig uiUri;
-    private final VisualisationAssetConfig visualisationAssetConfig;
-    private final VisualisationAssetDbConfig visualisationAssetDbConfig;
+    private final DocumentAssetConfig documentAssetConfig;
+    private final DocumentAssetDbConfig documentAssetDbConfig;
     private final VolumeConfig volumeConfig;
 
     /**
@@ -244,8 +244,8 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
                 new StroomPathConfig(),
                 new UiConfig(),
                 new UiUriConfig(),
-                new VisualisationAssetConfig(),
-                new VisualisationAssetDbConfig(),
+                new DocumentAssetConfig(),
+                new DocumentAssetDbConfig(),
                 new VolumeConfig());
     }
 
@@ -300,8 +300,8 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
                      @JsonProperty(PROP_NAME_PATH) final StroomPathConfig pathConfig,
                      @JsonProperty(PROP_NAME_UI) final UiConfig uiConfig,
                      @JsonProperty(PROP_NAME_UI_URI) final UiUriConfig uiUri,
-                     @JsonProperty(PROP_NAME_VISUALISATION_ASSET) final VisualisationAssetConfig visualisationAssetConfig,
-                     @JsonProperty(PROP_NAME_VISUALISATION_ASSET_DB) final VisualisationAssetDbConfig visualisationAssetDbConfig,
+                     @JsonProperty(PROP_NAME_DOCUMENT_ASSET) final DocumentAssetConfig documentAssetConfig,
+                     @JsonProperty(PROP_NAME_DOCUMENT_ASSET_DB) final DocumentAssetDbConfig documentAssetDbConfig,
                      @JsonProperty(PROP_NAME_VOLUMES) final VolumeConfig volumeConfig) {
         this.haltBootOnConfigValidationFailure = haltBootOnConfigValidationFailure;
         this.crossModuleConfig = crossModuleConfig;
@@ -352,8 +352,8 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
         this.pathConfig = pathConfig;
         this.uiConfig = uiConfig;
         this.uiUri = uiUri;
-        this.visualisationAssetConfig = visualisationAssetConfig;
-        this.visualisationAssetDbConfig = visualisationAssetDbConfig;
+        this.documentAssetConfig = documentAssetConfig;
+        this.documentAssetDbConfig = documentAssetDbConfig;
         this.volumeConfig = volumeConfig;
     }
 
@@ -629,14 +629,14 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
         return uiUri;
     }
 
-    @JsonProperty(PROP_NAME_VISUALISATION_ASSET)
-    public VisualisationAssetConfig getVisualisationAsset() {
-        return visualisationAssetConfig;
+    @JsonProperty(PROP_NAME_DOCUMENT_ASSET)
+    public DocumentAssetConfig getDocumentAsset() {
+        return documentAssetConfig;
     }
 
-    @JsonProperty(PROP_NAME_VISUALISATION_ASSET_DB)
-    public VisualisationAssetDbConfig getVisualisationAssetDbConfig() {
-        return visualisationAssetDbConfig;
+    @JsonProperty(PROP_NAME_DOCUMENT_ASSET_DB)
+    public DocumentAssetDbConfig getDocumentAssetDbConfig() {
+        return documentAssetDbConfig;
     }
 
     @JsonProperty(PROP_NAME_VOLUMES)

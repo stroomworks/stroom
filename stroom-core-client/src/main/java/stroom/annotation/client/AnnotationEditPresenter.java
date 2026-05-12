@@ -23,6 +23,7 @@ import stroom.annotation.shared.AddTag;
 import stroom.annotation.shared.Annotation;
 import stroom.annotation.shared.AnnotationEntry;
 import stroom.annotation.shared.AnnotationEntryType;
+import stroom.annotation.shared.AnnotationIdentity;
 import stroom.annotation.shared.AnnotationTable;
 import stroom.annotation.shared.AnnotationTag;
 import stroom.annotation.shared.AnnotationTagFields;
@@ -150,6 +151,7 @@ public class AnnotationEditPresenter
     private final Provider<CommentEditPresenter> commentEditPresenterProvider;
 
     private DocRef annotationRef;
+    private AnnotationIdentity annotationIdentity;
     private AnnotationPresenter parent;
 
     private AnnotationTag currentStatus;
@@ -219,12 +221,14 @@ public class AnnotationEditPresenter
 
         this.commentPresenter.setDataSupplier((filter, consumer) -> {
             final ExpressionCriteria criteria = createCriteria(AnnotationTagType.COMMENT, filter);
-            annotationResourceClient.findAnnotationTags(criteria, values -> {
-                if (values != null) {
-                    consumer.accept(values.getValues());
-                }
-            },
-                new DefaultErrorHandler(this, null), this);
+            annotationResourceClient.findAnnotationTags(
+                    criteria,
+                    values -> {
+                        if (values != null) {
+                            consumer.accept(values.getValues());
+                        }
+                    },
+                    new DefaultErrorHandler(this, null), this);
         });
         commentPresenter.setDisplayValueFunction(at -> SafeHtmlUtils.fromString(at.getName()));
         commentPresenter.setTooltipFunction(AnnotationTag::getTagText);
@@ -499,9 +503,9 @@ public class AnnotationEditPresenter
                 }
 
                 for (final AnnotationEntryGroup annotationEntryGroup : groups) {
-                    if (!annotationEntryGroup.entries.isEmpty()) {
-                        if (annotationEntryGroup.entries.size() == 1) {
-                            for (final AnnotationEntry entry : annotationEntryGroup.entries) {
+                    if (!annotationEntryGroup.getEntries().isEmpty()) {
+                        if (annotationEntryGroup.getEntries().size() == 1) {
+                            for (final AnnotationEntry entry : annotationEntryGroup.getEntries()) {
                                 final boolean added = addEntryHtml(history, entry, now, line);
                                 if (added && first) {
                                     // If we actually added some content then make sure we add a line marker before any
@@ -631,7 +635,7 @@ public class AnnotationEditPresenter
         final IconMenuItem deleteItem = new IconMenuItem.Builder()
                 .text("Delete Entry")
                 .icon(SvgImage.DELETE)
-                .command(() -> deleteEntry(id))
+                .command(() -> deleteEntry(id, entryType))
                 .build();
         menuItems.add(deleteItem);
 
@@ -644,10 +648,9 @@ public class AnnotationEditPresenter
     }
 
     private void editComment(final long id) {
-        final FetchAnnotationEntryRequest request =
-                new FetchAnnotationEntryRequest(annotationRef, id);
-        annotationResourceClient.fetchAnnotationEntry(request, result -> {
-            if (result.getEntryValue() instanceof final StringEntryValue value) {
+        final FetchAnnotationEntryRequest request = new FetchAnnotationEntryRequest(annotationRef, id);
+        annotationResourceClient.fetchAnnotationEntry(request, annotationEntry -> {
+            if (annotationEntry.getEntryValue() instanceof final StringEntryValue value) {
                 final CommentEditPresenter commentEditPresenter = commentEditPresenterProvider.get();
                 commentEditPresenter.setText(value.getValue());
                 final PopupSize popupSize = PopupSize.resizable(600, 600);
@@ -658,7 +661,10 @@ public class AnnotationEditPresenter
                         .onShow(e -> commentEditPresenter.focus())
                         .onHideRequest(e -> {
                             if (e.isOk()) {
-                                changeComment(id, commentEditPresenter.getText(), e);
+                                changeComment(id,
+                                        commentEditPresenter.getText(),
+                                        annotationEntry.getEntryType(),
+                                        e);
                             } else {
                                 e.hide();
                             }
@@ -670,31 +676,39 @@ public class AnnotationEditPresenter
 
     private void changeComment(final long id,
                                final String text,
+                               final AnnotationEntryType annotationEntryType,
                                final HidePopupRequestEvent e) {
         final ChangeAnnotationEntryRequest request = new ChangeAnnotationEntryRequest(
-                annotationRef,
+                annotationIdentity,
                 id,
+                annotationEntryType,
                 text);
         annotationResourceClient.changeAnnotationEntry(
                 request,
-                res -> afterChangeComment(e),
-                error -> new DefaultErrorHandler(this, e::reset),
+                ignored -> afterChangeComment(e),
+                ignored -> new DefaultErrorHandler(this, e::reset),
                 this);
     }
 
     private void afterChangeComment(final HidePopupRequestEvent e) {
         try {
+            AnnotationChangeEvent.fire(this, annotationRef);
             updateHistory();
         } finally {
             e.hide();
         }
     }
 
-    private void deleteEntry(final long id) {
+    private void deleteEntry(final long id, final AnnotationEntryType annotationEntryType) {
         ConfirmEvent.fire(this, "Are you sure you want to delete this entry?", ok -> {
             if (ok) {
-                final DeleteAnnotationEntryRequest request = new DeleteAnnotationEntryRequest(annotationRef, id);
-                annotationResourceClient.deleteAnnotationEntry(request, result -> updateHistory(), this);
+                final DeleteAnnotationEntryRequest request = new DeleteAnnotationEntryRequest(
+                        annotationIdentity, annotationEntryType, id);
+                annotationResourceClient.deleteAnnotationEntry(
+                        request, result -> {
+                            AnnotationChangeEvent.fire(this, annotationRef);
+                            updateHistory();
+                        }, this);
             }
         });
     }
@@ -837,11 +851,11 @@ public class AnnotationEditPresenter
                                  final AnnotationEntryGroup group,
                                  final Date now,
                                  final SafeHtml line) {
-        final AnnotationEntry first = group.entries.get(0);
+        final AnnotationEntry first = group.getEntries().get(0);
         final boolean expanded = expandedItems.contains(first.getId());
         final AnnotationEntryType entryType = first.getEntryType();
         UserRef user = first.getEntryUser();
-        for (final AnnotationEntry entry : group.entries) {
+        for (final AnnotationEntry entry : group.getEntries()) {
             if (!Objects.equals(entry.getEntryUser(), user)) {
                 user = null;
                 break;
@@ -849,7 +863,7 @@ public class AnnotationEditPresenter
         }
         final UserRef userRef = user;
 
-        final int count = group.entries.size();
+        final int count = group.getEntries().size();
         final String actionText = switch (entryType) {
             case TITLE, SUBJECT, STATUS, ASSIGNED, COMMENT, RETENTION_PERIOD, DESCRIPTION, DELETE ->
                     entryType.getActionText();
@@ -888,7 +902,7 @@ public class AnnotationEditPresenter
             // Add content if expanded.
             if (expanded) {
                 border.div(body -> {
-                    for (final AnnotationEntry entry : group.entries) {
+                    for (final AnnotationEntry entry : group.getEntries()) {
                         addEntryHtml(body, entry, now, line);
                     }
                 }, HISTORY_GROUP_BODY);
@@ -1302,6 +1316,7 @@ public class AnnotationEditPresenter
     @Override
     protected void onRead(final DocRef docRef, final Annotation annotation, final boolean readOnly) {
         this.annotationRef = annotation.asDocRef();
+        this.annotationIdentity = annotation.asAnnotationIdentity();
         this.currentStatus = annotation.getStatus();
         this.currentAssignedTo = annotation.getAssignedTo();
 
@@ -1441,10 +1456,68 @@ public class AnnotationEditPresenter
         this.parent = parent;
     }
 
-    private record AnnotationEntryGroup(long id, AnnotationEntryType annotationEntryType,
-                                        List<AnnotationEntry> entries) {
 
+    // --------------------------------------------------------------------------------
+
+
+    @SuppressWarnings("ClassCanBeRecord") // GWT moans if this is a record
+    private static final class AnnotationEntryGroup {
+
+        private final long id;
+        private final AnnotationEntryType annotationEntryType;
+        private final List<AnnotationEntry> entries;
+
+        private AnnotationEntryGroup(final long id,
+                                     final AnnotationEntryType annotationEntryType,
+                                     final List<AnnotationEntry> entries) {
+            this.id = id;
+            this.annotationEntryType = annotationEntryType;
+            this.entries = entries;
+        }
+
+        public long getId() {
+            return id;
+        }
+
+        public AnnotationEntryType getAnnotationEntryType() {
+            return annotationEntryType;
+        }
+
+        public List<AnnotationEntry> getEntries() {
+            return entries;
+        }
+
+        @Override
+        public boolean equals(final Object obj) {
+            if (obj == this) {
+                return true;
+            }
+            if (obj == null || obj.getClass() != this.getClass()) {
+                return false;
+            }
+            final AnnotationEntryGroup that = (AnnotationEntryGroup) obj;
+            return this.id == that.id &&
+                   Objects.equals(this.annotationEntryType, that.annotationEntryType) &&
+                   Objects.equals(this.entries, that.entries);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(id, annotationEntryType, entries);
+        }
+
+        @Override
+        public String toString() {
+            return "AnnotationEntryGroup[" +
+                   "id=" + id + ", " +
+                   "annotationEntryType=" + annotationEntryType + ", " +
+                   "entries=" + entries + ']';
+        }
     }
+
+
+    // --------------------------------------------------------------------------------
+
 
     public interface AnnotationEditView extends View, Focus, HasUiHandlers<AnnotationEditUiHandlers> {
 

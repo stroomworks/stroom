@@ -23,6 +23,7 @@ dependencies {
     implementation project(':stroom-core')
     implementation project(':stroom-core-shared')
     implementation project(':stroom-dashboard:stroom-dashboard-impl')
+    implementation project(':stroom-document-asset:stroom-document-asset-impl')
     implementation project(':stroom-dashboard:stroom-storedquery-impl')
     implementation project(':stroom-dashboard:stroom-storedquery-impl-db')
     implementation project(':stroom-data:stroom-data-retention-api')
@@ -82,7 +83,8 @@ dependencies {
 
     testImplementation project(':stroom-test-common')
 
-    testImplementation libs.jackson.datatype.jdk8
+    //testImplementation libs.jackson.datatype.jdk8
+    testImplementation libs.jackson2.core
     testImplementation libs.mbknor.jackson.jsonSchema
     testImplementation libs.java.diff.utils
 

@@ -13,6 +13,50 @@ DO NOT ADD CHANGES HERE - ADD THEM USING log_change.sh
 ~~~
 
 
+## [v7.12.3] - 2026-05-11
+
+* Feature **#5183** : Add title to dashboard link function.
+
+* Bug **#5518** : Fix expression editor bug.
+
+* Bug **#5507** : Improve dashboard column filtering.
+
+* Bug **#5516** : Allow event links with only feed USE permission.
+
+* Feature : Add System Info Admin Servlet. Add menu of all admin servlets at `<admin port>/<admin path>/menu`.
+
+* Bug : Fix permission exceptions when getting volume system info.
+
+
+## [v7.12.2] - 2026-05-05
+
+* Bug **#5532** : Relax Data Feed Identities validation so salt is optional.
+
+
+## [v7.12.1] - 2026-04-27
+
+* Bug **#5520** : Fix annotation decoration in queries/dashboards not working if the EventId/StreamId columns are not longs.
+
+* Feature : Add config prop `stroom.annotation.eventLinkCacheSizeLimit` (default 1,000,000) to protect Stroom from caching too many annotation to event links. If this limit is exceeded, the query will error.
+
+
+## [v7.12.0] - 2026-04-27
+
+* Feature : Change the annotation caching to invalidate on a field basis rather than the whole annotation.
+
+* Bug : Fix annotation dash/query columns not updating when status/label/collection names are deleted/modified.
+
+* Bug : Fix annotation decorations in dash/query columns showing deleted annotation entries.
+
+* Bug : Fix annotation Comment and History columns not updating when entries are added/updated/deleted.
+
+* Bug **#5508** : Improve annotation decoration performance.
+
+* Bug : Fix Annotation -> Events screen not refreshing the linked events list when an event link is added/removed.
+
+* Bug : Add missing directories (data_feed_identities, git_repo, lmdb_library, planb, reference_staging_data) as volumes in the docker image.
+
+
 ## [v7.13-beta.2] - 2026-04-15
 
 * Build : Fix CI build failure due to missing Docker container prefix.

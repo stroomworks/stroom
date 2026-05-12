@@ -108,7 +108,8 @@ public class AddDomainTypePresenter extends MyPresenterWidget<AddDomainTypePrese
                     if (e.isOk()) {
                         final String classPart = getView().getClassPart().getValue();
                         final String attributePart = getView().getAttributePart().getValue();
-                        if (classPart != null && !classPart.isBlank() && attributePart != null && !attributePart.isBlank()) {
+                        if (classPart != null && !classPart.isBlank()
+                            && attributePart != null && !attributePart.isBlank()) {
                             consumer.accept(new DomainType(classPart, attributePart));
                             e.hide();
                         }
