@@ -35,13 +35,15 @@ import com.google.inject.Inject;
 import com.google.inject.Provider;
 import com.google.web.bindery.event.shared.EventBus;
 
+import java.util.Objects;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import javax.inject.Singleton;
 
 @Singleton
 public class FloorMapPlugin extends DocumentPlugin<FloorMapDoc> {
 
-    private static final FloorMapResource ANALYTIC_RULE_RESOURCE = GWT.create(FloorMapResource.class);
+    private static final FloorMapResource FLOOR_MAP_RESOURCE = GWT.create(FloorMapResource.class);
 
     private final Provider<FloorMapPresenter> editorProvider;
     private final RestFactory restFactory;
@@ -69,7 +71,7 @@ public class FloorMapPlugin extends DocumentPlugin<FloorMapDoc> {
                      final RestErrorHandler errorHandler,
                      final TaskMonitorFactory taskMonitorFactory) {
         restFactory
-                .create(ANALYTIC_RULE_RESOURCE)
+                .create(FLOOR_MAP_RESOURCE)
                 .method(res -> res.fetch(docRef.getUuid()))
                 .onSuccess(resultConsumer)
                 .onFailure(errorHandler)
@@ -77,6 +79,9 @@ public class FloorMapPlugin extends DocumentPlugin<FloorMapDoc> {
                 .exec();
     }
 
+    /**
+     * Should not be called - only exists for back compatibility.
+     */
     @Override
     public void save(final DocRef docRef,
                      final FloorMapDoc document,
@@ -84,11 +89,25 @@ public class FloorMapPlugin extends DocumentPlugin<FloorMapDoc> {
                      final RestErrorHandler errorHandler,
                      final TaskMonitorFactory taskMonitorFactory) {
 
+        throw new IllegalStateException("Old save method called in FloorMapPlugin");
+    }
+
+    @Override
+    public void save(final DocRef docRef,
+                     final FloorMapDoc document,
+                     final BiConsumer<FloorMapDoc, Consumer<FloorMapDoc>> postSaveCallback,
+                     final Consumer<FloorMapDoc> resultConsumer,
+                     final RestErrorHandler errorHandler,
+                     final TaskMonitorFactory taskMonitorFactory) {
+
+        // Sanity check before everything goes async
+        Objects.requireNonNull(postSaveCallback);
+        Objects.requireNonNull(resultConsumer);
+
         restFactory
-                .create(ANALYTIC_RULE_RESOURCE)
-                .method(resource ->
-                        resource.update(document.getUuid(), document))
-                .onSuccess(resultConsumer)
+                .create(FLOOR_MAP_RESOURCE)
+                .method(res -> res.update(document.getUuid(), document))
+                .onSuccess(doc -> postSaveCallback.accept(doc, resultConsumer))
                 .onFailure(errorHandler)
                 .taskMonitorFactory(taskMonitorFactory)
                 .exec();

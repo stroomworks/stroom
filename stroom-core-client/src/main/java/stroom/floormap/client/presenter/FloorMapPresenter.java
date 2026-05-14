@@ -16,6 +16,7 @@
 
 package stroom.floormap.client.presenter;
 
+import stroom.document.asset.client.presenter.DocumentAssetPresenter;
 import stroom.floormap.shared.FloorMapDoc;
 import stroom.docref.DocRef;
 import stroom.entity.client.presenter.DocTabPresenter;
@@ -29,16 +30,21 @@ import stroom.widget.tab.client.presenter.TabDataImpl;
 
 import com.google.inject.Inject;
 import com.google.web.bindery.event.shared.EventBus;
+import com.gwtplatform.mvp.client.PresenterWidget;
 
+import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 import javax.inject.Provider;
 
-public class FloorMapPresenter
-        extends DocTabPresenter<LinkTabPanelView, FloorMapDoc> {
+public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMapDoc> {
 
     private static final TabData MAP = new TabDataImpl("Map");
     private static final TabData SETTINGS = new TabDataImpl("Settings");
+    private static final TabData ASSETS = new TabDataImpl("Assets");
     private static final TabData DOCUMENTATION = new TabDataImpl("Documentation");
     private static final TabData PERMISSIONS = new TabDataImpl("Permissions");
+
+    private final DocumentAssetPresenter<FloorMapDoc> documentAssetPresenter;
 
     @Inject
     public FloorMapPresenter(final EventBus eventBus,
@@ -46,11 +52,14 @@ public class FloorMapPresenter
                              final Provider<FloorMapMapPresenter> floorMapMapPresenterProvider,
                              final Provider<FloorMapSettingsPresenter> floorMapSettingsPresenterProvider,
                              final Provider<MarkdownEditPresenter> markdownEditPresenterProvider,
-                             final DocumentUserPermissionsTabProvider<FloorMapDoc> documentUserPermissionsTabProvider) {
+                             final DocumentUserPermissionsTabProvider<FloorMapDoc> documentUserPermissionsTabProvider,
+                             final DocumentAssetPresenter<FloorMapDoc> documentAssetPresenter) {
         super(eventBus, view);
+        this.documentAssetPresenter = documentAssetPresenter;
 
         addTab(MAP, new DocTabProvider<>(floorMapMapPresenterProvider::get));
         addTab(SETTINGS, new DocTabProvider<>(floorMapSettingsPresenterProvider::get));
+        addTab(ASSETS, new DocTabProvider<>(() -> documentAssetPresenter));
         addTab(DOCUMENTATION, new MarkdownTabProvider<FloorMapDoc>(eventBus, markdownEditPresenterProvider) {
             @Override
             public void onRead(final MarkdownEditPresenter presenter,
@@ -72,6 +81,13 @@ public class FloorMapPresenter
     }
 
     @Override
+    protected void afterSelectTab(final PresenterWidget<?> content) {
+        if (content == documentAssetPresenter) {
+            onChange();
+        }
+    }
+
+    @Override
     public String getType() {
         return FloorMapDoc.TYPE;
     }
@@ -84,5 +100,51 @@ public class FloorMapPresenter
     @Override
     protected TabData getDocumentationTab() {
         return DOCUMENTATION;
+    }
+
+    @Override
+    protected boolean hasAssociatedDirty() {
+        return super.hasAssociatedDirty() || (documentAssetPresenter != null && documentAssetPresenter.isDirty());
+    }
+
+    /**
+     * Provide a callback to be inserted into the save chain after the save is complete.
+     * @return The consumer for the callback. The second parameter will be the
+     * consumer to call after this method has completed.
+     */
+    @Override
+    public BiConsumer<FloorMapDoc, Consumer<FloorMapDoc>> getPostSaveCallback() {
+        return this::saveAssets;
+    }
+
+    /**
+     * Provide a callback to be inserted into the SaveAs chain after the document saveAs
+     * has happened.
+     * @return The consumer for the callback. The second parameter will be the
+     * consumer to call after this method has completed.
+     */
+    @Override
+    public BiConsumer<FloorMapDoc, Consumer<FloorMapDoc>> getPostSaveAsCallback() {
+        return this::saveAsAssets;
+    }
+
+    /**
+     * Called by DocumentPlugin to save the assets associated with the document.
+     * Specified in getPostSaveCallback().
+     * @param document The document that was written by all the data in all the tabs.
+     * @param callback Thing to call when the assets have been saved.
+     */
+    public void saveAssets(final FloorMapDoc document, final Consumer<FloorMapDoc> callback) {
+        documentAssetPresenter.onSave(document, callback);
+    }
+
+    /**
+     * Called by DocumentPlugin to do a SaveAs to a new document.
+     * Specified in getPostSaveAsCallback().
+     * @param document The new document to save to.
+     * @param callback Thing to call when the assets have been saved.
+     */
+    public void saveAsAssets(final FloorMapDoc document, final Consumer<FloorMapDoc> callback) {
+        documentAssetPresenter.onSaveAs(document, callback);
     }
 }
