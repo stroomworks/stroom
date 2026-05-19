@@ -16,24 +16,28 @@
 
 package stroom.floormap.client.presenter;
 
-import stroom.floormap.client.presenter.FloorMapSettingsPresenter.FloorMapSettingsView;
-import stroom.floormap.shared.FloorMapDoc;
 import stroom.docref.DocRef;
+import stroom.document.client.event.DirtyUiHandlers;
 import stroom.editor.client.presenter.EditorPresenter;
 import stroom.entity.client.presenter.DocPresenter;
 import stroom.explorer.client.presenter.DocSelectionBoxPresenter;
 import stroom.feed.shared.FeedDoc;
+import stroom.floormap.client.presenter.FloorMapSettingsPresenter.FloorMapSettingsView;
+import stroom.floormap.shared.FloorMapDoc;
 import stroom.security.shared.DocumentPermission;
 import stroom.ui.config.client.UiConfigCache;
 
+import com.google.gwt.event.logical.shared.ValueChangeHandler;
+import com.google.gwt.event.shared.HandlerRegistration;
 import com.google.inject.Inject;
+import com.google.inject.Provider;
 import com.google.web.bindery.event.shared.EventBus;
+import com.gwtplatform.mvp.client.HasUiHandlers;
 import com.gwtplatform.mvp.client.View;
 
-import javax.inject.Provider;
-
 public class FloorMapSettingsPresenter
-        extends DocPresenter<FloorMapSettingsView, FloorMapDoc> {
+        extends DocPresenter<FloorMapSettingsView, FloorMapDoc>
+        implements DirtyUiHandlers {
 
     final DocSelectionBoxPresenter sourceFeedPresenter;
     private final UiConfigCache uiConfigCache;
@@ -48,6 +52,9 @@ public class FloorMapSettingsPresenter
         this.sourceFeedPresenter = sourceFeedPresenter;
         this.uiConfigCache = uiConfigcache;
 
+        // Link the view to this presenter for dirty event handling
+        view.setUiHandlers(this);
+
         sourceFeedPresenter.setIncludedTypes(FeedDoc.TYPE);
         sourceFeedPresenter.setRequiredPermissions(DocumentPermission.VIEW);
         view.setSourceFeed(sourceFeedPresenter.getView());
@@ -56,7 +63,9 @@ public class FloorMapSettingsPresenter
     @Override
     protected void onBind() {
         super.onBind();
+        // Register handlers to detect changes and mark the document as dirty
         registerHandler(sourceFeedPresenter.addDataSelectionHandler(e -> onChange()));
+        registerHandler(getView().addBackgroundImageChangeHandler(e -> onChange()));
     }
 
     @Override
@@ -64,9 +73,14 @@ public class FloorMapSettingsPresenter
         uiConfigCache.get(extendedUiConfig -> {
             if (extendedUiConfig != null) {
                 final DocRef selectedDocRef = floorMapDoc.getFeed();
-
                 if (selectedDocRef != null) {
                     sourceFeedPresenter.setSelectedEntityReference(selectedDocRef, true);
+                }
+
+                // Load the background image path/data into the view
+                final String selectedBackgroundImage = floorMapDoc.getBackgroundImage();
+                if (selectedBackgroundImage != null) {
+                    getView().setBackgroundImage(selectedBackgroundImage);
                 }
             }
         }, this);
@@ -74,14 +88,28 @@ public class FloorMapSettingsPresenter
 
     @Override
     protected FloorMapDoc onWrite(final FloorMapDoc doc) {
+        // Build the updated document with values from the view
         return doc
                 .copy()
                 .feed(sourceFeedPresenter.getSelectedEntityReference())
+                .backgroundImage(getView().getBackgroundImage())
                 .build();
     }
 
-    public interface FloorMapSettingsView extends View {
+    @Override
+    public void onDirty() {
+        // Triggered by the view when a field is modified
+        onChange();
+    }
+
+    public interface FloorMapSettingsView extends View, HasUiHandlers<DirtyUiHandlers> {
 
         void setSourceFeed(View view);
+
+        void setBackgroundImage(String backgroundImage);
+
+        String getBackgroundImage();
+
+        HandlerRegistration addBackgroundImageChangeHandler(ValueChangeHandler<String> handler);
     }
 }

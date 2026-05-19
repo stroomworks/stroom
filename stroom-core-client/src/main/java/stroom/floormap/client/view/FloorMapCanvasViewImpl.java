@@ -19,20 +19,21 @@ package stroom.floormap.client.view;
 import stroom.document.client.event.DirtyUiHandlers;
 import stroom.entity.client.presenter.ReadOnlyChangeHandler;
 import stroom.floormap.client.presenter.FloorMapCanvasPresenter.FloorMapCanvasView;
+import stroom.widget.util.client.HtmlBuilder;
+import stroom.widget.util.client.HtmlBuilder.Attribute;
+import stroom.widget.util.client.SafeHtmlUtil;
 
-import com.google.gwt.canvas.client.Canvas;
-import com.google.gwt.canvas.dom.client.Context2d;
-import com.google.gwt.core.client.GWT;
 import com.google.gwt.core.client.Scheduler;
 import com.google.gwt.dom.client.Element;
 import com.google.gwt.event.dom.client.HasMouseDownHandlers;
 import com.google.gwt.event.dom.client.HasMouseMoveHandlers;
 import com.google.gwt.event.dom.client.HasMouseUpHandlers;
 import com.google.gwt.event.dom.client.HasMouseWheelHandlers;
+import com.google.gwt.safehtml.shared.SafeHtmlUtils;
 import com.google.gwt.uibinder.client.UiBinder;
-import com.google.gwt.uibinder.client.UiFactory;
 import com.google.gwt.uibinder.client.UiField;
 import com.google.gwt.user.client.ui.FocusPanel;
+import com.google.gwt.user.client.ui.HTML;
 import com.google.gwt.user.client.ui.Widget;
 import com.google.inject.Inject;
 import com.gwtplatform.mvp.client.ViewWithUiHandlers;
@@ -44,7 +45,7 @@ public class FloorMapCanvasViewImpl
     private final Widget widget;
 
     @UiField
-    Canvas canvas;
+    HTML svgContainer;
 
     @UiField
     FocusPanel focusPanel;
@@ -65,8 +66,8 @@ public class FloorMapCanvasViewImpl
 
     @Override
     public void onResize() {
-        // Get the canvas' parent element from the DOM and its width/height.
-        final Element parent = canvas.getElement().getParentElement();
+        // Get the parent element from the DOM and its width/height.
+        final Element parent = svgContainer.getElement().getParentElement();
         final int width = parent.getOffsetWidth();
         final int height = parent.getOffsetHeight();
 
@@ -75,23 +76,7 @@ public class FloorMapCanvasViewImpl
             Scheduler.get().scheduleDeferred((this::onResize));
         }
 
-        GWT.log("FloorMapCanvas.onResize(): " + width + " x " + height);
-
-        // Set the canvas' internal drawing resolution to the parent values to prevent blurring.
-        canvas.setCoordinateSpaceWidth(width);
-        canvas.setCoordinateSpaceHeight(height);
-
-        // Drawing logic - white background and orange border.
-        final Context2d context2d = canvas.getContext2d();
-        context2d.clearRect(0, 0, width, height);
-
-        context2d.setFillStyle("#FFFFFF");
-        context2d.fillRect(0, 0, width, height);
-    }
-
-    @UiFactory
-    public Canvas createCanvas() {
-        return Canvas.createIfSupported();
+        // SVG handles its own responsiveness via 100% width/height.
     }
 
     @Override
@@ -115,32 +100,47 @@ public class FloorMapCanvasViewImpl
     }
 
     @Override
-    public void draw(final double scale, final double x, final double y) {
-        final Context2d context2d = canvas.getContext2d();
-        final int width = canvas.getCoordinateSpaceWidth();
-        final int height = canvas.getCoordinateSpaceHeight();
+    public void draw(final double scale, final double x, final double y, final String backgroundImage) {
+        final HtmlBuilder htmlBuilder = new HtmlBuilder();
 
-        // Clear the canvas
-        context2d.clearRect(0, 0, width, height);
+        // Build the SVG structure dynamically
+        htmlBuilder.elem(svg -> {
+            // Apply zoom/pan transformation to a top-level group
+            svg.elem(group -> {
+                // Render the background image if set
+                if (backgroundImage != null && !backgroundImage.isEmpty()) {
+                    group.elem(SafeHtmlUtil.from("image"),
+                        new Attribute(SafeHtmlUtils.fromSafeConstant("href"),
+                                SafeHtmlUtils.fromTrustedString(backgroundImage)),
+                        new Attribute("x", "0"),
+                        new Attribute("y", "0"),
+                        new Attribute("width", "1000"),
+                        new Attribute("height", "1000"),
+                        new Attribute("preserveAspectRatio", "none"));
+                } else {
+                    // Fallback background rect
+                    group.elem(SafeHtmlUtil.from("rect"),
+                        new Attribute("x", "0"),
+                        new Attribute("y", "0"),
+                        new Attribute("width", "1000"),
+                        new Attribute("height", "1000"),
+                        new Attribute("fill", "#FFFFFF"));
+                }
+            }, SafeHtmlUtil.from("g"),
+                    new Attribute("transform", "translate(" + x + "," + y + ") scale(" + scale + ")"));
 
-        // Save the normal state (no zoom/pan)
-        context2d.save();
+        },
+            SafeHtmlUtil.from("svg"),
+            new Attribute("width", "100%"),
+            new Attribute("height", "100%"),
+            new Attribute("xmlns", "http://www.w3.org/2000/svg")
+        );
 
-        // Apply the translation
-        context2d.translate(x, y);
-        context2d.scale(scale, scale);
-
-        // Draw the map
-        context2d.setFillStyle("#FFFFFF");
-        context2d.fillRect(0, 0, 1000, 1000);
-
-        // Restore back to normal for next frame
-        context2d.restore();
+        // Inject the generated SVG into the HTML container
+        svgContainer.setHTML(htmlBuilder.toSafeHtml());
     }
 
-
     // --------------------------------------------------------------------------------
-
 
     public interface Binder extends UiBinder<Widget, FloorMapCanvasViewImpl> {
 

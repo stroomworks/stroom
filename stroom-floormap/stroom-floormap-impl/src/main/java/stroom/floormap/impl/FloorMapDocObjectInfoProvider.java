@@ -16,8 +16,8 @@
 
 package stroom.floormap.impl;
 
-import stroom.floormap.shared.FloorMapDoc;
 import stroom.event.logging.api.ObjectInfoProvider;
+import stroom.floormap.shared.FloorMapDoc;
 
 import event.logging.BaseObject;
 import event.logging.OtherObject;

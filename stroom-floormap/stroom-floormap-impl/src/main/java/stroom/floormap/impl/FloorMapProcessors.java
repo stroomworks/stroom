@@ -16,9 +16,9 @@
 
 package stroom.floormap.impl;
 
-import stroom.floormap.shared.FloorMapDoc;
 import stroom.docref.DocRef;
 import stroom.entity.shared.ExpressionCriteria;
+import stroom.floormap.shared.FloorMapDoc;
 import stroom.processor.api.ProcessorFilterService;
 import stroom.processor.api.ProcessorService;
 import stroom.processor.shared.Processor;

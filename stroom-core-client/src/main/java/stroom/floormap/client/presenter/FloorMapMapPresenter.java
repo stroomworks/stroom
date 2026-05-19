@@ -39,7 +39,7 @@ public class FloorMapMapPresenter
     public static final Object LOG_DATA = new Object();
 
     private final MetaPresenter metaPresenter;
-    private final Provider<FloorMapCanvasPresenter> floorMapCanvasPresenterProvider;
+    private final FloorMapCanvasPresenter floorMapCanvasPresenter;
 
     private DocRef currentFeed;
 
@@ -52,18 +52,24 @@ public class FloorMapMapPresenter
                                 final Provider<FloorMapCanvasPresenter> floorMapCanvasPresenterProvider) {
         super(eventBus, view);
         this.metaPresenter = metaPresenter;
-        this.floorMapCanvasPresenterProvider = floorMapCanvasPresenterProvider;
+
+        // Initialize the canvas presenter which handles the SVG map rendering
+        this.floorMapCanvasPresenter = floorMapCanvasPresenterProvider.get();
 
         final TabData dataTab = linkTabsPresenter.addTab("Data", metaPresenter);
         linkTabsPresenter.addTab("Temp", floorMapTempPresenter);
         linkTabsPresenter.changeSelectedTab(dataTab);
 
         setInSlot(LOG_DATA, linkTabsPresenter);
-        setInSlot(MAP, floorMapCanvasPresenterProvider.get());
+        setInSlot(MAP, floorMapCanvasPresenter);
     }
 
     @Override
     protected void onRead(final DocRef docRef, final FloorMapDoc document, final boolean readOnly) {
+        // Pass the background image from the document to the canvas presenter
+        floorMapCanvasPresenter.setBackgroundImage(document.getBackgroundImage());
+
+        // Update the log data view based on the selected feed
         if (!Objects.equals(currentFeed, document.getFeed())) {
             currentFeed = document.getFeed();
             if (currentFeed != null) {

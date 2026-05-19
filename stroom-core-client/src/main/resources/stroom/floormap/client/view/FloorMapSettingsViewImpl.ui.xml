@@ -3,11 +3,25 @@
              xmlns:g="urn:import:com.google.gwt.user.client.ui"
              xmlns:form="urn:import:stroom.widget.form.client">
     <g:FlowPanel styleName="max dock-container-vertical form-padding form">
+        <!-- Source Feed Selection -->
         <form:FormGroup identity="floorMapSourceFeed"
                         label="Source Feed"
                         helpText="The feed that the generated data will be sent to."
                         addStyleNames="dock-min">
             <g:SimplePanel ui:field="sourceFeed"/>
+        </form:FormGroup>
+
+        <!-- Background Image Selection -->
+        <form:FormGroup identity="floorMapBackgroundImage"
+                        label="Background Image"
+                        helpText="The background image for the map. Can be a URL or a Base64 data string."
+                        addStyleNames="dock-min">
+            <g:FlowPanel>
+                <g:TextBox ui:field="backgroundImage" addStyleNames="stroom-control wide-control"/>
+                <g:Button ui:field="browseButton" text="Browse..."/>
+                <!-- Hidden file upload widget triggered by the Browse button -->
+                <g:FileUpload ui:field="fileUpload" visible="false"/>
+            </g:FlowPanel>
         </form:FormGroup>
     </g:FlowPanel>
 </ui:UiBinder>

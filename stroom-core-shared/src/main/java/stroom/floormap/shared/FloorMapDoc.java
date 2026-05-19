@@ -32,10 +32,8 @@ import java.util.Objects;
 
 @Description(
         """
-        Defines a data generator which can be used to send data into a Stroom Feed.
-        The data is defined as a String.
-        The schedule on which the data is sent into the feed can be customised.
-        """)
+                Defines a floor map document which can be used to visualize data over time.
+                """)
 @JsonPropertyOrder(alphabetic = true)
 @JsonInclude(Include.NON_NULL)
 public class FloorMapDoc extends AbstractDoc {
@@ -49,6 +47,8 @@ public class FloorMapDoc extends AbstractDoc {
     private final String template;
     @JsonProperty
     private final DocRef feed;
+    @JsonProperty
+    private final String backgroundImage; // Base64 or URL for the map background
 
     @JsonCreator
     public FloorMapDoc(@JsonProperty("uuid") final String uuid,
@@ -60,7 +60,8 @@ public class FloorMapDoc extends AbstractDoc {
                        @JsonProperty("updateUser") final String updateUser,
                        @JsonProperty("description") final String description,
                        @JsonProperty("template") final String template,
-                       @JsonProperty("feed") final DocRef feed) {
+                       @JsonProperty("feed") final DocRef feed,
+                       @JsonProperty("backgroundImage") final String backgroundImage) {
         super(TYPE, uuid,
                 name,
                 version,
@@ -72,6 +73,7 @@ public class FloorMapDoc extends AbstractDoc {
         this.description = description;
         this.template = template;
         this.feed = feed;
+        this.backgroundImage = backgroundImage;
     }
 
     public String getDescription() {
@@ -84,6 +86,10 @@ public class FloorMapDoc extends AbstractDoc {
 
     public DocRef getFeed() {
         return feed;
+    }
+
+    public String getBackgroundImage() {
+        return backgroundImage;
     }
 
     /**
@@ -107,12 +113,13 @@ public class FloorMapDoc extends AbstractDoc {
         final FloorMapDoc that = (FloorMapDoc) o;
         return Objects.equals(description, that.description) &&
                Objects.equals(template, that.template) &&
-               Objects.equals(feed, that.feed);
+               Objects.equals(feed, that.feed) &&
+               Objects.equals(backgroundImage, that.backgroundImage);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(super.hashCode(), description, template, feed);
+        return Objects.hash(super.hashCode(), description, template, feed, backgroundImage);
     }
 
     public Builder copy() {
@@ -128,6 +135,7 @@ public class FloorMapDoc extends AbstractDoc {
         private String template;
         private String description;
         private DocRef feed;
+        private String backgroundImage;
 
         public Builder() {
         }
@@ -137,6 +145,7 @@ public class FloorMapDoc extends AbstractDoc {
             this.template = doc.template;
             this.description = doc.description;
             this.feed = doc.feed;
+            this.backgroundImage = doc.backgroundImage;
         }
 
         public Builder template(final String template) {
@@ -151,6 +160,11 @@ public class FloorMapDoc extends AbstractDoc {
 
         public Builder feed(final DocRef feed) {
             this.feed = feed;
+            return self();
+        }
+
+        public Builder backgroundImage(final String backgroundImage) {
+            this.backgroundImage = backgroundImage;
             return self();
         }
 
@@ -171,7 +185,8 @@ public class FloorMapDoc extends AbstractDoc {
                     updateUser,
                     description,
                     template,
-                    feed);
+                    feed,
+                    backgroundImage);
         }
     }
 }

@@ -16,11 +16,11 @@
 
 package stroom.floormap.impl;
 
-import stroom.floormap.shared.FloorMapDoc;
-import stroom.floormap.shared.FloorMapResource;
 import stroom.docref.DocRef;
 import stroom.docstore.api.DocumentResourceHelper;
 import stroom.event.logging.rs.api.AutoLogged;
+import stroom.floormap.shared.FloorMapDoc;
+import stroom.floormap.shared.FloorMapResource;
 import stroom.util.shared.EntityServiceException;
 
 import jakarta.inject.Inject;
@@ -34,7 +34,7 @@ class FloorMapResourceImpl implements FloorMapResource {
 
     @Inject
     FloorMapResourceImpl(final Provider<FloorMapStore> floorMapStoreProvider,
-                        final Provider<DocumentResourceHelper> documentResourceHelperProvider) {
+                         final Provider<DocumentResourceHelper> documentResourceHelperProvider) {
         this.floorMapStoreProvider = floorMapStoreProvider;
         this.documentResourceHelperProvider = documentResourceHelperProvider;
     }

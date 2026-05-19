@@ -16,10 +16,10 @@
 
 package stroom.floormap.impl;
 
-import stroom.floormap.shared.FloorMapDoc;
 import stroom.docstore.api.DocumentSerialiser2;
 import stroom.docstore.api.Serialiser2;
 import stroom.docstore.api.Serialiser2Factory;
+import stroom.floormap.shared.FloorMapDoc;
 import stroom.importexport.api.ImportExportDocument;
 
 import jakarta.inject.Inject;

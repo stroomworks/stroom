@@ -16,13 +16,23 @@
 
 package stroom.floormap.client.view;
 
-import stroom.floormap.client.presenter.FloorMapSettingsPresenter.FloorMapSettingsView;
 import stroom.document.client.event.DirtyUiHandlers;
 import stroom.entity.client.presenter.ReadOnlyChangeHandler;
+import stroom.floormap.client.presenter.FloorMapSettingsPresenter.FloorMapSettingsView;
 
+import com.google.gwt.dom.client.Element;
+import com.google.gwt.event.dom.client.ChangeEvent;
+import com.google.gwt.event.dom.client.ClickEvent;
+import com.google.gwt.event.logical.shared.ValueChangeEvent;
+import com.google.gwt.event.logical.shared.ValueChangeHandler;
+import com.google.gwt.event.shared.HandlerRegistration;
 import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
+import com.google.gwt.uibinder.client.UiHandler;
+import com.google.gwt.user.client.ui.Button;
+import com.google.gwt.user.client.ui.FileUpload;
 import com.google.gwt.user.client.ui.SimplePanel;
+import com.google.gwt.user.client.ui.TextBox;
 import com.google.gwt.user.client.ui.Widget;
 import com.google.inject.Inject;
 import com.gwtplatform.mvp.client.View;
@@ -36,6 +46,15 @@ public class FloorMapSettingsViewImpl
 
     @UiField
     SimplePanel sourceFeed;
+
+    @UiField
+    TextBox backgroundImage;
+
+    @UiField
+    Button browseButton;
+
+    @UiField
+    FileUpload fileUpload;
 
     @Inject
     public FloorMapSettingsViewImpl(final Binder binder) {
@@ -53,7 +72,74 @@ public class FloorMapSettingsViewImpl
     }
 
     @Override
+    public void setBackgroundImage(final String backgroundImage) {
+        this.backgroundImage.setText(backgroundImage);
+    }
+
+    @Override
+    public String getBackgroundImage() {
+        return this.backgroundImage.getText();
+    }
+
+    @Override
+    public HandlerRegistration addBackgroundImageChangeHandler(final ValueChangeHandler<String> handler) {
+        return backgroundImage.addValueChangeHandler(handler);
+    }
+
+    @Override
     public void onReadOnly(final boolean readOnly) {
+        backgroundImage.setEnabled(!readOnly);
+        browseButton.setEnabled(!readOnly);
+    }
+
+    @UiHandler("browseButton")
+    void onBrowseClick(final ClickEvent event) {
+        // Trigger the hidden file upload widget
+        fileUpload.click();
+    }
+
+    @UiHandler("fileUpload")
+    void onFileUploadChange(final ChangeEvent event) {
+        // When a file is selected, read its content
+        final Element element = fileUpload.getElement();
+        readFile(element);
+    }
+
+    @UiHandler("backgroundImage")
+    void onBackgroundImageChange(final ValueChangeEvent<String> event) {
+        // Notify the presenter when the text box is manually edited
+        if (getUiHandlers() != null) {
+            getUiHandlers().onDirty();
+        }
+    }
+
+    /**
+     * Uses the browser's FileReader API to read a file and convert it to a Base64 Data URL.
+     * Special GWT syntax called JSNI (JavaScript Native Interface).
+     * Looks like a Java comment, but is recognised by GWT compiler as the JavaScript implementation of native method.
+     */
+    private native void readFile(Element element) /*-{
+        var self = this;
+        var file = element.files[0];
+        if (file) {
+            var reader = new FileReader();
+            reader.onload = function(e) {
+                var base64 = e.target.result;
+                self.@stroom.floormap.client.view.FloorMapSettingsViewImpl::onFileRead(Ljava/lang/String;)(base64);
+            };
+            reader.readAsDataURL(file);
+        }
+    }-*/;
+
+    /**
+     * Callback method for the JSNI readFile logic.
+     */
+    void onFileRead(final String base64) {
+        // Update the text box and trigger a change event so the presenter sees it
+        backgroundImage.setValue(base64, true);
+        if (getUiHandlers() != null) {
+            getUiHandlers().onDirty();
+        }
     }
 
 

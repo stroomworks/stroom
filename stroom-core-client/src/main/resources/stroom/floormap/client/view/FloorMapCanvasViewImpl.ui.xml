@@ -3,6 +3,6 @@
              xmlns:g="urn:import:com.google.gwt.user.client.ui"
              xmlns:c="urn:import:com.google.gwt.canvas.client">
     <g:FocusPanel ui:field="focusPanel" styleName="max">
-        <c:Canvas ui:field="canvas" styleName="max" />
+        <g:HTML ui:field="svgContainer" addStyleNames="max"/>
     </g:FocusPanel>
 </ui:UiBinder>
