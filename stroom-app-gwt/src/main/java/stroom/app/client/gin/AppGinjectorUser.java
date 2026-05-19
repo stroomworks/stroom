@@ -70,6 +70,8 @@ import stroom.explorer.client.presenter.NavigationPresenter;
 import stroom.explorer.client.presenter.RecentItemsPresenter;
 import stroom.feed.client.gin.FeedGinjector;
 import stroom.feed.client.gin.FeedModule;
+import stroom.floormap.client.gin.FloorMapGinjector;
+import stroom.floormap.client.gin.FloorMapModule;
 import stroom.folder.client.gin.FolderGinjector;
 import stroom.folder.client.gin.FolderModule;
 import stroom.gitrepo.client.gin.GitRepoGinjector;
@@ -175,6 +177,7 @@ import com.gwtplatform.mvp.client.proxy.PlaceManager;
         AnalyticsModule.class,
         DataGenModule.class,
         ReportModule.class,
+        FloorMapModule.class,
         SolrIndexModule.class,
         StatisticsModule.class,
         StreamStoreModule.class,
@@ -223,6 +226,7 @@ public interface AppGinjectorUser extends
         ChangePasswordGinjector,
         AnalyticsGinjector,
         DataGenGinjector,
+        FloorMapGinjector,
         ElasticClusterGinjector,
         ElasticIndexGinjector,
         ReportGinjector,

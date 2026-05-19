@@ -65,6 +65,11 @@ public class DocumentTypeRegistry {
             "DataGen",
             "Data Generator",
             SvgImage.DOCUMENT_DATA_GEN);
+    public static final DocumentType FLOOR_MAP_DOCUMENT_TYPE = new DocumentType(
+            DocumentTypeGroup.SEARCH,
+            "FloorMap",
+            "Floor Map",
+            SvgImage.DOCUMENT_FLOOR_MAP);
     public static final DocumentType ANALYTICS_STORE_DOCUMENT_TYPE = new DocumentType(
             DocumentTypeGroup.SEARCH,
             "Analytics",
@@ -258,6 +263,7 @@ public class DocumentTypeRegistry {
         put(ANALYTICS_STORE_DOCUMENT_TYPE);
         put(ANALYTIC_RULE_DOCUMENT_TYPE);
         put(DATA_GENERATOR_DOCUMENT_TYPE);
+        put(FLOOR_MAP_DOCUMENT_TYPE);
         put(ANNOTATION_DOCUMENT_TYPE);
         put(DASHBOARD_DOCUMENT_TYPE);
         put(DICTIONARY_DOCUMENT_TYPE);

@@ -64,5 +64,33 @@
  *     return (doc, callback) -&gt; documentAssetPresenter.onSaveAs(doc, callback);
  * }
  * </pre>
+ *
+ * <h3>6. Update the Plugin</h3>
+ * <p>By default, <code>DocumentPlugin</code> does not support post-save callbacks. You must
+ * override the 6-argument <code>save</code> method in your <code>DocumentPlugin</code>
+ * subclass to execute the callback after the main document has been successfully saved.</p>
+ * <pre>
+ * &#64;Override
+ * public void save(final DocRef docRef,
+ *                  final MyDoc document,
+ *                  final BiConsumer&lt;MyDoc, Consumer&lt;MyDoc&gt;&gt; postSaveCallback,
+ *                  final Consumer&lt;MyDoc&gt; resultConsumer,
+ *                  final RestErrorHandler errorHandler,
+ *                  final TaskMonitorFactory taskMonitorFactory) {
+ *     restFactory
+ *             .create(MY_RESOURCE)
+ *             .method(res -&gt; res.update(document.getUuid(), document))
+ *             .onSuccess(doc -&gt; {
+ *                 if (postSaveCallback != null) {
+ *                     postSaveCallback.accept(doc, resultConsumer);
+ *                 } else {
+ *                     resultConsumer.accept(doc);
+ *                 }
+ *             })
+ *             .onFailure(errorHandler)
+ *             .taskMonitorFactory(taskMonitorFactory)
+ *             .exec();
+ * }
+ * </pre>
  */
 package stroom.document.asset.client.presenter;

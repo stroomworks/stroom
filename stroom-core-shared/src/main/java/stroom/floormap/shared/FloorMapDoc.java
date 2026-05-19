@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package stroom.datagen.shared;
+package stroom.floormap.shared;
 
 import stroom.docref.DocRef;
 import stroom.docs.shared.Description;
@@ -38,10 +38,10 @@ import java.util.Objects;
         """)
 @JsonPropertyOrder(alphabetic = true)
 @JsonInclude(Include.NON_NULL)
-public class DataGenDoc extends AbstractDoc {
+public class FloorMapDoc extends AbstractDoc {
 
-    public static final String TYPE = "DataGen";
-    public static final DocumentType DOCUMENT_TYPE = DocumentTypeRegistry.DATA_GENERATOR_DOCUMENT_TYPE;
+    public static final String TYPE = "FloorMap";
+    public static final DocumentType DOCUMENT_TYPE = DocumentTypeRegistry.FLOOR_MAP_DOCUMENT_TYPE;
 
     @JsonProperty
     private final String description;
@@ -51,16 +51,16 @@ public class DataGenDoc extends AbstractDoc {
     private final DocRef feed;
 
     @JsonCreator
-    public DataGenDoc(@JsonProperty("uuid") final String uuid,
-                      @JsonProperty("name") final String name,
-                      @JsonProperty("version") final String version,
-                      @JsonProperty("createTimeMs") final Long createTimeMs,
-                      @JsonProperty("updateTimeMs") final Long updateTimeMs,
-                      @JsonProperty("createUser") final String createUser,
-                      @JsonProperty("updateUser") final String updateUser,
-                      @JsonProperty("description") final String description,
-                      @JsonProperty("template") final String template,
-                      @JsonProperty("feed") final DocRef feed) {
+    public FloorMapDoc(@JsonProperty("uuid") final String uuid,
+                       @JsonProperty("name") final String name,
+                       @JsonProperty("version") final String version,
+                       @JsonProperty("createTimeMs") final Long createTimeMs,
+                       @JsonProperty("updateTimeMs") final Long updateTimeMs,
+                       @JsonProperty("createUser") final String createUser,
+                       @JsonProperty("updateUser") final String updateUser,
+                       @JsonProperty("description") final String description,
+                       @JsonProperty("template") final String template,
+                       @JsonProperty("feed") final DocRef feed) {
         super(TYPE, uuid,
                 name,
                 version,
@@ -104,7 +104,7 @@ public class DataGenDoc extends AbstractDoc {
         if (!super.equals(o)) {
             return false;
         }
-        final DataGenDoc that = (DataGenDoc) o;
+        final FloorMapDoc that = (FloorMapDoc) o;
         return Objects.equals(description, that.description) &&
                Objects.equals(template, that.template) &&
                Objects.equals(feed, that.feed);
@@ -123,7 +123,7 @@ public class DataGenDoc extends AbstractDoc {
         return new Builder();
     }
 
-    public static class Builder extends AbstractBuilder<DataGenDoc, Builder> {
+    public static class Builder extends AbstractBuilder<FloorMapDoc, Builder> {
 
         private String template;
         private String description;
@@ -132,7 +132,7 @@ public class DataGenDoc extends AbstractDoc {
         public Builder() {
         }
 
-        public Builder(final DataGenDoc doc) {
+        public Builder(final FloorMapDoc doc) {
             super(doc);
             this.template = doc.template;
             this.description = doc.description;
@@ -160,8 +160,8 @@ public class DataGenDoc extends AbstractDoc {
         }
 
         @Override
-        public DataGenDoc build() {
-            return new DataGenDoc(
+        public FloorMapDoc build() {
+            return new FloorMapDoc(
                     uuid,
                     name,
                     version,
