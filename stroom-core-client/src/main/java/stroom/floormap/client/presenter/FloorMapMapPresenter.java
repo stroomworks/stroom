@@ -32,10 +32,24 @@ import com.gwtplatform.mvp.client.View;
 
 import java.util.Objects;
 
+/**
+ * Main presenter for the Floor Map visualization.
+ * Coordinates the map canvas, the timeline, and the log data view.
+ */
 public class FloorMapMapPresenter
         extends DocPresenter<FloorMapMapView, FloorMapDoc> {
 
+    /**
+     * Slot for the SVG map canvas.
+     */
     public static final Object MAP = new Object();
+    /**
+     * Slot for the timeline control.
+     */
+    public static final Object TIMELINE = new Object();
+    /**
+     * Slot for the log data/tabs view.
+     */
     public static final Object LOG_DATA = new Object();
 
     private final MetaPresenter metaPresenter;
@@ -49,12 +63,22 @@ public class FloorMapMapPresenter
                                 final LinkTabsPresenter linkTabsPresenter,
                                 final MetaPresenter metaPresenter,
                                 final FloorMapTempPresenter floorMapTempPresenter,
-                                final Provider<FloorMapCanvasPresenter> floorMapCanvasPresenterProvider) {
+                                final Provider<FloorMapCanvasPresenter> floorMapCanvasPresenterProvider,
+                                final Provider<FloorMapTimelinePresenter> floorMapTimelinePresenterProvider) {
         super(eventBus, view);
         this.metaPresenter = metaPresenter;
-
+        
         // Initialize the canvas presenter which handles the SVG map rendering
         this.floorMapCanvasPresenter = floorMapCanvasPresenterProvider.get();
+
+        // Initialize the timeline presenter
+        final FloorMapTimelinePresenter floorMapTimelinePresenter = floorMapTimelinePresenterProvider.get();
+
+        // Set a default range for now (last 24 hours)
+        // TODO: Let the user choose the displayed time range.
+        final long now = System.currentTimeMillis();
+        floorMapTimelinePresenter.setTimeRange(now - (24 * 60 * 60 * 1000), now);
+        floorMapTimelinePresenter.setCurrentTime(now);
 
         final TabData dataTab = linkTabsPresenter.addTab("Data", metaPresenter);
         linkTabsPresenter.addTab("Temp", floorMapTempPresenter);
@@ -62,6 +86,7 @@ public class FloorMapMapPresenter
 
         setInSlot(LOG_DATA, linkTabsPresenter);
         setInSlot(MAP, floorMapCanvasPresenter);
+        setInSlot(TIMELINE, floorMapTimelinePresenter);
     }
 
     @Override

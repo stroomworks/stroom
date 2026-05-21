@@ -1,0 +1,16 @@
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
+             xmlns:g="urn:import:com.google.gwt.user.client.ui">
+
+    <g:FlowPanel addStyleNames="stroom-floormap-timeline-container">
+        <!-- The main timeline bar container -->
+        <g:FlowPanel ui:field="outerBar" addStyleNames="stroom-floormap-timeline-outer-bar">
+            <!-- The filled progress part -->
+            <g:FlowPanel ui:field="innerBar" addStyleNames="stroom-floormap-timeline-inner-bar" />
+            <!-- The draggable circle -->
+            <g:FlowPanel ui:field="handle" addStyleNames="stroom-floormap-timeline-handle" />
+            <!-- Slot for marker dots (potentially keyframes) -->
+            <g:FlowPanel ui:field="markerLayer" addStyleNames="max" />
+        </g:FlowPanel>
+    </g:FlowPanel>
+</ui:UiBinder>

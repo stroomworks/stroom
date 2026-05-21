@@ -21,20 +21,23 @@ import stroom.floormap.client.presenter.FloorMapMapPresenter.FloorMapMapView;
 
 import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
-import com.google.gwt.user.client.ui.ProvidesResize;
-import com.google.gwt.user.client.ui.RequiresResize;
-import com.google.gwt.user.client.ui.ResizeLayoutPanel;
 import com.google.gwt.user.client.ui.SimplePanel;
 import com.google.gwt.user.client.ui.Widget;
 import com.google.inject.Inject;
 import com.gwtplatform.mvp.client.ViewImpl;
 
-public class FloorMapMapViewImpl extends ViewImpl implements FloorMapMapView, RequiresResize, ProvidesResize {
+/**
+ * View implementation for the Floor Map.
+ * Uses a split layout to show the map, timeline, and log data.
+ */
+public class FloorMapMapViewImpl extends ViewImpl implements FloorMapMapView {
 
     private final Widget widget;
 
     @UiField
-    ResizeLayoutPanel mapPanel;
+    SimplePanel mapPanel;
+    @UiField
+    SimplePanel timelinePanel;
     @UiField
     SimplePanel logPanel;
 
@@ -52,16 +55,10 @@ public class FloorMapMapViewImpl extends ViewImpl implements FloorMapMapView, Re
     public void setInSlot(final Object slot, final Widget content) {
         if (FloorMapMapPresenter.MAP.equals(slot)) {
             mapPanel.setWidget(content);
+        } else if (FloorMapMapPresenter.TIMELINE.equals(slot)) {
+            timelinePanel.setWidget(content);
         } else if (FloorMapMapPresenter.LOG_DATA.equals(slot)) {
             logPanel.setWidget(content);
-        }
-    }
-
-    @Override
-    public void onResize() {
-        // Ensures the signal reaches ResizeLayoutPanel which then passes it to the canvas.
-        if (widget instanceof  RequiresResize) {
-            ((RequiresResize) widget).onResize();
         }
     }
 

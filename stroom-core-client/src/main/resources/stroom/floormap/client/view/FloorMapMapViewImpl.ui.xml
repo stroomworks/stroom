@@ -18,15 +18,22 @@
 <ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
              xmlns:g="urn:import:com.google.gwt.user.client.ui">
     <g:ThinSplitLayoutPanel vSplits="0.5" styleName="max">
+        <!-- Top section: The SVG map -->
         <g:north size="200">
-            <g:ResizeLayoutPanel ui:field="mapPanel" addStyleNames="max">
-                <g:Label text="Map Placeholder"/>
-            </g:ResizeLayoutPanel>
+            <g:SimplePanel ui:field="mapPanel" addStyleNames="max" />
         </g:north>
+        <!-- Bottom section: Timeline and log data -->
         <g:center>
-            <g:SimplePanel ui:field="logPanel" addStyleNames="max">
-                <g:Label text="Log Data Placeholder"/>
-            </g:SimplePanel>
+            <g:DockLayoutPanel unit='PX'>
+                <!-- Timeline at the top of the bottom section -->
+                <g:north size="50">
+                    <g:SimplePanel ui:field="timelinePanel" addStyleNames="max" />
+                </g:north>
+                <!-- Log data fills the rest -->
+                <g:center>
+                    <g:SimplePanel ui:field="logPanel" addStyleNames="max" />
+                </g:center>
+            </g:DockLayoutPanel>
         </g:center>
     </g:ThinSplitLayoutPanel>
 </ui:UiBinder>
