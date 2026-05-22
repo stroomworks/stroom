@@ -18,7 +18,6 @@ package stroom.floormap.client.presenter;
 
 import stroom.docref.DocRef;
 import stroom.document.client.event.DirtyUiHandlers;
-import stroom.editor.client.presenter.EditorPresenter;
 import stroom.entity.client.presenter.DocPresenter;
 import stroom.explorer.client.presenter.DocSelectionBoxPresenter;
 import stroom.feed.shared.FeedDoc;
@@ -33,7 +32,6 @@ import com.google.gwt.event.dom.client.ClickHandler;
 import com.google.gwt.event.logical.shared.ValueChangeHandler;
 import com.google.gwt.event.shared.HandlerRegistration;
 import com.google.inject.Inject;
-import com.google.inject.Provider;
 import com.google.web.bindery.event.shared.EventBus;
 import com.gwtplatform.mvp.client.HasUiHandlers;
 import com.gwtplatform.mvp.client.View;
