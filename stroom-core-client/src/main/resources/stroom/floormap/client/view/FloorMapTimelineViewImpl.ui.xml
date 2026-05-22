@@ -1,12 +1,13 @@
 <!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
 <ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
-             xmlns:g="urn:import:com.google.gwt.user.client.ui">
+             xmlns:g="urn:import:com.google.gwt.user.client.ui"
+             xmlns:datetimebox="urn:import:stroom.widget.datepicker.client">
 
     <g:FlowPanel addStyleNames="stroom-floormap-timeline-container max">
         <!-- Labels Above the timeline -->
         <g:FlowPanel addStyleNames="stroom-floormap-timeline-label-row">
-            <g:Label ui:field="lblStart" addStyleNames="stroom-floormap-timeline-label" />
-            <g:Label ui:field="lblEnd" addStyleNames="stroom-floormap-timeline-label stroom-floormap-timeline-label-end" />
+            <datetimebox:DateTimeBox ui:field="startDateTimeBox" addStyleNames="timeline-date-box" />
+            <datetimebox:DateTimeBox ui:field="endDateTimeBox" addStyleNames="timeline-date-box" />
         </g:FlowPanel>
 
         <!-- The Bar -->

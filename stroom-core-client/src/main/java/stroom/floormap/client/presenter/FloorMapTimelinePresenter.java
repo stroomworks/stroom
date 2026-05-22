@@ -19,8 +19,10 @@ package stroom.floormap.client.presenter;
 import stroom.floormap.client.event.TimeChangeEvent;
 import stroom.floormap.client.presenter.FloorMapTimelinePresenter.FloorMapTimelineView;
 
+import com.google.gwt.event.logical.shared.ValueChangeHandler;
 import com.google.inject.Inject;
 import com.google.web.bindery.event.shared.EventBus;
+import com.google.web.bindery.event.shared.HandlerRegistration;
 import com.gwtplatform.mvp.client.MyPresenterWidget;
 import com.gwtplatform.mvp.client.View;
 
@@ -48,6 +50,23 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
             // Fire a TimeChangeEvent so listeners (like the map) can update
             TimeChangeEvent.fire(this, newTime);
         });
+    }
+
+    @Override
+    protected void onBind() {
+        super.onBind();
+
+        // Update the timeline when the user picks a new START datetime.
+        registerHandler(getView().addStartTimeChangeHandler(e -> {
+            this.startTime = getView().getStartTime();
+            updateProgress();
+        }));
+
+        // Update the timeline when the user picks a new END datetime.
+        registerHandler(getView().addEndTimeChangeHandler(e -> {
+            this.endTime = getView().getEndTime();
+            updateProgress();
+        }));
     }
 
     /**
@@ -84,5 +103,10 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
         void setClickHandler(Consumer<Double> clickHandler);
         void setStartTime(long startTime);
         void setEndTime(long endTime);
+
+        HandlerRegistration addStartTimeChangeHandler(ValueChangeHandler<String> handler);
+        HandlerRegistration addEndTimeChangeHandler(ValueChangeHandler<String> handler);
+        long getStartTime();
+        long getEndTime();
     }
 }

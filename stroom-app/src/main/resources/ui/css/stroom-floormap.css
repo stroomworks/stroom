@@ -21,11 +21,16 @@
 }
 
 .stroom-floormap-timeline-label-row {
-    height: 20px;
+    height: 30px;
     width: 100%;
-    margin-bottom: 5px;
+    margin-top: 4px;
+    margin-bottom: 10px;
     display: flex;
     justify-content: space-between;
+}
+
+.stroom-floormap-timeline-label-row .timeline-date-box {
+    width: 220px;
 }
 
 .stroom-floormap-timeline-label {

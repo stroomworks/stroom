@@ -17,15 +17,19 @@
 package stroom.floormap.client.view;
 
 import stroom.floormap.client.presenter.FloorMapTimelinePresenter.FloorMapTimelineView;
+import stroom.widget.datepicker.client.DateTimeBox;
+import stroom.widget.datepicker.client.DateTimePopup;
 
 import com.google.gwt.dom.client.Style.Unit;
 import com.google.gwt.event.dom.client.ClickEvent;
+import com.google.gwt.event.logical.shared.ValueChangeHandler;
 import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
 import com.google.gwt.user.client.ui.FlowPanel;
-import com.google.gwt.user.client.ui.Label;
 import com.google.gwt.user.client.ui.Widget;
 import com.google.inject.Inject;
+import com.google.inject.Provider;
+import com.google.web.bindery.event.shared.HandlerRegistration;
 import com.gwtplatform.mvp.client.ViewImpl;
 
 import java.util.Date;
@@ -46,14 +50,15 @@ public class FloorMapTimelineViewImpl extends ViewImpl implements FloorMapTimeli
     @UiField
     FlowPanel handle;
     @UiField
-    Label lblStart;
+    DateTimeBox startDateTimeBox;
     @UiField
-    Label lblEnd;
+    DateTimeBox endDateTimeBox;
 
     private Consumer<Double> clickHandler;
 
     @Inject
-    public FloorMapTimelineViewImpl(final Binder binder) {
+    public FloorMapTimelineViewImpl(final Binder binder,
+                                    final Provider<DateTimePopup> dateTimePopupProvider) {
         widget = binder.createAndBindUi(this);
 
         // Standard click handling for stability
@@ -65,6 +70,9 @@ public class FloorMapTimelineViewImpl extends ViewImpl implements FloorMapTimeli
                 clickHandler.accept(pct);
             }
         }, ClickEvent.getType());
+
+        startDateTimeBox.setPopupProvider(dateTimePopupProvider);
+        endDateTimeBox.setPopupProvider(dateTimePopupProvider);
     }
 
     @Override
@@ -86,12 +94,32 @@ public class FloorMapTimelineViewImpl extends ViewImpl implements FloorMapTimeli
 
     @Override
     public void setStartTime(final long startTime) {
-        lblStart.setText(new Date(startTime).toString());
+        startDateTimeBox.setValue(startTime);
     }
 
     @Override
     public void setEndTime(final long endTime) {
-        lblEnd.setText(new Date(endTime).toString());
+        endDateTimeBox.setValue(endTime);
+    }
+
+    @Override
+    public HandlerRegistration addStartTimeChangeHandler(final ValueChangeHandler<String> handler) {
+        return startDateTimeBox.addValueChangeHandler(handler);
+    }
+
+    @Override
+    public HandlerRegistration addEndTimeChangeHandler(final ValueChangeHandler<String> handler) {
+        return endDateTimeBox.addValueChangeHandler(handler);
+    }
+
+    @Override
+    public long getStartTime() {
+        return startDateTimeBox.getValue() != null ? startDateTimeBox.getValue() : 0;
+    }
+
+    @Override
+    public long getEndTime() {
+        return endDateTimeBox.getValue() != null ? endDateTimeBox.getValue() : 0;
     }
 
     public interface Binder extends UiBinder<Widget, FloorMapTimelineViewImpl> {
