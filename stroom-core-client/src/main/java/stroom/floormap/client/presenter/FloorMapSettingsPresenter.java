@@ -55,8 +55,7 @@ public class FloorMapSettingsPresenter
     public FloorMapSettingsPresenter(final EventBus eventBus,
                                      final FloorMapSettingsView view,
                                      final DocSelectionBoxPresenter sourceFeedPresenter,
-                                     final UiConfigCache uiConfigcache,
-                                     final Provider<EditorPresenter> editorPresenterProvider) {
+                                     final UiConfigCache uiConfigcache) {
         super(eventBus, view);
         this.sourceFeedPresenter = sourceFeedPresenter;
         this.uiConfigCache = uiConfigcache;
@@ -82,9 +81,9 @@ public class FloorMapSettingsPresenter
         registerHandler(getView().addAddBackgroundHandler(e -> onAdd()));
 
         // Keep local time in sync with the global timeline
-        registerHandler(getEventBus().addHandler(TimeChangeEvent.getType(), e -> {
-            this.selectedTime = e.getTime();
-        }));
+        registerHandler(getEventBus().addHandler(TimeChangeEvent.getType(),
+                e -> this.selectedTime = e.getTime()
+        ));
     }
 
     @Override

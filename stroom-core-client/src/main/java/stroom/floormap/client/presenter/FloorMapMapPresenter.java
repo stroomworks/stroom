@@ -21,7 +21,6 @@ import stroom.docref.DocRef;
 import stroom.entity.client.presenter.DocPresenter;
 import stroom.floormap.client.event.TimeChangeEvent;
 import stroom.floormap.client.presenter.FloorMapMapPresenter.FloorMapMapView;
-import stroom.floormap.shared.FloorMapBackground;
 import stroom.floormap.shared.FloorMapDoc;
 import stroom.meta.shared.MetaExpressionUtil;
 import stroom.widget.tab.client.presenter.LinkTabsPresenter;
@@ -32,7 +31,6 @@ import com.google.inject.Provider;
 import com.google.web.bindery.event.shared.EventBus;
 import com.gwtplatform.mvp.client.View;
 
-import java.util.List;
 import java.util.Objects;
 
 /**
@@ -82,14 +80,12 @@ public class FloorMapMapPresenter
     @Override
     protected void onBind() {
         super.onBind();
-        registerHandler(getEventBus().addHandler(TimeChangeEvent.getType(), event -> {
-            onTimeChange(event.getTime());
-        }));
+        registerHandler(getEventBus().addHandler(TimeChangeEvent.getType(), e -> onTimeChange(e.getTime())));
     }
 
     @Override
     protected void onRead(final DocRef docRef, final FloorMapDoc document, final boolean readOnly) {
-        updateTimelineRange(document);
+        updateTimelineRange();
         
         // Pick the image for the current time
         final String activeImage = document.getActiveImage(selectedTime);
@@ -104,7 +100,7 @@ public class FloorMapMapPresenter
         }
     }
 
-    private void updateTimelineRange(final FloorMapDoc document) {
+    private void updateTimelineRange() {
         // By default, the timeline shows a range 24 hours each side of the current system time.
         final long start = selectedTime - ONE_DAY_MS;
         final long end = selectedTime + ONE_DAY_MS;
