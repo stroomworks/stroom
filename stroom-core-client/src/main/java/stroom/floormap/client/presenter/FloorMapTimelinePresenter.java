@@ -58,6 +58,8 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
     public void setTimeRange(final long start, final long end) {
         this.startTime = start;
         this.endTime = end;
+        getView().setStartTime(start);
+        getView().setEndTime(end);
         updateProgress();
     }
 
@@ -80,5 +82,7 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
     public interface FloorMapTimelineView extends View {
         void setProgressPct(double pct);
         void setClickHandler(Consumer<Double> clickHandler);
+        void setStartTime(long startTime);
+        void setEndTime(long endTime);
     }
 }

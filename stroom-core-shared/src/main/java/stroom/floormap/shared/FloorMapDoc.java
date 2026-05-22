@@ -28,6 +28,9 @@ import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Objects;
 
 @Description(
@@ -48,7 +51,7 @@ public class FloorMapDoc extends AbstractDoc {
     @JsonProperty
     private final DocRef feed;
     @JsonProperty
-    private final String backgroundImage; // Base64 or URL for the map background
+    private final List<FloorMapBackground> backgroundImages;
 
     @JsonCreator
     public FloorMapDoc(@JsonProperty("uuid") final String uuid,
@@ -61,7 +64,7 @@ public class FloorMapDoc extends AbstractDoc {
                        @JsonProperty("description") final String description,
                        @JsonProperty("template") final String template,
                        @JsonProperty("feed") final DocRef feed,
-                       @JsonProperty("backgroundImage") final String backgroundImage) {
+                       @JsonProperty("backgroundImages") final List<FloorMapBackground> backgroundImages) {
         super(TYPE, uuid,
                 name,
                 version,
@@ -73,7 +76,7 @@ public class FloorMapDoc extends AbstractDoc {
         this.description = description;
         this.template = template;
         this.feed = feed;
-        this.backgroundImage = backgroundImage;
+        this.backgroundImages = backgroundImages;
     }
 
     public String getDescription() {
@@ -88,8 +91,27 @@ public class FloorMapDoc extends AbstractDoc {
         return feed;
     }
 
-    public String getBackgroundImage() {
-        return backgroundImage;
+    public List<FloorMapBackground> getBackgroundImages() {
+        return backgroundImages;
+    }
+
+    /**
+     * Gets the background image that should be active at the specified time.
+     * Finds the image with the latest validFromTime that is <= currentTime.
+     */
+    public String getActiveImage(final long currentTime) {
+        String activeImage = null;
+        if (backgroundImages != null) {
+            for (final FloorMapBackground bg : backgroundImages) {
+                if (bg.getValidFromTime() <= currentTime) {
+                    activeImage = bg.getImage();
+                } else {
+                    // Since the list is sorted, we can stop here.
+                    break;
+                }
+            }
+        }
+        return activeImage;
     }
 
     /**
@@ -114,12 +136,12 @@ public class FloorMapDoc extends AbstractDoc {
         return Objects.equals(description, that.description) &&
                Objects.equals(template, that.template) &&
                Objects.equals(feed, that.feed) &&
-               Objects.equals(backgroundImage, that.backgroundImage);
+               Objects.equals(backgroundImages, that.backgroundImages);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(super.hashCode(), description, template, feed, backgroundImage);
+        return Objects.hash(super.hashCode(), description, template, feed, backgroundImages);
     }
 
     public Builder copy() {
@@ -135,7 +157,7 @@ public class FloorMapDoc extends AbstractDoc {
         private String template;
         private String description;
         private DocRef feed;
-        private String backgroundImage;
+        private List<FloorMapBackground> backgroundImages;
 
         public Builder() {
         }
@@ -145,7 +167,7 @@ public class FloorMapDoc extends AbstractDoc {
             this.template = doc.template;
             this.description = doc.description;
             this.feed = doc.feed;
-            this.backgroundImage = doc.backgroundImage;
+            this.backgroundImages = doc.backgroundImages;
         }
 
         public Builder template(final String template) {
@@ -163,8 +185,8 @@ public class FloorMapDoc extends AbstractDoc {
             return self();
         }
 
-        public Builder backgroundImage(final String backgroundImage) {
-            this.backgroundImage = backgroundImage;
+        public Builder backgroundImages(final List<FloorMapBackground> backgroundImages) {
+            this.backgroundImages = backgroundImages;
             return self();
         }
 
@@ -175,6 +197,11 @@ public class FloorMapDoc extends AbstractDoc {
 
         @Override
         public FloorMapDoc build() {
+            // Ensure the list is sorted by time before building
+            if (backgroundImages != null) {
+                backgroundImages.sort(Comparator.comparingLong(FloorMapBackground::getValidFromTime));
+            }
+
             return new FloorMapDoc(
                     uuid,
                     name,
@@ -186,7 +213,7 @@ public class FloorMapDoc extends AbstractDoc {
                     description,
                     template,
                     feed,
-                    backgroundImage);
+                    backgroundImages);
         }
     }
 }

@@ -2,14 +2,17 @@
 <ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
              xmlns:g="urn:import:com.google.gwt.user.client.ui">
 
-    <g:FlowPanel addStyleNames="stroom-floormap-timeline-container">
-        <!-- The main timeline bar container -->
+    <g:FlowPanel addStyleNames="stroom-floormap-timeline-container max">
+        <!-- Labels Above the timeline -->
+        <g:FlowPanel addStyleNames="stroom-floormap-timeline-label-row">
+            <g:Label ui:field="lblStart" addStyleNames="stroom-floormap-timeline-label" />
+            <g:Label ui:field="lblEnd" addStyleNames="stroom-floormap-timeline-label stroom-floormap-timeline-label-end" />
+        </g:FlowPanel>
+
+        <!-- The Bar -->
         <g:FlowPanel ui:field="outerBar" addStyleNames="stroom-floormap-timeline-outer-bar">
-            <!-- The filled progress part -->
             <g:FlowPanel ui:field="innerBar" addStyleNames="stroom-floormap-timeline-inner-bar" />
-            <!-- The draggable circle -->
             <g:FlowPanel ui:field="handle" addStyleNames="stroom-floormap-timeline-handle" />
-            <!-- Slot for marker dots (potentially keyframes) -->
             <g:FlowPanel ui:field="markerLayer" addStyleNames="max" />
         </g:FlowPanel>
     </g:FlowPanel>

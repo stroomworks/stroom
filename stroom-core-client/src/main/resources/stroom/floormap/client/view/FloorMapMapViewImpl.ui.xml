@@ -24,7 +24,7 @@
         </g:north>
         <!-- Bottom section: Timeline and log data -->
         <g:center>
-            <g:DockLayoutPanel unit='PX'>
+            <g:DockLayoutPanel unit='PX' styleName="max">
                 <!-- Timeline at the top of the bottom section -->
                 <g:north size="50">
                     <g:SimplePanel ui:field="timelinePanel" addStyleNames="max" />

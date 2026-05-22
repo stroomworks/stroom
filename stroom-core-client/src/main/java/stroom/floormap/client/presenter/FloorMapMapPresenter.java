@@ -19,7 +19,9 @@ package stroom.floormap.client.presenter;
 import stroom.data.client.presenter.MetaPresenter;
 import stroom.docref.DocRef;
 import stroom.entity.client.presenter.DocPresenter;
+import stroom.floormap.client.event.TimeChangeEvent;
 import stroom.floormap.client.presenter.FloorMapMapPresenter.FloorMapMapView;
+import stroom.floormap.shared.FloorMapBackground;
 import stroom.floormap.shared.FloorMapDoc;
 import stroom.meta.shared.MetaExpressionUtil;
 import stroom.widget.tab.client.presenter.LinkTabsPresenter;
@@ -30,6 +32,7 @@ import com.google.inject.Provider;
 import com.google.web.bindery.event.shared.EventBus;
 import com.gwtplatform.mvp.client.View;
 
+import java.util.List;
 import java.util.Objects;
 
 /**
@@ -39,21 +42,15 @@ import java.util.Objects;
 public class FloorMapMapPresenter
         extends DocPresenter<FloorMapMapView, FloorMapDoc> {
 
-    /**
-     * Slot for the SVG map canvas.
-     */
     public static final Object MAP = new Object();
-    /**
-     * Slot for the timeline control.
-     */
     public static final Object TIMELINE = new Object();
-    /**
-     * Slot for the log data/tabs view.
-     */
     public static final Object LOG_DATA = new Object();
 
     private final MetaPresenter metaPresenter;
     private final FloorMapCanvasPresenter floorMapCanvasPresenter;
+    private final FloorMapTimelinePresenter floorMapTimelinePresenter;
+    private long selectedTime;
+    private static final long ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
     private DocRef currentFeed;
 
@@ -67,18 +64,11 @@ public class FloorMapMapPresenter
                                 final Provider<FloorMapTimelinePresenter> floorMapTimelinePresenterProvider) {
         super(eventBus, view);
         this.metaPresenter = metaPresenter;
-        
-        // Initialize the canvas presenter which handles the SVG map rendering
         this.floorMapCanvasPresenter = floorMapCanvasPresenterProvider.get();
+        this.floorMapTimelinePresenter = floorMapTimelinePresenterProvider.get();
 
-        // Initialize the timeline presenter
-        final FloorMapTimelinePresenter floorMapTimelinePresenter = floorMapTimelinePresenterProvider.get();
-
-        // Set a default range for now (last 24 hours)
-        // TODO: Let the user choose the displayed time range.
-        final long now = System.currentTimeMillis();
-        floorMapTimelinePresenter.setTimeRange(now - (24 * 60 * 60 * 1000), now);
-        floorMapTimelinePresenter.setCurrentTime(now);
+        // Default initial time
+        this.selectedTime = System.currentTimeMillis();
 
         final TabData dataTab = linkTabsPresenter.addTab("Data", metaPresenter);
         linkTabsPresenter.addTab("Temp", floorMapTempPresenter);
@@ -90,11 +80,21 @@ public class FloorMapMapPresenter
     }
 
     @Override
-    protected void onRead(final DocRef docRef, final FloorMapDoc document, final boolean readOnly) {
-        // Pass the background image from the document to the canvas presenter
-        floorMapCanvasPresenter.setBackgroundImage(document.getBackgroundImage());
+    protected void onBind() {
+        super.onBind();
+        registerHandler(getEventBus().addHandler(TimeChangeEvent.getType(), event -> {
+            onTimeChange(event.getTime());
+        }));
+    }
 
-        // Update the log data view based on the selected feed
+    @Override
+    protected void onRead(final DocRef docRef, final FloorMapDoc document, final boolean readOnly) {
+        updateTimelineRange(document);
+        
+        // Pick the image for the current time
+        final String activeImage = document.getActiveImage(selectedTime);
+        floorMapCanvasPresenter.setBackgroundImage(activeImage);
+
         if (!Objects.equals(currentFeed, document.getFeed())) {
             currentFeed = document.getFeed();
             if (currentFeed != null) {
@@ -104,9 +104,26 @@ public class FloorMapMapPresenter
         }
     }
 
+    private void updateTimelineRange(final FloorMapDoc document) {
+        // By default, the timeline shows a range 24 hours each side of the current system time.
+        final long start = selectedTime - ONE_DAY_MS;
+        final long end = selectedTime + ONE_DAY_MS;
+
+        floorMapTimelinePresenter.setTimeRange(start, end);
+        floorMapTimelinePresenter.setCurrentTime(selectedTime);
+    }
+
     @Override
     protected FloorMapDoc onWrite(final FloorMapDoc document) {
         return document;
+    }
+
+    private void onTimeChange(final long time) {
+        this.selectedTime = time;
+        if (getEntity() != null) {
+            final String activeImage = getEntity().getActiveImage(time);
+            floorMapCanvasPresenter.setBackgroundImage(activeImage);
+        }
     }
 
     public interface FloorMapMapView extends View {

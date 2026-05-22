@@ -19,9 +19,18 @@
             <g:FlowPanel>
                 <g:TextBox ui:field="backgroundImage" addStyleNames="stroom-control wide-control"/>
                 <g:Button ui:field="browseButton" text="Browse..."/>
+                <g:Button ui:field="addBackgroundButton" text="Add to Timeline" />
                 <!-- Hidden file upload widget triggered by the Browse button -->
                 <g:FileUpload ui:field="fileUpload" visible="false"/>
             </g:FlowPanel>
+        </form:FormGroup>
+
+        <!-- List of Added Backgrounds -->
+        <form:FormGroup identity="floorMapBackgroundList"
+                        label="Timeline Images"
+                        helpText="List of background images and their activation times."
+                        addStyleNames="max">
+            <g:ListBox ui:field="backgroundList" addStyleNames="stroom-control max" visibleItemCount="5" />
         </form:FormGroup>
     </g:FlowPanel>
 </ui:UiBinder>

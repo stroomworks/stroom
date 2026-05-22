@@ -15,23 +15,41 @@
  */
 
 .stroom-floormap-timeline-container {
-    padding: 40px 20px;
+    padding: 5px 25px 15px 25px;
     box-sizing: border-box;
     cursor: pointer;
 }
 
+.stroom-floormap-timeline-label-row {
+    height: 20px;
+    width: 100%;
+    margin-bottom: 5px;
+    display: flex;
+    justify-content: space-between;
+}
+
+.stroom-floormap-timeline-label {
+    font-size: 10px;
+    color: var(--control__text-color);
+    white-space: nowrap;
+}
+
+.stroom-floormap-timeline-label-end {
+    text-align: right;
+}
+
 .stroom-floormap-timeline-outer-bar {
     position: relative;
-    background-color: #15161b;
+    background-color: var(--control__background-color);
     width: 100%;
-    height: 10px;
+    height: 12px;
     border: 1px solid var(--control__border-color);
     border-radius: 6px;
 }
 
 .stroom-floormap-timeline-inner-bar {
     position: absolute;
-    background-color: #1e88e5;
+    background-color: #1e88e5; /* Stroom Blue */
     height: 100%;
     border-radius: 6px 0 0 6px;
     pointer-events: none;

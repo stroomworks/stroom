@@ -23,10 +23,12 @@ import com.google.gwt.event.dom.client.ClickEvent;
 import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
 import com.google.gwt.user.client.ui.FlowPanel;
+import com.google.gwt.user.client.ui.Label;
 import com.google.gwt.user.client.ui.Widget;
 import com.google.inject.Inject;
 import com.gwtplatform.mvp.client.ViewImpl;
 
+import java.util.Date;
 import java.util.function.Consumer;
 
 /**
@@ -43,6 +45,10 @@ public class FloorMapTimelineViewImpl extends ViewImpl implements FloorMapTimeli
     FlowPanel innerBar;
     @UiField
     FlowPanel handle;
+    @UiField
+    Label lblStart;
+    @UiField
+    Label lblEnd;
 
     private Consumer<Double> clickHandler;
 
@@ -50,15 +56,14 @@ public class FloorMapTimelineViewImpl extends ViewImpl implements FloorMapTimeli
     public FloorMapTimelineViewImpl(final Binder binder) {
         widget = binder.createAndBindUi(this);
 
-        // Catch clicks on the bar
+        // Standard click handling for stability
         outerBar.addDomHandler(event -> {
-           if (clickHandler != null) {
-               final double x = event.getX();
-               final double width = outerBar.getElement().getOffsetWidth();
-
-               // Translate click position to percentage
-               clickHandler.accept(Math.max(0, Math.min(100, (x / width) * 100)));
-           }
+            if (clickHandler != null) {
+                final double x = event.getX();
+                final double width = outerBar.getElement().getOffsetWidth();
+                final double pct = Math.max(0, Math.min(100, (x / width) * 100));
+                clickHandler.accept(pct);
+            }
         }, ClickEvent.getType());
     }
 
@@ -77,6 +82,16 @@ public class FloorMapTimelineViewImpl extends ViewImpl implements FloorMapTimeli
     @Override
     public void setClickHandler(final Consumer<Double> clickHandler) {
         this.clickHandler = clickHandler;
+    }
+
+    @Override
+    public void setStartTime(final long startTime) {
+        lblStart.setText(new Date(startTime).toString());
+    }
+
+    @Override
+    public void setEndTime(final long endTime) {
+        lblEnd.setText(new Date(endTime).toString());
     }
 
     public interface Binder extends UiBinder<Widget, FloorMapTimelineViewImpl> {
