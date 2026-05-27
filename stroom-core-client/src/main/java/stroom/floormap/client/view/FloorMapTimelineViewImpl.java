@@ -32,7 +32,6 @@ import com.google.inject.Provider;
 import com.google.web.bindery.event.shared.HandlerRegistration;
 import com.gwtplatform.mvp.client.ViewImpl;
 
-import java.util.Date;
 import java.util.function.Consumer;
 
 /**

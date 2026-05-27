@@ -73,3 +73,30 @@
     pointer-events: none;
     z-index: 10;
 }
+
+.stroom-floormap-background-grid {
+    height: 150px;
+}
+
+.stroom-floormap-settings-button-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+}
+
+.stroom-floormap-settings-button-row .wide-control {
+    flex-grow: 1;
+    min-width: 100px;
+}
+
+.stroom-floormap-settings-button-row .timeline-date-box {
+    flex-shrink: 0;
+    width: 220px;
+}
+
+.stroom-floormap-settings-button-row .stroom-button {
+    white-space: nowrap;
+    height: 28px;
+    padding: 0 12px;
+}

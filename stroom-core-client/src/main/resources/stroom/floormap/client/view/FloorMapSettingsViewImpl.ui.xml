@@ -1,7 +1,8 @@
 <!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
 <ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
              xmlns:g="urn:import:com.google.gwt.user.client.ui"
-             xmlns:form="urn:import:stroom.widget.form.client">
+             xmlns:form="urn:import:stroom.widget.form.client"
+             xmlns:datetimebox="urn:import:stroom.widget.datepicker.client">
     <g:FlowPanel styleName="max dock-container-vertical form-padding form">
         <!-- Source Feed Selection -->
         <form:FormGroup identity="floorMapSourceFeed"
@@ -13,13 +14,14 @@
 
         <!-- Background Image Selection -->
         <form:FormGroup identity="floorMapBackgroundImage"
-                        label="Background Image"
+                        label="Background Images"
                         helpText="The background image for the map. Can be a URL or a Base64 data string."
                         addStyleNames="dock-min">
-            <g:FlowPanel>
+            <g:FlowPanel addStyleNames="stroom-floormap-settings-button-row">
+                <datetimebox:DateTimeBox ui:field="validFromBox" addStyleNames="timeline-date-box" />
                 <g:TextBox ui:field="backgroundImage" addStyleNames="stroom-control wide-control"/>
                 <g:Button ui:field="browseButton" text="Browse..."/>
-                <g:Button ui:field="addBackgroundButton" text="Add to Timeline" />
+                <g:Button ui:field="addBackgroundButton" text="Add" />
                 <!-- Hidden file upload widget triggered by the Browse button -->
                 <g:FileUpload ui:field="fileUpload" visible="false"/>
             </g:FlowPanel>
@@ -27,10 +29,11 @@
 
         <!-- List of Added Backgrounds -->
         <form:FormGroup identity="floorMapBackgroundList"
-                        label="Timeline Images"
-                        helpText="List of background images and their activation times."
                         addStyleNames="max">
-            <g:ListBox ui:field="backgroundList" addStyleNames="stroom-control max" visibleItemCount="5" />
+            <g:FlowPanel addStyleNames="max">
+                <g:SimplePanel ui:field="toolbarContainer" />
+                <g:SimplePanel ui:field="gridContainer" addStyleNames="stroom-floormap-background-grid" />
+            </g:FlowPanel>
         </form:FormGroup>
     </g:FlowPanel>
 </ui:UiBinder>
