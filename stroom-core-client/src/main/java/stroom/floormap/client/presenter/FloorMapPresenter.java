@@ -18,12 +18,15 @@ package stroom.floormap.client.presenter;
 
 import stroom.docref.DocRef;
 import stroom.document.asset.client.presenter.DocumentAssetPresenter;
+import stroom.entity.client.presenter.AbstractTabProvider;
+import stroom.entity.client.presenter.DocPresenter;
 import stroom.entity.client.presenter.DocTabPresenter;
 import stroom.entity.client.presenter.DocTabProvider;
 import stroom.entity.client.presenter.LinkTabPanelView;
 import stroom.entity.client.presenter.MarkdownEditPresenter;
 import stroom.entity.client.presenter.MarkdownTabProvider;
 import stroom.floormap.shared.FloorMapDoc;
+import stroom.query.client.presenter.QueryEditPresenter;
 import stroom.security.client.presenter.DocumentUserPermissionsTabProvider;
 import stroom.widget.tab.client.presenter.TabData;
 import stroom.widget.tab.client.presenter.TabDataImpl;
@@ -39,6 +42,7 @@ import javax.inject.Provider;
 public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMapDoc> {
 
     private static final TabData MAP = new TabDataImpl("Map");
+    private static final TabData QUERY = new TabDataImpl("Query");
     private static final TabData SETTINGS = new TabDataImpl("Settings");
     private static final TabData ASSETS = new TabDataImpl("Assets");
     private static final TabData DOCUMENTATION = new TabDataImpl("Documentation");
@@ -52,14 +56,47 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
                              final Provider<FloorMapMapPresenter> floorMapMapPresenterProvider,
                              final Provider<FloorMapSettingsPresenter> floorMapSettingsPresenterProvider,
                              final Provider<MarkdownEditPresenter> markdownEditPresenterProvider,
+                             final Provider<QueryEditPresenter> queryEditPresenterProvider,
                              final DocumentUserPermissionsTabProvider<FloorMapDoc> documentUserPermissionsTabProvider,
                              final DocumentAssetPresenter<FloorMapDoc> documentAssetPresenter) {
         super(eventBus, view);
         this.documentAssetPresenter = documentAssetPresenter;
 
         addTab(MAP, new DocTabProvider<>(floorMapMapPresenterProvider::get));
+
+        addTab(QUERY, new AbstractTabProvider<FloorMapDoc, QueryEditPresenter>(eventBus) {
+            @Override
+            protected QueryEditPresenter createPresenter() {
+                final QueryEditPresenter presenter = queryEditPresenterProvider.get();
+                registerHandler(presenter.addChangeHandler(() -> fireDirtyEvent(true)));
+                return presenter;
+            }
+
+            @Override
+            public void onRead(final QueryEditPresenter presenter,
+                               final DocRef docRef,
+                               final FloorMapDoc document,
+                               final boolean readOnly) {
+               presenter.setQuery(docRef, document.getQuery(), readOnly);
+               presenter.setTimeRange(document.getQueryTimeRange());
+               presenter.read(document.getQueryTablePreferences());
+               presenter.setTaskMonitorFactory(FloorMapPresenter.this);
+           }
+
+           @Override
+            public FloorMapDoc onWrite(final QueryEditPresenter presenter,
+                                       final FloorMapDoc document) {
+                return document.copy()
+                        .query(presenter.getQuery())
+                        .queryTimeRange(presenter.getTimeRange())
+                        .queryTablePreferences(presenter.write())
+                        .build();
+           }
+        });
+
         addTab(SETTINGS, new DocTabProvider<>(floorMapSettingsPresenterProvider::get));
         addTab(ASSETS, new DocTabProvider<>(() -> documentAssetPresenter));
+
         addTab(DOCUMENTATION, new MarkdownTabProvider<FloorMapDoc>(eventBus, markdownEditPresenterProvider) {
             @Override
             public void onRead(final MarkdownEditPresenter presenter,
@@ -76,6 +113,7 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
                 return document.copy().description(presenter.getText()).build();
             }
         });
+
         addTab(PERMISSIONS, documentUserPermissionsTabProvider);
         selectTab(MAP);
     }

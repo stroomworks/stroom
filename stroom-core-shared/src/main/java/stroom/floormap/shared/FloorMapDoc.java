@@ -21,6 +21,8 @@ import stroom.docs.shared.Description;
 import stroom.docstore.shared.AbstractDoc;
 import stroom.docstore.shared.DocumentType;
 import stroom.docstore.shared.DocumentTypeRegistry;
+import stroom.query.api.TimeRange;
+import stroom.query.shared.QueryTablePreferences;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonInclude;
@@ -33,9 +35,9 @@ import java.util.List;
 import java.util.Objects;
 
 @Description(
-        """
-                Defines a floor map document which can be used to visualize data over time.
-                """)
+    """
+    Defines a floor map document which can be used to visualize data over time.
+    """)
 @JsonPropertyOrder(alphabetic = true)
 @JsonInclude(Include.NON_NULL)
 public class FloorMapDoc extends AbstractDoc {
@@ -51,6 +53,12 @@ public class FloorMapDoc extends AbstractDoc {
     private final DocRef feed;
     @JsonProperty
     private final List<FloorMapBackground> backgroundImages;
+    @JsonProperty
+    private final String query;
+    @JsonProperty
+    private final TimeRange queryTimeRange;
+    @JsonProperty
+    private final QueryTablePreferences queryTablePreferences;
 
     @JsonCreator
     public FloorMapDoc(@JsonProperty("uuid") final String uuid,
@@ -63,7 +71,10 @@ public class FloorMapDoc extends AbstractDoc {
                        @JsonProperty("description") final String description,
                        @JsonProperty("template") final String template,
                        @JsonProperty("feed") final DocRef feed,
-                       @JsonProperty("backgroundImages") final List<FloorMapBackground> backgroundImages) {
+                       @JsonProperty("backgroundImages") final List<FloorMapBackground> backgroundImages,
+                       @JsonProperty("query") final String query,
+                       @JsonProperty("queryTimeRange") final TimeRange queryTimeRange,
+                       @JsonProperty("queryTablePreferences") final QueryTablePreferences queryTablePreferences) {
         super(TYPE, uuid,
                 name,
                 version,
@@ -76,6 +87,9 @@ public class FloorMapDoc extends AbstractDoc {
         this.template = template;
         this.feed = feed;
         this.backgroundImages = backgroundImages;
+        this.query = query;
+        this.queryTimeRange = queryTimeRange;
+        this.queryTablePreferences = queryTablePreferences;
     }
 
     public String getDescription() {
@@ -92,6 +106,18 @@ public class FloorMapDoc extends AbstractDoc {
 
     public List<FloorMapBackground> getBackgroundImages() {
         return backgroundImages;
+    }
+
+    public String getQuery() {
+        return query;
+    }
+
+    public TimeRange getQueryTimeRange() {
+        return queryTimeRange;
+    }
+
+    public QueryTablePreferences getQueryTablePreferences() {
+        return queryTablePreferences;
     }
 
     /**
@@ -135,12 +161,23 @@ public class FloorMapDoc extends AbstractDoc {
         return Objects.equals(description, that.description) &&
                Objects.equals(template, that.template) &&
                Objects.equals(feed, that.feed) &&
-               Objects.equals(backgroundImages, that.backgroundImages);
+               Objects.equals(backgroundImages, that.backgroundImages) &&
+               Objects.equals(query, that.query) &&
+               Objects.equals(queryTimeRange, that.queryTimeRange) &&
+               Objects.equals(queryTablePreferences, that.queryTablePreferences);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(super.hashCode(), description, template, feed, backgroundImages);
+        return Objects.hash(
+                super.hashCode(),
+                description,
+                template,
+                feed,
+                backgroundImages,
+                query,
+                queryTimeRange,
+                queryTablePreferences);
     }
 
     public Builder copy() {
@@ -157,6 +194,9 @@ public class FloorMapDoc extends AbstractDoc {
         private String description;
         private DocRef feed;
         private List<FloorMapBackground> backgroundImages;
+        private String query;
+        private TimeRange queryTimeRange;
+        private QueryTablePreferences queryTablePreferences;
 
         public Builder() {
         }
@@ -167,6 +207,9 @@ public class FloorMapDoc extends AbstractDoc {
             this.description = doc.description;
             this.feed = doc.feed;
             this.backgroundImages = doc.backgroundImages;
+            this.query = doc.query;
+            this.queryTimeRange = doc.queryTimeRange;
+            this.queryTablePreferences = doc.queryTablePreferences;
         }
 
         public Builder template(final String template) {
@@ -186,6 +229,21 @@ public class FloorMapDoc extends AbstractDoc {
 
         public Builder backgroundImages(final List<FloorMapBackground> backgroundImages) {
             this.backgroundImages = backgroundImages;
+            return self();
+        }
+
+        public Builder query(final String query) {
+            this.query = query;
+            return self();
+        }
+
+        public Builder queryTimeRange(final TimeRange queryTimeRange) {
+            this.queryTimeRange = queryTimeRange;
+            return self();
+        }
+
+        public Builder queryTablePreferences(final QueryTablePreferences queryTablePreferences) {
+            this.queryTablePreferences = queryTablePreferences;
             return self();
         }
 
@@ -212,7 +270,10 @@ public class FloorMapDoc extends AbstractDoc {
                     description,
                     template,
                     feed,
-                    backgroundImages);
+                    backgroundImages,
+                    query,
+                    queryTimeRange,
+                    queryTablePreferences);
         }
     }
 }
