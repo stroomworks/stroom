@@ -21,7 +21,9 @@ import stroom.docref.DocRef;
 import stroom.entity.client.presenter.DocPresenter;
 import stroom.floormap.client.event.TimeChangeEvent;
 import stroom.floormap.client.presenter.FloorMapMapPresenter.FloorMapMapView;
+import stroom.floormap.shared.FloorMapBackground;
 import stroom.floormap.shared.FloorMapDoc;
+import stroom.floormap.shared.FloorMapTransformationMatrix;
 import stroom.meta.shared.MetaExpressionUtil;
 import stroom.widget.tab.client.presenter.LinkTabsPresenter;
 import stroom.widget.tab.client.presenter.TabData;
@@ -87,9 +89,15 @@ public class FloorMapMapPresenter
     protected void onRead(final DocRef docRef, final FloorMapDoc document, final boolean readOnly) {
         updateTimelineRange();
         
-        // Pick the image for the current time
-        final String activeImage = document.getActiveImage(selectedTime);
-        floorMapCanvasPresenter.setBackgroundImage(activeImage);
+        // Pick the background for the current time
+        final FloorMapBackground activeBg = document.getActiveBackground(selectedTime);
+        if (activeBg != null) {
+            floorMapCanvasPresenter.setBackgroundImage(activeBg.getImage());
+            floorMapCanvasPresenter.setMatrix(activeBg.getMatrix());
+        } else {
+            floorMapCanvasPresenter.setBackgroundImage(null);
+            floorMapCanvasPresenter.setMatrix(FloorMapTransformationMatrix.identity());
+        }
 
         if (!Objects.equals(currentFeed, document.getFeed())) {
             currentFeed = document.getFeed();
@@ -116,9 +124,14 @@ public class FloorMapMapPresenter
 
     private void onTimeChange(final long time) {
         this.selectedTime = time;
-        if (getEntity() != null) {
-            final String activeImage = getEntity().getActiveImage(time);
-            floorMapCanvasPresenter.setBackgroundImage(activeImage);
+
+        final FloorMapBackground activeBg = getEntity().getActiveBackground(time);
+        if (activeBg != null) {
+            floorMapCanvasPresenter.setBackgroundImage(activeBg.getImage());
+            floorMapCanvasPresenter.setMatrix(activeBg.getMatrix());
+        } else {
+            floorMapCanvasPresenter.setBackgroundImage(null);
+            floorMapCanvasPresenter.setMatrix(FloorMapTransformationMatrix.identity());
         }
     }
 

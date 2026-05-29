@@ -59,6 +59,8 @@ public class FloorMapDoc extends AbstractDoc {
     private final TimeRange queryTimeRange;
     @JsonProperty
     private final QueryTablePreferences queryTablePreferences;
+    @JsonProperty
+    private final FloorMapTransformationMatrix matrix;
 
     @JsonCreator
     public FloorMapDoc(@JsonProperty("uuid") final String uuid,
@@ -74,7 +76,8 @@ public class FloorMapDoc extends AbstractDoc {
                        @JsonProperty("backgroundImages") final List<FloorMapBackground> backgroundImages,
                        @JsonProperty("query") final String query,
                        @JsonProperty("queryTimeRange") final TimeRange queryTimeRange,
-                       @JsonProperty("queryTablePreferences") final QueryTablePreferences queryTablePreferences) {
+                       @JsonProperty("queryTablePreferences") final QueryTablePreferences queryTablePreferences,
+                       @JsonProperty("matrix") final FloorMapTransformationMatrix matrix) {
         super(TYPE, uuid,
                 name,
                 version,
@@ -90,6 +93,7 @@ public class FloorMapDoc extends AbstractDoc {
         this.query = query;
         this.queryTimeRange = queryTimeRange;
         this.queryTablePreferences = queryTablePreferences;
+        this.matrix = matrix != null ? matrix : FloorMapTransformationMatrix.identity();
     }
 
     public String getDescription() {
@@ -124,19 +128,19 @@ public class FloorMapDoc extends AbstractDoc {
      * Gets the background image that should be active at the specified time.
      * Finds the image with the latest validFromTime that is <= currentTime.
      */
-    public String getActiveImage(final long currentTime) {
-        String activeImage = null;
+    public FloorMapBackground getActiveBackground(final long currentTime) {
+        FloorMapBackground active = null;
         if (backgroundImages != null) {
             for (final FloorMapBackground bg : backgroundImages) {
                 if (bg.getValidFromTime() <= currentTime) {
-                    activeImage = bg.getImage();
+                    active = bg;
                 } else {
                     // Since the list is sorted, we can stop here.
                     break;
                 }
             }
         }
-        return activeImage;
+        return active;
     }
 
     /**
@@ -164,7 +168,8 @@ public class FloorMapDoc extends AbstractDoc {
                Objects.equals(backgroundImages, that.backgroundImages) &&
                Objects.equals(query, that.query) &&
                Objects.equals(queryTimeRange, that.queryTimeRange) &&
-               Objects.equals(queryTablePreferences, that.queryTablePreferences);
+               Objects.equals(queryTablePreferences, that.queryTablePreferences) &&
+               Objects.equals(matrix, that.matrix);
     }
 
     @Override
@@ -177,7 +182,8 @@ public class FloorMapDoc extends AbstractDoc {
                 backgroundImages,
                 query,
                 queryTimeRange,
-                queryTablePreferences);
+                queryTablePreferences,
+                matrix);
     }
 
     public Builder copy() {
@@ -197,6 +203,7 @@ public class FloorMapDoc extends AbstractDoc {
         private String query;
         private TimeRange queryTimeRange;
         private QueryTablePreferences queryTablePreferences;
+        private FloorMapTransformationMatrix matrix;
 
         public Builder() {
         }
@@ -210,6 +217,7 @@ public class FloorMapDoc extends AbstractDoc {
             this.query = doc.query;
             this.queryTimeRange = doc.queryTimeRange;
             this.queryTablePreferences = doc.queryTablePreferences;
+            this.matrix = doc.matrix;
         }
 
         public Builder template(final String template) {
@@ -247,6 +255,11 @@ public class FloorMapDoc extends AbstractDoc {
             return self();
         }
 
+        public Builder matrix(final FloorMapTransformationMatrix matrix) {
+            this.matrix = matrix;
+            return self();
+        }
+
         @Override
         protected Builder self() {
             return this;
@@ -273,7 +286,8 @@ public class FloorMapDoc extends AbstractDoc {
                     backgroundImages,
                     query,
                     queryTimeRange,
-                    queryTablePreferences);
+                    queryTablePreferences,
+                    matrix);
         }
     }
 }

@@ -30,12 +30,16 @@ public class FloorMapBackground {
     private final long validFromTime;
     @JsonProperty
     private final String image;
+    @JsonProperty
+    private final FloorMapTransformationMatrix matrix;
 
     @JsonCreator
     public FloorMapBackground(@JsonProperty("validFromTime") final long validFromTime,
-                              @JsonProperty("image") final String image) {
+                              @JsonProperty("image") final String image,
+                              @JsonProperty("matrix") final FloorMapTransformationMatrix matrix) {
         this.validFromTime = validFromTime;
         this.image = image;
+        this.matrix = matrix != null ? matrix : FloorMapTransformationMatrix.identity();
     }
 
     public long getValidFromTime() {
@@ -69,5 +73,9 @@ public class FloorMapBackground {
                 "validFromTime=" + validFromTime +
                 ", image='[data]'" +
                 '}';
+    }
+
+    public FloorMapTransformationMatrix getMatrix() {
+        return matrix;
     }
 }

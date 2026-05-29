@@ -17,6 +17,7 @@
 package stroom.floormap.client.presenter;
 
 import stroom.floormap.client.presenter.FloorMapCanvasPresenter.FloorMapCanvasView;
+import stroom.floormap.shared.FloorMapTransformationMatrix;
 
 import com.google.gwt.event.dom.client.HasMouseDownHandlers;
 import com.google.gwt.event.dom.client.HasMouseMoveHandlers;
@@ -36,6 +37,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     private double offsetX = 0;
     private double offsetY = 0;
     private String backgroundImage;
+    private FloorMapTransformationMatrix matrix;
 
     // Dragging state
     private boolean isDragging = false;
@@ -112,7 +114,12 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     }
 
     private void redraw() {
-        getView().draw(scale, offsetX, offsetY, backgroundImage);
+        getView().draw(scale, offsetX, offsetY, backgroundImage, matrix);
+    }
+
+    public void setMatrix(final FloorMapTransformationMatrix matrix) {
+        this.matrix = matrix;
+        redraw();
     }
 
     /**
@@ -135,7 +142,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
         HasMouseWheelHandlers getMouseWheelHandlers();
 
-        void draw(double scale, double x, double y, String backgroundImage);
+        void draw(double scale, double x, double y, String backgroundImage, FloorMapTransformationMatrix matrix);
     }
 
 }

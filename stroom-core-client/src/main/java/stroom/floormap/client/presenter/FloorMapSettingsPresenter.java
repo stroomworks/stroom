@@ -27,6 +27,7 @@ import stroom.feed.shared.FeedDoc;
 import stroom.floormap.client.presenter.FloorMapSettingsPresenter.FloorMapSettingsView;
 import stroom.floormap.shared.FloorMapBackground;
 import stroom.floormap.shared.FloorMapDoc;
+import stroom.floormap.shared.FloorMapTransformationMatrix;
 import stroom.security.shared.DocumentPermission;
 import stroom.svg.client.SvgPresets;
 import stroom.ui.config.client.UiConfigCache;
@@ -159,7 +160,11 @@ public class FloorMapSettingsPresenter
 
         if (currentImage != null && !currentImage.isEmpty()) {
             final long time = getView().getStartTime();
-            final FloorMapBackground newBg = new FloorMapBackground(time, currentImage);
+            final FloorMapBackground newBg = new FloorMapBackground(
+                    time,
+                    currentImage,
+                    new FloorMapTransformationMatrix(1, 0, 0, 1, 0, 0)
+            );
 
             localBackgroundList.add(newBg);
             refreshGrid();

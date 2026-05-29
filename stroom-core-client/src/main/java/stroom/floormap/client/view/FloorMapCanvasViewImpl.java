@@ -19,6 +19,7 @@ package stroom.floormap.client.view;
 import stroom.document.client.event.DirtyUiHandlers;
 import stroom.entity.client.presenter.ReadOnlyChangeHandler;
 import stroom.floormap.client.presenter.FloorMapCanvasPresenter.FloorMapCanvasView;
+import stroom.floormap.shared.FloorMapTransformationMatrix;
 import stroom.widget.util.client.HtmlBuilder;
 import stroom.widget.util.client.HtmlBuilder.Attribute;
 import stroom.widget.util.client.SafeHtmlUtil;
@@ -100,35 +101,42 @@ public class FloorMapCanvasViewImpl
     }
 
     @Override
-    public void draw(final double scale, final double x, final double y, final String backgroundImage) {
+    public void draw(final double scale,
+                     final double x,
+                     final double y,
+                     final String backgroundImage,
+                     final FloorMapTransformationMatrix matrix) {
         final HtmlBuilder htmlBuilder = new HtmlBuilder();
+        final String svgMatrix = matrix != null ? matrix.toSvgMatrix() : FloorMapTransformationMatrix.identity().toSvgMatrix();
 
         // Build the SVG structure dynamically
         htmlBuilder.elem(svg -> {
-            // Apply zoom/pan transformation to a top-level group
+            // Group 1: User zoom/pan (applied first).
             svg.elem(group -> {
-                // Render the background image if set
-                if (backgroundImage != null && !backgroundImage.isEmpty()) {
-                    group.elem(SafeHtmlUtil.from("image"),
-                        new Attribute(SafeHtmlUtils.fromSafeConstant("href"),
-                                SafeHtmlUtils.fromTrustedString(backgroundImage)),
-                        new Attribute("x", "0"),
-                        new Attribute("y", "0"),
-                        new Attribute("width", "1000"),
-                        new Attribute("height", "1000"),
-                        new Attribute("preserveAspectRatio", "none"));
-                } else {
-                    // Fallback background rect
-                    group.elem(SafeHtmlUtil.from("rect"),
-                        new Attribute("x", "0"),
-                        new Attribute("y", "0"),
-                        new Attribute("width", "1000"),
-                        new Attribute("height", "1000"),
-                        new Attribute("fill", "#FFFFFF"));
-                }
+                // Group 2: The transformation matrix (applied inside zoom).
+                group.elem(matrixGroup -> {
+                    // Render the background image if set
+                    if (backgroundImage != null) {
+                        matrixGroup.elem(SafeHtmlUtil.from("image"),
+                            new Attribute(SafeHtmlUtils.fromSafeConstant("href"),
+                                    SafeHtmlUtils.fromTrustedString(backgroundImage)),
+                            new Attribute("x", "0"),
+                            new Attribute("y", "0"),
+                            new Attribute("width", "1000"),
+                            new Attribute("height", "1000"),
+                            new Attribute("preserveAspectRatio", "none"));
+                    } else {
+                        // Fallback background rect
+                        group.elem(SafeHtmlUtil.from("rect"),
+                            new Attribute("x", "0"),
+                            new Attribute("y", "0"),
+                            new Attribute("width", "1000"),
+                            new Attribute("height", "1000"),
+                            new Attribute("fill", "#FFFFFF"));
+                    }
+                }, SafeHtmlUtil.from("g"), new Attribute("transform", svgMatrix));
             }, SafeHtmlUtil.from("g"),
                     new Attribute("transform", "translate(" + x + "," + y + ") scale(" + scale + ")"));
-
         },
             SafeHtmlUtil.from("svg"),
             new Attribute("width", "100%"),
