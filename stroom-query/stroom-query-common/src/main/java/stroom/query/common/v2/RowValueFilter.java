@@ -92,11 +92,11 @@ public class RowValueFilter {
                     final List<ExpressionTerm> terms = columnValueSelection
                             .getValues()
                             .stream()
-                            .map(value -> ExpressionTerm
+                            .map(val -> ExpressionTerm
                                     .builder()
                                     .field(column.getId())
                                     .condition(Condition.NOT_EQUALS)
-                                    .value(value)
+                                    .value(val)
                                     .build())
                             .toList();
                     final ExpressionOperator expressionOperator = ExpressionOperator
@@ -110,11 +110,11 @@ public class RowValueFilter {
                     final List<ExpressionTerm> terms = columnValueSelection
                             .getValues()
                             .stream()
-                            .map(value -> ExpressionTerm
+                            .map(val -> ExpressionTerm
                                     .builder()
                                     .field(column.getId())
                                     .condition(Condition.EQUALS)
-                                    .value(value)
+                                    .value(val)
                                     .build())
                             .toList();
                     final ExpressionOperator expressionOperator = ExpressionOperator

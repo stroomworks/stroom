@@ -301,21 +301,21 @@ class AnnotationDaoImpl implements AnnotationDao, Clearable {
 
         // Decoration
         expressionMapper.map(AnnotationDecorationFields.ANNOTATION_ID_FIELD, ANNOTATION.ID, Long::valueOf);
-        expressionMapper.map(AnnotationDecorationFields.ANNOTATION_UUID_FIELD, ANNOTATION.UUID, value -> value);
+        expressionMapper.map(AnnotationDecorationFields.ANNOTATION_UUID_FIELD, ANNOTATION.UUID, val -> val);
         expressionMapper.map(AnnotationDecorationFields.ANNOTATION_CREATED_ON_FIELD,
                 ANNOTATION.CREATE_TIME_MS,
-                value -> DateExpressionParser.getMs(AnnotationDecorationFields.ANNOTATION_CREATED_ON, value));
+                val -> DateExpressionParser.getMs(AnnotationDecorationFields.ANNOTATION_CREATED_ON, val));
         expressionMapper.map(AnnotationDecorationFields.ANNOTATION_CREATED_BY_FIELD,
                 ANNOTATION.CREATE_USER,
-                value -> value);
+                val -> val);
         expressionMapper.map(AnnotationDecorationFields.ANNOTATION_UPDATED_ON_FIELD,
                 ANNOTATION.UPDATE_TIME_MS,
-                value -> DateExpressionParser.getMs(AnnotationDecorationFields.ANNOTATION_UPDATED_ON, value));
+                val -> DateExpressionParser.getMs(AnnotationDecorationFields.ANNOTATION_UPDATED_ON, val));
         expressionMapper.map(AnnotationDecorationFields.ANNOTATION_UPDATED_BY_FIELD,
                 ANNOTATION.UPDATE_USER,
-                value -> value);
-        expressionMapper.map(AnnotationDecorationFields.ANNOTATION_TITLE_FIELD, ANNOTATION.TITLE, value -> value);
-        expressionMapper.map(AnnotationDecorationFields.ANNOTATION_SUBJECT_FIELD, ANNOTATION.SUBJECT, value -> value);
+                val -> val);
+        expressionMapper.map(AnnotationDecorationFields.ANNOTATION_TITLE_FIELD, ANNOTATION.TITLE, val -> val);
+        expressionMapper.map(AnnotationDecorationFields.ANNOTATION_SUBJECT_FIELD, ANNOTATION.SUBJECT, val -> val);
         addTagHandler(expressionMapper, AnnotationDecorationFields.ANNOTATION_STATUS_FIELD,
                 AnnotationTagType.STATUS);
         expressionMapper.map(AnnotationDecorationFields.ANNOTATION_ASSIGNED_TO_FIELD,
@@ -327,25 +327,25 @@ class AnnotationDaoImpl implements AnnotationDao, Clearable {
                 AnnotationTagType.LABEL);
         addTagHandler(expressionMapper, AnnotationDecorationFields.ANNOTATION_COLLECTION_FIELD,
                 AnnotationTagType.COLLECTION);
-        expressionMapper.map(AnnotationDecorationFields.ANNOTATION_COMMENT_FIELD, COMMENT.DATA, value -> value);
+        expressionMapper.map(AnnotationDecorationFields.ANNOTATION_COMMENT_FIELD, COMMENT.DATA, val -> val);
         addEntryHandler(expressionMapper, AnnotationDecorationFields.ANNOTATION_HISTORY_FIELD);
         expressionMapper.map(AnnotationDecorationFields.ANNOTATION_DESCRIPTION_FIELD,
                 ANNOTATION.DESCRIPTION,
-                value -> value);
+                val -> val);
 
         // Direct fields
         expressionMapper.map(AnnotationFields.ID_FIELD, ANNOTATION.ID, Long::valueOf);
-        expressionMapper.map(AnnotationFields.UUID_FIELD, ANNOTATION.UUID, value -> value);
+        expressionMapper.map(AnnotationFields.UUID_FIELD, ANNOTATION.UUID, val -> val);
         expressionMapper.map(AnnotationFields.CREATED_ON_FIELD,
                 ANNOTATION.CREATE_TIME_MS,
-                value -> DateExpressionParser.getMs(AnnotationFields.CREATED_ON, value));
-        expressionMapper.map(AnnotationFields.CREATED_BY_FIELD, ANNOTATION.CREATE_USER, value -> value);
+                val -> DateExpressionParser.getMs(AnnotationFields.CREATED_ON, val));
+        expressionMapper.map(AnnotationFields.CREATED_BY_FIELD, ANNOTATION.CREATE_USER, val -> val);
         expressionMapper.map(AnnotationFields.UPDATED_ON_FIELD,
                 ANNOTATION.UPDATE_TIME_MS,
-                value -> DateExpressionParser.getMs(AnnotationFields.UPDATED_ON, value));
-        expressionMapper.map(AnnotationFields.UPDATED_BY_FIELD, ANNOTATION.UPDATE_USER, value -> value);
-        expressionMapper.map(AnnotationFields.TITLE_FIELD, ANNOTATION.TITLE, value -> value);
-        expressionMapper.map(AnnotationFields.SUBJECT_FIELD, ANNOTATION.SUBJECT, value -> value);
+                val -> DateExpressionParser.getMs(AnnotationFields.UPDATED_ON, val));
+        expressionMapper.map(AnnotationFields.UPDATED_BY_FIELD, ANNOTATION.UPDATE_USER, val -> val);
+        expressionMapper.map(AnnotationFields.TITLE_FIELD, ANNOTATION.TITLE, val -> val);
+        expressionMapper.map(AnnotationFields.SUBJECT_FIELD, ANNOTATION.SUBJECT, val -> val);
         addTagHandler(expressionMapper, AnnotationFields.STATUS_FIELD,
                 AnnotationTagType.STATUS);
         expressionMapper.map(AnnotationFields.ASSIGNED_TO_FIELD, ANNOTATION.ASSIGNED_TO_UUID, uuid ->
@@ -356,9 +356,9 @@ class AnnotationDaoImpl implements AnnotationDao, Clearable {
                 AnnotationTagType.LABEL);
         addTagHandler(expressionMapper, AnnotationFields.COLLECTION_FIELD,
                 AnnotationTagType.COLLECTION);
-        expressionMapper.map(AnnotationFields.COMMENT_FIELD, COMMENT.DATA, value -> value);
+        expressionMapper.map(AnnotationFields.COMMENT_FIELD, COMMENT.DATA, val -> val);
         addEntryHandler(expressionMapper, AnnotationFields.HISTORY_FIELD);
-        expressionMapper.map(AnnotationFields.DESCRIPTION_FIELD, ANNOTATION.DESCRIPTION, value -> value);
+        expressionMapper.map(AnnotationFields.DESCRIPTION_FIELD, ANNOTATION.DESCRIPTION, val -> val);
         expressionMapper.map(AnnotationFields.STREAM_ID_FIELD, ANNOTATION_DATA_LINK.STREAM_ID, Long::valueOf);
         expressionMapper.map(AnnotationFields.EVENT_ID_FIELD, ANNOTATION_DATA_LINK.EVENT_ID, Long::valueOf);
         expressionMapper.multiMap(AnnotationFields.FEED_FIELD, ANNOTATION_DATA_LINK.FEED_ID,
@@ -371,8 +371,8 @@ class AnnotationDaoImpl implements AnnotationDao, Clearable {
                                final QueryField queryField,
                                final AnnotationTagType annotationTagType) {
         expressionMapper.addHandler(queryField, term -> {
-            final MultiConverter<Integer> converter = value ->
-                    annotationTagDao.getIds(annotationTagType, value);
+            final MultiConverter<Integer> converter = val ->
+                    annotationTagDao.getIds(annotationTagType, val);
             final TermHandler<Integer> termHandler = termHandlerFactory.create(
                     queryField,
                     ANNOTATION_TAG_LINK.FK_ANNOTATION_TAG_ID,
@@ -399,7 +399,7 @@ class AnnotationDaoImpl implements AnnotationDao, Clearable {
     private void addEntryHandler(final ExpressionMapper expressionMapper,
                                  final QueryField queryField) {
         expressionMapper.addHandler(queryField, term -> {
-            final MultiConverter<String> converter = value -> value;
+            final MultiConverter<String> converter = val -> val;
             final TermHandler<String> termHandler = termHandlerFactory.create(
                     queryField,
                     ANNOTATION_ENTRY.DATA,
@@ -1818,7 +1818,7 @@ class AnnotationDaoImpl implements AnnotationDao, Clearable {
                             userUuid,
                             this::getUserRef,
                             UserRef::toDisplayString,
-                            value -> (Val) annotationValStringCache.getAndIntern(value))
+                            val -> (Val) annotationValStringCache.getAndIntern(val))
                     .orElse(ValNull.INSTANCE);
         }
     }

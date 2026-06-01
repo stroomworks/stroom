@@ -1,0 +1,239 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<referenceData xmlns="reference-data:2">
+    <!-- Person facts -->
+    <reference>
+        <map>UserMap</map>
+        <key>joe.blogs@example.org</key>
+        <value>
+            <fact>
+                <name>Joe Blogs</name>
+                <icon>/assets/1234-567-890/joe.png</icon>
+            </fact>
+        </value>
+    </reference>
+    <reference>
+        <map>UserMap</map>
+        <key>jane.doe@stroomworks.io</key>
+        <value>
+            <fact>
+                <name>Jane Doe</name>
+                <icon>/assets/1234-567-890/jane.png</icon>
+            </fact>
+        </value>
+    </reference>
+    <reference>
+        <map>UserMap</map>
+        <key>tech.support@example.net</key>
+        <value>
+            <fact>
+                <name>Tech Support</name>
+                <icon>/assets/1234-567-890/tech-support.png</icon>
+            </fact>
+        </value>
+    </reference>
+    <reference>
+        <map>UserMap</map>
+        <key>admin.one@corp.local</key>
+        <value>
+            <fact>
+                <name>Admin 1</name>
+                <icon>/assets/1234-567-890/admin1.png</icon>
+            </fact>
+        </value>
+    </reference>
+    <reference>
+        <map>UserMap</map>
+        <key>guest.user.742@outside.com</key>
+        <value>
+            <fact>
+                <name>Guest User 742</name>
+                <icon>/assets/1234-567-890/guest.png</icon>
+            </fact>
+        </value>
+    </reference>
+    <reference>
+        <map>UserMap</map>
+        <key>dev.lead@example.com</key>
+        <value>
+            <fact>
+                <name>Dev Lead</name>
+                <icon>/assets/1234-567-890/dev-lead.png</icon>
+            </fact>
+        </value>
+    </reference>
+    <reference>
+        <map>UserMap</map>
+        <key>facility.mgr@stroom.gov</key>
+        <value>
+            <fact>
+                <name>Facilities</name>
+                <icon>/assets/1234-567-890/facilities.png</icon>
+            </fact>
+        </value>
+    </reference>
+    <reference>
+        <map>UserMap</map>
+        <key>audit.team@example.org</key>
+        <value>
+            <fact>
+                <name>Audit</name>
+                <icon>/assets/1234-567-890/audit.png</icon>
+            </fact>
+        </value>
+    </reference>
+
+    <!-- Gate facts -->
+    <reference>
+        <map>GateMap</map>
+        <key>G-NORTH-01</key>
+        <value>
+            <fact>
+                <name>North Entrance</name>
+                <location>map3, 57.2, 17.1</location>
+            </fact>
+        </value>
+    </reference>
+    <reference>
+        <map>GateMap</map>
+        <key>G-SOUTH-22</key>
+        <value>
+            <fact>
+                <name>South Entrance</name>
+                <location>map3, 57.2, 17.1</location>
+            </fact>
+        </value>
+    </reference>
+    <reference>
+        <map>GateMap</map>
+        <key>G-EAST-04</key>
+        <value>
+            <fact>
+                <name>East Entrance</name>
+                <location>map3, 57.2, 17.1</location>
+            </fact>
+        </value>
+    </reference>
+    <reference>
+        <map>GateMap</map>
+        <key>G-MAIN_ENTRANCE</key>
+        <value>
+            <fact>
+                <name>Main Entrance</name>
+                <location>map3, 57.2, 17.1</location>
+            </fact>
+        </value>
+    </reference>
+    <reference>
+        <map>GateMap</map>
+        <key>G-SEC-RECEPTION</key>
+        <value>
+            <fact>
+                <name>Security Reception</name>
+                <location>map3, 57.2, 17.1</location>
+            </fact>
+        </value>
+    </reference>
+
+    <!-- Device facts -->
+    <reference>
+        <map>DeviceMap</map>
+        <key>P-L3-RM4</key>
+        <value>
+            <fact>
+                <name>Main Office Printer</name>
+                <icon>/assets/1234-567-890/office-printer.png</icon>
+                <location>map3, 57.2, 17.1</location>
+            </fact>
+        </value>
+    </reference>
+    <reference>
+        <map>DeviceMap</map>
+        <key>P-L1-CAFETERIA</key>
+        <value>
+            <fact>
+                <name>Cafeteria Printer</name>
+                <icon>/assets/1234-567-890/office-printer.png</icon>
+                <location>map3, 57.2, 17.1</location>
+            </fact>
+        </value>
+    </reference>
+    <reference>
+        <map>DeviceMap</map>
+        <key>P-L2-CORRIDOR</key>
+        <value>
+            <fact>
+                <name>Top Floor Printer</name>
+                <icon>/assets/1234-567-890/office-printer.png</icon>
+                <location>map3, 57.2, 17.1</location>
+            </fact>
+        </value>
+    </reference>
+    <reference>
+        <map>DeviceMap</map>
+        <key>P-EXEC-OFFICE</key>
+        <value>
+            <fact>
+                <name>Executive Printer</name>
+                <icon>/assets/1234-567-890/office-printer.png</icon>
+                <location>map3, 57.2, 17.1</location>
+            </fact>
+        </value>
+    </reference>
+    <reference>
+        <map>DeviceMap</map>
+        <key>C-office-1</key>
+        <value>
+            <fact>
+                <name>Office computer 1</name>
+                <icon>/assets/1234-567-890/wifi-ap.png</icon>
+                <location>map3, 57.2, 17.1</location>
+            </fact>
+        </value>
+    </reference>
+    <reference>
+        <map>DeviceMap</map>
+        <key>C-office-2</key>
+        <value>
+            <fact>
+                <name>Office computer 2</name>
+                <icon>/assets/1234-567-890/wifi-ap.png</icon>
+                <location>map3, 57.2, 17.1</location>
+            </fact>
+        </value>
+    </reference>
+    <reference>
+        <map>DeviceMap</map>
+        <key>C-office-3</key>
+        <value>
+            <fact>
+                <name>Office computer 3</name>
+                <icon>/assets/1234-567-890/console.png</icon>
+                <location>map3, 57.2, 17.1</location>
+            </fact>
+        </value>
+    </reference>
+    <reference>
+        <map>DeviceMap</map>
+        <key>C-office-4</key>
+        <value>
+            <fact>
+                <name>Console for Database Cluster</name>
+                <icon>/assets/1234-567-890/console.png</icon>
+                <location>map3, 57.2, 17.1</location>
+            </fact>
+        </value>
+    </reference>
+
+    <!-- Background facts -->
+    <reference>
+        <map>BackgroundMap</map>
+        <key>B-123</key>
+        <value>
+            <fact>
+                <name>Ground Floor, Banbury Office</name>
+                <icon>/assets/1234-567-890/bby-gnd-plan.png</icon>
+                <location>map3, 57.2, 17.1</location>
+            </fact>
+        </value>
+    </reference>
+</referenceData>
