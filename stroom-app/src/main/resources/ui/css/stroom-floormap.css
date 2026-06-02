@@ -174,3 +174,24 @@
     border: 1px solid var(--control__border-color);
     background-color: #eee;
 }
+
+.stroom-floormap-timeline-controls-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.stroom-floormap-timeline-speed-group {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    margin-left: 10px;
+}
+
+.stroom-floormap-timeline-speed-label {
+    font-size: 11px;
+    margin-left: 2px;
+    color: var(--text-color--low-emphasis);
+    white-space: nowrap;
+}

@@ -1,7 +1,9 @@
 <!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
 <ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
              xmlns:g="urn:import:com.google.gwt.user.client.ui"
-             xmlns:datetimebox="urn:import:stroom.widget.datepicker.client">
+             xmlns:datetimebox="urn:import:stroom.widget.datepicker.client"
+             xmlns:b="urn:import:stroom.widget.button.client"
+             xmlns:l="urn:import:stroom.item.client">
 
     <g:FlowPanel addStyleNames="stroom-floormap-timeline-container max">
         <!-- Labels Above the timeline -->
@@ -15,6 +17,15 @@
             <g:FlowPanel ui:field="innerBar" addStyleNames="stroom-floormap-timeline-inner-bar" />
             <g:FlowPanel ui:field="handle" addStyleNames="stroom-floormap-timeline-handle" />
             <g:FlowPanel ui:field="markerLayer" addStyleNames="max" />
+        </g:FlowPanel>
+
+        <!-- Playback Controls -->
+        <g:FlowPanel addStyleNames="stroom-floormap-timeline-controls-row">
+            <b:SvgButton ui:field="playPauseButton" />
+            <g:FlowPanel addStyleNames="stroom-floormap-timeline-speed-group">
+                <g:Label text="Playback Speed:" addStyleNames="stroom-floormap-timeline-speed-label" />
+                <l:SelectionBox ui:field="speedSelectionBox" />
+            </g:FlowPanel>
         </g:FlowPanel>
     </g:FlowPanel>
 </ui:UiBinder>

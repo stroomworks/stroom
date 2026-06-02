@@ -18,7 +18,10 @@ package stroom.floormap.client.presenter;
 
 import stroom.floormap.client.event.TimeChangeEvent;
 import stroom.floormap.client.presenter.FloorMapTimelinePresenter.FloorMapTimelineView;
+import stroom.svg.client.Preset;
+import stroom.svg.shared.SvgImage;
 
+import com.google.gwt.animation.client.AnimationScheduler;
 import com.google.gwt.event.logical.shared.ValueChangeHandler;
 import com.google.inject.Inject;
 import com.google.web.bindery.event.shared.EventBus;
@@ -26,6 +29,8 @@ import com.google.web.bindery.event.shared.HandlerRegistration;
 import com.gwtplatform.mvp.client.MyPresenterWidget;
 import com.gwtplatform.mvp.client.View;
 
+import java.util.Arrays;
+import java.util.List;
 import java.util.function.Consumer;
 
 /**
@@ -33,9 +38,17 @@ import java.util.function.Consumer;
  * Handles time range selection and fires events when the time changes.
  */
 public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelineView> {
+    private static final Preset PLAY_PRESET = new Preset(SvgImage.PLAY, "Play", true);
+    private static final Preset PAUSE_PRESET = new Preset(SvgImage.PAUSE, "Pause", true);
+    private static final double SPEED_MULTIPLIER = 1000.0;
+
     private long startTime;
     private long endTime;
     private long currentTime;
+
+    private boolean playing;
+    private double playbackSpeed;
+    private double lastFrameTime;
 
     @Inject
     public FloorMapTimelinePresenter(final EventBus eventBus,
@@ -67,6 +80,24 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
             this.endTime = getView().getEndTime();
             updateProgress();
         }));
+
+        getView().setPlayPauseHandler(() -> {
+            playing = !playing;
+            if (playing) {
+                getView().setPlayPausePreset(PAUSE_PRESET);
+                lastFrameTime = 0;
+                AnimationScheduler.get().requestAnimationFrame(playbackCallback);
+            } else {
+                getView().setPlayPausePreset(PLAY_PRESET);
+            }
+        });
+
+        getView().setSpeedChangeHandler(speed -> this.playbackSpeed = speed);
+
+        getView().setPlayPausePreset(PLAY_PRESET);
+        getView().setSpeedOptions(Arrays.asList(0.5, 1.0, 2.0, 5.0, 10.0));
+        getView().setSelectedSpeed(1.0);
+        this.playbackSpeed = 1.0;
     }
 
     /**
@@ -98,14 +129,45 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
         }
     }
 
+    private final AnimationScheduler.AnimationCallback playbackCallback = new AnimationScheduler.AnimationCallback() {
+        @Override
+        public void execute(final double timestamp) {
+            if (playing) {
+                if (lastFrameTime > 0) {
+                    final double delta = timestamp - lastFrameTime;
+                    long newTime = currentTime + (long) (delta * playbackSpeed * SPEED_MULTIPLIER);
+
+                    if (newTime > endTime) {
+                        newTime = startTime;
+                    }
+
+                    setCurrentTime(newTime);
+                    TimeChangeEvent.fire(FloorMapTimelinePresenter.this, newTime);
+                }
+
+                lastFrameTime = timestamp;
+                AnimationScheduler.get().requestAnimationFrame(this);
+            } else {
+                lastFrameTime = 0;
+            }
+        }
+    };
+
     public interface FloorMapTimelineView extends View {
         void setProgressPct(double pct);
         void setClickHandler(Consumer<Double> clickHandler);
         void setStartTime(long startTime);
         void setEndTime(long endTime);
 
+        void setPlayPausePreset(Preset preset);
+        void setPlayPauseHandler(Runnable handler);
+        void setSpeedOptions(List<Double> speeds);
+        void setSelectedSpeed(Double speed);
+        void setSpeedChangeHandler(Consumer<Double> handler);
+
         HandlerRegistration addStartTimeChangeHandler(ValueChangeHandler<String> handler);
         HandlerRegistration addEndTimeChangeHandler(ValueChangeHandler<String> handler);
+
         long getStartTime();
         long getEndTime();
     }
