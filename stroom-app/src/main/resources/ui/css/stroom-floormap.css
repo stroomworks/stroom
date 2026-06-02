@@ -75,7 +75,18 @@
 }
 
 .stroom-floormap-background-grid {
-    height: 150px;
+    flex-grow: 1;
+    min-height: 250px;
+    height: 100%;
+}
+
+.stroom-floormap-background-list-group {
+    flex-grow: 1;
+    max-width: none;
+}
+
+.stroom-floormap-background-list-group > div {
+    width: 100%;
 }
 
 .stroom-floormap-settings-button-row {
@@ -98,5 +109,68 @@
 .stroom-floormap-settings-button-row .stroom-button {
     white-space: nowrap;
     height: 28px;
-    padding: 0 12px;
+    padding: 0 16px;
+    min-width: 80px;
+    width: auto;
+}
+
+/* Container for the whole settings block */
+.stroom-floormap-settings-layout {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: 100%;
+}
+
+/* A single horizontal row of input groups */
+.stroom-floormap-settings-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 12px;
+    width: 100%;
+    max-width: 800px;
+    justify-content: flex-start;
+}
+
+/* Vertically stacks a label and its input */
+.stroom-floormap-input-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.stroom-floormap-input-group .wide-control {
+    width: 100%;
+}
+
+/* Forces the image text box to take up remaining space */
+.stroom-floormap-input-group.flex-grow {
+    flex-grow: 1;
+}
+
+/* Groups the action buttons together at the end of the row */
+.stroom-floormap-actions-group {
+    display: flex;
+    gap: 8px;
+    align-self: flex-end;
+}
+
+/* Ensure consistent label styling */
+.stroom-floormap-input-group .stroom-label {
+    font-size: 0.85em;
+    font-weight: 600;
+    color: var(--text-color--low-emphasis);
+}
+
+/* Width for the rotation spinner in settings */
+.stroom-floormap-rotation-spinner {
+    width: 80px;
+}
+
+.stroom-floormap-settings-preview {
+    width: 250px;
+    height: 250px;
+    object-fit: contain;
+    border: 1px solid var(--control__border-color);
+    background-color: #eee;
 }

@@ -34,12 +34,18 @@ import stroom.ui.config.client.UiConfigCache;
 import stroom.widget.button.client.ButtonPanel;
 import stroom.widget.button.client.ButtonView;
 import stroom.widget.button.client.SvgButton;
+import stroom.widget.util.client.HtmlBuilder;
+import stroom.widget.util.client.HtmlBuilder.Attribute;
 import stroom.widget.util.client.MultiSelectionModelImpl;
+import stroom.widget.util.client.SafeHtmlUtil;
 
+import com.google.gwt.cell.client.SafeHtmlCell;
 import com.google.gwt.cell.client.TextCell;
+import com.google.gwt.dom.client.Style.Unit;
 import com.google.gwt.event.dom.client.ClickHandler;
 import com.google.gwt.event.logical.shared.ValueChangeHandler;
 import com.google.gwt.event.shared.HandlerRegistration;
+import com.google.gwt.safehtml.shared.SafeHtml;
 import com.google.gwt.user.cellview.client.Column;
 import com.google.gwt.user.client.ui.Widget;
 import com.google.inject.Inject;
@@ -64,6 +70,7 @@ public class FloorMapSettingsPresenter
     private final MultiSelectionModelImpl<FloorMapBackground> selectionModel;
     private final ButtonView editButton;
     private final ButtonView deleteButton;
+    private FloorMapTransformationMatrix currentMatrix;
 
     @Inject
     public FloorMapSettingsPresenter(final EventBus eventBus,
@@ -80,26 +87,45 @@ public class FloorMapSettingsPresenter
         sourceFeedPresenter.setRequiredPermissions(DocumentPermission.VIEW);
         view.setSourceFeed(sourceFeedPresenter.getView());
 
-        // Setup the DataGrid
+        // Set up the DataGrid
         grid = new MyDataGrid<>(this);
         selectionModel = grid.addDefaultSelectionModel(false);
         
-        grid.addColumn(new Column<>(new TextCell()) {
+        final Column<FloorMapBackground, String> validFromColumn = new Column<>(new TextCell()) {
             @Override
             public String getValue(final FloorMapBackground row) {
                 return new Date(row.getValidFromTime()).toString();
             }
-        }, "Valid From");
+        };
+        grid.addColumn(validFromColumn, "Valid From");
+        grid.setColumnWidth(validFromColumn, 250, Unit.PX);
+
+        final Column<FloorMapBackground, SafeHtml> previewColumn = new Column<FloorMapBackground, SafeHtml>(
+                new SafeHtmlCell()) {
+            @Override
+            public SafeHtml getValue(final FloorMapBackground row) {
+                final HtmlBuilder hb = new HtmlBuilder();
+                hb.elem(SafeHtmlUtil.from("img"),
+                        new Attribute("src", row.getImage()),
+                        new Attribute("style", "width: 100px; height: 100px; object-fit: contain;"));
+                return hb.toSafeHtml();
+
+            }
+        };
+        grid.addColumn(previewColumn, "Preview");
+        grid.setColumnWidth(previewColumn, 120, Unit.PX);
 
         view.setGridView(grid);
 
-        // Setup the Toolbar
+        // Set up the Toolbar
         final ButtonPanel toolbar = new ButtonPanel();
         editButton = SvgButton.create(SvgPresets.EDIT);
         deleteButton = SvgButton.create(SvgPresets.DELETE);
         toolbar.addButton(editButton);
         toolbar.addButton(deleteButton);
         view.setToolbar(toolbar);
+
+        this.currentMatrix = FloorMapTransformationMatrix.identity();
     }
 
     @Override
@@ -117,6 +143,10 @@ public class FloorMapSettingsPresenter
             final boolean hasSelection = selectionModel.getSelected() != null;
             editButton.setEnabled(hasSelection);
             deleteButton.setEnabled(hasSelection);
+        }));
+
+        registerHandler(getView().addRotationChangeHandler(e -> {
+            onRotation();
         }));
     }
 
@@ -163,14 +193,23 @@ public class FloorMapSettingsPresenter
             final FloorMapBackground newBg = new FloorMapBackground(
                     time,
                     currentImage,
-                    new FloorMapTransformationMatrix(1, 0, 0, 1, 0, 0)
+                    currentMatrix
             );
 
             localBackgroundList.add(newBg);
             refreshGrid();
             setDirty(true);
             getView().setBackgroundImage("");
+
+            this.currentMatrix = FloorMapTransformationMatrix.identity();
+            getView().setRotation(0);
         }
+    }
+
+    private void onRotation() {
+        final double degrees = getView().getRotation();
+        this.currentMatrix = FloorMapTransformationMatrix.rotate(degrees);
+        setDirty(true);
     }
 
     private void onDelete() {
@@ -191,6 +230,10 @@ public class FloorMapSettingsPresenter
         if (selected != null) {
             getView().setStartTime(selected.getValidFromTime());
             getView().setBackgroundImage(selected.getImage());
+
+            // Load the existing matrix into the 'current' state.
+            this.currentMatrix = selected.getMatrix();
+
             localBackgroundList.remove(selected);
             refreshGrid();
             setDirty(true);
@@ -208,10 +251,15 @@ public class FloorMapSettingsPresenter
         void setBackgroundImage(String backgroundImage);
         String getBackgroundImage();
         long getStartTime();
-        HandlerRegistration addBackgroundImageChangeHandler(ValueChangeHandler<String> handler);
-        HandlerRegistration addAddBackgroundHandler(ClickHandler handler);
+        double getRotation();
+
         void setToolbar(Widget widget);
         void setGridView(Widget widget);
         void setStartTime(long startTime);
+        void setRotation(double degrees);
+
+        HandlerRegistration addBackgroundImageChangeHandler(ValueChangeHandler<String> handler);
+        HandlerRegistration addAddBackgroundHandler(ClickHandler handler);
+        HandlerRegistration addRotationChangeHandler(final ValueChangeHandler<Long> handler);
     }
 }

@@ -109,4 +109,13 @@ public class FloorMapTransformationMatrix {
     public String toString() {
         return toSvgMatrix();
     }
+
+    public static FloorMapTransformationMatrix rotate(final double degrees) {
+        final double radians = Math.toRadians(degrees);
+        final double cos = Math.cos(radians);
+        final double sin = Math.sin(radians);
+
+        // a=cos, b=sin, c=-sin, d=cos, e=0, f=0
+        return new FloorMapTransformationMatrix(cos, sin, -sin, cos, 0, 0);
+    }
 }

@@ -21,6 +21,7 @@ import stroom.entity.client.presenter.ReadOnlyChangeHandler;
 import stroom.floormap.client.presenter.FloorMapSettingsPresenter.FloorMapSettingsView;
 import stroom.widget.datepicker.client.DateTimeBox;
 import stroom.widget.datepicker.client.DateTimePopup;
+import stroom.widget.valuespinner.client.ValueSpinner;
 
 import com.google.gwt.dom.client.Element;
 import com.google.gwt.event.dom.client.ChangeEvent;
@@ -34,6 +35,7 @@ import com.google.gwt.uibinder.client.UiField;
 import com.google.gwt.uibinder.client.UiHandler;
 import com.google.gwt.user.client.ui.Button;
 import com.google.gwt.user.client.ui.FileUpload;
+import com.google.gwt.user.client.ui.Image;
 import com.google.gwt.user.client.ui.SimplePanel;
 import com.google.gwt.user.client.ui.TextBox;
 import com.google.gwt.user.client.ui.Widget;
@@ -72,11 +74,20 @@ public class FloorMapSettingsViewImpl
     @UiField
     SimplePanel gridContainer;
 
+    @UiField
+    ValueSpinner rotation;
+
+    @UiField
+    Image imagePreview;
+
     @Inject
     public FloorMapSettingsViewImpl(final Binder binder,
                                     final Provider<DateTimePopup> dateTimePopupProvider) {
         widget = binder.createAndBindUi(this);
         validFromBox.setPopupProvider(dateTimePopupProvider);
+
+        rotation.setMin(0L);
+        rotation.setMax(359L);
     }
 
     @Override
@@ -92,6 +103,7 @@ public class FloorMapSettingsViewImpl
     @Override
     public void setBackgroundImage(final String backgroundImage) {
         this.backgroundImage.setText(backgroundImage);
+        this.imagePreview.setUrl(backgroundImage);
     }
 
     @Override
@@ -120,6 +132,16 @@ public class FloorMapSettingsViewImpl
     }
 
     @Override
+    public void setRotation(final double degrees) {
+        rotation.setValue((long) degrees);
+    }
+
+    @Override
+    public double getRotation() {
+        return rotation.getValue().doubleValue();
+    }
+
+    @Override
     public HandlerRegistration addBackgroundImageChangeHandler(final ValueChangeHandler<String> handler) {
         return backgroundImage.addValueChangeHandler(handler);
     }
@@ -127,6 +149,11 @@ public class FloorMapSettingsViewImpl
     @Override
     public HandlerRegistration addAddBackgroundHandler(final ClickHandler handler) {
         return addBackgroundButton.addClickHandler(handler);
+    }
+
+    @Override
+    public HandlerRegistration addRotationChangeHandler(final ValueChangeHandler<Long> handler) {
+        return rotation.addValueChangeHandler(handler);
     }
 
     @Override
@@ -149,6 +176,7 @@ public class FloorMapSettingsViewImpl
 
     @UiHandler("backgroundImage")
     void onBackgroundImageChange(final ValueChangeEvent<String> event) {
+        imagePreview.setUrl(event.getValue());
         if (getUiHandlers() != null) {
             getUiHandlers().onDirty();
         }
@@ -169,6 +197,7 @@ public class FloorMapSettingsViewImpl
 
     void onFileRead(final String base64) {
         backgroundImage.setValue(base64, true);
+        imagePreview.setUrl(base64);
         if (getUiHandlers() != null) {
             getUiHandlers().onDirty();
         }
