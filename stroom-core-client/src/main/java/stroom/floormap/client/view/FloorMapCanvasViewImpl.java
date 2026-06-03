@@ -19,6 +19,7 @@ package stroom.floormap.client.view;
 import stroom.document.client.event.DirtyUiHandlers;
 import stroom.entity.client.presenter.ReadOnlyChangeHandler;
 import stroom.floormap.client.presenter.FloorMapCanvasPresenter.FloorMapCanvasView;
+import stroom.floormap.shared.FloorMapObject;
 import stroom.floormap.shared.FloorMapTransformationMatrix;
 import stroom.widget.util.client.HtmlBuilder;
 import stroom.widget.util.client.HtmlBuilder.Attribute;
@@ -39,10 +40,13 @@ import com.google.gwt.user.client.ui.Widget;
 import com.google.inject.Inject;
 import com.gwtplatform.mvp.client.ViewWithUiHandlers;
 
+import java.util.List;
+
 public class FloorMapCanvasViewImpl
         extends ViewWithUiHandlers<DirtyUiHandlers>
         implements FloorMapCanvasView, ReadOnlyChangeHandler {
 
+    private final static int OBJECT_SIZE = 100;
     private final Widget widget;
 
     @UiField
@@ -105,7 +109,8 @@ public class FloorMapCanvasViewImpl
                      final double x,
                      final double y,
                      final String backgroundImage,
-                     final FloorMapTransformationMatrix matrix) {
+                     final FloorMapTransformationMatrix matrix,
+                     final List<FloorMapObject> objects) {
         final HtmlBuilder htmlBuilder = new HtmlBuilder();
         final String svgMatrix = matrix != null ? matrix.toSvgMatrix() : FloorMapTransformationMatrix.identity().toSvgMatrix();
 
@@ -133,6 +138,46 @@ public class FloorMapCanvasViewImpl
                             new Attribute("width", "1000"),
                             new Attribute("height", "1000"),
                             new Attribute("fill", "#FFFFFF"));
+                    }
+
+                    if (objects != null) {
+                        for (final FloorMapObject obj : objects) {
+                            matrixGroup.elem(objectGroup -> {
+                                objectGroup.elem(SafeHtmlUtil.from("rect"),
+                                    // Shifting x and y by half the square's size puts it's center over the map coordinate.
+                                    new Attribute("x", (-OBJECT_SIZE/2) + ""),
+                                    new Attribute("y", (-OBJECT_SIZE/2) + ""),
+                                    new Attribute("width", OBJECT_SIZE + ""),
+                                    new Attribute("height", OBJECT_SIZE + ""),
+                                    new Attribute("fill", "grey"),
+                                    new Attribute("rx", "4"), // Round corners
+                                    new Attribute("ry", "4"),
+                                    new Attribute("id", obj.getId())
+                                );
+
+                                double counterRotationDegrees = 0;
+                                if (matrix != null) {
+                                    final double radians = Math.atan2(matrix.getB(), matrix.getA());
+                                    counterRotationDegrees = -Math.toDegrees(radians);
+                                }
+
+                                objectGroup.elem(obj.getId(), SafeHtmlUtil.from("text"),
+                                        new Attribute("x", "0"),
+                                        new Attribute("y", "0"),
+                                        new Attribute("dy", "0.35em"), // Centres text vertically
+                                        new Attribute("text-anchor", "middle"), // Centres text horizontally
+                                        new Attribute("fill", "white"),
+                                        new Attribute("font-size", "11px"),
+                                        new Attribute("font-family", "sans-serif"),
+                                        new Attribute("pointer-events", "none"), // Prevents text from interfering with mouse panning
+                                        new Attribute("transform", "rotate(" + counterRotationDegrees + ")")
+                                );
+                            },
+                            SafeHtmlUtil.from("g"),
+                                new Attribute("transform", "translate(" + obj.getX() + "," + obj.getY() + ")"),
+                                new Attribute("id", "obj-" + obj.getId())
+                            );
+                        }
                     }
                 }, SafeHtmlUtil.from("g"), new Attribute("transform", svgMatrix));
             }, SafeHtmlUtil.from("g"),

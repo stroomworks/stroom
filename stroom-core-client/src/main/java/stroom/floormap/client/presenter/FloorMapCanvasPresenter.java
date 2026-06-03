@@ -17,6 +17,7 @@
 package stroom.floormap.client.presenter;
 
 import stroom.floormap.client.presenter.FloorMapCanvasPresenter.FloorMapCanvasView;
+import stroom.floormap.shared.FloorMapObject;
 import stroom.floormap.shared.FloorMapTransformationMatrix;
 
 import com.google.gwt.event.dom.client.HasMouseDownHandlers;
@@ -28,6 +29,8 @@ import com.google.web.bindery.event.shared.EventBus;
 import com.gwtplatform.mvp.client.MyPresenterWidget;
 import com.gwtplatform.mvp.client.View;
 
+import java.util.ArrayList;
+import java.util.List;
 import javax.inject.Inject;
 
 public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasView> {
@@ -43,6 +46,9 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     private boolean isDragging = false;
     private double lastMouseX;
     private double lastMouseY;
+
+    // Objects on the map
+    private List<FloorMapObject> objects = new ArrayList<>();
 
     @Inject
     public FloorMapCanvasPresenter(final EventBus eventBus,
@@ -114,7 +120,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     }
 
     private void redraw() {
-        getView().draw(scale, offsetX, offsetY, backgroundImage, matrix);
+        getView().draw(scale, offsetX, offsetY, backgroundImage, matrix, objects);
     }
 
     public void setMatrix(final FloorMapTransformationMatrix matrix) {
@@ -132,6 +138,11 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         redraw();
     }
 
+    public void setObjects(final List<FloorMapObject> objects) {
+        this.objects = objects;
+        redraw();
+    }
+
     public interface FloorMapCanvasView extends View, RequiresResize {
 
         HasMouseDownHandlers getFocusPanel();
@@ -142,7 +153,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
         HasMouseWheelHandlers getMouseWheelHandlers();
 
-        void draw(double scale, double x, double y, String backgroundImage, FloorMapTransformationMatrix matrix);
+        void draw(double scale, double x, double y, String backgroundImage, FloorMapTransformationMatrix matrix, List<FloorMapObject> objects);
     }
 
 }

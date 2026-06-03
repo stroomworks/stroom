@@ -23,6 +23,7 @@ import stroom.floormap.client.event.TimeChangeEvent;
 import stroom.floormap.client.presenter.FloorMapMapPresenter.FloorMapMapView;
 import stroom.floormap.shared.FloorMapBackground;
 import stroom.floormap.shared.FloorMapDoc;
+import stroom.floormap.shared.FloorMapObject;
 import stroom.floormap.shared.FloorMapTransformationMatrix;
 import stroom.meta.shared.MetaExpressionUtil;
 import stroom.widget.tab.client.presenter.LinkTabsPresenter;
@@ -33,6 +34,7 @@ import com.google.inject.Provider;
 import com.google.web.bindery.event.shared.EventBus;
 import com.gwtplatform.mvp.client.View;
 
+import java.util.Arrays;
 import java.util.Objects;
 
 /**
@@ -98,6 +100,13 @@ public class FloorMapMapPresenter
             floorMapCanvasPresenter.setBackgroundImage(null);
             floorMapCanvasPresenter.setMatrix(FloorMapTransformationMatrix.identity());
         }
+
+        // TEST DATA
+        // TODO: REMOVE
+        floorMapCanvasPresenter.setObjects(Arrays.asList(
+                new FloorMapObject("Main Entrance", 100, 150),
+                new FloorMapObject("Access Point 1", 500, 375)
+        ));
 
         if (!Objects.equals(currentFeed, document.getFeed())) {
             currentFeed = document.getFeed();
