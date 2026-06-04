@@ -19,8 +19,8 @@ package stroom.sqlstore.impl;
 import stroom.docref.DocRef;
 import stroom.docstore.api.DocumentResourceHelper;
 import stroom.event.logging.rs.api.AutoLogged;
-import stroom.sqlstore.shared.SqlStoreDoc;
-import stroom.sqlstore.shared.SqlStoreDocResource;
+import stroom.sqlstore.shared.SqlTemporalStoreDoc;
+import stroom.sqlstore.shared.SqlTemporalStoreDocResource;
 import stroom.util.shared.EntityServiceException;
 import stroom.util.shared.FetchWithUuid;
 
@@ -28,25 +28,25 @@ import jakarta.inject.Inject;
 import jakarta.inject.Provider;
 
 @AutoLogged
-class SqlStoreDocResourceImpl implements SqlStoreDocResource, FetchWithUuid<SqlStoreDoc> {
+class SqlTemporalStoreDocResourceImpl implements SqlTemporalStoreDocResource, FetchWithUuid<SqlTemporalStoreDoc> {
 
-    private final Provider<SqlStoreDocStore> sqlStoreDocStoreProvider;
+    private final Provider<SqlTemporalStoreDocStore> sqlStoreDocStoreProvider;
     private final Provider<DocumentResourceHelper> documentResourceHelperProvider;
 
     @Inject
-    SqlStoreDocResourceImpl(final Provider<SqlStoreDocStore> sqlStoreDocStoreProvider,
+    SqlTemporalStoreDocResourceImpl(final Provider<SqlTemporalStoreDocStore> sqlStoreDocStoreProvider,
                             final Provider<DocumentResourceHelper> documentResourceHelperProvider) {
         this.sqlStoreDocStoreProvider = sqlStoreDocStoreProvider;
         this.documentResourceHelperProvider = documentResourceHelperProvider;
     }
 
     @Override
-    public SqlStoreDoc fetch(final String uuid) {
+    public SqlTemporalStoreDoc fetch(final String uuid) {
         return documentResourceHelperProvider.get().read(sqlStoreDocStoreProvider.get(), getDocRef(uuid));
     }
 
     @Override
-    public SqlStoreDoc update(final String uuid, final SqlStoreDoc doc) {
+    public SqlTemporalStoreDoc update(final String uuid, final SqlTemporalStoreDoc doc) {
         if (doc.getUuid() == null || !doc.getUuid().equals(uuid)) {
             throw new EntityServiceException("The document UUID must match the update UUID");
         }
@@ -56,7 +56,7 @@ class SqlStoreDocResourceImpl implements SqlStoreDocResource, FetchWithUuid<SqlS
     private DocRef getDocRef(final String uuid) {
         return DocRef.builder()
                 .uuid(uuid)
-                .type(SqlStoreDoc.TYPE)
+                .type(SqlTemporalStoreDoc.TYPE)
                 .build();
     }
 }

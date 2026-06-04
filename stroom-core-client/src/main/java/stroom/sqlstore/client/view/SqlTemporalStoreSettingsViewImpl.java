@@ -16,8 +16,8 @@
 
 package stroom.sqlstore.client.view;
 
-import stroom.sqlstore.client.presenter.SqlStoreSettingsPresenter.SqlStoreSettingsView;
-import stroom.sqlstore.client.presenter.SqlStoreSettingsUiHandlers;
+import stroom.sqlstore.client.presenter.SqlTemporalStoreSettingsPresenter.SqlTemporalStoreSettingsView;
+import stroom.sqlstore.client.presenter.SqlTemporalStoreSettingsUiHandlers;
 
 import com.google.gwt.event.dom.client.ClickEvent;
 import com.google.gwt.uibinder.client.UiBinder;
@@ -29,9 +29,9 @@ import com.google.gwt.user.client.ui.Widget;
 import com.google.inject.Inject;
 import com.gwtplatform.mvp.client.ViewWithUiHandlers;
 
-public class SqlStoreSettingsViewImpl
-        extends ViewWithUiHandlers<SqlStoreSettingsUiHandlers>
-        implements SqlStoreSettingsView {
+public class SqlTemporalStoreSettingsViewImpl
+        extends ViewWithUiHandlers<SqlTemporalStoreSettingsUiHandlers>
+        implements SqlTemporalStoreSettingsView {
 
     private final Widget widget;
 
@@ -41,7 +41,7 @@ public class SqlStoreSettingsViewImpl
     Button reset;
 
     @Inject
-    public SqlStoreSettingsViewImpl(final Binder binder) {
+    public SqlTemporalStoreSettingsViewImpl(final Binder binder) {
         widget = binder.createAndBindUi(this);
     }
 
@@ -68,7 +68,7 @@ public class SqlStoreSettingsViewImpl
         }
     }
 
-    public interface Binder extends UiBinder<Widget, SqlStoreSettingsViewImpl> {
+    public interface Binder extends UiBinder<Widget, SqlTemporalStoreSettingsViewImpl> {
 
     }
 }

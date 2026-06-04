@@ -42,7 +42,7 @@ import stroom.query.language.functions.ValString;
 import stroom.security.api.SecurityContext;
 import stroom.security.shared.DocumentPermission;
 import stroom.sqlstore.api.UpdatableTemporalStore;
-import stroom.sqlstore.shared.SqlStoreDoc;
+import stroom.sqlstore.shared.SqlTemporalStoreDoc;
 import stroom.task.api.TaskContextFactory;
 import stroom.util.shared.PermissionException;
 import stroom.util.shared.ResultPage;
@@ -62,7 +62,7 @@ import java.util.concurrent.Executor;
 public class UpdatableSqlTemporalStore implements UpdatableTemporalStore {
 
     private final UpdatableTemporalStoreDao dao;
-    private final SqlStoreDocStore sqlStoreDocStore;
+    private final SqlTemporalStoreDocStore sqlStoreDocStore;
     private final FieldInfoResultPageFactory fieldInfoResultPageFactory;
     private final CoprocessorsFactory coprocessorsFactory;
     private final ResultStoreFactory resultStoreFactory;
@@ -73,7 +73,7 @@ public class UpdatableSqlTemporalStore implements UpdatableTemporalStore {
 
     @Inject
     public UpdatableSqlTemporalStore(final UpdatableTemporalStoreDao dao,
-                                     final SqlStoreDocStore sqlStoreDocStore,
+                                     final SqlTemporalStoreDocStore sqlStoreDocStore,
                                      final FieldInfoResultPageFactory fieldInfoResultPageFactory,
                                      final CoprocessorsFactory coprocessorsFactory,
                                      final ResultStoreFactory resultStoreFactory,
@@ -171,7 +171,7 @@ public class UpdatableSqlTemporalStore implements UpdatableTemporalStore {
 
     @Override
     public String getDataSourceType() {
-        return SqlStoreDoc.TYPE;
+        return SqlTemporalStoreDoc.TYPE;
     }
 
     @Override

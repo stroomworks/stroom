@@ -251,7 +251,7 @@ public class ReferenceData {
                     planBLookup.lookup(lookupIdentifier, referenceDataResult);
                 }
 
-            } else if (stroom.sqlstore.shared.SqlStoreDoc.TYPE.equals(pipeline.getType())) {
+            } else if (stroom.sqlstore.shared.SqlTemporalStoreDoc.TYPE.equals(pipeline.getType())) {
                 Objects.requireNonNull(sqlStoreLookup,
                         "Attempt to perform SQL Store lookup but SQL Store Lookup service is not present");
                 Objects.requireNonNull(pipeline.getName(), "Null name for SQL Store doc ref in lookup");

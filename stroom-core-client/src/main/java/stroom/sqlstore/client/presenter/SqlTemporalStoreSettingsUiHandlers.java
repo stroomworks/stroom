@@ -18,7 +18,7 @@ package stroom.sqlstore.client.presenter;
 
 import com.gwtplatform.mvp.client.UiHandlers;
 
-public interface SqlStoreSettingsUiHandlers extends UiHandlers {
+public interface SqlTemporalStoreSettingsUiHandlers extends UiHandlers {
 
     void onReset();
 }

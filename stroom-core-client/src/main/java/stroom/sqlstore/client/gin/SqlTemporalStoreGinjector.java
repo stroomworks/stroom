@@ -16,12 +16,12 @@
 
 package stroom.sqlstore.client.gin;
 
-import stroom.sqlstore.client.SqlStorePlugin;
+import stroom.sqlstore.client.SqlTemporalStorePlugin;
 
 import com.google.inject.Provider;
 
-public interface SqlStoreGinjector {
+public interface SqlTemporalStoreGinjector {
 
     @SuppressWarnings("unused")
-    Provider<SqlStorePlugin> getSqlStorePlugin();
+    Provider<SqlTemporalStorePlugin> getSqlTemporalStorePlugin();
 }

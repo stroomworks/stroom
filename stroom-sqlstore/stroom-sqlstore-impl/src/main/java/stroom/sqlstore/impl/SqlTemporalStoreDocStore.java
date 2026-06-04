@@ -21,13 +21,13 @@ import stroom.docstore.api.ContentIndexable;
 import stroom.docstore.api.DocumentActionHandler;
 import stroom.explorer.api.ExplorerActionHandler;
 import stroom.importexport.api.ImportExportActionHandler;
-import stroom.sqlstore.shared.SqlStoreDoc;
+import stroom.sqlstore.shared.SqlTemporalStoreDoc;
 
 import java.util.List;
 
-public interface SqlStoreDocStore extends
+public interface SqlTemporalStoreDocStore extends
         ExplorerActionHandler,
-        DocumentActionHandler<SqlStoreDoc>,
+        DocumentActionHandler<SqlTemporalStoreDoc>,
         ImportExportActionHandler,
         ContentIndexable {
 

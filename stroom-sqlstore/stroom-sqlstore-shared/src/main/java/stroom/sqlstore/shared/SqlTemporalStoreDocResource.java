@@ -32,25 +32,26 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import org.fusesource.restygwt.client.DirectRestService;
 
-@Tag(name = "SqlStore")
-@Path("/sqlStoreDoc" + ResourcePaths.V1)
+@Tag(name = "SqlTemporalStore")
+@Path("/sqlTemporalStoreDoc" + ResourcePaths.V1)
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
-public interface SqlStoreDocResource extends RestResource, DirectRestService, FetchWithUuid<SqlStoreDoc> {
+public interface SqlTemporalStoreDocResource
+        extends RestResource, DirectRestService, FetchWithUuid<SqlTemporalStoreDoc> {
 
     @GET
     @Path("/{uuid}")
     @Operation(
-            summary = "Fetch an SQL store doc by its UUID",
-            operationId = "fetchSqlStoreDoc")
-    SqlStoreDoc fetch(@PathParam("uuid") String uuid);
+            summary = "Fetch an SQL temporal store doc by its UUID",
+            operationId = "fetchSqlTemporalStoreDoc")
+    SqlTemporalStoreDoc fetch(@PathParam("uuid") String uuid);
 
     @PUT
     @Path("/{uuid}")
     @Operation(
-            summary = "Update an SQL store doc",
-            operationId = "updateSqlStoreDoc")
-    SqlStoreDoc update(
+            summary = "Update an SQL temporal store doc",
+            operationId = "updateSqlTemporalStoreDoc")
+    SqlTemporalStoreDoc update(
             @PathParam("uuid") String uuid,
-            @Parameter(description = "doc", required = true) SqlStoreDoc doc);
+            @Parameter(description = "doc", required = true) SqlTemporalStoreDoc doc);
 }

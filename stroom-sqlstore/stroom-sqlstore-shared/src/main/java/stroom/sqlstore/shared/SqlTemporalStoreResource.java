@@ -31,13 +31,13 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import org.fusesource.restygwt.client.DirectRestService;
 
-@Tag(name = "SqlStore")
-@Path(SqlStoreResource.BASE_PATH)
+@Tag(name = "SqlTemporalStore")
+@Path(SqlTemporalStoreResource.BASE_PATH)
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
-public interface SqlStoreResource extends RestResource, DirectRestService {
+public interface SqlTemporalStoreResource extends RestResource, DirectRestService {
 
-    String BASE_PATH = "/sqlstore" + ResourcePaths.V1;
+    String BASE_PATH = "/sqltemporalstore" + ResourcePaths.V1;
 
     @DELETE
     @Path("/clear")

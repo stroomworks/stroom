@@ -25,9 +25,9 @@ import stroom.document.client.DocumentPlugin;
 import stroom.document.client.DocumentPluginEventManager;
 import stroom.entity.client.presenter.DocPresenter;
 import stroom.security.client.api.ClientSecurityContext;
-import stroom.sqlstore.client.presenter.SqlStorePresenter;
-import stroom.sqlstore.shared.SqlStoreDoc;
-import stroom.sqlstore.shared.SqlStoreDocResource;
+import stroom.sqlstore.client.presenter.SqlTemporalStorePresenter;
+import stroom.sqlstore.shared.SqlTemporalStoreDoc;
+import stroom.sqlstore.shared.SqlTemporalStoreDocResource;
 import stroom.task.client.TaskMonitorFactory;
 
 import com.google.gwt.core.client.GWT;
@@ -39,17 +39,18 @@ import java.util.function.Consumer;
 import javax.inject.Singleton;
 
 @Singleton
-public class SqlStorePlugin extends DocumentPlugin<SqlStoreDoc> {
+public class SqlTemporalStorePlugin extends DocumentPlugin<SqlTemporalStoreDoc> {
 
-    private static final SqlStoreDocResource SQL_STORE_DOC_RESOURCE = GWT.create(SqlStoreDocResource.class);
+    private static final SqlTemporalStoreDocResource SQL_STORE_DOC_RESOURCE =
+            GWT.create(SqlTemporalStoreDocResource.class);
 
-    private final Provider<SqlStorePresenter> editorProvider;
+    private final Provider<SqlTemporalStorePresenter> editorProvider;
     private final RestFactory restFactory;
 
     @Inject
-    public SqlStorePlugin(
+    public SqlTemporalStorePlugin(
             final EventBus eventBus,
-            final Provider<SqlStorePresenter> editorProvider,
+            final Provider<SqlTemporalStorePresenter> editorProvider,
             final RestFactory restFactory,
             final ContentManager contentManager,
             final DocumentPluginEventManager entityPluginEventManager,
@@ -67,7 +68,7 @@ public class SqlStorePlugin extends DocumentPlugin<SqlStoreDoc> {
 
     @Override
     public void load(final DocRef docRef,
-                     final Consumer<SqlStoreDoc> resultConsumer,
+                     final Consumer<SqlTemporalStoreDoc> resultConsumer,
                      final RestErrorHandler errorHandler,
                      final TaskMonitorFactory taskMonitorFactory) {
         restFactory
@@ -81,8 +82,8 @@ public class SqlStorePlugin extends DocumentPlugin<SqlStoreDoc> {
 
     @Override
     public void save(final DocRef docRef,
-                     final SqlStoreDoc document,
-                     final Consumer<SqlStoreDoc> resultConsumer,
+                     final SqlTemporalStoreDoc document,
+                     final Consumer<SqlTemporalStoreDoc> resultConsumer,
                      final RestErrorHandler errorHandler,
                      final TaskMonitorFactory taskMonitorFactory) {
         restFactory
@@ -96,11 +97,11 @@ public class SqlStorePlugin extends DocumentPlugin<SqlStoreDoc> {
 
     @Override
     public String getType() {
-        return SqlStoreDoc.TYPE;
+        return SqlTemporalStoreDoc.TYPE;
     }
 
     @Override
-    protected DocRef getDocRef(final SqlStoreDoc document) {
+    protected DocRef getDocRef(final SqlTemporalStoreDoc document) {
         return DocRefUtil.create(document);
     }
 }

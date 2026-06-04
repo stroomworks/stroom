@@ -24,7 +24,7 @@ import stroom.pipeline.xsltfunctions.SqlStoreLookup;
 import stroom.sqlstore.api.UpdatableTemporalStore;
 import stroom.sqlstore.impl.pipeline.SqlStoreElementModule;
 import stroom.sqlstore.impl.pipeline.SqlStoreLookupImpl;
-import stroom.sqlstore.shared.SqlStoreDoc;
+import stroom.sqlstore.shared.SqlTemporalStoreDoc;
 import stroom.util.guice.GuiceUtil;
 import stroom.util.guice.RestResourcesBinder;
 
@@ -36,22 +36,22 @@ public class SqlStoreModule extends AbstractModule {
     protected void configure() {
         install(new SqlStoreElementModule());
 
-        bind(SqlStoreDocStore.class).to(SqlStoreDocStoreImpl.class);
+        bind(SqlTemporalStoreDocStore.class).to(SqlTemporalStoreDocStoreImpl.class);
         bind(UpdatableTemporalStore.class).to(UpdatableSqlTemporalStore.class);
         bind(SqlStoreLookup.class).to(SqlStoreLookupImpl.class);
 
         GuiceUtil.buildMultiBinder(binder(), ExplorerActionHandler.class)
-                .addBinding(SqlStoreDocStoreImpl.class);
+                .addBinding(SqlTemporalStoreDocStoreImpl.class);
         GuiceUtil.buildMultiBinder(binder(), ImportExportActionHandler.class)
-                .addBinding(SqlStoreDocStoreImpl.class);
+                .addBinding(SqlTemporalStoreDocStoreImpl.class);
         GuiceUtil.buildMultiBinder(binder(), ContentIndexable.class)
-                .addBinding(SqlStoreDocStoreImpl.class);
+                .addBinding(SqlTemporalStoreDocStoreImpl.class);
 
         DocumentActionHandlerBinder.create(binder())
-                .bind(SqlStoreDoc.TYPE, SqlStoreDocStoreImpl.class);
+                .bind(SqlTemporalStoreDoc.TYPE, SqlTemporalStoreDocStoreImpl.class);
 
         RestResourcesBinder.create(binder())
-                .bind(SqlStoreDocResourceImpl.class)
-                .bind(SqlStoreResourceImpl.class);
+                .bind(SqlTemporalStoreDocResourceImpl.class)
+                .bind(SqlTemporalStoreResourceImpl.class);
     }
 }

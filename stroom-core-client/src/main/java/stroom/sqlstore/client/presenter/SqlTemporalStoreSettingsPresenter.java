@@ -21,8 +21,8 @@ import stroom.dispatch.client.RestFactory;
 import stroom.docref.DocRef;
 import stroom.entity.client.presenter.DocPresenter;
 import stroom.entity.client.presenter.ReadOnlyChangeHandler;
-import stroom.sqlstore.shared.SqlStoreDoc;
-import stroom.sqlstore.shared.SqlStoreResource;
+import stroom.sqlstore.shared.SqlTemporalStoreDoc;
+import stroom.sqlstore.shared.SqlTemporalStoreResource;
 
 import com.google.gwt.core.client.GWT;
 import com.google.inject.Inject;
@@ -30,18 +30,18 @@ import com.google.web.bindery.event.shared.EventBus;
 import com.gwtplatform.mvp.client.HasUiHandlers;
 import com.gwtplatform.mvp.client.View;
 
-public class SqlStoreSettingsPresenter
-        extends DocPresenter<SqlStoreSettingsPresenter.SqlStoreSettingsView, SqlStoreDoc>
-        implements SqlStoreSettingsUiHandlers {
+public class SqlTemporalStoreSettingsPresenter
+        extends DocPresenter<SqlTemporalStoreSettingsPresenter.SqlTemporalStoreSettingsView, SqlTemporalStoreDoc>
+        implements SqlTemporalStoreSettingsUiHandlers {
 
-    private static final SqlStoreResource SQL_STORE_RESOURCE = GWT.create(SqlStoreResource.class);
+    private static final SqlTemporalStoreResource SQL_STORE_RESOURCE = GWT.create(SqlTemporalStoreResource.class);
 
     private final RestFactory restFactory;
 
     @Inject
-    public SqlStoreSettingsPresenter(
+    public SqlTemporalStoreSettingsPresenter(
             final EventBus eventBus,
-            final SqlStoreSettingsView view,
+            final SqlTemporalStoreSettingsView view,
             final RestFactory restFactory) {
         super(eventBus, view);
         this.restFactory = restFactory;
@@ -49,13 +49,13 @@ public class SqlStoreSettingsPresenter
     }
 
     @Override
-    protected void onRead(final DocRef docRef, final SqlStoreDoc doc, final boolean readOnly) {
+    protected void onRead(final DocRef docRef, final SqlTemporalStoreDoc doc, final boolean readOnly) {
         getView().onReadOnly(readOnly);
         updateCount(docRef);
     }
 
     @Override
-    protected SqlStoreDoc onWrite(final SqlStoreDoc doc) {
+    protected SqlTemporalStoreDoc onWrite(final SqlTemporalStoreDoc doc) {
         return doc;
     }
 
@@ -86,8 +86,8 @@ public class SqlStoreSettingsPresenter
         }
     }
 
-    public interface SqlStoreSettingsView
-            extends View, ReadOnlyChangeHandler, HasUiHandlers<SqlStoreSettingsUiHandlers> {
+    public interface SqlTemporalStoreSettingsView
+            extends View, ReadOnlyChangeHandler, HasUiHandlers<SqlTemporalStoreSettingsUiHandlers> {
 
         void setCount(long count);
     }

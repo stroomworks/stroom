@@ -41,16 +41,16 @@ import java.util.Objects;
         "description"
 })
 @JsonInclude(Include.NON_NULL)
-public class SqlStoreDoc extends AbstractDoc {
+public class SqlTemporalStoreDoc extends AbstractDoc {
 
-    public static final DocumentType DOCUMENT_TYPE = DocumentTypeRegistry.SQL_STORE_DOCUMENT_TYPE;
+    public static final DocumentType DOCUMENT_TYPE = DocumentTypeRegistry.SQL_TEMPORAL_STORE_DOCUMENT_TYPE;
     public static final String TYPE = DOCUMENT_TYPE.getType();
 
     @JsonProperty
     private final String description;
 
     @JsonCreator
-    public SqlStoreDoc(
+    public SqlTemporalStoreDoc(
             @JsonProperty("uuid") final String uuid,
             @JsonProperty("name") final String name,
             @JsonProperty("version") final String version,
@@ -78,7 +78,7 @@ public class SqlStoreDoc extends AbstractDoc {
         if (!super.equals(o)) {
             return false;
         }
-        final SqlStoreDoc that = (SqlStoreDoc) o;
+        final SqlTemporalStoreDoc that = (SqlTemporalStoreDoc) o;
         return Objects.equals(description, that.description);
     }
 
@@ -103,14 +103,14 @@ public class SqlStoreDoc extends AbstractDoc {
         return new Builder(this);
     }
 
-    public static final class Builder extends AbstractBuilder<SqlStoreDoc, Builder> {
+    public static final class Builder extends AbstractBuilder<SqlTemporalStoreDoc, Builder> {
 
         private String description;
 
         public Builder() {
         }
 
-        public Builder(final SqlStoreDoc doc) {
+        public Builder(final SqlTemporalStoreDoc doc) {
             super(doc);
             this.description = doc.description;
         }
@@ -126,8 +126,8 @@ public class SqlStoreDoc extends AbstractDoc {
         }
 
         @Override
-        public SqlStoreDoc build() {
-            return new SqlStoreDoc(
+        public SqlTemporalStoreDoc build() {
+            return new SqlTemporalStoreDoc(
                     uuid,
                     name,
                     version,

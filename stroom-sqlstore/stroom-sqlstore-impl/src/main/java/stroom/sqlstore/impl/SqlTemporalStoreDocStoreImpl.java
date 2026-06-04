@@ -23,7 +23,7 @@ import stroom.docstore.api.StoreFactory;
 import stroom.importexport.api.ImportExportDocument;
 import stroom.importexport.shared.ImportSettings;
 import stroom.importexport.shared.ImportState;
-import stroom.sqlstore.shared.SqlStoreDoc;
+import stroom.sqlstore.shared.SqlTemporalStoreDoc;
 import stroom.util.shared.Message;
 
 import jakarta.inject.Inject;
@@ -34,19 +34,19 @@ import java.util.Map;
 import java.util.Set;
 
 @Singleton
-public class SqlStoreDocStoreImpl implements SqlStoreDocStore {
+public class SqlTemporalStoreDocStoreImpl implements SqlTemporalStoreDocStore {
 
-    private final Store<SqlStoreDoc> store;
+    private final Store<SqlTemporalStoreDoc> store;
 
     @Inject
-    public SqlStoreDocStoreImpl(
+    public SqlTemporalStoreDocStoreImpl(
             final StoreFactory storeFactory,
-            final SqlStoreSerialiser serialiser) {
+            final SqlTemporalStoreSerialiser serialiser) {
         this.store = storeFactory.createStore(
                 serialiser,
-                SqlStoreDoc.TYPE,
-                SqlStoreDoc::builder,
-                SqlStoreDoc::copy);
+                SqlTemporalStoreDoc.TYPE,
+                SqlTemporalStoreDoc::builder,
+                SqlTemporalStoreDoc::copy);
     }
 
     // ---------------------------------------------------------------------
@@ -95,12 +95,12 @@ public class SqlStoreDocStoreImpl implements SqlStoreDocStore {
     // ---------------------------------------------------------------------
 
     @Override
-    public SqlStoreDoc readDocument(final DocRef docRef) {
+    public SqlTemporalStoreDoc readDocument(final DocRef docRef) {
         return store.readDocument(docRef);
     }
 
     @Override
-    public SqlStoreDoc writeDocument(final SqlStoreDoc document) {
+    public SqlTemporalStoreDoc writeDocument(final SqlTemporalStoreDoc document) {
         return store.writeDocument(document);
     }
 

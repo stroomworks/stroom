@@ -20,20 +20,20 @@ import stroom.docref.DocRef;
 import stroom.event.logging.rs.api.AutoLogged;
 import stroom.security.api.SecurityContext;
 import stroom.security.shared.DocumentPermission;
-import stroom.sqlstore.shared.SqlStoreResource;
+import stroom.sqlstore.shared.SqlTemporalStoreResource;
 import stroom.util.shared.PermissionException;
 
 import jakarta.inject.Inject;
 import jakarta.inject.Provider;
 
 @AutoLogged
-class SqlStoreResourceImpl implements SqlStoreResource {
+class SqlTemporalStoreResourceImpl implements SqlTemporalStoreResource {
 
     private final Provider<UpdatableSqlTemporalStore> updatableSqlTemporalStoreProvider;
     private final SecurityContext securityContext;
 
     @Inject
-    SqlStoreResourceImpl(final Provider<UpdatableSqlTemporalStore> updatableSqlTemporalStoreProvider,
+    SqlTemporalStoreResourceImpl(final Provider<UpdatableSqlTemporalStore> updatableSqlTemporalStoreProvider,
                          final SecurityContext securityContext) {
         this.updatableSqlTemporalStoreProvider = updatableSqlTemporalStoreProvider;
         this.securityContext = securityContext;

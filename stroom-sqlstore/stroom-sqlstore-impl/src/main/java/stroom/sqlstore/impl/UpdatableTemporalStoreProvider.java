@@ -27,11 +27,11 @@ import jakarta.inject.Singleton;
 public class UpdatableTemporalStoreProvider {
 
     private final Provider<UpdatableSqlTemporalStore> sqlTemporalStoreProvider;
-    private final SqlStoreDocStore sqlStoreDocStore;
+    private final SqlTemporalStoreDocStore sqlStoreDocStore;
 
     @Inject
     public UpdatableTemporalStoreProvider(final Provider<UpdatableSqlTemporalStore> sqlTemporalStoreProvider,
-                                          final SqlStoreDocStore sqlStoreDocStore) {
+                                          final SqlTemporalStoreDocStore sqlStoreDocStore) {
         this.sqlTemporalStoreProvider = sqlTemporalStoreProvider;
         this.sqlStoreDocStore = sqlStoreDocStore;
     }

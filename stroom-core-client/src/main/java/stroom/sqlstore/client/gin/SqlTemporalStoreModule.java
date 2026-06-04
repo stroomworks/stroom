@@ -17,21 +17,21 @@
 package stroom.sqlstore.client.gin;
 
 import stroom.core.client.gin.PluginModule;
-import stroom.sqlstore.client.SqlStorePlugin;
-import stroom.sqlstore.client.presenter.SqlStorePresenter;
-import stroom.sqlstore.client.presenter.SqlStoreSettingsPresenter;
-import stroom.sqlstore.client.presenter.SqlStoreSettingsPresenter.SqlStoreSettingsView;
-import stroom.sqlstore.client.view.SqlStoreSettingsViewImpl;
+import stroom.sqlstore.client.SqlTemporalStorePlugin;
+import stroom.sqlstore.client.presenter.SqlTemporalStorePresenter;
+import stroom.sqlstore.client.presenter.SqlTemporalStoreSettingsPresenter;
+import stroom.sqlstore.client.presenter.SqlTemporalStoreSettingsPresenter.SqlTemporalStoreSettingsView;
+import stroom.sqlstore.client.view.SqlTemporalStoreSettingsViewImpl;
 
-public class SqlStoreModule extends PluginModule {
+public class SqlTemporalStoreModule extends PluginModule {
 
     @Override
     protected void configure() {
-        bindPlugin(SqlStorePlugin.class);
-        bind(SqlStorePresenter.class);
+        bindPlugin(SqlTemporalStorePlugin.class);
+        bind(SqlTemporalStorePresenter.class);
         bindPresenterWidget(
-                SqlStoreSettingsPresenter.class,
-                SqlStoreSettingsView.class,
-                SqlStoreSettingsViewImpl.class);
+                SqlTemporalStoreSettingsPresenter.class,
+                SqlTemporalStoreSettingsView.class,
+                SqlTemporalStoreSettingsViewImpl.class);
     }
 }

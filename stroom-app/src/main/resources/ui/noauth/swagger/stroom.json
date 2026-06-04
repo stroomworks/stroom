@@ -2757,6 +2757,35 @@
         "tags" : [ "Dashboards" ]
       }
     },
+    "/dashboard/v1/findByType" : {
+      "get" : {
+        "operationId" : "findDashboardsByType",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "domainType",
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "type" : "array",
+                  "items" : {
+                    "$ref" : "#/components/schemas/DocRef"
+                  }
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Find dashboards by dashboard type",
+        "tags" : [ "Dashboards" ]
+      }
+    },
     "/dashboard/v1/search" : {
       "post" : {
         "operationId" : "dashboardSearch",
@@ -3617,6 +3646,121 @@
         },
         "summary" : "Update a documentation doc",
         "tags" : [ "Documentation (v1)" ]
+      }
+    },
+    "/domainType/v1/attributeParts/{classPart}" : {
+      "get" : {
+        "operationId" : "fetchAttributeParts",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "classPart",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "type" : "array",
+                  "items" : {
+                    "type" : "string"
+                  }
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Fetch a list of available AttributeParts for a given ClassPart across all DomainTypeDocs",
+        "tags" : [ "DomainTypes (v1)" ]
+      }
+    },
+    "/domainType/v1/classParts" : {
+      "get" : {
+        "operationId" : "fetchClassParts",
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "type" : "array",
+                  "items" : {
+                    "type" : "string"
+                  }
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Fetch a list of available ClassParts across all DomainTypeDocs in the document store",
+        "tags" : [ "DomainTypes (v1)" ]
+      }
+    },
+    "/domainType/v1/{uuid}" : {
+      "get" : {
+        "operationId" : "fetchDomainType",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "uuid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/DomainTypeDoc"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Fetch a domain type doc by its UUID",
+        "tags" : [ "DomainTypes (v1)" ]
+      },
+      "put" : {
+        "operationId" : "updateDomainType",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "uuid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/DomainTypeDoc"
+              }
+            }
+          },
+          "description" : "doc",
+          "required" : true
+        },
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/DomainTypeDoc"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Update a domain type doc",
+        "tags" : [ "DomainTypes (v1)" ]
       }
     },
     "/duplicateCheck/v1/delete" : {
@@ -5259,6 +5403,69 @@
         },
         "summary" : "Send Plan B part",
         "tags" : [ "File Transfer" ]
+      }
+    },
+    "/floormap/v1/{uuid}" : {
+      "get" : {
+        "operationId" : "fetchFloorMap",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "uuid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FloorMapDoc"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Fetch an analytic rule doc by its UUID",
+        "tags" : [ "Queries" ]
+      },
+      "put" : {
+        "operationId" : "updateFloorMap",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "uuid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/FloorMapDoc"
+              }
+            }
+          },
+          "description" : "doc",
+          "required" : true
+        },
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FloorMapDoc"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Update an analytic rule doc",
+        "tags" : [ "Queries" ]
       }
     },
     "/fsVolume/v1" : {
@@ -10957,6 +11164,69 @@
         "tags" : [ "Solr Indices" ]
       }
     },
+    "/sqlTemporalStoreDoc/v1/{uuid}" : {
+      "get" : {
+        "operationId" : "fetchSqlTemporalStoreDoc",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "uuid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SqlTemporalStoreDoc"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Fetch an SQL temporal store doc by its UUID",
+        "tags" : [ "SqlTemporalStore" ]
+      },
+      "put" : {
+        "operationId" : "updateSqlTemporalStoreDoc",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "uuid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/SqlTemporalStoreDoc"
+              }
+            }
+          },
+          "description" : "doc",
+          "required" : true
+        },
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SqlTemporalStoreDoc"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Update an SQL temporal store doc",
+        "tags" : [ "SqlTemporalStore" ]
+      }
+    },
     "/sqlstatistics/v2/destroy" : {
       "post" : {
         "operationId" : "destroySqlStatisticsQuery",
@@ -11015,6 +11285,69 @@
         },
         "summary" : "Submit a search request",
         "tags" : [ "Sql Statistics Query" ]
+      }
+    },
+    "/sqltemporalstore/v1/clear" : {
+      "delete" : {
+        "description" : "Clears all entries for the specified store.",
+        "operationId" : "clear",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/DocRef"
+              }
+            }
+          },
+          "description" : "docRef",
+          "required" : true
+        },
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "type" : "boolean"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Clear a store",
+        "tags" : [ "SqlTemporalStore" ]
+      }
+    },
+    "/sqltemporalstore/v1/count" : {
+      "post" : {
+        "description" : "Returns the number of entries in the specified store.",
+        "operationId" : "count",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/DocRef"
+              }
+            }
+          },
+          "description" : "docRef",
+          "required" : true
+        },
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "type" : "integer",
+                  "format" : "int64"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Get store count",
+        "tags" : [ "SqlTemporalStore" ]
       }
     },
     "/statistic/v1/{uuid}" : {
@@ -12691,15 +13024,15 @@
             "content" : {
               "application/json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/VisualisationAssets"
+                  "$ref" : "#/components/schemas/DocumentAssets"
                 }
               }
             },
             "description" : "default response"
           }
         },
-        "summary" : "Fetch the assets belonging to a visualisation doc by the doc's UUID",
-        "tags" : [ "VisualisationAssets" ]
+        "summary" : "Fetch the assets belonging to a document by the doc's UUID",
+        "tags" : [ "DocumentAssets" ]
       }
     },
     "/visualisationAssets/getContent/{ownerDocId}" : {
@@ -12724,7 +13057,7 @@
             "content" : {
               "application/json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/VisualisationAssetContent"
+                  "$ref" : "#/components/schemas/DocumentAssetContent"
                 }
               }
             },
@@ -12732,7 +13065,7 @@
           }
         },
         "summary" : "Gets the content of an asset for editing",
-        "tags" : [ "VisualisationAssets" ]
+        "tags" : [ "DocumentAssets" ]
       }
     },
     "/visualisationAssets/revertDraftFromLive/{ownerDocId}" : {
@@ -12759,7 +13092,7 @@
           }
         },
         "summary" : "Revert draft assets to get rid of any changes",
-        "tags" : [ "VisualisationAssets" ]
+        "tags" : [ "DocumentAssets" ]
       }
     },
     "/visualisationAssets/saveAs/{fromOwnerDocId}" : {
@@ -12777,7 +13110,7 @@
           "content" : {
             "application/json" : {
               "schema" : {
-                "$ref" : "#/components/schemas/VisualisationAssetSaveAsParameters"
+                "$ref" : "#/components/schemas/DocumentAssetSaveAsParameters"
               }
             }
           },
@@ -12797,7 +13130,7 @@
           }
         },
         "summary" : "Save the document's assets to another document",
-        "tags" : [ "VisualisationAssets" ]
+        "tags" : [ "DocumentAssets" ]
       }
     },
     "/visualisationAssets/saveAs/{ownerDocId}" : {
@@ -12824,7 +13157,7 @@
           }
         },
         "summary" : "Check if an index.html asset exists for the document ID",
-        "tags" : [ "VisualisationAssets" ]
+        "tags" : [ "DocumentAssets" ]
       }
     },
     "/visualisationAssets/saveDraftToLive/{ownerDocId}" : {
@@ -12851,7 +13184,7 @@
           }
         },
         "summary" : "Save draft assets to main store to make them live",
-        "tags" : [ "VisualisationAssets" ]
+        "tags" : [ "DocumentAssets" ]
       }
     },
     "/visualisationAssets/updateContent/{ownerDocId}" : {
@@ -12869,7 +13202,7 @@
           "content" : {
             "application/json" : {
               "schema" : {
-                "$ref" : "#/components/schemas/VisualisationAssetUpdateContent"
+                "$ref" : "#/components/schemas/DocumentAssetUpdateContent"
               }
             }
           },
@@ -12889,7 +13222,7 @@
           }
         },
         "summary" : "Updates the content of an asset",
-        "tags" : [ "VisualisationAssets" ]
+        "tags" : [ "DocumentAssets" ]
       }
     },
     "/visualisationAssets/updateDelete/{ownerDocId}" : {
@@ -12907,7 +13240,7 @@
           "content" : {
             "application/json" : {
               "schema" : {
-                "$ref" : "#/components/schemas/VisualisationAssetUpdateDelete"
+                "$ref" : "#/components/schemas/DocumentAssetUpdateDelete"
               }
             }
           },
@@ -12927,7 +13260,7 @@
           }
         },
         "summary" : "Deletes an asset",
-        "tags" : [ "VisualisationAssets" ]
+        "tags" : [ "DocumentAssets" ]
       }
     },
     "/visualisationAssets/updateNewFile/{ownerDocId}" : {
@@ -12945,7 +13278,7 @@
           "content" : {
             "application/json" : {
               "schema" : {
-                "$ref" : "#/components/schemas/VisualisationAssetUpdateNewFile"
+                "$ref" : "#/components/schemas/DocumentAssetUpdateNewFile"
               }
             }
           },
@@ -12964,7 +13297,7 @@
           }
         },
         "summary" : "Creates a new text file",
-        "tags" : [ "VisualisationAssets" ]
+        "tags" : [ "DocumentAssets" ]
       }
     },
     "/visualisationAssets/updateNewFolder/{ownerDocId}" : {
@@ -13001,7 +13334,7 @@
           }
         },
         "summary" : "Create new folder",
-        "tags" : [ "VisualisationAssets" ]
+        "tags" : [ "DocumentAssets" ]
       }
     },
     "/visualisationAssets/updateNewUploadedFile/{ownerDocId}" : {
@@ -13019,7 +13352,7 @@
           "content" : {
             "application/json" : {
               "schema" : {
-                "$ref" : "#/components/schemas/VisualisationAssetUpdateNewFile"
+                "$ref" : "#/components/schemas/DocumentAssetUpdateNewFile"
               }
             }
           },
@@ -13039,7 +13372,7 @@
           }
         },
         "summary" : "Creates a new uploaded file",
-        "tags" : [ "VisualisationAssets" ]
+        "tags" : [ "DocumentAssets" ]
       }
     },
     "/visualisationAssets/updateRename/{ownerDocId}" : {
@@ -13057,7 +13390,7 @@
           "content" : {
             "application/json" : {
               "schema" : {
-                "$ref" : "#/components/schemas/VisualisationAssetUpdateRename"
+                "$ref" : "#/components/schemas/DocumentAssetUpdateRename"
               }
             }
           },
@@ -13077,7 +13410,7 @@
           }
         },
         "summary" : "Renames an asset",
-        "tags" : [ "VisualisationAssets" ]
+        "tags" : [ "DocumentAssets" ]
       }
     },
     "/welcome/v1" : {
@@ -14999,6 +15332,9 @@
           "columnValueSelection" : {
             "$ref" : "#/components/schemas/ColumnValueSelection"
           },
+          "domainType" : {
+            "type" : "string"
+          },
           "expression" : {
             "type" : "string",
             "description" : "The expression to use to generate the value for this field",
@@ -15968,6 +16304,12 @@
           "description" : {
             "type" : "string"
           },
+          "domainTypes" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/DomainType"
+            }
+          },
           "name" : {
             "type" : "string"
           },
@@ -16654,6 +16996,117 @@
           }
         }
       },
+      "DocumentAsset" : {
+        "type" : "object",
+        "properties" : {
+          "folder" : {
+            "type" : "boolean"
+          },
+          "id" : {
+            "type" : "string"
+          },
+          "path" : {
+            "type" : "string"
+          }
+        }
+      },
+      "DocumentAssetContent" : {
+        "type" : "object",
+        "properties" : {
+          "content" : {
+            "type" : "string"
+          },
+          "editorMode" : {
+            "type" : "string"
+          }
+        }
+      },
+      "DocumentAssetSaveAsParameters" : {
+        "type" : "object",
+        "properties" : {
+          "toOwnerDocId" : {
+            "type" : "string"
+          },
+          "updatedContent" : {
+            "type" : "string",
+            "format" : "byte"
+          },
+          "updatedContentPath" : {
+            "type" : "string"
+          }
+        }
+      },
+      "DocumentAssetUpdateContent" : {
+        "type" : "object",
+        "properties" : {
+          "content" : {
+            "type" : "string",
+            "format" : "byte"
+          },
+          "path" : {
+            "type" : "string"
+          }
+        }
+      },
+      "DocumentAssetUpdateDelete" : {
+        "type" : "object",
+        "properties" : {
+          "folder" : {
+            "type" : "boolean"
+          },
+          "path" : {
+            "type" : "string"
+          }
+        }
+      },
+      "DocumentAssetUpdateNewFile" : {
+        "type" : "object",
+        "properties" : {
+          "path" : {
+            "type" : "string"
+          },
+          "resourceKey" : {
+            "$ref" : "#/components/schemas/ResourceKey"
+          }
+        }
+      },
+      "DocumentAssetUpdateRename" : {
+        "type" : "object",
+        "properties" : {
+          "folder" : {
+            "type" : "boolean"
+          },
+          "newPath" : {
+            "type" : "string"
+          },
+          "oldPath" : {
+            "type" : "string"
+          }
+        }
+      },
+      "DocumentAssets" : {
+        "type" : "object",
+        "properties" : {
+          "assets" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/DocumentAsset"
+            }
+          },
+          "dirty" : {
+            "type" : "boolean"
+          },
+          "ownerId" : {
+            "type" : "string"
+          },
+          "uploadedFiles" : {
+            "type" : "object",
+            "additionalProperties" : {
+              "$ref" : "#/components/schemas/ResourceKey"
+            }
+          }
+        }
+      },
       "DocumentFindRequest" : {
         "type" : "object",
         "properties" : {
@@ -16687,7 +17140,7 @@
           },
           "icon" : {
             "type" : "string",
-            "enum" : [ "ADD", "ADD_ABOVE", "ADD_BELOW", "ADD_MULTIPLE", "AI", "ALERT", "ALERT_SIMPLE", "ARROW_DOWN", "ARROW_LEFT", "ARROW_RIGHT", "ARROW_UP", "AUTO_REFRESH", "BACKWARD", "BORDERED_CIRCLE", "CALENDAR", "CANCEL", "CASE_SENSITIVE", "CLEAR", "CLIPBOARD", "CLOSE", "CODE", "COLLAPSE_ALL", "COLLAPSE_UP", "CONTENT_STORE", "COPY", "DATABASE", "DELETE", "DEPENDENCIES", "DISABLE", "DOCUMENT_ANALYTIC_OUTPUT_STORE", "DOCUMENT_ANALYTIC_RULE", "DOCUMENT_DATA_GEN", "DOCUMENT_ANNOTATIONS_INDEX", "DOCUMENT_DASHBOARD", "DOCUMENT_DICTIONARY", "DOCUMENT_DOCUMENTATION", "DOCUMENT_ELASTIC_CLUSTER", "DOCUMENT_ELASTIC_INDEX", "DOCUMENT_FAVOURITES", "DOCUMENT_FEED", "DOCUMENT_FOLDER", "DOCUMENT_GIT_REPO", "DOCUMENT_GIT_REPO_FOLDER", "DOCUMENT_INDEX", "DOCUMENT_KAFKA_CONFIG", "DOCUMENT_OPEN_AI", "DOCUMENT_PATHWAYS", "DOCUMENT_PIPELINE", "DOCUMENT_PLAN_B", "DOCUMENT_QUERY", "DOCUMENT_RECEIVE_DATA_RULE_SET", "DOCUMENT_REPORT", "DOCUMENT_S3", "DOCUMENT_SCRIPT", "DOCUMENT_SEARCHABLE", "DOCUMENT_SELECT_ALL_OR_NONE", "DOCUMENT_SIGMA_RULE", "DOCUMENT_SOLR_INDEX", "DOCUMENT_STATISTIC_STORE", "DOCUMENT_SYSTEM", "DOCUMENT_TEXT_CONVERTER", "DOCUMENT_TRACES", "DOCUMENT_VIEW", "DOCUMENT_VISUALISATION", "DOCUMENT_XMLSCHEMA", "DOCUMENT_XSLT", "DOT", "DOUBLE_ARROW", "DOWN", "DOWNLOAD", "DROP_DOWN", "EDIT", "ELLIPSES_HORIZONTAL", "ELLIPSES_VERTICAL", "ERROR", "EXCLAMATION", "EXPAND_ALL", "EXPAND_DOWN", "EXPLORER", "EYE", "EYE_OFF", "FAST_BACKWARD", "FAST_FORWARD", "FATAL", "FATAL_DARK", "FAVOURITES", "FAVOURITES_OUTLINE", "FEED", "FIELD", "FIELDS_EXPRESSION", "FIELDS_FILTER", "FIELDS_FORMAT", "FIELDS_GROUP", "FIELDS_SORT_ASCENDING", "FIELDS_SORT_DESCENDING", "FIELDS_SORT_NONE", "FILE", "FILE_FORMATTED", "FILE_IMAGE", "FILE_RAW", "FILE_SCRIPT", "FILTER", "FIND", "FOLDER", "FOLDER_TREE", "FORMAT", "FORWARD", "FUNCTION", "GENERATE", "HELP", "HELP_OUTLINE", "HIDE", "HIDE_MENU", "HISTORY", "INFINITY_LOGO", "INFO", "INSERT", "JOBS", "KEY", "KEY_BLUE", "LINK", "LOCATE", "LOCKED", "LOGO", "LOGOUT", "MAXIMISE", "MENU", "MINIMISE", "MONITORING", "MOVE", "NODES", "OK", "OO", "OPEN", "OPERATOR", "PASSWORD", "PATHWAYS_CHOICE", "PATHWAYS_NODE", "PATHWAYS_SEQUENCE", "PAUSE", "PEN", "PIPELINE_ELASTIC_INDEX", "PIPELINE_FILE", "PIPELINE_FILES", "PIPELINE_HADOOP", "PIPELINE_ID", "PIPELINE_INDEX", "PIPELINE_JSON", "PIPELINE_KAFKA", "PIPELINE_MERGE", "PIPELINE_RECORD_COUNT", "PIPELINE_RECORD_OUTPUT", "PIPELINE_REFERENCE_DATA", "PIPELINE_SEARCH_OUTPUT", "PIPELINE_SOLR", "PIPELINE_SPLIT", "PIPELINE_STATISTICS", "PIPELINE_STREAM", "PIPELINE_STROOM_STATS", "PIPELINE_TEXT", "PIPELINE_XML", "PIPELINE_XML_SEARCH", "PIPELINE_XSD", "PIPELINE_XSLT", "PLAY", "PROCESS", "PROPERTIES", "QUESTION", "RAW", "REFRESH", "REGEX", "REMOVE", "RERUN", "RESIZE", "RESIZE_HANDLE", "SAVE", "SAVEAS", "SEARCH", "SELECTION", "SETTINGS", "SHARD_CLOSE", "SHARD_FLUSH", "SHARE", "SHIELD", "SHOW", "SHOW_MENU", "SPINNER_CIRCLE", "SPINNER_PAUSE", "SPINNER_SPINNING", "STAMP", "STEP", "STEPPING", "STEPPING_CIRCLE", "STEP_BACKWARD", "STEP_FORWARD", "STOP", "TABLE", "TABLE_NESTED", "TAB_CLOSE", "TAGS", "TEXT_WRAP", "TICK", "UNDO", "UNLINK", "UNLOCK", "UP", "UPLOAD", "USER", "USERS", "VALUE_FILTER", "VOLUMES", "WARNING" ]
+            "enum" : [ "ADD", "ADD_ABOVE", "ADD_BELOW", "ADD_MULTIPLE", "AI", "ALERT", "ALERT_SIMPLE", "ARROW_DOWN", "ARROW_LEFT", "ARROW_RIGHT", "ARROW_UP", "AUTO_REFRESH", "BACKWARD", "BORDERED_CIRCLE", "CALENDAR", "CANCEL", "CASE_SENSITIVE", "CLEAR", "CLIPBOARD", "CLOSE", "CODE", "COLLAPSE_ALL", "COLLAPSE_UP", "CONTENT_STORE", "COPY", "DATABASE", "DELETE", "DEPENDENCIES", "DISABLE", "DOCUMENT_ANALYTIC_OUTPUT_STORE", "DOCUMENT_ANALYTIC_RULE", "DOCUMENT_ANNOTATIONS_INDEX", "DOCUMENT_DASHBOARD", "DOCUMENT_DATA_GEN", "DOCUMENT_FLOOR_MAP", "DOCUMENT_DICTIONARY", "DOCUMENT_DOCUMENTATION", "DOCUMENT_DOMAIN_TYPE", "DOCUMENT_ELASTIC_CLUSTER", "DOCUMENT_ELASTIC_INDEX", "DOCUMENT_FAVOURITES", "DOCUMENT_FEED", "DOCUMENT_FOLDER", "DOCUMENT_GIT_REPO", "DOCUMENT_GIT_REPO_FOLDER", "DOCUMENT_INDEX", "DOCUMENT_KAFKA_CONFIG", "DOCUMENT_OPEN_AI", "DOCUMENT_PATHWAYS", "DOCUMENT_PIPELINE", "DOCUMENT_PLAN_B", "DOCUMENT_QUERY", "DOCUMENT_RECEIVE_DATA_RULE_SET", "DOCUMENT_REPORT", "DOCUMENT_S3", "DOCUMENT_SCRIPT", "DOCUMENT_SEARCHABLE", "DOCUMENT_SELECT_ALL_OR_NONE", "DOCUMENT_SIGMA_RULE", "DOCUMENT_SOLR_INDEX", "DOCUMENT_STATISTIC_STORE", "DOCUMENT_SYSTEM", "DOCUMENT_TEXT_CONVERTER", "DOCUMENT_TRACES", "DOCUMENT_VIEW", "DOCUMENT_VISUALISATION", "DOCUMENT_XMLSCHEMA", "DOCUMENT_XSLT", "DOT", "DOUBLE_ARROW", "DOWN", "DOWNLOAD", "DROP_DOWN", "EDIT", "ELLIPSES_HORIZONTAL", "ELLIPSES_VERTICAL", "ERROR", "EXCLAMATION", "EXPAND_ALL", "EXPAND_DOWN", "EXPLORER", "EYE", "EYE_OFF", "FAST_BACKWARD", "FAST_FORWARD", "FATAL", "FATAL_DARK", "FAVOURITES", "FAVOURITES_OUTLINE", "FEED", "FIELD", "FIELDS_EXPRESSION", "FIELDS_FILTER", "FIELDS_FORMAT", "FIELDS_GROUP", "FIELDS_SORT_ASCENDING", "FIELDS_SORT_DESCENDING", "FIELDS_SORT_NONE", "FILE", "FILE_FORMATTED", "FILE_IMAGE", "FILE_RAW", "FILE_SCRIPT", "FILTER", "FIND", "FOLDER", "FOLDER_TREE", "FORMAT", "FORWARD", "FUNCTION", "GENERATE", "HELP", "HELP_OUTLINE", "HIDE", "HIDE_MENU", "HISTORY", "INFINITY_LOGO", "INFO", "INSERT", "JOBS", "KEY", "KEY_BLUE", "LINK", "LOCATE", "LOCKED", "LOGO", "LOGOUT", "MAXIMISE", "MENU", "MINIMISE", "MONITORING", "MOVE", "NODES", "OK", "OO", "OPEN", "OPERATOR", "PASSWORD", "PATHWAYS_CHOICE", "PATHWAYS_NODE", "PATHWAYS_SEQUENCE", "PAUSE", "PEN", "PIPELINE_ELASTIC_INDEX", "PIPELINE_FILE", "PIPELINE_FILES", "PIPELINE_HADOOP", "PIPELINE_ID", "PIPELINE_INDEX", "PIPELINE_JSON", "PIPELINE_KAFKA", "PIPELINE_MERGE", "PIPELINE_RECORD_COUNT", "PIPELINE_RECORD_OUTPUT", "PIPELINE_REFERENCE_DATA", "PIPELINE_SEARCH_OUTPUT", "PIPELINE_SOLR", "PIPELINE_SPLIT", "PIPELINE_STATISTICS", "PIPELINE_STREAM", "PIPELINE_STROOM_STATS", "PIPELINE_TEXT", "PIPELINE_XML", "PIPELINE_XML_SEARCH", "PIPELINE_XSD", "PIPELINE_XSLT", "PLAY", "PROCESS", "PROPERTIES", "QUESTION", "RAW", "REFRESH", "REGEX", "REMOVE", "RERUN", "RESIZE", "RESIZE_HANDLE", "SAVE", "SAVEAS", "SEARCH", "SELECTION", "SETTINGS", "SHARD_CLOSE", "SHARD_FLUSH", "SHARE", "SHIELD", "SHOW", "SHOW_MENU", "SPINNER_CIRCLE", "SPINNER_PAUSE", "SPINNER_SPINNING", "STAMP", "STEP", "STEPPING", "STEPPING_CIRCLE", "STEP_BACKWARD", "STEP_FORWARD", "STOP", "TABLE", "TABLE_NESTED", "TAB_CLOSE", "TAGS", "TEXT_WRAP", "TICK", "UNDO", "UNLINK", "UNLOCK", "UP", "UPLOAD", "USER", "USERS", "VALUE_FILTER", "VOLUMES", "WARNING" ]
           },
           "type" : {
             "type" : "string"
@@ -16809,6 +17262,57 @@
           },
           "documentation" : {
             "type" : "string"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "type" : {
+            "type" : "string"
+          },
+          "updateTimeMs" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "updateUser" : {
+            "type" : "string"
+          },
+          "uuid" : {
+            "type" : "string"
+          },
+          "version" : {
+            "type" : "string"
+          }
+        }
+      },
+      "DomainType" : {
+        "type" : "object",
+        "properties" : {
+          "attributePart" : {
+            "type" : "string"
+          },
+          "classPart" : {
+            "type" : "string"
+          }
+        }
+      },
+      "DomainTypeDoc" : {
+        "type" : "object",
+        "properties" : {
+          "createTimeMs" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "createUser" : {
+            "type" : "string"
+          },
+          "description" : {
+            "type" : "string"
+          },
+          "domainTypes" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/DomainType"
+            }
           },
           "name" : {
             "type" : "string"
@@ -17138,6 +17642,9 @@
         "properties" : {
           "denseVectorFieldConfig" : {
             "$ref" : "#/components/schemas/DenseVectorFieldConfig"
+          },
+          "domainType" : {
+            "type" : "string"
           },
           "fieldName" : {
             "type" : "string"
@@ -19046,6 +19553,46 @@
         "description" : "A result structure used primarily for visualisation data",
         "required" : [ "componentId" ]
       },
+      "FloorMapDoc" : {
+        "type" : "object",
+        "properties" : {
+          "createTimeMs" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "createUser" : {
+            "type" : "string"
+          },
+          "description" : {
+            "type" : "string"
+          },
+          "feed" : {
+            "$ref" : "#/components/schemas/DocRef"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "template" : {
+            "type" : "string"
+          },
+          "type" : {
+            "type" : "string"
+          },
+          "updateTimeMs" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "updateUser" : {
+            "type" : "string"
+          },
+          "uuid" : {
+            "type" : "string"
+          },
+          "version" : {
+            "type" : "string"
+          }
+        }
+      },
       "Format" : {
         "type" : "object",
         "description" : "Describes the formatting that will be applied to values in a field",
@@ -19902,6 +20449,9 @@
           },
           "denseVectorFieldConfig" : {
             "$ref" : "#/components/schemas/DenseVectorFieldConfig"
+          },
+          "domainType" : {
+            "type" : "string"
           },
           "fldName" : {
             "type" : "string"
@@ -20762,6 +21312,9 @@
           },
           "denseVectorFieldConfig" : {
             "$ref" : "#/components/schemas/DenseVectorFieldConfig"
+          },
+          "domainType" : {
+            "type" : "string"
           },
           "fieldName" : {
             "type" : "string"
@@ -21768,7 +22321,7 @@
           },
           "icon" : {
             "type" : "string",
-            "enum" : [ "ADD", "ADD_ABOVE", "ADD_BELOW", "ADD_MULTIPLE", "AI", "ALERT", "ALERT_SIMPLE", "ARROW_DOWN", "ARROW_LEFT", "ARROW_RIGHT", "ARROW_UP", "AUTO_REFRESH", "BACKWARD", "BORDERED_CIRCLE", "CALENDAR", "CANCEL", "CASE_SENSITIVE", "CLEAR", "CLIPBOARD", "CLOSE", "CODE", "COLLAPSE_ALL", "COLLAPSE_UP", "CONTENT_STORE", "COPY", "DATABASE", "DELETE", "DEPENDENCIES", "DISABLE", "DOCUMENT_ANALYTIC_OUTPUT_STORE", "DOCUMENT_ANALYTIC_RULE", "DOCUMENT_DATA_GEN", "DOCUMENT_ANNOTATIONS_INDEX", "DOCUMENT_DASHBOARD", "DOCUMENT_DICTIONARY", "DOCUMENT_DOCUMENTATION", "DOCUMENT_ELASTIC_CLUSTER", "DOCUMENT_ELASTIC_INDEX", "DOCUMENT_FAVOURITES", "DOCUMENT_FEED", "DOCUMENT_FOLDER", "DOCUMENT_GIT_REPO", "DOCUMENT_GIT_REPO_FOLDER", "DOCUMENT_INDEX", "DOCUMENT_KAFKA_CONFIG", "DOCUMENT_OPEN_AI", "DOCUMENT_PATHWAYS", "DOCUMENT_PIPELINE", "DOCUMENT_PLAN_B", "DOCUMENT_QUERY", "DOCUMENT_RECEIVE_DATA_RULE_SET", "DOCUMENT_REPORT", "DOCUMENT_S3", "DOCUMENT_SCRIPT", "DOCUMENT_SEARCHABLE", "DOCUMENT_SELECT_ALL_OR_NONE", "DOCUMENT_SIGMA_RULE", "DOCUMENT_SOLR_INDEX", "DOCUMENT_STATISTIC_STORE", "DOCUMENT_SYSTEM", "DOCUMENT_TEXT_CONVERTER", "DOCUMENT_TRACES", "DOCUMENT_VIEW", "DOCUMENT_VISUALISATION", "DOCUMENT_XMLSCHEMA", "DOCUMENT_XSLT", "DOT", "DOUBLE_ARROW", "DOWN", "DOWNLOAD", "DROP_DOWN", "EDIT", "ELLIPSES_HORIZONTAL", "ELLIPSES_VERTICAL", "ERROR", "EXCLAMATION", "EXPAND_ALL", "EXPAND_DOWN", "EXPLORER", "EYE", "EYE_OFF", "FAST_BACKWARD", "FAST_FORWARD", "FATAL", "FATAL_DARK", "FAVOURITES", "FAVOURITES_OUTLINE", "FEED", "FIELD", "FIELDS_EXPRESSION", "FIELDS_FILTER", "FIELDS_FORMAT", "FIELDS_GROUP", "FIELDS_SORT_ASCENDING", "FIELDS_SORT_DESCENDING", "FIELDS_SORT_NONE", "FILE", "FILE_FORMATTED", "FILE_IMAGE", "FILE_RAW", "FILE_SCRIPT", "FILTER", "FIND", "FOLDER", "FOLDER_TREE", "FORMAT", "FORWARD", "FUNCTION", "GENERATE", "HELP", "HELP_OUTLINE", "HIDE", "HIDE_MENU", "HISTORY", "INFINITY_LOGO", "INFO", "INSERT", "JOBS", "KEY", "KEY_BLUE", "LINK", "LOCATE", "LOCKED", "LOGO", "LOGOUT", "MAXIMISE", "MENU", "MINIMISE", "MONITORING", "MOVE", "NODES", "OK", "OO", "OPEN", "OPERATOR", "PASSWORD", "PATHWAYS_CHOICE", "PATHWAYS_NODE", "PATHWAYS_SEQUENCE", "PAUSE", "PEN", "PIPELINE_ELASTIC_INDEX", "PIPELINE_FILE", "PIPELINE_FILES", "PIPELINE_HADOOP", "PIPELINE_ID", "PIPELINE_INDEX", "PIPELINE_JSON", "PIPELINE_KAFKA", "PIPELINE_MERGE", "PIPELINE_RECORD_COUNT", "PIPELINE_RECORD_OUTPUT", "PIPELINE_REFERENCE_DATA", "PIPELINE_SEARCH_OUTPUT", "PIPELINE_SOLR", "PIPELINE_SPLIT", "PIPELINE_STATISTICS", "PIPELINE_STREAM", "PIPELINE_STROOM_STATS", "PIPELINE_TEXT", "PIPELINE_XML", "PIPELINE_XML_SEARCH", "PIPELINE_XSD", "PIPELINE_XSLT", "PLAY", "PROCESS", "PROPERTIES", "QUESTION", "RAW", "REFRESH", "REGEX", "REMOVE", "RERUN", "RESIZE", "RESIZE_HANDLE", "SAVE", "SAVEAS", "SEARCH", "SELECTION", "SETTINGS", "SHARD_CLOSE", "SHARD_FLUSH", "SHARE", "SHIELD", "SHOW", "SHOW_MENU", "SPINNER_CIRCLE", "SPINNER_PAUSE", "SPINNER_SPINNING", "STAMP", "STEP", "STEPPING", "STEPPING_CIRCLE", "STEP_BACKWARD", "STEP_FORWARD", "STOP", "TABLE", "TABLE_NESTED", "TAB_CLOSE", "TAGS", "TEXT_WRAP", "TICK", "UNDO", "UNLINK", "UNLOCK", "UP", "UPLOAD", "USER", "USERS", "VALUE_FILTER", "VOLUMES", "WARNING" ]
+            "enum" : [ "ADD", "ADD_ABOVE", "ADD_BELOW", "ADD_MULTIPLE", "AI", "ALERT", "ALERT_SIMPLE", "ARROW_DOWN", "ARROW_LEFT", "ARROW_RIGHT", "ARROW_UP", "AUTO_REFRESH", "BACKWARD", "BORDERED_CIRCLE", "CALENDAR", "CANCEL", "CASE_SENSITIVE", "CLEAR", "CLIPBOARD", "CLOSE", "CODE", "COLLAPSE_ALL", "COLLAPSE_UP", "CONTENT_STORE", "COPY", "DATABASE", "DELETE", "DEPENDENCIES", "DISABLE", "DOCUMENT_ANALYTIC_OUTPUT_STORE", "DOCUMENT_ANALYTIC_RULE", "DOCUMENT_ANNOTATIONS_INDEX", "DOCUMENT_DASHBOARD", "DOCUMENT_DATA_GEN", "DOCUMENT_FLOOR_MAP", "DOCUMENT_DICTIONARY", "DOCUMENT_DOCUMENTATION", "DOCUMENT_DOMAIN_TYPE", "DOCUMENT_ELASTIC_CLUSTER", "DOCUMENT_ELASTIC_INDEX", "DOCUMENT_FAVOURITES", "DOCUMENT_FEED", "DOCUMENT_FOLDER", "DOCUMENT_GIT_REPO", "DOCUMENT_GIT_REPO_FOLDER", "DOCUMENT_INDEX", "DOCUMENT_KAFKA_CONFIG", "DOCUMENT_OPEN_AI", "DOCUMENT_PATHWAYS", "DOCUMENT_PIPELINE", "DOCUMENT_PLAN_B", "DOCUMENT_QUERY", "DOCUMENT_RECEIVE_DATA_RULE_SET", "DOCUMENT_REPORT", "DOCUMENT_S3", "DOCUMENT_SCRIPT", "DOCUMENT_SEARCHABLE", "DOCUMENT_SELECT_ALL_OR_NONE", "DOCUMENT_SIGMA_RULE", "DOCUMENT_SOLR_INDEX", "DOCUMENT_STATISTIC_STORE", "DOCUMENT_SYSTEM", "DOCUMENT_TEXT_CONVERTER", "DOCUMENT_TRACES", "DOCUMENT_VIEW", "DOCUMENT_VISUALISATION", "DOCUMENT_XMLSCHEMA", "DOCUMENT_XSLT", "DOT", "DOUBLE_ARROW", "DOWN", "DOWNLOAD", "DROP_DOWN", "EDIT", "ELLIPSES_HORIZONTAL", "ELLIPSES_VERTICAL", "ERROR", "EXCLAMATION", "EXPAND_ALL", "EXPAND_DOWN", "EXPLORER", "EYE", "EYE_OFF", "FAST_BACKWARD", "FAST_FORWARD", "FATAL", "FATAL_DARK", "FAVOURITES", "FAVOURITES_OUTLINE", "FEED", "FIELD", "FIELDS_EXPRESSION", "FIELDS_FILTER", "FIELDS_FORMAT", "FIELDS_GROUP", "FIELDS_SORT_ASCENDING", "FIELDS_SORT_DESCENDING", "FIELDS_SORT_NONE", "FILE", "FILE_FORMATTED", "FILE_IMAGE", "FILE_RAW", "FILE_SCRIPT", "FILTER", "FIND", "FOLDER", "FOLDER_TREE", "FORMAT", "FORWARD", "FUNCTION", "GENERATE", "HELP", "HELP_OUTLINE", "HIDE", "HIDE_MENU", "HISTORY", "INFINITY_LOGO", "INFO", "INSERT", "JOBS", "KEY", "KEY_BLUE", "LINK", "LOCATE", "LOCKED", "LOGO", "LOGOUT", "MAXIMISE", "MENU", "MINIMISE", "MONITORING", "MOVE", "NODES", "OK", "OO", "OPEN", "OPERATOR", "PASSWORD", "PATHWAYS_CHOICE", "PATHWAYS_NODE", "PATHWAYS_SEQUENCE", "PAUSE", "PEN", "PIPELINE_ELASTIC_INDEX", "PIPELINE_FILE", "PIPELINE_FILES", "PIPELINE_HADOOP", "PIPELINE_ID", "PIPELINE_INDEX", "PIPELINE_JSON", "PIPELINE_KAFKA", "PIPELINE_MERGE", "PIPELINE_RECORD_COUNT", "PIPELINE_RECORD_OUTPUT", "PIPELINE_REFERENCE_DATA", "PIPELINE_SEARCH_OUTPUT", "PIPELINE_SOLR", "PIPELINE_SPLIT", "PIPELINE_STATISTICS", "PIPELINE_STREAM", "PIPELINE_STROOM_STATS", "PIPELINE_TEXT", "PIPELINE_XML", "PIPELINE_XML_SEARCH", "PIPELINE_XSD", "PIPELINE_XSLT", "PLAY", "PROCESS", "PROPERTIES", "QUESTION", "RAW", "REFRESH", "REGEX", "REMOVE", "RERUN", "RESIZE", "RESIZE_HANDLE", "SAVE", "SAVEAS", "SEARCH", "SELECTION", "SETTINGS", "SHARD_CLOSE", "SHARD_FLUSH", "SHARE", "SHIELD", "SHOW", "SHOW_MENU", "SPINNER_CIRCLE", "SPINNER_PAUSE", "SPINNER_SPINNING", "STAMP", "STEP", "STEPPING", "STEPPING_CIRCLE", "STEP_BACKWARD", "STEP_FORWARD", "STOP", "TABLE", "TABLE_NESTED", "TAB_CLOSE", "TAGS", "TEXT_WRAP", "TICK", "UNDO", "UNLINK", "UNLOCK", "UP", "UPLOAD", "USER", "USERS", "VALUE_FILTER", "VOLUMES", "WARNING" ]
           },
           "roles" : {
             "type" : "array",
@@ -22818,6 +23371,9 @@
             "enum" : [ "'=', '!=', 'between', '>', '>=', '<', '<='", "'=', '!=', 'in', 'in dictionary', 'between', '>', '>=', '<', '<='", "'=', '!='", "'=', '!=', 'between', '>', '>=', '<', '<='", "'=', '!=', 'in', 'in dictionary'", "'=', '!=', 'in', 'in dictionary'", "'is', 'in folder'", "'=', '!=', 'in', 'in dictionary'", "'is', 'is not', 'in folder', '=', '!=', 'in', 'in dictionary'", "'=', '!=', 'in', 'in dictionary'", "'=', '!=', '==', '!==', 'in', 'in dictionary'", "'==', '!==', 'between', 'in', 'in dictionary'", "'==', '!==', 'in', 'in dictionary', '=', '!=', 'between', 'contains', 'contains (CS)', '>', '>=', '<', '<=', 'is null', 'is not null', 'matches regex', 'matches regex (CS)', 'starts with', 'starts with (CS)', 'ends with', 'ends with (CS)'", "'=', '!=', '>', '>=', '<', '<=', 'between', 'in', 'in dictionary'", "'=', '!=', 'in', 'in dictionary', 'matches regex'", "'=', '!=', 'in', 'in dictionary'", "'=', '!=', 'in', 'in dictionary'", "'=', '!=', '>', '>=', '<', '<=', 'between', 'in', 'in dictionary'", "'=', '!='", "'=', '!=', '>', '>=', '<', '<=', 'between', 'in', 'in dictionary'", "'=', '!=', 'in', 'in dictionary'", "'is', '=', '!='", "'between'", "'=', '!=', 'in'", "'contains', '=', '!=', 'matches regex', 'in'", "'contains', 'contains (CS)', '=', '==', '!=', '!==', 'starts with', 'starts with (CS)', 'ends with', 'ends with (CS)', 'matches regex', 'matches regex (CS)', 'in', 'in dictionary'", "'=', '!=', 'in', 'in dictionary'", "'=', '!=', 'in', 'in dictionary', 'is'", "'contains', 'contains (CS)', '=', '==', '!=', '!==', 'starts with', 'starts with (CS)', 'ends with', 'ends with (CS)', 'matches regex', 'matches regex (CS)', '>', '>=', '<', '<=', 'between', 'in', 'in dictionary'", "'=', '!=', '>', '>=', '<', '<=', 'between', 'in', 'in dictionary'", "'contains', 'contains (CS)', '=', '==', '!=', '!==', 'starts with', 'starts with (CS)', 'ends with', 'ends with (CS)', 'matches regex', 'matches regex (CS)', '>', '>=', '<', '<=', 'between', 'in', 'in dictionary'", "'=', '!=', '>', '>=', '<', '<=', 'between', 'in', 'in dictionary'", "'is'", "'of'", "'has permissions', 'has owner permission', 'has delete permission', 'has edit permission', 'has view permission', 'has use permission'", "'is', 'is not'" ]
           },
           "docRefType" : {
+            "type" : "string"
+          },
+          "domainType" : {
             "type" : "string"
           },
           "fldName" : {
@@ -25369,6 +25925,9 @@
           "docValues" : {
             "type" : "boolean"
           },
+          "domainType" : {
+            "type" : "string"
+          },
           "fieldName" : {
             "type" : "string"
           },
@@ -25772,6 +26331,40 @@
             }
           }
         } ]
+      },
+      "SqlTemporalStoreDoc" : {
+        "type" : "object",
+        "properties" : {
+          "createTimeMs" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "createUser" : {
+            "type" : "string"
+          },
+          "description" : {
+            "type" : "string"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "type" : {
+            "type" : "string"
+          },
+          "updateTimeMs" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "updateUser" : {
+            "type" : "string"
+          },
+          "uuid" : {
+            "type" : "string"
+          },
+          "version" : {
+            "type" : "string"
+          }
+        }
       },
       "SshKeySecret" : {
         "type" : "object",
@@ -28019,117 +28612,6 @@
           }
         } ],
         "required" : [ "componentId" ]
-      },
-      "VisualisationAsset" : {
-        "type" : "object",
-        "properties" : {
-          "folder" : {
-            "type" : "boolean"
-          },
-          "id" : {
-            "type" : "string"
-          },
-          "path" : {
-            "type" : "string"
-          }
-        }
-      },
-      "VisualisationAssetContent" : {
-        "type" : "object",
-        "properties" : {
-          "content" : {
-            "type" : "string"
-          },
-          "editorMode" : {
-            "type" : "string"
-          }
-        }
-      },
-      "VisualisationAssetSaveAsParameters" : {
-        "type" : "object",
-        "properties" : {
-          "toOwnerDocId" : {
-            "type" : "string"
-          },
-          "updatedContent" : {
-            "type" : "string",
-            "format" : "byte"
-          },
-          "updatedContentPath" : {
-            "type" : "string"
-          }
-        }
-      },
-      "VisualisationAssetUpdateContent" : {
-        "type" : "object",
-        "properties" : {
-          "content" : {
-            "type" : "string",
-            "format" : "byte"
-          },
-          "path" : {
-            "type" : "string"
-          }
-        }
-      },
-      "VisualisationAssetUpdateDelete" : {
-        "type" : "object",
-        "properties" : {
-          "folder" : {
-            "type" : "boolean"
-          },
-          "path" : {
-            "type" : "string"
-          }
-        }
-      },
-      "VisualisationAssetUpdateNewFile" : {
-        "type" : "object",
-        "properties" : {
-          "path" : {
-            "type" : "string"
-          },
-          "resourceKey" : {
-            "$ref" : "#/components/schemas/ResourceKey"
-          }
-        }
-      },
-      "VisualisationAssetUpdateRename" : {
-        "type" : "object",
-        "properties" : {
-          "folder" : {
-            "type" : "boolean"
-          },
-          "newPath" : {
-            "type" : "string"
-          },
-          "oldPath" : {
-            "type" : "string"
-          }
-        }
-      },
-      "VisualisationAssets" : {
-        "type" : "object",
-        "properties" : {
-          "assets" : {
-            "type" : "array",
-            "items" : {
-              "$ref" : "#/components/schemas/VisualisationAsset"
-            }
-          },
-          "dirty" : {
-            "type" : "boolean"
-          },
-          "ownerId" : {
-            "type" : "string"
-          },
-          "uploadedFiles" : {
-            "type" : "object",
-            "additionalProperties" : {
-              "$ref" : "#/components/schemas/ResourceKey"
-            }
-          }
-        }
       },
       "VisualisationDoc" : {
         "type" : "object",

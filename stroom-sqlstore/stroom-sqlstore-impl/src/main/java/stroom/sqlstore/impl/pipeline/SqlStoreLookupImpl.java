@@ -66,7 +66,7 @@ public class SqlStoreLookupImpl implements SqlStoreLookup {
                 final TemporalEntry entry = resultPage.getValues().getFirst();
                 if (entry.getValue() != null) {
                     final RefStreamDefinition refStreamDefinition = new RefStreamDefinition(
-                            new stroom.docref.DocRef(stroom.sqlstore.shared.SqlStoreDoc.TYPE, "", mapName),
+                            new stroom.docref.DocRef(stroom.sqlstore.shared.SqlTemporalStoreDoc.TYPE, "", mapName),
                             "0",
                             -1
                     );

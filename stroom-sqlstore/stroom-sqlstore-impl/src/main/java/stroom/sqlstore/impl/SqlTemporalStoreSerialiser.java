@@ -20,28 +20,28 @@ import stroom.docstore.api.DocumentSerialiser2;
 import stroom.docstore.api.Serialiser2;
 import stroom.docstore.api.Serialiser2Factory;
 import stroom.importexport.api.ImportExportDocument;
-import stroom.sqlstore.shared.SqlStoreDoc;
+import stroom.sqlstore.shared.SqlTemporalStoreDoc;
 
 import jakarta.inject.Inject;
 
 import java.io.IOException;
 
-public class SqlStoreSerialiser implements DocumentSerialiser2<SqlStoreDoc> {
+public class SqlTemporalStoreSerialiser implements DocumentSerialiser2<SqlTemporalStoreDoc> {
 
-    private final Serialiser2<SqlStoreDoc> delegate;
+    private final Serialiser2<SqlTemporalStoreDoc> delegate;
 
     @Inject
-    public SqlStoreSerialiser(final Serialiser2Factory serialiser2Factory) {
-        this.delegate = serialiser2Factory.createSerialiser(SqlStoreDoc.class);
+    public SqlTemporalStoreSerialiser(final Serialiser2Factory serialiser2Factory) {
+        this.delegate = serialiser2Factory.createSerialiser(SqlTemporalStoreDoc.class);
     }
 
     @Override
-    public SqlStoreDoc read(final ImportExportDocument importExportDocument) throws IOException {
+    public SqlTemporalStoreDoc read(final ImportExportDocument importExportDocument) throws IOException {
         return delegate.read(importExportDocument);
     }
 
     @Override
-    public ImportExportDocument write(final SqlStoreDoc document) throws IOException {
+    public ImportExportDocument write(final SqlTemporalStoreDoc document) throws IOException {
         return delegate.write(document);
     }
 }

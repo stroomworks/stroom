@@ -23,7 +23,7 @@ import stroom.entity.client.presenter.LinkTabPanelView;
 import stroom.entity.client.presenter.MarkdownEditPresenter;
 import stroom.entity.client.presenter.MarkdownTabProvider;
 import stroom.security.client.presenter.DocumentUserPermissionsTabProvider;
-import stroom.sqlstore.shared.SqlStoreDoc;
+import stroom.sqlstore.shared.SqlTemporalStoreDoc;
 import stroom.widget.tab.client.presenter.TabData;
 import stroom.widget.tab.client.presenter.TabDataImpl;
 
@@ -32,19 +32,19 @@ import com.google.web.bindery.event.shared.EventBus;
 
 import javax.inject.Provider;
 
-public class SqlStorePresenter extends DocTabPresenter<LinkTabPanelView, SqlStoreDoc> {
+public class SqlTemporalStorePresenter extends DocTabPresenter<LinkTabPanelView, SqlTemporalStoreDoc> {
 
     private static final TabData SETTINGS = new TabDataImpl("Settings");
     private static final TabData DOCUMENTATION = new TabDataImpl("Documentation");
     private static final TabData PERMISSIONS = new TabDataImpl("Permissions");
 
     @Inject
-    public SqlStorePresenter(
+    public SqlTemporalStorePresenter(
             final EventBus eventBus,
             final LinkTabPanelView view,
-            final Provider<SqlStoreSettingsPresenter> sqlStoreSettingsPresenterProvider,
+            final Provider<SqlTemporalStoreSettingsPresenter> sqlStoreSettingsPresenterProvider,
             final Provider<MarkdownEditPresenter> markdownEditPresenterProvider,
-            final DocumentUserPermissionsTabProvider<SqlStoreDoc> documentUserPermissionsTabProvider) {
+            final DocumentUserPermissionsTabProvider<SqlTemporalStoreDoc> documentUserPermissionsTabProvider) {
         super(eventBus, view);
 
         addTab(SETTINGS, new DocTabProvider<>(sqlStoreSettingsPresenterProvider::get));
@@ -52,15 +52,15 @@ public class SqlStorePresenter extends DocTabPresenter<LinkTabPanelView, SqlStor
             @Override
             public void onRead(final MarkdownEditPresenter presenter,
                                final DocRef docRef,
-                               final SqlStoreDoc document,
+                               final SqlTemporalStoreDoc document,
                                final boolean readOnly) {
                 presenter.setText(document.getDescription());
                 presenter.setReadOnly(readOnly);
             }
 
             @Override
-            public SqlStoreDoc onWrite(final MarkdownEditPresenter presenter,
-                                    final SqlStoreDoc document) {
+            public SqlTemporalStoreDoc onWrite(final MarkdownEditPresenter presenter,
+                                    final SqlTemporalStoreDoc document) {
                 return document.copy().description(presenter.getText()).build();
             }
         });
@@ -70,7 +70,7 @@ public class SqlStorePresenter extends DocTabPresenter<LinkTabPanelView, SqlStor
 
     @Override
     public String getType() {
-        return SqlStoreDoc.TYPE;
+        return SqlTemporalStoreDoc.TYPE;
     }
 
     @Override

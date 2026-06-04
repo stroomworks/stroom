@@ -277,7 +277,7 @@ public class SqlStoreFilter extends AbstractXMLFilter {
 
         } catch (final UnknownStoreException e) {
             error("Unknown SQL store map '" + mapName + "'. "
-                    + "Please ensure a SqlStoreDoc has been created and configured with this "
+                    + "Please ensure a SqlTemporalStoreDoc has been created and configured with this "
                     + "map name under the explorer tree.");
         } catch (final RuntimeException e) {
             error("Error writing reference entry to SQL store: " + e.getMessage(), e);
