@@ -23,7 +23,7 @@
             <g:Label ui:field="count" styleName="form-control-static"/>
         </div>
         <div class="form-group">
-            <g:Button ui:field="reset" text="Reset Store" styleName="btn btn-danger"/>
+            <g:Button ui:field="reset" text="Reset Store" styleName="Button"/>
         </div>
     </g:HTMLPanel>
 </ui:UiBinder>
