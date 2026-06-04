@@ -16,9 +16,9 @@
 
 package stroom.floormap.client.view;
 
-import stroom.floormap.client.presenter.FloorMapSettingsPresenter.FloorMapSettingsView;
 import stroom.document.client.event.DirtyUiHandlers;
 import stroom.entity.client.presenter.ReadOnlyChangeHandler;
+import stroom.floormap.client.presenter.FloorMapSettingsPresenter.FloorMapSettingsView;
 
 import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;

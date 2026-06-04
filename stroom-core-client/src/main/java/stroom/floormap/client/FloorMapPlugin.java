@@ -17,8 +17,6 @@
 package stroom.floormap.client;
 
 import stroom.core.client.ContentManager;
-import stroom.floormap.shared.FloorMapDoc;
-import stroom.floormap.shared.FloorMapResource;
 import stroom.dispatch.client.RestErrorHandler;
 import stroom.dispatch.client.RestFactory;
 import stroom.docref.DocRef;
@@ -27,6 +25,8 @@ import stroom.document.client.DocumentPlugin;
 import stroom.document.client.DocumentPluginEventManager;
 import stroom.entity.client.presenter.DocPresenter;
 import stroom.floormap.client.presenter.FloorMapPresenter;
+import stroom.floormap.shared.FloorMapDoc;
+import stroom.floormap.shared.FloorMapResource;
 import stroom.security.client.api.ClientSecurityContext;
 import stroom.task.client.TaskMonitorFactory;
 

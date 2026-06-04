@@ -113,6 +113,8 @@ import stroom.security.client.gin.SecurityGinjector;
 import stroom.security.client.gin.SecurityModule;
 import stroom.security.identity.client.gin.ChangePasswordGinjector;
 import stroom.security.identity.client.gin.ChangePasswordModule;
+import stroom.sqlstore.client.gin.SqlStoreGinjector;
+import stroom.sqlstore.client.gin.SqlStoreModule;
 import stroom.statistics.impl.sql.client.gin.StatisticsGinjector;
 import stroom.statistics.impl.sql.client.gin.StatisticsModule;
 import stroom.task.client.gin.TaskGinjector;
@@ -190,6 +192,7 @@ import com.gwtplatform.mvp.client.proxy.PlaceManager;
         XMLSchemaModule.class,
         S3ConfigModule.class,
         PlanBModule.class,
+        SqlStoreModule.class,
         GitRepoModule.class
 })
 public interface AppGinjectorUser extends
@@ -231,6 +234,7 @@ public interface AppGinjectorUser extends
         ElasticIndexGinjector,
         ReportGinjector,
         SolrIndexGinjector,
+        SqlStoreGinjector,
         StatisticsGinjector,
         StreamStoreGinjector,
         TaskGinjector,

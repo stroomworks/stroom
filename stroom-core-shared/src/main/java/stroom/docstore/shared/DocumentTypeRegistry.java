@@ -115,6 +115,11 @@ public class DocumentTypeRegistry {
             "SolrIndex",
             "Solr Index",
             SvgImage.DOCUMENT_SOLR_INDEX);
+    public static final DocumentType SQL_STORE_DOCUMENT_TYPE = new DocumentType(
+            DocumentTypeGroup.INDEXING,
+            "SqlStore",
+            "SQL Store",
+            SvgImage.DATABASE);
     public static final DocumentType DOCUMENTATION_DOCUMENT_TYPE = new DocumentType(
             DocumentTypeGroup.CONFIGURATION,
             "Documentation",
@@ -296,6 +301,7 @@ public class DocumentTypeRegistry {
         put(XML_SCHEMA_DOCUMENT_TYPE);
         put(XSLT_DOCUMENT_TYPE);
         put(PATHWAYS_DOCUMENT_TYPE);
+        put(SQL_STORE_DOCUMENT_TYPE);
 
         // Searchables
         put(DUAL_DOCUMENT_TYPE);
