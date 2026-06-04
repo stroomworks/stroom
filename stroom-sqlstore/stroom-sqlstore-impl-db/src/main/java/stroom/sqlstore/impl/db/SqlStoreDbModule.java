@@ -44,6 +44,7 @@ public class SqlStoreDbModule extends AbstractModule {
 
     @Provides
     @Singleton
+    @SuppressWarnings("unused")
     public SqlStoreDbConnProvider getConnectionProvider(final SqlStoreDbConfig config,
                                                         final DataSourceFactory dataSourceFactory) {
         LOGGER.debug(() -> "Creating SqlStoreDbConnProvider");

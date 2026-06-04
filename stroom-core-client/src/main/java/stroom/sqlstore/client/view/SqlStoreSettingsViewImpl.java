@@ -61,6 +61,7 @@ public class SqlStoreSettingsViewImpl
     }
 
     @UiHandler("reset")
+    @SuppressWarnings("unused")
     public void onReset(final ClickEvent event) {
         if (getUiHandlers() != null) {
             getUiHandlers().onReset();

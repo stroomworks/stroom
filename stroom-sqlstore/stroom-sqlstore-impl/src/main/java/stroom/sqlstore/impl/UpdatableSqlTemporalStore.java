@@ -57,7 +57,6 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 @Singleton
 public class UpdatableSqlTemporalStore implements UpdatableTemporalStore {
@@ -206,11 +205,6 @@ public class UpdatableSqlTemporalStore implements UpdatableTemporalStore {
     }
 
     @Override
-    public Optional<String> fetchDocumentation(final DocRef docRef) {
-        return Optional.empty();
-    }
-
-    @Override
     public ResultStore createResultStore(final SearchRequest searchRequest) {
         // Replace expression parameters.
         final SearchRequest modifiedSearchRequest = ExpressionUtil.replaceExpressionParameters(searchRequest);
@@ -244,7 +238,6 @@ public class UpdatableSqlTemporalStore implements UpdatableTemporalStore {
                 coprocessors);
 
         final String searchName = "Search '" + modifiedSearchRequest.getKey().toString() + "'";
-        final AtomicBoolean complete = new AtomicBoolean();
 
         final SearchProcess searchProcess = new SearchProcess() {
             @Override
@@ -261,7 +254,6 @@ public class UpdatableSqlTemporalStore implements UpdatableTemporalStore {
 
             @Override
             public void onTerminate() {
-                complete.set(true);
             }
         };
 
@@ -281,7 +273,6 @@ public class UpdatableSqlTemporalStore implements UpdatableTemporalStore {
                         coprocessors.accept(values);
                     });
                 } finally {
-                    complete.set(true);
                     coprocessors.getCompletionState().signalComplete();
                 }
             }).run();
@@ -295,7 +286,6 @@ public class UpdatableSqlTemporalStore implements UpdatableTemporalStore {
         checkPermission(docRef.getName(), DocumentPermission.VIEW);
         return dao.count(docRef.getName());
     }
-
 
     private void validateKey(final String key) {
         if (key != null && key.length() > 255) {

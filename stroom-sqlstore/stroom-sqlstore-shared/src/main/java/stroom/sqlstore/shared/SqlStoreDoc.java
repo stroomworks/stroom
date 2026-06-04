@@ -43,8 +43,8 @@ import java.util.Objects;
 @JsonInclude(Include.NON_NULL)
 public class SqlStoreDoc extends AbstractDoc {
 
-    public static final String TYPE = "SqlStore";
     public static final DocumentType DOCUMENT_TYPE = DocumentTypeRegistry.SQL_STORE_DOCUMENT_TYPE;
+    public static final String TYPE = DOCUMENT_TYPE.getType();
 
     @JsonProperty
     private final String description;

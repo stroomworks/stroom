@@ -221,6 +221,6 @@ class TestSqlStoreFilter {
         ProcessorUtil.processXml(input, errorReceiverProxy, sqlStoreFilter, new LocationFactoryProxy());
 
         assertThat(loggedSeverities).contains(Severity.ERROR);
-        assertThat(loggedMessages.get(0)).contains("Unknown SQL store map 'unknown-map'");
+        assertThat(loggedMessages.getFirst()).contains("Unknown SQL store map 'unknown-map'");
     }
 }

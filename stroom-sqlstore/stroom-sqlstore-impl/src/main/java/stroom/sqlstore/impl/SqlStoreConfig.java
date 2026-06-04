@@ -57,6 +57,7 @@ public class SqlStoreConfig extends AbstractConfig implements IsStroomConfig, Ha
         }
 
         @JsonCreator
+        @SuppressWarnings("unused")
         public SqlStoreDbConfig(
                 @JsonProperty(PROP_NAME_CONNECTION) final ConnectionConfig connectionConfig,
                 @JsonProperty(PROP_NAME_CONNECTION_POOL) final ConnectionPoolConfig connectionPoolConfig) {

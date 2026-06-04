@@ -613,6 +613,7 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
     }
 
     @JsonProperty(PROP_NAME_SQL_STORE)
+    @SuppressWarnings("unused")
     public SqlStoreConfig getSqlStoreConfig() {
         return sqlStoreConfig;
     }

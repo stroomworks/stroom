@@ -86,7 +86,7 @@ public class SqlStoreValueProxy implements RefDataValueProxy {
         if (resolvedValue == null) {
             resolvedValue = resolveValue();
         }
-        return Optional.ofNullable(resolvedValue);
+        return Optional.of(resolvedValue);
     }
 
     private RefDataValue resolveValue() {

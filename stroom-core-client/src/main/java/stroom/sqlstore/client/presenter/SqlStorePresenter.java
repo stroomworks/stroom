@@ -48,7 +48,7 @@ public class SqlStorePresenter extends DocTabPresenter<LinkTabPanelView, SqlStor
         super(eventBus, view);
 
         addTab(SETTINGS, new DocTabProvider<>(sqlStoreSettingsPresenterProvider::get));
-        addTab(DOCUMENTATION, new MarkdownTabProvider<SqlStoreDoc>(eventBus, markdownEditPresenterProvider) {
+        addTab(DOCUMENTATION, new MarkdownTabProvider<>(eventBus, markdownEditPresenterProvider) {
             @Override
             public void onRead(final MarkdownEditPresenter presenter,
                                final DocRef docRef,

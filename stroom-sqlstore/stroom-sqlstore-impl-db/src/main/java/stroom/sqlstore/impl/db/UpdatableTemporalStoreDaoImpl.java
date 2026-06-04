@@ -32,6 +32,10 @@ import stroom.util.shared.TemporalEntryId;
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 import org.jooq.Condition;
+import org.jooq.Field;
+import org.jooq.Record3;
+import org.jooq.SelectHavingStep;
+import org.jooq.Table;
 import org.jooq.impl.DSL;
 
 import java.util.List;
@@ -89,7 +93,8 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
 
     @Override
     public Optional<TemporalEntry> fetch(final TemporalEntryId id) {
-        final var table = stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore.UPDATABLE_TEMPORAL_STORE;
+        final stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore table =
+                stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore.UPDATABLE_TEMPORAL_STORE;
         return JooqUtil.contextResult(sqlStoreDbConnProvider, context -> context
                 .selectFrom(table)
                 .where(table.MAP_NAME.eq(id.getMap()))
@@ -105,7 +110,8 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
 
     @Override
     public boolean delete(final TemporalEntryId id) {
-        final var table = stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore.UPDATABLE_TEMPORAL_STORE;
+        final stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore table =
+                stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore.UPDATABLE_TEMPORAL_STORE;
         return JooqUtil.contextResult(sqlStoreDbConnProvider, context -> context
                 .deleteFrom(table)
                 .where(table.MAP_NAME.eq(id.getMap()))
@@ -121,10 +127,12 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
             final ExpressionOperator filteredExpression = getFilteredExpression(criteria);
             final Condition condition = expressionMapper.apply(filteredExpression);
 
-            final var t1 = stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore.UPDATABLE_TEMPORAL_STORE.as("t1");
-            final var t2 = stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore.UPDATABLE_TEMPORAL_STORE.as("t2");
+            final stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore t1 =
+                    stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore.UPDATABLE_TEMPORAL_STORE.as("t1");
+            final stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore t2 =
+                    stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore.UPDATABLE_TEMPORAL_STORE.as("t2");
 
-            final var subquery = DSL.select(
+            final SelectHavingStep<Record3<String, String, Long>> subquery = DSL.select(
                             t2.MAP_NAME.as("sub_map"),
                             t2.KEY_.as("sub_key"),
                             DSL.max(t2.EFFECTIVE_TIME).as("max_time"))
@@ -133,10 +141,10 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
                     .and(t2.EFFECTIVE_TIME.le(queryTime))
                     .groupBy(t2.MAP_NAME, t2.KEY_);
 
-            final var subTable = subquery.asTable("sub");
-            final var subMap = subTable.field("sub_map", String.class);
-            final var subKey = subTable.field("sub_key", String.class);
-            final var maxTime = subTable.field("max_time", Long.class);
+            final Table<Record3<String, String, Long>> subTable = subquery.asTable("sub");
+            final Field<String> subMap = subTable.field("sub_map", String.class);
+            final Field<String> subKey = subTable.field("sub_key", String.class);
+            final Field<Long> maxTime = subTable.field("max_time", Long.class);
 
             final List<TemporalEntry> list = JooqUtil.contextResult(sqlStoreDbConnProvider, context -> context
                     .select(t1.MAP_NAME, t1.KEY_, t1.EFFECTIVE_TIME, t1.VALUE_)
@@ -197,10 +205,12 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
             final ExpressionOperator filteredExpression = getFilteredExpression(criteria);
             final Condition condition = expressionMapper.apply(filteredExpression);
 
-            final var t1 = stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore.UPDATABLE_TEMPORAL_STORE.as("t1");
-            final var t2 = stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore.UPDATABLE_TEMPORAL_STORE.as("t2");
+            final stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore t1 =
+                    stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore.UPDATABLE_TEMPORAL_STORE.as("t1");
+            final stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore t2 =
+                    stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore.UPDATABLE_TEMPORAL_STORE.as("t2");
 
-            final var subquery = DSL.select(
+            final SelectHavingStep<Record3<String, String, Long>> subquery = DSL.select(
                             t2.MAP_NAME.as("sub_map"),
                             t2.KEY_.as("sub_key"),
                             DSL.max(t2.EFFECTIVE_TIME).as("max_time"))
@@ -209,10 +219,10 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
                     .and(t2.EFFECTIVE_TIME.le(queryTime))
                     .groupBy(t2.MAP_NAME, t2.KEY_);
 
-            final var subTable = subquery.asTable("sub");
-            final var subMap = subTable.field("sub_map", String.class);
-            final var subKey = subTable.field("sub_key", String.class);
-            final var maxTime = subTable.field("max_time", Long.class);
+            final Table<Record3<String, String, Long>> subTable = subquery.asTable("sub");
+            final Field<String> subMap = subTable.field("sub_map", String.class);
+            final Field<String> subKey = subTable.field("sub_key", String.class);
+            final Field<Long> maxTime = subTable.field("max_time", Long.class);
 
             JooqUtil.context(sqlStoreDbConnProvider, context -> context
                     .select(t1.MAP_NAME, t1.KEY_, t1.EFFECTIVE_TIME, t1.VALUE_)
@@ -255,7 +265,7 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
                     term.getCondition() == ExpressionTerm.Condition.LESS_THAN_OR_EQUAL_TO)) {
                 try {
                     return Long.valueOf(term.getValue());
-                } catch (NumberFormatException e) {
+                } catch (final NumberFormatException e) {
                     // Ignore and keep checking
                 }
             }
