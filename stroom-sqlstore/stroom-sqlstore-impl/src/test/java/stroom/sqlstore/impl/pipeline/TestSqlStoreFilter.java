@@ -74,6 +74,22 @@ class TestSqlStoreFilter {
         errorReceiverProxy = new ErrorReceiverProxy(errorReceiver);
     }
 
+    private void processXml(final String xml) {
+        final MetaHolder metaHolder = new MetaHolder();
+        final Meta meta = new Meta();
+        metaHolder.setMeta(meta);
+
+        final SqlStoreFilter sqlStoreFilter = new SqlStoreFilter(
+                errorReceiverProxy,
+                new LocationFactoryProxy(),
+                metaHolder,
+                storeProvider
+        );
+
+        final ByteArrayInputStream input = new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8));
+        ProcessorUtil.processXml(input, errorReceiverProxy, sqlStoreFilter, new LocationFactoryProxy());
+    }
+
     @Test
     void testPlainValueParsing() {
         Mockito.when(storeProvider.get("test-map")).thenReturn(updatableTemporalStore);
@@ -88,19 +104,7 @@ class TestSqlStoreFilter {
                 </referenceData>
                 """;
 
-        final MetaHolder metaHolder = new MetaHolder();
-        final Meta meta = new Meta();
-        metaHolder.setMeta(meta);
-
-        final SqlStoreFilter sqlStoreFilter = new SqlStoreFilter(
-                errorReceiverProxy,
-                new LocationFactoryProxy(),
-                metaHolder,
-                storeProvider
-        );
-
-        final ByteArrayInputStream input = new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8));
-        ProcessorUtil.processXml(input, errorReceiverProxy, sqlStoreFilter, new LocationFactoryProxy());
+        processXml(xml);
 
         assertThat(loggedSeverities).isEmpty();
 
@@ -111,6 +115,8 @@ class TestSqlStoreFilter {
         assertThat(captured.getMap()).isEqualTo("test-map");
         assertThat(captured.getKey()).isEqualTo("k1");
         assertThat(captured.getValue()).isEqualTo("simple-string-val");
+
+        // TODO Check effective date
     }
 
     @Test
@@ -127,19 +133,7 @@ class TestSqlStoreFilter {
                 </referenceData>
                 """;
 
-        final MetaHolder metaHolder = new MetaHolder();
-        final Meta meta = new Meta();
-        metaHolder.setMeta(meta);
-
-        final SqlStoreFilter sqlStoreFilter = new SqlStoreFilter(
-                errorReceiverProxy,
-                new LocationFactoryProxy(),
-                metaHolder,
-                storeProvider
-        );
-
-        final ByteArrayInputStream input = new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8));
-        ProcessorUtil.processXml(input, errorReceiverProxy, sqlStoreFilter, new LocationFactoryProxy());
+        processXml(xml);
 
         assertThat(loggedSeverities).isEmpty();
 
@@ -167,19 +161,7 @@ class TestSqlStoreFilter {
                 </referenceData>
                 """;
 
-        final MetaHolder metaHolder = new MetaHolder();
-        final Meta meta = new Meta();
-        metaHolder.setMeta(meta);
-
-        final SqlStoreFilter sqlStoreFilter = new SqlStoreFilter(
-                errorReceiverProxy,
-                new LocationFactoryProxy(),
-                metaHolder,
-                storeProvider
-        );
-
-        final ByteArrayInputStream input = new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8));
-        ProcessorUtil.processXml(input, errorReceiverProxy, sqlStoreFilter, new LocationFactoryProxy());
+        processXml(xml);
 
         assertThat(loggedSeverities).isEmpty();
 
@@ -206,21 +188,82 @@ class TestSqlStoreFilter {
                 </referenceData>
                 """;
 
-        final MetaHolder metaHolder = new MetaHolder();
-        final Meta meta = new Meta();
-        metaHolder.setMeta(meta);
-
-        final SqlStoreFilter sqlStoreFilter = new SqlStoreFilter(
-                errorReceiverProxy,
-                new LocationFactoryProxy(),
-                metaHolder,
-                storeProvider
-        );
-
-        final ByteArrayInputStream input = new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8));
-        ProcessorUtil.processXml(input, errorReceiverProxy, sqlStoreFilter, new LocationFactoryProxy());
+        processXml(xml);
 
         assertThat(loggedSeverities).contains(Severity.ERROR);
         assertThat(loggedMessages.getFirst()).contains("Unknown SQL store map 'unknown-map'");
+    }
+
+    @Test
+    void testPlanBStateParsing() {
+        final String xml = """
+                <plan-b xmlns="plan-b:1" version="1.0">
+                    <state>
+                        <map>test-map</map>
+                        <key>k1</key>
+                        <value>plan-b-state-val</value>
+                    </state>
+                </plan-b>
+                """;
+
+        processXml(xml);
+
+        assertThat(loggedSeverities).contains(Severity.ERROR);
+        assertThat(loggedMessages.getFirst()).contains("SQL Store Filter can only process '<temporal-state>' "
+                + "elements from the plan-b schema. Element 'state' is not supported.");
+        Mockito.verify(updatableTemporalStore, Mockito.never()).create(Mockito.any());
+    }
+
+    @Test
+    void testPlanBTemporalStateParsing() {
+        Mockito.when(storeProvider.get("test-map")).thenReturn(updatableTemporalStore);
+
+        final String xml = """
+                <plan-b xmlns="plan-b:1" version="1.0">
+                    <temporal-state>
+                        <map>test-map</map>
+                        <key>k1</key>
+                        <time>2026-06-03T15:30:00.000Z</time>
+                        <value>plan-b-temporal-state-val</value>
+                    </temporal-state>
+                </plan-b>
+                """;
+
+        processXml(xml);
+
+        assertThat(loggedSeverities).isEmpty();
+
+        final ArgumentCaptor<TemporalEntry> entryCaptor = ArgumentCaptor.forClass(TemporalEntry.class);
+        Mockito.verify(updatableTemporalStore, Mockito.times(1)).create(entryCaptor.capture());
+
+        final TemporalEntry captured = entryCaptor.getValue();
+        assertThat(captured.getMap()).isEqualTo("test-map");
+        assertThat(captured.getKey()).isEqualTo("k1");
+        assertThat(captured.getEffectiveTimeMs())
+                .isEqualTo(Instant.parse("2026-06-03T15:30:00Z").toEpochMilli());
+        assertThat(captured.getValue()).isEqualTo("plan-b-temporal-state-val");
+    }
+
+    @Test
+    void testPlanBRangeStateParsing() {
+        final String xml = """
+                <plan-b xmlns="plan-b:1" version="1.0">
+                    <range-state>
+                        <map>test-map</map>
+                        <range>
+                            <from>1000</from>
+                            <to>2000</to>
+                        </range>
+                        <value>plan-b-range-state-val</value>
+                    </range-state>
+                </plan-b>
+                """;
+
+        processXml(xml);
+
+        assertThat(loggedSeverities).contains(Severity.ERROR);
+        assertThat(loggedMessages.getFirst()).contains("SQL Store Filter can only process '<temporal-state>' "
+                + "elements from the plan-b schema. Element 'range-state' is not supported.");
+        Mockito.verify(updatableTemporalStore, Mockito.never()).create(Mockito.any());
     }
 }

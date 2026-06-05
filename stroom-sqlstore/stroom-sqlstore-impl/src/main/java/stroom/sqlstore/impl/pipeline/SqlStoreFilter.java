@@ -28,6 +28,8 @@ import stroom.sqlstore.impl.UpdatableTemporalStoreProvider;
 import stroom.sqlstore.shared.UnknownStoreException;
 import stroom.svg.shared.SvgImage;
 import stroom.util.date.DateUtil;
+import stroom.util.logging.LambdaLogger;
+import stroom.util.logging.LambdaLoggerFactory;
 import stroom.util.shared.NullSafe;
 import stroom.util.shared.Severity;
 import stroom.util.shared.TemporalEntry;
@@ -55,6 +57,7 @@ import javax.xml.transform.stream.StreamResult;
                 PipelineElementType.ROLE_HAS_TARGETS},
         icon = SvgImage.DATABASE)
 public class SqlStoreFilter extends AbstractXMLFilter {
+    private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(SqlStoreFilter.class);
 
     private final ErrorReceiverProxy errorReceiverProxy;
     private final LocationFactoryProxy locationFactory;
@@ -68,16 +71,22 @@ public class SqlStoreFilter extends AbstractXMLFilter {
     private boolean insideKey = false;
     private boolean insideTime = false;
     private boolean insideValue = false;
+    private boolean insideFrom = false;
+    private boolean insideTo = false;
     private boolean haveSeenXmlInValueElement = false;
 
     private final StringBuilder mapBuffer = new StringBuilder();
     private final StringBuilder keyBuffer = new StringBuilder();
     private final StringBuilder timeBuffer = new StringBuilder();
+    private final StringBuilder fromBuffer = new StringBuilder();
+    private final StringBuilder toBuffer = new StringBuilder();
     private final StringBuilder characterBuffer = new StringBuilder();
 
     private String mapName;
     private String key;
     private String timeString;
+    private String fromString;
+    private String toString;
     private String currentValue;
 
     private StringWriter stringWriter;
@@ -96,6 +105,7 @@ public class SqlStoreFilter extends AbstractXMLFilter {
 
     @Override
     public void startProcessing() {
+        LOGGER.info("SqlStoreFilter.startProcessing()");
         try {
             final long ms = Optional
                     .ofNullable(metaHolder.getMeta().getEffectiveMs())
@@ -108,6 +118,7 @@ public class SqlStoreFilter extends AbstractXMLFilter {
 
     @Override
     public void setDocumentLocator(final Locator locator) {
+        LOGGER.info("SqlStoreFilter.setDocumentLocator()");
         this.locator = locator;
         super.setDocumentLocator(locator);
     }
@@ -117,6 +128,7 @@ public class SqlStoreFilter extends AbstractXMLFilter {
                              final String localName,
                              final String qName,
                              final Attributes atts) throws SAXException {
+        LOGGER.info("SqlStoreFilter.startElement({}, {}, {}, {})", uri, localName, qName, atts);
         if (insideValue) {
             if (!haveSeenXmlInValueElement) {
                 haveSeenXmlInValueElement = true;
@@ -132,12 +144,28 @@ public class SqlStoreFilter extends AbstractXMLFilter {
                 transformerHandler.startElement(uri, localName, qName, atts);
             }
         } else {
+            if (localName.equalsIgnoreCase("state")
+                    || localName.equalsIgnoreCase("range-state")
+                    || localName.equalsIgnoreCase("temporal-range-state")
+                    || localName.equalsIgnoreCase("session")
+                    || localName.equalsIgnoreCase("histogram")
+                    || localName.equalsIgnoreCase("metric")) {
+                error("SQL Store Filter can only process '<temporal-state>' "
+                        + "elements from the plan-b schema. Element '" + localName + "' is not supported.");
+            }
+
             if (localName.equalsIgnoreCase("map")) {
                 insideMap = true;
                 mapBuffer.setLength(0);
             } else if (localName.equalsIgnoreCase("key")) {
                 insideKey = true;
                 keyBuffer.setLength(0);
+            } else if (localName.equalsIgnoreCase("from")) {
+                insideFrom = true;
+                fromBuffer.setLength(0);
+            } else if (localName.equalsIgnoreCase("to")) {
+                insideTo = true;
+                toBuffer.setLength(0);
             } else if (localName.equalsIgnoreCase("time") || localName.equalsIgnoreCase("effectiveTime")) {
                 insideTime = true;
                 timeBuffer.setLength(0);
@@ -155,6 +183,7 @@ public class SqlStoreFilter extends AbstractXMLFilter {
     public void endElement(final String uri,
                            final String localName,
                            final String qName) throws SAXException {
+        LOGGER.info("SqlStoreFilter.endElement({}, {}, {})", uri, localName, qName);
         if (insideValue && !localName.equalsIgnoreCase("value")) {
             if (transformerHandler != null) {
                 transformerHandler.endElement(uri, localName, qName);
@@ -166,6 +195,12 @@ public class SqlStoreFilter extends AbstractXMLFilter {
             } else if (localName.equalsIgnoreCase("key")) {
                 insideKey = false;
                 key = keyBuffer.toString().trim();
+            } else if (localName.equalsIgnoreCase("from")) {
+                insideFrom = false;
+                fromString = fromBuffer.toString().trim();
+            } else if (localName.equalsIgnoreCase("to")) {
+                insideTo = false;
+                toString = toBuffer.toString().trim();
             } else if (localName.equalsIgnoreCase("time") || localName.equalsIgnoreCase("effectiveTime")) {
                 insideTime = false;
                 timeString = timeBuffer.toString().trim();
@@ -176,8 +211,16 @@ public class SqlStoreFilter extends AbstractXMLFilter {
                     currentValue = characterBuffer.toString();
                 }
                 insideValue = false;
-            } else if (localName.equalsIgnoreCase("reference")) {
+            } else if (localName.equalsIgnoreCase("reference")
+                    || localName.equalsIgnoreCase("temporal-state")) {
                 addReference();
+                resetReference();
+            } else if (localName.equalsIgnoreCase("state")
+                    || localName.equalsIgnoreCase("range-state")
+                    || localName.equalsIgnoreCase("temporal-range-state")
+                    || localName.equalsIgnoreCase("session")
+                    || localName.equalsIgnoreCase("histogram")
+                    || localName.equalsIgnoreCase("metric")) {
                 resetReference();
             }
         }
@@ -188,6 +231,7 @@ public class SqlStoreFilter extends AbstractXMLFilter {
     public void characters(final char[] ch,
                            final int start,
                            final int length) throws SAXException {
+        LOGGER.info("SqlStoreFilter.characters()");
         if (insideValue) {
             if (haveSeenXmlInValueElement) {
                 if (transformerHandler != null) {
@@ -203,6 +247,10 @@ public class SqlStoreFilter extends AbstractXMLFilter {
                 keyBuffer.append(ch, start, length);
             } else if (insideTime) {
                 timeBuffer.append(ch, start, length);
+            } else if (insideFrom) {
+                fromBuffer.append(ch, start, length);
+            } else if (insideTo) {
+                toBuffer.append(ch, start, length);
             }
         }
         super.characters(ch, start, length);
@@ -210,6 +258,7 @@ public class SqlStoreFilter extends AbstractXMLFilter {
 
     @Override
     public void startPrefixMapping(final String prefix, final String uri) throws SAXException {
+        LOGGER.info("SqlStoreFilter.startPrefixMapping()");
         if (insideValue && transformerHandler != null) {
             transformerHandler.startPrefixMapping(prefix, uri);
         }
@@ -218,6 +267,7 @@ public class SqlStoreFilter extends AbstractXMLFilter {
 
     @Override
     public void endPrefixMapping(final String prefix) throws SAXException {
+        LOGGER.info("SqlStoreFilter.endPrefixMapping()");
         if (insideValue && transformerHandler != null) {
             transformerHandler.endPrefixMapping(prefix);
         }
@@ -225,6 +275,7 @@ public class SqlStoreFilter extends AbstractXMLFilter {
     }
 
     private void initTransformerHandler() {
+        LOGGER.info("SqlStoreFilter.initTransformerHandler()");
         try {
             stringWriter = new StringWriter();
             transformerHandler = XMLUtil.createTransformerHandler(false);
@@ -236,6 +287,7 @@ public class SqlStoreFilter extends AbstractXMLFilter {
     }
 
     private void completeTransformerHandler() {
+        LOGGER.info("SqlStoreFilter.completeTransformerHandler()");
         try {
             if (transformerHandler != null) {
                 transformerHandler.endDocument();
@@ -250,9 +302,15 @@ public class SqlStoreFilter extends AbstractXMLFilter {
     }
 
     private void addReference() {
+        LOGGER.info("SqlStoreFilter.addReference()");
         if (NullSafe.isEmptyString(mapName)) {
             error("Map name is missing for reference entry.");
             return;
+        }
+        if (NullSafe.isEmptyString(key)) {
+            if (!NullSafe.isEmptyString(fromString) && !NullSafe.isEmptyString(toString)) {
+                key = fromString + " - " + toString;
+            }
         }
         if (NullSafe.isEmptyString(key)) {
             error("Key is missing for reference entry in map: " + mapName);
@@ -285,19 +343,24 @@ public class SqlStoreFilter extends AbstractXMLFilter {
     }
 
     private void resetReference() {
+        LOGGER.info("SqlStoreFilter.resetReference()");
         mapName = null;
         key = null;
         timeString = null;
+        fromString = null;
+        toString = null;
         currentValue = null;
         characterBuffer.setLength(0);
         haveSeenXmlInValueElement = false;
     }
 
     private void error(final String message) {
+        LOGGER.info("SqlStoreFilter.error({})", message);
         errorReceiverProxy.log(Severity.ERROR, locationFactory.create(locator), getElementId(), message, null);
     }
 
     private void error(final String message, final Throwable e) {
+        LOGGER.info("SqlStoreFilter.error({}, {})", message, e.getMessage(), e);
         errorReceiverProxy.log(Severity.ERROR, locationFactory.create(locator), getElementId(), message, e);
     }
 }
