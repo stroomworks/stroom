@@ -34,6 +34,7 @@ import javax.inject.Provider;
 
 public class SqlTemporalStorePresenter extends DocTabPresenter<LinkTabPanelView, SqlTemporalStoreDoc> {
 
+    private static final TabData DATA = new TabDataImpl("Data");
     private static final TabData SETTINGS = new TabDataImpl("Settings");
     private static final TabData DOCUMENTATION = new TabDataImpl("Documentation");
     private static final TabData PERMISSIONS = new TabDataImpl("Permissions");
@@ -42,11 +43,13 @@ public class SqlTemporalStorePresenter extends DocTabPresenter<LinkTabPanelView,
     public SqlTemporalStorePresenter(
             final EventBus eventBus,
             final LinkTabPanelView view,
+            final Provider<SqlTemporalStoreDataPresenter> sqlTemporalStoreDataPresenterProvider,
             final Provider<SqlTemporalStoreSettingsPresenter> sqlStoreSettingsPresenterProvider,
             final Provider<MarkdownEditPresenter> markdownEditPresenterProvider,
             final DocumentUserPermissionsTabProvider<SqlTemporalStoreDoc> documentUserPermissionsTabProvider) {
         super(eventBus, view);
 
+        addTab(DATA, new DocTabProvider<>(sqlTemporalStoreDataPresenterProvider::get));
         addTab(SETTINGS, new DocTabProvider<>(sqlStoreSettingsPresenterProvider::get));
         addTab(DOCUMENTATION, new MarkdownTabProvider<>(eventBus, markdownEditPresenterProvider) {
             @Override
@@ -65,7 +68,7 @@ public class SqlTemporalStorePresenter extends DocTabPresenter<LinkTabPanelView,
             }
         });
         addTab(PERMISSIONS, documentUserPermissionsTabProvider);
-        selectTab(SETTINGS);
+        selectTab(DATA);
     }
 
     @Override

@@ -18,9 +18,12 @@ package stroom.sqlstore.client.gin;
 
 import stroom.core.client.gin.PluginModule;
 import stroom.sqlstore.client.SqlTemporalStorePlugin;
+import stroom.sqlstore.client.presenter.SqlTemporalStoreDataPresenter;
+import stroom.sqlstore.client.presenter.SqlTemporalStoreDataPresenter.SqlTemporalStoreDataView;
 import stroom.sqlstore.client.presenter.SqlTemporalStorePresenter;
 import stroom.sqlstore.client.presenter.SqlTemporalStoreSettingsPresenter;
 import stroom.sqlstore.client.presenter.SqlTemporalStoreSettingsPresenter.SqlTemporalStoreSettingsView;
+import stroom.sqlstore.client.view.SqlTemporalStoreDataViewImpl;
 import stroom.sqlstore.client.view.SqlTemporalStoreSettingsViewImpl;
 
 public class SqlTemporalStoreModule extends PluginModule {
@@ -33,5 +36,9 @@ public class SqlTemporalStoreModule extends PluginModule {
                 SqlTemporalStoreSettingsPresenter.class,
                 SqlTemporalStoreSettingsView.class,
                 SqlTemporalStoreSettingsViewImpl.class);
+        bindPresenterWidget(
+                SqlTemporalStoreDataPresenter.class,
+                SqlTemporalStoreDataView.class,
+                SqlTemporalStoreDataViewImpl.class);
     }
 }

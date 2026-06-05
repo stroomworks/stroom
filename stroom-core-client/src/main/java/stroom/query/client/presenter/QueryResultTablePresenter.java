@@ -620,6 +620,9 @@ public class QueryResultTablePresenter
             if (componentResult != null) {
                 // Don't refresh the table unless the results have changed.
                 final TableResult tableResult = (TableResult) componentResult;
+                GWT.log("QueryResultTablePresenter: Received non-null TableResult! Total results in result set: "
+                        + tableResult.getTotalResults() + ", Number of rows returned in this page: "
+                        + (tableResult.getRows() != null ? tableResult.getRows().size() : 0));
 
                 // Get result columns.
                 List<Column> columns = NullSafe.list(tableResult.getColumns());
@@ -693,6 +696,7 @@ public class QueryResultTablePresenter
                 fireColumnAndDataUpdate();
 
             } else {
+                GWT.log("QueryResultTablePresenter: Received NULL componentResult!");
                 // Disable download of current results.
                 downloadButton.setEnabled(false);
 
@@ -977,6 +981,10 @@ public class QueryResultTablePresenter
 
     public void setQueryResultVisPresenter(final QueryResultVisPresenter queryResultVisPresenter) {
         this.queryResultVisPresenter = queryResultVisPresenter;
+    }
+
+    public void setEmptyText(final String text) {
+        dataGrid.setEmptyText(text);
     }
 
     public void setCurrentSelectionFilter(final ExpressionOperator currentSelectionFilter) {

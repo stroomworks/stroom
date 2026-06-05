@@ -21,6 +21,8 @@ import stroom.docstore.api.DocumentActionHandlerBinder;
 import stroom.explorer.api.ExplorerActionHandler;
 import stroom.importexport.api.ImportExportActionHandler;
 import stroom.pipeline.xsltfunctions.SqlStoreLookup;
+import stroom.query.api.datasource.DataSourceProvider;
+import stroom.query.common.v2.SearchProvider;
 import stroom.sqlstore.api.UpdatableTemporalStore;
 import stroom.sqlstore.impl.pipeline.SqlStoreElementModule;
 import stroom.sqlstore.impl.pipeline.SqlStoreLookupImpl;
@@ -53,5 +55,11 @@ public class SqlStoreModule extends AbstractModule {
         RestResourcesBinder.create(binder())
                 .bind(SqlTemporalStoreDocResourceImpl.class)
                 .bind(SqlTemporalStoreResourceImpl.class);
+
+        // Bind to Search and DataSource provider registries
+        GuiceUtil.buildMultiBinder(binder(), DataSourceProvider.class)
+                .addBinding(UpdatableSqlTemporalStore.class);
+        GuiceUtil.buildMultiBinder(binder(), SearchProvider.class)
+                .addBinding(UpdatableSqlTemporalStore.class);
     }
 }

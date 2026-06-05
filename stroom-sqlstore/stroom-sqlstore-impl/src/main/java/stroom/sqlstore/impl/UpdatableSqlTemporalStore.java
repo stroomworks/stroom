@@ -21,6 +21,8 @@ import stroom.entity.shared.ExpressionCriteria;
 import stroom.event.logging.api.StroomEventLoggingService;
 import stroom.event.logging.api.StroomEventLoggingUtil;
 import stroom.index.shared.IndexFieldImpl;
+import stroom.query.api.ExpressionOperator;
+import stroom.query.api.ExpressionTerm;
 import stroom.query.api.ExpressionUtil;
 import stroom.query.api.Query;
 import stroom.query.api.SearchRequest;
@@ -38,12 +40,15 @@ import stroom.query.common.v2.ResultStoreFactory;
 import stroom.query.common.v2.SearchProcess;
 import stroom.query.language.functions.Val;
 import stroom.query.language.functions.ValDate;
+import stroom.query.language.functions.ValNull;
 import stroom.query.language.functions.ValString;
 import stroom.security.api.SecurityContext;
 import stroom.security.shared.DocumentPermission;
 import stroom.sqlstore.api.UpdatableTemporalStore;
 import stroom.sqlstore.shared.SqlTemporalStoreDoc;
 import stroom.task.api.TaskContextFactory;
+import stroom.util.logging.LambdaLogger;
+import stroom.util.logging.LambdaLoggerFactory;
 import stroom.util.shared.PermissionException;
 import stroom.util.shared.ResultPage;
 import stroom.util.shared.TemporalEntry;
@@ -53,13 +58,17 @@ import jakarta.inject.Inject;
 import jakarta.inject.Provider;
 import jakarta.inject.Singleton;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 
 @Singleton
 public class UpdatableSqlTemporalStore implements UpdatableTemporalStore {
+
+    private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(UpdatableSqlTemporalStore.class);
 
     private final UpdatableTemporalStoreDao dao;
     private final SqlTemporalStoreDocStore sqlStoreDocStore;
@@ -259,24 +268,54 @@ public class UpdatableSqlTemporalStore implements UpdatableTemporalStore {
 
         resultStore.setSearchProcess(searchProcess);
 
-        final ExpressionCriteria criteria = new ExpressionCriteria(query.getExpression());
+        final ExpressionOperator.Builder builder = ExpressionOperator.builder();
+        if (query.getExpression() != null) {
+            builder.addOperator(query.getExpression());
+        }
+        builder.addTerm(
+                UpdatableTemporalStore.MAP_FIELD.getFldName(),
+                ExpressionTerm.Condition.EQUALS,
+                docRef.getName());
 
-        CompletableFuture.runAsync(() -> {
-            taskContextFactory.context(searchName, taskContext -> {
-                try {
-                    dao.search(criteria, entry -> {
-                        final Val[] values = new Val[FIELDS.size()];
-                        values[0] = ValString.create(entry.getMap());
-                        values[1] = ValString.create(entry.getKey());
-                        values[2] = ValDate.create(entry.getEffectiveTimeMs());
-                        values[3] = ValString.create(entry.getValue());
-                        coprocessors.accept(values);
-                    });
-                } finally {
-                    coprocessors.getCompletionState().signalComplete();
-                }
-            }).run();
-        }, executor);
+        final ExpressionCriteria criteria = new ExpressionCriteria(builder.build());
+
+        final Runnable runnable = taskContextFactory.context(searchName, taskContext -> {
+            try {
+                dao.search(criteria, entry -> {
+                    final Map<String, Object> attributeMap = new HashMap<>();
+                    attributeMap.put(UpdatableTemporalStore.MAP_FIELD.getFldName(), entry.getMap());
+                    attributeMap.put(UpdatableTemporalStore.KEY_FIELD.getFldName(), entry.getKey());
+                    attributeMap.put(UpdatableTemporalStore.TIME_FIELD.getFldName(), entry.getEffectiveTimeMs());
+                    attributeMap.put(UpdatableTemporalStore.VALUE_FIELD.getFldName(), entry.getValue());
+
+                    final String[] fields = coprocessors.getFieldIndex().getFields();
+                    final Val[] arr = new Val[fields.length];
+                    for (int i = 0; i < fields.length; i++) {
+                        final String fieldName = fields[i];
+                        Val val = ValNull.INSTANCE;
+                        if (fieldName != null) {
+                            final Object o = attributeMap.get(fieldName);
+                            if (o != null) {
+                                if (UpdatableTemporalStore.TIME_FIELD.getFldName().equals(fieldName)) {
+                                    val = ValDate.create((Long) o);
+                                } else {
+                                    val = ValString.create(String.valueOf(o));
+                                }
+                            }
+                        }
+                        arr[i] = val;
+                    }
+                    coprocessors.accept(arr);
+                });
+            } catch (final RuntimeException e) {
+                LOGGER.error(() -> "Error running SQL temporal store search: " + e.getMessage(), e);
+                resultStore.addError(e);
+            } finally {
+                resultStore.signalComplete();
+            }
+        });
+
+        CompletableFuture.runAsync(runnable, executor);
 
         return resultStore;
     }

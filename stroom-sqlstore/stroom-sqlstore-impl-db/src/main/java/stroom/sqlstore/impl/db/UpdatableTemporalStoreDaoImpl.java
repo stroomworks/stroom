@@ -37,6 +37,8 @@ import org.jooq.Record3;
 import org.jooq.SelectHavingStep;
 import org.jooq.Table;
 import org.jooq.impl.DSL;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.Optional;
@@ -44,6 +46,8 @@ import java.util.function.Consumer;
 
 @Singleton
 class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(UpdatableTemporalStoreDaoImpl.class);
 
     private final SqlStoreDbConnProvider sqlStoreDbConnProvider;
     private final ExpressionMapper expressionMapper;
@@ -200,10 +204,12 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
 
     @Override
     public void search(final ExpressionCriteria criteria, final Consumer<TemporalEntry> consumer) {
+        LOGGER.info("Starting SQL Store search with criteria expression: {}", criteria.getExpression());
         final Long queryTime = getQueryTime(criteria);
         if (queryTime != null) {
             final ExpressionOperator filteredExpression = getFilteredExpression(criteria);
             final Condition condition = expressionMapper.apply(filteredExpression);
+            LOGGER.info("QueryTime path. queryTime: {}, condition: {}", queryTime, condition);
 
             final stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore t1 =
                     stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore.UPDATABLE_TEMPORAL_STORE.as("t1");
@@ -224,6 +230,15 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
             final Field<String> subKey = subTable.field("sub_key", String.class);
             final Field<Long> maxTime = subTable.field("max_time", Long.class);
 
+            final org.jooq.Query query = DSL.select(
+                            t1.MAP_NAME, t1.KEY_, t1.EFFECTIVE_TIME, t1.VALUE_)
+                    .from(t1)
+                    .innerJoin(subTable)
+                    .on(t1.MAP_NAME.eq(subMap))
+                    .and(t1.KEY_.eq(subKey))
+                    .and(t1.EFFECTIVE_TIME.eq(maxTime));
+            LOGGER.info("Executing SQL: {}", query.getSQL());
+
             JooqUtil.context(sqlStoreDbConnProvider, context -> context
                     .select(t1.MAP_NAME, t1.KEY_, t1.EFFECTIVE_TIME, t1.VALUE_)
                     .from(t1)
@@ -232,22 +247,41 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
                     .and(t1.KEY_.eq(subKey))
                     .and(t1.EFFECTIVE_TIME.eq(maxTime))
                     .fetch()
-                    .forEach(record -> consumer.accept(new TemporalEntry(
-                            record.get(t1.MAP_NAME),
-                            record.get(t1.KEY_),
-                            record.get(t1.EFFECTIVE_TIME),
-                            record.get(t1.VALUE_)))));
+                    .forEach(record -> {
+                        LOGGER.info("Found record (QueryTime path) -> Map: {}, Key: {}, Time: {}, Value: {}",
+                                record.get(t1.MAP_NAME),
+                                record.get(t1.KEY_),
+                                record.get(t1.EFFECTIVE_TIME),
+                                record.get(t1.VALUE_));
+                        consumer.accept(new TemporalEntry(
+                                record.get(t1.MAP_NAME),
+                                record.get(t1.KEY_),
+                                record.get(t1.EFFECTIVE_TIME),
+                                record.get(t1.VALUE_)));
+                    }));
         } else {
             final Condition condition = expressionMapper.apply(criteria.getExpression());
+            LOGGER.info("Standard path. condition: {}", condition);
+
+            final org.jooq.Query query = DSL.selectFrom(
+                    stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore
+                            .UPDATABLE_TEMPORAL_STORE)
+                    .where(condition);
+            LOGGER.info("Executing SQL: {}", query.getSQL());
+
             JooqUtil.context(sqlStoreDbConnProvider, context -> context
                     .selectFrom(stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore.UPDATABLE_TEMPORAL_STORE)
                     .where(condition)
                     .fetch()
-                    .forEach(record -> consumer.accept(new TemporalEntry(
-                            record.getMapName(),
-                            record.getKey_(),
-                            record.getEffectiveTime(),
-                            record.getValue_()))));
+                    .forEach(record -> {
+                        LOGGER.info("Found record (Standard path) -> Map: {}, Key: {}, Time: {}, Value: {}",
+                                record.getMapName(), record.getKey_(), record.getEffectiveTime(), record.getValue_());
+                        consumer.accept(new TemporalEntry(
+                                record.getMapName(),
+                                record.getKey_(),
+                                record.getEffectiveTime(),
+                                record.getValue_()));
+                    }));
         }
     }
 
