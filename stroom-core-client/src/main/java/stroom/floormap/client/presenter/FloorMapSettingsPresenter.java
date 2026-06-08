@@ -122,19 +122,19 @@ public class FloorMapSettingsPresenter
     protected void onBind() {
         super.onBind();
 
-        registerHandler(getView().addBackgroundImageChangeHandler(_ -> onChange()));
-        registerHandler(getView().addAddBackgroundHandler(_ -> onAdd()));
+        registerHandler(getView().addBackgroundImageChangeHandler(e -> onChange()));
+        registerHandler(getView().addAddBackgroundHandler(e -> onAdd()));
 
-        registerHandler(editButton.addClickHandler(_ -> onEdit()));
-        registerHandler(deleteButton.addClickHandler(_ -> onDelete()));
+        registerHandler(editButton.addClickHandler(e -> onEdit()));
+        registerHandler(deleteButton.addClickHandler(e -> onDelete()));
 
-        registerHandler(selectionModel.addSelectionHandler(_ -> {
+        registerHandler(selectionModel.addSelectionHandler(e -> {
             final boolean hasSelection = selectionModel.getSelected() != null;
             editButton.setEnabled(hasSelection);
             deleteButton.setEnabled(hasSelection);
         }));
 
-        registerHandler(getView().addRotationChangeHandler(_ -> onRotation()));
+        registerHandler(getView().addRotationChangeHandler(e -> onRotation()));
     }
 
     @Override
