@@ -151,7 +151,7 @@ public class SqlStoreFilter extends AbstractXMLFilter {
                     || localName.equalsIgnoreCase("histogram")
                     || localName.equalsIgnoreCase("metric")) {
                 error("SQL Store Filter can only process '<temporal-state>' "
-                        + "elements from the plan-b schema. Element '" + localName + "' is not supported.");
+                        + "elements from the plan-b schema. Element '<" + localName + ">' is not supported.");
             }
 
             if (localName.equalsIgnoreCase("map")) {
