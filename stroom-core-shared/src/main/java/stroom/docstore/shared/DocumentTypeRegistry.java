@@ -119,7 +119,7 @@ public class DocumentTypeRegistry {
             DocumentTypeGroup.INDEXING,
             "SqlTemporalStore",
             "SQL Temporal Store",
-            SvgImage.DATABASE);
+            SvgImage.DOCUMENT_SQL_TEMPORAL_STORE);
     public static final DocumentType DOCUMENTATION_DOCUMENT_TYPE = new DocumentType(
             DocumentTypeGroup.CONFIGURATION,
             "Documentation",
