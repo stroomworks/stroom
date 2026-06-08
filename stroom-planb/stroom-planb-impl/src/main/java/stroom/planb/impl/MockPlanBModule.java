@@ -18,6 +18,7 @@ package stroom.planb.impl;
 
 import stroom.cluster.task.api.TargetNodeSetFactory;
 import stroom.docstore.api.ContentIndexable;
+import stroom.docstore.api.DocumentActionHandlerBinder;
 import stroom.explorer.api.ExplorerActionHandler;
 import stroom.importexport.api.ImportExportActionHandler;
 import stroom.pipeline.xsltfunctions.PlanBLookup;
@@ -27,6 +28,7 @@ import stroom.planb.impl.pipeline.PlanBElementModule;
 import stroom.planb.impl.pipeline.PlanBLookupImpl;
 import stroom.planb.impl.pipeline.StateFetcherImpl;
 import stroom.planb.impl.pipeline.StateProviderImpl;
+import stroom.planb.shared.PlanBDoc;
 import stroom.query.language.functions.StateFetcher;
 import stroom.query.language.functions.StateProvider;
 import stroom.util.entityevent.EntityEvent;
@@ -58,6 +60,9 @@ public class MockPlanBModule extends AbstractModule {
         bind(PlanBDocStore.class).to(PlanBDocStoreImpl.class);
         bind(FileTransferClient.class).to(FileTransferClientImpl.class);
         bind(TargetNodeSetFactory.class).toProvider(() -> null);
+
+        DocumentActionHandlerBinder.create(binder())
+                .bind(PlanBDoc.TYPE, PlanBDocStoreImpl.class);
 
         GuiceUtil.buildMultiBinder(binder(), ExplorerActionHandler.class)
                 .addBinding(PlanBDocStoreImpl.class);

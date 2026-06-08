@@ -16,11 +16,15 @@
 
 package stroom.planb.impl.data;
 
+import stroom.docref.DocRef;
+import stroom.docstore.api.DocumentActionHandler;
+import stroom.docstore.api.DocumentActionHandlers;
 import stroom.node.api.NodeCallUtil;
 import stroom.node.api.NodeInfo;
 import stroom.node.api.NodeService;
 import stroom.pathways.shared.FindTraceCriteria;
 import stroom.pathways.shared.GetTraceRequest;
+import stroom.pathways.shared.TracesDoc;
 import stroom.pathways.shared.TracesResultPage;
 import stroom.pathways.shared.TracesStore;
 import stroom.pathways.shared.otel.trace.Trace;
@@ -58,6 +62,7 @@ public class TracesStoreImpl implements TracesStore {
     private final Provider<NodeService> nodeServiceProvider;
     private final Provider<NodeInfo> nodeInfoProvider;
     private final Provider<WebTargetFactory> webTargetFactoryProvider;
+    private final Provider<DocumentActionHandlers> documentActionHandlersProvider;
 
     @Inject
     public TracesStoreImpl(final PlanBDocCache planBDocCache,
@@ -65,22 +70,38 @@ public class TracesStoreImpl implements TracesStore {
                            final ShardManager shardManager,
                            final Provider<NodeService> nodeServiceProvider,
                            final Provider<NodeInfo> nodeInfoProvider,
-                           final Provider<WebTargetFactory> webTargetFactoryProvider) {
+                           final Provider<WebTargetFactory> webTargetFactoryProvider,
+                           final Provider<DocumentActionHandlers> documentActionHandlersProvider) {
         this.planBDocCache = planBDocCache;
         this.configProvider = configProvider;
         this.shardManager = shardManager;
         this.nodeServiceProvider = nodeServiceProvider;
         this.nodeInfoProvider = nodeInfoProvider;
         this.webTargetFactoryProvider = webTargetFactoryProvider;
+        this.documentActionHandlersProvider = documentActionHandlersProvider;
     }
 
     @Override
     public TracesResultPage findTraces(final FindTraceCriteria criteria) {
-        final String name = criteria.getDataSourceRef().getName();
-        final PlanBDoc doc = planBDocCache.get(name);
+        final DocRef docRef = criteria.getDataSourceRef();
+        final PlanBDoc doc;
+        if (docRef != null && TracesDoc.TYPE.equals(docRef.getType())) {
+            try {
+                final DocumentActionHandler<?> handler = documentActionHandlersProvider.get()
+                        .getHandler(TracesDoc.TYPE);
+                doc = (PlanBDoc) handler.readDocument(docRef);
+            } catch (final Exception e) {
+                LOGGER.error("Failed to read TracesDoc " + docRef, e);
+                throw new RuntimeException("Failed to read TracesDoc '" + docRef.getName() + "'", e);
+            }
+        } else {
+            final String name = docRef.getName();
+            doc = planBDocCache.get(name);
+        }
+
         if (doc == null) {
-            LOGGER.warn(() -> "No Plan B doc found for '" + name + "'");
-            throw new RuntimeException("No Plan B doc found for '" + name + "'");
+            LOGGER.warn(() -> "No Plan B doc found for '" + docRef.getName() + "'");
+            throw new RuntimeException("No Plan B doc found for '" + docRef.getName() + "'");
         }
         final boolean local = !shardManager.isSnapshotNode();
         return findTraces(criteria, local);
@@ -134,11 +155,25 @@ public class TracesStoreImpl implements TracesStore {
 
     @Override
     public Trace getTrace(final GetTraceRequest request) {
-        final String name = request.getDataSourceRef().getName();
-        final PlanBDoc doc = planBDocCache.get(name);
+        final DocRef docRef = request.getDataSourceRef();
+        final PlanBDoc doc;
+        if (docRef != null && TracesDoc.TYPE.equals(docRef.getType())) {
+            try {
+                final DocumentActionHandler<?> handler = documentActionHandlersProvider.get()
+                        .getHandler(TracesDoc.TYPE);
+                doc = (PlanBDoc) handler.readDocument(docRef);
+            } catch (final Exception e) {
+                LOGGER.error("Failed to read TracesDoc " + docRef, e);
+                throw new RuntimeException("Failed to read TracesDoc '" + docRef.getName() + "'", e);
+            }
+        } else {
+            final String name = docRef.getName();
+            doc = planBDocCache.get(name);
+        }
+
         if (doc == null) {
-            LOGGER.warn(() -> "No Plan B doc found for '" + name + "'");
-            throw new RuntimeException("No Plan B doc found for '" + name + "'");
+            LOGGER.warn(() -> "No Plan B doc found for '" + docRef.getName() + "'");
+            throw new RuntimeException("No Plan B doc found for '" + docRef.getName() + "'");
         }
         final boolean local = !shardManager.isSnapshotNode();
         return findTrace(request, local);

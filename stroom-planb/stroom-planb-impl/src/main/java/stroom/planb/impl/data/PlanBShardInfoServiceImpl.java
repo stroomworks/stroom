@@ -20,12 +20,15 @@ import stroom.cluster.task.api.NodeNotFoundException;
 import stroom.cluster.task.api.NullClusterStateException;
 import stroom.cluster.task.api.TargetNodeSetFactory;
 import stroom.docref.DocRef;
+import stroom.docstore.api.DocumentActionHandler;
+import stroom.docstore.api.DocumentActionHandlers;
 import stroom.docstore.api.DocumentNotFoundException;
 import stroom.docstore.shared.AbstractDoc;
 import stroom.entity.shared.ExpressionCriteria;
 import stroom.node.api.NodeCallUtil;
 import stroom.node.api.NodeInfo;
 import stroom.node.api.NodeService;
+import stroom.pathways.shared.TracesDoc;
 import stroom.planb.impl.PlanBDocStore;
 import stroom.planb.impl.db.StatePaths;
 import stroom.planb.shared.PlanBDoc;
@@ -103,6 +106,7 @@ public class PlanBShardInfoServiceImpl implements Searchable {
     private final StatePaths statePaths;
     private final PlanBDocStore planBDocStore;
     private final ShardManager shardManager;
+    private final Provider<DocumentActionHandlers> documentActionHandlersProvider;
     private final Executor executor;
 
     @Inject
@@ -117,7 +121,8 @@ public class PlanBShardInfoServiceImpl implements Searchable {
                                      final StatePaths statePaths,
                                      final PlanBDocStore planBDocStore,
                                      final ShardManager shardManager,
-                                     final ExecutorProvider executorProvider) {
+                                     final ExecutorProvider executorProvider,
+                                     final Provider<DocumentActionHandlers> documentActionHandlersProvider) {
         this.securityContext = securityContext;
         this.taskContextFactory = taskContextFactory;
         this.nodeServiceProvider = nodeServiceProvider;
@@ -130,6 +135,7 @@ public class PlanBShardInfoServiceImpl implements Searchable {
         this.planBDocStore = planBDocStore;
         this.shardManager = shardManager;
         this.executor = executorProvider.get();
+        this.documentActionHandlersProvider = documentActionHandlersProvider;
     }
 
     @Override
@@ -284,16 +290,11 @@ public class PlanBShardInfoServiceImpl implements Searchable {
                 stream.forEach(snapshotParent -> {
                     try {
                         final String uuid = snapshotParent.getFileName().toString();
-                        final DocRef docRef = DocRef.builder().type(PlanBDoc.TYPE).uuid(uuid).build();
-                        if (securityContext.isAdmin() ||
-                            securityContext.hasDocumentPermission(docRef, DocumentPermission.VIEW)) {
+                        final PlanBDoc loaded = readPlanBDoc(uuid);
+                        if (loaded != null && (securityContext.isAdmin() ||
+                            securityContext.hasDocumentPermission(loaded.asDocRef(), DocumentPermission.VIEW))) {
                             final Optional<PlanBDoc> optionalPlanBDoc = map
-                                    .computeIfAbsent(uuid, k ->
-                                            Optional.ofNullable(planBDocStore.readDocument(DocRef
-                                                    .builder()
-                                                    .type(PlanBDoc.TYPE)
-                                                    .uuid(uuid)
-                                                    .build())));
+                                    .computeIfAbsent(uuid, k -> Optional.of(loaded));
 
                             try (final Stream<Path> innerStream = Files.list(snapshotParent)) {
                                 innerStream.forEach(snapshot ->
@@ -326,11 +327,7 @@ public class PlanBShardInfoServiceImpl implements Searchable {
                     final String uuid = shard.getFileName().toString();
                     final Optional<PlanBDoc> optionalPlanBDoc = map
                             .computeIfAbsent(uuid, k ->
-                                    Optional.ofNullable(planBDocStore.readDocument(DocRef
-                                            .builder()
-                                            .type(PlanBDoc.TYPE)
-                                            .uuid(uuid)
-                                            .build())));
+                                    Optional.ofNullable(readPlanBDoc(uuid)));
 
                     addData(fields, results, shard, optionalPlanBDoc, "Shard");
                 });
@@ -376,5 +373,29 @@ public class PlanBShardInfoServiceImpl implements Searchable {
         }
 
         results.add(values);
+    }
+
+    private PlanBDoc readPlanBDoc(final DocRef docRef) {
+        if (documentActionHandlersProvider != null && documentActionHandlersProvider.get() != null) {
+            final DocumentActionHandler<?> handler = documentActionHandlersProvider.get().getHandler(docRef.getType());
+            if (handler != null) {
+                final Object loaded = handler.readDocument(docRef);
+                if (loaded instanceof PlanBDoc) {
+                    return (PlanBDoc) loaded;
+                }
+            }
+        }
+        if (planBDocStore != null) {
+            return planBDocStore.readDocument(docRef);
+        }
+        return null;
+    }
+
+    private PlanBDoc readPlanBDoc(final String uuid) {
+        PlanBDoc doc = readPlanBDoc(DocRef.builder().type(PlanBDoc.TYPE).uuid(uuid).build());
+        if (doc == null) {
+            doc = readPlanBDoc(DocRef.builder().type(TracesDoc.TYPE).uuid(uuid).build());
+        }
+        return doc;
     }
 }

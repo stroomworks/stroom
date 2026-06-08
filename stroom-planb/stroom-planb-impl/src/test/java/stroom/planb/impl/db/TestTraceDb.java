@@ -174,7 +174,8 @@ public class TestTraceDb {
                 statePaths,
                 null,
                 new SimpleTaskContextFactory(),
-                executorProvider);
+                executorProvider,
+                null);
         final MergeProcessor mergeProcessor = new MergeProcessor(
                 statePaths,
                 new MockSecurityContext(),
