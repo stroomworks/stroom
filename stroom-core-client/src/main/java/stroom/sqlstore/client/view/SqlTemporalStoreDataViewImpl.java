@@ -2,11 +2,12 @@ package stroom.sqlstore.client.view;
 
 import stroom.sqlstore.client.presenter.SqlTemporalStoreDataPresenter.SqlTemporalStoreDataView;
 import stroom.sqlstore.client.presenter.SqlTemporalStoreDataUiHandlers;
+import stroom.svg.shared.SvgImage;
 import stroom.util.client.Console;
+import stroom.widget.button.client.InlineSvgButton;
 
 import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
-import com.google.gwt.user.client.ui.Button;
 import com.google.gwt.user.client.ui.SimplePanel;
 import com.google.gwt.user.client.ui.TextBox;
 import com.google.gwt.user.client.ui.Widget;
@@ -23,9 +24,9 @@ public class SqlTemporalStoreDataViewImpl
     @UiField
     TextBox query;
     @UiField
-    Button run;
+    InlineSvgButton run;
     @UiField
-    Button stop;
+    InlineSvgButton stop;
     @UiField
     SimplePanel tableContainer;
 
@@ -34,6 +35,9 @@ public class SqlTemporalStoreDataViewImpl
     @Inject
     public SqlTemporalStoreDataViewImpl(final Binder binder) {
         widget = binder.createAndBindUi(this);
+
+        run.setSvg(SvgImage.PLAY);
+        stop.setSvg(SvgImage.STOP);
 
         run.addClickHandler(event -> {
             if (uiHandlers != null) {
