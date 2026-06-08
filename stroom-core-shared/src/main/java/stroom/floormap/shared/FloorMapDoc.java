@@ -50,8 +50,6 @@ public class FloorMapDoc extends AbstractDoc {
     @JsonProperty
     private final String template;
     @JsonProperty
-    private final DocRef feed;
-    @JsonProperty
     private final List<FloorMapBackground> backgroundImages;
     @JsonProperty
     private final String query;
@@ -61,6 +59,10 @@ public class FloorMapDoc extends AbstractDoc {
     private final QueryTablePreferences queryTablePreferences;
     @JsonProperty
     private final FloorMapTransformationMatrix matrix;
+    @JsonProperty
+    private final String entityIdColumn;
+    @JsonProperty
+    private final String locationIdColumn;
 
     @JsonCreator
     public FloorMapDoc(@JsonProperty("uuid") final String uuid,
@@ -72,12 +74,13 @@ public class FloorMapDoc extends AbstractDoc {
                        @JsonProperty("updateUser") final String updateUser,
                        @JsonProperty("description") final String description,
                        @JsonProperty("template") final String template,
-                       @JsonProperty("feed") final DocRef feed,
                        @JsonProperty("backgroundImages") final List<FloorMapBackground> backgroundImages,
                        @JsonProperty("query") final String query,
                        @JsonProperty("queryTimeRange") final TimeRange queryTimeRange,
                        @JsonProperty("queryTablePreferences") final QueryTablePreferences queryTablePreferences,
-                       @JsonProperty("matrix") final FloorMapTransformationMatrix matrix) {
+                       @JsonProperty("matrix") final FloorMapTransformationMatrix matrix,
+                       @JsonProperty("entityIdColumn") final String entityIdColumn,
+                       @JsonProperty("locationIdColumn") final String locationIdColumn) {
         super(TYPE, uuid,
                 name,
                 version,
@@ -88,12 +91,13 @@ public class FloorMapDoc extends AbstractDoc {
 
         this.description = description;
         this.template = template;
-        this.feed = feed;
         this.backgroundImages = backgroundImages;
         this.query = query;
         this.queryTimeRange = queryTimeRange;
         this.queryTablePreferences = queryTablePreferences;
         this.matrix = matrix != null ? matrix : FloorMapTransformationMatrix.identity();
+        this.entityIdColumn = entityIdColumn;
+        this.locationIdColumn = locationIdColumn;
     }
 
     public String getDescription() {
@@ -102,10 +106,6 @@ public class FloorMapDoc extends AbstractDoc {
 
     public String getTemplate() {
         return template;
-    }
-
-    public DocRef getFeed() {
-        return feed;
     }
 
     public List<FloorMapBackground> getBackgroundImages() {
@@ -143,6 +143,14 @@ public class FloorMapDoc extends AbstractDoc {
         return active;
     }
 
+    public String getEntityIdColumn() {
+        return entityIdColumn;
+    }
+
+    public String getLocationIdColumn() {
+        return locationIdColumn;
+    }
+
     /**
      * @return A new builder for creating a {@link DocRef} for this document's type.
      */
@@ -164,12 +172,13 @@ public class FloorMapDoc extends AbstractDoc {
         final FloorMapDoc that = (FloorMapDoc) o;
         return Objects.equals(description, that.description) &&
                Objects.equals(template, that.template) &&
-               Objects.equals(feed, that.feed) &&
                Objects.equals(backgroundImages, that.backgroundImages) &&
                Objects.equals(query, that.query) &&
                Objects.equals(queryTimeRange, that.queryTimeRange) &&
                Objects.equals(queryTablePreferences, that.queryTablePreferences) &&
-               Objects.equals(matrix, that.matrix);
+               Objects.equals(matrix, that.matrix) &&
+               Objects.equals(entityIdColumn, that.entityIdColumn) &&
+               Objects.equals(locationIdColumn, that.locationIdColumn);
     }
 
     @Override
@@ -178,12 +187,13 @@ public class FloorMapDoc extends AbstractDoc {
                 super.hashCode(),
                 description,
                 template,
-                feed,
                 backgroundImages,
                 query,
                 queryTimeRange,
                 queryTablePreferences,
-                matrix);
+                matrix,
+                entityIdColumn,
+                locationIdColumn);
     }
 
     public Builder copy() {
@@ -198,12 +208,13 @@ public class FloorMapDoc extends AbstractDoc {
 
         private String template;
         private String description;
-        private DocRef feed;
         private List<FloorMapBackground> backgroundImages;
         private String query;
         private TimeRange queryTimeRange;
         private QueryTablePreferences queryTablePreferences;
         private FloorMapTransformationMatrix matrix;
+        private String entityIdColumn;
+        private String locationIdColumn;
 
         public Builder() {
         }
@@ -212,12 +223,13 @@ public class FloorMapDoc extends AbstractDoc {
             super(doc);
             this.template = doc.template;
             this.description = doc.description;
-            this.feed = doc.feed;
             this.backgroundImages = doc.backgroundImages;
             this.query = doc.query;
             this.queryTimeRange = doc.queryTimeRange;
             this.queryTablePreferences = doc.queryTablePreferences;
             this.matrix = doc.matrix;
+            this.entityIdColumn = doc.entityIdColumn;
+            this.locationIdColumn = doc.locationIdColumn;
         }
 
         public Builder template(final String template) {
@@ -227,11 +239,6 @@ public class FloorMapDoc extends AbstractDoc {
 
         public Builder description(final String description) {
             this.description = description;
-            return self();
-        }
-
-        public Builder feed(final DocRef feed) {
-            this.feed = feed;
             return self();
         }
 
@@ -260,6 +267,16 @@ public class FloorMapDoc extends AbstractDoc {
             return self();
         }
 
+        public Builder entityIdColumn(final String entityIdColumn) {
+            this.entityIdColumn = entityIdColumn;
+            return self();
+        }
+
+        public Builder locationIdColumn(final String locationIdColumn) {
+            this.locationIdColumn = locationIdColumn;
+            return self();
+        }
+
         @Override
         protected Builder self() {
             return this;
@@ -282,12 +299,13 @@ public class FloorMapDoc extends AbstractDoc {
                     updateUser,
                     description,
                     template,
-                    feed,
                     backgroundImages,
                     query,
                     queryTimeRange,
                     queryTablePreferences,
-                    matrix);
+                    matrix,
+                    entityIdColumn,
+                    locationIdColumn);
         }
     }
 }

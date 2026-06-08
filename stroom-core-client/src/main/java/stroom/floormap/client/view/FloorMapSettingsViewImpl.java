@@ -41,7 +41,6 @@ import com.google.gwt.user.client.ui.TextBox;
 import com.google.gwt.user.client.ui.Widget;
 import com.google.inject.Inject;
 import com.google.inject.Provider;
-import com.gwtplatform.mvp.client.View;
 import com.gwtplatform.mvp.client.ViewWithUiHandlers;
 
 public class FloorMapSettingsViewImpl
@@ -49,9 +48,6 @@ public class FloorMapSettingsViewImpl
         implements FloorMapSettingsView, ReadOnlyChangeHandler {
 
     private final Widget widget;
-
-    @UiField
-    SimplePanel sourceFeed;
 
     @UiField
     DateTimeBox validFromBox;
@@ -93,11 +89,6 @@ public class FloorMapSettingsViewImpl
     @Override
     public Widget asWidget() {
         return widget;
-    }
-
-    @Override
-    public void setSourceFeed(final View view) {
-        this.sourceFeed.setWidget(view.asWidget());
     }
 
     @Override

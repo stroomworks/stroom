@@ -25,7 +25,6 @@ import stroom.floormap.shared.FloorMapBackground;
 import stroom.floormap.shared.FloorMapDoc;
 import stroom.floormap.shared.FloorMapObject;
 import stroom.floormap.shared.FloorMapTransformationMatrix;
-import stroom.meta.shared.MetaExpressionUtil;
 import stroom.widget.tab.client.presenter.LinkTabsPresenter;
 import stroom.widget.tab.client.presenter.TabData;
 
@@ -35,7 +34,6 @@ import com.google.web.bindery.event.shared.EventBus;
 import com.gwtplatform.mvp.client.View;
 
 import java.util.Arrays;
-import java.util.Objects;
 
 /**
  * Main presenter for the Floor Map visualization.
@@ -48,13 +46,10 @@ public class FloorMapMapPresenter
     public static final Object TIMELINE = new Object();
     public static final Object LOG_DATA = new Object();
 
-    private final MetaPresenter metaPresenter;
     private final FloorMapCanvasPresenter floorMapCanvasPresenter;
     private final FloorMapTimelinePresenter floorMapTimelinePresenter;
     private long selectedTime;
     private static final long ONE_DAY_MS = 24 * 60 * 60 * 1000;
-
-    private DocRef currentFeed;
 
     @Inject
     public FloorMapMapPresenter(final EventBus eventBus,
@@ -65,7 +60,6 @@ public class FloorMapMapPresenter
                                 final Provider<FloorMapCanvasPresenter> floorMapCanvasPresenterProvider,
                                 final Provider<FloorMapTimelinePresenter> floorMapTimelinePresenterProvider) {
         super(eventBus, view);
-        this.metaPresenter = metaPresenter;
         this.floorMapCanvasPresenter = floorMapCanvasPresenterProvider.get();
         this.floorMapTimelinePresenter = floorMapTimelinePresenterProvider.get();
 
@@ -107,14 +101,6 @@ public class FloorMapMapPresenter
                 new FloorMapObject("Main Entrance", 100, 150),
                 new FloorMapObject("Access Point 1", 500, 375)
         ));
-
-        if (!Objects.equals(currentFeed, document.getFeed())) {
-            currentFeed = document.getFeed();
-            if (currentFeed != null) {
-                metaPresenter.getCriteria().setExpression(MetaExpressionUtil.createFeedExpression(currentFeed));
-                metaPresenter.refresh();
-            }
-        }
     }
 
     private void updateTimelineRange() {

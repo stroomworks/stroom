@@ -22,13 +22,10 @@ import stroom.docref.DocRef;
 import stroom.document.client.event.DirtyUiHandlers;
 import stroom.entity.client.presenter.DocPresenter;
 import stroom.entity.client.presenter.ReadOnlyChangeHandler;
-import stroom.explorer.client.presenter.DocSelectionBoxPresenter;
-import stroom.feed.shared.FeedDoc;
 import stroom.floormap.client.presenter.FloorMapSettingsPresenter.FloorMapSettingsView;
 import stroom.floormap.shared.FloorMapBackground;
 import stroom.floormap.shared.FloorMapDoc;
 import stroom.floormap.shared.FloorMapTransformationMatrix;
-import stroom.security.shared.DocumentPermission;
 import stroom.svg.client.SvgPresets;
 import stroom.ui.config.client.UiConfigCache;
 import stroom.widget.button.client.ButtonPanel;
@@ -61,7 +58,6 @@ public class FloorMapSettingsPresenter
         extends DocPresenter<FloorMapSettingsView, FloorMapDoc>
         implements DirtyUiHandlers {
 
-    final DocSelectionBoxPresenter sourceFeedPresenter;
     private final UiConfigCache uiConfigCache;
 
     private List<FloorMapBackground> localBackgroundList;
@@ -75,17 +71,11 @@ public class FloorMapSettingsPresenter
     @Inject
     public FloorMapSettingsPresenter(final EventBus eventBus,
                                      final FloorMapSettingsView view,
-                                     final DocSelectionBoxPresenter sourceFeedPresenter,
                                      final UiConfigCache uiConfigcache) {
         super(eventBus, view);
-        this.sourceFeedPresenter = sourceFeedPresenter;
         this.uiConfigCache = uiConfigcache;
 
         view.setUiHandlers(this);
-
-        sourceFeedPresenter.setIncludedTypes(FeedDoc.TYPE);
-        sourceFeedPresenter.setRequiredPermissions(DocumentPermission.VIEW);
-        view.setSourceFeed(sourceFeedPresenter.getView());
 
         // Set up the DataGrid
         grid = new MyDataGrid<>(this);
@@ -100,7 +90,7 @@ public class FloorMapSettingsPresenter
         grid.addColumn(validFromColumn, "Valid From");
         grid.setColumnWidth(validFromColumn, 250, Unit.PX);
 
-        final Column<FloorMapBackground, SafeHtml> previewColumn = new Column<FloorMapBackground, SafeHtml>(
+        final Column<FloorMapBackground, SafeHtml> previewColumn = new Column<>(
                 new SafeHtmlCell()) {
             @Override
             public SafeHtml getValue(final FloorMapBackground row) {
@@ -132,22 +122,19 @@ public class FloorMapSettingsPresenter
     protected void onBind() {
         super.onBind();
 
-        registerHandler(sourceFeedPresenter.addDataSelectionHandler(e -> onChange()));
-        registerHandler(getView().addBackgroundImageChangeHandler(e -> onChange()));
-        registerHandler(getView().addAddBackgroundHandler(e -> onAdd()));
+        registerHandler(getView().addBackgroundImageChangeHandler(_ -> onChange()));
+        registerHandler(getView().addAddBackgroundHandler(_ -> onAdd()));
 
-        registerHandler(editButton.addClickHandler(e -> onEdit()));
-        registerHandler(deleteButton.addClickHandler(e -> onDelete()));
+        registerHandler(editButton.addClickHandler(_ -> onEdit()));
+        registerHandler(deleteButton.addClickHandler(_ -> onDelete()));
 
-        registerHandler(selectionModel.addSelectionHandler(e -> {
+        registerHandler(selectionModel.addSelectionHandler(_ -> {
             final boolean hasSelection = selectionModel.getSelected() != null;
             editButton.setEnabled(hasSelection);
             deleteButton.setEnabled(hasSelection);
         }));
 
-        registerHandler(getView().addRotationChangeHandler(e -> {
-            onRotation();
-        }));
+        registerHandler(getView().addRotationChangeHandler(_ -> onRotation()));
     }
 
     @Override
@@ -160,11 +147,6 @@ public class FloorMapSettingsPresenter
 
         uiConfigCache.get(extendedUiConfig -> {
             if (extendedUiConfig != null) {
-                final DocRef selectedDocRef = floorMapDoc.getFeed();
-                if (selectedDocRef != null) {
-                    sourceFeedPresenter.setSelectedEntityReference(selectedDocRef, true);
-                }
-
                 getView().setBackgroundImage("");
                 getView().setStartTime(System.currentTimeMillis());
                 refreshGrid();
@@ -175,7 +157,6 @@ public class FloorMapSettingsPresenter
     @Override
     protected FloorMapDoc onWrite(final FloorMapDoc doc) {
         return doc.copy()
-                .feed(sourceFeedPresenter.getSelectedEntityReference())
                 .backgroundImages(localBackgroundList)
                 .build();
     }
@@ -247,7 +228,6 @@ public class FloorMapSettingsPresenter
 
     public interface FloorMapSettingsView extends View, HasUiHandlers<DirtyUiHandlers>, ReadOnlyChangeHandler {
 
-        void setSourceFeed(View view);
         void setBackgroundImage(String backgroundImage);
         String getBackgroundImage();
         long getStartTime();

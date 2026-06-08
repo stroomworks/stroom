@@ -5,14 +5,6 @@
              xmlns:datetimebox="urn:import:stroom.widget.datepicker.client"
              xmlns:v="urn:import:stroom.widget.valuespinner.client">
     <g:FlowPanel styleName="max dock-container-vertical form-padding form">
-        <!-- Source Feed Selection -->
-        <form:FormGroup identity="floorMapSourceFeed"
-                        label="Source Feed"
-                        helpText="The feed that the generated data will be sent to."
-                        addStyleNames="dock-min">
-            <g:SimplePanel ui:field="sourceFeed"/>
-        </form:FormGroup>
-
         <!-- Background Image Selection -->
         <form:FormGroup label="Background Image">
             <g:FlowPanel addStyleNames="stroom-floormap-settings-layout">

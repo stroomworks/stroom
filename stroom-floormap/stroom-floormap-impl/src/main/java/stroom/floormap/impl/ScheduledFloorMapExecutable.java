@@ -20,13 +20,8 @@ import stroom.analytics.impl.ScheduledExecutable;
 import stroom.analytics.impl.ScheduledExecutorService.ExecutionResult;
 import stroom.analytics.shared.ExecutionSchedule;
 import stroom.analytics.shared.ExecutionTracker;
-import stroom.data.shared.StreamTypeNames;
-import stroom.data.store.api.OutputStreamProvider;
-import stroom.data.store.api.Store;
-import stroom.data.store.api.Target;
 import stroom.docref.DocRef;
 import stroom.floormap.shared.FloorMapDoc;
-import stroom.meta.api.MetaProperties;
 import stroom.util.logging.LambdaLogger;
 import stroom.util.logging.LambdaLoggerFactory;
 import stroom.util.scheduler.Trigger;
@@ -34,9 +29,6 @@ import stroom.util.shared.NullSafe;
 
 import jakarta.inject.Inject;
 
-import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -46,13 +38,10 @@ public class ScheduledFloorMapExecutable implements ScheduledExecutable<FloorMap
     private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(ScheduledFloorMapExecutable.class);
 
     private final FloorMapStore floorMapStore;
-    private final Store streamStore;
 
     @Inject
-    ScheduledFloorMapExecutable(final FloorMapStore floorMapStore,
-                               final Store streamStore) {
+    ScheduledFloorMapExecutable(final FloorMapStore floorMapStore) {
         this.floorMapStore = floorMapStore;
-        this.streamStore = streamStore;
     }
 
     @Override
@@ -63,25 +52,7 @@ public class ScheduledFloorMapExecutable implements ScheduledExecutable<FloorMap
                                final ExecutionSchedule executionSchedule,
                                final ExecutionTracker currentTracker,
                                final ExecutionResult executionResult) {
-
-        try {
-            final DocRef outputFeed = doc.getFeed();
-
-            final MetaProperties metaProperties = MetaProperties.builder()
-                    .feedName(outputFeed.getName())
-                    .typeName(StreamTypeNames.RAW_EVENTS)
-                    .effectiveMs(effectiveExecutionTime.toEpochMilli())
-                    .build();
-
-            try (final Target streamTarget = streamStore.openTarget(metaProperties)) {
-                try (final OutputStreamProvider outputStreamProvider = streamTarget.next()) {
-                    outputStreamProvider.get().write(doc.getTemplate().getBytes(StandardCharsets.UTF_8));
-                }
-            }
-        } catch (final IOException e) {
-            throw new UncheckedIOException(e);
-        }
-
+        // No-op: Background data generation into feeds is disabled under the new column-mapping architecture.
         return executionResult;
     }
 
