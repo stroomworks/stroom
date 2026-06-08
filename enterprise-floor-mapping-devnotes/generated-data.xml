@@ -1,4 +1,4 @@
-<records>
+<records xmlns="records:2">
     <record>
         <data name="type" value="badge-scan"/>
         <data name="timestamp" value="2026-04-11T13:04:43.000000Z"/>

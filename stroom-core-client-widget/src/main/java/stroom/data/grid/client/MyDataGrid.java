@@ -1218,4 +1218,14 @@ public class MyDataGrid<R> extends DataGrid<R> implements NativePreviewHandler {
             e.removeClassName(ALLOW_HEADER_SELECTION);
         }
     }
+
+    public void setEmptyText(final String text) {
+        if (text == null) {
+            emptyTableWidget.setWidget(null);
+        } else {
+            final com.google.gwt.user.client.ui.Label label = new com.google.gwt.user.client.ui.Label(text);
+            label.setStyleName("margin-10");
+            emptyTableWidget.setWidget(label);
+        }
+    }
 }

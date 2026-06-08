@@ -24,6 +24,8 @@ dependencies {
     implementation project(':stroom-query:stroom-query-api')
     implementation project(':stroom-query:stroom-query-common')
     implementation project(':stroom-security:stroom-security-api')
+    implementation project(':stroom-sqlstore:stroom-sqlstore-api')
+    implementation project(':stroom-sqlstore:stroom-sqlstore-shared')
     implementation project(':stroom-statistics:stroom-statistics-api')
     implementation project(':stroom-util')
     implementation project(':stroom-util-shared')
@@ -54,6 +56,8 @@ dependencies {
     implementation libs.jakarta.validation.api
     implementation libs.jakarta.annotation.api
     implementation libs.jakarta.inject
+    implementation libs.jaxb.api
+    compileOnly libs.jaxb.api.gwt
     implementation libs.jersey.client
     implementation libs.jetty.http
     implementation libs.kryo

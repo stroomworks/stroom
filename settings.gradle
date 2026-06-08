@@ -303,6 +303,13 @@ include 'stroom-security:stroom-security-mock'
 include 'stroom-security:stroom-security-openid-api'
 include 'stroom-security:stroom-security-user-api'
 
+// SQL Store
+include 'stroom-sqlstore:stroom-sqlstore-api'
+include 'stroom-sqlstore:stroom-sqlstore-shared'
+include 'stroom-sqlstore:stroom-sqlstore-impl'
+include 'stroom-sqlstore:stroom-sqlstore-impl-db'
+include 'stroom-sqlstore:stroom-sqlstore-impl-db-jooq'
+
 // Statistics
 include 'stroom-statistics:stroom-statistics-api'
 include 'stroom-statistics:stroom-statistics-client'

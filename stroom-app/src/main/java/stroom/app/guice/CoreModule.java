@@ -133,6 +133,8 @@ public class CoreModule extends AbstractModule {
         install(new stroom.datagen.impl.DataGenModule());
         install(new stroom.floormap.impl.FloorMapModule());
         install(new stroom.planb.impl.PlanBModule());
+        install(new stroom.sqlstore.impl.SqlStoreModule());
+        install(new stroom.sqlstore.impl.db.SqlStoreDbModule());
         install(new stroom.statistics.impl.InternalStatisticsModule());
         install(new stroom.statistics.impl.sql.SqlStatisticsModule());
         install(new stroom.statistics.impl.sql.entity.StatisticStoreModule());
