@@ -16,13 +16,13 @@
 
 package stroom.floormap.client.presenter;
 
-import stroom.floormap.client.presenter.FloorMapSettingsPresenter.FloorMapSettingsView;
-import stroom.floormap.shared.FloorMapDoc;
 import stroom.docref.DocRef;
 import stroom.editor.client.presenter.EditorPresenter;
 import stroom.entity.client.presenter.DocPresenter;
 import stroom.explorer.client.presenter.DocSelectionBoxPresenter;
 import stroom.feed.shared.FeedDoc;
+import stroom.floormap.client.presenter.FloorMapSettingsPresenter.FloorMapSettingsView;
+import stroom.floormap.shared.FloorMapDoc;
 import stroom.security.shared.DocumentPermission;
 import stroom.ui.config.client.UiConfigCache;
 

@@ -1868,6 +1868,26 @@ paths:
       summary: Download search results
       tags:
       - Dashboards
+  /dashboard/v1/findByType:
+    get:
+      operationId: findDashboardsByType
+      parameters:
+      - in: query
+        name: domainType
+        schema:
+          type: string
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DocRef"
+          description: default response
+      summary: Find dashboards by dashboard type
+      tags:
+      - Dashboards
   /dashboard/v1/search:
     post:
       operationId: dashboardSearch
@@ -2458,6 +2478,88 @@ paths:
       summary: Update a documentation doc
       tags:
       - Documentation (v1)
+  /domainType/v1/attributeParts/{classPart}:
+    get:
+      operationId: fetchAttributeParts
+      parameters:
+      - in: path
+        name: classPart
+        required: true
+        schema:
+          type: string
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+          description: default response
+      summary: Fetch a list of available AttributeParts for a given ClassPart across
+        all DomainTypeDocs
+      tags:
+      - DomainTypes (v1)
+  /domainType/v1/classParts:
+    get:
+      operationId: fetchClassParts
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+          description: default response
+      summary: Fetch a list of available ClassParts across all DomainTypeDocs in the
+        document store
+      tags:
+      - DomainTypes (v1)
+  /domainType/v1/{uuid}:
+    get:
+      operationId: fetchDomainType
+      parameters:
+      - in: path
+        name: uuid
+        required: true
+        schema:
+          type: string
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DomainTypeDoc"
+          description: default response
+      summary: Fetch a domain type doc by its UUID
+      tags:
+      - DomainTypes (v1)
+    put:
+      operationId: updateDomainType
+      parameters:
+      - in: path
+        name: uuid
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DomainTypeDoc"
+        description: doc
+        required: true
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DomainTypeDoc"
+          description: default response
+      summary: Update a domain type doc
+      tags:
+      - DomainTypes (v1)
   /duplicateCheck/v1/delete:
     post:
       operationId: deleteDuplicateCheckRows
@@ -3572,6 +3674,50 @@ paths:
       summary: Send Plan B part
       tags:
       - File Transfer
+  /floormap/v1/{uuid}:
+    get:
+      operationId: fetchFloorMap
+      parameters:
+      - in: path
+        name: uuid
+        required: true
+        schema:
+          type: string
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FloorMapDoc"
+          description: default response
+      summary: Fetch an analytic rule doc by its UUID
+      tags:
+      - Queries
+    put:
+      operationId: updateFloorMap
+      parameters:
+      - in: path
+        name: uuid
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FloorMapDoc"
+        description: doc
+        required: true
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FloorMapDoc"
+          description: default response
+      summary: Update an analytic rule doc
+      tags:
+      - Queries
   /fsVolume/v1:
     post:
       operationId: createFsVolume
@@ -7492,6 +7638,50 @@ paths:
       summary: Update a solr index doc
       tags:
       - Solr Indices
+  /sqlTemporalStoreDoc/v1/{uuid}:
+    get:
+      operationId: fetchSqlTemporalStoreDoc
+      parameters:
+      - in: path
+        name: uuid
+        required: true
+        schema:
+          type: string
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SqlTemporalStoreDoc"
+          description: default response
+      summary: Fetch an SQL temporal store doc by its UUID
+      tags:
+      - SqlTemporalStore
+    put:
+      operationId: updateSqlTemporalStoreDoc
+      parameters:
+      - in: path
+        name: uuid
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SqlTemporalStoreDoc"
+        description: doc
+        required: true
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SqlTemporalStoreDoc"
+          description: default response
+      summary: Update an SQL temporal store doc
+      tags:
+      - SqlTemporalStore
   /sqlstatistics/v2/destroy:
     post:
       operationId: destroySqlStatisticsQuery
@@ -7532,6 +7722,49 @@ paths:
       summary: Submit a search request
       tags:
       - Sql Statistics Query
+  /sqltemporalstore/v1/clear:
+    delete:
+      description: Clears all entries for the specified store.
+      operationId: clear
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DocRef"
+        description: docRef
+        required: true
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                type: boolean
+          description: default response
+      summary: Clear a store
+      tags:
+      - SqlTemporalStore
+  /sqltemporalstore/v1/count:
+    post:
+      description: Returns the number of entries in the specified store.
+      operationId: count
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DocRef"
+        description: docRef
+        required: true
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                type: integer
+                format: int64
+          description: default response
+      summary: Get store count
+      tags:
+      - SqlTemporalStore
   /statistic/v1/{uuid}:
     get:
       operationId: fetchStatisticStore
@@ -8677,11 +8910,11 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/VisualisationAssets"
+                $ref: "#/components/schemas/DocumentAssets"
           description: default response
-      summary: Fetch the assets belonging to a visualisation doc by the doc's UUID
+      summary: Fetch the assets belonging to a document by the doc's UUID
       tags:
-      - VisualisationAssets
+      - DocumentAssets
   /visualisationAssets/getContent/{ownerDocId}:
     get:
       operationId: getContent
@@ -8700,11 +8933,11 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/VisualisationAssetContent"
+                $ref: "#/components/schemas/DocumentAssetContent"
           description: default response
       summary: Gets the content of an asset for editing
       tags:
-      - VisualisationAssets
+      - DocumentAssets
   /visualisationAssets/revertDraftFromLive/{ownerDocId}:
     put:
       operationId: revertDraftFromLive
@@ -8723,7 +8956,7 @@ paths:
           description: default response
       summary: Revert draft assets to get rid of any changes
       tags:
-      - VisualisationAssets
+      - DocumentAssets
   /visualisationAssets/saveAs/{fromOwnerDocId}:
     put:
       operationId: saveAs
@@ -8737,7 +8970,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/VisualisationAssetSaveAsParameters"
+              $ref: "#/components/schemas/DocumentAssetSaveAsParameters"
         description: SaveAs parameters
         required: true
       responses:
@@ -8749,7 +8982,7 @@ paths:
           description: default response
       summary: Save the document's assets to another document
       tags:
-      - VisualisationAssets
+      - DocumentAssets
   /visualisationAssets/saveAs/{ownerDocId}:
     get:
       operationId: indexAssetExists
@@ -8768,7 +9001,7 @@ paths:
           description: default response
       summary: Check if an index.html asset exists for the document ID
       tags:
-      - VisualisationAssets
+      - DocumentAssets
   /visualisationAssets/saveDraftToLive/{ownerDocId}:
     put:
       operationId: saveDraftToLive
@@ -8787,7 +9020,7 @@ paths:
           description: default response
       summary: Save draft assets to main store to make them live
       tags:
-      - VisualisationAssets
+      - DocumentAssets
   /visualisationAssets/updateContent/{ownerDocId}:
     put:
       operationId: updateContent
@@ -8801,7 +9034,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/VisualisationAssetUpdateContent"
+              $ref: "#/components/schemas/DocumentAssetUpdateContent"
         description: Path and Content
         required: true
       responses:
@@ -8813,7 +9046,7 @@ paths:
           description: default response
       summary: Updates the content of an asset
       tags:
-      - VisualisationAssets
+      - DocumentAssets
   /visualisationAssets/updateDelete/{ownerDocId}:
     put:
       operationId: updateDelete
@@ -8827,7 +9060,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/VisualisationAssetUpdateDelete"
+              $ref: "#/components/schemas/DocumentAssetUpdateDelete"
         description: Path and isFolder
         required: true
       responses:
@@ -8839,7 +9072,7 @@ paths:
           description: default response
       summary: Deletes an asset
       tags:
-      - VisualisationAssets
+      - DocumentAssets
   /visualisationAssets/updateNewFile/{ownerDocId}:
     put:
       operationId: updateNewFile
@@ -8853,7 +9086,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/VisualisationAssetUpdateNewFile"
+              $ref: "#/components/schemas/DocumentAssetUpdateNewFile"
         description: Path and Mimetype
       responses:
         default:
@@ -8864,7 +9097,7 @@ paths:
           description: default response
       summary: Creates a new text file
       tags:
-      - VisualisationAssets
+      - DocumentAssets
   /visualisationAssets/updateNewFolder/{ownerDocId}:
     put:
       operationId: updateNewFolder
@@ -8889,7 +9122,7 @@ paths:
           description: default response
       summary: Create new folder
       tags:
-      - VisualisationAssets
+      - DocumentAssets
   /visualisationAssets/updateNewUploadedFile/{ownerDocId}:
     put:
       operationId: updateNewUploadedFile
@@ -8903,7 +9136,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/VisualisationAssetUpdateNewFile"
+              $ref: "#/components/schemas/DocumentAssetUpdateNewFile"
         description: "Path, ResourceKey and Mimetype"
         required: true
       responses:
@@ -8915,7 +9148,7 @@ paths:
           description: default response
       summary: Creates a new uploaded file
       tags:
-      - VisualisationAssets
+      - DocumentAssets
   /visualisationAssets/updateRename/{ownerDocId}:
     put:
       operationId: updateRename
@@ -8929,7 +9162,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/VisualisationAssetUpdateRename"
+              $ref: "#/components/schemas/DocumentAssetUpdateRename"
         description: "Old Path, New Path and isFolder"
         required: true
       responses:
@@ -8941,7 +9174,7 @@ paths:
           description: default response
       summary: Renames an asset
       tags:
-      - VisualisationAssets
+      - DocumentAssets
   /welcome/v1:
     get:
       operationId: fetchWelcome
@@ -10497,6 +10730,8 @@ components:
           $ref: "#/components/schemas/ColumnFilter"
         columnValueSelection:
           $ref: "#/components/schemas/ColumnValueSelection"
+        domainType:
+          type: string
         expression:
           type: string
           description: The expression to use to generate the value for this field
@@ -11216,6 +11451,10 @@ components:
           $ref: "#/components/schemas/DashboardConfig"
         description:
           type: string
+        domainTypes:
+          type: array
+          items:
+            $ref: "#/components/schemas/DomainType"
         name:
           type: string
         type:
@@ -11754,6 +11993,78 @@ components:
           items:
             $ref: "#/components/schemas/DocRef"
           uniqueItems: true
+    DocumentAsset:
+      type: object
+      properties:
+        folder:
+          type: boolean
+        id:
+          type: string
+        path:
+          type: string
+    DocumentAssetContent:
+      type: object
+      properties:
+        content:
+          type: string
+        editorMode:
+          type: string
+    DocumentAssetSaveAsParameters:
+      type: object
+      properties:
+        toOwnerDocId:
+          type: string
+        updatedContent:
+          type: string
+          format: byte
+        updatedContentPath:
+          type: string
+    DocumentAssetUpdateContent:
+      type: object
+      properties:
+        content:
+          type: string
+          format: byte
+        path:
+          type: string
+    DocumentAssetUpdateDelete:
+      type: object
+      properties:
+        folder:
+          type: boolean
+        path:
+          type: string
+    DocumentAssetUpdateNewFile:
+      type: object
+      properties:
+        path:
+          type: string
+        resourceKey:
+          $ref: "#/components/schemas/ResourceKey"
+    DocumentAssetUpdateRename:
+      type: object
+      properties:
+        folder:
+          type: boolean
+        newPath:
+          type: string
+        oldPath:
+          type: string
+    DocumentAssets:
+      type: object
+      properties:
+        assets:
+          type: array
+          items:
+            $ref: "#/components/schemas/DocumentAsset"
+        dirty:
+          type: boolean
+        ownerId:
+          type: string
+        uploadedFiles:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/ResourceKey"
     DocumentFindRequest:
       type: object
       properties:
@@ -11818,11 +12129,13 @@ components:
           - DISABLE
           - DOCUMENT_ANALYTIC_OUTPUT_STORE
           - DOCUMENT_ANALYTIC_RULE
-          - DOCUMENT_DATA_GEN
           - DOCUMENT_ANNOTATIONS_INDEX
           - DOCUMENT_DASHBOARD
+          - DOCUMENT_DATA_GEN
+          - DOCUMENT_FLOOR_MAP
           - DOCUMENT_DICTIONARY
           - DOCUMENT_DOCUMENTATION
+          - DOCUMENT_DOMAIN_TYPE
           - DOCUMENT_ELASTIC_CLUSTER
           - DOCUMENT_ELASTIC_INDEX
           - DOCUMENT_FAVOURITES
@@ -12108,6 +12421,40 @@ components:
           type: string
         version:
           type: string
+    DomainType:
+      type: object
+      properties:
+        attributePart:
+          type: string
+        classPart:
+          type: string
+    DomainTypeDoc:
+      type: object
+      properties:
+        createTimeMs:
+          type: integer
+          format: int64
+        createUser:
+          type: string
+        description:
+          type: string
+        domainTypes:
+          type: array
+          items:
+            $ref: "#/components/schemas/DomainType"
+        name:
+          type: string
+        type:
+          type: string
+        updateTimeMs:
+          type: integer
+          format: int64
+        updateUser:
+          type: string
+        uuid:
+          type: string
+        version:
+          type: string
     DoubleRange:
       type: object
       allOf:
@@ -12321,6 +12668,8 @@ components:
       properties:
         denseVectorFieldConfig:
           $ref: "#/components/schemas/DenseVectorFieldConfig"
+        domainType:
+          type: string
         fieldName:
           type: string
         fieldType:
@@ -13771,6 +14120,33 @@ components:
       description: A result structure used primarily for visualisation data
       required:
       - componentId
+    FloorMapDoc:
+      type: object
+      properties:
+        createTimeMs:
+          type: integer
+          format: int64
+        createUser:
+          type: string
+        description:
+          type: string
+        feed:
+          $ref: "#/components/schemas/DocRef"
+        name:
+          type: string
+        template:
+          type: string
+        type:
+          type: string
+        updateTimeMs:
+          type: integer
+          format: int64
+        updateUser:
+          type: string
+        uuid:
+          type: string
+        version:
+          type: string
     Format:
       type: object
       description: Describes the formatting that will be applied to values in a field
@@ -14457,6 +14833,8 @@ components:
           type: boolean
         denseVectorFieldConfig:
           $ref: "#/components/schemas/DenseVectorFieldConfig"
+        domainType:
+          type: string
         fldName:
           type: string
         fldType:
@@ -15086,6 +15464,8 @@ components:
           type: boolean
         denseVectorFieldConfig:
           $ref: "#/components/schemas/DenseVectorFieldConfig"
+        domainType:
+          type: string
         fieldName:
           type: string
         fieldType:
@@ -15880,11 +16260,13 @@ components:
           - DISABLE
           - DOCUMENT_ANALYTIC_OUTPUT_STORE
           - DOCUMENT_ANALYTIC_RULE
-          - DOCUMENT_DATA_GEN
           - DOCUMENT_ANNOTATIONS_INDEX
           - DOCUMENT_DASHBOARD
+          - DOCUMENT_DATA_GEN
+          - DOCUMENT_FLOOR_MAP
           - DOCUMENT_DICTIONARY
           - DOCUMENT_DOCUMENTATION
+          - DOCUMENT_DOMAIN_TYPE
           - DOCUMENT_ELASTIC_CLUSTER
           - DOCUMENT_ELASTIC_INDEX
           - DOCUMENT_FAVOURITES
@@ -16860,6 +17242,8 @@ components:
             \ edit permission', 'has view permission', 'has use permission'"
           - "'is', 'is not'"
         docRefType:
+          type: string
+        domainType:
           type: string
         fldName:
           type: string
@@ -18784,6 +19168,8 @@ components:
           $ref: "#/components/schemas/DenseVectorFieldConfig"
         docValues:
           type: boolean
+        domainType:
+          type: string
         fieldName:
           type: string
         fieldType:
@@ -19101,6 +19487,29 @@ components:
           dimension:
             type: integer
             format: int32
+    SqlTemporalStoreDoc:
+      type: object
+      properties:
+        createTimeMs:
+          type: integer
+          format: int64
+        createUser:
+          type: string
+        description:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+        updateTimeMs:
+          type: integer
+          format: int64
+        updateUser:
+          type: string
+        uuid:
+          type: string
+        version:
+          type: string
     SshKeySecret:
       type: object
       allOf:
@@ -20788,78 +21197,6 @@ components:
             $ref: "#/components/schemas/DocRef"
       required:
       - componentId
-    VisualisationAsset:
-      type: object
-      properties:
-        folder:
-          type: boolean
-        id:
-          type: string
-        path:
-          type: string
-    VisualisationAssetContent:
-      type: object
-      properties:
-        content:
-          type: string
-        editorMode:
-          type: string
-    VisualisationAssetSaveAsParameters:
-      type: object
-      properties:
-        toOwnerDocId:
-          type: string
-        updatedContent:
-          type: string
-          format: byte
-        updatedContentPath:
-          type: string
-    VisualisationAssetUpdateContent:
-      type: object
-      properties:
-        content:
-          type: string
-          format: byte
-        path:
-          type: string
-    VisualisationAssetUpdateDelete:
-      type: object
-      properties:
-        folder:
-          type: boolean
-        path:
-          type: string
-    VisualisationAssetUpdateNewFile:
-      type: object
-      properties:
-        path:
-          type: string
-        resourceKey:
-          $ref: "#/components/schemas/ResourceKey"
-    VisualisationAssetUpdateRename:
-      type: object
-      properties:
-        folder:
-          type: boolean
-        newPath:
-          type: string
-        oldPath:
-          type: string
-    VisualisationAssets:
-      type: object
-      properties:
-        assets:
-          type: array
-          items:
-            $ref: "#/components/schemas/VisualisationAsset"
-        dirty:
-          type: boolean
-        ownerId:
-          type: string
-        uploadedFiles:
-          type: object
-          additionalProperties:
-            $ref: "#/components/schemas/ResourceKey"
     VisualisationDoc:
       type: object
       properties:

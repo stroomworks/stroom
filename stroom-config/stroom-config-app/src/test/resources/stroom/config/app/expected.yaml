@@ -1218,6 +1218,23 @@ appConfig:
     search:
       maxBooleanClauseCount: 1024
       maxStoredDataQueueSize: 1000
+  sqlStore:
+    db:
+      connection:
+        jdbcDriverClassName: null
+        jdbcDriverPassword: null
+        jdbcDriverUrl: null
+        jdbcDriverUsername: null
+      connectionPool:
+        cachePrepStmts: false
+        connectionTimeout: "PT30S"
+        idleTimeout: "PT10M"
+        leakDetectionThreshold: "PT0S"
+        maxLifetime: "PT30M"
+        maxPoolSize: 30
+        minimumIdle: 10
+        prepStmtCacheSize: 25
+        prepStmtCacheSqlLimit: 256
   statistics:
     internal:
       benchmarkCluster:

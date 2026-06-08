@@ -16,9 +16,9 @@
 
 package stroom.floormap.impl;
 
-import stroom.floormap.shared.FloorMapDoc;
 import stroom.docref.DocRef;
 import stroom.docstore.api.DocumentStore;
+import stroom.floormap.shared.FloorMapDoc;
 
 import java.util.List;
 

@@ -16,14 +16,14 @@
 
 package stroom.floormap.client.presenter;
 
-import stroom.document.asset.client.presenter.DocumentAssetPresenter;
-import stroom.floormap.shared.FloorMapDoc;
 import stroom.docref.DocRef;
+import stroom.document.asset.client.presenter.DocumentAssetPresenter;
 import stroom.entity.client.presenter.DocTabPresenter;
 import stroom.entity.client.presenter.DocTabProvider;
 import stroom.entity.client.presenter.LinkTabPanelView;
 import stroom.entity.client.presenter.MarkdownEditPresenter;
 import stroom.entity.client.presenter.MarkdownTabProvider;
+import stroom.floormap.shared.FloorMapDoc;
 import stroom.security.client.presenter.DocumentUserPermissionsTabProvider;
 import stroom.widget.tab.client.presenter.TabData;
 import stroom.widget.tab.client.presenter.TabDataImpl;

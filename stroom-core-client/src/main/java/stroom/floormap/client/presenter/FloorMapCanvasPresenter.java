@@ -108,8 +108,11 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
     public interface FloorMapCanvasView extends View, RequiresResize {
         HasMouseDownHandlers getFocusPanel();
+
         HasMouseMoveHandlers getMouseMoveHandlers();
+
         HasMouseUpHandlers getMouseUpHandlers();
+
         HasMouseWheelHandlers getMouseWheelHandlers();
 
         void draw(double scale, double x, double y);
