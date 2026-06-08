@@ -34,6 +34,7 @@ import javax.inject.Provider;
 
 public class PlanBPresenter extends DocTabPresenter<LinkTabPanelView, PlanBDoc> {
 
+    private static final TabData DATA = new TabDataImpl("Data");
     private static final TabData SETTINGS = new TabDataImpl("Settings");
     private static final TabData DOCUMENTATION = new TabDataImpl("Documentation");
     private static final TabData PERMISSIONS = new TabDataImpl("Permissions");
@@ -42,13 +43,15 @@ public class PlanBPresenter extends DocTabPresenter<LinkTabPanelView, PlanBDoc> 
     public PlanBPresenter(
             final EventBus eventBus,
             final LinkTabPanelView view,
+            final Provider<PlanBDataPresenter> planBDataPresenterProvider,
             final Provider<PlanBSettingsPresenter> planBSettingsPresenterProvider,
             final Provider<MarkdownEditPresenter> markdownEditPresenterProvider,
             final DocumentUserPermissionsTabProvider<PlanBDoc> documentUserPermissionsTabProvider) {
         super(eventBus, view);
 
+        addTab(DATA, new DocTabProvider<>(planBDataPresenterProvider::get));
         addTab(SETTINGS, new DocTabProvider<>(planBSettingsPresenterProvider::get));
-        addTab(DOCUMENTATION, new MarkdownTabProvider<PlanBDoc>(eventBus, markdownEditPresenterProvider) {
+        addTab(DOCUMENTATION, new MarkdownTabProvider<>(eventBus, markdownEditPresenterProvider) {
             @Override
             public void onRead(final MarkdownEditPresenter presenter,
                                final DocRef docRef,
@@ -65,7 +68,7 @@ public class PlanBPresenter extends DocTabPresenter<LinkTabPanelView, PlanBDoc> 
             }
         });
         addTab(PERMISSIONS, documentUserPermissionsTabProvider);
-        selectTab(SETTINGS);
+        selectTab(DATA);
     }
 
     @Override
