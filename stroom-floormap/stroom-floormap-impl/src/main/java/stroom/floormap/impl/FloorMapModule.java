@@ -38,14 +38,6 @@ public class FloorMapModule extends AbstractModule {
 
     @Override
     protected void configure() {
-        ScheduledJobsBinder.create(binder())
-                .bindJobTo(ScheduledFloorMapExecutorRunnable.class, builder -> builder
-                        .name("Data Generator")
-                        .description("Generate data to be fed into the selected feed.")
-                        .frequencySchedule("10m")
-                        .enabled(false)
-                        .enabledOnBootstrap(false)
-                        .advanced(true));
 
         bind(FloorMapStore.class).to(FloorMapStoreImpl.class);
 
@@ -63,37 +55,7 @@ public class FloorMapModule extends AbstractModule {
         ObjectInfoProviderBinder.create(binder())
                 .bind(FloorMapDoc.class, FloorMapDocObjectInfoProvider.class);
 
-        ExecuteNowProviderBinder.create(binder())
-                .bind(FloorMapDoc.TYPE, FloorMapExecuteNow.class);
-
         RestResourcesBinder.create(binder())
                 .bind(FloorMapResourceImpl.class);
-    }
-
-    private static class ScheduledFloorMapExecutorRunnable extends RunnableWrapper {
-
-        @Inject
-        ScheduledFloorMapExecutorRunnable(final ScheduledExecutorService<FloorMapDoc> scheduledExecutorService,
-                                         final ScheduledFloorMapExecutable scheduledFloorMapExecutor) {
-            super(() -> scheduledExecutorService.exec(scheduledFloorMapExecutor));
-        }
-    }
-
-    private static class FloorMapExecuteNow implements ExecuteNow {
-
-        private final ScheduledExecutorService<FloorMapDoc> scheduledExecutorService;
-        private final ScheduledFloorMapExecutable scheduledFloorMapExecutor;
-
-        @Inject
-        FloorMapExecuteNow(final ScheduledExecutorService<FloorMapDoc> scheduledExecutorService,
-                          final ScheduledFloorMapExecutable scheduledFloorMapExecutor) {
-            this.scheduledExecutorService = scheduledExecutorService;
-            this.scheduledFloorMapExecutor = scheduledFloorMapExecutor;
-        }
-
-        @Override
-        public void execute(final ExecutionSchedule executionSchedule) {
-            scheduledExecutorService.executeNow(executionSchedule, scheduledFloorMapExecutor);
-        }
     }
 }
