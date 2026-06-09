@@ -55,7 +55,7 @@ import javax.xml.transform.stream.StreamResult;
         roles = {
                 PipelineElementType.ROLE_TARGET,
                 PipelineElementType.ROLE_HAS_TARGETS},
-        icon = SvgImage.DATABASE)
+        icon = SvgImage.DOCUMENT_SQL_TEMPORAL_STORE)
 public class SqlStoreFilter extends AbstractXMLFilter {
     private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(SqlStoreFilter.class);
 

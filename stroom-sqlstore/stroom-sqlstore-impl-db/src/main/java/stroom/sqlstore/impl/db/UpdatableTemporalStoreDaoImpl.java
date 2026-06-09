@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2016-2026 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -44,6 +44,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.function.Consumer;
 
+import static stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore.UPDATABLE_TEMPORAL_STORE;
+
 @Singleton
 class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
 
@@ -58,34 +60,29 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
         this.sqlStoreDbConnProvider = sqlStoreDbConnProvider;
         this.expressionMapper = expressionMapperFactory.create();
         expressionMapper.map(UpdatableTemporalStore.MAP_FIELD,
-                stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore.UPDATABLE_TEMPORAL_STORE.MAP_NAME,
+                UPDATABLE_TEMPORAL_STORE.MAP_NAME,
                 String::valueOf);
         expressionMapper.map(UpdatableTemporalStore.KEY_FIELD,
-                stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore.UPDATABLE_TEMPORAL_STORE.KEY_,
+                UPDATABLE_TEMPORAL_STORE.KEY_,
                 String::valueOf);
         expressionMapper.map(UpdatableTemporalStore.TIME_FIELD,
-                stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore.UPDATABLE_TEMPORAL_STORE.EFFECTIVE_TIME,
+                UPDATABLE_TEMPORAL_STORE.EFFECTIVE_TIME,
                 Long::valueOf);
         expressionMapper.map(UpdatableTemporalStore.VALUE_FIELD,
-                stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore.UPDATABLE_TEMPORAL_STORE.VALUE_,
+                UPDATABLE_TEMPORAL_STORE.VALUE_,
                 String::valueOf);
     }
 
     @Override
     public TemporalEntry create(final TemporalEntry entry) {
         JooqUtil.context(sqlStoreDbConnProvider, context -> context
-                .insertInto(stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore.UPDATABLE_TEMPORAL_STORE)
-                .set(stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore.UPDATABLE_TEMPORAL_STORE.MAP_NAME,
-                        entry.getMap())
-                .set(stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore.UPDATABLE_TEMPORAL_STORE.KEY_,
-                        entry.getKey())
-                .set(stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore.UPDATABLE_TEMPORAL_STORE.EFFECTIVE_TIME,
-                        entry.getEffectiveTimeMs())
-                .set(stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore.UPDATABLE_TEMPORAL_STORE.VALUE_,
-                        entry.getValue())
+                .insertInto(UPDATABLE_TEMPORAL_STORE)
+                .set(UPDATABLE_TEMPORAL_STORE.MAP_NAME, entry.getMap())
+                .set(UPDATABLE_TEMPORAL_STORE.KEY_, entry.getKey())
+                .set(UPDATABLE_TEMPORAL_STORE.EFFECTIVE_TIME, entry.getEffectiveTimeMs())
+                .set(UPDATABLE_TEMPORAL_STORE.VALUE_, entry.getValue())
                 .onDuplicateKeyUpdate()
-                .set(stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore.UPDATABLE_TEMPORAL_STORE.VALUE_,
-                        entry.getValue())
+                .set(UPDATABLE_TEMPORAL_STORE.VALUE_, entry.getValue())
                 .execute());
         return entry;
     }
@@ -97,13 +94,11 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
 
     @Override
     public Optional<TemporalEntry> fetch(final TemporalEntryId id) {
-        final stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore table =
-                stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore.UPDATABLE_TEMPORAL_STORE;
         return JooqUtil.contextResult(sqlStoreDbConnProvider, context -> context
-                .selectFrom(table)
-                .where(table.MAP_NAME.eq(id.getMap()))
-                .and(table.KEY_.eq(id.getKey()))
-                .and(table.EFFECTIVE_TIME.eq(id.getEffectiveTimeMs()))
+                .selectFrom(UPDATABLE_TEMPORAL_STORE)
+                .where(UPDATABLE_TEMPORAL_STORE.MAP_NAME.eq(id.getMap()))
+                .and(UPDATABLE_TEMPORAL_STORE.KEY_.eq(id.getKey()))
+                .and(UPDATABLE_TEMPORAL_STORE.EFFECTIVE_TIME.eq(id.getEffectiveTimeMs()))
                 .fetchOptional()
                 .map(record -> new TemporalEntry(
                         record.getMapName(),
@@ -114,13 +109,11 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
 
     @Override
     public boolean delete(final TemporalEntryId id) {
-        final stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore table =
-                stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore.UPDATABLE_TEMPORAL_STORE;
         return JooqUtil.contextResult(sqlStoreDbConnProvider, context -> context
-                .deleteFrom(table)
-                .where(table.MAP_NAME.eq(id.getMap()))
-                .and(table.KEY_.eq(id.getKey()))
-                .and(table.EFFECTIVE_TIME.eq(id.getEffectiveTimeMs()))
+                .deleteFrom(UPDATABLE_TEMPORAL_STORE)
+                .where(UPDATABLE_TEMPORAL_STORE.MAP_NAME.eq(id.getMap()))
+                .and(UPDATABLE_TEMPORAL_STORE.KEY_.eq(id.getKey()))
+                .and(UPDATABLE_TEMPORAL_STORE.EFFECTIVE_TIME.eq(id.getEffectiveTimeMs()))
                 .execute() > 0);
     }
 
@@ -132,9 +125,9 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
             final Condition condition = expressionMapper.apply(filteredExpression);
 
             final stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore t1 =
-                    stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore.UPDATABLE_TEMPORAL_STORE.as("t1");
+                    UPDATABLE_TEMPORAL_STORE.as("t1");
             final stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore t2 =
-                    stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore.UPDATABLE_TEMPORAL_STORE.as("t2");
+                    UPDATABLE_TEMPORAL_STORE.as("t2");
 
             final SelectHavingStep<Record3<String, String, Long>> subquery = DSL.select(
                             t2.MAP_NAME.as("sub_map"),
@@ -169,7 +162,7 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
         } else {
             final Condition condition = expressionMapper.apply(criteria.getExpression());
             final List<TemporalEntry> list = JooqUtil.contextResult(sqlStoreDbConnProvider, context -> context
-                    .selectFrom(stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore.UPDATABLE_TEMPORAL_STORE)
+                    .selectFrom(UPDATABLE_TEMPORAL_STORE)
                     .where(condition)
                     .limit(JooqUtil.getLimit(criteria.getPageRequest(), true))
                     .offset(JooqUtil.getOffset(criteria.getPageRequest()))
@@ -186,9 +179,8 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
     @Override
     public void clear(final String mapName) {
         JooqUtil.context(sqlStoreDbConnProvider, context -> context
-                .deleteFrom(stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore.UPDATABLE_TEMPORAL_STORE)
-                .where(stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore.UPDATABLE_TEMPORAL_STORE.MAP_NAME.eq(
-                        mapName))
+                .deleteFrom(UPDATABLE_TEMPORAL_STORE)
+                .where(UPDATABLE_TEMPORAL_STORE.MAP_NAME.eq(mapName))
                 .execute());
     }
 
@@ -196,9 +188,8 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
     public long count(final String mapName) {
         return JooqUtil.contextResult(sqlStoreDbConnProvider, context -> context
                 .selectCount()
-                .from(stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore.UPDATABLE_TEMPORAL_STORE)
-                .where(stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore.UPDATABLE_TEMPORAL_STORE.MAP_NAME.eq(
-                        mapName))
+                .from(UPDATABLE_TEMPORAL_STORE)
+                .where(UPDATABLE_TEMPORAL_STORE.MAP_NAME.eq(mapName))
                 .fetchOne(0, Long.class));
     }
 
@@ -212,9 +203,9 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
             LOGGER.info("QueryTime path. queryTime: {}, condition: {}", queryTime, condition);
 
             final stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore t1 =
-                    stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore.UPDATABLE_TEMPORAL_STORE.as("t1");
+                    UPDATABLE_TEMPORAL_STORE.as("t1");
             final stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore t2 =
-                    stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore.UPDATABLE_TEMPORAL_STORE.as("t2");
+                    UPDATABLE_TEMPORAL_STORE.as("t2");
 
             final SelectHavingStep<Record3<String, String, Long>> subquery = DSL.select(
                             t2.MAP_NAME.as("sub_map"),
@@ -263,14 +254,12 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
             final Condition condition = expressionMapper.apply(criteria.getExpression());
             LOGGER.info("Standard path. condition: {}", condition);
 
-            final org.jooq.Query query = DSL.selectFrom(
-                    stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore
-                            .UPDATABLE_TEMPORAL_STORE)
+            final org.jooq.Query query = DSL.selectFrom(UPDATABLE_TEMPORAL_STORE)
                     .where(condition);
             LOGGER.info("Executing SQL: {}", query.getSQL());
 
             JooqUtil.context(sqlStoreDbConnProvider, context -> context
-                    .selectFrom(stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore.UPDATABLE_TEMPORAL_STORE)
+                    .selectFrom(UPDATABLE_TEMPORAL_STORE)
                     .where(condition)
                     .fetch()
                     .forEach(record -> {
@@ -314,9 +303,9 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
         return ExpressionUtil.copyOperator(
                 criteria.getExpression(),
                 item -> {
-                    if (item instanceof ExpressionTerm) {
-                        return !UpdatableTemporalStore.TIME_FIELD.getFldName()
-                                .equals(((ExpressionTerm) item).getField());
+                    if (item instanceof final ExpressionTerm term) {
+                        return term.getField() != null
+                               && !UpdatableTemporalStore.TIME_FIELD.getFldName().equals(term.getField());
                     }
                     return true;
                 });
