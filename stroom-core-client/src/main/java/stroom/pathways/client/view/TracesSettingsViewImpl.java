@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2016-2026 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,48 +16,29 @@
 
 package stroom.pathways.client.view;
 
-import stroom.pathways.client.presenter.TracesListTabPresenter.TracesView;
+import stroom.entity.client.presenter.ReadOnlyChangeHandler;
+import stroom.pathways.client.presenter.TracesSettingsPresenter.TracesSettingsView;
 
 import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
-import com.google.gwt.user.client.ui.Label;
 import com.google.gwt.user.client.ui.SimplePanel;
 import com.google.gwt.user.client.ui.Widget;
 import com.google.inject.Inject;
 import com.gwtplatform.mvp.client.View;
 import com.gwtplatform.mvp.client.ViewImpl;
 
-public class TracesViewImpl
+public class TracesSettingsViewImpl
         extends ViewImpl
-        implements TracesView {
-
-    @UiField
-    Label label;
-    @UiField
-    SimplePanel topWidget;
-    @UiField
-    SimplePanel bottomWidget;
+        implements TracesSettingsView, ReadOnlyChangeHandler {
 
     private final Widget widget;
 
+    @UiField
+    SimplePanel settings;
+
     @Inject
-    public TracesViewImpl(final Binder binder) {
+    public TracesSettingsViewImpl(final Binder binder) {
         widget = binder.createAndBindUi(this);
-    }
-
-    @Override
-    public void setLabel(final String label) {
-        this.label.setText(label);
-    }
-
-    @Override
-    public void setTopWidget(final View view) {
-        this.topWidget.setWidget(view.asWidget());
-    }
-
-    @Override
-    public void setBottomWidget(final Widget widget) {
-        this.bottomWidget.setWidget(widget);
     }
 
     @Override
@@ -65,7 +46,17 @@ public class TracesViewImpl
         return widget;
     }
 
-    public interface Binder extends UiBinder<Widget, TracesViewImpl> {
+    @Override
+    public void setSettingsView(final View view) {
+        this.settings.setWidget(view.asWidget());
+    }
+
+    @Override
+    public void onReadOnly(final boolean readOnly) {
+        // Handled by child presenter
+    }
+
+    public interface Binder extends UiBinder<Widget, TracesSettingsViewImpl> {
 
     }
 }

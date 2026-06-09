@@ -22,6 +22,7 @@ import stroom.explorer.api.ExplorerActionHandler;
 import stroom.importexport.api.ImportExportActionHandler;
 import stroom.job.api.ScheduledJobsBinder;
 import stroom.pathways.shared.PathwaysDoc;
+import stroom.pathways.shared.TracesDoc;
 import stroom.pathways.shared.TracesStore;
 import stroom.planb.impl.data.TracesStoreImpl;
 import stroom.util.RunnableWrapper;
@@ -37,20 +38,26 @@ public class PathwaysModule extends AbstractModule {
     protected void configure() {
         bind(PathwaysStore.class).to(PathwaysStoreImpl.class);
         bind(TracesStore.class).to(TracesStoreImpl.class);
+        bind(TracesDocStore.class).to(TracesDocStoreImpl.class);
 
         GuiceUtil.buildMultiBinder(binder(), ExplorerActionHandler.class)
-                .addBinding(PathwaysStoreImpl.class);
+                .addBinding(PathwaysStoreImpl.class)
+                .addBinding(TracesDocStoreImpl.class);
         GuiceUtil.buildMultiBinder(binder(), ImportExportActionHandler.class)
-                .addBinding(PathwaysStoreImpl.class);
+                .addBinding(PathwaysStoreImpl.class)
+                .addBinding(TracesDocStoreImpl.class);
         GuiceUtil.buildMultiBinder(binder(), ContentIndexable.class)
-                .addBinding(PathwaysStoreImpl.class);
+                .addBinding(PathwaysStoreImpl.class)
+                .addBinding(TracesDocStoreImpl.class);
 
         RestResourcesBinder.create(binder())
                 .bind(PathwaysResourceImpl.class)
-                .bind(TracesResourceImpl.class);
+                .bind(TracesResourceImpl.class)
+                .bind(TracesDocResourceImpl.class);
 
         DocumentActionHandlerBinder.create(binder())
-                .bind(PathwaysDoc.TYPE, PathwaysStoreImpl.class);
+                .bind(PathwaysDoc.TYPE, PathwaysStoreImpl.class)
+                .bind(TracesDoc.TYPE, TracesDocStoreImpl.class);
 
         ScheduledJobsBinder.create(binder())
                 .bindJobTo(ProcessPathways.class, builder -> builder

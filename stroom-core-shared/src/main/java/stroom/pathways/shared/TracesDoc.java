@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2016-2026 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,13 +14,14 @@
  * limitations under the License.
  */
 
-package stroom.planb.shared;
+package stroom.pathways.shared;
 
 import stroom.docref.DocRef;
-import stroom.docs.shared.Description;
-import stroom.docstore.shared.AbstractDoc;
 import stroom.docstore.shared.DocumentType;
 import stroom.docstore.shared.DocumentTypeRegistry;
+import stroom.planb.shared.AbstractPlanBSettings;
+import stroom.planb.shared.PlanBDoc;
+import stroom.planb.shared.StateType;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonInclude;
@@ -28,9 +29,6 @@ import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 
-import java.util.Objects;
-
-@Description("Defines a place to store state")
 @JsonPropertyOrder({
         "type",
         "uuid",
@@ -45,20 +43,13 @@ import java.util.Objects;
         "settings"
 })
 @JsonInclude(Include.NON_NULL)
-public class PlanBDoc extends AbstractDoc {
+public class TracesDoc extends PlanBDoc {
 
-    public static final String TYPE = "PlanB";
-    public static final DocumentType DOCUMENT_TYPE = DocumentTypeRegistry.PLAN_B_DOCUMENT_TYPE;
-
-    @JsonProperty
-    private final String description;
-    @JsonProperty
-    private final StateType stateType;
-    @JsonProperty
-    private final AbstractPlanBSettings settings;
+    public static final String TYPE = "Traces";
+    public static final DocumentType DOCUMENT_TYPE = DocumentTypeRegistry.TRACES_DOCUMENT_TYPE;
 
     @JsonCreator
-    public PlanBDoc(
+    public TracesDoc(
             @JsonProperty("uuid") final String uuid,
             @JsonProperty("name") final String name,
             @JsonProperty("version") final String version,
@@ -69,47 +60,24 @@ public class PlanBDoc extends AbstractDoc {
             @JsonProperty("description") final String description,
             @JsonProperty("stateType") final StateType stateType,
             @JsonProperty("settings") final AbstractPlanBSettings settings) {
-        this(TYPE,
-                uuid,
-                name,
-                version,
-                createTimeMs,
-                updateTimeMs,
-                createUser,
-                updateUser,
-                description,
-                stateType,
-                settings);
+        super(TYPE, uuid, name, version, createTimeMs, updateTimeMs, createUser, updateUser,
+                description, stateType == null ? StateType.TRACE : stateType, settings);
     }
 
-    protected PlanBDoc(
-            final String type,
-            final String uuid,
-            final String name,
-            final String version,
-            final Long createTimeMs,
-            final Long updateTimeMs,
-            final String createUser,
-            final String updateUser,
-            final String description,
-            final StateType stateType,
-            final AbstractPlanBSettings settings) {
-        super(type, uuid, name, version, createTimeMs, updateTimeMs, createUser, updateUser);
-        this.description = description;
-        this.stateType = stateType;
-        this.settings = settings;
+    /**
+     * @return A new {@link DocRef} for this document's type with the supplied uuid.
+     */
+    public static DocRef getDocRef(final String uuid) {
+        return DocRef.builder(TYPE)
+                .uuid(uuid)
+                .build();
     }
 
-    public String getDescription() {
-        return description;
-    }
-
-    public StateType getStateType() {
-        return stateType;
-    }
-
-    public AbstractPlanBSettings getSettings() {
-        return settings;
+    /**
+     * @return A new builder for creating a {@link DocRef} for this document's type.
+     */
+    public static DocRef.TypedBuilder buildDocRef() {
+        return DocRef.builder(TYPE);
     }
 
     @Override
@@ -120,64 +88,49 @@ public class PlanBDoc extends AbstractDoc {
         if (o == null || getClass() != o.getClass()) {
             return false;
         }
-        if (!super.equals(o)) {
-            return false;
-        }
-        final PlanBDoc doc = (PlanBDoc) o;
-        return Objects.equals(description, doc.description) &&
-               stateType == doc.stateType &&
-               Objects.equals(settings, doc.settings);
+        return super.equals(o);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(super.hashCode(),
-                description,
-                stateType,
-                settings);
+        return super.hashCode();
     }
 
     @Override
     public String toString() {
-        return "PlanBDoc{" +
+        return "TracesDoc{" +
                "type='" + getType() + '\'' +
                ", uuid='" + getUuid() + '\'' +
                ", name='" + getName() + '\'' +
-               ", description='" + description + '\'' +
-               ", stateType=" + stateType +
-               ", settings=" + settings +
+               ", description='" + getDescription() + '\'' +
+               ", stateType=" + getStateType() +
+               ", settings=" + getSettings() +
                '}';
     }
 
-    /**
-     * @return A new builder for creating a {@link DocRef} for this document's type.
-     */
-    public static DocRef.TypedBuilder buildDocRef() {
-        return DocRef.builder(TYPE);
-    }
-
-    public Builder copy() {
+    public Builder copyTraces() {
         return new Builder(this);
     }
 
-    public static Builder builder() {
+    public static Builder tracesBuilder() {
         return new Builder();
     }
 
-    public static class Builder extends AbstractBuilder<PlanBDoc, Builder> {
+    public static final class Builder
+            extends AbstractBuilder<TracesDoc, Builder> {
 
         private String description;
-        private StateType stateType;
+        private StateType stateType = StateType.TRACE;
         private AbstractPlanBSettings settings;
 
-        public Builder() {
+        private Builder() {
         }
 
-        public Builder(final PlanBDoc doc) {
-            super(doc);
-            this.description = doc.description;
-            this.stateType = doc.stateType;
-            this.settings = doc.settings;
+        private Builder(final TracesDoc tracesDoc) {
+            super(tracesDoc);
+            this.description = tracesDoc.getDescription();
+            this.stateType = tracesDoc.getStateType();
+            this.settings = tracesDoc.getSettings();
         }
 
         public Builder description(final String description) {
@@ -201,8 +154,8 @@ public class PlanBDoc extends AbstractDoc {
         }
 
         @Override
-        public PlanBDoc build() {
-            return new PlanBDoc(
+        public TracesDoc build() {
+            return new TracesDoc(
                     uuid,
                     name,
                     version,

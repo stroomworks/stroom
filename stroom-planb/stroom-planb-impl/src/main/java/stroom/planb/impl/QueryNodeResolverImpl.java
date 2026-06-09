@@ -17,6 +17,7 @@
 package stroom.planb.impl;
 
 import stroom.docref.DocRef;
+import stroom.pathways.shared.TracesDoc;
 import stroom.planb.shared.AbstractPlanBSettings;
 import stroom.planb.shared.PlanBDoc;
 import stroom.planb.shared.SnapshotSettings;
@@ -42,7 +43,7 @@ public class QueryNodeResolverImpl implements QueryNodeResolver {
 
     @Override
     public String getNode(final DocRef docRef) {
-        if (docRef == null || !PlanBDoc.TYPE.equals(docRef.getType())) {
+        if (docRef == null || (!PlanBDoc.TYPE.equals(docRef.getType()) && !TracesDoc.TYPE.equals(docRef.getType()))) {
             return null;
         }
 
