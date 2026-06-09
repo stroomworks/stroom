@@ -1,36 +1,26 @@
 package stroom.planb.client.presenter;
 
-import stroom.alert.client.event.AlertEvent;
 import stroom.dispatch.client.RestFactory;
 import stroom.docref.DocRef;
-import stroom.entity.client.presenter.DocPresenter;
 import stroom.query.api.Column;
+import stroom.query.client.presenter.AbstractQueryDataPresenter;
 import stroom.query.client.presenter.DateTimeSettingsFactory;
-import stroom.query.client.presenter.QueryModel;
+import stroom.query.client.presenter.QueryDataView;
 import stroom.query.client.presenter.QueryResultTablePresenter;
 import stroom.query.client.presenter.ResultStoreModel;
-import stroom.query.shared.QueryTablePreferences;
 import stroom.planb.shared.PlanBDoc;
 import stroom.planb.shared.StateType;
-import stroom.util.shared.ErrorMessage;
 
 import com.google.inject.Inject;
 import com.google.web.bindery.event.shared.EventBus;
-import com.gwtplatform.mvp.client.HasUiHandlers;
-import com.gwtplatform.mvp.client.View;
 
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.List;
-import java.util.stream.Collectors;
 
-public class PlanBDataPresenter
-        extends DocPresenter<PlanBDataPresenter.PlanBDataView, PlanBDoc>
-        implements PlanBDataUiHandlers {
+public class PlanBDataPresenter extends AbstractQueryDataPresenter<PlanBDataPresenter.PlanBDataView, PlanBDoc> {
 
-    private final QueryResultTablePresenter tablePresenter;
-    private final QueryModel queryModel;
-    private QueryTablePreferences queryTablePreferences = QueryTablePreferences.builder().build();
+    public interface PlanBDataView extends QueryDataView {
+    }
 
     // Column definitions
     private final Column timeCol = Column.builder().id("EffectiveTime").name("Effective Time").expression("EffectiveTime").build();
@@ -60,125 +50,38 @@ public class PlanBDataPresenter
                               final RestFactory restFactory,
                               final DateTimeSettingsFactory dateTimeSettingsFactory,
                               final ResultStoreModel resultStoreModel) {
-        super(eventBus, view);
-        this.tablePresenter = tablePresenter;
-
-        view.setUiHandlers(this);
-        view.setTable(tablePresenter.getView());
-
-        tablePresenter.setEmptyText("No data");
-        tablePresenter.setQueryTablePreferencesSupplier(() -> queryTablePreferences);
-        tablePresenter.setQueryTablePreferencesConsumer(qtp -> queryTablePreferences = qtp);
-
-        tablePresenter.setData(null);
-
-        queryModel = new QueryModel(
-                eventBus,
-                restFactory,
-                dateTimeSettingsFactory,
-                resultStoreModel,
-                () -> queryTablePreferences);
-        queryModel.addResultComponent(QueryModel.TABLE_COMPONENT_ID, tablePresenter);
-        queryModel.addSearchErrorListener(errors -> {
-            if (errors != null && !errors.isEmpty()) {
-                final String errorMsg = errors.stream()
-                        .map(ErrorMessage::getMessage)
-                        .collect(Collectors.joining("\n"));
-                AlertEvent.fireError(PlanBDataPresenter.this, errorMsg, null);
-            }
-        });
+        super(eventBus, view, tablePresenter, restFactory, dateTimeSettingsFactory, resultStoreModel);
     }
 
     @Override
-    protected void onRead(final DocRef docRef, final PlanBDoc doc, final boolean readOnly) {
+    protected String getDefaultQuery(final DocRef docRef, final PlanBDoc doc) {
         final StateType stateType = doc.getStateType() != null ? doc.getStateType() : StateType.TEMPORAL_STATE;
-        
-        // Define columns and query dynamically based on StateType
-        final List<Column> preferredCols;
-        final String defaultQuery = switch (stateType) {
-            case STATE -> {
-                preferredCols = Arrays.asList(keyCol, valueCol);
-                yield "from \"" + docRef.getName() + "\" select Key, Value";
-            }
-            case TEMPORAL_STATE -> {
-                preferredCols = Arrays.asList(timeCol, keyCol, valueCol);
-                yield "from \"" + docRef.getName() + "\" select EffectiveTime, Key, Value";
-            }
-            case RANGED_STATE -> {
-                preferredCols = Arrays.asList(keyStartCol, keyEndCol, valueCol);
-                yield "from \"" + docRef.getName() + "\" select KeyStart, KeyEnd, Value";
-            }
-            case TEMPORAL_RANGED_STATE -> {
-                preferredCols = Arrays.asList(timeCol, keyStartCol, keyEndCol, valueCol);
-                yield "from \"" + docRef.getName() + "\" select EffectiveTime, KeyStart, KeyEnd, Value";
-            }
-            case SESSION -> {
-                preferredCols = Arrays.asList(startCol, endCol, keyCol);
-                yield "from \"" + docRef.getName() + "\" select Start, End, Key";
-            }
-            case HISTOGRAM -> {
-                preferredCols = Arrays.asList(histTimeCol, keyCol, resolutionCol, valueCol);
-                yield "from \"" + docRef.getName() + "\" select Time, Key, Resolution, Value";
-            }
-            case METRIC -> {
-                preferredCols = Arrays.asList(histTimeCol,
-                        keyCol,
-                        resolutionCol,
-                        valueCol,
-                        minCol,
-                        maxCol,
-                        countCol,
-                        sumCol,
-                        avgCol);
-                yield "from \"" + docRef.getName() + "\" select Time, Key, Resolution, Value, Min, Max, Count, Sum, Average";
-            }
-            case TRACE -> {
-                preferredCols = Arrays.asList(traceStartTimeCol,
-                        traceEndTimeCol,
-                        traceIdCol,
-                        parentSpanIdCol,
-                        spanIdCol);
-                yield "from \"" + docRef.getName() + "\" select StartTime, EndTime, TraceId, ParentSpanId, SpanId";
-            }
-            default -> {
-                preferredCols = Arrays.asList(timeCol, keyCol, valueCol);
-                yield "from \"" + docRef.getName() + "\" select EffectiveTime, Key, Value";
-            }
+        return switch (stateType) {
+            case STATE -> "from \"" + docRef.getName() + "\" select Key, Value";
+            case TEMPORAL_STATE -> "from \"" + docRef.getName() + "\" select EffectiveTime as \"Effective Time\", Key, Value";
+            case RANGED_STATE -> "from \"" + docRef.getName() + "\" select KeyStart as \"Key Start\", KeyEnd as \"Key End\", Value";
+            case TEMPORAL_RANGED_STATE -> "from \"" + docRef.getName() + "\" select EffectiveTime as \"Effective Time\", KeyStart as \"Key Start\", KeyEnd as \"Key End\", Value";
+            case SESSION -> "from \"" + docRef.getName() + "\" select Start, End, Key";
+            case HISTOGRAM -> "from \"" + docRef.getName() + "\" select Time, Key, Resolution, Value";
+            case METRIC -> "from \"" + docRef.getName() + "\" select Time, Key, Resolution, Value, Min, Max, Count, Sum, Average";
+            case TRACE -> "from \"" + docRef.getName() + "\" select StartTime as \"Start Time\", EndTime as \"End Time\", TraceId as \"Trace Id\", ParentSpanId as \"Parent Span Id\", SpanId as \"Span Id\"";
+            default -> "from \"" + docRef.getName() + "\" select EffectiveTime as \"Effective Time\", Key, Value";
         };
-
-        tablePresenter.setPreferredColumns(preferredCols);
-        getView().setQuery(defaultQuery);
     }
 
     @Override
-    protected PlanBDoc onWrite(final PlanBDoc doc) {
-        return doc;
-    }
-
-    @Override
-    public void onRun() {
-        queryModel.startNewSearch(
-                QueryModel.TABLE_COMPONENT_ID,
-                "Table",
-                getView().getQuery(),
-                Collections.emptyList(),
-                null,
-                false,
-                false,
-                null,
-                null);
-    }
-
-    @Override
-    public void onStop() {
-        queryModel.stop();
-    }
-
-    public interface PlanBDataView extends View, HasUiHandlers<PlanBDataUiHandlers> {
-        void setQuery(String query);
-
-        String getQuery();
-
-        void setTable(View view);
+    protected List<Column> getPreferredColumns(final PlanBDoc doc) {
+        final StateType stateType = doc.getStateType() != null ? doc.getStateType() : StateType.TEMPORAL_STATE;
+        return switch (stateType) {
+            case STATE -> Arrays.asList(keyCol, valueCol);
+            case TEMPORAL_STATE -> Arrays.asList(timeCol, keyCol, valueCol);
+            case RANGED_STATE -> Arrays.asList(keyStartCol, keyEndCol, valueCol);
+            case TEMPORAL_RANGED_STATE -> Arrays.asList(timeCol, keyStartCol, keyEndCol, valueCol);
+            case SESSION -> Arrays.asList(startCol, endCol, keyCol);
+            case HISTOGRAM -> Arrays.asList(histTimeCol, keyCol, resolutionCol, valueCol);
+            case METRIC -> Arrays.asList(histTimeCol, keyCol, resolutionCol, valueCol, minCol, maxCol, countCol, sumCol, avgCol);
+            case TRACE -> Arrays.asList(traceStartTimeCol, traceEndTimeCol, traceIdCol, parentSpanIdCol, spanIdCol);
+            default -> Arrays.asList(timeCol, keyCol, valueCol);
+        };
     }
 }
