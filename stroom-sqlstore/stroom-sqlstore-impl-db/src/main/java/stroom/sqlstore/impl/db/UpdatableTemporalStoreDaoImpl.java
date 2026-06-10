@@ -24,6 +24,7 @@ import stroom.query.api.ExpressionOperator;
 import stroom.query.api.ExpressionTerm;
 import stroom.query.api.ExpressionUtil;
 import stroom.sqlstore.api.UpdatableTemporalStore;
+import stroom.util.date.DateUtil;
 import stroom.sqlstore.impl.UpdatableTemporalStoreDao;
 import stroom.util.shared.ResultPage;
 import stroom.util.shared.TemporalEntry;
@@ -69,7 +70,7 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
                 String::valueOf);
         expressionMapper.map(UpdatableTemporalStore.TIME_FIELD,
                 UPDATABLE_TEMPORAL_STORE.EFFECTIVE_TIME,
-                Long::valueOf);
+                DateUtil::parseUnknownString);
         expressionMapper.map(UpdatableTemporalStore.VALUE_FIELD,
                 UPDATABLE_TEMPORAL_STORE.VALUE_,
                 String::valueOf);
@@ -139,7 +140,7 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
                     String::valueOf);
             localExpressionMapper.map(UpdatableTemporalStore.TIME_FIELD,
                     t2.EFFECTIVE_TIME,
-                    Long::valueOf);
+                    DateUtil::parseUnknownString);
             localExpressionMapper.map(UpdatableTemporalStore.VALUE_FIELD,
                     t2.VALUE_,
                     String::valueOf);
@@ -210,6 +211,35 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
                 .fetchOne(0, Long.class));
     }
 
+    /**
+     * Executes a search query on the updatable temporal store and streams matching entries to the consumer.
+     * The method distinguishes between two query paths based on the presence of a query/lookup time:
+     * 
+     * <p><b>1. QueryTime Path (Temporal Lookup):</b>
+     * If a temporal query time boundary is present (e.g., from a lookup request at a specific point in time),
+     * the search retrieves the single most recent (effective) entry for each map and key that is valid at or 
+     * before the specified time.
+     * <ul>
+     *   <li>A subquery is constructed over the aliased table <code>t2</code> to find the maximum effective 
+     *       time (<code>max(effective_time)</code>) for each map and key combination that is less than or 
+     *       equal to the query time (<code>t2.effective_time &lt;= queryTime</code>).</li>
+     *   <li>The subquery is joined back onto the main table <code>t1</code> on matching keys, maps, and 
+     *       effective times to fetch the corresponding value.</li>
+     *   <li>The returned {@link TemporalEntry} contains the actual <code>effective_time</code> matching the latest 
+     *       available point in time resolved by the lookup.</li>
+     * </ul>
+     * 
+     * <p><b>2. Standard Path (Bulk/Unbounded Search):</b>
+     * If no query time is specified, a standard search is performed.
+     * <ul>
+     *   <li>It executes a direct SELECT query against the <code>UPDATABLE_TEMPORAL_STORE</code> table, filtering 
+     *       using the expression criteria.</li>
+     *   <li>This returns all matching records across all historical time points.</li>
+     * </ul>
+     *
+     * @param criteria The criteria containing filters and optional query time.
+     * @param consumer A consumer to receive the mapped {@link TemporalEntry} results.
+     */
     @Override
     public void search(final ExpressionCriteria criteria, final Consumer<TemporalEntry> consumer) {
         LOGGER.info("Starting SQL Store search with criteria expression: {}", criteria.getExpression());
@@ -231,7 +261,7 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
                     String::valueOf);
             localExpressionMapper.map(UpdatableTemporalStore.TIME_FIELD,
                     t2.EFFECTIVE_TIME,
-                    Long::valueOf);
+                    DateUtil::parseUnknownString);
             localExpressionMapper.map(UpdatableTemporalStore.VALUE_FIELD,
                     t2.VALUE_,
                     String::valueOf);
@@ -319,8 +349,8 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
                     (term.getCondition() == ExpressionTerm.Condition.EQUALS ||
                     term.getCondition() == ExpressionTerm.Condition.LESS_THAN_OR_EQUAL_TO)) {
                 try {
-                    return Long.valueOf(term.getValue());
-                } catch (final NumberFormatException e) {
+                    return DateUtil.parseUnknownString(term.getValue());
+                } catch (final RuntimeException e) {
                     // Ignore and keep checking
                 }
             }
