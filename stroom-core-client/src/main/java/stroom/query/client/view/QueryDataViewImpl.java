@@ -11,6 +11,7 @@ import com.google.gwt.event.dom.client.KeyDownEvent;
 import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
 import com.google.gwt.uibinder.client.UiHandler;
+import com.google.gwt.user.client.ui.Label;
 import com.google.gwt.user.client.ui.SimplePanel;
 import com.google.gwt.user.client.ui.TextBox;
 import com.google.gwt.user.client.ui.Widget;
@@ -27,6 +28,8 @@ public class QueryDataViewImpl extends ViewWithUiHandlers<QueryDataUiHandlers> i
 
     @UiField
     TextBox query;
+    @UiField
+    Label errorLabel;
     @UiField
     InlineSvgButton run;
     @UiField
@@ -60,6 +63,30 @@ public class QueryDataViewImpl extends ViewWithUiHandlers<QueryDataUiHandlers> i
     public void setTable(final View view) {
         view.asWidget().addStyleName("TablePresenter");
         tableContainer.setWidget(view.asWidget());
+    }
+
+    @Override
+    public void setError(final String error) {
+        if (error != null && !error.trim().isEmpty()) {
+            errorLabel.setText(error);
+            errorLabel.setVisible(true);
+            query.addStyleName("invalid");
+        } else {
+            clearError();
+        }
+    }
+
+    @Override
+    public void clearError() {
+        errorLabel.setText("");
+        errorLabel.setVisible(false);
+        query.removeStyleName("invalid");
+    }
+
+    @Override
+    public void selectQueryRange(final int pos, final int length) {
+        query.setFocus(true);
+        query.setSelectionRange(pos, length);
     }
 
     @UiHandler("run")

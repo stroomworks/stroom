@@ -52,12 +52,14 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
     private static final Logger LOGGER = LoggerFactory.getLogger(UpdatableTemporalStoreDaoImpl.class);
 
     private final SqlStoreDbConnProvider sqlStoreDbConnProvider;
+    private final ExpressionMapperFactory expressionMapperFactory;
     private final ExpressionMapper expressionMapper;
 
     @Inject
     UpdatableTemporalStoreDaoImpl(final SqlStoreDbConnProvider sqlStoreDbConnProvider,
                                   final ExpressionMapperFactory expressionMapperFactory) {
         this.sqlStoreDbConnProvider = sqlStoreDbConnProvider;
+        this.expressionMapperFactory = expressionMapperFactory;
         this.expressionMapper = expressionMapperFactory.create();
         expressionMapper.map(UpdatableTemporalStore.MAP_FIELD,
                 UPDATABLE_TEMPORAL_STORE.MAP_NAME,
@@ -122,12 +124,27 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
         final Long queryTime = getQueryTime(criteria);
         if (queryTime != null) {
             final ExpressionOperator filteredExpression = getFilteredExpression(criteria);
-            final Condition condition = expressionMapper.apply(filteredExpression);
 
             final stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore t1 =
                     UPDATABLE_TEMPORAL_STORE.as("t1");
             final stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore t2 =
                     UPDATABLE_TEMPORAL_STORE.as("t2");
+
+            final ExpressionMapper localExpressionMapper = expressionMapperFactory.create();
+            localExpressionMapper.map(UpdatableTemporalStore.MAP_FIELD,
+                    t2.MAP_NAME,
+                    String::valueOf);
+            localExpressionMapper.map(UpdatableTemporalStore.KEY_FIELD,
+                    t2.KEY_,
+                    String::valueOf);
+            localExpressionMapper.map(UpdatableTemporalStore.TIME_FIELD,
+                    t2.EFFECTIVE_TIME,
+                    Long::valueOf);
+            localExpressionMapper.map(UpdatableTemporalStore.VALUE_FIELD,
+                    t2.VALUE_,
+                    String::valueOf);
+
+            final Condition condition = localExpressionMapper.apply(filteredExpression);
 
             final SelectHavingStep<Record3<String, String, Long>> subquery = DSL.select(
                             t2.MAP_NAME.as("sub_map"),
@@ -199,13 +216,28 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
         final Long queryTime = getQueryTime(criteria);
         if (queryTime != null) {
             final ExpressionOperator filteredExpression = getFilteredExpression(criteria);
-            final Condition condition = expressionMapper.apply(filteredExpression);
-            LOGGER.info("QueryTime path. queryTime: {}, condition: {}", queryTime, condition);
 
             final stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore t1 =
                     UPDATABLE_TEMPORAL_STORE.as("t1");
             final stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore t2 =
                     UPDATABLE_TEMPORAL_STORE.as("t2");
+
+            final ExpressionMapper localExpressionMapper = expressionMapperFactory.create();
+            localExpressionMapper.map(UpdatableTemporalStore.MAP_FIELD,
+                    t2.MAP_NAME,
+                    String::valueOf);
+            localExpressionMapper.map(UpdatableTemporalStore.KEY_FIELD,
+                    t2.KEY_,
+                    String::valueOf);
+            localExpressionMapper.map(UpdatableTemporalStore.TIME_FIELD,
+                    t2.EFFECTIVE_TIME,
+                    Long::valueOf);
+            localExpressionMapper.map(UpdatableTemporalStore.VALUE_FIELD,
+                    t2.VALUE_,
+                    String::valueOf);
+
+            final Condition condition = localExpressionMapper.apply(filteredExpression);
+            LOGGER.info("QueryTime path. queryTime: {}, condition: {}", queryTime, condition);
 
             final SelectHavingStep<Record3<String, String, Long>> subquery = DSL.select(
                             t2.MAP_NAME.as("sub_map"),

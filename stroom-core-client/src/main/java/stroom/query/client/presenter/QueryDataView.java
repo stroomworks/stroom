@@ -9,4 +9,10 @@ public interface QueryDataView extends View, HasUiHandlers<QueryDataUiHandlers> 
     String getQuery();
 
     void setTable(View view);
+
+    void setError(String error);
+
+    void clearError();
+
+    void selectQueryRange(int pos, int length);
 }
