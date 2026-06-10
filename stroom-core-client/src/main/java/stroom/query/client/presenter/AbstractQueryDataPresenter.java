@@ -21,6 +21,8 @@ public abstract class AbstractQueryDataPresenter<V extends QueryDataView, D>
     private final QueryModel queryModel;
     private final QueryResultTablePresenter tablePresenter;
     private QueryTablePreferences queryTablePreferences = QueryTablePreferences.builder().build();
+    private DocRef currentDocRef;
+    private D currentDoc;
 
     public AbstractQueryDataPresenter(final EventBus eventBus,
                                       final V view,
@@ -69,6 +71,8 @@ public abstract class AbstractQueryDataPresenter<V extends QueryDataView, D>
 
     @Override
     protected void onRead(final DocRef docRef, final D doc, final boolean readOnly) {
+        this.currentDocRef = docRef;
+        this.currentDoc = doc;
         tablePresenter.setPreferredColumns(getPreferredColumns(doc));
         getView().setQuery(getDefaultQuery(docRef, doc));
         getView().clearError();
@@ -97,6 +101,14 @@ public abstract class AbstractQueryDataPresenter<V extends QueryDataView, D>
     @Override
     public void onStop() {
         queryModel.stop();
+    }
+
+    @Override
+    public void onReset() {
+        if (currentDocRef != null && currentDoc != null) {
+            getView().setQuery(getDefaultQuery(currentDocRef, currentDoc));
+            getView().clearError();
+        }
     }
 
     protected abstract String getDefaultQuery(DocRef docRef, D doc);

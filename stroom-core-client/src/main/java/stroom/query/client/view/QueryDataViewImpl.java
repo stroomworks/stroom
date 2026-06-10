@@ -31,6 +31,8 @@ public class QueryDataViewImpl extends ViewWithUiHandlers<QueryDataUiHandlers> i
     @UiField
     Label errorLabel;
     @UiField
+    InlineSvgButton undo;
+    @UiField
     InlineSvgButton run;
     @UiField
     InlineSvgButton stop;
@@ -40,6 +42,7 @@ public class QueryDataViewImpl extends ViewWithUiHandlers<QueryDataUiHandlers> i
     @Inject
     public QueryDataViewImpl(final Binder binder) {
         widget = binder.createAndBindUi(this);
+        undo.setSvg(SvgImage.UNDO);
         run.setSvg(SvgImage.PLAY);
         stop.setSvg(SvgImage.STOP);
     }
@@ -87,6 +90,14 @@ public class QueryDataViewImpl extends ViewWithUiHandlers<QueryDataUiHandlers> i
     public void selectQueryRange(final int pos, final int length) {
         query.setFocus(true);
         query.setSelectionRange(pos, length);
+    }
+
+    @UiHandler("undo")
+    @SuppressWarnings("unused")
+    public void onUndo(final ClickEvent event) {
+        if (getUiHandlers() != null) {
+            getUiHandlers().onReset();
+        }
     }
 
     @UiHandler("run")

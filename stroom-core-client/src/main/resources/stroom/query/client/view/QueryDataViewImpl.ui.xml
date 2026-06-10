@@ -21,6 +21,7 @@
         <g:FlowPanel styleName="dock-min dock-container-horizontal align-center form-padding input-row">
             <g:Label text="Query:" styleName="dock-min"/>
             <g:TextBox ui:field="query" styleName="dock-max" />
+            <b:InlineSvgButton ui:field="undo" title="Reset to Default" addStyleNames="QueryButtons-button undo dock-min"/>
             <b:InlineSvgButton ui:field="run" title="Run" addStyleNames="QueryButtons-button play dock-min"/>
             <b:InlineSvgButton ui:field="stop" title="Stop" addStyleNames="QueryButtons-button stop dock-min"/>
         </g:FlowPanel>
