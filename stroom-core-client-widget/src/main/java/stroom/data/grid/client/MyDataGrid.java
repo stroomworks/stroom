@@ -870,14 +870,14 @@ public class MyDataGrid<R> extends DataGrid<R> implements NativePreviewHandler {
 
     private ResizeHandle<R> getResizeHandle() {
         if (resizeHandle == null) {
-            resizeHandle = new ResizeHandle<R>(this, colSettings, RESOURCES);
+            resizeHandle = new ResizeHandle<>(this, colSettings, RESOURCES);
         }
         return resizeHandle;
     }
 
     private MoveHandle<R> getMoveHandle() {
         if (moveHandle == null) {
-            moveHandle = new MoveHandle<R>(this, colSettings, RESOURCES);
+            moveHandle = new MoveHandle<>(this, colSettings, RESOURCES);
         }
 
         return moveHandle;
@@ -1224,7 +1224,7 @@ public class MyDataGrid<R> extends DataGrid<R> implements NativePreviewHandler {
             emptyTableWidget.setWidget(null);
         } else {
             final com.google.gwt.user.client.ui.Label label = new com.google.gwt.user.client.ui.Label(text);
-            label.setStyleName("margin-10");
+            label.setStyleName("form-padding");
             emptyTableWidget.setWidget(label);
         }
     }

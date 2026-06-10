@@ -210,7 +210,7 @@ class TestSqlStoreFilter {
 
         assertThat(loggedSeverities).contains(Severity.ERROR);
         assertThat(loggedMessages.getFirst()).contains("SQL Store Filter can only process '<temporal-state>' "
-                + "elements from the plan-b schema. Element 'state' is not supported.");
+                + "elements from the plan-b schema. Element '<state>' is not supported.");
         Mockito.verify(updatableTemporalStore, Mockito.never()).create(Mockito.any());
     }
 
@@ -263,7 +263,7 @@ class TestSqlStoreFilter {
 
         assertThat(loggedSeverities).contains(Severity.ERROR);
         assertThat(loggedMessages.getFirst()).contains("SQL Store Filter can only process '<temporal-state>' "
-                + "elements from the plan-b schema. Element 'range-state' is not supported.");
+                + "elements from the plan-b schema. Element '<range-state>' is not supported.");
         Mockito.verify(updatableTemporalStore, Mockito.never()).create(Mockito.any());
     }
 }
