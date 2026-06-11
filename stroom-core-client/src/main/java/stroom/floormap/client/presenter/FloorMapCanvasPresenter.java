@@ -17,6 +17,8 @@
 package stroom.floormap.client.presenter;
 
 import stroom.floormap.client.presenter.FloorMapCanvasPresenter.FloorMapCanvasView;
+import stroom.floormap.shared.FloorMapObject;
+import stroom.floormap.shared.FloorMapTransformationMatrix;
 
 import com.google.gwt.event.dom.client.HasMouseDownHandlers;
 import com.google.gwt.event.dom.client.HasMouseMoveHandlers;
@@ -27,17 +29,26 @@ import com.google.web.bindery.event.shared.EventBus;
 import com.gwtplatform.mvp.client.MyPresenterWidget;
 import com.gwtplatform.mvp.client.View;
 
+import java.util.ArrayList;
+import java.util.List;
 import javax.inject.Inject;
 
 public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasView> {
 
+    // Zoom and pan state
     private double scale = 1.0;
     private double offsetX = 0;
     private double offsetY = 0;
+    private String backgroundImage;
+    private FloorMapTransformationMatrix matrix;
 
+    // Dragging state
     private boolean isDragging = false;
     private double lastMouseX;
     private double lastMouseY;
+
+    // Objects on the map
+    private List<FloorMapObject> objects = new ArrayList<>();
 
     @Inject
     public FloorMapCanvasPresenter(final EventBus eventBus,
@@ -48,7 +59,17 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     @Override
     protected void onBind() {
         super.onBind();
+        handleMouseEvents();
 
+        if (getView() != null) {
+            getView().onResize();
+        }
+
+        // Perform initial draw
+        redraw();
+    }
+
+    private void handleMouseEvents() {
         // Mouse Down (Start Panning)
         registerHandler(getView().getFocusPanel().addMouseDownHandler(event -> {
             isDragging = true;
@@ -77,7 +98,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
             isDragging = false;
         }));
 
-        // Mouse Wheel (Zooming)
+        // Mouse Wheel (Zoom toward cursor)
         registerHandler(getView().getMouseWheelHandlers().addMouseWheelHandler(event -> {
             event.preventDefault();
 
@@ -89,24 +110,41 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
             final double mouseX = event.getX();
             final double mouseY = event.getY();
 
-            // Zoom towards the cursor
+            // Coordinate shift to ensure we zoom toward the mouse pointer
             offsetX = mouseX - (mouseX - offsetX) * zoomFactor;
             offsetY = mouseY - (mouseY - offsetY) * zoomFactor;
             scale *= zoomFactor;
 
             redraw();
         }));
-
-        if (getView() != null) {
-            getView().onResize();
-        }
     }
 
     private void redraw() {
-        getView().draw(scale, offsetX, offsetY);
+        getView().draw(scale, offsetX, offsetY, backgroundImage, matrix, objects);
+    }
+
+    public void setMatrix(final FloorMapTransformationMatrix matrix) {
+        this.matrix = matrix;
+        redraw();
+    }
+
+    /**
+     * Updates the background image for the SVG map.
+     *
+     * @param backgroundImage Base64 data URL or external URL.
+     */
+    public void setBackgroundImage(final String backgroundImage) {
+        this.backgroundImage = backgroundImage;
+        redraw();
+    }
+
+    public void setObjects(final List<FloorMapObject> objects) {
+        this.objects = objects;
+        redraw();
     }
 
     public interface FloorMapCanvasView extends View, RequiresResize {
+
         HasMouseDownHandlers getFocusPanel();
 
         HasMouseMoveHandlers getMouseMoveHandlers();
@@ -115,7 +153,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
         HasMouseWheelHandlers getMouseWheelHandlers();
 
-        void draw(double scale, double x, double y);
+        void draw(double scale, double x, double y, String backgroundImage, FloorMapTransformationMatrix matrix, List<FloorMapObject> objects);
     }
 
 }

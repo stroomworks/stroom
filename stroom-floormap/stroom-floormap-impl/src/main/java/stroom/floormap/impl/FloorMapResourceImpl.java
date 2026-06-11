@@ -34,7 +34,7 @@ class FloorMapResourceImpl implements FloorMapResource {
 
     @Inject
     FloorMapResourceImpl(final Provider<FloorMapStore> floorMapStoreProvider,
-                        final Provider<DocumentResourceHelper> documentResourceHelperProvider) {
+                         final Provider<DocumentResourceHelper> documentResourceHelperProvider) {
         this.floorMapStoreProvider = floorMapStoreProvider;
         this.documentResourceHelperProvider = documentResourceHelperProvider;
     }

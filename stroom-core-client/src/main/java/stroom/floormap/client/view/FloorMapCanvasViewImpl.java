@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2016-2026 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,32 +19,38 @@ package stroom.floormap.client.view;
 import stroom.document.client.event.DirtyUiHandlers;
 import stroom.entity.client.presenter.ReadOnlyChangeHandler;
 import stroom.floormap.client.presenter.FloorMapCanvasPresenter.FloorMapCanvasView;
+import stroom.floormap.shared.FloorMapObject;
+import stroom.floormap.shared.FloorMapTransformationMatrix;
+import stroom.widget.util.client.HtmlBuilder;
+import stroom.widget.util.client.HtmlBuilder.Attribute;
+import stroom.widget.util.client.SafeHtmlUtil;
 
-import com.google.gwt.canvas.client.Canvas;
-import com.google.gwt.canvas.dom.client.Context2d;
-import com.google.gwt.core.client.GWT;
 import com.google.gwt.core.client.Scheduler;
 import com.google.gwt.dom.client.Element;
 import com.google.gwt.event.dom.client.HasMouseDownHandlers;
 import com.google.gwt.event.dom.client.HasMouseMoveHandlers;
 import com.google.gwt.event.dom.client.HasMouseUpHandlers;
 import com.google.gwt.event.dom.client.HasMouseWheelHandlers;
+import com.google.gwt.safehtml.shared.SafeHtmlUtils;
 import com.google.gwt.uibinder.client.UiBinder;
-import com.google.gwt.uibinder.client.UiFactory;
 import com.google.gwt.uibinder.client.UiField;
 import com.google.gwt.user.client.ui.FocusPanel;
+import com.google.gwt.user.client.ui.HTML;
 import com.google.gwt.user.client.ui.Widget;
 import com.google.inject.Inject;
 import com.gwtplatform.mvp.client.ViewWithUiHandlers;
+
+import java.util.List;
 
 public class FloorMapCanvasViewImpl
         extends ViewWithUiHandlers<DirtyUiHandlers>
         implements FloorMapCanvasView, ReadOnlyChangeHandler {
 
+    private final static int OBJECT_SIZE = 100;
     private final Widget widget;
 
     @UiField
-    Canvas canvas;
+    HTML svgContainer;
 
     @UiField
     FocusPanel focusPanel;
@@ -65,8 +71,8 @@ public class FloorMapCanvasViewImpl
 
     @Override
     public void onResize() {
-        // Get the canvas' parent element from the DOM and its width/height.
-        final Element parent = canvas.getElement().getParentElement();
+        // Get the parent element from the DOM and its width/height.
+        final Element parent = svgContainer.getElement().getParentElement();
         final int width = parent.getOffsetWidth();
         final int height = parent.getOffsetHeight();
 
@@ -75,23 +81,7 @@ public class FloorMapCanvasViewImpl
             Scheduler.get().scheduleDeferred((this::onResize));
         }
 
-        GWT.log("FloorMapCanvas.onResize(): " + width + " x " + height);
-
-        // Set the canvas' internal drawing resolution to the parent values to prevent blurring.
-        canvas.setCoordinateSpaceWidth(width);
-        canvas.setCoordinateSpaceHeight(height);
-
-        // Drawing logic - white background and orange border.
-        final Context2d context2d = canvas.getContext2d();
-        context2d.clearRect(0, 0, width, height);
-
-        context2d.setFillStyle("#FFFFFF");
-        context2d.fillRect(0, 0, width, height);
-    }
-
-    @UiFactory
-    public Canvas createCanvas() {
-        return Canvas.createIfSupported();
+        // SVG handles its own responsiveness via 100% width/height.
     }
 
     @Override
@@ -115,32 +105,115 @@ public class FloorMapCanvasViewImpl
     }
 
     @Override
-    public void draw(final double scale, final double x, final double y) {
-        final Context2d context2d = canvas.getContext2d();
-        final int width = canvas.getCoordinateSpaceWidth();
-        final int height = canvas.getCoordinateSpaceHeight();
+    public void draw(final double scale,
+                     final double x,
+                     final double y,
+                     final String backgroundImage,
+                     final FloorMapTransformationMatrix matrix,
+                     final List<FloorMapObject> objects) {
+        final HtmlBuilder htmlBuilder = new HtmlBuilder();
+        final String svgMatrix = matrix != null ? matrix.toSvgMatrix() : FloorMapTransformationMatrix.identity().toSvgMatrix();
 
-        // Clear the canvas
-        context2d.clearRect(0, 0, width, height);
+        // Build the SVG structure dynamically
+        htmlBuilder.elem(svg -> {
+            // Group 1: User zoom/pan (applied first).
+            svg.elem(group -> {
+                // Group 2: The transformation matrix (applied inside zoom).
+                group.elem(matrixGroup -> {
+                    // Render the background image if set
+                    if (backgroundImage != null) {
+                        matrixGroup.elem(SafeHtmlUtil.from("image"),
+                            new Attribute(SafeHtmlUtils.fromSafeConstant("href"),
+                                    SafeHtmlUtils.fromTrustedString(backgroundImage)),
+                            new Attribute("x", "0"),
+                            new Attribute("y", "0"),
+                            new Attribute("width", "1000"),
+                            new Attribute("height", "1000"),
+                            new Attribute("preserveAspectRatio", "none"));
+                    } else {
+                        // Fallback background rect
+                        group.elem(SafeHtmlUtil.from("rect"),
+                            new Attribute("x", "0"),
+                            new Attribute("y", "0"),
+                            new Attribute("width", "1000"),
+                            new Attribute("height", "1000"),
+                            new Attribute("fill", "#FFFFFF"));
+                    }
 
-        // Save the normal state (no zoom/pan)
-        context2d.save();
+                    if (objects != null) {
+                        for (final FloorMapObject obj : objects) {
+                            matrixGroup.elem(objectGroup -> {
 
-        // Apply the translation
-        context2d.translate(x, y);
-        context2d.scale(scale, scale);
+                                // Determine if this object is a person.
+                                final boolean isPerson = obj.getType() != null && obj.getType().equalsIgnoreCase("person");
 
-        // Draw the map
-        context2d.setFillStyle("#FFFFFF");
-        context2d.fillRect(0, 0, 1000, 1000);
+                                if (isPerson) {
+                                    // Render a small blue circle for users.
+                                    objectGroup.elem(SafeHtmlUtil.from("circle"),
+                                        new Attribute("cx", "0"),
+                                        new Attribute("cy", "0"),
+                                        new Attribute("r", (OBJECT_SIZE / 4) + ""),
+                                        new Attribute("fill", "#1f77b4"),
+                                        new Attribute("stroke", "#ffffff"),
+                                        new Attribute("stroke-width", "2"),
+                                        new Attribute("id", obj.getId())
+                                    );
+                                } else {
+                                    objectGroup.elem(SafeHtmlUtil.from("rect"),
+                                        // Shifting x and y by half the square's size puts it's center over the map coordinate.
+                                        new Attribute("x", (-OBJECT_SIZE/2) + ""),
+                                        new Attribute("y", (-OBJECT_SIZE/2) + ""),
+                                        new Attribute("width", OBJECT_SIZE + ""),
+                                        new Attribute("height", OBJECT_SIZE + ""),
+                                        new Attribute("fill", "grey"),
+                                        new Attribute("rx", "4"), // Round corners
+                                        new Attribute("ry", "4"),
+                                        new Attribute("id", obj.getId())
+                                    );
+                                }
 
-        // Restore back to normal for next frame
-        context2d.restore();
+                                double counterRotationDegrees = 0;
+                                if (matrix != null) {
+                                    final double radians = Math.atan2(matrix.getB(), matrix.getA());
+                                    counterRotationDegrees = -Math.toDegrees(radians);
+                                }
+
+                                // Adjust label text position for circles vs squares.
+                                final String textDy = isPerson ? "1.5em" : "0.35em";
+
+                                objectGroup.elem(obj.getId(), SafeHtmlUtil.from("text"),
+                                        new Attribute("x", "0"),
+                                        new Attribute("y", "0"),
+                                        new Attribute("dy", "0.35em"), // Centres text vertically
+                                        new Attribute("text-anchor", "middle"), // Centres text horizontally
+                                        new Attribute("fill", "white"),
+                                        new Attribute("font-size", "11px"),
+                                        new Attribute("font-family", "sans-serif"),
+                                        new Attribute("pointer-events", "none"), // Prevents text from interfering with mouse panning
+                                        new Attribute("transform", "rotate(" + counterRotationDegrees + ")")
+                                );
+                            },
+                            SafeHtmlUtil.from("g"),
+                                new Attribute("transform", "translate(" + obj.getX() + "," + obj.getY() + ")"),
+                                new Attribute("id", "obj-" + obj.getId())
+                            );
+                        }
+                    }
+                }, SafeHtmlUtil.from("g"), new Attribute("transform", svgMatrix));
+            }, SafeHtmlUtil.from("g"),
+                    new Attribute("transform", "translate(" + x + "," + y + ") scale(" + scale + ")"));
+        },
+            SafeHtmlUtil.from("svg"),
+            new Attribute("width", "100%"),
+            new Attribute("height", "100%"),
+            new Attribute("xmlns", "http://www.w3.org/2000/svg")
+        );
+
+        // Inject the generated SVG into the HTML container
+        svgContainer.setHTML(htmlBuilder.toSafeHtml());
     }
 
-
     // --------------------------------------------------------------------------------
-
 
     public interface Binder extends UiBinder<Widget, FloorMapCanvasViewImpl> {
 

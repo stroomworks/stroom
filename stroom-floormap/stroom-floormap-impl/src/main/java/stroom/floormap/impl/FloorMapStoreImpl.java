@@ -50,9 +50,9 @@ class FloorMapStoreImpl implements FloorMapStore {
 
     @Inject
     FloorMapStoreImpl(final StoreFactory storeFactory,
-                     final FloorMapSerialiser serialiser,
-                     final SecurityContext securityContext,
-                     final Provider<FloorMapProcessors> floorMapProcessorsProvider) {
+                      final FloorMapSerialiser serialiser,
+                      final SecurityContext securityContext,
+                      final Provider<FloorMapProcessors> floorMapProcessorsProvider) {
         this.store = storeFactory.createStore(
                 serialiser,
                 FloorMapDoc.TYPE,

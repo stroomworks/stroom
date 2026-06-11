@@ -1,0 +1,17 @@
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
+             xmlns:g="urn:import:com.google.gwt.user.client.ui"
+             xmlns:form="urn:import:stroom.widget.form.client"
+             xmlns:l="urn:import:stroom.item.client">
+    <g:FlowPanel styleName="max dock-container-vertical">
+        <g:FlowPanel styleName="dock-min dock-container-horizontal form-padding form align-center">
+            <form:FormGroup identity="entityColumn" label="Entity ID Column" addStyleNames="margin-right-10 flex-grow-1">
+                <l:SelectionBox ui:field="entityIdColumn" addStyleNames="w-100"/>
+            </form:FormGroup>
+            <form:FormGroup identity="locationColumn" label="Location ID Column" addStyleNames="flex-grow-1">
+                <l:SelectionBox ui:field="locationIdColumn" addStyleNames="w-100"/>
+            </form:FormGroup>
+        </g:FlowPanel>
+        <g:SimplePanel ui:field="queryEditContainer" styleName="dock-max overflow-hidden"/>
+    </g:FlowPanel>
+</ui:UiBinder>

@@ -458,6 +458,10 @@ public class QueryEditPresenter
         return editorPresenter.addValueChangeHandler(handler);
     }
 
+    public QueryResultTableSplitPresenter getQueryResultPresenter() {
+        return queryResultPresenter;
+    }
+
     // --------------------------------------------------------------------------------
 
 

@@ -157,6 +157,8 @@ public class QueryResultTablePresenter
     private boolean tableIsVisible = true;
     private boolean annotationChanged;
 
+    private TableResult currentTableResult;
+
     @Inject
     public QueryResultTablePresenter(final EventBus eventBus,
                                      final RestFactory restFactory,
@@ -620,6 +622,8 @@ public class QueryResultTablePresenter
             if (componentResult != null) {
                 // Don't refresh the table unless the results have changed.
                 final TableResult tableResult = (TableResult) componentResult;
+                this.currentTableResult = tableResult;
+
                 GWT.log("QueryResultTablePresenter: Received non-null TableResult! Total results in result set: "
                         + tableResult.getTotalResults() + ", Number of rows returned in this page: "
                         + (tableResult.getRows() != null ? tableResult.getRows().size() : 0));
@@ -1059,6 +1063,10 @@ public class QueryResultTablePresenter
     @Override
     public FilterCellManager getFilterCellManager() {
         return columnsManager;
+    }
+
+    public TableResult getCurrentTableResult() {
+        return currentTableResult;
     }
 
     private void fireColumnAndDataUpdate() {

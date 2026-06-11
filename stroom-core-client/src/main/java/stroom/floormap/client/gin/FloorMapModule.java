@@ -23,15 +23,25 @@ import stroom.floormap.client.presenter.FloorMapCanvasPresenter.FloorMapCanvasVi
 import stroom.floormap.client.presenter.FloorMapMapPresenter;
 import stroom.floormap.client.presenter.FloorMapMapPresenter.FloorMapMapView;
 import stroom.floormap.client.presenter.FloorMapPresenter;
+import stroom.floormap.client.presenter.FloorMapQueryPresenter;
+import stroom.floormap.client.presenter.FloorMapQueryPresenter.FloorMapQueryView;
 import stroom.floormap.client.presenter.FloorMapSettingsPresenter;
 import stroom.floormap.client.presenter.FloorMapSettingsPresenter.FloorMapSettingsView;
 import stroom.floormap.client.presenter.FloorMapTempPresenter;
 import stroom.floormap.client.presenter.FloorMapTempPresenter.FloorMapTempView;
+import stroom.floormap.client.presenter.FloorMapTimelinePresenter;
+import stroom.floormap.client.presenter.FloorMapTimelinePresenter.FloorMapTimelineView;
 import stroom.floormap.client.view.FloorMapCanvasViewImpl;
 import stroom.floormap.client.view.FloorMapMapViewImpl;
+import stroom.floormap.client.view.FloorMapQueryViewImpl;
 import stroom.floormap.client.view.FloorMapSettingsViewImpl;
 import stroom.floormap.client.view.FloorMapTempViewImpl;
+import stroom.floormap.client.view.FloorMapTimelineViewImpl;
 
+/**
+ * GIN module for the Floor Map feature.
+ * Binds the presenters and views for the floor map components.
+ */
 public class FloorMapModule extends PluginModule {
 
     @Override
@@ -52,5 +62,12 @@ public class FloorMapModule extends PluginModule {
         bindPresenterWidget(FloorMapCanvasPresenter.class,
                 FloorMapCanvasView.class,
                 FloorMapCanvasViewImpl.class);
+        bindPresenterWidget(FloorMapTimelinePresenter.class,
+                FloorMapTimelineView.class,
+                FloorMapTimelineViewImpl.class);
+
+        bindPresenterWidget(FloorMapQueryPresenter.class,
+                FloorMapQueryView.class,
+                FloorMapQueryViewImpl.class);
     }
 }
