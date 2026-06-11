@@ -38,8 +38,6 @@ import org.jooq.Record3;
 import org.jooq.SelectHavingStep;
 import org.jooq.Table;
 import org.jooq.impl.DSL;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.Optional;
@@ -49,8 +47,6 @@ import static stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore.UPDATAB
 
 @Singleton
 class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
-
-    private static final Logger LOGGER = LoggerFactory.getLogger(UpdatableTemporalStoreDaoImpl.class);
 
     private final SqlStoreDbConnProvider sqlStoreDbConnProvider;
     private final ExpressionMapperFactory expressionMapperFactory;
@@ -78,6 +74,7 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
 
     @Override
     public TemporalEntry create(final TemporalEntry entry) {
+        validateTemporalEntry(entry);
         JooqUtil.context(sqlStoreDbConnProvider, context -> context
                 .insertInto(UPDATABLE_TEMPORAL_STORE)
                 .set(UPDATABLE_TEMPORAL_STORE.MAP_NAME, entry.getMap())
@@ -97,6 +94,7 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
 
     @Override
     public Optional<TemporalEntry> fetch(final TemporalEntryId id) {
+        validateTemporalEntryId(id);
         return JooqUtil.contextResult(sqlStoreDbConnProvider, context -> context
                 .selectFrom(UPDATABLE_TEMPORAL_STORE)
                 .where(UPDATABLE_TEMPORAL_STORE.MAP_NAME.eq(id.getMap()))
@@ -112,6 +110,7 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
 
     @Override
     public boolean delete(final TemporalEntryId id) {
+        validateTemporalEntryId(id);
         return JooqUtil.contextResult(sqlStoreDbConnProvider, context -> context
                 .deleteFrom(UPDATABLE_TEMPORAL_STORE)
                 .where(UPDATABLE_TEMPORAL_STORE.MAP_NAME.eq(id.getMap()))
@@ -122,6 +121,7 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
 
     @Override
     public ResultPage<TemporalEntry> find(final ExpressionCriteria criteria) {
+        validateCriteriaMapName(criteria);
         final Long queryTime = getQueryTime(criteria);
         if (queryTime != null) {
             final ExpressionOperator filteredExpression = getFilteredExpression(criteria);
@@ -196,6 +196,7 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
 
     @Override
     public void clear(final String mapName) {
+        validateMapName(mapName);
         JooqUtil.context(sqlStoreDbConnProvider, context -> context
                 .deleteFrom(UPDATABLE_TEMPORAL_STORE)
                 .where(UPDATABLE_TEMPORAL_STORE.MAP_NAME.eq(mapName))
@@ -204,6 +205,7 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
 
     @Override
     public long count(final String mapName) {
+        validateMapName(mapName);
         return JooqUtil.contextResult(sqlStoreDbConnProvider, context -> context
                 .selectCount()
                 .from(UPDATABLE_TEMPORAL_STORE)
@@ -242,7 +244,7 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
      */
     @Override
     public void search(final ExpressionCriteria criteria, final Consumer<TemporalEntry> consumer) {
-        LOGGER.info("Starting SQL Store search with criteria expression: {}", criteria.getExpression());
+        validateCriteriaMapName(criteria);
         final Long queryTime = getQueryTime(criteria);
         if (queryTime != null) {
             final ExpressionOperator filteredExpression = getFilteredExpression(criteria);
@@ -267,8 +269,6 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
                     String::valueOf);
 
             final Condition condition = localExpressionMapper.apply(filteredExpression);
-            LOGGER.info("QueryTime path. queryTime: {}, condition: {}", queryTime, condition);
-
             final SelectHavingStep<Record3<String, String, Long>> subquery = DSL.select(
                             t2.MAP_NAME.as("sub_map"),
                             t2.KEY_.as("sub_key"),
@@ -290,7 +290,6 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
                     .on(t1.MAP_NAME.eq(subMap))
                     .and(t1.KEY_.eq(subKey))
                     .and(t1.EFFECTIVE_TIME.eq(maxTime));
-            LOGGER.info("Executing SQL: {}", query.getSQL());
 
             JooqUtil.context(sqlStoreDbConnProvider, context -> context
                     .select(t1.MAP_NAME, t1.KEY_, t1.EFFECTIVE_TIME, t1.VALUE_)
@@ -301,11 +300,6 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
                     .and(t1.EFFECTIVE_TIME.eq(maxTime))
                     .fetch()
                     .forEach(record -> {
-                        LOGGER.info("Found record (QueryTime path) -> Map: {}, Key: {}, Time: {}, Value: {}",
-                                record.get(t1.MAP_NAME),
-                                record.get(t1.KEY_),
-                                record.get(t1.EFFECTIVE_TIME),
-                                record.get(t1.VALUE_));
                         consumer.accept(new TemporalEntry(
                                 record.get(t1.MAP_NAME),
                                 record.get(t1.KEY_),
@@ -314,19 +308,14 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
                     }));
         } else {
             final Condition condition = expressionMapper.apply(criteria.getExpression());
-            LOGGER.info("Standard path. condition: {}", condition);
-
             final org.jooq.Query query = DSL.selectFrom(UPDATABLE_TEMPORAL_STORE)
                     .where(condition);
-            LOGGER.info("Executing SQL: {}", query.getSQL());
 
             JooqUtil.context(sqlStoreDbConnProvider, context -> context
                     .selectFrom(UPDATABLE_TEMPORAL_STORE)
                     .where(condition)
                     .fetch()
                     .forEach(record -> {
-                        LOGGER.info("Found record (Standard path) -> Map: {}, Key: {}, Time: {}, Value: {}",
-                                record.getMapName(), record.getKey_(), record.getEffectiveTime(), record.getValue_());
                         consumer.accept(new TemporalEntry(
                                 record.getMapName(),
                                 record.getKey_(),
@@ -371,5 +360,61 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
                     }
                     return true;
                 });
+    }
+
+    private void validateMapName(final String mapName) {
+        if (mapName == null || mapName.isBlank()) {
+            throw new IllegalArgumentException("Map name must be defined and not empty.");
+        }
+    }
+
+    private void validateTemporalEntry(final TemporalEntry entry) {
+        if (entry == null) {
+            throw new IllegalArgumentException("Entry cannot be null.");
+        }
+        if (entry.getMap() == null || entry.getMap().isBlank()) {
+            throw new IllegalArgumentException("Map name must be defined and not empty.");
+        }
+        if (entry.getKey() == null || entry.getKey().isBlank()) {
+            throw new IllegalArgumentException("Key must be defined and not empty.");
+        }
+        if (entry.getEffectiveTimeMs() == null) {
+            throw new IllegalArgumentException("Effective time must be defined.");
+        }
+    }
+
+    private void validateTemporalEntryId(final TemporalEntryId id) {
+        if (id == null) {
+            throw new IllegalArgumentException("Id cannot be null.");
+        }
+        if (id.getMap() == null || id.getMap().isBlank()) {
+            throw new IllegalArgumentException("Map name must be defined and not empty.");
+        }
+        if (id.getKey() == null || id.getKey().isBlank()) {
+            throw new IllegalArgumentException("Key must be defined and not empty.");
+        }
+        if (id.getEffectiveTimeMs() == null) {
+            throw new IllegalArgumentException("Effective time must be defined.");
+        }
+    }
+
+    private void validateCriteriaMapName(final ExpressionCriteria criteria) {
+        if (criteria == null || criteria.getExpression() == null) {
+            throw new IllegalArgumentException("Query criteria and expression must be defined.");
+        }
+        final List<ExpressionTerm> mapTerms = ExpressionUtil.terms(
+                criteria.getExpression(),
+                List.of(UpdatableTemporalStore.MAP_FIELD.getFldName()));
+
+        if (mapTerms.isEmpty()) {
+            throw new IllegalArgumentException("Map name must be defined in the query criteria.");
+        }
+
+        for (final ExpressionTerm term : mapTerms) {
+            if (term != null && term.getField() != null && term.getField().equals(UpdatableTemporalStore.MAP_FIELD.getFldName())) {
+                final String value = term.getValue();
+                validateMapName(value);
+            }
+        }
     }
 }
