@@ -19,11 +19,11 @@ package stroom.floormap.client.presenter;
 import stroom.data.client.presenter.MetaPresenter;
 import stroom.docref.DocRef;
 import stroom.entity.client.presenter.DocPresenter;
+import stroom.floormap.client.event.FloorMapDataEvent;
 import stroom.floormap.client.event.TimeChangeEvent;
 import stroom.floormap.client.presenter.FloorMapMapPresenter.FloorMapMapView;
 import stroom.floormap.shared.FloorMapBackground;
 import stroom.floormap.shared.FloorMapDoc;
-import stroom.floormap.shared.FloorMapObject;
 import stroom.floormap.shared.FloorMapTransformationMatrix;
 import stroom.widget.tab.client.presenter.LinkTabsPresenter;
 import stroom.widget.tab.client.presenter.TabData;
@@ -32,8 +32,6 @@ import com.google.inject.Inject;
 import com.google.inject.Provider;
 import com.google.web.bindery.event.shared.EventBus;
 import com.gwtplatform.mvp.client.View;
-
-import java.util.Arrays;
 
 /**
  * Main presenter for the Floor Map visualization.
@@ -79,6 +77,8 @@ public class FloorMapMapPresenter
     protected void onBind() {
         super.onBind();
         registerHandler(getEventBus().addHandler(TimeChangeEvent.getType(), e -> onTimeChange(e.getTime())));
+        registerHandler(getEventBus().addHandler(FloorMapDataEvent.getType(), e ->
+                floorMapCanvasPresenter.setObjects(e.getObjects())));
     }
 
     @Override
@@ -95,12 +95,12 @@ public class FloorMapMapPresenter
             floorMapCanvasPresenter.setMatrix(FloorMapTransformationMatrix.identity());
         }
 
-        // TEST DATA
-        // TODO: REMOVE
-        floorMapCanvasPresenter.setObjects(Arrays.asList(
-                new FloorMapObject("Main Entrance", 100, 150),
-                new FloorMapObject("Access Point 1", 500, 375)
-        ));
+//        // TEST DATA
+//        // TODO: REMOVE
+//        floorMapCanvasPresenter.setObjects(Arrays.asList(
+//                new FloorMapObject("Main Entrance", 100, 150),
+//                new FloorMapObject("Access Point 1", 500, 375)
+//        ));
     }
 
     private void updateTimelineRange() {

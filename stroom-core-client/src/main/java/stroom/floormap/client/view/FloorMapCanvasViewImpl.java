@@ -143,23 +143,43 @@ public class FloorMapCanvasViewImpl
                     if (objects != null) {
                         for (final FloorMapObject obj : objects) {
                             matrixGroup.elem(objectGroup -> {
-                                objectGroup.elem(SafeHtmlUtil.from("rect"),
-                                    // Shifting x and y by half the square's size puts it's center over the map coordinate.
-                                    new Attribute("x", (-OBJECT_SIZE/2) + ""),
-                                    new Attribute("y", (-OBJECT_SIZE/2) + ""),
-                                    new Attribute("width", OBJECT_SIZE + ""),
-                                    new Attribute("height", OBJECT_SIZE + ""),
-                                    new Attribute("fill", "grey"),
-                                    new Attribute("rx", "4"), // Round corners
-                                    new Attribute("ry", "4"),
-                                    new Attribute("id", obj.getId())
-                                );
+
+                                // Determine if this object is a person.
+                                final boolean isPerson = obj.getType() != null && obj.getType().equalsIgnoreCase("person");
+
+                                if (isPerson) {
+                                    // Render a small blue circle for users.
+                                    objectGroup.elem(SafeHtmlUtil.from("circle"),
+                                        new Attribute("cx", "0"),
+                                        new Attribute("cy", "0"),
+                                        new Attribute("r", (OBJECT_SIZE / 4) + ""),
+                                        new Attribute("fill", "#1f77b4"),
+                                        new Attribute("stroke", "#ffffff"),
+                                        new Attribute("stroke-width", "2"),
+                                        new Attribute("id", obj.getId())
+                                    );
+                                } else {
+                                    objectGroup.elem(SafeHtmlUtil.from("rect"),
+                                        // Shifting x and y by half the square's size puts it's center over the map coordinate.
+                                        new Attribute("x", (-OBJECT_SIZE/2) + ""),
+                                        new Attribute("y", (-OBJECT_SIZE/2) + ""),
+                                        new Attribute("width", OBJECT_SIZE + ""),
+                                        new Attribute("height", OBJECT_SIZE + ""),
+                                        new Attribute("fill", "grey"),
+                                        new Attribute("rx", "4"), // Round corners
+                                        new Attribute("ry", "4"),
+                                        new Attribute("id", obj.getId())
+                                    );
+                                }
 
                                 double counterRotationDegrees = 0;
                                 if (matrix != null) {
                                     final double radians = Math.atan2(matrix.getB(), matrix.getA());
                                     counterRotationDegrees = -Math.toDegrees(radians);
                                 }
+
+                                // Adjust label text position for circles vs squares.
+                                final String textDy = isPerson ? "1.5em" : "0.35em";
 
                                 objectGroup.elem(obj.getId(), SafeHtmlUtil.from("text"),
                                         new Attribute("x", "0"),

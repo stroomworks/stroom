@@ -20,13 +20,16 @@ public class FloorMapObject {
     private final String id;
     private final double x;
     private final double y;
+    private final String type;
 
     public FloorMapObject(final String id,
                           final double x,
-                          final double y) {
+                          final double y,
+                          final String type) {
         this.id = id;
         this.x = x;
         this.y = y;
+        this.type = type;
     }
 
     public String getId() {
@@ -39,5 +42,9 @@ public class FloorMapObject {
 
     public double getY() {
         return y;
+    }
+
+    public String getType() {
+        return type;
     }
 }
