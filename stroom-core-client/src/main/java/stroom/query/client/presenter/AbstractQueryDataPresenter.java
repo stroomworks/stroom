@@ -121,7 +121,8 @@ public abstract class AbstractQueryDataPresenter<V extends QueryDataView, D>
             return;
         }
 
-        final int startOffset = getCharOffset(queryText, tokenError.getFrom().getLineNo(), tokenError.getFrom().getColNo());
+        final int startOffset = getCharOffset(
+                queryText, tokenError.getFrom().getLineNo(), tokenError.getFrom().getColNo());
         final int endOffset = getCharOffset(queryText, tokenError.getTo().getLineNo(), tokenError.getTo().getColNo());
 
         if (startOffset >= 0 && endOffset >= startOffset && endOffset <= queryText.length()) {

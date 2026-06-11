@@ -16,7 +16,10 @@ import com.google.web.bindery.event.shared.EventBus;
 import java.util.Arrays;
 import java.util.List;
 
-public class SqlTemporalStoreDataPresenter extends AbstractQueryDataPresenter<SqlTemporalStoreDataPresenter.SqlTemporalStoreDataView, SqlTemporalStoreDoc> {
+public class SqlTemporalStoreDataPresenter
+        extends AbstractQueryDataPresenter<
+                SqlTemporalStoreDataPresenter.SqlTemporalStoreDataView,
+                SqlTemporalStoreDoc> {
 
     public interface SqlTemporalStoreDataView extends QueryDataView {
     }
