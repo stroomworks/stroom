@@ -49,7 +49,7 @@ public class SqlTemporalStoreDataPresenter extends AbstractQueryDataPresenter<Sq
 
     @Override
     protected String getDefaultQuery(final DocRef docRef, final SqlTemporalStoreDoc doc) {
-        return "from \"" + docRef.getName() + "\" select EffectiveTime as \"Effective Time\", Key, Value";
+        return "from \"" + docRef.getName() + "\" limit 100 select EffectiveTime as \"Effective Time\", Key, Value";
     }
 
     @Override

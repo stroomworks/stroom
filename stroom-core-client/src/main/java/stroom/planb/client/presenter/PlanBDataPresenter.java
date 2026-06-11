@@ -57,15 +57,15 @@ public class PlanBDataPresenter extends AbstractQueryDataPresenter<PlanBDataPres
     protected String getDefaultQuery(final DocRef docRef, final PlanBDoc doc) {
         final StateType stateType = doc.getStateType() != null ? doc.getStateType() : StateType.TEMPORAL_STATE;
         return switch (stateType) {
-            case STATE -> "from \"" + docRef.getName() + "\" select Key, Value";
-            case TEMPORAL_STATE -> "from \"" + docRef.getName() + "\" select EffectiveTime as \"Effective Time\", Key, Value";
-            case RANGED_STATE -> "from \"" + docRef.getName() + "\" select KeyStart as \"Key Start\", KeyEnd as \"Key End\", Value";
-            case TEMPORAL_RANGED_STATE -> "from \"" + docRef.getName() + "\" select EffectiveTime as \"Effective Time\", KeyStart as \"Key Start\", KeyEnd as \"Key End\", Value";
-            case SESSION -> "from \"" + docRef.getName() + "\" select Start, End, Key";
-            case HISTOGRAM -> "from \"" + docRef.getName() + "\" select Time, Key, Resolution, Value";
-            case METRIC -> "from \"" + docRef.getName() + "\" select Time, Key, Resolution, Value, Min, Max, Count, Sum, Average";
-            case TRACE -> "from \"" + docRef.getName() + "\" select StartTime as \"Start Time\", EndTime as \"End Time\", TraceId as \"Trace Id\", ParentSpanId as \"Parent Span Id\", SpanId as \"Span Id\"";
-            default -> "from \"" + docRef.getName() + "\" select EffectiveTime as \"Effective Time\", Key, Value";
+            case STATE -> "from \"" + docRef.getName() + "\" limit 100 select Key, Value";
+            case TEMPORAL_STATE -> "from \"" + docRef.getName() + "\" limit 100 select EffectiveTime as \"Effective Time\", Key, Value";
+            case RANGED_STATE -> "from \"" + docRef.getName() + "\" limit 100 select KeyStart as \"Key Start\", KeyEnd as \"Key End\", Value";
+            case TEMPORAL_RANGED_STATE -> "from \"" + docRef.getName() + "\" limit 100 select EffectiveTime as \"Effective Time\", KeyStart as \"Key Start\", KeyEnd as \"Key End\", Value";
+            case SESSION -> "from \"" + docRef.getName() + "\" limit 100 select Start, End, Key";
+            case HISTOGRAM -> "from \"" + docRef.getName() + "\" limit 100 select Time, Key, Resolution, Value";
+            case METRIC -> "from \"" + docRef.getName() + "\" limit 100 select Time, Key, Resolution, Value, Min, Max, Count, Sum, Average";
+            case TRACE -> "from \"" + docRef.getName() + "\" limit 100 select StartTime as \"Start Time\", EndTime as \"End Time\", TraceId as \"Trace Id\", ParentSpanId as \"Parent Span Id\", SpanId as \"Span Id\"";
+            default -> "from \"" + docRef.getName() + "\" limit 100 select EffectiveTime as \"Effective Time\", Key, Value";
         };
     }
 
