@@ -4,12 +4,16 @@
              xmlns:b="urn:import:stroom.widget.button.client">
 
     <ui:style>
-        .errorLabel {
+        .errorContainer {
             margin: 0px 8px 8px 8px;
             padding: 8px 12px;
             border: 1px solid var(--error);
             border-radius: 4px;
             background-color: rgba(220, 53, 69, 0.15);
+            height: 100px;
+            overflow-y: auto;
+        }
+        .errorLabel {
             color: var(--error);
             font-weight: 500;
             white-space: pre-wrap;
@@ -25,7 +29,9 @@
             <b:InlineSvgButton ui:field="run" title="Run" addStyleNames="QueryButtons-button play dock-min"/>
             <b:InlineSvgButton ui:field="stop" title="Stop" addStyleNames="QueryButtons-button stop dock-min"/>
         </g:FlowPanel>
-        <g:Label ui:field="errorLabel" styleName="{style.errorLabel}" visible="false"/>
+        <g:ScrollPanel ui:field="errorContainer" styleName="{style.errorContainer}" visible="false">
+            <g:Label ui:field="errorLabel" styleName="{style.errorLabel}"/>
+        </g:ScrollPanel>
         <g:SimplePanel ui:field="tableContainer" styleName="max dock-max"/>
     </g:FlowPanel>
 </ui:UiBinder>

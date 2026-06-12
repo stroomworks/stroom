@@ -95,7 +95,6 @@ public class IndexDataPresenter
 
         if (fields != null) {
             final List<String> storedFields = fields.stream()
-                    .filter(IndexField::isStored)
                     .map(IndexField::getFldName)
                     .toList();
 
@@ -127,7 +126,6 @@ public class IndexDataPresenter
             return Collections.emptyList();
         }
         return fields.stream()
-                .filter(IndexField::isStored)
                 .map(field -> Column.builder()
                         .id(field.getFldName())
                         .name(field.getFldName())
