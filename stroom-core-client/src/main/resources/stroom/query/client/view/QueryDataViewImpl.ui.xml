@@ -28,6 +28,7 @@
             <b:InlineSvgButton ui:field="undo" title="Reset to Default" addStyleNames="QueryButtons-button undo dock-min"/>
             <b:InlineSvgButton ui:field="run" title="Run" addStyleNames="QueryButtons-button play dock-min"/>
             <b:InlineSvgButton ui:field="stop" title="Stop" addStyleNames="QueryButtons-button stop dock-min"/>
+            <b:InlineSvgButton ui:field="createDashboard" title="Create Dashboard" addStyleNames="QueryButtons-button create-dashboard dock-min"/>
         </g:FlowPanel>
         <g:ScrollPanel ui:field="errorContainer" styleName="{style.errorContainer}" visible="false">
             <g:Label ui:field="errorLabel" styleName="{style.errorLabel}"/>

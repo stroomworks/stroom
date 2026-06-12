@@ -40,6 +40,8 @@ public class QueryDataViewImpl extends ViewWithUiHandlers<QueryDataUiHandlers> i
     @UiField
     InlineSvgButton stop;
     @UiField
+    InlineSvgButton createDashboard;
+    @UiField
     SimplePanel tableContainer;
 
     @Inject
@@ -48,6 +50,7 @@ public class QueryDataViewImpl extends ViewWithUiHandlers<QueryDataUiHandlers> i
         undo.setSvg(SvgImage.UNDO);
         run.setSvg(SvgImage.PLAY);
         stop.setSvg(SvgImage.STOP);
+        createDashboard.setSvg(SvgImage.DOCUMENT_DASHBOARD);
     }
 
     @Override
@@ -116,6 +119,14 @@ public class QueryDataViewImpl extends ViewWithUiHandlers<QueryDataUiHandlers> i
     public void onStop(final ClickEvent event) {
         if (getUiHandlers() != null) {
             getUiHandlers().onStop();
+        }
+    }
+
+    @UiHandler("createDashboard")
+    @SuppressWarnings("unused")
+    public void onCreateDashboard(final ClickEvent event) {
+        if (getUiHandlers() != null) {
+            getUiHandlers().onCreateDashboard();
         }
     }
 

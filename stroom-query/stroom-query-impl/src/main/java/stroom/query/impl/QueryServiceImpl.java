@@ -1133,4 +1133,26 @@ class QueryServiceImpl implements QueryService, QueryFieldProvider {
         }
         return nodeName;
     }
+
+    @Override
+    public ExpressionOperator parseQuery(final String query) {
+        return securityContext.useAsReadResult(() -> {
+            try {
+                final SearchRequest sampleRequest = new SearchRequest(
+                        null,
+                        null,
+                        Query.builder().build(),
+                        null,
+                        null,
+                        false,
+                        null);
+                final ExpressionContext expressionContext = expressionContextFactory.createContext(sampleRequest);
+                final SearchRequest mappedRequest = searchRequestFactory.create(query, sampleRequest, expressionContext);
+                return mappedRequest.getQuery().getExpression();
+            } catch (final RuntimeException e) {
+                LOGGER.debug(e.getMessage(), e);
+                throw e;
+            }
+        });
+    }
 }

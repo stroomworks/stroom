@@ -8,4 +8,6 @@ public interface QueryDataUiHandlers extends UiHandlers {
     void onStop();
 
     void onReset();
+
+    void onCreateDashboard();
 }
