@@ -166,12 +166,16 @@ To allow items to move or change properties dynamically over time (e.g., a gate 
    * Columns include: **Effective Time** (date-time string) and a **Summary** of the configuration at that time (e.g., `Coords: [1.0, 5.0], Name: Gate A`).
    * Below the grid, buttons allow the user to **Add Time**, **Edit Selected Time**, and **Delete Selected Time**.
 
-2. **Temporal Editing Workflow**:
-   When the user makes an edit on the canvas (dragging) or via the property fields:
-   * **Exact Match**: If the currently selected timeline time matches the `effectiveTimeMs` of a version of this item exactly, the local changes are applied directly to that version's entry in GWT memory.
-   * **No Exact Match**: If the selected timeline time falls *between* defined versions (or before the first version), the UI prompts the user with a dialog:
-     * **Option A: "Modify Active Preceding Version"**: Modifies the fields of the latest version that was active prior to the selected time.
-     * **Option B: "Create New Version at Selected Time"**: Clones the state of the active preceding version, assigns it the selected timeline time as its new `effectiveTimeMs`, and writes it as a new `TemporalEntry` version in memory. This represents a movement/change occurring precisely at the selected time.
+2. **Temporal Editing Workflow & Selection Locking**:
+   To prevent user errors and eliminate ambiguity when making edits at arbitrary timeline timestamps, **the UI enforces a selection lock**:
+   * **Locked State**: When the user enters Edit Mode and selects an item, the map canvas dragging handlers and detail form fields for that item are **disabled (locked/read-only)** by default.
+   * **Unlocking via Selection**: The user must explicitly select a row (a specific temporal version) in the **Effective Times** grid.
+     * Selecting a version unlocks the fields and canvas interactions, updating the map canvas visualization to reflect that specific version's properties.
+     * Any subsequent drags on the canvas or field edits are applied directly and unambiguously to the selected temporal version entry in GWT memory.
+   * **Modifying Positions at a New Time**:
+     * If the user wishes to change the item's coordinates at a new effective time, they must first click **Add Time** in the grid.
+     * Clicking **Add Time** prompts for a new timestamp, clones the properties of the currently active version, inserts a new version row in the grid, and automatically selects it.
+     * Once selected, the item is unlocked and the user can drag it to its new location for that new effective time.
 
 3. **Effective Time Management Actions**:
    * **Add Time**: Prompts the user for a new timestamp, clones the current active item properties, and inserts a new temporal version in client memory.
