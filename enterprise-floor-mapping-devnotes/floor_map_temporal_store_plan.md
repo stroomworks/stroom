@@ -235,3 +235,42 @@ The table below outlines the core differences between the currently implemented 
 | **Item Management** | No support for adding/deleting mapped items. | sidebar controls to **Add Item** or **Delete Selected** items. |
 | **Temporal Versioning** | A simple static "Valid From" table for background images in the Settings tab. | **Effective Times** grid for any selected item in the sidebar. Editing a dragged item or its fields prompts the user to either update the preceding version or spawn a new version at the selected timeline time (e.g., allowing a gate to move coordinates on a specific date). |
 | **Storage & Persistence** | All backgrounds are stored inline inside the `FloorMapDoc` document. | Backgrounds/items are removed from `FloorMapDoc` and saved to the SQL Temporal Store database in delta-batches during save. |
+
+---
+
+## 9. Implementation Roadmap & Phases
+
+The transition to the SQL Temporal Store will be executed in five separate, testable phases:
+
+### Phase 1: Server-Side Model & Persistence Updates
+* **Tasks**:
+  * Update `FloorMapDoc.java` to support split queries and `temporalStoreRef` generic `DocRef`.
+  * Clean up `FloorMapStoreImpl.java` serialization logic.
+* **Verification**: FloorMap unit tests should run cleanly, validating persistence and reloading of the new fields without inline background image errors.
+
+### Phase 2: GWT Client Layout & Store Reference Selector
+* **Tasks**:
+  * Create GWT tabs for **Events Query**, **Facts Query**, and **Settings** under `FloorMapPresenter.java`.
+  * Bind the Settings tab to select and persist the `temporalStoreRef`.
+  * Auto-populate the default facts query template upon selecting a SQL temporal store.
+* **Verification**: Verify that configuration selections save successfully and facts query editor displays the StroomQL autoload template.
+
+### Phase 3: Playback Mode & Dynamic Query Rendering
+* **Tasks**:
+  * Modify `FloorMapMapPresenter.java` to execute the facts query on timeline changes.
+  * Extract query values to place background images (applying `tm-map-to-screen`) and custom items (applying coordinates and `tm-world-to-map` matrices). Render colored squares for missing images.
+* **Verification**: Inject mock data into the temporal store database and ensure map items swap and render dynamically in Playback Mode as timeline time changes.
+
+### Phase 4: Edit Mode & Canvas Drag-and-Drop Interactions
+* **Tasks**:
+  * Implement an **Edit Mode** toolbar toggle.
+  * Implement canvas mouse drag handlers using inverse transformations (Section 3).
+  * Build the GWT properties sidebar details form.
+* **Verification**: Toggle Edit Mode, drag map objects, edit their form fields, and verify map assets reposition on the canvas.
+
+### Phase 5: Temporal Versioning & Delta-Saving
+* **Tasks**:
+  * Embed the **Effective Times** grid inside the property sidebar.
+  * Implement prompt dialog workflow (Edit Preceding vs. Create New version at timeline time).
+  * Implement delta-saving to batch write added/modified/deleted entries to `/sqltemporalstore/entry` REST endpoints.
+* **Verification**: Perform a full end-to-end versioning cycle (moving items across different effective times) and check DB writes.
