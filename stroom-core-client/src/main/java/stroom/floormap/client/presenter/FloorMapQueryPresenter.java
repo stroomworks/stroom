@@ -159,7 +159,7 @@ public class FloorMapQueryPresenter extends MyPresenterWidget<FloorMapQueryView>
                                 type = "person"; // Fallback: email contains "@" = person.
                             }
 
-                            list.add(new FloorMapObject(entityId, x, y, type));
+                            list.add(new FloorMapObject(entityId, type, x, y));
                         }
                     } catch (final RuntimeException e) {
                         // Skip malformed row.
