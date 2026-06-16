@@ -19,15 +19,17 @@
              xmlns:g="urn:import:com.google.gwt.user.client.ui"
              xmlns:form="urn:import:stroom.widget.form.client"
              xmlns:datetimebox="urn:import:stroom.widget.datepicker.client">
-    <g:FlowPanel styleName="max dock-container-horizontal form">
-        <!-- LEFT COLUMN: Historical Shards Grid -->
+    <g:FlowPanel styleName="max dock-container-vertical form">
+        <g:Label ui:field="objectLabel" addStyleNames="stroom-floormap-active-object-label" />
+        
+        <!-- TOP: Historical Shards Grid -->
         <g:FlowPanel addStyleNames="max dock-container-vertical flex-grow">
             <g:SimplePanel ui:field="toolbarContainer" />
             <g:SimplePanel ui:field="gridContainer" addStyleNames="stroom-floormap-background-grid flex-grow max" />
         </g:FlowPanel>
 
-        <!-- RIGHT COLUMN: Location/Time Editor Form -->
-        <g:FlowPanel addStyleNames="dock-container-vertical">
+        <!-- BOTTOM: Location/Time Editor Form (placed under the grid) -->
+        <g:FlowPanel addStyleNames="dock-container-vertical stroom-floormap-edit-form-panel">
             <g:HTML styleName="stroom-label-header">Edit Temporal State</g:HTML>
             <form:FormGroup label="Effective From Time">
                 <datetimebox:DateTimeBox ui:field="effectiveTimeBox" addStyleNames="timeline-date-box wide-control" />

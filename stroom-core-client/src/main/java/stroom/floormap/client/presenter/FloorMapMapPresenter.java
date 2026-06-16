@@ -65,6 +65,7 @@ public class FloorMapMapPresenter
 
     // Local state for batch saving
     private final List<TemporalEntry> pendingUpdates = new ArrayList<>();
+    private String storeName = "location_plan_b";
 
     private long selectedTime;
     private static final long ONE_DAY_MS = 24 * 60 * 60 * 1000;
@@ -109,6 +110,7 @@ public class FloorMapMapPresenter
         registerHandler(getEventBus().addHandler(MapObjectSelectedEvent.getType(), e -> {
             // Swap to edit menu
             floorMapObjectEditPresenter.setObject(e.getObjectId());
+            floorMapCanvasPresenter.setActivelyEditedObjectId(e.getObjectId());
             setInSlot(LOG_DATA, floorMapObjectEditPresenter);
         }));
 
@@ -116,10 +118,16 @@ public class FloorMapMapPresenter
             // Mark document dirty when an object finishes dragging
             setDirty(true);
 
+            // Sync coordinates to edit form text boxes in real-time
+            if (e.getObjectId().equals(floorMapObjectEditPresenter.getObjectId())) {
+                floorMapObjectEditPresenter.getView().setX(e.getX());
+                floorMapObjectEditPresenter.getView().setY(e.getY());
+            }
+
             // Format coordinate value as "map3, x, y"
             final String valueStr = "map3, " + e.getX() + ", " + e.getY();
             final TemporalEntry entry = new TemporalEntry(
-                    "location_plan_b",
+                    storeName,
                     e.getObjectId(),
                     selectedTime,
                     valueStr
@@ -135,6 +143,10 @@ public class FloorMapMapPresenter
     protected void onRead(final DocRef docRef, final FloorMapDoc document, final boolean readOnly) {
         updateTimelineRange();
         
+        // Extract the store name dynamically from the query (e.g. from "store_name")
+        this.storeName = extractStoreName(document.getQuery());
+        floorMapObjectEditPresenter.setStoreName(this.storeName);
+
         // Pick the background for the current time
         final FloorMapBackground activeBg = document.getActiveBackground(selectedTime);
         if (activeBg != null) {
@@ -144,6 +156,44 @@ public class FloorMapMapPresenter
             floorMapCanvasPresenter.setBackgroundImage(null);
             floorMapCanvasPresenter.setMatrix(FloorMapTransformationMatrix.identity());
         }
+    }
+
+    private String extractStoreName(final String query) {
+        if (query == null || query.trim().isEmpty()) {
+            return "location_plan_b";
+        }
+        // Match from clause: from "store_name" or from store_name (case-insensitive)
+        final String lowercaseQuery = query.toLowerCase();
+        int fromIdx = lowercaseQuery.indexOf("from");
+        if (fromIdx != -1) {
+            final String afterFrom = query.substring(fromIdx + 4).trim();
+            if (!afterFrom.isEmpty()) {
+                // If it starts with quote, extract up to closing quote
+                if (afterFrom.startsWith("\"") || afterFrom.startsWith("'")) {
+                    char quote = afterFrom.charAt(0);
+                    int endQuoteIdx = afterFrom.indexOf(quote, 1);
+                    if (endQuoteIdx != -1) {
+                        return afterFrom.substring(1, endQuoteIdx);
+                    }
+                } else {
+                    // Extract up to next whitespace character (space, newline, tab, etc.)
+                    int nextWhitespace = -1;
+                    for (int i = 0; i < afterFrom.length(); i++) {
+                        char c = afterFrom.charAt(i);
+                        if (c == ' ' || c == '\n' || c == '\r' || c == '\t') {
+                            nextWhitespace = i;
+                            break;
+                        }
+                    }
+                    if (nextWhitespace != -1) {
+                        return afterFrom.substring(0, nextWhitespace);
+                    } else {
+                        return afterFrom;
+                    }
+                }
+            }
+        }
+        return "location_plan_b";
     }
 
     @Override

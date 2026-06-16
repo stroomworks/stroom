@@ -25,6 +25,7 @@ import com.google.gwt.event.shared.HandlerRegistration;
 import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
 import com.google.gwt.user.client.ui.Button;
+import com.google.gwt.user.client.ui.Label;
 import com.google.gwt.user.client.ui.SimplePanel;
 import com.google.gwt.user.client.ui.TextBox;
 import com.google.gwt.user.client.ui.Widget;
@@ -40,6 +41,8 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
     SimplePanel toolbarContainer;
     @UiField
     SimplePanel gridContainer;
+    @UiField
+    Label objectLabel;
     @UiField
     DateTimeBox effectiveTimeBox;
     @UiField
@@ -59,6 +62,11 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
     @Override
     public Widget asWidget() {
         return widget;
+    }
+
+    @Override
+    public void setObjectLabel(final String label) {
+        objectLabel.setText(label);
     }
 
     @Override

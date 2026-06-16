@@ -195,3 +195,17 @@
     color: var(--text-color--low-emphasis);
     white-space: nowrap;
 }
+
+.stroom-floormap-active-object-label {
+    font-size: 14px;
+    font-weight: bold;
+    margin-bottom: 14px;
+    padding-bottom: 8px;
+    color: #1f62ae;
+    border-bottom: 1px solid var(--control__border-color);
+    width: 100%;
+}
+
+.stroom-floormap-edit-form-panel {
+    margin-top: 14px;
+}

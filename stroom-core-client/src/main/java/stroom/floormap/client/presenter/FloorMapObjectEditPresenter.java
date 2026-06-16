@@ -64,6 +64,7 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
     private final ButtonView deleteButton;
     private String objectId;
     private boolean isAdding = false;
+    private String storeName = "location_plan_b";
 
     @Inject
     public FloorMapObjectEditPresenter(final EventBus eventBus,
@@ -155,13 +156,29 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
             final long time = getView().getEffectiveTime();
             final double x = getView().getX();
             final double y = getView().getY();
-            updateEntry(time, x, y, this::refresh);
+            updateEntry(time, x, y, () -> {
+                isAdding = false;
+                getView().setEnabled(false);
+                if (editStateConsumer != null) {
+                    editStateConsumer.accept(false);
+                }
+                refresh();
+            });
         }));
     }
 
     public void setObject(final String objectId) {
         this.objectId = objectId;
+        getView().setObjectLabel(objectId != null ? "Object: " + objectId : "");
         refresh();
+    }
+
+    public String getObjectId() {
+        return objectId;
+    }
+
+    public void setStoreName(final String storeName) {
+        this.storeName = storeName != null ? storeName : "location_plan_b";
     }
 
     public void setEditStateConsumer(final Consumer<Boolean> editStateConsumer) {
@@ -211,7 +228,7 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
                 .addTerm(ExpressionTerm.builder()
                         .field("Map")
                         .condition(Condition.EQUALS)
-                        .value("location_plan_b")
+                        .value(storeName)
                         .build())
                 .addTerm(ExpressionTerm.builder()
                         .field("Key")
@@ -244,7 +261,7 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
 
         final String valueStr = "map3, " + x + ", " + y;
         final TemporalEntry entry = new TemporalEntry(
-                "location_plan_b",
+                storeName,
                 objectId,
                 effectiveTimeMs,
                 valueStr
@@ -266,7 +283,7 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
 
         final String valueStr = "map3, " + x + ", " + y;
         final TemporalEntry entry = new TemporalEntry(
-                "location_plan_b",
+                storeName,
                 objectId,
                 effectiveTimeMs,
                 valueStr
@@ -287,7 +304,7 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
         }
 
         final TemporalEntryId id = new TemporalEntryId(
-                "location_plan_b",
+                storeName,
                 objectId,
                 effectiveTimeMs
         );
@@ -307,6 +324,7 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
     public interface FloorMapObjectEditView extends View {
         void setToolbar(Widget toolbarWidget);
         void setGridView(Widget gridWidget);
+        void setObjectLabel(String label);
 
         long getEffectiveTime();
         void setEffectiveTime(long timeMS);

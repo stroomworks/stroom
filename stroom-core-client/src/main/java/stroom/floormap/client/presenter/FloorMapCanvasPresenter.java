@@ -58,6 +58,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     // Edit mode
     private boolean editMode = false;
     private String selectedObjectId = null;
+    private String activelyEditedObjectId = null;
 
     @Inject
     public FloorMapCanvasPresenter(final EventBus eventBus,
@@ -92,16 +93,28 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
                     // Check if we clicked on an actual map object shape (which does not start with "obj-")
                     if (id != null && !id.isEmpty() && !id.startsWith("obj-")) {
-                        selectedObjectId = id;
+                        // Find the object to verify its type
+                        FloorMapObject clickedObj = null;
+                        for (final FloorMapObject obj : objects) {
+                            if (obj.getId().equals(id)) {
+                                clickedObj = obj;
+                                break;
+                            }
+                        }
 
-                        // Fire an event to tell the parent presenter to show the edit menu
-                        MapObjectSelectedEvent.fire(this, selectedObjectId);
-                        isDragging = true;
-                        lastMouseX = event.getX();
-                        lastMouseY = event.getY();
+                        // Do not allow selecting or dragging people/users
+                        if (clickedObj != null && !"person".equalsIgnoreCase(clickedObj.getType())) {
+                            selectedObjectId = id;
 
-                        // Stop panning
-                        return;
+                            // Fire an event to tell the parent presenter to show the edit menu
+                            MapObjectSelectedEvent.fire(this, selectedObjectId);
+                            isDragging = true;
+                            lastMouseX = event.getX();
+                            lastMouseY = event.getY();
+
+                            // Stop panning
+                            return;
+                        }
                     }
                 }
 
@@ -120,7 +133,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                 final double deltaX = event.getX() - lastMouseX;
                 final double deltaY = event.getY() - lastMouseY;
 
-                if (editMode && isDraggingEnabled && selectedObjectId != null) {
+                if (editMode && isDraggingEnabled && selectedObjectId != null && selectedObjectId.equals(activelyEditedObjectId)) {
                     // Move the selected object
                     for (final FloorMapObject obj : objects) {
                         if (obj.getId().equals(selectedObjectId)) {
@@ -207,10 +220,15 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         this.editMode = editMode;
         if (!editMode) {
             selectedObjectId = null;
+            activelyEditedObjectId = null;
         }
 
         isDraggingEnabled = false;
         redraw();
+    }
+
+    public void setActivelyEditedObjectId(final String activelyEditedObjectId) {
+        this.activelyEditedObjectId = activelyEditedObjectId;
     }
 
     public void setIsDraggingEnabled(final boolean isDraggingEnabled) {
