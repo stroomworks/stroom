@@ -53,6 +53,8 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
     private static final SqlTemporalStoreResource SQL_TEMPORAL_STORE_RESOURCE =
             GWT.create(SqlTemporalStoreResource.class);
 
+    private Consumer<Boolean> editStateConsumer;
+
     private final RestFactory restFactory;
     private final MyDataGrid<TemporalEntry> dataGrid;
     private final ListDataProvider<TemporalEntry> dataProvider = new ListDataProvider<>();
@@ -61,6 +63,7 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
     private final ButtonView addButton;
     private final ButtonView deleteButton;
     private String objectId;
+    private boolean isAdding = false;
 
     @Inject
     public FloorMapObjectEditPresenter(final EventBus eventBus,
@@ -92,6 +95,9 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
             final TemporalEntry selected = selectionModel.getSelectedObject();
 
             if (selected != null) {
+                isAdding = false;
+                getView().setEnabled(true);
+                deleteButton.setEnabled(true);
                 getView().setEffectiveTime(selected.getEffectiveTimeMs());
 
                 try {
@@ -102,15 +108,37 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
                     getView().setX(0.0);
                     getView().setY(0.0);
                 }
+
+                if (editStateConsumer != null) {
+                    editStateConsumer.accept(true);
+                }
+            } else {
+                deleteButton.setEnabled(false);
+                if (!isAdding) {
+                    getView().setEnabled(false);
+                    getView().setEffectiveTime(0L);
+                    getView().setX(0.0);
+                    getView().setY(0.0);
+
+                    if (editStateConsumer != null) {
+                        editStateConsumer.accept(false);
+                    }
+                }
             }
         }));
 
         // Toolbar: Click Add to clear input form for a new row
         registerHandler(addButton.addClickHandler(e -> {
+            isAdding = true;
             selectionModel.clear();
+            getView().setEnabled(true);
             getView().setEffectiveTime(System.currentTimeMillis());
             getView().setX(0.0);
             getView().setY(0.0);
+
+            if (editStateConsumer != null) {
+                editStateConsumer.accept(true);
+            }
         }));
 
         // Toolbar: Click Delete to remove from database and refresh table
@@ -136,16 +164,15 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
         refresh();
     }
 
+    public void setEditStateConsumer(final Consumer<Boolean> editStateConsumer) {
+        this.editStateConsumer = editStateConsumer;
+    }
+
     private void refresh() {
         fetchHistory(entries -> {
             dataProvider.setList(entries);
             dataGrid.setRowData(0, entries);
-
-            if (!entries.isEmpty()) {
-                selectionModel.setSelected(entries.get(0), true);
-            } else {
-                selectionModel.clear();
-            }
+            selectionModel.clear();
         });
     }
 
@@ -291,5 +318,7 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
         void setY(double y);
 
         HandlerRegistration addSaveHandler(ClickHandler handler);
+
+        void setEnabled(final boolean enabled);
     }
 }

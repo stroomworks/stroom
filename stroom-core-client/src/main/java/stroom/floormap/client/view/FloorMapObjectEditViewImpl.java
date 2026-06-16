@@ -114,6 +114,14 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
         return saveBtn.addClickHandler(handler);
     }
 
+    @Override
+    public void setEnabled(final boolean enabled) {
+        effectiveTimeBox.setEnabled(enabled);
+        xBox.setEnabled(enabled);
+        yBox.setEnabled(enabled);
+        saveBtn.setEnabled(enabled);
+    }
+
     // --------------------------------------------------------------------------------
 
     public interface Binder extends UiBinder<Widget, FloorMapObjectEditViewImpl> {

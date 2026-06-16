@@ -127,6 +127,8 @@ public class FloorMapMapPresenter
 
             pendingUpdates.add(entry);
         }));
+
+        floorMapObjectEditPresenter.setEditStateConsumer(floorMapCanvasPresenter::setIsDraggingEnabled);
     }
 
     @Override

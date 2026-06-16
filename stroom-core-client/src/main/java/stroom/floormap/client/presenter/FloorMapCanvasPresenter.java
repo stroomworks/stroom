@@ -47,6 +47,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     private FloorMapTransformationMatrix matrix;
 
     // Dragging state
+    private boolean isDraggingEnabled = false;
     private boolean isDragging = false;
     private double lastMouseX;
     private double lastMouseY;
@@ -89,6 +90,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                     final Element element = Element.as(target);
                     final String id = element.getId();
 
+                    // Check if we clicked on an actual map object shape (which does not start with "obj-")
                     if (id != null && !id.isEmpty() && !id.startsWith("obj-")) {
                         selectedObjectId = id;
 
@@ -102,6 +104,9 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                         return;
                     }
                 }
+
+                // Clicked on background/empty space, clear selection and allow panning
+                selectedObjectId = null;
             }
 
             // Normal panning logic
@@ -115,7 +120,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                 final double deltaX = event.getX() - lastMouseX;
                 final double deltaY = event.getY() - lastMouseY;
 
-                if (editMode && selectedObjectId != null) {
+                if (editMode && isDraggingEnabled && selectedObjectId != null) {
                     // Move the selected object
                     for (final FloorMapObject obj : objects) {
                         if (obj.getId().equals(selectedObjectId)) {
@@ -198,12 +203,18 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         redraw();
     }
 
-    public void setEditMode(boolean editMode) {
+    public void setEditMode(final boolean editMode) {
         this.editMode = editMode;
         if (!editMode) {
             selectedObjectId = null;
         }
+
+        isDraggingEnabled = false;
         redraw();
+    }
+
+    public void setIsDraggingEnabled(final boolean isDraggingEnabled) {
+        this.isDraggingEnabled = isDraggingEnabled;
     }
 
     public interface FloorMapCanvasView extends View, RequiresResize {
