@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~ Copyright 2016-2026 Crown Copyright
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~     http://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+  -->
+
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
+             xmlns:g="urn:import:com.google.gwt.user.client.ui"
+             xmlns:form="urn:import:stroom.widget.form.client"
+             xmlns:datetimebox="urn:import:stroom.widget.datepicker.client">
+    <g:FlowPanel styleName="max dock-container-horizontal form">
+        <!-- LEFT COLUMN: Historical Shards Grid -->
+        <g:FlowPanel addStyleNames="max dock-container-vertical flex-grow">
+            <g:SimplePanel ui:field="toolbarContainer" />
+            <g:SimplePanel ui:field="gridContainer" addStyleNames="stroom-floormap-background-grid flex-grow max" />
+        </g:FlowPanel>
+
+        <!-- RIGHT COLUMN: Location/Time Editor Form -->
+        <g:FlowPanel addStyleNames="dock-container-vertical">
+            <g:HTML styleName="stroom-label-header">Edit Temporal State</g:HTML>
+            <form:FormGroup label="Effective From Time">
+                <datetimebox:DateTimeBox ui:field="effectiveTimeBox" addStyleNames="timeline-date-box wide-control" />
+            </form:FormGroup>
+
+            <form:FormGroup label="X Coordinate">
+                <g:TextBox ui:field="xBox" addStyleNames="stroom-control wide-control" />
+            </form:FormGroup>
+
+            <form:FormGroup label="Y Coordinate">
+                <g:TextBox ui:field="yBox" addStyleNames="stroom-control wide-control" />
+            </form:FormGroup>
+
+            <g:FlowPanel addStyleNames="stroom-floormap-actions-group">
+                <g:Button ui:field="saveBtn" text="Commit Location State" addStyleNames="stroom-button stroom-button-blue" />
+            </g:FlowPanel>
+        </g:FlowPanel>
+    </g:FlowPanel>
+</ui:UiBinder>

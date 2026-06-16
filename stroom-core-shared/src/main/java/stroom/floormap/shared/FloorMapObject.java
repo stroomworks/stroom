@@ -18,22 +18,27 @@ package stroom.floormap.shared;
 
 public class FloorMapObject {
     private final String id;
-    private final double x;
-    private final double y;
     private final String type;
 
+    private double x;
+    private double y;
+
     public FloorMapObject(final String id,
+                          final String type,
                           final double x,
-                          final double y,
-                          final String type) {
+                          final double y) {
         this.id = id;
+        this.type = type;
         this.x = x;
         this.y = y;
-        this.type = type;
     }
 
     public String getId() {
         return id;
+    }
+
+    public String getType() {
+        return type;
     }
 
     public double getX() {
@@ -44,7 +49,11 @@ public class FloorMapObject {
         return y;
     }
 
-    public String getType() {
-        return type;
+    public void setX(final double x) {
+        this.x = x;
+    }
+
+    public void setY(final double y) {
+        this.y = y;
     }
 }

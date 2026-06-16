@@ -16,10 +16,14 @@
 
 package stroom.floormap.client.presenter;
 
+import stroom.floormap.client.event.MapObjectMovedEvent;
+import stroom.floormap.client.event.MapObjectSelectedEvent;
 import stroom.floormap.client.presenter.FloorMapCanvasPresenter.FloorMapCanvasView;
 import stroom.floormap.shared.FloorMapObject;
 import stroom.floormap.shared.FloorMapTransformationMatrix;
 
+import com.google.gwt.dom.client.Element;
+import com.google.gwt.dom.client.EventTarget;
 import com.google.gwt.event.dom.client.HasMouseDownHandlers;
 import com.google.gwt.event.dom.client.HasMouseMoveHandlers;
 import com.google.gwt.event.dom.client.HasMouseUpHandlers;
@@ -43,12 +47,17 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     private FloorMapTransformationMatrix matrix;
 
     // Dragging state
+    private boolean isDraggingEnabled = false;
     private boolean isDragging = false;
     private double lastMouseX;
     private double lastMouseY;
 
     // Objects on the map
     private List<FloorMapObject> objects = new ArrayList<>();
+
+    // Edit mode
+    private boolean editMode = false;
+    private String selectedObjectId = null;
 
     @Inject
     public FloorMapCanvasPresenter(final EventBus eventBus,
@@ -70,31 +79,82 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     }
 
     private void handleMouseEvents() {
-        // Mouse Down (Start Panning)
+
+        // Check if we clicked on an object in edit mode
         registerHandler(getView().getFocusPanel().addMouseDownHandler(event -> {
+            // Check if we clicked an object while in edit mode
+            if (editMode) {
+                final EventTarget target = event.getNativeEvent().getEventTarget();
+
+                if (Element.is(target)) {
+                    final Element element = Element.as(target);
+                    final String id = element.getId();
+
+                    // Check if we clicked on an actual map object shape (which does not start with "obj-")
+                    if (id != null && !id.isEmpty() && !id.startsWith("obj-")) {
+                        selectedObjectId = id;
+
+                        // Fire an event to tell the parent presenter to show the edit menu
+                        MapObjectSelectedEvent.fire(this, selectedObjectId);
+                        isDragging = true;
+                        lastMouseX = event.getX();
+                        lastMouseY = event.getY();
+
+                        // Stop panning
+                        return;
+                    }
+                }
+
+                // Clicked on background/empty space, clear selection and allow panning
+                selectedObjectId = null;
+            }
+
+            // Normal panning logic
             isDragging = true;
             lastMouseX = event.getX();
             lastMouseY = event.getY();
         }));
 
-        // Mouse Move (Dragging)
         registerHandler(getView().getMouseMoveHandlers().addMouseMoveHandler(event -> {
             if (isDragging) {
                 final double deltaX = event.getX() - lastMouseX;
                 final double deltaY = event.getY() - lastMouseY;
 
-                offsetX += deltaX;
-                offsetY += deltaY;
+                if (editMode && isDraggingEnabled && selectedObjectId != null) {
+                    // Move the selected object
+                    for (final FloorMapObject obj : objects) {
+                        if (obj.getId().equals(selectedObjectId)) {
+                            // Adjust for scale
+                            obj.setX(obj.getX() + (deltaX / scale));
+                            obj.setY(obj.getY() + (deltaY / scale));
+                            break;
+                        }
+                    }
+
+                    redraw();
+                } else {
+                    // Pan the map
+                    offsetX += deltaX;
+                    offsetY += deltaY;
+                    redraw();
+                }
 
                 lastMouseX = event.getX();
                 lastMouseY = event.getY();
-
-                redraw();
             }
         }));
 
-        // Mouse Up (Stop Panning)
         registerHandler(getView().getMouseUpHandlers().addMouseUpHandler(event -> {
+            if (isDragging && editMode && selectedObjectId != null) {
+                // Find the object's current coordinates
+                for (final FloorMapObject obj : objects) {
+                    if (obj.getId().equals(selectedObjectId)) {
+                        MapObjectMovedEvent.fire(this, selectedObjectId, obj.getX(), obj.getY());
+                        break;
+                    }
+                }
+            }
+
             isDragging = false;
         }));
 
@@ -141,6 +201,20 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     public void setObjects(final List<FloorMapObject> objects) {
         this.objects = objects;
         redraw();
+    }
+
+    public void setEditMode(final boolean editMode) {
+        this.editMode = editMode;
+        if (!editMode) {
+            selectedObjectId = null;
+        }
+
+        isDraggingEnabled = false;
+        redraw();
+    }
+
+    public void setIsDraggingEnabled(final boolean isDraggingEnabled) {
+        this.isDraggingEnabled = isDraggingEnabled;
     }
 
     public interface FloorMapCanvasView extends View, RequiresResize {

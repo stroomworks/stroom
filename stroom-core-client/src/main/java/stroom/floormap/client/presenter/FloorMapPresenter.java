@@ -27,6 +27,8 @@ import stroom.entity.client.presenter.MarkdownEditPresenter;
 import stroom.entity.client.presenter.MarkdownTabProvider;
 import stroom.floormap.shared.FloorMapDoc;
 import stroom.security.client.presenter.DocumentUserPermissionsTabProvider;
+import stroom.svg.shared.SvgImage;
+import stroom.widget.button.client.InlineSvgToggleButton;
 import stroom.widget.tab.client.presenter.TabData;
 import stroom.widget.tab.client.presenter.TabDataImpl;
 
@@ -48,6 +50,8 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
     private static final TabData PERMISSIONS = new TabDataImpl("Permissions");
 
     private final DocumentAssetPresenter<FloorMapDoc> documentAssetPresenter;
+    private final InlineSvgToggleButton editModeButton;
+    private FloorMapMapPresenter floorMapMapPresenter;
 
     @Inject
     public FloorMapPresenter(final EventBus eventBus,
@@ -61,7 +65,22 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
         super(eventBus, view);
         this.documentAssetPresenter = documentAssetPresenter;
 
-        addTab(MAP, new DocTabProvider<>(floorMapMapPresenterProvider::get));
+        editModeButton = new InlineSvgToggleButton();
+        editModeButton.setSvg(SvgImage.EDIT);
+        editModeButton.setTitle("Edit Mode");
+        editModeButton.setState(false);
+        toolbar.addButton(editModeButton);
+
+        registerHandler(editModeButton.addClickHandler(e -> {
+            if (floorMapMapPresenter != null) {
+                floorMapMapPresenter.toggleEditMode(editModeButton.getState());
+            }
+        }));
+
+        addTab(MAP, new DocTabProvider<>(() -> {
+            floorMapMapPresenter = floorMapMapPresenterProvider.get();
+            return floorMapMapPresenter;
+        }));
 
         addTab(QUERY, new AbstractTabProvider<FloorMapDoc, FloorMapQueryPresenter>(eventBus) {
             @Override
@@ -112,9 +131,21 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
     }
 
     @Override
+    protected void onRead(final DocRef docRef, final FloorMapDoc document, final boolean readOnly) {
+        super.onRead(docRef, document, readOnly);
+        if (editModeButton != null) {
+            editModeButton.setState(false);
+            editModeButton.setVisible(getSelectedTab() == MAP);
+        }
+    }
+
+    @Override
     protected void afterSelectTab(final PresenterWidget<?> content) {
         if (content == documentAssetPresenter) {
             onChange();
+        }
+        if (editModeButton != null) {
+            editModeButton.setVisible(content instanceof FloorMapMapPresenter);
         }
     }
 
@@ -135,7 +166,9 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
 
     @Override
     protected boolean hasAssociatedDirty() {
-        return super.hasAssociatedDirty() || (documentAssetPresenter != null && documentAssetPresenter.isDirty());
+        return super.hasAssociatedDirty() ||
+                (floorMapMapPresenter != null && floorMapMapPresenter.hasAssociatedDirty()) ||
+                (documentAssetPresenter != null && documentAssetPresenter.isDirty());
     }
 
     /**
