@@ -53,7 +53,7 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
     @UiField
     TextBox typeBox;
     @UiField
-    TextBox imgBox;
+    SimplePanel chooseImgContainer;
 
     @UiField
     FormGroup w2m_translation_group;
@@ -178,13 +178,8 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
     }
 
     @Override
-    public String getImg() {
-        return imgBox.getText();
-    }
-
-    @Override
-    public void setImg(final String img) {
-        imgBox.setText(img == null ? "" : img);
+    public void setChooseImgView(final Widget widget) {
+        chooseImgContainer.setWidget(widget);
     }
 
     @Override
@@ -282,7 +277,6 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
         yBox.setEnabled(enabled);
         nameBox.setEnabled(enabled);
         typeBox.setEnabled(enabled);
-        imgBox.setEnabled(enabled);
         w2m_tx.setEnabled(enabled);
         w2m_ty.setEnabled(enabled);
         w2m_sx.setEnabled(enabled);

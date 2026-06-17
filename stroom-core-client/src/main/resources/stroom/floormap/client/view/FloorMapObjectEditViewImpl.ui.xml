@@ -51,19 +51,19 @@
                     <g:TextBox ui:field="typeBox" addStyleNames="stroom-control wide-control" />
                 </form:FormGroup>
 
-                <form:FormGroup label="Img URL to Asset">
-                    <g:TextBox ui:field="imgBox" addStyleNames="stroom-control wide-control" />
+                <form:FormGroup label="Image">
+                    <g:SimplePanel ui:field="chooseImgContainer" addStyleNames="wide-control" />
                 </form:FormGroup>
 
                 <form:FormGroup label="Effective From Time">
                     <datetimebox:DateTimeBox ui:field="effectiveTimeBox" addStyleNames="timeline-date-box wide-control" />
                 </form:FormGroup>
 
-                <form:FormGroup label="X Coordinate">
+                <form:FormGroup label="World X Coordinate">
                     <g:TextBox ui:field="xBox" addStyleNames="stroom-control wide-control" />
                 </form:FormGroup>
 
-                <form:FormGroup label="Y Coordinate">
+                <form:FormGroup label="World Y Coordinate">
                     <g:TextBox ui:field="yBox" addStyleNames="stroom-control wide-control" />
                 </form:FormGroup>
 
