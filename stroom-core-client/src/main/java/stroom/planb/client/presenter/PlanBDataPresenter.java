@@ -2,14 +2,14 @@ package stroom.planb.client.presenter;
 
 import stroom.dispatch.client.RestFactory;
 import stroom.docref.DocRef;
+import stroom.planb.shared.PlanBDoc;
+import stroom.planb.shared.StateType;
 import stroom.query.api.Column;
 import stroom.query.client.presenter.AbstractQueryDataPresenter;
 import stroom.query.client.presenter.DateTimeSettingsFactory;
 import stroom.query.client.presenter.QueryDataView;
 import stroom.query.client.presenter.QueryResultTablePresenter;
 import stroom.query.client.presenter.ResultStoreModel;
-import stroom.planb.shared.PlanBDoc;
-import stroom.planb.shared.StateType;
 
 import com.google.inject.Inject;
 import com.google.web.bindery.event.shared.EventBus;
@@ -23,25 +23,40 @@ public class PlanBDataPresenter extends AbstractQueryDataPresenter<PlanBDataPres
     }
 
     // Column definitions
-    private final Column timeCol = Column.builder().id("EffectiveTime").name("Effective Time").expression("EffectiveTime").build();
+    private final Column timeCol = Column.builder()
+            .id("EffectiveTime").name("Effective Time").expression("EffectiveTime").build();
     private final Column keyCol = Column.builder().id("Key").name("Key").expression("Key").build();
-    private final Column valueCol = Column.builder().id("Value").name("Value").expression("substring(Value, 1, 100)").build();
+    private final Column valueCol = Column.builder()
+            .id("Value").name("Value").expression("substring(Value, 1, 100)").build();
     private final Column keyStartCol = Column.builder().id("KeyStart").name("Key Start").expression("KeyStart").build();
     private final Column keyEndCol = Column.builder().id("KeyEnd").name("Key End").expression("KeyEnd").build();
     private final Column startCol = Column.builder().id("Start").name("Start").expression("Start").build();
     private final Column endCol = Column.builder().id("End").name("End").expression("End").build();
     private final Column histTimeCol = Column.builder().id("Time").name("Time").expression("Time").build();
-    private final Column resolutionCol = Column.builder().id("Resolution").name("Resolution").expression("Resolution").build();
+    private final Column resolutionCol = Column.builder()
+            .id("Resolution").name("Resolution").expression("Resolution").build();
     private final Column minCol = Column.builder().id("Min").name("Min").expression("Min").build();
     private final Column maxCol = Column.builder().id("Max").name("Max").expression("Max").build();
     private final Column countCol = Column.builder().id("Count").name("Count").expression("Count").build();
     private final Column sumCol = Column.builder().id("Sum").name("Sum").expression("Sum").build();
     private final Column avgCol = Column.builder().id("Average").name("Average").expression("Average").build();
     private final Column traceIdCol = Column.builder().id("TraceId").name("Trace Id").expression("TraceId").build();
-    private final Column parentSpanIdCol = Column.builder().id("ParentSpanId").name("Parent Span Id").expression("ParentSpanId").build();
+    private final Column parentSpanIdCol = Column.builder()
+            .id("ParentSpanId")
+            .name("Parent Span Id")
+            .expression("ParentSpanId")
+            .build();
     private final Column spanIdCol = Column.builder().id("SpanId").name("Span Id").expression("SpanId").build();
-    private final Column traceStartTimeCol = Column.builder().id("StartTime").name("Start Time").expression("StartTime").build();
-    private final Column traceEndTimeCol = Column.builder().id("EndTime").name("End Time").expression("EndTime").build();
+    private final Column traceStartTimeCol = Column.builder()
+            .id("StartTime")
+            .name("Start Time")
+            .expression("StartTime")
+            .build();
+    private final Column traceEndTimeCol = Column.builder()
+            .id("EndTime")
+            .name("End Time")
+            .expression("EndTime")
+            .build();
 
     @Inject
     public PlanBDataPresenter(final EventBus eventBus,
@@ -56,16 +71,20 @@ public class PlanBDataPresenter extends AbstractQueryDataPresenter<PlanBDataPres
     @Override
     protected String getDefaultQuery(final DocRef docRef, final PlanBDoc doc) {
         final StateType stateType = doc.getStateType() != null ? doc.getStateType() : StateType.TEMPORAL_STATE;
+        final String prefix = "from \"" + docRef.getName() + "\" limit 100 select ";
         return switch (stateType) {
-            case STATE -> "from \"" + docRef.getName() + "\" select Key, Value";
-            case TEMPORAL_STATE -> "from \"" + docRef.getName() + "\" select EffectiveTime as \"Effective Time\", Key, Value";
-            case RANGED_STATE -> "from \"" + docRef.getName() + "\" select KeyStart as \"Key Start\", KeyEnd as \"Key End\", Value";
-            case TEMPORAL_RANGED_STATE -> "from \"" + docRef.getName() + "\" select EffectiveTime as \"Effective Time\", KeyStart as \"Key Start\", KeyEnd as \"Key End\", Value";
-            case SESSION -> "from \"" + docRef.getName() + "\" select Start, End, Key";
-            case HISTOGRAM -> "from \"" + docRef.getName() + "\" select Time, Key, Resolution, Value";
-            case METRIC -> "from \"" + docRef.getName() + "\" select Time, Key, Resolution, Value, Min, Max, Count, Sum, Average";
-            case TRACE -> "from \"" + docRef.getName() + "\" select StartTime as \"Start Time\", EndTime as \"End Time\", TraceId as \"Trace Id\", ParentSpanId as \"Parent Span Id\", SpanId as \"Span Id\"";
-            default -> "from \"" + docRef.getName() + "\" select EffectiveTime as \"Effective Time\", Key, Value";
+            case STATE -> prefix + "Key, Value";
+            case TEMPORAL_STATE -> prefix + "EffectiveTime as \"Effective Time\", Key, Value";
+            case RANGED_STATE -> prefix + "KeyStart as \"Key Start\", KeyEnd as \"Key End\", Value";
+            case TEMPORAL_RANGED_STATE -> prefix
+                    + "EffectiveTime as \"Effective Time\", KeyStart as \"Key Start\", KeyEnd as \"Key End\", Value";
+            case SESSION -> prefix + "Start, End, Key";
+            case HISTOGRAM -> prefix + "Time, Key, Resolution, Value";
+            case METRIC -> prefix + "Time, Key, Resolution, Value, Min, Max, Count, Sum, Average";
+            case TRACE -> prefix
+                    + "StartTime as \"Start Time\", EndTime as \"End Time\", TraceId as \"Trace Id\", "
+                    + "ParentSpanId as \"Parent Span Id\", SpanId as \"Span Id\"";
+            default -> prefix + "EffectiveTime as \"Effective Time\", Key, Value";
         };
     }
 
@@ -79,7 +98,8 @@ public class PlanBDataPresenter extends AbstractQueryDataPresenter<PlanBDataPres
             case TEMPORAL_RANGED_STATE -> Arrays.asList(timeCol, keyStartCol, keyEndCol, valueCol);
             case SESSION -> Arrays.asList(startCol, endCol, keyCol);
             case HISTOGRAM -> Arrays.asList(histTimeCol, keyCol, resolutionCol, valueCol);
-            case METRIC -> Arrays.asList(histTimeCol, keyCol, resolutionCol, valueCol, minCol, maxCol, countCol, sumCol, avgCol);
+            case METRIC -> Arrays.asList(
+                    histTimeCol, keyCol, resolutionCol, valueCol, minCol, maxCol, countCol, sumCol, avgCol);
             case TRACE -> Arrays.asList(traceStartTimeCol, traceEndTimeCol, traceIdCol, parentSpanIdCol, spanIdCol);
             default -> Arrays.asList(timeCol, keyCol, valueCol);
         };

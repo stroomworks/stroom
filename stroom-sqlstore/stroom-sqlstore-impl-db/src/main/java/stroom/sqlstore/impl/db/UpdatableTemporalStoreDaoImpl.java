@@ -24,8 +24,8 @@ import stroom.query.api.ExpressionOperator;
 import stroom.query.api.ExpressionTerm;
 import stroom.query.api.ExpressionUtil;
 import stroom.sqlstore.api.UpdatableTemporalStore;
-import stroom.util.date.DateUtil;
 import stroom.sqlstore.impl.UpdatableTemporalStoreDao;
+import stroom.util.date.DateUtil;
 import stroom.util.shared.ResultPage;
 import stroom.util.shared.TemporalEntry;
 import stroom.util.shared.TemporalEntryId;
@@ -38,19 +38,16 @@ import org.jooq.Record3;
 import org.jooq.SelectHavingStep;
 import org.jooq.Table;
 import org.jooq.impl.DSL;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Consumer;
 
-import static stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore.UPDATABLE_TEMPORAL_STORE;
-
 @Singleton
 class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(UpdatableTemporalStoreDaoImpl.class);
+    private static final stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore UPDATABLE_TEMPORAL_STORE =
+            stroom.sqlstore.impl.db.jooq.tables.UpdatableTemporalStore.UPDATABLE_TEMPORAL_STORE;
 
     private final SqlStoreDbConnProvider sqlStoreDbConnProvider;
     private final ExpressionMapperFactory expressionMapperFactory;
@@ -78,6 +75,7 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
 
     @Override
     public TemporalEntry create(final TemporalEntry entry) {
+        validateTemporalEntry(entry);
         JooqUtil.context(sqlStoreDbConnProvider, context -> context
                 .insertInto(UPDATABLE_TEMPORAL_STORE)
                 .set(UPDATABLE_TEMPORAL_STORE.MAP_NAME, entry.getMap())
@@ -97,6 +95,7 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
 
     @Override
     public Optional<TemporalEntry> fetch(final TemporalEntryId id) {
+        validateTemporalEntryId(id);
         return JooqUtil.contextResult(sqlStoreDbConnProvider, context -> context
                 .selectFrom(UPDATABLE_TEMPORAL_STORE)
                 .where(UPDATABLE_TEMPORAL_STORE.MAP_NAME.eq(id.getMap()))
@@ -112,6 +111,7 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
 
     @Override
     public boolean delete(final TemporalEntryId id) {
+        validateTemporalEntryId(id);
         return JooqUtil.contextResult(sqlStoreDbConnProvider, context -> context
                 .deleteFrom(UPDATABLE_TEMPORAL_STORE)
                 .where(UPDATABLE_TEMPORAL_STORE.MAP_NAME.eq(id.getMap()))
@@ -122,6 +122,7 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
 
     @Override
     public ResultPage<TemporalEntry> find(final ExpressionCriteria criteria) {
+        validateCriteriaMapName(criteria);
         final Long queryTime = getQueryTime(criteria);
         if (queryTime != null) {
             final ExpressionOperator filteredExpression = getFilteredExpression(criteria);
@@ -196,6 +197,7 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
 
     @Override
     public void clear(final String mapName) {
+        validateMapName(mapName);
         JooqUtil.context(sqlStoreDbConnProvider, context -> context
                 .deleteFrom(UPDATABLE_TEMPORAL_STORE)
                 .where(UPDATABLE_TEMPORAL_STORE.MAP_NAME.eq(mapName))
@@ -204,6 +206,7 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
 
     @Override
     public long count(final String mapName) {
+        validateMapName(mapName);
         return JooqUtil.contextResult(sqlStoreDbConnProvider, context -> context
                 .selectCount()
                 .from(UPDATABLE_TEMPORAL_STORE)
@@ -214,25 +217,25 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
     /**
      * Executes a search query on the updatable temporal store and streams matching entries to the consumer.
      * The method distinguishes between two query paths based on the presence of a query/lookup time:
-     * 
+     *
      * <p><b>1. QueryTime Path (Temporal Lookup):</b>
      * If a temporal query time boundary is present (e.g., from a lookup request at a specific point in time),
-     * the search retrieves the single most recent (effective) entry for each map and key that is valid at or 
+     * the search retrieves the single most recent (effective) entry for each map and key that is valid at or
      * before the specified time.
      * <ul>
-     *   <li>A subquery is constructed over the aliased table <code>t2</code> to find the maximum effective 
-     *       time (<code>max(effective_time)</code>) for each map and key combination that is less than or 
+     *   <li>A subquery is constructed over the aliased table <code>t2</code> to find the maximum effective
+     *       time (<code>max(effective_time)</code>) for each map and key combination that is less than or
      *       equal to the query time (<code>t2.effective_time &lt;= queryTime</code>).</li>
-     *   <li>The subquery is joined back onto the main table <code>t1</code> on matching keys, maps, and 
+     *   <li>The subquery is joined back onto the main table <code>t1</code> on matching keys, maps, and
      *       effective times to fetch the corresponding value.</li>
-     *   <li>The returned {@link TemporalEntry} contains the actual <code>effective_time</code> matching the latest 
+     *   <li>The returned {@link TemporalEntry} contains the actual <code>effective_time</code> matching the latest
      *       available point in time resolved by the lookup.</li>
      * </ul>
-     * 
+     *
      * <p><b>2. Standard Path (Bulk/Unbounded Search):</b>
      * If no query time is specified, a standard search is performed.
      * <ul>
-     *   <li>It executes a direct SELECT query against the <code>UPDATABLE_TEMPORAL_STORE</code> table, filtering 
+     *   <li>It executes a direct SELECT query against the <code>UPDATABLE_TEMPORAL_STORE</code> table, filtering
      *       using the expression criteria.</li>
      *   <li>This returns all matching records across all historical time points.</li>
      * </ul>
@@ -242,7 +245,7 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
      */
     @Override
     public void search(final ExpressionCriteria criteria, final Consumer<TemporalEntry> consumer) {
-        LOGGER.info("Starting SQL Store search with criteria expression: {}", criteria.getExpression());
+        validateCriteriaMapName(criteria);
         final Long queryTime = getQueryTime(criteria);
         if (queryTime != null) {
             final ExpressionOperator filteredExpression = getFilteredExpression(criteria);
@@ -267,8 +270,6 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
                     String::valueOf);
 
             final Condition condition = localExpressionMapper.apply(filteredExpression);
-            LOGGER.info("QueryTime path. queryTime: {}, condition: {}", queryTime, condition);
-
             final SelectHavingStep<Record3<String, String, Long>> subquery = DSL.select(
                             t2.MAP_NAME.as("sub_map"),
                             t2.KEY_.as("sub_key"),
@@ -290,7 +291,6 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
                     .on(t1.MAP_NAME.eq(subMap))
                     .and(t1.KEY_.eq(subKey))
                     .and(t1.EFFECTIVE_TIME.eq(maxTime));
-            LOGGER.info("Executing SQL: {}", query.getSQL());
 
             JooqUtil.context(sqlStoreDbConnProvider, context -> context
                     .select(t1.MAP_NAME, t1.KEY_, t1.EFFECTIVE_TIME, t1.VALUE_)
@@ -301,11 +301,6 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
                     .and(t1.EFFECTIVE_TIME.eq(maxTime))
                     .fetch()
                     .forEach(record -> {
-                        LOGGER.info("Found record (QueryTime path) -> Map: {}, Key: {}, Time: {}, Value: {}",
-                                record.get(t1.MAP_NAME),
-                                record.get(t1.KEY_),
-                                record.get(t1.EFFECTIVE_TIME),
-                                record.get(t1.VALUE_));
                         consumer.accept(new TemporalEntry(
                                 record.get(t1.MAP_NAME),
                                 record.get(t1.KEY_),
@@ -314,19 +309,14 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
                     }));
         } else {
             final Condition condition = expressionMapper.apply(criteria.getExpression());
-            LOGGER.info("Standard path. condition: {}", condition);
-
             final org.jooq.Query query = DSL.selectFrom(UPDATABLE_TEMPORAL_STORE)
                     .where(condition);
-            LOGGER.info("Executing SQL: {}", query.getSQL());
 
             JooqUtil.context(sqlStoreDbConnProvider, context -> context
                     .selectFrom(UPDATABLE_TEMPORAL_STORE)
                     .where(condition)
                     .fetch()
                     .forEach(record -> {
-                        LOGGER.info("Found record (Standard path) -> Map: {}, Key: {}, Time: {}, Value: {}",
-                                record.getMapName(), record.getKey_(), record.getEffectiveTime(), record.getValue_());
                         consumer.accept(new TemporalEntry(
                                 record.getMapName(),
                                 record.getKey_(),
@@ -371,5 +361,63 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
                     }
                     return true;
                 });
+    }
+
+    private void validateMapName(final String mapName) {
+        if (mapName == null || mapName.isBlank()) {
+            throw new IllegalArgumentException("Map name must be defined and not empty.");
+        }
+    }
+
+    private void validateTemporalEntry(final TemporalEntry entry) {
+        if (entry == null) {
+            throw new IllegalArgumentException("Entry cannot be null.");
+        }
+        if (entry.getMap() == null || entry.getMap().isBlank()) {
+            throw new IllegalArgumentException("Map name must be defined and not empty.");
+        }
+        if (entry.getKey() == null || entry.getKey().isBlank()) {
+            throw new IllegalArgumentException("Key must be defined and not empty.");
+        }
+        if (entry.getEffectiveTimeMs() == null) {
+            throw new IllegalArgumentException("Effective time must be defined.");
+        }
+    }
+
+    private void validateTemporalEntryId(final TemporalEntryId id) {
+        if (id == null) {
+            throw new IllegalArgumentException("Id cannot be null.");
+        }
+        if (id.getMap() == null || id.getMap().isBlank()) {
+            throw new IllegalArgumentException("Map name must be defined and not empty.");
+        }
+        if (id.getKey() == null || id.getKey().isBlank()) {
+            throw new IllegalArgumentException("Key must be defined and not empty.");
+        }
+        if (id.getEffectiveTimeMs() == null) {
+            throw new IllegalArgumentException("Effective time must be defined.");
+        }
+    }
+
+    private void validateCriteriaMapName(final ExpressionCriteria criteria) {
+        if (criteria == null || criteria.getExpression() == null) {
+            throw new IllegalArgumentException("Query criteria and expression must be defined.");
+        }
+        final List<ExpressionTerm> mapTerms = ExpressionUtil.terms(
+                criteria.getExpression(),
+                List.of(UpdatableTemporalStore.MAP_FIELD.getFldName()));
+
+        if (mapTerms.isEmpty()) {
+            throw new IllegalArgumentException("Map name must be defined in the query criteria.");
+        }
+
+        for (final ExpressionTerm term : mapTerms) {
+            if (term != null
+                    && term.getField() != null
+                    && term.getField().equals(UpdatableTemporalStore.MAP_FIELD.getFldName())) {
+                final String value = term.getValue();
+                validateMapName(value);
+            }
+        }
     }
 }

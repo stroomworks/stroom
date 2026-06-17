@@ -59,6 +59,16 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     private boolean editMode = false;
     private String selectedObjectId = null;
 
+    private DragHandler dragHandler;
+
+    public void setDragHandler(final DragHandler dragHandler) {
+        this.dragHandler = dragHandler;
+    }
+
+    public interface DragHandler {
+        void onDrag(String objectId, double x, double y, FloorMapTransformationMatrix bgMatrix);
+    }
+
     @Inject
     public FloorMapCanvasPresenter(final EventBus eventBus,
                                    final FloorMapCanvasView view) {
@@ -92,16 +102,21 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
                     // Check if we clicked on an actual map object shape (which does not start with "obj-")
                     if (id != null && !id.isEmpty() && !id.startsWith("obj-")) {
-                        selectedObjectId = id;
+                        // If Ctrl or Shift is pressed and it is the background, allow panning instead of background drag
+                        if ("background".equals(id) && (event.getNativeEvent().getCtrlKey() || event.getNativeEvent().getShiftKey())) {
+                            selectedObjectId = null;
+                        } else {
+                            selectedObjectId = id;
 
-                        // Fire an event to tell the parent presenter to show the edit menu
-                        MapObjectSelectedEvent.fire(this, selectedObjectId);
-                        isDragging = true;
-                        lastMouseX = event.getX();
-                        lastMouseY = event.getY();
+                            // Fire an event to tell the parent presenter to show the edit menu
+                            MapObjectSelectedEvent.fire(this, selectedObjectId);
+                            isDragging = true;
+                            lastMouseX = event.getX();
+                            lastMouseY = event.getY();
 
-                        // Stop panning
-                        return;
+                            // Stop panning
+                            return;
+                        }
                     }
                 }
 
@@ -121,13 +136,43 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                 final double deltaY = event.getY() - lastMouseY;
 
                 if (editMode && isDraggingEnabled && selectedObjectId != null) {
-                    // Move the selected object
-                    for (final FloorMapObject obj : objects) {
-                        if (obj.getId().equals(selectedObjectId)) {
-                            // Adjust for scale
-                            obj.setX(obj.getX() + (deltaX / scale));
-                            obj.setY(obj.getY() + (deltaY / scale));
-                            break;
+                    if ("background".equals(selectedObjectId)) {
+                        // Dragging the background (updates the background's tm-map-to-screen matrix)
+                        final double deltaUnzoomedX = deltaX / scale;
+                        final double deltaUnzoomedY = deltaY / scale;
+                        if (matrix != null) {
+                            matrix = new FloorMapTransformationMatrix(
+                                    matrix.getA(), matrix.getB(),
+                                    matrix.getC(), matrix.getD(),
+                                    matrix.getE() + deltaUnzoomedX,
+                                    matrix.getF() + deltaUnzoomedY
+                            );
+                        } else {
+                            matrix = new FloorMapTransformationMatrix(1, 0, 0, 1, deltaUnzoomedX, deltaUnzoomedY);
+                        }
+                        if (dragHandler != null) {
+                            dragHandler.onDrag("background", matrix.getE(), matrix.getF(), matrix);
+                        }
+                    } else {
+                        // Move the selected object (non-background)
+                        for (final FloorMapObject obj : objects) {
+                            if (obj.getId().equals(selectedObjectId)) {
+                                // Revert scale to get unzoomed screen delta
+                                final double deltaUnzoomedX = deltaX / scale;
+                                final double deltaUnzoomedY = deltaY / scale;
+
+                                // Revert active background's M_map_to_screen matrix to get delta in map space
+                                final FloorMapTransformationMatrix invBgMatrix = matrix != null ? matrix.inverse() : FloorMapTransformationMatrix.identity();
+                                final double deltaMapX = invBgMatrix.getA() * deltaUnzoomedX + invBgMatrix.getC() * deltaUnzoomedY;
+                                final double deltaMapY = invBgMatrix.getB() * deltaUnzoomedX + invBgMatrix.getD() * deltaUnzoomedY;
+
+                                obj.setX(obj.getX() + deltaMapX);
+                                obj.setY(obj.getY() + deltaMapY);
+                                if (dragHandler != null) {
+                                    dragHandler.onDrag(selectedObjectId, obj.getX(), obj.getY(), matrix);
+                                }
+                                break;
+                            }
                         }
                     }
 
@@ -146,11 +191,15 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
         registerHandler(getView().getMouseUpHandlers().addMouseUpHandler(event -> {
             if (isDragging && editMode && selectedObjectId != null) {
-                // Find the object's current coordinates
-                for (final FloorMapObject obj : objects) {
-                    if (obj.getId().equals(selectedObjectId)) {
-                        MapObjectMovedEvent.fire(this, selectedObjectId, obj.getX(), obj.getY());
-                        break;
+                if ("background".equals(selectedObjectId)) {
+                    MapObjectMovedEvent.fire(this, "background", matrix.getE(), matrix.getF());
+                } else {
+                    // Find the object's current coordinates
+                    for (final FloorMapObject obj : objects) {
+                        if (obj.getId().equals(selectedObjectId)) {
+                            MapObjectMovedEvent.fire(this, selectedObjectId, obj.getX(), obj.getY());
+                            break;
+                        }
                     }
                 }
             }
@@ -180,12 +229,21 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     }
 
     private void redraw() {
-        getView().draw(scale, offsetX, offsetY, backgroundImage, matrix, objects);
+        getView().draw(scale, offsetX, offsetY, backgroundImage, matrix, objects, selectedObjectId);
+    }
+
+    public void setSelectedObjectId(final String selectedObjectId) {
+        this.selectedObjectId = selectedObjectId;
+        redraw();
     }
 
     public void setMatrix(final FloorMapTransformationMatrix matrix) {
         this.matrix = matrix;
         redraw();
+    }
+
+    public FloorMapTransformationMatrix getMatrix() {
+        return matrix;
     }
 
     /**
@@ -217,6 +275,10 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         this.isDraggingEnabled = isDraggingEnabled;
     }
 
+    public String getSelectedObjectId() {
+        return selectedObjectId;
+    }
+
     public interface FloorMapCanvasView extends View, RequiresResize {
 
         HasMouseDownHandlers getFocusPanel();
@@ -227,7 +289,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
         HasMouseWheelHandlers getMouseWheelHandlers();
 
-        void draw(double scale, double x, double y, String backgroundImage, FloorMapTransformationMatrix matrix, List<FloorMapObject> objects);
+        void draw(double scale, double x, double y, String backgroundImage, FloorMapTransformationMatrix matrix, List<FloorMapObject> objects, String selectedObjectId);
     }
 
 }

@@ -12,6 +12,7 @@ import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
 import com.google.gwt.uibinder.client.UiHandler;
 import com.google.gwt.user.client.ui.Label;
+import com.google.gwt.user.client.ui.ScrollPanel;
 import com.google.gwt.user.client.ui.SimplePanel;
 import com.google.gwt.user.client.ui.TextBox;
 import com.google.gwt.user.client.ui.Widget;
@@ -29,6 +30,8 @@ public class QueryDataViewImpl extends ViewWithUiHandlers<QueryDataUiHandlers> i
     @UiField
     TextBox query;
     @UiField
+    ScrollPanel errorContainer;
+    @UiField
     Label errorLabel;
     @UiField
     InlineSvgButton undo;
@@ -36,6 +39,8 @@ public class QueryDataViewImpl extends ViewWithUiHandlers<QueryDataUiHandlers> i
     InlineSvgButton run;
     @UiField
     InlineSvgButton stop;
+    @UiField
+    InlineSvgButton createDashboard;
     @UiField
     SimplePanel tableContainer;
 
@@ -45,6 +50,7 @@ public class QueryDataViewImpl extends ViewWithUiHandlers<QueryDataUiHandlers> i
         undo.setSvg(SvgImage.UNDO);
         run.setSvg(SvgImage.PLAY);
         stop.setSvg(SvgImage.STOP);
+        createDashboard.setSvg(SvgImage.DOCUMENT_DASHBOARD);
     }
 
     @Override
@@ -72,7 +78,7 @@ public class QueryDataViewImpl extends ViewWithUiHandlers<QueryDataUiHandlers> i
     public void setError(final String error) {
         if (error != null && !error.trim().isEmpty()) {
             errorLabel.setText(error);
-            errorLabel.setVisible(true);
+            errorContainer.setVisible(true);
             query.addStyleName("invalid");
         } else {
             clearError();
@@ -82,7 +88,7 @@ public class QueryDataViewImpl extends ViewWithUiHandlers<QueryDataUiHandlers> i
     @Override
     public void clearError() {
         errorLabel.setText("");
-        errorLabel.setVisible(false);
+        errorContainer.setVisible(false);
         query.removeStyleName("invalid");
     }
 
@@ -113,6 +119,14 @@ public class QueryDataViewImpl extends ViewWithUiHandlers<QueryDataUiHandlers> i
     public void onStop(final ClickEvent event) {
         if (getUiHandlers() != null) {
             getUiHandlers().onStop();
+        }
+    }
+
+    @UiHandler("createDashboard")
+    @SuppressWarnings("unused")
+    public void onCreateDashboard(final ClickEvent event) {
+        if (getUiHandlers() != null) {
+            getUiHandlers().onCreateDashboard();
         }
     }
 

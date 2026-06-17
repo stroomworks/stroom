@@ -110,7 +110,8 @@ public class FloorMapCanvasViewImpl
                      final double y,
                      final String backgroundImage,
                      final FloorMapTransformationMatrix matrix,
-                     final List<FloorMapObject> objects) {
+                     final List<FloorMapObject> objects,
+                     final String selectedObjectId) {
         final HtmlBuilder htmlBuilder = new HtmlBuilder();
         final String svgMatrix = matrix != null ? matrix.toSvgMatrix() : FloorMapTransformationMatrix.identity().toSvgMatrix();
 
@@ -129,7 +130,22 @@ public class FloorMapCanvasViewImpl
                             new Attribute("y", "0"),
                             new Attribute("width", "1000"),
                             new Attribute("height", "1000"),
-                            new Attribute("preserveAspectRatio", "none"));
+                            new Attribute("preserveAspectRatio", "none"),
+                            new Attribute("id", "background"));
+                        
+                        if ("background".equals(selectedObjectId)) {
+                            // Render a highlight border on top of the background image
+                            matrixGroup.elem(SafeHtmlUtil.from("rect"),
+                                new Attribute("x", "0"),
+                                new Attribute("y", "0"),
+                                new Attribute("width", "1000"),
+                                new Attribute("height", "1000"),
+                                new Attribute("fill", "none"),
+                                new Attribute("stroke", "#1e88e5"),
+                                new Attribute("stroke-width", "8"),
+                                new Attribute("vector-effect", "non-scaling-stroke"),
+                                new Attribute("pointer-events", "none"));
+                        }
                     } else {
                         // Fallback background rect
                         group.elem(SafeHtmlUtil.from("rect"),
@@ -137,7 +153,21 @@ public class FloorMapCanvasViewImpl
                             new Attribute("y", "0"),
                             new Attribute("width", "1000"),
                             new Attribute("height", "1000"),
-                            new Attribute("fill", "#FFFFFF"));
+                            new Attribute("fill", "#FFFFFF"),
+                            new Attribute("id", "background"));
+                        
+                        if ("background".equals(selectedObjectId)) {
+                            group.elem(SafeHtmlUtil.from("rect"),
+                                new Attribute("x", "0"),
+                                new Attribute("y", "0"),
+                                new Attribute("width", "1000"),
+                                new Attribute("height", "1000"),
+                                new Attribute("fill", "none"),
+                                new Attribute("stroke", "#1e88e5"),
+                                new Attribute("stroke-width", "8"),
+                                new Attribute("vector-effect", "non-scaling-stroke"),
+                                new Attribute("pointer-events", "none"));
+                        }
                     }
 
                     if (objects != null) {
@@ -146,6 +176,7 @@ public class FloorMapCanvasViewImpl
 
                                 // Determine if this object is a person.
                                 final boolean isPerson = obj.getType() != null && obj.getType().equalsIgnoreCase("person");
+                                final boolean isSelected = obj.getId().equals(selectedObjectId);
 
                                 if (isPerson) {
                                     // Render a small blue circle for users.
@@ -154,8 +185,9 @@ public class FloorMapCanvasViewImpl
                                         new Attribute("cy", "0"),
                                         new Attribute("r", (OBJECT_SIZE / 4) + ""),
                                         new Attribute("fill", "#1f77b4"),
-                                        new Attribute("stroke", "#ffffff"),
-                                        new Attribute("stroke-width", "2"),
+                                        new Attribute("stroke", isSelected ? "#1e88e5" : "#ffffff"),
+                                        new Attribute("stroke-width", isSelected ? "4" : "2"),
+                                        new Attribute("vector-effect", isSelected ? "non-scaling-stroke" : "none"),
                                         new Attribute("id", obj.getId())
                                     );
                                 } else {
@@ -168,6 +200,9 @@ public class FloorMapCanvasViewImpl
                                         new Attribute("fill", "grey"),
                                         new Attribute("rx", "4"), // Round corners
                                         new Attribute("ry", "4"),
+                                        new Attribute("stroke", isSelected ? "#1e88e5" : "none"),
+                                        new Attribute("stroke-width", isSelected ? "4" : "0"),
+                                        new Attribute("vector-effect", isSelected ? "non-scaling-stroke" : "none"),
                                         new Attribute("id", obj.getId())
                                     );
                                 }

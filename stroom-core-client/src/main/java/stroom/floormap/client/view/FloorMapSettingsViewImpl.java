@@ -41,6 +41,7 @@ import com.google.gwt.user.client.ui.TextBox;
 import com.google.gwt.user.client.ui.Widget;
 import com.google.inject.Inject;
 import com.google.inject.Provider;
+import com.gwtplatform.mvp.client.View;
 import com.gwtplatform.mvp.client.ViewWithUiHandlers;
 
 public class FloorMapSettingsViewImpl
@@ -71,6 +72,9 @@ public class FloorMapSettingsViewImpl
     SimplePanel gridContainer;
 
     @UiField
+    SimplePanel temporalStoreRefContainer;
+
+    @UiField
     ValueSpinner rotation;
 
     @UiField
@@ -89,6 +93,11 @@ public class FloorMapSettingsViewImpl
     @Override
     public Widget asWidget() {
         return widget;
+    }
+
+    @Override
+    public void setTemporalStoreRefView(final View view) {
+        this.temporalStoreRefContainer.setWidget(view.asWidget());
     }
 
     @Override
@@ -155,17 +164,20 @@ public class FloorMapSettingsViewImpl
     }
 
     @UiHandler("browseButton")
+    @SuppressWarnings("unused")
     void onBrowseClick(final ClickEvent event) {
         fileUpload.click();
     }
 
     @UiHandler("fileUpload")
+    @SuppressWarnings("unused")
     void onFileUploadChange(final ChangeEvent event) {
         final Element element = fileUpload.getElement();
         readFile(element);
     }
 
     @UiHandler("backgroundImage")
+    @SuppressWarnings("unused")
     void onBackgroundImageChange(final ValueChangeEvent<String> event) {
         imagePreview.setUrl(event.getValue());
         if (getUiHandlers() != null) {

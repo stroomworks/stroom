@@ -4,7 +4,7 @@
              xmlns:form="urn:import:stroom.widget.form.client"
              xmlns:l="urn:import:stroom.item.client">
     <g:FlowPanel styleName="max dock-container-vertical">
-        <g:FlowPanel styleName="dock-min dock-container-horizontal form-padding form align-center">
+        <g:FlowPanel ui:field="columnMappingsContainer" styleName="dock-min dock-container-horizontal form-padding form align-center">
             <form:FormGroup identity="entityColumn" label="Entity ID Column" addStyleNames="margin-right-10 flex-grow-1">
                 <l:SelectionBox ui:field="entityIdColumn" addStyleNames="w-100"/>
             </form:FormGroup>

@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2016-2026 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,11 +14,17 @@
  * limitations under the License.
  */
 
-package stroom.index.client.presenter;
+package stroom.index.client.view;
 
-import stroom.document.client.event.ChangeUiHandlers;
+import stroom.index.client.presenter.IndexDataPresenter.IndexDataView;
+import stroom.query.client.view.QueryDataViewImpl;
 
-public interface IndexSettingsUiHandlers extends ChangeUiHandlers {
+import com.google.inject.Inject;
 
-    void onReset();
+public class IndexDataViewImpl extends QueryDataViewImpl implements IndexDataView {
+
+    @Inject
+    public IndexDataViewImpl(final Binder binder) {
+        super(binder);
+    }
 }

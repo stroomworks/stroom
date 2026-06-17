@@ -49,12 +49,16 @@ public class FloorMapDoc extends AbstractDoc {
     private final String description;
     @JsonProperty
     private final String template;
+    @Deprecated
     @JsonProperty
     private final List<FloorMapBackground> backgroundImages;
+    @Deprecated
     @JsonProperty
     private final String query;
+    @Deprecated
     @JsonProperty
     private final TimeRange queryTimeRange;
+    @Deprecated
     @JsonProperty
     private final QueryTablePreferences queryTablePreferences;
     @JsonProperty
@@ -63,6 +67,21 @@ public class FloorMapDoc extends AbstractDoc {
     private final String entityIdColumn;
     @JsonProperty
     private final String locationIdColumn;
+
+    @JsonProperty
+    private final DocRef temporalStoreRef;
+    @JsonProperty
+    private final String eventsQuery;
+    @JsonProperty
+    private final TimeRange eventsQueryTimeRange;
+    @JsonProperty
+    private final QueryTablePreferences eventsQueryTablePreferences;
+    @JsonProperty
+    private final String factsQuery;
+    @JsonProperty
+    private final TimeRange factsQueryTimeRange;
+    @JsonProperty
+    private final QueryTablePreferences factsQueryTablePreferences;
 
     @JsonCreator
     public FloorMapDoc(@JsonProperty("uuid") final String uuid,
@@ -80,7 +99,14 @@ public class FloorMapDoc extends AbstractDoc {
                        @JsonProperty("queryTablePreferences") final QueryTablePreferences queryTablePreferences,
                        @JsonProperty("matrix") final FloorMapTransformationMatrix matrix,
                        @JsonProperty("entityIdColumn") final String entityIdColumn,
-                       @JsonProperty("locationIdColumn") final String locationIdColumn) {
+                       @JsonProperty("locationIdColumn") final String locationIdColumn,
+                       @JsonProperty("temporalStoreRef") final DocRef temporalStoreRef,
+                       @JsonProperty("eventsQuery") final String eventsQuery,
+                       @JsonProperty("eventsQueryTimeRange") final TimeRange eventsQueryTimeRange,
+                       @JsonProperty("eventsQueryTablePreferences") final QueryTablePreferences eventsQueryTablePreferences,
+                       @JsonProperty("factsQuery") final String factsQuery,
+                       @JsonProperty("factsQueryTimeRange") final TimeRange factsQueryTimeRange,
+                       @JsonProperty("factsQueryTablePreferences") final QueryTablePreferences factsQueryTablePreferences) {
         super(TYPE, uuid,
                 name,
                 version,
@@ -92,12 +118,24 @@ public class FloorMapDoc extends AbstractDoc {
         this.description = description;
         this.template = template;
         this.backgroundImages = backgroundImages;
-        this.query = query;
-        this.queryTimeRange = queryTimeRange;
-        this.queryTablePreferences = queryTablePreferences;
         this.matrix = matrix != null ? matrix : FloorMapTransformationMatrix.identity();
         this.entityIdColumn = entityIdColumn;
         this.locationIdColumn = locationIdColumn;
+
+        this.temporalStoreRef = temporalStoreRef;
+
+        // Backward compatibility fallback handling
+        this.eventsQuery = eventsQuery != null ? eventsQuery : query;
+        this.eventsQueryTimeRange = eventsQueryTimeRange != null ? eventsQueryTimeRange : queryTimeRange;
+        this.eventsQueryTablePreferences = eventsQueryTablePreferences != null ? eventsQueryTablePreferences : queryTablePreferences;
+
+        this.factsQuery = factsQuery;
+        this.factsQueryTimeRange = factsQueryTimeRange;
+        this.factsQueryTablePreferences = factsQueryTablePreferences;
+
+        this.query = query != null ? query : this.eventsQuery;
+        this.queryTimeRange = queryTimeRange != null ? queryTimeRange : this.eventsQueryTimeRange;
+        this.queryTablePreferences = queryTablePreferences != null ? queryTablePreferences : this.eventsQueryTablePreferences;
     }
 
     public String getDescription() {
@@ -108,18 +146,22 @@ public class FloorMapDoc extends AbstractDoc {
         return template;
     }
 
+    @Deprecated
     public List<FloorMapBackground> getBackgroundImages() {
         return backgroundImages;
     }
 
+    @Deprecated
     public String getQuery() {
         return query;
     }
 
+    @Deprecated
     public TimeRange getQueryTimeRange() {
         return queryTimeRange;
     }
 
+    @Deprecated
     public QueryTablePreferences getQueryTablePreferences() {
         return queryTablePreferences;
     }
@@ -128,6 +170,7 @@ public class FloorMapDoc extends AbstractDoc {
      * Gets the background image that should be active at the specified time.
      * Finds the image with the latest validFromTime that is <= currentTime.
      */
+    @Deprecated
     public FloorMapBackground getActiveBackground(final long currentTime) {
         FloorMapBackground active = null;
         if (backgroundImages != null) {
@@ -149,6 +192,38 @@ public class FloorMapDoc extends AbstractDoc {
 
     public String getLocationIdColumn() {
         return locationIdColumn;
+    }
+
+    public DocRef getTemporalStoreRef() {
+        return temporalStoreRef;
+    }
+
+    public String getEventsQuery() {
+        return eventsQuery;
+    }
+
+    public TimeRange getEventsQueryTimeRange() {
+        return eventsQueryTimeRange;
+    }
+
+    public QueryTablePreferences getEventsQueryTablePreferences() {
+        return eventsQueryTablePreferences;
+    }
+
+    public String getFactsQuery() {
+        return factsQuery;
+    }
+
+    public TimeRange getFactsQueryTimeRange() {
+        return factsQueryTimeRange;
+    }
+
+    public QueryTablePreferences getFactsQueryTablePreferences() {
+        return factsQueryTablePreferences;
+    }
+
+    public FloorMapTransformationMatrix getMatrix() {
+        return matrix;
     }
 
     /**
@@ -178,7 +253,14 @@ public class FloorMapDoc extends AbstractDoc {
                Objects.equals(queryTablePreferences, that.queryTablePreferences) &&
                Objects.equals(matrix, that.matrix) &&
                Objects.equals(entityIdColumn, that.entityIdColumn) &&
-               Objects.equals(locationIdColumn, that.locationIdColumn);
+               Objects.equals(locationIdColumn, that.locationIdColumn) &&
+               Objects.equals(temporalStoreRef, that.temporalStoreRef) &&
+               Objects.equals(eventsQuery, that.eventsQuery) &&
+               Objects.equals(eventsQueryTimeRange, that.eventsQueryTimeRange) &&
+               Objects.equals(eventsQueryTablePreferences, that.eventsQueryTablePreferences) &&
+               Objects.equals(factsQuery, that.factsQuery) &&
+               Objects.equals(factsQueryTimeRange, that.factsQueryTimeRange) &&
+               Objects.equals(factsQueryTablePreferences, that.factsQueryTablePreferences);
     }
 
     @Override
@@ -193,7 +275,14 @@ public class FloorMapDoc extends AbstractDoc {
                 queryTablePreferences,
                 matrix,
                 entityIdColumn,
-                locationIdColumn);
+                locationIdColumn,
+                temporalStoreRef,
+                eventsQuery,
+                eventsQueryTimeRange,
+                eventsQueryTablePreferences,
+                factsQuery,
+                factsQueryTimeRange,
+                factsQueryTablePreferences);
     }
 
     public Builder copy() {
@@ -216,6 +305,14 @@ public class FloorMapDoc extends AbstractDoc {
         private String entityIdColumn;
         private String locationIdColumn;
 
+        private DocRef temporalStoreRef;
+        private String eventsQuery;
+        private TimeRange eventsQueryTimeRange;
+        private QueryTablePreferences eventsQueryTablePreferences;
+        private String factsQuery;
+        private TimeRange factsQueryTimeRange;
+        private QueryTablePreferences factsQueryTablePreferences;
+
         public Builder() {
         }
 
@@ -230,6 +327,13 @@ public class FloorMapDoc extends AbstractDoc {
             this.matrix = doc.matrix;
             this.entityIdColumn = doc.entityIdColumn;
             this.locationIdColumn = doc.locationIdColumn;
+            this.temporalStoreRef = doc.temporalStoreRef;
+            this.eventsQuery = doc.eventsQuery;
+            this.eventsQueryTimeRange = doc.eventsQueryTimeRange;
+            this.eventsQueryTablePreferences = doc.eventsQueryTablePreferences;
+            this.factsQuery = doc.factsQuery;
+            this.factsQueryTimeRange = doc.factsQueryTimeRange;
+            this.factsQueryTablePreferences = doc.factsQueryTablePreferences;
         }
 
         public Builder template(final String template) {
@@ -242,21 +346,25 @@ public class FloorMapDoc extends AbstractDoc {
             return self();
         }
 
+        @Deprecated
         public Builder backgroundImages(final List<FloorMapBackground> backgroundImages) {
             this.backgroundImages = backgroundImages;
             return self();
         }
 
+        @Deprecated
         public Builder query(final String query) {
             this.query = query;
             return self();
         }
 
+        @Deprecated
         public Builder queryTimeRange(final TimeRange queryTimeRange) {
             this.queryTimeRange = queryTimeRange;
             return self();
         }
 
+        @Deprecated
         public Builder queryTablePreferences(final QueryTablePreferences queryTablePreferences) {
             this.queryTablePreferences = queryTablePreferences;
             return self();
@@ -274,6 +382,41 @@ public class FloorMapDoc extends AbstractDoc {
 
         public Builder locationIdColumn(final String locationIdColumn) {
             this.locationIdColumn = locationIdColumn;
+            return self();
+        }
+
+        public Builder temporalStoreRef(final DocRef temporalStoreRef) {
+            this.temporalStoreRef = temporalStoreRef;
+            return self();
+        }
+
+        public Builder eventsQuery(final String eventsQuery) {
+            this.eventsQuery = eventsQuery;
+            return self();
+        }
+
+        public Builder eventsQueryTimeRange(final TimeRange eventsQueryTimeRange) {
+            this.eventsQueryTimeRange = eventsQueryTimeRange;
+            return self();
+        }
+
+        public Builder eventsQueryTablePreferences(final QueryTablePreferences eventsQueryTablePreferences) {
+            this.eventsQueryTablePreferences = eventsQueryTablePreferences;
+            return self();
+        }
+
+        public Builder factsQuery(final String factsQuery) {
+            this.factsQuery = factsQuery;
+            return self();
+        }
+
+        public Builder factsQueryTimeRange(final TimeRange factsQueryTimeRange) {
+            this.factsQueryTimeRange = factsQueryTimeRange;
+            return self();
+        }
+
+        public Builder factsQueryTablePreferences(final QueryTablePreferences factsQueryTablePreferences) {
+            this.factsQueryTablePreferences = factsQueryTablePreferences;
             return self();
         }
 
@@ -305,7 +448,14 @@ public class FloorMapDoc extends AbstractDoc {
                     queryTablePreferences,
                     matrix,
                     entityIdColumn,
-                    locationIdColumn);
+                    locationIdColumn,
+                    temporalStoreRef,
+                    eventsQuery,
+                    eventsQueryTimeRange,
+                    eventsQueryTablePreferences,
+                    factsQuery,
+                    factsQueryTimeRange,
+                    factsQueryTablePreferences);
         }
     }
 }

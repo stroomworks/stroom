@@ -22,6 +22,7 @@ import com.gwtplatform.mvp.client.View;
 
 import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
+import com.google.gwt.user.client.ui.FlowPanel;
 import com.google.gwt.user.client.ui.SimplePanel;
 import com.google.gwt.user.client.ui.Widget;
 import com.gwtplatform.mvp.client.ViewImpl;
@@ -36,6 +37,8 @@ public class FloorMapQueryViewImpl extends ViewImpl implements FloorMapQueryView
     @UiField
     SimplePanel queryEditContainer;
     @UiField
+    FlowPanel columnMappingsContainer;
+    @UiField
     SelectionBox<String> entityIdColumn;
     @UiField
     SelectionBox<String> locationIdColumn;
@@ -48,6 +51,11 @@ public class FloorMapQueryViewImpl extends ViewImpl implements FloorMapQueryView
     @Override
     public void setQueryEditView(final View view) {
         queryEditContainer.setWidget(view.asWidget());
+    }
+
+    @Override
+    public void setColumnMappingsVisible(final boolean visible) {
+        columnMappingsContainer.setVisible(visible);
     }
 
     @Override

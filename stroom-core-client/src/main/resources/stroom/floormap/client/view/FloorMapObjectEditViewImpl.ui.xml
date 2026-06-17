@@ -18,32 +18,88 @@
 <ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
              xmlns:g="urn:import:com.google.gwt.user.client.ui"
              xmlns:form="urn:import:stroom.widget.form.client"
-             xmlns:datetimebox="urn:import:stroom.widget.datepicker.client">
-    <g:FlowPanel styleName="max dock-container-horizontal form">
-        <!-- LEFT COLUMN: Historical Shards Grid -->
-        <g:FlowPanel addStyleNames="max dock-container-vertical flex-grow">
-            <g:SimplePanel ui:field="toolbarContainer" />
-            <g:SimplePanel ui:field="gridContainer" addStyleNames="stroom-floormap-background-grid flex-grow max" />
-        </g:FlowPanel>
+             xmlns:datetimebox="urn:import:stroom.widget.datepicker.client"
+             xmlns:b="urn:import:stroom.widget.button.client">
 
-        <!-- RIGHT COLUMN: Location/Time Editor Form -->
-        <g:FlowPanel addStyleNames="dock-container-vertical">
-            <g:HTML styleName="stroom-label-header">Edit Temporal State</g:HTML>
-            <form:FormGroup label="Effective From Time">
-                <datetimebox:DateTimeBox ui:field="effectiveTimeBox" addStyleNames="timeline-date-box wide-control" />
-            </form:FormGroup>
+    <ui:style>
+        .matrixBox {
+            width: 80px !important;
+            min-width: 80px !important;
+            margin-right: 8px;
+        }
+    </ui:style>
 
-            <form:FormGroup label="X Coordinate">
-                <g:TextBox ui:field="xBox" addStyleNames="stroom-control wide-control" />
-            </form:FormGroup>
-
-            <form:FormGroup label="Y Coordinate">
-                <g:TextBox ui:field="yBox" addStyleNames="stroom-control wide-control" />
-            </form:FormGroup>
-
-            <g:FlowPanel addStyleNames="stroom-floormap-actions-group">
-                <g:Button ui:field="saveBtn" text="Commit Location State" addStyleNames="stroom-button stroom-button-blue" />
+    <g:ThinSplitLayoutPanel vSplits="0.5" styleName="max">
+        <!-- TOP HALF: Historical Shards Grid -->
+        <g:north size="200">
+            <g:FlowPanel addStyleNames="max dock-container-vertical">
+                <g:SimplePanel ui:field="toolbarContainer" />
+                <g:SimplePanel ui:field="gridContainer" addStyleNames="stroom-floormap-background-grid flex-grow max" />
             </g:FlowPanel>
-        </g:FlowPanel>
-    </g:FlowPanel>
+        </g:north>
+
+        <!-- BOTTOM HALF: Location/Time Editor Form -->
+        <g:center>
+            <g:FlowPanel addStyleNames="max dock-container-vertical form overflow-y-auto">
+                <g:HTML styleName="stroom-label-header">Edit Temporal State</g:HTML>
+                
+                <form:FormGroup label="Name">
+                    <g:TextBox ui:field="nameBox" addStyleNames="stroom-control wide-control" />
+                </form:FormGroup>
+
+                <form:FormGroup label="Type">
+                    <g:TextBox ui:field="typeBox" addStyleNames="stroom-control wide-control" />
+                </form:FormGroup>
+
+                <form:FormGroup label="Img URL to Asset">
+                    <g:TextBox ui:field="imgBox" addStyleNames="stroom-control wide-control" />
+                </form:FormGroup>
+
+                <form:FormGroup label="Effective From Time">
+                    <datetimebox:DateTimeBox ui:field="effectiveTimeBox" addStyleNames="timeline-date-box wide-control" />
+                </form:FormGroup>
+
+                <form:FormGroup label="X Coordinate">
+                    <g:TextBox ui:field="xBox" addStyleNames="stroom-control wide-control" />
+                </form:FormGroup>
+
+                <form:FormGroup label="Y Coordinate">
+                    <g:TextBox ui:field="yBox" addStyleNames="stroom-control wide-control" />
+                </form:FormGroup>
+
+                <form:FormGroup ui:field="w2m_translation_group" label="World-to-Map Translation (X, Y)">
+                    <g:FlowPanel addStyleNames="dock-container-horizontal align-center">
+                        <g:TextBox ui:field="w2m_tx" addStyleNames="stroom-control {style.matrixBox}" />
+                        <g:TextBox ui:field="w2m_ty" addStyleNames="stroom-control {style.matrixBox}" />
+                    </g:FlowPanel>
+                </form:FormGroup>
+                <form:FormGroup ui:field="w2m_scale_rot_group" label="World-to-Map Scale (X, Y) &amp; Rotation (deg)">
+                    <g:FlowPanel addStyleNames="dock-container-horizontal align-center">
+                        <g:TextBox ui:field="w2m_sx" addStyleNames="stroom-control {style.matrixBox}" />
+                        <g:TextBox ui:field="w2m_sy" addStyleNames="stroom-control {style.matrixBox}" />
+                        <g:TextBox ui:field="w2m_rot" addStyleNames="stroom-control {style.matrixBox}" />
+                    </g:FlowPanel>
+                </form:FormGroup>
+
+                <form:FormGroup ui:field="m2s_translation_group" label="Map-to-Screen Translation (X, Y)">
+                    <g:FlowPanel addStyleNames="dock-container-horizontal align-center">
+                        <g:TextBox ui:field="m2s_tx" addStyleNames="stroom-control {style.matrixBox}" />
+                        <g:TextBox ui:field="m2s_ty" addStyleNames="stroom-control {style.matrixBox}" />
+                    </g:FlowPanel>
+                </form:FormGroup>
+                <form:FormGroup ui:field="m2s_scale_rot_group" label="Map-to-Screen Scale (X, Y) &amp; Rotation (deg)">
+                    <g:FlowPanel addStyleNames="dock-container-horizontal align-center">
+                        <g:TextBox ui:field="m2s_sx" addStyleNames="stroom-control {style.matrixBox}" />
+                        <g:TextBox ui:field="m2s_sy" addStyleNames="stroom-control {style.matrixBox}" />
+                        <g:TextBox ui:field="m2s_rot" addStyleNames="stroom-control {style.matrixBox}" />
+                    </g:FlowPanel>
+                </form:FormGroup>
+
+                <g:FlowPanel addStyleNames="stroom-floormap-actions-group">
+                    <b:Button ui:field="saveBtn" text="OK" addStyleNames="allow-focus Button--contained-primary" />
+                    <b:Button ui:field="cancelBtn" text="Cancel" addStyleNames="allow-focus Button--contained-secondary" />
+                </g:FlowPanel>
+            </g:FlowPanel>
+        </g:center>
+    </g:ThinSplitLayoutPanel>
 </ui:UiBinder>
