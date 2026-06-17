@@ -190,9 +190,11 @@ public class FloorMapMapPresenter
                 if (key != null) {
                     floorMapObjectListPresenter.setSelected(key);
                     floorMapObjectEditPresenter.setObject(key);
+                    floorMapCanvasPresenter.setSelectedObjectId(e.getObjectId());
                     getView().setPropertiesVisible(true);
                 }
             } else {
+                floorMapCanvasPresenter.setSelectedObjectId(null);
                 getView().setPropertiesVisible(false);
             }
         }));
@@ -248,7 +250,11 @@ public class FloorMapMapPresenter
         this.floorMapObjectListPresenter.setSelectionConsumer(factObj -> {
             if (factObj != null) {
                 floorMapObjectEditPresenter.setObject(factObj.getKey());
+                final String canvasId = factObj.getKey().equals(activeBgKey) ? "background" : factObj.getKey();
+                floorMapCanvasPresenter.setSelectedObjectId(canvasId);
                 getView().setPropertiesVisible(true);
+            } else {
+                floorMapCanvasPresenter.setSelectedObjectId(null);
             }
         });
 

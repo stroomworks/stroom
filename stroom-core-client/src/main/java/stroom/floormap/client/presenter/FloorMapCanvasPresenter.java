@@ -229,7 +229,12 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     }
 
     private void redraw() {
-        getView().draw(scale, offsetX, offsetY, backgroundImage, matrix, objects);
+        getView().draw(scale, offsetX, offsetY, backgroundImage, matrix, objects, selectedObjectId);
+    }
+
+    public void setSelectedObjectId(final String selectedObjectId) {
+        this.selectedObjectId = selectedObjectId;
+        redraw();
     }
 
     public void setMatrix(final FloorMapTransformationMatrix matrix) {
@@ -284,7 +289,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
         HasMouseWheelHandlers getMouseWheelHandlers();
 
-        void draw(double scale, double x, double y, String backgroundImage, FloorMapTransformationMatrix matrix, List<FloorMapObject> objects);
+        void draw(double scale, double x, double y, String backgroundImage, FloorMapTransformationMatrix matrix, List<FloorMapObject> objects, String selectedObjectId);
     }
 
 }
