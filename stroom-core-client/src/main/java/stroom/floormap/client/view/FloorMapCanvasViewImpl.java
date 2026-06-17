@@ -40,7 +40,11 @@ import com.google.gwt.user.client.ui.Widget;
 import com.google.inject.Inject;
 import com.gwtplatform.mvp.client.ViewWithUiHandlers;
 
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 public class FloorMapCanvasViewImpl
         extends ViewWithUiHandlers<DirtyUiHandlers>
@@ -48,6 +52,10 @@ public class FloorMapCanvasViewImpl
 
     private final static int OBJECT_SIZE = 100;
     private final Widget widget;
+
+    private final Map<String, Double> imageAspectRatioCache = new HashMap<>();
+    private final Set<String> loadingImages = new HashSet<>();
+    private Runnable redrawListener;
 
     @UiField
     HTML svgContainer;
@@ -123,13 +131,24 @@ public class FloorMapCanvasViewImpl
                 group.elem(matrixGroup -> {
                     // Render the background image if set
                     if (backgroundImage != null) {
+                        final Double cachedAspectRatio = imageAspectRatioCache.get(backgroundImage);
+                        final double aspectRatio;
+                        if (cachedAspectRatio != null) {
+                            aspectRatio = cachedAspectRatio;
+                        } else {
+                            aspectRatio = 1.0; // Fallback to square aspect ratio while loading
+                            loadImageAspectRatio(backgroundImage);
+                        }
+
+                        final double height = 1000 / aspectRatio;
+
                         matrixGroup.elem(SafeHtmlUtil.from("image"),
                             new Attribute(SafeHtmlUtils.fromSafeConstant("href"),
                                     SafeHtmlUtils.fromTrustedString(backgroundImage)),
                             new Attribute("x", "0"),
                             new Attribute("y", "0"),
                             new Attribute("width", "1000"),
-                            new Attribute("height", "1000"),
+                            new Attribute("height", String.valueOf(height)),
                             new Attribute("preserveAspectRatio", "none"),
                             new Attribute("id", "background"));
                         
@@ -139,7 +158,7 @@ public class FloorMapCanvasViewImpl
                                 new Attribute("x", "0"),
                                 new Attribute("y", "0"),
                                 new Attribute("width", "1000"),
-                                new Attribute("height", "1000"),
+                                new Attribute("height", String.valueOf(height)),
                                 new Attribute("fill", "none"),
                                 new Attribute("stroke", "#1e88e5"),
                                 new Attribute("stroke-width", "8"),
@@ -214,7 +233,7 @@ public class FloorMapCanvasViewImpl
                                 }
 
                                 // Adjust label text position for circles vs squares.
-                                final String textDy = isPerson ? "1.5em" : "0.35em";
+                                //final String textDy = isPerson ? "1.5em" : "0.35em";
 
                                 objectGroup.elem(obj.getId(), SafeHtmlUtil.from("text"),
                                         new Attribute("x", "0"),
@@ -247,6 +266,46 @@ public class FloorMapCanvasViewImpl
         // Inject the generated SVG into the HTML container
         svgContainer.setHTML(htmlBuilder.toSafeHtml());
     }
+
+    @Override
+    public void setRedrawListener(final Runnable redrawListener) {
+        this.redrawListener = redrawListener;
+    }
+
+    @SuppressWarnings("unused")
+    void onImageAspectRatioResolved(final String url, final double aspectRatio) {
+        imageAspectRatioCache.put(url, aspectRatio);
+        loadingImages.remove(url);
+        if (redrawListener != null) {
+            redrawListener.run();
+        }
+    }
+
+    private void loadImageAspectRatio(final String url) {
+        if (loadingImages.contains(url)) {
+            return;
+        }
+        loadingImages.add(url);
+        startImageLoad(url);
+    }
+
+    private native void startImageLoad(final String url) /*-{
+        var self = this;
+        var img = new Image();
+        img.onload = function() {
+            var width = img.naturalWidth || img.width || 0;
+            var height = img.naturalHeight || img.height || 0;
+            var aspectRatio = 1.0;
+            if (width > 0 && height > 0) {
+                aspectRatio = width / height;
+            }
+            self.@stroom.floormap.client.view.FloorMapCanvasViewImpl::onImageAspectRatioResolved(Ljava/lang/String;D)(url, aspectRatio);
+        };
+        img.onerror = function() {
+            self.@stroom.floormap.client.view.FloorMapCanvasViewImpl::onImageAspectRatioResolved(Ljava/lang/String;D)(url, 1.0);
+        };
+        img.src = url;
+    }-*/;
 
     // --------------------------------------------------------------------------------
 

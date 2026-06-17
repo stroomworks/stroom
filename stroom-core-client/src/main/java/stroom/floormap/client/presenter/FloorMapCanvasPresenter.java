@@ -82,6 +82,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
         if (getView() != null) {
             getView().onResize();
+            getView().setRedrawListener(this::redraw);
         }
 
         // Perform initial draw
@@ -103,9 +104,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                     // Check if we clicked on an actual map object shape (which does not start with "obj-")
                     if (id != null && !id.isEmpty() && !id.startsWith("obj-")) {
                         // If Ctrl or Shift is pressed and it is the background, allow panning instead of background drag
-                        if ("background".equals(id) && (event.getNativeEvent().getCtrlKey() || event.getNativeEvent().getShiftKey())) {
-                            selectedObjectId = null;
-                        } else {
+                        if (!("background".equals(id) && (event.getNativeEvent().getCtrlKey() || event.getNativeEvent().getShiftKey()))) {
                             selectedObjectId = id;
 
                             // Fire an event to tell the parent presenter to show the edit menu
@@ -275,10 +274,6 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         this.isDraggingEnabled = isDraggingEnabled;
     }
 
-    public String getSelectedObjectId() {
-        return selectedObjectId;
-    }
-
     public interface FloorMapCanvasView extends View, RequiresResize {
 
         HasMouseDownHandlers getFocusPanel();
@@ -290,6 +285,8 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         HasMouseWheelHandlers getMouseWheelHandlers();
 
         void draw(double scale, double x, double y, String backgroundImage, FloorMapTransformationMatrix matrix, List<FloorMapObject> objects, String selectedObjectId);
+
+        void setRedrawListener(Runnable redrawListener);
     }
 
 }
