@@ -89,7 +89,7 @@ public class FloorMapObjectListPresenter extends MyPresenterWidget<FloorMapObjec
     public void selectLast() {
         final List<FactObject> list = dataProvider.getList();
         if (list != null && !list.isEmpty()) {
-            selectionModel.setSelected(list.getLast(), true);
+            selectionModel.setSelected(list.get(list.size() - 1), true);
         } else {
             selectionModel.clear();
         }

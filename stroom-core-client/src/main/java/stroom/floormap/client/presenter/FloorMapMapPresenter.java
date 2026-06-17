@@ -186,7 +186,9 @@ public class FloorMapMapPresenter
 
         registerHandler(getEventBus().addHandler(MapObjectSelectedEvent.getType(), e -> {
             if (e.getObjectId() != null && editMode) {
-                final String key = "background".equals(e.getObjectId()) ? activeBgKey : e.getObjectId();
+                final String key = "background".equals(e.getObjectId()) 
+                        ? (activeBgKey != null ? activeBgKey : "background") 
+                        : e.getObjectId();
                 if (key != null) {
                     floorMapObjectListPresenter.setSelected(key);
                     floorMapObjectEditPresenter.setObject(key);
@@ -204,7 +206,9 @@ public class FloorMapMapPresenter
                     ? getEntity().getTemporalStoreRef().getName() 
                     : "location_plan_b";
 
-            final String key = "background".equals(e.getObjectId()) ? activeBgKey : e.getObjectId();
+            final String key = "background".equals(e.getObjectId()) 
+                    ? (activeBgKey != null ? activeBgKey : "background") 
+                    : e.getObjectId();
             if (key == null) {
                 return;
             }
@@ -250,7 +254,9 @@ public class FloorMapMapPresenter
         this.floorMapObjectListPresenter.setSelectionConsumer(factObj -> {
             if (factObj != null) {
                 floorMapObjectEditPresenter.setObject(factObj.getKey());
-                final String canvasId = factObj.getKey().equals(activeBgKey) ? "background" : factObj.getKey();
+                final String canvasId = (factObj.getKey().equals(activeBgKey) || "background".equals(factObj.getKey())) 
+                        ? "background" 
+                        : factObj.getKey();
                 floorMapCanvasPresenter.setSelectedObjectId(canvasId);
                 getView().setPropertiesVisible(true);
             } else {
@@ -815,6 +821,19 @@ public class FloorMapMapPresenter
                             factObjects.add(new FloorMapObjectListPresenter.FactObject(key, name, type));
                         }
                     }
+                    // Ensure background is always in the list of items
+                    final String bgKey = activeBgKey != null ? activeBgKey : "background";
+                    boolean hasBg = false;
+                    for (final FloorMapObjectListPresenter.FactObject obj : factObjects) {
+                        if (obj.getKey().equals(bgKey) || "background".equalsIgnoreCase(obj.getType())) {
+                            hasBg = true;
+                            break;
+                        }
+                    }
+                    if (!hasBg) {
+                        factObjects.add(new FloorMapObjectListPresenter.FactObject(bgKey, "Background", "background"));
+                    }
+
                     factObjects.sort(java.util.Comparator.comparing(
                             FloorMapObjectListPresenter.FactObject::getName,
                             String.CASE_INSENSITIVE_ORDER));

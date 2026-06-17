@@ -263,7 +263,7 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
             dataProvider.setList(entries);
             dataGrid.setRowData(0, entries);
             if (entries != null && !entries.isEmpty()) {
-                selectionModel.setSelected(entries.getLast(), true);
+                selectionModel.setSelected(entries.get(entries.size() - 1), true);
             } else {
                 selectionModel.clear();
             }
