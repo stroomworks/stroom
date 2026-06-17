@@ -138,6 +138,25 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
                 if (editStateConsumer != null) {
                     editStateConsumer.accept(true);
                 }
+
+                final List<TemporalEntry> list = dataProvider.getList();
+                if (list != null) {
+                    final int index = list.indexOf(selected);
+                    if (index >= 0) {
+                        com.google.gwt.core.client.Scheduler.get().scheduleDeferred(() -> {
+                            if (index < dataGrid.getVisibleItemCount()) {
+                                try {
+                                    final com.google.gwt.dom.client.TableRowElement rowEl = dataGrid.getRowElement(index);
+                                    if (rowEl != null) {
+                                        stroom.widget.util.client.ElementUtil.scrollIntoViewNearest(rowEl);
+                                    }
+                                } catch (final Exception ex) {
+                                    // Ignore
+                                }
+                            }
+                        });
+                    }
+                }
             } else {
                 deleteButton.setEnabled(false);
                 if (!isAdding) {

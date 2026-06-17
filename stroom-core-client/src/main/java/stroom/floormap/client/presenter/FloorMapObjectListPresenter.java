@@ -58,6 +58,28 @@ public class FloorMapObjectListPresenter extends MyPresenterWidget<FloorMapObjec
             if (selectionConsumer != null) {
                 selectionConsumer.accept(selectionModel.getSelectedObject());
             }
+
+            final FactObject selected = selectionModel.getSelectedObject();
+            if (selected != null) {
+                final List<FactObject> list = dataProvider.getList();
+                if (list != null) {
+                    final int index = list.indexOf(selected);
+                    if (index >= 0) {
+                        com.google.gwt.core.client.Scheduler.get().scheduleDeferred(() -> {
+                            if (index < dataGrid.getVisibleItemCount()) {
+                                try {
+                                    final com.google.gwt.dom.client.TableRowElement rowEl = dataGrid.getRowElement(index);
+                                    if (rowEl != null) {
+                                        stroom.widget.util.client.ElementUtil.scrollIntoViewNearest(rowEl);
+                                    }
+                                } catch (final Exception ex) {
+                                    // Ignore
+                                }
+                            }
+                        });
+                    }
+                }
+            }
         }));
     }
 
