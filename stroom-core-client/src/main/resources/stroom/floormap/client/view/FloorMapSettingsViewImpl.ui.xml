@@ -5,6 +5,11 @@
              xmlns:datetimebox="urn:import:stroom.widget.datepicker.client"
              xmlns:v="urn:import:stroom.widget.valuespinner.client">
     <g:FlowPanel styleName="max dock-container-vertical form-padding form">
+        <!-- SQL Temporal Store Reference Selection -->
+        <form:FormGroup label="Temporal Store">
+            <g:SimplePanel ui:field="temporalStoreRefContainer" />
+        </form:FormGroup>
+
         <!-- Background Image Selection -->
         <form:FormGroup label="Background Image">
             <g:FlowPanel addStyleNames="stroom-floormap-settings-layout">

@@ -129,7 +129,8 @@ public class FloorMapCanvasViewImpl
                             new Attribute("y", "0"),
                             new Attribute("width", "1000"),
                             new Attribute("height", "1000"),
-                            new Attribute("preserveAspectRatio", "none"));
+                            new Attribute("preserveAspectRatio", "none"),
+                            new Attribute("id", "background"));
                     } else {
                         // Fallback background rect
                         group.elem(SafeHtmlUtil.from("rect"),
@@ -137,7 +138,8 @@ public class FloorMapCanvasViewImpl
                             new Attribute("y", "0"),
                             new Attribute("width", "1000"),
                             new Attribute("height", "1000"),
-                            new Attribute("fill", "#FFFFFF"));
+                            new Attribute("fill", "#FFFFFF"),
+                            new Attribute("id", "background"));
                     }
 
                     if (objects != null) {

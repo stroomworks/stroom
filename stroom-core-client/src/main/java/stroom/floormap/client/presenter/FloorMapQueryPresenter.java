@@ -16,6 +16,7 @@
 
 package stroom.floormap.client.presenter;
 
+import stroom.docref.DocRef;
 import stroom.entity.client.presenter.HasToolbar;
 import stroom.floormap.client.event.FloorMapDataEvent;
 import stroom.floormap.client.presenter.FloorMapQueryPresenter.FloorMapQueryView;
@@ -24,6 +25,8 @@ import stroom.floormap.shared.FloorMapObject;
 import stroom.query.api.Column;
 import stroom.query.api.Row;
 import stroom.query.api.TableResult;
+import stroom.query.api.TimeRange;
+import stroom.query.shared.QueryTablePreferences;
 import stroom.query.client.presenter.QueryEditPresenter;
 import stroom.task.client.TaskMonitorFactory;
 
@@ -172,16 +175,28 @@ public class FloorMapQueryPresenter extends MyPresenterWidget<FloorMapQueryView>
     }
 
     public void read(final FloorMapDoc doc) {
-        this.currentEntityColumn = doc.getEntityIdColumn();
-        this.currentLocationColumn = doc.getLocationIdColumn();
+        read(doc.asDocRef(), doc.getQuery(), doc.getQueryTimeRange(), doc.getQueryTablePreferences(),
+                doc.getEntityIdColumn(), doc.getLocationIdColumn(), true);
+    }
+
+    public void read(final DocRef docRef,
+                     final String query,
+                     final TimeRange timeRange,
+                     final QueryTablePreferences queryTablePreferences,
+                     final String entityIdColumn,
+                     final String locationIdColumn,
+                     final boolean showColumnMappings) {
+        this.currentEntityColumn = entityIdColumn;
+        this.currentLocationColumn = locationIdColumn;
 
         getView().setEntityIdColumn(currentEntityColumn);
         getView().setLocationIdColumn(currentLocationColumn);
+        getView().setColumnMappingsVisible(showColumnMappings);
 
         // Populate the inner query editor.
-        queryEditPresenter.setQuery(doc.asDocRef(), doc.getQuery(), false);
-        queryEditPresenter.setTimeRange(doc.getQueryTimeRange());
-        queryEditPresenter.read(doc.getQueryTablePreferences());
+        queryEditPresenter.setQuery(docRef, query, false);
+        queryEditPresenter.setTimeRange(timeRange);
+        queryEditPresenter.read(queryTablePreferences);
 
         updateColumnSelections();
     }
@@ -197,6 +212,26 @@ public class FloorMapQueryPresenter extends MyPresenterWidget<FloorMapQueryView>
                 .queryTimeRange(queryEditPresenter.getTimeRange())
                 .queryTablePreferences(queryEditPresenter.write())
                 .build();
+    }
+
+    public String getQuery() {
+        return queryEditPresenter.getQuery();
+    }
+
+    public TimeRange getQueryTimeRange() {
+        return queryEditPresenter.getTimeRange();
+    }
+
+    public QueryTablePreferences getQueryTablePreferences() {
+        return queryEditPresenter.write();
+    }
+
+    public String getEntityIdColumn() {
+        return getView().getEntityIdColumn();
+    }
+
+    public String getLocationIdColumn() {
+        return getView().getLocationIdColumn();
     }
 
     public void setTaskMonitorFactory(final TaskMonitorFactory taskMonitorFactory) {
@@ -218,5 +253,7 @@ public class FloorMapQueryPresenter extends MyPresenterWidget<FloorMapQueryView>
 
         String getEntityIdColumn();
         String getLocationIdColumn();
+
+        void setColumnMappingsVisible(boolean visible);
     }
 }

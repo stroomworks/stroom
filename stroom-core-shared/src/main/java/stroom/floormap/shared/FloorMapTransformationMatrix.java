@@ -118,4 +118,19 @@ public class FloorMapTransformationMatrix {
         // a=cos, b=sin, c=-sin, d=cos, e=0, f=0
         return new FloorMapTransformationMatrix(cos, sin, -sin, cos, 0, 0);
     }
+
+    public FloorMapTransformationMatrix inverse() {
+        final double det = a * d - b * c;
+        if (Math.abs(det) < 1e-9) {
+            return identity();
+        }
+        final double invDet = 1.0 / det;
+        final double invA = d * invDet;
+        final double invB = -b * invDet;
+        final double invC = -c * invDet;
+        final double invD = a * invDet;
+        final double invE = (c * f - d * e) * invDet;
+        final double invF = (b * e - a * f) * invDet;
+        return new FloorMapTransformationMatrix(invA, invB, invC, invD, invE, invF);
+    }
 }

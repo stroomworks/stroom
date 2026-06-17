@@ -22,10 +22,12 @@ import stroom.docref.DocRef;
 import stroom.document.client.event.DirtyUiHandlers;
 import stroom.entity.client.presenter.DocPresenter;
 import stroom.entity.client.presenter.ReadOnlyChangeHandler;
+import stroom.explorer.client.presenter.DocSelectionBoxPresenter;
 import stroom.floormap.client.presenter.FloorMapSettingsPresenter.FloorMapSettingsView;
 import stroom.floormap.shared.FloorMapBackground;
 import stroom.floormap.shared.FloorMapDoc;
 import stroom.floormap.shared.FloorMapTransformationMatrix;
+import stroom.security.shared.DocumentPermission;
 import stroom.svg.client.SvgPresets;
 import stroom.ui.config.client.UiConfigCache;
 import stroom.widget.button.client.ButtonPanel;
@@ -46,6 +48,7 @@ import com.google.gwt.safehtml.shared.SafeHtml;
 import com.google.gwt.user.cellview.client.Column;
 import com.google.gwt.user.client.ui.Widget;
 import com.google.inject.Inject;
+import com.google.inject.Provider;
 import com.google.web.bindery.event.shared.EventBus;
 import com.gwtplatform.mvp.client.HasUiHandlers;
 import com.gwtplatform.mvp.client.View;
@@ -66,16 +69,23 @@ public class FloorMapSettingsPresenter
     private final MultiSelectionModelImpl<FloorMapBackground> selectionModel;
     private final ButtonView editButton;
     private final ButtonView deleteButton;
+    private final DocSelectionBoxPresenter temporalStoreRefPresenter;
     private FloorMapTransformationMatrix currentMatrix;
 
     @Inject
     public FloorMapSettingsPresenter(final EventBus eventBus,
                                      final FloorMapSettingsView view,
-                                     final UiConfigCache uiConfigcache) {
+                                     final UiConfigCache uiConfigcache,
+                                     final Provider<DocSelectionBoxPresenter> docSelectionBoxPresenterProvider) {
         super(eventBus, view);
         this.uiConfigCache = uiConfigcache;
 
         view.setUiHandlers(this);
+
+        this.temporalStoreRefPresenter = docSelectionBoxPresenterProvider.get();
+        this.temporalStoreRefPresenter.setIncludedTypes("SqlTemporalStore");
+        this.temporalStoreRefPresenter.setRequiredPermissions(DocumentPermission.USE);
+        view.setTemporalStoreRefView(this.temporalStoreRefPresenter.getView());
 
         // Set up the DataGrid
         grid = new MyDataGrid<>(this);
@@ -135,6 +145,7 @@ public class FloorMapSettingsPresenter
         }));
 
         registerHandler(getView().addRotationChangeHandler(e -> onRotation()));
+        registerHandler(temporalStoreRefPresenter.addDataSelectionHandler(e -> onChange()));
     }
 
     @Override
@@ -144,6 +155,8 @@ public class FloorMapSettingsPresenter
         } else {
             this.localBackgroundList = new ArrayList<>();
         }
+
+        temporalStoreRefPresenter.setSelectedEntityReference(floorMapDoc.getTemporalStoreRef(), true);
 
         uiConfigCache.get(extendedUiConfig -> {
             if (extendedUiConfig != null) {
@@ -158,7 +171,12 @@ public class FloorMapSettingsPresenter
     protected FloorMapDoc onWrite(final FloorMapDoc doc) {
         return doc.copy()
                 .backgroundImages(localBackgroundList)
+                .temporalStoreRef(temporalStoreRefPresenter.getSelectedEntityReference())
                 .build();
+    }
+
+    public DocRef getTemporalStoreRef() {
+        return temporalStoreRefPresenter.getSelectedEntityReference();
     }
 
     @Override
@@ -237,6 +255,7 @@ public class FloorMapSettingsPresenter
         void setGridView(Widget widget);
         void setStartTime(long startTime);
         void setRotation(double degrees);
+        void setTemporalStoreRefView(View view);
 
         HandlerRegistration addBackgroundImageChangeHandler(ValueChangeHandler<String> handler);
         HandlerRegistration addAddBackgroundHandler(ClickHandler handler);
