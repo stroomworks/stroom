@@ -55,6 +55,9 @@ import java.util.List;
 import java.util.function.Consumer;
 import javax.inject.Inject;
 
+import stroom.document.asset.client.presenter.DocumentAssetDropDownPresenter;
+import stroom.floormap.shared.FloorMapDoc;
+
 public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjectEditView> {
 
     private static final SqlTemporalStoreResource SQL_TEMPORAL_STORE_RESOURCE =
@@ -81,6 +84,7 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
 
     private final ButtonView addButton;
     private final ButtonView deleteButton;
+    private final DocumentAssetDropDownPresenter documentAssetDropDownPresenter;
     private String objectId;
     private boolean isAdding = false;
     // TODO MB FIX THIS
@@ -89,6 +93,10 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
     public void setMapName(final String mapName) {
         // TODO MB FIX THIS
         this.mapName = mapName != null ? mapName : "location_plan_b";
+    }
+
+    public void setFloorMapDoc(final FloorMapDoc floorMapDoc) {
+        documentAssetDropDownPresenter.setDocument(floorMapDoc);
     }
 
     public TemporalEntry getSelectedEntry() {
@@ -103,9 +111,11 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
     @Inject
     public FloorMapObjectEditPresenter(final EventBus eventBus,
                                        final FloorMapObjectEditView view,
-                                       final RestFactory restFactory) {
+                                       final RestFactory restFactory,
+                                       final DocumentAssetDropDownPresenter documentAssetDropDownPresenter) {
         super(eventBus, view);
         this.restFactory = restFactory;
+        this.documentAssetDropDownPresenter = documentAssetDropDownPresenter;
 
         // Initialise the Table grid
         dataGrid = new MyDataGrid<>(this);
@@ -125,6 +135,8 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
     protected void onBind() {
         super.onBind();
 
+        getView().setChooseImgView(documentAssetDropDownPresenter.getView().asWidget());
+
         // Row selection updates the input form
         registerHandler(selectionModel.addSelectionChangeHandler(e -> {
             final TemporalEntry selected = selectionModel.getSelectedObject();
@@ -132,6 +144,7 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
             if (selected != null) {
                 isAdding = false;
                 getView().setEnabled(true);
+                documentAssetDropDownPresenter.setEnabled(true);
                 deleteButton.setEnabled(true);
                 resetInputs(selected);
 
@@ -161,6 +174,7 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
                 deleteButton.setEnabled(false);
                 if (!isAdding) {
                     getView().setEnabled(false);
+                    documentAssetDropDownPresenter.setEnabled(false);
                     getView().setEffectiveTime(0L);
                     getView().setX(0.0);
                     getView().setY(0.0);
@@ -398,7 +412,7 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
         final JSONObject json = new JSONObject();
         json.put(JSON_KEY_TYPE, new JSONString(getView().getType()));
         json.put(JSON_KEY_NAME, new JSONString(getView().getName()));
-        json.put(JSON_KEY_IMG, new JSONString(getView().getImg()));
+        json.put(JSON_KEY_IMG, new JSONString(documentAssetDropDownPresenter.getSelectedAssetPath() == null ? "" : documentAssetDropDownPresenter.getSelectedAssetPath()));
 
         final JSONArray coordsArr = new JSONArray();
         coordsArr.set(0, new JSONNumber(getView().getX()));
@@ -509,7 +523,7 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
             getView().setY(y);
             getView().setName(name);
             getView().setType(type);
-            getView().setImg(img);
+            documentAssetDropDownPresenter.setSelectedAssetPath(img);
             getView().setWorldToMapMatrix(w2m);
             getView().setMapToScreenMatrix(m2s);
         } else {
@@ -518,7 +532,7 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
             getView().setY(0.0);
             getView().setName("");
             getView().setType("");
-            getView().setImg("");
+            documentAssetDropDownPresenter.setSelectedAssetPath("");
             getView().setWorldToMapMatrix(new double[]{1.0, 0.0, 0.0, 1.0, 0.0, 0.0});
             getView().setMapToScreenMatrix(new double[]{1.0, 0.0, 0.0, 1.0, 0.0, 0.0});
         }
@@ -545,8 +559,7 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
         String getType();
         void setType(String type);
 
-        String getImg();
-        void setImg(String img);
+        void setChooseImgView(Widget widget);
 
         double[] getWorldToMapMatrix();
         void setWorldToMapMatrix(double[] matrix);

@@ -19,6 +19,8 @@ package stroom.document.asset.client.gin;
 import stroom.core.client.gin.PluginModule;
 import stroom.document.asset.client.presenter.DocumentAssetAddItemDialogPresenter;
 import stroom.document.asset.client.presenter.DocumentAssetAddItemDialogPresenter.DocumentAssetAddItemDialogView;
+import stroom.document.asset.client.presenter.DocumentAssetChooserPresenter;
+import stroom.document.asset.client.presenter.DocumentAssetChooserPresenter.DocumentAssetChooserView;
 import stroom.document.asset.client.presenter.DocumentAssetEditAssetDialogPresenter;
 import stroom.document.asset.client.presenter.DocumentAssetEditAssetDialogPresenter.DocumentAssetEditAssetDialogView;
 import stroom.document.asset.client.presenter.DocumentAssetPresenter;
@@ -26,6 +28,7 @@ import stroom.document.asset.client.presenter.DocumentAssetPresenter.DocumentAss
 import stroom.document.asset.client.presenter.DocumentAssetUploadFileDialogPresenter;
 import stroom.document.asset.client.presenter.DocumentAssetUploadFileDialogPresenter.DocumentAssetUploadFileDialogView;
 import stroom.document.asset.client.view.DocumentAssetAddItemDialogViewImpl;
+import stroom.document.asset.client.view.DocumentAssetChooserViewImpl;
 import stroom.document.asset.client.view.DocumentAssetEditAssetDialogViewImpl;
 import stroom.document.asset.client.view.DocumentAssetUploadFileDialogViewImpl;
 import stroom.document.asset.client.view.DocumentAssetViewImpl;
@@ -45,5 +48,8 @@ public class DocumentAssetModule extends PluginModule {
         bindPresenterWidget(DocumentAssetEditAssetDialogPresenter.class,
                 DocumentAssetEditAssetDialogView.class,
                 DocumentAssetEditAssetDialogViewImpl.class);
+        bindPresenterWidget(DocumentAssetChooserPresenter.class,
+                DocumentAssetChooserView.class,
+                DocumentAssetChooserViewImpl.class);
     }
 }

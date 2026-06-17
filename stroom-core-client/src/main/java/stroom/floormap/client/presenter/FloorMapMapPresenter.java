@@ -381,6 +381,7 @@ public class FloorMapMapPresenter
 
         final String mapName = document.getTemporalStoreRef() != null ? document.getTemporalStoreRef().getName() : "location_plan_b";
         floorMapObjectEditPresenter.setMapName(mapName);
+        floorMapObjectEditPresenter.setFloorMapDoc(document);
 
         onTimeChange(selectedTime);
     }
