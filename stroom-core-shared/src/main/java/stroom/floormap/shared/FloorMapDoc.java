@@ -30,8 +30,6 @@ import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 
-import java.util.Comparator;
-import java.util.List;
 import java.util.Objects;
 
 @Description(
@@ -49,9 +47,6 @@ public class FloorMapDoc extends AbstractDoc {
     private final String description;
     @JsonProperty
     private final String template;
-    @Deprecated
-    @JsonProperty
-    private final List<FloorMapBackground> backgroundImages;
     @Deprecated
     @JsonProperty
     private final String query;
@@ -93,7 +88,6 @@ public class FloorMapDoc extends AbstractDoc {
                        @JsonProperty("updateUser") final String updateUser,
                        @JsonProperty("description") final String description,
                        @JsonProperty("template") final String template,
-                       @JsonProperty("backgroundImages") final List<FloorMapBackground> backgroundImages,
                        @JsonProperty("query") final String query,
                        @JsonProperty("queryTimeRange") final TimeRange queryTimeRange,
                        @JsonProperty("queryTablePreferences") final QueryTablePreferences queryTablePreferences,
@@ -117,7 +111,6 @@ public class FloorMapDoc extends AbstractDoc {
 
         this.description = description;
         this.template = template;
-        this.backgroundImages = backgroundImages;
         this.matrix = matrix != null ? matrix : FloorMapTransformationMatrix.identity();
         this.entityIdColumn = entityIdColumn;
         this.locationIdColumn = locationIdColumn;
@@ -147,11 +140,6 @@ public class FloorMapDoc extends AbstractDoc {
     }
 
     @Deprecated
-    public List<FloorMapBackground> getBackgroundImages() {
-        return backgroundImages;
-    }
-
-    @Deprecated
     public String getQuery() {
         return query;
     }
@@ -164,26 +152,6 @@ public class FloorMapDoc extends AbstractDoc {
     @Deprecated
     public QueryTablePreferences getQueryTablePreferences() {
         return queryTablePreferences;
-    }
-
-    /**
-     * Gets the background image that should be active at the specified time.
-     * Finds the image with the latest validFromTime that is <= currentTime.
-     */
-    @Deprecated
-    public FloorMapBackground getActiveBackground(final long currentTime) {
-        FloorMapBackground active = null;
-        if (backgroundImages != null) {
-            for (final FloorMapBackground bg : backgroundImages) {
-                if (bg.getValidFromTime() <= currentTime) {
-                    active = bg;
-                } else {
-                    // Since the list is sorted, we can stop here.
-                    break;
-                }
-            }
-        }
-        return active;
     }
 
     public String getEntityIdColumn() {
@@ -247,7 +215,6 @@ public class FloorMapDoc extends AbstractDoc {
         final FloorMapDoc that = (FloorMapDoc) o;
         return Objects.equals(description, that.description) &&
                Objects.equals(template, that.template) &&
-               Objects.equals(backgroundImages, that.backgroundImages) &&
                Objects.equals(query, that.query) &&
                Objects.equals(queryTimeRange, that.queryTimeRange) &&
                Objects.equals(queryTablePreferences, that.queryTablePreferences) &&
@@ -269,7 +236,6 @@ public class FloorMapDoc extends AbstractDoc {
                 super.hashCode(),
                 description,
                 template,
-                backgroundImages,
                 query,
                 queryTimeRange,
                 queryTablePreferences,
@@ -297,7 +263,6 @@ public class FloorMapDoc extends AbstractDoc {
 
         private String template;
         private String description;
-        private List<FloorMapBackground> backgroundImages;
         private String query;
         private TimeRange queryTimeRange;
         private QueryTablePreferences queryTablePreferences;
@@ -320,7 +285,6 @@ public class FloorMapDoc extends AbstractDoc {
             super(doc);
             this.template = doc.template;
             this.description = doc.description;
-            this.backgroundImages = doc.backgroundImages;
             this.query = doc.query;
             this.queryTimeRange = doc.queryTimeRange;
             this.queryTablePreferences = doc.queryTablePreferences;
@@ -346,11 +310,7 @@ public class FloorMapDoc extends AbstractDoc {
             return self();
         }
 
-        @Deprecated
-        public Builder backgroundImages(final List<FloorMapBackground> backgroundImages) {
-            this.backgroundImages = backgroundImages;
-            return self();
-        }
+
 
         @Deprecated
         public Builder query(final String query) {
@@ -427,11 +387,6 @@ public class FloorMapDoc extends AbstractDoc {
 
         @Override
         public FloorMapDoc build() {
-            // Ensure the list is sorted by time before building
-            if (backgroundImages != null) {
-                backgroundImages.sort(Comparator.comparingLong(FloorMapBackground::getValidFromTime));
-            }
-
             return new FloorMapDoc(
                     uuid,
                     name,
@@ -442,7 +397,6 @@ public class FloorMapDoc extends AbstractDoc {
                     updateUser,
                     description,
                     template,
-                    backgroundImages,
                     query,
                     queryTimeRange,
                     queryTablePreferences,

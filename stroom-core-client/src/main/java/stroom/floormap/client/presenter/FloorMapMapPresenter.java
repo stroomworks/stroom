@@ -29,7 +29,6 @@ import stroom.floormap.client.event.MapObjectMovedEvent;
 import stroom.floormap.client.event.MapObjectSelectedEvent;
 import stroom.floormap.client.event.TimeChangeEvent;
 import stroom.floormap.client.presenter.FloorMapMapPresenter.FloorMapMapView;
-import stroom.floormap.shared.FloorMapBackground;
 import stroom.floormap.shared.FloorMapDoc;
 import stroom.floormap.shared.FloorMapObject;
 import stroom.floormap.shared.FloorMapTransformationMatrix;
@@ -444,15 +443,9 @@ public class FloorMapMapPresenter
                         null
                 );
             } else {
-                // Fallback to inline background images
-                final FloorMapBackground activeBg = getEntity() != null ? getEntity().getActiveBackground(time) : null;
-                if (activeBg != null) {
-                    floorMapCanvasPresenter.setBackgroundImage(activeBg.getImage());
-                    floorMapCanvasPresenter.setMatrix(activeBg.getMatrix());
-                } else {
-                    floorMapCanvasPresenter.setBackgroundImage(null);
-                    floorMapCanvasPresenter.setMatrix(FloorMapTransformationMatrix.identity());
-                }
+                // No background if facts query is empty/disabled and no inline backgrounds exist anymore
+                floorMapCanvasPresenter.setBackgroundImage(null);
+                floorMapCanvasPresenter.setMatrix(FloorMapTransformationMatrix.identity());
                 floorMapCanvasPresenter.setObjects(new ArrayList<>());
             }
         }

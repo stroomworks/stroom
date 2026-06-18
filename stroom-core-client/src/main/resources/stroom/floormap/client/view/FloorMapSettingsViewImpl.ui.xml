@@ -1,66 +1,11 @@
 <!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
 <ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
              xmlns:g="urn:import:com.google.gwt.user.client.ui"
-             xmlns:form="urn:import:stroom.widget.form.client"
-             xmlns:datetimebox="urn:import:stroom.widget.datepicker.client"
-             xmlns:v="urn:import:stroom.widget.valuespinner.client">
+             xmlns:form="urn:import:stroom.widget.form.client">
     <g:FlowPanel styleName="max dock-container-vertical form-padding form">
         <!-- SQL Temporal Store Reference Selection -->
         <form:FormGroup label="Temporal Store">
             <g:SimplePanel ui:field="temporalStoreRefContainer" />
-        </form:FormGroup>
-
-        <!-- Background Image Selection -->
-        <form:FormGroup label="Background Image">
-            <g:FlowPanel addStyleNames="stroom-floormap-settings-layout">
-
-                <!-- Row 1: The Data and Adjustments -->
-                <g:FlowPanel addStyleNames="stroom-floormap-settings-row">
-                    <g:FlowPanel addStyleNames="stroom-floormap-input-group">
-                        <g:Label text="Valid From:" addStyleNames="stroom-label" />
-                        <datetimebox:DateTimeBox ui:field="validFromBox" addStyleNames="timeline-date-box" />
-                    </g:FlowPanel>
-
-                    <g:FlowPanel addStyleNames="stroom-floormap-input-group flex-grow">
-                        <g:Label text="Image Data (URL/Base64):" addStyleNames="stroom-label" />
-                        <g:TextBox ui:field="backgroundImage" addStyleNames="stroom-control wide-control" />
-                    </g:FlowPanel>
-
-                    <g:Button ui:field="browseButton" text="Browse..." addStyleNames="stroom-button" />
-
-                    <g:FlowPanel addStyleNames="stroom-floormap-input-group">
-                        <g:Label text="Rotation:" addStyleNames="stroom-label" />
-                        <v:ValueSpinner ui:field="rotation" addStyleNames="stroom-floormap-rotation-spinner" />
-                    </g:FlowPanel>
-                </g:FlowPanel>
-
-                <!-- Row 2: Actions -->
-                <g:FlowPanel addStyleNames="stroom-floormap-settings-row">
-                    <g:FlowPanel addStyleNames="stroom-floormap-actions-group">
-                        <g:Button ui:field="addBackgroundButton" text="Add" addStyleNames="stroom-button stroom-button-blue" />
-                    </g:FlowPanel>
-                </g:FlowPanel>
-
-                <!-- Row 3: The Image Preview -->
-                <g:FlowPanel addStyleNames="stroom-floormap-settings-row">
-                    <g:FlowPanel addStyleNames="stroom-floormap-input-group">
-                        <g:Label text="Preview:" addStyleNames="stroom-label" />
-                        <g:Image ui:field="imagePreview" addStyleNames="stroom-floormap-settings-preview" />
-                    </g:FlowPanel>
-                </g:FlowPanel>
-
-                <!-- Hidden file upload widget triggered by the Browse button -->
-                <g:FileUpload ui:field="fileUpload" visible="false"/>
-            </g:FlowPanel>
-        </form:FormGroup>
-
-        <!-- List of Added Backgrounds -->
-        <form:FormGroup identity="floorMapBackgroundList"
-                        addStyleNames="max stroom-floormap-background-list-group">
-            <g:FlowPanel addStyleNames="max">
-                <g:SimplePanel ui:field="toolbarContainer" />
-                <g:SimplePanel ui:field="gridContainer" addStyleNames="stroom-floormap-background-grid" />
-            </g:FlowPanel>
         </form:FormGroup>
     </g:FlowPanel>
 </ui:UiBinder>
