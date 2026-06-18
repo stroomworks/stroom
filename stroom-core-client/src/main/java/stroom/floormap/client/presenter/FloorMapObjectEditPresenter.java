@@ -336,16 +336,6 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
         };
 
         dataGrid.addColumn(timeColumn, "Effective Time");
-
-        // Coordinates Column
-        final Column<TemporalEntry, String> valueColumn = new TextColumn<>() {
-            @Override
-            public String getValue(final TemporalEntry entry) {
-                return entry.getValue();
-            }
-        };
-
-        dataGrid.addColumn(valueColumn, "Location State");
     }
 
     /**
