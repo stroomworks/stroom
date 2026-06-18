@@ -52,6 +52,7 @@ import com.gwtplatform.mvp.client.View;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.Objects;
 import java.util.function.Consumer;
 import javax.inject.Inject;
 
@@ -138,6 +139,7 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
         getView().setChooseImgView(documentAssetDropDownPresenter.getView().asWidget());
 
         // Row selection updates the input form
+        //noinspection unused
         registerHandler(selectionModel.addSelectionChangeHandler(e -> {
             final TemporalEntry selected = selectionModel.getSelectedObject();
 
@@ -187,6 +189,7 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
         }));
 
         // Toolbar: Click Add to clear input form for a new row
+        //noinspection unused
         registerHandler(addButton.addClickHandler(e -> {
             final TemporalEntry activeVersion = selectionModel.getSelectedObject();
             
@@ -230,6 +233,7 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
         }));
 
         // Toolbar: Click Delete to remove from database and refresh table
+        //noinspection unused
         registerHandler(deleteButton.addClickHandler(e -> {
             final TemporalEntry selected = selectionModel.getSelectedObject();
 
@@ -243,6 +247,7 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
         }));
 
         // Action Form: Save/Update temporal record
+        //noinspection unused
         registerHandler(getView().addSaveHandler(e -> {
             final long time = getView().getEffectiveTime();
             final double x = getView().getX();
@@ -266,6 +271,7 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
         }));
 
         // Action Form: Revert/Cancel changes
+        //noinspection unused
         registerHandler(getView().addCancelHandler(e -> {
             final TemporalEntry selected = selectionModel.getSelectedObject();
             resetInputs(selected);
@@ -295,8 +301,25 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
             }
             dataProvider.setList(entries);
             dataGrid.setRowData(0, entries);
+            // Make sure something is selected if possible
             if (entries != null && !entries.isEmpty()) {
-                selectionModel.setSelected(entries.get(entries.size() - 1), true);
+                final TemporalEntry currentlySelected = selectionModel.getSelectedObject();
+                TemporalEntry matchingEntry = null;
+                if (currentlySelected != null && Objects.equals(objectId, currentlySelected.getKey())) {
+                    for (final TemporalEntry entry : entries) {
+                        if (Objects.equals(entry.getEffectiveTimeMs(), currentlySelected.getEffectiveTimeMs())) {
+                            matchingEntry = entry;
+                            break;
+                        }
+                    }
+                }
+                if (matchingEntry != null) {
+                    selectionModel.setSelected(matchingEntry, true);
+                } else {
+                    // Select the last item if nothing is already selected
+                    //noinspection SequencedCollectionMethodCanBeUsed
+                    selectionModel.setSelected(entries.get(entries.size() - 1), true);
+                }
             } else {
                 selectionModel.clear();
             }

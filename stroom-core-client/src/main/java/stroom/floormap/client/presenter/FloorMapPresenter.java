@@ -58,7 +58,7 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
     private final ButtonView addObjectButton;
     private FloorMapMapPresenter floorMapMapPresenter;
     private FloorMapSettingsPresenter floorMapSettingsPresenter;
-    private FloorMapQueryPresenter eventsQueryPresenter;
+    private FloorMapEventsQueryPresenter eventsQueryPresenter;
     private FloorMapQueryPresenter factsQueryPresenter;
 
     @Inject
@@ -67,6 +67,7 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
                              final Provider<FloorMapMapPresenter> floorMapMapPresenterProvider,
                              final Provider<FloorMapSettingsPresenter> floorMapSettingsPresenterProvider,
                              final Provider<MarkdownEditPresenter> markdownEditPresenterProvider,
+                             final Provider<FloorMapEventsQueryPresenter> floorMapEventsQueryPresenterProvider,
                              final Provider<FloorMapQueryPresenter> floorMapQueryPresenterProvider,
                              final DocumentUserPermissionsTabProvider<FloorMapDoc> documentUserPermissionsTabProvider,
                              final DocumentAssetPresenter<FloorMapDoc> documentAssetPresenter) {
@@ -84,6 +85,7 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
         addObjectButton.setVisible(false);
         toolbar.addButton(addObjectButton);
 
+        //noinspection unused
         registerHandler(editModeButton.addClickHandler(e -> {
             if (floorMapMapPresenter != null) {
                 floorMapMapPresenter.toggleEditMode(editModeButton.getState());
@@ -91,6 +93,7 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
             addObjectButton.setVisible(editModeButton.getState());
         }));
 
+        //noinspection unused
         registerHandler(addObjectButton.addClickHandler(e -> {
             if (floorMapMapPresenter != null) {
                 floorMapMapPresenter.promptAndAddObject();
@@ -102,37 +105,10 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
             return floorMapMapPresenter;
         }));
 
-        addTab(EVENTS_QUERY, new AbstractTabProvider<FloorMapDoc, FloorMapQueryPresenter>(eventBus) {
-            @Override
-            protected FloorMapQueryPresenter createPresenter() {
-                eventsQueryPresenter = floorMapQueryPresenterProvider.get();
-                registerHandler(eventBus.addHandler(ChangeEvent.getType(), () -> fireDirtyEvent(true)));
-                return eventsQueryPresenter;
-            }
-
-            @Override
-            public void onRead(final FloorMapQueryPresenter presenter,
-                               final DocRef docRef,
-                               final FloorMapDoc document,
-                               final boolean readOnly) {
-                presenter.read(docRef, document.getEventsQuery(), document.getEventsQueryTimeRange(),
-                        document.getEventsQueryTablePreferences(), document.getEntityIdColumn(),
-                        document.getLocationIdColumn(), true);
-                presenter.setTaskMonitorFactory(FloorMapPresenter.this);
-            }
-
-            @Override
-            public FloorMapDoc onWrite(final FloorMapQueryPresenter presenter,
-                                       final FloorMapDoc document) {
-                return document.copy()
-                        .eventsQuery(presenter.getQuery())
-                        .eventsQueryTimeRange(presenter.getQueryTimeRange())
-                        .eventsQueryTablePreferences(presenter.getQueryTablePreferences())
-                        .entityIdColumn(presenter.getEntityIdColumn())
-                        .locationIdColumn(presenter.getLocationIdColumn())
-                        .build();
-            }
-        });
+        addTab(EVENTS_QUERY, new DocTabProvider<>(() -> {
+            eventsQueryPresenter = floorMapEventsQueryPresenterProvider.get();
+            return eventsQueryPresenter;
+        }));
 
         addTab(FACTS_QUERY, new AbstractTabProvider<FloorMapDoc, FloorMapQueryPresenter>(eventBus) {
             @Override

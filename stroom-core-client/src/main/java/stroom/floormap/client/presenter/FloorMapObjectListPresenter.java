@@ -54,6 +54,7 @@ public class FloorMapObjectListPresenter extends MyPresenterWidget<FloorMapObjec
     @Override
     protected void onBind() {
         super.onBind();
+        //noinspection unused
         registerHandler(selectionModel.addSelectionChangeHandler(e -> {
             if (selectionConsumer != null) {
                 selectionConsumer.accept(selectionModel.getSelectedObject());
@@ -111,6 +112,7 @@ public class FloorMapObjectListPresenter extends MyPresenterWidget<FloorMapObjec
     public void selectLast() {
         final List<FactObject> list = dataProvider.getList();
         if (list != null && !list.isEmpty()) {
+            //noinspection SequencedCollectionMethodCanBeUsed
             selectionModel.setSelected(list.get(list.size() - 1), true);
         } else {
             selectionModel.clear();
