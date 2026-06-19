@@ -19,6 +19,7 @@ package stroom.floormap.client.presenter;
 import stroom.docref.DocRef;
 import stroom.entity.client.presenter.HasToolbar;
 import stroom.floormap.client.event.FloorMapDataEvent;
+import stroom.floormap.client.event.TimeChangeEvent;
 import stroom.floormap.client.presenter.FloorMapQueryPresenter.FloorMapQueryView;
 import stroom.floormap.shared.FloorMapDoc;
 import stroom.floormap.shared.FloorMapObject;
@@ -75,6 +76,13 @@ public class FloorMapQueryPresenter extends MyPresenterWidget<FloorMapQueryView>
                 final List<FloorMapObject> objects = parseRows(tableResult);
                 FloorMapDataEvent.fire(FloorMapQueryPresenter.this, objects);
             }
+        }));
+
+        // Listen to timeline playback changes to automatically update query time and re-run.
+        registerHandler(getEventBus().addHandler(TimeChangeEvent.getType(), e -> {
+            final TimeRange timeRange = new TimeRange("CUSTOM", String.valueOf(e.getTime()), String.valueOf(e.getTime()));
+            queryEditPresenter.setTimeRange(timeRange);
+            queryEditPresenter.start();
         }));
     }
 

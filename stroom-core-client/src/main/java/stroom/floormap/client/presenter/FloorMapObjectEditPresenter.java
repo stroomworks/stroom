@@ -52,6 +52,7 @@ import com.gwtplatform.mvp.client.View;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import stroom.data.client.event.DataSelectionEvent;
 import java.util.function.Consumer;
 import javax.inject.Inject;
 
@@ -198,9 +199,10 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
                             try {
                                 final long newTime = Long.parseLong(result.trim());
                                 
-                                // Clone coordinate values from active selection
+                                // Clone coordinate values and type from active selection
                                 double x = 0.0;
                                 double y = 0.0;
+                                String activeType = "background".equals(objectId) ? "background" : "gates";
                                 if (activeVersion != null) {
                                     final String originalValue = activeVersion.getValue();
                                     if (originalValue != null && originalValue.trim().startsWith("{")) {
@@ -210,6 +212,10 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
                                             if (coordsArr != null && coordsArr.size() >= 2) {
                                                 x = JSONUtil.getDouble(coordsArr.get(0));
                                                 y = JSONUtil.getDouble(coordsArr.get(1));
+                                            }
+                                            final String typeStr = JSONUtil.getString(json.get(JSON_KEY_TYPE));
+                                            if (typeStr != null && !typeStr.isEmpty()) {
+                                                activeType = typeStr;
                                             }
                                         }
                                     } else if (originalValue != null) {
@@ -221,7 +227,8 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
                                 
                                 final double finalX = x;
                                 final double finalY = y;
-                                addEntry(newTime, finalX, finalY, this::onWriteComplete);
+                                final String finalType = activeType;
+                                addEntry(newTime, finalX, finalY, finalType, this::onWriteComplete);
                             } catch (final NumberFormatException ex) {
                                 // Ignore
                             }
@@ -364,15 +371,13 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
     /**
      * Adds a new temporal entry for the current object.
      */
-    public void addEntry(final long effectiveTimeMs, final double x, final double y, final Runnable onSuccess) {
+    public void addEntry(final long effectiveTimeMs, final double x, final double y, final String type, final Runnable onSuccess) {
         if (objectId == null) {
             return;
         }
 
-        // TODO MB FIX THIS - type = "gates"
-
         final JSONObject json = new JSONObject();
-        json.put(JSON_KEY_TYPE, new JSONString("gates"));
+        json.put(JSON_KEY_TYPE, new JSONString(type != null ? type : "gates"));
         json.put(JSON_KEY_NAME, new JSONString(objectId));
         final JSONArray coordsArr = new JSONArray();
         coordsArr.set(0, new JSONNumber(x));
@@ -387,6 +392,17 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
         matrixArr.set(4, new JSONNumber(0.0));
         matrixArr.set(5, new JSONNumber(0.0));
         json.put(JSON_KEY_TM_WORLD_TO_MAP, matrixArr);
+
+        if ("background".equalsIgnoreCase(type)) {
+            final JSONArray m2sArr = new JSONArray();
+            m2sArr.set(0, new JSONNumber(1.0));
+            m2sArr.set(1, new JSONNumber(0.0));
+            m2sArr.set(2, new JSONNumber(0.0));
+            m2sArr.set(3, new JSONNumber(1.0));
+            m2sArr.set(4, new JSONNumber(0.0));
+            m2sArr.set(5, new JSONNumber(0.0));
+            json.put(JSON_KEY_TM_MAP_TO_SCREEN, m2sArr);
+        }
 
         final TemporalEntry entry = new TemporalEntry(
                 mapName,
@@ -530,12 +546,21 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
             getView().setEffectiveTime(0L);
             getView().setX(0.0);
             getView().setY(0.0);
-            getView().setName("");
-            getView().setType("");
+            if ("background".equals(objectId)) {
+                getView().setName("Background");
+                getView().setType("background");
+            } else {
+                getView().setName("");
+                getView().setType("");
+            }
             documentAssetDropDownPresenter.setSelectedAssetPath("");
             getView().setWorldToMapMatrix(new double[]{1.0, 0.0, 0.0, 1.0, 0.0, 0.0});
             getView().setMapToScreenMatrix(new double[]{1.0, 0.0, 0.0, 1.0, 0.0, 0.0});
         }
+    }
+
+    public void addAssetSelectionHandler(final DataSelectionEvent.DataSelectionHandler<String> handler) {
+        registerHandler(documentAssetDropDownPresenter.addDataSelectionHandler(handler));
     }
 
     // --------------------------------------------------------------------------------

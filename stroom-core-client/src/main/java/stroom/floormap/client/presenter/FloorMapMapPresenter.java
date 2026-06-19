@@ -213,7 +213,7 @@ public class FloorMapMapPresenter
                 return;
             }
 
-            final TemporalEntry selectedEntry = floorMapObjectEditPresenter.getSelectedEntry();
+            final TemporalEntry selectedEntry = findEntry(key);
             final long targetTime = selectedEntry != null ? selectedEntry.getEffectiveTimeMs() : selectedTime;
 
             applyMove(selectedEntry, key, mapName, e.getX(), e.getY(), targetTime);
@@ -229,27 +229,29 @@ public class FloorMapMapPresenter
                     });
                 }
             } else {
-                final double worldX = floorMapObjectEditPresenter.getView().getX();
-                final double worldY = floorMapObjectEditPresenter.getView().getY();
-                final double[] w2m = floorMapObjectEditPresenter.getView().getWorldToMapMatrix();
-                if (w2m != null && w2m.length >= 6) {
-                    final double a = w2m[0];
-                    final double b = w2m[1];
-                    final double c = w2m[2];
-                    final double d = w2m[3];
+                final TemporalEntry entry = findEntry(objectId);
+                final EntryCoordsAndMatrix info = getEntryCoordsAndMatrix(entry);
 
-                    // e = mapX - (a * worldX + c * worldY)
-                    // f = mapY - (b * worldX + d * worldY)
-                    final double newE = x - (a * worldX + c * worldY);
-                    final double newF = y - (b * worldX + d * worldY);
+                // e = mapX - (a * worldX + c * worldY)
+                // f = mapY - (b * worldX + d * worldY)
+                final double newE = x - (info.a * info.worldX + info.c * info.worldY);
+                final double newF = y - (info.b * info.worldX + info.d * info.worldY);
 
-                    final double[] newW2m = new double[]{a, b, c, d, newE, newF};
-                    floorMapObjectEditPresenter.getView().setWorldToMapMatrix(newW2m);
-                }
+                final double[] newW2m = new double[]{info.a, info.b, info.c, info.d, newE, newF};
+                floorMapObjectEditPresenter.getView().setWorldToMapMatrix(newW2m);
             }
         });
 
         floorMapObjectEditPresenter.setEditStateConsumer(floorMapCanvasPresenter::setIsDraggingEnabled);
+
+        this.floorMapObjectEditPresenter.addAssetSelectionHandler(e -> {
+            if (e.getSelectedItem() != null) {
+                final String type = floorMapObjectEditPresenter.getView().getType();
+                if ("background".equalsIgnoreCase(type)) {
+                    floorMapCanvasPresenter.setBackgroundImage(e.getSelectedItem());
+                }
+            }
+        });
 
         this.floorMapObjectListPresenter.setSelectionConsumer(factObj -> {
             if (factObj != null) {
@@ -491,6 +493,7 @@ public class FloorMapMapPresenter
     }
 
     private void parseTemporalEntries(final List<TemporalEntry> entries) {
+        this.currentEntries = entries;
         String activeBgImage = null;
         FloorMapTransformationMatrix activeBgMatrix = FloorMapTransformationMatrix.identity();
         final List<FloorMapObject> plottedObjects = new ArrayList<>();
@@ -841,6 +844,58 @@ public class FloorMapMapPresenter
                     consumer.accept(factObjects);
                 })
                 .exec();
+    }
+
+    private List<TemporalEntry> currentEntries = new ArrayList<>();
+
+    private TemporalEntry findEntry(final String key) {
+        if (currentEntries != null && key != null) {
+            for (final TemporalEntry entry : currentEntries) {
+                if (key.equals(entry.getKey())) {
+                    return entry;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static class EntryCoordsAndMatrix {
+        double worldX = 0.0;
+        double worldY = 0.0;
+        double a = 1.0;
+        double b = 0.0;
+        double c = 0.0;
+        double d = 1.0;
+        double e = 0.0;
+        double f = 0.0;
+    }
+
+    private EntryCoordsAndMatrix getEntryCoordsAndMatrix(final TemporalEntry entry) {
+        final EntryCoordsAndMatrix result = new EntryCoordsAndMatrix();
+        if (entry != null && entry.getValue() != null && entry.getValue().trim().startsWith("{")) {
+            try {
+                final JSONObject json = JSONUtil.getObject(JSONUtil.parse(entry.getValue()));
+                if (json != null) {
+                    final JSONArray coordsArr = JSONUtil.getArray(json.get(FloorMapObjectEditPresenter.JSON_KEY_COORDS));
+                    if (coordsArr != null && coordsArr.size() >= 2) {
+                        result.worldX = JSONUtil.getDouble(coordsArr.get(0));
+                        result.worldY = JSONUtil.getDouble(coordsArr.get(1));
+                    }
+                    final JSONArray matrixArr = JSONUtil.getArray(json.get(FloorMapObjectEditPresenter.JSON_KEY_TM_WORLD_TO_MAP));
+                    if (matrixArr != null && matrixArr.size() >= 6) {
+                        result.a = JSONUtil.getDouble(matrixArr.get(0));
+                        result.b = JSONUtil.getDouble(matrixArr.get(1));
+                        result.c = JSONUtil.getDouble(matrixArr.get(2));
+                        result.d = JSONUtil.getDouble(matrixArr.get(3));
+                        result.e = JSONUtil.getDouble(matrixArr.get(4));
+                        result.f = JSONUtil.getDouble(matrixArr.get(5));
+                    }
+                }
+            } catch (final Exception ex) {
+                // Ignore
+            }
+        }
+        return result;
     }
 
     public interface FloorMapMapView extends View {

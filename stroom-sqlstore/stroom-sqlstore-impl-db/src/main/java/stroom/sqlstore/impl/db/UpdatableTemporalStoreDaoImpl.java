@@ -337,7 +337,8 @@ class UpdatableTemporalStoreDaoImpl implements UpdatableTemporalStoreDao {
         for (final ExpressionTerm term : timeTerms) {
             if (UpdatableTemporalStore.TIME_FIELD.getFldName().equals(term.getField()) &&
                     (term.getCondition() == ExpressionTerm.Condition.EQUALS ||
-                    term.getCondition() == ExpressionTerm.Condition.LESS_THAN_OR_EQUAL_TO)) {
+                    term.getCondition() == ExpressionTerm.Condition.LESS_THAN_OR_EQUAL_TO ||
+                    term.getCondition() == ExpressionTerm.Condition.LESS_THAN)) {
                 try {
                     return DateUtil.parseUnknownString(term.getValue());
                 } catch (final RuntimeException e) {
