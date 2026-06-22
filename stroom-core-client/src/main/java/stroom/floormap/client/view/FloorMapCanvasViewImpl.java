@@ -51,6 +51,8 @@ public class FloorMapCanvasViewImpl
         implements FloorMapCanvasView, ReadOnlyChangeHandler {
 
     private final static int OBJECT_SIZE = 100;
+    private final static int PERSON_RADIUS = 30;
+
     private final Widget widget;
 
     private final Map<String, Double> imageAspectRatioCache = new HashMap<>();
@@ -79,7 +81,6 @@ public class FloorMapCanvasViewImpl
 
     @Override
     public void onResize() {
-        // Get the parent element from the DOM and its width/height.
         final Element parent = svgContainer.getElement().getParentElement();
         final int width = parent.getOffsetWidth();
         final int height = parent.getOffsetHeight();
@@ -88,7 +89,6 @@ public class FloorMapCanvasViewImpl
         if (width <= 0 || height <= 0) {
             Scheduler.get().scheduleDeferred((this::onResize));
         }
-
         // SVG handles its own responsiveness via 100% width/height.
     }
 
@@ -121,26 +121,32 @@ public class FloorMapCanvasViewImpl
                      final List<FloorMapObject> objects,
                      final String selectedObjectId) {
         final HtmlBuilder htmlBuilder = new HtmlBuilder();
-        final String svgMatrix = matrix != null ? matrix.toSvgMatrix() : FloorMapTransformationMatrix.identity().toSvgMatrix();
+        final FloorMapTransformationMatrix effectiveMatrix =
+                matrix != null ? matrix : FloorMapTransformationMatrix.identity();
+        final String svgMatrix = effectiveMatrix.toSvgMatrix();
 
-        // Build the SVG structure dynamically
+        // Pre-compute counter-rotation so labels stay upright when the
+        // background image has been rotated via the world-to-map matrix.
+        final double radians = Math.atan2(effectiveMatrix.getB(), effectiveMatrix.getA());
+        final double counterRotationDeg = -Math.toDegrees(radians);
+        final String counterRotation = "rotate(" + counterRotationDeg + ")";
+
         htmlBuilder.elem(svg -> {
             // Group 1: User zoom/pan (applied first).
-            svg.elem(group -> {
-                // Group 2: The transformation matrix (applied inside zoom).
-                group.elem(matrixGroup -> {
-                    // Render the background image if set
+            svg.elem(panGroup -> {
+                // Group 2: The map-to-screen transformation matrix.
+                panGroup.elem(matrixGroup -> {
+
+                    // ----------------------------------------------------------------
+                    // Background
+                    // ----------------------------------------------------------------
                     if (backgroundImage != null) {
                         final Double cachedAspectRatio = imageAspectRatioCache.get(backgroundImage);
-                        final double aspectRatio;
-                        if (cachedAspectRatio != null) {
-                            aspectRatio = cachedAspectRatio;
-                        } else {
-                            aspectRatio = 1.0; // Fallback to square aspect ratio while loading
+                        final double aspectRatio = cachedAspectRatio != null ? cachedAspectRatio : 1.0;
+                        if (cachedAspectRatio == null) {
                             loadImageAspectRatio(backgroundImage);
                         }
-
-                        final double height = 1000 / aspectRatio;
+                        final double bgHeight = 1000.0 / aspectRatio;
 
                         matrixGroup.elem(SafeHtmlUtil.from("image"),
                             new Attribute(SafeHtmlUtils.fromSafeConstant("href"),
@@ -148,17 +154,16 @@ public class FloorMapCanvasViewImpl
                             new Attribute("x", "0"),
                             new Attribute("y", "0"),
                             new Attribute("width", "1000"),
-                            new Attribute("height", String.valueOf(height)),
+                            new Attribute("height", String.valueOf(bgHeight)),
                             new Attribute("preserveAspectRatio", "none"),
                             new Attribute("id", "background"));
-                        
+
                         if ("background".equals(selectedObjectId)) {
-                            // Render a highlight border on top of the background image
                             matrixGroup.elem(SafeHtmlUtil.from("rect"),
                                 new Attribute("x", "0"),
                                 new Attribute("y", "0"),
                                 new Attribute("width", "1000"),
-                                new Attribute("height", String.valueOf(height)),
+                                new Attribute("height", String.valueOf(bgHeight)),
                                 new Attribute("fill", "none"),
                                 new Attribute("stroke", "#1e88e5"),
                                 new Attribute("stroke-width", "8"),
@@ -166,17 +171,17 @@ public class FloorMapCanvasViewImpl
                                 new Attribute("pointer-events", "none"));
                         }
                     } else {
-                        // Fallback background rect
-                        group.elem(SafeHtmlUtil.from("rect"),
+                        // FIX (Bug 1): fallback rect belongs in matrixGroup, not panGroup.
+                        matrixGroup.elem(SafeHtmlUtil.from("rect"),
                             new Attribute("x", "0"),
                             new Attribute("y", "0"),
                             new Attribute("width", "1000"),
                             new Attribute("height", "1000"),
-                            new Attribute("fill", "#FFFFFF"),
+                            new Attribute("fill", "#f8f8f8"),
                             new Attribute("id", "background"));
-                        
+
                         if ("background".equals(selectedObjectId)) {
-                            group.elem(SafeHtmlUtil.from("rect"),
+                            matrixGroup.elem(SafeHtmlUtil.from("rect"),
                                 new Attribute("x", "0"),
                                 new Attribute("y", "0"),
                                 new Attribute("width", "1000"),
@@ -189,70 +194,88 @@ public class FloorMapCanvasViewImpl
                         }
                     }
 
+                    // ----------------------------------------------------------------
+                    // Map objects (facts — gates, doors, etc.)
+                    // ----------------------------------------------------------------
                     if (objects != null) {
                         for (final FloorMapObject obj : objects) {
-                            matrixGroup.elem(objectGroup -> {
+                            final boolean isPerson = "person".equalsIgnoreCase(obj.getType());
+                            final boolean isSelected = obj.getId().equals(selectedObjectId);
 
-                                // Determine if this object is a person.
-                                final boolean isPerson = obj.getType() != null && obj.getType().equalsIgnoreCase("person");
-                                final boolean isSelected = obj.getId().equals(selectedObjectId);
+                            // Short display label: use the part before '@' for email addresses,
+                            // or the full ID if no '@' is present.
+                            final String rawId = obj.getId() != null ? obj.getId() : "";
+                            final int atIdx = rawId.indexOf('@');
+                            final String displayLabel = atIdx > 0 ? rawId.substring(0, atIdx) : rawId;
 
+                            // Each object is a <g translate(x,y)> wrapper containing the shape + label.
+                            // The wrapper id uses the "obj-" prefix so click-detection ignores it.
+                            matrixGroup.elem(objGroup -> {
                                 if (isPerson) {
-                                    // Render a small blue circle for users.
-                                    objectGroup.elem(SafeHtmlUtil.from("circle"),
+                                    // ---- Person: filled circle ----
+                                    objGroup.elem(SafeHtmlUtil.from("circle"),
                                         new Attribute("cx", "0"),
                                         new Attribute("cy", "0"),
-                                        new Attribute("r", (OBJECT_SIZE / 4) + ""),
+                                        new Attribute("r", String.valueOf(PERSON_RADIUS)),
                                         new Attribute("fill", "#1f77b4"),
-                                        new Attribute("stroke", isSelected ? "#1e88e5" : "#ffffff"),
+                                        new Attribute("stroke", isSelected ? "#ff9800" : "#ffffff"),
                                         new Attribute("stroke-width", isSelected ? "4" : "2"),
-                                        new Attribute("vector-effect", isSelected ? "non-scaling-stroke" : "none"),
-                                        new Attribute("id", obj.getId())
-                                    );
+                                        new Attribute("vector-effect", "non-scaling-stroke"),
+                                        // FIX (Bug 3): ID on the shape (no "obj-" prefix) so click-detection works.
+                                        new Attribute("id", obj.getId()));
+
+                                    // Label rendered BELOW the circle so it isn't hidden inside it.
+                                    // FIX (Bug 4/5): use dy to shift below the circle radius.
+                                    objGroup.elem(displayLabel,
+                                            SafeHtmlUtil.from("text"),
+                                            new Attribute("x", "0"),
+                                            new Attribute("y", String.valueOf(PERSON_RADIUS + 4)),
+                                            new Attribute("dy", "0.85em"),
+                                            new Attribute("text-anchor", "middle"),
+                                            new Attribute("fill", "#1f77b4"),
+                                            new Attribute("font-size", "14px"),
+                                            new Attribute("font-family", "sans-serif"),
+                                            new Attribute("font-weight", "600"),
+                                            new Attribute("pointer-events", "none"),
+                                            new Attribute("transform", counterRotation));
                                 } else {
-                                    objectGroup.elem(SafeHtmlUtil.from("rect"),
-                                        // Shifting x and y by half the square's size puts it's center over the map coordinate.
-                                        new Attribute("x", (-OBJECT_SIZE/2) + ""),
-                                        new Attribute("y", (-OBJECT_SIZE/2) + ""),
-                                        new Attribute("width", OBJECT_SIZE + ""),
-                                        new Attribute("height", OBJECT_SIZE + ""),
-                                        new Attribute("fill", "grey"),
-                                        new Attribute("rx", "4"), // Round corners
-                                        new Attribute("ry", "4"),
-                                        new Attribute("stroke", isSelected ? "#1e88e5" : "none"),
+                                    // ---- Static object: rounded rectangle ----
+                                    final String fillColour = colourForType(obj.getType());
+
+                                    objGroup.elem(SafeHtmlUtil.from("rect"),
+                                        new Attribute("x", String.valueOf(-OBJECT_SIZE / 2)),
+                                        new Attribute("y", String.valueOf(-OBJECT_SIZE / 2)),
+                                        new Attribute("width", String.valueOf(OBJECT_SIZE)),
+                                        new Attribute("height", String.valueOf(OBJECT_SIZE)),
+                                        new Attribute("fill", fillColour),
+                                        new Attribute("rx", "6"),
+                                        new Attribute("ry", "6"),
+                                        new Attribute("stroke", isSelected ? "#ff9800" : "none"),
                                         new Attribute("stroke-width", isSelected ? "4" : "0"),
                                         new Attribute("vector-effect", isSelected ? "non-scaling-stroke" : "none"),
-                                        new Attribute("id", obj.getId())
-                                    );
+                                        // FIX (Bug 3): ID on the shape so click-detection works.
+                                        new Attribute("id", obj.getId()));
+
+                                    // FIX (Bug 2): pass the actual display text as content.
+                                    objGroup.elem(displayLabel,
+                                            SafeHtmlUtil.from("text"),
+                                            new Attribute("x", "0"),
+                                            new Attribute("y", "0"),
+                                            new Attribute("dy", "0.35em"),
+                                            new Attribute("text-anchor", "middle"),
+                                            new Attribute("fill", "white"),
+                                            new Attribute("font-size", "14px"),
+                                            new Attribute("font-family", "sans-serif"),
+                                            new Attribute("pointer-events", "none"),
+                                            new Attribute("transform", counterRotation));
                                 }
-
-                                double counterRotationDegrees = 0;
-                                if (matrix != null) {
-                                    final double radians = Math.atan2(matrix.getB(), matrix.getA());
-                                    counterRotationDegrees = -Math.toDegrees(radians);
-                                }
-
-                                // Adjust label text position for circles vs squares.
-                                //final String textDy = isPerson ? "1.5em" : "0.35em";
-
-                                objectGroup.elem(obj.getId(), SafeHtmlUtil.from("text"),
-                                        new Attribute("x", "0"),
-                                        new Attribute("y", "0"),
-                                        new Attribute("dy", "0.35em"), // Centres text vertically
-                                        new Attribute("text-anchor", "middle"), // Centres text horizontally
-                                        new Attribute("fill", "white"),
-                                        new Attribute("font-size", "11px"),
-                                        new Attribute("font-family", "sans-serif"),
-                                        new Attribute("pointer-events", "none"), // Prevents text from interfering with mouse panning
-                                        new Attribute("transform", "rotate(" + counterRotationDegrees + ")")
-                                );
                             },
                             SafeHtmlUtil.from("g"),
                                 new Attribute("transform", "translate(" + obj.getX() + "," + obj.getY() + ")"),
-                                new Attribute("id", "obj-" + obj.getId())
-                            );
+                                new Attribute("id", "obj-" + obj.getId()));
                         }
                     }
+
                 }, SafeHtmlUtil.from("g"), new Attribute("transform", svgMatrix));
             }, SafeHtmlUtil.from("g"),
                     new Attribute("transform", "translate(" + x + "," + y + ") scale(" + scale + ")"));
@@ -263,8 +286,27 @@ public class FloorMapCanvasViewImpl
             new Attribute("xmlns", "http://www.w3.org/2000/svg")
         );
 
-        // Inject the generated SVG into the HTML container
         svgContainer.setHTML(htmlBuilder.toSafeHtml());
+    }
+
+    /**
+     * TODO EW: Potentially add a colour option to object edit screen so users can choose this instead of being predefined.
+     * Returns a fill colour based on object type so different fixture types are
+     * visually distinguishable at a glance.
+     */
+    private static String colourForType(final String type) {
+        if (type == null) {
+            return "#607d8b"; // blue-grey default
+        }
+        return switch (type.toLowerCase()) {
+            case "background" -> "#90a4ae";
+            case "gates", "gate" -> "#43a047"; // green
+            case "door", "doors" -> "#fb8c00"; // amber
+            case "camera", "cameras" -> "#8e24aa"; // purple
+            case "desk", "desks" -> "#039be5"; // light blue
+            case "server", "servers" -> "#e53935"; // red
+            default -> "#607d8b"; // blue-grey
+        };
     }
 
     @Override

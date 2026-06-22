@@ -31,17 +31,17 @@ import stroom.floormap.client.presenter.FloorMapQueryPresenter;
 import stroom.floormap.client.presenter.FloorMapQueryPresenter.FloorMapQueryView;
 import stroom.floormap.client.presenter.FloorMapSettingsPresenter;
 import stroom.floormap.client.presenter.FloorMapSettingsPresenter.FloorMapSettingsView;
-import stroom.floormap.client.presenter.FloorMapTempPresenter;
-import stroom.floormap.client.presenter.FloorMapTempPresenter.FloorMapTempView;
 import stroom.floormap.client.presenter.FloorMapTimelinePresenter;
 import stroom.floormap.client.presenter.FloorMapTimelinePresenter.FloorMapTimelineView;
+import stroom.floormap.client.presenter.FloorMapTimelineSettingsPresenter;
+import stroom.floormap.client.presenter.FloorMapTimelineSettingsPresenter.FloorMapTimelineSettingsView;
 import stroom.floormap.client.view.FloorMapCanvasViewImpl;
 import stroom.floormap.client.view.FloorMapMapViewImpl;
 import stroom.floormap.client.view.FloorMapObjectEditViewImpl;
 import stroom.floormap.client.view.FloorMapObjectListViewImpl;
 import stroom.floormap.client.view.FloorMapQueryViewImpl;
 import stroom.floormap.client.view.FloorMapSettingsViewImpl;
-import stroom.floormap.client.view.FloorMapTempViewImpl;
+import stroom.floormap.client.view.FloorMapTimelineSettingsViewImpl;
 import stroom.floormap.client.view.FloorMapTimelineViewImpl;
 
 /**
@@ -62,15 +62,16 @@ public class FloorMapModule extends PluginModule {
         bindPresenterWidget(FloorMapSettingsPresenter.class,
                 FloorMapSettingsView.class,
                 FloorMapSettingsViewImpl.class);
-        bindPresenterWidget(FloorMapTempPresenter.class,
-                FloorMapTempView.class,
-                FloorMapTempViewImpl.class);
         bindPresenterWidget(FloorMapCanvasPresenter.class,
                 FloorMapCanvasView.class,
                 FloorMapCanvasViewImpl.class);
         bindPresenterWidget(FloorMapTimelinePresenter.class,
                 FloorMapTimelineView.class,
                 FloorMapTimelineViewImpl.class);
+
+        bindPresenterWidget(FloorMapTimelineSettingsPresenter.class,
+                FloorMapTimelineSettingsView.class,
+                FloorMapTimelineSettingsViewImpl.class);
 
         bindPresenterWidget(FloorMapQueryPresenter.class,
                 FloorMapQueryView.class,

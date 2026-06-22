@@ -52,8 +52,9 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     private double lastMouseX;
     private double lastMouseY;
 
-    // Objects on the map
-    private List<FloorMapObject> objects = new ArrayList<>();
+    // Objects on the map — kept in two separate lists so facts and events never overwrite each other.
+    private List<FloorMapObject> factObjects = new ArrayList<>();
+    private List<FloorMapObject> eventObjects = new ArrayList<>();
 
     // Edit mode
     private boolean editMode = false;
@@ -153,8 +154,8 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                             dragHandler.onDrag("background", matrix.getE(), matrix.getF(), matrix);
                         }
                     } else {
-                        // Move the selected object (non-background)
-                        for (final FloorMapObject obj : objects) {
+                        // Move the selected object.
+                        for (final FloorMapObject obj : factObjects) {
                             if (obj.getId().equals(selectedObjectId)) {
                                 // Revert scale to get unzoomed screen delta
                                 final double deltaUnzoomedX = deltaX / scale;
@@ -194,7 +195,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                     MapObjectMovedEvent.fire(this, "background", matrix.getE(), matrix.getF());
                 } else {
                     // Find the object's current coordinates
-                    for (final FloorMapObject obj : objects) {
+                    for (final FloorMapObject obj : factObjects) {
                         if (obj.getId().equals(selectedObjectId)) {
                             MapObjectMovedEvent.fire(this, selectedObjectId, obj.getX(), obj.getY());
                             break;
@@ -228,7 +229,10 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     }
 
     private void redraw() {
-        getView().draw(scale, offsetX, offsetY, backgroundImage, matrix, objects, selectedObjectId);
+        // Merge facts and events into a single list so both are always visible simultaneously.
+        final List<FloorMapObject> combined = new ArrayList<>(factObjects);
+        combined.addAll(eventObjects);
+        getView().draw(scale, offsetX, offsetY, backgroundImage, matrix, combined, selectedObjectId);
     }
 
     public void setSelectedObjectId(final String selectedObjectId) {
@@ -255,9 +259,30 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         redraw();
     }
 
-    public void setObjects(final List<FloorMapObject> objects) {
-        this.objects = objects;
+    /**
+     * Sets the static floor-plan objects (facts query result).
+     * These are gates, doors, desks etc. whose positions come from the facts store.
+     */
+    public void setFactObjects(final List<FloorMapObject> objects) {
+        this.factObjects = objects != null ? objects : new ArrayList<>();
         redraw();
+    }
+
+    /**
+     * Sets the event-driven entity overlays (events query result).
+     * These are person/entity positions at the currently selected time.
+     */
+    public void setEventObjects(final List<FloorMapObject> objects) {
+        this.eventObjects = objects != null ? objects : new ArrayList<>();
+        redraw();
+    }
+
+    /**
+     * Legacy convenience alias — routes to {@link #setFactObjects} so existing
+     * edit-mode code paths (which only deal with facts) continue to work.
+     */
+    public void setObjects(final List<FloorMapObject> objects) {
+        setFactObjects(objects);
     }
 
     public void setEditMode(final boolean editMode) {

@@ -16,7 +16,6 @@
 
 package stroom.floormap.client.presenter;
 
-import stroom.data.client.presenter.MetaPresenter;
 import stroom.dispatch.client.RestFactory;
 import stroom.docref.DocRef;
 import stroom.entity.client.presenter.DocPresenter;
@@ -48,9 +47,8 @@ import stroom.query.client.presenter.ResultComponent;
 import stroom.query.client.presenter.ResultStoreModel;
 import stroom.sqlstore.shared.SqlTemporalStoreResource;
 import stroom.util.shared.TemporalEntry;
-import stroom.widget.tab.client.presenter.LinkTabsPresenter;
-import stroom.widget.tab.client.presenter.TabData;
 import stroom.alert.client.event.PromptEvent;
+import stroom.widget.datepicker.client.UTCDate;
 import com.google.gwt.json.client.JSONArray;
 import com.google.gwt.json.client.JSONNumber;
 import com.google.gwt.json.client.JSONObject;
@@ -69,14 +67,13 @@ import java.util.function.Consumer;
 
 /**
  * Main presenter for the Floor Map visualization.
- * Coordinates the map canvas, the timeline, and the log data view.
+ * Coordinates the map canvas and the timeline.
  */
 public class FloorMapMapPresenter
         extends DocPresenter<FloorMapMapView, FloorMapDoc> {
 
     public static final Object MAP = new Object();
     public static final Object TIMELINE = new Object();
-    public static final Object LOG_DATA = new Object();
     public static final Object PROPERTIES = new Object();
 
     private static final SqlTemporalStoreResource SQL_TEMPORAL_STORE_RESOURCE =
@@ -88,8 +85,12 @@ public class FloorMapMapPresenter
     private final FloorMapObjectListPresenter floorMapObjectListPresenter;
 
     private final RestFactory restFactory;
-    private final LinkTabsPresenter linkTabsPresenter;
     private final QueryModel queryModel;
+    private final QueryModel histogramQueryModel;
+
+    private long histogramStart;
+    private long histogramEnd;
+    private static final int HISTOGRAM_BINS = 100;
 
     // Local state for batch saving
     // TODO MB FIXME IntelliJ warning
@@ -104,9 +105,6 @@ public class FloorMapMapPresenter
     public FloorMapMapPresenter(final EventBus eventBus,
                                 final FloorMapMapView view,
                                 final RestFactory restFactory,
-                                final LinkTabsPresenter linkTabsPresenter,
-                                final MetaPresenter metaPresenter,
-                                final FloorMapTempPresenter floorMapTempPresenter,
                                 final DateTimeSettingsFactory dateTimeSettingsFactory,
                                 final ResultStoreModel resultStoreModel,
                                 final Provider<FloorMapObjectEditPresenter> floorMapObjectEditPresenterProvider,
@@ -115,7 +113,6 @@ public class FloorMapMapPresenter
                                 final Provider<FloorMapObjectListPresenter> floorMapObjectListPresenterProvider) {
         super(eventBus, view);
         this.restFactory = restFactory;
-        this.linkTabsPresenter = linkTabsPresenter;
 
         this.floorMapCanvasPresenter = floorMapCanvasPresenterProvider.get();
         this.floorMapTimelinePresenter = floorMapTimelinePresenterProvider.get();
@@ -125,11 +122,6 @@ public class FloorMapMapPresenter
         // Default initial time
         this.selectedTime = System.currentTimeMillis();
 
-        final TabData dataTab = linkTabsPresenter.addTab("Data", metaPresenter);
-        linkTabsPresenter.addTab("Temp", floorMapTempPresenter);
-        linkTabsPresenter.changeSelectedTab(dataTab);
-
-        setInSlot(LOG_DATA, linkTabsPresenter);
         setInSlot(MAP, floorMapCanvasPresenter);
         setInSlot(TIMELINE, floorMapTimelinePresenter);
         setInSlot(PROPERTIES, floorMapObjectEditPresenter);
@@ -175,6 +167,50 @@ public class FloorMapMapPresenter
                         ? getEntity().getFactsQueryTablePreferences()
                         : QueryTablePreferences.builder().build());
         this.queryModel.addResultComponent(QueryModel.TABLE_COMPONENT_ID, resultConsumer);
+
+        // Separate QueryModel for the histogram — runs the events query over the full
+        // timeline range to count events per time bucket.
+        final ResultComponent histogramResultConsumer = new ResultComponent() {
+            @Override
+            public OffsetRange getRequestedRange() {
+                // Request a large page so we get a meaningful sample for bucketing.
+                return new OffsetRange(0, 10000);
+            }
+
+            @Override
+            public GroupSelection getGroupSelection() {
+                return null;
+            }
+
+            @Override
+            public void reset() {}
+
+            @Override
+            public void startSearch() {}
+
+            @Override
+            public void endSearch() {}
+
+            @Override
+            public void setData(final Result componentResult) {
+                if (componentResult instanceof final TableResult tableResult) {
+                    parseHistogram(tableResult);
+                }
+            }
+
+            @Override
+            public void setQueryModel(final QueryModel queryModel) {}
+        };
+
+        this.histogramQueryModel = new QueryModel(
+                eventBus,
+                restFactory,
+                dateTimeSettingsFactory,
+                resultStoreModel,
+                () -> getEntity() != null && getEntity().getEventsQueryTablePreferences() != null
+                        ? getEntity().getEventsQueryTablePreferences()
+                        : QueryTablePreferences.builder().build());
+        this.histogramQueryModel.addResultComponent(QueryModel.TABLE_COMPONENT_ID, histogramResultConsumer);
     }
 
     @Override
@@ -182,7 +218,12 @@ public class FloorMapMapPresenter
         super.onBind();
         registerHandler(getEventBus().addHandler(TimeChangeEvent.getType(), e -> onTimeChange(e.getTime())));
         registerHandler(getEventBus().addHandler(FloorMapDataEvent.getType(), e ->
-                floorMapCanvasPresenter.setObjects(e.getObjects())));
+                floorMapCanvasPresenter.setEventObjects(e.getObjects())));
+
+        // Re-run the histogram whenever the user changes the visible date range via the settings popup.
+        floorMapTimelinePresenter.setTimeRangeChangeHandler(() ->
+                runHistogramQuery(floorMapTimelinePresenter.getStartTime(),
+                        floorMapTimelinePresenter.getEndTime()));
 
         registerHandler(getEventBus().addHandler(MapObjectSelectedEvent.getType(), e -> {
             if (e.getObjectId() != null && editMode) {
@@ -377,14 +418,19 @@ public class FloorMapMapPresenter
 
     @Override
     protected void onRead(final DocRef docRef, final FloorMapDoc document, final boolean readOnly) {
-        updateTimelineRange();
+        // Initialise and reset both query models BEFORE starting any searches, so that the histogram query
+        // started inside updateTimelineRange() is not immediately cancelled by the reset() call below.
         queryModel.init(docRef);
         queryModel.reset(DestroyReason.NO_LONGER_NEEDED);
+        histogramQueryModel.init(docRef);
+        histogramQueryModel.reset(DestroyReason.NO_LONGER_NEEDED);
 
         final String mapName = document.getTemporalStoreRef() != null ? document.getTemporalStoreRef().getName() : "location_plan_b";
         floorMapObjectEditPresenter.setMapName(mapName);
         floorMapObjectEditPresenter.setFloorMapDoc(document);
 
+        // Start timeline (and histogram query) only after models are ready.
+        updateTimelineRange();
         onTimeChange(selectedTime);
     }
 
@@ -559,8 +605,6 @@ public class FloorMapMapPresenter
     private void parseFacts(final TableResult tableResult) {
         int keyIdx = -1;
         int typeIdx = -1;
-        int nameIdx = -1;
-        int mapsIdx = -1;
         int coordsIdx = -1;
         int imgIdx = -1;
         int worldToMapIdx = -1;
@@ -575,8 +619,6 @@ public class FloorMapMapPresenter
             final String colName = columns.get(i).getName();
             if (colName.equalsIgnoreCase("Key")) keyIdx = i;
             else if (colName.equalsIgnoreCase(FloorMapObjectEditPresenter.JSON_KEY_TYPE)) typeIdx = i;
-            else if (colName.equalsIgnoreCase(FloorMapObjectEditPresenter.JSON_KEY_NAME)) nameIdx = i;
-            else if (colName.equalsIgnoreCase("maps")) mapsIdx = i;
             else if (colName.equalsIgnoreCase(FloorMapObjectEditPresenter.JSON_KEY_COORDS)) coordsIdx = i;
             else if (colName.equalsIgnoreCase(FloorMapObjectEditPresenter.JSON_KEY_IMG)) imgIdx = i;
             else if (colName.equalsIgnoreCase("tm_world_to_map") || colName.equalsIgnoreCase(FloorMapObjectEditPresenter.JSON_KEY_TM_WORLD_TO_MAP)) worldToMapIdx = i;
@@ -689,8 +731,105 @@ public class FloorMapMapPresenter
         final long start = selectedTime - ONE_DAY_MS;
         final long end = selectedTime + ONE_DAY_MS;
 
+        this.histogramStart = start;
+        this.histogramEnd = end;
+
         floorMapTimelinePresenter.setTimeRange(start, end);
         floorMapTimelinePresenter.setCurrentTime(selectedTime);
+
+        runHistogramQuery(start, end);
+    }
+
+    /**
+     * Runs the events query over the full [start, end] range and populates the histogram.
+     */
+    private void runHistogramQuery(final long start, final long end) {
+        final String eventsQuery = getEntity() != null ? getEntity().getEventsQuery() : null;
+        if (eventsQuery == null || eventsQuery.trim().isEmpty()) {
+            return;
+        }
+
+        // Keep these in sync with the query range so that parseHistogram buckets
+        // events against the same window that was actually queried.
+        this.histogramStart = start;
+        this.histogramEnd = end;
+
+        final TimeRange fullRange = new TimeRange("CUSTOM",
+                String.valueOf(start), String.valueOf(end));
+        histogramQueryModel.startNewSearch(
+                QueryModel.TABLE_COMPONENT_ID,
+                "histogramTable",
+                eventsQuery,
+                null,
+                fullRange,
+                false,
+                false,
+                "Histogram Query",
+                null
+        );
+    }
+
+    /**
+     * Parses the histogram TableResult: reads the 'Effective Time' column (ISO-8601 string),
+     * buckets events into HISTOGRAM_BINS bins across [histogramStart, histogramEnd],
+     * and sends the counts to the timeline for rendering.
+     */
+    private void parseHistogram(final TableResult tableResult) {
+        final int[] bins = new int[HISTOGRAM_BINS];
+
+        if (tableResult == null || tableResult.getRows() == null || tableResult.getColumns() == null) {
+            floorMapTimelinePresenter.setHistogramData(bins);
+            return;
+        }
+
+        // Find the "Effective Time" column index.
+        int timeColIdx = -1;
+        final List<Column> columns = tableResult.getColumns();
+        for (int i = 0; i < columns.size(); i++) {
+            final String name = columns.get(i).getName();
+            if ("Effective Time".equalsIgnoreCase(name) || "EffectiveTime".equalsIgnoreCase(name)) {
+                timeColIdx = i;
+                break;
+            }
+        }
+
+        if (timeColIdx == -1 || histogramEnd <= histogramStart) {
+            floorMapTimelinePresenter.setHistogramData(bins);
+            return;
+        }
+
+        final long range = histogramEnd - histogramStart;
+        for (final Row row : tableResult.getRows()) {
+            final List<String> values = row.getValues();
+            if (values == null || values.size() <= timeColIdx) {
+                continue;
+            }
+            final String timeStr = values.get(timeColIdx);
+            if (timeStr == null || timeStr.trim().isEmpty()) {
+                continue;
+            }
+            try {
+                // Parse ISO-8601 timestamp via UTCDate (e.g. "2026-04-01T09:06:46.000Z").
+                final UTCDate date = UTCDate.create(timeStr);
+                if (date == null) {
+                    continue;
+                }
+                final long t = (long) date.getTime();
+                // Skip events that fall outside the visible range — do not clamp them
+                // to the edge bins, as that would make out-of-range data appear at the
+                // start or end of the histogram.
+                if (t < histogramStart || t > histogramEnd) {
+                    continue;
+                }
+                final int bin = (int) Math.min(HISTOGRAM_BINS - 1,
+                        (t - histogramStart) * HISTOGRAM_BINS / range);
+                bins[bin]++;
+            } catch (final Exception e) {
+                // Skip unparseable timestamps.
+            }
+        }
+
+        floorMapTimelinePresenter.setHistogramData(bins);
     }
 
     public void promptAndAddObject() {
@@ -758,12 +897,8 @@ public class FloorMapMapPresenter
         this.editMode = editMode;
         floorMapCanvasPresenter.setEditMode(editMode);
         if (!editMode) {
-            // Revert bottom panel to normal timeline + tabs
-            setInSlot(LOG_DATA, linkTabsPresenter);
             getView().setPropertiesVisible(false);
         } else {
-            // Show objects list
-            setInSlot(LOG_DATA, floorMapObjectListPresenter);
             fetchObjectsForList(factObjects -> {
                 floorMapObjectListPresenter.setData(factObjects);
                 floorMapObjectListPresenter.selectLast();
