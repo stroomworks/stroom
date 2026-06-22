@@ -67,31 +67,31 @@
                     <g:TextBox ui:field="yBox" addStyleNames="stroom-control wide-control" />
                 </form:FormGroup>
 
-                <form:FormGroup ui:field="w2m_translation_group" label="World-to-Map Translation (X, Y)">
+                <form:FormGroup ui:field="w2mTranslationGroup" label="World-to-Map Translation (X, Y)">
                     <g:FlowPanel addStyleNames="dock-container-horizontal align-center">
-                        <g:TextBox ui:field="w2m_tx" addStyleNames="stroom-control {style.matrixBox}" />
-                        <g:TextBox ui:field="w2m_ty" addStyleNames="stroom-control {style.matrixBox}" />
+                        <g:TextBox ui:field="w2mTx" addStyleNames="stroom-control {style.matrixBox}" />
+                        <g:TextBox ui:field="w2mTy" addStyleNames="stroom-control {style.matrixBox}" />
                     </g:FlowPanel>
                 </form:FormGroup>
-                <form:FormGroup ui:field="w2m_scale_rot_group" label="World-to-Map Scale (X, Y) &amp; Rotation (deg)">
+                <form:FormGroup ui:field="w2mScaleRotGroup" label="World-to-Map Scale (X, Y) &amp; Rotation (deg)">
                     <g:FlowPanel addStyleNames="dock-container-horizontal align-center">
-                        <g:TextBox ui:field="w2m_sx" addStyleNames="stroom-control {style.matrixBox}" />
-                        <g:TextBox ui:field="w2m_sy" addStyleNames="stroom-control {style.matrixBox}" />
-                        <g:TextBox ui:field="w2m_rot" addStyleNames="stroom-control {style.matrixBox}" />
+                        <g:TextBox ui:field="w2mSx" addStyleNames="stroom-control {style.matrixBox}" />
+                        <g:TextBox ui:field="w2mSy" addStyleNames="stroom-control {style.matrixBox}" />
+                        <g:TextBox ui:field="w2mRot" addStyleNames="stroom-control {style.matrixBox}" />
                     </g:FlowPanel>
                 </form:FormGroup>
 
-                <form:FormGroup ui:field="m2s_translation_group" label="Map-to-Screen Translation (X, Y)">
+                <form:FormGroup ui:field="m2sTranslationGroup" label="Map-to-Screen Translation (X, Y)">
                     <g:FlowPanel addStyleNames="dock-container-horizontal align-center">
-                        <g:TextBox ui:field="m2s_tx" addStyleNames="stroom-control {style.matrixBox}" />
-                        <g:TextBox ui:field="m2s_ty" addStyleNames="stroom-control {style.matrixBox}" />
+                        <g:TextBox ui:field="m2sTx" addStyleNames="stroom-control {style.matrixBox}" />
+                        <g:TextBox ui:field="m2sTy" addStyleNames="stroom-control {style.matrixBox}" />
                     </g:FlowPanel>
                 </form:FormGroup>
-                <form:FormGroup ui:field="m2s_scale_rot_group" label="Map-to-Screen Scale (X, Y) &amp; Rotation (deg)">
+                <form:FormGroup ui:field="m2sScaleRotGroup" label="Map-to-Screen Scale (X, Y) &amp; Rotation (deg)">
                     <g:FlowPanel addStyleNames="dock-container-horizontal align-center">
-                        <g:TextBox ui:field="m2s_sx" addStyleNames="stroom-control {style.matrixBox}" />
-                        <g:TextBox ui:field="m2s_sy" addStyleNames="stroom-control {style.matrixBox}" />
-                        <g:TextBox ui:field="m2s_rot" addStyleNames="stroom-control {style.matrixBox}" />
+                        <g:TextBox ui:field="m2sSx" addStyleNames="stroom-control {style.matrixBox}" />
+                        <g:TextBox ui:field="m2sSy" addStyleNames="stroom-control {style.matrixBox}" />
+                        <g:TextBox ui:field="m2sRot" addStyleNames="stroom-control {style.matrixBox}" />
                     </g:FlowPanel>
                 </form:FormGroup>
 

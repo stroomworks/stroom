@@ -105,16 +105,23 @@ public class FloorMapTimelineSettingsPresenter
     }
 
     public interface FloorMapTimelineSettingsView extends View {
+
         void setSpeedOptions(List<Double> speeds);
+
         void setSelectedSpeed(Double speed);
+
         void setSpeedChangeHandler(Consumer<Double> handler);
 
         void setStartTime(long startTime);
+
         void setEndTime(long endTime);
+
         long getStartTime();
+
         long getEndTime();
 
         HandlerRegistration addStartTimeChangeHandler(ValueChangeHandler<String> handler);
+
         HandlerRegistration addEndTimeChangeHandler(ValueChangeHandler<String> handler);
     }
 }

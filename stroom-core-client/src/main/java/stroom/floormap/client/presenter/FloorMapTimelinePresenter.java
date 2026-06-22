@@ -282,6 +282,7 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
          * Returns the settings button widget so the popup can be anchored to it.
          */
         Widget getSettingsButtonWidget();
+
         /**
          * Provides histogram data (event counts per bin) for the hover pop-up.
          * An empty or null array clears the histogram.

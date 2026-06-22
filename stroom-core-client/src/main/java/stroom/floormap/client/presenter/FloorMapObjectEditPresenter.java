@@ -16,29 +16,32 @@
 
 package stroom.floormap.client.presenter;
 
+import stroom.alert.client.event.ConfirmEvent;
+import stroom.alert.client.event.PromptEvent;
+import stroom.data.client.event.DataSelectionEvent;
 import stroom.data.grid.client.MyDataGrid;
 import stroom.dispatch.client.RestFactory;
+import stroom.document.asset.client.presenter.DocumentAssetDropDownPresenter;
 import stroom.entity.shared.ExpressionCriteria;
 import stroom.floormap.client.presenter.FloorMapObjectEditPresenter.FloorMapObjectEditView;
+import stroom.floormap.shared.FloorMapDoc;
 import stroom.query.api.ExpressionOperator;
 import stroom.query.api.ExpressionTerm;
 import stroom.query.api.ExpressionTerm.Condition;
 import stroom.sqlstore.shared.SqlTemporalStoreResource;
 import stroom.svg.client.SvgPresets;
+import stroom.util.client.JSONUtil;
 import stroom.util.shared.TemporalEntry;
 import stroom.util.shared.TemporalEntryId;
-import stroom.alert.client.event.ConfirmEvent;
-import stroom.alert.client.event.PromptEvent;
 import stroom.widget.button.client.ButtonPanel;
 import stroom.widget.button.client.ButtonView;
+
+import com.google.gwt.core.client.GWT;
+import com.google.gwt.event.dom.client.ClickHandler;
 import com.google.gwt.json.client.JSONArray;
 import com.google.gwt.json.client.JSONNumber;
 import com.google.gwt.json.client.JSONObject;
 import com.google.gwt.json.client.JSONString;
-import stroom.util.client.JSONUtil;
-
-import com.google.gwt.core.client.GWT;
-import com.google.gwt.event.dom.client.ClickHandler;
 import com.google.gwt.user.cellview.client.Column;
 import com.google.gwt.user.cellview.client.TextColumn;
 import com.google.gwt.user.client.ui.Widget;
@@ -52,12 +55,8 @@ import com.gwtplatform.mvp.client.View;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
-import stroom.data.client.event.DataSelectionEvent;
 import java.util.function.Consumer;
 import javax.inject.Inject;
-
-import stroom.document.asset.client.presenter.DocumentAssetDropDownPresenter;
-import stroom.floormap.shared.FloorMapDoc;
 
 public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjectEditView> {
 
@@ -160,7 +159,8 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
                         com.google.gwt.core.client.Scheduler.get().scheduleDeferred(() -> {
                             if (index < dataGrid.getVisibleItemCount()) {
                                 try {
-                                    final com.google.gwt.dom.client.TableRowElement rowEl = dataGrid.getRowElement(index);
+                                    final com.google.gwt.dom.client.TableRowElement rowEl =
+                                            dataGrid.getRowElement(index);
                                     if (rowEl != null) {
                                         stroom.widget.util.client.ElementUtil.scrollIntoViewNearest(rowEl);
                                     }
@@ -190,15 +190,15 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
         // Toolbar: Click Add to clear input form for a new row
         registerHandler(addButton.addClickHandler(e -> {
             final TemporalEntry activeVersion = selectionModel.getSelectedObject();
-            
-            PromptEvent.fire(this, 
-                    "Enter the new Effective Time (in milliseconds):", 
-                    String.valueOf(System.currentTimeMillis()), 
+
+            PromptEvent.fire(this,
+                    "Enter the new Effective Time (in milliseconds):",
+                    String.valueOf(System.currentTimeMillis()),
                     result -> {
                         if (result != null && !result.trim().isEmpty()) {
                             try {
                                 final long newTime = Long.parseLong(result.trim());
-                                
+
                                 // Clone coordinate values and type from active selection
                                 double x = 0.0;
                                 double y = 0.0;
@@ -224,7 +224,7 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
                                         y = Double.parseDouble(coords[2].trim());
                                     }
                                 }
-                                
+
                                 final double finalX = x;
                                 final double finalY = y;
                                 final String finalType = activeType;
@@ -254,11 +254,14 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
             final long time = getView().getEffectiveTime();
             final double x = getView().getX();
             final double y = getView().getY();
-            
+
+
             final TemporalEntry selected = selectionModel.getSelectedObject();
             if (selected != null && selected.getEffectiveTimeMs() != time) {
-                ConfirmEvent.fire(this, 
-                        "You have changed the effective time. Do you want to move the version to the new time? (Click OK to move, or Cancel to create a new cloned version instead)", 
+                ConfirmEvent.fire(this,
+                        "You have changed the effective time. Do you want to move the version to"
+                                + " the new time? (Click OK to move, or Cancel to create a new"
+                                + " cloned version instead)",
                         move -> {
                             if (move) {
                                 deleteEntry(selected.getEffectiveTimeMs(),
@@ -371,7 +374,9 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
     /**
      * Adds a new temporal entry for the current object.
      */
-    public void addEntry(final long effectiveTimeMs, final double x, final double y, final String type, final Runnable onSuccess) {
+    public void addEntry(
+            final long effectiveTimeMs, final double x, final double y,
+            final String type, final Runnable onSuccess) {
         if (objectId == null) {
             return;
         }
@@ -383,7 +388,8 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
         coordsArr.set(0, new JSONNumber(x));
         coordsArr.set(1, new JSONNumber(y));
         json.put(JSON_KEY_COORDS, coordsArr);
-        
+
+
         final JSONArray matrixArr = new JSONArray();
         matrixArr.set(0, new JSONNumber(1.0));
         matrixArr.set(1, new JSONNumber(0.0));
@@ -420,7 +426,8 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
     /**
      * Updates an existing temporal entry (or inserts if not exists).
      */
-    public void updateEntry(final long effectiveTimeMs, final double x, final double y, final Runnable onSuccess) {
+    public void updateEntry(
+            final long effectiveTimeMs, final double x, final double y, final Runnable onSuccess) {
         if (objectId == null) {
             return;
         }
@@ -428,7 +435,8 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
         final JSONObject json = new JSONObject();
         json.put(JSON_KEY_TYPE, new JSONString(getView().getType()));
         json.put(JSON_KEY_NAME, new JSONString(getView().getName()));
-        json.put(JSON_KEY_IMG, new JSONString(documentAssetDropDownPresenter.getSelectedAssetPath() == null ? "" : documentAssetDropDownPresenter.getSelectedAssetPath()));
+        final String imgPath = documentAssetDropDownPresenter.getSelectedAssetPath();
+        json.put(JSON_KEY_IMG, new JSONString(imgPath == null ? "" : imgPath));
 
         final JSONArray coordsArr = new JSONArray();
         coordsArr.set(0, new JSONNumber(getView().getX()));
@@ -567,32 +575,41 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
 
     public interface FloorMapObjectEditView extends View {
         void setToolbar(Widget toolbarWidget);
+
         void setGridView(Widget gridWidget);
 
         long getEffectiveTime();
+
         void setEffectiveTime(long timeMS);
 
         double getX();
+
         void setX(double x);
 
         double getY();
+
         void setY(double y);
 
         String getName();
+
         void setName(String name);
 
         String getType();
+
         void setType(String type);
 
         void setChooseImgView(Widget widget);
 
         double[] getWorldToMapMatrix();
+
         void setWorldToMapMatrix(double[] matrix);
 
         double[] getMapToScreenMatrix();
+
         void setMapToScreenMatrix(double[] matrix);
 
         HandlerRegistration addSaveHandler(ClickHandler handler);
+
         HandlerRegistration addCancelHandler(ClickHandler handler);
 
         void setEnabled(final boolean enabled);

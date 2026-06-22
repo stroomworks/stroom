@@ -90,7 +90,7 @@ public class FloorMapSettingsPresenter
         // Set up the DataGrid
         grid = new MyDataGrid<>(this);
         selectionModel = grid.addDefaultSelectionModel(false);
-        
+
         final Column<FloorMapBackground, String> validFromColumn = new Column<>(new TextCell()) {
             @Override
             public String getValue(final FloorMapBackground row) {
@@ -247,18 +247,27 @@ public class FloorMapSettingsPresenter
     public interface FloorMapSettingsView extends View, HasUiHandlers<DirtyUiHandlers>, ReadOnlyChangeHandler {
 
         void setBackgroundImage(String backgroundImage);
+
         String getBackgroundImage();
+
         long getStartTime();
+
         double getRotation();
 
         void setToolbar(Widget widget);
+
         void setGridView(Widget widget);
+
         void setStartTime(long startTime);
+
         void setRotation(double degrees);
+
         void setTemporalStoreRefView(View view);
 
         HandlerRegistration addBackgroundImageChangeHandler(ValueChangeHandler<String> handler);
+
         HandlerRegistration addAddBackgroundHandler(ClickHandler handler);
+
         HandlerRegistration addRotationChangeHandler(final ValueChangeHandler<Long> handler);
     }
 }

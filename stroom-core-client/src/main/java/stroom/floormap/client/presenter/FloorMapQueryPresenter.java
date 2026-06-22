@@ -27,8 +27,8 @@ import stroom.query.api.Column;
 import stroom.query.api.Row;
 import stroom.query.api.TableResult;
 import stroom.query.api.TimeRange;
-import stroom.query.shared.QueryTablePreferences;
 import stroom.query.client.presenter.QueryEditPresenter;
+import stroom.query.shared.QueryTablePreferences;
 import stroom.task.client.TaskMonitorFactory;
 
 import com.google.gwt.user.client.ui.Widget;
@@ -80,7 +80,8 @@ public class FloorMapQueryPresenter extends MyPresenterWidget<FloorMapQueryView>
 
         // Listen to timeline playback changes to automatically update query time and re-run.
         registerHandler(getEventBus().addHandler(TimeChangeEvent.getType(), e -> {
-            final TimeRange timeRange = new TimeRange("CUSTOM", String.valueOf(e.getTime()), String.valueOf(e.getTime()));
+            final TimeRange timeRange = new TimeRange(
+                    "CUSTOM", String.valueOf(e.getTime()), String.valueOf(e.getTime()));
             queryEditPresenter.setTimeRange(timeRange);
             queryEditPresenter.start();
         }));
@@ -257,9 +258,11 @@ public class FloorMapQueryPresenter extends MyPresenterWidget<FloorMapQueryView>
         void setAvailableColumns(List<String> columnNames);
 
         void setEntityIdColumn(String entityId);
+
         void setLocationIdColumn(String locationId);
 
         String getEntityIdColumn();
+
         String getLocationIdColumn();
 
         void setColumnMappingsVisible(boolean visible);

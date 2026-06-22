@@ -104,8 +104,10 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
                     // Check if we clicked on an actual map object shape (which does not start with "obj-")
                     if (id != null && !id.isEmpty() && !id.startsWith("obj-")) {
-                        // If Ctrl or Shift is pressed and it is the background, allow panning instead of background drag
-                        if (!("background".equals(id) && (event.getNativeEvent().getCtrlKey() || event.getNativeEvent().getShiftKey()))) {
+                        // If Ctrl or Shift is pressed and it is the background, allow panning
+                        if (!("background".equals(id)
+                                && (event.getNativeEvent().getCtrlKey()
+                                || event.getNativeEvent().getShiftKey()))) {
                             selectedObjectId = id;
 
                             // Fire an event to tell the parent presenter to show the edit menu
@@ -162,9 +164,13 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                                 final double deltaUnzoomedY = deltaY / scale;
 
                                 // Revert active background's M_map_to_screen matrix to get delta in map space
-                                final FloorMapTransformationMatrix invBgMatrix = matrix != null ? matrix.inverse() : FloorMapTransformationMatrix.identity();
-                                final double deltaMapX = invBgMatrix.getA() * deltaUnzoomedX + invBgMatrix.getC() * deltaUnzoomedY;
-                                final double deltaMapY = invBgMatrix.getB() * deltaUnzoomedX + invBgMatrix.getD() * deltaUnzoomedY;
+                                final FloorMapTransformationMatrix invBgMatrix = matrix != null
+                                        ? matrix.inverse()
+                                        : FloorMapTransformationMatrix.identity();
+                                final double deltaMapX =
+                                        invBgMatrix.getA() * deltaUnzoomedX + invBgMatrix.getC() * deltaUnzoomedY;
+                                final double deltaMapY =
+                                        invBgMatrix.getB() * deltaUnzoomedX + invBgMatrix.getD() * deltaUnzoomedY;
 
                                 obj.setX(obj.getX() + deltaMapX);
                                 obj.setY(obj.getY() + deltaMapY);
@@ -309,7 +315,9 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
         HasMouseWheelHandlers getMouseWheelHandlers();
 
-        void draw(double scale, double x, double y, String backgroundImage, FloorMapTransformationMatrix matrix, List<FloorMapObject> objects, String selectedObjectId);
+        void draw(double scale, double x, double y, String backgroundImage,
+                FloorMapTransformationMatrix matrix, List<FloorMapObject> objects,
+                String selectedObjectId);
 
         void setRedrawListener(Runnable redrawListener);
     }

@@ -50,8 +50,8 @@ public class FloorMapCanvasViewImpl
         extends ViewWithUiHandlers<DirtyUiHandlers>
         implements FloorMapCanvasView, ReadOnlyChangeHandler {
 
-    private final static int OBJECT_SIZE = 100;
-    private final static int PERSON_RADIUS = 30;
+    private static final int OBJECT_SIZE = 100;
+    private static final int PERSON_RADIUS = 30;
 
     private final Widget widget;
 
@@ -270,9 +270,9 @@ public class FloorMapCanvasViewImpl
                                             new Attribute("transform", counterRotation));
                                 }
                             },
-                            SafeHtmlUtil.from("g"),
-                                new Attribute("transform", "translate(" + obj.getX() + "," + obj.getY() + ")"),
-                                new Attribute("id", "obj-" + obj.getId()));
+                                    SafeHtmlUtil.from("g"),
+                                    new Attribute("transform", "translate(" + obj.getX() + "," + obj.getY() + ")"),
+                                    new Attribute("id", "obj-" + obj.getId()));
                         }
                     }
 
@@ -290,7 +290,8 @@ public class FloorMapCanvasViewImpl
     }
 
     /**
-     * TODO EW: Potentially add a colour option to object edit screen so users can choose this instead of being predefined.
+     * TODO EW: Potentially add a colour option to object edit screen so users can choose this
+     * instead of being predefined.
      * Returns a fill colour based on object type so different fixture types are
      * visually distinguishable at a glance.
      */
@@ -341,10 +342,12 @@ public class FloorMapCanvasViewImpl
             if (width > 0 && height > 0) {
                 aspectRatio = width / height;
             }
-            self.@stroom.floormap.client.view.FloorMapCanvasViewImpl::onImageAspectRatioResolved(Ljava/lang/String;D)(url, aspectRatio);
+            self.@stroom.floormap.client.view.FloorMapCanvasViewImpl::onImageAspectRatioResolved(Ljava/lang/String;D)
+                    (url, aspectRatio);
         };
         img.onerror = function() {
-            self.@stroom.floormap.client.view.FloorMapCanvasViewImpl::onImageAspectRatioResolved(Ljava/lang/String;D)(url, 1.0);
+            self.@stroom.floormap.client.view.FloorMapCanvasViewImpl::onImageAspectRatioResolved(Ljava/lang/String;D)
+                    (url, 1.0);
         };
         img.src = url;
     }-*/;

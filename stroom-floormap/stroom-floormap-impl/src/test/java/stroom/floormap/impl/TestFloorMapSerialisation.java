@@ -88,7 +88,7 @@ class TestFloorMapSerialisation {
         assertThat(deserialized.getEventsQuery()).isEqualTo("from StoreName select old_query");
         assertThat(deserialized.getEventsQueryTimeRange()).isNotNull();
         assertThat(deserialized.getEventsQueryTimeRange().getName()).isEqualTo("LAST_24_HOURS");
-        
+
         // Assert that new fields not present in old JSON are null
         assertThat(deserialized.getTemporalStoreRef()).isNull();
         assertThat(deserialized.getFactsQuery()).isNull();

@@ -17,6 +17,8 @@
 package stroom.floormap.client.view;
 
 import stroom.floormap.client.presenter.FloorMapObjectEditPresenter.FloorMapObjectEditView;
+import stroom.svg.shared.SvgImage;
+import stroom.widget.button.client.Button;
 import stroom.widget.datepicker.client.DateTimeBox;
 import stroom.widget.datepicker.client.DateTimePopup;
 import stroom.widget.form.client.FormGroup;
@@ -25,8 +27,6 @@ import com.google.gwt.event.dom.client.ClickHandler;
 import com.google.gwt.event.shared.HandlerRegistration;
 import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
-import stroom.svg.shared.SvgImage;
-import stroom.widget.button.client.Button;
 import com.google.gwt.user.client.ui.SimplePanel;
 import com.google.gwt.user.client.ui.TextBox;
 import com.google.gwt.user.client.ui.Widget;
@@ -56,35 +56,35 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
     SimplePanel chooseImgContainer;
 
     @UiField
-    FormGroup w2m_translation_group;
+    FormGroup w2mTranslationGroup;
     @UiField
-    FormGroup w2m_scale_rot_group;
+    FormGroup w2mScaleRotGroup;
     @UiField
-    FormGroup m2s_translation_group;
+    FormGroup m2sTranslationGroup;
     @UiField
-    FormGroup m2s_scale_rot_group;
+    FormGroup m2sScaleRotGroup;
 
     @UiField
-    TextBox w2m_tx;
+    TextBox w2mTx;
     @UiField
-    TextBox w2m_ty;
+    TextBox w2mTy;
     @UiField
-    TextBox w2m_sx;
+    TextBox w2mSx;
     @UiField
-    TextBox w2m_sy;
+    TextBox w2mSy;
     @UiField
-    TextBox w2m_rot;
+    TextBox w2mRot;
 
     @UiField
-    TextBox m2s_tx;
+    TextBox m2sTx;
     @UiField
-    TextBox m2s_ty;
+    TextBox m2sTy;
     @UiField
-    TextBox m2s_sx;
+    TextBox m2sSx;
     @UiField
-    TextBox m2s_sy;
+    TextBox m2sSy;
     @UiField
-    TextBox m2s_rot;
+    TextBox m2sRot;
 
     @UiField
     Button saveBtn;
@@ -184,25 +184,28 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
 
     @Override
     public double[] getWorldToMapMatrix() {
-        return parseMatrixFields(w2m_tx, w2m_ty, w2m_sx, w2m_sy, w2m_rot);
+        return parseMatrixFields(w2mTx, w2mTy, w2mSx, w2mSy, w2mRot);
     }
 
     @Override
     public void setWorldToMapMatrix(final double[] m) {
-        populateMatrixFields(m, w2m_tx, w2m_ty, w2m_sx, w2m_sy, w2m_rot);
+        populateMatrixFields(m, w2mTx, w2mTy, w2mSx, w2mSy, w2mRot);
     }
 
     @Override
     public double[] getMapToScreenMatrix() {
-        return parseMatrixFields(m2s_tx, m2s_ty, m2s_sx, m2s_sy, m2s_rot);
+        return parseMatrixFields(m2sTx, m2sTy, m2sSx, m2sSy, m2sRot);
     }
 
     @Override
     public void setMapToScreenMatrix(final double[] m) {
-        populateMatrixFields(m, m2s_tx, m2s_ty, m2s_sx, m2s_sy, m2s_rot);
+        populateMatrixFields(m, m2sTx, m2sTy, m2sSx, m2sSy, m2sRot);
     }
 
-    private double[] parseMatrixFields(final TextBox tx, final TextBox ty, final TextBox sx, final TextBox sy, final TextBox rot) {
+    private double[] parseMatrixFields(
+            final TextBox tx, final TextBox ty,
+            final TextBox sx, final TextBox sy,
+            final TextBox rot) {
         final double tX = parseDouble(tx.getText(), 0.0);
         final double tY = parseDouble(ty.getText(), 0.0);
         final double sX = parseDouble(sx.getText(), 1.0);
@@ -210,7 +213,6 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
         final double rDeg = parseDouble(rot.getText(), 0.0);
 
         final double rRad = Math.toRadians(rDeg);
-        
         final double[] m = new double[6];
         m[0] = sX * Math.cos(rRad);
         m[1] = sX * Math.sin(rRad);
@@ -229,7 +231,11 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
         }
     }
 
-    private void populateMatrixFields(final double[] m, final TextBox tx, final TextBox ty, final TextBox sx, final TextBox sy, final TextBox rot) {
+    private void populateMatrixFields(
+            final double[] m,
+            final TextBox tx, final TextBox ty,
+            final TextBox sx, final TextBox sy,
+            final TextBox rot) {
         if (m != null && m.length >= 6) {
             final double a = m[0];
             final double b = m[1];
@@ -242,7 +248,6 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
             final double tY = f;
             final double sX = Math.sqrt(a * a + b * b);
             final double sY = Math.sqrt(c * c + d * d);
-            
             double rotationDeg = Math.toDegrees(Math.atan2(b, a));
             rotationDeg = Math.round(rotationDeg * 100.0) / 100.0;
 
@@ -277,33 +282,33 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
         yBox.setEnabled(enabled);
         nameBox.setEnabled(enabled);
         typeBox.setEnabled(enabled);
-        w2m_tx.setEnabled(enabled);
-        w2m_ty.setEnabled(enabled);
-        w2m_sx.setEnabled(enabled);
-        w2m_sy.setEnabled(enabled);
-        w2m_rot.setEnabled(enabled);
-        m2s_tx.setEnabled(enabled);
-        m2s_ty.setEnabled(enabled);
-        m2s_sx.setEnabled(enabled);
-        m2s_sy.setEnabled(enabled);
-        m2s_rot.setEnabled(enabled);
+        w2mTx.setEnabled(enabled);
+        w2mTy.setEnabled(enabled);
+        w2mSx.setEnabled(enabled);
+        w2mSy.setEnabled(enabled);
+        w2mRot.setEnabled(enabled);
+        m2sTx.setEnabled(enabled);
+        m2sTy.setEnabled(enabled);
+        m2sSx.setEnabled(enabled);
+        m2sSy.setEnabled(enabled);
+        m2sRot.setEnabled(enabled);
         saveBtn.setEnabled(enabled);
         cancelBtn.setEnabled(enabled);
     }
 
     private void updateMatrixVisibility(final String type) {
         final boolean isBackground = "background".equalsIgnoreCase(type == null ? "" : type.trim());
-        if (w2m_translation_group != null) {
-            w2m_translation_group.setVisible(!isBackground);
+        if (w2mTranslationGroup != null) {
+            w2mTranslationGroup.setVisible(!isBackground);
         }
-        if (w2m_scale_rot_group != null) {
-            w2m_scale_rot_group.setVisible(!isBackground);
+        if (w2mScaleRotGroup != null) {
+            w2mScaleRotGroup.setVisible(!isBackground);
         }
-        if (m2s_translation_group != null) {
-            m2s_translation_group.setVisible(isBackground);
+        if (m2sTranslationGroup != null) {
+            m2sTranslationGroup.setVisible(isBackground);
         }
-        if (m2s_scale_rot_group != null) {
-            m2s_scale_rot_group.setVisible(isBackground);
+        if (m2sScaleRotGroup != null) {
+            m2sScaleRotGroup.setVisible(isBackground);
         }
     }
 

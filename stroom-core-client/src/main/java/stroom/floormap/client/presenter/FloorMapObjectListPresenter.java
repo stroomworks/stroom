@@ -68,7 +68,8 @@ public class FloorMapObjectListPresenter extends MyPresenterWidget<FloorMapObjec
                         com.google.gwt.core.client.Scheduler.get().scheduleDeferred(() -> {
                             if (index < dataGrid.getVisibleItemCount()) {
                                 try {
-                                    final com.google.gwt.dom.client.TableRowElement rowEl = dataGrid.getRowElement(index);
+                                    final com.google.gwt.dom.client.TableRowElement rowEl =
+                                            dataGrid.getRowElement(index);
                                     if (rowEl != null) {
                                         stroom.widget.util.client.ElementUtil.scrollIntoViewNearest(rowEl);
                                     }

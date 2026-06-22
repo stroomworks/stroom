@@ -27,11 +27,11 @@ import stroom.entity.client.presenter.MarkdownEditPresenter;
 import stroom.entity.client.presenter.MarkdownTabProvider;
 import stroom.floormap.shared.FloorMapDoc;
 import stroom.security.client.presenter.DocumentUserPermissionsTabProvider;
-import stroom.svg.shared.SvgImage;
-import stroom.widget.button.client.InlineSvgToggleButton;
-import stroom.widget.button.client.ButtonView;
-import stroom.widget.button.client.SvgButton;
 import stroom.svg.client.SvgPresets;
+import stroom.svg.shared.SvgImage;
+import stroom.widget.button.client.ButtonView;
+import stroom.widget.button.client.InlineSvgToggleButton;
+import stroom.widget.button.client.SvgButton;
 import stroom.widget.tab.client.presenter.TabData;
 import stroom.widget.tab.client.presenter.TabDataImpl;
 
@@ -218,12 +218,9 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
         if (content == factsQueryPresenter) {
             final String currentQuery = factsQueryPresenter.getQuery();
             if (currentQuery == null || currentQuery.trim().isEmpty()) {
-                DocRef storeRef;
-                if (floorMapSettingsPresenter != null) {
-                    storeRef = floorMapSettingsPresenter.getTemporalStoreRef();
-                } else {
-                    storeRef = getEntity().getTemporalStoreRef();
-                }
+                final DocRef storeRef = floorMapSettingsPresenter != null
+                        ? floorMapSettingsPresenter.getTemporalStoreRef()
+                        : getEntity().getTemporalStoreRef();
 
                 if (storeRef != null && storeRef.getName() != null && !storeRef.getName().isEmpty()) {
                     final String template = "from \"" + storeRef.getName() + "\"\n"
