@@ -18,13 +18,13 @@ package stroom.floormap.client.view;
 
 import stroom.floormap.client.presenter.FloorMapQueryPresenter.FloorMapQueryView;
 import stroom.item.client.SelectionBox;
-import com.gwtplatform.mvp.client.View;
 
 import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
 import com.google.gwt.user.client.ui.FlowPanel;
 import com.google.gwt.user.client.ui.SimplePanel;
 import com.google.gwt.user.client.ui.Widget;
+import com.gwtplatform.mvp.client.View;
 import com.gwtplatform.mvp.client.ViewImpl;
 
 import java.util.List;

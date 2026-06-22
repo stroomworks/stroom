@@ -90,7 +90,7 @@ public class FloorMapSettingsPresenter
         // Set up the DataGrid
         grid = new MyDataGrid<>(this);
         selectionModel = grid.addDefaultSelectionModel(false);
-        
+
         final Column<FloorMapBackground, String> validFromColumn = new Column<>(new TextCell()) {
             @Override
             public String getValue(final FloorMapBackground row) {
@@ -132,19 +132,26 @@ public class FloorMapSettingsPresenter
     protected void onBind() {
         super.onBind();
 
+        //noinspection unused e
         registerHandler(getView().addBackgroundImageChangeHandler(e -> onChange()));
+        //noinspection unused e
         registerHandler(getView().addAddBackgroundHandler(e -> onAdd()));
 
+        //noinspection unused e
         registerHandler(editButton.addClickHandler(e -> onEdit()));
+        //noinspection unused e
         registerHandler(deleteButton.addClickHandler(e -> onDelete()));
 
+        //noinspection unused e
         registerHandler(selectionModel.addSelectionHandler(e -> {
             final boolean hasSelection = selectionModel.getSelected() != null;
             editButton.setEnabled(hasSelection);
             deleteButton.setEnabled(hasSelection);
         }));
 
+        //noinspection unused e
         registerHandler(getView().addRotationChangeHandler(e -> onRotation()));
+        //noinspection unused e
         registerHandler(temporalStoreRefPresenter.addDataSelectionHandler(e -> onChange()));
     }
 
@@ -247,18 +254,28 @@ public class FloorMapSettingsPresenter
     public interface FloorMapSettingsView extends View, HasUiHandlers<DirtyUiHandlers>, ReadOnlyChangeHandler {
 
         void setBackgroundImage(String backgroundImage);
+
         String getBackgroundImage();
+
         long getStartTime();
+
         double getRotation();
 
         void setToolbar(Widget widget);
+
         void setGridView(Widget widget);
+
         void setStartTime(long startTime);
+
         void setRotation(double degrees);
+
         void setTemporalStoreRefView(View view);
 
         HandlerRegistration addBackgroundImageChangeHandler(ValueChangeHandler<String> handler);
+
         HandlerRegistration addAddBackgroundHandler(ClickHandler handler);
+
         HandlerRegistration addRotationChangeHandler(final ValueChangeHandler<Long> handler);
+
     }
 }

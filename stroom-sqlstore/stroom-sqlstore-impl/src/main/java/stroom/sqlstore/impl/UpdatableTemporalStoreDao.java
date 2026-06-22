@@ -17,10 +17,13 @@
 package stroom.sqlstore.impl;
 
 import stroom.entity.shared.ExpressionCriteria;
+import stroom.sqlstore.shared.ChangeOperation;
+import stroom.sqlstore.shared.TemporalStoreTimeRange;
 import stroom.util.shared.ResultPage;
 import stroom.util.shared.TemporalEntry;
 import stroom.util.shared.TemporalEntryId;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.function.Consumer;
 
@@ -36,9 +39,50 @@ public interface UpdatableTemporalStoreDao {
 
     ResultPage<TemporalEntry> find(ExpressionCriteria criteria);
 
+    /**
+     * Returns the absolute latest version of every key in the specified map,
+     * with no upper-time constraint.
+     *
+     * <p>Equivalent to calling {@link #find} with only a {@code Map = mapName}
+     * term (no time term), then deduplicating in-process to one entry per key.
+     * Used to back the "Show all" toggle in the Floor Map Editor Fact List.</p>
+     *
+     * @param mapName name of the map to query; must not be {@code null} or blank
+     * @return deduplicated list — one entry per key — sorted by key ascending;
+     *         never {@code null}, may be empty
+     */
+    List<TemporalEntry> fetchAll(String mapName);
+
+    /**
+     * Returns the minimum and maximum {@code effective_time} values present in
+     * the store for the given map name.
+     *
+     * <p>Executes a single {@code SELECT MIN(effective_time), MAX(effective_time)}
+     * aggregation — no deduplication is performed.</p>
+     *
+     * @param mapName name of the map to query; must not be {@code null} or blank
+     * @return the time range; both fields are {@code null} if the store is empty
+     */
+    TemporalStoreTimeRange getTimeRange(String mapName);
+
+    /**
+     * Applies a list of upsert and delete operations atomically within a
+     * single database transaction.
+     *
+     * <p>Operations are applied strictly in list order. If any operation
+     * fails the entire transaction is rolled back and no changes are
+     * persisted.</p>
+     *
+     * @param operations ordered list of operations; must not be {@code null}
+     * @throws RuntimeException (propagated from JOOQ) if any operation fails;
+     *                          the transaction is rolled back automatically
+     */
+    void applyChanges(List<ChangeOperation> operations);
+
     void clear(String mapName);
 
     long count(String mapName);
 
     void search(ExpressionCriteria criteria, Consumer<TemporalEntry> consumer);
 }
+

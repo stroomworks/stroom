@@ -21,7 +21,11 @@ import stroom.entity.shared.ExpressionCriteria;
 import stroom.event.logging.rs.api.AutoLogged;
 import stroom.security.api.SecurityContext;
 import stroom.security.shared.DocumentPermission;
+import stroom.sqlstore.shared.ApplyChangesRequest;
+import stroom.sqlstore.shared.ApplyChangesResult;
+import stroom.sqlstore.shared.FetchAtTimeRequest;
 import stroom.sqlstore.shared.SqlTemporalStoreResource;
+import stroom.sqlstore.shared.TemporalStoreTimeRange;
 import stroom.util.shared.PermissionException;
 import stroom.util.shared.ResultPage;
 import stroom.util.shared.TemporalEntry;
@@ -29,6 +33,8 @@ import stroom.util.shared.TemporalEntryId;
 
 import jakarta.inject.Inject;
 import jakarta.inject.Provider;
+
+import java.util.List;
 
 @AutoLogged
 class SqlTemporalStoreResourceImpl implements SqlTemporalStoreResource {
@@ -85,5 +91,25 @@ class SqlTemporalStoreResourceImpl implements SqlTemporalStoreResource {
     @Override
     public ResultPage<TemporalEntry> find(final ExpressionCriteria criteria) {
         return updatableSqlTemporalStoreProvider.get().find(criteria);
+    }
+
+    @Override
+    public List<TemporalEntry> fetchAtTime(final FetchAtTimeRequest request) {
+        return updatableSqlTemporalStoreProvider.get().fetchAtTime(request);
+    }
+
+    @Override
+    public List<TemporalEntry> fetchAll(final String mapName) {
+        return updatableSqlTemporalStoreProvider.get().fetchAll(mapName);
+    }
+
+    @Override
+    public TemporalStoreTimeRange getTimeRange(final String mapName) {
+        return updatableSqlTemporalStoreProvider.get().getTimeRange(mapName);
+    }
+
+    @Override
+    public ApplyChangesResult applyChanges(final ApplyChangesRequest request) {
+        return updatableSqlTemporalStoreProvider.get().applyChanges(request);
     }
 }

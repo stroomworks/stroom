@@ -50,7 +50,7 @@ public class FloorMapCanvasViewImpl
         extends ViewWithUiHandlers<DirtyUiHandlers>
         implements FloorMapCanvasView, ReadOnlyChangeHandler {
 
-    private final static int OBJECT_SIZE = 100;
+    private static final int OBJECT_SIZE = 100;
     private final Widget widget;
 
     private final Map<String, Double> imageAspectRatioCache = new HashMap<>();
@@ -121,7 +121,9 @@ public class FloorMapCanvasViewImpl
                      final List<FloorMapObject> objects,
                      final String selectedObjectId) {
         final HtmlBuilder htmlBuilder = new HtmlBuilder();
-        final String svgMatrix = matrix != null ? matrix.toSvgMatrix() : FloorMapTransformationMatrix.identity().toSvgMatrix();
+        final String svgMatrix = matrix != null
+                ? matrix.toSvgMatrix()
+                : FloorMapTransformationMatrix.identity().toSvgMatrix();
 
         // Build the SVG structure dynamically
         htmlBuilder.elem(svg -> {
@@ -151,7 +153,7 @@ public class FloorMapCanvasViewImpl
                             new Attribute("height", String.valueOf(height)),
                             new Attribute("preserveAspectRatio", "none"),
                             new Attribute("id", "background"));
-                        
+
                         if ("background".equals(selectedObjectId)) {
                             // Render a highlight border on top of the background image
                             matrixGroup.elem(SafeHtmlUtil.from("rect"),
@@ -174,7 +176,7 @@ public class FloorMapCanvasViewImpl
                             new Attribute("height", "1000"),
                             new Attribute("fill", "#FFFFFF"),
                             new Attribute("id", "background"));
-                        
+
                         if ("background".equals(selectedObjectId)) {
                             group.elem(SafeHtmlUtil.from("rect"),
                                 new Attribute("x", "0"),
@@ -194,7 +196,8 @@ public class FloorMapCanvasViewImpl
                             matrixGroup.elem(objectGroup -> {
 
                                 // Determine if this object is a person.
-                                final boolean isPerson = obj.getType() != null && obj.getType().equalsIgnoreCase("person");
+                                final boolean isPerson =
+                                        obj.getType() != null && obj.getType().equalsIgnoreCase("person");
                                 final boolean isSelected = obj.getId().equals(selectedObjectId);
 
                                 if (isPerson) {
@@ -212,8 +215,8 @@ public class FloorMapCanvasViewImpl
                                 } else {
                                     objectGroup.elem(SafeHtmlUtil.from("rect"),
                                         // Shifting x and y by half the square's size puts it's center over the map coordinate.
-                                        new Attribute("x", (-OBJECT_SIZE/2) + ""),
-                                        new Attribute("y", (-OBJECT_SIZE/2) + ""),
+                                        new Attribute("x", (-OBJECT_SIZE / 2) + ""),
+                                        new Attribute("y", (-OBJECT_SIZE / 2) + ""),
                                         new Attribute("width", OBJECT_SIZE + ""),
                                         new Attribute("height", OBJECT_SIZE + ""),
                                         new Attribute("fill", "grey"),
@@ -247,7 +250,7 @@ public class FloorMapCanvasViewImpl
                                         new Attribute("transform", "rotate(" + counterRotationDegrees + ")")
                                 );
                             },
-                            SafeHtmlUtil.from("g"),
+                                SafeHtmlUtil.from("g"),
                                 new Attribute("transform", "translate(" + obj.getX() + "," + obj.getY() + ")"),
                                 new Attribute("id", "obj-" + obj.getId())
                             );

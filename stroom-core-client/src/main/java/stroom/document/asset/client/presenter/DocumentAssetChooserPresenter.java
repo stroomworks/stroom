@@ -4,12 +4,12 @@ import stroom.dispatch.client.RestFactory;
 import stroom.docstore.shared.AbstractDoc;
 import stroom.document.asset.client.presenter.assets.DocumentAssetTreeItem;
 import stroom.document.asset.shared.DocumentAssetResource;
-import stroom.widget.popup.client.view.DialogAction;
 import stroom.widget.popup.client.event.DisablePopupEvent;
 import stroom.widget.popup.client.event.EnablePopupEvent;
 import stroom.widget.popup.client.event.ShowPopupEvent;
 import stroom.widget.popup.client.presenter.PopupSize;
 import stroom.widget.popup.client.presenter.PopupType;
+import stroom.widget.popup.client.view.DialogAction;
 
 import com.google.gwt.core.client.GWT;
 import com.google.gwt.user.client.ui.Tree;
@@ -57,10 +57,10 @@ public class DocumentAssetChooserPresenter
                 .popupSize(PopupSize.resizable(DIALOG_WIDTH, DIALOG_HEIGHT))
                 .caption("Choose Asset")
                 .modal(true);
-        
+
         // Disable OK button initially
         DisablePopupEvent.builder(this).action(DialogAction.OK).fire();
-        
+
         if (document != null) {
             fetchDraftAssets();
         }
@@ -69,7 +69,7 @@ public class DocumentAssetChooserPresenter
     @Override
     protected void onBind() {
         super.onBind();
-        
+
         registerHandler(tree.addSelectionHandler(event -> {
             final TreeItem item = event.getSelectedItem();
             if (item instanceof DocumentAssetTreeItem && ((DocumentAssetTreeItem) item).isLeaf()) {
@@ -114,11 +114,20 @@ public class DocumentAssetChooserPresenter
         private static final int HEIGHT = 12;
         private static final int WIDTH = 16;
         private static final stroom.document.asset.client.presenter.assets.DocumentAssetImageResource CLOSED =
-                new stroom.document.asset.client.presenter.assets.DocumentAssetImageResource(HEIGHT, WIDTH, "/ui/background-images/arrow-right.png");
+                new stroom.document.asset.client.presenter.assets.DocumentAssetImageResource(
+                        HEIGHT,
+                        WIDTH,
+                        "/ui/background-images/arrow-right.png");
         private static final stroom.document.asset.client.presenter.assets.DocumentAssetImageResource OPEN =
-                new stroom.document.asset.client.presenter.assets.DocumentAssetImageResource(HEIGHT, WIDTH, "/ui/background-images/arrow-down.png");
+                new stroom.document.asset.client.presenter.assets.DocumentAssetImageResource(
+                        HEIGHT,
+                        WIDTH,
+                        "/ui/background-images/arrow-down.png");
         private static final stroom.document.asset.client.presenter.assets.DocumentAssetImageResource TRANSPARENT =
-                new stroom.document.asset.client.presenter.assets.DocumentAssetImageResource(HEIGHT, WIDTH, "/ui/background-images/transparent-16x16.png");
+                new stroom.document.asset.client.presenter.assets.DocumentAssetImageResource(
+                        HEIGHT,
+                        WIDTH,
+                        "/ui/background-images/transparent-16x16.png");
 
         @Override
         public com.google.gwt.resources.client.ImageResource treeClosed() {

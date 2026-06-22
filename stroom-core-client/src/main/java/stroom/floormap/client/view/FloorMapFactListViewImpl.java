@@ -16,30 +16,43 @@
 
 package stroom.floormap.client.view;
 
-import stroom.floormap.client.presenter.FloorMapObjectListPresenter.FloorMapObjectListView;
+import stroom.floormap.client.presenter.FloorMapFactListPresenter.FloorMapFactListView;
 
-import com.google.gwt.uibinder.client.UiBinder;
-import com.google.gwt.uibinder.client.UiField;
+import com.google.gwt.user.client.ui.FlowPanel;
 import com.google.gwt.user.client.ui.SimplePanel;
 import com.google.gwt.user.client.ui.Widget;
 import com.google.inject.Inject;
 import com.gwtplatform.mvp.client.ViewImpl;
 
-public class FloorMapObjectListViewImpl extends ViewImpl implements FloorMapObjectListView {
+/**
+ * View implementation for the Fact List panel.
+ *
+ * <p>Layout: optional toolbar pinned above the data grid.</p>
+ *
+ * <p>Renamed from {@code FloorMapObjectListViewImpl}.</p>
+ */
+public class FloorMapFactListViewImpl extends ViewImpl implements FloorMapFactListView {
 
-    private final Widget widget;
-
-    @UiField
-    SimplePanel gridContainer;
+    private final FlowPanel root;
+    private final SimplePanel toolbarContainer;
+    private final SimplePanel gridContainer;
 
     @Inject
-    public FloorMapObjectListViewImpl(final Binder binder) {
-        widget = binder.createAndBindUi(this);
+    public FloorMapFactListViewImpl() {
+        toolbarContainer = new SimplePanel();
+
+        gridContainer = new SimplePanel();
+        gridContainer.setSize("100%", "100%");
+
+        root = new FlowPanel();
+        root.setSize("100%", "100%");
+        root.add(toolbarContainer);
+        root.add(gridContainer);
     }
 
     @Override
     public Widget asWidget() {
-        return widget;
+        return root;
     }
 
     @Override
@@ -47,6 +60,8 @@ public class FloorMapObjectListViewImpl extends ViewImpl implements FloorMapObje
         gridContainer.setWidget(gridWidget);
     }
 
-    public interface Binder extends UiBinder<Widget, FloorMapObjectListViewImpl> {
+    @Override
+    public void setToolbar(final Widget toolbarWidget) {
+        toolbarContainer.setWidget(toolbarWidget);
     }
 }

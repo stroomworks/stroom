@@ -20,12 +20,14 @@ import stroom.core.client.gin.PluginModule;
 import stroom.floormap.client.FloorMapPlugin;
 import stroom.floormap.client.presenter.FloorMapCanvasPresenter;
 import stroom.floormap.client.presenter.FloorMapCanvasPresenter.FloorMapCanvasView;
+import stroom.floormap.client.presenter.FloorMapEditorPresenter;
+import stroom.floormap.client.presenter.FloorMapEditorPresenter.FloorMapEditorView;
+import stroom.floormap.client.presenter.FloorMapFactListPresenter;
+import stroom.floormap.client.presenter.FloorMapFactListPresenter.FloorMapFactListView;
 import stroom.floormap.client.presenter.FloorMapMapPresenter;
 import stroom.floormap.client.presenter.FloorMapMapPresenter.FloorMapMapView;
 import stroom.floormap.client.presenter.FloorMapObjectEditPresenter;
 import stroom.floormap.client.presenter.FloorMapObjectEditPresenter.FloorMapObjectEditView;
-import stroom.floormap.client.presenter.FloorMapObjectListPresenter;
-import stroom.floormap.client.presenter.FloorMapObjectListPresenter.FloorMapObjectListView;
 import stroom.floormap.client.presenter.FloorMapPresenter;
 import stroom.floormap.client.presenter.FloorMapQueryPresenter;
 import stroom.floormap.client.presenter.FloorMapQueryPresenter.FloorMapQueryView;
@@ -33,15 +35,19 @@ import stroom.floormap.client.presenter.FloorMapSettingsPresenter;
 import stroom.floormap.client.presenter.FloorMapSettingsPresenter.FloorMapSettingsView;
 import stroom.floormap.client.presenter.FloorMapTempPresenter;
 import stroom.floormap.client.presenter.FloorMapTempPresenter.FloorMapTempView;
+import stroom.floormap.client.presenter.FloorMapTimeListPresenter;
+import stroom.floormap.client.presenter.FloorMapTimeListPresenter.FloorMapTimeListView;
 import stroom.floormap.client.presenter.FloorMapTimelinePresenter;
 import stroom.floormap.client.presenter.FloorMapTimelinePresenter.FloorMapTimelineView;
 import stroom.floormap.client.view.FloorMapCanvasViewImpl;
+import stroom.floormap.client.view.FloorMapEditorViewImpl;
+import stroom.floormap.client.view.FloorMapFactListViewImpl;
 import stroom.floormap.client.view.FloorMapMapViewImpl;
 import stroom.floormap.client.view.FloorMapObjectEditViewImpl;
-import stroom.floormap.client.view.FloorMapObjectListViewImpl;
 import stroom.floormap.client.view.FloorMapQueryViewImpl;
 import stroom.floormap.client.view.FloorMapSettingsViewImpl;
 import stroom.floormap.client.view.FloorMapTempViewImpl;
+import stroom.floormap.client.view.FloorMapTimeListViewImpl;
 import stroom.floormap.client.view.FloorMapTimelineViewImpl;
 
 /**
@@ -56,6 +62,9 @@ public class FloorMapModule extends PluginModule {
 
         bind(FloorMapPresenter.class);
 
+        bindPresenterWidget(FloorMapEditorPresenter.class,
+                FloorMapEditorView.class,
+                FloorMapEditorViewImpl.class);
         bindPresenterWidget(FloorMapMapPresenter.class,
                 FloorMapMapView.class,
                 FloorMapMapViewImpl.class);
@@ -80,8 +89,12 @@ public class FloorMapModule extends PluginModule {
                 FloorMapObjectEditView.class,
                 FloorMapObjectEditViewImpl.class);
 
-        bindPresenterWidget(FloorMapObjectListPresenter.class,
-                FloorMapObjectListView.class,
-                FloorMapObjectListViewImpl.class);
+        bindPresenterWidget(FloorMapFactListPresenter.class,
+                FloorMapFactListView.class,
+                FloorMapFactListViewImpl.class);
+
+        bindPresenterWidget(FloorMapTimeListPresenter.class,
+                FloorMapTimeListView.class,
+                FloorMapTimeListViewImpl.class);
     }
 }

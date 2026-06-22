@@ -70,12 +70,14 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
         super.onBind();
 
         // Update the timeline when the user picks a new START datetime.
+        //noinspection unused e
         registerHandler(getView().addStartTimeChangeHandler(e -> {
             this.startTime = getView().getStartTime();
             updateProgress();
         }));
 
         // Update the timeline when the user picks a new END datetime.
+        //noinspection unused e
         registerHandler(getView().addEndTimeChangeHandler(e -> {
             this.endTime = getView().getEndTime();
             updateProgress();
@@ -155,20 +157,30 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
 
     public interface FloorMapTimelineView extends View {
         void setProgressPct(double pct);
+
         void setClickHandler(Consumer<Double> clickHandler);
+
         void setStartTime(long startTime);
+
         void setEndTime(long endTime);
 
         void setPlayPausePreset(Preset preset);
+
         void setPlayPauseHandler(Runnable handler);
+
         void setSpeedOptions(List<Double> speeds);
+
         void setSelectedSpeed(Double speed);
+
         void setSpeedChangeHandler(Consumer<Double> handler);
 
         HandlerRegistration addStartTimeChangeHandler(ValueChangeHandler<String> handler);
+
         HandlerRegistration addEndTimeChangeHandler(ValueChangeHandler<String> handler);
 
         long getStartTime();
+
         long getEndTime();
+
     }
 }
