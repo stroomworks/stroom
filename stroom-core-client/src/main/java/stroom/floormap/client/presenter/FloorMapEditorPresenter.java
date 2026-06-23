@@ -92,14 +92,12 @@ import javax.inject.Provider;
 public class FloorMapEditorPresenter
         extends DocPresenter<FloorMapEditorView, FloorMapDoc> {
 
-    // -----------------------------------------------------------------------
-    // REST resource
-    // -----------------------------------------------------------------------
-
+    /** REST endpoint */
     private static final SqlTemporalStoreResource SQL_TEMPORAL_STORE_RESOURCE =
             GWT.create(SqlTemporalStoreResource.class);
 
-    private static final long ONE_DAY_MS = 24L * 60 * 60 * 1000;
+    /** One day in ms */
+    private static final long ONE_DAY_MS = 24L * 60L * 60L * 1000L;
 
     // -----------------------------------------------------------------------
     // View slots
@@ -224,26 +222,27 @@ public class FloorMapEditorPresenter
         floorMapCanvasPresenter.setDragHandler(this::onCanvasDrag);
 
         // ---- Fact List selection + Show All toggle --------------------------
-        floorMapFactListPresenter.setSelectionConsumer(this::onFactSelected);
-        floorMapFactListPresenter.setShowAllConsumer(() -> onShowAllToggled(true));
-        floorMapFactListPresenter.setShowTimeFilteredConsumer(() -> onShowAllToggled(false));
+        floorMapFactListPresenter.setSelectionConsumer(this::onFactSelectedInFactList);
+        floorMapFactListPresenter.setShowAllConsumer(() -> onShowAllFactsToggled(true));
+        floorMapFactListPresenter.setShowTimeFilteredConsumer(() -> onShowAllFactsToggled(false));
 
         // ---- Time List selection / toolbar ----------------------------------
-        floorMapTimeListPresenter.setSelectionConsumer(this::onEntrySelected);
-        floorMapTimeListPresenter.setAddConsumer(this::onAddEntry);
-        floorMapTimeListPresenter.setDeleteConsumer(this::onDeleteEntry);
+        floorMapTimeListPresenter.setSelectionConsumer(this::onTimeSelectedInTimeList);
+        floorMapTimeListPresenter.setAddConsumer(this::onAddTimeInTimeList);
+        floorMapTimeListPresenter.setDeleteConsumer(this::onDeleteTimeFromTimeList);
 
         // ---- Properties (stage updates through pending-changes buffer) ------
         floorMapObjectEditPresenter.setSaveConsumer(entry -> {
             pendingChanges.recordUpdate(entry);
             setDirty(true);
-            refreshTimeListOptimistic();
+            refreshTimeListAtTime(entry.getEffectiveTimeMs());
             refreshCanvas();
         });
         floorMapObjectEditPresenter.setDeleteConsumer(id -> {
             pendingChanges.recordDeletion(id);
             setDirty(true);
-            refreshTimeListOptimistic();
+            // TODO MB
+            //refreshTimeListAutoSelectLastTime();
         });
 
         // Live drag → Properties coordinates update
@@ -409,7 +408,7 @@ public class FloorMapEditorPresenter
         selectedTime = timeMs;
         loadAtTime(timeMs);
         if (selectedFactKey != null) {
-            refreshTimeListOptimistic();
+            refreshTimeListAtTime(timeMs);
         }
     }
 
@@ -422,6 +421,8 @@ public class FloorMapEditorPresenter
      * active) and reloads the canvas and Fact List.
      *
      * @param timeMs the point in time to query
+     *
+     * TODO MB Ideally this also accepts events from the FloorMapTimeListPresenter and relays to the Timeline.
      */
     private void loadAtTime(final long timeMs) {
         final String mapName = getMapName();
@@ -438,6 +439,8 @@ public class FloorMapEditorPresenter
 
     /**
      * Fetches the most recent entry per key at or before {@code timeMs}.
+     * Merges the entries into the pending changes.
+     * Then calls updateCanvasAndFactList(merged)
      *
      * @param mapName the temporal store name
      * @param timeMs  the upper bound for effective_time
@@ -498,7 +501,7 @@ public class FloorMapEditorPresenter
                     }
                     serverEntriesForSelectedFact.sort(
                             Comparator.comparingLong(TemporalEntry::getEffectiveTimeMs));
-                    refreshTimeListOptimistic();
+                    refreshTimeListAtTime(selectedTime);
                 })
                 .exec();
     }
@@ -509,6 +512,7 @@ public class FloorMapEditorPresenter
 
     /**
      * Updates the canvas and Fact List from a merged entry list.
+     * Parses the name and type out of the entries and creates a list of FactObjects.
      * Also ensures the currently selected fact remains highlighted on the canvas.
      *
      * @param entries merged entries (server data + pending changes)
@@ -543,6 +547,8 @@ public class FloorMapEditorPresenter
         }
 
         // Guarantee background entry is always present
+        // TODO MB Don't always need a background
+        /*
         final boolean hasBg = factObjects.stream()
                 .anyMatch(o -> "background".equalsIgnoreCase(o.getType())
                         || "background".equalsIgnoreCase(o.getKey()));
@@ -550,7 +556,7 @@ public class FloorMapEditorPresenter
             factObjects.add(new FloorMapFactListPresenter.FactObject(
                     "background", "Background", "background"));
         }
-
+        */
         floorMapFactListPresenter.setData(factObjects);
 
         // Restore selection highlight without re-firing selection event
@@ -563,17 +569,18 @@ public class FloorMapEditorPresenter
      * Parses the entry list and sends canvas objects to the canvas presenter.
      *
      * <p>This is the Editor tab's own canvas data feed; it does not share code
-     * with the Map tab (which will be radically reworked later).</p>
+     * with the Map tab.</p>
      *
      * @param entries the merged entry list to render
      */
     private void parseForCanvas(final List<TemporalEntry> entries) {
-        final List<FloorMapObject> objects = new ArrayList<>();
+        final List<FloorMapObject> floorMapObjects = new ArrayList<>();
         String backgroundImage = null;
         FloorMapTransformationMatrix bgMatrix = null;
 
         for (final TemporalEntry entry : entries) {
             try {
+                // Ignore any value that isn't JSON
                 if (entry.getValue() == null || !entry.getValue().trim().startsWith("{")) {
                     continue;
                 }
@@ -609,7 +616,7 @@ public class FloorMapEditorPresenter
                         y = JSONUtil.getDouble(coords.get(1));
                     }
                     final FloorMapObject obj = new FloorMapObject(entry.getKey(), type != null ? type : "", x, y);
-                    objects.add(obj);
+                    floorMapObjects.add(obj);
                 }
             } catch (final Exception ex) {
                 // Skip malformed entries
@@ -620,7 +627,7 @@ public class FloorMapEditorPresenter
         if (bgMatrix != null) {
             floorMapCanvasPresenter.setMatrix(bgMatrix);
         }
-        floorMapCanvasPresenter.setObjects(objects);
+        floorMapCanvasPresenter.setObjects(floorMapObjects);
         if (selectedFactKey != null) {
             floorMapCanvasPresenter.setSelectedObjectId(selectedFactKey);
         }
@@ -657,18 +664,23 @@ public class FloorMapEditorPresenter
         final List<TemporalEntry> all = pendingChanges.applyTo(serverEntriesAtCurrentTime);
         for (final TemporalEntry e : all) {
             if (objectId.equals(e.getKey())) {
-                // Build an updated entry with the new coordinates
-                final TemporalEntry updated = buildUpdatedEntryWithCoords(e, x, y);
-                if (updated != null) {
+                try {
+                    final TemporalEntry updated = buildUpdatedEntryWithCoords(e, x, y);
                     pendingChanges.recordUpdate(updated);
                     setDirty(true);
+                } catch (final Exception ex) {
+                    AlertEvent.fireError(this,
+                            "Cannot update coordinates for object '" + objectId + "': "
+                            + ex.getMessage(),
+                            null);
                 }
                 break;
             }
         }
         // Optimistic canvas + Time List refresh
         refreshCanvas();
-        refreshTimeListOptimistic();
+        // TODO
+        //refreshTimeListAutoSelectLastTime();
     }
 
     /**
@@ -685,9 +697,9 @@ public class FloorMapEditorPresenter
      *                 future use; not used by this method)
      */
     private void onCanvasDrag(final String objectId,
-                               final double x,
-                               final double y,
-                               final FloorMapTransformationMatrix bgMatrix) {
+                              final double x,
+                              final double y,
+                              final FloorMapTransformationMatrix bgMatrix) {
         floorMapObjectEditPresenter.updateCoords(x, y);
     }
 
@@ -696,7 +708,7 @@ public class FloorMapEditorPresenter
      *
      * @param factObject the selected fact, or {@code null}
      */
-    private void onFactSelected(final FloorMapFactListPresenter.FactObject factObject) {
+    private void onFactSelectedInFactList(final FloorMapFactListPresenter.FactObject factObject) {
         if (factObject == null) {
             selectedFactKey = null;
             floorMapCanvasPresenter.setSelectedObjectId(null);
@@ -718,7 +730,7 @@ public class FloorMapEditorPresenter
      *
      * @param entry the selected entry, or {@code null}
      */
-    private void onEntrySelected(final TemporalEntry entry) {
+    private void onTimeSelectedInTimeList(final TemporalEntry entry) {
         floorMapCanvasPresenter.setIsDraggingEnabled(entry != null);
         floorMapObjectEditPresenter.loadEntry(entry);
     }
@@ -728,7 +740,7 @@ public class FloorMapEditorPresenter
      * Creates a new entry cloned from the currently selected one (or defaults),
      * staged in the pending-changes buffer.
      */
-    private void onAddEntry() {
+    private void onAddTimeInTimeList() {
         final String mapName = getMapName();
         if (mapName == null || selectedFactKey == null) {
             return;
@@ -739,7 +751,8 @@ public class FloorMapEditorPresenter
         final TemporalEntry newEntry = cloneEntryAtTime(selected, mapName, selectedFactKey, newTime);
         pendingChanges.recordCreation(newEntry);
         setDirty(true);
-        refreshTimeListOptimistic();
+        // TODO MB
+        //refreshTimeListAutoSelectLastTime();
     }
 
     /**
@@ -749,12 +762,13 @@ public class FloorMapEditorPresenter
      *
      * @param entry the entry to delete
      */
-    private void onDeleteEntry(final TemporalEntry entry) {
+    private void onDeleteTimeFromTimeList(final TemporalEntry entry) {
         final TemporalEntryId id = new TemporalEntryId(
                 entry.getMap(), entry.getKey(), entry.getEffectiveTimeMs());
         pendingChanges.recordDeletion(id);
         setDirty(true);
-        refreshTimeListOptimistic();
+        // TODO MB
+        //refreshTimeListAutoSelectLastTime();
     }
 
     // -----------------------------------------------------------------------
@@ -766,7 +780,7 @@ public class FloorMapEditorPresenter
      *
      * @param showAll {@code true} to ignore the time filter
      */
-    public void onShowAllToggled(final boolean showAll) {
+    public void onShowAllFactsToggled(final boolean showAll) {
         this.showAllFacts = showAll;
         final String mapName = getMapName();
         if (mapName == null) {
@@ -785,14 +799,38 @@ public class FloorMapEditorPresenter
 
     /**
      * Refreshes the Time List from {@link #serverEntriesForSelectedFact}
-     * overlaid with pending changes, then auto-selects the last entry.
+     * overlaid with pending changes, then selects the entry active at
+     * {@link #selectedTime} (i.e. the most recent entry ≤ the current
+     * timeline position).
+     *
+     * <p>Called on timeline scrubber moves so the highlighted row tracks the
+     * time position rather than always jumping to the newest entry.</p>
+     *
+     * @param timeMs the timeline position to select against
      */
-    private void refreshTimeListOptimistic() {
+    private void refreshTimeListAtTime(final long timeMs) {
         final List<TemporalEntry> merged = pendingChanges.applyTo(serverEntriesForSelectedFact);
+        merged.removeIf(e -> !e.getKey().equals(selectedFactKey));
+        merged.sort(Comparator.comparingLong(TemporalEntry::getEffectiveTimeMs));
+        floorMapTimeListPresenter.setData(merged);
+        floorMapTimeListPresenter.selectAtTime(timeMs);
+    }
+
+    /**
+     * Refreshes the Time List from {@link #serverEntriesForSelectedFact}
+     * overlaid with pending changes, then auto-selects the last (most recent)
+     * entry.
+     *
+     * <p>Used after add / delete / save / canvas-drag operations where the
+     * intent is to show the newest entry.</p>
+     */
+    /*private void refreshTimeListAutoSelectLastTime() {
+        final List<TemporalEntry> merged = pendingChanges.applyTo(serverEntriesForSelectedFact);
+        merged.removeIf(e -> !e.getKey().equals(selectedFactKey));
         merged.sort(Comparator.comparingLong(TemporalEntry::getEffectiveTimeMs));
         floorMapTimeListPresenter.setData(merged);
         floorMapTimeListPresenter.selectLast();
-    }
+    }*/
 
     /** Refreshes the canvas using the latest Fact List data at the current time. */
     private void refreshCanvas() {
@@ -885,38 +923,42 @@ public class FloorMapEditorPresenter
         return new TemporalEntry(mapName, key, newTime, value != null ? value : "{}");
     }
 
+
     /**
-     * Returns an updated copy of {@code original} with new x/y coordinates
-     * patched into its JSON value. Returns {@code null} if the value cannot
-     * be parsed.
+     * Builds a copy of {@code original} with its {@code coords} field replaced
+     * by the supplied {@code x} and {@code y} values.
      *
-     * @param original the entry to update
-     * @param x        the new x coordinate
-     * @param y        the new y coordinate
-     * @return the updated entry, or {@code null} on parse failure
+     * @param original the entry to update; must not be {@code null}
+     * @param x        the new X coordinate in map space
+     * @param y        the new Y coordinate in map space
+     * @return a new {@link TemporalEntry} with the updated JSON value
+     * @throws IllegalStateException if the entry's value is absent or not a
+     *                               JSON object — the legacy CSV format should
+     *                               never appear in live data
+     * @throws RuntimeException      if the JSON cannot be parsed or mutated
      */
     private static TemporalEntry buildUpdatedEntryWithCoords(final TemporalEntry original,
                                                               final double x,
                                                               final double y) {
-        try {
-            final String raw = original.getValue();
-            if (raw == null || !raw.trim().startsWith("{")) {
-                return null;
-            }
-            final JSONObject json = JSONUtil.getObject(JSONUtil.parse(raw));
-            if (json == null) {
-                return null;
-            }
-            final JSONArray coordsArr = new JSONArray();
-            coordsArr.set(0, new com.google.gwt.json.client.JSONNumber(x));
-            coordsArr.set(1, new com.google.gwt.json.client.JSONNumber(y));
-            json.put("coords", coordsArr);
-            return new TemporalEntry(
-                    original.getMap(), original.getKey(),
-                    original.getEffectiveTimeMs(), json.toString());
-        } catch (final Exception ex) {
-            return null;
+        final String raw = original.getValue();
+        if (raw == null || !raw.trim().startsWith("{")) {
+            throw new IllegalStateException(
+                    "Entry value is not a JSON object (legacy format?): " + raw);
         }
+        final JSONObject json = JSONUtil.getObject(JSONUtil.parse(raw));
+        if (json == null) {
+            throw new IllegalStateException(
+                    "Entry value could not be parsed as a JSON object: " + raw);
+        }
+        final JSONArray coordsArr = new JSONArray();
+        coordsArr.set(0, new com.google.gwt.json.client.JSONNumber(x));
+        coordsArr.set(1, new com.google.gwt.json.client.JSONNumber(y));
+        json.put("coords", coordsArr);
+        return new TemporalEntry(
+                original.getMap(),
+                original.getKey(),
+                original.getEffectiveTimeMs(),
+                json.toString());
     }
 
     // -----------------------------------------------------------------------

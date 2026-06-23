@@ -169,6 +169,46 @@ public class FloorMapTimeListPresenter extends MyPresenterWidget<FloorMapTimeLis
         if (list != null && !list.isEmpty()) {
             //noinspection SequencedCollectionMethodCanBeUsed
             selectionModel.setSelected(list.get(list.size() - 1), true);
+            deleteButton.setEnabled(true);
+        }
+    }
+
+    /**
+     * Selects the entry that would be active at {@code timeMs} — i.e. the
+     * most recent entry whose effective time is at or before {@code timeMs}.
+     *
+     * <p>If all entries are later than {@code timeMs} the first (earliest)
+     * entry is selected so the user can still see the list is populated.
+     * No-op when the list is empty.</p>
+     *
+     * @param timeMs the point in time to match against
+     */
+    public void selectAtTime(final long timeMs) {
+        final List<TemporalEntry> list = dataProvider.getList();
+        if (list == null || list.isEmpty()) {
+            return;
+        }
+        // List is sorted ascending by effective time; walk backwards to find
+        // the last entry whose time is <= timeMs.
+        TemporalEntry best = null;
+        for (int i = list.size() - 1; i >= 0; i--) {
+            if (list.get(i).getEffectiveTimeMs() <= timeMs) {
+                best = list.get(i);
+                break;
+            }
+        }
+        if (best != null) {
+            selectionModel.setSelected(best, true);
+            // Explicitly enable the delete button: setData() disables it
+            // synchronously, and GWT's deferred SelectionChangeEvent may not
+            // re-enable it reliably when clear() and setSelected() are coalesced.
+            deleteButton.setEnabled(true);
+        } else {
+            // Timeline is before all entries — no entry is active at this time.
+            // Clear the selection so the Properties form is disabled, matching
+            // the canvas which also shows nothing for this object at this time.
+            selectionModel.clear();
+            deleteButton.setEnabled(false);
         }
     }
 
