@@ -39,10 +39,6 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
     private final Widget widget;
 
     @UiField
-    SimplePanel toolbarContainer;
-    @UiField
-    SimplePanel gridContainer;
-    @UiField
     DateTimeBox effectiveTimeBox;
     @UiField
     TextBox xBox;
@@ -110,15 +106,7 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
         return widget;
     }
 
-    @Override
-    public void setToolbar(final Widget toolbarWidget) {
-        toolbarContainer.setWidget(toolbarWidget);
-    }
 
-    @Override
-    public void setGridView(final Widget gridWidget) {
-        gridContainer.setWidget(gridWidget);
-    }
 
     @Override
     public long getEffectiveTime() {

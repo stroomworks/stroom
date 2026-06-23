@@ -238,7 +238,7 @@ public class FloorMapMapPresenter
             }
         });
 
-        floorMapObjectEditPresenter.setEditStateConsumer(floorMapCanvasPresenter::setIsDraggingEnabled);
+
 
         this.floorMapObjectEditPresenter.addAssetSelectionHandler(e -> {
             if (e.getSelectedItem() != null) {
@@ -256,9 +256,11 @@ public class FloorMapMapPresenter
                         ? "background"
                         : factObj.getKey();
                 floorMapCanvasPresenter.setSelectedObjectId(canvasId);
+                floorMapCanvasPresenter.setIsDraggingEnabled(true);
                 getView().setPropertiesVisible(true);
             } else {
                 floorMapCanvasPresenter.setSelectedObjectId(null);
+                floorMapCanvasPresenter.setIsDraggingEnabled(false);
             }
         });
 

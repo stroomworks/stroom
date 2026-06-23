@@ -719,11 +719,8 @@ public class FloorMapEditorPresenter
      * @param entry the selected entry, or {@code null}
      */
     private void onEntrySelected(final TemporalEntry entry) {
-        if (entry == null) {
-            return;
-        }
-        // Show entry in Properties panel and enable dragging
-        floorMapCanvasPresenter.setIsDraggingEnabled(true);
+        floorMapCanvasPresenter.setIsDraggingEnabled(entry != null);
+        floorMapObjectEditPresenter.loadEntry(entry);
     }
 
     /**
