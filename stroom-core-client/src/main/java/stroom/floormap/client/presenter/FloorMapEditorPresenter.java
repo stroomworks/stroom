@@ -728,11 +728,22 @@ public class FloorMapEditorPresenter
     /**
      * Called when a row in the Time List is selected.
      *
+     * <p>Moves the timeline scrubber to the entry's effective time and reloads
+     * the canvas so all panels stay in sync. {@link FloorMapTimelinePresenter#setCurrentTime}
+     * only repositions the scrubber — it does <em>not</em> fire a
+     * {@link stroom.floormap.client.event.TimeChangeEvent} — so there is no
+     * feedback loop back into {@link #onTimeChange}.</p>
+     *
      * @param entry the selected entry, or {@code null}
      */
     private void onTimeSelectedInTimeList(final TemporalEntry entry) {
         floorMapCanvasPresenter.setIsDraggingEnabled(entry != null);
         floorMapObjectEditPresenter.loadEntry(entry);
+        if (entry != null) {
+            selectedTime = entry.getEffectiveTimeMs();
+            floorMapTimelinePresenter.setCurrentTime(selectedTime);
+            loadAtTime(selectedTime);
+        }
     }
 
     /**
@@ -815,22 +826,6 @@ public class FloorMapEditorPresenter
         floorMapTimeListPresenter.setData(merged);
         floorMapTimeListPresenter.selectAtTime(timeMs);
     }
-
-    /**
-     * Refreshes the Time List from {@link #serverEntriesForSelectedFact}
-     * overlaid with pending changes, then auto-selects the last (most recent)
-     * entry.
-     *
-     * <p>Used after add / delete / save / canvas-drag operations where the
-     * intent is to show the newest entry.</p>
-     */
-    /*private void refreshTimeListAutoSelectLastTime() {
-        final List<TemporalEntry> merged = pendingChanges.applyTo(serverEntriesForSelectedFact);
-        merged.removeIf(e -> !e.getKey().equals(selectedFactKey));
-        merged.sort(Comparator.comparingLong(TemporalEntry::getEffectiveTimeMs));
-        floorMapTimeListPresenter.setData(merged);
-        floorMapTimeListPresenter.selectLast();
-    }*/
 
     /** Refreshes the canvas using the latest Fact List data at the current time. */
     private void refreshCanvas() {
