@@ -14,62 +14,137 @@
  * limitations under the License.
  */
 
+/* ============================================================
+ * Floor Map Timeline — YouTube-style layout
+ * ============================================================ */
+
 .stroom-floormap-timeline-container {
-    padding: 5px 25px 15px 25px;
+    padding: 6px 12px 8px 12px;
     box-sizing: border-box;
+}
+
+/* Single row: [play] [center: bar + labels] [settings] */
+.stroom-floormap-timeline-playback-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+}
+
+/* Play / pause button — compact square, aligned to the scrubber bar vertically */
+.stroom-floormap-timeline-play-button {
+    flex-shrink: 0;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    /* Align to the bar, not the vertical centre of the whole column.
+       margin-bottom offsets up from the bottom of the flex row by:
+       date-label line-height (~14px) + date-label margin-top (5px) + bar height / 2 (2.5px) ≈ 22px */
+    align-self: flex-end;
+    margin-bottom: 22px;
+}
+
+/* The center section grows to fill available space */
+.stroom-floormap-timeline-center {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
     cursor: pointer;
 }
 
-.stroom-floormap-timeline-label-row {
-    height: 30px;
+/* ============================================================
+ * Histogram hover pop-up (YouTube-style)
+ * ============================================================ */
+
+/* Container that wraps the histogram canvas — always visible. */
+.stroom-floormap-timeline-histogram-container {
     width: 100%;
-    margin-top: 4px;
-    margin-bottom: 10px;
+    height: 48px;
+    overflow: hidden;
+    position: relative;
+}
+
+/* The canvas itself fills the container exactly. */
+.stroom-floormap-timeline-histogram-canvas {
+    display: block;
+    width: 100%;
+    height: 48px;
+    /* Subtle gradient fade at the bottom to blend into the scrubber bar. */
+    -webkit-mask-image: linear-gradient(to bottom, rgba(0,0,0,1) 60%, rgba(0,0,0,0) 100%);
+    mask-image: linear-gradient(to bottom, rgba(0,0,0,1) 60%, rgba(0,0,0,0) 100%);
+}
+
+/* Settings gear button — mirrors the play button sizing and alignment */
+.stroom-floormap-timeline-settings-button {
+    flex-shrink: 0;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.7;
+    transition: opacity 0.15s ease;
+    /* Same bottom-alignment as the play button */
+    align-self: flex-end;
+    margin-bottom: 22px;
+}
+
+.stroom-floormap-timeline-settings-button:hover {
+    opacity: 1;
+}
+
+/* Date labels row below the bar */
+.stroom-floormap-timeline-date-labels-row {
     display: flex;
     justify-content: space-between;
+    pointer-events: none;
+    margin-top: 5px;
 }
 
-.stroom-floormap-timeline-label-row .timeline-date-box {
-    width: 220px;
-}
-
-.stroom-floormap-timeline-label {
+.stroom-floormap-timeline-date-label {
     font-size: 10px;
-    color: var(--control__text-color);
+    color: var(--text-color--low-emphasis);
     white-space: nowrap;
+    user-select: none;
 }
 
-.stroom-floormap-timeline-label-end {
+.stroom-floormap-timeline-date-label-end {
     text-align: right;
 }
 
+/* The progress bar track */
 .stroom-floormap-timeline-outer-bar {
     position: relative;
     background-color: var(--control__background-color);
     width: 100%;
-    height: 12px;
+    height: 5px;
     border: 1px solid var(--control__border-color);
-    border-radius: 6px;
+    border-radius: 3px;
 }
 
+/* The filled portion of the bar */
 .stroom-floormap-timeline-inner-bar {
     position: absolute;
     background-color: #1e88e5; /* Stroom Blue */
     height: 100%;
-    border-radius: 6px 0 0 6px;
+    border-radius: 3px 0 0 3px;
     pointer-events: none;
 }
 
+/* The draggable circle handle */
 .stroom-floormap-timeline-handle {
     position: absolute;
     top: 50%;
     transform: translate(-50%, -50%);
-    width: 18px;
-    height: 18px;
+    width: 14px;
+    height: 14px;
     background-color: #1e88e5;
     border: 2px solid #fff;
     border-radius: 50%;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.25);
     pointer-events: none;
     z-index: 10;
 }
@@ -175,23 +250,38 @@
     background-color: #eee;
 }
 
-.stroom-floormap-timeline-controls-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-top: 10px;
-}
+/* ============================================================
+ * Timeline settings popup panel
+ * ============================================================ */
 
-.stroom-floormap-timeline-speed-group {
+.stroom-floormap-timeline-settings-popup {
     display: flex;
     flex-direction: column;
-    gap: 5px;
-    margin-left: 10px;
+    gap: 8px;
+    padding: 10px 14px;
+    min-width: 280px;
 }
 
-.stroom-floormap-timeline-speed-label {
-    font-size: 11px;
-    margin-left: 2px;
+.stroom-floormap-timeline-settings-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.stroom-floormap-timeline-settings-label {
+    font-size: 0.85em;
+    font-weight: 600;
     color: var(--text-color--low-emphasis);
     white-space: nowrap;
+    width: 100px;
+    flex-shrink: 0;
+}
+
+.stroom-floormap-timeline-settings-speed-box {
+    width: 80px;
+}
+
+.stroom-floormap-timeline-settings-date-box {
+    flex: 1;
+    min-width: 160px;
 }

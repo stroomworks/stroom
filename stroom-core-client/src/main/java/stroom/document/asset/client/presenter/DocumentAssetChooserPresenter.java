@@ -124,10 +124,7 @@ public class DocumentAssetChooserPresenter
                         WIDTH,
                         "/ui/background-images/arrow-down.png");
         private static final stroom.document.asset.client.presenter.assets.DocumentAssetImageResource TRANSPARENT =
-                new stroom.document.asset.client.presenter.assets.DocumentAssetImageResource(
-                        HEIGHT,
-                        WIDTH,
-                        "/ui/background-images/transparent-16x16.png");
+                new stroom.document.asset.client.presenter.assets.DocumentAssetImageResource(HEIGHT, WIDTH, "/ui/background-images/transparent-16x16.png");
 
         @Override
         public com.google.gwt.resources.client.ImageResource treeClosed() {

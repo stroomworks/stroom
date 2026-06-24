@@ -204,7 +204,6 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
         final double rDeg = parseDouble(rot.getText(), 0.0);
 
         final double rRad = Math.toRadians(rDeg);
-
         final double[] m = new double[6];
         m[0] = sX * Math.cos(rRad);
         m[1] = sX * Math.sin(rRad);
@@ -243,7 +242,7 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
             final double tY = f;
             final double sX = Math.sqrt(a * a + b * b);
             final double sY = Math.sqrt(c * c + d * d);
-
+            
             double rotationDeg = Math.toDegrees(Math.atan2(b, a));
             rotationDeg = Math.round(rotationDeg * 100.0) / 100.0;
 

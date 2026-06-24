@@ -29,7 +29,7 @@ import com.gwtplatform.mvp.client.ViewImpl;
 
 /**
  * View implementation for the Floor Map.
- * Uses a split layout to show the map, timeline, and log data.
+ * Uses a split layout to show the map and timeline.
  */
 public class FloorMapMapViewImpl extends ViewImpl implements FloorMapMapView {
 
@@ -43,8 +43,6 @@ public class FloorMapMapViewImpl extends ViewImpl implements FloorMapMapView {
     SimplePanel mapPanel;
     @UiField
     SimplePanel timelinePanel;
-    @UiField
-    SimplePanel logPanel;
 
     @Inject
     public FloorMapMapViewImpl(final Binder binder) {
@@ -72,8 +70,6 @@ public class FloorMapMapViewImpl extends ViewImpl implements FloorMapMapView {
             mapPanel.setWidget(content);
         } else if (FloorMapMapPresenter.TIMELINE.equals(slot)) {
             timelinePanel.setWidget(content);
-        } else if (FloorMapMapPresenter.LOG_DATA.equals(slot)) {
-            logPanel.setWidget(content);
         } else if (FloorMapMapPresenter.PROPERTIES.equals(slot)) {
             propertiesPanel.setWidget(content);
         }

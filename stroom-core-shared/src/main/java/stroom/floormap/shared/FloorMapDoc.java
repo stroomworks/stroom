@@ -104,11 +104,11 @@ public class FloorMapDoc extends AbstractDoc {
                        @JsonProperty("eventsQuery") final String eventsQuery,
                        @JsonProperty("eventsQueryTimeRange") final TimeRange eventsQueryTimeRange,
                        @JsonProperty("eventsQueryTablePreferences")
-                       final QueryTablePreferences eventsQueryTablePreferences,
+                           final QueryTablePreferences eventsQueryTablePreferences,
                        @JsonProperty("factsQuery") final String factsQuery,
                        @JsonProperty("factsQueryTimeRange") final TimeRange factsQueryTimeRange,
                        @JsonProperty("factsQueryTablePreferences")
-                       final QueryTablePreferences factsQueryTablePreferences) {
+                           final QueryTablePreferences factsQueryTablePreferences) {
         super(TYPE, uuid,
                 name,
                 version,
@@ -129,9 +129,8 @@ public class FloorMapDoc extends AbstractDoc {
         // Backward compatibility fallback handling
         this.eventsQuery = eventsQuery != null ? eventsQuery : query;
         this.eventsQueryTimeRange = eventsQueryTimeRange != null ? eventsQueryTimeRange : queryTimeRange;
-        this.eventsQueryTablePreferences = eventsQueryTablePreferences != null
-                ? eventsQueryTablePreferences
-                : queryTablePreferences;
+        this.eventsQueryTablePreferences = eventsQueryTablePreferences != null ?
+                eventsQueryTablePreferences : queryTablePreferences;
 
         this.factsQuery = factsQuery;
         this.factsQueryTimeRange = factsQueryTimeRange;
@@ -139,9 +138,8 @@ public class FloorMapDoc extends AbstractDoc {
 
         this.query = query != null ? query : this.eventsQuery;
         this.queryTimeRange = queryTimeRange != null ? queryTimeRange : this.eventsQueryTimeRange;
-        this.queryTablePreferences = queryTablePreferences != null
-                ? queryTablePreferences
-                : this.eventsQueryTablePreferences;
+        this.queryTablePreferences = queryTablePreferences != null ?
+                queryTablePreferences : this.eventsQueryTablePreferences;
     }
 
     public String getDescription() {
