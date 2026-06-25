@@ -34,15 +34,23 @@ import java.util.function.Consumer;
 
 /**
  * Presenter for the floor map timeline control. Handles time range selection and fires events when the time changes.
- * Provides a timeline bar with a play/pause button, progress scrubber, date labels and a settings icon that opens a
- * popup for date range and speed.
+ * Provides a timeline bar with step-back/play-pause/step-forward buttons, a progress scrubber, date labels,
+ * a speed badge, and a settings icon that opens a popup for date range, speed and loop options.
  */
 public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelineView> {
 
     private static final Preset PLAY_PRESET = new Preset(SvgImage.PLAY, "Play", true);
     private static final Preset PAUSE_PRESET = new Preset(SvgImage.PAUSE, "Pause", true);
     private static final Preset SETTINGS_PRESET = new Preset(SvgImage.SETTINGS, "Playback Settings", true);
+    private static final Preset STEP_BACK_PRESET = new Preset(SvgImage.STEP_BACKWARD, "Step Back", true);
+    private static final Preset STEP_FORWARD_PRESET = new Preset(SvgImage.STEP_FORWARD, "Step Forward", true);
     private static final double SPEED_MULTIPLIER = 1000.0;
+    /**
+     * Minimum wall-clock interval (ms) between data query fires during playback.
+     * The visual position updates every animation frame; queries are throttled to this rate
+     * so the server is not overwhelmed at high playback speeds.
+     */
+    private static final double PLAYBACK_QUERY_INTERVAL_MS = 300.0;
 
     private final FloorMapTimelineSettingsPresenter settingsPresenter;
 
@@ -50,9 +58,16 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
     private long endTime;
     private long currentTime;
 
+    /** Earliest timestamp observed in histogram data — used by Show All. */
+    private long dataRangeMin = Long.MAX_VALUE;
+    /** Latest timestamp observed in histogram data — used by Show All. */
+    private long dataRangeMax = Long.MIN_VALUE;
+
     private boolean playing;
     private double playbackSpeed;
     private double lastFrameTime;
+    /** Wall-clock timestamp (ms) of the most recent playback data query, used for throttling. */
+    private double lastQueryWallClockTime;
 
     /** Optional callback fired when the user changes the visible time range via the settings popup. */
     private Runnable timeRangeChangeHandler;
@@ -64,12 +79,19 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
         super(eventBus, view);
         this.settingsPresenter = settingsPresenter;
 
-        view.setClickHandler(percentage -> {
+        view.setScrubHandler(percentage -> {
+            // Visual-only update during drag — no data query fired.
             final long duration = endTime - startTime;
             final long newTime = startTime + (long) (duration * (percentage / 100.0));
             setCurrentTime(newTime);
+            view.setScrubTooltip(formatTime(newTime));
+        });
 
-            // Fire a TimeChangeEvent so listeners (like the map) can update
+        view.setCommitHandler(percentage -> {
+            // User released the scrubber: commit the position and fire a data query.
+            final long duration = endTime - startTime;
+            final long newTime = startTime + (long) (duration * (percentage / 100.0));
+            setCurrentTime(newTime);
             TimeChangeEvent.fire(this, newTime);
         });
     }
@@ -108,17 +130,48 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
             }
         });
 
+        // Step-back: jump one histogram bin backward.
+        getView().setStepBackHandler(() -> stepBy(-1));
+
+        // Step-forward: jump one histogram bin forward.
+        getView().setStepForwardHandler(() -> stepBy(1));
+
         // Settings button opens the popup anchored above the settings icon.
         getView().setSettingsHandler(() -> settingsPresenter.show(getView().getSettingsButtonWidget()));
 
-        settingsPresenter.setSpeedChangeHandler(speed -> this.playbackSpeed = speed);
+        settingsPresenter.setSpeedChangeHandler(speed -> {
+            this.playbackSpeed = speed;
+            getView().setSpeedBadge(formatSpeed(speed));
+        });
+
+        // Loop/stop-at-end toggle: default to looping.
+        settingsPresenter.setLoopPlayback(true);
+
+        // Wire the Show All button: disabled until we have histogram data with a valid range.
+        settingsPresenter.setShowAllEnabled(false);
+        settingsPresenter.setShowAllHandler(() -> {
+            if (dataRangeMin < dataRangeMax) {
+                // Apply a small 5% padding on each side so the first/last events are not
+                // flush against the edges of the histogram.
+                final long padding = Math.max(1, (dataRangeMax - dataRangeMin) / 20);
+                final long newStart = dataRangeMin - padding;
+                final long newEnd = dataRangeMax + padding;
+                setTimeRange(newStart, newEnd);
+                if (timeRangeChangeHandler != null) {
+                    timeRangeChangeHandler.run();
+                }
+            }
+        });
 
         getView().setPlayPausePreset(PLAY_PRESET);
+        getView().setStepBackPreset(STEP_BACK_PRESET);
+        getView().setStepForwardPreset(STEP_FORWARD_PRESET);
         getView().setSettingsPreset(SETTINGS_PRESET);
 
-        settingsPresenter.setSpeedOptions(Arrays.asList(0.5, 1.0, 2.0, 5.0, 10.0));
+        settingsPresenter.setSpeedOptions(Arrays.asList(0.5, 1.0, 10.0, 100.0, 1_000.0, 10_000.0));
         settingsPresenter.setSelectedSpeed(1.0);
         this.playbackSpeed = 1.0;
+        getView().setSpeedBadge(formatSpeed(1.0));
     }
 
     /**
@@ -180,6 +233,25 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
     }
 
     /**
+     * Steps the timeline by the given number of histogram bins and fires a data query.
+     * Positive values step forward; negative values step backward.
+     *
+     * @param bins Number of bins to step (positive = forward, negative = backward).
+     */
+    private void stepBy(final int bins) {
+        if (endTime <= startTime) {
+            return;
+        }
+        // Use the same bin count that the histogram uses (default 50 if not set).
+        final long duration = endTime - startTime;
+        final int binCount = 50;
+        final long stepMs = duration / binCount * bins;
+        final long newTime = Math.max(startTime, Math.min(endTime, currentTime + stepMs));
+        setCurrentTime(newTime);
+        TimeChangeEvent.fire(this, newTime);
+    }
+
+    /**
      * Formats a millisecond timestamp as a short display string for the timeline labels.
      */
     private String formatTime(final long millis) {
@@ -198,6 +270,28 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
         final int hour = date.getHours();
         final int min = date.getMinutes();
         return pad4(year) + "-" + pad2(month) + "-" + pad2(day) + " " + pad2(hour) + ":" + pad2(min);
+    }
+
+    /**
+     * Formats a playback speed value as a badge string, e.g. {@code "×1"} or {@code "×0.5"}.
+     * Large values are comma-formatted (e.g. {@code "×1,000"}).
+     */
+    private static String formatSpeed(final double speed) {
+        if (speed >= 1000) {
+            // Format with thousands separator — GWT has no String.format %,d so we do it manually.
+            final long rounded = Math.round(speed);
+            final String raw = String.valueOf(rounded);
+            final int len = raw.length();
+            if (len > 3) {
+                return "x" + raw.substring(0, len - 3) + "," + raw.substring(len - 3);
+            }
+            return "x" + raw;
+        }
+        // For values < 1000: show as integer where possible.
+        if (speed == Math.floor(speed)) {
+            return "x" + (int) speed;
+        }
+        return "x" + speed;
     }
 
     private static String pad2(final int value) {
@@ -224,35 +318,92 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
                     long newTime = currentTime + (long) (delta * playbackSpeed * SPEED_MULTIPLIER);
 
                     if (newTime > endTime) {
-                        newTime = startTime;
+                        if (settingsPresenter.isLoopPlayback()) {
+                            // Loop: wrap back to the start.
+                            newTime = startTime;
+                            // Reset the query clock on loop-around so the first frame after
+                            // wrapping always triggers a fresh query.
+                            lastQueryWallClockTime = 0;
+                        } else {
+                            // Stop at end: park at the end time and pause.
+                            newTime = endTime;
+                            playing = false;
+                            getView().setPlayPausePreset(PLAY_PRESET);
+                            setCurrentTime(newTime);
+                            TimeChangeEvent.fire(FloorMapTimelinePresenter.this, newTime);
+                            lastFrameTime = 0;
+                            lastQueryWallClockTime = 0;
+                            return;
+                        }
                     }
 
+                    // Always update the visual position (smooth 60 fps).
                     setCurrentTime(newTime);
-                    TimeChangeEvent.fire(FloorMapTimelinePresenter.this, newTime);
+
+                    // Only fire a data query if enough wall-clock time has elapsed since
+                    // the last one, preventing the server from being overwhelmed.
+                    if (lastQueryWallClockTime == 0
+                            || timestamp - lastQueryWallClockTime >= PLAYBACK_QUERY_INTERVAL_MS) {
+                        TimeChangeEvent.fire(FloorMapTimelinePresenter.this, newTime);
+                        lastQueryWallClockTime = timestamp;
+                    }
                 }
 
                 lastFrameTime = timestamp;
                 AnimationScheduler.get().requestAnimationFrame(this);
             } else {
                 lastFrameTime = 0;
+                lastQueryWallClockTime = 0;
             }
         }
     };
 
     /**
-     * Provides histogram bin counts to be displayed above the scrubber on hover.
+     * Provides histogram bin counts to be displayed above the scrubber.
      *
-     * @param binCounts  Array of event counts per time bucket.
+     * @param binCounts  Array of event counts per bin.
      */
     public void setHistogramData(final int[] binCounts) {
         getView().setHistogramData(binCounts);
+    }
+
+    /**
+     * Records the actual min/max timestamps seen in the current histogram data.
+     * Called by {@code FloorMapMapPresenter} after each histogram query completes.
+     * Enables the "Show All" button once a valid range is known.
+     *
+     * @param min Earliest event timestamp in the queried data (milliseconds).
+     * @param max Latest event timestamp in the queried data (milliseconds).
+     */
+    public void setDataRange(final long min, final long max) {
+        if (min <= max) {
+            this.dataRangeMin = min;
+            this.dataRangeMax = max;
+            settingsPresenter.setShowAllEnabled(true);
+        }
     }
 
     public interface FloorMapTimelineView extends View {
 
         void setProgressPct(double pct);
 
-        void setClickHandler(Consumer<Double> clickHandler);
+        /**
+         * Sets the handler called on every mouse-move during a drag.
+         * Should update the visual position only — must NOT trigger a data query.
+         */
+        void setScrubHandler(Consumer<Double> scrubHandler);
+
+        /**
+         * Sets the handler called when the user releases the scrubber (mouse-up) or
+         * clicks directly on the histogram to seek.
+         * This is the point at which a data query should be fired.
+         */
+        void setCommitHandler(Consumer<Double> commitHandler);
+
+        /**
+         * Updates the text of the scrub tooltip shown above the handle during dragging.
+         */
+        void setScrubTooltip(String text);
 
         /**
          * Set the text label shown at the left end of the timeline bar (start date).
@@ -267,6 +418,18 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
         void setPlayPausePreset(Preset preset);
 
         void setPlayPauseHandler(Runnable handler);
+
+        /** Set the icon/title for the step-back button. */
+        void setStepBackPreset(Preset preset);
+
+        /** Set the icon/title for the step-forward button. */
+        void setStepForwardPreset(Preset preset);
+
+        /** Set the click handler for the step-back button. */
+        void setStepBackHandler(Runnable handler);
+
+        /** Set the click handler for the step-forward button. */
+        void setStepForwardHandler(Runnable handler);
 
         /**
          * Set the icon/title for the settings gear button.
@@ -284,7 +447,12 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
         Widget getSettingsButtonWidget();
 
         /**
-         * Provides histogram data (event counts per bin) for the hover pop-up.
+         * Updates the speed badge label shown beside the settings button (e.g. "1×").
+         */
+        void setSpeedBadge(String text);
+
+        /**
+         * Provides histogram data (event counts per bin) for display above the scrubber.
          * An empty or null array clears the histogram.
          */
         void setHistogramData(int[] binCounts);

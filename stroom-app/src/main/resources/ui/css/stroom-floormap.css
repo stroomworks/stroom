@@ -23,7 +23,7 @@
     box-sizing: border-box;
 }
 
-/* Single row: [play] [center: bar + labels] [settings] */
+/* Bar row: [left controls] | center | [right controls] — all centred on the bar */
 .stroom-floormap-timeline-playback-row {
     display: flex;
     align-items: center;
@@ -31,7 +31,15 @@
     width: 100%;
 }
 
-/* Play / pause button — compact square, aligned to the scrubber bar vertically */
+/* Left control group: step-back | play/pause | step-forward */
+.stroom-floormap-timeline-left-controls {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+/* Play / pause button — slightly larger than step buttons */
 .stroom-floormap-timeline-play-button {
     flex-shrink: 0;
     width: 28px;
@@ -39,45 +47,55 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    /* Align to the bar, not the vertical centre of the whole column.
-       margin-bottom offsets up from the bottom of the flex row by:
-       date-label line-height (~14px) + date-label margin-top (5px) + bar height / 2 (2.5px) ≈ 22px */
-    align-self: flex-end;
-    margin-bottom: 22px;
 }
 
-/* The center section grows to fill available space */
+/* Step-back / step-forward buttons — compact, flanking the play button */
+.stroom-floormap-timeline-step-button {
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.75;
+    transition: opacity 0.15s ease;
+}
+
+.stroom-floormap-timeline-step-button:hover {
+    opacity: 1;
+}
+
+/* The center section grows to fill available space — bar only, no date labels */
 .stroom-floormap-timeline-center {
     flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
+    min-width: 0;
     cursor: pointer;
 }
 
-/* ============================================================
- * Histogram hover pop-up (YouTube-style)
- * ============================================================ */
+/* Right control group: speed badge | settings gear */
+.stroom-floormap-timeline-right-controls {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+}
 
-/* Container that wraps the histogram canvas — always visible. */
-.stroom-floormap-timeline-histogram-container {
-    width: 100%;
-    height: 48px;
+/* Speed badge — small read-only label showing current playback speed (e.g. "1×") */
+.stroom-floormap-timeline-speed-badge {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--blue-500);
+    width: 44px;         /* Fixed — wide enough for the longest label (×10,000) */
+    flex-shrink: 0;      /* Never shrink; keeps the timeline bar and histogram in sync */
+    text-align: center;
     overflow: hidden;
-    position: relative;
+    opacity: 0.85;
+    cursor: default;
+    user-select: none;
+    white-space: nowrap;
 }
 
-/* The canvas itself fills the container exactly. */
-.stroom-floormap-timeline-histogram-canvas {
-    display: block;
-    width: 100%;
-    height: 48px;
-    /* Subtle gradient fade at the bottom to blend into the scrubber bar. */
-    -webkit-mask-image: linear-gradient(to bottom, rgba(0,0,0,1) 60%, rgba(0,0,0,0) 100%);
-    mask-image: linear-gradient(to bottom, rgba(0,0,0,1) 60%, rgba(0,0,0,0) 100%);
-}
-
-/* Settings gear button — mirrors the play button sizing and alignment */
+/* Settings gear button */
 .stroom-floormap-timeline-settings-button {
     flex-shrink: 0;
     width: 24px;
@@ -87,21 +105,80 @@
     justify-content: center;
     opacity: 0.7;
     transition: opacity 0.15s ease;
-    /* Same bottom-alignment as the play button */
-    align-self: flex-end;
-    margin-bottom: 22px;
 }
 
 .stroom-floormap-timeline-settings-button:hover {
     opacity: 1;
 }
 
-/* Date labels row below the bar */
+/* ============================================================
+ * Histogram hover pop-up (YouTube-style)
+ * ============================================================ */
+
+/* Container that wraps the histogram canvas — always visible.
+   Left margin  = left-controls (22+4+28+4+22 = 80px) + outer gap (8px) = 88px.
+   Right margin = right-controls (44px badge + 4px gap + 24px settings = 72px) + outer gap (8px) = 80px.
+   This aligns the histogram edges with the edges of the timeline bar below it. */
+.stroom-floormap-timeline-histogram-container {
+    margin-left: 88px;
+    margin-right: 80px;
+    height: 48px;
+    overflow: hidden;
+    position: relative;
+}
+
+/* Wrapper that stacks the canvas and the hover tooltip on top of each other. */
+.stroom-floormap-timeline-histogram-canvas-wrapper {
+    position: relative;
+    width: 100%;
+    height: 48px;
+}
+
+/* The canvas itself fills the container exactly. */
+.stroom-floormap-timeline-histogram-canvas {
+    display: block;
+    width: 100%;
+    height: 48px;
+    cursor: pointer; /* indicates click-to-seek */
+    /* Subtle gradient fade at the bottom to blend into the scrubber bar. */
+    -webkit-mask-image: linear-gradient(to bottom, rgba(0,0,0,1) 60%, rgba(0,0,0,0) 100%);
+    mask-image: linear-gradient(to bottom, rgba(0,0,0,1) 60%, rgba(0,0,0,0) 100%);
+}
+
+/* Hover tooltip shown above the histogram bars while the user moves over them */
+.stroom-floormap-timeline-histogram-tooltip {
+    position: absolute;
+    top: 2px;
+    left: 0;
+    background-color: var(--page__background-color);
+    color: var(--blue-500);
+    border: 1px solid var(--blue-500);
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 500;
+    padding: 1px 5px;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.1s ease;
+    z-index: 15;
+}
+
+.stroom-floormap-timeline-histogram-tooltip--visible {
+    opacity: 1;
+}
+
+/* Date labels row below the playback row.
+   Inset by the same margins as the histogram so labels align under the bar ends.
+   Left margin  = left-controls (80px) + outer gap (8px) = 88px.
+   Right margin = right-controls (44px badge + 4px gap + 24px settings = 72px) + outer gap (8px) = 80px. */
 .stroom-floormap-timeline-date-labels-row {
     display: flex;
     justify-content: space-between;
+    margin-left: 88px;
+    margin-right: 80px;
+    margin-top: 3px;
     pointer-events: none;
-    margin-top: 5px;
 }
 
 .stroom-floormap-timeline-date-label {
@@ -147,6 +224,53 @@
     box-shadow: 0 1px 3px rgba(0,0,0,0.25);
     pointer-events: none;
     z-index: 10;
+}
+
+/* Datetime pill shown above the handle while scrubbing */
+.stroom-floormap-timeline-scrub-tooltip {
+    position: absolute;
+    bottom: calc(100% + 12px); /* sit above the handle (bar height / 2 + handle radius + gap) */
+    left: 0;
+    transform: translateX(-50%);
+    background-color: var(--page__background-color);
+    color: var(--blue-500);
+    font-size: 10px; /* matches start/end date labels */
+    font-weight: 500;
+    white-space: nowrap;
+    padding: 3px 7px;
+    border: 1px solid var(--blue-500);
+    border-radius: 4px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.1s ease;
+    z-index: 20;
+}
+
+/* Caret — outer (border colour) layer */
+.stroom-floormap-timeline-scrub-tooltip::before {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 5px solid transparent;
+    border-top-color: var(--blue-500);
+}
+
+/* Caret — inner (background colour) layer, sits 1px higher to mask the fill */
+.stroom-floormap-timeline-scrub-tooltip::after {
+    content: '';
+    position: absolute;
+    top: calc(100% - 1px);
+    left: 50%;
+    transform: translateX(-50%);
+    border: 4px solid transparent;
+    border-top-color: var(--page__background-color);
+}
+
+.stroom-floormap-timeline-scrub-tooltip--visible {
+    opacity: 1;
 }
 
 .stroom-floormap-background-grid {
@@ -284,4 +408,20 @@
 .stroom-floormap-timeline-settings-date-box {
     flex: 1;
     min-width: 160px;
+}
+
+/* Show All button row — right-aligned, separated from the date pickers by a divider */
+.stroom-floormap-timeline-settings-show-all-row {
+    display: flex;
+    justify-content: flex-end;
+    padding-top: 6px;
+    margin-top: 2px;
+    border-top: 1px solid var(--border-color);
+}
+
+.stroom-floormap-timeline-settings-show-all-button {
+    font-size: 0.85em;
+    padding: 3px 14px;
+    height: 26px;
+    white-space: nowrap;
 }

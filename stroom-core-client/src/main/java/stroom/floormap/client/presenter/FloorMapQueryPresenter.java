@@ -184,7 +184,8 @@ public class FloorMapQueryPresenter extends MyPresenterWidget<FloorMapQueryView>
     }
 
     public void read(final FloorMapDoc doc) {
-        read(doc.asDocRef(), doc.getQuery(), doc.getQueryTimeRange(), doc.getQueryTablePreferences(),
+        read(doc.asDocRef(), doc.getEventsQuery(), doc.getEventsQueryTimeRange(),
+                doc.getEventsQueryTablePreferences(),
                 doc.getEntityIdColumn(), doc.getLocationIdColumn(), true);
     }
 
@@ -217,9 +218,9 @@ public class FloorMapQueryPresenter extends MyPresenterWidget<FloorMapQueryView>
         return doc.copy()
                 .entityIdColumn(currentEntityColumn)
                 .locationIdColumn(currentLocationColumn)
-                .query(queryEditPresenter.getQuery())
-                .queryTimeRange(queryEditPresenter.getTimeRange())
-                .queryTablePreferences(queryEditPresenter.write())
+                .eventsQuery(queryEditPresenter.getQuery())
+                .eventsQueryTimeRange(queryEditPresenter.getTimeRange())
+                .eventsQueryTablePreferences(queryEditPresenter.write())
                 .build();
     }
 

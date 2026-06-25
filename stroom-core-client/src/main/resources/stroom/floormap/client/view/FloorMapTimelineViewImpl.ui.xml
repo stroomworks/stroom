@@ -4,34 +4,43 @@
              xmlns:b="urn:import:stroom.widget.button.client">
 
     <g:FlowPanel addStyleNames="stroom-floormap-timeline-container max">
-        <!-- Single playback row: play button | bar | settings icon -->
+
+        <!-- Histogram canvas spanning full width above the bar row -->
+        <g:SimplePanel ui:field="histogramContainer" addStyleNames="stroom-floormap-timeline-histogram-container" />
+
+        <!-- Bar row: [left controls] | scrubber bar | [right controls] — all vertically centred on the bar -->
         <g:FlowPanel addStyleNames="stroom-floormap-timeline-playback-row">
 
-            <!-- Play/Pause button -->
-            <b:SvgButton ui:field="playPauseButton" addStyleNames="stroom-floormap-timeline-play-button" />
+            <!-- Left controls: step-back, play/pause, step-forward -->
+            <g:FlowPanel addStyleNames="stroom-floormap-timeline-left-controls">
+                <b:SvgButton ui:field="stepBackButton" addStyleNames="stroom-floormap-timeline-step-button" />
+                <b:SvgButton ui:field="playPauseButton" addStyleNames="stroom-floormap-timeline-play-button" />
+                <b:SvgButton ui:field="stepForwardButton" addStyleNames="stroom-floormap-timeline-step-button" />
+            </g:FlowPanel>
 
-            <!-- Center section: histogram (hover) + bar + date labels -->
+            <!-- Center section: bar only -->
             <g:FlowPanel addStyleNames="stroom-floormap-timeline-center">
-
-                <!-- Histogram canvas — shown on hover above the scrubber bar -->
-                <g:SimplePanel ui:field="histogramContainer" addStyleNames="stroom-floormap-timeline-histogram-container" />
 
                 <!-- The timeline scrubber bar -->
                 <g:FlowPanel ui:field="outerBar" addStyleNames="stroom-floormap-timeline-outer-bar">
                     <g:FlowPanel ui:field="innerBar" addStyleNames="stroom-floormap-timeline-inner-bar" />
                     <g:FlowPanel ui:field="handle" addStyleNames="stroom-floormap-timeline-handle" />
+                    <g:Label ui:field="scrubTooltip" addStyleNames="stroom-floormap-timeline-scrub-tooltip" />
                     <g:FlowPanel ui:field="markerLayer" addStyleNames="max" />
-                </g:FlowPanel>
-
-                <!-- Date labels below the bar -->
-                <g:FlowPanel addStyleNames="stroom-floormap-timeline-date-labels-row">
-                    <g:Label ui:field="startDateLabel" addStyleNames="stroom-floormap-timeline-date-label" />
-                    <g:Label ui:field="endDateLabel" addStyleNames="stroom-floormap-timeline-date-label stroom-floormap-timeline-date-label-end" />
                 </g:FlowPanel>
             </g:FlowPanel>
 
-            <!-- Settings gear icon -->
-            <b:SvgButton ui:field="settingsButton" addStyleNames="stroom-floormap-timeline-settings-button" />
+            <!-- Right controls: speed badge, settings gear icon -->
+            <g:FlowPanel addStyleNames="stroom-floormap-timeline-right-controls">
+                <g:Label ui:field="speedBadge" addStyleNames="stroom-floormap-timeline-speed-badge" />
+                <b:SvgButton ui:field="settingsButton" addStyleNames="stroom-floormap-timeline-settings-button" />
+            </g:FlowPanel>
+        </g:FlowPanel>
+
+        <!-- Date labels sit below the playback row, inset to align with the bar ends -->
+        <g:FlowPanel addStyleNames="stroom-floormap-timeline-date-labels-row">
+            <g:Label ui:field="startDateLabel" addStyleNames="stroom-floormap-timeline-date-label" />
+            <g:Label ui:field="endDateLabel" addStyleNames="stroom-floormap-timeline-date-label stroom-floormap-timeline-date-label-end" />
         </g:FlowPanel>
     </g:FlowPanel>
 </ui:UiBinder>

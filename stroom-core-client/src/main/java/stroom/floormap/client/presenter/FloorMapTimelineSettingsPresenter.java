@@ -80,6 +80,14 @@ public class FloorMapTimelineSettingsPresenter
         getView().setSpeedChangeHandler(handler);
     }
 
+    public boolean isLoopPlayback() {
+        return getView().isLoopPlayback();
+    }
+
+    public void setLoopPlayback(final boolean loop) {
+        getView().setLoopPlayback(loop);
+    }
+
     public void setStartTime(final long startTime) {
         getView().setStartTime(startTime);
     }
@@ -104,6 +112,23 @@ public class FloorMapTimelineSettingsPresenter
         return getView().addEndTimeChangeHandler(handler);
     }
 
+    /**
+     * Registers the handler called when the user clicks the "Show All" button.
+     * The handler should respond by computing the full data range and calling
+     * {@link #setStartTime(long)} / {@link #setEndTime(long)} to update the date pickers.
+     */
+    public void setShowAllHandler(final Runnable handler) {
+        getView().setShowAllHandler(handler);
+    }
+
+    /**
+     * Enables or disables the "Show All" button.
+     * Should be disabled until at least one histogram data point has been received.
+     */
+    public void setShowAllEnabled(final boolean enabled) {
+        getView().setShowAllEnabled(enabled);
+    }
+
     public interface FloorMapTimelineSettingsView extends View {
 
         void setSpeedOptions(List<Double> speeds);
@@ -111,6 +136,10 @@ public class FloorMapTimelineSettingsPresenter
         void setSelectedSpeed(Double speed);
 
         void setSpeedChangeHandler(Consumer<Double> handler);
+
+        boolean isLoopPlayback();
+
+        void setLoopPlayback(boolean loop);
 
         void setStartTime(long startTime);
 
@@ -123,5 +152,9 @@ public class FloorMapTimelineSettingsPresenter
         HandlerRegistration addStartTimeChangeHandler(ValueChangeHandler<String> handler);
 
         HandlerRegistration addEndTimeChangeHandler(ValueChangeHandler<String> handler);
+
+        void setShowAllHandler(Runnable handler);
+
+        void setShowAllEnabled(boolean enabled);
     }
 }

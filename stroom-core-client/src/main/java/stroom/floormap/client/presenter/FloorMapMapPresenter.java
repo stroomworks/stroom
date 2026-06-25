@@ -26,7 +26,6 @@ import stroom.floormap.client.event.MapObjectMovedEvent;
 import stroom.floormap.client.event.MapObjectSelectedEvent;
 import stroom.floormap.client.event.TimeChangeEvent;
 import stroom.floormap.client.presenter.FloorMapMapPresenter.FloorMapMapView;
-import stroom.floormap.shared.FloorMapBackground;
 import stroom.floormap.shared.FloorMapDoc;
 import stroom.floormap.shared.FloorMapObject;
 import stroom.floormap.shared.FloorMapTransformationMatrix;
@@ -501,17 +500,6 @@ public class FloorMapMapPresenter
                         "Facts Query Playback",
                         null
                 );
-            } else {
-                // Fallback to inline background images
-                final FloorMapBackground activeBg = getEntity() != null ? getEntity().getActiveBackground(time) : null;
-                if (activeBg != null) {
-                    floorMapCanvasPresenter.setBackgroundImage(activeBg.getImage());
-                    floorMapCanvasPresenter.setMatrix(activeBg.getMatrix());
-                } else {
-                    floorMapCanvasPresenter.setBackgroundImage(null);
-                    floorMapCanvasPresenter.setMatrix(FloorMapTransformationMatrix.identity());
-                }
-                floorMapCanvasPresenter.setObjects(new ArrayList<>());
             }
         }
     }
@@ -827,6 +815,8 @@ public class FloorMapMapPresenter
         }
 
         final long range = histogramEnd - histogramStart;
+        long minTime = Long.MAX_VALUE;
+        long maxTime = Long.MIN_VALUE;
         for (final Row row : tableResult.getRows()) {
             final List<String> values = row.getValues();
             if (values == null || values.size() <= timeColIdx) {
@@ -843,6 +833,13 @@ public class FloorMapMapPresenter
                     continue;
                 }
                 final long t = (long) date.getTime();
+                // Track the overall data extent for "Show All".
+                if (t < minTime) {
+                    minTime = t;
+                }
+                if (t > maxTime) {
+                    maxTime = t;
+                }
                 // Skip events that fall outside the visible range — do not clamp them
                 // to the edge bins, as that would make out-of-range data appear at the
                 // start or end of the histogram.
@@ -858,6 +855,10 @@ public class FloorMapMapPresenter
         }
 
         floorMapTimelinePresenter.setHistogramData(bins);
+        // Inform the timeline of the actual data extent so Show All can be computed.
+        if (minTime <= maxTime) {
+            floorMapTimelinePresenter.setDataRange(minTime, maxTime);
+        }
     }
 
     public void promptAndAddObject() {
