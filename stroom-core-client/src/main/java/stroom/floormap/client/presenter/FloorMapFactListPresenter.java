@@ -20,7 +20,9 @@ import stroom.data.grid.client.MyDataGrid;
 import stroom.floormap.client.presenter.FloorMapFactListPresenter.FloorMapFactListView;
 import stroom.svg.shared.SvgImage;
 import stroom.widget.button.client.ButtonPanel;
+import stroom.widget.button.client.ButtonView;
 import stroom.widget.button.client.InlineSvgToggleButton;
+import stroom.svg.client.SvgPresets;
 
 import com.google.gwt.user.cellview.client.Column;
 import com.google.gwt.user.cellview.client.TextColumn;
@@ -51,6 +53,11 @@ public class FloorMapFactListPresenter extends MyPresenterWidget<FloorMapFactLis
     private Runnable showTimeFilteredConsumer;
     private boolean showingAll = false;
 
+    private final ButtonView addButton;
+    private final ButtonView deleteButton;
+    private Runnable addConsumer;
+    private Consumer<String> deleteConsumer;
+
     @Inject
     public FloorMapFactListPresenter(final EventBus eventBus,
                                      final FloorMapFactListView view) {
@@ -62,12 +69,19 @@ public class FloorMapFactListPresenter extends MyPresenterWidget<FloorMapFactLis
         initGridColumns();
         dataProvider.addDataDisplay(dataGrid);
 
-        // Show All toggle button on the toolbar
+        // Toolbar
+        final ButtonPanel buttonPanel = new ButtonPanel();
+        addButton = buttonPanel.addButton(SvgPresets.ADD);
+        addButton.setTitle("Add New Object");
+        deleteButton = buttonPanel.addButton(SvgPresets.DELETE);
+        deleteButton.setTitle("Delete Object");
+        deleteButton.setEnabled(false);
+
+        // Show All toggle button
         final InlineSvgToggleButton showAllButton = new InlineSvgToggleButton();
-        showAllButton.setSvg(SvgImage.FILTER);
+        showAllButton.setSvg(SvgImage.HISTORY); // Clock image so correct for time stuff
         showAllButton.setTitle("Show All (ignore time filter)");
         showAllButton.setState(false);
-        final ButtonPanel buttonPanel = new ButtonPanel();
         buttonPanel.addButton(showAllButton);
         view.setToolbar(buttonPanel);
 
@@ -91,11 +105,12 @@ public class FloorMapFactListPresenter extends MyPresenterWidget<FloorMapFactLis
         super.onBind();
         //noinspection unused e
         registerHandler(selectionModel.addSelectionChangeHandler(e -> {
+            final FactObject selected = selectionModel.getSelectedObject();
+            deleteButton.setEnabled(selected != null);
             if (selectionConsumer != null) {
-                selectionConsumer.accept(selectionModel.getSelectedObject());
+                selectionConsumer.accept(selected);
             }
 
-            final FactObject selected = selectionModel.getSelectedObject();
             if (selected != null) {
                 final List<FactObject> list = dataProvider.getList();
                 if (list != null) {
@@ -110,11 +125,28 @@ public class FloorMapFactListPresenter extends MyPresenterWidget<FloorMapFactLis
                                         stroom.widget.util.client.ElementUtil.scrollIntoViewNearest(rowEl);
                                     }
                                 } catch (final Exception ex) {
-                                    // Ignore
+                                    // Ignore - if the scroll doesn't work it doesn't matter
                                 }
                             }
                         });
                     }
+                }
+            }
+        }));
+
+        //noinspection unused e
+        registerHandler(addButton.addClickHandler(e -> {
+            if (addConsumer != null) {
+                addConsumer.run();
+            }
+        }));
+
+        //noinspection unused e
+        registerHandler(deleteButton.addClickHandler(e -> {
+            if (deleteConsumer != null) {
+                final FactObject selected = selectionModel.getSelectedObject();
+                if (selected != null) {
+                    deleteConsumer.accept(selected.getKey());
                 }
             }
         }));
@@ -177,6 +209,25 @@ public class FloorMapFactListPresenter extends MyPresenterWidget<FloorMapFactLis
     }
 
     /**
+     * Sets the action to run when the user clicks the Add button.
+     *
+     * @param addConsumer called when the add button is clicked
+     */
+    public void setAddConsumer(final Runnable addConsumer) {
+        this.addConsumer = addConsumer;
+    }
+
+    /**
+     * Sets the action to run when the user clicks the Delete button.
+     * The consumer receives the key of the selected fact.
+     *
+     * @param deleteConsumer called with the selected fact's key
+     */
+    public void setDeleteConsumer(final Consumer<String> deleteConsumer) {
+        this.deleteConsumer = deleteConsumer;
+    }
+
+    /**
      * Sets the action to run when the user toggles "Show all" ON.
      *
      * @param showAllConsumer called when show-all is activated
@@ -200,6 +251,7 @@ public class FloorMapFactListPresenter extends MyPresenterWidget<FloorMapFactLis
      * Represents a single object (fact) entry shown in the list.
      * Identified by its temporal-store key; carries display name and type.
      */
+    @SuppressWarnings("ClassCanBeRecord")
     public static class FactObject {
 
         private final String key;

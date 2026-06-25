@@ -18,7 +18,8 @@ package stroom.floormap.client.view;
 
 import stroom.floormap.client.presenter.FloorMapFactListPresenter.FloorMapFactListView;
 
-import com.google.gwt.user.client.ui.FlowPanel;
+import com.google.gwt.dom.client.Style.Unit;
+import com.google.gwt.user.client.ui.DockLayoutPanel;
 import com.google.gwt.user.client.ui.SimplePanel;
 import com.google.gwt.user.client.ui.Widget;
 import com.google.inject.Inject;
@@ -27,13 +28,17 @@ import com.gwtplatform.mvp.client.ViewImpl;
 /**
  * View implementation for the Fact List panel.
  *
- * <p>Layout: optional toolbar pinned above the data grid.</p>
+ * <p>Layout: toolbar pinned above the data grid using a {@link DockLayoutPanel}
+ * so the toolbar remains visible when data is loaded.</p>
  *
  * <p>Renamed from {@code FloorMapObjectListViewImpl}.</p>
  */
 public class FloorMapFactListViewImpl extends ViewImpl implements FloorMapFactListView {
 
-    private final FlowPanel root;
+    /** Height of the button toolbar in pixels. */
+    private static final int TOOLBAR_HEIGHT_PX = 26;
+
+    private final DockLayoutPanel root;
     private final SimplePanel toolbarContainer;
     private final SimplePanel gridContainer;
 
@@ -44,9 +49,9 @@ public class FloorMapFactListViewImpl extends ViewImpl implements FloorMapFactLi
         gridContainer = new SimplePanel();
         gridContainer.setSize("100%", "100%");
 
-        root = new FlowPanel();
+        root = new DockLayoutPanel(Unit.PX);
         root.setSize("100%", "100%");
-        root.add(toolbarContainer);
+        root.addNorth(toolbarContainer, TOOLBAR_HEIGHT_PX);
         root.add(gridContainer);
     }
 

@@ -19,6 +19,8 @@ package stroom.floormap.client.view;
 import stroom.floormap.client.presenter.FloorMapEditorPresenter;
 import stroom.floormap.client.presenter.FloorMapEditorPresenter.FloorMapEditorView;
 
+import com.google.gwt.dom.client.Style.Unit;
+import com.google.gwt.user.client.ui.DockLayoutPanel;
 import com.google.gwt.user.client.ui.SimplePanel;
 import com.google.gwt.user.client.ui.ThinSplitLayoutPanel;
 import com.google.gwt.user.client.ui.Widget;
@@ -74,7 +76,7 @@ public class FloorMapEditorViewImpl extends ViewImpl implements FloorMapEditorVi
      * need to be user-resizable — it is anchored to the south with no split
      * ratio, so it keeps this fixed height when the window is resized.
      */
-    private static final int TIMELINE_HEIGHT = 138;
+    private static final int TIMELINE_HEIGHT = 110;
 
     // -----------------------------------------------------------------------
     // Bottom-inner (horizontal) split — three equal columns
@@ -109,14 +111,7 @@ public class FloorMapEditorViewImpl extends ViewImpl implements FloorMapEditorVi
         canvasPanel.addStyleName("dashboard-panel overflow-hidden");
 
         timelinePanel = new SimplePanel();
-        timelinePanel.addStyleName("dashboard-panel overflow-hidden");
-
-        // Top area: canvas + timeline
-        final ThinSplitLayoutPanel topSplitPanel = new ThinSplitLayoutPanel();
-        topSplitPanel.setSize("100%", "100%");
-        // No setVSplits — timeline keeps its fixed pixel height on resize.
-        topSplitPanel.addSouth(timelinePanel, TIMELINE_HEIGHT);  // timeline (fixed)
-        topSplitPanel.add(canvasPanel);                          // canvas (fills remaining)
+        timelinePanel.addStyleName("dashboard-panel overflow-hidden stroom-border-bottom");
 
         // ---- Bottom strip: three horizontal columns -------------------------
         factListPanel = new SimplePanel();
@@ -137,12 +132,17 @@ public class FloorMapEditorViewImpl extends ViewImpl implements FloorMapEditorVi
         bottomSplitPanel.addWest(timeListPanel, BOTTOM_COLUMN_INITIAL_WIDTH);   // Time List
         bottomSplitPanel.add(propertiesPanel);                                   // Properties (centre)
 
+        // Combine timeline and bottom
+        final DockLayoutPanel bottomPanel = new DockLayoutPanel(Unit.PX);
+        bottomPanel.addNorth(timelinePanel, TIMELINE_HEIGHT);
+        bottomPanel.add(bottomSplitPanel);
+
         // ---- Outer vertical split: top area vs bottom strip -----------------
         outerSplitPanel = new ThinSplitLayoutPanel();
         outerSplitPanel.setSize("100%", "100%");
         outerSplitPanel.setVSplits(BOTTOM_STRIP_SPLIT);
-        outerSplitPanel.addSouth(bottomSplitPanel, BOTTOM_STRIP_INITIAL_HEIGHT); // bottom strip
-        outerSplitPanel.add(topSplitPanel);                                       // canvas + timeline (centre)
+        outerSplitPanel.addSouth(bottomPanel, BOTTOM_STRIP_INITIAL_HEIGHT); // bottom strip
+        outerSplitPanel.add(canvasPanel);                                       // canvas + timeline (centre)
     }
 
     @Override

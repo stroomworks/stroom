@@ -18,9 +18,10 @@ package stroom.floormap.client.view;
 
 import stroom.floormap.client.presenter.FloorMapTimeListPresenter.FloorMapTimeListView;
 
-import com.google.gwt.user.client.ui.FlowPanel;
+import com.google.gwt.user.client.ui.DockLayoutPanel;
 import com.google.gwt.user.client.ui.SimplePanel;
 import com.google.gwt.user.client.ui.Widget;
+import com.google.gwt.dom.client.Style.Unit;
 import com.google.inject.Inject;
 import com.gwtplatform.mvp.client.ViewImpl;
 
@@ -32,7 +33,10 @@ import com.gwtplatform.mvp.client.ViewImpl;
  */
 public class FloorMapTimeListViewImpl extends ViewImpl implements FloorMapTimeListView {
 
-    private final FlowPanel root;
+    /** Height of the button toolbar in pixels. */
+    private static final int TOOLBAR_HEIGHT_PX = 26;
+
+    private final DockLayoutPanel root;
     private final SimplePanel toolbarContainer;
     private final SimplePanel gridContainer;
 
@@ -43,9 +47,9 @@ public class FloorMapTimeListViewImpl extends ViewImpl implements FloorMapTimeLi
         gridContainer = new SimplePanel();
         gridContainer.setSize("100%", "100%");
 
-        root = new FlowPanel();
+        root = new DockLayoutPanel(Unit.PX);
         root.setSize("100%", "100%");
-        root.add(toolbarContainer);
+        root.addNorth(toolbarContainer, TOOLBAR_HEIGHT_PX);
         root.add(gridContainer);
     }
 

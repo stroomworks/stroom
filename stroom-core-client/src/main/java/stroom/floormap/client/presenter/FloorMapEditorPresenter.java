@@ -17,6 +17,8 @@
 package stroom.floormap.client.presenter;
 
 import stroom.alert.client.event.AlertEvent;
+import stroom.alert.client.event.ConfirmEvent;
+import stroom.alert.client.event.PromptEvent;
 import stroom.dispatch.client.RestFactory;
 import stroom.docref.DocRef;
 import stroom.entity.client.presenter.DocPresenter;
@@ -225,6 +227,8 @@ public class FloorMapEditorPresenter
         floorMapFactListPresenter.setSelectionConsumer(this::onFactSelectedInFactList);
         floorMapFactListPresenter.setShowAllConsumer(() -> onShowAllFactsToggled(true));
         floorMapFactListPresenter.setShowTimeFilteredConsumer(() -> onShowAllFactsToggled(false));
+        floorMapFactListPresenter.setAddConsumer(this::onAddFactToFactList);
+        floorMapFactListPresenter.setDeleteConsumer(this::onDeleteFactFromFactList);
 
         // ---- Time List selection / toolbar ----------------------------------
         floorMapTimeListPresenter.setSelectionConsumer(this::onTimeSelectedInTimeList);
@@ -241,8 +245,6 @@ public class FloorMapEditorPresenter
         floorMapObjectEditPresenter.setDeleteConsumer(id -> {
             pendingChanges.recordDeletion(id);
             setDirty(true);
-            // TODO MB
-            //refreshTimeListAutoSelectLastTime();
         });
 
         // Live drag → Properties coordinates update
@@ -421,8 +423,6 @@ public class FloorMapEditorPresenter
      * active) and reloads the canvas and Fact List.
      *
      * @param timeMs the point in time to query
-     *
-     * TODO MB Ideally this also accepts events from the FloorMapTimeListPresenter and relays to the Timeline.
      */
     private void loadAtTime(final long timeMs) {
         final String mapName = getMapName();
@@ -546,17 +546,6 @@ public class FloorMapEditorPresenter
             factObjects.add(new FloorMapFactListPresenter.FactObject(entry.getKey(), name, type));
         }
 
-        // Guarantee background entry is always present
-        // TODO MB Don't always need a background
-        /*
-        final boolean hasBg = factObjects.stream()
-                .anyMatch(o -> "background".equalsIgnoreCase(o.getType())
-                        || "background".equalsIgnoreCase(o.getKey()));
-        if (!hasBg) {
-            factObjects.add(new FloorMapFactListPresenter.FactObject(
-                    "background", "Background", "background"));
-        }
-        */
         floorMapFactListPresenter.setData(factObjects);
 
         // Restore selection highlight without re-firing selection event
@@ -589,11 +578,13 @@ public class FloorMapEditorPresenter
                     continue;
                 }
 
+                // TODO MB CHECK THIS - returns null if "type" doesn't exist
                 final String type = JSONUtil.getString(json.get("type"));
 
                 if ("background".equalsIgnoreCase(type)
                         || "background".equalsIgnoreCase(entry.getKey())) {
                     // Background
+                    // TODO MB - null handling
                     backgroundImage = JSONUtil.getString(json.get("img"));
 
                     final JSONArray m2sArr = JSONUtil.getArray(json.get("tm-map-to-screen"));
@@ -679,8 +670,6 @@ public class FloorMapEditorPresenter
         }
         // Optimistic canvas + Time List refresh
         refreshCanvas();
-        // TODO
-        //refreshTimeListAutoSelectLastTime();
     }
 
     /**
@@ -762,8 +751,98 @@ public class FloorMapEditorPresenter
         final TemporalEntry newEntry = cloneEntryAtTime(selected, mapName, selectedFactKey, newTime);
         pendingChanges.recordCreation(newEntry);
         setDirty(true);
-        // TODO MB
-        //refreshTimeListAutoSelectLastTime();
+    }
+
+    /**
+     * Called when the Fact List's Add button is clicked.
+     * Prompts for an object key, then stages a new entry in the pending-changes buffer.
+     */
+    private void onAddFactToFactList() {
+        final String mapName = getMapName();
+        if (mapName == null) {
+            return;
+        }
+        PromptEvent.fire(this,
+                "Enter Object ID/Key to add:",
+                "",
+                key -> {
+                    if (key != null && !key.trim().isEmpty()) {
+                        final String trimmedKey = key.trim();
+                        final com.google.gwt.json.client.JSONObject json =
+                                new com.google.gwt.json.client.JSONObject();
+                        json.put(FloorMapObjectEditPresenter.JSON_KEY_TYPE,
+                                new com.google.gwt.json.client.JSONString("gates"));
+                        json.put(FloorMapObjectEditPresenter.JSON_KEY_NAME,
+                                new com.google.gwt.json.client.JSONString(trimmedKey));
+                        final com.google.gwt.json.client.JSONArray coordsArr =
+                                new com.google.gwt.json.client.JSONArray();
+                        coordsArr.set(0, new com.google.gwt.json.client.JSONNumber(500.0));
+                        coordsArr.set(1, new com.google.gwt.json.client.JSONNumber(500.0));
+                        json.put(FloorMapObjectEditPresenter.JSON_KEY_COORDS, coordsArr);
+                        final com.google.gwt.json.client.JSONArray matrixArr =
+                                new com.google.gwt.json.client.JSONArray();
+                        matrixArr.set(0, new com.google.gwt.json.client.JSONNumber(1.0));
+                        matrixArr.set(1, new com.google.gwt.json.client.JSONNumber(0.0));
+                        matrixArr.set(2, new com.google.gwt.json.client.JSONNumber(0.0));
+                        matrixArr.set(3, new com.google.gwt.json.client.JSONNumber(1.0));
+                        matrixArr.set(4, new com.google.gwt.json.client.JSONNumber(0.0));
+                        matrixArr.set(5, new com.google.gwt.json.client.JSONNumber(0.0));
+                        json.put(FloorMapObjectEditPresenter.JSON_KEY_TM_WORLD_TO_MAP, matrixArr);
+                        final TemporalEntry entry = new TemporalEntry(
+                                mapName, trimmedKey, selectedTime, json.toString());
+                        pendingChanges.recordCreation(entry);
+                        setDirty(true);
+                        // Optimistically refresh the Fact List and select the new entry
+                        loadAtTime(selectedTime);
+                    }
+                });
+    }
+
+    /**
+     * Called when the Fact List's Delete button is clicked.
+     * Confirms with the user then stages deletions for all time-entries of the selected fact.
+     *
+     * @param key the fact key to delete
+     */
+    private void onDeleteFactFromFactList(final String key) {
+        if (key == null) {
+            return;
+        }
+        ConfirmEvent.fire(this,
+                "Delete all entries for '" + key + "'? This cannot be undone.",
+                ok -> {
+                    if (ok) {
+                        // Stage a deletion for every known entry of this key.
+                        final List<TemporalEntry> all =
+                                pendingChanges.applyTo(serverEntriesAtCurrentTime);
+                        // Also include entries from the time list (for the selected fact)
+                        final List<TemporalEntry> merged = new ArrayList<>(all);
+                        for (final TemporalEntry e : serverEntriesForSelectedFact) {
+                            if (e.getKey().equals(key) && !merged.contains(e)) {
+                                merged.add(e);
+                            }
+                        }
+                        boolean staged = false;
+                        for (final TemporalEntry e : merged) {
+                            if (key.equals(e.getKey())) {
+                                pendingChanges.recordDeletion(
+                                        new stroom.util.shared.TemporalEntryId(
+                                                e.getMap(), e.getKey(), e.getEffectiveTimeMs()));
+                                staged = true;
+                            }
+                        }
+                        if (staged) {
+                            setDirty(true);
+                        }
+                        // Clear selection and refresh
+                        if (key.equals(selectedFactKey)) {
+                            selectedFactKey = null;
+                            floorMapTimeListPresenter.setData(new ArrayList<>());
+                            floorMapObjectEditPresenter.loadEntry(null);
+                        }
+                        loadAtTime(selectedTime);
+                    }
+                });
     }
 
     /**
@@ -778,8 +857,6 @@ public class FloorMapEditorPresenter
                 entry.getMap(), entry.getKey(), entry.getEffectiveTimeMs());
         pendingChanges.recordDeletion(id);
         setDirty(true);
-        // TODO MB
-        //refreshTimeListAutoSelectLastTime();
     }
 
     // -----------------------------------------------------------------------
