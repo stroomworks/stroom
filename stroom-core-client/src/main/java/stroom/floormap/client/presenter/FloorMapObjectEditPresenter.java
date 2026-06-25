@@ -194,7 +194,14 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
 
         // Action Form: Revert/Cancel changes
         //noinspection unused e
-        registerHandler(getView().addCancelHandler(e -> resetInputs(currentEntry)));
+        registerHandler(getView().addCancelHandler(e -> {
+            resetInputs(currentEntry);
+            getView().setSaveEnabled(false);
+        }));
+
+        // Re-enable Save/Cancel when the user picks a different image asset.
+        //noinspection unused e
+        addAssetSelectionHandler(e -> getView().setSaveEnabled(true));
     }
 
     /**
@@ -220,6 +227,7 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
     public void loadEntry(final TemporalEntry entry) {
         this.currentEntry = entry;
         getView().setEnabled(entry != null);
+        getView().setSaveEnabled(false);
         documentAssetDropDownPresenter.setEnabled(entry != null);
         resetInputs(entry);
     }
@@ -455,5 +463,12 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
         HandlerRegistration addCancelHandler(ClickHandler handler);
 
         void setEnabled(final boolean enabled);
+
+        /**
+         * Enables or disables the Save and Cancel buttons independently of
+         * the form fields. Call with {@code false} when a fresh entry is loaded
+         * (no unsaved changes) and {@code true} when the user edits any field.
+         */
+        void setSaveEnabled(boolean enabled);
     }
 }
