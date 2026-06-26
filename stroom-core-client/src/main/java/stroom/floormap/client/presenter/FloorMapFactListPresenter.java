@@ -153,6 +153,15 @@ public class FloorMapFactListPresenter extends MyPresenterWidget<FloorMapFactLis
     }
 
     private void initGridColumns() {
+        // Key Column
+        final Column<FactObject, String> keyColumn = new TextColumn<>() {
+            @Override
+            public String getValue(final FactObject object) {
+                return object.getKey();
+            }
+        };
+        dataGrid.addColumn(keyColumn, "Key");
+
         // Type Column
         final Column<FactObject, String> typeColumn = new TextColumn<>() {
             @Override
@@ -262,6 +271,40 @@ public class FloorMapFactListPresenter extends MyPresenterWidget<FloorMapFactLis
             this.key = key;
             this.name = name;
             this.type = type;
+        }
+
+        /**
+         * Creates a {@link FactObject} from a {@link stroom.util.shared.TemporalEntry}
+         * by parsing the JSON value for {@code name} and {@code type}.
+         *
+         * @param entry the temporal entry; must not be {@code null}
+         * @return a new fact object; never {@code null}
+         */
+        public static FactObject fromEntry(final stroom.util.shared.TemporalEntry entry) {
+            String name = entry.getKey();
+            String type = "";
+            try {
+                if (entry.getValue() != null && entry.getValue().trim().startsWith("{")) {
+                    final com.google.gwt.json.client.JSONObject json =
+                            stroom.util.client.JSONUtil.getObject(
+                                    stroom.util.client.JSONUtil.parse(entry.getValue()));
+                    if (json != null) {
+                        final String parsedName = stroom.util.client.JSONUtil.getString(
+                                json.get(stroom.floormap.client.FloorMapJsonKeys.NAME));
+                        final String parsedType = stroom.util.client.JSONUtil.getString(
+                                json.get(stroom.floormap.client.FloorMapJsonKeys.TYPE));
+                        if (parsedName != null && !parsedName.isEmpty()) {
+                            name = parsedName;
+                        }
+                        if (parsedType != null) {
+                            type = parsedType;
+                        }
+                    }
+                }
+            } catch (final Exception ex) {
+                // Use key as display name
+            }
+            return new FactObject(entry.getKey(), name, type);
         }
 
         public String getKey() {

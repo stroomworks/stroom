@@ -18,17 +18,14 @@ package stroom.floormap.client.presenter;
 
 import stroom.alert.client.event.ConfirmEvent;
 import stroom.data.client.event.DataSelectionEvent;
-import stroom.dispatch.client.RestFactory;
 import stroom.document.asset.client.presenter.DocumentAssetDropDownPresenter;
 import stroom.floormap.client.presenter.FloorMapObjectEditPresenter.FloorMapObjectEditView;
 import stroom.floormap.shared.FloorMapDoc;
-import stroom.sqlstore.shared.SqlTemporalStoreResource;
 import stroom.util.client.JSONUtil;
 import stroom.util.shared.TemporalEntry;
-import stroom.util.shared.TemporalEntryId;
+import stroom.widget.popup.client.event.ShowPopupEvent;
+import stroom.widget.popup.client.presenter.PopupType;
 
-import com.google.gwt.core.client.GWT;
-import com.google.gwt.event.dom.client.ClickHandler;
 import com.google.gwt.json.client.JSONArray;
 import com.google.gwt.json.client.JSONNumber;
 import com.google.gwt.json.client.JSONObject;
@@ -36,70 +33,19 @@ import com.google.gwt.json.client.JSONString;
 
 import com.google.gwt.user.client.ui.Widget;
 import com.google.web.bindery.event.shared.EventBus;
-import com.google.web.bindery.event.shared.HandlerRegistration;
 import com.gwtplatform.mvp.client.MyPresenterWidget;
 import com.gwtplatform.mvp.client.View;
-
 
 import java.util.function.Consumer;
 import javax.inject.Inject;
 
+import static stroom.floormap.client.FloorMapJsonKeys.*;
+
 public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjectEditView> {
 
-    private static final SqlTemporalStoreResource SQL_TEMPORAL_STORE_RESOURCE =
-            GWT.create(SqlTemporalStoreResource.class);
-
-    public static final String JSON_KEY_COORDS = "coords";
-    public static final String JSON_KEY_TYPE = "type";
-    public static final String JSON_KEY_NAME = "name";
-    public static final String JSON_KEY_IMG = "img";
-    public static final String JSON_KEY_TM_WORLD_TO_MAP = "tm-world-to-map";
-    public static final String JSON_KEY_TM_MAP_TO_SCREEN = "tm-map-to-screen";
-
-    private Runnable changeEventConsumer;
-    private Consumer<TemporalEntry> saveConsumer;
-    private Consumer<TemporalEntryId> deleteConsumer;
-
-    public void setChangeEventConsumer(final Runnable changeEventConsumer) {
-        this.changeEventConsumer = changeEventConsumer;
-    }
-
-    /**
-     * Sets a consumer called instead of REST-based save when the Save button
-     * is clicked. When non-null the entry is built locally and passed to this
-     * consumer (e.g. to record in the pending-changes buffer). When null the
-     * default REST update behaviour is used.
-     *
-     * @param saveConsumer the consumer, or {@code null} to use REST
-     */
-    public void setSaveConsumer(final Consumer<TemporalEntry> saveConsumer) {
-        this.saveConsumer = saveConsumer;
-    }
-
-    /**
-     * Sets a consumer called instead of REST-based delete when the Delete
-     * button is clicked. When non-null the entry id is passed to this consumer
-     * (e.g. to record deletion in the pending-changes buffer). When null the
-     * default REST delete behaviour is used.
-     *
-     * @param deleteConsumer the consumer, or {@code null} to use REST
-     */
-    public void setDeleteConsumer(final Consumer<TemporalEntryId> deleteConsumer) {
-        this.deleteConsumer = deleteConsumer;
-    }
-
-    private final RestFactory restFactory;
     private final DocumentAssetDropDownPresenter documentAssetDropDownPresenter;
     private String objectId;
     private String mapName;
-
-    /**
-     * The entry currently loaded into the form; driven by
-     * {@link #loadEntry(TemporalEntry)} which is called by
-     * {@link stroom.floormap.client.presenter.FloorMapEditorPresenter}
-     * whenever the Time List selection changes.
-     */
-    private TemporalEntry currentEntry;
 
     public void setMapName(final String mapName) {
         if (mapName == null) {
@@ -128,80 +74,61 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
     @Inject
     public FloorMapObjectEditPresenter(final EventBus eventBus,
                                        final FloorMapObjectEditView view,
-                                       final RestFactory restFactory,
                                        final DocumentAssetDropDownPresenter documentAssetDropDownPresenter) {
         super(eventBus, view);
-        this.restFactory = restFactory;
         this.documentAssetDropDownPresenter = documentAssetDropDownPresenter;
     }
 
     @Override
     protected void onBind() {
         super.onBind();
-
         getView().setChooseImgView(documentAssetDropDownPresenter.getView().asWidget());
+    }
 
-        // Action Form: Save/Update temporal record
+    /**
+     * Shows the properties form as a modal OK/Cancel dialog.
+     *
+     * <p>The form is pre-populated from {@code entry}. When the user clicks OK
+     * the current form state is built into a {@link TemporalEntry} and passed
+     * to {@code onSave}. Clicking Cancel discards the changes.</p>
+     *
+     * @param caption the dialog title — e.g. "Add Time Properties" or "Edit Time Properties"
+     * @param entry   the entry to pre-populate the form with; may be {@code null} for a blank form
+     * @param onSave  called with the built entry when the user clicks OK
+     */
+    public void show(final String caption,
+                     final TemporalEntry entry,
+                     final Consumer<TemporalEntry> onSave) {
+        loadEntry(entry);
         //noinspection unused e
-        registerHandler(getView().addSaveHandler(e -> {
-            final long time = getView().getEffectiveTime();
-            final double x = getView().getX();
-            final double y = getView().getY();
-
-            if (saveConsumer != null) {
-                // Editor tab: route through pending-changes buffer instead of REST.
-                final TemporalEntry entry = buildEntry(time);
-                if (currentEntry != null && currentEntry.getEffectiveTimeMs() != time) {
-                    // Effective time changed: stage a deletion of the old key first.
-                    if (deleteConsumer != null) {
-                        deleteConsumer.accept(new TemporalEntryId(
-                                requireMapName(), objectId, currentEntry.getEffectiveTimeMs()));
+        ShowPopupEvent.builder(this)
+                .popupType(PopupType.OK_CANCEL_DIALOG)
+                .caption(caption)
+                .onShow(e -> getView().setEnabled(true))
+                .onHideRequest(e -> {
+                    if (e.isOk()) {
+                        final long time = getView().getEffectiveTime();
+                        if (entry != null && entry.getEffectiveTimeMs() != time) {
+                            // Effective time changed — ask whether to move or clone.
+                            //noinspection unused move
+                            ConfirmEvent.fire(this,
+                                    "You have changed the effective time. "
+                                    + "Do you want to move the version to the new time? "
+                                    + "(OK to move, Cancel to create a new cloned version at the new time)",
+                                    move -> {
+                                        final TemporalEntry built = buildEntry(time);
+                                        onSave.accept(built);
+                                        e.hide();
+                                    });
+                        } else {
+                            onSave.accept(buildEntry(time));
+                            e.hide();
+                        }
+                    } else {
+                        e.hide();
                     }
-                }
-                saveConsumer.accept(entry);
-                if (changeEventConsumer != null) {
-                    changeEventConsumer.run();
-                }
-            } else if (currentEntry != null && currentEntry.getEffectiveTimeMs() != time) {
-                ConfirmEvent.fire(this,
-                        "You have changed the effective time. "
-                        + "Do you want to move the version to the new time? "
-                        + "(Click OK to move, or Cancel to create a new cloned version instead)",
-                        move -> {
-                            if (move) {
-                                deleteEntry(currentEntry.getEffectiveTimeMs(),
-                                        () -> updateEntry(time, x, y, () -> {
-                                            if (changeEventConsumer != null) {
-                                                changeEventConsumer.run();
-                                            }
-                                        }));
-                            } else {
-                                updateEntry(time, x, y, () -> {
-                                    if (changeEventConsumer != null) {
-                                        changeEventConsumer.run();
-                                    }
-                                });
-                            }
-                        });
-            } else {
-                updateEntry(time, x, y, () -> {
-                    if (changeEventConsumer != null) {
-                        changeEventConsumer.run();
-                    }
-                });
-            }
-        }));
-
-        // Action Form: Revert/Cancel changes
-        //noinspection unused e
-        registerHandler(getView().addCancelHandler(e -> {
-            resetInputs(currentEntry);
-            getView().setSaveEnabled(false);
-        }));
-
-        // Re-enable Save/Cancel when the user picks a different image asset.
-        //noinspection unused e
-        addAssetSelectionHandler(e -> getView().setSaveEnabled(true));
+                })
+                .fire();
     }
 
     /**
@@ -225,79 +152,21 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
      * @param entry the entry to display, or {@code null} to clear and disable the form
      */
     public void loadEntry(final TemporalEntry entry) {
-        this.currentEntry = entry;
         getView().setEnabled(entry != null);
-        getView().setSaveEnabled(false);
         documentAssetDropDownPresenter.setEnabled(entry != null);
         resetInputs(entry);
     }
 
     /**
-     * Updates an existing temporal entry (or inserts if not exists).
-     */
-    public void updateEntry(final long effectiveTimeMs,
-                            final double x,
-                            final double y,
-                            final Runnable onSuccess) {
-        if (objectId == null) {
-            return;
-        }
-
-        final JSONObject json = new JSONObject();
-        json.put(JSON_KEY_TYPE, new JSONString(getView().getType()));
-        json.put(JSON_KEY_NAME, new JSONString(getView().getName()));
-        json.put(JSON_KEY_IMG, new JSONString(documentAssetDropDownPresenter.getSelectedAssetPath() == null
-                ? ""
-                : documentAssetDropDownPresenter.getSelectedAssetPath()));
-
-        final JSONArray coordsArr = new JSONArray();
-        coordsArr.set(0, new JSONNumber(getView().getX()));
-        coordsArr.set(1, new JSONNumber(getView().getY()));
-        json.put(JSON_KEY_COORDS, coordsArr);
-
-        final double[] w2m = getView().getWorldToMapMatrix();
-        final JSONArray w2mArr = new JSONArray();
-        for (int i = 0; i < 6; i++) {
-            w2mArr.set(i, new JSONNumber(w2m[i]));
-        }
-        json.put(JSON_KEY_TM_WORLD_TO_MAP, w2mArr);
-
-        if ("background".equalsIgnoreCase(getView().getType())) {
-            final double[] m2s = getView().getMapToScreenMatrix();
-            final JSONArray m2sArr = new JSONArray();
-            for (int i = 0; i < 6; i++) {
-                m2sArr.set(i, new JSONNumber(m2s[i]));
-            }
-            json.put(JSON_KEY_TM_MAP_TO_SCREEN, m2sArr);
-        }
-
-        final TemporalEntry entry = new TemporalEntry(
-                requireMapName(),
-                objectId,
-                effectiveTimeMs,
-                json.toString()
-        );
-
-        //noinspection unused result
-        restFactory.create(SQL_TEMPORAL_STORE_RESOURCE)
-                .method(res -> res.update(entry))
-                .onSuccess(result -> onSuccess.run())
-                .exec();
-    }
-
-    /**
-     * Builds a {@link TemporalEntry} from the current view state without
-     * making a REST call. Used by the staged-save path when
-     * {@link #saveConsumer} is non-null.
+     * Builds a JSON object from the current view state.
      *
-     * @param effectiveTimeMs the effective time for the new entry
-     * @return the constructed entry; never {@code null}
+     * @return the constructed JSON; never {@code null}
      */
-    private TemporalEntry buildEntry(final long effectiveTimeMs) {
+    private JSONObject buildJson() {
         final JSONObject json = new JSONObject();
-        json.put(JSON_KEY_TYPE, new JSONString(getView().getType()));
-        json.put(JSON_KEY_NAME, new JSONString(getView().getName()));
-        json.put(JSON_KEY_IMG, new JSONString(
+        json.put(TYPE, new JSONString(getView().getType()));
+        json.put(NAME, new JSONString(getView().getName()));
+        json.put(IMG, new JSONString(
                 documentAssetDropDownPresenter.getSelectedAssetPath() == null
                         ? ""
                         : documentAssetDropDownPresenter.getSelectedAssetPath()));
@@ -305,14 +174,14 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
         final JSONArray coordsArr = new JSONArray();
         coordsArr.set(0, new JSONNumber(getView().getX()));
         coordsArr.set(1, new JSONNumber(getView().getY()));
-        json.put(JSON_KEY_COORDS, coordsArr);
+        json.put(COORDS, coordsArr);
 
         final double[] w2m = getView().getWorldToMapMatrix();
         final JSONArray w2mArr = new JSONArray();
         for (int i = 0; i < 6; i++) {
             w2mArr.set(i, new JSONNumber(w2m[i]));
         }
-        json.put(JSON_KEY_TM_WORLD_TO_MAP, w2mArr);
+        json.put(TM_WORLD_TO_MAP, w2mArr);
 
         if ("background".equalsIgnoreCase(getView().getType())) {
             final double[] m2s = getView().getMapToScreenMatrix();
@@ -320,34 +189,20 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
             for (int i = 0; i < 6; i++) {
                 m2sArr.set(i, new JSONNumber(m2s[i]));
             }
-            json.put(JSON_KEY_TM_MAP_TO_SCREEN, m2sArr);
+            json.put(TM_MAP_TO_SCREEN, m2sArr);
         }
-
-        return new TemporalEntry(requireMapName(), objectId, effectiveTimeMs, json.toString());
+        return json;
     }
 
     /**
-     * Deletes a specific temporal entry by its effective time key.
+     * Builds a {@link TemporalEntry} from the current view state without
+     * making a REST call.
+     *
+     * @param effectiveTimeMs the effective time for the new entry
+     * @return the constructed entry; never {@code null}
      */
-    public void deleteEntry(final long effectiveTimeMs, final Runnable onSuccess) {
-        if (objectId == null) {
-            return;
-        }
-
-        final TemporalEntryId id = new TemporalEntryId(
-                requireMapName(),
-                objectId,
-                effectiveTimeMs
-        );
-
-        restFactory.create(SQL_TEMPORAL_STORE_RESOURCE)
-                .method(res -> res.delete(id))
-                .onSuccess(result -> {
-                    if (result) {
-                        onSuccess.run();
-                    }
-                })
-                .exec();
+    private TemporalEntry buildEntry(final long effectiveTimeMs) {
+        return new TemporalEntry(requireMapName(), objectId, effectiveTimeMs, buildJson().toString());
     }
 
     private void resetInputs(final TemporalEntry selected) {
@@ -365,34 +220,30 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
                 if (selected.getValue() != null && selected.getValue().trim().startsWith("{")) {
                     final JSONObject json = JSONUtil.getObject(JSONUtil.parse(selected.getValue()));
                     if (json != null) {
-                        name = JSONUtil.getString(json.get(JSON_KEY_NAME));
-                        type = JSONUtil.getString(json.get(JSON_KEY_TYPE));
-                        img = JSONUtil.getString(json.get(JSON_KEY_IMG));
+                        name = JSONUtil.getString(json.get(NAME));
+                        type = JSONUtil.getString(json.get(TYPE));
+                        img = JSONUtil.getString(json.get(IMG));
 
-                        final JSONArray coordsArr = JSONUtil.getArray(json.get(JSON_KEY_COORDS));
+                        final JSONArray coordsArr = JSONUtil.getArray(json.get(COORDS));
                         if (coordsArr != null && coordsArr.size() >= 2) {
                             x = JSONUtil.getDouble(coordsArr.get(0));
                             y = JSONUtil.getDouble(coordsArr.get(1));
                         }
 
-                        final JSONArray w2mArr = JSONUtil.getArray(json.get(JSON_KEY_TM_WORLD_TO_MAP));
+                        final JSONArray w2mArr = JSONUtil.getArray(json.get(TM_WORLD_TO_MAP));
                         if (w2mArr != null && w2mArr.size() >= 6) {
                             for (int i = 0; i < 6; i++) {
                                 w2m[i] = JSONUtil.getDouble(w2mArr.get(i));
                             }
                         }
 
-                        final JSONArray m2sArr = JSONUtil.getArray(json.get(JSON_KEY_TM_MAP_TO_SCREEN));
+                        final JSONArray m2sArr = JSONUtil.getArray(json.get(TM_MAP_TO_SCREEN));
                         if (m2sArr != null && m2sArr.size() >= 6) {
                             for (int i = 0; i < 6; i++) {
                                 m2s[i] = JSONUtil.getDouble(m2sArr.get(i));
                             }
                         }
                     }
-                } else if (selected.getValue() != null) {
-                    final String[] coords = selected.getValue().split(",");
-                    x = Double.parseDouble(coords[1].trim());
-                    y = Double.parseDouble(coords[2].trim());
                 }
             } catch (final Exception ex) {
                 // Ignore
@@ -458,17 +309,6 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
 
         void setMapToScreenMatrix(double[] matrix);
 
-        HandlerRegistration addSaveHandler(ClickHandler handler);
-
-        HandlerRegistration addCancelHandler(ClickHandler handler);
-
         void setEnabled(final boolean enabled);
-
-        /**
-         * Enables or disables the Save and Cancel buttons independently of
-         * the form fields. Call with {@code false} when a fresh entry is loaded
-         * (no unsaved changes) and {@code true} when the user edits any field.
-         */
-        void setSaveEnabled(boolean enabled);
     }
 }

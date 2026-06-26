@@ -47,12 +47,11 @@ import java.util.function.Consumer;
  *
  * <p>Shows every {@link TemporalEntry} for the currently selected fact,
  * sorted ascending by effective time (oldest first, most recent last).
- * When a fact is selected, {@link #setData(List)} populates the grid and
- * {@link #selectLast()} auto-selects the last (most recent) entry.</p>
+ * When a fact is selected, {@link #setData(List)} populates the grid.</p>
  *
  * <h3>Toolbar</h3>
- * <p>Add and Delete buttons. Delete is enabled only when a row is selected.
- * Clicks are reported via consumers that the Editor presenter sets.</p>
+ * <p>Edit, Add, and Delete buttons. Edit and Delete are enabled only when a row
+ * is selected. Clicks are reported via consumers that the Editor presenter sets.</p>
  */
 public class FloorMapTimeListPresenter extends MyPresenterWidget<FloorMapTimeListView> {
 
@@ -60,10 +59,12 @@ public class FloorMapTimeListPresenter extends MyPresenterWidget<FloorMapTimeLis
     private final ListDataProvider<TemporalEntry> dataProvider = new ListDataProvider<>();
     private final SingleSelectionModel<TemporalEntry> selectionModel = new SingleSelectionModel<>();
 
+    private final ButtonView editButton;
     private final ButtonView addButton;
     private final ButtonView deleteButton;
 
     private Consumer<TemporalEntry> selectionConsumer;
+    private Consumer<TemporalEntry> editConsumer;
     private Runnable addConsumer;
     private Consumer<TemporalEntry> deleteConsumer;
 
@@ -79,6 +80,8 @@ public class FloorMapTimeListPresenter extends MyPresenterWidget<FloorMapTimeLis
         dataProvider.addDataDisplay(dataGrid);
 
         final ButtonPanel toolbar = new ButtonPanel();
+        editButton = toolbar.addButton(SvgPresets.EDIT);
+        editButton.setEnabled(false);
         addButton = toolbar.addButton(SvgPresets.ADD);
         deleteButton = toolbar.addButton(SvgPresets.DELETE);
         deleteButton.setEnabled(false);
@@ -92,6 +95,7 @@ public class FloorMapTimeListPresenter extends MyPresenterWidget<FloorMapTimeLis
         //noinspection unused
         registerHandler(selectionModel.addSelectionChangeHandler(e -> {
             final TemporalEntry selected = selectionModel.getSelectedObject();
+            editButton.setEnabled(selected != null);
             deleteButton.setEnabled(selected != null);
             if (selectionConsumer != null) {
                 selectionConsumer.accept(selected);
@@ -116,6 +120,16 @@ public class FloorMapTimeListPresenter extends MyPresenterWidget<FloorMapTimeLis
                             }
                         });
                     }
+                }
+            }
+        }));
+
+        //noinspection unused
+        registerHandler(editButton.addClickHandler(e -> {
+            if (editConsumer != null) {
+                final TemporalEntry selected = selectionModel.getSelectedObject();
+                if (selected != null) {
+                    editConsumer.accept(selected);
                 }
             }
         }));
@@ -150,6 +164,7 @@ public class FloorMapTimeListPresenter extends MyPresenterWidget<FloorMapTimeLis
      */
     public void setData(final List<TemporalEntry> entries) {
         selectionModel.clear();
+        editButton.setEnabled(false);
         deleteButton.setEnabled(false);
         if (entries != null) {
             dataProvider.setList(entries);
@@ -157,19 +172,6 @@ public class FloorMapTimeListPresenter extends MyPresenterWidget<FloorMapTimeLis
         } else {
             dataProvider.setList(Collections.emptyList());
             dataGrid.setRowData(0, Collections.emptyList());
-        }
-    }
-
-    /**
-     * Selects the last (most recent) entry in the grid.
-     * No-op when the list is empty.
-     */
-    public void selectLast() {
-        final List<TemporalEntry> list = dataProvider.getList();
-        if (list != null && !list.isEmpty()) {
-            //noinspection SequencedCollectionMethodCanBeUsed
-            selectionModel.setSelected(list.get(list.size() - 1), true);
-            deleteButton.setEnabled(true);
         }
     }
 
@@ -199,17 +201,42 @@ public class FloorMapTimeListPresenter extends MyPresenterWidget<FloorMapTimeLis
         }
         if (best != null) {
             selectionModel.setSelected(best, true);
-            // Explicitly enable the delete button: setData() disables it
+            // Explicitly enable the edit and delete buttons: setData() disables them
             // synchronously, and GWT's deferred SelectionChangeEvent may not
-            // re-enable it reliably when clear() and setSelected() are coalesced.
+            // re-enable them reliably when clear() and setSelected() are coalesced.
+            editButton.setEnabled(true);
             deleteButton.setEnabled(true);
         } else {
             // Timeline is before all entries — no entry is active at this time.
             // Clear the selection so the Properties form is disabled, matching
             // the canvas which also shows nothing for this object at this time.
             selectionModel.clear();
+            editButton.setEnabled(false);
             deleteButton.setEnabled(false);
         }
+    }
+
+    /**
+     * Selects the entry at the given index.
+     *
+     * <p>If the index is out of range the selection is clamped to the nearest
+     * valid row (first or last). No-op when the list is empty.</p>
+     *
+     * @param index the zero-based row index to select
+     */
+    public void selectAtIndex(final int index) {
+        final List<TemporalEntry> list = dataProvider.getList();
+        if (list == null || list.isEmpty()) {
+            selectionModel.clear();
+            editButton.setEnabled(false);
+            deleteButton.setEnabled(false);
+            return;
+        }
+        final int clamped = Math.max(0, Math.min(index, list.size() - 1));
+        final TemporalEntry entry = list.get(clamped);
+        selectionModel.setSelected(entry, true);
+        editButton.setEnabled(true);
+        deleteButton.setEnabled(true);
     }
 
     /** Returns the currently selected entry, or {@code null} if none. */
@@ -229,6 +256,16 @@ public class FloorMapTimeListPresenter extends MyPresenterWidget<FloorMapTimeLis
      */
     public void setSelectionConsumer(final Consumer<TemporalEntry> selectionConsumer) {
         this.selectionConsumer = selectionConsumer;
+    }
+
+    /**
+     * Sets the action to perform when the Edit button is clicked.
+     * Called with the currently selected entry.
+     *
+     * @param editConsumer called with the entry to edit
+     */
+    public void setEditConsumer(final Consumer<TemporalEntry> editConsumer) {
+        this.editConsumer = editConsumer;
     }
 
     /**

@@ -36,12 +36,12 @@ import com.gwtplatform.mvp.client.ViewImpl;
  * │                  Map Canvas  (MAIN)                  │  fills upper area
  * ├──────────────────────────────────────────────────────┤
  * │              Timeline control (TIMELINE)             │  fixed ~60 px
- * ├────────────────────┬────────────────┬────────────────┤  ◄─ draggable
- * │    Fact List       │   Time List    │   Properties   │  ~1/3 total height
- * │   (FACT_LIST)      │  (TIME_LIST)   │  (PROPERTIES)  │
- * └────────────────────┴────────────────┴────────────────┘
- *       ~1/3 width   ▲    ~1/3 width   ▲    ~1/3 width
- *                    └── draggable ────┘
+ * ├─────────────────────────┬────────────────────────────┤  ◄─ draggable
+ * │    Fact List            │       Time List            │  ~1/3 total height
+ * │   (FACT_LIST)           │      (TIME_LIST)           │
+ * └─────────────────────────┴────────────────────────────┘
+ *           ~50% width      ▲         ~50% width
+ *                           └── draggable
  * </pre>
  *
  * Uses three nested {@link ThinSplitLayoutPanel}s:
@@ -85,13 +85,6 @@ public class FloorMapEditorViewImpl extends ViewImpl implements FloorMapEditorVi
     /** Initial width of each anchored (West) column in pixels. */
     private static final int BOTTOM_COLUMN_INITIAL_WIDTH = 300;
 
-    /**
-     * Proportional width of each West column — 1/3 of the bottom strip width.
-     * Two values are supplied (one per {@code addWest} call); the centre widget
-     * fills the remainder automatically.
-     */
-    private static final double BOTTOM_COLUMN_SPLIT = 1.0 / 3.0;
-
     // -----------------------------------------------------------------------
 
     private final ThinSplitLayoutPanel outerSplitPanel;
@@ -101,7 +94,6 @@ public class FloorMapEditorViewImpl extends ViewImpl implements FloorMapEditorVi
 
     private final SimplePanel factListPanel;
     private final SimplePanel timeListPanel;
-    private final SimplePanel propertiesPanel;
 
     @Inject
     public FloorMapEditorViewImpl() {
@@ -120,17 +112,12 @@ public class FloorMapEditorViewImpl extends ViewImpl implements FloorMapEditorVi
         timeListPanel = new SimplePanel();
         timeListPanel.addStyleName("dashboard-panel overflow-hidden");
 
-        propertiesPanel = new SimplePanel();
-        propertiesPanel.addStyleName("dashboard-panel overflow-hidden");
-
-        // Bottom strip: three columns
+        // Bottom strip: two equal columns
         final ThinSplitLayoutPanel bottomSplitPanel = new ThinSplitLayoutPanel();
         bottomSplitPanel.setSize("100%", "100%");
-        // Each West column gets 1/3 of total width; the centre fills the rest.
-        bottomSplitPanel.setHSplits(BOTTOM_COLUMN_SPLIT, BOTTOM_COLUMN_SPLIT);
+        bottomSplitPanel.setHSplits(0.5);
         bottomSplitPanel.addWest(factListPanel, BOTTOM_COLUMN_INITIAL_WIDTH);   // Fact List
-        bottomSplitPanel.addWest(timeListPanel, BOTTOM_COLUMN_INITIAL_WIDTH);   // Time List
-        bottomSplitPanel.add(propertiesPanel);                                   // Properties (centre)
+        bottomSplitPanel.add(timeListPanel);                                     // Time List (fills rest)
 
         // Combine timeline and bottom
         final DockLayoutPanel bottomPanel = new DockLayoutPanel(Unit.PX);
@@ -156,9 +143,9 @@ public class FloorMapEditorViewImpl extends ViewImpl implements FloorMapEditorVi
      *   <li>{@link FloorMapEditorPresenter#MAIN}       → canvas panel (top of top area)</li>
      *   <li>{@link FloorMapEditorPresenter#TIMELINE}   → timeline strip (bottom of top area, fixed height)</li>
      *   <li>{@link FloorMapEditorPresenter#FACT_LIST}  → bottom-left column</li>
-     *   <li>{@link FloorMapEditorPresenter#TIME_LIST}  → bottom-centre column</li>
-     *   <li>{@link FloorMapEditorPresenter#PROPERTIES} → bottom-right column</li>
+     *   <li>{@link FloorMapEditorPresenter#TIME_LIST}  → bottom-right column (fills remaining space)</li>
      * </ul>
+     * Properties are shown as a modal dialog and have no slot.
      */
     @Override
     public void setInSlot(final Object slot, final Widget content) {
@@ -170,8 +157,6 @@ public class FloorMapEditorViewImpl extends ViewImpl implements FloorMapEditorVi
             factListPanel.setWidget(content);
         } else if (FloorMapEditorPresenter.TIME_LIST.equals(slot)) {
             timeListPanel.setWidget(content);
-        } else if (FloorMapEditorPresenter.PROPERTIES.equals(slot)) {
-            propertiesPanel.setWidget(content);
         }
     }
 }

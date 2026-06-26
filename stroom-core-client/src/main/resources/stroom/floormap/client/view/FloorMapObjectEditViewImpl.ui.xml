@@ -18,8 +18,7 @@
 <ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
              xmlns:g="urn:import:com.google.gwt.user.client.ui"
              xmlns:form="urn:import:stroom.widget.form.client"
-             xmlns:datetimebox="urn:import:stroom.widget.datepicker.client"
-             xmlns:b="urn:import:stroom.widget.button.client">
+             xmlns:datetimebox="urn:import:stroom.widget.datepicker.client">
 
     <ui:style>
         .matrixBox {
@@ -30,7 +29,6 @@
     </ui:style>
 
     <g:FlowPanel addStyleNames="max dock-container-vertical form overflow-y-auto">
-                <g:HTML styleName="stroom-label-header">Edit Temporal State</g:HTML>
 
                 <form:FormGroup label="Name">
                     <g:TextBox ui:field="nameBox" addStyleNames="stroom-control wide-control" />
@@ -84,9 +82,5 @@
                     </g:FlowPanel>
                 </form:FormGroup>
 
-                <g:FlowPanel addStyleNames="stroom-floormap-actions-group">
-                    <b:Button ui:field="saveBtn" text="OK" addStyleNames="allow-focus Button--contained-primary" />
-                    <b:Button ui:field="cancelBtn" text="Cancel" addStyleNames="allow-focus Button--contained-secondary" />
-                </g:FlowPanel>
     </g:FlowPanel>
 </ui:UiBinder>

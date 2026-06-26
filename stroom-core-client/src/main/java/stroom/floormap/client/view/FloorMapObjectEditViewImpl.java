@@ -17,14 +17,10 @@
 package stroom.floormap.client.view;
 
 import stroom.floormap.client.presenter.FloorMapObjectEditPresenter.FloorMapObjectEditView;
-import stroom.svg.shared.SvgImage;
-import stroom.widget.button.client.Button;
 import stroom.widget.datepicker.client.DateTimeBox;
 import stroom.widget.datepicker.client.DateTimePopup;
 import stroom.widget.form.client.FormGroup;
 
-import com.google.gwt.event.dom.client.ClickHandler;
-import com.google.gwt.event.shared.HandlerRegistration;
 import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
 import com.google.gwt.user.client.ui.SimplePanel;
@@ -37,9 +33,6 @@ import com.gwtplatform.mvp.client.ViewImpl;
 public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObjectEditView {
 
     private final Widget widget;
-
-    /** True while the form is being populated programmatically; suppresses dirty-marking. */
-    private boolean loadingEntry;
 
     @UiField
     DateTimeBox effectiveTimeBox;
@@ -85,61 +78,16 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
     @UiField
     TextBox m2sRot;
 
-    @UiField
-    Button saveBtn;
-    @UiField
-    Button cancelBtn;
-
     @Inject
     public FloorMapObjectEditViewImpl(final Binder binder,
                                       final Provider<DateTimePopup> dateTimePopupProvider) {
         widget = binder.createAndBindUi(this);
         effectiveTimeBox.setPopupProvider(dateTimePopupProvider);
-        saveBtn.setIcon(SvgImage.OK);
-        saveBtn.setEnabled(false);
-        cancelBtn.setIcon(SvgImage.CANCEL);
-        cancelBtn.setEnabled(false);
 
         //noinspection unused e
         typeBox.addKeyUpHandler(e -> updateMatrixVisibility(typeBox.getText()));
         //noinspection unused e
         typeBox.addValueChangeHandler(e -> updateMatrixVisibility(typeBox.getText()));
-
-        // Re-enable Save/Cancel whenever the user edits any field.
-        // Note: effectiveTimeBox is handled via its ValueChangeHandler below;
-        // we do NOT add a separate handler here because DateTimeBox.setValue() fires
-        // ValueChangeEvent through its inner TextBox even on programmatic set.
-        //noinspection unused e
-        effectiveTimeBox.addValueChangeHandler(e -> { if (!loadingEntry) { setSaveEnabled(true); } });
-        //noinspection unused e
-        xBox.addKeyUpHandler(e -> setSaveEnabled(true));
-        //noinspection unused e
-        yBox.addKeyUpHandler(e -> setSaveEnabled(true));
-        //noinspection unused e
-        nameBox.addKeyUpHandler(e -> setSaveEnabled(true));
-        // typeBox already has key-up handlers above; add a dedicated dirty handler too
-        //noinspection unused e
-        typeBox.addKeyUpHandler(e -> setSaveEnabled(true));
-        //noinspection unused e
-        w2mTx.addKeyUpHandler(e -> setSaveEnabled(true));
-        //noinspection unused e
-        w2mTy.addKeyUpHandler(e -> setSaveEnabled(true));
-        //noinspection unused e
-        w2mSx.addKeyUpHandler(e -> setSaveEnabled(true));
-        //noinspection unused e
-        w2mSy.addKeyUpHandler(e -> setSaveEnabled(true));
-        //noinspection unused e
-        w2mRot.addKeyUpHandler(e -> setSaveEnabled(true));
-        //noinspection unused e
-        m2sTx.addKeyUpHandler(e -> setSaveEnabled(true));
-        //noinspection unused e
-        m2sTy.addKeyUpHandler(e -> setSaveEnabled(true));
-        //noinspection unused e
-        m2sSx.addKeyUpHandler(e -> setSaveEnabled(true));
-        //noinspection unused e
-        m2sSy.addKeyUpHandler(e -> setSaveEnabled(true));
-        //noinspection unused e
-        m2sRot.addKeyUpHandler(e -> setSaveEnabled(true));
     }
 
     @Override
@@ -156,12 +104,7 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
 
     @Override
     public void setEffectiveTime(final long timeMs) {
-        loadingEntry = true;
-        try {
-            effectiveTimeBox.setValue(timeMs);
-        } finally {
-            loadingEntry = false;
-        }
+        effectiveTimeBox.setValue(timeMs);
     }
 
     @Override
@@ -307,16 +250,6 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
     }
 
     @Override
-    public HandlerRegistration addSaveHandler(final ClickHandler handler) {
-        return saveBtn.addClickHandler(handler);
-    }
-
-    @Override
-    public HandlerRegistration addCancelHandler(final ClickHandler handler) {
-        return cancelBtn.addClickHandler(handler);
-    }
-
-    @Override
     public void setEnabled(final boolean enabled) {
         effectiveTimeBox.setEnabled(enabled);
         xBox.setEnabled(enabled);
@@ -333,13 +266,6 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
         m2sSx.setEnabled(enabled);
         m2sSy.setEnabled(enabled);
         m2sRot.setEnabled(enabled);
-        // Save and Cancel are intentionally NOT controlled here — use setSaveEnabled().
-    }
-
-    @Override
-    public void setSaveEnabled(final boolean enabled) {
-        saveBtn.setEnabled(enabled);
-        cancelBtn.setEnabled(enabled);
     }
 
     private void updateMatrixVisibility(final String type) {

@@ -66,6 +66,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
 
+import static stroom.floormap.client.FloorMapJsonKeys.*;
+
 /**
  * Main presenter for the Floor Map visualization.
  * Coordinates the map canvas and the timeline.
@@ -306,19 +308,6 @@ public class FloorMapMapPresenter
             }
         });
 
-        this.floorMapObjectEditPresenter.setChangeEventConsumer(() -> {
-            onTimeChange(selectedTime);
-            if (editMode) {
-                final FloorMapFactListPresenter.FactObject selected = floorMapObjectListPresenter.getSelectedObject();
-                final String selectedKey = selected != null ? selected.getKey() : null;
-                fetchObjectsForList(factObjects -> {
-                    floorMapObjectListPresenter.setData(factObjects);
-                    if (selectedKey != null) {
-                        floorMapObjectListPresenter.setSelected(selectedKey);
-                    }
-                });
-            }
-        });
     }
 
     private void applyMove(final TemporalEntry selectedEntry,
@@ -340,11 +329,11 @@ public class FloorMapMapPresenter
         if ("background".equals(key)
             || (selectedEntry != null && json != null
                 && "background".equalsIgnoreCase(
-                JSONUtil.getString(json.get(FloorMapObjectEditPresenter.JSON_KEY_TYPE))))) {
+                JSONUtil.getString(json.get(TYPE))))) {
             if (json == null) {
                 json = new JSONObject();
-                json.put(FloorMapObjectEditPresenter.JSON_KEY_TYPE, new JSONString("background"));
-                json.put(FloorMapObjectEditPresenter.JSON_KEY_NAME, new JSONString("Background"));
+                json.put(TYPE, new JSONString("background"));
+                json.put(NAME, new JSONString("Background"));
             }
             final FloorMapTransformationMatrix bgMatrix = floorMapCanvasPresenter.getMatrix();
             final JSONArray matrixArr = new JSONArray();
@@ -354,12 +343,12 @@ public class FloorMapMapPresenter
             matrixArr.set(3, new JSONNumber(bgMatrix.getD()));
             matrixArr.set(4, new JSONNumber(bgMatrix.getE()));
             matrixArr.set(5, new JSONNumber(bgMatrix.getF()));
-            json.put(FloorMapObjectEditPresenter.JSON_KEY_TM_MAP_TO_SCREEN, matrixArr);
+            json.put(TM_MAP_TO_SCREEN, matrixArr);
         } else {
             if (json == null) {
                 json = new JSONObject();
-                json.put(FloorMapObjectEditPresenter.JSON_KEY_TYPE, new JSONString("gates"));
-                json.put(FloorMapObjectEditPresenter.JSON_KEY_NAME, new JSONString(key));
+                json.put(TYPE, new JSONString("gates"));
+                json.put(NAME, new JSONString(key));
             }
 
             double worldX = 0.0;
@@ -370,7 +359,7 @@ public class FloorMapMapPresenter
             double d = 1.0;
 
             final JSONArray coordsArr =
-                    JSONUtil.getArray(json.get(FloorMapObjectEditPresenter.JSON_KEY_COORDS));
+                    JSONUtil.getArray(json.get(COORDS));
             if (coordsArr != null && coordsArr.size() >= 2) {
                 worldX = JSONUtil.getDouble(coordsArr.get(0));
                 worldY = JSONUtil.getDouble(coordsArr.get(1));
@@ -378,11 +367,11 @@ public class FloorMapMapPresenter
                 final JSONArray newCoordsArr = new JSONArray();
                 newCoordsArr.set(0, new JSONNumber(0.0));
                 newCoordsArr.set(1, new JSONNumber(0.0));
-                json.put(FloorMapObjectEditPresenter.JSON_KEY_COORDS, newCoordsArr);
+                json.put(COORDS, newCoordsArr);
             }
 
             final JSONArray matrixArr =
-                    JSONUtil.getArray(json.get(FloorMapObjectEditPresenter.JSON_KEY_TM_WORLD_TO_MAP));
+                    JSONUtil.getArray(json.get(TM_WORLD_TO_MAP));
             if (matrixArr != null && matrixArr.size() >= 6) {
                 a = JSONUtil.getDouble(matrixArr.get(0));
                 b = JSONUtil.getDouble(matrixArr.get(1));
@@ -402,7 +391,7 @@ public class FloorMapMapPresenter
             newMatrixArr.set(3, new JSONNumber(d));
             newMatrixArr.set(4, new JSONNumber(newE));
             newMatrixArr.set(5, new JSONNumber(newF));
-            json.put(FloorMapObjectEditPresenter.JSON_KEY_TM_WORLD_TO_MAP, newMatrixArr);
+            json.put(TM_WORLD_TO_MAP, newMatrixArr);
 
             // Update details panel coordinates
             floorMapObjectEditPresenter.updateCoords(worldX, worldY);
@@ -550,71 +539,17 @@ public class FloorMapMapPresenter
 
     private void parseTemporalEntries(final List<TemporalEntry> entries) {
         this.currentEntries = entries;
-        String activeBgImage = null;
-        FloorMapTransformationMatrix activeBgMatrix = FloorMapTransformationMatrix.identity();
-        final List<FloorMapObject> plottedObjects = new ArrayList<>();
+        final FloorMapEntryParser.ParseResult result = FloorMapEntryParser.parse(entries);
 
-        for (final TemporalEntry entry : entries) {
-            final String key = entry.getKey();
-            final String valueStr = entry.getValue();
-            if (valueStr == null || valueStr.trim().isEmpty()) {
-                continue;
-            }
+        activeBgKey = result.getBackgroundKey();
 
-            try {
-                if (valueStr.trim().startsWith("{")) {
-                    final JSONObject json = JSONUtil.getObject(JSONUtil.parse(valueStr));
-                    if (json != null) {
-                        final String type = JSONUtil.getString(json.get(FloorMapObjectEditPresenter.JSON_KEY_TYPE));
-                        final String img = JSONUtil.getString(json.get(FloorMapObjectEditPresenter.JSON_KEY_IMG));
-
-                        if ("background".equalsIgnoreCase(type)) {
-                            activeBgImage = img;
-                            activeBgKey = key;
-                            final JSONArray mapToScreenArr =
-                                    JSONUtil.getArray(json.get(FloorMapObjectEditPresenter.JSON_KEY_TM_MAP_TO_SCREEN));
-                            if (mapToScreenArr != null) {
-                                activeBgMatrix = parseMatrix(mapToScreenArr.toString());
-                            }
-                        } else {
-                            double worldX = 0;
-                            double worldY = 0;
-                            final JSONArray coordsArr =
-                                    JSONUtil.getArray(json.get(FloorMapObjectEditPresenter.JSON_KEY_COORDS));
-                            if (coordsArr != null && coordsArr.size() >= 2) {
-                                worldX = JSONUtil.getDouble(coordsArr.get(0));
-                                worldY = JSONUtil.getDouble(coordsArr.get(1));
-                            }
-
-                            FloorMapTransformationMatrix worldToMap = FloorMapTransformationMatrix.identity();
-                            final JSONArray worldToMapArr =
-                                    JSONUtil.getArray(json.get(FloorMapObjectEditPresenter.JSON_KEY_TM_WORLD_TO_MAP));
-                            if (worldToMapArr != null) {
-                                worldToMap = parseMatrix(worldToMapArr.toString());
-                            }
-
-                            // Apply coordinates transformation:
-                            final double mapX =
-                                    worldToMap.getA() * worldX + worldToMap.getC() * worldY + worldToMap.getE();
-                            final double mapY =
-                                    worldToMap.getB() * worldX + worldToMap.getD() * worldY + worldToMap.getF();
-
-                            plottedObjects.add(new FloorMapObject(key, type, mapX, mapY));
-                        }
-                    }
-                }
-            } catch (final Exception e) {
-                // Ignore malformed entry
-            }
-        }
-
-        if (activeBgImage != null && !activeBgImage.isEmpty()) {
-            floorMapCanvasPresenter.setBackgroundImage(activeBgImage);
+        if (result.getBackgroundImage() != null && !result.getBackgroundImage().isEmpty()) {
+            floorMapCanvasPresenter.setBackgroundImage(result.getBackgroundImage());
         } else {
             floorMapCanvasPresenter.setBackgroundImage(null);
         }
-        floorMapCanvasPresenter.setMatrix(activeBgMatrix);
-        floorMapCanvasPresenter.setObjects(plottedObjects);
+        floorMapCanvasPresenter.setMatrix(result.getBackgroundMatrix());
+        floorMapCanvasPresenter.setObjects(result.getObjects());
     }
 
     private void parseFacts(final TableResult tableResult) {
@@ -634,19 +569,19 @@ public class FloorMapMapPresenter
             final String colName = columns.get(i).getName();
             if (colName.equalsIgnoreCase("Key")) {
                 keyIdx = i;
-            } else if (colName.equalsIgnoreCase(FloorMapObjectEditPresenter.JSON_KEY_TYPE)) {
+            } else if (colName.equalsIgnoreCase(TYPE)) {
                 typeIdx = i;
-            } else if (colName.equalsIgnoreCase(FloorMapObjectEditPresenter.JSON_KEY_COORDS)) {
+            } else if (colName.equalsIgnoreCase(COORDS)) {
                 coordsIdx = i;
-            } else if (colName.equalsIgnoreCase(FloorMapObjectEditPresenter.JSON_KEY_IMG)) {
+            } else if (colName.equalsIgnoreCase(IMG)) {
                 imgIdx = i;
             } else if (colName.equalsIgnoreCase("tm_world_to_map")
                       || colName.equalsIgnoreCase(
-                            FloorMapObjectEditPresenter.JSON_KEY_TM_WORLD_TO_MAP)) {
+                            TM_WORLD_TO_MAP)) {
                 worldToMapIdx = i;
             } else if (colName.equalsIgnoreCase("tm_map_to_screen")
                     || colName.equalsIgnoreCase(
-                            FloorMapObjectEditPresenter.JSON_KEY_TM_MAP_TO_SCREEN)) {
+                            TM_MAP_TO_SCREEN)) {
                 mapToScreenIdx = i;
             }
         }
@@ -872,13 +807,13 @@ public class FloorMapMapPresenter
                 : "location_plan_b";
 
         final JSONObject json = new JSONObject();
-        json.put(FloorMapObjectEditPresenter.JSON_KEY_TYPE, new JSONString("gates"));
-        json.put(FloorMapObjectEditPresenter.JSON_KEY_NAME, new JSONString(key));
+        json.put(TYPE, new JSONString("gates"));
+        json.put(NAME, new JSONString(key));
 
         final JSONArray coordsArr = new JSONArray();
         coordsArr.set(0, new JSONNumber(500.0));
         coordsArr.set(1, new JSONNumber(500.0));
-        json.put(FloorMapObjectEditPresenter.JSON_KEY_COORDS, coordsArr);
+        json.put(COORDS, coordsArr);
 
         if (activeBgKey != null) {
             final JSONArray mapsArr = new JSONArray();
@@ -893,7 +828,7 @@ public class FloorMapMapPresenter
         matrixArr.set(3, new JSONNumber(1.0));
         matrixArr.set(4, new JSONNumber(0.0));
         matrixArr.set(5, new JSONNumber(0.0));
-        json.put(FloorMapObjectEditPresenter.JSON_KEY_TM_WORLD_TO_MAP, matrixArr);
+        json.put(TM_WORLD_TO_MAP, matrixArr);
 
         final TemporalEntry entry = new TemporalEntry(
                 mapName,
@@ -967,25 +902,7 @@ public class FloorMapMapPresenter
                         }
 
                         for (final java.util.Map.Entry<String, TemporalEntry> entry : latestByKey.entrySet()) {
-                            final String key = entry.getKey();
-                            final TemporalEntry latestEntry = entry.getValue();
-                            String name = key;
-                            String type = "";
-                            try {
-                                if (latestEntry.getValue() != null && latestEntry.getValue().trim().startsWith("{")) {
-                                    final JSONObject json = JSONUtil.getObject(JSONUtil.parse(latestEntry.getValue()));
-                                    if (json != null) {
-                                        name = JSONUtil.getString(json.get(FloorMapObjectEditPresenter.JSON_KEY_NAME));
-                                        type = JSONUtil.getString(json.get(FloorMapObjectEditPresenter.JSON_KEY_TYPE));
-                                    }
-                                }
-                            } catch (final Exception ex) {
-                                // ignore
-                            }
-                            if (name == null || name.isEmpty()) {
-                                name = key;
-                            }
-                            factObjects.add(new FloorMapFactListPresenter.FactObject(key, name, type));
+                            factObjects.add(FloorMapFactListPresenter.FactObject.fromEntry(entry.getValue()));
                         }
                     }
                     // Ensure background is always in the list of items
@@ -1040,13 +957,13 @@ public class FloorMapMapPresenter
                 final JSONObject json = JSONUtil.getObject(JSONUtil.parse(entry.getValue()));
                 if (json != null) {
                     final JSONArray coordsArr =
-                            JSONUtil.getArray(json.get(FloorMapObjectEditPresenter.JSON_KEY_COORDS));
+                            JSONUtil.getArray(json.get(COORDS));
                     if (coordsArr != null && coordsArr.size() >= 2) {
                         result.worldX = JSONUtil.getDouble(coordsArr.get(0));
                         result.worldY = JSONUtil.getDouble(coordsArr.get(1));
                     }
                     final JSONArray matrixArr =
-                            JSONUtil.getArray(json.get(FloorMapObjectEditPresenter.JSON_KEY_TM_WORLD_TO_MAP));
+                            JSONUtil.getArray(json.get(TM_WORLD_TO_MAP));
                     if (matrixArr != null && matrixArr.size() >= 6) {
                         result.a = JSONUtil.getDouble(matrixArr.get(0));
                         result.b = JSONUtil.getDouble(matrixArr.get(1));
