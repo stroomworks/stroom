@@ -224,6 +224,16 @@ public class FloorMapMapPresenter
                 runHistogramQuery(floorMapTimelinePresenter.getStartTime(),
                         floorMapTimelinePresenter.getEndTime()));
 
+        // Keep the canvas informed of play/pause transitions so it can switch
+        // between animate-on-move and teleport behaviour.
+        floorMapTimelinePresenter.setPlayStateChangeHandler(
+                floorMapCanvasPresenter::setPlaying);
+
+        // Discard stale animation state whenever the timeline jumps non-continuously
+        // (scrub, step-back/forward, loop-around, stop-at-end).
+        floorMapTimelinePresenter.setClearAnimationStateHandler(
+                floorMapCanvasPresenter::clearAnimationState);
+
         registerHandler(getEventBus().addHandler(MapObjectSelectedEvent.getType(), e -> {
             if (e.getObjectId() != null && editMode) {
                 final String key = "background".equals(e.getObjectId())

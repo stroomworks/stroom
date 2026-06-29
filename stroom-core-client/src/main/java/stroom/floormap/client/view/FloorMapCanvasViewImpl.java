@@ -208,6 +208,38 @@ public class FloorMapCanvasViewImpl
                             final int atIdx = rawId.indexOf('@');
                             final String displayLabel = atIdx > 0 ? rawId.substring(0, atIdx) : rawId;
 
+                            // ---- Movement trail (people only) ----
+                            // Rendered BEFORE the object group so trail lines sit behind the circle.
+                            if (isPerson && obj.getTrail() != null && obj.getTrail().size() >= 2) {
+                                final java.util.List<double[]> trail = obj.getTrail();
+                                for (int i = 1; i < trail.size(); i++) {
+                                    final double[] prev = trail.get(i - 1);
+                                    final double[] curr = trail.get(i);
+
+                                    // Use the average alpha of the two endpoints for this segment.
+                                    final double segAlpha = (prev[2] + curr[2]) / 2.0;
+                                    if (segAlpha <= 0.0) {
+                                        continue;
+                                    }
+
+                                    // Encode alpha into the hex colour string (e.g. "#1f77b4CC").
+                                    final int opacityInt = Math.min(255, (int) Math.round(segAlpha * 255));
+                                    final String hexByte = Integer.toHexString(opacityInt);
+                                    final String opacityHex = hexByte.length() == 1 ? "0" + hexByte : hexByte;
+
+                                    matrixGroup.elem(SafeHtmlUtil.from("line"),
+                                        new Attribute("x1", String.valueOf(prev[0])),
+                                        new Attribute("y1", String.valueOf(prev[1])),
+                                        new Attribute("x2", String.valueOf(curr[0])),
+                                        new Attribute("y2", String.valueOf(curr[1])),
+                                        new Attribute("stroke", "#1f77b4" + opacityHex),
+                                        new Attribute("stroke-width", "6"),
+                                        new Attribute("stroke-linecap", "round"),
+                                        new Attribute("vector-effect", "non-scaling-stroke"),
+                                        new Attribute("pointer-events", "none"));
+                                }
+                            }
+
                             // Each object is a <g translate(x,y)> wrapper containing the shape + label.
                             // The wrapper id uses the "obj-" prefix so click-detection ignores it.
                             matrixGroup.elem(objGroup -> {

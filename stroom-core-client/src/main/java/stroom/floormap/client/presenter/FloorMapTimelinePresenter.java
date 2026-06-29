@@ -69,6 +69,12 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
     /** Wall-clock timestamp (ms) of the most recent playback data query, used for throttling. */
     private double lastQueryWallClockTime;
 
+    /** Optional callback fired whenever the timeline transitions between playing and paused. */
+    private java.util.function.Consumer<Boolean> playStateChangeHandler;
+
+    /** Optional callback fired whenever the current time jumps non-continuously (scrub, step, loop). */
+    private Runnable clearAnimationStateHandler;
+
     /** Optional callback fired when the user changes the visible time range via the settings popup. */
     private Runnable timeRangeChangeHandler;
 
@@ -89,6 +95,10 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
 
         view.setCommitHandler(percentage -> {
             // User released the scrubber: commit the position and fire a data query.
+            // Clear any in-flight animations since the time has jumped discontinuously.
+            if (clearAnimationStateHandler != null) {
+                clearAnimationStateHandler.run();
+            }
             final long duration = endTime - startTime;
             final long newTime = startTime + (long) (duration * (percentage / 100.0));
             setCurrentTime(newTime);
@@ -128,13 +138,26 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
             } else {
                 getView().setPlayPausePreset(PLAY_PRESET);
             }
+            if (playStateChangeHandler != null) {
+                playStateChangeHandler.accept(playing);
+            }
         });
 
         // Step-back: jump one histogram bin backward.
-        getView().setStepBackHandler(() -> stepBy(-1));
+        getView().setStepBackHandler(() -> {
+            if (clearAnimationStateHandler != null) {
+                clearAnimationStateHandler.run();
+            }
+            stepBy(-1);
+        });
 
         // Step-forward: jump one histogram bin forward.
-        getView().setStepForwardHandler(() -> stepBy(1));
+        getView().setStepForwardHandler(() -> {
+            if (clearAnimationStateHandler != null) {
+                clearAnimationStateHandler.run();
+            }
+            stepBy(1);
+        });
 
         // Settings button opens the popup anchored above the settings icon.
         getView().setSettingsHandler(() -> settingsPresenter.show(getView().getSettingsButtonWidget()));
@@ -197,6 +220,28 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
     public void setCurrentTime(final long time) {
         this.currentTime = time;
         updateProgress();
+    }
+
+    /**
+     * Registers a callback to be invoked when the timeline transitions between playing and
+     * paused.  The boolean argument is {@code true} when playback starts, {@code false}
+     * when it stops for any reason.
+     *
+     * @param handler Called with {@code true} on play, {@code false} on pause/stop.
+     */
+    public void setPlayStateChangeHandler(final java.util.function.Consumer<Boolean> handler) {
+        this.playStateChangeHandler = handler;
+    }
+
+    /**
+     * Registers a callback to be invoked whenever the current time jumps non-continuously
+     * (scrub commit, step, stop-at-end, loop-around).  Used by the canvas presenter to
+     * discard any in-flight movement animations and trail data.
+     *
+     * @param handler Called on every discontinuous time jump.
+     */
+    public void setClearAnimationStateHandler(final Runnable handler) {
+        this.clearAnimationStateHandler = handler;
     }
 
     /**
@@ -324,15 +369,25 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
                             // Reset the query clock on loop-around so the first frame after
                             // wrapping always triggers a fresh query.
                             lastQueryWallClockTime = 0;
+                            // Discard in-flight animations — positions jump discontinuously.
+                            if (clearAnimationStateHandler != null) {
+                                clearAnimationStateHandler.run();
+                            }
                         } else {
                             // Stop at end: park at the end time and pause.
                             newTime = endTime;
                             playing = false;
+                            if (playStateChangeHandler != null) {
+                                playStateChangeHandler.accept(false);
+                            }
                             getView().setPlayPausePreset(PLAY_PRESET);
                             setCurrentTime(newTime);
                             TimeChangeEvent.fire(FloorMapTimelinePresenter.this, newTime);
                             lastFrameTime = 0;
                             lastQueryWallClockTime = 0;
+                            if (clearAnimationStateHandler != null) {
+                                clearAnimationStateHandler.run();
+                            }
                             return;
                         }
                     }
