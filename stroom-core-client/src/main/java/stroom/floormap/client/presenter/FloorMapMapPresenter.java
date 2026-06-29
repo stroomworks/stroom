@@ -16,15 +16,10 @@
 
 package stroom.floormap.client.presenter;
 
-import stroom.alert.client.event.PromptEvent;
-
 import stroom.dispatch.client.RestFactory;
 import stroom.docref.DocRef;
 import stroom.entity.client.presenter.DocPresenter;
-import stroom.entity.shared.ExpressionCriteria;
 import stroom.floormap.client.event.FloorMapDataEvent;
-import stroom.floormap.client.event.MapObjectMovedEvent;
-import stroom.floormap.client.event.MapObjectSelectedEvent;
 import stroom.floormap.client.event.TimeChangeEvent;
 import stroom.floormap.client.presenter.FloorMapMapPresenter.FloorMapMapView;
 import stroom.floormap.shared.FloorMapDoc;
@@ -32,9 +27,6 @@ import stroom.floormap.shared.FloorMapObject;
 import stroom.floormap.shared.FloorMapTransformationMatrix;
 import stroom.query.api.Column;
 import stroom.query.api.DestroyReason;
-import stroom.query.api.ExpressionOperator;
-import stroom.query.api.ExpressionTerm;
-import stroom.query.api.ExpressionTerm.Condition;
 import stroom.query.api.GroupSelection;
 import stroom.query.api.OffsetRange;
 import stroom.query.api.Result;
@@ -46,16 +38,8 @@ import stroom.query.client.presenter.QueryModel;
 import stroom.query.client.presenter.ResultComponent;
 import stroom.query.client.presenter.ResultStoreModel;
 import stroom.query.shared.QueryTablePreferences;
-import stroom.sqlstore.shared.SqlTemporalStoreResource;
-import stroom.util.client.JSONUtil;
-import stroom.util.shared.TemporalEntry;
 import stroom.widget.datepicker.client.UTCDate;
 
-import com.google.gwt.core.client.GWT;
-import com.google.gwt.json.client.JSONArray;
-import com.google.gwt.json.client.JSONNumber;
-import com.google.gwt.json.client.JSONObject;
-import com.google.gwt.json.client.JSONString;
 import com.google.inject.Inject;
 import com.google.inject.Provider;
 import com.google.web.bindery.event.shared.EventBus;
@@ -63,7 +47,6 @@ import com.gwtplatform.mvp.client.View;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.function.Consumer;
 
 import static stroom.floormap.client.FloorMapJsonKeys.*;
 
@@ -76,17 +59,10 @@ public class FloorMapMapPresenter
 
     public static final Object MAP = new Object();
     public static final Object TIMELINE = new Object();
-    public static final Object PROPERTIES = new Object();
-
-    private static final SqlTemporalStoreResource SQL_TEMPORAL_STORE_RESOURCE =
-            GWT.create(SqlTemporalStoreResource.class);
 
     private final FloorMapCanvasPresenter floorMapCanvasPresenter;
     private final FloorMapTimelinePresenter floorMapTimelinePresenter;
-    private final FloorMapObjectEditPresenter floorMapObjectEditPresenter;
-    private final FloorMapFactListPresenter floorMapObjectListPresenter;
 
-    private final RestFactory restFactory;
     private final QueryModel queryModel;
     private final QueryModel histogramQueryModel;
 
@@ -96,8 +72,6 @@ public class FloorMapMapPresenter
 
     private long selectedTime;
     private static final long ONE_DAY_MS = 24L * 60 * 60 * 1000;
-    private String activeBgKey;
-    private boolean editMode = false;
 
     @Inject
     public FloorMapMapPresenter(final EventBus eventBus,
@@ -105,24 +79,18 @@ public class FloorMapMapPresenter
                                 final RestFactory restFactory,
                                 final DateTimeSettingsFactory dateTimeSettingsFactory,
                                 final ResultStoreModel resultStoreModel,
-                                final Provider<FloorMapObjectEditPresenter> floorMapObjectEditPresenterProvider,
                                 final Provider<FloorMapCanvasPresenter> floorMapCanvasPresenterProvider,
-                                final Provider<FloorMapTimelinePresenter> floorMapTimelinePresenterProvider,
-                                final Provider<FloorMapFactListPresenter> floorMapObjectListPresenterProvider) {
+                                final Provider<FloorMapTimelinePresenter> floorMapTimelinePresenterProvider) {
         super(eventBus, view);
-        this.restFactory = restFactory;
 
         this.floorMapCanvasPresenter = floorMapCanvasPresenterProvider.get();
         this.floorMapTimelinePresenter = floorMapTimelinePresenterProvider.get();
-        this.floorMapObjectEditPresenter = floorMapObjectEditPresenterProvider.get();
-        this.floorMapObjectListPresenter = floorMapObjectListPresenterProvider.get();
 
         // Default initial time
         this.selectedTime = System.currentTimeMillis();
 
         setInSlot(MAP, floorMapCanvasPresenter);
         setInSlot(TIMELINE, floorMapTimelinePresenter);
-        setInSlot(PROPERTIES, floorMapObjectEditPresenter);
 
         // Result component to parse and handle Facts query results
         final ResultComponent resultConsumer = new ResultComponent() {
@@ -232,196 +200,6 @@ public class FloorMapMapPresenter
         // (scrub, step-back/forward, loop-around, stop-at-end).
         floorMapTimelinePresenter.setClearAnimationStateHandler(
                 floorMapCanvasPresenter::clearAnimationState);
-
-        registerHandler(getEventBus().addHandler(MapObjectSelectedEvent.getType(), e -> {
-            if (e.getObjectId() != null && editMode) {
-                final String key = "background".equals(e.getObjectId())
-                        ? (activeBgKey != null ? activeBgKey : "background")
-                        : e.getObjectId();
-                if (key != null) {
-                    floorMapObjectListPresenter.setSelected(key);
-                    floorMapObjectEditPresenter.setObject(key);
-                    floorMapCanvasPresenter.setSelectedObjectId(e.getObjectId());
-                    getView().setPropertiesVisible(true);
-                }
-            } else {
-                floorMapCanvasPresenter.setSelectedObjectId(null);
-                getView().setPropertiesVisible(false);
-            }
-        }));
-
-        registerHandler(getEventBus().addHandler(MapObjectMovedEvent.getType(), e -> {
-            final String mapName = getEntity() != null && getEntity().getTemporalStoreRef() != null
-                    ? getEntity().getTemporalStoreRef().getName()
-                    : "location_plan_b";
-
-            final String key = "background".equals(e.getObjectId())
-                    ? (activeBgKey != null ? activeBgKey : "background")
-                    : e.getObjectId();
-            if (key == null) {
-                return;
-            }
-
-            final TemporalEntry selectedEntry = findEntry(key);
-            final long targetTime = selectedEntry != null ? selectedEntry.getEffectiveTimeMs() : selectedTime;
-
-            applyMove(selectedEntry, key, mapName, e.getX(), e.getY(), targetTime);
-        }));
-
-        this.floorMapCanvasPresenter.setDragHandler((objectId, x, y, bgMatrix) -> {
-            if ("background".equals(objectId)) {
-                if (bgMatrix != null) {
-                    floorMapObjectEditPresenter.getView().setMapToScreenMatrix(new double[]{
-                            bgMatrix.getA(), bgMatrix.getB(),
-                            bgMatrix.getC(), bgMatrix.getD(),
-                            bgMatrix.getE(), bgMatrix.getF()
-                    });
-                }
-            } else {
-                final TemporalEntry entry = findEntry(objectId);
-                final EntryCoordsAndMatrix info = getEntryCoordsAndMatrix(entry);
-
-                // e = mapX - (a * worldX + c * worldY)
-                // f = mapY - (b * worldX + d * worldY)
-                final double newE = x - (info.a * info.worldX + info.c * info.worldY);
-                final double newF = y - (info.b * info.worldX + info.d * info.worldY);
-
-                final double[] newW2m = new double[]{info.a, info.b, info.c, info.d, newE, newF};
-                floorMapObjectEditPresenter.getView().setWorldToMapMatrix(newW2m);
-            }
-        });
-
-
-
-        this.floorMapObjectEditPresenter.addAssetSelectionHandler(e -> {
-            if (e.getSelectedItem() != null) {
-                final String type = floorMapObjectEditPresenter.getView().getType();
-                if ("background".equalsIgnoreCase(type)) {
-                    floorMapCanvasPresenter.setBackgroundImage(e.getSelectedItem());
-                }
-            }
-        });
-
-        this.floorMapObjectListPresenter.setSelectionConsumer(factObj -> {
-            if (factObj != null) {
-                floorMapObjectEditPresenter.setObject(factObj.getKey());
-                final String canvasId = (factObj.getKey().equals(activeBgKey) || "background".equals(factObj.getKey()))
-                        ? "background"
-                        : factObj.getKey();
-                floorMapCanvasPresenter.setSelectedObjectId(canvasId);
-                floorMapCanvasPresenter.setIsDraggingEnabled(true);
-                getView().setPropertiesVisible(true);
-            } else {
-                floorMapCanvasPresenter.setSelectedObjectId(null);
-                floorMapCanvasPresenter.setIsDraggingEnabled(false);
-            }
-        });
-
-    }
-
-    private void applyMove(final TemporalEntry selectedEntry,
-                           final String key,
-                           final String mapName,
-                           final double mapX,
-                           final double mapY,
-                           final long effectiveTime) {
-        setDirty(true);
-
-        JSONObject json = null;
-        if (selectedEntry != null
-            && selectedEntry.getValue() != null
-            && selectedEntry.getValue().trim().startsWith("{")) {
-            json = JSONUtil.getObject(JSONUtil.parse(selectedEntry.getValue()));
-        }
-
-        // TODO MB Check this
-        if ("background".equals(key)
-            || (selectedEntry != null && json != null
-                && "background".equalsIgnoreCase(
-                JSONUtil.getString(json.get(TYPE))))) {
-            if (json == null) {
-                json = new JSONObject();
-                json.put(TYPE, new JSONString("background"));
-                json.put(NAME, new JSONString("Background"));
-            }
-            final FloorMapTransformationMatrix bgMatrix = floorMapCanvasPresenter.getMatrix();
-            final JSONArray matrixArr = new JSONArray();
-            matrixArr.set(0, new JSONNumber(bgMatrix.getA()));
-            matrixArr.set(1, new JSONNumber(bgMatrix.getB()));
-            matrixArr.set(2, new JSONNumber(bgMatrix.getC()));
-            matrixArr.set(3, new JSONNumber(bgMatrix.getD()));
-            matrixArr.set(4, new JSONNumber(bgMatrix.getE()));
-            matrixArr.set(5, new JSONNumber(bgMatrix.getF()));
-            json.put(TM_MAP_TO_SCREEN, matrixArr);
-        } else {
-            if (json == null) {
-                json = new JSONObject();
-                json.put(TYPE, new JSONString("gates"));
-                json.put(NAME, new JSONString(key));
-            }
-
-            double worldX = 0.0;
-            double worldY = 0.0;
-            double a = 1.0;
-            double b = 0.0;
-            double c = 0.0;
-            double d = 1.0;
-
-            final JSONArray coordsArr =
-                    JSONUtil.getArray(json.get(COORDS));
-            if (coordsArr != null && coordsArr.size() >= 2) {
-                worldX = JSONUtil.getDouble(coordsArr.get(0));
-                worldY = JSONUtil.getDouble(coordsArr.get(1));
-            } else {
-                final JSONArray newCoordsArr = new JSONArray();
-                newCoordsArr.set(0, new JSONNumber(0.0));
-                newCoordsArr.set(1, new JSONNumber(0.0));
-                json.put(COORDS, newCoordsArr);
-            }
-
-            final JSONArray matrixArr =
-                    JSONUtil.getArray(json.get(TM_WORLD_TO_MAP));
-            if (matrixArr != null && matrixArr.size() >= 6) {
-                a = JSONUtil.getDouble(matrixArr.get(0));
-                b = JSONUtil.getDouble(matrixArr.get(1));
-                c = JSONUtil.getDouble(matrixArr.get(2));
-                d = JSONUtil.getDouble(matrixArr.get(3));
-            }
-
-            // e = mapX - (a * worldX + c * worldY)
-            // f = mapY - (b * worldX + d * worldY)
-            final double newE = mapX - (a * worldX + c * worldY);
-            final double newF = mapY - (b * worldX + d * worldY);
-
-            final JSONArray newMatrixArr = new JSONArray();
-            newMatrixArr.set(0, new JSONNumber(a));
-            newMatrixArr.set(1, new JSONNumber(b));
-            newMatrixArr.set(2, new JSONNumber(c));
-            newMatrixArr.set(3, new JSONNumber(d));
-            newMatrixArr.set(4, new JSONNumber(newE));
-            newMatrixArr.set(5, new JSONNumber(newF));
-            json.put(TM_WORLD_TO_MAP, newMatrixArr);
-
-            // Update details panel coordinates
-            floorMapObjectEditPresenter.updateCoords(worldX, worldY);
-        }
-
-        final TemporalEntry entry = new TemporalEntry(
-                mapName,
-                key,
-                effectiveTime,
-                json.toString()
-        );
-
-        //noinspection unused result
-        restFactory.create(SQL_TEMPORAL_STORE_RESOURCE)
-                .method(res -> res.update(entry))
-                .onSuccess(result -> {
-                    onTimeChange(selectedTime);
-                    floorMapObjectEditPresenter.setObject(key);
-                    floorMapObjectListPresenter.setSelected(key);
-                })
-                .exec();
     }
 
     @Override
@@ -432,11 +210,6 @@ public class FloorMapMapPresenter
         queryModel.reset(DestroyReason.NO_LONGER_NEEDED);
         histogramQueryModel.init(docRef);
         histogramQueryModel.reset(DestroyReason.NO_LONGER_NEEDED);
-
-        if (document.getTemporalStoreRef() != null) {
-            floorMapObjectEditPresenter.setMapName(document.getTemporalStoreRef().getName());
-        }
-        floorMapObjectEditPresenter.setFloorMapDoc(document);
 
         // Start timeline (and histogram query) only after models are ready.
         updateTimelineRange();
@@ -480,74 +253,23 @@ public class FloorMapMapPresenter
     private void onTimeChange(final long time) {
         this.selectedTime = time;
 
-        if (editMode) {
-            fetchFactsViaRest();
-        } else {
-            final String factsQuery = getFactsQueryToUse();
-            if (factsQuery != null && !factsQuery.trim().isEmpty()) {
-                final TimeRange timeRange =
-                        new TimeRange("CUSTOM", String.valueOf(selectedTime), String.valueOf(selectedTime));
-                queryModel.startNewSearch(
-                        QueryModel.TABLE_COMPONENT_ID,
-                        "factsTable",
-                        factsQuery,
-                        null,
-                        timeRange,
-                        false,
-                        false,
-                        "Facts Query Playback",
-                        null
-                );
+        final String factsQuery = getFactsQueryToUse();
+        if (factsQuery != null && !factsQuery.trim().isEmpty()) {
+            final TimeRange timeRange =
+                    new TimeRange("CUSTOM", String.valueOf(selectedTime), String.valueOf(selectedTime));
+            queryModel.startNewSearch(
+                    QueryModel.TABLE_COMPONENT_ID,
+                    "factsTable",
+                    factsQuery,
+                    null,
+                    timeRange,
+                    false,
+                    false,
+                    "Facts Query Playback",
+                    null
+            );
 
-            }
         }
-    }
-
-    private void fetchFactsViaRest() {
-        final String mapName = getEntity() != null && getEntity().getTemporalStoreRef() != null
-                ? getEntity().getTemporalStoreRef().getName()
-                : "location_plan_b";
-
-        final ExpressionOperator expression = ExpressionOperator.builder()
-                .addTerm(ExpressionTerm.builder()
-                        .field("Map")
-                        .condition(Condition.EQUALS)
-                        .value(mapName)
-                        .build())
-                .addTerm(ExpressionTerm.builder()
-                        .field("EffectiveTime")
-                        .condition(Condition.LESS_THAN_OR_EQUAL_TO)
-                        .value(String.valueOf(selectedTime))
-                        .build())
-                .build();
-
-        final ExpressionCriteria criteria = new ExpressionCriteria(expression);
-
-        restFactory.create(SQL_TEMPORAL_STORE_RESOURCE)
-                .method(res -> res.find(criteria))
-                .onSuccess(result -> {
-                    if (result != null && result.getValues() != null) {
-                        parseTemporalEntries(result.getValues());
-                    } else {
-                        parseTemporalEntries(new ArrayList<>());
-                    }
-                })
-                .exec();
-    }
-
-    private void parseTemporalEntries(final List<TemporalEntry> entries) {
-        this.currentEntries = entries;
-        final FloorMapEntryParser.ParseResult result = FloorMapEntryParser.parse(entries);
-
-        activeBgKey = result.getBackgroundKey();
-
-        if (result.getBackgroundImage() != null && !result.getBackgroundImage().isEmpty()) {
-            floorMapCanvasPresenter.setBackgroundImage(result.getBackgroundImage());
-        } else {
-            floorMapCanvasPresenter.setBackgroundImage(null);
-        }
-        floorMapCanvasPresenter.setMatrix(result.getBackgroundMatrix());
-        floorMapCanvasPresenter.setObjects(result.getObjects());
     }
 
     private void parseFacts(final TableResult tableResult) {
@@ -597,7 +319,6 @@ public class FloorMapMapPresenter
 
                 if ("background".equalsIgnoreCase(type)) {
                     activeBgImage = img;
-                    activeBgKey = key;
                     if (mapToScreenIdx != -1 && values.size() > mapToScreenIdx) {
                         final String matrixStr = values.get(mapToScreenIdx);
                         activeBgMatrix = parseMatrix(matrixStr);
@@ -801,197 +522,6 @@ public class FloorMapMapPresenter
         }
     }
 
-    public void promptAndAddObject() {
-        PromptEvent.fire(this,
-                "Enter Object ID/Key to add:",
-                "",
-                key -> {
-                    if (key != null && !key.trim().isEmpty()) {
-                        addNewObject(key.trim());
-                    }
-                });
-    }
-
-    public void addNewObject(final String key) {
-        final String mapName = getEntity() != null && getEntity().getTemporalStoreRef() != null
-                ? getEntity().getTemporalStoreRef().getName()
-                : "location_plan_b";
-
-        final JSONObject json = new JSONObject();
-        json.put(TYPE, new JSONString("gates"));
-        json.put(NAME, new JSONString(key));
-
-        final JSONArray coordsArr = new JSONArray();
-        coordsArr.set(0, new JSONNumber(500.0));
-        coordsArr.set(1, new JSONNumber(500.0));
-        json.put(COORDS, coordsArr);
-
-        if (activeBgKey != null) {
-            final JSONArray mapsArr = new JSONArray();
-            mapsArr.set(0, new JSONString(activeBgKey));
-            json.put("maps", mapsArr);
-        }
-
-        final JSONArray matrixArr = new JSONArray();
-        matrixArr.set(0, new JSONNumber(1.0));
-        matrixArr.set(1, new JSONNumber(0.0));
-        matrixArr.set(2, new JSONNumber(0.0));
-        matrixArr.set(3, new JSONNumber(1.0));
-        matrixArr.set(4, new JSONNumber(0.0));
-        matrixArr.set(5, new JSONNumber(0.0));
-        json.put(TM_WORLD_TO_MAP, matrixArr);
-
-        final TemporalEntry entry = new TemporalEntry(
-                mapName,
-                key,
-                selectedTime,
-                json.toString()
-        );
-
-        //noinspection unused result
-        restFactory.create(SQL_TEMPORAL_STORE_RESOURCE)
-                .method(res -> res.create(entry))
-                .onSuccess(result -> {
-                    onTimeChange(selectedTime);
-                    if (editMode) {
-                        fetchObjectsForList(factObjects -> {
-                            floorMapObjectListPresenter.setData(factObjects);
-                            floorMapObjectListPresenter.setSelected(key);
-                        });
-                    }
-                })
-                .exec();
-    }
-
-    public void toggleEditMode(final boolean editMode) {
-        this.editMode = editMode;
-        floorMapCanvasPresenter.setEditMode(editMode);
-        if (!editMode) {
-            getView().setPropertiesVisible(false);
-        } else {
-            fetchObjectsForList(factObjects -> {
-                floorMapObjectListPresenter.setData(factObjects);
-                floorMapObjectListPresenter.selectLast();
-            });
-        }
-        onTimeChange(selectedTime);
-    }
-
-    private void fetchObjectsForList(final Consumer<List<FloorMapFactListPresenter.FactObject>> consumer) {
-        if (getEntity() == null || getEntity().getTemporalStoreRef() == null) {
-            consumer.accept(new ArrayList<>());
-            return;
-        }
-        final String mapName = getEntity().getTemporalStoreRef().getName();
-
-        final ExpressionOperator expression = ExpressionOperator.builder()
-                .addTerm(ExpressionTerm.builder()
-                        .field("Map")
-                        .condition(Condition.EQUALS)
-                        .value(mapName)
-                        .build())
-                .build();
-
-        final ExpressionCriteria criteria = new ExpressionCriteria(expression);
-        criteria.setPageRequest(new stroom.util.shared.PageRequest(0, 10000));
-
-        restFactory.create(SQL_TEMPORAL_STORE_RESOURCE)
-                .method(res -> res.find(criteria))
-                .onSuccess(result -> {
-                    final List<FloorMapFactListPresenter.FactObject> factObjects = new ArrayList<>();
-                    if (result != null && result.getValues() != null) {
-                        final java.util.Map<String, TemporalEntry> latestByKey = new java.util.HashMap<>();
-                        for (final TemporalEntry entry : result.getValues()) {
-                            final String key = entry.getKey();
-                            if (key == null) {
-                                continue;
-                            }
-                            final TemporalEntry existing = latestByKey.get(key);
-                            if (existing == null || entry.getEffectiveTimeMs() > existing.getEffectiveTimeMs()) {
-                                latestByKey.put(key, entry);
-                            }
-                        }
-
-                        for (final java.util.Map.Entry<String, TemporalEntry> entry : latestByKey.entrySet()) {
-                            factObjects.add(FloorMapFactListPresenter.FactObject.fromEntry(entry.getValue()));
-                        }
-                    }
-                    // Ensure background is always in the list of items
-                    final String bgKey = activeBgKey != null ? activeBgKey : "background";
-                    boolean hasBg = false;
-                    for (final FloorMapFactListPresenter.FactObject obj : factObjects) {
-                        if (obj.getKey().equals(bgKey) || "background".equalsIgnoreCase(obj.getType())) {
-                            hasBg = true;
-                            break;
-                        }
-                    }
-                    if (!hasBg) {
-                        factObjects.add(new FloorMapFactListPresenter.FactObject(bgKey, "Background", "background"));
-                    }
-
-                    factObjects.sort(java.util.Comparator.comparing(
-                            FloorMapFactListPresenter.FactObject::getName,
-                            String.CASE_INSENSITIVE_ORDER));
-                    consumer.accept(factObjects);
-                })
-                .exec();
-    }
-
-    private List<TemporalEntry> currentEntries = new ArrayList<>();
-
-    private TemporalEntry findEntry(final String key) {
-        if (currentEntries != null && key != null) {
-            for (final TemporalEntry entry : currentEntries) {
-                if (key.equals(entry.getKey())) {
-                    return entry;
-                }
-            }
-        }
-        return null;
-    }
-
-    private static class EntryCoordsAndMatrix {
-        double worldX = 0.0;
-        double worldY = 0.0;
-        double a = 1.0;
-        double b = 0.0;
-        double c = 0.0;
-        double d = 1.0;
-        double e = 0.0;
-        double f = 0.0;
-    }
-
-    private EntryCoordsAndMatrix getEntryCoordsAndMatrix(final TemporalEntry entry) {
-        final EntryCoordsAndMatrix result = new EntryCoordsAndMatrix();
-        if (entry != null && entry.getValue() != null && entry.getValue().trim().startsWith("{")) {
-            try {
-                final JSONObject json = JSONUtil.getObject(JSONUtil.parse(entry.getValue()));
-                if (json != null) {
-                    final JSONArray coordsArr =
-                            JSONUtil.getArray(json.get(COORDS));
-                    if (coordsArr != null && coordsArr.size() >= 2) {
-                        result.worldX = JSONUtil.getDouble(coordsArr.get(0));
-                        result.worldY = JSONUtil.getDouble(coordsArr.get(1));
-                    }
-                    final JSONArray matrixArr =
-                            JSONUtil.getArray(json.get(TM_WORLD_TO_MAP));
-                    if (matrixArr != null && matrixArr.size() >= 6) {
-                        result.a = JSONUtil.getDouble(matrixArr.get(0));
-                        result.b = JSONUtil.getDouble(matrixArr.get(1));
-                        result.c = JSONUtil.getDouble(matrixArr.get(2));
-                        result.d = JSONUtil.getDouble(matrixArr.get(3));
-                        result.e = JSONUtil.getDouble(matrixArr.get(4));
-                        result.f = JSONUtil.getDouble(matrixArr.get(5));
-                    }
-                }
-            } catch (final Exception ex) {
-                // Ignore
-            }
-        }
-        return result;
-    }
-
     public interface FloorMapMapView extends View {
-        void setPropertiesVisible(boolean visible);
     }
 }

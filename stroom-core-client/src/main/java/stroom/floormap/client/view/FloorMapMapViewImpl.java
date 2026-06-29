@@ -21,7 +21,6 @@ import stroom.floormap.client.presenter.FloorMapMapPresenter.FloorMapMapView;
 
 import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
-import com.google.gwt.user.client.ui.DockLayoutPanel;
 import com.google.gwt.user.client.ui.SimplePanel;
 import com.google.gwt.user.client.ui.Widget;
 import com.google.inject.Inject;
@@ -35,10 +34,6 @@ public class FloorMapMapViewImpl extends ViewImpl implements FloorMapMapView {
 
     private final Widget widget;
 
-    @UiField
-    DockLayoutPanel mainDockPanel;
-    @UiField
-    SimplePanel propertiesPanel;
     @UiField
     SimplePanel mapPanel;
     @UiField
@@ -55,23 +50,11 @@ public class FloorMapMapViewImpl extends ViewImpl implements FloorMapMapView {
     }
 
     @Override
-    public void setPropertiesVisible(final boolean visible) {
-        if (visible) {
-            mainDockPanel.setWidgetSize(propertiesPanel, 480);
-        } else {
-            mainDockPanel.setWidgetSize(propertiesPanel, 0);
-        }
-        mainDockPanel.forceLayout();
-    }
-
-    @Override
     public void setInSlot(final Object slot, final Widget content) {
         if (FloorMapMapPresenter.MAP.equals(slot)) {
             mapPanel.setWidget(content);
         } else if (FloorMapMapPresenter.TIMELINE.equals(slot)) {
             timelinePanel.setWidget(content);
-        } else if (FloorMapMapPresenter.PROPERTIES.equals(slot)) {
-            propertiesPanel.setWidget(content);
         }
     }
 

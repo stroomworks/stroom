@@ -27,11 +27,6 @@ import stroom.entity.client.presenter.MarkdownEditPresenter;
 import stroom.entity.client.presenter.MarkdownTabProvider;
 import stroom.floormap.shared.FloorMapDoc;
 import stroom.security.client.presenter.DocumentUserPermissionsTabProvider;
-import stroom.svg.client.SvgPresets;
-import stroom.svg.shared.SvgImage;
-import stroom.widget.button.client.ButtonView;
-import stroom.widget.button.client.InlineSvgToggleButton;
-import stroom.widget.button.client.SvgButton;
 import stroom.widget.tab.client.presenter.TabData;
 import stroom.widget.tab.client.presenter.TabDataImpl;
 
@@ -55,8 +50,6 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
     private static final TabData PERMISSIONS = new TabDataImpl("Permissions");
 
     private final DocumentAssetPresenter<FloorMapDoc> documentAssetPresenter;
-    private final InlineSvgToggleButton editModeButton;
-    private final ButtonView addObjectButton;
     private FloorMapMapPresenter floorMapMapPresenter;
     private FloorMapEditorPresenter floorMapEditorPresenter;
     private FloorMapSettingsPresenter floorMapSettingsPresenter;
@@ -75,32 +68,6 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
                              final DocumentAssetPresenter<FloorMapDoc> documentAssetPresenter) {
         super(eventBus, view);
         this.documentAssetPresenter = documentAssetPresenter;
-
-        editModeButton = new InlineSvgToggleButton();
-        editModeButton.setSvg(SvgImage.EDIT);
-        editModeButton.setTitle("Edit Mode");
-        editModeButton.setState(false);
-        toolbar.addButton(editModeButton);
-
-        addObjectButton = SvgButton.create(SvgPresets.ADD);
-        addObjectButton.setTitle("Add New Object");
-        addObjectButton.setVisible(false);
-        toolbar.addButton(addObjectButton);
-
-        //noinspection unused
-        registerHandler(editModeButton.addClickHandler(e -> {
-            if (floorMapMapPresenter != null) {
-                floorMapMapPresenter.toggleEditMode(editModeButton.getState());
-            }
-            addObjectButton.setVisible(editModeButton.getState());
-        }));
-
-        //noinspection unused
-        registerHandler(addObjectButton.addClickHandler(e -> {
-            if (floorMapMapPresenter != null) {
-                floorMapMapPresenter.promptAndAddObject();
-            }
-        }));
 
         addTab(MAP, new DocTabProvider<>(() -> {
             floorMapMapPresenter = floorMapMapPresenterProvider.get();
@@ -203,25 +170,12 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
     @Override
     protected void onRead(final DocRef docRef, final FloorMapDoc document, final boolean readOnly) {
         super.onRead(docRef, document, readOnly);
-        if (editModeButton != null) {
-            editModeButton.setState(false);
-            editModeButton.setVisible(getSelectedTab() == MAP);
-        }
-        if (addObjectButton != null) {
-            addObjectButton.setVisible(false);
-        }
     }
 
     @Override
     protected void afterSelectTab(final PresenterWidget<?> content) {
         if (content == documentAssetPresenter) {
             onChange();
-        }
-        if (editModeButton != null) {
-            editModeButton.setVisible(content instanceof FloorMapMapPresenter);
-        }
-        if (addObjectButton != null && editModeButton != null) {
-            addObjectButton.setVisible(content instanceof FloorMapMapPresenter && editModeButton.getState());
         }
 
         // Auto-populate default template for Facts Query if it is empty/blank
