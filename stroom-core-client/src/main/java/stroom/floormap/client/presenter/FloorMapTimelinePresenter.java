@@ -111,6 +111,7 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
         super.onBind();
 
         // Forward date changes from the settings popup back to the timeline.
+        //noinspection unused e
         registerHandler(settingsPresenter.addStartTimeChangeHandler(e -> {
             this.startTime = settingsPresenter.getStartTime();
             updateProgress();
@@ -120,6 +121,7 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
             }
         }));
 
+        //noinspection unused e
         registerHandler(settingsPresenter.addEndTimeChangeHandler(e -> {
             this.endTime = settingsPresenter.getEndTime();
             updateProgress();

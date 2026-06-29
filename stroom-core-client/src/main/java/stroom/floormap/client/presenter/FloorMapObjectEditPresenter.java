@@ -17,90 +17,53 @@
 package stroom.floormap.client.presenter;
 
 import stroom.alert.client.event.ConfirmEvent;
-import stroom.alert.client.event.PromptEvent;
 import stroom.data.client.event.DataSelectionEvent;
-import stroom.data.grid.client.MyDataGrid;
-import stroom.dispatch.client.RestFactory;
 import stroom.document.asset.client.presenter.DocumentAssetDropDownPresenter;
-import stroom.entity.shared.ExpressionCriteria;
 import stroom.floormap.client.presenter.FloorMapObjectEditPresenter.FloorMapObjectEditView;
 import stroom.floormap.shared.FloorMapDoc;
-import stroom.query.api.ExpressionOperator;
-import stroom.query.api.ExpressionTerm;
-import stroom.query.api.ExpressionTerm.Condition;
-import stroom.sqlstore.shared.SqlTemporalStoreResource;
-import stroom.svg.client.SvgPresets;
 import stroom.util.client.JSONUtil;
 import stroom.util.shared.TemporalEntry;
-import stroom.util.shared.TemporalEntryId;
-import stroom.widget.button.client.ButtonPanel;
-import stroom.widget.button.client.ButtonView;
+import stroom.widget.popup.client.event.ShowPopupEvent;
+import stroom.widget.popup.client.presenter.PopupType;
 
-import com.google.gwt.core.client.GWT;
-import com.google.gwt.event.dom.client.ClickHandler;
 import com.google.gwt.json.client.JSONArray;
 import com.google.gwt.json.client.JSONNumber;
 import com.google.gwt.json.client.JSONObject;
 import com.google.gwt.json.client.JSONString;
-import com.google.gwt.user.cellview.client.Column;
-import com.google.gwt.user.cellview.client.TextColumn;
+
 import com.google.gwt.user.client.ui.Widget;
-import com.google.gwt.view.client.ListDataProvider;
-import com.google.gwt.view.client.SingleSelectionModel;
 import com.google.web.bindery.event.shared.EventBus;
-import com.google.web.bindery.event.shared.HandlerRegistration;
 import com.gwtplatform.mvp.client.MyPresenterWidget;
 import com.gwtplatform.mvp.client.View;
 
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.List;
 import java.util.function.Consumer;
 import javax.inject.Inject;
 
+import static stroom.floormap.client.FloorMapJsonKeys.*;
+
 public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjectEditView> {
 
-    private static final SqlTemporalStoreResource SQL_TEMPORAL_STORE_RESOURCE =
-            GWT.create(SqlTemporalStoreResource.class);
-
-    public static final String JSON_KEY_COORDS = "coords";
-    public static final String JSON_KEY_TYPE = "type";
-    public static final String JSON_KEY_NAME = "name";
-    public static final String JSON_KEY_IMG = "img";
-    public static final String JSON_KEY_TM_WORLD_TO_MAP = "tm-world-to-map";
-    public static final String JSON_KEY_TM_MAP_TO_SCREEN = "tm-map-to-screen";
-
-    private Consumer<Boolean> editStateConsumer;
-    private Runnable changeEventConsumer;
-
-    public void setChangeEventConsumer(final Runnable changeEventConsumer) {
-        this.changeEventConsumer = changeEventConsumer;
-    }
-
-    private final RestFactory restFactory;
-    private final MyDataGrid<TemporalEntry> dataGrid;
-    private final ListDataProvider<TemporalEntry> dataProvider = new ListDataProvider<>();
-    private final SingleSelectionModel<TemporalEntry> selectionModel = new SingleSelectionModel<>();
-
-    private final ButtonView addButton;
-    private final ButtonView deleteButton;
     private final DocumentAssetDropDownPresenter documentAssetDropDownPresenter;
     private String objectId;
-    private boolean isAdding = false;
-    // TODO MB FIX THIS
-    private String mapName = "location_plan_b";
+    private String mapName;
 
     public void setMapName(final String mapName) {
-        // TODO MB FIX THIS
-        this.mapName = mapName != null ? mapName : "location_plan_b";
+        if (mapName == null) {
+            throw new IllegalArgumentException("mapName must not be null");
+        }
+        this.mapName = mapName;
+    }
+
+    private String requireMapName() {
+        if (mapName == null) {
+            throw new IllegalStateException(
+                    "mapName has not been set — call setMapName() before using this presenter");
+        }
+        return mapName;
     }
 
     public void setFloorMapDoc(final FloorMapDoc floorMapDoc) {
         documentAssetDropDownPresenter.setDocument(floorMapDoc);
-    }
-
-    public TemporalEntry getSelectedEntry() {
-        return selectionModel.getSelectedObject();
     }
 
     public void updateCoords(final double x, final double y) {
@@ -111,344 +74,114 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
     @Inject
     public FloorMapObjectEditPresenter(final EventBus eventBus,
                                        final FloorMapObjectEditView view,
-                                       final RestFactory restFactory,
                                        final DocumentAssetDropDownPresenter documentAssetDropDownPresenter) {
         super(eventBus, view);
-        this.restFactory = restFactory;
         this.documentAssetDropDownPresenter = documentAssetDropDownPresenter;
-
-        // Initialise the Table grid
-        dataGrid = new MyDataGrid<>(this);
-        dataGrid.setSelectionModel(selectionModel);
-        view.setGridView(dataGrid);
-        initGridColumns();
-        dataProvider.addDataDisplay(dataGrid);
-
-        // Initialise the Toolbar Buttons
-        final ButtonPanel buttonPanel = new ButtonPanel();
-        addButton = buttonPanel.addButton(SvgPresets.ADD);
-        deleteButton = buttonPanel.addButton(SvgPresets.DELETE);
-        view.setToolbar(buttonPanel);
     }
 
     @Override
     protected void onBind() {
         super.onBind();
-
         getView().setChooseImgView(documentAssetDropDownPresenter.getView().asWidget());
-
-        // Row selection updates the input form
-        registerHandler(selectionModel.addSelectionChangeHandler(e -> {
-            final TemporalEntry selected = selectionModel.getSelectedObject();
-
-            if (selected != null) {
-                isAdding = false;
-                getView().setEnabled(true);
-                documentAssetDropDownPresenter.setEnabled(true);
-                deleteButton.setEnabled(true);
-                resetInputs(selected);
-
-                if (editStateConsumer != null) {
-                    editStateConsumer.accept(true);
-                }
-
-                final List<TemporalEntry> list = dataProvider.getList();
-                if (list != null) {
-                    final int index = list.indexOf(selected);
-                    if (index >= 0) {
-                        com.google.gwt.core.client.Scheduler.get().scheduleDeferred(() -> {
-                            if (index < dataGrid.getVisibleItemCount()) {
-                                try {
-                                    final com.google.gwt.dom.client.TableRowElement rowEl =
-                                            dataGrid.getRowElement(index);
-                                    if (rowEl != null) {
-                                        stroom.widget.util.client.ElementUtil.scrollIntoViewNearest(rowEl);
-                                    }
-                                } catch (final Exception ex) {
-                                    // Ignore
-                                }
-                            }
-                        });
-                    }
-                }
-            } else {
-                deleteButton.setEnabled(false);
-                if (!isAdding) {
-                    getView().setEnabled(false);
-                    documentAssetDropDownPresenter.setEnabled(false);
-                    getView().setEffectiveTime(0L);
-                    getView().setX(0.0);
-                    getView().setY(0.0);
-
-                    if (editStateConsumer != null) {
-                        editStateConsumer.accept(false);
-                    }
-                }
-            }
-        }));
-
-        // Toolbar: Click Add to clear input form for a new row
-        registerHandler(addButton.addClickHandler(e -> {
-            final TemporalEntry activeVersion = selectionModel.getSelectedObject();
-
-            PromptEvent.fire(this,
-                    "Enter the new Effective Time (in milliseconds):",
-                    String.valueOf(System.currentTimeMillis()),
-                    result -> {
-                        if (result != null && !result.trim().isEmpty()) {
-                            try {
-                                final long newTime = Long.parseLong(result.trim());
-
-                                // Clone coordinate values and type from active selection
-                                double x = 0.0;
-                                double y = 0.0;
-                                String activeType = "background".equals(objectId) ? "background" : "gates";
-                                if (activeVersion != null) {
-                                    final String originalValue = activeVersion.getValue();
-                                    if (originalValue != null && originalValue.trim().startsWith("{")) {
-                                        final JSONObject json = JSONUtil.getObject(JSONUtil.parse(originalValue));
-                                        if (json != null) {
-                                            final JSONArray coordsArr = JSONUtil.getArray(json.get(JSON_KEY_COORDS));
-                                            if (coordsArr != null && coordsArr.size() >= 2) {
-                                                x = JSONUtil.getDouble(coordsArr.get(0));
-                                                y = JSONUtil.getDouble(coordsArr.get(1));
-                                            }
-                                            final String typeStr = JSONUtil.getString(json.get(JSON_KEY_TYPE));
-                                            if (typeStr != null && !typeStr.isEmpty()) {
-                                                activeType = typeStr;
-                                            }
-                                        }
-                                    } else if (originalValue != null) {
-                                        final String[] coords = originalValue.split(",");
-                                        x = Double.parseDouble(coords[1].trim());
-                                        y = Double.parseDouble(coords[2].trim());
-                                    }
-                                }
-
-                                final double finalX = x;
-                                final double finalY = y;
-                                final String finalType = activeType;
-                                addEntry(newTime, finalX, finalY, finalType, this::onWriteComplete);
-                            } catch (final NumberFormatException ex) {
-                                // Ignore
-                            }
-                        }
-                    });
-        }));
-
-        // Toolbar: Click Delete to remove from database and refresh table
-        registerHandler(deleteButton.addClickHandler(e -> {
-            final TemporalEntry selected = selectionModel.getSelectedObject();
-
-            if (selected != null) {
-                ConfirmEvent.fire(this, "Are you sure you want to delete this temporal version?", ok -> {
-                    if (ok) {
-                        deleteEntry(selected.getEffectiveTimeMs(), this::onWriteComplete);
-                    }
-                });
-            }
-        }));
-
-        // Action Form: Save/Update temporal record
-        registerHandler(getView().addSaveHandler(e -> {
-            final long time = getView().getEffectiveTime();
-            final double x = getView().getX();
-            final double y = getView().getY();
-
-
-            final TemporalEntry selected = selectionModel.getSelectedObject();
-            if (selected != null && selected.getEffectiveTimeMs() != time) {
-                ConfirmEvent.fire(this,
-                        "You have changed the effective time. Do you want to move the version to"
-                                + " the new time? (Click OK to move, or Cancel to create a new"
-                                + " cloned version instead)",
-                        move -> {
-                            if (move) {
-                                deleteEntry(selected.getEffectiveTimeMs(),
-                                        () -> updateEntry(time, x, y, this::onWriteComplete));
-                            } else {
-                                updateEntry(time, x, y, this::onWriteComplete);
-                            }
-                        });
-            } else {
-                updateEntry(time, x, y, this::onWriteComplete);
-            }
-        }));
-
-        // Action Form: Revert/Cancel changes
-        registerHandler(getView().addCancelHandler(e -> {
-            final TemporalEntry selected = selectionModel.getSelectedObject();
-            resetInputs(selected);
-        }));
-    }
-
-    public void setObject(final String objectId) {
-        this.objectId = objectId;
-        refresh();
-    }
-
-    public void setEditStateConsumer(final Consumer<Boolean> editStateConsumer) {
-        this.editStateConsumer = editStateConsumer;
-    }
-
-    private void onWriteComplete() {
-        refresh();
-        if (changeEventConsumer != null) {
-            changeEventConsumer.run();
-        }
-    }
-
-    private void refresh() {
-        fetchHistory(entries -> {
-            if (entries != null) {
-                entries.sort(java.util.Comparator.comparing(TemporalEntry::getEffectiveTimeMs));
-            }
-            dataProvider.setList(entries);
-            dataGrid.setRowData(0, entries);
-            if (entries != null && !entries.isEmpty()) {
-                selectionModel.setSelected(entries.get(entries.size() - 1), true);
-            } else {
-                selectionModel.clear();
-            }
-        });
-    }
-
-    private void initGridColumns() {
-        // Date/Time Column
-        final Column<TemporalEntry, String> timeColumn = new TextColumn<>() {
-            @Override
-            public String getValue(final TemporalEntry entry) {
-                return new Date(entry.getEffectiveTimeMs()).toString();
-            }
-        };
-
-        dataGrid.addColumn(timeColumn, "Effective Time");
-
-        // Coordinates Column
-        final Column<TemporalEntry, String> valueColumn = new TextColumn<>() {
-            @Override
-            public String getValue(final TemporalEntry entry) {
-                return entry.getValue();
-            }
-        };
-
-        dataGrid.addColumn(valueColumn, "Location State");
     }
 
     /**
-     * Fetches all temporal/historical locations for the selected object from the store.
+     * Shows the properties form as a modal OK/Cancel dialog.
+     *
+     * <p>The form is pre-populated from {@code entry}. When the user clicks OK
+     * the current form state is built into a {@link TemporalEntry} and passed
+     * to {@code onSave}. Clicking Cancel discards the changes.</p>
+     *
+     * @param caption the dialog title — e.g. "Add Time Properties" or "Edit Time Properties"
+     * @param entry   the entry to pre-populate the form with; may be {@code null} for a blank form
+     * @param onSave  called with the built entry when the user clicks OK
      */
-    public void fetchHistory(final Consumer<List<TemporalEntry>> consumer) {
-        if (objectId == null) {
-            consumer.accept(new ArrayList<>());
-            return;
-        }
-
-        final ExpressionOperator expression = ExpressionOperator.builder()
-                .addTerm(ExpressionTerm.builder()
-                        .field("Map")
-                        .condition(Condition.EQUALS)
-                        .value(mapName)
-                        .build())
-                .addTerm(ExpressionTerm.builder()
-                        .field("Key")
-                        .condition(Condition.EQUALS)
-                        .value(objectId)
-                        .build())
-                .build();
-
-        final ExpressionCriteria criteria = new ExpressionCriteria(expression);
-
-        restFactory.create(SQL_TEMPORAL_STORE_RESOURCE)
-                .method(res -> res.find(criteria))
-                .onSuccess(result -> {
-                    if (result != null && result.getValues() != null) {
-                        consumer.accept(result.getValues());
+    public void show(final String caption,
+                     final TemporalEntry entry,
+                     final Consumer<TemporalEntry> onSave) {
+        loadEntry(entry);
+        //noinspection unused e
+        ShowPopupEvent.builder(this)
+                .popupType(PopupType.OK_CANCEL_DIALOG)
+                .caption(caption)
+                .onShow(e -> getView().setEnabled(true))
+                .onHideRequest(e -> {
+                    if (e.isOk()) {
+                        final long time = getView().getEffectiveTime();
+                        if (entry != null && entry.getEffectiveTimeMs() != time) {
+                            // Effective time changed — ask whether to move or clone.
+                            //noinspection unused move
+                            ConfirmEvent.fire(this,
+                                    "You have changed the effective time. "
+                                    + "Do you want to move the version to the new time? "
+                                    + "(OK to move, Cancel to create a new cloned version at the new time)",
+                                    move -> {
+                                        final TemporalEntry built = buildEntry(time);
+                                        onSave.accept(built);
+                                        e.hide();
+                                    });
+                        } else {
+                            onSave.accept(buildEntry(time));
+                            e.hide();
+                        }
                     } else {
-                        consumer.accept(new ArrayList<>());
+                        e.hide();
                     }
                 })
-                .exec();
+                .fire();
     }
 
     /**
-     * Adds a new temporal entry for the current object.
+     * Stores the object ID. Called by both the Editor tab and the Map tab.
+     * Does not trigger a server fetch — form population is driven by
+     * {@link #loadEntry(TemporalEntry)} on the Editor tab.
+     *
+     * @param objectId the fact key for the object being edited
      */
-    public void addEntry(
-            final long effectiveTimeMs, final double x, final double y,
-            final String type, final Runnable onSuccess) {
-        if (objectId == null) {
-            return;
-        }
-
-        final JSONObject json = new JSONObject();
-        json.put(JSON_KEY_TYPE, new JSONString(type != null ? type : "gates"));
-        json.put(JSON_KEY_NAME, new JSONString(objectId));
-        final JSONArray coordsArr = new JSONArray();
-        coordsArr.set(0, new JSONNumber(x));
-        coordsArr.set(1, new JSONNumber(y));
-        json.put(JSON_KEY_COORDS, coordsArr);
-
-
-        final JSONArray matrixArr = new JSONArray();
-        matrixArr.set(0, new JSONNumber(1.0));
-        matrixArr.set(1, new JSONNumber(0.0));
-        matrixArr.set(2, new JSONNumber(0.0));
-        matrixArr.set(3, new JSONNumber(1.0));
-        matrixArr.set(4, new JSONNumber(0.0));
-        matrixArr.set(5, new JSONNumber(0.0));
-        json.put(JSON_KEY_TM_WORLD_TO_MAP, matrixArr);
-
-        if ("background".equalsIgnoreCase(type)) {
-            final JSONArray m2sArr = new JSONArray();
-            m2sArr.set(0, new JSONNumber(1.0));
-            m2sArr.set(1, new JSONNumber(0.0));
-            m2sArr.set(2, new JSONNumber(0.0));
-            m2sArr.set(3, new JSONNumber(1.0));
-            m2sArr.set(4, new JSONNumber(0.0));
-            m2sArr.set(5, new JSONNumber(0.0));
-            json.put(JSON_KEY_TM_MAP_TO_SCREEN, m2sArr);
-        }
-
-        final TemporalEntry entry = new TemporalEntry(
-                mapName,
-                objectId,
-                effectiveTimeMs,
-                json.toString()
-        );
-
-        restFactory.create(SQL_TEMPORAL_STORE_RESOURCE)
-                .method(res -> res.create(entry))
-                .onSuccess(result -> onSuccess.run())
-                .exec();
+    public void setObject(final String objectId) {
+        this.objectId = objectId;
     }
 
     /**
-     * Updates an existing temporal entry (or inserts if not exists).
+     * Loads a temporal entry into the form.
+     *
+     * <p>Called by {@link stroom.floormap.client.presenter.FloorMapEditorPresenter}
+     * whenever the Time List selection changes. Populates all form fields and
+     * enables or disables the form based on whether {@code entry} is non-null.</p>
+     *
+     * @param entry the entry to display, or {@code null} to clear and disable the form
      */
-    public void updateEntry(
-            final long effectiveTimeMs, final double x, final double y, final Runnable onSuccess) {
-        if (objectId == null) {
-            return;
-        }
+    public void loadEntry(final TemporalEntry entry) {
+        getView().setEnabled(entry != null);
+        documentAssetDropDownPresenter.setEnabled(entry != null);
+        resetInputs(entry);
+    }
 
+    /**
+     * Builds a JSON object from the current view state.
+     *
+     * @return the constructed JSON; never {@code null}
+     */
+    private JSONObject buildJson() {
         final JSONObject json = new JSONObject();
-        json.put(JSON_KEY_TYPE, new JSONString(getView().getType()));
-        json.put(JSON_KEY_NAME, new JSONString(getView().getName()));
-        final String imgPath = documentAssetDropDownPresenter.getSelectedAssetPath();
-        json.put(JSON_KEY_IMG, new JSONString(imgPath == null ? "" : imgPath));
+        json.put(TYPE, new JSONString(getView().getType()));
+        json.put(NAME, new JSONString(getView().getName()));
+        json.put(IMG, new JSONString(
+                documentAssetDropDownPresenter.getSelectedAssetPath() == null
+                        ? ""
+                        : documentAssetDropDownPresenter.getSelectedAssetPath()));
 
         final JSONArray coordsArr = new JSONArray();
         coordsArr.set(0, new JSONNumber(getView().getX()));
         coordsArr.set(1, new JSONNumber(getView().getY()));
-        json.put(JSON_KEY_COORDS, coordsArr);
+        json.put(COORDS, coordsArr);
 
         final double[] w2m = getView().getWorldToMapMatrix();
         final JSONArray w2mArr = new JSONArray();
         for (int i = 0; i < 6; i++) {
             w2mArr.set(i, new JSONNumber(w2m[i]));
         }
-        json.put(JSON_KEY_TM_WORLD_TO_MAP, w2mArr);
+        json.put(TM_WORLD_TO_MAP, w2mArr);
 
         if ("background".equalsIgnoreCase(getView().getType())) {
             final double[] m2s = getView().getMapToScreenMatrix();
@@ -456,44 +189,20 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
             for (int i = 0; i < 6; i++) {
                 m2sArr.set(i, new JSONNumber(m2s[i]));
             }
-            json.put(JSON_KEY_TM_MAP_TO_SCREEN, m2sArr);
+            json.put(TM_MAP_TO_SCREEN, m2sArr);
         }
-
-        final TemporalEntry entry = new TemporalEntry(
-                mapName,
-                objectId,
-                effectiveTimeMs,
-                json.toString()
-        );
-
-        restFactory.create(SQL_TEMPORAL_STORE_RESOURCE)
-                .method(res -> res.update(entry))
-                .onSuccess(result -> onSuccess.run())
-                .exec();
+        return json;
     }
 
     /**
-     * Deletes a specific temporal entry by its effective time key.
+     * Builds a {@link TemporalEntry} from the current view state without
+     * making a REST call.
+     *
+     * @param effectiveTimeMs the effective time for the new entry
+     * @return the constructed entry; never {@code null}
      */
-    public void deleteEntry(final long effectiveTimeMs, final Runnable onSuccess) {
-        if (objectId == null) {
-            return;
-        }
-
-        final TemporalEntryId id = new TemporalEntryId(
-                mapName,
-                objectId,
-                effectiveTimeMs
-        );
-
-        restFactory.create(SQL_TEMPORAL_STORE_RESOURCE)
-                .method(res -> res.delete(id))
-                .onSuccess(result -> {
-                    if (result) {
-                        onSuccess.run();
-                    }
-                })
-                .exec();
+    private TemporalEntry buildEntry(final long effectiveTimeMs) {
+        return new TemporalEntry(requireMapName(), objectId, effectiveTimeMs, buildJson().toString());
     }
 
     private void resetInputs(final TemporalEntry selected) {
@@ -511,34 +220,30 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
                 if (selected.getValue() != null && selected.getValue().trim().startsWith("{")) {
                     final JSONObject json = JSONUtil.getObject(JSONUtil.parse(selected.getValue()));
                     if (json != null) {
-                        name = JSONUtil.getString(json.get(JSON_KEY_NAME));
-                        type = JSONUtil.getString(json.get(JSON_KEY_TYPE));
-                        img = JSONUtil.getString(json.get(JSON_KEY_IMG));
+                        name = JSONUtil.getString(json.get(NAME));
+                        type = JSONUtil.getString(json.get(TYPE));
+                        img = JSONUtil.getString(json.get(IMG));
 
-                        final JSONArray coordsArr = JSONUtil.getArray(json.get(JSON_KEY_COORDS));
+                        final JSONArray coordsArr = JSONUtil.getArray(json.get(COORDS));
                         if (coordsArr != null && coordsArr.size() >= 2) {
                             x = JSONUtil.getDouble(coordsArr.get(0));
                             y = JSONUtil.getDouble(coordsArr.get(1));
                         }
 
-                        final JSONArray w2mArr = JSONUtil.getArray(json.get(JSON_KEY_TM_WORLD_TO_MAP));
+                        final JSONArray w2mArr = JSONUtil.getArray(json.get(TM_WORLD_TO_MAP));
                         if (w2mArr != null && w2mArr.size() >= 6) {
                             for (int i = 0; i < 6; i++) {
                                 w2m[i] = JSONUtil.getDouble(w2mArr.get(i));
                             }
                         }
 
-                        final JSONArray m2sArr = JSONUtil.getArray(json.get(JSON_KEY_TM_MAP_TO_SCREEN));
+                        final JSONArray m2sArr = JSONUtil.getArray(json.get(TM_MAP_TO_SCREEN));
                         if (m2sArr != null && m2sArr.size() >= 6) {
                             for (int i = 0; i < 6; i++) {
                                 m2s[i] = JSONUtil.getDouble(m2sArr.get(i));
                             }
                         }
                     }
-                } else if (selected.getValue() != null) {
-                    final String[] coords = selected.getValue().split(",");
-                    x = Double.parseDouble(coords[1].trim());
-                    y = Double.parseDouble(coords[2].trim());
                 }
             } catch (final Exception ex) {
                 // Ignore
@@ -574,10 +279,6 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
     // --------------------------------------------------------------------------------
 
     public interface FloorMapObjectEditView extends View {
-        void setToolbar(Widget toolbarWidget);
-
-        void setGridView(Widget gridWidget);
-
         long getEffectiveTime();
 
         void setEffectiveTime(long timeMS);
@@ -607,10 +308,6 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
         double[] getMapToScreenMatrix();
 
         void setMapToScreenMatrix(double[] matrix);
-
-        HandlerRegistration addSaveHandler(ClickHandler handler);
-
-        HandlerRegistration addCancelHandler(ClickHandler handler);
 
         void setEnabled(final boolean enabled);
     }

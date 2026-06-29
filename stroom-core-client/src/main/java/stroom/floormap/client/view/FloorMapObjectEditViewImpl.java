@@ -17,14 +17,10 @@
 package stroom.floormap.client.view;
 
 import stroom.floormap.client.presenter.FloorMapObjectEditPresenter.FloorMapObjectEditView;
-import stroom.svg.shared.SvgImage;
-import stroom.widget.button.client.Button;
 import stroom.widget.datepicker.client.DateTimeBox;
 import stroom.widget.datepicker.client.DateTimePopup;
 import stroom.widget.form.client.FormGroup;
 
-import com.google.gwt.event.dom.client.ClickHandler;
-import com.google.gwt.event.shared.HandlerRegistration;
 import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
 import com.google.gwt.user.client.ui.SimplePanel;
@@ -38,10 +34,6 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
 
     private final Widget widget;
 
-    @UiField
-    SimplePanel toolbarContainer;
-    @UiField
-    SimplePanel gridContainer;
     @UiField
     DateTimeBox effectiveTimeBox;
     @UiField
@@ -86,20 +78,15 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
     @UiField
     TextBox m2sRot;
 
-    @UiField
-    Button saveBtn;
-    @UiField
-    Button cancelBtn;
-
     @Inject
     public FloorMapObjectEditViewImpl(final Binder binder,
                                       final Provider<DateTimePopup> dateTimePopupProvider) {
         widget = binder.createAndBindUi(this);
         effectiveTimeBox.setPopupProvider(dateTimePopupProvider);
-        saveBtn.setIcon(SvgImage.OK);
-        cancelBtn.setIcon(SvgImage.CANCEL);
 
+        //noinspection unused e
         typeBox.addKeyUpHandler(e -> updateMatrixVisibility(typeBox.getText()));
+        //noinspection unused e
         typeBox.addValueChangeHandler(e -> updateMatrixVisibility(typeBox.getText()));
     }
 
@@ -108,15 +95,7 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
         return widget;
     }
 
-    @Override
-    public void setToolbar(final Widget toolbarWidget) {
-        toolbarContainer.setWidget(toolbarWidget);
-    }
 
-    @Override
-    public void setGridView(final Widget gridWidget) {
-        gridContainer.setWidget(gridWidget);
-    }
 
     @Override
     public long getEffectiveTime() {
@@ -202,10 +181,11 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
         populateMatrixFields(m, m2sTx, m2sTy, m2sSx, m2sSy, m2sRot);
     }
 
-    private double[] parseMatrixFields(
-            final TextBox tx, final TextBox ty,
-            final TextBox sx, final TextBox sy,
-            final TextBox rot) {
+    private double[] parseMatrixFields(final TextBox tx,
+                                       final TextBox ty,
+                                       final TextBox sx,
+                                       final TextBox sy,
+                                       final TextBox rot) {
         final double tX = parseDouble(tx.getText(), 0.0);
         final double tY = parseDouble(ty.getText(), 0.0);
         final double sX = parseDouble(sx.getText(), 1.0);
@@ -231,11 +211,12 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
         }
     }
 
-    private void populateMatrixFields(
-            final double[] m,
-            final TextBox tx, final TextBox ty,
-            final TextBox sx, final TextBox sy,
-            final TextBox rot) {
+    private void populateMatrixFields(final double[] m,
+                                      final TextBox tx,
+                                      final TextBox ty,
+                                      final TextBox sx,
+                                      final TextBox sy,
+                                      final TextBox rot) {
         if (m != null && m.length >= 6) {
             final double a = m[0];
             final double b = m[1];
@@ -244,10 +225,13 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
             final double e = m[4];
             final double f = m[5];
 
+            @SuppressWarnings("UnnecessaryLocalVariable")
             final double tX = e;
+            @SuppressWarnings("UnnecessaryLocalVariable")
             final double tY = f;
             final double sX = Math.sqrt(a * a + b * b);
             final double sY = Math.sqrt(c * c + d * d);
+            
             double rotationDeg = Math.toDegrees(Math.atan2(b, a));
             rotationDeg = Math.round(rotationDeg * 100.0) / 100.0;
 
@@ -263,16 +247,6 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
             sy.setText("1.0");
             rot.setText("0.0");
         }
-    }
-
-    @Override
-    public HandlerRegistration addSaveHandler(final ClickHandler handler) {
-        return saveBtn.addClickHandler(handler);
-    }
-
-    @Override
-    public HandlerRegistration addCancelHandler(final ClickHandler handler) {
-        return cancelBtn.addClickHandler(handler);
     }
 
     @Override
@@ -292,8 +266,6 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
         m2sSx.setEnabled(enabled);
         m2sSy.setEnabled(enabled);
         m2sRot.setEnabled(enabled);
-        saveBtn.setEnabled(enabled);
-        cancelBtn.setEnabled(enabled);
     }
 
     private void updateMatrixVisibility(final String type) {

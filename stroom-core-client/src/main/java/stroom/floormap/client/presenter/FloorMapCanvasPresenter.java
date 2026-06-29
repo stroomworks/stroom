@@ -73,6 +73,8 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     // -------------------------------------------------------------------------
     private boolean isDraggingEnabled = false;
     private boolean isDragging = false;
+    /** True only if the mouse actually moved while dragging an object (distinguishes click-to-select from drag). */
+    private boolean hasMoved = false;
     private double lastMouseX;
     private double lastMouseY;
 
@@ -216,6 +218,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                             // Fire an event to tell the parent presenter to show the edit menu
                             MapObjectSelectedEvent.fire(this, selectedObjectId);
                             isDragging = true;
+                            hasMoved = false;
                             lastMouseX = event.getX();
                             lastMouseY = event.getY();
 
@@ -255,6 +258,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                         } else {
                             matrix = new FloorMapTransformationMatrix(1, 0, 0, 1, deltaUnzoomedX, deltaUnzoomedY);
                         }
+                        hasMoved = true;
                         if (dragHandler != null) {
                             dragHandler.onDrag("background", matrix.getE(), matrix.getF(), matrix);
                         }
@@ -277,6 +281,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
                                 obj.setX(obj.getX() + deltaMapX);
                                 obj.setY(obj.getY() + deltaMapY);
+                                hasMoved = true;
                                 if (dragHandler != null) {
                                     dragHandler.onDrag(selectedObjectId, obj.getX(), obj.getY(), matrix);
                                 }
@@ -298,8 +303,10 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
             }
         }));
 
+        //noinspection unused event
         registerHandler(getView().getMouseUpHandlers().addMouseUpHandler(event -> {
-            if (isDragging && editMode && selectedObjectId != null) {
+            // Only fire a move event when the object was actually dragged, not just clicked.
+            if (isDragging && hasMoved && editMode && selectedObjectId != null) {
                 if ("background".equals(selectedObjectId)) {
                     MapObjectMovedEvent.fire(this, "background", matrix.getE(), matrix.getF());
                 } else {
@@ -314,6 +321,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
             }
 
             isDragging = false;
+            hasMoved = false;
         }));
 
         // Mouse Wheel (Zoom toward cursor)

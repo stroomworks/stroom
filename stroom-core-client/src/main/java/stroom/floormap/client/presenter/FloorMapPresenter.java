@@ -46,6 +46,7 @@ import javax.inject.Provider;
 public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMapDoc> {
 
     private static final TabData MAP = new TabDataImpl("Map");
+    private static final TabData EDITOR = new TabDataImpl("Editor");
     private static final TabData EVENTS_QUERY = new TabDataImpl("Events Query");
     private static final TabData FACTS_QUERY = new TabDataImpl("Facts Query");
     private static final TabData SETTINGS = new TabDataImpl("Settings");
@@ -57,6 +58,7 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
     private final InlineSvgToggleButton editModeButton;
     private final ButtonView addObjectButton;
     private FloorMapMapPresenter floorMapMapPresenter;
+    private FloorMapEditorPresenter floorMapEditorPresenter;
     private FloorMapSettingsPresenter floorMapSettingsPresenter;
     private FloorMapQueryPresenter eventsQueryPresenter;
     private FloorMapQueryPresenter factsQueryPresenter;
@@ -65,6 +67,7 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
     public FloorMapPresenter(final EventBus eventBus,
                              final LinkTabPanelView view,
                              final Provider<FloorMapMapPresenter> floorMapMapPresenterProvider,
+                             final Provider<FloorMapEditorPresenter> floorMapEditorPresenterProvider,
                              final Provider<FloorMapSettingsPresenter> floorMapSettingsPresenterProvider,
                              final Provider<MarkdownEditPresenter> markdownEditPresenterProvider,
                              final Provider<FloorMapQueryPresenter> floorMapQueryPresenterProvider,
@@ -84,6 +87,7 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
         addObjectButton.setVisible(false);
         toolbar.addButton(addObjectButton);
 
+        //noinspection unused
         registerHandler(editModeButton.addClickHandler(e -> {
             if (floorMapMapPresenter != null) {
                 floorMapMapPresenter.toggleEditMode(editModeButton.getState());
@@ -91,6 +95,7 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
             addObjectButton.setVisible(editModeButton.getState());
         }));
 
+        //noinspection unused
         registerHandler(addObjectButton.addClickHandler(e -> {
             if (floorMapMapPresenter != null) {
                 floorMapMapPresenter.promptAndAddObject();
@@ -100,6 +105,11 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
         addTab(MAP, new DocTabProvider<>(() -> {
             floorMapMapPresenter = floorMapMapPresenterProvider.get();
             return floorMapMapPresenter;
+        }));
+
+        addTab(EDITOR, new DocTabProvider<>(() -> {
+            floorMapEditorPresenter = floorMapEditorPresenterProvider.get();
+            return floorMapEditorPresenter;
         }));
 
         addTab(EVENTS_QUERY, new AbstractTabProvider<FloorMapDoc, FloorMapQueryPresenter>(eventBus) {
@@ -218,9 +228,12 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
         if (content == factsQueryPresenter) {
             final String currentQuery = factsQueryPresenter.getQuery();
             if (currentQuery == null || currentQuery.trim().isEmpty()) {
-                final DocRef storeRef = floorMapSettingsPresenter != null
-                        ? floorMapSettingsPresenter.getTemporalStoreRef()
-                        : getEntity().getTemporalStoreRef();
+                final DocRef storeRef;
+                if (floorMapSettingsPresenter != null) {
+                    storeRef = floorMapSettingsPresenter.getTemporalStoreRef();
+                } else {
+                    storeRef = getEntity().getTemporalStoreRef();
+                }
 
                 if (storeRef != null && storeRef.getName() != null && !storeRef.getName().isEmpty()) {
                     final String template = "from \"" + storeRef.getName() + "\"\n"
@@ -262,17 +275,39 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
     protected boolean hasAssociatedDirty() {
         return super.hasAssociatedDirty() ||
                 (floorMapMapPresenter != null && floorMapMapPresenter.hasAssociatedDirty()) ||
+                (floorMapEditorPresenter != null && floorMapEditorPresenter.hasPendingChanges()) ||
                 (documentAssetPresenter != null && documentAssetPresenter.isDirty());
     }
 
     /**
-     * Provide a callback to be inserted into the save chain after the save is complete.
-     * @return The consumer for the callback. The second parameter will be the
-     * consumer to call after this method has completed.
+     * Returns the post-save callback for the Editor tab's staged-change flush
+     * followed by the document asset save.
+     *
+     * <p>The returned {@link java.util.function.BiConsumer} first flushes any
+     * pending Editor-tab changes via
+     * {@link FloorMapEditorPresenter#onSave(FloorMapDoc, Consumer)}, then on
+     * success delegates to {@link stroom.document.asset.client.presenter.DocumentAssetPresenter#onSave}
+     * to persist any associated binary assets.</p>
+     *
+     * @return a BiConsumer that is inserted into the Stroom document save chain
      */
     @Override
     public BiConsumer<FloorMapDoc, Consumer<FloorMapDoc>> getPostSaveCallback() {
-        return this::saveAssets;
+        return this::flushEditorThenSaveAssets;
+    }
+
+    /**
+     * Chains the Editor pending-changes flush and the asset save.
+     * If the editor has pending changes they are flushed first; only on
+     * success does the asset save proceed.
+     */
+    private void flushEditorThenSaveAssets(final FloorMapDoc document,
+                                            final Consumer<FloorMapDoc> callback) {
+        if (floorMapEditorPresenter != null && floorMapEditorPresenter.hasPendingChanges()) {
+            floorMapEditorPresenter.onSave(document, doc -> documentAssetPresenter.onSave(doc, callback));
+        } else {
+            documentAssetPresenter.onSave(document, callback);
+        }
     }
 
     /**
@@ -287,11 +322,13 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
     }
 
     /**
-     * Called by DocumentPlugin to save the assets associated with the document.
-     * Specified in getPostSaveCallback().
+     * Saves the assets associated with the document.
+     * Called indirectly via {@link #flushEditorThenSaveAssets}, which is the method
+     * referenced by {@link #getPostSaveCallback()}.
      * @param document The document that was written by all the data in all the tabs.
      * @param callback Thing to call when the assets have been saved.
      */
+    @SuppressWarnings("unused")
     public void saveAssets(final FloorMapDoc document, final Consumer<FloorMapDoc> callback) {
         documentAssetPresenter.onSave(document, callback);
     }

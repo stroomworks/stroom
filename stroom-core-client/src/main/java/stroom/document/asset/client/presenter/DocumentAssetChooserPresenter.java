@@ -115,13 +115,16 @@ public class DocumentAssetChooserPresenter
         private static final int WIDTH = 16;
         private static final stroom.document.asset.client.presenter.assets.DocumentAssetImageResource CLOSED =
                 new stroom.document.asset.client.presenter.assets.DocumentAssetImageResource(
-                        HEIGHT, WIDTH, "/ui/background-images/arrow-right.png");
+                        HEIGHT,
+                        WIDTH,
+                        "/ui/background-images/arrow-right.png");
         private static final stroom.document.asset.client.presenter.assets.DocumentAssetImageResource OPEN =
                 new stroom.document.asset.client.presenter.assets.DocumentAssetImageResource(
-                        HEIGHT, WIDTH, "/ui/background-images/arrow-down.png");
+                        HEIGHT,
+                        WIDTH,
+                        "/ui/background-images/arrow-down.png");
         private static final stroom.document.asset.client.presenter.assets.DocumentAssetImageResource TRANSPARENT =
-                new stroom.document.asset.client.presenter.assets.DocumentAssetImageResource(
-                        HEIGHT, WIDTH, "/ui/background-images/transparent-16x16.png");
+                new stroom.document.asset.client.presenter.assets.DocumentAssetImageResource(HEIGHT, WIDTH, "/ui/background-images/transparent-16x16.png");
 
         @Override
         public com.google.gwt.resources.client.ImageResource treeClosed() {

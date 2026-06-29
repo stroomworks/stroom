@@ -45,7 +45,12 @@ import stroom.query.language.functions.ValString;
 import stroom.security.api.SecurityContext;
 import stroom.security.shared.DocumentPermission;
 import stroom.sqlstore.api.UpdatableTemporalStore;
+import stroom.sqlstore.shared.ApplyChangesRequest;
+import stroom.sqlstore.shared.ApplyChangesResult;
+import stroom.sqlstore.shared.ChangeOperation;
+import stroom.sqlstore.shared.FetchAtTimeRequest;
 import stroom.sqlstore.shared.SqlTemporalStoreDoc;
+import stroom.sqlstore.shared.TemporalStoreTimeRange;
 import stroom.task.api.TaskContextFactory;
 import stroom.util.logging.LambdaLogger;
 import stroom.util.logging.LambdaLoggerFactory;
@@ -58,6 +63,7 @@ import jakarta.inject.Inject;
 import jakarta.inject.Provider;
 import jakarta.inject.Singleton;
 
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -161,6 +167,166 @@ public class UpdatableSqlTemporalStore implements UpdatableTemporalStore {
                     return null;
                 })
                 .getResultAndLog();
+    }
+
+    /**
+     * Returns the latest-at-time version of every key in the specified map.
+     *
+     * <p>Delegates temporal deduplication to the existing
+     * {@link UpdatableTemporalStoreDao#find} implementation: by supplying an
+     * {@code EffectiveTime <= timeTo} term the DAO activates its "QueryTime Path"
+     * which uses a correlated subquery to select only the most-recent version of
+     * each key at or before {@code timeTo}, without fetching all historical
+     * versions.</p>
+     *
+     * <p>Requires {@code VIEW} permission on the map.</p>
+     *
+     * @param request specifies the map name and required upper time bound
+     * @return deduplicated list of entries, one per key, sorted by key ascending
+     */
+    @Override
+    public List<TemporalEntry> fetchAtTime(final FetchAtTimeRequest request) {
+        if (request == null || request.getMapName() == null || request.getMapName().isBlank()) {
+            throw new IllegalArgumentException("mapName must be specified in the request.");
+        }
+        checkPermission(request.getMapName(), DocumentPermission.VIEW);
+
+        // Build criteria that trigger the DAO's temporal-deduplication subquery path.
+        // The Map = mapName term scopes the query to the correct store.
+        // The EffectiveTime <= timeTo term is detected by getQueryTime() in the DAO,
+        // which switches from a plain SELECT to the correlated MAX(effective_time) subquery,
+        // returning one row per key rather than all historical versions.
+        final ExpressionOperator expression = ExpressionOperator.builder()
+                .addTerm(ExpressionTerm.builder()
+                        .field(UpdatableTemporalStore.MAP_FIELD.getFldName())
+                        .condition(ExpressionTerm.Condition.EQUALS)
+                        .value(request.getMapName())
+                        .build())
+                .addTerm(ExpressionTerm.builder()
+                        .field(UpdatableTemporalStore.TIME_FIELD.getFldName())
+                        .condition(ExpressionTerm.Condition.LESS_THAN_OR_EQUAL_TO)
+                        .value(String.valueOf(request.getTimeTo()))
+                        .build())
+                .build();
+
+        // No page limit — we want all keys for the map.
+        final ExpressionCriteria criteria = new ExpressionCriteria(expression);
+        final ResultPage<TemporalEntry> page = dao.find(criteria);
+
+        // Apply permission filtering (consistent with find()).
+        // Sort by key for a predictable, user-friendly order.
+        return page.getValues().stream()
+                .filter(e -> hasPermission(e.getMap(), DocumentPermission.VIEW))
+                .sorted(Comparator.comparing(TemporalEntry::getKey,
+                        Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER)))
+                .toList();
+    }
+
+    /**
+     * Returns the absolute latest version of every key in the specified map,
+     * with no upper-time constraint.
+     *
+     * <p>The server uses {@code currentTimeMillis() + ONE_DAY_MS} as an
+     * internal upper bound so that entries with effective times a short way
+     * in the future are not silently missed. The client does not need to
+     * supply a time value.</p>
+     *
+     * <p>Delegates deduplication to
+     * {@link UpdatableTemporalStoreDao#fetchAll(String)}, which fetches all
+     * historical versions and keeps only the latest per key in-process.</p>
+     *
+     * <p>Requires {@code VIEW} permission on the map.</p>
+     *
+     * @param mapName name of the map to query; must not be {@code null} or blank
+     * @return deduplicated list — one entry per key — sorted by key ascending
+     */
+    @Override
+    public List<TemporalEntry> fetchAll(final String mapName) {
+        if (mapName == null || mapName.isBlank()) {
+            throw new IllegalArgumentException("mapName must be specified.");
+        }
+        checkPermission(mapName, DocumentPermission.VIEW);
+        return dao.fetchAll(mapName);
+    }
+
+    /**
+     * Returns the minimum and maximum {@code effective_time} values in the
+     * store for the given map, for use in initialising the timeline slider.
+     *
+     * <p>Requires {@code VIEW} permission on the map.</p>
+     *
+     * @param mapName name of the map to query; must not be {@code null} or blank
+     * @return the time range; both fields {@code null} if the store is empty
+     */
+    @Override
+    public TemporalStoreTimeRange getTimeRange(final String mapName) {
+        if (mapName == null || mapName.isBlank()) {
+            throw new IllegalArgumentException("mapName must be specified.");
+        }
+        checkPermission(mapName, DocumentPermission.VIEW);
+        return dao.getTimeRange(mapName);
+    }
+
+    /**
+     * Applies a list of staged changes atomically.
+     *
+     * <p>Validates the request, asserts that all operations target the same map
+     * (cross-map batches are rejected outright), checks {@code EDIT} permission
+     * on that map, then delegates to {@link UpdatableTemporalStoreDao#applyChanges}
+     * which wraps all operations in a single JOOQ transaction.</p>
+     *
+     * <p>Any exception thrown by the DAO is caught and converted into an
+     * {@link ApplyChangesResult} with {@code success = false} so that the REST
+     * layer always receives a well-formed response rather than an HTTP 500.</p>
+     *
+     * @param request the ordered list of operations; must not be {@code null}
+     * @return result indicating success or failure; never {@code null}
+     */
+    @Override
+    public ApplyChangesResult applyChanges(final ApplyChangesRequest request) {
+        if (request == null || request.getOperations() == null) {
+            return new ApplyChangesResult(false, "Request must not be null.");
+        }
+
+        // Extract the map name from every operation and verify they all agree.
+        // A batch that spans multiple maps is rejected before any DB work is done.
+        String mapName = null;
+        for (int i = 0; i < request.getOperations().size(); i++) {
+            final ChangeOperation op = request.getOperations().get(i);
+            if (op == null) {
+                continue;
+            }
+            final String opMap = op.getType() == ChangeOperation.Type.UPSERT && op.getEntry() != null
+                    ? op.getEntry().getMap()
+                    : op.getId() != null
+                    ? op.getId().getMap()
+                    : null;
+            if (opMap == null || opMap.isBlank()) {
+                return new ApplyChangesResult(false,
+                        "Operation at index " + i + " has a null or blank map name.");
+            }
+            if (mapName == null) {
+                mapName = opMap;
+            } else if (!mapName.equals(opMap)) {
+                return new ApplyChangesResult(false,
+                        "All operations in a batch must target the same map. "
+                        + "Expected '" + mapName + "' but operation at index " + i
+                        + " targets '" + opMap + "'.");
+            }
+        }
+
+        if (mapName == null) {
+            return new ApplyChangesResult(false,
+                    "Could not determine map name: the operations list is empty or contains only nulls.");
+        }
+        try {
+            checkPermission(mapName, DocumentPermission.EDIT);
+            dao.applyChanges(request.getOperations());
+            return new ApplyChangesResult(true, null);
+        } catch (final Exception e) {
+            LOGGER.error("applyChanges failed for map '{}': {}", mapName, e.getMessage(), e);
+            return new ApplyChangesResult(false, e.getMessage());
+        }
     }
 
     private void checkPermission(final String mapName, final DocumentPermission permission) {
@@ -279,6 +445,7 @@ public class UpdatableSqlTemporalStore implements UpdatableTemporalStore {
 
         final ExpressionCriteria criteria = new ExpressionCriteria(builder.build());
 
+        //noinspection unused taskContext
         final Runnable runnable = taskContextFactory.context(searchName, taskContext -> {
             try {
                 dao.search(criteria, entry -> {

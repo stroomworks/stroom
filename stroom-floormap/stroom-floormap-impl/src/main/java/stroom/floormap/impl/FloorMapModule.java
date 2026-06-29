@@ -16,23 +16,16 @@
 
 package stroom.floormap.impl;
 
-import stroom.analytics.impl.ExecuteNow;
-import stroom.analytics.impl.ExecuteNowProviderBinder;
-import stroom.analytics.impl.ScheduledExecutorService;
-import stroom.analytics.shared.ExecutionSchedule;
 import stroom.docstore.api.ContentIndexable;
 import stroom.docstore.api.DocumentActionHandlerBinder;
 import stroom.event.logging.api.ObjectInfoProviderBinder;
 import stroom.explorer.api.ExplorerActionHandler;
 import stroom.floormap.shared.FloorMapDoc;
 import stroom.importexport.api.ImportExportActionHandler;
-import stroom.job.api.ScheduledJobsBinder;
-import stroom.util.RunnableWrapper;
 import stroom.util.guice.GuiceUtil;
 import stroom.util.guice.RestResourcesBinder;
 
 import com.google.inject.AbstractModule;
-import jakarta.inject.Inject;
 
 public class FloorMapModule extends AbstractModule {
 

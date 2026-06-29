@@ -4,7 +4,7 @@
              xmlns:form="urn:import:stroom.widget.form.client">
     <g:FlowPanel styleName="max dock-container-vertical form-padding form">
         <!-- SQL Temporal Store Reference Selection -->
-        <form:FormGroup label="Temporal Store">
+        <form:FormGroup label="Facts Store">
             <g:SimplePanel ui:field="temporalStoreRefContainer" />
         </form:FormGroup>
     </g:FlowPanel>
