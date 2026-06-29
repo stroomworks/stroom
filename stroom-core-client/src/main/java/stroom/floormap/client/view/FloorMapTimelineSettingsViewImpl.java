@@ -103,6 +103,7 @@ public class FloorMapTimelineSettingsViewImpl extends ViewImpl implements FloorM
 
     @Override
     public void setShowAllHandler(final Runnable handler) {
+        //noinspection unused e
         showAllButton.addClickHandler(e -> handler.run());
     }
 

@@ -401,6 +401,7 @@ class QueryServiceImpl implements QueryService, QueryFieldProvider {
                         final Predicate<Item> columnValueSelectionPredicate = ColumnValueSelectionPredicateFactory
                                 .create(columnIdList, request.getSelections(), primaryColumnIndex);
 
+                        //noinspection unused row, count
                         dataStore.fetch(
                                 dataStore.getColumns(),
                                 OffsetRange.UNBOUNDED,
@@ -466,6 +467,7 @@ class QueryServiceImpl implements QueryService, QueryFieldProvider {
                                     rule.getExpression(),
                                     queryFieldIndex,
                                     dateTimeSettings);
+                    //noinspection unused t
                     final Predicate<Values> conditionalFormattingPredicate =
                             optionalValuesPredicate.orElse(t -> true);
                     ruleAndMatchers.add(new RuleAndMatcher(rule, conditionalFormattingPredicate));

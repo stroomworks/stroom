@@ -118,11 +118,13 @@ public class FloorMapTimelineViewImpl extends ViewImpl implements FloorMapTimeli
         outerBar.addDomHandler(this::onBarMouseUp, MouseUpEvent.getType());
 
         // Step button handlers.
+        //noinspection unused e
         stepBackButton.addDomHandler(e -> {
             if (stepBackHandler != null) {
                 stepBackHandler.run();
             }
         }, ClickEvent.getType());
+        //noinspection unused e
         stepForwardButton.addDomHandler(e -> {
             if (stepForwardHandler != null) {
                 stepForwardHandler.run();
@@ -155,14 +157,16 @@ public class FloorMapTimelineViewImpl extends ViewImpl implements FloorMapTimeli
 
             // Histogram hover — show per-bin event count.
             histogramCanvas.addDomHandler(this::onHistogramMouseMove, MouseMoveEvent.getType());
+            //noinspection unused e
             histogramCanvas.addDomHandler(e -> hideHistogramTooltip(), MouseOutEvent.getType());
 
             // Histogram click-to-seek — clicking jumps the timeline head.
             histogramCanvas.addDomHandler(this::onHistogramClick, ClickEvent.getType());
         }
 
-        // Redraw the histogram if the widget gains size after the initial data arrived (e.g. panel
-        // was collapsed during load). This is a reliable fallback for the deferred-draw below.
+        // Redraw the histogram if the widget gains size after the initial data arrived (e.g. panel was collapsed
+        // during load). This is a reliable fallback for the deferred-draw below.
+        //noinspection unused e
         histogramContainer.addDomHandler(e -> {
             if (histogramBins != null) {
                 drawHistogram();
@@ -236,6 +240,7 @@ public class FloorMapTimelineViewImpl extends ViewImpl implements FloorMapTimeli
 
     @Override
     public void setPlayPauseHandler(final Runnable handler) {
+        //noinspection unused e
         playPauseButton.addClickHandler(e -> handler.run());
     }
 
@@ -277,6 +282,7 @@ public class FloorMapTimelineViewImpl extends ViewImpl implements FloorMapTimeli
 
     @Override
     public void setSettingsHandler(final Runnable handler) {
+        //noinspection unused e
         settingsButton.addClickHandler(e -> handler.run());
     }
 

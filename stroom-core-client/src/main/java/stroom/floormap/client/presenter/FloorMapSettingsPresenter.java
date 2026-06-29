@@ -54,13 +54,15 @@ public class FloorMapSettingsPresenter
     @Override
     protected void onBind() {
         super.onBind();
-
+        //noinspection unused e
         registerHandler(temporalStoreRefPresenter.addDataSelectionHandler(e -> onChange()));
     }
 
     @Override
     protected void onRead(final DocRef docRef, final FloorMapDoc floorMapDoc, final boolean readOnly) {
+
         temporalStoreRefPresenter.setSelectedEntityReference(floorMapDoc.getTemporalStoreRef(), true);
+        temporalStoreRefPresenter.setEnabled(!readOnly);
     }
 
     @Override
@@ -82,5 +84,6 @@ public class FloorMapSettingsPresenter
     public interface FloorMapSettingsView extends View, HasUiHandlers<DirtyUiHandlers>, ReadOnlyChangeHandler {
 
         void setTemporalStoreRefView(View view);
+
     }
 }

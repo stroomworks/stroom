@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2016-2026 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -54,12 +54,11 @@ public class FloorMapSettingsViewImpl
 
     @Override
     public void onReadOnly(final boolean readOnly) {
-        // Nothing to toggle for read-only state in this view.
+        // No code
     }
 
 
     // --------------------------------------------------------------------------------
-
 
     public interface Binder extends UiBinder<Widget, FloorMapSettingsViewImpl> {
 
