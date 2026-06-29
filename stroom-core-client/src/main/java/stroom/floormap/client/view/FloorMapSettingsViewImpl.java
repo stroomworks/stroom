@@ -57,6 +57,7 @@ public class FloorMapSettingsViewImpl
         // No code
     }
 
+
     // --------------------------------------------------------------------------------
 
     public interface Binder extends UiBinder<Widget, FloorMapSettingsViewImpl> {

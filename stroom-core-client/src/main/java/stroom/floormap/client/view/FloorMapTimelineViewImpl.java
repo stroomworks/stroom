@@ -26,8 +26,10 @@ import com.google.gwt.core.client.Scheduler;
 import com.google.gwt.dom.client.Element;
 import com.google.gwt.dom.client.NativeEvent;
 import com.google.gwt.dom.client.Style.Unit;
+import com.google.gwt.event.dom.client.ClickEvent;
 import com.google.gwt.event.dom.client.MouseDownEvent;
 import com.google.gwt.event.dom.client.MouseMoveEvent;
+import com.google.gwt.event.dom.client.MouseOutEvent;
 import com.google.gwt.event.dom.client.MouseOverEvent;
 import com.google.gwt.event.dom.client.MouseUpEvent;
 import com.google.gwt.uibinder.client.UiBinder;
@@ -44,22 +46,42 @@ import java.util.function.Consumer;
 
 /**
  * View implementation for the floor map timeline control.
- * Includes a play button, progress bar with date labels, and a settings button.
- * A histogram canvas is located above the scrubber showing the distribution of events across the timeline range.
+ * Includes step-back, play/pause and step-forward buttons, a progress scrubber with date labels,
+ * a settings button with a speed badge, and a histogram above the scrubber.
+ * Features:
+ * <ul>
+ *   <li>Scrub tooltip — datetime pill above the handle while dragging.</li>
+ *   <li>Histogram click-to-seek — clicking the histogram jumps the timeline head.</li>
+ *   <li>Histogram hover tooltip — shows event count for the hovered bin.</li>
+ *   <li>Tick marks — subtle vertical lines at regular intervals along the scrubber bar.</li>
+ *   <li>ARIA slider attributes for accessibility.</li>
+ * </ul>
  */
 public class FloorMapTimelineViewImpl extends ViewImpl implements FloorMapTimelineView {
 
     private static final int HISTOGRAM_HEIGHT = 48;
     private static final String HISTOGRAM_BAR_COLOUR = "rgba(30,136,229,0.7)";
     private static final String HISTOGRAM_PEAK_COLOUR = "rgba(30,136,229,1.0)";
+    private static final String TICK_COLOUR = "rgba(128,128,128,0.25)";
+    /** Ideal number of tick marks — the actual count is rounded to a "nice" interval. */
+    private static final int TARGET_TICK_COUNT = 10;
 
     private final Widget widget;
-    private Consumer<Double> clickHandler;
+    /** Called on every mouse-move during a drag — updates visuals only, no data queries. */
+    private Consumer<Double> scrubHandler;
+    /** Called on mouse-up (release) — commits the time and triggers data queries. */
+    private Consumer<Double> commitHandler;
+    /** Called when the step-back button is clicked. */
+    private Runnable stepBackHandler;
+    /** Called when the step-forward button is clicked. */
+    private Runnable stepForwardHandler;
     private boolean dragging;
 
     // Histogram state
     private int[] histogramBins;
     private Canvas histogramCanvas;
+    /** Label shown above the histogram while the user hovers over it. */
+    private Label histogramTooltip;
 
     @UiField
     SimplePanel histogramContainer;
@@ -70,9 +92,17 @@ public class FloorMapTimelineViewImpl extends ViewImpl implements FloorMapTimeli
     @UiField
     FlowPanel handle;
     @UiField
+    Label scrubTooltip;
+    @UiField
+    SvgButton stepBackButton;
+    @UiField
     SvgButton playPauseButton;
     @UiField
+    SvgButton stepForwardButton;
+    @UiField
     SvgButton settingsButton;
+    @UiField
+    Label speedBadge;
     @UiField
     Label startDateLabel;
     @UiField
@@ -83,15 +113,55 @@ public class FloorMapTimelineViewImpl extends ViewImpl implements FloorMapTimeli
         widget = binder.createAndBindUi(this);
 
         // Mouse handlers for dragging the timeline handle.
-        outerBar.addDomHandler(this::onMouseDown, MouseDownEvent.getType());
-        outerBar.addDomHandler(this::onMouseMove, MouseMoveEvent.getType());
-        outerBar.addDomHandler(this::onMouseUp, MouseUpEvent.getType());
+        outerBar.addDomHandler(this::onBarMouseDown, MouseDownEvent.getType());
+        outerBar.addDomHandler(this::onBarMouseMove, MouseMoveEvent.getType());
+        outerBar.addDomHandler(this::onBarMouseUp, MouseUpEvent.getType());
 
-        // Build the histogram canvas and put it inside the container.
+        // Step button handlers.
+        //noinspection unused e
+        stepBackButton.addDomHandler(e -> {
+            if (stepBackHandler != null) {
+                stepBackHandler.run();
+            }
+        }, ClickEvent.getType());
+        //noinspection unused e
+        stepForwardButton.addDomHandler(e -> {
+            if (stepForwardHandler != null) {
+                stepForwardHandler.run();
+            }
+        }, ClickEvent.getType());
+
+        // ARIA: mark the outer bar as a slider.
+        final Element barEl = outerBar.getElement();
+        barEl.setAttribute("role", "slider");
+        barEl.setAttribute("aria-valuemin", "0");
+        barEl.setAttribute("aria-valuemax", "100");
+        barEl.setAttribute("aria-valuenow", "0");
+        barEl.setAttribute("tabindex", "0");
+
+        // Build the histogram canvas and tooltip, then put them inside the container.
         if (Canvas.isSupported()) {
             histogramCanvas = Canvas.createIfSupported();
             histogramCanvas.addStyleName("stroom-floormap-timeline-histogram-canvas");
-            histogramContainer.setWidget(histogramCanvas);
+
+            // Build a tooltip label for bin hover info (hidden by default).
+            histogramTooltip = new Label();
+            histogramTooltip.addStyleName("stroom-floormap-timeline-histogram-tooltip");
+
+            // Use a relative-positioned wrapper so the canvas and tooltip overlay each other.
+            final FlowPanel canvasWrapper = new FlowPanel();
+            canvasWrapper.addStyleName("stroom-floormap-timeline-histogram-canvas-wrapper");
+            canvasWrapper.add(histogramCanvas);
+            canvasWrapper.add(histogramTooltip);
+            histogramContainer.setWidget(canvasWrapper);
+
+            // Histogram hover — show per-bin event count.
+            histogramCanvas.addDomHandler(this::onHistogramMouseMove, MouseMoveEvent.getType());
+            //noinspection unused e
+            histogramCanvas.addDomHandler(e -> hideHistogramTooltip(), MouseOutEvent.getType());
+
+            // Histogram click-to-seek — clicking jumps the timeline head.
+            histogramCanvas.addDomHandler(this::onHistogramClick, ClickEvent.getType());
         }
 
         // Redraw the histogram if the widget gains size after the initial data arrived (e.g. panel was collapsed
@@ -117,11 +187,27 @@ public class FloorMapTimelineViewImpl extends ViewImpl implements FloorMapTimeli
     public void setProgressPct(final double pct) {
         innerBar.getElement().getStyle().setWidth(pct, Unit.PCT);
         handle.getElement().getStyle().setLeft(pct, Unit.PCT);
+        scrubTooltip.getElement().getStyle().setLeft(pct, Unit.PCT);
+
+        // Keep ARIA in sync so screen-readers announce the current position.
+        outerBar.getElement().setAttribute("aria-valuenow", String.valueOf((int) Math.round(pct)));
     }
 
     @Override
-    public void setClickHandler(final Consumer<Double> clickHandler) {
-        this.clickHandler = clickHandler;
+    public void setScrubTooltip(final String text) {
+        scrubTooltip.setText(text);
+        // Also push to ARIA so screen-readers announce the formatted datetime.
+        outerBar.getElement().setAttribute("aria-valuetext", text);
+    }
+
+    @Override
+    public void setScrubHandler(final Consumer<Double> scrubHandler) {
+        this.scrubHandler = scrubHandler;
+    }
+
+    @Override
+    public void setCommitHandler(final Consumer<Double> commitHandler) {
+        this.commitHandler = commitHandler;
     }
 
     // -----------------------------------------------------------------------
@@ -131,11 +217,15 @@ public class FloorMapTimelineViewImpl extends ViewImpl implements FloorMapTimeli
     @Override
     public void setStartDateLabel(final String text) {
         startDateLabel.setText(text);
+        outerBar.getElement().setAttribute("aria-label",
+                "Timeline from " + text + " to " + endDateLabel.getText());
     }
 
     @Override
     public void setEndDateLabel(final String text) {
         endDateLabel.setText(text);
+        outerBar.getElement().setAttribute("aria-label",
+                "Timeline from " + startDateLabel.getText() + " to " + text);
     }
 
     // -----------------------------------------------------------------------
@@ -152,6 +242,32 @@ public class FloorMapTimelineViewImpl extends ViewImpl implements FloorMapTimeli
     public void setPlayPauseHandler(final Runnable handler) {
         //noinspection unused e
         playPauseButton.addClickHandler(e -> handler.run());
+    }
+
+    // -----------------------------------------------------------------------
+    // Step buttons
+    // -----------------------------------------------------------------------
+
+    @Override
+    public void setStepBackPreset(final Preset preset) {
+        stepBackButton.setSvg(preset.getSvgImage());
+        stepBackButton.setTitle(preset.getTitle());
+    }
+
+    @Override
+    public void setStepForwardPreset(final Preset preset) {
+        stepForwardButton.setSvg(preset.getSvgImage());
+        stepForwardButton.setTitle(preset.getTitle());
+    }
+
+    @Override
+    public void setStepBackHandler(final Runnable handler) {
+        this.stepBackHandler = handler;
+    }
+
+    @Override
+    public void setStepForwardHandler(final Runnable handler) {
+        this.stepForwardHandler = handler;
     }
 
     // -----------------------------------------------------------------------
@@ -176,6 +292,15 @@ public class FloorMapTimelineViewImpl extends ViewImpl implements FloorMapTimeli
     }
 
     // -----------------------------------------------------------------------
+    // Speed badge
+    // -----------------------------------------------------------------------
+
+    @Override
+    public void setSpeedBadge(final String text) {
+        speedBadge.setText(text);
+    }
+
+    // -----------------------------------------------------------------------
     // Histogram
     // -----------------------------------------------------------------------
 
@@ -188,7 +313,7 @@ public class FloorMapTimelineViewImpl extends ViewImpl implements FloorMapTimeli
     }
 
     /**
-     * Draws the histogram bars onto the canvas element. Called whenever new data arrives.
+     * Draws the histogram bars and tick marks onto the canvas. Called whenever new data arrives.
      */
     private void drawHistogram() {
         if (histogramCanvas == null || histogramBins == null || histogramBins.length == 0) {
@@ -216,9 +341,19 @@ public class FloorMapTimelineViewImpl extends ViewImpl implements FloorMapTimeli
             }
         }
         if (max == 0) {
+            // A query has run but returned no events for this time range.
+            // Draw a centred placeholder so the user knows what the space is for.
+            ctx.save();
+            ctx.setFont("italic 11px sans-serif");
+            ctx.setTextAlign(Context2d.TextAlign.CENTER);
+            ctx.setTextBaseline(Context2d.TextBaseline.MIDDLE);
+            ctx.setFillStyle("rgba(128,128,128,0.45)");
+            ctx.fillText("No events in this time range", width / 2.0, height / 2.0);
+            ctx.restore();
             return;
         }
 
+        // ---- Draw histogram bars ----
         final int n = histogramBins.length;
         final double barW = (double) width / n;
 
@@ -234,44 +369,141 @@ public class FloorMapTimelineViewImpl extends ViewImpl implements FloorMapTimeli
             ctx.setFillStyle(histogramBins[i] == max ? HISTOGRAM_PEAK_COLOUR : HISTOGRAM_BAR_COLOUR);
             ctx.fillRect(x, y, Math.max(1, barW - 1), barH);
         }
+
+        // ---- Draw tick marks at regular intervals ----
+        // Calculate a "nice" tick interval so ticks align with even bin boundaries.
+        final int tickInterval = niceTickInterval(n);
+        ctx.setFillStyle(TICK_COLOUR);
+        for (int i = tickInterval; i < n; i += tickInterval) {
+            final double x = i * barW;
+            ctx.fillRect(x, 0, 1, height);
+        }
+    }
+
+    /**
+     * Returns a tick interval (in bins) that divides {@code binCount} into approximately
+     * {@code targetCount} evenly-spaced ticks, rounded to a "nice" number (1, 2, 5, 10, 20…).
+     */
+    private static int niceTickInterval(final int binCount) {
+        final int raw = Math.max(1, binCount / FloorMapTimelineViewImpl.TARGET_TICK_COUNT);
+        // Round up to the nearest "nice" step: 1, 2, 5, 10, 20, 25, 50, 100…
+        final int[] nice = {1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500};
+        for (final int n : nice) {
+            if (n >= raw) {
+                return n;
+            }
+        }
+        return raw;
     }
 
     // -----------------------------------------------------------------------
-    // Mouse / drag handling
+    // Histogram — hover tooltip
     // -----------------------------------------------------------------------
 
-    private void onMouseDown(final MouseDownEvent event) {
+    private void onHistogramMouseMove(final MouseMoveEvent event) {
+        if (histogramBins == null || histogramBins.length == 0 || histogramTooltip == null) {
+            return;
+        }
+        final int containerWidth = histogramContainer.getOffsetWidth();
+        if (containerWidth <= 0) {
+            return;
+        }
+        final int relX = event.getX();
+        final int binIndex = (int) Math.min(
+                histogramBins.length - 1,
+                Math.max(0, (relX / (double) containerWidth) * histogramBins.length));
+        final int count = histogramBins[binIndex];
+
+        histogramTooltip.setText(count + " event" + (count == 1 ? "" : "s"));
+        // Position the tooltip horizontally centred on the cursor, within the canvas bounds.
+        final int tooltipW = histogramTooltip.getOffsetWidth();
+        final int clampedX = Math.max(0, Math.min(containerWidth - tooltipW, relX - tooltipW / 2));
+        histogramTooltip.getElement().getStyle().setLeft(clampedX, Unit.PX);
+        histogramTooltip.addStyleName("stroom-floormap-timeline-histogram-tooltip--visible");
+    }
+
+    private void hideHistogramTooltip() {
+        if (histogramTooltip != null) {
+            histogramTooltip.removeStyleName("stroom-floormap-timeline-histogram-tooltip--visible");
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Histogram — click-to-seek
+    // -----------------------------------------------------------------------
+
+    private void onHistogramClick(final ClickEvent event) {
+        final int containerWidth = histogramContainer.getOffsetWidth();
+        if (containerWidth <= 0) {
+            return;
+        }
+        final double pct = Math.max(0, Math.min(100,
+                (event.getX() / (double) containerWidth) * 100.0));
+        // Treat a histogram click the same as releasing the scrubber (commits a data query).
+        if (commitHandler != null) {
+            commitHandler.accept(pct);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Mouse / drag handling on the scrubber bar
+    // -----------------------------------------------------------------------
+
+    private void onBarMouseDown(final MouseDownEvent event) {
         if (event.getNativeButton() == NativeEvent.BUTTON_LEFT) {
             dragging = true;
-            updatePosition(event.getClientX());
+            scrubTooltip.addStyleName("stroom-floormap-timeline-scrub-tooltip--visible");
+            // Move the handle immediately on click but do not yet fire a data query.
+            notifyScrub(event.getClientX());
             DOM.setCapture(outerBar.getElement());
             event.preventDefault();
         }
     }
 
-    private void onMouseMove(final MouseMoveEvent event) {
+    private void onBarMouseMove(final MouseMoveEvent event) {
         if (dragging) {
-            updatePosition(event.getClientX());
+            // Keep updating the visual position while dragging — still no data query.
+            notifyScrub(event.getClientX());
         }
     }
 
-    private void onMouseUp(final MouseUpEvent event) {
+    private void onBarMouseUp(final MouseUpEvent event) {
         if (dragging) {
             dragging = false;
+            scrubTooltip.removeStyleName("stroom-floormap-timeline-scrub-tooltip--visible");
+            // Commit the final position: this is the single point at which we fire a data query.
+            notifyCommit(event.getClientX());
             DOM.releaseCapture(outerBar.getElement());
         }
     }
 
-    private void updatePosition(final int clientX) {
-        if (clickHandler != null) {
-            final Element element = outerBar.getElement();
-            final int absoluteLeft = element.getAbsoluteLeft();
-            final int width = element.getOffsetWidth();
-
-            final double relativeX = clientX - absoluteLeft;
-            final double pct = Math.max(0, Math.min(100, (relativeX / width) * 100));
-            clickHandler.accept(pct);
+    /**
+     * Notifies the scrub handler with the percentage position for the given client X coordinate.
+     * Updates visuals immediately but intentionally does NOT trigger a data query.
+     */
+    private void notifyScrub(final int clientX) {
+        if (scrubHandler != null) {
+            scrubHandler.accept(computeBarPct(clientX));
         }
+    }
+
+    /**
+     * Notifies the commit handler with the percentage position for the given client X coordinate.
+     * This is the signal that the user has finished scrubbing and a data query should be fired.
+     */
+    private void notifyCommit(final int clientX) {
+        if (commitHandler != null) {
+            commitHandler.accept(computeBarPct(clientX));
+        }
+    }
+
+    /** Converts a client-X pixel position to a [0, 100] percentage along the scrubber bar. */
+    private double computeBarPct(final int clientX) {
+        final Element element = outerBar.getElement();
+        final int absoluteLeft = element.getAbsoluteLeft();
+        final int width = element.getOffsetWidth();
+        final double relativeX = clientX - absoluteLeft;
+        return Math.max(0, Math.min(100, (relativeX / width) * 100));
     }
 
     public interface Binder extends UiBinder<Widget, FloorMapTimelineViewImpl> {

@@ -21,11 +21,13 @@ import stroom.item.client.SelectionBox;
 import stroom.item.client.SimpleSelectionListModel;
 import stroom.widget.datepicker.client.DateTimeBox;
 import stroom.widget.datepicker.client.DateTimePopup;
+import stroom.widget.tickbox.client.view.CustomCheckBox;
 
 import com.google.gwt.event.logical.shared.ValueChangeHandler;
 import com.google.gwt.safehtml.shared.SafeHtmlUtils;
 import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
+import com.google.gwt.user.client.ui.Button;
 import com.google.gwt.user.client.ui.Widget;
 import com.google.inject.Inject;
 import com.google.inject.Provider;
@@ -50,6 +52,10 @@ public class FloorMapTimelineSettingsViewImpl extends ViewImpl implements FloorM
     DateTimeBox endDateTimeBox;
     @UiField
     SelectionBox<Double> speedSelectionBox;
+    @UiField
+    CustomCheckBox loopCheckBox;
+    @UiField
+    Button showAllButton;
 
     @Inject
     public FloorMapTimelineSettingsViewImpl(final Binder binder,
@@ -60,8 +66,8 @@ public class FloorMapTimelineSettingsViewImpl extends ViewImpl implements FloorM
         endDateTimeBox.setPopupProvider(dateTimePopupProvider);
 
         speedSelectionBox.setModel(speedModel);
-        speedSelectionBox.setDisplayValueFunction(val -> val + "x");
-        speedSelectionBox.setRenderFunction(val -> SafeHtmlUtils.fromString(val + "x"));
+        speedModel.setDisplayValueFunction(FloorMapTimelineSettingsViewImpl::formatSpeedLabel);
+        speedModel.setRenderFunction(v -> SafeHtmlUtils.fromString(formatSpeedLabel(v)));
     }
 
     @Override
@@ -83,6 +89,27 @@ public class FloorMapTimelineSettingsViewImpl extends ViewImpl implements FloorM
     @Override
     public void setSpeedChangeHandler(final Consumer<Double> handler) {
         speedSelectionBox.addValueChangeHandler(e -> handler.accept(e.getValue()));
+    }
+
+    @Override
+    public boolean isLoopPlayback() {
+        return Boolean.TRUE.equals(loopCheckBox.getValue());
+    }
+
+    @Override
+    public void setLoopPlayback(final boolean loop) {
+        loopCheckBox.setValue(loop);
+    }
+
+    @Override
+    public void setShowAllHandler(final Runnable handler) {
+        //noinspection unused e
+        showAllButton.addClickHandler(e -> handler.run());
+    }
+
+    @Override
+    public void setShowAllEnabled(final boolean enabled) {
+        showAllButton.setEnabled(enabled);
     }
 
     @Override
@@ -113,6 +140,29 @@ public class FloorMapTimelineSettingsViewImpl extends ViewImpl implements FloorM
     @Override
     public HandlerRegistration addEndTimeChangeHandler(final ValueChangeHandler<String> handler) {
         return endDateTimeBox.addValueChangeHandler(handler);
+    }
+
+    /**
+     * Formats a speed value for display in the dropdown, e.g. {@code "×1"}, {@code "×0.5"},
+     * {@code "×1,000"}. Mirrors the badge format used by the timeline view.
+     */
+    private static String formatSpeedLabel(final Double speed) {
+        if (speed == null) {
+            return "";
+        }
+        if (speed >= 1000) {
+            final long rounded = Math.round(speed);
+            final String raw = String.valueOf(rounded);
+            final int len = raw.length();
+            if (len > 3) {
+                return "x" + raw.substring(0, len - 3) + "," + raw.substring(len - 3);
+            }
+            return "x" + raw;
+        }
+        if (speed == Math.floor(speed)) {
+            return "x" + (int) Math.round(speed);
+        }
+        return "x" + speed;
     }
 
     public interface Binder extends UiBinder<Widget, FloorMapTimelineSettingsViewImpl> {

@@ -62,15 +62,12 @@ class TestFloorMapSerialisation {
         assertThat(deserialized.getEventsQueryTimeRange()).isEqualTo(timeRange);
         assertThat(deserialized.getFactsQuery()).isEqualTo("from StoreName select facts");
         assertThat(deserialized.getFactsQueryTimeRange()).isEqualTo(timeRange);
-
-        // Assert backward compatibility fallback fields
-        assertThat(deserialized.getQuery()).isEqualTo("from StoreName select events");
-        assertThat(deserialized.getQueryTimeRange()).isEqualTo(timeRange);
     }
 
     @Test
-    void testBackwardCompatibility() {
-        // Mock JSON representing an old FloorMapDoc that lacks the new fields but has the old 'query' field
+    void testLegacyJsonIgnored() {
+        // Old FloorMapDoc JSON that contains the removed 'query' / 'queryTimeRange' fields.
+        // Jackson should silently ignore unknown fields; deserialisation must not throw.
         final String oldJson = "{"
                 + "\"uuid\":\"map-uuid-456\","
                 + "\"name\":\"MyFloorMap\","
@@ -79,17 +76,11 @@ class TestFloorMapSerialisation {
                 + "\"queryTimeRange\":{\"name\":\"LAST_24_HOURS\"}"
                 + "}";
 
-        // Deserialize old JSON
         final FloorMapDoc deserialized = JsonUtil.readValue(oldJson, FloorMapDoc.class);
         assertThat(deserialized).isNotNull();
 
-        // Assert fallback logic maps query to eventsQuery
-        assertThat(deserialized.getQuery()).isEqualTo("from StoreName select old_query");
-        assertThat(deserialized.getEventsQuery()).isEqualTo("from StoreName select old_query");
-        assertThat(deserialized.getEventsQueryTimeRange()).isNotNull();
-        assertThat(deserialized.getEventsQueryTimeRange().getName()).isEqualTo("LAST_24_HOURS");
-
-        // Assert that new fields not present in old JSON are null
+        // Legacy 'query' field is no longer migrated eventsQuery should be null.
+        assertThat(deserialized.getEventsQuery()).isNull();
         assertThat(deserialized.getTemporalStoreRef()).isNull();
         assertThat(deserialized.getFactsQuery()).isNull();
     }
