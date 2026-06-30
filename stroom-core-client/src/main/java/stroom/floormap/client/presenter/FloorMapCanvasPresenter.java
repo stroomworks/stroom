@@ -39,6 +39,21 @@ import javax.inject.Inject;
 
 public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasView> {
 
+    /**
+     * Minimum zoom scale. At extreme zoom-out the grid decade selection and
+     * SVG coordinate values lose precision. This limit (~1e-12) provides
+     * roughly 12 orders of magnitude of zoom-out from the default — far
+     * beyond any practical use.
+     */
+    private static final double MIN_SCALE = 1e-12;
+
+    /**
+     * Maximum zoom scale. At extreme zoom-in the same precision issues
+     * apply. This limit (~1e12) provides roughly 12 orders of magnitude
+     * of zoom-in from the default.
+     */
+    private static final double MAX_SCALE = 1e12;
+
     // Zoom and pan state
     private double scale = 1.0;
     private double offsetX = 0;
@@ -237,6 +252,10 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
             offsetX = mouseX - (mouseX - offsetX) * zoomFactor;
             offsetY = mouseY - (mouseY - offsetY) * zoomFactor;
             scale *= zoomFactor;
+
+            // Clamp to prevent floating-point precision breakdown at
+            // extreme zoom levels.
+            scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale));
 
             redraw();
         }));
