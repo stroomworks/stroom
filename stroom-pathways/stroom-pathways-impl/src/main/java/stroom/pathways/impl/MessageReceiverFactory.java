@@ -20,29 +20,49 @@ import stroom.data.store.api.OutputStreamProvider;
 import stroom.data.store.api.Store;
 import stroom.data.store.api.Target;
 import stroom.meta.api.MetaProperties;
+import stroom.pathways.impl.events.PathwayEvent;
+import stroom.pathways.shared.PathwaysDoc;
 import stroom.util.logging.LambdaLogger;
 import stroom.util.logging.LambdaLoggerFactory;
+import stroom.util.shared.Severity;
 
 import com.google.inject.Inject;
+
+import stroom.bytebuffer.impl6.ByteBuffers;
+import stroom.planb.impl.db.LmdbWriter;
+import stroom.planb.impl.db.trace.PathwaysDb;
+import stroom.planb.impl.db.trace.PathwaysDb.SimpleDb;
 
 import java.io.IOException;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 public class MessageReceiverFactory {
 
     private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(MessageReceiverFactory.class);
 
     private final Store streamStore;
+    private final PathwayEventsSerde pathwayEventsSerde;
+    private final ByteBuffers byteBuffers;
 
 
     @Inject
-    public MessageReceiverFactory(final Store streamStore) {
+    public MessageReceiverFactory(final Store streamStore,
+                                  final PathwayEventsSerde pathwayEventsSerde,
+                                  final ByteBuffers byteBuffers) {
         this.streamStore = streamStore;
+        this.pathwayEventsSerde = pathwayEventsSerde;
+        this.byteBuffers = byteBuffers;
     }
 
-    public void create(final String feedName, final Consumer<MessageReceiver> messageReceiverConsumer) {
+    public void create(final PathwaysDb pathwaysDb, final LmdbWriter lmdbWriter, final String feedName, final Consumer<MessageReceiver> messageReceiverConsumer) {
         final MetaProperties metaProperties = MetaProperties.builder()
                 .feedName(feedName)
                 .typeName("Report")
@@ -52,18 +72,67 @@ public class MessageReceiverFactory {
             try (final Target streamTarget = streamStore.openTarget(metaProperties)) {
                 try (final OutputStreamProvider outputStreamProvider = streamTarget.next()) {
                     try (final Writer writer = new OutputStreamWriter(outputStreamProvider.get())) {
-                        messageReceiverConsumer.accept((severity, message) -> {
-                            try {
-                                writer.write(severity.getDisplayValue());
-                                writer.write(": ");
-                                writer.write(message.get());
-                                writer.write("\n");
-                            } catch (final IOException | RuntimeException e) {
-                                LOGGER.error(e::getMessage, e);
-                            }
-                        });
-                    }
+                        class BufferingMessageReceiver implements MessageReceiver {
+                            private final Map<String, List<PathwayEvent>> buffer = new HashMap<>();
+                            private int eventCount = 0;
+                            private long sequenceId = 0;
+                            private static final int MAX_BUFFER_SIZE = 10000;
 
+                            @Override
+                            public void log(final Severity severity, final Supplier<String> message) {
+                                try {
+                                    writer.write(severity.getDisplayValue());
+                                    writer.write(": ");
+                                    writer.write(message.get());
+                                    writer.write("\n");
+                                } catch (final IOException | RuntimeException e) {
+                                    LOGGER.error(e::getMessage, e);
+                                }
+                            }
+
+                            @Override
+                            public void event(final PathwaysDoc pathwaysDoc, final String pathwayName, final PathwayEvent event) {
+                                LOGGER.error("Received event for pathway " + pathwayName + ": " + event.getDescription());
+                                buffer.computeIfAbsent(pathwayName, k -> new ArrayList<>()).add(event);
+                                eventCount++;
+                                if (eventCount >= MAX_BUFFER_SIZE) {
+                                    flush();
+                                }
+                            }
+                            
+                            public void flush() {
+                                LOGGER.error("FLUSHING BUFFER");
+                                if (buffer.isEmpty()) return;
+                                try {
+                                    final SimpleDb eventsDb = pathwaysDb.getPathwayEvents();
+                                    for (final Map.Entry<String, List<PathwayEvent>> entry : buffer.entrySet()) {
+                                        final byte[] pathBytes = entry.getKey().getBytes(StandardCharsets.UTF_8);
+                                        for (final PathwayEvent event : entry.getValue()) {
+                                            byteBuffers.use(pathBytes.length + 9, keyBuf -> {
+                                                keyBuf.put(pathBytes);
+                                                keyBuf.put((byte) 0);
+                                                keyBuf.putLong(sequenceId++);
+                                                
+                                                pathwayEventsSerde.writePathwayEvent(event, valBuf -> {
+                                                    LOGGER.error("Writing Pathway Event " + event.getDescription());
+                                                    eventsDb.insert(lmdbWriter, keyBuf.flip(), valBuf);
+                                                });
+                                            });
+                                        }
+                                    }
+                                } catch (final RuntimeException e) {
+                                    LOGGER.error("Failed to flush PathwayEvent buffer to LMDB: " + e.getMessage(), e);
+                                } finally {
+                                    buffer.clear();
+                                    eventCount = 0;
+                                }
+                            }
+                        }
+                        
+                        final BufferingMessageReceiver receiver = new BufferingMessageReceiver();
+                        messageReceiverConsumer.accept(receiver);
+                        receiver.flush();
+                    }
 
 //                        StreamUtil.streamToStream(inputStream, outputStreamProvider.get());
 //

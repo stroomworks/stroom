@@ -16,10 +16,14 @@
 
 package stroom.pathways.impl;
 
+import stroom.bytebuffer.impl6.ByteBuffers;
 import stroom.docstore.api.DocumentNotFoundException;
 import stroom.node.api.NodeCallUtil;
 import stroom.node.api.NodeInfo;
 import stroom.node.api.NodeService;
+import stroom.pathways.impl.events.PathwayEvent;
+import stroom.pathways.impl.events.PathwayEventType;
+import stroom.pathways.impl.events.PathwayRootDiscoveryEvent;
 import stroom.pathways.shared.AddPathway;
 import stroom.pathways.shared.DeletePathway;
 import stroom.pathways.shared.FindPathwayCriteria;
@@ -27,7 +31,17 @@ import stroom.pathways.shared.PathwayResultPage;
 import stroom.pathways.shared.PathwaysDoc;
 import stroom.pathways.shared.PathwaysResource;
 import stroom.pathways.shared.UpdatePathway;
+import stroom.pathways.shared.otel.trace.NanoTime;
+import stroom.pathways.shared.pathway.PathNode;
+import stroom.pathways.shared.pathway.Pathway;
+import stroom.planb.impl.db.AbstractDb;
+import stroom.planb.impl.db.LmdbWriter;
+import stroom.planb.impl.db.trace.NanoTimeUtil;
+import stroom.planb.impl.db.trace.PathwaysDb;
+import stroom.util.io.PathCreator;
 import stroom.util.jersey.WebTargetFactory;
+import stroom.util.logging.LambdaLogger;
+import stroom.util.logging.LambdaLoggerFactory;
 import stroom.util.shared.PageResponse;
 import stroom.util.shared.ResourcePaths;
 import stroom.util.shared.ResultPage;
@@ -43,28 +57,49 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.Response.Status;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Instant;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
 
 @Singleton
 public class PathwaysService {
+
+    protected static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(PathwaysService.class);
 
     private final PathwaysStore pathwaysStore;
     private final PathwaysProcessor pathwaysProcessor;
     private final Provider<NodeService> nodeServiceProvider;
     private final Provider<NodeInfo> nodeInfoProvider;
     private final Provider<WebTargetFactory> webTargetFactoryProvider;
+    final ByteBuffers byteBuffers; /*TEMPORARY TODO 8192*/
+    final PathwayEventsSerde pathwayEventsSerde;
+    final Path dbPath;
 
     @Inject
     public PathwaysService(final PathwaysProcessor pathwaysProcessor,
                            final PathwaysStore pathwaysStore,
                            final Provider<NodeService> nodeServiceProvider,
                            final Provider<NodeInfo> nodeInfoProvider,
-                           final Provider<WebTargetFactory> webTargetFactoryProvider) {
+                           final Provider<WebTargetFactory> webTargetFactoryProvider,
+                           final ByteBuffers byteBuffers,/*TEMPORARY TODO 8192*/
+                           final PathCreator pathCreator,
+                           final PathwayEventsSerde pathwayEventsSerde) {
         this.pathwaysProcessor = pathwaysProcessor;
         this.pathwaysStore = pathwaysStore;
         this.nodeServiceProvider = nodeServiceProvider;
         this.nodeInfoProvider = nodeInfoProvider;
         this.webTargetFactoryProvider = webTargetFactoryProvider;
+        this.byteBuffers = byteBuffers;
+        this.pathwayEventsSerde = pathwayEventsSerde;
+        dbPath = pathCreator.toAppPath("${stroom.home}/pathways");
     }
 
     public PathwayResultPage findPathways(final FindPathwayCriteria criteria) {
@@ -93,6 +128,38 @@ public class PathwaysService {
     }
 
     public Boolean deletePathway(final DeletePathway deletePathway) {
+        final PathwaysDb pathwaysDb;
+            try {
+                final Path processingPath = dbPath.resolve("pathways").resolve(deletePathway.getDocRef().getUuid());
+                Files.createDirectories(processingPath);
+                pathwaysDb = PathwaysDb.create(processingPath, byteBuffers, false);
+            } catch (final IOException e) {
+                throw new UncheckedIOException(e);
+            }
+
+        final byte[] keyBytes = "POST /people".getBytes(StandardCharsets.UTF_8);
+        LOGGER.error("Attempting to recover data for " + Arrays.toString(keyBytes));
+        try (final LmdbWriter writer = pathwaysDb.createWriter()) {
+            final List<PathwayEvent> events = new java.util.ArrayList<>();
+            final stroom.lmdb.stream.LmdbKeyRange prefixRange = stroom.lmdb.stream.LmdbKeyRange.builder()
+                    .prefix(ByteBuffer.wrap(keyBytes))
+                    .build();
+            
+            pathwaysDb.getPathwayEvents().iterate(writer.getWriteTxn(), prefixRange, (keyBb, valueByteBuffer) -> {
+                final byte[] keyArr = new byte[keyBb.remaining()];
+                keyBb.duplicate().get(keyArr);
+                LOGGER.error("keyBb: " + Arrays.toString(keyArr));
+                
+                if (valueByteBuffer == null) return;
+                
+                final byte[] valArr = new byte[valueByteBuffer.remaining()];
+                valueByteBuffer.duplicate().get(valArr);
+                LOGGER.error("valueByteBuffer: " + Arrays.toString(valArr));
+                
+                events.add(pathwayEventsSerde.readPathwayEvent(valueByteBuffer, new HashMap<>()));
+            });
+            events.forEach(pathwayEvent -> {LOGGER.error(pathwayEvent.getDescription());});
+        }
         throw new UnsupportedOperationException("Not implemented");
     }
 

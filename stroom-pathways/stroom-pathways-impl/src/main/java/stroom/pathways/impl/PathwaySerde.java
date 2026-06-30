@@ -152,7 +152,8 @@ public class PathwaySerde {
         return map;
     }
 
-    private Constraint readConstraint(final Input input) {
+    //Package private so PathwayEventsSerde can reuse
+    Constraint readConstraint(final Input input) {
         return Constraint.builder()
                 .name(input.readString())
                 .value(readConstraintValue(input))
@@ -160,7 +161,8 @@ public class PathwaySerde {
                 .build();
     }
 
-    private ConstraintValue readConstraintValue(final Input input) {
+    //Package private so PathwayEventsSerde can reuse
+    ConstraintValue readConstraintValue(final Input input) {
         final ConstraintValueType type =
                 ConstraintValueType.PRIMITIVE_VALUE_CONVERTER.fromPrimitiveValue(input.readByte());
         return switch (type) {
@@ -282,13 +284,15 @@ public class PathwaySerde {
         }
     }
 
-    private void writeConstraint(final Constraint constraint, final Output output) {
+    //Package private so PathwayEventsSerde can reuse
+    void writeConstraint(final Constraint constraint, final Output output) {
         writeString(constraint.getName(), output);
         writeConstraintValue(constraint.getValue(), output);
         output.writeBoolean(constraint.isOptional());
     }
 
-    private void writeConstraintValue(final ConstraintValue constraintValue, final Output output) {
+    //Package private so PathwayEventsSerde can reuse
+    void writeConstraintValue(final ConstraintValue constraintValue, final Output output) {
         output.writeByte(constraintValue.valueType().getPrimitiveValue());
         switch (constraintValue) {
             case final AnyTypeValue anyTypeValue -> {

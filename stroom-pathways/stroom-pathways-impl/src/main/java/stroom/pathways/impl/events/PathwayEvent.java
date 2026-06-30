@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2016-2026 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,17 +14,22 @@
  * limitations under the License.
  */
 
-package stroom.pathways.impl;
+package stroom.pathways.impl.events;
 
-import stroom.pathways.impl.events.PathwayEvent;
-import stroom.pathways.shared.PathwaysDoc;
-import stroom.util.shared.Severity;
+import stroom.pathways.shared.otel.trace.NanoTime;
+import stroom.pathways.shared.pathway.Pathway;
 
-import java.util.function.Supplier;
+import java.time.Instant;
 
-public interface MessageReceiver {
+public interface PathwayEvent {
 
-    void log(Severity severity, Supplier<String> message);
+    String getNodeUuid();
 
-    void event(final PathwaysDoc pathwaysDoc, final String pathwayName, final PathwayEvent event);
+    String getNodeName();
+
+    NanoTime getTimestamp();
+
+    PathwayEventType getEventType();
+
+    String getDescription();
 }

@@ -45,6 +45,7 @@ public class PathwaysDb {
     protected final ByteBuffers byteBuffers;
     protected final SimpleDb processingStatus;
     protected final SimpleDb pathways;
+    protected final SimpleDb pathwayEvents;
 
     private PathwaysDb(final PlanBEnv env,
                        final ByteBuffers byteBuffers) {
@@ -60,6 +61,10 @@ public class PathwaysDb {
                 env,
                 env.openDbi("pathways", DbiFlags.MDB_CREATE),
                 new PutFlags[]{});
+        pathwayEvents = new SimpleDb(
+                env,
+                env.openDbi("pathway-events", DbiFlags.MDB_CREATE),
+                new PutFlags[]{});
     }
 
     public SimpleDb getProcessingStatus() {
@@ -68,6 +73,10 @@ public class PathwaysDb {
 
     public SimpleDb getPathways() {
         return pathways;
+    }
+
+    public SimpleDb getPathwayEvents() {
+        return pathwayEvents;
     }
 
     public LmdbWriter createWriter() {
@@ -130,6 +139,12 @@ public class PathwaysDb {
         public void iterate(final Txn<ByteBuffer> txn,
                             final EntryConsumer consumer) {
             LmdbIterable.iterate(txn, dbi, consumer);
+        }
+
+        public void iterate(final Txn<ByteBuffer> txn,
+                            final stroom.lmdb.stream.LmdbKeyRange keyRange,
+                            final EntryConsumer consumer) {
+            LmdbIterable.iterate(txn, dbi, keyRange, consumer);
         }
 
         public <R> R get(final Txn<ByteBuffer> txn,

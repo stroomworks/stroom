@@ -101,12 +101,11 @@ public class PathwaysProcessor {
 
                 final DocRef infoFeed = doc.getInfoFeed();
                 if (infoFeed != null && infoFeed.getName() != null) {
-                    messageReceiverFactory.create(infoFeed.getName(), messageReceiver -> {
+                    shardManager.get(doc.getTracesDocRef().getName(), db -> {
+                        if (db instanceof final TraceDb traceDb) {
 
-                        shardManager.get(doc.getTracesDocRef().getName(), db -> {
-                            if (db instanceof final TraceDb traceDb) {
-
-                                try (final LmdbWriter writer = pathwaysDb.createWriter()) {
+                            try (final LmdbWriter writer = pathwaysDb.createWriter()) {
+                                messageReceiverFactory.create(pathwaysDb, writer, infoFeed.getName(), messageReceiver -> {
                                     final TraceProcessor traceProcessor =
                                             new TraceProcessor(byteBuffers, pathwaySerde);
                                     traceDb.iterateTraces((traceId, function) ->
@@ -116,11 +115,11 @@ public class PathwaysProcessor {
                                                     function,
                                                     doc,
                                                     messageReceiver));
-                                    writer.commit();
-                                }
+                                });
+                                writer.commit();
                             }
-                            return null;
-                        });
+                        }
+                        return null;
                     });
                 }
             }

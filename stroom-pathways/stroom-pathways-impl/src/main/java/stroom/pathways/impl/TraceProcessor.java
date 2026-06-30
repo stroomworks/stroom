@@ -17,6 +17,8 @@
 package stroom.pathways.impl;
 
 import stroom.bytebuffer.impl6.ByteBuffers;
+import stroom.pathways.impl.events.PathwayEventType;
+import stroom.pathways.impl.events.PathwayRootDiscoveryEvent;
 import stroom.pathways.shared.PathwaysDoc;
 import stroom.pathways.shared.otel.trace.NanoTime;
 import stroom.pathways.shared.otel.trace.Span;
@@ -31,7 +33,6 @@ import stroom.planb.impl.db.trace.PathwaysDb.SimpleDb;
 import stroom.planb.impl.serde.trace.HexStringUtil;
 import stroom.util.logging.LambdaLogger;
 import stroom.util.logging.LambdaLoggerFactory;
-import stroom.util.shared.Severity;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
@@ -105,8 +106,13 @@ public class TraceProcessor {
         byteBuffers.useBytes(keyBytes, keyByteBuffer -> {
             Pathway pathway = pathways.get(writer.getWriteTxn(), keyByteBuffer, valueByteBuffer -> {
                 if (valueByteBuffer == null) {
-                    messageReceiver.log(Severity.INFO, () -> "Adding new root path: " + root.getName());
+//                    messageReceiver.log(Severity.INFO, () -> "Adding new root path: " + root.getName());
                     final PathNode pathNode = new PathNode(root.getName());
+                    messageReceiver.event(doc, root.getName(), new PathwayRootDiscoveryEvent(
+                            pathNode.getUuid(),
+                            pathNode.getName(),
+                            PathwayEventType.MUTATION
+                    ));
                     final Instant now = Instant.now();
                     final NanoTime nanoTime = NanoTimeUtil.fromInstant(now);
                     return Pathway.builder()

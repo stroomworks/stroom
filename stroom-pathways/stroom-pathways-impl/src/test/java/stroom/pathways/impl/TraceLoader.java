@@ -17,6 +17,7 @@
 package stroom.pathways.impl;
 
 import stroom.docref.DocRef;
+import stroom.pathways.impl.events.PathwayEvent;
 import stroom.pathways.shared.FindTraceCriteria;
 import stroom.pathways.shared.GetTraceRequest;
 import stroom.pathways.shared.PathwaysDoc;
@@ -37,6 +38,7 @@ import stroom.util.logging.LambdaLogger;
 import stroom.util.logging.LambdaLoggerFactory;
 import stroom.util.shared.NullSafe;
 import stroom.util.shared.PageRequest;
+import stroom.util.shared.Severity;
 import stroom.util.shared.time.SimpleDuration;
 import stroom.util.string.StringIdUtil;
 
@@ -58,6 +60,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -98,11 +101,18 @@ public class TraceLoader {
         }
 
         final StringBuilder messages = new StringBuilder();
-        final MessageReceiver messageReceiver = (severity, message) -> {
-            messages.append(severity.getDisplayValue());
-            messages.append(": ");
-            messages.append(message.get());
-            messages.append("\n");
+        final MessageReceiver messageReceiver = new MessageReceiver() {
+            public void log(final Severity severity, final Supplier<String> message)
+            {
+                messages.append(severity.getDisplayValue());
+                messages.append(": ");
+                messages.append(message.get());
+                messages.append("\n");
+            }
+            public void event(final PathwaysDoc pathwaysDoc, final String pathwayName, final PathwayEvent event)
+            {
+
+            }
         };
 
         // Construct known paths for all traces.
