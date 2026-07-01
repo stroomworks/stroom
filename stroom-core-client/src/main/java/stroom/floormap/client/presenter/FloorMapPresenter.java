@@ -230,9 +230,9 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
             if (currentQuery == null || currentQuery.trim().isEmpty()) {
                 final DocRef storeRef;
                 if (floorMapSettingsPresenter != null) {
-                    storeRef = floorMapSettingsPresenter.getTemporalStoreRef();
+                    storeRef = floorMapSettingsPresenter.getFactsStoreRef();
                 } else {
-                    storeRef = getEntity().getTemporalStoreRef();
+                    storeRef = getEntity().getFactsStoreRef();
                 }
 
                 if (storeRef != null && storeRef.getName() != null && !storeRef.getName().isEmpty()) {

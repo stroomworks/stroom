@@ -35,7 +35,10 @@ public class FloorMapSettingsViewImpl
     private final Widget widget;
 
     @UiField
-    SimplePanel temporalStoreRefContainer;
+    SimplePanel eventsStoreRefContainer;
+
+    @UiField
+    SimplePanel factsStoreRefContainer;
 
     @Inject
     public FloorMapSettingsViewImpl(final Binder binder) {
@@ -48,8 +51,13 @@ public class FloorMapSettingsViewImpl
     }
 
     @Override
-    public void setTemporalStoreRefView(final View view) {
-        this.temporalStoreRefContainer.setWidget(view.asWidget());
+    public void setEventsStoreRefView(final View view) {
+        this.eventsStoreRefContainer.setWidget(view.asWidget());
+    }
+
+    @Override
+    public void setFactsStoreRefView(final View view) {
+        this.factsStoreRefContainer.setWidget(view.asWidget());
     }
 
     @Override

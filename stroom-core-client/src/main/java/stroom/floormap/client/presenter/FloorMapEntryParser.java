@@ -16,6 +16,7 @@
 
 package stroom.floormap.client.presenter;
 
+import stroom.floormap.client.FloorMapJsonKeys;
 import stroom.floormap.shared.FloorMapObject;
 import stroom.floormap.shared.FloorMapTransformationMatrix;
 import stroom.util.client.JSONUtil;
@@ -26,8 +27,6 @@ import com.google.gwt.json.client.JSONObject;
 
 import java.util.ArrayList;
 import java.util.List;
-
-import static stroom.floormap.client.FloorMapJsonKeys.*;
 
 /**
  * Shared utility that parses a list of {@link TemporalEntry} objects into
@@ -119,15 +118,15 @@ public final class FloorMapEntryParser {
                     continue;
                 }
 
-                final String type = JSONUtil.getString(json.get(TYPE));
+                final String type = JSONUtil.getString(json.get(FloorMapJsonKeys.TYPE));
 
-                if ("background".equalsIgnoreCase(type)
-                        || "background".equalsIgnoreCase(entry.getKey())) {
+                if (FloorMapJsonKeys.BACKGROUND.equalsIgnoreCase(type)
+                        || FloorMapJsonKeys.BACKGROUND.equalsIgnoreCase(entry.getKey())) {
                     // Background entry
-                    backgroundImage = JSONUtil.getString(json.get(IMG));
+                    backgroundImage = JSONUtil.getString(json.get(FloorMapJsonKeys.IMG));
                     backgroundKey = entry.getKey();
 
-                    final JSONArray m2sArr = JSONUtil.getArray(json.get(TM_MAP_TO_SCREEN));
+                    final JSONArray m2sArr = JSONUtil.getArray(json.get(FloorMapJsonKeys.TM_MAP_TO_SCREEN));
                     if (m2sArr != null && m2sArr.size() >= 6) {
                         bgMatrix = new FloorMapTransformationMatrix(
                                 JSONUtil.getDouble(m2sArr.get(0)),
@@ -141,14 +140,14 @@ public final class FloorMapEntryParser {
                     // Regular object
                     double worldX = 0;
                     double worldY = 0;
-                    final JSONArray coordsArr = JSONUtil.getArray(json.get(COORDS));
+                    final JSONArray coordsArr = JSONUtil.getArray(json.get(FloorMapJsonKeys.COORDS));
                     if (coordsArr != null && coordsArr.size() >= 2) {
                         worldX = JSONUtil.getDouble(coordsArr.get(0));
                         worldY = JSONUtil.getDouble(coordsArr.get(1));
                     }
 
                     FloorMapTransformationMatrix worldToMap = FloorMapTransformationMatrix.identity();
-                    final JSONArray w2mArr = JSONUtil.getArray(json.get(TM_WORLD_TO_MAP));
+                    final JSONArray w2mArr = JSONUtil.getArray(json.get(FloorMapJsonKeys.TM_WORLD_TO_MAP));
                     if (w2mArr != null && w2mArr.size() >= 6) {
                         worldToMap = new FloorMapTransformationMatrix(
                                 JSONUtil.getDouble(w2mArr.get(0)),

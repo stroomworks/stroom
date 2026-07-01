@@ -3,13 +3,13 @@
              xmlns:g="urn:import:com.google.gwt.user.client.ui"
              xmlns:form="urn:import:stroom.widget.form.client">
     <g:FlowPanel styleName="max dock-container-vertical form-padding form">
-        <!-- Events Store (PlanB Temporal State) Reference Selection -->
-        <form:FormGroup label="Events Store">
-            <g:SimplePanel ui:field="eventsStoreRefContainer" />
-        </form:FormGroup>
-        <!-- Facts Store (SQL Temporal Store) Reference Selection -->
+        <!-- Facts Store (SQL Temporal Store) Selection -->
         <form:FormGroup label="Facts Store">
-            <g:SimplePanel ui:field="factsStoreRefContainer" />
+            <g:SimplePanel ui:field="factsStoreContainer" />
+        </form:FormGroup>
+        <!-- Events Store (PlanB Temporal State) Selection -->
+        <form:FormGroup label="Events Store">
+            <g:SimplePanel ui:field="eventsStoreContainer" />
         </form:FormGroup>
     </g:FlowPanel>
 </ui:UiBinder>

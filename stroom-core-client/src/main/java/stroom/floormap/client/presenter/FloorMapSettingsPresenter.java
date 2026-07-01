@@ -23,7 +23,9 @@ import stroom.entity.client.presenter.ReadOnlyChangeHandler;
 import stroom.explorer.client.presenter.DocSelectionBoxPresenter;
 import stroom.floormap.client.presenter.FloorMapSettingsPresenter.FloorMapSettingsView;
 import stroom.floormap.shared.FloorMapDoc;
+import stroom.planb.shared.PlanBDoc;
 import stroom.security.shared.DocumentPermission;
+import stroom.sqlstore.shared.SqlTemporalStoreDoc;
 
 import com.google.inject.Inject;
 import com.google.inject.Provider;
@@ -35,7 +37,8 @@ public class FloorMapSettingsPresenter
         extends DocPresenter<FloorMapSettingsView, FloorMapDoc>
         implements DirtyUiHandlers {
 
-    private final DocSelectionBoxPresenter temporalStoreRefPresenter;
+    private final DocSelectionBoxPresenter eventsStoreRefPresenter;
+    private final DocSelectionBoxPresenter factsStoreRefPresenter;
 
     @Inject
     public FloorMapSettingsPresenter(final EventBus eventBus,
@@ -45,35 +48,49 @@ public class FloorMapSettingsPresenter
 
         view.setUiHandlers(this);
 
-        this.temporalStoreRefPresenter = docSelectionBoxPresenterProvider.get();
-        this.temporalStoreRefPresenter.setIncludedTypes("SqlTemporalStore");
-        this.temporalStoreRefPresenter.setRequiredPermissions(DocumentPermission.USE);
-        view.setTemporalStoreRefView(this.temporalStoreRefPresenter.getView());
+        this.eventsStoreRefPresenter = docSelectionBoxPresenterProvider.get();
+        this.eventsStoreRefPresenter.setIncludedTypes(PlanBDoc.TYPE);
+        this.eventsStoreRefPresenter.setRequiredPermissions(DocumentPermission.USE);
+        view.setEventsStoreRefView(this.eventsStoreRefPresenter.getView());
+
+        this.factsStoreRefPresenter = docSelectionBoxPresenterProvider.get();
+        this.factsStoreRefPresenter.setIncludedTypes(SqlTemporalStoreDoc.TYPE);
+        this.factsStoreRefPresenter.setRequiredPermissions(DocumentPermission.USE);
+        view.setFactsStoreRefView(this.factsStoreRefPresenter.getView());
     }
 
     @Override
     protected void onBind() {
         super.onBind();
         //noinspection unused e
-        registerHandler(temporalStoreRefPresenter.addDataSelectionHandler(e -> onChange()));
+        registerHandler(eventsStoreRefPresenter.addDataSelectionHandler(e -> onChange()));
+        //noinspection unused e
+        registerHandler(factsStoreRefPresenter.addDataSelectionHandler(e -> onChange()));
     }
 
     @Override
     protected void onRead(final DocRef docRef, final FloorMapDoc floorMapDoc, final boolean readOnly) {
 
-        temporalStoreRefPresenter.setSelectedEntityReference(floorMapDoc.getTemporalStoreRef(), true);
-        temporalStoreRefPresenter.setEnabled(!readOnly);
+        eventsStoreRefPresenter.setSelectedEntityReference(floorMapDoc.getEventsStoreRef(), true);
+        eventsStoreRefPresenter.setEnabled(!readOnly);
+        factsStoreRefPresenter.setSelectedEntityReference(floorMapDoc.getFactsStoreRef(), true);
+        factsStoreRefPresenter.setEnabled(!readOnly);
     }
 
     @Override
     protected FloorMapDoc onWrite(final FloorMapDoc doc) {
         return doc.copy()
-                .temporalStoreRef(temporalStoreRefPresenter.getSelectedEntityReference())
+                .eventsStoreRef(eventsStoreRefPresenter.getSelectedEntityReference())
+                .factsStoreRef(factsStoreRefPresenter.getSelectedEntityReference())
                 .build();
     }
 
-    public DocRef getTemporalStoreRef() {
-        return temporalStoreRefPresenter.getSelectedEntityReference();
+    public DocRef getEventsStoreRef() {
+        return eventsStoreRefPresenter.getSelectedEntityReference();
+    }
+
+    public DocRef getFactsStoreRef() {
+        return factsStoreRefPresenter.getSelectedEntityReference();
     }
 
     @Override
@@ -83,7 +100,9 @@ public class FloorMapSettingsPresenter
 
     public interface FloorMapSettingsView extends View, HasUiHandlers<DirtyUiHandlers>, ReadOnlyChangeHandler {
 
-        void setTemporalStoreRefView(View view);
+        void setEventsStoreRefView(View view);
+
+        void setFactsStoreRefView(View view);
 
     }
 }

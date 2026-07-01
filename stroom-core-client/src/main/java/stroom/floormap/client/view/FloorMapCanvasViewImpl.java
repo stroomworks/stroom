@@ -18,6 +18,7 @@ package stroom.floormap.client.view;
 
 import stroom.document.client.event.DirtyUiHandlers;
 import stroom.entity.client.presenter.ReadOnlyChangeHandler;
+import stroom.floormap.client.FloorMapJsonKeys;
 import stroom.floormap.client.presenter.FloorMapCanvasPresenter.FloorMapCanvasView;
 import stroom.floormap.shared.FloorMapObject;
 import stroom.floormap.shared.FloorMapTransformationMatrix;
@@ -176,9 +177,9 @@ public class FloorMapCanvasViewImpl
                             new Attribute("width", String.valueOf(IMAGE_DISPLAY_WIDTH)),
                             new Attribute("height", String.valueOf(bgHeight)),
                             new Attribute("preserveAspectRatio", "none"),
-                            new Attribute("id", "background"));
+                            new Attribute("id", FloorMapJsonKeys.BACKGROUND));
 
-                        if ("background".equals(selectedObjectId)) {
+                        if (FloorMapJsonKeys.BACKGROUND.equals(selectedObjectId)) {
                             matrixGroup.elem(SafeHtmlUtil.from("rect"),
                                 new Attribute("x", "0"),
                                 new Attribute("y", "0"),
@@ -298,7 +299,7 @@ public class FloorMapCanvasViewImpl
             return "#607d8b"; // blue-grey default
         }
         return switch (type.toLowerCase()) {
-            case "background" -> "#90a4ae";
+            case FloorMapJsonKeys.BACKGROUND -> "#90a4ae";
             case "gates", "gate" -> "#43a047"; // green
             case "door", "doors" -> "#fb8c00"; // amber
             case "camera", "cameras" -> "#8e24aa"; // purple

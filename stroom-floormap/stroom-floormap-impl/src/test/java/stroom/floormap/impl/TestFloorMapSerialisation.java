@@ -41,7 +41,7 @@ class TestFloorMapSerialisation {
                 .uuid("map-uuid-456")
                 .name("MyFloorMap")
                 .description("Floor map description")
-                .temporalStoreRef(storeRef)
+                .factsStoreRef(storeRef)
                 .eventsQuery("from StoreName select events")
                 .eventsQueryTimeRange(timeRange)
                 .factsQuery("from StoreName select facts")
@@ -57,7 +57,7 @@ class TestFloorMapSerialisation {
         assertThat(deserialized).isNotNull();
 
         // Assert new fields
-        assertThat(deserialized.getTemporalStoreRef()).isEqualTo(storeRef);
+        assertThat(deserialized.getFactsStoreRef()).isEqualTo(storeRef);
         assertThat(deserialized.getEventsQuery()).isEqualTo("from StoreName select events");
         assertThat(deserialized.getEventsQueryTimeRange()).isEqualTo(timeRange);
         assertThat(deserialized.getFactsQuery()).isEqualTo("from StoreName select facts");
@@ -81,7 +81,7 @@ class TestFloorMapSerialisation {
 
         // Legacy 'query' field is no longer migrated eventsQuery should be null.
         assertThat(deserialized.getEventsQuery()).isNull();
-        assertThat(deserialized.getTemporalStoreRef()).isNull();
+        assertThat(deserialized.getFactsStoreRef()).isNull();
         assertThat(deserialized.getFactsQuery()).isNull();
     }
 }

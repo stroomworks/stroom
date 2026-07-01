@@ -16,6 +16,7 @@
 
 package stroom.floormap.client.presenter;
 
+import stroom.floormap.client.FloorMapJsonKeys;
 import stroom.floormap.client.event.MapObjectMovedEvent;
 import stroom.floormap.client.event.MapObjectSelectedEvent;
 import stroom.floormap.client.presenter.FloorMapCanvasPresenter.FloorMapCanvasView;
@@ -122,7 +123,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                     // Check if we clicked on an actual map object shape (which does not start with "obj-")
                     if (id != null && !id.isEmpty() && !id.startsWith("obj-")) {
                         // If Ctrl or Shift is pressed and it is the background, allow panning
-                        if (!("background".equals(id)
+                        if (!(FloorMapJsonKeys.BACKGROUND.equals(id)
                                 && (event.getNativeEvent().getCtrlKey()
                                 || event.getNativeEvent().getShiftKey()))) {
                             selectedObjectId = id;
@@ -156,7 +157,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                 final double deltaY = event.getY() - lastMouseY;
 
                 if (editMode && isDraggingEnabled && selectedObjectId != null) {
-                    if ("background".equals(selectedObjectId)) {
+                    if (FloorMapJsonKeys.BACKGROUND.equals(selectedObjectId)) {
                         // Dragging the background (updates the background's tm-map-to-screen matrix)
                         final double deltaUnzoomedX = deltaX / scale;
                         final double deltaUnzoomedY = deltaY / scale;
@@ -172,7 +173,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                         }
                         hasMoved = true;
                         if (dragHandler != null) {
-                            dragHandler.onDrag("background", matrix.getE(), matrix.getF(), matrix);
+                            dragHandler.onDrag(FloorMapJsonKeys.BACKGROUND, matrix.getE(), matrix.getF(), matrix);
                         }
                     } else {
                         // Move the selected object.
@@ -219,8 +220,8 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         registerHandler(getView().getMouseUpHandlers().addMouseUpHandler(event -> {
             // Only fire a move event when the object was actually dragged, not just clicked.
             if (isDragging && hasMoved && editMode && selectedObjectId != null) {
-                if ("background".equals(selectedObjectId)) {
-                    MapObjectMovedEvent.fire(this, "background", matrix.getE(), matrix.getF());
+                if (FloorMapJsonKeys.BACKGROUND.equals(selectedObjectId)) {
+                    MapObjectMovedEvent.fire(this, FloorMapJsonKeys.BACKGROUND, matrix.getE(), matrix.getF());
                 } else {
                     // Find the object's current coordinates
                     for (final FloorMapObject obj : factObjects) {

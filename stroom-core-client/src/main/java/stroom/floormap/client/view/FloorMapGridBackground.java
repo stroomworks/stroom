@@ -51,10 +51,17 @@ public final class FloorMapGridBackground {
 
     // -- Appearance constants ------------------------------------------------
 
-    /** Background fill (slightly off-black). */
-    private static final String BG_FILL = "#1a1a1a";
-    /** Major grid line colour. */
-    private static final String MAJOR_STROKE = "rgba(255,255,255,0.6)";
+    /**
+     * Background fill — references the CSS variable
+     * {@code --floormap-grid__background-color} so the grid respects
+     * light/dark themes.
+     */
+    private static final String BG_FILL = "var(--floormap-grid__background-color)";
+    /**
+     * Major grid line colour — references the CSS variable
+     * {@code --floormap-grid__major-stroke}.
+     */
+    private static final String MAJOR_STROKE = "var(--floormap-grid__major-stroke)";
     /** Desired screen-pixel width for major grid lines. */
     private static final double MAJOR_SCREEN_PX = 1.0;
     /** Maximum opacity for minor grid lines (reached mid-decade). */
@@ -62,12 +69,26 @@ public final class FloorMapGridBackground {
     /** Desired screen-pixel width for minor grid lines. */
     private static final double MINOR_SCREEN_PX = 0.5;
 
-    /** Stroom highlight colour (Material Design Blue 600). */
-    private static final String HIGHLIGHT_COLOUR = "#1e88e5";
+    /**
+     * Minor grid line colour — references the CSS variable
+     * {@code --floormap-grid__minor-stroke}. The dynamic
+     * zoom-dependent opacity is applied via the SVG
+     * {@code stroke-opacity} attribute rather than being baked
+     * into an {@code rgba()} value, so the base colour can
+     * come from CSS.
+     */
+    private static final String MINOR_STROKE = "var(--floormap-grid__minor-stroke)";
+
+    /**
+     * Stroom highlight colour — references the CSS variable
+     * {@code --floormap-grid__highlight-color} (defaults to
+     * Material Design Blue 600).
+     */
+    private static final String HIGHLIGHT_COLOUR = "var(--floormap-grid__highlight-color)";
     /** Screen-pixel stroke width for origin axis lines. */
     private static final double AXIS_SCREEN_PX = 2.5;
     /** Arrowhead length expressed as a number of minor grid divisions. */
-    private static final double ARROW_MINOR_DIVISIONS = 2.0;
+    private static final double ARROW_MINOR_DIVISIONS = 1.0;
     /** Screen-pixel font size for the origin scale labels. */
     private static final double LABEL_FONT_SCREEN_PX = 12.0;
     /** Screen-pixel gap between the arrowhead tip and the label. */
@@ -140,7 +161,7 @@ public final class FloorMapGridBackground {
         // World-space size of one minor grid cell (1/10th of major)
         final double minorWorldSpacing = majorWorldSpacing / 10.0;
 
-        final String minorStroke = "rgba(255,255,255," + formatDouble(minorOpacity) + ")";
+        final String minorOpacityStr = formatDouble(minorOpacity);
 
         // Compute stroke widths in world-space units so that lines render
         // at a constant screen-pixel width.  We cannot use
@@ -177,7 +198,8 @@ public final class FloorMapGridBackground {
                                 new Attribute("y1", pos),
                                 new Attribute("x2", formatDouble(majorWorldSpacing)),
                                 new Attribute("y2", pos),
-                                new Attribute("stroke", minorStroke),
+                                new Attribute("stroke", MINOR_STROKE),
+                                new Attribute("stroke-opacity", minorOpacityStr),
                                 new Attribute("stroke-width", minorStrokeWidth));
                         // Vertical minor line
                         gridPattern.elem(SafeHtmlUtil.from("line"),
@@ -185,7 +207,8 @@ public final class FloorMapGridBackground {
                                 new Attribute("y1", "0"),
                                 new Attribute("x2", pos),
                                 new Attribute("y2", formatDouble(majorWorldSpacing)),
-                                new Attribute("stroke", minorStroke),
+                                new Attribute("stroke", MINOR_STROKE),
+                                new Attribute("stroke-opacity", minorOpacityStr),
                                 new Attribute("stroke-width", minorStrokeWidth));
                     }
                 }

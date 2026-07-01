@@ -18,11 +18,11 @@ package stroom.floormap.client.presenter;
 
 import stroom.data.grid.client.MyDataGrid;
 import stroom.floormap.client.presenter.FloorMapFactListPresenter.FloorMapFactListView;
+import stroom.svg.client.SvgPresets;
 import stroom.svg.shared.SvgImage;
 import stroom.widget.button.client.ButtonPanel;
 import stroom.widget.button.client.ButtonView;
 import stroom.widget.button.client.InlineSvgToggleButton;
-import stroom.svg.client.SvgPresets;
 
 import com.google.gwt.user.cellview.client.Column;
 import com.google.gwt.user.cellview.client.TextColumn;

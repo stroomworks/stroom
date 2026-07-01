@@ -16,9 +16,10 @@
 
 package stroom.floormap.client.presenter;
 
-import org.junit.jupiter.api.Test;
 import stroom.util.shared.TemporalEntry;
 import stroom.util.shared.TemporalEntryId;
+
+import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;

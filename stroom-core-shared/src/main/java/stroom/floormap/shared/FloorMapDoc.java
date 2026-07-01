@@ -24,6 +24,7 @@ import stroom.docstore.shared.DocumentTypeRegistry;
 import stroom.query.api.TimeRange;
 import stroom.query.shared.QueryTablePreferences;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonInclude.Include;
@@ -54,8 +55,19 @@ public class FloorMapDoc extends AbstractDoc {
     @JsonProperty
     private final String locationIdColumn;
 
+    /**
+     * Reference to the SQL Temporal Store document used as the facts store.
+     * May be null if not yet configured.
+     */
+    @JsonProperty("factsStoreRef")
+    private final DocRef factsStoreRef;
+    /**
+     * Reference to the PlanB document (with {@code stateType == TEMPORAL_STATE})
+     * used as the events store.
+     * May be null if not yet configured.
+     */
     @JsonProperty
-    private final DocRef temporalStoreRef;
+    private final DocRef eventsStoreRef;
     @JsonProperty
     private final String eventsQuery;
     @JsonProperty
@@ -69,6 +81,18 @@ public class FloorMapDoc extends AbstractDoc {
     @JsonProperty
     private final QueryTablePreferences factsQueryTablePreferences;
 
+    /**
+     * Constructs a {@code FloorMapDoc} from its constituent fields.
+     *
+     * <p><strong>Back-compatibility:</strong> The {@code factsStoreRef}
+     * parameter is annotated with {@code @JsonAlias("temporalStoreRef")}
+     * so that existing serialised documents that use the old field name
+     * {@code "temporalStoreRef"} are deserialised correctly into
+     * {@code factsStoreRef}. When the document is next saved, the
+     * field-level {@code @JsonProperty("factsStoreRef")} annotation
+     * causes it to be written under the new name, completing the
+     * migration.</p>
+     */
     @JsonCreator
     public FloorMapDoc(@JsonProperty("uuid") final String uuid,
                        @JsonProperty("name") final String name,
@@ -82,7 +106,11 @@ public class FloorMapDoc extends AbstractDoc {
                        @JsonProperty("matrix") final FloorMapTransformationMatrix matrix,
                        @JsonProperty("entityIdColumn") final String entityIdColumn,
                        @JsonProperty("locationIdColumn") final String locationIdColumn,
-                       @JsonProperty("temporalStoreRef") final DocRef temporalStoreRef,
+                       @JsonProperty("factsStoreRef")
+                       @JsonAlias("temporalStoreRef")
+                       final DocRef factsStoreRef,
+                       @JsonProperty("eventsStoreRef")
+                       final DocRef eventsStoreRef,
                        @JsonProperty("eventsQuery") final String eventsQuery,
                        @JsonProperty("eventsQueryTimeRange") final TimeRange eventsQueryTimeRange,
                        @JsonProperty("eventsQueryTablePreferences")
@@ -105,7 +133,8 @@ public class FloorMapDoc extends AbstractDoc {
         this.entityIdColumn = entityIdColumn;
         this.locationIdColumn = locationIdColumn;
 
-        this.temporalStoreRef = temporalStoreRef;
+        this.factsStoreRef = factsStoreRef;
+        this.eventsStoreRef = eventsStoreRef;
 
         this.eventsQuery = eventsQuery;
         this.eventsQueryTimeRange = eventsQueryTimeRange;
@@ -132,8 +161,22 @@ public class FloorMapDoc extends AbstractDoc {
         return locationIdColumn;
     }
 
-    public DocRef getTemporalStoreRef() {
-        return temporalStoreRef;
+    /**
+     * Returns the reference to the facts store (SQL Temporal Store).
+     *
+     * @return the facts store DocRef, or null if not configured
+     */
+    public DocRef getFactsStoreRef() {
+        return factsStoreRef;
+    }
+
+    /**
+     * Returns the reference to the events store (PlanB Temporal State Store).
+     *
+     * @return the events store DocRef, or null if not configured
+     */
+    public DocRef getEventsStoreRef() {
+        return eventsStoreRef;
     }
 
     public String getEventsQuery() {
@@ -188,7 +231,8 @@ public class FloorMapDoc extends AbstractDoc {
                Objects.equals(matrix, that.matrix) &&
                Objects.equals(entityIdColumn, that.entityIdColumn) &&
                Objects.equals(locationIdColumn, that.locationIdColumn) &&
-               Objects.equals(temporalStoreRef, that.temporalStoreRef) &&
+               Objects.equals(factsStoreRef, that.factsStoreRef) &&
+               Objects.equals(eventsStoreRef, that.eventsStoreRef) &&
                Objects.equals(eventsQuery, that.eventsQuery) &&
                Objects.equals(eventsQueryTimeRange, that.eventsQueryTimeRange) &&
                Objects.equals(eventsQueryTablePreferences, that.eventsQueryTablePreferences) &&
@@ -206,7 +250,8 @@ public class FloorMapDoc extends AbstractDoc {
                 matrix,
                 entityIdColumn,
                 locationIdColumn,
-                temporalStoreRef,
+                factsStoreRef,
+                eventsStoreRef,
                 eventsQuery,
                 eventsQueryTimeRange,
                 eventsQueryTablePreferences,
@@ -231,7 +276,8 @@ public class FloorMapDoc extends AbstractDoc {
         private String entityIdColumn;
         private String locationIdColumn;
 
-        private DocRef temporalStoreRef;
+        private DocRef factsStoreRef;
+        private DocRef eventsStoreRef;
         private String eventsQuery;
         private TimeRange eventsQueryTimeRange;
         private QueryTablePreferences eventsQueryTablePreferences;
@@ -249,7 +295,8 @@ public class FloorMapDoc extends AbstractDoc {
             this.matrix = doc.matrix;
             this.entityIdColumn = doc.entityIdColumn;
             this.locationIdColumn = doc.locationIdColumn;
-            this.temporalStoreRef = doc.temporalStoreRef;
+            this.factsStoreRef = doc.factsStoreRef;
+            this.eventsStoreRef = doc.eventsStoreRef;
             this.eventsQuery = doc.eventsQuery;
             this.eventsQueryTimeRange = doc.eventsQueryTimeRange;
             this.eventsQueryTablePreferences = doc.eventsQueryTablePreferences;
@@ -283,8 +330,13 @@ public class FloorMapDoc extends AbstractDoc {
             return self();
         }
 
-        public Builder temporalStoreRef(final DocRef temporalStoreRef) {
-            this.temporalStoreRef = temporalStoreRef;
+        public Builder factsStoreRef(final DocRef factsStoreRef) {
+            this.factsStoreRef = factsStoreRef;
+            return self();
+        }
+
+        public Builder eventsStoreRef(final DocRef eventsStoreRef) {
+            this.eventsStoreRef = eventsStoreRef;
             return self();
         }
 
@@ -338,7 +390,8 @@ public class FloorMapDoc extends AbstractDoc {
                     matrix,
                     entityIdColumn,
                     locationIdColumn,
-                    temporalStoreRef,
+                    factsStoreRef,
+                    eventsStoreRef,
                     eventsQuery,
                     eventsQueryTimeRange,
                     eventsQueryTablePreferences,

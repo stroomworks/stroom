@@ -19,6 +19,7 @@ package stroom.floormap.client.presenter;
 import stroom.alert.client.event.ConfirmEvent;
 import stroom.data.client.event.DataSelectionEvent;
 import stroom.document.asset.client.presenter.DocumentAssetDropDownPresenter;
+import stroom.floormap.client.FloorMapJsonKeys;
 import stroom.floormap.client.presenter.FloorMapObjectEditPresenter.FloorMapObjectEditView;
 import stroom.floormap.shared.FloorMapDoc;
 import stroom.util.client.JSONUtil;
@@ -30,7 +31,6 @@ import com.google.gwt.json.client.JSONArray;
 import com.google.gwt.json.client.JSONNumber;
 import com.google.gwt.json.client.JSONObject;
 import com.google.gwt.json.client.JSONString;
-
 import com.google.gwt.user.client.ui.Widget;
 import com.google.web.bindery.event.shared.EventBus;
 import com.gwtplatform.mvp.client.MyPresenterWidget;
@@ -38,8 +38,6 @@ import com.gwtplatform.mvp.client.View;
 
 import java.util.function.Consumer;
 import javax.inject.Inject;
-
-import static stroom.floormap.client.FloorMapJsonKeys.*;
 
 public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjectEditView> {
 
@@ -164,9 +162,9 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
      */
     private JSONObject buildJson() {
         final JSONObject json = new JSONObject();
-        json.put(TYPE, new JSONString(getView().getType()));
-        json.put(NAME, new JSONString(getView().getName()));
-        json.put(IMG, new JSONString(
+        json.put(FloorMapJsonKeys.TYPE, new JSONString(getView().getType()));
+        json.put(FloorMapJsonKeys.NAME, new JSONString(getView().getName()));
+        json.put(FloorMapJsonKeys.IMG, new JSONString(
                 documentAssetDropDownPresenter.getSelectedAssetPath() == null
                         ? ""
                         : documentAssetDropDownPresenter.getSelectedAssetPath()));
@@ -174,22 +172,22 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
         final JSONArray coordsArr = new JSONArray();
         coordsArr.set(0, new JSONNumber(getView().getX()));
         coordsArr.set(1, new JSONNumber(getView().getY()));
-        json.put(COORDS, coordsArr);
+        json.put(FloorMapJsonKeys.COORDS, coordsArr);
 
         final double[] w2m = getView().getWorldToMapMatrix();
         final JSONArray w2mArr = new JSONArray();
         for (int i = 0; i < 6; i++) {
             w2mArr.set(i, new JSONNumber(w2m[i]));
         }
-        json.put(TM_WORLD_TO_MAP, w2mArr);
+        json.put(FloorMapJsonKeys.TM_WORLD_TO_MAP, w2mArr);
 
-        if ("background".equalsIgnoreCase(getView().getType())) {
+        if (FloorMapJsonKeys.BACKGROUND.equalsIgnoreCase(getView().getType())) {
             final double[] m2s = getView().getMapToScreenMatrix();
             final JSONArray m2sArr = new JSONArray();
             for (int i = 0; i < 6; i++) {
                 m2sArr.set(i, new JSONNumber(m2s[i]));
             }
-            json.put(TM_MAP_TO_SCREEN, m2sArr);
+            json.put(FloorMapJsonKeys.TM_MAP_TO_SCREEN, m2sArr);
         }
         return json;
     }
@@ -220,24 +218,24 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
                 if (selected.getValue() != null && selected.getValue().trim().startsWith("{")) {
                     final JSONObject json = JSONUtil.getObject(JSONUtil.parse(selected.getValue()));
                     if (json != null) {
-                        name = JSONUtil.getString(json.get(NAME));
-                        type = JSONUtil.getString(json.get(TYPE));
-                        img = JSONUtil.getString(json.get(IMG));
+                        name = JSONUtil.getString(json.get(FloorMapJsonKeys.NAME));
+                        type = JSONUtil.getString(json.get(FloorMapJsonKeys.TYPE));
+                        img = JSONUtil.getString(json.get(FloorMapJsonKeys.IMG));
 
-                        final JSONArray coordsArr = JSONUtil.getArray(json.get(COORDS));
+                        final JSONArray coordsArr = JSONUtil.getArray(json.get(FloorMapJsonKeys.COORDS));
                         if (coordsArr != null && coordsArr.size() >= 2) {
                             x = JSONUtil.getDouble(coordsArr.get(0));
                             y = JSONUtil.getDouble(coordsArr.get(1));
                         }
 
-                        final JSONArray w2mArr = JSONUtil.getArray(json.get(TM_WORLD_TO_MAP));
+                        final JSONArray w2mArr = JSONUtil.getArray(json.get(FloorMapJsonKeys.TM_WORLD_TO_MAP));
                         if (w2mArr != null && w2mArr.size() >= 6) {
                             for (int i = 0; i < 6; i++) {
                                 w2m[i] = JSONUtil.getDouble(w2mArr.get(i));
                             }
                         }
 
-                        final JSONArray m2sArr = JSONUtil.getArray(json.get(TM_MAP_TO_SCREEN));
+                        final JSONArray m2sArr = JSONUtil.getArray(json.get(FloorMapJsonKeys.TM_MAP_TO_SCREEN));
                         if (m2sArr != null && m2sArr.size() >= 6) {
                             for (int i = 0; i < 6; i++) {
                                 m2s[i] = JSONUtil.getDouble(m2sArr.get(i));
@@ -259,9 +257,9 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
             getView().setEffectiveTime(0L);
             getView().setX(0.0);
             getView().setY(0.0);
-            if ("background".equals(objectId)) {
-                getView().setName("Background");
-                getView().setType("background");
+            if (FloorMapJsonKeys.BACKGROUND.equals(objectId)) {
+                getView().setName(FloorMapJsonKeys.BACKGROUND_DISPLAY_NAME);
+                getView().setType(FloorMapJsonKeys.BACKGROUND);
             } else {
                 getView().setName("");
                 getView().setType("");

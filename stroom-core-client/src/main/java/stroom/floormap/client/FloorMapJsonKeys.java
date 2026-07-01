@@ -29,6 +29,17 @@ public final class FloorMapJsonKeys {
     public static final String TM_WORLD_TO_MAP = "tm-world-to-map";
     public static final String TM_MAP_TO_SCREEN = "tm-map-to-screen";
 
+    /**
+     * Object ID and type identifier for the background layer/object
+     * in the floor map canvas.
+     */
+    public static final String BACKGROUND = "background";
+
+    /**
+     * Display name for the background object in the fact list UI.
+     */
+    public static final String BACKGROUND_DISPLAY_NAME = "Background";
+
     private FloorMapJsonKeys() {
         // Utility class
     }

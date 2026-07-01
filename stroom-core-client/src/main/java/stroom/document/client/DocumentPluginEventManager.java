@@ -1087,7 +1087,17 @@ public class DocumentPluginEventManager extends Plugin {
             // Open the document in the content pane.
             final DocumentPlugin<?> plugin = documentPluginRegistry.getDocumentPlugin(docRef.getType());
             if (plugin != null) {
-                plugin.open(docRef, true, false, new DefaultTaskMonitorFactory(this));
+                final TaskMonitorFactory tmf = new DefaultTaskMonitorFactory(this);
+                plugin.getInitialisationHandler().showInitialisationDialog(
+                        docRef,
+                        proceed -> {
+                            if (proceed) {
+                                plugin.open(docRef, true, false, tmf);
+                            }
+                            // If !proceed, the handler has already deleted the doc
+                            // and fired RefreshExplorerTreeEvent.
+                        },
+                        tmf);
             }
         };
 

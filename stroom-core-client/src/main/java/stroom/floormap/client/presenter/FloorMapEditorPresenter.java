@@ -23,6 +23,7 @@ import stroom.dispatch.client.RestFactory;
 import stroom.docref.DocRef;
 import stroom.entity.client.presenter.DocPresenter;
 import stroom.entity.shared.ExpressionCriteria;
+import stroom.floormap.client.FloorMapJsonKeys;
 import stroom.floormap.client.event.MapObjectMovedEvent;
 import stroom.floormap.client.event.MapObjectSelectedEvent;
 import stroom.floormap.client.event.TimeChangeEvent;
@@ -55,8 +56,6 @@ import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
 import javax.inject.Provider;
-
-import static stroom.floormap.client.FloorMapJsonKeys.*;
 
 /**
  * Presenter for the FloorMap <b>Editor</b> tab.
@@ -696,12 +695,12 @@ public class FloorMapEditorPresenter
                     if (key != null && !key.trim().isEmpty()) {
                         final String trimmedKey = key.trim();
                         final JSONObject json = new JSONObject();
-                        json.put(TYPE, new JSONString("gates"));
-                        json.put(NAME, new JSONString(trimmedKey));
+                        json.put(FloorMapJsonKeys.TYPE, new JSONString("gates"));
+                        json.put(FloorMapJsonKeys.NAME, new JSONString(trimmedKey));
                         final JSONArray coordsArr = new JSONArray();
                         coordsArr.set(0, new JSONNumber(500.0));
                         coordsArr.set(1, new JSONNumber(500.0));
-                        json.put(COORDS, coordsArr);
+                        json.put(FloorMapJsonKeys.COORDS, coordsArr);
                         final JSONArray matrixArr = new JSONArray();
                         matrixArr.set(0, new JSONNumber(1.0));
                         matrixArr.set(1, new JSONNumber(0.0));
@@ -709,7 +708,7 @@ public class FloorMapEditorPresenter
                         matrixArr.set(3, new JSONNumber(1.0));
                         matrixArr.set(4, new JSONNumber(0.0));
                         matrixArr.set(5, new JSONNumber(0.0));
-                        json.put(TM_WORLD_TO_MAP, matrixArr);
+                        json.put(FloorMapJsonKeys.TM_WORLD_TO_MAP, matrixArr);
                         final TemporalEntry entry = new TemporalEntry(
                                 mapName, trimmedKey, selectedTime, json.toString());
                         pendingChanges.recordCreation(entry);
@@ -914,12 +913,12 @@ public class FloorMapEditorPresenter
     private String getMapName() {
         final FloorMapDoc doc = getEntity();
         if (doc == null
-                || doc.getTemporalStoreRef() == null
-                || doc.getTemporalStoreRef().getName() == null
-                || doc.getTemporalStoreRef().getName().isEmpty()) {
+                || doc.getFactsStoreRef() == null
+                || doc.getFactsStoreRef().getName() == null
+                || doc.getFactsStoreRef().getName().isEmpty()) {
             return null;
         }
-        return doc.getTemporalStoreRef().getName();
+        return doc.getFactsStoreRef().getName();
     }
 
     /**
@@ -976,7 +975,7 @@ public class FloorMapEditorPresenter
         // Convert map-space coordinates back to world space using the
         // inverse of the entry's world-to-map matrix.
         FloorMapTransformationMatrix worldToMap = FloorMapTransformationMatrix.identity();
-        final JSONArray w2mArr = JSONUtil.getArray(json.get(TM_WORLD_TO_MAP));
+        final JSONArray w2mArr = JSONUtil.getArray(json.get(FloorMapJsonKeys.TM_WORLD_TO_MAP));
         if (w2mArr != null && w2mArr.size() >= 6) {
             worldToMap = new FloorMapTransformationMatrix(
                     JSONUtil.getDouble(w2mArr.get(0)),
@@ -993,7 +992,7 @@ public class FloorMapEditorPresenter
         final JSONArray coordsArr = new JSONArray();
         coordsArr.set(0, new JSONNumber(worldX));
         coordsArr.set(1, new JSONNumber(worldY));
-        json.put(COORDS, coordsArr);
+        json.put(FloorMapJsonKeys.COORDS, coordsArr);
         return new TemporalEntry(
                 original.getMap(),
                 original.getKey(),
