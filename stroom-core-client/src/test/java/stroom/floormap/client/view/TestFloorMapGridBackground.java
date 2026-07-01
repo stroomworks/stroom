@@ -184,4 +184,21 @@ class TestFloorMapGridBackground {
             previousSpacing = majorWorldSpacing;
         }
     }
+
+    @Test
+    void formatScaleLabelIntegerPowersOf10() {
+        // Powers of 10 >= 1 should render as integers (no ".0")
+        assertThat(FloorMapGridBackground.formatScaleLabel(1.0)).isEqualTo("1");
+        assertThat(FloorMapGridBackground.formatScaleLabel(10.0)).isEqualTo("10");
+        assertThat(FloorMapGridBackground.formatScaleLabel(100.0)).isEqualTo("100");
+        assertThat(FloorMapGridBackground.formatScaleLabel(1000.0)).isEqualTo("1000");
+    }
+
+    @Test
+    void formatScaleLabelSubUnitPowersOf10() {
+        // Powers of 10 < 1 should render as clean decimals
+        assertThat(FloorMapGridBackground.formatScaleLabel(0.1)).isEqualTo("0.1");
+        assertThat(FloorMapGridBackground.formatScaleLabel(0.01)).isEqualTo("0.01");
+        assertThat(FloorMapGridBackground.formatScaleLabel(0.001)).isEqualTo("0.001");
+    }
 }

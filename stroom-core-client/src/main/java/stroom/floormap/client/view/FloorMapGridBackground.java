@@ -62,6 +62,17 @@ public final class FloorMapGridBackground {
     /** Desired screen-pixel width for minor grid lines. */
     private static final double MINOR_SCREEN_PX = 0.5;
 
+    /** Stroom highlight colour (Material Design Blue 600). */
+    private static final String HIGHLIGHT_COLOUR = "#1e88e5";
+    /** Screen-pixel stroke width for origin axis lines. */
+    private static final double AXIS_SCREEN_PX = 2.5;
+    /** Arrowhead length expressed as a number of minor grid divisions. */
+    private static final double ARROW_MINOR_DIVISIONS = 2.0;
+    /** Screen-pixel font size for the origin scale labels. */
+    private static final double LABEL_FONT_SCREEN_PX = 12.0;
+    /** Screen-pixel gap between the arrowhead tip and the label. */
+    private static final double LABEL_GAP_SCREEN_PX = 4.0;
+
     // -- Zoom range constants ------------------------------------------------
 
     /**
@@ -76,8 +87,9 @@ public final class FloorMapGridBackground {
      */
     static final double TARGET_MAX_PX = 400.0;
 
-    // -- Pattern ID (unique within a single SVG document) ------------------
+    // -- Pattern / marker IDs (unique within a single SVG document) --------
     private static final String MAJOR_PATTERN_ID = "grid-major";
+    private static final String ARROW_MARKER_ID = "origin-arrow";
 
     private FloorMapGridBackground() {
         // utility class
@@ -92,6 +104,10 @@ public final class FloorMapGridBackground {
      * height="100%"}) and uses {@code patternTransform} to align the grid
      * with the map coordinate system. This means the grid always extends
      * to the edges of the screen regardless of pan or zoom.</p>
+     *
+     * <p>An origin indicator is drawn at world-space (0,0) showing the
+     * X and Y axes, each one major grid division long, in the Stroom
+     * highlight colour with arrowheads and scale labels.</p>
      *
      * @param builder    the HtmlBuilder to append into (at SVG root level)
      * @param matrix     the world-to-map transformation matrix
@@ -142,7 +158,7 @@ public final class FloorMapGridBackground {
                 + "," + formatDouble(panY) + ") scale(" + formatDouble(userZoom)
                 + ") " + matrix.toSvgMatrix();
 
-        // -- 3. Emit SVG <defs> with a single grid pattern -------------------
+        // -- 3. Emit SVG <defs> with grid pattern and arrowhead marker -------
         //    One tile = one major grid cell. Minor subdivisions (9 lines)
         //    are drawn directly inside the tile — no nested patterns, which
         //    avoids patternTransform compounding issues.
@@ -200,6 +216,11 @@ public final class FloorMapGridBackground {
                     new Attribute("patternUnits", "userSpaceOnUse"),
                     new Attribute("patternTransform", patternTransform));
 
+            // Arrowhead marker definition for origin axis lines.
+            // Uses a simple filled triangle pointing right; the marker
+            // auto-rotates to match the line direction via orient="auto".
+            appendArrowMarker(defs, majorWorldSpacing);
+
         }, SafeHtmlUtil.from("defs"));
 
         // -- 4. Background fill (dark) — fills entire viewport --------------
@@ -215,6 +236,155 @@ public final class FloorMapGridBackground {
                 new Attribute("width", "100%"),
                 new Attribute("height", "100%"),
                 new Attribute("fill", "url(#" + MAJOR_PATTERN_ID + ")"),
+                new Attribute("pointer-events", "none"));
+
+        // -- 6. Origin indicator — X and Y axes at (0,0) --------------------
+        appendOriginIndicator(builder, matrix, userZoom, panX, panY,
+                majorWorldSpacing, effectiveScale);
+    }
+
+    /**
+     * Appends an arrowhead {@code <marker>} definition into the given
+     * {@code <defs>} builder. The marker is a filled triangle in the
+     * Stroom highlight colour, sized proportionally to the grid so it
+     * always spans {@link #ARROW_MINOR_DIVISIONS} minor divisions.
+     */
+    private static void appendArrowMarker(final HtmlBuilder defs,
+                                          final double majorWorldSpacing) {
+        // Arrow length = ARROW_MINOR_DIVISIONS minor grid cells.
+        // One minor cell = majorWorldSpacing / 10.
+        final double arrowLen = majorWorldSpacing * ARROW_MINOR_DIVISIONS / 10.0;
+        final double arrowHalfWidth = arrowLen * 0.4;
+
+        // The marker viewBox is 0 0 arrowLen arrowLen, with refX at the
+        // tip so the arrow abuts exactly at the line endpoint.
+        final String viewBox = "0 0 " + formatDouble(arrowLen) + " " + formatDouble(arrowLen);
+        final String halfStr = formatDouble(arrowLen / 2.0);
+        final String lenStr = formatDouble(arrowLen);
+
+        defs.elem(marker -> {
+            // Triangle path: from (0, centre-halfWidth) to (arrowLen, centre) to (0, centre+halfWidth)
+            final String pathD = "M0," + formatDouble(arrowLen / 2.0 - arrowHalfWidth)
+                    + " L" + lenStr + "," + halfStr
+                    + " L0," + formatDouble(arrowLen / 2.0 + arrowHalfWidth) + " Z";
+            marker.elem(SafeHtmlUtil.from("path"),
+                    new Attribute("d", pathD),
+                    new Attribute("fill", HIGHLIGHT_COLOUR));
+        },
+                SafeHtmlUtil.from("marker"),
+                new Attribute("id", ARROW_MARKER_ID),
+                new Attribute("viewBox", viewBox),
+                new Attribute("refX", lenStr),
+                new Attribute("refY", halfStr),
+                new Attribute("markerWidth", lenStr),
+                new Attribute("markerHeight", lenStr),
+                new Attribute("markerUnits", "userSpaceOnUse"),
+                new Attribute("orient", "auto"));
+    }
+
+    /**
+     * Appends the origin indicator at world-space (0,0). Draws two axis
+     * lines (X rightward, Y downward), each one major grid division long,
+     * with arrowheads at the far end and a text label showing the world-
+     * space distance (the major grid spacing) in map units.
+     *
+     * <p>The indicator is rendered in a {@code <g>} group with the same
+     * combined pan/zoom/matrix transform used by the grid pattern, so it
+     * aligns exactly with the grid lines.</p>
+     */
+    private static void appendOriginIndicator(final HtmlBuilder builder,
+                                              final FloorMapTransformationMatrix matrix,
+                                              final double userZoom,
+                                              final double panX,
+                                              final double panY,
+                                              final double majorWorldSpacing,
+                                              final double effectiveScale) {
+
+        // Axis stroke width in world-space units (renders at AXIS_SCREEN_PX on screen).
+        final String axisStrokeWidth = formatDouble(AXIS_SCREEN_PX / effectiveScale);
+
+        // Font size in world-space units (renders at LABEL_FONT_SCREEN_PX on screen).
+        final String fontSize = formatDouble(LABEL_FONT_SCREEN_PX / effectiveScale);
+
+        // Gap between the arrowhead and the label in world-space units.
+        final double labelGap = LABEL_GAP_SCREEN_PX / effectiveScale;
+
+        final String spacing = formatDouble(majorWorldSpacing);
+        final String markerUrl = "url(#" + ARROW_MARKER_ID + ")";
+
+        // Human-readable label for the axis length.
+        final String label = formatScaleLabel(majorWorldSpacing);
+
+        // Counter-rotation angle so labels remain horizontal on screen.
+        // The world-to-map matrix may include rotation; we undo it for
+        // text readability.
+        final double radians = Math.atan2(matrix.getB(), matrix.getA());
+        final double counterRotDeg = -Math.toDegrees(radians);
+
+        // Combined transform: user pan/zoom then world-to-map matrix.
+        final String groupTransform = "translate(" + formatDouble(panX)
+                + "," + formatDouble(panY) + ") scale(" + formatDouble(userZoom)
+                + ") " + matrix.toSvgMatrix();
+
+        builder.elem(originGroup -> {
+
+            // --- X axis: from (0,0) to (majorWorldSpacing, 0) ---
+            originGroup.elem(SafeHtmlUtil.from("line"),
+                    new Attribute("x1", "0"),
+                    new Attribute("y1", "0"),
+                    new Attribute("x2", spacing),
+                    new Attribute("y2", "0"),
+                    new Attribute("stroke", HIGHLIGHT_COLOUR),
+                    new Attribute("stroke-width", axisStrokeWidth),
+                    new Attribute("marker-end", markerUrl));
+
+            // X axis label — positioned just past the arrowhead.
+            final String xLabelX = formatDouble(majorWorldSpacing + labelGap);
+            originGroup.elem(label,
+                    SafeHtmlUtil.from("text"),
+                    new Attribute("x", xLabelX),
+                    new Attribute("y", "0"),
+                    new Attribute("dy", "0.35em"),
+                    new Attribute("text-anchor", "start"),
+                    new Attribute("fill", HIGHLIGHT_COLOUR),
+                    new Attribute("font-size", fontSize),
+                    new Attribute("font-family", "sans-serif"),
+                    new Attribute("font-weight", "600"),
+                    new Attribute("pointer-events", "none"),
+                    new Attribute("transform",
+                            "rotate(" + formatDouble(counterRotDeg)
+                            + "," + xLabelX + ",0)"));
+
+            // --- Y axis: from (0,0) to (0, majorWorldSpacing) ---
+            originGroup.elem(SafeHtmlUtil.from("line"),
+                    new Attribute("x1", "0"),
+                    new Attribute("y1", "0"),
+                    new Attribute("x2", "0"),
+                    new Attribute("y2", spacing),
+                    new Attribute("stroke", HIGHLIGHT_COLOUR),
+                    new Attribute("stroke-width", axisStrokeWidth),
+                    new Attribute("marker-end", markerUrl));
+
+            // Y axis label — positioned just past the arrowhead.
+            final String yLabelY = formatDouble(majorWorldSpacing + labelGap);
+            originGroup.elem(label,
+                    SafeHtmlUtil.from("text"),
+                    new Attribute("x", "0"),
+                    new Attribute("y", yLabelY),
+                    new Attribute("dy", "1em"),
+                    new Attribute("text-anchor", "middle"),
+                    new Attribute("fill", HIGHLIGHT_COLOUR),
+                    new Attribute("font-size", fontSize),
+                    new Attribute("font-family", "sans-serif"),
+                    new Attribute("font-weight", "600"),
+                    new Attribute("pointer-events", "none"),
+                    new Attribute("transform",
+                            "rotate(" + formatDouble(counterRotDeg)
+                            + ",0," + yLabelY + ")"));
+
+        },
+                SafeHtmlUtil.from("g"),
+                new Attribute("transform", groupTransform),
                 new Attribute("pointer-events", "none"));
     }
 
@@ -253,6 +423,26 @@ public final class FloorMapGridBackground {
         final double minorOpacity = clampZeroToOne(t) * MINOR_MAX_OPACITY;
 
         return new double[]{majorWorldSpacing, minorOpacity};
+    }
+
+    /**
+     * Formats the major grid spacing as a clean, human-readable label in
+     * map units (e.g. "1", "10", "100", "0.1", "0.01"). Since the
+     * spacing is always a power of 10, the result is always a short,
+     * unambiguous number.
+     *
+     * @param majorWorldSpacing the world-space distance (a power of 10)
+     * @return a formatted label string
+     */
+    static String formatScaleLabel(final double majorWorldSpacing) {
+        // Powers of 10 ≥ 1 are displayed as integers; < 1 as decimals.
+        if (majorWorldSpacing >= 1.0 && majorWorldSpacing == (long) majorWorldSpacing) {
+            return String.valueOf((long) majorWorldSpacing);
+        }
+        // For sub-unit values (0.1, 0.01, etc.), strip trailing zeros.
+        // Double.toString for powers of 10 < 1 will produce e.g. "0.1", "0.01"
+        // which is already clean — no trailing zeros to strip.
+        return String.valueOf(majorWorldSpacing);
     }
 
     private static double clampZeroToOne(final double value) {
