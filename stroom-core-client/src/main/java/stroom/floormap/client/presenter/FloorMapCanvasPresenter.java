@@ -60,17 +60,29 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     private static final int TRAIL_MAX_PTS = 80;
 
     // -------------------------------------------------------------------------
+    /**
+     * Minimum zoom scale. At extreme zoom-out the grid decade selection and
+     * SVG coordinate values lose precision. This limit (~1e-12) provides
+     * roughly 12 orders of magnitude of zoom-out from the default — far
+     * beyond any practical use.
+     */
+    private static final double MIN_SCALE = 1e-12;
+
+    /**
+     * Maximum zoom scale. At extreme zoom-in the same precision issues
+     * apply. This limit (~1e12) provides roughly 12 orders of magnitude
+     * of zoom-in from the default.
+     */
+    private static final double MAX_SCALE = 1e12;
+
     // Zoom and pan state
-    // -------------------------------------------------------------------------
     private double scale = 1.0;
     private double offsetX = 0;
     private double offsetY = 0;
     private String backgroundImage;
     private FloorMapTransformationMatrix matrix;
 
-    // -------------------------------------------------------------------------
     // Dragging state
-    // -------------------------------------------------------------------------
     private boolean isDraggingEnabled = false;
     private boolean isDragging = false;
     /** True only if the mouse actually moved while dragging an object (distinguishes click-to-select from drag). */
@@ -78,10 +90,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     private double lastMouseX;
     private double lastMouseY;
 
-    // -------------------------------------------------------------------------
-    // Objects on the map — kept in two separate lists so facts and events never
-    // overwrite each other.
-    // -------------------------------------------------------------------------
+    // Objects on the map — kept in two separate lists so facts and events never overwrite each other.
     private List<FloorMapObject> factObjects = new ArrayList<>();
 
     /**
@@ -90,9 +99,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
      */
     private List<FloorMapObject> eventObjects = new ArrayList<>();
 
-    // -------------------------------------------------------------------------
     // Edit mode
-    // -------------------------------------------------------------------------
     private boolean editMode = false;
     private String selectedObjectId = null;
 
@@ -340,6 +347,10 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
             offsetX = mouseX - (mouseX - offsetX) * zoomFactor;
             offsetY = mouseY - (mouseY - offsetY) * zoomFactor;
             scale *= zoomFactor;
+
+            // Clamp to prevent floating-point precision breakdown at
+            // extreme zoom levels.
+            scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale));
 
             redraw();
         }));

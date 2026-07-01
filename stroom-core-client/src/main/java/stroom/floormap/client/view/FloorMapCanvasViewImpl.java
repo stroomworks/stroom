@@ -50,6 +50,14 @@ public class FloorMapCanvasViewImpl
         extends ViewWithUiHandlers<DirtyUiHandlers>
         implements FloorMapCanvasView, ReadOnlyChangeHandler {
 
+    /**
+     * The display width of a background image in map-space SVG coordinate
+     * units. The image height is derived from this and the image's aspect
+     * ratio. This is an arbitrary normalisation — the world-to-map
+     * transformation matrix determines the real-world meaning.
+     */
+    private static final int IMAGE_DISPLAY_WIDTH = 1000;
+
     private static final int OBJECT_SIZE = 100;
     private static final int PERSON_RADIUS = 30;
 
@@ -132,13 +140,25 @@ public class FloorMapCanvasViewImpl
         final String counterRotation = "rotate(" + counterRotationDeg + ")";
 
         htmlBuilder.elem(svg -> {
+
+            // ----------------------------------------------------------------
+            // Background
+            // ----------------------------------------------------------------
+            if (backgroundImage == null) {
+                // Adaptive grid background — fills the entire viewport.
+                // Spacing adjusts with zoom: white grid on dark background,
+                // with 10 subdivisions per major square that fade in/out.
+                FloorMapGridBackground.appendGrid(
+                        svg, effectiveMatrix, scale, x, y);
+            }
+
             // Group 1: User zoom/pan (applied first).
             svg.elem(panGroup -> {
                 // Group 2: The map-to-screen transformation matrix.
                 panGroup.elem(matrixGroup -> {
 
                     // ----------------------------------------------------------------
-                    // Background
+                    // Background image (when provided)
                     // ----------------------------------------------------------------
                     if (backgroundImage != null) {
                         final Double cachedAspectRatio = imageAspectRatioCache.get(backgroundImage);
@@ -146,14 +166,14 @@ public class FloorMapCanvasViewImpl
                         if (cachedAspectRatio == null) {
                             loadImageAspectRatio(backgroundImage);
                         }
-                        final double bgHeight = 1000.0 / aspectRatio;
+                        final double bgHeight = (double) IMAGE_DISPLAY_WIDTH / aspectRatio;
 
                         matrixGroup.elem(SafeHtmlUtil.from("image"),
                             new Attribute(SafeHtmlUtils.fromSafeConstant("href"),
                                     SafeHtmlUtils.fromTrustedString(backgroundImage)),
                             new Attribute("x", "0"),
                             new Attribute("y", "0"),
-                            new Attribute("width", "1000"),
+                            new Attribute("width", String.valueOf(IMAGE_DISPLAY_WIDTH)),
                             new Attribute("height", String.valueOf(bgHeight)),
                             new Attribute("preserveAspectRatio", "none"),
                             new Attribute("id", "background"));
@@ -162,30 +182,8 @@ public class FloorMapCanvasViewImpl
                             matrixGroup.elem(SafeHtmlUtil.from("rect"),
                                 new Attribute("x", "0"),
                                 new Attribute("y", "0"),
-                                new Attribute("width", "1000"),
+                                new Attribute("width", String.valueOf(IMAGE_DISPLAY_WIDTH)),
                                 new Attribute("height", String.valueOf(bgHeight)),
-                                new Attribute("fill", "none"),
-                                new Attribute("stroke", "#1e88e5"),
-                                new Attribute("stroke-width", "8"),
-                                new Attribute("vector-effect", "non-scaling-stroke"),
-                                new Attribute("pointer-events", "none"));
-                        }
-                    } else {
-                        // FIX (Bug 1): fallback rect belongs in matrixGroup, not panGroup.
-                        matrixGroup.elem(SafeHtmlUtil.from("rect"),
-                            new Attribute("x", "0"),
-                            new Attribute("y", "0"),
-                            new Attribute("width", "1000"),
-                            new Attribute("height", "1000"),
-                            new Attribute("fill", "#f8f8f8"),
-                            new Attribute("id", "background"));
-
-                        if ("background".equals(selectedObjectId)) {
-                            matrixGroup.elem(SafeHtmlUtil.from("rect"),
-                                new Attribute("x", "0"),
-                                new Attribute("y", "0"),
-                                new Attribute("width", "1000"),
-                                new Attribute("height", "1000"),
                                 new Attribute("fill", "none"),
                                 new Attribute("stroke", "#1e88e5"),
                                 new Attribute("stroke-width", "8"),
