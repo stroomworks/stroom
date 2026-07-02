@@ -92,7 +92,6 @@ public class MessageReceiverFactory {
 
                             @Override
                             public void event(final PathwaysDoc pathwaysDoc, final String pathwayName, final PathwayEvent event) {
-                                LOGGER.error("Received event for pathway " + pathwayName + ": " + event.getDescription());
                                 buffer.computeIfAbsent(pathwayName, k -> new ArrayList<>()).add(event);
                                 eventCount++;
                                 if (eventCount >= MAX_BUFFER_SIZE) {
@@ -101,7 +100,6 @@ public class MessageReceiverFactory {
                             }
                             
                             public void flush() {
-                                LOGGER.error("FLUSHING BUFFER");
                                 if (buffer.isEmpty()) return;
                                 try {
                                     final SimpleDb eventsDb = pathwaysDb.getPathwayEvents();
@@ -114,7 +112,6 @@ public class MessageReceiverFactory {
                                                 keyBuf.putLong(sequenceId++);
                                                 
                                                 pathwayEventsSerde.writePathwayEvent(event, valBuf -> {
-                                                    LOGGER.error("Writing Pathway Event " + event.getDescription());
                                                     eventsDb.insert(lmdbWriter, keyBuf.flip(), valBuf);
                                                 });
                                             });

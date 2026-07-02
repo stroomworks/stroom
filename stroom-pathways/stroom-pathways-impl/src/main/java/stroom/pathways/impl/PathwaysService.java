@@ -17,6 +17,7 @@
 package stroom.pathways.impl;
 
 import stroom.bytebuffer.impl6.ByteBuffers;
+import stroom.docref.DocRef;
 import stroom.docstore.api.DocumentNotFoundException;
 import stroom.node.api.NodeCallUtil;
 import stroom.node.api.NodeInfo;
@@ -42,6 +43,7 @@ import stroom.util.io.PathCreator;
 import stroom.util.jersey.WebTargetFactory;
 import stroom.util.logging.LambdaLogger;
 import stroom.util.logging.LambdaLoggerFactory;
+import stroom.util.shared.NullSafe;
 import stroom.util.shared.PageResponse;
 import stroom.util.shared.ResourcePaths;
 import stroom.util.shared.ResultPage;
@@ -128,37 +130,70 @@ public class PathwaysService {
     }
 
     public Boolean deletePathway(final DeletePathway deletePathway) {
-        final PathwaysDb pathwaysDb;
-            try {
-                final Path processingPath = dbPath.resolve("pathways").resolve(deletePathway.getDocRef().getUuid());
-                Files.createDirectories(processingPath);
-                pathwaysDb = PathwaysDb.create(processingPath, byteBuffers, false);
-            } catch (final IOException e) {
-                throw new UncheckedIOException(e);
-            }
+        final List<DocRef> docRefs = pathwaysStore.list();
+        for (final DocRef docRef : NullSafe.list(docRefs)) {
+            final PathwaysDb pathwaysDb = pathwaysProcessor.getPathwaysDb(docRef);
 
-        final byte[] keyBytes = "POST /people".getBytes(StandardCharsets.UTF_8);
-        LOGGER.error("Attempting to recover data for " + Arrays.toString(keyBytes));
-        try (final LmdbWriter writer = pathwaysDb.createWriter()) {
-            final List<PathwayEvent> events = new java.util.ArrayList<>();
-            final stroom.lmdb.stream.LmdbKeyRange prefixRange = stroom.lmdb.stream.LmdbKeyRange.builder()
-                    .prefix(ByteBuffer.wrap(keyBytes))
-                    .build();
-            
-            pathwaysDb.getPathwayEvents().iterate(writer.getWriteTxn(), prefixRange, (keyBb, valueByteBuffer) -> {
-                final byte[] keyArr = new byte[keyBb.remaining()];
-                keyBb.duplicate().get(keyArr);
-                LOGGER.error("keyBb: " + Arrays.toString(keyArr));
-                
-                if (valueByteBuffer == null) return;
-                
-                final byte[] valArr = new byte[valueByteBuffer.remaining()];
-                valueByteBuffer.duplicate().get(valArr);
-                LOGGER.error("valueByteBuffer: " + Arrays.toString(valArr));
-                
-                events.add(pathwayEventsSerde.readPathwayEvent(valueByteBuffer, new HashMap<>()));
-            });
-            events.forEach(pathwayEvent -> {LOGGER.error(pathwayEvent.getDescription());});
+            final byte[] keyBytes = "POST /people".getBytes(StandardCharsets.UTF_8);
+            LOGGER.error("Attempting to recover data for " + Arrays.toString(keyBytes));
+            LOGGER.error("TRY");
+            try (final LmdbWriter writer = pathwaysDb.createWriter()) {
+                LOGGER.error("prefixRange");
+                final List<PathwayEvent> events = new java.util.ArrayList<>();
+
+                LOGGER.error("--- DEBUG DUMP OF DB KEYS ---");
+                final stroom.lmdb.stream.LmdbKeyRange allRange = stroom.lmdb.stream.LmdbKeyRange.all();
+                final int[] count = new int[]{0};
+                pathwaysDb.getPathwayEvents().iterate(writer.getWriteTxn(), allRange, (k, v) -> {
+                    if (count[0]++ < 10) {
+                        final byte[] kArr = new byte[k.remaining()];
+                        k.duplicate().get(kArr);
+
+                        int zeroIdx = -1;
+                        for (int i = 0; i < kArr.length; i++) {
+                            if (kArr[i] == 0) {
+                                zeroIdx = i;
+                                break;
+                            }
+                        }
+                        String pathName = zeroIdx != -1
+                                ? new String(kArr, 0, zeroIdx, StandardCharsets.UTF_8)
+                                : new String(kArr, StandardCharsets.UTF_8);
+                        LOGGER.error("DB KEY FOUND: " + pathName);
+                    }
+                });
+                LOGGER.error("--- END DEBUG DUMP ---");
+                final ByteBuffer prefixBuffer = ByteBuffer.allocateDirect(keyBytes.length + 1);
+                prefixBuffer.put(keyBytes);
+                prefixBuffer.put((byte) 0);
+                prefixBuffer.flip();
+
+                final stroom.lmdb.stream.LmdbKeyRange prefixRange = stroom.lmdb.stream.LmdbKeyRange.builder()
+                        .prefix(prefixBuffer)
+                        .build();
+
+                LOGGER.error("iterate");
+                pathwaysDb.getPathwayEvents().iterate(writer.getWriteTxn(), prefixRange, (keyBb, valueByteBuffer) -> {
+                    LOGGER.error("iterate-loop");
+                    final byte[] keyArr = new byte[keyBb.remaining()];
+                    keyBb.duplicate().get(keyArr);
+                    LOGGER.error("keyBb: " + Arrays.toString(keyArr));
+
+                    LOGGER.error("if (valueByteBuffer == null) return;");
+                    if (valueByteBuffer == null) return;
+                    LOGGER.error("no return;");
+
+                    LOGGER.error("valArr");
+                    final byte[] valArr = new byte[valueByteBuffer.remaining()];
+                    valueByteBuffer.duplicate().get(valArr);
+                    LOGGER.error("valueByteBuffer: " + Arrays.toString(valArr));
+
+                    events.add(pathwayEventsSerde.readPathwayEvent(valueByteBuffer, new HashMap<>()));
+                });
+                events.forEach(pathwayEvent -> {
+                    LOGGER.error(pathwayEvent.getDescription());
+                });
+            }
         }
         throw new UnsupportedOperationException("Not implemented");
     }

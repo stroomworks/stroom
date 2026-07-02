@@ -20,6 +20,7 @@ import stroom.bytebuffer.ByteBufferUtils;
 import stroom.bytebuffer.impl6.ByteBuffers;
 import stroom.docref.DocRef;
 import stroom.node.api.NodeInfo;
+import stroom.pathways.impl.events.PathwayEvent;
 import stroom.pathways.shared.FindPathwayCriteria;
 import stroom.pathways.shared.PathwayResultPage;
 import stroom.pathways.shared.PathwaysDoc;
@@ -42,9 +43,12 @@ import jakarta.inject.Singleton;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -64,6 +68,7 @@ public class PathwaysProcessor {
     private final PathwaySerde pathwaySerde;
     private final ShardManager shardManager;
     private final NodeInfo nodeInfo;
+    final PathwayEventsSerde pathwayEventsSerde;
 
     @Inject
     public PathwaysProcessor(final PathwaysStore pathwaysStore,
@@ -72,13 +77,15 @@ public class PathwaysProcessor {
                              final ByteBuffers byteBuffers,
                              final PathwaySerde pathwaySerde,
                              final ShardManager shardManager,
-                             final NodeInfo nodeInfo) {
+                             final NodeInfo nodeInfo,
+                             final PathwayEventsSerde pathwayEventsSerde/*TEMPORARY TODO 8192*/) {
         this.pathwaysStore = pathwaysStore;
         this.messageReceiverFactory = messageReceiverFactory;
         this.byteBuffers = byteBuffers;
         this.pathwaySerde = pathwaySerde;
         this.shardManager = shardManager;
         this.nodeInfo = nodeInfo;
+        this.pathwayEventsSerde = pathwayEventsSerde;/*TEMPORARY TODO 8192*/
 
         dbPath = pathCreator.toAppPath("${stroom.home}/pathways");
     }
@@ -105,28 +112,103 @@ public class PathwaysProcessor {
                         if (db instanceof final TraceDb traceDb) {
 
                             try (final LmdbWriter writer = pathwaysDb.createWriter()) {
-                                messageReceiverFactory.create(pathwaysDb, writer, infoFeed.getName(), messageReceiver -> {
-                                    final TraceProcessor traceProcessor =
-                                            new TraceProcessor(byteBuffers, pathwaySerde);
-                                    traceDb.iterateTraces((traceId, function) ->
-                                            traceProcessor.processTrace(writer,
-                                                    pathwaysDb,
-                                                    traceId,
-                                                    function,
-                                                    doc,
-                                                    messageReceiver));
-                                });
+                                messageReceiverFactory.create(pathwaysDb,
+                                        writer,
+                                        infoFeed.getName(),
+                                        messageReceiver -> {
+                                            final TraceProcessor traceProcessor =
+                                                    new TraceProcessor(byteBuffers, pathwaySerde);
+                                            traceDb.iterateTraces((traceId, function) ->
+                                                    traceProcessor.processTrace(writer,
+                                                            pathwaysDb,
+                                                            traceId,
+                                                            function,
+                                                            doc,
+                                                            messageReceiver));
+                                        });
                                 writer.commit();
                             }
                         }
                         return null;
                     });
                 }
+
+
+                temp();
             }
         }
     }
 
-    private PathwaysDb getPathwaysDb(final DocRef docRef) {
+    private void temp() {
+
+        final List<DocRef> docRefs = pathwaysStore.list();
+        for (final DocRef docRef : NullSafe.list(docRefs)) {
+            final PathwaysDb pathwaysDb = getPathwaysDb(docRef);
+
+            final byte[] keyBytes = "POST /people".getBytes(StandardCharsets.UTF_8);
+            LOGGER.error("Attempting to recover data for " + Arrays.toString(keyBytes));
+            LOGGER.error("TRY");
+            try (final LmdbWriter writer = pathwaysDb.createWriter()) {
+                LOGGER.error("prefixRange");
+                final List<PathwayEvent> events = new java.util.ArrayList<>();
+
+                LOGGER.error("--- DEBUG DUMP OF DB KEYS ---");
+                final stroom.lmdb.stream.LmdbKeyRange allRange = stroom.lmdb.stream.LmdbKeyRange.all();
+                final int[] count = new int[]{0};
+                pathwaysDb.getPathwayEvents().iterate(writer.getWriteTxn(), allRange, (k, v) -> {
+                    if (count[0]++ < 10) {
+                        final byte[] kArr = new byte[k.remaining()];
+                        k.duplicate().get(kArr);
+
+                        int zeroIdx = -1;
+                        for (int i = 0; i < kArr.length; i++) {
+                            if (kArr[i] == 0) {
+                                zeroIdx = i;
+                                break;
+                            }
+                        }
+                        String pathName = zeroIdx != -1
+                                ? new String(kArr, 0, zeroIdx, StandardCharsets.UTF_8)
+                                : new String(kArr, StandardCharsets.UTF_8);
+                        LOGGER.error("DB KEY FOUND: " + pathName);
+                    }
+                });
+                LOGGER.error("--- END DEBUG DUMP ---");
+                final ByteBuffer prefixBuffer = ByteBuffer.allocateDirect(keyBytes.length + 1);
+                prefixBuffer.put(keyBytes);
+                prefixBuffer.put((byte) 0);
+                prefixBuffer.flip();
+
+                final stroom.lmdb.stream.LmdbKeyRange prefixRange = stroom.lmdb.stream.LmdbKeyRange.builder()
+                        .prefix(prefixBuffer)
+                        .build();
+
+                LOGGER.error("iterate");
+                pathwaysDb.getPathwayEvents().iterate(writer.getWriteTxn(), prefixRange, (keyBb, valueByteBuffer) -> {
+                    LOGGER.error("iterate-loop");
+                    final byte[] keyArr = new byte[keyBb.remaining()];
+                    keyBb.duplicate().get(keyArr);
+                    LOGGER.error("keyBb: " + Arrays.toString(keyArr));
+
+                    LOGGER.error("if (valueByteBuffer == null) return;");
+                    if (valueByteBuffer == null) return;
+                    LOGGER.error("no return;");
+
+                    LOGGER.error("valArr");
+                    final byte[] valArr = new byte[valueByteBuffer.remaining()];
+                    valueByteBuffer.duplicate().get(valArr);
+                    LOGGER.error("valueByteBuffer: " + Arrays.toString(valArr));
+
+                    events.add(pathwayEventsSerde.readPathwayEvent(valueByteBuffer, new HashMap<>()));
+                });
+                events.forEach(pathwayEvent -> {
+                    LOGGER.error(pathwayEvent.getDescription());
+                });
+            }
+        }
+    }
+
+    public PathwaysDb getPathwaysDb(final DocRef docRef) {
         return pathwaysDbMap.computeIfAbsent(docRef.getUuid(), k -> {
             try {
                 final Path processingPath = dbPath.resolve("pathways").resolve(docRef.getUuid());
