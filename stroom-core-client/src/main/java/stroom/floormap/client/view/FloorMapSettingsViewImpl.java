@@ -28,6 +28,12 @@ import com.google.inject.Inject;
 import com.gwtplatform.mvp.client.View;
 import com.gwtplatform.mvp.client.ViewWithUiHandlers;
 
+/**
+ * View implementation for the floor map settings tab.
+ *
+ * <p>Provides the temporal-store document reference picker, allowing the user
+ * to configure which temporal store the floor map queries against.</p>
+ */
 public class FloorMapSettingsViewImpl
         extends ViewWithUiHandlers<DirtyUiHandlers>
         implements FloorMapSettingsView, ReadOnlyChangeHandler {
@@ -56,7 +62,6 @@ public class FloorMapSettingsViewImpl
     public void onReadOnly(final boolean readOnly) {
         // No code
     }
-
 
     // --------------------------------------------------------------------------------
 

@@ -32,6 +32,9 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import org.fusesource.restygwt.client.DirectRestService;
 
+/**
+ * REST resource interface for fetching and updating {@link FloorMapDoc} documents.
+ */
 @Tag(name = "Queries")
 @Path("/floormap" + ResourcePaths.V1)
 @Produces(MediaType.APPLICATION_JSON)
@@ -42,14 +45,14 @@ public interface FloorMapResource
     @GET
     @Path("/{uuid}")
     @Operation(
-            summary = "Fetch an analytic rule doc by its UUID",
+            summary = "Fetch a floor map doc by its UUID",
             operationId = "fetchFloorMap")
     FloorMapDoc fetch(@PathParam("uuid") String uuid);
 
     @PUT
     @Path("/{uuid}")
     @Operation(
-            summary = "Update an analytic rule doc",
+            summary = "Update a floor map doc",
             operationId = "updateFloorMap")
     FloorMapDoc update(@PathParam("uuid") String uuid,
                        @Parameter(description = "doc", required = true) FloorMapDoc doc);

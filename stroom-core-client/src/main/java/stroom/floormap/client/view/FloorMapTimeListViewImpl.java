@@ -18,10 +18,10 @@ package stroom.floormap.client.view;
 
 import stroom.floormap.client.presenter.FloorMapTimeListPresenter.FloorMapTimeListView;
 
+import com.google.gwt.dom.client.Style.Unit;
 import com.google.gwt.user.client.ui.DockLayoutPanel;
 import com.google.gwt.user.client.ui.SimplePanel;
 import com.google.gwt.user.client.ui.Widget;
-import com.google.gwt.dom.client.Style.Unit;
 import com.google.inject.Inject;
 import com.gwtplatform.mvp.client.ViewImpl;
 

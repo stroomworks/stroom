@@ -49,16 +49,13 @@ public final class FloorMapEntryParser {
     public static final class ParseResult {
 
         private final String backgroundImage;
-        private final String backgroundKey;
         private final FloorMapTransformationMatrix backgroundMatrix;
         private final List<FloorMapObject> objects;
 
         public ParseResult(final String backgroundImage,
-                           final String backgroundKey,
                            final FloorMapTransformationMatrix backgroundMatrix,
                            final List<FloorMapObject> objects) {
             this.backgroundImage = backgroundImage;
-            this.backgroundKey = backgroundKey;
             this.backgroundMatrix = backgroundMatrix;
             this.objects = objects;
         }
@@ -66,11 +63,6 @@ public final class FloorMapEntryParser {
         /** The background image path, or {@code null} if none. */
         public String getBackgroundImage() {
             return backgroundImage;
-        }
-
-        /** The temporal-store key for the background entry, or {@code null}. */
-        public String getBackgroundKey() {
-            return backgroundKey;
         }
 
         /** The map-to-screen transformation matrix for the background. */
@@ -100,12 +92,11 @@ public final class FloorMapEntryParser {
      */
     public static ParseResult parse(final List<TemporalEntry> entries) {
         String backgroundImage = null;
-        String backgroundKey = null;
         FloorMapTransformationMatrix bgMatrix = FloorMapTransformationMatrix.identity();
         final List<FloorMapObject> objects = new ArrayList<>();
 
         if (entries == null) {
-            return new ParseResult(null, null, bgMatrix, objects);
+            return new ParseResult(null, null, objects);
         }
 
         for (final TemporalEntry entry : entries) {
@@ -125,18 +116,9 @@ public final class FloorMapEntryParser {
                         || "background".equalsIgnoreCase(entry.getKey())) {
                     // Background entry
                     backgroundImage = JSONUtil.getString(json.get(IMG));
-                    backgroundKey = entry.getKey();
 
                     final JSONArray m2sArr = JSONUtil.getArray(json.get(TM_MAP_TO_SCREEN));
-                    if (m2sArr != null && m2sArr.size() >= 6) {
-                        bgMatrix = new FloorMapTransformationMatrix(
-                                JSONUtil.getDouble(m2sArr.get(0)),
-                                JSONUtil.getDouble(m2sArr.get(1)),
-                                JSONUtil.getDouble(m2sArr.get(2)),
-                                JSONUtil.getDouble(m2sArr.get(3)),
-                                JSONUtil.getDouble(m2sArr.get(4)),
-                                JSONUtil.getDouble(m2sArr.get(5)));
-                    }
+                    bgMatrix = parseMatrix(m2sArr);
                 } else {
                     // Regular object
                     double worldX = 0;
@@ -147,17 +129,8 @@ public final class FloorMapEntryParser {
                         worldY = JSONUtil.getDouble(coordsArr.get(1));
                     }
 
-                    FloorMapTransformationMatrix worldToMap = FloorMapTransformationMatrix.identity();
-                    final JSONArray w2mArr = JSONUtil.getArray(json.get(TM_WORLD_TO_MAP));
-                    if (w2mArr != null && w2mArr.size() >= 6) {
-                        worldToMap = new FloorMapTransformationMatrix(
-                                JSONUtil.getDouble(w2mArr.get(0)),
-                                JSONUtil.getDouble(w2mArr.get(1)),
-                                JSONUtil.getDouble(w2mArr.get(2)),
-                                JSONUtil.getDouble(w2mArr.get(3)),
-                                JSONUtil.getDouble(w2mArr.get(4)),
-                                JSONUtil.getDouble(w2mArr.get(5)));
-                    }
+                    final FloorMapTransformationMatrix worldToMap =
+                            parseMatrix(JSONUtil.getArray(json.get(TM_WORLD_TO_MAP)));
 
                     // Apply world-to-map transformation
                     final double mapX =
@@ -173,6 +146,24 @@ public final class FloorMapEntryParser {
             }
         }
 
-        return new ParseResult(backgroundImage, backgroundKey, bgMatrix, objects);
+        return new ParseResult(backgroundImage, bgMatrix, objects);
+    }
+
+    /**
+     * Parses a 6-element JSON array into a transformation matrix.
+     * Returns {@link FloorMapTransformationMatrix#identity()} if the array is
+     * {@code null} or has fewer than 6 elements.
+     */
+    private static FloorMapTransformationMatrix parseMatrix(final JSONArray arr) {
+        if (arr == null || arr.size() < 6) {
+            return FloorMapTransformationMatrix.identity();
+        }
+        return new FloorMapTransformationMatrix(
+                JSONUtil.getDouble(arr.get(0)),
+                JSONUtil.getDouble(arr.get(1)),
+                JSONUtil.getDouble(arr.get(2)),
+                JSONUtil.getDouble(arr.get(3)),
+                JSONUtil.getDouble(arr.get(4)),
+                JSONUtil.getDouble(arr.get(5)));
     }
 }

@@ -57,13 +57,20 @@ public class FloorMapDataEvent extends GwtEvent<FloorMapDataEvent.Handler> {
         handler.onDataChange(this);
     }
 
+    /**
+     * @return the list of map objects received from the query model
+     */
     public List<FloorMapObject> getObjects() {
         return objects;
     }
 
     // --------------------------------------------------------------------------------
 
+    /**
+     * Handler for {@link FloorMapDataEvent}.
+     */
     public interface Handler extends EventHandler {
+
         void onDataChange(FloorMapDataEvent event);
     }
 

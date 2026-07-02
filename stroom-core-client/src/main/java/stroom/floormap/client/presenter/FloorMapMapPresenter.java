@@ -51,8 +51,21 @@ import java.util.List;
 import static stroom.floormap.client.FloorMapJsonKeys.*;
 
 /**
- * Main presenter for the Floor Map visualization.
- * Coordinates the map canvas and the timeline.
+ * Presenter for the Floor Map <b>Map</b> tab.
+ *
+ * <p>Runs two independent query models at the current timeline time:</p>
+ * <ul>
+ *   <li><b>Facts query</b> ({@link #queryModel}) — fetches static floor-plan
+ *       objects (desks, rooms, people positions) and passes the parsed result
+ *       to {@link FloorMapCanvasPresenter#setObjects}.</li>
+ *   <li><b>Histogram query</b> ({@link #histogramQueryModel}) — runs the
+ *       events query over the full timeline range, buckets timestamps into
+ *       {@link #HISTOGRAM_BINS} bins, and feeds the counts to
+ *       {@link FloorMapTimelinePresenter#setHistogramData}.</li>
+ * </ul>
+ *
+ * <p>Coordinates with {@link FloorMapCanvasPresenter} for rendering and
+ * {@link FloorMapTimelinePresenter} for playback, step, and scrub controls.</p>
  */
 public class FloorMapMapPresenter
         extends DocPresenter<FloorMapMapView, FloorMapDoc> {
@@ -202,6 +215,10 @@ public class FloorMapMapPresenter
                 floorMapCanvasPresenter::clearAnimationState);
     }
 
+    /**
+     * Initialises and resets both query models, then loads the timeline range
+     * and fires the initial facts query.
+     */
     @Override
     protected void onRead(final DocRef docRef, final FloorMapDoc document, final boolean readOnly) {
         // Initialise and reset both query models BEFORE starting any searches, so that the histogram query
@@ -216,19 +233,24 @@ public class FloorMapMapPresenter
         onTimeChange(selectedTime);
     }
 
+    /** No document-level state to write — returns the document unchanged. */
     @Override
     protected FloorMapDoc onWrite(final FloorMapDoc document) {
         return document;
     }
 
-    /**
-     * Overridden to make public.
-     */
+    /** Always returns {@code false} — the Map tab has no associated dirty state. */
     @Override
     public boolean hasAssociatedDirty() {
         return false;
     }
 
+    /**
+     * Returns the facts query to execute, falling back to a default template
+     * derived from the configured temporal store if no custom query is set.
+     *
+     * @return the StroomQL query text, or {@code null} if no store is configured
+     */
     private String getFactsQueryToUse() {
         String factsQuery = getEntity() != null ? getEntity().getFactsQuery() : null;
         if (factsQuery == null || factsQuery.trim().isEmpty()) {
@@ -250,6 +272,12 @@ public class FloorMapMapPresenter
         return factsQuery;
     }
 
+    /**
+     * Handles a timeline time change by re-running the facts query at the
+     * specified time.
+     *
+     * @param time the new timeline position in milliseconds
+     */
     private void onTimeChange(final long time) {
         this.selectedTime = time;
 
@@ -272,6 +300,12 @@ public class FloorMapMapPresenter
         }
     }
 
+    /**
+     * Parses a facts {@link TableResult} into floor-map objects, extracts the
+     * background image and matrix, and updates the canvas.
+     *
+     * @param tableResult the result from the facts query
+     */
     private void parseFacts(final TableResult tableResult) {
         int keyIdx = -1;
         int typeIdx = -1;
@@ -354,15 +388,20 @@ public class FloorMapMapPresenter
             }
         }
 
-        if (activeBgImage != null && !activeBgImage.isEmpty()) {
-            floorMapCanvasPresenter.setBackgroundImage(activeBgImage);
-        } else {
-            floorMapCanvasPresenter.setBackgroundImage(null);
-        }
+        floorMapCanvasPresenter.setBackgroundImage(
+                activeBgImage != null && !activeBgImage.isEmpty() ? activeBgImage : null);
         floorMapCanvasPresenter.setMatrix(activeBgMatrix);
         floorMapCanvasPresenter.setObjects(plottedObjects);
     }
 
+    /**
+     * Parses a comma-separated string of 6 numbers into a transformation
+     * matrix, stripping any JSON array brackets.
+     *
+     * @param str the string to parse; may be {@code null}
+     * @return the parsed matrix, or {@link FloorMapTransformationMatrix#identity()}
+     *         if parsing fails
+     */
     private FloorMapTransformationMatrix parseMatrix(final String str) {
         if (str == null || str.trim().isEmpty()) {
             return FloorMapTransformationMatrix.identity();
@@ -385,6 +424,13 @@ public class FloorMapMapPresenter
         return FloorMapTransformationMatrix.identity();
     }
 
+    /**
+     * Parses a comma-separated string of 2 numbers into {@code [x, y]}
+     * coordinates, stripping any JSON array brackets.
+     *
+     * @param str the string to parse; may be {@code null}
+     * @return the coordinates as {@code [x, y]}, or {@code null} if parsing fails
+     */
     private double[] parseCoords(final String str) {
         if (str == null || str.trim().isEmpty()) {
             return null;
@@ -403,6 +449,10 @@ public class FloorMapMapPresenter
         return null;
     }
 
+    /**
+     * Initialises the timeline range to ±1 day around the current time and
+     * triggers a histogram query.
+     */
     private void updateTimelineRange() {
         // By default, the timeline shows a range 24 hours each side of the current system time.
         final long start = selectedTime - ONE_DAY_MS;
@@ -418,11 +468,28 @@ public class FloorMapMapPresenter
     }
 
     /**
-     * Runs the events query over the full [start, end] range and populates the histogram.
+     * Runs an events query over the full [start, end] range and populates the histogram.
+     * <p>
+     * If the document has an explicit events query ({@link FloorMapDoc#getEventsQuery()}),
+     * that is used directly.  Otherwise, a default query is generated from the configured
+     * temporal store — selecting only {@code Key} and {@code EffectiveTime} — so that the
+     * histogram always reflects the temporal data even when no custom events query is set.
      */
     private void runHistogramQuery(final long start, final long end) {
-        final String eventsQuery = getEntity() != null ? getEntity().getEventsQuery() : null;
-        if (eventsQuery == null || eventsQuery.trim().isEmpty()) {
+        String histogramQuery = getEntity() != null ? getEntity().getEventsQuery() : null;
+
+        // Fall back to a query derived from the temporal store if no explicit events query is set.
+        if (histogramQuery == null || histogramQuery.trim().isEmpty()) {
+            final DocRef storeRef = getEntity() != null ? getEntity().getTemporalStoreRef() : null;
+            if (storeRef != null && storeRef.getName() != null && !storeRef.getName().isEmpty()) {
+                histogramQuery = "from \"" + storeRef.getName() + "\"\n"
+                                 + "select \n"
+                                 + "  Key, \n"
+                                 + "  EffectiveTime";
+            }
+        }
+
+        if (histogramQuery == null || histogramQuery.trim().isEmpty()) {
             return;
         }
 
@@ -436,7 +503,7 @@ public class FloorMapMapPresenter
         histogramQueryModel.startNewSearch(
                 QueryModel.TABLE_COMPONENT_ID,
                 "histogramTable",
-                eventsQuery,
+                histogramQuery,
                 null,
                 fullRange,
                 false,

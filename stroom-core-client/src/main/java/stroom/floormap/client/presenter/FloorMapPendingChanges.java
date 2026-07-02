@@ -182,29 +182,9 @@ public class FloorMapPendingChanges {
 
         for (final PendingChange change : changes) {
             if (change instanceof Creation) {
-                final TemporalEntry entry = ((Creation) change).getEntry();
-                // Treat a colliding Creation as an overwrite, matching the server-side
-                // UPSERT semantics. This keeps the optimistic view consistent whether
-                // or not a duplicate was recorded by mistake.
-                boolean replaced = false;
-                for (int i = 0; i < result.size(); i++) {
-                    if (naturalKeyMatches(result.get(i), entry)) {
-                        result.set(i, entry);
-                        replaced = true;
-                        break;
-                    }
-                }
-                if (!replaced) {
-                    result.add(entry);
-                }
+                upsertByNaturalKey(result, ((Creation) change).getEntry());
             } else if (change instanceof Update) {
-                final TemporalEntry entry = ((Update) change).getEntry();
-                for (int i = 0; i < result.size(); i++) {
-                    if (naturalKeyMatches(result.get(i), entry)) {
-                        result.set(i, entry);
-                        break;
-                    }
-                }
+                upsertByNaturalKey(result, ((Update) change).getEntry());
             } else if (change instanceof Deletion) {
                 final TemporalEntryId id = ((Deletion) change).getId();
                 result.removeIf(e -> naturalKeyMatchesId(e, id));
@@ -250,9 +230,25 @@ public class FloorMapPendingChanges {
     }
 
     private static boolean naturalKeyMatchesId(final TemporalEntry entry,
-                                               final TemporalEntryId id) {
+                                                final TemporalEntryId id) {
         return Objects.equals(entry.getMap(), id.getMap())
                 && Objects.equals(entry.getKey(), id.getKey())
                 && Objects.equals(entry.getEffectiveTimeMs(), id.getEffectiveTimeMs());
+    }
+
+    /**
+     * Replaces the first entry in the list that matches the given entry's
+     * natural key, or appends the entry if no match is found.
+     * This mirrors server-side UPSERT semantics.
+     */
+    private static void upsertByNaturalKey(final List<TemporalEntry> list,
+                                           final TemporalEntry entry) {
+        for (int i = 0; i < list.size(); i++) {
+            if (naturalKeyMatches(list.get(i), entry)) {
+                list.set(i, entry);
+                return;
+            }
+        }
+        list.add(entry);
     }
 }

@@ -36,11 +36,25 @@ import com.gwtplatform.mvp.client.View;
 
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.Iterator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import javax.inject.Inject;
 
+/**
+ * Presenter for the interactive SVG map canvas.
+ *
+ * <p>Manages zoom, pan, object selection and drag-move in edit mode, and
+ * smooth person-movement animations with fading trails during timeline
+ * playback.  Two separate object lists are maintained — {@code factObjects}
+ * for static floor-plan items and {@code eventObjects} for event-driven
+ * entities — so that facts and events never overwrite each other.</p>
+ *
+ * <p>The canvas view renders the combined draw list produced by
+ * {@link #buildAnimatedDrawList(double)} via its
+ * {@link FloorMapCanvasView#draw draw()} method.</p>
+ */
 public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasView> {
 
     // -------------------------------------------------------------------------
@@ -51,13 +65,16 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     private static final double ANIMATION_DURATION_MS = 800.0;
 
     /**
-     * How long (wall-clock ms) trail points are kept before fading to zero.
-     * Points older than this are pruned on every animation frame.
+     * Maximum number of recorded trail points per person.  Set high enough
+     * that the trail covers the full journey during normal playback (~83 s
+     * at 60 fps).  The single SVG {@code <path>} rendering makes this
+     * inexpensive; trail data is cleaned up on fade completion and
+     * discontinuous time jumps.
      */
-    private static final double TRAIL_FADE_MS = 4000.0;
+    private static final int TRAIL_MAX_PTS = 5000;
 
-    /** Maximum number of recorded trail points per person. */
-    private static final int TRAIL_MAX_PTS = 80;
+    /** How long (wall-clock ms) trails take to fade out after the person stops moving. */
+    private static final double TRAIL_FADE_DURATION_MS = 2000.0;
 
     // -------------------------------------------------------------------------
     /**
@@ -111,6 +128,15 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     private boolean isPlaying = false;
 
     /**
+     * When {@code true}, the next call to {@link #setEventObjects} will teleport
+     * persons directly to their new positions without creating animations, even if
+     * {@link #isPlaying} is {@code true}.  Set by {@link #clearAnimationState()} so
+     * that a scrub/skip/loop-around places users instantly rather than replaying a
+     * batch of movements.
+     */
+    private boolean pendingTeleport = false;
+
+    /**
      * In-flight animations keyed by person id.  Only populated while playing.
      */
     private final Map<String, UserAnimation> activeAnimations = new HashMap<>();
@@ -122,11 +148,18 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     private final Map<String, double[]> lastPersonPositions = new HashMap<>();
 
     /**
-     * Trail points for each person.  Each entry is {@code [mapX, mapY, wallClockMs]}.
-     * Oldest points are at the front of the list; they are pruned when they exceed
-     * {@link #TRAIL_FADE_MS} in age.
+     * Trail points for each person.  Each entry is {@code [mapX, mapY]}.
+     * Points are appended during animation; oldest are at the front.
+     * The list is bounded by {@link #TRAIL_MAX_PTS}.
      */
     private final Map<String, List<double[]>> personTrails = new HashMap<>();
+
+    /**
+     * AnimationScheduler timestamp when each person's last animation completed,
+     * initiating the trail fade-out.  Entries are removed once the fade finishes
+     * or if the person starts a new animation.
+     */
+    private final Map<String, Double> trailFadeStartTimes = new HashMap<>();
 
     /** {@code true} while the {@link #animationCallback} loop is scheduled. */
     private boolean animationLoopRunning = false;
@@ -139,16 +172,6 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     private double lastAnimationTimestamp = 0;
 
     // -------------------------------------------------------------------------
-
-    private DragHandler dragHandler;
-
-    public void setDragHandler(final DragHandler dragHandler) {
-        this.dragHandler = dragHandler;
-    }
-
-    public interface DragHandler {
-        void onDrag(String objectId, double x, double y, FloorMapTransformationMatrix bgMatrix);
-    }
 
     @Inject
     public FloorMapCanvasPresenter(final EventBus eventBus,
@@ -189,10 +212,17 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
      * Discards all in-flight movement animations and trail data.  Call this
      * whenever the timeline time jumps non-continuously (scrub, step, loop-around,
      * stop-at-end) so stale animation state does not carry over.
+     * <p>
+     * Also sets {@link #pendingTeleport} so that the <em>next</em> call to
+     * {@link #setEventObjects} places persons at their new positions instantly
+     * (teleport) rather than animating them from stale positions, even when
+     * {@link #isPlaying} is {@code true}.
      */
     public void clearAnimationState() {
         activeAnimations.clear();
         personTrails.clear();
+        trailFadeStartTimes.clear();
+        pendingTeleport = true;
         animationLoopRunning = false;
         lastAnimationTimestamp = 0;
         redraw();
@@ -266,9 +296,6 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                             matrix = new FloorMapTransformationMatrix(1, 0, 0, 1, deltaUnzoomedX, deltaUnzoomedY);
                         }
                         hasMoved = true;
-                        if (dragHandler != null) {
-                            dragHandler.onDrag("background", matrix.getE(), matrix.getF(), matrix);
-                        }
                     } else {
                         // Move the selected object.
                         for (final FloorMapObject obj : factObjects) {
@@ -289,9 +316,6 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                                 obj.setX(obj.getX() + deltaMapX);
                                 obj.setY(obj.getY() + deltaMapY);
                                 hasMoved = true;
-                                if (dragHandler != null) {
-                                    dragHandler.onDrag(selectedObjectId, obj.getX(), obj.getY(), matrix);
-                                }
                                 break;
                             }
                         }
@@ -386,17 +410,23 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
             combined.add(obj);
         }
 
-        // Stationary people (animation finished) — still show any fading trail.
+        // Stationary people (animation finished or idle during playback) — draw
+        // at their last known position and attach any fading trail.  A set of
+        // already-drawn person IDs prevents duplicates when the same person is
+        // also present in factObjects or eventObjects (e.g. after play stops).
+        final Set<String> drawnPersonIds = new HashSet<>();
+        for (final FloorMapObject obj : combined) {
+            if ("person".equalsIgnoreCase(obj.getType())) {
+                drawnPersonIds.add(obj.getId());
+            }
+        }
         for (final Map.Entry<String, double[]> entry : lastPersonPositions.entrySet()) {
             final String id = entry.getKey();
-            if (!activeAnimations.containsKey(id)) {
-                final List<double[]> rawTrail = personTrails.get(id);
-                if (rawTrail != null && !rawTrail.isEmpty()) {
-                    final FloorMapObject obj = new FloorMapObject(
-                            id, "person", entry.getValue()[0], entry.getValue()[1]);
-                    attachTrail(obj, id, nowMs);
-                    combined.add(obj);
-                }
+            if (!activeAnimations.containsKey(id) && !drawnPersonIds.contains(id)) {
+                final FloorMapObject obj = new FloorMapObject(
+                        id, "person", entry.getValue()[0], entry.getValue()[1]);
+                attachTrail(obj, id, nowMs);
+                combined.add(obj);
             }
         }
 
@@ -404,18 +434,46 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     }
 
     /**
-     * Computes per-point alpha values from the raw trail timestamps and attaches
-     * the resulting {@code [x, y, alpha]} list to {@code obj}.
+     * Computes per-point alpha values using a positional (index-based) gradient
+     * and attaches the resulting {@code [x, y, alpha]} list to {@code obj}.
+     * <p>
+     * Alpha runs from {@code 0.0} at the oldest point (index 0) to {@code 1.0}
+     * at the newest point (last index).  This ensures the <em>entire</em> spatial
+     * path from the start of a journey to the user's current position is always
+     * drawn — the tail fades to transparent but the leading edge always meets the
+     * user's circle, so the trail visually grows to the full journey length.
+     * <p>
+     * When the person has stopped moving, a global fade factor is applied on top
+     * of the index-based gradient so the trail fades out over
+     * {@link #TRAIL_FADE_DURATION_MS} and then disappears.
+     *
+     * @param nowMs current AnimationScheduler timestamp in ms, used to compute
+     *              the fade factor for stopped people.  Pass {@code 0.0} when
+     *              the animation loop is not running.
      */
     private void attachTrail(final FloorMapObject obj, final String id, final double nowMs) {
         final List<double[]> raw = personTrails.get(id);
         if (raw == null || raw.isEmpty()) {
             return;
         }
-        final List<double[]> trailWithAlpha = new ArrayList<>(raw.size());
-        for (final double[] pt : raw) {
-            final double age = nowMs - pt[2];
-            final double alpha = Math.max(0.0, 1.0 - age / TRAIL_FADE_MS);
+
+        // Compute a global fade multiplier for trails of stopped people.
+        double fadeFactor = 1.0;
+        final Double fadeStart = trailFadeStartTimes.get(id);
+        if (fadeStart != null && nowMs > 0) {
+            final double elapsed = nowMs - fadeStart;
+            fadeFactor = Math.max(0.0, 1.0 - elapsed / TRAIL_FADE_DURATION_MS);
+        }
+        if (fadeFactor <= 0.0) {
+            return; // Fully faded — nothing to render.
+        }
+
+        final int size = raw.size();
+        final List<double[]> trailWithAlpha = new ArrayList<>(size);
+        for (int i = 0; i < size; i++) {
+            final double[] pt = raw.get(i);
+            // Oldest point → alpha 0, newest → alpha 1, scaled by fade factor.
+            final double alpha = (size == 1 ? 1.0 : (double) i / (size - 1)) * fadeFactor;
             trailWithAlpha.add(new double[]{pt[0], pt[1], alpha});
         }
         obj.setTrail(trailWithAlpha);
@@ -437,8 +495,8 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                     : 16.0;
             lastAnimationTimestamp = timestamp;
 
-            if (activeAnimations.isEmpty() && !hasActiveTrails(timestamp)) {
-                // Nothing left to animate — let the loop terminate.
+            if (activeAnimations.isEmpty() && trailFadeStartTimes.isEmpty()) {
+                // Nothing left to animate or fade — let the loop terminate.
                 animationLoopRunning = false;
                 lastAnimationTimestamp = 0;
                 return;
@@ -454,26 +512,36 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                 anim.progress = Math.min(1.0, anim.progress + deltaMs / ANIMATION_DURATION_MS);
 
                 // Record the current interpolated position into the trail.
-                recordTrailPoint(anim.id, anim.currentX(), anim.currentY(), timestamp);
+                recordTrailPoint(anim.id, anim.currentX(), anim.currentY());
 
                 if (anim.progress >= 1.0) {
                     // Snap to the destination and record final position.
                     lastPersonPositions.put(anim.id, new double[]{anim.toX, anim.toY});
                     finished.add(anim.id);
+                    // Start fading the trail for this person.
+                    trailFadeStartTimes.put(anim.id, timestamp);
                 }
             }
             for (final String id : finished) {
                 activeAnimations.remove(id);
             }
 
-            // Prune stale trail points for people whose animation has completed.
-            for (final List<double[]> trail : personTrails.values()) {
-                final Iterator<double[]> iter = trail.iterator();
-                while (iter.hasNext()) {
-                    if (timestamp - iter.next()[2] > TRAIL_FADE_MS) {
-                        iter.remove();
-                    }
+            // Process fading trails: remove entries that are fully faded or
+            // whose person has started a new animation.
+            final List<String> doneFading = new ArrayList<>();
+            for (final Map.Entry<String, Double> fade : trailFadeStartTimes.entrySet()) {
+                final String id = fade.getKey();
+                if (activeAnimations.containsKey(id)) {
+                    // Person started moving again — cancel the fade.
+                    doneFading.add(id);
+                } else if (timestamp - fade.getValue() >= TRAIL_FADE_DURATION_MS) {
+                    // Fully faded — remove trail data.
+                    personTrails.remove(id);
+                    doneFading.add(id);
                 }
+            }
+            for (final String id : doneFading) {
+                trailFadeStartTimes.remove(id);
             }
 
             // Draw the current frame.
@@ -484,19 +552,6 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
             AnimationScheduler.get().requestAnimationFrame(this);
         }
     };
-
-    /**
-     * Returns {@code true} if any person still has trail points that are young
-     * enough to be visible (i.e., the trail hasn't fully faded yet).
-     */
-    private boolean hasActiveTrails(final double nowMs) {
-        for (final List<double[]> trail : personTrails.values()) {
-            if (!trail.isEmpty() && nowMs - trail.get(trail.size() - 1)[2] < TRAIL_FADE_MS) {
-                return true;
-            }
-        }
-        return false;
-    }
 
     /**
      * Shared logic for handling a person position update from either the facts
@@ -514,8 +569,8 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
      *         {@code false} if the animation system has taken ownership.
      */
     private boolean handlePersonUpdate(final FloorMapObject obj) {
-        if (!isPlaying) {
-            // Not playing — record position so play-start can animate from here.
+        if (!isPlaying || pendingTeleport) {
+            // Teleport: record position for later play-start animation anchor.
             lastPersonPositions.put(obj.getId(), new double[]{obj.getX(), obj.getY()});
             return true; // caller adds to draw list
         }
@@ -561,18 +616,18 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     }
 
     /**
-     * Appends {@code [x, y, nowMs]} to the trail for {@code id}, pruning old
-     * points and enforcing the maximum trail length.
+     * Appends {@code [x, y]} to the trail for {@code id}, enforcing the maximum
+     * trail length by dropping the oldest point when the cap is exceeded.
+     * <p>
+     * Trail points no longer carry a wall-clock timestamp; fading is now
+     * index-based (see {@link #attachTrail}) so the full spatial path is always
+     * visible regardless of how long the journey took.
      */
     private void recordTrailPoint(final String id,
                                   final double x,
-                                  final double y,
-                                  final double nowMs) {
+                                  final double y) {
         final List<double[]> trail = personTrails.computeIfAbsent(id, k -> new ArrayList<>());
-        trail.add(new double[]{x, y, nowMs});
-
-        // Prune points older than the fade window.
-        trail.removeIf(pt -> nowMs - pt[2] > TRAIL_FADE_MS);
+        trail.add(new double[]{x, y});
 
         // Hard cap to avoid unbounded growth.
         while (trail.size() > TRAIL_MAX_PTS) {
@@ -584,18 +639,24 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     // Setters
     // =========================================================================
 
+    /**
+     * Sets the currently selected (highlighted) object on the canvas and redraws.
+     *
+     * @param selectedObjectId the object ID to highlight, or {@code null} to clear
+     */
     public void setSelectedObjectId(final String selectedObjectId) {
         this.selectedObjectId = selectedObjectId;
         redraw();
     }
 
+    /**
+     * Sets the background's map-to-screen transformation matrix and redraws.
+     *
+     * @param matrix the new transformation matrix
+     */
     public void setMatrix(final FloorMapTransformationMatrix matrix) {
         this.matrix = matrix;
         redraw();
-    }
-
-    public FloorMapTransformationMatrix getMatrix() {
-        return matrix;
     }
 
     /**
@@ -614,19 +675,27 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
      * are routed through the same animation machinery as event-driven people.
      */
     public void setFactObjects(final List<FloorMapObject> objects) {
-        // DEBUG — remove once root cause is confirmed
-
         final List<FloorMapObject> nonPersonFacts = new ArrayList<>();
 
         if (objects != null) {
             for (final FloorMapObject obj : objects) {
                 if ("person".equalsIgnoreCase(obj.getType())) {
-                    handlePersonUpdate(obj);
+                    if (handlePersonUpdate(obj)) {
+                        // Person placed without animation (not playing, first appearance, etc.) —
+                        // add to draw list so it's visible.
+                        nonPersonFacts.add(obj);
+                    }
                 } else {
                     nonPersonFacts.add(obj);
                 }
             }
         }
+
+        // One-shot: clear the teleport flag now that person positions have been committed.
+        // Without this, a pendingTeleport set by clearAnimationState() (loop-around, scrub,
+        // step, stop-at-end) would stick forever because setEventObjects — the only other
+        // place that clears it — may never be called for fact-sourced person objects.
+        pendingTeleport = false;
 
         this.factObjects = nonPersonFacts;
 
@@ -649,10 +718,11 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
      * every other type continues to teleport.
      */
     public void setEventObjects(final List<FloorMapObject> objects) {
-        if (!isPlaying) {
+        if (!isPlaying || pendingTeleport) {
+            // Not playing, or a discontinuous time jump just occurred — teleport all persons.
             this.eventObjects = objects != null ? objects : new ArrayList<>();
             activeAnimations.clear();
-            // Record positions for play-start anchor.
+            // Record positions for play-start animation anchor.
             if (objects != null) {
                 for (final FloorMapObject obj : objects) {
                     if ("person".equalsIgnoreCase(obj.getType())) {
@@ -661,6 +731,8 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                     }
                 }
             }
+            // One-shot: clear the teleport flag now that positions are committed.
+            pendingTeleport = false;
             redraw();
             return;
         }
@@ -693,6 +765,12 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         setFactObjects(objects);
     }
 
+    /**
+     * Toggles edit mode. When disabled, the object selection is cleared and
+     * object dragging is turned off.
+     *
+     * @param editMode {@code true} to enter edit mode, {@code false} to leave
+     */
     public void setEditMode(final boolean editMode) {
         this.editMode = editMode;
         if (!editMode) {
@@ -703,6 +781,11 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         redraw();
     }
 
+    /**
+     * Enables or disables object dragging within edit mode.
+     *
+     * @param isDraggingEnabled {@code true} to allow dragging selected objects
+     */
     public void setIsDraggingEnabled(final boolean isDraggingEnabled) {
         this.isDraggingEnabled = isDraggingEnabled;
     }

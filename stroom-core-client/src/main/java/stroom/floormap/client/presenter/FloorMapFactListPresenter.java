@@ -181,21 +181,22 @@ public class FloorMapFactListPresenter extends MyPresenterWidget<FloorMapFactLis
         dataGrid.addColumn(nameColumn, "Name");
     }
 
+    /**
+     * Replaces the grid contents with the supplied fact objects.
+     *
+     * @param data the facts to display
+     */
     public void setData(final List<FactObject> data) {
         dataProvider.setList(data);
         dataGrid.setRowData(0, data);
     }
 
-    public void selectLast() {
-        final List<FactObject> list = dataProvider.getList();
-        if (list != null && !list.isEmpty()) {
-            //noinspection SequencedCollectionMethodCanBeUsed
-            selectionModel.setSelected(list.get(list.size() - 1), true);
-        } else {
-            selectionModel.clear();
-        }
-    }
-
+    /**
+     * Selects the fact object with the given key, or clears the selection if
+     * no match is found.
+     *
+     * @param key the fact key to select; may be {@code null}
+     */
     public void setSelected(final String key) {
         final List<FactObject> list = dataProvider.getList();
         if (list != null && key != null) {
@@ -209,10 +210,17 @@ public class FloorMapFactListPresenter extends MyPresenterWidget<FloorMapFactLis
         selectionModel.clear();
     }
 
+    /** Returns the currently selected fact object, or {@code null} if none. */
     public FactObject getSelectedObject() {
         return selectionModel.getSelectedObject();
     }
 
+    /**
+     * Sets the consumer called whenever the row selection changes.
+     *
+     * @param selectionConsumer called with the selected object, or {@code null}
+     *                          when the selection is cleared
+     */
     public void setSelectionConsumer(final Consumer<FactObject> selectionConsumer) {
         this.selectionConsumer = selectionConsumer;
     }

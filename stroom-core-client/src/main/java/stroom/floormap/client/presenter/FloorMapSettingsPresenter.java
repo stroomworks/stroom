@@ -31,6 +31,10 @@ import com.google.web.bindery.event.shared.EventBus;
 import com.gwtplatform.mvp.client.HasUiHandlers;
 import com.gwtplatform.mvp.client.View;
 
+/**
+ * Presenter for the Settings tab. Allows configuring the temporal store
+ * reference used by a floor map document.
+ */
 public class FloorMapSettingsPresenter
         extends DocPresenter<FloorMapSettingsView, FloorMapDoc>
         implements DirtyUiHandlers {
@@ -72,6 +76,11 @@ public class FloorMapSettingsPresenter
                 .build();
     }
 
+    /**
+     * Returns the currently selected temporal store reference.
+     *
+     * @return the {@link DocRef} for the selected temporal store, or {@code null} if none is selected.
+     */
     public DocRef getTemporalStoreRef() {
         return temporalStoreRefPresenter.getSelectedEntityReference();
     }
@@ -81,8 +90,17 @@ public class FloorMapSettingsPresenter
         onChange();
     }
 
+    /**
+     * View contract for the floor map settings tab. Provides a slot for the
+     * temporal store reference selection widget.
+     */
     public interface FloorMapSettingsView extends View, HasUiHandlers<DirtyUiHandlers>, ReadOnlyChangeHandler {
 
+        /**
+         * Sets the temporal store reference selection widget into the view.
+         *
+         * @param view the {@link DocSelectionBoxPresenter} view to embed.
+         */
         void setTemporalStoreRefView(View view);
 
     }

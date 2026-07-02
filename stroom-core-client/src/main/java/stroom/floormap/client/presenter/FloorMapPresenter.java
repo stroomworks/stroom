@@ -38,6 +38,15 @@ import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import javax.inject.Provider;
 
+/**
+ * Top-level document tab presenter for a {@link FloorMapDoc}.
+ *
+ * <p>Hosts all sub-tabs — Map, Editor, Events Query, Facts Query, Settings,
+ * Assets, Documentation, and Permissions — and coordinates the save chain
+ * across them.  The {@link #getPostSaveCallback()} method chains the Editor
+ * tab’s pending-change flush with the asset save so that both are persisted
+ * in a single user-initiated save.</p>
+ */
 public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMapDoc> {
 
     private static final TabData MAP = new TabDataImpl("Map");
@@ -167,11 +176,16 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
         selectTab(MAP);
     }
 
+    /** {@inheritDoc} */
     @Override
     protected void onRead(final DocRef docRef, final FloorMapDoc document, final boolean readOnly) {
         super.onRead(docRef, document, readOnly);
     }
 
+    /**
+     * Performs post-tab-selection logic such as auto-populating the default
+     * Facts Query template and triggering asset change detection.
+     */
     @Override
     protected void afterSelectTab(final PresenterWidget<?> content) {
         if (content == documentAssetPresenter) {
@@ -225,6 +239,10 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
         return DOCUMENTATION;
     }
 
+    /**
+     * Returns {@code true} when any associated presenter (Map, Editor, or
+     * Assets) has unsaved changes.
+     */
     @Override
     protected boolean hasAssociatedDirty() {
         return super.hasAssociatedDirty() ||

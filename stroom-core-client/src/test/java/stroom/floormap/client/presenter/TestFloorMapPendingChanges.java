@@ -25,6 +25,11 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+/**
+ * Tests for {@link FloorMapPendingChanges}, focusing on correct natural-key
+ * matching when {@link Long} values fall outside the JVM's cached range
+ * ({@code -128} to {@code 127}) and therefore have distinct object identities.
+ */
 class TestFloorMapPendingChanges {
 
     @Test

@@ -22,7 +22,6 @@ import stroom.docstore.api.Store;
 import stroom.docstore.api.StoreFactory;
 import stroom.docstore.api.UniqueNameUtil;
 import stroom.floormap.shared.FloorMapDoc;
-import stroom.floormap.shared.FloorMapDoc.Builder;
 import stroom.importexport.api.ImportExportDocument;
 import stroom.importexport.shared.ImportSettings;
 import stroom.importexport.shared.ImportState;
@@ -39,6 +38,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+/**
+ * Singleton implementation of {@link FloorMapStore} that delegates to a generic
+ * {@link Store Store&lt;FloorMapDoc&gt;} for document persistence.
+ * <p>
+ * Handles document CRUD operations, import/export, dependency tracking, and
+ * cleans up associated processor filters when a floor map document is deleted.
+ */
 @Singleton
 class FloorMapStoreImpl implements FloorMapStore {
 
@@ -83,19 +89,16 @@ class FloorMapStoreImpl implements FloorMapStore {
         final String newName = UniqueNameUtil.getCopyName(name, makeNameUnique, existingNames);
         final FloorMapDoc document = store.readDocument(docRef);
         return store.createDocument(newName,
-                (uuid, docName, version, createTime, updateTime, createUser, updateUser) -> {
-                    final Builder builder = document
-                            .copy()
-                            .uuid(uuid)
-                            .name(docName)
-                            .version(version)
-                            .createTimeMs(createTime)
-                            .updateTimeMs(updateTime)
-                            .createUser(createUser)
-                            .updateUser(updateUser);
-
-                    return builder.build();
-                });
+                (uuid, docName, version, createTime, updateTime, createUser, updateUser) ->
+                        document.copy()
+                                .uuid(uuid)
+                                .name(docName)
+                                .version(version)
+                                .createTimeMs(createTime)
+                                .updateTimeMs(updateTime)
+                                .createUser(createUser)
+                                .updateUser(updateUser)
+                                .build());
     }
 
     @Override

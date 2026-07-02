@@ -17,7 +17,6 @@
 package stroom.floormap.client.presenter;
 
 import stroom.alert.client.event.ConfirmEvent;
-import stroom.data.client.event.DataSelectionEvent;
 import stroom.document.asset.client.presenter.DocumentAssetDropDownPresenter;
 import stroom.floormap.client.presenter.FloorMapObjectEditPresenter.FloorMapObjectEditView;
 import stroom.floormap.shared.FloorMapDoc;
@@ -41,12 +40,30 @@ import javax.inject.Inject;
 
 import static stroom.floormap.client.FloorMapJsonKeys.*;
 
+/**
+ * Presenter for the floor map object property editor dialog.
+ *
+ * <p>Displays an OK/Cancel modal for editing a map object's properties:
+ * type, name, image (via asset dropdown), coordinates, effective time,
+ * and world-to-map / map-to-screen transformation matrices.  Used by both
+ * the Editor tab and the Map tab.</p>
+ *
+ * <p>Form state is populated from a {@link TemporalEntry} via
+ * {@link #loadEntry(TemporalEntry)} and built back into a new entry via
+ * {@link #buildEntry(long)} on OK.</p>
+ */
 public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjectEditView> {
 
     private final DocumentAssetDropDownPresenter documentAssetDropDownPresenter;
     private String objectId;
     private String mapName;
 
+    /**
+     * Sets the temporal store map name used when building entries.
+     *
+     * @param mapName the map name; must not be {@code null}
+     * @throws IllegalArgumentException if {@code mapName} is {@code null}
+     */
     public void setMapName(final String mapName) {
         if (mapName == null) {
             throw new IllegalArgumentException("mapName must not be null");
@@ -62,13 +79,13 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
         return mapName;
     }
 
+    /**
+     * Sets the floor map document so the asset dropdown can resolve image paths.
+     *
+     * @param floorMapDoc the current floor map document
+     */
     public void setFloorMapDoc(final FloorMapDoc floorMapDoc) {
         documentAssetDropDownPresenter.setDocument(floorMapDoc);
-    }
-
-    public void updateCoords(final double x, final double y) {
-        getView().setX(x);
-        getView().setY(y);
     }
 
     @Inject
@@ -270,10 +287,6 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
             getView().setWorldToMapMatrix(new double[]{1.0, 0.0, 0.0, 1.0, 0.0, 0.0});
             getView().setMapToScreenMatrix(new double[]{1.0, 0.0, 0.0, 1.0, 0.0, 0.0});
         }
-    }
-
-    public void addAssetSelectionHandler(final DataSelectionEvent.DataSelectionHandler<String> handler) {
-        registerHandler(documentAssetDropDownPresenter.addDataSelectionHandler(handler));
     }
 
     // --------------------------------------------------------------------------------

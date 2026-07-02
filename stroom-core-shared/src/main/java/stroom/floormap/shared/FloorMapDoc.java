@@ -32,6 +32,14 @@ import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 
 import java.util.Objects;
 
+/**
+ * Shared document model for a floor map.
+ * <p>
+ * A floor map visualises entity positions on a background image, with optional temporal
+ * playback driven by events and facts queries against a temporal store. It holds the
+ * SVG template, coordinate transformation matrix, column mappings, and query
+ * configuration needed to render and animate the map.
+ */
 @Description(
     """
     Defines a floor map document which can be used to visualize data over time.
@@ -223,6 +231,9 @@ public class FloorMapDoc extends AbstractDoc {
         return new Builder();
     }
 
+    /**
+     * Mutable builder for constructing or copying {@link FloorMapDoc} instances.
+     */
     public static class Builder extends AbstractBuilder<FloorMapDoc, Builder> {
 
         private String template;

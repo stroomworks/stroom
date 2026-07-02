@@ -27,8 +27,12 @@ import com.google.inject.Inject;
 import com.gwtplatform.mvp.client.ViewImpl;
 
 /**
- * View implementation for the Floor Map.
- * Uses a split layout to show the map and timeline.
+ * View implementation for the floor map canvas area.
+ *
+ * <p>Uses a UiBinder split layout to host the map canvas in the main area and
+ * the timeline control strip beneath it. Slot routing directs content from
+ * {@link FloorMapMapPresenter#MAP} into the map panel and
+ * {@link FloorMapMapPresenter#TIMELINE} into the timeline panel.</p>
  */
 public class FloorMapMapViewImpl extends ViewImpl implements FloorMapMapView {
 
@@ -49,6 +53,9 @@ public class FloorMapMapViewImpl extends ViewImpl implements FloorMapMapView {
         return widget;
     }
 
+    /**
+     * Routes GWTP slot content into the map or timeline panel.
+     */
     @Override
     public void setInSlot(final Object slot, final Widget content) {
         if (FloorMapMapPresenter.MAP.equals(slot)) {

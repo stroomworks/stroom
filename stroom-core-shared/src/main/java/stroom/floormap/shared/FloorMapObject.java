@@ -18,6 +18,13 @@ package stroom.floormap.shared;
 
 import java.util.List;
 
+/**
+ * Represents a single positioned entity on a floor map.
+ * <p>
+ * Each object has a unique identifier, a type (e.g. person, device), and mutable
+ * {@code (x, y)} coordinates in the map's coordinate space. An optional movement
+ * trail can be attached for client-side animation during temporal playback.
+ */
 public class FloorMapObject {
     private final String id;
     private final String type;
