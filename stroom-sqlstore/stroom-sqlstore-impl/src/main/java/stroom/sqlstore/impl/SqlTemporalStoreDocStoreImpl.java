@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2016-2026 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +24,7 @@ import stroom.importexport.api.ImportExportDocument;
 import stroom.importexport.shared.ImportSettings;
 import stroom.importexport.shared.ImportState;
 import stroom.sqlstore.shared.SqlTemporalStoreDoc;
+import stroom.util.shared.EntityServiceException;
 import stroom.util.shared.Message;
 
 import jakarta.inject.Inject;
@@ -55,6 +56,7 @@ public class SqlTemporalStoreDocStoreImpl implements SqlTemporalStoreDocStore {
 
     @Override
     public DocRef createDocument(final String name) {
+        checkNameNotInUse(name);
         return store.createDocument(name);
     }
 
@@ -63,6 +65,7 @@ public class SqlTemporalStoreDocStoreImpl implements SqlTemporalStoreDocStore {
                                final String name,
                                final boolean makeNameUnique,
                                final Set<String> existingNames) {
+        checkNameNotInUse(name);
         return store.copyDocument(docRef.getUuid(), name);
     }
 
@@ -73,7 +76,39 @@ public class SqlTemporalStoreDocStoreImpl implements SqlTemporalStoreDocStore {
 
     @Override
     public DocRef renameDocument(final DocRef docRef, final String name) {
+        checkNameNotInUseByOther(name, docRef.getUuid());
         return store.renameDocument(docRef, name);
+    }
+
+    /**
+     * Ensures no SqlTemporalStoreDoc already uses the given name.
+     * Used by create and copy operations where any existing match is a conflict.
+     */
+    private void checkNameNotInUse(final String name) {
+        final boolean inUse = store.list().stream()
+                .anyMatch(dr -> dr.getName().equals(name));
+        if (inUse) {
+            throwNameClash(name);
+        }
+    }
+
+    /**
+     * Ensures no other SqlTemporalStoreDoc already uses the given name.
+     * Used by rename operations where the document being renamed is excluded.
+     */
+    private void checkNameNotInUseByOther(final String name, final String selfUuid) {
+        final boolean inUse = store.list().stream()
+                .anyMatch(dr -> dr.getName().equals(name)
+                        && !dr.getUuid().equals(selfUuid));
+        if (inUse) {
+            throwNameClash(name);
+        }
+    }
+
+    private void throwNameClash(final String name) {
+        throw new EntityServiceException(
+                "A SqlTemporalStore with name '" + name + "' already exists. "
+                + "Names must be unique because they are used as map identifiers.");
     }
 
     @Override
