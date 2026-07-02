@@ -302,6 +302,24 @@ public class FloorMapInitPresenter
                     final FloorMapDoc updated = doc.copy()
                             .factsStoreRef(factsDocRef)
                             .eventsStoreRef(eventsDocRef)
+                            .factsQuery("from param('FactStore')\n"
+                                    + "select \n"
+                                    + "  Key, \n"
+                                    + "  EffectiveTime, \n"
+                                    + "  jq(Value, \".type\") as type, \n"
+                                    + "  jq(Value, \".name\") as name, \n"
+                                    + "  jq(Value, \".maps\") as maps, \n"
+                                    + "  jq(Value, \".coords\") as coords, \n"
+                                    + "  jq(Value, \".img\") as img, \n"
+                                    + "  jq(Value, \"\\\"tm-world-to-map\\\"\") as tm_world_to_map, \n"
+                                    + "  jq(Value, \"\\\"tm-map-to-screen\\\"\") as tm_map_to_screen")
+                            .eventsQuery("from param('EventStore')\n"
+                                    + "select EffectiveTime as \"Effective Time\",\n"
+                                    + "  Key as \"Entity ID\",\n"
+                                    + "  jq(Value, '.location') as \"Location ID\",\n"
+                                    + "  jq(Value, '.type') as \"Event Type\",\n"
+                                    + "  jq(Value, '.status') as \"Status\",\n"
+                                    + "  jq(Value, '.message') as \"Message\"")
                             .build();
 
                     //noinspection unused savedDoc, error

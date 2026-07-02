@@ -37,7 +37,9 @@ import com.gwtplatform.mvp.client.MyPresenterWidget;
 import com.gwtplatform.mvp.client.View;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import javax.inject.Inject;
 
 public class FloorMapQueryPresenter extends MyPresenterWidget<FloorMapQueryView> implements HasToolbar {
@@ -189,7 +191,8 @@ public class FloorMapQueryPresenter extends MyPresenterWidget<FloorMapQueryView>
     public void read(final FloorMapDoc doc) {
         read(doc.asDocRef(), doc.getEventsQuery(), doc.getEventsQueryTimeRange(),
                 doc.getEventsQueryTablePreferences(),
-                doc.getEntityIdColumn(), doc.getLocationIdColumn(), true);
+                doc.getEntityIdColumn(), doc.getLocationIdColumn(), true,
+                buildQueryVariables(doc));
     }
 
     public void read(final DocRef docRef,
@@ -198,7 +201,8 @@ public class FloorMapQueryPresenter extends MyPresenterWidget<FloorMapQueryView>
                      final QueryTablePreferences queryTablePreferences,
                      final String entityIdColumn,
                      final String locationIdColumn,
-                     final boolean showColumnMappings) {
+                     final boolean showColumnMappings,
+                     final Map<String, String> queryVariables) {
         this.currentEntityColumn = entityIdColumn;
         this.currentLocationColumn = locationIdColumn;
 
@@ -207,6 +211,7 @@ public class FloorMapQueryPresenter extends MyPresenterWidget<FloorMapQueryView>
         getView().setColumnMappingsVisible(showColumnMappings);
 
         // Populate the inner query editor.
+        queryEditPresenter.setQueryVariables(queryVariables);
         queryEditPresenter.setQuery(docRef, query, false);
         queryEditPresenter.setTimeRange(timeRange);
         queryEditPresenter.read(queryTablePreferences);
@@ -254,6 +259,26 @@ public class FloorMapQueryPresenter extends MyPresenterWidget<FloorMapQueryView>
     @Override
     public List<Widget> getToolbars() {
         return queryEditPresenter.getToolbars();
+    }
+
+    /**
+     * Builds the query parameter map from a {@link FloorMapDoc}'s store references.
+     * Parameters {@code FactStore} and {@code EventStore} are mapped to the
+     * store names so that {@code param('FactStore')} and {@code param('EventStore')}
+     * references in queries resolve correctly.
+     *
+     * @param doc the floor map document; never null
+     * @return a parameter map, possibly empty but never null
+     */
+    public static Map<String, String> buildQueryVariables(final FloorMapDoc doc) {
+        final Map<String, String> vars = new HashMap<>();
+        if (doc.getFactsStoreRef() != null && doc.getFactsStoreRef().getName() != null) {
+            vars.put("FactStore", doc.getFactsStoreRef().getName());
+        }
+        if (doc.getEventsStoreRef() != null && doc.getEventsStoreRef().getName() != null) {
+            vars.put("EventStore", doc.getEventsStoreRef().getName());
+        }
+        return vars;
     }
 
     public interface FloorMapQueryView extends View {
