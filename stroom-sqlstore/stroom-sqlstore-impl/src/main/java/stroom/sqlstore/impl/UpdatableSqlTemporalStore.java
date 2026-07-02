@@ -156,8 +156,9 @@ public class UpdatableSqlTemporalStore implements UpdatableTemporalStore {
     }
 
     @Override
-    public void clear(final String mapName) {
-        checkPermission(mapName, DocumentPermission.EDIT);
+    public void clear(final DocRef docRef) {
+        checkPermission(docRef, DocumentPermission.EDIT);
+        final String mapName = docRef.getName();
         eventLoggingServiceProvider.get().loggedWorkBuilder()
                 .withTypeId(StroomEventLoggingUtil.buildTypeId(this, "clear"))
                 .withDescription("Clear temporal store: " + mapName)
@@ -329,6 +330,13 @@ public class UpdatableSqlTemporalStore implements UpdatableTemporalStore {
         }
     }
 
+    private void checkPermission(final DocRef docRef, final DocumentPermission permission) {
+        if (!securityContext.hasDocumentPermission(docRef, permission)) {
+            throw new PermissionException(securityContext.getUserRef(),
+                    "User does not have " + permission + " permission on store " + docRef.getName());
+        }
+    }
+
     private void checkPermission(final String mapName, final DocumentPermission permission) {
         if (!hasPermission(mapName, permission)) {
             throw new PermissionException(securityContext.getUserRef(),
@@ -489,7 +497,7 @@ public class UpdatableSqlTemporalStore implements UpdatableTemporalStore {
 
     @Override
     public long count(final DocRef docRef) {
-        checkPermission(docRef.getName(), DocumentPermission.VIEW);
+        checkPermission(docRef, DocumentPermission.VIEW);
         return dao.count(docRef.getName());
     }
 

@@ -123,6 +123,8 @@ public class MockServiceModule extends AbstractModule {
         install(new MockClusterLockModule());
         install(new MockOpenAIModule());
 
+        bind(stroom.pipeline.xsltfunctions.SqlStoreLookup.class).toProvider(() -> null);
+
         bind(DictionaryStore.class).to(DictionaryStoreImpl.class);
         bind(ContentPackUserService.class).to(MockSecurityContext.class);
         bind(HttpClientFactory.class).to(BasicHttpClientFactory.class);
