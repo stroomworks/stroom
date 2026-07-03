@@ -17,15 +17,13 @@
 package stroom.floormap.client.presenter;
 
 import stroom.floormap.client.FloorMapJsonKeys;
-import stroom.floormap.client.ValuePathAccessor;
+import stroom.floormap.client.ParsedValue;
+import stroom.floormap.client.ValueAccessor;
 import stroom.floormap.shared.FloorMapFieldMapping;
 import stroom.floormap.shared.FloorMapFieldMapping.Role;
 import stroom.floormap.shared.FloorMapObject;
 import stroom.floormap.shared.FloorMapTransformationMatrix;
-import stroom.util.client.JSONUtil;
-
-import com.google.gwt.json.client.JSONArray;
-import com.google.gwt.json.client.JSONObject;
+import stroom.floormap.shared.ValueFormat;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -40,6 +38,11 @@ import java.util.List;
  * schema). Each mapping's {@link Role} determines how the extracted value is
  * interpreted. A schema must always be provided; it is stored in the
  * {@link stroom.floormap.shared.FloorMapDoc} and configured via the Settings tab.</p>
+ *
+ * <p>Both JSON and XML value formats are supported. The
+ * {@link ValueFormat} parameter selects the appropriate
+ * {@link ValueAccessor} implementation for parsing and field
+ * extraction. When no format is specified, JSON is assumed.</p>
  *
  * <p>Used by both the Map tab ({@link FloorMapMapPresenter}) and the Editor tab
  * ({@link FloorMapEditorPresenter}) to ensure consistent parsing logic.</p>
@@ -91,9 +94,35 @@ public final class FloorMapEntryParser {
         }
     }
 
+    /**
+     * Convenience overload that parses using {@code null} schema and
+     * {@link ValueFormat#JSON}.
+     *
+     * @param entries the temporal entries to parse; may be {@code null} or empty
+     * @return the parse result; never {@code null}
+     */
+    public static ParseResult parse(
+            final List<stroom.util.shared.TemporalEntry> entries) {
+        return parse(entries, null, ValueFormat.JSON);
+    }
 
     /**
-     * Parses temporal entries into canvas-ready data using the supplied schema.
+     * Parses temporal entries into canvas-ready data using the supplied schema
+     * and {@link ValueFormat#JSON}.
+     *
+     * @param entries the temporal entries to parse; may be {@code null} or empty
+     * @param schema  the value schema to use; must not be {@code null}
+     * @return the parse result; never {@code null}
+     */
+    public static ParseResult parse(
+            final List<stroom.util.shared.TemporalEntry> entries,
+            final List<FloorMapFieldMapping> schema) {
+        return parse(entries, schema, ValueFormat.JSON);
+    }
+
+    /**
+     * Parses temporal entries into canvas-ready data using the supplied schema
+     * and value format.
      *
      * <p>For each entry:</p>
      * <ul>
@@ -106,11 +135,13 @@ public final class FloorMapEntryParser {
      *
      * @param entries the temporal entries to parse; may be {@code null} or empty
      * @param schema  the value schema to use; must not be {@code null}
+     * @param format  the value format (JSON or XML); must not be {@code null}
      * @return the parse result; never {@code null}
      */
     public static ParseResult parse(
             final List<stroom.util.shared.TemporalEntry> entries,
-            final List<FloorMapFieldMapping> schema) {
+            final List<FloorMapFieldMapping> schema,
+            final ValueFormat format) {
         String backgroundImage = null;
         String backgroundKey = null;
         FloorMapTransformationMatrix bgMatrix = FloorMapTransformationMatrix.identity();
@@ -119,6 +150,8 @@ public final class FloorMapEntryParser {
         if (entries == null) {
             return new ParseResult(null, null, bgMatrix, objects);
         }
+
+        final ValueAccessor accessor = ValueAccessor.forFormat(format);
 
         // Resolve the path for each role from the schema.
         final String typePath = findPath(schema, Role.TYPE);
@@ -130,42 +163,41 @@ public final class FloorMapEntryParser {
         for (final stroom.util.shared.TemporalEntry entry : entries) {
             try {
                 final String valueStr = entry.getValue();
-                if (valueStr == null || !valueStr.trim().startsWith("{")) {
+                if (valueStr == null || !accessor.canParse(valueStr.trim())) {
                     continue;
                 }
-                final JSONObject json = ValuePathAccessor.parse(valueStr);
-                if (json == null) {
+                final ParsedValue parsed = accessor.parse(valueStr);
+                if (parsed == null) {
                     continue;
                 }
 
                 final String type = typePath != null
-                        ? JSONUtil.getString(ValuePathAccessor.get(json, typePath))
+                        ? accessor.getString(parsed, typePath)
                         : null;
 
                 if (FloorMapJsonKeys.BACKGROUND.equalsIgnoreCase(type)
                         || FloorMapJsonKeys.BACKGROUND.equalsIgnoreCase(entry.getKey())) {
                     // Background entry
                     backgroundImage = imagePath != null
-                            ? JSONUtil.getString(ValuePathAccessor.get(json, imagePath))
+                            ? accessor.getString(parsed, imagePath)
                             : null;
                     backgroundKey = entry.getKey();
 
-                    bgMatrix = parseMatrix(json, mapToScreenPath);
+                    bgMatrix = parseMatrix(accessor, parsed, mapToScreenPath);
                 } else {
                     // Regular object
                     double worldX = 0;
                     double worldY = 0;
                     if (positionPath != null) {
-                        final JSONArray coordsArr =
-                                JSONUtil.getArray(ValuePathAccessor.get(json, positionPath));
-                        if (coordsArr != null && coordsArr.size() >= 2) {
-                            worldX = JSONUtil.getDouble(coordsArr.get(0));
-                            worldY = JSONUtil.getDouble(coordsArr.get(1));
+                        final double[] coords = accessor.getArray(parsed, positionPath);
+                        if (coords != null && coords.length >= 2) {
+                            worldX = coords[0];
+                            worldY = coords[1];
                         }
                     }
 
                     final FloorMapTransformationMatrix worldToMap =
-                            parseMatrix(json, worldToMapPath);
+                            parseMatrix(accessor, parsed, worldToMapPath);
 
                     // Apply world-to-map transformation
                     final double mapX =
@@ -204,24 +236,20 @@ public final class FloorMapEntryParser {
     }
 
     /**
-     * Parses a 6-element transformation matrix from a JSON array at the given
-     * path. Returns {@link FloorMapTransformationMatrix#identity()} if the path
-     * is null or the array is missing/malformed.
+     * Parses a 6-element transformation matrix from a numeric array at the
+     * given path. Returns {@link FloorMapTransformationMatrix#identity()} if
+     * the path is null or the array is missing/malformed.
      */
     private static FloorMapTransformationMatrix parseMatrix(
-            final JSONObject json, final String path) {
+            final ValueAccessor accessor, final ParsedValue parsed,
+            final String path) {
         if (path == null) {
             return FloorMapTransformationMatrix.identity();
         }
-        final JSONArray arr = JSONUtil.getArray(ValuePathAccessor.get(json, path));
-        if (arr != null && arr.size() >= 6) {
+        final double[] arr = accessor.getArray(parsed, path);
+        if (arr != null && arr.length >= 6) {
             return new FloorMapTransformationMatrix(
-                    JSONUtil.getDouble(arr.get(0)),
-                    JSONUtil.getDouble(arr.get(1)),
-                    JSONUtil.getDouble(arr.get(2)),
-                    JSONUtil.getDouble(arr.get(3)),
-                    JSONUtil.getDouble(arr.get(4)),
-                    JSONUtil.getDouble(arr.get(5)));
+                    arr[0], arr[1], arr[2], arr[3], arr[4], arr[5]);
         }
         return FloorMapTransformationMatrix.identity();
     }

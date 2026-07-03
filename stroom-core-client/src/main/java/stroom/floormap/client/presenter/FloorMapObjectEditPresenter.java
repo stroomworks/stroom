@@ -20,19 +20,15 @@ import stroom.alert.client.event.ConfirmEvent;
 import stroom.data.client.event.DataSelectionEvent;
 import stroom.document.asset.client.presenter.DocumentAssetDropDownPresenter;
 import stroom.floormap.client.FloorMapJsonKeys;
-import stroom.floormap.client.ValuePathAccessor;
+import stroom.floormap.client.ParsedValue;
+import stroom.floormap.client.ValueAccessor;
 import stroom.floormap.client.presenter.FloorMapObjectEditPresenter.FloorMapObjectEditView;
 import stroom.floormap.shared.FloorMapDoc;
 import stroom.floormap.shared.FloorMapFieldMapping.Role;
-import stroom.util.client.JSONUtil;
 import stroom.util.shared.TemporalEntry;
 import stroom.widget.popup.client.event.ShowPopupEvent;
 import stroom.widget.popup.client.presenter.PopupType;
 
-import com.google.gwt.json.client.JSONArray;
-import com.google.gwt.json.client.JSONNumber;
-import com.google.gwt.json.client.JSONObject;
-import com.google.gwt.json.client.JSONString;
 import com.google.gwt.user.client.ui.Widget;
 import com.google.web.bindery.event.shared.EventBus;
 import com.gwtplatform.mvp.client.MyPresenterWidget;
@@ -237,40 +233,34 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
     }
 
     /**
-     * Builds a JSON object from the current view state.
+     * Builds a serialised value string from the current view state using
+     * the format-independent {@link ValueAccessor} abstraction.
      *
-     * @return the constructed JSON; never {@code null}
+     * @return the serialised value (JSON or XML); never {@code null}
      */
-    private JSONObject buildJson() {
-        final JSONObject json = new JSONObject();
-        ValuePathAccessor.set(json, pathForRole(Role.TYPE), new JSONString(getView().getType()));
-        ValuePathAccessor.set(json, pathForRole(Role.LABEL), new JSONString(getView().getName()));
-        ValuePathAccessor.set(json, pathForRole(Role.IMAGE), new JSONString(
+    private String buildValue() {
+        final ValueAccessor accessor = ValueAccessor.forFormat(floorMapDoc.getValueFormat());
+        final ParsedValue newValue = accessor.createEmpty("entry");
+
+        accessor.setString(newValue, pathForRole(Role.TYPE), getView().getType());
+        accessor.setString(newValue, pathForRole(Role.LABEL), getView().getName());
+        accessor.setString(newValue, pathForRole(Role.IMAGE),
                 documentAssetDropDownPresenter.getSelectedAssetPath() == null
                         ? ""
-                        : documentAssetDropDownPresenter.getSelectedAssetPath()));
+                        : documentAssetDropDownPresenter.getSelectedAssetPath());
 
-        final JSONArray coordsArr = new JSONArray();
-        coordsArr.set(0, new JSONNumber(getView().getX()));
-        coordsArr.set(1, new JSONNumber(getView().getY()));
-        ValuePathAccessor.set(json, pathForRole(Role.POSITION), coordsArr);
+        accessor.setArray(newValue, pathForRole(Role.POSITION),
+                new double[]{getView().getX(), getView().getY()});
 
-        final double[] w2m = getView().getWorldToMapMatrix();
-        final JSONArray w2mArr = new JSONArray();
-        for (int i = 0; i < 6; i++) {
-            w2mArr.set(i, new JSONNumber(w2m[i]));
-        }
-        ValuePathAccessor.set(json, pathForRole(Role.WORLD_TO_MAP), w2mArr);
+        accessor.setArray(newValue, pathForRole(Role.WORLD_TO_MAP),
+                getView().getWorldToMapMatrix());
 
         if (FloorMapJsonKeys.BACKGROUND.equalsIgnoreCase(getView().getType())) {
-            final double[] m2s = getView().getMapToScreenMatrix();
-            final JSONArray m2sArr = new JSONArray();
-            for (int i = 0; i < 6; i++) {
-                m2sArr.set(i, new JSONNumber(m2s[i]));
-            }
-            ValuePathAccessor.set(json, pathForRole(Role.MAP_TO_SCREEN), m2sArr);
+            accessor.setArray(newValue, pathForRole(Role.MAP_TO_SCREEN),
+                    getView().getMapToScreenMatrix());
         }
-        return json;
+
+        return accessor.serialize(newValue);
     }
 
     /**
@@ -281,7 +271,7 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
      * @return the constructed entry; never {@code null}
      */
     private TemporalEntry buildEntry(final long effectiveTimeMs) {
-        return new TemporalEntry(requireMapName(), objectId, effectiveTimeMs, buildJson().toString());
+        return new TemporalEntry(requireMapName(), objectId, effectiveTimeMs, buildValue());
     }
 
     /**
@@ -313,35 +303,36 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
             final double[] m2s = new double[]{1.0, 0.0, 0.0, 1.0, 0.0, 0.0};
 
             try {
-                if (selected.getValue() != null && selected.getValue().trim().startsWith("{")) {
-                    final JSONObject json = JSONUtil.getObject(JSONUtil.parse(selected.getValue()));
-                    if (json != null) {
-                        name = JSONUtil.getString(ValuePathAccessor.get(json, pathForRole(Role.LABEL)));
-                        type = JSONUtil.getString(ValuePathAccessor.get(json, pathForRole(Role.TYPE)));
-                        img = JSONUtil.getString(ValuePathAccessor.get(json, pathForRole(Role.IMAGE)));
+                final ValueAccessor accessor = ValueAccessor.forFormat(floorMapDoc.getValueFormat());
+                final ParsedValue parsed = accessor.parse(selected.getValue());
+                if (parsed != null) {
+                    final String parsedName = accessor.getString(parsed, pathForRole(Role.LABEL));
+                    if (parsedName != null) {
+                        name = parsedName;
+                    }
+                    final String parsedType = accessor.getString(parsed, pathForRole(Role.TYPE));
+                    if (parsedType != null) {
+                        type = parsedType;
+                    }
+                    final String parsedImg = accessor.getString(parsed, pathForRole(Role.IMAGE));
+                    if (parsedImg != null) {
+                        img = parsedImg;
+                    }
 
-                        final JSONArray coordsArr = JSONUtil.getArray(
-                                ValuePathAccessor.get(json, pathForRole(Role.POSITION)));
-                        if (coordsArr != null && coordsArr.size() >= 2) {
-                            x = JSONUtil.getDouble(coordsArr.get(0));
-                            y = JSONUtil.getDouble(coordsArr.get(1));
-                        }
+                    final double[] coords = accessor.getArray(parsed, pathForRole(Role.POSITION));
+                    if (coords != null && coords.length >= 2) {
+                        x = coords[0];
+                        y = coords[1];
+                    }
 
-                        final JSONArray w2mArr = JSONUtil.getArray(
-                                ValuePathAccessor.get(json, pathForRole(Role.WORLD_TO_MAP)));
-                        if (w2mArr != null && w2mArr.size() >= 6) {
-                            for (int i = 0; i < 6; i++) {
-                                w2m[i] = JSONUtil.getDouble(w2mArr.get(i));
-                            }
-                        }
+                    final double[] parsedW2m = accessor.getArray(parsed, pathForRole(Role.WORLD_TO_MAP));
+                    if (parsedW2m != null && parsedW2m.length >= 6) {
+                        System.arraycopy(parsedW2m, 0, w2m, 0, 6);
+                    }
 
-                        final JSONArray m2sArr = JSONUtil.getArray(
-                                ValuePathAccessor.get(json, pathForRole(Role.MAP_TO_SCREEN)));
-                        if (m2sArr != null && m2sArr.size() >= 6) {
-                            for (int i = 0; i < 6; i++) {
-                                m2s[i] = JSONUtil.getDouble(m2sArr.get(i));
-                            }
-                        }
+                    final double[] parsedM2s = accessor.getArray(parsed, pathForRole(Role.MAP_TO_SCREEN));
+                    if (parsedM2s != null && parsedM2s.length >= 6) {
+                        System.arraycopy(parsedM2s, 0, m2s, 0, 6);
                     }
                 }
             } catch (final Exception ex) {

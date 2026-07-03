@@ -614,7 +614,7 @@ public class FloorMapMapPresenter
     private void parseTemporalEntries(final List<TemporalEntry> entries) {
         this.currentEntries = entries;
         final FloorMapEntryParser.ParseResult result = FloorMapEntryParser.parse(
-                entries, valueSchema());
+                entries, valueSchema(), getEntity().getValueFormat());
 
         activeBgKey = result.getBackgroundKey();
 
