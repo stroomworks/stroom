@@ -142,11 +142,11 @@ public class TestPathwayProcessor {
         try (final LmdbWriter writer = pathwaysDb.createWriter()) {
             final TraceProcessor traceProcessor =
                     new TraceProcessor(BYTE_BUFFERS, new PathwaySerde(BYTE_BUFFER_FACTORY));
-            traceDb.iterateTraces((traceId, function) ->
+            traceDb.iterateTraces((traceId, ignored) ->
                     traceProcessor.processTrace(writer,
                             pathwaysDb,
                             traceId,
-                            function,
+                            traceDb::findTrace,
                             PathwaysDoc.builder()
                                     .uuid(UUID.randomUUID().toString())
                                     .name("Dummy DocRef")
@@ -169,25 +169,25 @@ public class TestPathwayProcessor {
                 for (final PathwayEvent event : originalEvents) {
                     final AtomicReference<ByteBuffer> bufferRef = new AtomicReference<>();
                     serde.writePathwayEvent(event, bufferRef::set);
-                    
+
                     final ByteBuffer key = ByteBuffer.allocateDirect(100);
                     final byte[] pathBytes = pathwayName.getBytes(java.nio.charset.StandardCharsets.UTF_8);
                     key.put(pathBytes);
                     key.put((byte) 0);
                     key.putLong(sequenceId++);
                     key.flip();
-                    
+
                     final ByteBuffer val = bufferRef.get();
                     pathwayEventsDb.insert(lmdbWriter, key, val);
                 }
             });
             lmdbWriter.commit();
         }
-        
+
         final StringBuilder eventString = new StringBuilder();
         events.keySet().stream().sorted().forEach(pathwayName -> {
             final List<PathwayEvent> originalEvents = events.get(pathwayName);
-            
+
             final Map<String, String> uuidToNameMap = new HashMap<>();
             for (final PathwayEvent event : originalEvents) {
                 if (event.getNodeUuid() != null && event.getNodeName() != null) {
@@ -210,12 +210,12 @@ public class TestPathwayProcessor {
                 } else {
                     matches = false;
                 }
-                
+
                 if (matches) {
                     deserializedEvents.add(serde.readPathwayEvent(bb, uuidToNameMap));
                 }
             });
-            
+
             assertThat(deserializedEvents).usingRecursiveComparison().isEqualTo(originalEvents);
 
             originalEvents.forEach(event -> {

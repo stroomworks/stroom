@@ -20,18 +20,19 @@ import stroom.bytebuffer.impl6.ByteBufferFactory;
 import stroom.bytebuffer.impl6.ByteBufferFactoryImpl;
 import stroom.bytebuffer.impl6.ByteBuffers;
 import stroom.docref.DocRef;
+import stroom.docstore.api.DocFinder;
 import stroom.entity.shared.ExpressionCriteria;
 import stroom.planb.impl.PlanBConfig;
 import stroom.planb.impl.PlanBDocCache;
 import stroom.planb.impl.PlanBDocStore;
-import stroom.planb.impl.data.FileDescriptor;
-import stroom.planb.impl.data.FileHashUtil;
 import stroom.planb.impl.data.MergeProcessor;
 import stroom.planb.impl.data.ShardManager;
 import stroom.planb.impl.data.State;
 import stroom.planb.impl.db.StateValueTestUtil.ValueFunction;
 import stroom.planb.impl.db.state.StateDb;
 import stroom.planb.impl.db.state.StateFields;
+import stroom.planb.impl.rest.FileDescriptor;
+import stroom.planb.impl.rest.FileHashUtil;
 import stroom.planb.impl.serde.keyprefix.KeyPrefix;
 import stroom.planb.shared.KeyType;
 import stroom.planb.shared.PlanBDoc;
@@ -81,6 +82,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
@@ -220,6 +222,7 @@ class TestStateDb {
     void testFullProcess(@TempDir final Path rootDir) {
         final StatePaths statePaths = new StatePaths(rootDir);
         final PlanBDocStore planBDocStore = Mockito.mock(PlanBDocStore.class);
+        final DocFinder docFinder = Mockito.mock(DocFinder.class);
         final PlanBDoc doc = PlanBDoc
                 .builder()
                 .uuid(MAP_UUID)
@@ -227,7 +230,7 @@ class TestStateDb {
                 .stateType(StateType.STATE)
                 .settings(BASIC_SETTINGS)
                 .build();
-        Mockito.when(planBDocStore.findByName(Mockito.anyString()))
+        Mockito.when(docFinder.findByName(Mockito.eq(PlanBDoc.TYPE), Mockito.anyString()))
                 .thenReturn(Collections.singletonList(doc.asDocRef()));
         Mockito.when(planBDocStore.readDocument(Mockito.any(DocRef.class)))
                 .thenReturn(doc);
@@ -238,6 +241,7 @@ class TestStateDb {
         final String path = rootDir.toAbsolutePath().toString();
         final PlanBConfig planBConfig = new PlanBConfig(path);
         final ByteBufferFactory byteBufferFactory = new ByteBufferFactoryImpl();
+
         final ShardManager shardManager = new ShardManager(
                 new ByteBuffers(byteBufferFactory),
                 byteBufferFactory,
@@ -248,7 +252,8 @@ class TestStateDb {
                 statePaths,
                 null,
                 new SimpleTaskContextFactory(),
-                executorProvider);
+                executorProvider,
+                null);
         final MergeProcessor mergeProcessor = new MergeProcessor(
                 statePaths,
                 new MockSecurityContext(),

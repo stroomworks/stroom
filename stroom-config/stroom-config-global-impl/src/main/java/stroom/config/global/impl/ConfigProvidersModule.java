@@ -216,6 +216,15 @@ public class ConfigProvidersModule extends AbstractModule {
     @Generated("stroom.config.global.impl.GenerateConfigProvidersModule")
     @Provides
     @SuppressWarnings("unused")
+    stroom.contentindex.ContentIndexConfig getContentIndexConfig(
+            final ConfigMapper configMapper) {
+        return configMapper.getConfigObject(
+                stroom.contentindex.ContentIndexConfig.class);
+    }
+
+    @Generated("stroom.config.global.impl.GenerateConfigProvidersModule")
+    @Provides
+    @SuppressWarnings("unused")
     stroom.contentstore.impl.ContentStoreConfig getContentStoreConfig(
             final ConfigMapper configMapper) {
         return configMapper.getConfigObject(
@@ -288,10 +297,10 @@ public class ConfigProvidersModule extends AbstractModule {
     @Generated("stroom.config.global.impl.GenerateConfigProvidersModule")
     @Provides
     @SuppressWarnings("unused")
-    stroom.docstore.impl.db.DocStoreConfig getDocStoreConfig(
+    stroom.docstore.impl.DocStoreConfig getDocStoreConfig(
             final ConfigMapper configMapper) {
         return configMapper.getConfigObject(
-                stroom.docstore.impl.db.DocStoreConfig.class);
+                stroom.docstore.impl.DocStoreConfig.class);
     }
 
     @Generated("stroom.config.global.impl.GenerateConfigProvidersModule")
@@ -324,10 +333,10 @@ public class ConfigProvidersModule extends AbstractModule {
     @Generated("stroom.config.global.impl.GenerateConfigProvidersModule")
     @Provides
     @SuppressWarnings("unused")
-    stroom.gitrepo.api.GitRepoConfig getGitRepoConfig(
+    stroom.gitrepo.impl.GitRepoConfig getGitRepoConfig(
             final ConfigMapper configMapper) {
         return configMapper.getConfigObject(
-                stroom.gitrepo.api.GitRepoConfig.class);
+                stroom.gitrepo.impl.GitRepoConfig.class);
     }
 
     @Generated("stroom.config.global.impl.GenerateConfigProvidersModule")

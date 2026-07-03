@@ -395,6 +395,7 @@ public class S3Manager {
     public String createBucketName(final String bucketNamePattern,
                                    final Meta meta) {
         String bucketName = bucketNamePattern;
+
         bucketName = pathCreator.replace(bucketName, "feed", meta::getFeedName);
         bucketName = pathCreator.replace(bucketName, "type", meta::getTypeName);
         bucketName = bucketName.toLowerCase(Locale.ROOT);
@@ -643,11 +644,14 @@ public class S3Manager {
                 ZonedDateTime.ofInstant(Instant.ofEpochMilli(meta.getCreateMs()), ZoneOffset.UTC);
         final String idPadded = padId(meta.getId());
         keyName = pathCreator.replaceTimeVars(keyName, zonedDateTime);
+        // Parse for stuff like partNo, pipeline, node, etc.
         keyName = pathCreator.replace(keyName, "feed", meta::getFeedName);
         keyName = pathCreator.replace(keyName, "type", meta::getTypeName);
         keyName = pathCreator.replace(keyName, "id", () -> String.valueOf(meta.getId()));
         keyName = pathCreator.replace(keyName, "idPath", () -> getIdPath(idPadded));
         keyName = pathCreator.replace(keyName, "idPadded", () -> idPadded);
+        keyName = pathCreator.replaceContextVars(keyName);
+        keyName = pathCreator.replaceUUIDVars(keyName);
 
         keyName = S3_KEY_NAME_PATTERN.matcher(keyName).replaceAll("-");
         keyName = MULTI_SLASH.matcher(keyName).replaceAll("/");
@@ -701,25 +705,17 @@ public class S3Manager {
                 .stream()
                 .collect(Collectors.toMap(e -> createS3Name(e.getKey()), Entry::getValue));
 
-        PutObjectRequest.Builder builder = PutObjectRequest.builder()
+        final PutObjectRequest.Builder builder = PutObjectRequest.builder()
                 .bucket(bucketName)
                 .key(key)
                 .tagging(createTags(meta))
                 .metadata(metadata);
 
         if (uploadProperties != null) {
-            if (NullSafe.isNonBlankString(uploadProperties.cacheControl())) {
-                builder = builder.cacheControl(uploadProperties.cacheControl());
-            }
-            if (NullSafe.isNonBlankString(uploadProperties.contentDisposition())) {
-                builder = builder.contentDisposition(uploadProperties.contentDisposition());
-            }
-            if (NullSafe.isNonBlankString(uploadProperties.contentEncoding())) {
-                builder = builder.contentEncoding(uploadProperties.contentEncoding());
-            }
-            if (NullSafe.isNonBlankString(uploadProperties.contentType())) {
-                builder = builder.contentType(uploadProperties.contentType());
-            }
+            NullSafe.consumeNonBlankString(uploadProperties.cacheControl(), builder::cacheControl);
+            NullSafe.consumeNonBlankString(uploadProperties.contentDisposition(), builder::contentDisposition);
+            NullSafe.consumeNonBlankString(uploadProperties.contentEncoding(), builder::contentEncoding);
+            NullSafe.consumeNonBlankString(uploadProperties.contentType(), builder::contentType);
         }
 
         return builder.build();

@@ -20,15 +20,16 @@ import stroom.bytebuffer.impl6.ByteBufferFactory;
 import stroom.bytebuffer.impl6.ByteBufferFactoryImpl;
 import stroom.bytebuffer.impl6.ByteBuffers;
 import stroom.docref.DocRef;
+import stroom.docstore.api.DocFinder;
 import stroom.planb.impl.PlanBConfig;
 import stroom.planb.impl.PlanBDocCache;
 import stroom.planb.impl.PlanBDocStore;
-import stroom.planb.impl.data.FileDescriptor;
-import stroom.planb.impl.data.FileHashUtil;
 import stroom.planb.impl.data.MergeProcessor;
 import stroom.planb.impl.data.ShardManager;
 import stroom.planb.impl.data.SpanKV;
 import stroom.planb.impl.db.trace.TraceDb;
+import stroom.planb.impl.rest.FileDescriptor;
+import stroom.planb.impl.rest.FileHashUtil;
 import stroom.planb.impl.serde.SpanDataLoaderTestUtil;
 import stroom.planb.impl.serde.trace.SpanKey;
 import stroom.planb.impl.serde.trace.SpanValue;
@@ -60,6 +61,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
@@ -146,6 +148,7 @@ public class TestTraceDb {
     void testFullProcess(@TempDir final Path rootDir) {
         final StatePaths statePaths = new StatePaths(rootDir);
         final PlanBDocStore planBDocStore = Mockito.mock(PlanBDocStore.class);
+        final DocFinder docFinder = Mockito.mock(DocFinder.class);
         final PlanBDoc doc = PlanBDoc
                 .builder()
                 .uuid(MAP_UUID)
@@ -153,7 +156,7 @@ public class TestTraceDb {
                 .stateType(StateType.TRACE)
                 .settings(BASIC_SETTINGS)
                 .build();
-        Mockito.when(planBDocStore.findByName(Mockito.anyString()))
+        Mockito.when(docFinder.findByName(Mockito.eq(PlanBDoc.TYPE), Mockito.anyString()))
                 .thenReturn(Collections.singletonList(doc.asDocRef()));
         Mockito.when(planBDocStore.readDocument(Mockito.any(DocRef.class)))
                 .thenReturn(doc);
@@ -164,6 +167,7 @@ public class TestTraceDb {
         final String path = rootDir.toAbsolutePath().toString();
         final PlanBConfig planBConfig = new PlanBConfig(path);
         final ByteBufferFactory byteBufferFactory = new ByteBufferFactoryImpl();
+
         final ShardManager shardManager = new ShardManager(
                 new ByteBuffers(byteBufferFactory),
                 byteBufferFactory,
@@ -174,7 +178,8 @@ public class TestTraceDb {
                 statePaths,
                 null,
                 new SimpleTaskContextFactory(),
-                executorProvider);
+                executorProvider,
+                null);
         final MergeProcessor mergeProcessor = new MergeProcessor(
                 statePaths,
                 new MockSecurityContext(),
@@ -219,7 +224,7 @@ public class TestTraceDb {
                 DOC,
                 true)) {
             assertThat(db.count()).isEqualTo(166);
-            assertThat(db.getInfo().env().dbNames().size()).isEqualTo(9);
+            assertThat(db.getInfo().env().dbNames().size()).isEqualTo(10);
         }
 
         // Try deletion.
@@ -234,7 +239,7 @@ public class TestTraceDb {
                 true)) {
             assertThat(db.count()).isEqualTo(0);
             System.err.println(db.getInfoString());
-            assertThat(db.getInfo().env().dbNames().size()).isEqualTo(9);
+            assertThat(db.getInfo().env().dbNames().size()).isEqualTo(10);
         }
 
         // Try compaction.
@@ -249,7 +254,7 @@ public class TestTraceDb {
                 DOC,
                 true)) {
             assertThat(db.count()).isEqualTo(0);
-            assertThat(db.getInfo().env().stat().entries).isEqualTo(9);
+            assertThat(db.getInfo().env().stat().entries).isEqualTo(10);
         }
     }
 
