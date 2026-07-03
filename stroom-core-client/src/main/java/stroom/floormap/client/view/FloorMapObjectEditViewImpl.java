@@ -16,6 +16,7 @@
 
 package stroom.floormap.client.view;
 
+import stroom.floormap.client.FloorMapJsonKeys;
 import stroom.floormap.client.presenter.FloorMapObjectEditPresenter.FloorMapObjectEditView;
 import stroom.widget.datepicker.client.DateTimeBox;
 import stroom.widget.datepicker.client.DateTimePopup;
@@ -231,7 +232,7 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
             final double tY = f;
             final double sX = Math.sqrt(a * a + b * b);
             final double sY = Math.sqrt(c * c + d * d);
-            
+
             double rotationDeg = Math.toDegrees(Math.atan2(b, a));
             rotationDeg = Math.round(rotationDeg * 100.0) / 100.0;
 
@@ -269,7 +270,7 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
     }
 
     private void updateMatrixVisibility(final String type) {
-        final boolean isBackground = "background".equalsIgnoreCase(type == null ? "" : type.trim());
+        final boolean isBackground = FloorMapJsonKeys.BACKGROUND.equalsIgnoreCase(type == null ? "" : type.trim());
         if (w2mTranslationGroup != null) {
             w2mTranslationGroup.setVisible(!isBackground);
         }

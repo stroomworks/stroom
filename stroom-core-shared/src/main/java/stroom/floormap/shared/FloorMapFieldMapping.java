@@ -1,0 +1,230 @@
+/*
+ * Copyright 2016-2026 Crown Copyright
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package stroom.floormap.shared;
+
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonInclude.Include;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonPropertyOrder;
+
+import java.util.List;
+import java.util.Objects;
+
+/**
+ * Immutable DTO representing a single field mapping that tells the floor map
+ * editor how to read/write a field from a temporal entry's Value column.
+ *
+ * <p>Each instance maps a path within the serialised value (e.g. a JSON
+ * pointer such as {@code ".type"}) to a semantic {@link Role} that the
+ * floor map UI understands. The four fields are:</p>
+ * <ul>
+ *   <li><b>path</b> – a dot-prefixed path into the value structure
+ *       (e.g. {@code ".type"}, {@code ".coords"}). May be {@code null}
+ *       if the mapping is purely metadata.</li>
+ *   <li><b>role</b> – the {@link Role} that defines how the floor map
+ *       editor interprets this field. May be {@code null} for
+ *       unmapped entries.</li>
+ *   <li><b>displayName</b> – a human-readable label shown in the editor
+ *       UI. May be {@code null} if the field should not be displayed
+ *       to the user.</li>
+ *   <li><b>defaultValue</b> – the fallback value inserted when a new
+ *       entity is created and this field is not yet populated. May be
+ *       {@code null} to indicate no default.</li>
+ * </ul>
+ *
+ * <p>A list of these mappings forms the <em>value schema</em> stored in
+ * {@link FloorMapDoc#getValueSchema()}. The schema tells the UI which
+ * fields to expect, in what order, and how to render them.</p>
+ *
+ * @see FloorMapDoc#getValueSchema()
+ * @see Role
+ */
+@JsonPropertyOrder(alphabetic = true)
+@JsonInclude(Include.NON_NULL)
+public class FloorMapFieldMapping {
+
+    @JsonProperty
+    private final String path;
+
+    @JsonProperty
+    private final Role role;
+
+    @JsonProperty
+    private final String displayName;
+
+    @JsonProperty
+    private final String defaultValue;
+
+    /**
+     * Defines what a mapped field means to the floor map editor.
+     */
+    public enum Role {
+        /** Object type / icon category. */
+        TYPE,
+        /** Display name on the canvas. */
+        LABEL,
+        /** Position coordinates (e.g. a JSON array {@code [x, y]}). */
+        POSITION,
+        /** Background image URL/data. */
+        IMAGE,
+        /** Transformation matrix – 6-element array (world to map). */
+        WORLD_TO_MAP,
+        /** Background transformation matrix – 6-element array (map to screen). */
+        MAP_TO_SCREEN,
+        /** Extra user-defined field. */
+        CUSTOM
+    }
+
+    /**
+     * Constructs a new field mapping.
+     *
+     * <p>All parameters are nullable; see the class-level Javadoc for the
+     * semantics of each field.</p>
+     *
+     * @param path         dot-prefixed path into the serialised value
+     *                     (e.g. {@code ".type"}), or {@code null}
+     * @param role         the semantic {@link Role} of this field, or
+     *                     {@code null} if unmapped
+     * @param displayName  human-readable label for the editor UI, or
+     *                     {@code null} if the field should be hidden
+     * @param defaultValue fallback value for new entities, or {@code null}
+     *                     for no default
+     */
+    @JsonCreator
+    public FloorMapFieldMapping(@JsonProperty("path") final String path,
+                                @JsonProperty("role") final Role role,
+                                @JsonProperty("displayName") final String displayName,
+                                @JsonProperty("defaultValue") final String defaultValue) {
+        this.path = path;
+        this.role = role;
+        this.displayName = displayName;
+        this.defaultValue = defaultValue;
+    }
+
+    /**
+     * Returns the dot-prefixed path into the serialised value structure.
+     *
+     * @return the path string (e.g. {@code ".type"}), or {@code null}
+     */
+    public String getPath() {
+        return path;
+    }
+
+    /**
+     * Returns the semantic role of this field within the floor map.
+     *
+     * @return the {@link Role}, or {@code null} if this mapping has no
+     *         assigned role
+     */
+    public Role getRole() {
+        return role;
+    }
+
+    /**
+     * Returns the human-readable label shown for this field in the
+     * floor map editor UI.
+     *
+     * @return the display name, or {@code null} if the field should
+     *         not be displayed
+     */
+    public String getDisplayName() {
+        return displayName;
+    }
+
+    /**
+     * Returns the fallback value used when a new floor map entity is
+     * created and this field has not been populated.
+     *
+     * @return the default value string, or {@code null} if no default
+     *         is defined
+     */
+    public String getDefaultValue() {
+        return defaultValue;
+    }
+
+    /**
+     * Returns the initial value-schema mappings used to seed a
+     * newly-created {@link FloorMapDoc}.
+     *
+     * <p>This method is <strong>not</strong> intended as a runtime fallback.
+     * Once a document is created, its schema is persisted and should be
+     * read from {@link FloorMapDoc#getValueSchema()}. This method exists
+     * solely so that {@code FloorMapInitPresenter} can provide a sensible
+     * starting configuration.</p>
+     *
+     * <p>The returned list contains the following mappings:</p>
+     * <table>
+     *   <caption>Initial field mappings</caption>
+     *   <tr><th>Path</th><th>Role</th><th>Display Name</th><th>Default Value</th></tr>
+     *   <tr><td>{@code .type}</td><td>{@link Role#TYPE}</td><td>Type</td><td>{@code null}</td></tr>
+     *   <tr><td>{@code .name}</td><td>{@link Role#LABEL}</td><td>Name</td><td>{@code null}</td></tr>
+     *   <tr><td>{@code .coords}</td><td>{@link Role#POSITION}</td><td>Coords</td><td>{@code null}</td></tr>
+     *   <tr><td>{@code .img}</td><td>{@link Role#IMAGE}</td><td>Image</td><td>{@code null}</td></tr>
+     *   <tr><td>{@code .tm-world-to-map}</td><td>{@link Role#WORLD_TO_MAP}</td>
+     *       <td>{@code null}</td><td>{@code null}</td></tr>
+     *   <tr><td>{@code .tm-map-to-screen}</td><td>{@link Role#MAP_TO_SCREEN}</td>
+     *       <td>{@code null}</td><td>{@code null}</td></tr>
+     * </table>
+     *
+     * <p>The returned list is created via {@link List#of(Object...)} and is
+     * therefore <em>unmodifiable</em>; any attempt to mutate it will throw
+     * {@link UnsupportedOperationException}.</p>
+     *
+     * @return a non-null, unmodifiable list of the six initial field mappings
+     */
+    public static List<FloorMapFieldMapping> initialValueSchema() {
+        return List.of(
+                new FloorMapFieldMapping(".type", Role.TYPE, "Type", null),
+                new FloorMapFieldMapping(".name", Role.LABEL, "Name", null),
+                new FloorMapFieldMapping(".coords", Role.POSITION, "Coords", null),
+                new FloorMapFieldMapping(".img", Role.IMAGE, "Image", null),
+                new FloorMapFieldMapping(".tm-world-to-map", Role.WORLD_TO_MAP, null, null),
+                new FloorMapFieldMapping(".tm-map-to-screen", Role.MAP_TO_SCREEN, null, null)
+        );
+    }
+
+    @Override
+    public boolean equals(final Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+        final FloorMapFieldMapping that = (FloorMapFieldMapping) o;
+        return Objects.equals(path, that.path)
+                && role == that.role
+                && Objects.equals(displayName, that.displayName)
+                && Objects.equals(defaultValue, that.defaultValue);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(path, role, displayName, defaultValue);
+    }
+
+    @Override
+    public String toString() {
+        return "FloorMapFieldMapping{"
+                + "path='" + path + '\''
+                + ", role=" + role
+                + ", displayName='" + displayName + '\''
+                + ", defaultValue='" + defaultValue + '\''
+                + '}';
+    }
+}

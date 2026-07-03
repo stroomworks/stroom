@@ -90,6 +90,7 @@ public interface SqlTemporalStoreResource extends RestResource, DirectRestServic
     @Path("/clear")
     @Operation(
             summary = "Clear a store",
+            operationId = "clearSqlTemporalStore",
             description = "Deletes all entries for the store identified by the supplied DocRef. "
                     + "Requires EDIT permission on the document.")
     Boolean clear(@Parameter(description = "docRef", required = true) DocRef docRef);
@@ -108,6 +109,7 @@ public interface SqlTemporalStoreResource extends RestResource, DirectRestServic
     @Path("/count")
     @Operation(
             summary = "Count store entries",
+            operationId = "countSqlTemporalStoreEntries",
             description = "Returns the total number of entries (all keys, all effective times) "
                     + "in the store identified by the supplied DocRef.")
     Long count(@Parameter(description = "docRef", required = true) DocRef docRef);
@@ -129,6 +131,7 @@ public interface SqlTemporalStoreResource extends RestResource, DirectRestServic
     @Path("/entry")
     @Operation(
             summary = "Create an entry",
+            operationId = "createSqlTemporalStoreEntry",
             description = "Creates a new temporal entry. If an entry already exists for the same "
                     + "(map, key, effectiveTimeMs) triple the value is overwritten (upsert).")
     TemporalEntry create(@Parameter(description = "entry", required = true) TemporalEntry entry);
@@ -148,26 +151,11 @@ public interface SqlTemporalStoreResource extends RestResource, DirectRestServic
     @Path("/entry")
     @Operation(
             summary = "Update an entry",
+            operationId = "updateSqlTemporalStoreEntry",
             description = "Updates an existing temporal entry. Uses upsert semantics — "
                     + "equivalent to create if the entry does not already exist.")
     TemporalEntry update(@Parameter(description = "entry", required = true) TemporalEntry entry);
 
-    /**
-     * Fetches a single entry identified by its composite primary key
-     * {@code (map, key, effectiveTimeMs)}.
-     *
-     * <p>Requires {@code VIEW} permission on the map.</p>
-     *
-     * @param id composite key identifying the specific version to retrieve
-     * @return the matching {@link TemporalEntry}, or {@code null} if not found
-     */
-    @POST
-    @Path("/entry/fetch")
-    @Operation(
-            summary = "Fetch a specific entry",
-            description = "Returns the single entry identified by (map, key, effectiveTimeMs), "
-                    + "or null if no such entry exists.")
-    TemporalEntry fetch(@Parameter(description = "id", required = true) TemporalEntryId id);
 
     /**
      * Deletes the entry identified by its composite primary key
@@ -182,6 +170,7 @@ public interface SqlTemporalStoreResource extends RestResource, DirectRestServic
     @Path("/entry/delete")
     @Operation(
             summary = "Delete a specific entry",
+            operationId = "deleteSqlTemporalStoreEntry",
             description = "Deletes the entry identified by (map, key, effectiveTimeMs). "
                     + "Returns true if a row was deleted.")
     Boolean delete(@Parameter(description = "id", required = true) TemporalEntryId id);
@@ -209,6 +198,7 @@ public interface SqlTemporalStoreResource extends RestResource, DirectRestServic
     @Path("/find")
     @Operation(
             summary = "Find entries",
+            operationId = "findSqlTemporalStoreEntries",
             description = "Returns entries matching the supplied criteria. When an EffectiveTime <= T "
                     + "term is present, only the latest version of each key at or before T is returned "
                     + "(temporal deduplication). Without a time term, all historical versions are returned.")
@@ -239,6 +229,7 @@ public interface SqlTemporalStoreResource extends RestResource, DirectRestServic
     @Path("/fetchAtTime")
     @Operation(
             summary = "Fetch entry per key at a point in time",
+            operationId = "fetchSqlTemporalStoreEntriesAtTime",
             description = "For each key in the specified map, returns the single entry whose "
                     + "effective_time is the greatest value at or before request.timeTo. "
                     + "Results are sorted by key ascending. "
@@ -268,6 +259,7 @@ public interface SqlTemporalStoreResource extends RestResource, DirectRestServic
     @Path("/fetchAll")
     @Operation(
             summary = "Fetch absolute latest entry per key (no time constraint)",
+            operationId = "fetchAllSqlTemporalStoreEntries",
             description = "Returns the most recent version of every key in the map with no upper-time "
                     + "bound. Use for the 'Show all' Fact List toggle. "
                     + "The server applies currentTimeMillis() + ONE_DAY_MS internally.")
@@ -291,6 +283,7 @@ public interface SqlTemporalStoreResource extends RestResource, DirectRestServic
     @Path("/timeRange")
     @Operation(
             summary = "Get effective-time range for a map",
+            operationId = "getSqlTemporalStoreTimeRange",
             description = "Returns MIN(effective_time) and MAX(effective_time) for all entries in the "
                     + "specified map. Used to initialise the timeline slider range in the Floor Map Editor. "
                     + "Both fields are null if the store is empty.")
@@ -317,6 +310,7 @@ public interface SqlTemporalStoreResource extends RestResource, DirectRestServic
     @Path("/applyChanges")
     @Operation(
             summary = "Apply staged changes atomically",
+            operationId = "applySqlTemporalStoreChanges",
             description = "Applies an ordered list of upsert and delete operations within a single "
                     + "database transaction. A failure in any operation rolls back all changes. "
                     + "Returns success=false (not HTTP 500) on failure so the client can display "

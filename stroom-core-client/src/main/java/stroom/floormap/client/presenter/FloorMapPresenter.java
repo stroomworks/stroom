@@ -48,7 +48,6 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
     private static final TabData MAP = new TabDataImpl("Map");
     private static final TabData EDITOR = new TabDataImpl("Editor");
     private static final TabData EVENTS_QUERY = new TabDataImpl("Events Query");
-    private static final TabData FACTS_QUERY = new TabDataImpl("Facts Query");
     private static final TabData SETTINGS = new TabDataImpl("Settings");
     private static final TabData ASSETS = new TabDataImpl("Assets");
     private static final TabData DOCUMENTATION = new TabDataImpl("Documentation");
@@ -61,7 +60,6 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
     private FloorMapEditorPresenter floorMapEditorPresenter;
     private FloorMapSettingsPresenter floorMapSettingsPresenter;
     private FloorMapQueryPresenter eventsQueryPresenter;
-    private FloorMapQueryPresenter factsQueryPresenter;
 
     @Inject
     public FloorMapPresenter(final EventBus eventBus,
@@ -127,7 +125,8 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
                                final boolean readOnly) {
                 presenter.read(docRef, document.getEventsQuery(), document.getEventsQueryTimeRange(),
                         document.getEventsQueryTablePreferences(), document.getEntityIdColumn(),
-                        document.getLocationIdColumn(), true);
+                        document.getLocationIdColumn(), true,
+                        FloorMapQueryPresenter.buildQueryVariables(document));
                 presenter.setTaskMonitorFactory(FloorMapPresenter.this);
             }
 
@@ -144,34 +143,6 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
             }
         });
 
-        addTab(FACTS_QUERY, new AbstractTabProvider<FloorMapDoc, FloorMapQueryPresenter>(eventBus) {
-            @Override
-            protected FloorMapQueryPresenter createPresenter() {
-                factsQueryPresenter = floorMapQueryPresenterProvider.get();
-                registerHandler(eventBus.addHandler(ChangeEvent.getType(), () -> fireDirtyEvent(true)));
-                return factsQueryPresenter;
-            }
-
-            @Override
-            public void onRead(final FloorMapQueryPresenter presenter,
-                               final DocRef docRef,
-                               final FloorMapDoc document,
-                               final boolean readOnly) {
-                presenter.read(docRef, document.getFactsQuery(), document.getFactsQueryTimeRange(),
-                        document.getFactsQueryTablePreferences(), null, null, false);
-                presenter.setTaskMonitorFactory(FloorMapPresenter.this);
-            }
-
-            @Override
-            public FloorMapDoc onWrite(final FloorMapQueryPresenter presenter,
-                                       final FloorMapDoc document) {
-                return document.copy()
-                        .factsQuery(presenter.getQuery())
-                        .factsQueryTimeRange(presenter.getQueryTimeRange())
-                        .factsQueryTablePreferences(presenter.getQueryTablePreferences())
-                        .build();
-            }
-        });
 
         addTab(SETTINGS, new DocTabProvider<>(() -> {
             floorMapSettingsPresenter = floorMapSettingsPresenterProvider.get();
@@ -224,36 +195,6 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
             addObjectButton.setVisible(content instanceof FloorMapMapPresenter && editModeButton.getState());
         }
 
-        // Auto-populate default template for Facts Query if it is empty/blank
-        if (content == factsQueryPresenter) {
-            final String currentQuery = factsQueryPresenter.getQuery();
-            if (currentQuery == null || currentQuery.trim().isEmpty()) {
-                final DocRef storeRef;
-                if (floorMapSettingsPresenter != null) {
-                    storeRef = floorMapSettingsPresenter.getTemporalStoreRef();
-                } else {
-                    storeRef = getEntity().getTemporalStoreRef();
-                }
-
-                if (storeRef != null && storeRef.getName() != null && !storeRef.getName().isEmpty()) {
-                    final String template = "from \"" + storeRef.getName() + "\"\n"
-                            + "select \n"
-                            + "  Key, \n"
-                            + "  EffectiveTime, \n"
-                            + "  jq(Value, \".type\") as type, \n"
-                            + "  jq(Value, \".name\") as name, \n"
-                            + "  jq(Value, \".maps\") as maps, \n"
-                            + "  jq(Value, \".coords\") as coords, \n"
-                            + "  jq(Value, \".img\") as img, \n"
-                            + "  jq(Value, \"\\\"tm-world-to-map\\\"\") as tm_world_to_map, \n"
-                            + "  jq(Value, \"\\\"tm-map-to-screen\\\"\") as tm_map_to_screen";
-
-                    factsQueryPresenter.read(getEntity().asDocRef(), template,
-                            getEntity().getFactsQueryTimeRange(), getEntity().getFactsQueryTablePreferences(),
-                            null, null, false);
-                }
-            }
-        }
     }
 
     @Override

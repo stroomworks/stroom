@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2016-2026 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,14 +19,11 @@ package stroom.sqlstore.impl;
 import stroom.docref.DocRef;
 import stroom.entity.shared.ExpressionCriteria;
 import stroom.event.logging.rs.api.AutoLogged;
-import stroom.security.api.SecurityContext;
-import stroom.security.shared.DocumentPermission;
 import stroom.sqlstore.shared.ApplyChangesRequest;
 import stroom.sqlstore.shared.ApplyChangesResult;
 import stroom.sqlstore.shared.FetchAtTimeRequest;
 import stroom.sqlstore.shared.SqlTemporalStoreResource;
 import stroom.sqlstore.shared.TemporalStoreTimeRange;
-import stroom.util.shared.PermissionException;
 import stroom.util.shared.ResultPage;
 import stroom.util.shared.TemporalEntry;
 import stroom.util.shared.TemporalEntryId;
@@ -40,31 +37,21 @@ import java.util.List;
 class SqlTemporalStoreResourceImpl implements SqlTemporalStoreResource {
 
     private final Provider<UpdatableSqlTemporalStore> updatableSqlTemporalStoreProvider;
-    private final SecurityContext securityContext;
 
     @Inject
-    SqlTemporalStoreResourceImpl(final Provider<UpdatableSqlTemporalStore> updatableSqlTemporalStoreProvider,
-                         final SecurityContext securityContext) {
+    SqlTemporalStoreResourceImpl(
+            final Provider<UpdatableSqlTemporalStore> updatableSqlTemporalStoreProvider) {
         this.updatableSqlTemporalStoreProvider = updatableSqlTemporalStoreProvider;
-        this.securityContext = securityContext;
     }
 
     @Override
     public Boolean clear(final DocRef docRef) {
-        if (!securityContext.hasDocumentPermission(docRef, DocumentPermission.EDIT)) {
-            throw new PermissionException(securityContext.getUserRef(),
-                    "User does not have EDIT permission on store " + docRef.getName());
-        }
-        updatableSqlTemporalStoreProvider.get().clear(docRef.getName());
+        updatableSqlTemporalStoreProvider.get().clear(docRef);
         return true;
     }
 
     @Override
     public Long count(final DocRef docRef) {
-        if (!securityContext.hasDocumentPermission(docRef, DocumentPermission.VIEW)) {
-            throw new PermissionException(securityContext.getUserRef(),
-                    "User does not have VIEW permission on store " + docRef.getName());
-        }
         return updatableSqlTemporalStoreProvider.get().count(docRef);
     }
 
@@ -78,10 +65,6 @@ class SqlTemporalStoreResourceImpl implements SqlTemporalStoreResource {
         return updatableSqlTemporalStoreProvider.get().update(entry);
     }
 
-    @Override
-    public TemporalEntry fetch(final TemporalEntryId id) {
-        return updatableSqlTemporalStoreProvider.get().fetch(id).orElse(null);
-    }
 
     @Override
     public Boolean delete(final TemporalEntryId id) {

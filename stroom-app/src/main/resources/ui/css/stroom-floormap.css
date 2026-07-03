@@ -15,6 +15,21 @@
  */
 
 /* ============================================================
+ * Floor Map Grid — theme-aware colours
+ *
+ * These variables are used by the SVG grid background
+ * (FloorMapGridBackground.java) so that the grid respects
+ * the current light/dark theme.
+ * ============================================================ */
+
+:root {
+    --floormap-grid__background-color: var(--dashboard-panel__grid-background-color);
+    --floormap-grid__major-stroke:     var(--vis-axis__color);
+    --floormap-grid__minor-stroke:     var(--vis-text__color--faint);
+    --floormap-grid__highlight-color:  var(--blue-600);
+}
+
+/* ============================================================
  * Floor Map Timeline — YouTube-style layout
  * ============================================================ */
 

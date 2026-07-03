@@ -31,6 +31,7 @@ import stroom.query.api.DestroyReason;
 import stroom.query.api.ExpressionOperator;
 import stroom.query.api.GroupSelection;
 import stroom.query.api.OffsetRange;
+import stroom.query.api.Param;
 import stroom.query.api.QLVisResult;
 import stroom.query.api.Result;
 import stroom.query.api.TimeRange;
@@ -61,8 +62,10 @@ import edu.ycp.cs.dh.acegwt.client.ace.AceEditorMode;
 import edu.ycp.cs.dh.acegwt.client.ace.AceMarkerType;
 import edu.ycp.cs.dh.acegwt.client.ace.AceRange;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
 import javax.inject.Provider;
@@ -89,6 +92,7 @@ public class QueryEditPresenter
     private QueryResultVisPresenter currentVisPresenter;
     private String currentQuery;
     private Timer requestTimer;
+    private Map<String, String> queryVariables;
 
     @Inject
     public QueryEditPresenter(final EventBus eventBus,
@@ -282,19 +286,24 @@ public class QueryEditPresenter
     @Override
     protected void onBind() {
         super.onBind();
+        //noinspection unused event
         registerHandler(editorPresenter.addValueChangeHandler(event -> {
             final String query = editorPresenter.getText();
             updateQuery(query);
             onChange();
         }));
+        //noinspection unused event
         registerHandler(editorPresenter.addFormatHandler(event -> onChange()));
+        //noinspection unused e
         registerHandler(queryToolbarPresenter.addStartQueryHandler(e -> toggleStart()));
+        //noinspection unused e
         registerHandler(queryToolbarPresenter.addTimeRangeChangeHandler(e -> {
             run(true, true);
             onChange();
         }));
         queryHelpPresenter.linkToEditor(editorPresenter);
 
+        //noinspection unused event
         registerHandler(getEventBus().addHandler(WindowCloseEvent.getType(), event -> {
             // If a user is even attempting to close the browser or browser tab then destroy the query.
             queryModel.reset(DestroyReason.WINDOW_CLOSE);
@@ -382,12 +391,26 @@ public class QueryEditPresenter
         // Destroy any previous query.
         queryModel.reset(DestroyReason.NO_LONGER_NEEDED);
 
-        // Start search.
+        // Substitute param('key') references with quoted values so that
+        // the from clause (which only accepts string literals) resolves correctly.
+        // The params are also passed natively to the search model so that
+        // param() calls in expressions work via the standard Stroom mechanism.
+        String queryText = editorPresenter.getText();
+        List<Param> params = null;
+        if (queryVariables != null && !queryVariables.isEmpty()) {
+            params = new ArrayList<>();
+            for (final Map.Entry<String, String> entry : queryVariables.entrySet()) {
+                params.add(new Param(entry.getKey(), entry.getValue()));
+                queryText = queryText.replace(
+                        "param('" + entry.getKey() + "')",
+                        "\"" + entry.getValue() + "\"");
+            }
+        }
         queryModel.startNewSearch(
                 null,
                 null,
-                editorPresenter.getText(),
-                null, //getDashboardContext().getCombinedParams(),
+                queryText,
+                params,
                 queryToolbarPresenter.getTimeRange(),
                 incremental,
                 storeHistory,
@@ -401,6 +424,20 @@ public class QueryEditPresenter
 
     public void setTimeRange(final TimeRange timeRange) {
         queryToolbarPresenter.setTimeRange(timeRange);
+    }
+
+    /**
+     * Sets query parameters to be made available during query execution.
+     * <p>In the {@code from} clause (which only accepts string literals),
+     * {@code param('key')} is replaced with the quoted value via text
+     * substitution before the query is sent to the parser. In expression
+     * contexts, the parameters are also passed natively via the standard
+     * Stroom {@link Param} pipeline.</p>
+     *
+     * @param queryVariables parameter key → value map, or {@code null}
+     */
+    public void setQueryVariables(final Map<String, String> queryVariables) {
+        this.queryVariables = queryVariables;
     }
 
     public void setQuery(final DocRef docRef, final String query, final boolean readOnly) {

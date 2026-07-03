@@ -225,10 +225,10 @@ public interface UpdatableTemporalStore extends HasCrud<TemporalEntry, TemporalE
      * Deletes all entries for the specified map, across all keys and all
      * effective times.
      *
-     * @param mapName name of the map to clear; must not be {@code null} or
-     *                blank
+     * @param docRef reference to the store document to clear; must not be
+     *               {@code null}
      */
-    void clear(String mapName);
+    void clear(DocRef docRef);
 
     /**
      * Returns the total number of entries in the store document identified by
