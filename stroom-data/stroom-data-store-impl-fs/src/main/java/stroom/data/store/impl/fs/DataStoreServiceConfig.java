@@ -16,12 +16,8 @@
 
 package stroom.data.store.impl.fs;
 
-import stroom.config.common.AbstractDbConfig;
-import stroom.config.common.ConnectionConfig;
-import stroom.config.common.ConnectionPoolConfig;
 import stroom.config.common.HasDbConfig;
 import stroom.util.shared.AbstractConfig;
-import stroom.util.shared.BootStrapConfig;
 import stroom.util.shared.IsStroomConfig;
 import stroom.util.time.StroomDuration;
 
@@ -33,11 +29,17 @@ import jakarta.validation.constraints.Min;
 
 import java.util.Objects;
 
+
 @JsonPropertyOrder(alphabetic = true)
 public class DataStoreServiceConfig extends AbstractConfig implements IsStroomConfig, HasDbConfig {
 
     public static final String PROP_NAME_DELETE_PURGE_AGE = "deletePurgeAge";
     protected static final String PROP_NAME_DELETE_FAILURE_THRESHOLD = "deleteFailureThreshold";
+
+    private static final int DEFAULT_DELETE_BATCH_SIZE = 1000;
+    private static final int DEFAULT_DELETE_FAILURE_THRESHOLD = 100;
+    private static final int DEFAULT_FILE_SYSTEM_CLEAN_BATCH_SIZE = 20;
+    private static final boolean DEFAULT_FILE_SYSTEM_CLEAN_DELETE_OUT = false;
 
     private final DataStoreServiceDbConfig dbConfig;
     private StroomDuration deletePurgeAge;
@@ -51,10 +53,10 @@ public class DataStoreServiceConfig extends AbstractConfig implements IsStroomCo
     public DataStoreServiceConfig() {
         dbConfig = new DataStoreServiceDbConfig();
         deletePurgeAge = StroomDuration.ofDays(7);
-        deleteBatchSize = 1000;
-        deleteFailureThreshold = 100;
-        fileSystemCleanBatchSize = 20;
-        fileSystemCleanDeleteOut = false;
+        deleteBatchSize = DEFAULT_DELETE_BATCH_SIZE;
+        deleteFailureThreshold = DEFAULT_DELETE_FAILURE_THRESHOLD;
+        fileSystemCleanBatchSize = DEFAULT_FILE_SYSTEM_CLEAN_BATCH_SIZE;
+        fileSystemCleanDeleteOut = DEFAULT_FILE_SYSTEM_CLEAN_DELETE_OUT;
         fileSystemCleanOldAge = StroomDuration.ofDays(1);
     }
 
@@ -70,10 +72,14 @@ public class DataStoreServiceConfig extends AbstractConfig implements IsStroomCo
                                   @JsonProperty("fileSystemCleanOldAge") final StroomDuration fileSystemCleanOldAge) {
         this.dbConfig = dbConfig;
         this.deletePurgeAge = deletePurgeAge;
-        this.deleteBatchSize = Objects.requireNonNullElse(deleteBatchSize, 0);
-        this.deleteFailureThreshold = Objects.requireNonNullElse(deleteFailureThreshold, 0);
-        this.fileSystemCleanBatchSize = Objects.requireNonNullElse(fileSystemCleanBatchSize, 0);
-        this.fileSystemCleanDeleteOut = Objects.requireNonNullElse(fileSystemCleanDeleteOut, false);
+        this.deleteBatchSize =
+                Objects.requireNonNullElse(deleteBatchSize, DEFAULT_DELETE_BATCH_SIZE);
+        this.deleteFailureThreshold =
+                Objects.requireNonNullElse(deleteFailureThreshold, DEFAULT_DELETE_FAILURE_THRESHOLD);
+        this.fileSystemCleanBatchSize =
+                Objects.requireNonNullElse(fileSystemCleanBatchSize, DEFAULT_FILE_SYSTEM_CLEAN_BATCH_SIZE);
+        this.fileSystemCleanDeleteOut =
+                Objects.requireNonNullElse(fileSystemCleanDeleteOut, DEFAULT_FILE_SYSTEM_CLEAN_DELETE_OUT);
         this.fileSystemCleanOldAge = fileSystemCleanOldAge;
     }
 
@@ -153,24 +159,5 @@ public class DataStoreServiceConfig extends AbstractConfig implements IsStroomCo
                 fileSystemCleanBatchSize,
                 fileSystemCleanDeleteOut,
                 fileSystemCleanOldAge);
-    }
-
-
-    // --------------------------------------------------------------------------------
-
-
-    @BootStrapConfig
-    public static class DataStoreServiceDbConfig extends AbstractDbConfig {
-
-        public DataStoreServiceDbConfig() {
-            super();
-        }
-
-        @JsonCreator
-        public DataStoreServiceDbConfig(
-                @JsonProperty(PROP_NAME_CONNECTION) final ConnectionConfig connectionConfig,
-                @JsonProperty(PROP_NAME_CONNECTION_POOL) final ConnectionPoolConfig connectionPoolConfig) {
-            super(connectionConfig, connectionPoolConfig);
-        }
     }
 }

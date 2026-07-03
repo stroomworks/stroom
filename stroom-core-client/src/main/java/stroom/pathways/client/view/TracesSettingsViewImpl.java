@@ -28,8 +28,8 @@ import com.gwtplatform.mvp.client.View;
 import com.gwtplatform.mvp.client.ViewImpl;
 
 public class TracesSettingsViewImpl
-        extends ViewImpl
-        implements TracesSettingsView, ReadOnlyChangeHandler {
+         extends ViewImpl
+         implements TracesSettingsView, ReadOnlyChangeHandler {
 
     private final Widget widget;
 
@@ -53,7 +53,7 @@ public class TracesSettingsViewImpl
 
     @Override
     public void onReadOnly(final boolean readOnly) {
-        // Handled by child presenter
+        // No-op (read-only state is propagated to child panels directly)
     }
 
     public interface Binder extends UiBinder<Widget, TracesSettingsViewImpl> {

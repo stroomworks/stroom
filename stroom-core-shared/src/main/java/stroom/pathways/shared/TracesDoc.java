@@ -19,9 +19,10 @@ package stroom.pathways.shared;
 import stroom.docref.DocRef;
 import stroom.docstore.shared.DocumentType;
 import stroom.docstore.shared.DocumentTypeRegistry;
+import stroom.planb.shared.AbstractPlanBDoc;
 import stroom.planb.shared.AbstractPlanBSettings;
-import stroom.planb.shared.PlanBDoc;
 import stroom.planb.shared.StateType;
+import stroom.planb.shared.TraceSettings;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonInclude;
@@ -43,10 +44,14 @@ import com.fasterxml.jackson.annotation.JsonPropertyOrder;
         "settings"
 })
 @JsonInclude(Include.NON_NULL)
-public class TracesDoc extends PlanBDoc {
+public class TracesDoc extends AbstractPlanBDoc {
 
     public static final String TYPE = "Traces";
     public static final DocumentType DOCUMENT_TYPE = DocumentTypeRegistry.TRACES_DOCUMENT_TYPE;
+
+    @JsonProperty("hasSharedFileStoreData")
+    @JsonInclude(Include.NON_NULL)
+    private final Boolean hasSharedFileStoreData;
 
     @JsonCreator
     public TracesDoc(
@@ -59,9 +64,20 @@ public class TracesDoc extends PlanBDoc {
             @JsonProperty("updateUser") final String updateUser,
             @JsonProperty("description") final String description,
             @JsonProperty("stateType") final StateType stateType,
-            @JsonProperty("settings") final AbstractPlanBSettings settings) {
+            @JsonProperty("settings") final AbstractPlanBSettings settings,
+            @JsonProperty("hasSharedFileStoreData") final Boolean hasSharedFileStoreData) {
         super(TYPE, uuid, name, version, createTimeMs, updateTimeMs, createUser, updateUser,
                 description, stateType == null ? StateType.TRACE : stateType, settings);
+        if (settings != null && !(settings instanceof TraceSettings)) {
+            throw new IllegalArgumentException(
+                    "TracesDoc requires TraceSettings, got: " +
+                    settings.getClass().getSimpleName());
+        }
+        this.hasSharedFileStoreData = hasSharedFileStoreData;
+    }
+
+    public boolean hasSharedFileStoreData() {
+        return Boolean.TRUE.equals(hasSharedFileStoreData);
     }
 
     /**
@@ -105,6 +121,8 @@ public class TracesDoc extends PlanBDoc {
                ", description='" + getDescription() + '\'' +
                ", stateType=" + getStateType() +
                ", settings=" + getSettings() +
+               ", shardCount=" + getShardCount() +
+               ", sharedPath='" + getSharedPath() + '\'' +
                '}';
     }
 
@@ -117,34 +135,21 @@ public class TracesDoc extends PlanBDoc {
     }
 
     public static final class Builder
-            extends AbstractBuilder<TracesDoc, Builder> {
+            extends AbstractPlanBDoc.AbstractBuilder<TracesDoc, Builder> {
 
-        private String description;
-        private StateType stateType = StateType.TRACE;
-        private AbstractPlanBSettings settings;
+        // hasSharedFileStoreData is intentionally not copied — it is always recomputed server-side.
+        private Boolean hasSharedFileStoreData;
 
         private Builder() {
+            this.stateType = StateType.TRACE;
         }
 
         private Builder(final TracesDoc tracesDoc) {
             super(tracesDoc);
-            this.description = tracesDoc.getDescription();
-            this.stateType = tracesDoc.getStateType();
-            this.settings = tracesDoc.getSettings();
         }
 
-        public Builder description(final String description) {
-            this.description = description;
-            return self();
-        }
-
-        public Builder stateType(final StateType stateType) {
-            this.stateType = stateType;
-            return self();
-        }
-
-        public Builder settings(final AbstractPlanBSettings settings) {
-            this.settings = settings;
+        public Builder hasSharedFileStoreData(final Boolean hasSharedFileStoreData) {
+            this.hasSharedFileStoreData = hasSharedFileStoreData;
             return self();
         }
 
@@ -165,7 +170,8 @@ public class TracesDoc extends PlanBDoc {
                     updateUser,
                     description,
                     stateType,
-                    settings);
+                    settings,
+                    hasSharedFileStoreData);
         }
     }
 }

@@ -21,43 +21,60 @@ import stroom.entity.client.presenter.DocPresenter;
 import stroom.entity.client.presenter.ReadOnlyChangeHandler;
 import stroom.pathways.client.presenter.TracesSettingsPresenter.TracesSettingsView;
 import stroom.pathways.shared.TracesDoc;
-import stroom.planb.client.presenter.TraceSettingsPresenter;
+import stroom.planb.client.presenter.PlanBSettingsPresenter;
 import stroom.planb.shared.StateType;
 
 import com.google.inject.Inject;
 import com.google.web.bindery.event.shared.EventBus;
 import com.gwtplatform.mvp.client.View;
 
+/**
+ * Settings tab presenter for {@link TracesDoc}.
+ *
+ * <p>This is a thin adapter that satisfies the {@code DocPresenter<?, TracesDoc>}
+ * contract required by {@link stroom.entity.client.presenter.DocTabProvider}.
+ * All settings form logic is delegated to {@link PlanBSettingsPresenter}, which
+ * is locked to {@link StateType#TRACE} so the state-type dropdown is hidden.
+ *
+ * <p>The {@code updateTraceSettingsForSharding} logic previously in this class has
+ * moved to {@link stroom.planb.client.presenter.TraceSettingsPresenter#onChange()},
+ * where it belongs alongside the sharding field state.
+ */
 public class TracesSettingsPresenter
         extends DocPresenter<TracesSettingsView, TracesDoc> {
 
-    private final TraceSettingsPresenter traceSettingsPresenter;
+    private final PlanBSettingsPresenter planBSettingsPresenter;
 
     @Inject
     public TracesSettingsPresenter(final EventBus eventBus,
                                    final TracesSettingsView view,
-                                   final TraceSettingsPresenter traceSettingsPresenter) {
+                                   final PlanBSettingsPresenter planBSettingsPresenter) {
         super(eventBus, view);
-        this.traceSettingsPresenter = traceSettingsPresenter;
-        view.setSettingsView(traceSettingsPresenter.getView());
+        this.planBSettingsPresenter = planBSettingsPresenter;
+        planBSettingsPresenter.setStateTypeLocked(true);
+        view.setSettingsView(planBSettingsPresenter.getView());
     }
 
     @Override
     protected void onBind() {
         super.onBind();
-        registerHandler(traceSettingsPresenter.addChangeHandler(() -> onChange()));
+        registerHandler(planBSettingsPresenter.addChangeHandler(this::onChange));
     }
 
     @Override
     protected void onRead(final DocRef docRef, final TracesDoc doc, final boolean readOnly) {
-        traceSettingsPresenter.read(doc.getSettings(), readOnly);
+        getView().onReadOnly(readOnly);
+        planBSettingsPresenter.readSettings(doc.getSettings(), StateType.TRACE, readOnly);
+        final boolean locked = doc.hasSharedFileStoreData();
+        planBSettingsPresenter.setShardCountLocked(locked);
+        planBSettingsPresenter.setSharedPathLocked(locked);
     }
 
     @Override
     protected TracesDoc onWrite(final TracesDoc doc) {
         return doc.copyTraces()
                 .stateType(StateType.TRACE)
-                .settings(traceSettingsPresenter.write())
+                .settings(planBSettingsPresenter.writeSettings())
                 .build();
     }
 

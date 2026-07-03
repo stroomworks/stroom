@@ -27,6 +27,8 @@ import stroom.entity.client.presenter.DocPresenter;
 import stroom.pathways.client.presenter.TracesPresenter;
 import stroom.pathways.shared.TracesDoc;
 import stroom.pathways.shared.TracesDocResource;
+import stroom.planb.shared.SharedFileStoreSettings;
+import stroom.planb.shared.TraceSettings;
 import stroom.security.client.api.ClientSecurityContext;
 import stroom.task.client.TaskMonitorFactory;
 
@@ -101,5 +103,25 @@ public class TracesDocPlugin extends DocumentPlugin<TracesDoc> {
     @Override
     protected DocRef getDocRef(final TracesDoc document) {
         return DocRefUtil.create(document);
+    }
+
+    /**
+     * Block the save and display a warning if the Enable Shared File Store checkbox
+     * is checked but no path was entered.
+     *
+     * <p>After {@link DocPresenter#write}, an enabled-but-pathless shared file store
+     * is represented as {@code ShardingSettings{shardCount>0, sharedPath=blank}}.
+     */
+    @Override
+    protected String getPreSaveError(final TracesDoc doc) {
+        if (doc.getSettings() instanceof final TraceSettings settings) {
+            final SharedFileStoreSettings sfs = settings.getSharedFileStore();
+            if (sfs != null
+                    && sfs.getShardCount() > 0
+                    && (sfs.getSharedPath() == null || sfs.getSharedPath().isBlank())) {
+                return "A path must be provided when the shared file store is enabled.";
+            }
+        }
+        return null;
     }
 }

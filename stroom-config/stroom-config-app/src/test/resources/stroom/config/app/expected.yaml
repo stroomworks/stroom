@@ -227,6 +227,10 @@ appConfig:
       minimumIdle: 10
       prepStmtCacheSize: 25
       prepStmtCacheSqlLimit: 256
+  contentIndex:
+    contentIndexDir: "content_index"
+    minRebuildAge: "PT1M"
+    storageType: "LOCAL"
   contentPackImport:
     enabled: false
     importAsSubjectId: "Administrators"
@@ -309,8 +313,8 @@ appConfig:
         refreshAfterWrite: null
         statisticsMode: "INTERNAL"
       volumeCache:
-        expireAfterAccess: "PT10M"
-        expireAfterWrite: null
+        expireAfterAccess: null
+        expireAfterWrite: "PT10M"
         maximumSize: 1000
         refreshAfterWrite: null
         statisticsMode: "INTERNAL"
@@ -432,6 +436,19 @@ appConfig:
         minimumIdle: 10
         prepStmtCacheSize: 25
         prepStmtCacheSqlLimit: 256
+    docRefInfoCache:
+      expireAfterAccess: "PT10M"
+      expireAfterWrite: null
+      maximumSize: 1000000
+      refreshAfterWrite: null
+      statisticsMode: "INTERNAL"
+    docRefNameCache:
+      expireAfterAccess: "PT10M"
+      expireAfterWrite: null
+      maximumSize: 1000000
+      refreshAfterWrite: null
+      statisticsMode: "INTERNAL"
+    physicalDeleteAge: "P30D"
   elastic:
     client:
       maxConnections: 30
@@ -476,12 +493,6 @@ appConfig:
         prepStmtCacheSize: 25
         prepStmtCacheSqlLimit: 256
     dependencyWarningsEnabled: false
-    docRefInfoCache:
-      expireAfterAccess: "PT10M"
-      expireAfterWrite: null
-      maximumSize: 1000
-      refreshAfterWrite: null
-      statisticsMode: "INTERNAL"
     suggestedTags:
     - "reference-loader"
     - "dynamic"
@@ -749,6 +760,15 @@ appConfig:
         statisticsMode: "INTERNAL"
       maxElements: 1000000
   planb:
+    defaultShardCounts:
+      STATE: 16
+      TEMPORAL_STATE: 32
+      RANGED_STATE: 16
+      TEMPORAL_RANGED_STATE: 32
+      SESSION: 32
+      HISTOGRAM: 16
+      METRIC: 16
+      TRACE: 64
     minTimeToKeepSnapshotEnv: "PT20M"
     minTimeToKeepSnapshots: "PT10M"
     nodeList: []

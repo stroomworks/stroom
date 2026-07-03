@@ -16,12 +16,8 @@
 
 package stroom.storedquery.impl;
 
-import stroom.config.common.AbstractDbConfig;
-import stroom.config.common.ConnectionConfig;
-import stroom.config.common.ConnectionPoolConfig;
 import stroom.config.common.HasDbConfig;
 import stroom.util.shared.AbstractConfig;
-import stroom.util.shared.BootStrapConfig;
 import stroom.util.shared.IsStroomConfig;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
@@ -35,13 +31,16 @@ import java.util.Objects;
 @JsonPropertyOrder(alphabetic = true)
 public class StoredQueryConfig extends AbstractConfig implements IsStroomConfig, HasDbConfig {
 
+    private static final int DEFAULT_ITEMS_RETENTION = 100;
+    private static final int DEFAULT_DAYS_RETENTION = 365;
+
     private final int itemsRetention;
     private final int daysRetention;
     private final StoredQueryDbConfig dbConfig;
 
     public StoredQueryConfig() {
-        itemsRetention = 100;
-        daysRetention = 365;
+        itemsRetention = DEFAULT_ITEMS_RETENTION;
+        daysRetention = DEFAULT_DAYS_RETENTION;
         dbConfig = new StoredQueryDbConfig();
     }
 
@@ -49,8 +48,8 @@ public class StoredQueryConfig extends AbstractConfig implements IsStroomConfig,
     public StoredQueryConfig(@JsonProperty("itemsRetention") final Integer itemsRetention,
                              @JsonProperty("daysRetention") final Integer daysRetention,
                              @JsonProperty("db") final StoredQueryDbConfig dbConfig) {
-        this.itemsRetention = Objects.requireNonNullElse(itemsRetention, 100);
-        this.daysRetention = Objects.requireNonNullElse(daysRetention, 365);
+        this.itemsRetention = Objects.requireNonNullElse(itemsRetention, DEFAULT_ITEMS_RETENTION);
+        this.daysRetention = Objects.requireNonNullElse(daysRetention, DEFAULT_DAYS_RETENTION);
         this.dbConfig = dbConfig;
     }
 
@@ -69,20 +68,5 @@ public class StoredQueryConfig extends AbstractConfig implements IsStroomConfig,
     @JsonProperty("db")
     public StoredQueryDbConfig getDbConfig() {
         return dbConfig;
-    }
-
-    @BootStrapConfig
-    public static class StoredQueryDbConfig extends AbstractDbConfig {
-
-        public StoredQueryDbConfig() {
-            super();
-        }
-
-        @JsonCreator
-        public StoredQueryDbConfig(
-                @JsonProperty(PROP_NAME_CONNECTION) final ConnectionConfig connectionConfig,
-                @JsonProperty(PROP_NAME_CONNECTION_POOL) final ConnectionPoolConfig connectionPoolConfig) {
-            super(connectionConfig, connectionPoolConfig);
-        }
     }
 }

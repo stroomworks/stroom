@@ -42,7 +42,16 @@ class TracesDocResourceImpl implements TracesDocResource, FetchWithUuid<TracesDo
 
     @Override
     public TracesDoc fetch(final String uuid) {
-        return documentResourceHelperProvider.get().read(tracesDocStoreProvider.get(), getDocRef(uuid));
+        final TracesDoc doc = documentResourceHelperProvider.get()
+                .read(tracesDocStoreProvider.get(), getDocRef(uuid));
+        if (doc == null) {
+            return null;
+        }
+        // Stamp the transient hasSharedFileStoreData flag so the client can disable shard-count
+        // and shared-path fields when sharded data already exists.
+        return doc.copyTraces()
+                .hasSharedFileStoreData(tracesDocStoreProvider.get().hasSharedFileStoreData(uuid))
+                .build();
     }
 
     @Override
@@ -50,7 +59,17 @@ class TracesDocResourceImpl implements TracesDocResource, FetchWithUuid<TracesDo
         if (doc.getUuid() == null || !doc.getUuid().equals(uuid)) {
             throw new EntityServiceException("The document UUID must match the update UUID");
         }
-        return documentResourceHelperProvider.get().update(tracesDocStoreProvider.get(), doc);
+        // Strip the transient hasSharedFileStoreData flag before persisting — it is always recomputed
+        // server-side and must never be written to the document store.
+        final TracesDoc docToSave = doc.copyTraces().build();
+        final TracesDoc updated = documentResourceHelperProvider.get().update(tracesDocStoreProvider.get(), docToSave);
+        if (updated == null) {
+            return null;
+        }
+
+        return updated.copyTraces()
+                .hasSharedFileStoreData(tracesDocStoreProvider.get().hasSharedFileStoreData(uuid))
+                .build();
     }
 
     private DocRef getDocRef(final String uuid) {

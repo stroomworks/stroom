@@ -25,4 +25,6 @@ import java.util.List;
 public interface TracesDocStore extends DocumentStore<TracesDoc> {
 
     List<DocRef> list();
+
+    boolean hasSharedFileStoreData(String uuid);
 }
