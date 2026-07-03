@@ -468,15 +468,21 @@ public class FloorMapDoc extends AbstractDoc {
      * Returns the ordered list of field mappings that describe the structure
      * of a temporal entry's {@code Value} column.
      *
-     * <p>May return {@code null} for legacy documents created before the
-     * value schema feature was introduced. New documents are always
-     * seeded with {@link FloorMapFieldMapping#initialValueSchema()} by
-     * {@code FloorMapInitPresenter}, so this should not be {@code null}
-     * under normal circumstances.</p>
+     * <p><strong>Back-compatibility:</strong> if the stored schema is
+     * {@code null} or empty (e.g. for legacy documents created before
+     * the value schema feature was introduced), the
+     * {@linkplain FloorMapFieldMapping#initialValueSchema() initial
+     * default schema} is returned instead. This ensures that all
+     * consumers — Settings tab, entry parser, query builder — get a
+     * usable schema without requiring a manual re-save of old
+     * documents.</p>
      *
-     * @return the value schema list, or {@code null} if not configured
+     * @return the value schema list; never {@code null} or empty
      */
     public List<FloorMapFieldMapping> getValueSchema() {
+        if (valueSchema == null || valueSchema.isEmpty()) {
+            return FloorMapFieldMapping.initialValueSchema();
+        }
         return valueSchema;
     }
 

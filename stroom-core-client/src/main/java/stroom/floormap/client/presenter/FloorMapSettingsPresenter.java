@@ -346,9 +346,8 @@ public class FloorMapSettingsPresenter
         valueFormatListBox.setEnabled(!readOnly);
 
         // Value Schema
-        final List<FloorMapFieldMapping> rawSchema = floorMapDoc.getValueSchema();
         final List<FloorMapFieldMapping> schema =
-                rawSchema != null ? new ArrayList<>(rawSchema) : new ArrayList<>();
+                new ArrayList<>(floorMapDoc.getValueSchema());
         schemaDataProvider.setList(schema);
         refreshGrid();
 
