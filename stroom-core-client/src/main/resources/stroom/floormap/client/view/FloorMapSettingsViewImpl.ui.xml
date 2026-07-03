@@ -11,5 +11,16 @@
         <form:FormGroup label="Facts Store">
             <g:SimplePanel ui:field="factsStoreRefContainer" />
         </form:FormGroup>
+        <!-- Value Format -->
+        <form:FormGroup label="Value Format">
+            <g:SimplePanel ui:field="valueFormatContainer" />
+        </form:FormGroup>
+        <!-- Value Schema -->
+        <form:FormGroup label="Value Schema">
+            <g:FlowPanel>
+                <g:SimplePanel ui:field="schemaToolbarContainer" />
+                <g:SimplePanel ui:field="schemaGridContainer" height="250px" />
+            </g:FlowPanel>
+        </form:FormGroup>
     </g:FlowPanel>
 </ui:UiBinder>

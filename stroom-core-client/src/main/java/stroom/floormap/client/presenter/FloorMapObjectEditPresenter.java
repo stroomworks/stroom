@@ -20,8 +20,10 @@ import stroom.alert.client.event.ConfirmEvent;
 import stroom.data.client.event.DataSelectionEvent;
 import stroom.document.asset.client.presenter.DocumentAssetDropDownPresenter;
 import stroom.floormap.client.FloorMapJsonKeys;
+import stroom.floormap.client.ValuePathAccessor;
 import stroom.floormap.client.presenter.FloorMapObjectEditPresenter.FloorMapObjectEditView;
 import stroom.floormap.shared.FloorMapDoc;
+import stroom.floormap.shared.FloorMapFieldMapping.Role;
 import stroom.util.client.JSONUtil;
 import stroom.util.shared.TemporalEntry;
 import stroom.widget.popup.client.event.ShowPopupEvent;
@@ -39,12 +41,70 @@ import com.gwtplatform.mvp.client.View;
 import java.util.function.Consumer;
 import javax.inject.Inject;
 
+/**
+ * Presenter for the properties form used to edit individual floor-map object
+ * entries (temporal versions of a fact).
+ *
+ * <p>This presenter is used in two contexts:</p>
+ * <ul>
+ *   <li><strong>Editor tab</strong> ({@link FloorMapEditorPresenter}) — displayed as a
+ *       modal OK/Cancel dialog via {@link #show(String, TemporalEntry, Consumer)}.
+ *       Selecting a row in the Time List calls {@link #loadEntry(TemporalEntry)}
+ *       to populate the inline form.</li>
+ *   <li><strong>Map tab</strong> ({@link FloorMapMapPresenter}) — embedded as an inline
+ *       panel. Coordinate fields are updated live by
+ *       {@link #updateCoords(double, double)} when the user drags objects on the
+ *       canvas.</li>
+ * </ul>
+ *
+ * <h3>Managed form fields</h3>
+ * <ul>
+ *   <li>Type, Name — free-text identification of the object.</li>
+ *   <li>Image — selected from the document-asset dropdown.</li>
+ *   <li>X / Y coordinates — position on the map canvas.</li>
+ *   <li>Effective time — the timestamp of this temporal version.</li>
+ *   <li>World-to-Map matrix — 6-element affine transform.</li>
+ *   <li>Map-to-Screen matrix — 6-element affine transform (background objects only).</li>
+ * </ul>
+ *
+ * <h3>Preconditions</h3>
+ * <p>{@link #setMapName(String)} <strong>must</strong> be called before
+ * {@link #buildEntry(long)} or {@link #show(String, TemporalEntry, Consumer)}
+ * is invoked; otherwise an {@link IllegalStateException} is thrown.</p>
+ */
 public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjectEditView> {
 
     private final DocumentAssetDropDownPresenter documentAssetDropDownPresenter;
     private String objectId;
     private String mapName;
+    private FloorMapDoc floorMapDoc;
 
+    /**
+     * Resolves the JSON path for the given {@link Role} using the current
+     * document's value schema.
+     *
+     * <p>Requires that {@link #setFloorMapDoc(FloorMapDoc)} has been called
+     * with a non-null document before any invocation.</p>
+     *
+     * @param role the field role to resolve
+     * @return the dot-separated JSON path for the role, or {@code null}
+     *         if the role is not present in the schema
+     * @throws NullPointerException if no document has been set
+     */
+    private String pathForRole(final Role role) {
+        return FloorMapEntryParser.findPath(floorMapDoc.getValueSchema(), role);
+    }
+
+    /**
+     * Stores the map name for later use by {@link #buildEntry(long)}.
+     *
+     * <p>This method <strong>must</strong> be called at least once before
+     * any call to {@link #buildEntry(long)} or
+     * {@link #show(String, TemporalEntry, Consumer)}.</p>
+     *
+     * @param mapName the temporal-store map name; must not be {@code null}
+     * @throws IllegalArgumentException if {@code mapName} is {@code null}
+     */
     public void setMapName(final String mapName) {
         if (mapName == null) {
             throw new IllegalArgumentException("mapName must not be null");
@@ -60,10 +120,31 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
         return mapName;
     }
 
+    /**
+     * Sets the floor-map document and configures the asset dropdown to list
+     * assets belonging to that document.
+     *
+     * <p>If {@code floorMapDoc} is {@code null}, subsequent calls to
+     * {@link #pathForRole(Role)} will fall back to the default value schema,
+     * and the asset dropdown will show no assets.</p>
+     *
+     * @param floorMapDoc the floor-map document, or {@code null} to clear
+     */
     public void setFloorMapDoc(final FloorMapDoc floorMapDoc) {
+        this.floorMapDoc = floorMapDoc;
         documentAssetDropDownPresenter.setDocument(floorMapDoc);
     }
 
+    /**
+     * Updates the X and Y coordinate display fields in the form.
+     *
+     * <p>Called from {@link FloorMapMapPresenter} when the user drags an
+     * object on the SVG canvas (via {@code applyMove}), so that the
+     * coordinate fields stay in sync with the visual position.</p>
+     *
+     * @param x the new X coordinate (map-space)
+     * @param y the new Y coordinate (map-space)
+     */
     public void updateCoords(final double x, final double y) {
         getView().setX(x);
         getView().setY(y);
@@ -162,9 +243,9 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
      */
     private JSONObject buildJson() {
         final JSONObject json = new JSONObject();
-        json.put(FloorMapJsonKeys.TYPE, new JSONString(getView().getType()));
-        json.put(FloorMapJsonKeys.NAME, new JSONString(getView().getName()));
-        json.put(FloorMapJsonKeys.IMG, new JSONString(
+        ValuePathAccessor.set(json, pathForRole(Role.TYPE), new JSONString(getView().getType()));
+        ValuePathAccessor.set(json, pathForRole(Role.LABEL), new JSONString(getView().getName()));
+        ValuePathAccessor.set(json, pathForRole(Role.IMAGE), new JSONString(
                 documentAssetDropDownPresenter.getSelectedAssetPath() == null
                         ? ""
                         : documentAssetDropDownPresenter.getSelectedAssetPath()));
@@ -172,14 +253,14 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
         final JSONArray coordsArr = new JSONArray();
         coordsArr.set(0, new JSONNumber(getView().getX()));
         coordsArr.set(1, new JSONNumber(getView().getY()));
-        json.put(FloorMapJsonKeys.COORDS, coordsArr);
+        ValuePathAccessor.set(json, pathForRole(Role.POSITION), coordsArr);
 
         final double[] w2m = getView().getWorldToMapMatrix();
         final JSONArray w2mArr = new JSONArray();
         for (int i = 0; i < 6; i++) {
             w2mArr.set(i, new JSONNumber(w2m[i]));
         }
-        json.put(FloorMapJsonKeys.TM_WORLD_TO_MAP, w2mArr);
+        ValuePathAccessor.set(json, pathForRole(Role.WORLD_TO_MAP), w2mArr);
 
         if (FloorMapJsonKeys.BACKGROUND.equalsIgnoreCase(getView().getType())) {
             final double[] m2s = getView().getMapToScreenMatrix();
@@ -187,7 +268,7 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
             for (int i = 0; i < 6; i++) {
                 m2sArr.set(i, new JSONNumber(m2s[i]));
             }
-            json.put(FloorMapJsonKeys.TM_MAP_TO_SCREEN, m2sArr);
+            ValuePathAccessor.set(json, pathForRole(Role.MAP_TO_SCREEN), m2sArr);
         }
         return json;
     }
@@ -203,6 +284,23 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
         return new TemporalEntry(requireMapName(), objectId, effectiveTimeMs, buildJson().toString());
     }
 
+    /**
+     * Populates the form fields from the given temporal entry, or resets all
+     * fields to sensible defaults if {@code selected} is {@code null}.
+     *
+     * <p>When an entry is provided its JSON value is parsed to extract type,
+     * name, image path, coordinates, and the affine transformation matrices.
+     * Any parse errors are silently ignored and the affected fields retain
+     * their zero/identity defaults.</p>
+     *
+     * <p>When {@code selected} is {@code null} and the current
+     * {@link #objectId} is the background sentinel, the name and type fields
+     * are pre-filled with the background defaults; otherwise they are left
+     * blank.</p>
+     *
+     * @param selected the temporal entry to populate from, or {@code null}
+     *                 to reset
+     */
     private void resetInputs(final TemporalEntry selected) {
         if (selected != null) {
             getView().setEffectiveTime(selected.getEffectiveTimeMs());
@@ -218,24 +316,27 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
                 if (selected.getValue() != null && selected.getValue().trim().startsWith("{")) {
                     final JSONObject json = JSONUtil.getObject(JSONUtil.parse(selected.getValue()));
                     if (json != null) {
-                        name = JSONUtil.getString(json.get(FloorMapJsonKeys.NAME));
-                        type = JSONUtil.getString(json.get(FloorMapJsonKeys.TYPE));
-                        img = JSONUtil.getString(json.get(FloorMapJsonKeys.IMG));
+                        name = JSONUtil.getString(ValuePathAccessor.get(json, pathForRole(Role.LABEL)));
+                        type = JSONUtil.getString(ValuePathAccessor.get(json, pathForRole(Role.TYPE)));
+                        img = JSONUtil.getString(ValuePathAccessor.get(json, pathForRole(Role.IMAGE)));
 
-                        final JSONArray coordsArr = JSONUtil.getArray(json.get(FloorMapJsonKeys.COORDS));
+                        final JSONArray coordsArr = JSONUtil.getArray(
+                                ValuePathAccessor.get(json, pathForRole(Role.POSITION)));
                         if (coordsArr != null && coordsArr.size() >= 2) {
                             x = JSONUtil.getDouble(coordsArr.get(0));
                             y = JSONUtil.getDouble(coordsArr.get(1));
                         }
 
-                        final JSONArray w2mArr = JSONUtil.getArray(json.get(FloorMapJsonKeys.TM_WORLD_TO_MAP));
+                        final JSONArray w2mArr = JSONUtil.getArray(
+                                ValuePathAccessor.get(json, pathForRole(Role.WORLD_TO_MAP)));
                         if (w2mArr != null && w2mArr.size() >= 6) {
                             for (int i = 0; i < 6; i++) {
                                 w2m[i] = JSONUtil.getDouble(w2mArr.get(i));
                             }
                         }
 
-                        final JSONArray m2sArr = JSONUtil.getArray(json.get(FloorMapJsonKeys.TM_MAP_TO_SCREEN));
+                        final JSONArray m2sArr = JSONUtil.getArray(
+                                ValuePathAccessor.get(json, pathForRole(Role.MAP_TO_SCREEN)));
                         if (m2sArr != null && m2sArr.size() >= 6) {
                             for (int i = 0; i < 6; i++) {
                                 m2s[i] = JSONUtil.getDouble(m2sArr.get(i));
@@ -270,43 +371,85 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
         }
     }
 
+    /**
+     * Registers a handler that is notified whenever the user selects an asset
+     * from the image dropdown.
+     *
+     * <p>The handler registration is bound to this presenter's lifecycle via
+     * {@link #registerHandler}, so it is automatically removed on unbind.</p>
+     *
+     * @param handler the selection handler to register
+     */
     public void addAssetSelectionHandler(final DataSelectionEvent.DataSelectionHandler<String> handler) {
         registerHandler(documentAssetDropDownPresenter.addDataSelectionHandler(handler));
     }
 
     // --------------------------------------------------------------------------------
 
+    /**
+     * View contract for the object-edit properties form.
+     *
+     * <p>Implementations provide the UI widgets for all editable fields:
+     * effective time, coordinates, name, type, image chooser, and the two
+     * affine-transform matrices.</p>
+     */
     public interface FloorMapObjectEditView extends View {
+
+        /** Returns the effective-time value entered by the user, in epoch milliseconds. */
         long getEffectiveTime();
 
+        /** Sets the effective-time field to the given epoch-millisecond value. */
         void setEffectiveTime(long timeMS);
 
+        /** Returns the current X-coordinate value from the form. */
         double getX();
 
+        /** Sets the X-coordinate display field. */
         void setX(double x);
 
+        /** Returns the current Y-coordinate value from the form. */
         double getY();
 
+        /** Sets the Y-coordinate display field. */
         void setY(double y);
 
+        /** Returns the object display name entered by the user. */
         String getName();
 
+        /** Sets the object display name field. */
         void setName(String name);
 
+        /** Returns the object type entered by the user. */
         String getType();
 
+        /** Sets the object type field. */
         void setType(String type);
 
+        /**
+         * Installs the image-chooser (asset dropdown) widget into the form.
+         *
+         * @param widget the dropdown widget; must not be {@code null}
+         */
         void setChooseImgView(Widget widget);
 
+        /** Returns the 6-element world-to-map affine transformation matrix. */
         double[] getWorldToMapMatrix();
 
+        /** Sets the 6-element world-to-map affine transformation matrix. */
         void setWorldToMapMatrix(double[] matrix);
 
+        /** Returns the 6-element map-to-screen affine transformation matrix. */
         double[] getMapToScreenMatrix();
 
+        /** Sets the 6-element map-to-screen affine transformation matrix. */
         void setMapToScreenMatrix(double[] matrix);
 
+        /**
+         * Enables or disables all form fields.
+         *
+         * @param enabled {@code true} to enable editing, {@code false} to
+         *                disable (grey-out) all inputs
+         */
         void setEnabled(final boolean enabled);
     }
 }

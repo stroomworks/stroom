@@ -23,12 +23,14 @@ import stroom.dispatch.client.RestFactory;
 import stroom.docref.DocRef;
 import stroom.entity.client.presenter.DocPresenter;
 import stroom.entity.shared.ExpressionCriteria;
-import stroom.floormap.client.FloorMapJsonKeys;
+import stroom.floormap.client.ValuePathAccessor;
 import stroom.floormap.client.event.MapObjectMovedEvent;
 import stroom.floormap.client.event.MapObjectSelectedEvent;
 import stroom.floormap.client.event.TimeChangeEvent;
 import stroom.floormap.client.presenter.FloorMapEditorPresenter.FloorMapEditorView;
 import stroom.floormap.shared.FloorMapDoc;
+import stroom.floormap.shared.FloorMapFieldMapping;
+import stroom.floormap.shared.FloorMapFieldMapping.Role;
 import stroom.floormap.shared.FloorMapTransformationMatrix;
 import stroom.query.api.ExpressionOperator;
 import stroom.query.api.ExpressionTerm;
@@ -503,7 +505,8 @@ public class FloorMapEditorPresenter
      */
     private void updateCanvasAndFactList(final List<TemporalEntry> entries) {
         // Update canvas using shared parser (applies world-to-map transform)
-        final FloorMapEntryParser.ParseResult result = FloorMapEntryParser.parse(entries);
+        final FloorMapEntryParser.ParseResult result = FloorMapEntryParser.parse(
+                entries, getEntity().getValueSchema());
         floorMapCanvasPresenter.setBackgroundImage(result.getBackgroundImage());
         floorMapCanvasPresenter.setMatrix(result.getBackgroundMatrix());
         floorMapCanvasPresenter.setObjects(result.getObjects());
@@ -512,9 +515,10 @@ public class FloorMapEditorPresenter
         }
 
         // Update Fact List
+        final List<FloorMapFieldMapping> schema = getEntity().getValueSchema();
         final List<FloorMapFactListPresenter.FactObject> factObjects = new ArrayList<>();
         for (final TemporalEntry entry : entries) {
-            factObjects.add(FloorMapFactListPresenter.FactObject.fromEntry(entry));
+            factObjects.add(FloorMapFactListPresenter.FactObject.fromEntry(entry, schema));
         }
 
         floorMapFactListPresenter.setData(factObjects);
@@ -557,7 +561,14 @@ public class FloorMapEditorPresenter
         for (final TemporalEntry e : all) {
             if (objectId.equals(e.getKey())) {
                 try {
-                    final TemporalEntry updated = buildUpdatedEntryWithCoords(e, x, y);
+                    final List<FloorMapFieldMapping> schema = getEntity().getValueSchema();
+                    if (schema == null || schema.isEmpty()) {
+                        throw new IllegalStateException(
+                                "No Value Schema is configured. "
+                                + "Please configure a Value Schema in the Settings tab.");
+                    }
+                    final TemporalEntry updated = buildUpdatedEntryWithCoords(
+                            e, x, y, schema);
                     pendingChanges.recordUpdate(updated);
                     setDirty(true);
                 } catch (final Exception ex) {
@@ -572,7 +583,8 @@ public class FloorMapEditorPresenter
         // Refresh canvas only — avoid reloading the Fact List which would
         // clear its selection and cascade into the Time List.
         final List<TemporalEntry> canvasEntries = pendingChanges.applyTo(serverEntriesAtCurrentTime);
-        final FloorMapEntryParser.ParseResult result = FloorMapEntryParser.parse(canvasEntries);
+        final FloorMapEntryParser.ParseResult result = FloorMapEntryParser.parse(
+                canvasEntries, getEntity().getValueSchema());
         floorMapCanvasPresenter.setBackgroundImage(result.getBackgroundImage());
         floorMapCanvasPresenter.setMatrix(result.getBackgroundMatrix());
         floorMapCanvasPresenter.setObjects(result.getObjects());
@@ -693,28 +705,35 @@ public class FloorMapEditorPresenter
                 "",
                 key -> {
                     if (key != null && !key.trim().isEmpty()) {
-                        final String trimmedKey = key.trim();
-                        final JSONObject json = new JSONObject();
-                        json.put(FloorMapJsonKeys.TYPE, new JSONString("gates"));
-                        json.put(FloorMapJsonKeys.NAME, new JSONString(trimmedKey));
-                        final JSONArray coordsArr = new JSONArray();
-                        coordsArr.set(0, new JSONNumber(500.0));
-                        coordsArr.set(1, new JSONNumber(500.0));
-                        json.put(FloorMapJsonKeys.COORDS, coordsArr);
-                        final JSONArray matrixArr = new JSONArray();
-                        matrixArr.set(0, new JSONNumber(1.0));
-                        matrixArr.set(1, new JSONNumber(0.0));
-                        matrixArr.set(2, new JSONNumber(0.0));
-                        matrixArr.set(3, new JSONNumber(1.0));
-                        matrixArr.set(4, new JSONNumber(0.0));
-                        matrixArr.set(5, new JSONNumber(0.0));
-                        json.put(FloorMapJsonKeys.TM_WORLD_TO_MAP, matrixArr);
-                        final TemporalEntry entry = new TemporalEntry(
-                                mapName, trimmedKey, selectedTime, json.toString());
-                        pendingChanges.recordCreation(entry);
-                        setDirty(true);
-                        // Optimistically refresh the Fact List and select the new entry
-                        loadAtTime(selectedTime);
+                        try {
+                            final String trimmedKey = key.trim();
+                            final JSONObject json = new JSONObject();
+                            ValuePathAccessor.set(json, pathForRole(Role.TYPE), new JSONString("gates"));
+                            ValuePathAccessor.set(json, pathForRole(Role.LABEL), new JSONString(trimmedKey));
+                            final JSONArray coordsArr = new JSONArray();
+                            coordsArr.set(0, new JSONNumber(500.0));
+                            coordsArr.set(1, new JSONNumber(500.0));
+                            ValuePathAccessor.set(json, pathForRole(Role.POSITION), coordsArr);
+                            final JSONArray matrixArr = new JSONArray();
+                            matrixArr.set(0, new JSONNumber(1.0));
+                            matrixArr.set(1, new JSONNumber(0.0));
+                            matrixArr.set(2, new JSONNumber(0.0));
+                            matrixArr.set(3, new JSONNumber(1.0));
+                            matrixArr.set(4, new JSONNumber(0.0));
+                            matrixArr.set(5, new JSONNumber(0.0));
+                            ValuePathAccessor.set(json, pathForRole(Role.WORLD_TO_MAP), matrixArr);
+                            final TemporalEntry entry = new TemporalEntry(
+                                    mapName, trimmedKey, selectedTime, json.toString());
+                            pendingChanges.recordCreation(entry);
+                            setDirty(true);
+                            // Optimistically refresh the Fact List and select the new entry
+                            loadAtTime(selectedTime);
+                        } catch (final IllegalStateException ex) {
+                            AlertEvent.fireError(
+                                    FloorMapEditorPresenter.this,
+                                    "Cannot add object: " + ex.getMessage(),
+                                    null);
+                        }
                     }
                 });
     }
@@ -803,7 +822,8 @@ public class FloorMapEditorPresenter
         // Refresh the canvas without reloading the Fact List (which would
         // clear and re-fire the fact selection, wiping the Time List).
         final List<TemporalEntry> canvasEntries = pendingChanges.applyTo(serverEntriesAtCurrentTime);
-        final FloorMapEntryParser.ParseResult result = FloorMapEntryParser.parse(canvasEntries);
+        final FloorMapEntryParser.ParseResult result = FloorMapEntryParser.parse(
+                canvasEntries, getEntity().getValueSchema());
         floorMapCanvasPresenter.setBackgroundImage(result.getBackgroundImage());
         floorMapCanvasPresenter.setMatrix(result.getBackgroundMatrix());
         floorMapCanvasPresenter.setObjects(result.getObjects());
@@ -922,6 +942,26 @@ public class FloorMapEditorPresenter
     }
 
     /**
+     * Returns the JSON path for the given {@link Role} using the document's
+     * value schema, falling back to the default schema if the document is
+     * unavailable.
+     *
+     * @param role the field role to look up
+     * @return the JSON path string for the role; never {@code null}
+     * @throws IllegalStateException if the schema does not contain the requested role
+     */
+    private String pathForRole(final Role role) {
+        final String path = FloorMapEntryParser.findPath(getEntity().getValueSchema(), role);
+        if (path == null) {
+            throw new IllegalStateException(
+                    "The Value Schema for this Floor Map does not define a mapping "
+                    + "for the '" + role + "' role. Please add a '" + role
+                    + "' mapping in the Settings tab under Value Schema.");
+        }
+        return path;
+    }
+
+    /**
      * Returns a new entry cloned from {@code source} but with {@code newTime}
      * as its effective time. If {@code source} is {@code null} a blank entry is
      * returned. Coordinates are preserved from the source.
@@ -960,7 +1000,8 @@ public class FloorMapEditorPresenter
      */
     private static TemporalEntry buildUpdatedEntryWithCoords(final TemporalEntry original,
                                                               final double mapX,
-                                                              final double mapY) {
+                                                              final double mapY,
+                                                              final List<FloorMapFieldMapping> schema) {
         final String raw = original.getValue();
         if (raw == null || !raw.trim().startsWith("{")) {
             throw new IllegalStateException(
@@ -975,7 +1016,8 @@ public class FloorMapEditorPresenter
         // Convert map-space coordinates back to world space using the
         // inverse of the entry's world-to-map matrix.
         FloorMapTransformationMatrix worldToMap = FloorMapTransformationMatrix.identity();
-        final JSONArray w2mArr = JSONUtil.getArray(json.get(FloorMapJsonKeys.TM_WORLD_TO_MAP));
+        final JSONArray w2mArr = JSONUtil.getArray(
+                ValuePathAccessor.get(json, FloorMapEntryParser.findPath(schema, Role.WORLD_TO_MAP)));
         if (w2mArr != null && w2mArr.size() >= 6) {
             worldToMap = new FloorMapTransformationMatrix(
                     JSONUtil.getDouble(w2mArr.get(0)),
@@ -992,7 +1034,8 @@ public class FloorMapEditorPresenter
         final JSONArray coordsArr = new JSONArray();
         coordsArr.set(0, new JSONNumber(worldX));
         coordsArr.set(1, new JSONNumber(worldY));
-        json.put(FloorMapJsonKeys.COORDS, coordsArr);
+        ValuePathAccessor.set(json,
+                FloorMapEntryParser.findPath(schema, Role.POSITION), coordsArr);
         return new TemporalEntry(
                 original.getMap(),
                 original.getKey(),

@@ -48,7 +48,6 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
     private static final TabData MAP = new TabDataImpl("Map");
     private static final TabData EDITOR = new TabDataImpl("Editor");
     private static final TabData EVENTS_QUERY = new TabDataImpl("Events Query");
-    private static final TabData FACTS_QUERY = new TabDataImpl("Facts Query");
     private static final TabData SETTINGS = new TabDataImpl("Settings");
     private static final TabData ASSETS = new TabDataImpl("Assets");
     private static final TabData DOCUMENTATION = new TabDataImpl("Documentation");
@@ -61,7 +60,6 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
     private FloorMapEditorPresenter floorMapEditorPresenter;
     private FloorMapSettingsPresenter floorMapSettingsPresenter;
     private FloorMapQueryPresenter eventsQueryPresenter;
-    private FloorMapQueryPresenter factsQueryPresenter;
 
     @Inject
     public FloorMapPresenter(final EventBus eventBus,
@@ -145,35 +143,6 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
             }
         });
 
-        addTab(FACTS_QUERY, new AbstractTabProvider<FloorMapDoc, FloorMapQueryPresenter>(eventBus) {
-            @Override
-            protected FloorMapQueryPresenter createPresenter() {
-                factsQueryPresenter = floorMapQueryPresenterProvider.get();
-                registerHandler(eventBus.addHandler(ChangeEvent.getType(), () -> fireDirtyEvent(true)));
-                return factsQueryPresenter;
-            }
-
-            @Override
-            public void onRead(final FloorMapQueryPresenter presenter,
-                               final DocRef docRef,
-                               final FloorMapDoc document,
-                               final boolean readOnly) {
-                presenter.read(docRef, document.getFactsQuery(), document.getFactsQueryTimeRange(),
-                        document.getFactsQueryTablePreferences(), null, null, false,
-                        FloorMapQueryPresenter.buildQueryVariables(document));
-                presenter.setTaskMonitorFactory(FloorMapPresenter.this);
-            }
-
-            @Override
-            public FloorMapDoc onWrite(final FloorMapQueryPresenter presenter,
-                                       final FloorMapDoc document) {
-                return document.copy()
-                        .factsQuery(presenter.getQuery())
-                        .factsQueryTimeRange(presenter.getQueryTimeRange())
-                        .factsQueryTablePreferences(presenter.getQueryTablePreferences())
-                        .build();
-            }
-        });
 
         addTab(SETTINGS, new DocTabProvider<>(() -> {
             floorMapSettingsPresenter = floorMapSettingsPresenterProvider.get();
@@ -226,7 +195,7 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
             addObjectButton.setVisible(content instanceof FloorMapMapPresenter && editModeButton.getState());
         }
 
-        }
+    }
 
     @Override
     public String getType() {

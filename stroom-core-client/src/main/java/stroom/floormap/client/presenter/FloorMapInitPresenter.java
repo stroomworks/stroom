@@ -25,7 +25,9 @@ import stroom.explorer.client.presenter.DocSelectionBoxPresenter;
 import stroom.explorer.shared.ExplorerResource;
 import stroom.explorer.shared.ExplorerServiceDeleteRequest;
 import stroom.floormap.shared.FloorMapDoc;
+import stroom.floormap.shared.FloorMapFieldMapping;
 import stroom.floormap.shared.FloorMapResource;
+import stroom.floormap.shared.ValueFormat;
 import stroom.planb.shared.PlanBDoc;
 import stroom.planb.shared.PlanBDocResource;
 import stroom.planb.shared.StateType;
@@ -302,24 +304,16 @@ public class FloorMapInitPresenter
                     final FloorMapDoc updated = doc.copy()
                             .factsStoreRef(factsDocRef)
                             .eventsStoreRef(eventsDocRef)
-                            .factsQuery("from param('FactStore')\n"
-                                    + "select \n"
-                                    + "  Key, \n"
-                                    + "  EffectiveTime, \n"
-                                    + "  jq(Value, \".type\") as type, \n"
-                                    + "  jq(Value, \".name\") as name, \n"
-                                    + "  jq(Value, \".maps\") as maps, \n"
-                                    + "  jq(Value, \".coords\") as coords, \n"
-                                    + "  jq(Value, \".img\") as img, \n"
-                                    + "  jq(Value, \"\\\"tm-world-to-map\\\"\") as tm_world_to_map, \n"
-                                    + "  jq(Value, \"\\\"tm-map-to-screen\\\"\") as tm_map_to_screen")
-                            .eventsQuery("from param('EventStore')\n"
-                                    + "select EffectiveTime as \"Effective Time\",\n"
-                                    + "  Key as \"Entity ID\",\n"
-                                    + "  jq(Value, '.location') as \"Location ID\",\n"
-                                    + "  jq(Value, '.type') as \"Event Type\",\n"
-                                    + "  jq(Value, '.status') as \"Status\",\n"
-                                    + "  jq(Value, '.message') as \"Message\"")
+                            .eventsQuery("""
+                                    from param('EventStore')
+                                    select EffectiveTime as "Effective Time",
+                                      Key as "Entity ID",
+                                      jq(Value, '.location') as "Location ID",
+                                      jq(Value, '.type') as "Event Type",
+                                      jq(Value, '.status') as "Status",
+                                      jq(Value, '.message') as "Message\"""")
+                            .valueFormat(ValueFormat.JSON)
+                            .valueSchema(FloorMapFieldMapping.initialValueSchema())
                             .build();
 
                     //noinspection unused savedDoc, error
@@ -330,15 +324,11 @@ public class FloorMapInitPresenter
                                 e.hide();
                                 completionCallback.accept(true);
                             })
-                            .onFailure(error -> {
-                                e.reset();
-                            })
+                            .onFailure(error -> e.reset())
                             .taskMonitorFactory(tmf)
                             .exec();
                 })
-                .onFailure(error -> {
-                    e.reset();
-                })
+                .onFailure(error -> e.reset())
                 .taskMonitorFactory(tmf)
                 .exec();
     }

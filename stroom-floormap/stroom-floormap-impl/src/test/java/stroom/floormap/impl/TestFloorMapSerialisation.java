@@ -44,8 +44,6 @@ class TestFloorMapSerialisation {
                 .factsStoreRef(storeRef)
                 .eventsQuery("from StoreName select events")
                 .eventsQueryTimeRange(timeRange)
-                .factsQuery("from StoreName select facts")
-                .factsQueryTimeRange(timeRange)
                 .build();
 
         // Serialize
@@ -60,8 +58,6 @@ class TestFloorMapSerialisation {
         assertThat(deserialized.getFactsStoreRef()).isEqualTo(storeRef);
         assertThat(deserialized.getEventsQuery()).isEqualTo("from StoreName select events");
         assertThat(deserialized.getEventsQueryTimeRange()).isEqualTo(timeRange);
-        assertThat(deserialized.getFactsQuery()).isEqualTo("from StoreName select facts");
-        assertThat(deserialized.getFactsQueryTimeRange()).isEqualTo(timeRange);
     }
 
     @Test
@@ -79,9 +75,8 @@ class TestFloorMapSerialisation {
         final FloorMapDoc deserialized = JsonUtil.readValue(oldJson, FloorMapDoc.class);
         assertThat(deserialized).isNotNull();
 
-        // Legacy 'query' field is no longer migrated eventsQuery should be null.
+        // Legacy 'query' field is no longer migrated; eventsQuery should be null.
         assertThat(deserialized.getEventsQuery()).isNull();
         assertThat(deserialized.getFactsStoreRef()).isNull();
-        assertThat(deserialized.getFactsQuery()).isNull();
     }
 }

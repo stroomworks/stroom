@@ -31,8 +31,86 @@ import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 
+import java.util.List;
 import java.util.Objects;
 
+/**
+ * Immutable document describing a floor map visualisation.
+ *
+ * <p>A {@code FloorMapDoc} ties together a <em>facts store</em> (a
+ * {@code SqlTemporalStoreDoc}) and
+ * an <em>events store</em> (a
+ * {@code PlanBDoc} with
+ * {@code stateType == TEMPORAL_STATE}), along with the queries, display
+ * preferences, and value-schema metadata the floor map UI needs to parse
+ * and render temporal entries on a 2-D canvas.</p>
+ *
+ * <h3>UI Tabs</h3>
+ * <p>When a user opens a Floor Map document in the Stroom UI, the
+ * {@code FloorMapPresenter}
+ * builds several tabs, each backed by a sub-presenter:</p>
+ * <table>
+ *   <caption>Floor Map tabs and their presenters</caption>
+ *   <tr><th>Tab</th><th>Presenter</th><th>Purpose</th></tr>
+ *   <tr><td>Settings</td>
+ *       <td>{@code FloorMapSettingsPresenter}</td>
+ *       <td>Configures store references, value format, and value schema</td></tr>
+ *   <tr><td>Events Query</td>
+ *       <td>{@code FloorMapQueryPresenter}</td>
+ *       <td>Edits the StroomQL query for the events store</td></tr>
+ *   <tr><td>Map</td>
+ *       <td>{@code FloorMapMapPresenter}</td>
+ *       <td>Read-only (or light-edit) canvas rendering of facts
+ *       at a point in time</td></tr>
+ *   <tr><td>Editor</td>
+ *       <td>{@code FloorMapEditorPresenter}</td>
+ *       <td>Full authoring environment with staged (pending)
+ *       saves</td></tr>
+ * </table>
+ *
+ * <h3>Two-Store Architecture</h3>
+ * <ul>
+ *   <li><strong>Facts store</strong> ({@link #factsStoreRef}) — a SQL Temporal Store
+ *       containing the spatial data (objects, positions, background image, matrices).</li>
+ *   <li><strong>Events store</strong> ({@link #eventsStoreRef}) — a PlanB Temporal State
+ *       store containing status / event records keyed by entity ID.
+ *       Queried via {@link #eventsQuery}.</li>
+ * </ul>
+ *
+ * <h3>Value Schema</h3>
+ * <p>Each temporal entry's {@code Value} column is a serialised string whose
+ * format is determined by {@link #valueFormat} (currently only
+ * {@link ValueFormat#JSON} is implemented). The {@link #valueSchema} list
+ * tells the UI how to read individual fields from that value string: each
+ * {@link FloorMapFieldMapping} maps a
+ * {@link FloorMapFieldMapping.Role Role} (e.g. {@code TYPE}, {@code POSITION})
+ * to a path within the serialised structure (e.g. {@code ".type"},
+ * {@code ".coords"}).</p>
+ *
+ * <h3>Null Conventions</h3>
+ * <p>This class is JSON-serialised with
+ * {@link JsonInclude.Include#NON_NULL NON_NULL}, so {@code null} fields
+ * are omitted from the stored JSON. The following getters apply
+ * <em>default-on-null</em> logic to guarantee a non-null return value:</p>
+ * <ul>
+ *   <li>{@link #getValueFormat()} → defaults to {@link ValueFormat#JSON}</li>
+ *   <li>{@link #getMatrix()} → never null; the constructor defaults a
+ *       {@code null} input to {@link FloorMapTransformationMatrix#identity()}</li>
+ * </ul>
+ * <p>All other getters — including {@link #getValueSchema()} — return
+ * exactly what was passed to the constructor and <strong>may return
+ * {@code null}</strong>; see each getter's Javadoc for details.</p>
+ *
+ * <h3>Immutability and Builder</h3>
+ * <p>All fields are {@code final}. Mutation is done via the copy-builder
+ * pattern: call {@link #copy()} to obtain a pre-populated {@link Builder},
+ * modify the desired fields, and call {@link Builder#build()}. A fresh
+ * builder can be obtained via {@link #builder()}.</p>
+ *
+ * @see FloorMapFieldMapping
+ * @see ValueFormat
+ * @see FloorMapTransformationMatrix
+ */
 @Description(
     """
     Defines a floor map document which can be used to visualize data over time.
@@ -44,45 +122,139 @@ public class FloorMapDoc extends AbstractDoc {
     public static final String TYPE = "FloorMap";
     public static final DocumentType DOCUMENT_TYPE = DocumentTypeRegistry.FLOOR_MAP_DOCUMENT_TYPE;
 
+    /**
+     * Free-text description of this floor map document.
+     * Displayed on the Description tab.
+     * May be {@code null} if not set.
+     */
     @JsonProperty
     private final String description;
+
+    /**
+     * HTML template used for rendering object tooltips / popups on the canvas.
+     * May be {@code null} if not configured.
+     */
     @JsonProperty
     private final String template;
+
+    /**
+     * Global transformation matrix applied to the canvas.
+     * Never stored as {@code null} — the constructor replaces a {@code null}
+     * input with {@link FloorMapTransformationMatrix#identity()}.
+     */
     @JsonProperty
     private final FloorMapTransformationMatrix matrix;
+
+    /**
+     * The name of the column in the events query result that identifies
+     * the entity (e.g. a person or asset).
+     * May be {@code null} if not configured; consumed by
+     * {@code FloorMapQueryPresenter}.
+     */
     @JsonProperty
     private final String entityIdColumn;
+
+    /**
+     * The name of the column in the events query result that identifies
+     * the location (e.g. a room or zone).
+     * May be {@code null} if not configured; consumed by
+     * {@code FloorMapQueryPresenter}.
+     */
     @JsonProperty
     private final String locationIdColumn;
 
     /**
      * Reference to the SQL Temporal Store document used as the facts store.
-     * May be null if not yet configured.
+     * The facts store contains spatial data: object positions, background
+     * images, and transformation matrices.
+     * May be {@code null} if not yet configured.
+     *
+     * <p><strong>Back-compatibility:</strong> previously serialised as
+     * {@code "temporalStoreRef"}; the {@link JsonAlias} on the constructor
+     * parameter handles migration transparently.</p>
      */
     @JsonProperty("factsStoreRef")
     private final DocRef factsStoreRef;
+
     /**
      * Reference to the PlanB document (with {@code stateType == TEMPORAL_STATE})
-     * used as the events store.
-     * May be null if not yet configured.
+     * used as the events store. The events store contains status / event
+     * records keyed by entity ID.
+     * May be {@code null} if not yet configured.
      */
     @JsonProperty
     private final DocRef eventsStoreRef;
+
+    /**
+     * StroomQL query string for the events store.
+     * Executed by
+     * {@code FloorMapMapPresenter} to
+     * populate the events overlay on the canvas.
+     * May be {@code null} if not configured.
+     */
     @JsonProperty
     private final String eventsQuery;
+
+    /**
+     * Time range filter applied to the events query.
+     * May be {@code null} if no time range restriction is configured.
+     */
     @JsonProperty
     private final TimeRange eventsQueryTimeRange;
+
+    /**
+     * Table display preferences (column widths, sort order, etc.) for the
+     * events query result grid.
+     * May be {@code null} if not configured.
+     */
     @JsonProperty
     private final QueryTablePreferences eventsQueryTablePreferences;
+
+    /**
+     * The serialisation format of the temporal entry's {@code Value} column.
+     * May be {@code null} in the stored JSON; {@link #getValueFormat()}
+     * defaults to {@link ValueFormat#JSON} in that case.
+     *
+     * <p><strong>Note:</strong> only {@link ValueFormat#JSON} is currently
+     * implemented. {@link ValueFormat#XML} is defined but not yet supported
+     * by the parser or serialiser.</p>
+     */
     @JsonProperty
-    private final String factsQuery;
+    private final ValueFormat valueFormat;
+
+    /**
+     * Ordered list of field mappings that describe the structure of a
+     * temporal entry's {@code Value} column. Each entry maps a
+     * {@link FloorMapFieldMapping.Role Role} to a path within the
+     * serialised value (e.g. {@code ".type"}, {@code ".coords"}).
+     *
+     * <p>May be {@code null} for documents created before the value
+     * schema feature was introduced. New documents are always seeded
+     * with {@link FloorMapFieldMapping#initialValueSchema()} by
+     * {@code FloorMapInitPresenter}.</p>
+     */
     @JsonProperty
-    private final TimeRange factsQueryTimeRange;
-    @JsonProperty
-    private final QueryTablePreferences factsQueryTablePreferences;
+    private final List<FloorMapFieldMapping> valueSchema;
 
     /**
      * Constructs a {@code FloorMapDoc} from its constituent fields.
+     *
+     * <p>This constructor is invoked by Jackson during deserialisation and
+     * by the {@link Builder}. All parameters are nullable except
+     * {@code uuid} and {@code name} (inherited from
+     * {@link AbstractDoc}).</p>
+     *
+     * <p><strong>Default-on-null rules applied in the constructor:</strong></p>
+     * <ul>
+     *   <li>{@code matrix} — replaced with
+     *       {@link FloorMapTransformationMatrix#identity()} if {@code null}</li>
+     * </ul>
+     *
+     * <p><strong>Default-on-null rules applied in getters:</strong></p>
+     * <ul>
+     *   <li>{@link #getValueFormat()} returns {@link ValueFormat#JSON}
+     *       if the stored field is {@code null}</li>
+     * </ul>
      *
      * <p><strong>Back-compatibility:</strong> The {@code factsStoreRef}
      * parameter is annotated with {@code @JsonAlias("temporalStoreRef")}
@@ -92,6 +264,28 @@ public class FloorMapDoc extends AbstractDoc {
      * field-level {@code @JsonProperty("factsStoreRef")} annotation
      * causes it to be written under the new name, completing the
      * migration.</p>
+     *
+     * @param uuid                        document UUID; must not be {@code null}
+     * @param name                        document name; must not be {@code null}
+     * @param version                     document version; may be {@code null}
+     * @param createTimeMs                creation timestamp in millis; may be {@code null}
+     * @param updateTimeMs                last-update timestamp in millis; may be {@code null}
+     * @param createUser                  user who created the document; may be {@code null}
+     * @param updateUser                  user who last updated the document; may be {@code null}
+     * @param description                 free-text description; may be {@code null}
+     * @param template                    HTML tooltip template; may be {@code null}
+     * @param matrix                      global canvas matrix; defaults to identity if {@code null}
+     * @param entityIdColumn              events-query entity column name; may be {@code null}
+     * @param locationIdColumn            events-query location column name; may be {@code null}
+     * @param factsStoreRef               facts store {@link DocRef}; may be {@code null}
+     * @param eventsStoreRef              events store {@link DocRef}; may be {@code null}
+     * @param eventsQuery                 StroomQL for the events store; may be {@code null}
+     * @param eventsQueryTimeRange        time range for the events query; may be {@code null}
+     * @param eventsQueryTablePreferences table prefs for events query results; may be {@code null}
+     * @param valueFormat                 value serialisation format; may be {@code null}
+     *                                    (defaults to {@link ValueFormat#JSON} via getter)
+     * @param valueSchema                 value field mappings; may be {@code null}
+     *                                    for legacy documents
      */
     @JsonCreator
     public FloorMapDoc(@JsonProperty("uuid") final String uuid,
@@ -115,10 +309,8 @@ public class FloorMapDoc extends AbstractDoc {
                        @JsonProperty("eventsQueryTimeRange") final TimeRange eventsQueryTimeRange,
                        @JsonProperty("eventsQueryTablePreferences")
                            final QueryTablePreferences eventsQueryTablePreferences,
-                       @JsonProperty("factsQuery") final String factsQuery,
-                       @JsonProperty("factsQueryTimeRange") final TimeRange factsQueryTimeRange,
-                       @JsonProperty("factsQueryTablePreferences")
-                           final QueryTablePreferences factsQueryTablePreferences) {
+                       @JsonProperty("valueFormat") final ValueFormat valueFormat,
+                       @JsonProperty("valueSchema") final List<FloorMapFieldMapping> valueSchema) {
         super(TYPE, uuid,
                 name,
                 version,
@@ -140,23 +332,45 @@ public class FloorMapDoc extends AbstractDoc {
         this.eventsQueryTimeRange = eventsQueryTimeRange;
         this.eventsQueryTablePreferences = eventsQueryTablePreferences;
 
-        this.factsQuery = factsQuery;
-        this.factsQueryTimeRange = factsQueryTimeRange;
-        this.factsQueryTablePreferences = factsQueryTablePreferences;
+        this.valueFormat = valueFormat;
+        this.valueSchema = valueSchema;
     }
 
+    /**
+     * Returns the free-text description of this floor map document.
+     *
+     * @return the description, or {@code null} if not set
+     */
     public String getDescription() {
         return description;
     }
 
+    /**
+     * Returns the HTML template used for rendering object tooltips or
+     * popups on the canvas.
+     *
+     * @return the template string, or {@code null} if not configured
+     */
     public String getTemplate() {
         return template;
     }
 
+    /**
+     * Returns the name of the column in the events query result that
+     * identifies the entity (e.g. a person or asset ID).
+     *
+     * @return the entity ID column name, or {@code null} if not configured
+     */
     public String getEntityIdColumn() {
         return entityIdColumn;
     }
 
+    /**
+     * Returns the name of the column in the events query result that
+     * identifies the location (e.g. a room or zone ID).
+     *
+     * @return the location ID column name, or {@code null} if not configured
+     */
     public String getLocationIdColumn() {
         return locationIdColumn;
     }
@@ -164,56 +378,139 @@ public class FloorMapDoc extends AbstractDoc {
     /**
      * Returns the reference to the facts store (SQL Temporal Store).
      *
-     * @return the facts store DocRef, or null if not configured
+     * <p>The facts store contains spatial data: object positions,
+     * background images, and transformation matrices.</p>
+     *
+     * @return the facts store {@link DocRef}, or {@code null} if not
+     *         yet configured
      */
     public DocRef getFactsStoreRef() {
         return factsStoreRef;
     }
 
     /**
-     * Returns the reference to the events store (PlanB Temporal State Store).
+     * Returns the reference to the events store (PlanB Temporal State
+     * Store).
      *
-     * @return the events store DocRef, or null if not configured
+     * <p>The events store contains status / event records keyed by
+     * entity ID.</p>
+     *
+     * @return the events store {@link DocRef}, or {@code null} if not
+     *         yet configured
      */
     public DocRef getEventsStoreRef() {
         return eventsStoreRef;
     }
 
+    /**
+     * Returns the StroomQL query string for the events store.
+     *
+     * @return the events query string, or {@code null} if not configured
+     */
     public String getEventsQuery() {
         return eventsQuery;
     }
 
+    /**
+     * Returns the time range filter applied to the events query.
+     *
+     * @return the events query {@link TimeRange}, or {@code null} if no
+     *         time range restriction is configured
+     */
     public TimeRange getEventsQueryTimeRange() {
         return eventsQueryTimeRange;
     }
 
+    /**
+     * Returns the table display preferences for the events query result
+     * grid (column widths, sort order, etc.).
+     *
+     * @return the events query {@link QueryTablePreferences}, or
+     *         {@code null} if not configured
+     */
     public QueryTablePreferences getEventsQueryTablePreferences() {
         return eventsQueryTablePreferences;
     }
 
-    public String getFactsQuery() {
-        return factsQuery;
-    }
-
-    public TimeRange getFactsQueryTimeRange() {
-        return factsQueryTimeRange;
-    }
-
-    public QueryTablePreferences getFactsQueryTablePreferences() {
-        return factsQueryTablePreferences;
-    }
-
+    /**
+     * Returns the global transformation matrix applied to the canvas.
+     *
+     * <p>This method never returns {@code null}. If the constructor
+     * received a {@code null} matrix, it was replaced with
+     * {@link FloorMapTransformationMatrix#identity()}.</p>
+     *
+     * @return the canvas transformation matrix; never {@code null}
+     */
     public FloorMapTransformationMatrix getMatrix() {
         return matrix;
     }
 
     /**
-     * @return A new builder for creating a {@link DocRef} for this document's type.
+     * Returns the serialisation format used for the temporal entry's
+     * {@code Value} column.
+     *
+     * <p>This method never returns {@code null}. If no explicit format has
+     * been set (i.e. the underlying field is {@code null}), it defaults to
+     * {@link ValueFormat#JSON}.</p>
+     *
+     * <p><strong>Note:</strong> only {@link ValueFormat#JSON} is currently
+     * implemented. Selecting {@link ValueFormat#XML} in the Settings tab
+     * will cause the parser to silently skip all entries.</p>
+     *
+     * @return the configured {@link ValueFormat}, or {@link ValueFormat#JSON}
+     *         if none was specified; never {@code null}
+     */
+    public ValueFormat getValueFormat() {
+        return valueFormat != null ? valueFormat : ValueFormat.JSON;
+    }
+
+    /**
+     * Returns the ordered list of field mappings that describe the structure
+     * of a temporal entry's {@code Value} column.
+     *
+     * <p>May return {@code null} for legacy documents created before the
+     * value schema feature was introduced. New documents are always
+     * seeded with {@link FloorMapFieldMapping#initialValueSchema()} by
+     * {@code FloorMapInitPresenter}, so this should not be {@code null}
+     * under normal circumstances.</p>
+     *
+     * @return the value schema list, or {@code null} if not configured
+     */
+    public List<FloorMapFieldMapping> getValueSchema() {
+        return valueSchema;
+    }
+
+    /**
+     * Returns a new {@link DocRef.TypedBuilder} pre-configured with this
+     * document's {@link #TYPE}.
+     *
+     * @return a typed builder for creating a {@link DocRef}; never {@code null}
      */
     public static DocRef.TypedBuilder buildDocRef() {
         return DocRef.builder(TYPE);
     }
 
+    /**
+     * Compares this document to another for value equality.
+     *
+     * <p>Two {@code FloorMapDoc} instances are equal if they have the same
+     * superclass identity (UUID, name, version, timestamps, users) and
+     * all 11 document-specific fields are equal. {@code null} fields are
+     * handled safely via {@link Objects#equals(Object, Object)}.</p>
+     *
+     * <p><strong>Note:</strong> equality is based on the <em>raw</em>
+     * stored field values, not the default-on-null getter semantics. This
+     * means a doc with {@code valueFormat == null} is <em>not</em> equal
+     * to one with {@code valueFormat == JSON}, even though their getters
+     * would return the same value. This is intentional — it allows the
+     * dirty-detection logic in
+     * {@code stroom.entity.client.presenter.DocPresenter#onChange()}
+     * to correctly detect when a user has explicitly set a field that
+     * previously relied on the default.</p>
+     *
+     * @param o the object to compare against
+     * @return {@code true} if the objects are value-equal
+     */
     @Override
     public boolean equals(final Object o) {
         if (this == o) {
@@ -236,11 +533,11 @@ public class FloorMapDoc extends AbstractDoc {
                Objects.equals(eventsQuery, that.eventsQuery) &&
                Objects.equals(eventsQueryTimeRange, that.eventsQueryTimeRange) &&
                Objects.equals(eventsQueryTablePreferences, that.eventsQueryTablePreferences) &&
-               Objects.equals(factsQuery, that.factsQuery) &&
-               Objects.equals(factsQueryTimeRange, that.factsQueryTimeRange) &&
-               Objects.equals(factsQueryTablePreferences, that.factsQueryTablePreferences);
+               Objects.equals(valueFormat, that.valueFormat) &&
+               Objects.equals(valueSchema, that.valueSchema);
     }
 
+    /** {@inheritDoc} */
     @Override
     public int hashCode() {
         return Objects.hash(
@@ -255,19 +552,41 @@ public class FloorMapDoc extends AbstractDoc {
                 eventsQuery,
                 eventsQueryTimeRange,
                 eventsQueryTablePreferences,
-                factsQuery,
-                factsQueryTimeRange,
-                factsQueryTablePreferences);
+                valueFormat,
+                valueSchema);
     }
 
+    /**
+     * Returns a new {@link Builder} pre-populated with all field values
+     * from this document, ready for modification via the copy-builder
+     * pattern.
+     *
+     * @return a pre-populated builder; never {@code null}
+     */
     public Builder copy() {
         return new Builder(this);
     }
 
+    /**
+     * Returns a new empty {@link Builder}.
+     *
+     * @return a fresh builder; never {@code null}
+     */
     public static Builder builder() {
         return new Builder();
     }
 
+    /**
+     * Mutable builder for constructing {@link FloorMapDoc} instances.
+     *
+     * <p>All setter methods accept {@code null}. Where a field has
+     * default-on-null semantics, the default is applied at read time
+     * by the corresponding getter on the built {@link FloorMapDoc}
+     * (see the class-level Javadoc for the full list).</p>
+     *
+     * <p>To create a modified copy of an existing document, use
+     * {@link FloorMapDoc#copy()} which returns a pre-populated builder.</p>
+     */
     public static class Builder extends AbstractBuilder<FloorMapDoc, Builder> {
 
         private String template;
@@ -281,13 +600,21 @@ public class FloorMapDoc extends AbstractDoc {
         private String eventsQuery;
         private TimeRange eventsQueryTimeRange;
         private QueryTablePreferences eventsQueryTablePreferences;
-        private String factsQuery;
-        private TimeRange factsQueryTimeRange;
-        private QueryTablePreferences factsQueryTablePreferences;
+        private ValueFormat valueFormat;
+        private List<FloorMapFieldMapping> valueSchema;
 
+        /**
+         * Creates an empty builder. All fields default to {@code null}.
+         */
         public Builder() {
         }
 
+        /**
+         * Creates a builder pre-populated with all field values from the
+         * given document (copy-builder pattern).
+         *
+         * @param doc the document to copy; must not be {@code null}
+         */
         public Builder(final FloorMapDoc doc) {
             super(doc);
             this.template = doc.template;
@@ -300,73 +627,156 @@ public class FloorMapDoc extends AbstractDoc {
             this.eventsQuery = doc.eventsQuery;
             this.eventsQueryTimeRange = doc.eventsQueryTimeRange;
             this.eventsQueryTablePreferences = doc.eventsQueryTablePreferences;
-            this.factsQuery = doc.factsQuery;
-            this.factsQueryTimeRange = doc.factsQueryTimeRange;
-            this.factsQueryTablePreferences = doc.factsQueryTablePreferences;
+            this.valueFormat = doc.valueFormat;
+            this.valueSchema = doc.valueSchema;
         }
 
+        /**
+         * Sets the HTML tooltip template.
+         *
+         * @param template the template string, or {@code null} to clear
+         * @return this builder
+         */
         public Builder template(final String template) {
             this.template = template;
             return self();
         }
 
+        /**
+         * Sets the free-text description.
+         *
+         * @param description the description, or {@code null} to clear
+         * @return this builder
+         */
         public Builder description(final String description) {
             this.description = description;
             return self();
         }
 
+        /**
+         * Sets the global canvas transformation matrix.
+         *
+         * <p>If {@code null}, the constructor will default to
+         * {@link FloorMapTransformationMatrix#identity()}.</p>
+         *
+         * @param matrix the matrix, or {@code null} for identity
+         * @return this builder
+         */
         public Builder matrix(final FloorMapTransformationMatrix matrix) {
             this.matrix = matrix;
             return self();
         }
 
+        /**
+         * Sets the entity ID column name for the events query.
+         *
+         * @param entityIdColumn the column name, or {@code null} to clear
+         * @return this builder
+         */
         public Builder entityIdColumn(final String entityIdColumn) {
             this.entityIdColumn = entityIdColumn;
             return self();
         }
 
+        /**
+         * Sets the location ID column name for the events query.
+         *
+         * @param locationIdColumn the column name, or {@code null} to clear
+         * @return this builder
+         */
         public Builder locationIdColumn(final String locationIdColumn) {
             this.locationIdColumn = locationIdColumn;
             return self();
         }
 
+        /**
+         * Sets the facts store reference.
+         *
+         * @param factsStoreRef the {@link DocRef} to the SQL Temporal Store,
+         *                      or {@code null} to clear
+         * @return this builder
+         */
         public Builder factsStoreRef(final DocRef factsStoreRef) {
             this.factsStoreRef = factsStoreRef;
             return self();
         }
 
+        /**
+         * Sets the events store reference.
+         *
+         * @param eventsStoreRef the {@link DocRef} to the PlanB Temporal
+         *                       State Store, or {@code null} to clear
+         * @return this builder
+         */
         public Builder eventsStoreRef(final DocRef eventsStoreRef) {
             this.eventsStoreRef = eventsStoreRef;
             return self();
         }
 
+        /**
+         * Sets the StroomQL query string for the events store.
+         *
+         * @param eventsQuery the query string, or {@code null} to clear
+         * @return this builder
+         */
         public Builder eventsQuery(final String eventsQuery) {
             this.eventsQuery = eventsQuery;
             return self();
         }
 
+        /**
+         * Sets the time range filter for the events query.
+         *
+         * @param eventsQueryTimeRange the time range, or {@code null} for
+         *                             no restriction
+         * @return this builder
+         */
         public Builder eventsQueryTimeRange(final TimeRange eventsQueryTimeRange) {
             this.eventsQueryTimeRange = eventsQueryTimeRange;
             return self();
         }
 
+        /**
+         * Sets the table display preferences for events query results.
+         *
+         * @param eventsQueryTablePreferences the preferences, or {@code null}
+         *                                    to use defaults
+         * @return this builder
+         */
         public Builder eventsQueryTablePreferences(final QueryTablePreferences eventsQueryTablePreferences) {
             this.eventsQueryTablePreferences = eventsQueryTablePreferences;
             return self();
         }
 
-        public Builder factsQuery(final String factsQuery) {
-            this.factsQuery = factsQuery;
+        /**
+         * Sets the serialisation format for the temporal entry's Value column.
+         *
+         * <p>If {@code null} is passed, {@link FloorMapDoc#getValueFormat()}
+         * will fall back to {@link ValueFormat#JSON} at read time.</p>
+         *
+         * @param valueFormat the desired {@link ValueFormat}, or {@code null}
+         *                    to use the default ({@link ValueFormat#JSON})
+         * @return this builder
+         */
+        public Builder valueFormat(final ValueFormat valueFormat) {
+            this.valueFormat = valueFormat;
             return self();
         }
 
-        public Builder factsQueryTimeRange(final TimeRange factsQueryTimeRange) {
-            this.factsQueryTimeRange = factsQueryTimeRange;
-            return self();
-        }
-
-        public Builder factsQueryTablePreferences(final QueryTablePreferences factsQueryTablePreferences) {
-            this.factsQueryTablePreferences = factsQueryTablePreferences;
+        /**
+         * Sets the ordered list of field mappings that describe the structure
+         * of a temporal entry's Value column.
+         *
+         * <p>Should not be set to {@code null} for new documents. Use
+         * {@link FloorMapFieldMapping#initialValueSchema()} to seed a
+         * new document with the standard starting schema.</p>
+         *
+         * @param valueSchema the list of {@link FloorMapFieldMapping} entries,
+         *                    or {@code null} to clear
+         * @return this builder
+         */
+        public Builder valueSchema(final List<FloorMapFieldMapping> valueSchema) {
+            this.valueSchema = valueSchema;
             return self();
         }
 
@@ -375,6 +785,12 @@ public class FloorMapDoc extends AbstractDoc {
             return this;
         }
 
+        /**
+         * Builds and returns a new immutable {@link FloorMapDoc} from
+         * the values set on this builder.
+         *
+         * @return a new {@link FloorMapDoc}; never {@code null}
+         */
         @Override
         public FloorMapDoc build() {
             return new FloorMapDoc(
@@ -395,9 +811,8 @@ public class FloorMapDoc extends AbstractDoc {
                     eventsQuery,
                     eventsQueryTimeRange,
                     eventsQueryTablePreferences,
-                    factsQuery,
-                    factsQueryTimeRange,
-                    factsQueryTablePreferences);
+                    valueFormat,
+                    valueSchema);
         }
     }
 }
