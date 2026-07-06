@@ -28,7 +28,6 @@ import stroom.widget.util.client.SafeHtmlUtil;
 
 import com.google.gwt.core.client.Scheduler;
 import com.google.gwt.dom.client.Element;
-import com.google.gwt.event.dom.client.HasMouseDownHandlers;
 import com.google.gwt.event.dom.client.HasMouseMoveHandlers;
 import com.google.gwt.event.dom.client.HasMouseUpHandlers;
 import com.google.gwt.event.dom.client.HasMouseWheelHandlers;
@@ -102,7 +101,7 @@ public class FloorMapCanvasViewImpl
     }
 
     @Override
-    public HasMouseDownHandlers getFocusPanel() {
+    public FocusPanel getFocusPanel() {
         return focusPanel;
     }
 
@@ -208,7 +207,7 @@ public class FloorMapCanvasViewImpl
                             final String displayLabel = atIdx > 0 ? rawId.substring(0, atIdx) : rawId;
 
                             // Each object is a <g translate(x,y)> wrapper containing the shape + label.
-                            // The wrapper id uses the "obj-" prefix so click-detection ignores it.
+                            // The wrapper id uses the SVG_GROUP_PREFIX so click-detection ignores it.
                             matrixGroup.elem(objGroup -> {
                                 if (isPerson) {
                                     // ---- Person: filled circle ----
@@ -220,7 +219,7 @@ public class FloorMapCanvasViewImpl
                                         new Attribute("stroke", isSelected ? "#ff9800" : "#ffffff"),
                                         new Attribute("stroke-width", isSelected ? "4" : "2"),
                                         new Attribute("vector-effect", "non-scaling-stroke"),
-                                        // FIX (Bug 3): ID on the shape (no "obj-" prefix) so click-detection works.
+                                        // FIX (Bug 3): ID on the shape (no group prefix) so click-detection works.
                                         new Attribute("id", obj.getId()));
 
                                     // Label rendered BELOW the circle so it isn't hidden inside it.
@@ -271,7 +270,7 @@ public class FloorMapCanvasViewImpl
                             },
                                     SafeHtmlUtil.from("g"),
                                     new Attribute("transform", "translate(" + obj.getX() + "," + obj.getY() + ")"),
-                                    new Attribute("id", "obj-" + obj.getId()));
+                                    new Attribute("id", FloorMapJsonKeys.SVG_GROUP_PREFIX + obj.getId()));
                         }
                     }
 
