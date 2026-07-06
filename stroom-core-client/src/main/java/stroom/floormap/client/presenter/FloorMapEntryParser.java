@@ -27,7 +27,11 @@ import com.google.gwt.json.client.JSONObject;
 import java.util.ArrayList;
 import java.util.List;
 
-import static stroom.floormap.client.FloorMapJsonKeys.*;
+import static stroom.floormap.client.FloorMapJsonKeys.COORDS;
+import static stroom.floormap.client.FloorMapJsonKeys.IMG;
+import static stroom.floormap.client.FloorMapJsonKeys.TM_MAP_TO_SCREEN;
+import static stroom.floormap.client.FloorMapJsonKeys.TM_WORLD_TO_MAP;
+import static stroom.floormap.client.FloorMapJsonKeys.TYPE;
 
 /**
  * Shared utility that parses a list of {@link TemporalEntry} objects into

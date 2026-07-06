@@ -56,7 +56,10 @@ import java.util.Objects;
 import java.util.function.Consumer;
 import javax.inject.Provider;
 
-import static stroom.floormap.client.FloorMapJsonKeys.*;
+import static stroom.floormap.client.FloorMapJsonKeys.COORDS;
+import static stroom.floormap.client.FloorMapJsonKeys.NAME;
+import static stroom.floormap.client.FloorMapJsonKeys.TM_WORLD_TO_MAP;
+import static stroom.floormap.client.FloorMapJsonKeys.TYPE;
 
 /**
  * Presenter for the FloorMap <b>Editor</b> tab.

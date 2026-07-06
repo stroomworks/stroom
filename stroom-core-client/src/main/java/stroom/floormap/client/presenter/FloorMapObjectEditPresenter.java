@@ -29,7 +29,6 @@ import com.google.gwt.json.client.JSONArray;
 import com.google.gwt.json.client.JSONNumber;
 import com.google.gwt.json.client.JSONObject;
 import com.google.gwt.json.client.JSONString;
-
 import com.google.gwt.user.client.ui.Widget;
 import com.google.web.bindery.event.shared.EventBus;
 import com.gwtplatform.mvp.client.MyPresenterWidget;
@@ -38,7 +37,12 @@ import com.gwtplatform.mvp.client.View;
 import java.util.function.Consumer;
 import javax.inject.Inject;
 
-import static stroom.floormap.client.FloorMapJsonKeys.*;
+import static stroom.floormap.client.FloorMapJsonKeys.COORDS;
+import static stroom.floormap.client.FloorMapJsonKeys.IMG;
+import static stroom.floormap.client.FloorMapJsonKeys.NAME;
+import static stroom.floormap.client.FloorMapJsonKeys.TM_MAP_TO_SCREEN;
+import static stroom.floormap.client.FloorMapJsonKeys.TM_WORLD_TO_MAP;
+import static stroom.floormap.client.FloorMapJsonKeys.TYPE;
 
 /**
  * Presenter for the floor map object property editor dialog.

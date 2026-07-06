@@ -485,73 +485,73 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
     private final AnimationScheduler.AnimationCallback animationCallback =
             new AnimationScheduler.AnimationCallback() {
-        @Override
-        public void execute(final double timestamp) {
-            // Compute the time elapsed since the previous frame.  On the very first
-            // frame after the loop starts, lastAnimationTimestamp is 0 so we use a
-            // nominal 16 ms (one 60 fps frame) to avoid a stalled first step.
-            final double deltaMs = lastAnimationTimestamp > 0
-                    ? timestamp - lastAnimationTimestamp
-                    : 16.0;
-            lastAnimationTimestamp = timestamp;
+                @Override
+                public void execute(final double timestamp) {
+                    // Compute the time elapsed since the previous frame.  On the very first
+                    // frame after the loop starts, lastAnimationTimestamp is 0 so we use a
+                    // nominal 16 ms (one 60 fps frame) to avoid a stalled first step.
+                    final double deltaMs = lastAnimationTimestamp > 0
+                            ? timestamp - lastAnimationTimestamp
+                            : 16.0;
+                    lastAnimationTimestamp = timestamp;
 
-            if (activeAnimations.isEmpty() && trailFadeStartTimes.isEmpty()) {
-                // Nothing left to animate or fade — let the loop terminate.
-                animationLoopRunning = false;
-                lastAnimationTimestamp = 0;
-                return;
-            }
+                    if (activeAnimations.isEmpty() && trailFadeStartTimes.isEmpty()) {
+                        // Nothing left to animate or fade — let the loop terminate.
+                        animationLoopRunning = false;
+                        lastAnimationTimestamp = 0;
+                        return;
+                    }
 
-            // Advance each active animation by the fraction of ANIMATION_DURATION_MS
-            // that elapsed since the last frame.  This is independent of any absolute
-            // clock, so it works correctly regardless of the time-base used by the
-            // AnimationScheduler (performance.now() vs Date.now()).
-            final List<String> finished = new ArrayList<>();
-            for (final Map.Entry<String, UserAnimation> entry : activeAnimations.entrySet()) {
-                final UserAnimation anim = entry.getValue();
-                anim.progress = Math.min(1.0, anim.progress + deltaMs / ANIMATION_DURATION_MS);
+                    // Advance each active animation by the fraction of ANIMATION_DURATION_MS
+                    // that elapsed since the last frame.  This is independent of any absolute
+                    // clock, so it works correctly regardless of the time-base used by the
+                    // AnimationScheduler (performance.now() vs Date.now()).
+                    final List<String> finished = new ArrayList<>();
+                    for (final Map.Entry<String, UserAnimation> entry : activeAnimations.entrySet()) {
+                        final UserAnimation anim = entry.getValue();
+                        anim.progress = Math.min(1.0, anim.progress + deltaMs / ANIMATION_DURATION_MS);
 
-                // Record the current interpolated position into the trail.
-                recordTrailPoint(anim.id, anim.currentX(), anim.currentY());
+                        // Record the current interpolated position into the trail.
+                        recordTrailPoint(anim.id, anim.currentX(), anim.currentY());
 
-                if (anim.progress >= 1.0) {
-                    // Snap to the destination and record final position.
-                    lastPersonPositions.put(anim.id, new double[]{anim.toX, anim.toY});
-                    finished.add(anim.id);
-                    // Start fading the trail for this person.
-                    trailFadeStartTimes.put(anim.id, timestamp);
+                        if (anim.progress >= 1.0) {
+                            // Snap to the destination and record final position.
+                            lastPersonPositions.put(anim.id, new double[]{anim.toX, anim.toY});
+                            finished.add(anim.id);
+                            // Start fading the trail for this person.
+                            trailFadeStartTimes.put(anim.id, timestamp);
+                        }
+                    }
+                    for (final String id : finished) {
+                        activeAnimations.remove(id);
+                    }
+
+                    // Process fading trails: remove entries that are fully faded or
+                    // whose person has started a new animation.
+                    final List<String> doneFading = new ArrayList<>();
+                    for (final Map.Entry<String, Double> fade : trailFadeStartTimes.entrySet()) {
+                        final String id = fade.getKey();
+                        if (activeAnimations.containsKey(id)) {
+                            // Person started moving again — cancel the fade.
+                            doneFading.add(id);
+                        } else if (timestamp - fade.getValue() >= TRAIL_FADE_DURATION_MS) {
+                            // Fully faded — remove trail data.
+                            personTrails.remove(id);
+                            doneFading.add(id);
+                        }
+                    }
+                    for (final String id : doneFading) {
+                        trailFadeStartTimes.remove(id);
+                    }
+
+                    // Draw the current frame.
+                    getView().draw(scale, offsetX, offsetY, backgroundImage, matrix,
+                            buildAnimatedDrawList(timestamp), selectedObjectId);
+
+                    // Keep looping.
+                    AnimationScheduler.get().requestAnimationFrame(this);
                 }
-            }
-            for (final String id : finished) {
-                activeAnimations.remove(id);
-            }
-
-            // Process fading trails: remove entries that are fully faded or
-            // whose person has started a new animation.
-            final List<String> doneFading = new ArrayList<>();
-            for (final Map.Entry<String, Double> fade : trailFadeStartTimes.entrySet()) {
-                final String id = fade.getKey();
-                if (activeAnimations.containsKey(id)) {
-                    // Person started moving again — cancel the fade.
-                    doneFading.add(id);
-                } else if (timestamp - fade.getValue() >= TRAIL_FADE_DURATION_MS) {
-                    // Fully faded — remove trail data.
-                    personTrails.remove(id);
-                    doneFading.add(id);
-                }
-            }
-            for (final String id : doneFading) {
-                trailFadeStartTimes.remove(id);
-            }
-
-            // Draw the current frame.
-            getView().draw(scale, offsetX, offsetY, backgroundImage, matrix,
-                    buildAnimatedDrawList(timestamp), selectedObjectId);
-
-            // Keep looping.
-            AnimationScheduler.get().requestAnimationFrame(this);
-        }
-    };
+            };
 
     /**
      * Shared logic for handling a person position update from either the facts
