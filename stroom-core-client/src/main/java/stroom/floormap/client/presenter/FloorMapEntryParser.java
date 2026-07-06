@@ -28,6 +28,7 @@ import stroom.floormap.shared.ValueFormat;
 import java.util.ArrayList;
 import java.util.List;
 
+
 /**
  * Shared utility that parses a list of {@link stroom.util.shared.TemporalEntry}
  * objects into canvas-ready data: a background image, a background
@@ -148,7 +149,7 @@ public final class FloorMapEntryParser {
         final List<FloorMapObject> objects = new ArrayList<>();
 
         if (entries == null) {
-            return new ParseResult(null, null, bgMatrix, objects);
+            return new ParseResult(null, null, null, objects);
         }
 
         final ValueAccessor accessor = ValueAccessor.forFormat(format);
@@ -217,6 +218,8 @@ public final class FloorMapEntryParser {
 
         return new ParseResult(backgroundImage, backgroundKey, bgMatrix, objects);
     }
+
+
 
     /**
      * Finds the path for a given role in the schema, or {@code null} if not

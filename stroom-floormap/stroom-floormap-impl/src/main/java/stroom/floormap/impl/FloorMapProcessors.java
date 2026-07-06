@@ -42,6 +42,13 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 
+/**
+ * Manages processor filters associated with {@link FloorMapDoc} documents.
+ * <p>
+ * Provides operations to delete processor filters linked to a floor map
+ * and to retrieve the default processing filter expression from the
+ * associated view's query.
+ */
 public class FloorMapProcessors {
 
     private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(FloorMapProcessors.class);
@@ -62,18 +69,31 @@ public class FloorMapProcessors {
         this.viewStore = viewStore;
     }
 
+    /**
+     * Deletes all processor filters associated with the given floor map document.
+     *
+     * @param doc the floor map document whose processor filters should be deleted
+     * @throws RuntimeException if more than one processor is found for the document
+     */
     public void deleteProcessorFilters(final FloorMapDoc doc) {
         final List<Processor> processors = getProcessor(doc);
         if (processors.size() > 1) {
             throw new RuntimeException("Unexpected number of processors");
-        } else {
-            for (final Processor processor : processors) {
-                final ResultPage<ProcessorFilter> existing = getProcessorFilters(processor);
-                deleteFilters(existing.getValues());
-            }
+        }
+        for (final Processor processor : processors) {
+            final ResultPage<ProcessorFilter> existing = getProcessorFilters(processor);
+            deleteFilters(existing.getValues());
         }
     }
 
+    /**
+     * Retrieves the default processing filter expression from the view associated
+     * with the given query string.
+     *
+     * @param query the query string from which to extract the data source view
+     * @return the filter expression from the associated view, or {@code null} if
+     *         no view is found or the query is {@code null}
+     */
     public ExpressionOperator getDefaultProcessingFilterExpression(final String query) {
         final Optional<ViewDoc> optionalViewDoc = getViewDoc(query);
         return optionalViewDoc.map(ViewDoc::getFilter).orElse(null);

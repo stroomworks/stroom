@@ -18,11 +18,7 @@
 <ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
              xmlns:g="urn:import:com.google.gwt.user.client.ui">
     <g:DockLayoutPanel unit='PX' styleName="max" ui:field="mainDockPanel">
-        <!-- Properties panel on the right -->
-        <g:east size="0">
-            <g:SimplePanel ui:field="propertiesPanel" addStyleNames="max stroom-border-left form-padding" />
-        </g:east>
-        <!-- The rest (split layout for map above, timeline below) -->
+        <!-- Split layout for map above and timeline below -->
         <g:center>
             <g:ThinSplitLayoutPanel vSplits="0.9" styleName="max">
                 <!-- Top section: The SVG map -->

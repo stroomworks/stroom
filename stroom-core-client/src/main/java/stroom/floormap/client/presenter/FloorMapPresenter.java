@@ -27,11 +27,6 @@ import stroom.entity.client.presenter.MarkdownEditPresenter;
 import stroom.entity.client.presenter.MarkdownTabProvider;
 import stroom.floormap.shared.FloorMapDoc;
 import stroom.security.client.presenter.DocumentUserPermissionsTabProvider;
-import stroom.svg.client.SvgPresets;
-import stroom.svg.shared.SvgImage;
-import stroom.widget.button.client.ButtonView;
-import stroom.widget.button.client.InlineSvgToggleButton;
-import stroom.widget.button.client.SvgButton;
 import stroom.widget.tab.client.presenter.TabData;
 import stroom.widget.tab.client.presenter.TabDataImpl;
 
@@ -43,6 +38,15 @@ import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import javax.inject.Provider;
 
+/**
+ * Top-level document tab presenter for a {@link FloorMapDoc}.
+ *
+ * <p>Hosts all sub-tabs — Map, Editor, Events Query, Facts Query, Settings,
+ * Assets, Documentation, and Permissions — and coordinates the save chain
+ * across them.  The {@link #getPostSaveCallback()} method chains the Editor
+ * tab’s pending-change flush with the asset save so that both are persisted
+ * in a single user-initiated save.</p>
+ */
 public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMapDoc> {
 
     private static final TabData MAP = new TabDataImpl("Map");
@@ -54,8 +58,6 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
     private static final TabData PERMISSIONS = new TabDataImpl("Permissions");
 
     private final DocumentAssetPresenter<FloorMapDoc> documentAssetPresenter;
-    private final InlineSvgToggleButton editModeButton;
-    private final ButtonView addObjectButton;
     private FloorMapMapPresenter floorMapMapPresenter;
     private FloorMapEditorPresenter floorMapEditorPresenter;
     private FloorMapSettingsPresenter floorMapSettingsPresenter;
@@ -73,32 +75,6 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
                              final DocumentAssetPresenter<FloorMapDoc> documentAssetPresenter) {
         super(eventBus, view);
         this.documentAssetPresenter = documentAssetPresenter;
-
-        editModeButton = new InlineSvgToggleButton();
-        editModeButton.setSvg(SvgImage.EDIT);
-        editModeButton.setTitle("Edit Mode");
-        editModeButton.setState(false);
-        toolbar.addButton(editModeButton);
-
-        addObjectButton = SvgButton.create(SvgPresets.ADD);
-        addObjectButton.setTitle("Add New Object");
-        addObjectButton.setVisible(false);
-        toolbar.addButton(addObjectButton);
-
-        //noinspection unused
-        registerHandler(editModeButton.addClickHandler(e -> {
-            if (floorMapMapPresenter != null) {
-                floorMapMapPresenter.toggleEditMode(editModeButton.getState());
-            }
-            addObjectButton.setVisible(editModeButton.getState());
-        }));
-
-        //noinspection unused
-        registerHandler(addObjectButton.addClickHandler(e -> {
-            if (floorMapMapPresenter != null) {
-                floorMapMapPresenter.promptAndAddObject();
-            }
-        }));
 
         addTab(MAP, new DocTabProvider<>(() -> {
             floorMapMapPresenter = floorMapMapPresenterProvider.get();
@@ -171,28 +147,20 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
         selectTab(MAP);
     }
 
+    /** {@inheritDoc} */
     @Override
     protected void onRead(final DocRef docRef, final FloorMapDoc document, final boolean readOnly) {
         super.onRead(docRef, document, readOnly);
-        if (editModeButton != null) {
-            editModeButton.setState(false);
-            editModeButton.setVisible(getSelectedTab() == MAP);
-        }
-        if (addObjectButton != null) {
-            addObjectButton.setVisible(false);
-        }
     }
 
+    /**
+     * Performs post-tab-selection logic such as auto-populating the default
+     * Facts Query template and triggering asset change detection.
+     */
     @Override
     protected void afterSelectTab(final PresenterWidget<?> content) {
         if (content == documentAssetPresenter) {
             onChange();
-        }
-        if (editModeButton != null) {
-            editModeButton.setVisible(content instanceof FloorMapMapPresenter);
-        }
-        if (addObjectButton != null && editModeButton != null) {
-            addObjectButton.setVisible(content instanceof FloorMapMapPresenter && editModeButton.getState());
         }
 
     }
@@ -212,6 +180,10 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
         return DOCUMENTATION;
     }
 
+    /**
+     * Returns {@code true} when any associated presenter (Map, Editor, or
+     * Assets) has unsaved changes.
+     */
     @Override
     protected boolean hasAssociatedDirty() {
         return super.hasAssociatedDirty() ||

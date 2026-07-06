@@ -25,6 +25,11 @@ import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+/**
+ * Verifies JSON serialisation and deserialisation of {@link FloorMapDoc},
+ * including round-trip fidelity and backward compatibility with legacy JSON
+ * that may contain removed fields.
+ */
 class TestFloorMapSerialisation {
 
     @Test

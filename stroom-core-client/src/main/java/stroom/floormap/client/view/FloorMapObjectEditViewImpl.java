@@ -31,6 +31,14 @@ import com.google.inject.Inject;
 import com.google.inject.Provider;
 import com.gwtplatform.mvp.client.ViewImpl;
 
+/**
+ * View implementation for the floor map object (fact) edit dialog.
+ *
+ * <p>Renders form fields for the object's name, type, effective time, position (x/y),
+ * an image chooser, and two sets of affine-transform matrix fields (world→map and
+ * map→screen). The matrix fields are conditionally visible based on the object type:
+ * "background" objects show the map→screen matrix, all others show world→map.</p>
+ */
 public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObjectEditView {
 
     private final Widget widget;
@@ -95,8 +103,6 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
     public Widget asWidget() {
         return widget;
     }
-
-
 
     @Override
     public long getEffectiveTime() {
@@ -182,6 +188,10 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
         populateMatrixFields(m, m2sTx, m2sTy, m2sSx, m2sSy, m2sRot);
     }
 
+    /**
+     * Reads the five decomposed transform fields (translate-X/Y, scale-X/Y, rotation)
+     * and recomposes them into a 6-element affine matrix {@code [a, b, c, d, tx, ty]}.
+     */
     private double[] parseMatrixFields(final TextBox tx,
                                        final TextBox ty,
                                        final TextBox sx,
@@ -191,19 +201,20 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
         final double tY = parseDouble(ty.getText(), 0.0);
         final double sX = parseDouble(sx.getText(), 1.0);
         final double sY = parseDouble(sy.getText(), 1.0);
-        final double rDeg = parseDouble(rot.getText(), 0.0);
+        final double rRad = Math.toRadians(parseDouble(rot.getText(), 0.0));
 
-        final double rRad = Math.toRadians(rDeg);
-        final double[] m = new double[6];
-        m[0] = sX * Math.cos(rRad);
-        m[1] = sX * Math.sin(rRad);
-        m[2] = -sY * Math.sin(rRad);
-        m[3] = sY * Math.cos(rRad);
-        m[4] = tX;
-        m[5] = tY;
-        return m;
+        final double cos = Math.cos(rRad);
+        final double sin = Math.sin(rRad);
+        return new double[]{
+                sX * cos, sX * sin,
+                -sY * sin, sY * cos,
+                tX, tY
+        };
     }
 
+    /**
+     * Parses a double from the given string, returning {@code defaultVal} on failure.
+     */
     private double parseDouble(final String val, final double defaultVal) {
         try {
             return Double.parseDouble(val.trim());
@@ -212,6 +223,11 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
         }
     }
 
+    /**
+     * Decomposes a 6-element affine matrix {@code [a, b, c, d, tx, ty]} into translation,
+     * scale, and rotation fields. Falls back to identity values if the matrix is null or
+     * too short.
+     */
     private void populateMatrixFields(final double[] m,
                                       final TextBox tx,
                                       final TextBox ty,
@@ -219,25 +235,12 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
                                       final TextBox sy,
                                       final TextBox rot) {
         if (m != null && m.length >= 6) {
-            final double a = m[0];
-            final double b = m[1];
-            final double c = m[2];
-            final double d = m[3];
-            final double e = m[4];
-            final double f = m[5];
+            final double sX = Math.sqrt(m[0] * m[0] + m[1] * m[1]);
+            final double sY = Math.sqrt(m[2] * m[2] + m[3] * m[3]);
+            final double rotationDeg = Math.round(Math.toDegrees(Math.atan2(m[1], m[0])) * 100.0) / 100.0;
 
-            @SuppressWarnings("UnnecessaryLocalVariable")
-            final double tX = e;
-            @SuppressWarnings("UnnecessaryLocalVariable")
-            final double tY = f;
-            final double sX = Math.sqrt(a * a + b * b);
-            final double sY = Math.sqrt(c * c + d * d);
-
-            double rotationDeg = Math.toDegrees(Math.atan2(b, a));
-            rotationDeg = Math.round(rotationDeg * 100.0) / 100.0;
-
-            tx.setText(String.valueOf(tX));
-            ty.setText(String.valueOf(tY));
+            tx.setText(String.valueOf(m[4]));
+            ty.setText(String.valueOf(m[5]));
             sx.setText(String.valueOf(Math.round(sX * 100.0) / 100.0));
             sy.setText(String.valueOf(Math.round(sY * 100.0) / 100.0));
             rot.setText(String.valueOf(rotationDeg));
@@ -253,35 +256,33 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
     @Override
     public void setEnabled(final boolean enabled) {
         effectiveTimeBox.setEnabled(enabled);
-        xBox.setEnabled(enabled);
-        yBox.setEnabled(enabled);
-        nameBox.setEnabled(enabled);
-        typeBox.setEnabled(enabled);
-        w2mTx.setEnabled(enabled);
-        w2mTy.setEnabled(enabled);
-        w2mSx.setEnabled(enabled);
-        w2mSy.setEnabled(enabled);
-        w2mRot.setEnabled(enabled);
-        m2sTx.setEnabled(enabled);
-        m2sTy.setEnabled(enabled);
-        m2sSx.setEnabled(enabled);
-        m2sSy.setEnabled(enabled);
-        m2sRot.setEnabled(enabled);
+        setTextBoxesEnabled(enabled,
+                xBox, yBox, nameBox, typeBox,
+                w2mTx, w2mTy, w2mSx, w2mSy, w2mRot,
+                m2sTx, m2sTy, m2sSx, m2sSy, m2sRot);
     }
 
+    private static void setTextBoxesEnabled(final boolean enabled, final TextBox... boxes) {
+        for (final TextBox box : boxes) {
+            box.setEnabled(enabled);
+        }
+    }
+
+    /**
+     * Toggles which matrix fields are visible based on the object type. "background"
+     * objects show the map→screen matrix; all other types show world→map.
+     */
     private void updateMatrixVisibility(final String type) {
         final boolean isBackground = FloorMapJsonKeys.BACKGROUND.equalsIgnoreCase(type == null ? "" : type.trim());
-        if (w2mTranslationGroup != null) {
-            w2mTranslationGroup.setVisible(!isBackground);
-        }
-        if (w2mScaleRotGroup != null) {
-            w2mScaleRotGroup.setVisible(!isBackground);
-        }
-        if (m2sTranslationGroup != null) {
-            m2sTranslationGroup.setVisible(isBackground);
-        }
-        if (m2sScaleRotGroup != null) {
-            m2sScaleRotGroup.setVisible(isBackground);
+        setVisibleIfPresent(w2mTranslationGroup, !isBackground);
+        setVisibleIfPresent(w2mScaleRotGroup, !isBackground);
+        setVisibleIfPresent(m2sTranslationGroup, isBackground);
+        setVisibleIfPresent(m2sScaleRotGroup, isBackground);
+    }
+
+    private static void setVisibleIfPresent(final Widget widget, final boolean visible) {
+        if (widget != null) {
+            widget.setVisible(visible);
         }
     }
 

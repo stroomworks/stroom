@@ -42,6 +42,11 @@ import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import javax.inject.Singleton;
 
+/**
+ * Document plugin for {@link FloorMapDoc} documents.
+ * Handles loading and saving floor map documents via the REST API
+ * and provides the editor presenter for the content manager.
+ */
 @Singleton
 public class FloorMapPlugin extends DocumentPlugin<FloorMapDoc> {
 
@@ -65,11 +70,23 @@ public class FloorMapPlugin extends DocumentPlugin<FloorMapDoc> {
         this.restFactory = restFactory;
     }
 
+    /**
+     * {@inheritDoc}
+     */
     @Override
     protected DocPresenter<?, ?> createEditor() {
         return editorProvider.get();
     }
 
+    /**
+     * Loads a {@link FloorMapDoc} from the server by fetching it via the
+     * floor map REST resource.
+     *
+     * @param docRef             the document reference to load
+     * @param resultConsumer     callback for the loaded document
+     * @param errorHandler       callback for REST errors
+     * @param taskMonitorFactory factory for task progress monitoring
+     */
     @Override
     public void load(final DocRef docRef,
                      final Consumer<FloorMapDoc> resultConsumer,
@@ -85,7 +102,11 @@ public class FloorMapPlugin extends DocumentPlugin<FloorMapDoc> {
     }
 
     /**
-     * Should not be called - only exists for back compatibility.
+     * Legacy save method — must not be called.
+     * Floor map documents use the overload that accepts a {@code postSaveCallback}
+     * for flushing pending temporal-store changes after the document is persisted.
+     *
+     * @throws IllegalStateException always
      */
     @Override
     public void save(final DocRef docRef,
@@ -97,6 +118,19 @@ public class FloorMapPlugin extends DocumentPlugin<FloorMapDoc> {
         throw new IllegalStateException("Old save method called in FloorMapPlugin");
     }
 
+    /**
+     * Saves a {@link FloorMapDoc} to the server, then invokes the
+     * {@code postSaveCallback} to allow the caller to flush pending
+     * temporal-store changes before notifying the result consumer.
+     *
+     * @param docRef             the document reference
+     * @param document           the document to persist
+     * @param postSaveCallback   callback invoked after a successful save;
+     *                           receives the saved doc and the result consumer
+     * @param resultConsumer     final callback for the saved document
+     * @param errorHandler       callback for REST errors
+     * @param taskMonitorFactory factory for task progress monitoring
+     */
     @Override
     public void save(final DocRef docRef,
                      final FloorMapDoc document,

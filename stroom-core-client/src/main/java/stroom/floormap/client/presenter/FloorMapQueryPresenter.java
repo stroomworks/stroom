@@ -42,6 +42,16 @@ import java.util.List;
 import java.util.Map;
 import javax.inject.Inject;
 
+/**
+ * Presenter for the Floor Map query tab.
+ *
+ * <p>Embeds a {@link QueryEditPresenter} for authoring and executing StroomQL
+ * queries, parses the resulting {@link TableResult} rows into
+ * {@link FloorMapObject} lists, and fires {@link FloorMapDataEvent} so the
+ * canvas can display the matched entities.  Also provides column-mapping
+ * dropdowns that let the user choose which result columns contain the entity
+ * ID, location, and type.</p>
+ */
 public class FloorMapQueryPresenter extends MyPresenterWidget<FloorMapQueryView> implements HasToolbar {
 
     private final QueryEditPresenter queryEditPresenter;
@@ -92,6 +102,10 @@ public class FloorMapQueryPresenter extends MyPresenterWidget<FloorMapQueryView>
         }));
     }
 
+    /**
+     * Refreshes the entity/location column dropdowns from the latest table
+     * columns, preserving the user's current selections where possible.
+     */
     private void updateColumnSelections() {
         final List<Column> columns = queryEditPresenter.getQueryResultPresenter()
                 .getTablePresenter()
@@ -125,6 +139,14 @@ public class FloorMapQueryPresenter extends MyPresenterWidget<FloorMapQueryView>
         }
     }
 
+    /**
+     * Parses all rows of the supplied {@link TableResult} into
+     * {@link FloorMapObject} instances using the currently selected entity and
+     * location column mappings.
+     *
+     * @param tableResult the query result to parse
+     * @return a list of map objects; never {@code null}
+     */
     private List<FloorMapObject> parseRows(final TableResult tableResult) {
         final List<FloorMapObject> list = new ArrayList<>();
 
@@ -172,7 +194,7 @@ public class FloorMapQueryPresenter extends MyPresenterWidget<FloorMapQueryView>
                             String type = "object";
                             if (typeColIndex != -1 && values.size() > typeColIndex) {
                                 type = values.get(typeColIndex);
-                            }    else if (entityId.contains("@")) {
+                            } else if (entityId.contains("@")) {
                                 type = "person"; // Fallback: email contains "@" = person.
                             }
 
@@ -188,6 +210,11 @@ public class FloorMapQueryPresenter extends MyPresenterWidget<FloorMapQueryView>
         return list;
     }
 
+    /**
+     * Convenience overload that reads all query state from a {@link FloorMapDoc}.
+     *
+     * @param doc the floor map document to read from
+     */
     public void read(final FloorMapDoc doc) {
         read(doc.asDocRef(), doc.getEventsQuery(), doc.getEventsQueryTimeRange(),
                 doc.getEventsQueryTablePreferences(),
@@ -195,6 +222,18 @@ public class FloorMapQueryPresenter extends MyPresenterWidget<FloorMapQueryView>
                 buildQueryVariables(doc));
     }
 
+    /**
+     * Populates the query editor and column-mapping dropdowns from the supplied
+     * parameters.
+     *
+     * @param docRef               the document reference for the query context
+     * @param query                the StroomQL query text
+     * @param timeRange            the time range filter; may be {@code null}
+     * @param queryTablePreferences table column preferences; may be {@code null}
+     * @param entityIdColumn       the column name for entity IDs; may be {@code null}
+     * @param locationIdColumn     the column name for locations; may be {@code null}
+     * @param showColumnMappings   {@code true} to show the column-mapping dropdowns
+     */
     public void read(final DocRef docRef,
                      final String query,
                      final TimeRange timeRange,
@@ -219,6 +258,13 @@ public class FloorMapQueryPresenter extends MyPresenterWidget<FloorMapQueryView>
         updateColumnSelections();
     }
 
+    /**
+     * Writes the current query editor state and column selections back into a
+     * copy of the supplied document.
+     *
+     * @param doc the document to update
+     * @return a new document copy with the query state applied
+     */
     public FloorMapDoc write(final FloorMapDoc doc) {
         this.currentEntityColumn = getView().getEntityIdColumn();
         this.currentLocationColumn = getView().getLocationIdColumn();

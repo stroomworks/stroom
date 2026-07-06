@@ -16,14 +16,8 @@
 
 package stroom.floormap.client.gin;
 
-import stroom.floormap.client.FloorMapPlugin;
-import stroom.floormap.client.presenter.FloorMapPresenter;
-
-import com.google.gwt.inject.client.AsyncProvider;
-
+/**
+ * GIN injector interface for the floor map feature.
+ */
 public interface FloorMapGinjector {
-
-    AsyncProvider<FloorMapPlugin> getFloorMapRulePlugin();
-
-    AsyncProvider<FloorMapPresenter> getFloorMapRulePresenter();
 }

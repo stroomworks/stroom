@@ -38,8 +38,11 @@ import java.util.List;
 import java.util.function.Consumer;
 
 /**
- * View for the timeline settings popup.
- * Contains date range pickers and playback speed selector.
+ * View implementation for the timeline settings popup dialog.
+ *
+ * <p>Contains start/end date-time pickers to constrain the visible time range,
+ * a playback speed selector, a loop-playback checkbox, and a "Show All" button
+ * that resets the range to cover all available data.</p>
  */
 public class FloorMapTimelineSettingsViewImpl extends ViewImpl implements FloorMapTimelineSettingsView {
 
@@ -75,6 +78,11 @@ public class FloorMapTimelineSettingsViewImpl extends ViewImpl implements FloorM
         return widget;
     }
 
+    /**
+     * Replaces the available playback speed options in the dropdown.
+     *
+     * @param speeds the list of speed multipliers (e.g. 0.5, 1, 2, 10)
+     */
     @Override
     public void setSpeedOptions(final List<Double> speeds) {
         speedModel.clear();
@@ -124,12 +132,17 @@ public class FloorMapTimelineSettingsViewImpl extends ViewImpl implements FloorM
 
     @Override
     public long getStartTime() {
-        return startDateTimeBox.getValue() != null ? startDateTimeBox.getValue() : 0;
+        return getTimeOrZero(startDateTimeBox);
     }
 
     @Override
     public long getEndTime() {
-        return endDateTimeBox.getValue() != null ? endDateTimeBox.getValue() : 0;
+        return getTimeOrZero(endDateTimeBox);
+    }
+
+    private static long getTimeOrZero(final DateTimeBox box) {
+        final Long value = box.getValue();
+        return value != null ? value : 0L;
     }
 
     @Override

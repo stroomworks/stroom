@@ -64,50 +64,96 @@ public class FloorMapTimelineSettingsPresenter
                 .fire();
     }
 
+    /** Hides the settings popup. */
     public void hide() {
         HidePopupRequestEvent.builder(this).fire();
     }
 
+    /**
+     * Sets the available playback speed options in the dropdown.
+     *
+     * @param speeds the list of speed multipliers to offer
+     */
     public void setSpeedOptions(final List<Double> speeds) {
         getView().setSpeedOptions(speeds);
     }
 
+    /**
+     * Selects a speed in the dropdown.
+     *
+     * @param speed the speed multiplier to select
+     */
     public void setSelectedSpeed(final Double speed) {
         getView().setSelectedSpeed(speed);
     }
 
+    /**
+     * Registers the callback fired when the user selects a new playback speed.
+     *
+     * @param handler called with the newly selected speed multiplier
+     */
     public void setSpeedChangeHandler(final Consumer<Double> handler) {
         getView().setSpeedChangeHandler(handler);
     }
 
+    /** Returns {@code true} if loop playback is enabled. */
     public boolean isLoopPlayback() {
         return getView().isLoopPlayback();
     }
 
+    /**
+     * Enables or disables loop playback mode.
+     *
+     * @param loop {@code true} to loop, {@code false} to stop at end
+     */
     public void setLoopPlayback(final boolean loop) {
         getView().setLoopPlayback(loop);
     }
 
+    /**
+     * Sets the start time displayed in the date picker.
+     *
+     * @param startTime start time in milliseconds
+     */
     public void setStartTime(final long startTime) {
         getView().setStartTime(startTime);
     }
 
+    /**
+     * Sets the end time displayed in the date picker.
+     *
+     * @param endTime end time in milliseconds
+     */
     public void setEndTime(final long endTime) {
         getView().setEndTime(endTime);
     }
 
+    /** Returns the start time from the date picker, in milliseconds. */
     public long getStartTime() {
         return getView().getStartTime();
     }
 
+    /** Returns the end time from the date picker, in milliseconds. */
     public long getEndTime() {
         return getView().getEndTime();
     }
 
+    /**
+     * Registers a handler that fires when the start time date picker value changes.
+     *
+     * @param handler the value-change handler
+     * @return the handler registration for later removal
+     */
     public HandlerRegistration addStartTimeChangeHandler(final ValueChangeHandler<String> handler) {
         return getView().addStartTimeChangeHandler(handler);
     }
 
+    /**
+     * Registers a handler that fires when the end time date picker value changes.
+     *
+     * @param handler the value-change handler
+     * @return the handler registration for later removal
+     */
     public HandlerRegistration addEndTimeChangeHandler(final ValueChangeHandler<String> handler) {
         return getView().addEndTimeChangeHandler(handler);
     }
