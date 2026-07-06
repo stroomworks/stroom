@@ -38,7 +38,8 @@ import stroom.query.client.presenter.QueryModel;
 import stroom.query.client.presenter.ResultComponent;
 import stroom.query.client.presenter.ResultStoreModel;
 import stroom.query.shared.QueryTablePreferences;
-import stroom.widget.datepicker.client.UTCDate;
+import stroom.widget.histogram.client.HistogramDataModel;
+import stroom.widget.histogram.client.HistogramQueryHelper;
 
 import com.google.inject.Inject;
 import com.google.inject.Provider;
@@ -48,19 +49,23 @@ import com.gwtplatform.mvp.client.View;
 import java.util.ArrayList;
 import java.util.List;
 
-import static stroom.floormap.client.FloorMapJsonKeys.*;
+import static stroom.floormap.client.FloorMapJsonKeys.COORDS;
+import static stroom.floormap.client.FloorMapJsonKeys.IMG;
+import static stroom.floormap.client.FloorMapJsonKeys.TM_MAP_TO_SCREEN;
+import static stroom.floormap.client.FloorMapJsonKeys.TM_WORLD_TO_MAP;
+import static stroom.floormap.client.FloorMapJsonKeys.TYPE;
 
 /**
  * Presenter for the Floor Map <b>Map</b> tab.
  *
- * <p>Runs two independent query models at the current timeline time:</p>
+ * <p>Runs independent query models at the current timeline time:</p>
  * <ul>
  *   <li><b>Facts query</b> ({@link #queryModel}) — fetches static floor-plan
  *       objects (desks, rooms, people positions) and passes the parsed result
  *       to {@link FloorMapCanvasPresenter#setObjects}.</li>
- *   <li><b>Histogram query</b> ({@link #histogramQueryModel}) — runs the
- *       events query over the full timeline range, buckets timestamps into
- *       {@link #HISTOGRAM_BINS} bins, and feeds the counts to
+ *   <li><b>Histogram query</b> ({@link #histogramQueryHelper}) — runs the
+ *       events query over the full timeline range, buckets timestamps via
+ *       {@link HistogramDataModel}, and feeds the counts to
  *       {@link FloorMapTimelinePresenter#setHistogramData}.</li>
  * </ul>
  *
@@ -72,22 +77,15 @@ public class FloorMapMapPresenter
 
     public static final Object MAP = new Object();
     public static final Object TIMELINE = new Object();
+    private static final int HISTOGRAM_BINS = 100;
 
     private final FloorMapCanvasPresenter floorMapCanvasPresenter;
     private final FloorMapTimelinePresenter floorMapTimelinePresenter;
 
     private final QueryModel queryModel;
-    private final QueryModel histogramQueryModel;
-    private final QueryModel factsHistogramQueryModel;
-
-    private long histogramStart;
-    private long histogramEnd;
-    private static final int HISTOGRAM_BINS = 100;
-
-    /** Per-bin counts from the events histogram query. */
-    private int[] eventBins = new int[HISTOGRAM_BINS];
-    /** Per-bin counts from the facts histogram query. */
-    private int[] factBins = new int[HISTOGRAM_BINS];
+    private final HistogramQueryHelper histogramQueryHelper;
+    private final HistogramQueryHelper factsHistogramQueryHelper;
+    private final HistogramDataModel histogramDataModel;
 
     private long selectedTime;
     private static final long ONE_DAY_MS = 24L * 60 * 60 * 1000;
@@ -153,95 +151,20 @@ public class FloorMapMapPresenter
                         : QueryTablePreferences.builder().build());
         this.queryModel.addResultComponent(QueryModel.TABLE_COMPONENT_ID, resultConsumer);
 
-        // Separate QueryModel for the histogram — runs the events query over the full
-        // timeline range to count events per time bucket.
-        final ResultComponent histogramResultConsumer = new ResultComponent() {
-            @Override
-            public OffsetRange getRequestedRange() {
-                // Request a large page so we get a meaningful sample for bucketing.
-                return new OffsetRange(0, 10000);
-            }
+        // Histogram data model — buckets timestamps and notifies the timeline.
+        this.histogramDataModel = new HistogramDataModel(HISTOGRAM_BINS);
+        this.histogramDataModel.setDataHandler(
+                floorMapTimelinePresenter::setHistogramData);
+        this.histogramDataModel.setDataRangeHandler(
+                range -> floorMapTimelinePresenter.setDataRange(range[0], range[1]));
 
-            @Override
-            public GroupSelection getGroupSelection() {
-                return null;
-            }
-
-            @Override
-            public void reset() {}
-
-            @Override
-            public void startSearch() {}
-
-            @Override
-            public void endSearch() {}
-
-            @Override
-            public void setData(final Result componentResult) {
-                if (componentResult instanceof final TableResult tableResult) {
-                    eventBins = bucketTimestamps(tableResult);
-                    mergeAndSetHistogram();
-                }
-            }
-
-            @Override
-            public void setQueryModel(final QueryModel queryModel) {}
-        };
-
-        this.histogramQueryModel = new QueryModel(
-                eventBus,
-                restFactory,
-                dateTimeSettingsFactory,
-                resultStoreModel,
-                // Use empty preferences — the histogram query selects its own
-                // columns (e.g. EventTime) that differ from the events query tab.
-                () -> QueryTablePreferences.builder().build());
-        this.histogramQueryModel.addResultComponent(QueryModel.TABLE_COMPONENT_ID, histogramResultConsumer);
-
-        // Third QueryModel: runs the facts query over the full timeline range to count
-        // fact timestamps for the histogram (object positions, etc.).
-        final ResultComponent factsHistogramResultConsumer = new ResultComponent() {
-            @Override
-            public OffsetRange getRequestedRange() {
-                return new OffsetRange(0, 10000);
-            }
-
-            @Override
-            public GroupSelection getGroupSelection() {
-                return null;
-            }
-
-            @Override
-            public void reset() {}
-
-            @Override
-            public void startSearch() {}
-
-            @Override
-            public void endSearch() {}
-
-            @Override
-            public void setData(final Result componentResult) {
-                if (componentResult instanceof final TableResult tableResult) {
-                    factBins = bucketTimestamps(tableResult);
-                    mergeAndSetHistogram();
-                }
-            }
-
-            @Override
-            public void setQueryModel(final QueryModel queryModel) {}
-        };
-
-        this.factsHistogramQueryModel = new QueryModel(
-                eventBus,
-                restFactory,
-                dateTimeSettingsFactory,
-                resultStoreModel,
-                // Use empty preferences — the histogram query selects its own
-                // columns that differ from the facts query tab.
-                () -> QueryTablePreferences.builder().build());
-        this.factsHistogramQueryModel.addResultComponent(
-                QueryModel.TABLE_COMPONENT_ID, factsHistogramResultConsumer);
+        // Histogram query helpers — one for events, one for facts.
+        this.histogramQueryHelper = new HistogramQueryHelper(
+                eventBus, restFactory, dateTimeSettingsFactory, resultStoreModel,
+                histogramDataModel::process);
+        this.factsHistogramQueryHelper = new HistogramQueryHelper(
+                eventBus, restFactory, dateTimeSettingsFactory, resultStoreModel,
+                histogramDataModel::process);
     }
 
     @Override
@@ -277,10 +200,10 @@ public class FloorMapMapPresenter
         // started inside updateTimelineRange() is not immediately cancelled by the reset() call below.
         queryModel.init(docRef);
         queryModel.reset(DestroyReason.NO_LONGER_NEEDED);
-        histogramQueryModel.init(docRef);
-        histogramQueryModel.reset(DestroyReason.NO_LONGER_NEEDED);
-        factsHistogramQueryModel.init(docRef);
-        factsHistogramQueryModel.reset(DestroyReason.NO_LONGER_NEEDED);
+        histogramQueryHelper.init(docRef);
+        histogramQueryHelper.reset();
+        factsHistogramQueryHelper.init(docRef);
+        factsHistogramQueryHelper.reset();
 
         // Start timeline (and histogram query) only after models are ready.
         updateTimelineRange();
@@ -512,9 +435,6 @@ public class FloorMapMapPresenter
         final long start = selectedTime - ONE_DAY_MS;
         final long end = selectedTime + ONE_DAY_MS;
 
-        this.histogramStart = start;
-        this.histogramEnd = end;
-
         floorMapTimelinePresenter.setTimeRange(start, end);
         floorMapTimelinePresenter.setCurrentTime(selectedTime);
 
@@ -522,64 +442,28 @@ public class FloorMapMapPresenter
     }
 
     /**
-     * Runs a histogram query over the full [start, end] range and populates the
-     * timeline bins.
+     * Runs a histogram query over the full [start, end] range.
      * <p>
-     * Uses the events query if one is configured (via
-     * {@link #buildEventsHistogramQuery()}), otherwise falls back to the facts
-     * query.  Only <em>one</em> query is used to avoid double-counting when both
-     * events and facts are sourced from the same data store.
+     * Uses the events query if one is configured, otherwise falls back to the
+     * facts query.  Only <em>one</em> query is used to avoid double-counting
+     * when both events and facts are sourced from the same data store.
+     * <p>
+     * The {@link HistogramQueryHelper} passes {@code null} for the TimeRange
+     * to bypass temporal-lookup deduplication — see its Javadoc for details.
      */
     private void runHistogramQuery(final long start, final long end) {
-        // Keep these in sync with the query range so that bucketTimestamps buckets
-        // entries against the same window that was actually queried.
-        this.histogramStart = start;
-        this.histogramEnd = end;
+        histogramDataModel.setRange(start, end);
 
-        // Reset both bin arrays so stale data from a previous range is not retained.
-        this.eventBins = new int[HISTOGRAM_BINS];
-        this.factBins = new int[HISTOGRAM_BINS];
-
-        // IMPORTANT: We deliberately pass a null TimeRange to avoid the temporal
-        // store's temporal-lookup semantics.  When a TimeRange is present, the
-        // temporal store returns only ONE row per key (the latest entry at or
-        // before the range's end time) — correct for point-in-time map display
-        // but completely wrong for a histogram that needs ALL entries.
-        // Passing null makes the DAO take the "standard path", returning every
-        // historical entry.  Client-side filtering in bucketTimestamps() then
-        // restricts entries to the visible [histogramStart, histogramEnd] window.
-
-        // Prefer the events query for the histogram — it typically selects from
-        // the same store as the facts query and already includes a timestamp column.
-        // If no events query is configured, fall back to the facts query.
+        // Prefer the events query — it typically selects from the same store
+        // as the facts query and already includes a timestamp column.
         final String eventsHistQuery = buildEventsHistogramQuery();
         if (eventsHistQuery != null && !eventsHistQuery.trim().isEmpty()) {
-            histogramQueryModel.startNewSearch(
-                    QueryModel.TABLE_COMPONENT_ID,
-                    "histogramTable",
-                    eventsHistQuery,
-                    null,
-                    null,  // No TimeRange — see comment above
-                    false,
-                    false,
-                    "Events Histogram Query",
-                    null
-            );
+            histogramQueryHelper.run(eventsHistQuery);
         } else {
             // No events query configured — fall back to the facts query.
             final String factsHistQuery = getFactsQueryToUse();
             if (factsHistQuery != null && !factsHistQuery.trim().isEmpty()) {
-                factsHistogramQueryModel.startNewSearch(
-                        QueryModel.TABLE_COMPONENT_ID,
-                        "factsHistogramTable",
-                        factsHistQuery,
-                        null,
-                        null,  // No TimeRange — see comment above
-                        false,
-                        false,
-                        "Facts Histogram Query",
-                        null
-                );
+                factsHistogramQueryHelper.run(factsHistQuery);
             }
         }
     }
@@ -590,8 +474,7 @@ public class FloorMapMapPresenter
      * If the user has configured an events query, it is returned as-is.
      * The query's own {@code SELECT} clause is expected to include a recognised
      * timestamp column (e.g. {@code EffectiveTime} or {@code EventTime}) that
-     * {@link #findTimeColumnIndex} can detect — typically aliased as
-     * {@code "Effective Time"} for temporal-store queries.
+     * {@link HistogramDataModel#findTimeColumnIndex} can detect.
      * <p>
      * If no events query is configured, falls back to a minimal query against
      * the configured temporal store selecting {@code EffectiveTime}.
@@ -601,8 +484,6 @@ public class FloorMapMapPresenter
     private String buildEventsHistogramQuery() {
         final String eventsQuery = getEntity() != null ? getEntity().getEventsQuery() : null;
         if (eventsQuery != null && !eventsQuery.trim().isEmpty()) {
-            // Use the events query directly — it should already contain a
-            // timestamp column that findTimeColumnIndex can recognise.
             return eventsQuery;
         }
 
@@ -615,107 +496,6 @@ public class FloorMapMapPresenter
                    + "  EffectiveTime";
         }
         return null;
-    }
-
-    /**
-     * Looks for a well-known timestamp column in the supplied table result.
-     * Recognises {@code EffectiveTime} / {@code Effective Time} (used by the
-     * SQL Temporal Store facts query) and {@code EventTime} / {@code Event Time}
-     * (used by standard Stroom event-source queries).
-     *
-     * @return the 0-based column index, or {@code -1} if no known time column is found
-     */
-    private static int findTimeColumnIndex(final List<Column> columns) {
-        for (int i = 0; i < columns.size(); i++) {
-            final String name = columns.get(i).getName();
-            if ("EffectiveTime".equalsIgnoreCase(name)
-                    || "Effective Time".equalsIgnoreCase(name)
-                    || "EventTime".equalsIgnoreCase(name)
-                    || "Event Time".equalsIgnoreCase(name)) {
-                return i;
-            }
-        }
-        return -1;
-    }
-
-    /**
-     * Parses a {@link TableResult}, finds the first recognised timestamp column
-     * ({@code EffectiveTime}, {@code EventTime}, etc.), buckets the timestamps
-     * into {@link #HISTOGRAM_BINS} bins across
-     * [{@link #histogramStart}, {@link #histogramEnd}], and returns the per-bin
-     * counts. Also updates the timeline data range for "Show All".
-     */
-    private int[] bucketTimestamps(final TableResult tableResult) {
-        final int[] bins = new int[HISTOGRAM_BINS];
-
-        if (tableResult == null || tableResult.getRows() == null || tableResult.getColumns() == null) {
-            return bins;
-        }
-
-        final int timeColIdx = findTimeColumnIndex(tableResult.getColumns());
-
-        if (timeColIdx == -1 || histogramEnd <= histogramStart) {
-            return bins;
-        }
-
-        final long range = histogramEnd - histogramStart;
-        long minTime = Long.MAX_VALUE;
-        long maxTime = Long.MIN_VALUE;
-        for (final Row row : tableResult.getRows()) {
-            final List<String> values = row.getValues();
-            if (values == null || values.size() <= timeColIdx) {
-                continue;
-            }
-            final String timeStr = values.get(timeColIdx);
-            if (timeStr == null || timeStr.trim().isEmpty()) {
-                continue;
-            }
-            try {
-                // Parse ISO-8601 timestamp via UTCDate (e.g. "2026-04-01T09:06:46.000Z").
-                final UTCDate date = UTCDate.create(timeStr);
-                if (date == null) {
-                    continue;
-                }
-                final long t = (long) date.getTime();
-                // Track the overall data extent for "Show All".
-                if (t < minTime) {
-                    minTime = t;
-                }
-                if (t > maxTime) {
-                    maxTime = t;
-                }
-                // Skip entries that fall outside the visible range — do not clamp them
-                // to the edge bins, as that would make out-of-range data appear at the
-                // start or end of the histogram.
-                if (t < histogramStart || t > histogramEnd) {
-                    continue;
-                }
-                final int bin = (int) Math.min(HISTOGRAM_BINS - 1,
-                        (t - histogramStart) * HISTOGRAM_BINS / range);
-                bins[bin]++;
-            } catch (final Exception e) {
-                // Skip unparseable timestamps.
-            }
-        }
-
-        // Inform the timeline of the actual data extent so Show All can be computed.
-        if (minTime <= maxTime) {
-            floorMapTimelinePresenter.setDataRange(minTime, maxTime);
-        }
-
-        return bins;
-    }
-
-    /**
-     * Merges the per-bin counts from the events histogram and the facts histogram,
-     * then pushes the combined result to the timeline presenter.
-     */
-    private void mergeAndSetHistogram() {
-        final int[] merged = new int[HISTOGRAM_BINS];
-        for (int i = 0; i < HISTOGRAM_BINS; i++) {
-            merged[i] = eventBins[i] + factBins[i];
-        }
-        floorMapTimelinePresenter.setHistogramData(merged);
     }
 
     public interface FloorMapMapView extends View {
