@@ -210,6 +210,15 @@ public class FloorMapDoc extends AbstractDoc {
     @JsonProperty
     private final QueryTablePreferences eventsQueryTablePreferences;
 
+    @JsonProperty
+    private final String factsQuery;
+
+    @JsonProperty
+    private final TimeRange factsQueryTimeRange;
+
+    @JsonProperty
+    private final QueryTablePreferences factsQueryTablePreferences;
+
     /**
      * The serialisation format of the temporal entry's {@code Value} column.
      * May be {@code null} in the stored JSON; {@link #getValueFormat()}
@@ -309,6 +318,10 @@ public class FloorMapDoc extends AbstractDoc {
                        @JsonProperty("eventsQueryTimeRange") final TimeRange eventsQueryTimeRange,
                        @JsonProperty("eventsQueryTablePreferences")
                            final QueryTablePreferences eventsQueryTablePreferences,
+                       @JsonProperty("factsQuery") final String factsQuery,
+                       @JsonProperty("factsQueryTimeRange") final TimeRange factsQueryTimeRange,
+                       @JsonProperty("factsQueryTablePreferences")
+                           final QueryTablePreferences factsQueryTablePreferences,
                        @JsonProperty("valueFormat") final ValueFormat valueFormat,
                        @JsonProperty("valueSchema") final List<FloorMapFieldMapping> valueSchema) {
         super(TYPE, uuid,
@@ -331,6 +344,10 @@ public class FloorMapDoc extends AbstractDoc {
         this.eventsQuery = eventsQuery;
         this.eventsQueryTimeRange = eventsQueryTimeRange;
         this.eventsQueryTablePreferences = eventsQueryTablePreferences;
+
+        this.factsQuery = factsQuery;
+        this.factsQueryTimeRange = factsQueryTimeRange;
+        this.factsQueryTablePreferences = factsQueryTablePreferences;
 
         this.valueFormat = valueFormat;
         this.valueSchema = valueSchema;
@@ -430,6 +447,18 @@ public class FloorMapDoc extends AbstractDoc {
      */
     public QueryTablePreferences getEventsQueryTablePreferences() {
         return eventsQueryTablePreferences;
+    }
+
+    public String getFactsQuery() {
+        return factsQuery;
+    }
+
+    public TimeRange getFactsQueryTimeRange() {
+        return factsQueryTimeRange;
+    }
+
+    public QueryTablePreferences getFactsQueryTablePreferences() {
+        return factsQueryTablePreferences;
     }
 
     /**
@@ -539,6 +568,9 @@ public class FloorMapDoc extends AbstractDoc {
                Objects.equals(eventsQuery, that.eventsQuery) &&
                Objects.equals(eventsQueryTimeRange, that.eventsQueryTimeRange) &&
                Objects.equals(eventsQueryTablePreferences, that.eventsQueryTablePreferences) &&
+               Objects.equals(factsQuery, that.factsQuery) &&
+               Objects.equals(factsQueryTimeRange, that.factsQueryTimeRange) &&
+               Objects.equals(factsQueryTablePreferences, that.factsQueryTablePreferences) &&
                Objects.equals(valueFormat, that.valueFormat) &&
                Objects.equals(valueSchema, that.valueSchema);
     }
@@ -558,6 +590,9 @@ public class FloorMapDoc extends AbstractDoc {
                 eventsQuery,
                 eventsQueryTimeRange,
                 eventsQueryTablePreferences,
+                factsQuery,
+                factsQueryTimeRange,
+                factsQueryTablePreferences,
                 valueFormat,
                 valueSchema);
     }
@@ -606,6 +641,9 @@ public class FloorMapDoc extends AbstractDoc {
         private String eventsQuery;
         private TimeRange eventsQueryTimeRange;
         private QueryTablePreferences eventsQueryTablePreferences;
+        private String factsQuery;
+        private TimeRange factsQueryTimeRange;
+        private QueryTablePreferences factsQueryTablePreferences;
         private ValueFormat valueFormat;
         private List<FloorMapFieldMapping> valueSchema;
 
@@ -633,6 +671,9 @@ public class FloorMapDoc extends AbstractDoc {
             this.eventsQuery = doc.eventsQuery;
             this.eventsQueryTimeRange = doc.eventsQueryTimeRange;
             this.eventsQueryTablePreferences = doc.eventsQueryTablePreferences;
+            this.factsQuery = doc.factsQuery;
+            this.factsQueryTimeRange = doc.factsQueryTimeRange;
+            this.factsQueryTablePreferences = doc.factsQueryTablePreferences;
             this.valueFormat = doc.valueFormat;
             this.valueSchema = doc.valueSchema;
         }
@@ -754,6 +795,21 @@ public class FloorMapDoc extends AbstractDoc {
             return self();
         }
 
+        public Builder factsQuery(final String factsQuery) {
+            this.factsQuery = factsQuery;
+            return this;
+        }
+
+        public Builder factsQueryTimeRange(final TimeRange factsQueryTimeRange) {
+            this.factsQueryTimeRange = factsQueryTimeRange;
+            return this;
+        }
+
+        public Builder factsQueryTablePreferences(final QueryTablePreferences factsQueryTablePreferences) {
+            this.factsQueryTablePreferences = factsQueryTablePreferences;
+            return this;
+        }
+
         /**
          * Sets the serialisation format for the temporal entry's Value column.
          *
@@ -817,6 +873,9 @@ public class FloorMapDoc extends AbstractDoc {
                     eventsQuery,
                     eventsQueryTimeRange,
                     eventsQueryTablePreferences,
+                    factsQuery,
+                    factsQueryTimeRange,
+                    factsQueryTablePreferences,
                     valueFormat,
                     valueSchema);
         }

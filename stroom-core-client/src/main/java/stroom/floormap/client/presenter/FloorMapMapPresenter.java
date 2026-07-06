@@ -40,6 +40,7 @@ import stroom.query.api.ExpressionTerm;
 import stroom.query.api.ExpressionTerm.Condition;
 import stroom.query.api.GroupSelection;
 import stroom.query.api.OffsetRange;
+import stroom.query.api.Param;
 import stroom.query.api.Result;
 import stroom.query.api.Row;
 import stroom.query.api.TableResult;
@@ -66,6 +67,7 @@ import com.gwtplatform.mvp.client.View;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Consumer;
 
 /**
@@ -525,22 +527,44 @@ public class FloorMapMapPresenter
     private void onTimeChange(final long time) {
         this.selectedTime = time;
 
+        // In edit mode, fetch facts directly via the REST API so that
+        // pending (uncommitted) changes are immediately visible.
+        if (editMode) {
+            fetchFactsViaRest();
+            return;
+        }
+
         final String factsQuery = getFactsQueryToUse();
         if (factsQuery != null && !factsQuery.trim().isEmpty()) {
+            // Resolve param('FactStore') / param('EventStore') references
+            // in the query text so the from-clause resolves correctly.
+            final Map<String, String> vars =
+                    FloorMapQueryPresenter.buildQueryVariables(getEntity());
+            String resolvedQuery = factsQuery;
+            List<Param> params = null;
+            if (!vars.isEmpty()) {
+                params = new ArrayList<>();
+                for (final Map.Entry<String, String> entry : vars.entrySet()) {
+                    params.add(new Param(entry.getKey(), entry.getValue()));
+                    resolvedQuery = resolvedQuery.replace(
+                            "param('" + entry.getKey() + "')",
+                            "\"" + entry.getValue() + "\"");
+                }
+            }
+
             final TimeRange timeRange =
                     new TimeRange("CUSTOM", String.valueOf(selectedTime), String.valueOf(selectedTime));
             queryModel.startNewSearch(
                     QueryModel.TABLE_COMPONENT_ID,
                     "factsTable",
-                    factsQuery,
-                    null,
+                    resolvedQuery,
+                    params,
                     timeRange,
                     false,
                     false,
                     "Facts Query Playback",
                     null
             );
-
         }
     }
 
