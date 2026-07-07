@@ -50,6 +50,7 @@ import stroom.query.client.presenter.QueryModel;
 import stroom.query.client.presenter.ResultComponent;
 import stroom.query.client.presenter.ResultStoreModel;
 import stroom.query.shared.QueryTablePreferences;
+import stroom.sqlstore.shared.SqlTemporalStoreResource;
 import stroom.util.client.JSONUtil;
 import stroom.util.shared.TemporalEntry;
 import stroom.widget.histogram.client.HistogramDataModel;
@@ -87,7 +88,6 @@ import java.util.function.Consumer;
  * <ul>
  *     <li>{@link #MAP} – the {@link FloorMapCanvasPresenter} (canvas / visualisation)</li>
  *     <li>{@link #TIMELINE} – the {@link FloorMapTimelinePresenter} (timeline scrubber)</li>
- *     <li>{@link #PROPERTIES} – the {@link FloorMapObjectEditPresenter} (object property editor)</li>
  * </ul>
  *
  * <p>Two separate {@link QueryModel} instances are maintained: one for the facts query
@@ -857,6 +857,17 @@ public class FloorMapMapPresenter
                    + "  EffectiveTime";
         }
         return null;
+    }
+
+    /**
+     * Pauses the timeline if it is currently playing.
+     *
+     * <p>Called by {@link FloorMapPresenter} when the user navigates away from
+     * the Map tab, so that background queries are not issued while the tab
+     * is hidden.</p>
+     */
+    public void pauseTimeline() {
+        floorMapTimelinePresenter.pause();
     }
 
     /**

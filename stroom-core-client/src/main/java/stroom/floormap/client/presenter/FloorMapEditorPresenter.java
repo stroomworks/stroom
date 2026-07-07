@@ -297,6 +297,17 @@ public class FloorMapEditorPresenter
     }
 
     /**
+     * Pauses the timeline if it is currently playing.
+     *
+     * <p>Called by {@link FloorMapPresenter} when the user navigates away from
+     * the Editor tab, so that background queries are not issued while the tab
+     * is hidden.</p>
+     */
+    public void pauseTimeline() {
+        floorMapTimelinePresenter.pause();
+    }
+
+    /**
      * Flushes pending changes to the server as part of the Stroom save chain.
      *
      * <p>Called by {@link FloorMapPresenter} via {@code getPostSaveCallback()}

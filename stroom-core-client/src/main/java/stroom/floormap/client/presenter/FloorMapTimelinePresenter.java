@@ -236,6 +236,23 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
     }
 
     /**
+     * Pauses playback if the timeline is currently playing.
+     *
+     * <p>This is a no-op when the timeline is already paused. The button preset is
+     * updated to reflect the paused state and the play-state-change handler is notified,
+     * matching the same logic used by the play/pause toggle button.</p>
+     */
+    public void pause() {
+        if (playing) {
+            playing = false;
+            getView().setPlayPausePreset(PLAY_PRESET);
+            if (playStateChangeHandler != null) {
+                playStateChangeHandler.accept(false);
+            }
+        }
+    }
+
+    /**
      * Registers a callback to be invoked whenever the current time jumps non-continuously
      * (scrub commit, step, stop-at-end, loop-around).  Used by the canvas presenter to
      * discard any in-flight movement animations and trail data.

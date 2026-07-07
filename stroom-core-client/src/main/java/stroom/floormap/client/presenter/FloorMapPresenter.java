@@ -65,6 +65,13 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
     private FloorMapQueryPresenter eventsQueryPresenter;
     private FloorMapQueryPresenter factsQueryPresenter;
 
+    /**
+     * Tracks the presenter that was active before the most recent tab switch.
+     * Used to pause the timeline when the user navigates away from the Map or
+     * Editor tab.
+     */
+    private PresenterWidget<?> previousContent;
+
     @Inject
     public FloorMapPresenter(final EventBus eventBus,
                              final LinkTabPanelView view,
@@ -184,11 +191,22 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
     }
 
     /**
-     * Performs post-tab-selection logic such as auto-populating the default
-     * Facts Query template and triggering asset change detection.
+     * Performs post-tab-selection logic: pauses the Map / Editor timeline when
+     * the user navigates away from those tabs, auto-populates the default Facts
+     * Query template, and triggers asset change detection.
      */
     @Override
     protected void afterSelectTab(final PresenterWidget<?> content) {
+        // Pause whichever timeline-bearing tab the user just left.
+        if (previousContent != content) {
+            if (previousContent == floorMapMapPresenter && floorMapMapPresenter != null) {
+                floorMapMapPresenter.pauseTimeline();
+            } else if (previousContent == floorMapEditorPresenter && floorMapEditorPresenter != null) {
+                floorMapEditorPresenter.pauseTimeline();
+            }
+            previousContent = content;
+        }
+
         if (content == documentAssetPresenter) {
             onChange();
         }
