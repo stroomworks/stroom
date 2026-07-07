@@ -17,6 +17,7 @@
 package stroom.floormap.client.presenter;
 
 import stroom.floormap.client.FloorMapJsonKeys;
+import stroom.floormap.client.event.MapContextMenuEvent;
 import stroom.floormap.client.event.MapObjectMovedEvent;
 import stroom.floormap.client.event.MapObjectSelectedEvent;
 import stroom.floormap.client.presenter.FloorMapCanvasPresenter.FloorMapCanvasView;
@@ -26,10 +27,11 @@ import stroom.floormap.shared.FloorMapTransformationMatrix;
 import com.google.gwt.animation.client.AnimationScheduler;
 import com.google.gwt.dom.client.Element;
 import com.google.gwt.dom.client.EventTarget;
-import com.google.gwt.event.dom.client.HasMouseDownHandlers;
+import com.google.gwt.event.dom.client.ContextMenuEvent;
 import com.google.gwt.event.dom.client.HasMouseMoveHandlers;
 import com.google.gwt.event.dom.client.HasMouseUpHandlers;
 import com.google.gwt.event.dom.client.HasMouseWheelHandlers;
+import com.google.gwt.user.client.ui.FocusPanel;
 import com.google.gwt.user.client.ui.RequiresResize;
 import com.google.web.bindery.event.shared.EventBus;
 import com.gwtplatform.mvp.client.MyPresenterWidget;
@@ -236,8 +238,18 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
     private void handleMouseEvents() {
 
-        // Check if we clicked on an object in edit mode
+        // Check if we clicked on an object in edit mode.
+        // Only react to the primary (left) mouse button — right-click is
+        // handled by the contextmenu event handler below.
         registerHandler(getView().getFocusPanel().addMouseDownHandler(event -> {
+            // Ignore right-click (button 2 in the W3C DOM spec).
+            // Without this guard the mousedown sets isDragging = true, but
+            // the subsequent mouseup lands on the context menu popup (outside
+            // the canvas), leaving isDragging permanently stuck.
+            if (event.getNativeEvent().getButton() == 2) {
+                return;
+            }
+
             // Check if we clicked an object while in edit mode
             if (editMode) {
                 final EventTarget target = event.getNativeEvent().getEventTarget();
@@ -246,8 +258,10 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                     final Element element = Element.as(target);
                     final String id = element.getId();
 
-                    // Check if we clicked on an actual map object shape (which does not start with "obj-")
-                    if (id != null && !id.isEmpty() && !id.startsWith("obj-")) {
+                    // Check if we clicked on an actual map object shape
+                    // (whose ID does NOT start with the SVG group prefix)
+                    if (id != null && !id.isEmpty()
+                            && !id.startsWith(FloorMapJsonKeys.SVG_GROUP_PREFIX)) {
                         // If Ctrl or Shift is pressed and it is the background, allow panning
                         if (!(FloorMapJsonKeys.BACKGROUND.equals(id)
                                 && (event.getNativeEvent().getCtrlKey()
@@ -278,6 +292,18 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         }));
 
         registerHandler(getView().getMouseMoveHandlers().addMouseMoveHandler(event -> {
+            // Guard: if no mouse button is actually pressed, cancel any
+            // stale drag state. This catches the case where mousedown fired
+            // on the canvas but mouseup landed outside (on a toolbar button
+            // or dialog), so the canvas never received the mouseup event.
+            // The DOM 'buttons' property returns a bitmask of currently held
+            // buttons (W3C spec); 0 means nothing is pressed.
+            if (isDragging && nativeButtons(event.getNativeEvent()) == 0) {
+                isDragging = false;
+                hasMoved = false;
+                return;
+            }
+
             if (isDragging) {
                 final double deltaX = event.getX() - lastMouseX;
                 final double deltaY = event.getY() - lastMouseY;
@@ -383,7 +409,95 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
             redraw();
         }));
+
+        // Right-click context menu — suppress the browser default and fire a MapContextMenuEvent.
+        // Only fires in edit mode; in read-only (Map tab) mode the browser default is allowed.
+        registerHandler(getView().getFocusPanel().addDomHandler(event -> {
+            if (!editMode) {
+                return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+
+            // Reset any drag state that may have leaked from a preceding
+            // mousedown (e.g. if the mouseup landed on a dialog or toolbar
+            // outside the canvas).
+            isDragging = false;
+            hasMoved = false;
+
+            final int clientX = event.getNativeEvent().getClientX();
+            final int clientY = event.getNativeEvent().getClientY();
+
+            // Convert viewport-relative client coordinates to element-relative
+            // coordinates, matching the coordinate space used by event.getX()/getY()
+            // and the zoom/pan model (offsetX, offsetY, scale).
+            final Element panelElement = getView().getFocusPanel().getElement();
+            final double elementX = clientX - panelElement.getAbsoluteLeft();
+            final double elementY = clientY - panelElement.getAbsoluteTop();
+
+            // Determine whether an object was right-clicked
+            String objectId = null;
+            final EventTarget target = event.getNativeEvent().getEventTarget();
+            if (Element.is(target)) {
+                final Element element = Element.as(target);
+                final String id = element.getId();
+                if (id != null && !id.isEmpty()
+                        && !id.startsWith(FloorMapJsonKeys.SVG_GROUP_PREFIX)) {
+                    objectId = id;
+                }
+            }
+
+            // Convert element-relative position to map-space coordinates
+            final double[] mapCoords = screenToMapCoords(elementX, elementY);
+
+            MapContextMenuEvent.fire(this, objectId, mapCoords[0], mapCoords[1], clientX, clientY);
+        }, ContextMenuEvent.getType()));
     }
+
+    /**
+     * Converts element-relative coordinates to map-space coordinates by
+     * reversing the zoom/pan transform and then applying the inverse of
+     * the background transformation matrix.
+     *
+     * <p>The input coordinates should be relative to the FocusPanel element
+     * (matching the coordinate space of {@code MouseEvent.getX()/getY()}
+     * and the zoom/pan model's {@code offsetX}/{@code offsetY}).
+     * Viewport-relative client coordinates must be converted first by
+     * subtracting the element's absolute position.</p>
+     *
+     * @param screenX the X coordinate relative to the FocusPanel element
+     * @param screenY the Y coordinate relative to the FocusPanel element
+     * @return a two-element array {@code {mapX, mapY}} in map space
+     */
+    private double[] screenToMapCoords(final double screenX, final double screenY) {
+        // Step 1: Remove the zoom/pan offset and scale
+        final double unzoomedX = (screenX - offsetX) / scale;
+        final double unzoomedY = (screenY - offsetY) / scale;
+
+        // Step 2: Apply the inverse of the background matrix
+        final FloorMapTransformationMatrix invMatrix = matrix != null
+                ? matrix.inverse()
+                : FloorMapTransformationMatrix.identity();
+        final double mapX = invMatrix.getA() * unzoomedX + invMatrix.getC() * unzoomedY + invMatrix.getE();
+        final double mapY = invMatrix.getB() * unzoomedX + invMatrix.getD() * unzoomedY + invMatrix.getF();
+
+        return new double[]{mapX, mapY};
+    }
+
+    /**
+     * Returns the W3C DOM {@code buttons} property from a native mouse event.
+     *
+     * <p>GWT's {@code NativeEvent} doesn't expose {@code getButtons()}, so we
+     * access it via JSNI. The {@code buttons} property is a bitmask of
+     * currently pressed buttons (1 = primary, 2 = secondary, 4 = auxiliary).
+     * Returns {@code 0} when no button is pressed.</p>
+     *
+     * @param event the native event to query
+     * @return the {@code buttons} bitmask, or 0 if unsupported
+     */
+    private static native int nativeButtons(com.google.gwt.dom.client.NativeEvent event) /*-{
+        return event.buttons || 0;
+    }-*/;
 
     // =========================================================================
     // Drawing
@@ -421,7 +535,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         // also present in factObjects or eventObjects (e.g. after play stops).
         final Set<String> drawnPersonIds = new HashSet<>();
         for (final FloorMapObject obj : combined) {
-            if ("person".equalsIgnoreCase(obj.getType())) {
+            if (FloorMapJsonKeys.PERSON.equalsIgnoreCase(obj.getType())) {
                 drawnPersonIds.add(obj.getId());
             }
         }
@@ -429,7 +543,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
             final String id = entry.getKey();
             if (!activeAnimations.containsKey(id) && !drawnPersonIds.contains(id)) {
                 final FloorMapObject obj = new FloorMapObject(
-                        id, "person", entry.getValue()[0], entry.getValue()[1]);
+                        id, FloorMapJsonKeys.PERSON, entry.getValue()[0], entry.getValue()[1]);
                 attachTrail(obj, id, nowMs);
                 combined.add(obj);
             }
@@ -631,11 +745,14 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     private void recordTrailPoint(final String id,
                                   final double x,
                                   final double y) {
+
+        //noinspection unused k
         final List<double[]> trail = personTrails.computeIfAbsent(id, k -> new ArrayList<>());
         trail.add(new double[]{x, y});
 
         // Hard cap to avoid unbounded growth.
         while (trail.size() > TRAIL_MAX_PTS) {
+            //noinspection SequencedCollectionMethodCanBeUsed GWT does not support
             trail.remove(0);
         }
     }
@@ -674,9 +791,31 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     }
 
     /**
+     * Returns the map-space coordinates of the centre of the currently
+     * visible canvas area.
+     *
+     * <p>This is useful for placing new objects at "the middle of what the
+     * user can see" when no specific click position is available (e.g. when
+     * using a toolbar Add button rather than a canvas right-click).</p>
+     *
+     * @return a two-element array {@code {mapX, mapY}} representing the
+     *         visible centre in map space
+     */
+    public double[] getVisibleCentreMapCoords() {
+        final Element panel = getView().getFocusPanel().getElement();
+        final double centreX = panel.getOffsetWidth() / 2.0;
+        final double centreY = panel.getOffsetHeight() / 2.0;
+        return screenToMapCoords(centreX, centreY);
+    }
+
+    /**
      * Updates the background image for the SVG map.
      *
-     * @param backgroundImage Base64 data URL or external URL.
+     * <p>Background images must be served from the Asset Store — base64
+     * data-URIs are not supported.</p>
+     *
+     * @param backgroundImage the Asset Store URL for the background image,
+     *                        or {@code null} to clear the background
      */
     public void setBackgroundImage(final String backgroundImage) {
         this.backgroundImage = backgroundImage;
@@ -693,7 +832,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
         if (objects != null) {
             for (final FloorMapObject obj : objects) {
-                if ("person".equalsIgnoreCase(obj.getType())) {
+                if (FloorMapJsonKeys.PERSON.equalsIgnoreCase(obj.getType())) {
                     if (handlePersonUpdate(obj)) {
                         // Person placed without animation (not playing, first appearance, etc.) —
                         // add to draw list so it's visible.
@@ -739,7 +878,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
             // Record positions for play-start animation anchor.
             if (objects != null) {
                 for (final FloorMapObject obj : objects) {
-                    if ("person".equalsIgnoreCase(obj.getType())) {
+                    if (FloorMapJsonKeys.PERSON.equalsIgnoreCase(obj.getType())) {
                         lastPersonPositions.put(obj.getId(),
                                 new double[]{obj.getX(), obj.getY()});
                     }
@@ -755,7 +894,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
         if (objects != null) {
             for (final FloorMapObject obj : objects) {
-                if ("person".equalsIgnoreCase(obj.getType())) {
+                if (FloorMapJsonKeys.PERSON.equalsIgnoreCase(obj.getType())) {
                     if (handlePersonUpdate(obj)) {
                         // Person placed without animation (first appearance, etc.) —
                         // add to draw list so it's visible.
@@ -878,20 +1017,89 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     // View interface
     // =========================================================================
 
+    /**
+     * View contract for the floor map canvas.
+     *
+     * <p>The canvas is an SVG-based rendering surface that displays a
+     * background image (the floor plan), overlaid with draggable map objects
+     * (gates, doors, cameras, people, etc.). It supports zoom, pan, object
+     * selection, and right-click context menus.</p>
+     *
+     * <p>The view is responsible for rendering; all interaction logic
+     * (drag handling, selection, coordinate transforms) lives in
+     * {@link FloorMapCanvasPresenter}.</p>
+     */
     public interface FloorMapCanvasView extends View, RequiresResize {
 
-        HasMouseDownHandlers getFocusPanel();
+        /**
+         * Returns the {@link FocusPanel} that wraps the SVG canvas.
+         *
+         * <p>The presenter registers mouse and context-menu handlers on this
+         * panel. {@code FocusPanel} is returned (rather than a narrower
+         * {@code Has*Handlers} type) so that the presenter can also attach
+         * DOM-level handlers via {@code addDomHandler} (e.g. for the native
+         * {@code contextmenu} event).</p>
+         *
+         * @return the focus panel containing the SVG canvas
+         */
+        FocusPanel getFocusPanel();
 
+        /**
+         * Returns the handler source for mouse-move events on the canvas.
+         *
+         * @return the mouse-move handler source
+         */
         HasMouseMoveHandlers getMouseMoveHandlers();
 
+        /**
+         * Returns the handler source for mouse-up events on the canvas.
+         *
+         * @return the mouse-up handler source
+         */
         HasMouseUpHandlers getMouseUpHandlers();
 
+        /**
+         * Returns the handler source for mouse-wheel events on the canvas.
+         *
+         * @return the mouse-wheel handler source
+         */
         HasMouseWheelHandlers getMouseWheelHandlers();
 
+        /**
+         * Renders the complete SVG canvas contents.
+         *
+         * <p>This is called on every state change (zoom, pan, object move,
+         * selection change, data load) and rebuilds the entire SVG DOM.
+         * The rendering layers are, from back to front:</p>
+         * <ol>
+         *   <li>Adaptive grid background (when no image is set)</li>
+         *   <li>Background floor-plan image (transformed by {@code matrix})</li>
+         *   <li>Map objects (gates, doors, people, etc.)</li>
+         * </ol>
+         *
+         * @param scale           the current zoom scale factor
+         * @param x               the current pan offset X (pixels)
+         * @param y               the current pan offset Y (pixels)
+         * @param backgroundImage the Asset Store URL for the background image,
+         *                        or {@code null} for grid-only mode
+         * @param matrix          the map-to-screen transformation matrix,
+         *                        or {@code null} for identity
+         * @param objects         the list of map objects to render
+         * @param selectedObjectId the ID of the currently selected object,
+         *                         or {@code null} if nothing is selected
+         */
         void draw(double scale, double x, double y, String backgroundImage,
                 FloorMapTransformationMatrix matrix, List<FloorMapObject> objects,
                 String selectedObjectId);
 
+        /**
+         * Registers a listener that is called whenever the view needs to
+         * trigger a redraw from outside the normal presenter flow (e.g.
+         * after an asynchronous image aspect-ratio calculation completes).
+         *
+         * @param redrawListener the callback to invoke, typically
+         *                       {@code FloorMapCanvasPresenter::redraw}
+         */
         void setRedrawListener(Runnable redrawListener);
     }
 

@@ -28,7 +28,6 @@ import stroom.widget.util.client.SafeHtmlUtil;
 
 import com.google.gwt.core.client.Scheduler;
 import com.google.gwt.dom.client.Element;
-import com.google.gwt.event.dom.client.HasMouseDownHandlers;
 import com.google.gwt.event.dom.client.HasMouseMoveHandlers;
 import com.google.gwt.event.dom.client.HasMouseUpHandlers;
 import com.google.gwt.event.dom.client.HasMouseWheelHandlers;
@@ -131,7 +130,7 @@ public class FloorMapCanvasViewImpl
 
     /** {@inheritDoc} */
     @Override
-    public HasMouseDownHandlers getFocusPanel() {
+    public FocusPanel getFocusPanel() {
         return focusPanel;
     }
 
@@ -162,8 +161,8 @@ public class FloorMapCanvasViewImpl
      * @param scale           current zoom factor (1.0 = 100 %)
      * @param x               horizontal pan offset in SVG user-units
      * @param y               vertical pan offset in SVG user-units
-     * @param backgroundImage URL of the background image, or {@code null} for a plain rect
-     * @param matrix          world-to-map transformation matrix, or {@code null} for identity
+     * @param backgroundImage Asset Store URL of the background image, or {@code null} for a plain rect
+     * @param matrix          map-to-screen transformation matrix, or {@code null} for identity
      * @param objects         list of map objects (gates, people, etc.) to render
      * @param selectedObjectId ID of the currently selected object, or {@code null}
      */
@@ -238,13 +237,14 @@ public class FloorMapCanvasViewImpl
                                 new Attribute("pointer-events", "none"));
                         }
                     } else {
-                        matrixGroup.elem(SafeHtmlUtil.from("rect"),
+                        // Remove the white rectangle for now
+                        /*matrixGroup.elem(SafeHtmlUtil.from("rect"),
                             new Attribute("x", "0"),
                             new Attribute("y", "0"),
                             new Attribute("width", "1000"),
                             new Attribute("height", "1000"),
                             new Attribute("fill", "#f8f8f8"),
-                            new Attribute("id", "background"));
+                            new Attribute("id", "background"));*/
 
                         if ("background".equals(selectedObjectId)) {
                             matrixGroup.elem(SafeHtmlUtil.from("rect"),
@@ -265,7 +265,7 @@ public class FloorMapCanvasViewImpl
                     // ----------------------------------------------------------------
                     if (objects != null) {
                         for (final FloorMapObject obj : objects) {
-                            final boolean isPerson = "person".equalsIgnoreCase(obj.getType());
+                            final boolean isPerson = FloorMapJsonKeys.PERSON.equalsIgnoreCase(obj.getType());
                             final boolean isSelected = obj.getId().equals(selectedObjectId);
 
                             // Short display label: use the part before '@' for email addresses,
@@ -313,7 +313,7 @@ public class FloorMapCanvasViewImpl
                             }
 
                             // Each object is a <g translate(x,y)> wrapper containing the shape + label.
-                            // The wrapper id uses the "obj-" prefix so click-detection ignores it.
+                            // The wrapper id uses the SVG_GROUP_PREFIX so click-detection ignores it.
                             matrixGroup.elem(objGroup -> {
                                 if (isPerson) {
                                     // ---- Person: filled circle ----
@@ -325,6 +325,7 @@ public class FloorMapCanvasViewImpl
                                         new Attribute("stroke", isSelected ? "#ff9800" : "#ffffff"),
                                         new Attribute("stroke-width", isSelected ? "4" : "2"),
                                         new Attribute("vector-effect", "non-scaling-stroke"),
+                                        // ID on the shape (not the wrapper group) so click-detection works.
                                         new Attribute("id", obj.getId()));
 
                                     // Label rendered BELOW the circle so it isn't hidden inside it.
@@ -372,7 +373,7 @@ public class FloorMapCanvasViewImpl
                             },
                                     SafeHtmlUtil.from("g"),
                                     new Attribute("transform", "translate(" + obj.getX() + "," + obj.getY() + ")"),
-                                    new Attribute("id", "obj-" + obj.getId()));
+                                    new Attribute("id", FloorMapJsonKeys.SVG_GROUP_PREFIX + obj.getId()));
                         }
                     }
 

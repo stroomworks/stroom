@@ -18,6 +18,7 @@ package stroom.floormap.client.presenter;
 
 import stroom.docref.DocRef;
 import stroom.entity.client.presenter.HasToolbar;
+import stroom.floormap.client.FloorMapJsonKeys;
 import stroom.floormap.client.event.FloorMapDataEvent;
 import stroom.floormap.client.event.TimeChangeEvent;
 import stroom.floormap.client.presenter.FloorMapQueryPresenter.FloorMapQueryView;
@@ -31,6 +32,7 @@ import stroom.query.client.presenter.QueryEditPresenter;
 import stroom.query.shared.QueryTablePreferences;
 import stroom.task.client.TaskMonitorFactory;
 
+import com.google.gwt.core.client.GWT;
 import com.google.gwt.user.client.ui.Widget;
 import com.google.web.bindery.event.shared.EventBus;
 import com.gwtplatform.mvp.client.MyPresenterWidget;
@@ -195,13 +197,14 @@ public class FloorMapQueryPresenter extends MyPresenterWidget<FloorMapQueryView>
                             if (typeColIndex != -1 && values.size() > typeColIndex) {
                                 type = values.get(typeColIndex);
                             } else if (entityId.contains("@")) {
-                                type = "person"; // Fallback: email contains "@" = person.
+                                type = FloorMapJsonKeys.PERSON; // Fallback: email contains "@" = person.
                             }
 
                             list.add(new FloorMapObject(entityId, type, x, y));
                         }
-                    } catch (final RuntimeException e) {
-                        // Skip malformed row.
+                    } catch (final NumberFormatException e) {
+                        GWT.log("Skipping malformed floor-map row for entity '"
+                                + entityId + "': " + e.getMessage());
                     }
                 }
             }

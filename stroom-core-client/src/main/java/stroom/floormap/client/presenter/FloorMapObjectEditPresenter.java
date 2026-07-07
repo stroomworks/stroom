@@ -16,6 +16,7 @@
 
 package stroom.floormap.client.presenter;
 
+import stroom.alert.client.event.AlertEvent;
 import stroom.alert.client.event.ConfirmEvent;
 import stroom.data.client.event.DataSelectionEvent;
 import stroom.document.asset.client.presenter.DocumentAssetDropDownPresenter;
@@ -182,6 +183,14 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
                 .onShow(e -> getView().setEnabled(true))
                 .onHideRequest(e -> {
                     if (e.isOk()) {
+                        final String type = getView().getType();
+                        if (type == null || type.trim().isEmpty()) {
+                            AlertEvent.fireError(this,
+                                    "Object type must not be empty. "
+                                    + "Please enter a type (e.g. 'gate', 'camera', 'person').",
+                                    null);
+                            return;
+                        }
                         final long time = getView().getEffectiveTime();
                         if (entry != null && entry.getEffectiveTimeMs() != time) {
                             // Effective time changed — ask whether to move or clone.

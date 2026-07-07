@@ -18,13 +18,14 @@ package stroom.floormap.client.presenter;
 
 import stroom.alert.client.event.AlertEvent;
 import stroom.alert.client.event.ConfirmEvent;
-import stroom.alert.client.event.PromptEvent;
 import stroom.dispatch.client.RestFactory;
 import stroom.docref.DocRef;
 import stroom.entity.client.presenter.DocPresenter;
 import stroom.entity.shared.ExpressionCriteria;
+import stroom.floormap.client.FloorMapJsonKeys;
 import stroom.floormap.client.ParsedValue;
 import stroom.floormap.client.ValueAccessor;
+import stroom.floormap.client.event.MapContextMenuEvent;
 import stroom.floormap.client.event.MapObjectMovedEvent;
 import stroom.floormap.client.event.MapObjectSelectedEvent;
 import stroom.floormap.client.event.TimeChangeEvent;
@@ -41,18 +42,26 @@ import stroom.sqlstore.shared.ApplyChangesResult;
 import stroom.sqlstore.shared.FetchAtTimeRequest;
 import stroom.sqlstore.shared.SqlTemporalStoreResource;
 import stroom.sqlstore.shared.TemporalStoreTimeRange;
+import stroom.svg.shared.SvgImage;
 import stroom.util.shared.TemporalEntry;
 import stroom.util.shared.TemporalEntryId;
+import stroom.widget.menu.client.presenter.IconMenuItem;
+import stroom.widget.menu.client.presenter.Item;
+import stroom.widget.menu.client.presenter.ShowMenuEvent;
+import stroom.widget.popup.client.presenter.PopupPosition;
 
 import com.google.gwt.core.client.GWT;
+import com.google.gwt.user.client.Random;
 import com.google.inject.Inject;
 import com.google.web.bindery.event.shared.EventBus;
 import com.gwtplatform.mvp.client.View;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Consumer;
 import javax.inject.Provider;
 
@@ -218,6 +227,13 @@ public class FloorMapEditorPresenter
         registerHandler(getEventBus().addHandler(MapObjectMovedEvent.getType(), event -> {
             if (event.getSource() == floorMapCanvasPresenter) {
                 onObjectMovedOnCanvas(event.getObjectId(), event.getX(), event.getY());
+            }
+        }));
+
+        // ---- Canvas context menu --------------------------------------------
+        registerHandler(getEventBus().addHandler(MapContextMenuEvent.getType(), event -> {
+            if (event.getSource() == floorMapCanvasPresenter) {
+                onCanvasContextMenu(event);
             }
         }));
 
@@ -431,9 +447,9 @@ public class FloorMapEditorPresenter
     }
 
     /**
-     * Fetches the most recent entry per key at or before {@code timeMs}.
-     * Merges the entries into the pending changes.
-     * Then calls updateCanvasAndFactList(merged)
+     * Fetches the most recent entry per key at or before {@code timeMs}
+     * from the server, then calls {@link #onEntriesFetched} to update
+     * the canvas and fact list.
      *
      * @param mapName the temporal store name
      * @param timeMs  the upper bound for effective_time
@@ -524,11 +540,18 @@ public class FloorMapEditorPresenter
             floorMapCanvasPresenter.setSelectedObjectId(selectedFactKey);
         }
 
-        // Update Fact List
+        // Update Fact List — one row per unique key.
+        // The merged entry list may contain multiple entries for the same key
+        // (e.g. when "Show All" mode is on, or when a pending creation overlaps
+        // with a server-returned entry). We deduplicate by key so the fact list
+        // shows each object exactly once.
         final List<FloorMapFieldMapping> schema = getEntity().getValueSchema();
         final List<FloorMapFactListPresenter.FactObject> factObjects = new ArrayList<>();
+        final Set<String> seenKeys = new HashSet<>();
         for (final TemporalEntry entry : entries) {
-            factObjects.add(FloorMapFactListPresenter.FactObject.fromEntry(entry, schema));
+            if (seenKeys.add(entry.getKey())) {
+                factObjects.add(FloorMapFactListPresenter.FactObject.fromEntry(entry, schema));
+            }
         }
 
         floorMapFactListPresenter.setData(factObjects);
@@ -590,8 +613,16 @@ public class FloorMapEditorPresenter
                 break;
             }
         }
-        // Refresh canvas only — avoid reloading the Fact List which would
-        // clear its selection and cascade into the Time List.
+        refreshCanvasOnly();
+    }
+
+
+    /**
+     * Refreshes the canvas by re-applying pending changes and re-parsing,
+     * without reloading the Fact List (which would clear its selection
+     * and cascade into the Time List).
+     */
+    private void refreshCanvasOnly() {
         final List<TemporalEntry> canvasEntries = pendingChanges.applyTo(serverEntriesAtCurrentTime);
         final FloorMapEntryParser.ParseResult result = FloorMapEntryParser.parse(
                 canvasEntries, getEntity().getValueSchema(), getEntity().getValueFormat());
@@ -602,7 +633,6 @@ public class FloorMapEditorPresenter
             floorMapCanvasPresenter.setSelectedObjectId(selectedFactKey);
         }
     }
-
 
     /**
      * Called when a row in the Fact List is selected.
@@ -700,47 +730,14 @@ public class FloorMapEditorPresenter
 
     /**
      * Called when the Fact List's Add button is clicked.
-     * Prompts for an object key, then stages a new entry in the pending-changes buffer.
+     *
+     * <p>Delegates to {@link #onAddObjectAtPosition} using the centre of the
+     * visible canvas area as the initial position, giving the same
+     * properties-editor experience as the right-click "Add Object Here" action.</p>
      */
     private void onAddFactToFactList() {
-        final String mapName = getMapName();
-        if (mapName == null) {
-            return;
-        }
-
-        // TODO MB Replace this with a proper dialog
-        // TODO MB Must add a single time list item??
-        PromptEvent.fire(this,
-                "Enter Object ID/Key to add:",
-                "",
-                key -> {
-                    if (key != null && !key.trim().isEmpty()) {
-                        try {
-                            final String trimmedKey = key.trim();
-                            final ValueFormat format = getEntity().getValueFormat();
-                            final ValueAccessor accessor = ValueAccessor.forFormat(format);
-                            final ParsedValue newValue = accessor.createEmpty("entry");
-                            accessor.setString(newValue, pathForRole(Role.TYPE), "gates");
-                            accessor.setString(newValue, pathForRole(Role.LABEL), trimmedKey);
-                            accessor.setArray(newValue, pathForRole(Role.POSITION),
-                                    new double[]{500, 500});
-                            accessor.setArray(newValue, pathForRole(Role.WORLD_TO_MAP),
-                                    new double[]{1, 0, 0, 1, 0, 0});
-                            final String valueStr = accessor.serialize(newValue);
-                            final TemporalEntry entry = new TemporalEntry(
-                                    mapName, trimmedKey, selectedTime, valueStr);
-                            pendingChanges.recordCreation(entry);
-                            setDirty(true);
-                            // Optimistically refresh the Fact List and select the new entry
-                            loadAtTime(selectedTime);
-                        } catch (final IllegalStateException ex) {
-                            AlertEvent.fireError(
-                                    FloorMapEditorPresenter.this,
-                                    "Cannot add object: " + ex.getMessage(),
-                                    null);
-                        }
-                    }
-                });
+        final double[] centre = floorMapCanvasPresenter.getVisibleCentreMapCoords();
+        onAddObjectAtPosition(centre[0], centre[1]);
     }
 
     /**
@@ -762,9 +759,17 @@ public class FloorMapEditorPresenter
                                 pendingChanges.applyTo(serverEntriesAtCurrentTime);
                         // Also include entries from the time list (for the selected fact)
                         final List<TemporalEntry> merged = new ArrayList<>(all);
+                        final Set<TemporalEntryId> seenIds = new HashSet<>();
+                        for (final TemporalEntry e : merged) {
+                            seenIds.add(new TemporalEntryId(
+                                    e.getMap(), e.getKey(), e.getEffectiveTimeMs()));
+                        }
                         for (final TemporalEntry e : serverEntriesForSelectedFact) {
-                            if (e.getKey().equals(key) && !merged.contains(e)) {
+                            final TemporalEntryId id = new TemporalEntryId(
+                                    e.getMap(), e.getKey(), e.getEffectiveTimeMs());
+                            if (e.getKey().equals(key) && !seenIds.contains(id)) {
                                 merged.add(e);
+                                seenIds.add(id);
                             }
                         }
                         boolean staged = false;
@@ -824,17 +829,328 @@ public class FloorMapEditorPresenter
         floorMapTimeListPresenter.setData(merged);
         floorMapTimeListPresenter.selectAtIndex(selectIndex);
 
-        // Refresh the canvas without reloading the Fact List (which would
-        // clear and re-fire the fact selection, wiping the Time List).
-        final List<TemporalEntry> canvasEntries = pendingChanges.applyTo(serverEntriesAtCurrentTime);
-        final FloorMapEntryParser.ParseResult result = FloorMapEntryParser.parse(
-                canvasEntries, getEntity().getValueSchema(), getEntity().getValueFormat());
-        floorMapCanvasPresenter.setBackgroundImage(result.getBackgroundImage());
-        floorMapCanvasPresenter.setMatrix(result.getBackgroundMatrix());
-        floorMapCanvasPresenter.setObjects(result.getObjects());
-        if (selectedFactKey != null) {
-            floorMapCanvasPresenter.setSelectedObjectId(selectedFactKey);
+        refreshCanvasOnly();
+    }
+
+    // -----------------------------------------------------------------------
+    // Canvas context menu
+    // -----------------------------------------------------------------------
+
+    /**
+     * Called when the user right-clicks on the floor map canvas.
+     *
+     * <p>Builds and shows a context menu whose items depend on whether the
+     * click landed on an existing map object or on empty canvas space.
+     * All actions use the current timeline scrubber position as the
+     * effective time.</p>
+     *
+     * @param event the context menu event from the canvas
+     */
+    private void onCanvasContextMenu(final MapContextMenuEvent event) {
+        showCanvasContextMenu(
+                event.getObjectId(),
+                event.getMapX(),
+                event.getMapY(),
+                event.getClientX(),
+                event.getClientY());
+    }
+
+    /**
+     * Builds and displays the canvas context menu at the given screen position.
+     *
+     * <p>Menu structure:</p>
+     * <ul>
+     *   <li><b>Empty canvas:</b>
+     *       <ul>
+     *         <li>"Add Object Here" — creates a new object at the clicked map position</li>
+     *       </ul>
+     *   </li>
+     *   <li><b>On an object:</b>
+     *       <ul>
+     *         <li>"Edit Properties" — selects the object and opens the property editor</li>
+     *         <li>"Add Time Version" — creates a new effective time entry at the scrubber
+     *             position, cloned from the current version</li>
+     *         <li>"Duplicate Object" — clones the object with a new key, offset slightly</li>
+     *         <li>"Delete Object" — confirms and stages deletion of all time entries</li>
+     *       </ul>
+     *   </li>
+     * </ul>
+     *
+     * @param objectId the right-clicked object's key, or {@code null} for empty canvas
+     * @param mapX     map-space X coordinate of the click
+     * @param mapY     map-space Y coordinate of the click
+     * @param clientX  screen X coordinate for popup positioning
+     * @param clientY  screen Y coordinate for popup positioning
+     */
+    private void showCanvasContextMenu(final String objectId,
+                                       final double mapX,
+                                       final double mapY,
+                                       final int clientX,
+                                       final int clientY) {
+        final String mapName = getMapName();
+        if (mapName == null) {
+            return;
         }
+
+        final List<Item> menuItems = new ArrayList<>();
+
+        if (objectId == null) {
+            // ---- Right-clicked on empty canvas ----
+            menuItems.add(new IconMenuItem.Builder()
+                    .priority(1)
+                    .icon(SvgImage.ADD)
+                    .text("Add Object Here")
+                    .command(() -> onAddObjectAtPosition(mapX, mapY))
+                    .build());
+        } else {
+            // ---- Right-clicked on an object ----
+
+            // Edit Properties
+            menuItems.add(new IconMenuItem.Builder()
+                    .priority(1)
+                    .icon(SvgImage.EDIT)
+                    .text("Edit Properties")
+                    .command(() -> {
+                        // Select the object and open the properties editor
+                        selectedFactKey = objectId;
+                        floorMapCanvasPresenter.setSelectedObjectId(objectId);
+                        floorMapFactListPresenter.setSelected(objectId);
+                        loadTimeListForSelectedFact();
+
+                        // Find the active entry for this object at the current time
+                        // and open the edit dialog
+                        final List<TemporalEntry> all =
+                                pendingChanges.applyTo(serverEntriesAtCurrentTime);
+                        for (final TemporalEntry e : all) {
+                            if (objectId.equals(e.getKey())) {
+                                onEditTimeInTimeList(e);
+                                break;
+                            }
+                        }
+                    })
+                    .build());
+
+            // Add Time Version at scrubber position
+            if (!FloorMapJsonKeys.BACKGROUND.equals(objectId)) {
+                menuItems.add(new IconMenuItem.Builder()
+                        .priority(2)
+                        .icon(SvgImage.HISTORY)
+                        .text("Add Time Version")
+                        .command(() -> {
+                            // Select the object first so the time list loads
+                            selectedFactKey = objectId;
+                            floorMapCanvasPresenter.setSelectedObjectId(objectId);
+                            floorMapFactListPresenter.setSelected(objectId);
+                            // Trigger the same flow as "Add Time" on the Time List
+                            onAddTimeInTimeList();
+                        })
+                        .build());
+            }
+
+            // Duplicate Object
+            if (!FloorMapJsonKeys.BACKGROUND.equals(objectId)) {
+                menuItems.add(new IconMenuItem.Builder()
+                        .priority(3)
+                        .icon(SvgImage.COPY)
+                        .text("Duplicate Object")
+                        .command(() -> onDuplicateObject(objectId, mapX, mapY))
+                        .build());
+            }
+
+            // Delete Object
+            menuItems.add(new IconMenuItem.Builder()
+                    .priority(4)
+                    .icon(SvgImage.DELETE)
+                    .text("Delete Object")
+                    .command(() -> onDeleteFactFromFactList(objectId))
+                    .build());
+        }
+
+        final PopupPosition popupPosition = new PopupPosition(clientX, clientY);
+        ShowMenuEvent
+                .builder()
+                .items(menuItems)
+                .popupPosition(popupPosition)
+                .fire(this);
+    }
+
+    /**
+     * Creates a new object at the given map-space position.
+     *
+     * <p>Called from the canvas context menu's "Add Object Here" action.
+     * Uses the current timeline scrubber position as the effective time,
+     * and opens the properties editor dialog so the user can set the type,
+     * name, and image before confirming.</p>
+     *
+     * @param mapX the X coordinate in map space
+     * @param mapY the Y coordinate in map space
+     */
+    private void onAddObjectAtPosition(final double mapX, final double mapY) {
+        final String mapName = getMapName();
+        if (mapName == null) {
+            return;
+        }
+
+        // Generate a unique key for the new object
+        final String newKey = generateObjectKey("new");
+
+        try {
+            final ValueFormat format = getEntity().getValueFormat();
+            final ValueAccessor accessor = ValueAccessor.forFormat(format);
+            final ParsedValue newValue = accessor.createEmpty("entry");
+            accessor.setString(newValue, pathForRole(Role.TYPE), "");
+            accessor.setString(newValue, pathForRole(Role.LABEL), newKey);
+            accessor.setArray(newValue, pathForRole(Role.POSITION),
+                    new double[]{mapX, mapY});
+            final FloorMapTransformationMatrix identity = FloorMapTransformationMatrix.identity();
+            accessor.setArray(newValue, pathForRole(Role.WORLD_TO_MAP),
+                    new double[]{identity.getA(), identity.getB(), identity.getC(),
+                            identity.getD(), identity.getE(), identity.getF()});
+            final String valueStr = accessor.serialize(newValue);
+
+            final TemporalEntry entry = new TemporalEntry(
+                    mapName, newKey, selectedTime, valueStr);
+
+            // Open the properties editor so the user can customise before committing
+            floorMapObjectEditPresenter.setMapName(mapName);
+            floorMapObjectEditPresenter.setObject(newKey);
+            floorMapObjectEditPresenter.setFloorMapDoc(getEntity());
+
+            floorMapObjectEditPresenter.show(
+                    "Add Object",
+                    entry,
+                    saved -> {
+                        pendingChanges.recordCreation(saved);
+                        setDirty(true);
+                        selectedFactKey = saved.getKey();
+
+                        // Select the new object in the Fact List and canvas
+                        floorMapCanvasPresenter.setSelectedObjectId(selectedFactKey);
+                        floorMapFactListPresenter.setSelected(selectedFactKey);
+
+                        // Populate the Time List optimistically from pending
+                        // changes (the server doesn't know about this entry yet)
+                        serverEntriesForSelectedFact = new ArrayList<>();
+                        refreshTimeListAtTime(selectedTime);
+
+                        // Enable dragging so the user can immediately reposition
+                        floorMapCanvasPresenter.setIsDraggingEnabled(true);
+
+                        loadAtTime(selectedTime);
+                    });
+        } catch (final IllegalStateException ex) {
+            AlertEvent.fireError(
+                    this,
+                    "Cannot add object: " + ex.getMessage(),
+                    null);
+        }
+    }
+
+    /**
+     * Duplicates an existing object with a new key, offset slightly from
+     * the original position.
+     *
+     * <p>The new object is a clone of the original's current state at the
+     * timeline scrubber position, with coordinates shifted by a small offset
+     * to avoid overlapping the original. Uses the scrubber time as the
+     * effective time for the new entry.</p>
+     *
+     * @param originalKey the key of the object to duplicate
+     * @param mapX        the original object's map-space X coordinate
+     * @param mapY        the original object's map-space Y coordinate
+     */
+    private void onDuplicateObject(final String originalKey,
+                                    final double mapX,
+                                    final double mapY) {
+        final String mapName = getMapName();
+        if (mapName == null) {
+            return;
+        }
+
+        // Find the current entry for this object
+        final List<TemporalEntry> all = pendingChanges.applyTo(serverEntriesAtCurrentTime);
+        TemporalEntry sourceEntry = null;
+        for (final TemporalEntry e : all) {
+            if (originalKey.equals(e.getKey())) {
+                sourceEntry = e;
+                break;
+            }
+        }
+
+        if (sourceEntry == null) {
+            return;
+        }
+
+        try {
+            final String newKey = generateObjectKey(originalKey + "-copy");
+            final ValueFormat format = getEntity().getValueFormat();
+            final ValueAccessor accessor = ValueAccessor.forFormat(format);
+            final ParsedValue parsed = accessor.parse(sourceEntry.getValue());
+            if (parsed != null) {
+                // Offset the position slightly so the duplicate doesn't sit on top
+                accessor.setArray(parsed, pathForRole(Role.POSITION),
+                        new double[]{mapX + 50, mapY + 50});
+                accessor.setString(parsed, pathForRole(Role.LABEL), newKey);
+            }
+
+            final String valueStr = parsed != null
+                    ? accessor.serialize(parsed)
+                    : sourceEntry.getValue();
+
+            final TemporalEntry newEntry = new TemporalEntry(
+                    mapName, newKey, selectedTime, valueStr);
+
+            pendingChanges.recordCreation(newEntry);
+            setDirty(true);
+            selectedFactKey = newKey;
+            loadAtTime(selectedTime);
+        } catch (final Exception ex) {
+            AlertEvent.fireError(
+                    this,
+                    "Cannot duplicate object: " + ex.getMessage(),
+                    null);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Key generation
+    // -----------------------------------------------------------------------
+
+    /**
+     * Generates a unique object key with the given prefix, guaranteed not to
+     * clash with any key currently known to the editor.
+     *
+     * <p>The returned key has the form {@code prefix-NNNNN} where {@code NNNNN}
+     * is a random integer. If the generated key already exists, a new random
+     * suffix is tried until a unique key is found (up to a safety limit of
+     * 1000 attempts).</p>
+     *
+     * <p>The prefix must not start with
+     * {@link FloorMapJsonKeys#SVG_GROUP_PREFIX} as that would make the object
+     * unselectable on the canvas.</p>
+     *
+     * @param prefix a human-readable prefix (e.g. {@code "new"}, {@code "gate-1-copy"})
+     * @return a key string suitable for use as a temporal-store fact key
+     */
+    private String generateObjectKey(final String prefix) {
+        final List<TemporalEntry> merged =
+                pendingChanges.applyTo(serverEntriesAtCurrentTime);
+        final Set<String> existingKeys = new HashSet<>();
+        for (final TemporalEntry e : merged) {
+            existingKeys.add(e.getKey());
+        }
+
+        final int maxAttempts = 1_000;
+        for (int i = 0; i < maxAttempts; i++) {
+            final String candidate = prefix + "-"
+                    + Random.nextInt(99999);
+            if (!existingKeys.contains(candidate)) {
+                return candidate;
+            }
+        }
+
+        // Extremely unlikely fallback — append a timestamp to guarantee uniqueness
+        return prefix + "-" + System.currentTimeMillis();
     }
 
     // -----------------------------------------------------------------------

@@ -131,7 +131,7 @@ public final class FloorMapGridBackground {
      * highlight colour with arrowheads and scale labels.</p>
      *
      * @param builder    the HtmlBuilder to append into (at SVG root level)
-     * @param matrix     the world-to-map transformation matrix
+     * @param matrix     the map-to-screen transformation matrix
      * @param userZoom   the current user zoom level (the {@code scale} in
      *                   the pan group)
      * @param panX       the current horizontal pan offset (the {@code x}
@@ -146,7 +146,7 @@ public final class FloorMapGridBackground {
                                   final double panY) {
 
         // -- 1. Compute effective pixels-per-world-unit ----------------------
-        //    matrixScale = scale factor of the world-to-map affine matrix
+        //    matrixScale = scale factor of the map-to-screen affine matrix
         //    effectiveScale = matrixScale × userZoom
         final double matrixScale = Math.sqrt(
                 matrix.getA() * matrix.getA()

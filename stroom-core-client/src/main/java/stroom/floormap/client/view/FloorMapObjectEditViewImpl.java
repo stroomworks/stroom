@@ -236,7 +236,12 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
                                       final TextBox rot) {
         if (m != null && m.length >= 6) {
             final double sX = Math.sqrt(m[0] * m[0] + m[1] * m[1]);
-            final double sY = Math.sqrt(m[2] * m[2] + m[3] * m[3]);
+            // The determinant of the 2×2 rotation-scale sub-matrix (a*d - b*c)
+            // encodes the sign of scaleY relative to scaleX.  Using Math.sqrt
+            // alone always produces a positive value, which silently loses a
+            // negative scaleY (used for Y-axis flipping) on every round-trip.
+            final double det = m[0] * m[3] - m[1] * m[2];
+            final double sY = (det >= 0 ? 1.0 : -1.0) * Math.sqrt(m[2] * m[2] + m[3] * m[3]);
             final double rotationDeg = Math.round(Math.toDegrees(Math.atan2(m[1], m[0])) * 100.0) / 100.0;
 
             tx.setText(String.valueOf(m[4]));

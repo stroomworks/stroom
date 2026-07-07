@@ -22,12 +22,8 @@ package stroom.floormap.client;
  */
 public final class FloorMapJsonKeys {
 
-    public static final String COORDS = "coords";
     public static final String TYPE = "type";
     public static final String NAME = "name";
-    public static final String IMG = "img";
-    public static final String TM_WORLD_TO_MAP = "tm-world-to-map";
-    public static final String TM_MAP_TO_SCREEN = "tm-map-to-screen";
 
     /**
      * Object ID and type identifier for the background layer/object
@@ -36,9 +32,30 @@ public final class FloorMapJsonKeys {
     public static final String BACKGROUND = "background";
 
     /**
+     * Type identifier for person objects in the floor map canvas.
+     * Objects with this type receive animated movement and trail rendering
+     * during timeline playback.
+     */
+    public static final String PERSON = "person";
+
+    /**
      * Display name for the background object in the fact list UI.
      */
     public static final String BACKGROUND_DISPLAY_NAME = "Background";
+
+    /**
+     * ID prefix applied to SVG {@code <g>} wrapper elements in the canvas.
+     *
+     * <p>Each map object is rendered inside a {@code <g>} whose ID is
+     * {@code SVG_GROUP_PREFIX + objectKey}. The click-detection logic uses
+     * this prefix to distinguish wrapper groups (ignored) from the actual
+     * clickable shape elements (whose IDs are the raw object keys).</p>
+     *
+     * <p>The prefix uses a double-underscore convention ({@code "__g_"}) to
+     * avoid collisions with user-chosen object keys — users are unlikely to
+     * name objects starting with {@code "__"}.</p>
+     */
+    public static final String SVG_GROUP_PREFIX = "__g_";
 
     private FloorMapJsonKeys() {
         // Utility class
