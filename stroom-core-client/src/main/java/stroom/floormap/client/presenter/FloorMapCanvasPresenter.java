@@ -535,7 +535,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         // also present in factObjects or eventObjects (e.g. after play stops).
         final Set<String> drawnPersonIds = new HashSet<>();
         for (final FloorMapObject obj : combined) {
-            if ("person".equalsIgnoreCase(obj.getType())) {
+            if (FloorMapJsonKeys.PERSON.equalsIgnoreCase(obj.getType())) {
                 drawnPersonIds.add(obj.getId());
             }
         }
@@ -543,7 +543,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
             final String id = entry.getKey();
             if (!activeAnimations.containsKey(id) && !drawnPersonIds.contains(id)) {
                 final FloorMapObject obj = new FloorMapObject(
-                        id, "person", entry.getValue()[0], entry.getValue()[1]);
+                        id, FloorMapJsonKeys.PERSON, entry.getValue()[0], entry.getValue()[1]);
                 attachTrail(obj, id, nowMs);
                 combined.add(obj);
             }
@@ -745,11 +745,14 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     private void recordTrailPoint(final String id,
                                   final double x,
                                   final double y) {
+
+        //noinspection unused k
         final List<double[]> trail = personTrails.computeIfAbsent(id, k -> new ArrayList<>());
         trail.add(new double[]{x, y});
 
         // Hard cap to avoid unbounded growth.
         while (trail.size() > TRAIL_MAX_PTS) {
+            //noinspection SequencedCollectionMethodCanBeUsed GWT does not support
             trail.remove(0);
         }
     }
@@ -808,7 +811,11 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     /**
      * Updates the background image for the SVG map.
      *
-     * @param backgroundImage Base64 data URL or external URL.
+     * <p>Background images must be served from the Asset Store — base64
+     * data-URIs are not supported.</p>
+     *
+     * @param backgroundImage the Asset Store URL for the background image,
+     *                        or {@code null} to clear the background
      */
     public void setBackgroundImage(final String backgroundImage) {
         this.backgroundImage = backgroundImage;
@@ -825,7 +832,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
         if (objects != null) {
             for (final FloorMapObject obj : objects) {
-                if ("person".equalsIgnoreCase(obj.getType())) {
+                if (FloorMapJsonKeys.PERSON.equalsIgnoreCase(obj.getType())) {
                     if (handlePersonUpdate(obj)) {
                         // Person placed without animation (not playing, first appearance, etc.) —
                         // add to draw list so it's visible.
@@ -871,7 +878,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
             // Record positions for play-start animation anchor.
             if (objects != null) {
                 for (final FloorMapObject obj : objects) {
-                    if ("person".equalsIgnoreCase(obj.getType())) {
+                    if (FloorMapJsonKeys.PERSON.equalsIgnoreCase(obj.getType())) {
                         lastPersonPositions.put(obj.getId(),
                                 new double[]{obj.getX(), obj.getY()});
                     }
@@ -887,7 +894,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
         if (objects != null) {
             for (final FloorMapObject obj : objects) {
-                if ("person".equalsIgnoreCase(obj.getType())) {
+                if (FloorMapJsonKeys.PERSON.equalsIgnoreCase(obj.getType())) {
                     if (handlePersonUpdate(obj)) {
                         // Person placed without animation (first appearance, etc.) —
                         // add to draw list so it's visible.
@@ -1073,7 +1080,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
          * @param scale           the current zoom scale factor
          * @param x               the current pan offset X (pixels)
          * @param y               the current pan offset Y (pixels)
-         * @param backgroundImage the background image URL or data-URI,
+         * @param backgroundImage the Asset Store URL for the background image,
          *                        or {@code null} for grid-only mode
          * @param matrix          the map-to-screen transformation matrix,
          *                        or {@code null} for identity

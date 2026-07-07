@@ -24,6 +24,7 @@ import stroom.floormap.shared.FloorMapFieldMapping.Role;
 import stroom.floormap.shared.FloorMapObject;
 import stroom.floormap.shared.FloorMapTransformationMatrix;
 import stroom.floormap.shared.ValueFormat;
+import stroom.util.client.Console;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -60,16 +61,13 @@ public final class FloorMapEntryParser {
     public static final class ParseResult {
 
         private final String backgroundImage;
-        private final String backgroundKey;
         private final FloorMapTransformationMatrix backgroundMatrix;
         private final List<FloorMapObject> objects;
 
         public ParseResult(final String backgroundImage,
-                           final String backgroundKey,
                            final FloorMapTransformationMatrix backgroundMatrix,
                            final List<FloorMapObject> objects) {
             this.backgroundImage = backgroundImage;
-            this.backgroundKey = backgroundKey;
             this.backgroundMatrix = backgroundMatrix;
             this.objects = objects;
         }
@@ -77,11 +75,6 @@ public final class FloorMapEntryParser {
         /** The background image path, or {@code null} if none. */
         public String getBackgroundImage() {
             return backgroundImage;
-        }
-
-        /** The temporal-store key for the background entry, or {@code null}. */
-        public String getBackgroundKey() {
-            return backgroundKey;
         }
 
         /** The map-to-screen transformation matrix for the background. */
@@ -144,12 +137,11 @@ public final class FloorMapEntryParser {
             final List<FloorMapFieldMapping> schema,
             final ValueFormat format) {
         String backgroundImage = null;
-        String backgroundKey = null;
         FloorMapTransformationMatrix bgMatrix = FloorMapTransformationMatrix.identity();
         final List<FloorMapObject> objects = new ArrayList<>();
 
         if (entries == null) {
-            return new ParseResult(null, null, null, objects);
+            return new ParseResult(null, null, objects);
         }
 
         final ValueAccessor accessor = ValueAccessor.forFormat(format);
@@ -182,7 +174,6 @@ public final class FloorMapEntryParser {
                     backgroundImage = imagePath != null
                             ? accessor.getString(parsed, imagePath)
                             : null;
-                    backgroundKey = entry.getKey();
 
                     bgMatrix = parseMatrix(accessor, parsed, mapToScreenPath);
                 } else {
@@ -212,11 +203,12 @@ public final class FloorMapEntryParser {
                             entry.getKey(), type != null ? type : "", mapX, mapY));
                 }
             } catch (final Exception ex) {
-                // Skip malformed entries
+                Console.warn("Skipping malformed temporal entry (key='"
+                             + entry.getKey() + "'): " + ex.getMessage());
             }
         }
 
-        return new ParseResult(backgroundImage, backgroundKey, bgMatrix, objects);
+        return new ParseResult(backgroundImage, bgMatrix, objects);
     }
 
 

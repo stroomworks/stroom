@@ -51,6 +51,7 @@ import stroom.widget.menu.client.presenter.ShowMenuEvent;
 import stroom.widget.popup.client.presenter.PopupPosition;
 
 import com.google.gwt.core.client.GWT;
+import com.google.gwt.user.client.Random;
 import com.google.inject.Inject;
 import com.google.web.bindery.event.shared.EventBus;
 import com.gwtplatform.mvp.client.View;
@@ -446,9 +447,9 @@ public class FloorMapEditorPresenter
     }
 
     /**
-     * Fetches the most recent entry per key at or before {@code timeMs}.
-     * Merges the entries into the pending changes.
-     * Then calls updateCanvasAndFactList(merged)
+     * Fetches the most recent entry per key at or before {@code timeMs}
+     * from the server, then calls {@link #onEntriesFetched} to update
+     * the canvas and fact list.
      *
      * @param mapName the temporal store name
      * @param timeMs  the upper bound for effective_time
@@ -612,8 +613,16 @@ public class FloorMapEditorPresenter
                 break;
             }
         }
-        // Refresh canvas only — avoid reloading the Fact List which would
-        // clear its selection and cascade into the Time List.
+        refreshCanvasOnly();
+    }
+
+
+    /**
+     * Refreshes the canvas by re-applying pending changes and re-parsing,
+     * without reloading the Fact List (which would clear its selection
+     * and cascade into the Time List).
+     */
+    private void refreshCanvasOnly() {
         final List<TemporalEntry> canvasEntries = pendingChanges.applyTo(serverEntriesAtCurrentTime);
         final FloorMapEntryParser.ParseResult result = FloorMapEntryParser.parse(
                 canvasEntries, getEntity().getValueSchema(), getEntity().getValueFormat());
@@ -624,7 +633,6 @@ public class FloorMapEditorPresenter
             floorMapCanvasPresenter.setSelectedObjectId(selectedFactKey);
         }
     }
-
 
     /**
      * Called when a row in the Fact List is selected.
@@ -751,9 +759,17 @@ public class FloorMapEditorPresenter
                                 pendingChanges.applyTo(serverEntriesAtCurrentTime);
                         // Also include entries from the time list (for the selected fact)
                         final List<TemporalEntry> merged = new ArrayList<>(all);
+                        final Set<TemporalEntryId> seenIds = new HashSet<>();
+                        for (final TemporalEntry e : merged) {
+                            seenIds.add(new TemporalEntryId(
+                                    e.getMap(), e.getKey(), e.getEffectiveTimeMs()));
+                        }
                         for (final TemporalEntry e : serverEntriesForSelectedFact) {
-                            if (e.getKey().equals(key) && !merged.contains(e)) {
+                            final TemporalEntryId id = new TemporalEntryId(
+                                    e.getMap(), e.getKey(), e.getEffectiveTimeMs());
+                            if (e.getKey().equals(key) && !seenIds.contains(id)) {
                                 merged.add(e);
+                                seenIds.add(id);
                             }
                         }
                         boolean staged = false;
@@ -813,17 +829,7 @@ public class FloorMapEditorPresenter
         floorMapTimeListPresenter.setData(merged);
         floorMapTimeListPresenter.selectAtIndex(selectIndex);
 
-        // Refresh the canvas without reloading the Fact List (which would
-        // clear and re-fire the fact selection, wiping the Time List).
-        final List<TemporalEntry> canvasEntries = pendingChanges.applyTo(serverEntriesAtCurrentTime);
-        final FloorMapEntryParser.ParseResult result = FloorMapEntryParser.parse(
-                canvasEntries, getEntity().getValueSchema(), getEntity().getValueFormat());
-        floorMapCanvasPresenter.setBackgroundImage(result.getBackgroundImage());
-        floorMapCanvasPresenter.setMatrix(result.getBackgroundMatrix());
-        floorMapCanvasPresenter.setObjects(result.getObjects());
-        if (selectedFactKey != null) {
-            floorMapCanvasPresenter.setSelectedObjectId(selectedFactKey);
-        }
+        refreshCanvasOnly();
     }
 
     // -----------------------------------------------------------------------
@@ -992,12 +998,14 @@ public class FloorMapEditorPresenter
             final ValueFormat format = getEntity().getValueFormat();
             final ValueAccessor accessor = ValueAccessor.forFormat(format);
             final ParsedValue newValue = accessor.createEmpty("entry");
-            accessor.setString(newValue, pathForRole(Role.TYPE), "gates");
+            accessor.setString(newValue, pathForRole(Role.TYPE), "");
             accessor.setString(newValue, pathForRole(Role.LABEL), newKey);
             accessor.setArray(newValue, pathForRole(Role.POSITION),
                     new double[]{mapX, mapY});
+            final FloorMapTransformationMatrix identity = FloorMapTransformationMatrix.identity();
             accessor.setArray(newValue, pathForRole(Role.WORLD_TO_MAP),
-                    new double[]{1, 0, 0, 1, 0, 0});
+                    new double[]{identity.getA(), identity.getB(), identity.getC(),
+                            identity.getD(), identity.getE(), identity.getF()});
             final String valueStr = accessor.serialize(newValue);
 
             final TemporalEntry entry = new TemporalEntry(
@@ -1135,7 +1143,7 @@ public class FloorMapEditorPresenter
         final int maxAttempts = 1_000;
         for (int i = 0; i < maxAttempts; i++) {
             final String candidate = prefix + "-"
-                    + com.google.gwt.user.client.Random.nextInt(99999);
+                    + Random.nextInt(99999);
             if (!existingKeys.contains(candidate)) {
                 return candidate;
             }

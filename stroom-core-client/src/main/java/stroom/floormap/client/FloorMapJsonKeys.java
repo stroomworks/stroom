@@ -32,6 +32,13 @@ public final class FloorMapJsonKeys {
     public static final String BACKGROUND = "background";
 
     /**
+     * Type identifier for person objects in the floor map canvas.
+     * Objects with this type receive animated movement and trail rendering
+     * during timeline playback.
+     */
+    public static final String PERSON = "person";
+
+    /**
      * Display name for the background object in the fact list UI.
      */
     public static final String BACKGROUND_DISPLAY_NAME = "Background";
