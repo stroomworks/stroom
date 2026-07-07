@@ -30,6 +30,13 @@ import com.gwtplatform.mvp.client.ViewImpl;
 import java.util.List;
 import javax.inject.Inject;
 
+/**
+ * View implementation for the floor map query configuration panel.
+ *
+ * <p>Embeds the standard query editor and exposes column-mapping dropdowns that
+ * let the user select which result columns should be used as the entity ID and
+ * location ID when plotting facts on the floor map.</p>
+ */
 public class FloorMapQueryViewImpl extends ViewImpl implements FloorMapQueryView {
 
     private final Widget widget;
@@ -58,18 +65,23 @@ public class FloorMapQueryViewImpl extends ViewImpl implements FloorMapQueryView
         columnMappingsContainer.setVisible(visible);
     }
 
+    /**
+     * Replaces the available items in both column-mapping dropdowns with the given
+     * column names, preceded by an empty "none selected" entry.
+     */
     @Override
     public void setAvailableColumns(final List<String> columnNames) {
-        entityIdColumn.clear();
-        locationIdColumn.clear();
+        populateSelectionBox(entityIdColumn, columnNames);
+        populateSelectionBox(locationIdColumn, columnNames);
+    }
 
-        entityIdColumn.addItem("");
-        locationIdColumn.addItem("");
-
-        if (columnNames != null) {
-            for (final String col : columnNames) {
-                entityIdColumn.addItem(col);
-                locationIdColumn.addItem(col);
+    private static void populateSelectionBox(final SelectionBox<String> box,
+                                             final List<String> items) {
+        box.clear();
+        box.addItem("");
+        if (items != null) {
+            for (final String item : items) {
+                box.addItem(item);
             }
         }
     }

@@ -23,6 +23,18 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.Objects;
 
+/**
+ * A 2D affine transformation matrix used to position and transform floor map
+ * images and coordinates.
+ * <p>
+ * The six components {@code (a, b, c, d, e, f)} correspond to the SVG/CSS
+ * {@code matrix(a, b, c, d, e, f)} notation, representing the transformation:
+ * <pre>
+ *   | a  c  e |
+ *   | b  d  f |
+ *   | 0  0  1 |
+ * </pre>
+ */
 @JsonInclude(Include.NON_NULL)
 public class FloorMapTransformationMatrix {
 
@@ -78,10 +90,20 @@ public class FloorMapTransformationMatrix {
         return f;
     }
 
+    /**
+     * Formats this matrix as an SVG {@code matrix(a,b,c,d,e,f)} string.
+     *
+     * @return the SVG matrix attribute value
+     */
     public String toSvgMatrix() {
         return "matrix(" + a + "," + b + "," + c + "," + d + "," + e + "," + f + ")";
     }
 
+    /**
+     * Returns the identity transformation (no scaling, rotation, or translation).
+     *
+     * @return the identity matrix
+     */
     public static FloorMapTransformationMatrix identity() {
         return new FloorMapTransformationMatrix(1, 0, 0, 1, 0, 0);
     }
@@ -113,6 +135,12 @@ public class FloorMapTransformationMatrix {
         return toSvgMatrix();
     }
 
+    /**
+     * Creates a rotation-only transformation matrix for the given angle.
+     *
+     * @param degrees the rotation angle in degrees (counter-clockwise positive)
+     * @return a new rotation matrix
+     */
     public static FloorMapTransformationMatrix rotate(final double degrees) {
         final double radians = Math.toRadians(degrees);
         final double cos = Math.cos(radians);
@@ -122,6 +150,14 @@ public class FloorMapTransformationMatrix {
         return new FloorMapTransformationMatrix(cos, sin, -sin, cos, 0, 0);
     }
 
+    /**
+     * Computes the inverse of this transformation matrix.
+     * <p>
+     * If the matrix is singular (determinant ≈ 0), the identity matrix is
+     * returned as a safe fallback.
+     *
+     * @return the inverse matrix, or identity if this matrix is non-invertible
+     */
     public FloorMapTransformationMatrix inverse() {
         final double det = a * d - b * c;
         if (Math.abs(det) < 1e-9) {

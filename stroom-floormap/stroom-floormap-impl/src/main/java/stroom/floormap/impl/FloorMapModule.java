@@ -27,6 +27,14 @@ import stroom.util.guice.RestResourcesBinder;
 
 import com.google.inject.AbstractModule;
 
+/**
+ * Guice dependency injection module for the floor map feature.
+ * <p>
+ * Binds the {@link FloorMapStore} implementation and registers the
+ * explorer action handler, import/export handler, content indexer,
+ * document action handler, event logging object info provider, and
+ * REST resource for floor map documents.
+ */
 public class FloorMapModule extends AbstractModule {
 
     @Override

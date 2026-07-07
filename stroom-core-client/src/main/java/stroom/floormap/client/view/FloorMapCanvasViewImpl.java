@@ -46,6 +46,23 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+/**
+ * GWT view implementation for the interactive SVG floor-map canvas.
+ *
+ * <p>Renders the map as an inline SVG element, including:</p>
+ * <ul>
+ *   <li>A background image (or placeholder rectangle) with optional selection highlight.</li>
+ *   <li>Static map objects (gates, doors, cameras, desks, servers, etc.) drawn as colour-coded
+ *       rounded rectangles.</li>
+ *   <li>Person markers drawn as filled circles with movement trails.</li>
+ *   <li>Text labels that counter-rotate to remain upright regardless of the map's
+ *       world-to-map transformation matrix.</li>
+ * </ul>
+ *
+ * <p>Pan and zoom are applied via a wrapping SVG {@code <g>} group so the
+ * presenter can control the viewport purely by updating the {@code scale},
+ * {@code x} and {@code y} parameters passed to {@link #draw}.</p>
+ */
 public class FloorMapCanvasViewImpl
         extends ViewWithUiHandlers<DirtyUiHandlers>
         implements FloorMapCanvasView, ReadOnlyChangeHandler {
@@ -73,20 +90,31 @@ public class FloorMapCanvasViewImpl
     @UiField
     FocusPanel focusPanel;
 
+    /**
+     * Constructs the canvas view, inflating the UiBinder template.
+     *
+     * @param binder the UiBinder that produces the widget tree
+     */
     @Inject
     public FloorMapCanvasViewImpl(final Binder binder) {
         widget = binder.createAndBindUi(this);
     }
 
+    /** {@inheritDoc} */
     @Override
     public Widget asWidget() {
         return widget;
     }
 
+    /** {@inheritDoc} — no read-only visual changes required for the canvas. */
     @Override
     public void onReadOnly(final boolean readOnly) {
     }
 
+    /**
+     * Handles resize events. If the parent container has no size yet (e.g. during
+     * initial attachment), the call is deferred until layout completes.
+     */
     @Override
     public void onResize() {
         final Element parent = svgContainer.getElement().getParentElement();
@@ -100,26 +128,44 @@ public class FloorMapCanvasViewImpl
         // SVG handles its own responsiveness via 100% width/height.
     }
 
+    /** {@inheritDoc} */
     @Override
     public FocusPanel getFocusPanel() {
         return focusPanel;
     }
 
+    /** {@inheritDoc} */
     @Override
     public HasMouseMoveHandlers getMouseMoveHandlers() {
         return focusPanel;
     }
 
+    /** {@inheritDoc} */
     @Override
     public HasMouseUpHandlers getMouseUpHandlers() {
         return focusPanel;
     }
 
+    /** {@inheritDoc} */
     @Override
     public HasMouseWheelHandlers getMouseWheelHandlers() {
         return focusPanel;
     }
 
+    /**
+     * Rebuilds the entire SVG DOM to reflect the current map state.
+     *
+     * <p>The SVG structure is:
+     * {@code <svg> → <g pan/zoom> → <g matrix> → [background, objects…]}</p>
+     *
+     * @param scale           current zoom factor (1.0 = 100 %)
+     * @param x               horizontal pan offset in SVG user-units
+     * @param y               vertical pan offset in SVG user-units
+     * @param backgroundImage URL of the background image, or {@code null} for a plain rect
+     * @param matrix          world-to-map transformation matrix, or {@code null} for identity
+     * @param objects         list of map objects (gates, people, etc.) to render
+     * @param selectedObjectId ID of the currently selected object, or {@code null}
+     */
     @Override
     public void draw(final double scale,
                      final double x,
@@ -190,6 +236,27 @@ public class FloorMapCanvasViewImpl
                                 new Attribute("vector-effect", "non-scaling-stroke"),
                                 new Attribute("pointer-events", "none"));
                         }
+                    } else {
+                        matrixGroup.elem(SafeHtmlUtil.from("rect"),
+                            new Attribute("x", "0"),
+                            new Attribute("y", "0"),
+                            new Attribute("width", "1000"),
+                            new Attribute("height", "1000"),
+                            new Attribute("fill", "#f8f8f8"),
+                            new Attribute("id", "background"));
+
+                        if ("background".equals(selectedObjectId)) {
+                            matrixGroup.elem(SafeHtmlUtil.from("rect"),
+                                new Attribute("x", "0"),
+                                new Attribute("y", "0"),
+                                new Attribute("width", "1000"),
+                                new Attribute("height", "1000"),
+                                new Attribute("fill", "none"),
+                                new Attribute("stroke", "#1e88e5"),
+                                new Attribute("stroke-width", "8"),
+                                new Attribute("vector-effect", "non-scaling-stroke"),
+                                new Attribute("pointer-events", "none"));
+                        }
                     }
 
                     // ----------------------------------------------------------------
@@ -205,6 +272,44 @@ public class FloorMapCanvasViewImpl
                             final String rawId = obj.getId() != null ? obj.getId() : "";
                             final int atIdx = rawId.indexOf('@');
                             final String displayLabel = atIdx > 0 ? rawId.substring(0, atIdx) : rawId;
+
+                            // ---- Movement trail (people only) ----
+                            // Rendered BEFORE the object group so trail lines sit behind the circle.
+                            // Uses a single SVG &lt;path&gt; with per-sub-path opacity to produce a
+                            // seamless, solid line that fades from tail to head.
+                            if (isPerson && obj.getTrail() != null && obj.getTrail().size() >= 2) {
+                                final java.util.List<double[]> trail = obj.getTrail();
+
+                                // Build a single SVG path "d" attribute from all trail points,
+                                // using the maximum alpha across the trail as the element opacity.
+                                // This gives a solid, seamless line without visible segment joins.
+                                final StringBuilder pathD = new StringBuilder();
+                                double maxAlpha = 0.0;
+                                for (int i = 0; i < trail.size(); i++) {
+                                    final double[] pt = trail.get(i);
+                                    if (pt[2] > maxAlpha) {
+                                        maxAlpha = pt[2];
+                                    }
+                                    if (i == 0) {
+                                        pathD.append("M").append(pt[0]).append(",").append(pt[1]);
+                                    } else {
+                                        pathD.append("L").append(pt[0]).append(",").append(pt[1]);
+                                    }
+                                }
+
+                                if (maxAlpha > 0.0) {
+                                    matrixGroup.elem(SafeHtmlUtil.from("path"),
+                                        new Attribute("d", pathD.toString()),
+                                        new Attribute("fill", "none"),
+                                        new Attribute("stroke", "#1f77b4"),
+                                        new Attribute("stroke-width", "6"),
+                                        new Attribute("stroke-linecap", "round"),
+                                        new Attribute("stroke-linejoin", "round"),
+                                        new Attribute("vector-effect", "non-scaling-stroke"),
+                                        new Attribute("opacity", String.valueOf(maxAlpha)),
+                                        new Attribute("pointer-events", "none"));
+                                }
+                            }
 
                             // Each object is a <g translate(x,y)> wrapper containing the shape + label.
                             // The wrapper id uses the SVG_GROUP_PREFIX so click-detection ignores it.
@@ -223,7 +328,6 @@ public class FloorMapCanvasViewImpl
                                         new Attribute("id", obj.getId()));
 
                                     // Label rendered BELOW the circle so it isn't hidden inside it.
-                                    // FIX (Bug 4/5): use dy to shift below the circle radius.
                                     objGroup.elem(displayLabel,
                                             SafeHtmlUtil.from("text"),
                                             new Attribute("x", "0"),
@@ -251,10 +355,8 @@ public class FloorMapCanvasViewImpl
                                         new Attribute("stroke", isSelected ? "#ff9800" : "none"),
                                         new Attribute("stroke-width", isSelected ? "4" : "0"),
                                         new Attribute("vector-effect", isSelected ? "non-scaling-stroke" : "none"),
-                                        // FIX (Bug 3): ID on the shape so click-detection works.
                                         new Attribute("id", obj.getId()));
 
-                                    // FIX (Bug 2): pass the actual display text as content.
                                     objGroup.elem(displayLabel,
                                             SafeHtmlUtil.from("text"),
                                             new Attribute("x", "0"),
@@ -288,10 +390,11 @@ public class FloorMapCanvasViewImpl
     }
 
     /**
-     * TODO EW: Potentially add a colour option to object edit screen so users can choose this
-     * instead of being predefined.
-     * Returns a fill colour based on object type so different fixture types are
+     * Returns a fill colour based on object type so that different fixture types are
      * visually distinguishable at a glance.
+     *
+     * @param type the object type string (e.g. "gate", "camera"), case-insensitive
+     * @return a CSS hex colour string
      */
     private static String colourForType(final String type) {
         if (type == null) {
@@ -308,11 +411,24 @@ public class FloorMapCanvasViewImpl
         };
     }
 
+    /**
+     * Registers a callback that is invoked whenever the canvas needs to be redrawn
+     * (e.g. after an asynchronous image aspect-ratio resolution completes).
+     *
+     * @param redrawListener the callback, or {@code null} to clear
+     */
     @Override
     public void setRedrawListener(final Runnable redrawListener) {
         this.redrawListener = redrawListener;
     }
 
+    /**
+     * Callback invoked (via JSNI) when the browser has finished loading a background image
+     * and its natural dimensions are known.
+     *
+     * @param url         the image URL that was loaded
+     * @param aspectRatio the image's natural width / height ratio
+     */
     @SuppressWarnings("unused")
     void onImageAspectRatioResolved(final String url, final double aspectRatio) {
         imageAspectRatioCache.put(url, aspectRatio);
@@ -322,6 +438,12 @@ public class FloorMapCanvasViewImpl
         }
     }
 
+    /**
+     * Starts an asynchronous image load to determine the aspect ratio of the given URL.
+     * No-ops if a load for this URL is already in flight.
+     *
+     * @param url the image URL to load
+     */
     private void loadImageAspectRatio(final String url) {
         if (loadingImages.contains(url)) {
             return;
@@ -330,6 +452,11 @@ public class FloorMapCanvasViewImpl
         startImageLoad(url);
     }
 
+    /**
+     * JSNI method that creates a browser {@code Image} element and starts loading the given URL.
+     * On success, calls back {@link #onImageAspectRatioResolved} with the computed aspect ratio;
+     * on error, falls back to an aspect ratio of {@code 1.0}.
+     */
     private native void startImageLoad(final String url) /*-{
         var self = this;
         var img = new Image();
@@ -350,8 +477,7 @@ public class FloorMapCanvasViewImpl
         img.src = url;
     }-*/;
 
-    // --------------------------------------------------------------------------------
-
+    /** GWT UiBinder interface for {@link FloorMapCanvasViewImpl}. */
     public interface Binder extends UiBinder<Widget, FloorMapCanvasViewImpl> {
 
     }

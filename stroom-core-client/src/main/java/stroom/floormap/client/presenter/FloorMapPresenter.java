@@ -27,11 +27,6 @@ import stroom.entity.client.presenter.MarkdownEditPresenter;
 import stroom.entity.client.presenter.MarkdownTabProvider;
 import stroom.floormap.shared.FloorMapDoc;
 import stroom.security.client.presenter.DocumentUserPermissionsTabProvider;
-import stroom.svg.client.SvgPresets;
-import stroom.svg.shared.SvgImage;
-import stroom.widget.button.client.ButtonView;
-import stroom.widget.button.client.InlineSvgToggleButton;
-import stroom.widget.button.client.SvgButton;
 import stroom.widget.tab.client.presenter.TabData;
 import stroom.widget.tab.client.presenter.TabDataImpl;
 
@@ -43,23 +38,32 @@ import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import javax.inject.Provider;
 
+/**
+ * Top-level document tab presenter for a {@link FloorMapDoc}.
+ *
+ * <p>Hosts all sub-tabs — Map, Editor, Events Query, Facts Query, Settings,
+ * Assets, Documentation, and Permissions — and coordinates the save chain
+ * across them.  The {@link #getPostSaveCallback()} method chains the Editor
+ * tab’s pending-change flush with the asset save so that both are persisted
+ * in a single user-initiated save.</p>
+ */
 public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMapDoc> {
 
     private static final TabData MAP = new TabDataImpl("Map");
     private static final TabData EDITOR = new TabDataImpl("Editor");
     private static final TabData EVENTS_QUERY = new TabDataImpl("Events Query");
+    private static final TabData FACTS_QUERY = new TabDataImpl("Facts Query");
     private static final TabData SETTINGS = new TabDataImpl("Settings");
     private static final TabData ASSETS = new TabDataImpl("Assets");
     private static final TabData DOCUMENTATION = new TabDataImpl("Documentation");
     private static final TabData PERMISSIONS = new TabDataImpl("Permissions");
 
     private final DocumentAssetPresenter<FloorMapDoc> documentAssetPresenter;
-    private final InlineSvgToggleButton editModeButton;
-    private final ButtonView addObjectButton;
     private FloorMapMapPresenter floorMapMapPresenter;
     private FloorMapEditorPresenter floorMapEditorPresenter;
     private FloorMapSettingsPresenter floorMapSettingsPresenter;
     private FloorMapQueryPresenter eventsQueryPresenter;
+    private FloorMapQueryPresenter factsQueryPresenter;
 
     @Inject
     public FloorMapPresenter(final EventBus eventBus,
@@ -73,32 +77,6 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
                              final DocumentAssetPresenter<FloorMapDoc> documentAssetPresenter) {
         super(eventBus, view);
         this.documentAssetPresenter = documentAssetPresenter;
-
-        editModeButton = new InlineSvgToggleButton();
-        editModeButton.setSvg(SvgImage.EDIT);
-        editModeButton.setTitle("Edit Mode");
-        editModeButton.setState(false);
-        toolbar.addButton(editModeButton);
-
-        addObjectButton = SvgButton.create(SvgPresets.ADD);
-        addObjectButton.setTitle("Add New Object");
-        addObjectButton.setVisible(false);
-        toolbar.addButton(addObjectButton);
-
-        //noinspection unused
-        registerHandler(editModeButton.addClickHandler(e -> {
-            if (floorMapMapPresenter != null) {
-                floorMapMapPresenter.toggleEditMode(editModeButton.getState());
-            }
-            addObjectButton.setVisible(editModeButton.getState());
-        }));
-
-        //noinspection unused
-        registerHandler(addObjectButton.addClickHandler(e -> {
-            if (floorMapMapPresenter != null) {
-                floorMapMapPresenter.promptAndAddObject();
-            }
-        }));
 
         addTab(MAP, new DocTabProvider<>(() -> {
             floorMapMapPresenter = floorMapMapPresenterProvider.get();
@@ -143,6 +121,34 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
             }
         });
 
+        addTab(FACTS_QUERY, new AbstractTabProvider<FloorMapDoc, FloorMapQueryPresenter>(eventBus) {
+            @Override
+            protected FloorMapQueryPresenter createPresenter() {
+                factsQueryPresenter = floorMapQueryPresenterProvider.get();
+                registerHandler(eventBus.addHandler(ChangeEvent.getType(), () -> fireDirtyEvent(true)));
+                return factsQueryPresenter;
+            }
+
+            @Override
+            public void onRead(final FloorMapQueryPresenter presenter,
+                               final DocRef docRef,
+                               final FloorMapDoc document,
+                               final boolean readOnly) {
+                presenter.read(docRef, document.getFactsQuery(), document.getFactsQueryTimeRange(),
+                        document.getFactsQueryTablePreferences(), null, null, false, null);
+                presenter.setTaskMonitorFactory(FloorMapPresenter.this);
+            }
+
+            @Override
+            public FloorMapDoc onWrite(final FloorMapQueryPresenter presenter,
+                                       final FloorMapDoc document) {
+                return document.copy()
+                        .factsQuery(presenter.getQuery())
+                        .factsQueryTimeRange(presenter.getQueryTimeRange())
+                        .factsQueryTablePreferences(presenter.getQueryTablePreferences())
+                        .build();
+            }
+        });
 
         addTab(SETTINGS, new DocTabProvider<>(() -> {
             floorMapSettingsPresenter = floorMapSettingsPresenterProvider.get();
@@ -171,30 +177,47 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
         selectTab(MAP);
     }
 
+    /** {@inheritDoc} */
     @Override
     protected void onRead(final DocRef docRef, final FloorMapDoc document, final boolean readOnly) {
         super.onRead(docRef, document, readOnly);
-        if (editModeButton != null) {
-            editModeButton.setState(false);
-            editModeButton.setVisible(getSelectedTab() == MAP);
-        }
-        if (addObjectButton != null) {
-            addObjectButton.setVisible(false);
-        }
     }
 
+    /**
+     * Performs post-tab-selection logic such as auto-populating the default
+     * Facts Query template and triggering asset change detection.
+     */
     @Override
     protected void afterSelectTab(final PresenterWidget<?> content) {
         if (content == documentAssetPresenter) {
             onChange();
         }
-        if (editModeButton != null) {
-            editModeButton.setVisible(content instanceof FloorMapMapPresenter);
-        }
-        if (addObjectButton != null && editModeButton != null) {
-            addObjectButton.setVisible(content instanceof FloorMapMapPresenter && editModeButton.getState());
-        }
 
+        // Auto-populate default template for Facts Query if it is empty/blank
+        if (content == factsQueryPresenter) {
+            final String currentQuery = factsQueryPresenter.getQuery();
+            if (currentQuery == null || currentQuery.trim().isEmpty()) {
+                final DocRef storeRef = getEntity() != null ? getEntity().getFactsStoreRef() : null;
+
+                if (storeRef != null && storeRef.getName() != null && !storeRef.getName().isEmpty()) {
+                    final String template = "from \"" + storeRef.getName() + "\"\n"
+                            + "select \n"
+                            + "  Key, \n"
+                            + "  EffectiveTime, \n"
+                            + "  jq(Value, \".type\") as type, \n"
+                            + "  jq(Value, \".name\") as name, \n"
+                            + "  jq(Value, \".maps\") as maps, \n"
+                            + "  jq(Value, \".coords\") as coords, \n"
+                            + "  jq(Value, \".img\") as img, \n"
+                            + "  jq(Value, \"\\\"tm-world-to-map\\\"\") as tm_world_to_map, \n"
+                            + "  jq(Value, \"\\\"tm-map-to-screen\\\"\") as tm_map_to_screen";
+
+                    factsQueryPresenter.read(getEntity().asDocRef(), template,
+                            getEntity().getFactsQueryTimeRange(), getEntity().getFactsQueryTablePreferences(),
+                            null, null, false, null);
+                }
+            }
+        }
     }
 
     @Override
@@ -212,6 +235,10 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
         return DOCUMENTATION;
     }
 
+    /**
+     * Returns {@code true} when any associated presenter (Map, Editor, or
+     * Assets) has unsaved changes.
+     */
     @Override
     protected boolean hasAssociatedDirty() {
         return super.hasAssociatedDirty() ||

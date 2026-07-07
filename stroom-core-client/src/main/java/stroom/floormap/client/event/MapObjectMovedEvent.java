@@ -20,6 +20,10 @@ import com.google.gwt.event.shared.EventHandler;
 import com.google.gwt.event.shared.GwtEvent;
 import com.google.gwt.event.shared.HasHandlers;
 
+/**
+ * Event fired when a map object is dragged to a new position on the floor map canvas.
+ * Carries the object identifier and the new map-space coordinates.
+ */
 public class MapObjectMovedEvent extends GwtEvent<MapObjectMovedEvent.Handler> {
 
     private static Type<MapObjectMovedEvent.Handler> TYPE;
@@ -54,21 +58,34 @@ public class MapObjectMovedEvent extends GwtEvent<MapObjectMovedEvent.Handler> {
         handler.onMove(this);
     }
 
+    /**
+     * @return the identifier of the object that was moved
+     */
     public String getObjectId() {
         return objectId;
     }
 
+    /**
+     * @return the new X coordinate in map space
+     */
     public double getX() {
         return x;
     }
 
+    /**
+     * @return the new Y coordinate in map space
+     */
     public double getY() {
         return y;
     }
 
     // --------------------------------------------------------------------------------
 
+    /**
+     * Handler for {@link MapObjectMovedEvent}.
+     */
     public interface Handler extends EventHandler {
+
         void onMove(MapObjectMovedEvent event);
     }
 

@@ -26,6 +26,13 @@ import stroom.util.shared.EntityServiceException;
 import jakarta.inject.Inject;
 import jakarta.inject.Provider;
 
+/**
+ * REST resource implementation for {@link FloorMapDoc} CRUD operations.
+ * <p>
+ * Delegates document read and update operations to {@link FloorMapStore}
+ * via {@link DocumentResourceHelper} for consistent permission checking
+ * and event logging.
+ */
 @AutoLogged
 class FloorMapResourceImpl implements FloorMapResource {
 
@@ -39,11 +46,25 @@ class FloorMapResourceImpl implements FloorMapResource {
         this.documentResourceHelperProvider = documentResourceHelperProvider;
     }
 
+    /**
+     * Fetches a floor map document by its UUID.
+     *
+     * @param uuid the UUID of the floor map document to fetch
+     * @return the floor map document
+     */
     @Override
     public FloorMapDoc fetch(final String uuid) {
         return documentResourceHelperProvider.get().read(floorMapStoreProvider.get(), getDocRef(uuid));
     }
 
+    /**
+     * Updates an existing floor map document.
+     *
+     * @param uuid the UUID of the floor map document to update
+     * @param doc  the updated floor map document
+     * @return the updated floor map document after persistence
+     * @throws EntityServiceException if the document UUID does not match the path UUID
+     */
     @Override
     public FloorMapDoc update(final String uuid, final FloorMapDoc doc) {
         checkUuidsMatch(uuid, doc);
