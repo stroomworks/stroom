@@ -17,6 +17,7 @@
 package stroom.floormap.client.view;
 
 import stroom.floormap.client.presenter.FloorMapTimelinePresenter.FloorMapTimelineView;
+import stroom.floormap.client.presenter.FloorMapTimelinePresenter.OutOfRange;
 import stroom.svg.client.Preset;
 import stroom.widget.button.client.SvgButton;
 import stroom.widget.histogram.client.HistogramWidget;
@@ -91,6 +92,10 @@ public class FloorMapTimelineViewImpl extends ViewImpl implements FloorMapTimeli
     Label startDateLabel;
     @UiField
     Label endDateLabel;
+    @UiField
+    Label outOfRangeLeftLabel;
+    @UiField
+    Label outOfRangeRightLabel;
 
     @Inject
     public FloorMapTimelineViewImpl(final Binder binder) {
@@ -132,6 +137,12 @@ public class FloorMapTimelineViewImpl extends ViewImpl implements FloorMapTimeli
             }
         });
         histogramContainer.setWidget(histogramWidget);
+
+        // Set tooltip text for out-of-range indicators (labels are declared in UiBinder).
+        outOfRangeLeftLabel.setText("\u00AB"); // «
+        outOfRangeLeftLabel.setTitle("Object out of range. Extend timeline range to view object.");
+        outOfRangeRightLabel.setText("\u00BB"); // »
+        outOfRangeRightLabel.setTitle("Object out of range. Extend timeline range to view object.");
     }
 
     @Override
@@ -265,6 +276,12 @@ public class FloorMapTimelineViewImpl extends ViewImpl implements FloorMapTimeli
         if (histogramWidget != null) {
             histogramWidget.setData(binCounts);
         }
+    }
+
+    @Override
+    public void setOutOfRangeIndicator(final OutOfRange direction) {
+        outOfRangeLeftLabel.setVisible(direction == OutOfRange.BEFORE);
+        outOfRangeRightLabel.setVisible(direction == OutOfRange.AFTER);
     }
 
     // -----------------------------------------------------------------------
