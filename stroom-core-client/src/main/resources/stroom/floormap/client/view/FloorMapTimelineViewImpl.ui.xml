@@ -39,8 +39,14 @@
 
         <!-- Date labels sit below the playback row, inset to align with the bar ends -->
         <g:FlowPanel addStyleNames="stroom-floormap-timeline-date-labels-row">
-            <g:Label ui:field="startDateLabel" addStyleNames="stroom-floormap-timeline-date-label" />
-            <g:Label ui:field="endDateLabel" addStyleNames="stroom-floormap-timeline-date-label stroom-floormap-timeline-date-label-end" />
+            <g:FlowPanel addStyleNames="stroom-floormap-timeline-date-labels-left">
+                <g:Label ui:field="outOfRangeLeftLabel" addStyleNames="stroom-floormap-timeline-out-of-range stroom-floormap-timeline-out-of-range--left" visible="false" />
+                <g:Label ui:field="startDateLabel" addStyleNames="stroom-floormap-timeline-date-label" />
+            </g:FlowPanel>
+            <g:FlowPanel addStyleNames="stroom-floormap-timeline-date-labels-right">
+                <g:Label ui:field="endDateLabel" addStyleNames="stroom-floormap-timeline-date-label stroom-floormap-timeline-date-label-end" />
+                <g:Label ui:field="outOfRangeRightLabel" addStyleNames="stroom-floormap-timeline-out-of-range stroom-floormap-timeline-out-of-range--right" visible="false" />
+            </g:FlowPanel>
         </g:FlowPanel>
     </g:FlowPanel>
 </ui:UiBinder>

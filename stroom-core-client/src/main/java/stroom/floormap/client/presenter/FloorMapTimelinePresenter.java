@@ -39,6 +39,20 @@ import java.util.function.Consumer;
  */
 public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelineView> {
 
+    /**
+     * Indicates whether the selected time falls outside the visible timeline range.
+     * Used to show a directional warning indicator so the user knows they need to
+     * extend the range to see the selected object.
+     */
+    public enum OutOfRange {
+        /** The selected time is within the visible range. */
+        NONE,
+        /** The selected time is before the timeline start. */
+        BEFORE,
+        /** The selected time is after the timeline end. */
+        AFTER
+    }
+
     private static final Preset PLAY_PRESET = new Preset(SvgImage.PLAY, "Play", true);
     private static final Preset PAUSE_PRESET = new Preset(SvgImage.PAUSE, "Pause", true);
     private static final Preset SETTINGS_PRESET = new Preset(SvgImage.SETTINGS, "Playback Settings", true);
@@ -65,6 +79,8 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
 
     private boolean playing;
     private double playbackSpeed;
+    /** Tracks whether the last programmatic setCurrentTime() was out of the visible range. */
+    private OutOfRange outOfRange = OutOfRange.NONE;
     private double lastFrameTime;
     /** Wall-clock timestamp (ms) of the most recent playback data query, used for throttling. */
     private double lastQueryWallClockTime;
@@ -87,8 +103,10 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
 
         view.setScrubHandler(percentage -> {
             // Visual-only update during drag — no data query fired.
+            // Manual scrub is always in-range, so clear any out-of-range indicator.
             final long duration = endTime - startTime;
             final long newTime = startTime + (long) (duration * (percentage / 100.0));
+            clearOutOfRange();
             setCurrentTime(newTime);
             view.setScrubTooltip(formatTime(newTime));
         });
@@ -101,6 +119,7 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
             }
             final long duration = endTime - startTime;
             final long newTime = startTime + (long) (duration * (percentage / 100.0));
+            clearOutOfRange();
             setCurrentTime(newTime);
             TimeChangeEvent.fire(this, newTime);
         });
@@ -210,6 +229,10 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
         this.endTime = end;
         settingsPresenter.setStartTime(start);
         settingsPresenter.setEndTime(end);
+        // Re-evaluate: if the current time now falls within the new range, clear the indicator.
+        if (currentTime >= start && currentTime <= end) {
+            clearOutOfRange();
+        }
         updateProgress();
         updateDateLabels();
     }
@@ -217,10 +240,29 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
     /**
      * Sets the current selected time on the timeline.
      *
+     * <p>If the time falls outside the visible range [{@link #startTime},
+     * {@link #endTime}], it is clamped to the nearest boundary and the view is
+     * notified with an {@link OutOfRange} indicator so a warning chevron can
+     * be shown at the corresponding end of the bar.</p>
+     *
      * @param time The selected time in milliseconds.
      */
     public void setCurrentTime(final long time) {
-        this.currentTime = time;
+        if (endTime > startTime) {
+            if (time < startTime) {
+                setOutOfRange(OutOfRange.BEFORE);
+                this.currentTime = startTime;
+            } else if (time > endTime) {
+                setOutOfRange(OutOfRange.AFTER);
+                this.currentTime = endTime;
+            } else {
+                clearOutOfRange();
+                this.currentTime = time;
+            }
+        } else {
+            // Range not yet initialised — store as-is.
+            this.currentTime = time;
+        }
         updateProgress();
     }
 
@@ -287,13 +329,36 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
     private void updateProgress() {
         if (endTime > startTime) {
             final double percentage = ((double) (currentTime - startTime) / (endTime - startTime)) * 100;
-            getView().setProgressPct(percentage);
+            // Defence-in-depth clamp — setCurrentTime should already keep us in bounds,
+            // but guard against any future caller that bypasses it.
+            getView().setProgressPct(Math.max(0.0, Math.min(100.0, percentage)));
         }
     }
 
     private void updateDateLabels() {
         getView().setStartDateLabel(formatTime(startTime));
         getView().setEndDateLabel(formatTime(endTime));
+    }
+
+    /**
+     * Sets the out-of-range state and notifies the view to show the indicator.
+     * Only notifies the view if the state actually changes to avoid redundant DOM updates.
+     */
+    private void setOutOfRange(final OutOfRange direction) {
+        if (this.outOfRange != direction) {
+            this.outOfRange = direction;
+            getView().setOutOfRangeIndicator(direction);
+        }
+    }
+
+    /**
+     * Clears the out-of-range indicator if one is currently showing.
+     */
+    private void clearOutOfRange() {
+        if (this.outOfRange != OutOfRange.NONE) {
+            this.outOfRange = OutOfRange.NONE;
+            getView().setOutOfRangeIndicator(OutOfRange.NONE);
+        }
     }
 
     /**
@@ -530,5 +595,15 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
          * An empty or null array clears the histogram.
          */
         void setHistogramData(int[] binCounts);
+
+        /**
+         * Shows or hides the out-of-range indicator at the appropriate end of the
+         * timeline bar.
+         *
+         * @param direction {@link OutOfRange#BEFORE} to show a left indicator,
+         *                  {@link OutOfRange#AFTER} to show a right indicator,
+         *                  or {@link OutOfRange#NONE} to hide both.
+         */
+        void setOutOfRangeIndicator(OutOfRange direction);
     }
 }
