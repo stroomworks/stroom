@@ -18,8 +18,8 @@ package stroom.floormap.client.view;
 
 import stroom.document.client.event.DirtyUiHandlers;
 import stroom.entity.client.presenter.ReadOnlyChangeHandler;
-import stroom.floormap.client.FloorMapJsonKeys;
 import stroom.floormap.client.presenter.FloorMapCanvasPresenter.FloorMapCanvasView;
+import stroom.floormap.shared.FloorMapJsonKeys;
 import stroom.floormap.shared.FloorMapObject;
 import stroom.floormap.shared.FloorMapTransformationMatrix;
 import stroom.widget.util.client.HtmlBuilder;

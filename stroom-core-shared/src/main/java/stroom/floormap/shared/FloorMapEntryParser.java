@@ -14,24 +14,18 @@
  * limitations under the License.
  */
 
-package stroom.floormap.client.presenter;
+package stroom.floormap.shared;
 
-import stroom.floormap.client.FloorMapJsonKeys;
-import stroom.floormap.client.ParsedValue;
-import stroom.floormap.client.ValueAccessor;
-import stroom.floormap.shared.FloorMapFieldMapping;
 import stroom.floormap.shared.FloorMapFieldMapping.Role;
-import stroom.floormap.shared.FloorMapObject;
-import stroom.floormap.shared.FloorMapTransformationMatrix;
-import stroom.floormap.shared.ValueFormat;
-import stroom.util.client.Console;
+import stroom.util.shared.TemporalEntry;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Consumer;
 
 
 /**
- * Shared utility that parses a list of {@link stroom.util.shared.TemporalEntry}
+ * Shared utility that parses a list of {@link TemporalEntry}
  * objects into canvas-ready data: a background image, a background
  * transformation matrix, the background's temporal-store key, and a list of
  * {@link FloorMapObject}s.
@@ -39,15 +33,14 @@ import java.util.List;
  * <p>Parsing is driven by a list of {@link FloorMapFieldMapping}s (the value
  * schema). Each mapping's {@link Role} determines how the extracted value is
  * interpreted. A schema must always be provided; it is stored in the
- * {@link stroom.floormap.shared.FloorMapDoc} and configured via the Settings tab.</p>
+ * {@link FloorMapDoc} and configured via the Settings tab.</p>
  *
- * <p>Both JSON and XML value formats are supported. The
- * {@link ValueFormat} parameter selects the appropriate
- * {@link ValueAccessor} implementation for parsing and field
- * extraction. When no format is specified, JSON is assumed.</p>
+ * <p>Both JSON and XML value formats are supported. The caller supplies
+ * an appropriate {@link ValueAccessor} implementation for parsing and field
+ * extraction.</p>
  *
- * <p>Used by both the Map tab ({@link FloorMapMapPresenter}) and the Editor tab
- * ({@link FloorMapEditorPresenter}) to ensure consistent parsing logic.</p>
+ * <p>This class has no GWT dependencies and can be tested with standard
+ * JUnit.</p>
  */
 public final class FloorMapEntryParser {
 
@@ -89,34 +82,8 @@ public final class FloorMapEntryParser {
     }
 
     /**
-     * Convenience overload that parses using {@code null} schema and
-     * {@link ValueFormat#JSON}.
-     *
-     * @param entries the temporal entries to parse; may be {@code null} or empty
-     * @return the parse result; never {@code null}
-     */
-    public static ParseResult parse(
-            final List<stroom.util.shared.TemporalEntry> entries) {
-        return parse(entries, null, ValueFormat.JSON);
-    }
-
-    /**
      * Parses temporal entries into canvas-ready data using the supplied schema
-     * and {@link ValueFormat#JSON}.
-     *
-     * @param entries the temporal entries to parse; may be {@code null} or empty
-     * @param schema  the value schema to use; must not be {@code null}
-     * @return the parse result; never {@code null}
-     */
-    public static ParseResult parse(
-            final List<stroom.util.shared.TemporalEntry> entries,
-            final List<FloorMapFieldMapping> schema) {
-        return parse(entries, schema, ValueFormat.JSON);
-    }
-
-    /**
-     * Parses temporal entries into canvas-ready data using the supplied schema
-     * and value format.
+     * and value accessor.
      *
      * <p>For each entry:</p>
      * <ul>
@@ -127,15 +94,18 @@ public final class FloorMapEntryParser {
      *       coordinate transformation, and adds a {@link FloorMapObject}.</li>
      * </ul>
      *
-     * @param entries the temporal entries to parse; may be {@code null} or empty
-     * @param schema  the value schema to use; must not be {@code null}
-     * @param format  the value format (JSON or XML); must not be {@code null}
+     * @param entries         the temporal entries to parse; may be {@code null} or empty
+     * @param schema          the value schema to use; may be {@code null}
+     * @param accessor        the value accessor for parsing; must not be {@code null}
+     * @param warningConsumer callback for warning messages (e.g. malformed entries);
+     *                        may be {@code null} to silently ignore warnings
      * @return the parse result; never {@code null}
      */
     public static ParseResult parse(
-            final List<stroom.util.shared.TemporalEntry> entries,
+            final List<TemporalEntry> entries,
             final List<FloorMapFieldMapping> schema,
-            final ValueFormat format) {
+            final ValueAccessor accessor,
+            final Consumer<String> warningConsumer) {
         String backgroundImage = null;
         FloorMapTransformationMatrix bgMatrix = FloorMapTransformationMatrix.identity();
         final List<FloorMapObject> objects = new ArrayList<>();
@@ -144,8 +114,6 @@ public final class FloorMapEntryParser {
             return new ParseResult(null, null, objects);
         }
 
-        final ValueAccessor accessor = ValueAccessor.forFormat(format);
-
         // Resolve the path for each role from the schema.
         final String typePath = findPath(schema, Role.TYPE);
         final String positionPath = findPath(schema, Role.POSITION);
@@ -153,14 +121,23 @@ public final class FloorMapEntryParser {
         final String worldToMapPath = findPath(schema, Role.WORLD_TO_MAP);
         final String mapToScreenPath = findPath(schema, Role.MAP_TO_SCREEN);
 
-        for (final stroom.util.shared.TemporalEntry entry : entries) {
+        for (final TemporalEntry entry : entries) {
             try {
                 final String valueStr = entry.getValue();
-                if (valueStr == null || !accessor.canParse(valueStr.trim())) {
+                if (valueStr == null) {
+                    warn(warningConsumer, "Skipping temporal entry with null value (key='"
+                            + entry.getKey() + "')");
+                    continue;
+                }
+                if (!accessor.canParse(valueStr.trim())) {
+                    warn(warningConsumer, "Skipping unparseable temporal entry (key='"
+                            + entry.getKey() + "'): value does not match expected format");
                     continue;
                 }
                 final ParsedValue parsed = accessor.parse(valueStr);
                 if (parsed == null) {
+                    warn(warningConsumer, "Skipping temporal entry that parsed to null (key='"
+                            + entry.getKey() + "')");
                     continue;
                 }
 
@@ -203,8 +180,8 @@ public final class FloorMapEntryParser {
                             entry.getKey(), type != null ? type : "", mapX, mapY));
                 }
             } catch (final Exception ex) {
-                Console.warn("Skipping malformed temporal entry (key='"
-                             + entry.getKey() + "'): " + ex.getMessage());
+                warn(warningConsumer, "Skipping malformed temporal entry (key='"
+                        + entry.getKey() + "'): " + ex.getMessage());
             }
         }
 
@@ -247,5 +224,15 @@ public final class FloorMapEntryParser {
                     arr[0], arr[1], arr[2], arr[3], arr[4], arr[5]);
         }
         return FloorMapTransformationMatrix.identity();
+    }
+
+    /**
+     * Emits a warning message via the consumer, if one is provided.
+     */
+    private static void warn(final Consumer<String> warningConsumer,
+                             final String message) {
+        if (warningConsumer != null) {
+            warningConsumer.accept(message);
+        }
     }
 }

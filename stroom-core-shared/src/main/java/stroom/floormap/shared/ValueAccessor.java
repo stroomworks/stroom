@@ -14,38 +14,21 @@
  * limitations under the License.
  */
 
-package stroom.floormap.client;
-
-import stroom.floormap.shared.ValueFormat;
+package stroom.floormap.shared;
 
 /**
  * Format-independent interface for reading, writing, and serialising
  * floor map entry values.
  *
- * <p>Each {@link ValueFormat} has a corresponding implementation:
- * {@link JsonValueAccessor} for JSON and {@link XmlValueAccessor} for
- * XML. Callers obtain an accessor via {@link #forFormat(ValueFormat)}
- * and then use the same API regardless of the underlying format.</p>
+ * <p>Each {@link ValueFormat} has a corresponding implementation.
+ * In the GWT client, implementations use GWT's JSON and XML libraries.
+ * In tests, a map-backed mock implementation can be used.</p>
  *
- * <h3>Namespace support (XML)</h3>
- * <p>The current XML implementation ({@link XmlValueAccessor}) does
- * <b>not</b> support XML namespaces. Paths match elements by local
- * name only (e.g. {@code /entry/type}). This is intentional: floor
- * map values are user-defined and authored by Stroom, making
- * namespace-qualified XML unlikely in practice.</p>
- *
- * <p>If namespace support is needed in future, the extension path is:
- * add a namespace-prefix-to-URI mapping to the settings, use
- * namespace-aware path syntax ({@code /ns:entry/ns:type}), and
- * switch {@code XmlValueAccessor} to
- * {@code getElementsByTagNameNS()} / {@code getAttributeNS()}.
- * GWT's {@code com.google.gwt.xml.client} API already provides
- * these methods, so no architectural changes to this interface
- * are required.</p>
+ * <p>Callers obtain an accessor from a factory appropriate to their
+ * runtime context and then use the same API regardless of the
+ * underlying format.</p>
  *
  * @see ParsedValue
- * @see JsonValueAccessor
- * @see XmlValueAccessor
  */
 public interface ValueAccessor {
 
@@ -135,18 +118,4 @@ public interface ValueAccessor {
      * @return {@code true} if this accessor can likely parse it
      */
     boolean canParse(String raw);
-
-    /**
-     * Returns the appropriate {@link ValueAccessor} for the given
-     * format.
-     *
-     * @param format the value format; must not be {@code null}
-     * @return the accessor instance (singleton)
-     */
-    static ValueAccessor forFormat(final ValueFormat format) {
-        return switch (format) {
-            case JSON -> JsonValueAccessor.INSTANCE;
-            case XML -> XmlValueAccessor.INSTANCE;
-        };
-    }
 }

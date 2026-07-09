@@ -22,27 +22,34 @@ import stroom.dispatch.client.RestFactory;
 import stroom.docref.DocRef;
 import stroom.entity.client.presenter.DocPresenter;
 import stroom.entity.shared.ExpressionCriteria;
-import stroom.floormap.client.FloorMapJsonKeys;
-import stroom.floormap.client.ParsedValue;
-import stroom.floormap.client.ValueAccessor;
+import stroom.floormap.client.ValueAccessorFactory;
 import stroom.floormap.client.event.MapContextMenuEvent;
 import stroom.floormap.client.event.MapObjectMovedEvent;
 import stroom.floormap.client.event.MapObjectSelectedEvent;
 import stroom.floormap.client.event.TimeChangeEvent;
 import stroom.floormap.client.presenter.FloorMapEditorPresenter.FloorMapEditorView;
 import stroom.floormap.shared.FloorMapDoc;
+import stroom.floormap.shared.FloorMapEditorModel;
+import stroom.floormap.shared.FloorMapEntryParser;
 import stroom.floormap.shared.FloorMapFieldMapping;
 import stroom.floormap.shared.FloorMapFieldMapping.Role;
+import stroom.floormap.shared.FloorMapJsonKeys;
+import stroom.floormap.shared.FloorMapPendingChanges;
 import stroom.floormap.shared.FloorMapTransformationMatrix;
+import stroom.floormap.shared.ParsedValue;
+import stroom.floormap.shared.ValueAccessor;
 import stroom.floormap.shared.ValueFormat;
 import stroom.query.api.ExpressionOperator;
 import stroom.query.api.ExpressionTerm;
 import stroom.query.api.ExpressionTerm.Condition;
+import stroom.sqlstore.shared.ApplyChangesRequest;
 import stroom.sqlstore.shared.ApplyChangesResult;
+import stroom.sqlstore.shared.ChangeOperation;
 import stroom.sqlstore.shared.FetchAtTimeRequest;
 import stroom.sqlstore.shared.SqlTemporalStoreResource;
 import stroom.sqlstore.shared.TemporalStoreTimeRange;
 import stroom.svg.shared.SvgImage;
+import stroom.util.client.Console;
 import stroom.util.shared.TemporalEntry;
 import stroom.util.shared.TemporalEntryId;
 import stroom.widget.menu.client.presenter.IconMenuItem;
@@ -51,13 +58,11 @@ import stroom.widget.menu.client.presenter.ShowMenuEvent;
 import stroom.widget.popup.client.presenter.PopupPosition;
 
 import com.google.gwt.core.client.GWT;
-import com.google.gwt.user.client.Random;
 import com.google.inject.Inject;
 import com.google.web.bindery.event.shared.EventBus;
 import com.gwtplatform.mvp.client.View;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
@@ -91,10 +96,10 @@ import javax.inject.Provider;
  * presenter only; they never call each other directly.</p>
  *
  * <ul>
- *   <li>{@link #selectedFactKey} — key of the selected fact, or {@code null}</li>
- *   <li>{@link #selectedTime} — current timeline position in ms</li>
- *   <li>{@link #showAllFacts} — whether "show all" mode is active</li>
- *   <li>{@link #pendingChanges} — staged edits awaiting flush</li>
+ *   <li>{@code selectedFactKey} — key of the selected fact, or {@code null}</li>
+ *   <li>{@code selectedTime} — current timeline position in ms</li>
+ *   <li>{@code showAllFacts} — whether "show all" mode is active</li>
+ *   <li>{@code pendingChanges} — staged edits awaiting flush</li>
  * </ul>
  *
  * <h3>Staged saves</h3>
@@ -144,35 +149,8 @@ public class FloorMapEditorPresenter
     private final FloorMapTimeListPresenter floorMapTimeListPresenter;
     private final FloorMapObjectEditPresenter floorMapObjectEditPresenter;
 
-    // -----------------------------------------------------------------------
-    // Shared selection model
-    // -----------------------------------------------------------------------
-
-    /** Currently selected fact key, or {@code null}. */
-    private String selectedFactKey;
-
-    /** Current timeline position in milliseconds. */
-    private long selectedTime;
-
-    /** When {@code true}, the Fact List ignores the time filter and shows everything. */
-    private boolean showAllFacts;
-
-    /**
-     * Server-sourced entry list for the currently selected fact.
-     * {@link #pendingChanges} is merged on top of this for display.
-     */
-    private List<TemporalEntry> serverEntriesForSelectedFact = new ArrayList<>();
-
-    /**
-     * Server-sourced snapshot of all keys visible on the canvas at the current time.
-     * Populated whenever {@link #fetchAtTime} or {@link #fetchAll} succeeds.
-     * Used by {@link #onObjectMovedOnCanvas} to locate an entry by key regardless
-     * of which key is currently selected in the Time List.
-     */
-    private List<TemporalEntry> serverEntriesAtCurrentTime = new ArrayList<>();
-
-    /** Buffer of staged edits awaiting the next flush. */
-    private final FloorMapPendingChanges pendingChanges = new FloorMapPendingChanges();
+    /** The GWT-free model containing all shared state and pure logic. */
+    private final FloorMapEditorModel model;
 
     // -----------------------------------------------------------------------
 
@@ -187,6 +165,8 @@ public class FloorMapEditorPresenter
                                    final Provider<FloorMapObjectEditPresenter> propertiesProvider) {
         super(eventBus, view);
         this.restFactory = restFactory;
+        this.model = new FloorMapEditorModel(
+                new java.util.Random(), Console::warn);
 
         // Each child is obtained via Provider so GIN creates a fresh instance
         // for this presenter rather than sharing singletons used elsewhere.
@@ -279,7 +259,7 @@ public class FloorMapEditorPresenter
                 .method(res -> res.getTimeRange(mapName))
                 .onSuccess(range -> {
                     initTimeline(range);
-                    loadAtTime(selectedTime);
+                    loadAtTime(model.getSelectedTime());
                 })
                 .exec();
     }
@@ -309,7 +289,7 @@ public class FloorMapEditorPresenter
      * @return {@code true} when pending changes exist
      */
     public boolean hasPendingChanges() {
-        return pendingChanges.isDirty();
+        return model.hasPendingChanges();
     }
 
     /**
@@ -344,15 +324,15 @@ public class FloorMapEditorPresenter
      * @param callback invoked with the document only when the flush succeeds
      */
     public void onSave(final FloorMapDoc document, final Consumer<FloorMapDoc> callback) {
-        if (!pendingChanges.isDirty()) {
+        if (!model.hasPendingChanges()) {
             callback.accept(document);
             return;
         }
 
         restFactory.create(SQL_TEMPORAL_STORE_RESOURCE)
-                .method(res -> res.applyChanges(pendingChanges.toRequest()))
+                .method(res -> res.applyChanges(buildApplyChangesRequest()))
                 .onSuccess(result -> {
-                    pendingChanges.clear();
+                    model.clearPendingChanges();
                     if (result.isSuccess()) {
                         // Reload all panels so they reflect the newly-persisted data
                         reloadAllPanels();
@@ -362,13 +342,35 @@ public class FloorMapEditorPresenter
                     }
                 })
                 .onFailure(error -> {
-                    pendingChanges.clear();
+                    model.clearPendingChanges();
                     AlertEvent.fireError(this,
                             "Error saving floor map editor changes: " + error.getMessage(),
                             this::reloadAllPanels);
                 })
                 .taskMonitorFactory(this)
                 .exec();
+    }
+
+    /**
+     * Builds an {@link ApplyChangesRequest} from the model's pending changes.
+     * This method lives in the presenter (not the model) because the
+     * {@code sqlstore.shared} types are not available in {@code stroom-core-shared}.
+     */
+    private ApplyChangesRequest buildApplyChangesRequest() {
+        final List<ChangeOperation> ops = new ArrayList<>();
+        for (final FloorMapPendingChanges.PendingChange change : model.getPendingChanges().getChanges()) {
+            if (change instanceof FloorMapPendingChanges.Creation) {
+                ops.add(ChangeOperation.upsert(
+                        ((FloorMapPendingChanges.Creation) change).getEntry()));
+            } else if (change instanceof FloorMapPendingChanges.Update) {
+                ops.add(ChangeOperation.upsert(
+                        ((FloorMapPendingChanges.Update) change).getEntry()));
+            } else if (change instanceof FloorMapPendingChanges.Deletion) {
+                ops.add(ChangeOperation.delete(
+                        ((FloorMapPendingChanges.Deletion) change).getId()));
+            }
+        }
+        return new ApplyChangesRequest(ops);
     }
 
     // -----------------------------------------------------------------------
@@ -391,34 +393,32 @@ public class FloorMapEditorPresenter
         final long now = System.currentTimeMillis();
 
         if (range.getMinEffectiveTimeMs() == null || range.getMaxEffectiveTimeMs() == null) {
-            // Empty store — use a default range centred on now
             floorMapTimelinePresenter.setTimeRange(now - ONE_DAY_MS, now + ONE_DAY_MS);
             floorMapTimelinePresenter.setCurrentTime(now);
-            selectedTime = now;
+            model.setSelectedTime(now);
         } else {
             final long min = range.getMinEffectiveTimeMs();
             final long max = range.getMaxEffectiveTimeMs();
             floorMapTimelinePresenter.setTimeRange(min, max);
             floorMapTimelinePresenter.setCurrentTime(max);
-            selectedTime = max;
+            model.setSelectedTime(max);
         }
     }
 
     /**
      * Called when the user moves the timeline scrubber.
      *
-     * <p>Updates {@link #selectedTime} and reloads the canvas and Fact List
-     * from the server at the new time. If a fact is already selected, also
-     * refreshes the Time List display using the cached
-     * {@link #serverEntriesForSelectedFact} overlaid with pending changes
+     * <p>Updates the model's selected time and reloads the canvas and Fact List
+     * at the new time. If a fact is selected, also refreshes the Time List
+     * from the model's server entries for the selected fact overlaid with pending changes
      * (no extra server call).</p>
      *
      * @param timeMs the new timeline position in milliseconds
      */
     private void onTimeChange(final long timeMs) {
-        selectedTime = timeMs;
+        model.setSelectedTime(timeMs);
         loadAtTime(timeMs);
-        if (selectedFactKey != null) {
+        if (model.getSelectedFactKey() != null) {
             refreshTimeListAtTime(timeMs);
         }
     }
@@ -428,7 +428,7 @@ public class FloorMapEditorPresenter
     // -----------------------------------------------------------------------
 
     /**
-     * Fetches facts at the given time (or all facts if {@link #showAllFacts} is
+     * Fetches facts at the given time (or all facts if {@code showAllFacts} is
      * active) and reloads the canvas and Fact List.
      *
      * @param timeMs the point in time to query
@@ -439,7 +439,7 @@ public class FloorMapEditorPresenter
             return;
         }
 
-        if (showAllFacts) {
+        if (model.isShowAllFacts()) {
             fetchAll(mapName);
         } else {
             fetchAtTime(mapName, timeMs);
@@ -480,8 +480,7 @@ public class FloorMapEditorPresenter
      * the canvas and Fact List.
      */
     private void onEntriesFetched(final List<TemporalEntry> entries) {
-        serverEntriesAtCurrentTime = entries != null ? entries : new ArrayList<>();
-        final List<TemporalEntry> merged = pendingChanges.applyTo(entries);
+        final List<TemporalEntry> merged = model.onEntriesFetched(entries);
         updateCanvasAndFactList(merged);
     }
 
@@ -506,14 +505,9 @@ public class FloorMapEditorPresenter
         restFactory.create(SQL_TEMPORAL_STORE_RESOURCE)
                 .method(res -> res.find(criteria))
                 .onSuccess(result -> {
-                    if (result != null && result.getValues() != null) {
-                        serverEntriesForSelectedFact = new ArrayList<>(result.getValues());
-                    } else {
-                        serverEntriesForSelectedFact = new ArrayList<>();
-                    }
-                    serverEntriesForSelectedFact.sort(
-                            Comparator.comparingLong(TemporalEntry::getEffectiveTimeMs));
-                    refreshTimeListAtTime(selectedTime);
+                    model.onTimeListFetched(
+                            result != null ? result.getValues() : null);
+                    refreshTimeListAtTime(model.getSelectedTime());
                 })
                 .exec();
     }
@@ -531,13 +525,14 @@ public class FloorMapEditorPresenter
      */
     private void updateCanvasAndFactList(final List<TemporalEntry> entries) {
         // Update canvas using shared parser (applies world-to-map transform)
-        final FloorMapEntryParser.ParseResult result = FloorMapEntryParser.parse(
-                entries, getEntity().getValueSchema(), getEntity().getValueFormat());
+        final FloorMapEntryParser.ParseResult result = model.parseForCanvas(
+                entries, getEntity().getValueSchema(),
+                ValueAccessorFactory.forFormat(getEntity().getValueFormat()));
         floorMapCanvasPresenter.setBackgroundImage(result.getBackgroundImage());
         floorMapCanvasPresenter.setMatrix(result.getBackgroundMatrix());
         floorMapCanvasPresenter.setObjects(result.getObjects());
-        if (selectedFactKey != null) {
-            floorMapCanvasPresenter.setSelectedObjectId(selectedFactKey);
+        if (model.getSelectedFactKey() != null) {
+            floorMapCanvasPresenter.setSelectedObjectId(model.getSelectedFactKey());
         }
 
         // Update Fact List — one row per unique key.
@@ -557,8 +552,8 @@ public class FloorMapEditorPresenter
         floorMapFactListPresenter.setData(factObjects);
 
         // Restore selection highlight without re-firing selection event
-        if (selectedFactKey != null) {
-            floorMapFactListPresenter.setSelected(selectedFactKey);
+        if (model.getSelectedFactKey() != null) {
+            floorMapFactListPresenter.setSelected(model.getSelectedFactKey());
         }
     }
 
@@ -572,7 +567,7 @@ public class FloorMapEditorPresenter
      * @param objectId the ID of the clicked object (= fact key)
      */
     private void onObjectSelectedOnCanvas(final String objectId) {
-        selectedFactKey = objectId;
+        model.setSelectedFactKey(objectId);
         // Highlight in Fact List without re-firing the consumer
         floorMapFactListPresenter.setSelected(objectId);
         // Load Time List
@@ -588,30 +583,21 @@ public class FloorMapEditorPresenter
      * @param y        new Y coordinate in map space
      */
     private void onObjectMovedOnCanvas(final String objectId, final double x, final double y) {
-        // Search the full canvas snapshot (all keys at current time) so that dragging
-        // any object works regardless of which key is selected in the Time List.
-        final List<TemporalEntry> all = pendingChanges.applyTo(serverEntriesAtCurrentTime);
-        for (final TemporalEntry e : all) {
-            if (objectId.equals(e.getKey())) {
-                try {
-                    final List<FloorMapFieldMapping> schema = getEntity().getValueSchema();
-                    if (schema == null || schema.isEmpty()) {
-                        throw new IllegalStateException(
-                                "No Value Schema is configured. "
-                                + "Please configure a Value Schema in the Settings tab.");
-                    }
-                    final TemporalEntry updated = buildUpdatedEntryWithCoords(
-                            e, x, y, schema, getEntity().getValueFormat());
-                    pendingChanges.recordUpdate(updated);
-                    setDirty(true);
-                } catch (final Exception ex) {
-                    AlertEvent.fireError(this,
-                            "Cannot update coordinates for object '" + objectId + "': "
-                            + ex.getMessage(),
-                            null);
-                }
-                break;
+        // The model searches the full canvas snapshot (all keys at current time) so that
+        // dragging any object works regardless of which key is selected in the Time List.
+        try {
+            final boolean recorded = model.recordObjectMove(
+                    objectId, x, y,
+                    getEntity().getValueSchema(),
+                    ValueAccessorFactory.forFormat(getEntity().getValueFormat()));
+            if (recorded) {
+                setDirty(true);
             }
+        } catch (final Exception ex) {
+            AlertEvent.fireError(this,
+                    "Cannot update coordinates for object '" + objectId + "': "
+                    + ex.getMessage(),
+                    null);
         }
         refreshCanvasOnly();
     }
@@ -623,14 +609,15 @@ public class FloorMapEditorPresenter
      * and cascade into the Time List).
      */
     private void refreshCanvasOnly() {
-        final List<TemporalEntry> canvasEntries = pendingChanges.applyTo(serverEntriesAtCurrentTime);
-        final FloorMapEntryParser.ParseResult result = FloorMapEntryParser.parse(
-                canvasEntries, getEntity().getValueSchema(), getEntity().getValueFormat());
+        final List<TemporalEntry> canvasEntries = model.buildMergedCanvasEntries();
+        final FloorMapEntryParser.ParseResult result = model.parseForCanvas(
+                canvasEntries, getEntity().getValueSchema(),
+                ValueAccessorFactory.forFormat(getEntity().getValueFormat()));
         floorMapCanvasPresenter.setBackgroundImage(result.getBackgroundImage());
         floorMapCanvasPresenter.setMatrix(result.getBackgroundMatrix());
         floorMapCanvasPresenter.setObjects(result.getObjects());
-        if (selectedFactKey != null) {
-            floorMapCanvasPresenter.setSelectedObjectId(selectedFactKey);
+        if (model.getSelectedFactKey() != null) {
+            floorMapCanvasPresenter.setSelectedObjectId(model.getSelectedFactKey());
         }
     }
 
@@ -641,17 +628,17 @@ public class FloorMapEditorPresenter
      */
     private void onFactSelectedInFactList(final FloorMapFactListPresenter.FactObject factObject) {
         if (factObject == null) {
-            selectedFactKey = null;
+            model.setSelectedFactKey(null);
             floorMapCanvasPresenter.setSelectedObjectId(null);
             floorMapTimeListPresenter.setData(new ArrayList<>());
             return;
         }
-        selectedFactKey = factObject.getKey();
-        floorMapCanvasPresenter.setSelectedObjectId(selectedFactKey);
+        model.setSelectedFactKey(factObject.getKey());
+        floorMapCanvasPresenter.setSelectedObjectId(model.getSelectedFactKey());
 
         // Pass object info to Properties panel
         floorMapObjectEditPresenter.setMapName(getMapName());
-        floorMapObjectEditPresenter.setObject(selectedFactKey);
+        floorMapObjectEditPresenter.setObject(model.getSelectedFactKey());
 
         loadTimeListForSelectedFact();
     }
@@ -670,9 +657,9 @@ public class FloorMapEditorPresenter
     private void onTimeSelectedInTimeList(final TemporalEntry entry) {
         floorMapCanvasPresenter.setIsDraggingEnabled(entry != null);
         if (entry != null) {
-            selectedTime = entry.getEffectiveTimeMs();
-            floorMapTimelinePresenter.setCurrentTime(selectedTime);
-            loadAtTime(selectedTime);
+            model.setSelectedTime(entry.getEffectiveTimeMs());
+            floorMapTimelinePresenter.setCurrentTime(model.getSelectedTime());
+            loadAtTime(model.getSelectedTime());
         }
     }
 
@@ -686,16 +673,19 @@ public class FloorMapEditorPresenter
         if (entry == null) {
             return;
         }
-        floorMapObjectEditPresenter.show(
+        floorMapObjectEditPresenter.showForEdit(
                 "Edit Time Properties",
                 entry,
-                saved -> {
-                    if (!Objects.equals(saved.getEffectiveTimeMs(), entry.getEffectiveTimeMs())) {
-                        pendingChanges.recordDeletion(new TemporalEntryId(
+                (saved, clone) -> {
+                    // When the effective time changed, a "move" deletes the
+                    // original version; a "clone" keeps it alongside the new one.
+                    if (!clone
+                            && !Objects.equals(saved.getEffectiveTimeMs(), entry.getEffectiveTimeMs())) {
+                        model.getPendingChanges().recordDeletion(new TemporalEntryId(
                                 saved.getMap(), saved.getKey(),
                                 entry.getEffectiveTimeMs()));
                     }
-                    pendingChanges.recordUpdate(saved);
+                    model.getPendingChanges().recordUpdate(saved);
                     setDirty(true);
                     refreshTimeListAtTime(saved.getEffectiveTimeMs());
                     refreshCanvas();
@@ -709,22 +699,23 @@ public class FloorMapEditorPresenter
      */
     private void onAddTimeInTimeList() {
         final String mapName = getMapName();
-        if (mapName == null || selectedFactKey == null) {
+        if (mapName == null || model.getSelectedFactKey() == null) {
             return;
         }
 
         final long newTime = System.currentTimeMillis();
         final TemporalEntry selected = floorMapTimeListPresenter.getSelectedEntry();
-        final TemporalEntry newEntry = cloneEntryAtTime(selected, mapName, selectedFactKey, newTime);
+        final TemporalEntry newEntry = FloorMapEditorModel.cloneEntryAtTime(
+                selected, mapName, model.getSelectedFactKey(), newTime);
 
         floorMapObjectEditPresenter.show(
                 "Add Time Properties",
                 newEntry,
                 saved -> {
-                    pendingChanges.recordCreation(saved);
+                    model.getPendingChanges().recordCreation(saved);
                     setDirty(true);
-                    loadAtTime(selectedTime);
-                    refreshTimeListAtTime(selectedTime);
+                    loadAtTime(model.getSelectedTime());
+                    refreshTimeListAtTime(model.getSelectedTime());
                 });
     }
 
@@ -754,43 +745,18 @@ public class FloorMapEditorPresenter
                 "Delete all entries for '" + key + "'? This cannot be undone.",
                 ok -> {
                     if (ok) {
-                        // Stage a deletion for every known entry of this key.
-                        final List<TemporalEntry> all =
-                                pendingChanges.applyTo(serverEntriesAtCurrentTime);
-                        // Also include entries from the time list (for the selected fact)
-                        final List<TemporalEntry> merged = new ArrayList<>(all);
-                        final Set<TemporalEntryId> seenIds = new HashSet<>();
-                        for (final TemporalEntry e : merged) {
-                            seenIds.add(new TemporalEntryId(
-                                    e.getMap(), e.getKey(), e.getEffectiveTimeMs()));
-                        }
-                        for (final TemporalEntry e : serverEntriesForSelectedFact) {
-                            final TemporalEntryId id = new TemporalEntryId(
-                                    e.getMap(), e.getKey(), e.getEffectiveTimeMs());
-                            if (e.getKey().equals(key) && !seenIds.contains(id)) {
-                                merged.add(e);
-                                seenIds.add(id);
-                            }
-                        }
-                        boolean staged = false;
-                        for (final TemporalEntry e : merged) {
-                            if (key.equals(e.getKey())) {
-                                pendingChanges.recordDeletion(
-                                        new TemporalEntryId(
-                                                e.getMap(), e.getKey(), e.getEffectiveTimeMs()));
-                                staged = true;
-                            }
-                        }
-                        if (staged) {
+                        // Was this key the current selection? Capture before staging,
+                        // since the model clears the selection as part of the deletion.
+                        final boolean wasSelected = key.equals(model.getSelectedFactKey());
+                        if (model.stageFactDeletion(key)) {
                             setDirty(true);
                         }
                         // Clear selection and refresh
-                        if (key.equals(selectedFactKey)) {
-                            selectedFactKey = null;
+                        if (wasSelected) {
                             floorMapTimeListPresenter.setData(new ArrayList<>());
                             floorMapObjectEditPresenter.loadEntry(null);
                         }
-                        loadAtTime(selectedTime);
+                        loadAtTime(model.getSelectedTime());
                     }
                 });
     }
@@ -803,29 +769,13 @@ public class FloorMapEditorPresenter
      * @param entry the entry to delete
      */
     private void onDeleteTimeFromTimeList(final TemporalEntry entry) {
-        final TemporalEntryId id = new TemporalEntryId(
-                entry.getMap(), entry.getKey(), entry.getEffectiveTimeMs());
-        pendingChanges.recordDeletion(id);
+        // Stage the deletion and compute the row to select afterwards (the item
+        // above the deleted one) so the user stays in context.
+        final int selectIndex = model.stageTimeEntryDeletion(entry);
         setDirty(true);
 
-        // Rebuild the Time List optimistically and select the item above
-        // the deleted one so the user stays in context.
-        final List<TemporalEntry> merged = pendingChanges.applyTo(serverEntriesForSelectedFact);
-        merged.removeIf(e -> !e.getKey().equals(selectedFactKey));
-        merged.sort(Comparator.comparingLong(TemporalEntry::getEffectiveTimeMs));
-
-        // Find where the deleted entry would have sat in the sorted list.
-        // Since applyTo already removed it, find the first entry with a
-        // later effective time — that position is where the deleted item was.
-        int deletedIndex = merged.size();
-        for (int i = 0; i < merged.size(); i++) {
-            if (merged.get(i).getEffectiveTimeMs() > entry.getEffectiveTimeMs()) {
-                deletedIndex = i;
-                break;
-            }
-        }
-        final int selectIndex = deletedIndex - 1;
-
+        // Rebuild the Time List optimistically from the same merged view.
+        final List<TemporalEntry> merged = model.buildMergedTimeList();
         floorMapTimeListPresenter.setData(merged);
         floorMapTimeListPresenter.selectAtIndex(selectIndex);
 
@@ -912,15 +862,14 @@ public class FloorMapEditorPresenter
                     .text("Edit Properties")
                     .command(() -> {
                         // Select the object and open the properties editor
-                        selectedFactKey = objectId;
+                        model.setSelectedFactKey(objectId);
                         floorMapCanvasPresenter.setSelectedObjectId(objectId);
                         floorMapFactListPresenter.setSelected(objectId);
                         loadTimeListForSelectedFact();
 
                         // Find the active entry for this object at the current time
                         // and open the edit dialog
-                        final List<TemporalEntry> all =
-                                pendingChanges.applyTo(serverEntriesAtCurrentTime);
+                        final List<TemporalEntry> all = model.buildMergedCanvasEntries();
                         for (final TemporalEntry e : all) {
                             if (objectId.equals(e.getKey())) {
                                 onEditTimeInTimeList(e);
@@ -938,7 +887,7 @@ public class FloorMapEditorPresenter
                         .text("Add Time Version")
                         .command(() -> {
                             // Select the object first so the time list loads
-                            selectedFactKey = objectId;
+                            model.setSelectedFactKey(objectId);
                             floorMapCanvasPresenter.setSelectedObjectId(objectId);
                             floorMapFactListPresenter.setSelected(objectId);
                             // Trigger the same flow as "Add Time" on the Time List
@@ -996,7 +945,7 @@ public class FloorMapEditorPresenter
 
         try {
             final ValueFormat format = getEntity().getValueFormat();
-            final ValueAccessor accessor = ValueAccessor.forFormat(format);
+            final ValueAccessor accessor = ValueAccessorFactory.forFormat(format);
             final ParsedValue newValue = accessor.createEmpty("entry");
             accessor.setString(newValue, pathForRole(Role.TYPE), "");
             accessor.setString(newValue, pathForRole(Role.LABEL), newKey);
@@ -1009,7 +958,7 @@ public class FloorMapEditorPresenter
             final String valueStr = accessor.serialize(newValue);
 
             final TemporalEntry entry = new TemporalEntry(
-                    mapName, newKey, selectedTime, valueStr);
+                    mapName, newKey, model.getSelectedTime(), valueStr);
 
             // Open the properties editor so the user can customise before committing
             floorMapObjectEditPresenter.setMapName(mapName);
@@ -1020,23 +969,23 @@ public class FloorMapEditorPresenter
                     "Add Object",
                     entry,
                     saved -> {
-                        pendingChanges.recordCreation(saved);
+                        model.getPendingChanges().recordCreation(saved);
                         setDirty(true);
-                        selectedFactKey = saved.getKey();
+                        model.setSelectedFactKey(saved.getKey());
 
                         // Select the new object in the Fact List and canvas
-                        floorMapCanvasPresenter.setSelectedObjectId(selectedFactKey);
-                        floorMapFactListPresenter.setSelected(selectedFactKey);
+                        floorMapCanvasPresenter.setSelectedObjectId(model.getSelectedFactKey());
+                        floorMapFactListPresenter.setSelected(model.getSelectedFactKey());
 
                         // Populate the Time List optimistically from pending
                         // changes (the server doesn't know about this entry yet)
-                        serverEntriesForSelectedFact = new ArrayList<>();
-                        refreshTimeListAtTime(selectedTime);
+                        model.setServerEntriesForSelectedFact(new ArrayList<>());
+                        refreshTimeListAtTime(model.getSelectedTime());
 
                         // Enable dragging so the user can immediately reposition
                         floorMapCanvasPresenter.setIsDraggingEnabled(true);
 
-                        loadAtTime(selectedTime);
+                        loadAtTime(model.getSelectedTime());
                     });
         } catch (final IllegalStateException ex) {
             AlertEvent.fireError(
@@ -1068,7 +1017,7 @@ public class FloorMapEditorPresenter
         }
 
         // Find the current entry for this object
-        final List<TemporalEntry> all = pendingChanges.applyTo(serverEntriesAtCurrentTime);
+        final List<TemporalEntry> all = model.buildMergedCanvasEntries();
         TemporalEntry sourceEntry = null;
         for (final TemporalEntry e : all) {
             if (originalKey.equals(e.getKey())) {
@@ -1084,7 +1033,7 @@ public class FloorMapEditorPresenter
         try {
             final String newKey = generateObjectKey(originalKey + "-copy");
             final ValueFormat format = getEntity().getValueFormat();
-            final ValueAccessor accessor = ValueAccessor.forFormat(format);
+            final ValueAccessor accessor = ValueAccessorFactory.forFormat(format);
             final ParsedValue parsed = accessor.parse(sourceEntry.getValue());
             if (parsed != null) {
                 // Offset the position slightly so the duplicate doesn't sit on top
@@ -1098,12 +1047,12 @@ public class FloorMapEditorPresenter
                     : sourceEntry.getValue();
 
             final TemporalEntry newEntry = new TemporalEntry(
-                    mapName, newKey, selectedTime, valueStr);
+                    mapName, newKey, model.getSelectedTime(), valueStr);
 
-            pendingChanges.recordCreation(newEntry);
+            model.getPendingChanges().recordCreation(newEntry);
             setDirty(true);
-            selectedFactKey = newKey;
-            loadAtTime(selectedTime);
+            model.setSelectedFactKey(newKey);
+            loadAtTime(model.getSelectedTime());
         } catch (final Exception ex) {
             AlertEvent.fireError(
                     this,
@@ -1133,24 +1082,7 @@ public class FloorMapEditorPresenter
      * @return a key string suitable for use as a temporal-store fact key
      */
     private String generateObjectKey(final String prefix) {
-        final List<TemporalEntry> merged =
-                pendingChanges.applyTo(serverEntriesAtCurrentTime);
-        final Set<String> existingKeys = new HashSet<>();
-        for (final TemporalEntry e : merged) {
-            existingKeys.add(e.getKey());
-        }
-
-        final int maxAttempts = 1_000;
-        for (int i = 0; i < maxAttempts; i++) {
-            final String candidate = prefix + "-"
-                    + Random.nextInt(99999);
-            if (!existingKeys.contains(candidate)) {
-                return candidate;
-            }
-        }
-
-        // Extremely unlikely fallback — append a timestamp to guarantee uniqueness
-        return prefix + "-" + System.currentTimeMillis();
+        return model.generateObjectKey(prefix);
     }
 
     // -----------------------------------------------------------------------
@@ -1163,8 +1095,8 @@ public class FloorMapEditorPresenter
      * @param showAll {@code true} to ignore the time filter
      */
     public void onShowAllFactsToggled(final boolean showAll) {
-        this.showAllFacts = showAll;
-        loadAtTime(selectedTime);
+        model.setShowAllFacts(showAll);
+        loadAtTime(model.getSelectedTime());
     }
 
     // -----------------------------------------------------------------------
@@ -1172,9 +1104,9 @@ public class FloorMapEditorPresenter
     // -----------------------------------------------------------------------
 
     /**
-     * Refreshes the Time List from {@link #serverEntriesForSelectedFact}
+     * Refreshes the Time List from the model's server entries for the selected fact,
      * overlaid with pending changes, then selects the entry active at
-     * {@link #selectedTime} (i.e. the most recent entry ≤ the current
+     * the model's selected time (i.e. the most recent entry ≤ the current
      * timeline position).
      *
      * <p>Called on timeline scrubber moves so the highlighted row tracks the
@@ -1183,16 +1115,14 @@ public class FloorMapEditorPresenter
      * @param timeMs the timeline position to select against
      */
     private void refreshTimeListAtTime(final long timeMs) {
-        final List<TemporalEntry> merged = pendingChanges.applyTo(serverEntriesForSelectedFact);
-        merged.removeIf(e -> !e.getKey().equals(selectedFactKey));
-        merged.sort(Comparator.comparingLong(TemporalEntry::getEffectiveTimeMs));
+        final List<TemporalEntry> merged = model.buildMergedTimeList();
         floorMapTimeListPresenter.setData(merged);
         floorMapTimeListPresenter.selectAtTime(timeMs);
     }
 
     /** Refreshes the canvas using the latest Fact List data at the current time. */
     private void refreshCanvas() {
-        loadAtTime(selectedTime);
+        loadAtTime(model.getSelectedTime());
     }
 
     // -----------------------------------------------------------------------
@@ -1206,7 +1136,7 @@ public class FloorMapEditorPresenter
      * @param result the failed {@link ApplyChangesResult}
      */
     private void onFlushError(final ApplyChangesResult result) {
-        pendingChanges.clear();
+        model.getPendingChanges().clear();
         final String message = result.getErrorMessage() != null
                 ? result.getErrorMessage()
                 : "Unknown error";
@@ -1221,9 +1151,9 @@ public class FloorMapEditorPresenter
     private void reloadAllPanels() {
         final String mapName = getMapName();
         if (mapName != null) {
-            loadAtTime(selectedTime);
-            if (selectedFactKey != null) {
-                fetchTimeList(mapName, selectedFactKey);
+            loadAtTime(model.getSelectedTime());
+            if (model.getSelectedFactKey() != null) {
+                fetchTimeList(mapName, model.getSelectedFactKey());
             }
         }
     }
@@ -1238,11 +1168,11 @@ public class FloorMapEditorPresenter
      */
     private void loadTimeListForSelectedFact() {
         final String mapName = getMapName();
-        if (mapName == null || selectedFactKey == null) {
+        if (mapName == null || model.getSelectedFactKey() == null) {
             floorMapTimeListPresenter.setData(new ArrayList<>());
             return;
         }
-        fetchTimeList(mapName, selectedFactKey);
+        fetchTimeList(mapName, model.getSelectedFactKey());
     }
 
     /**
@@ -1280,80 +1210,6 @@ public class FloorMapEditorPresenter
                     + "' mapping in the Settings tab under Value Schema.");
         }
         return path;
-    }
-
-    /**
-     * Returns a new entry cloned from {@code source} but with {@code newTime}
-     * as its effective time. If {@code source} is {@code null} a blank entry is
-     * returned. Coordinates are preserved from the source.
-     *
-     * @param source     the entry to clone; may be {@code null}
-     * @param mapName    the temporal store map name
-     * @param key        the fact key
-     * @param newTime    the effective time for the cloned entry
-     * @return the new entry; never {@code null}
-     */
-    private static TemporalEntry cloneEntryAtTime(final TemporalEntry source,
-                                                   final String mapName,
-                                                   final String key,
-                                                   final long newTime) {
-        final String value = source != null ? source.getValue() : "{}";
-        return new TemporalEntry(mapName, key, newTime, value != null ? value : "{}");
-    }
-
-
-    /**
-     * Builds a copy of {@code original} with its {@code coords} field replaced
-     * by the supplied map-space {@code x} and {@code y} values.
-     *
-     * <p>The canvas fires coordinates in <em>map space</em> (after the
-     * world-to-map transform). Since the JSON {@code coords} field stores
-     * <em>world-space</em> values, this method applies the inverse of the
-     * entry's world-to-map matrix before writing.</p>
-     *
-     * @param original the entry to update; must not be {@code null}
-     * @param mapX     the new X coordinate in map space
-     * @param mapY     the new Y coordinate in map space
-     * @return a new {@link TemporalEntry} with the updated JSON value
-     * @throws IllegalStateException if the entry's value is absent or not a
-     *                               JSON object
-     * @throws RuntimeException      if the JSON cannot be parsed or mutated
-     */
-    private static TemporalEntry buildUpdatedEntryWithCoords(final TemporalEntry original,
-                                                              final double mapX,
-                                                              final double mapY,
-                                                              final List<FloorMapFieldMapping> schema,
-                                                              final ValueFormat format) {
-        final String raw = original.getValue();
-        final ValueAccessor accessor = ValueAccessor.forFormat(format);
-        final ParsedValue parsed = accessor.parse(raw);
-        if (parsed == null) {
-            throw new IllegalStateException(
-                    "Entry value could not be parsed (format=" + format + "): " + raw);
-        }
-
-        // Convert map-space coordinates back to world space using the
-        // inverse of the entry's world-to-map matrix.
-        FloorMapTransformationMatrix worldToMap = FloorMapTransformationMatrix.identity();
-        final double[] w2mArr = accessor.getArray(
-                parsed, FloorMapEntryParser.findPath(schema, Role.WORLD_TO_MAP));
-        if (w2mArr != null && w2mArr.length >= 6) {
-            worldToMap = new FloorMapTransformationMatrix(
-                    w2mArr[0], w2mArr[1], w2mArr[2],
-                    w2mArr[3], w2mArr[4], w2mArr[5]);
-        }
-        final FloorMapTransformationMatrix inv = worldToMap.inverse();
-        final double worldX = inv.getA() * mapX + inv.getC() * mapY + inv.getE();
-        final double worldY = inv.getB() * mapX + inv.getD() * mapY + inv.getF();
-
-        accessor.setArray(parsed,
-                FloorMapEntryParser.findPath(schema, Role.POSITION),
-                new double[]{worldX, worldY});
-        return new TemporalEntry(
-                original.getMap(),
-                original.getKey(),
-                original.getEffectiveTimeMs(),
-                accessor.serialize(parsed));
     }
 
     // -----------------------------------------------------------------------

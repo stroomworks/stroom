@@ -16,6 +16,9 @@
 
 package stroom.floormap.client;
 
+import stroom.floormap.shared.ParsedValue;
+import stroom.floormap.shared.ValueAccessor;
+
 import com.google.gwt.xml.client.Document;
 import com.google.gwt.xml.client.Element;
 import com.google.gwt.xml.client.Node;
@@ -216,8 +219,8 @@ public final class XmlValueAccessor implements ValueAccessor {
             return null;
         }
 
-        // First segment must match the root element name.
-        if (!current.getTagName().equals(segments[0])) {
+        // First segment must match the root element's local name.
+        if (!localName(current.getTagName()).equals(segments[0])) {
             return null;
         }
 
@@ -254,8 +257,8 @@ public final class XmlValueAccessor implements ValueAccessor {
             return null;
         }
 
-        // First segment must match the root element name.
-        if (!current.getTagName().equals(segments[0])) {
+        // First segment must match the root element's local name.
+        if (!localName(current.getTagName()).equals(segments[0])) {
             return null;
         }
 
@@ -293,7 +296,8 @@ public final class XmlValueAccessor implements ValueAccessor {
     }
 
     /**
-     * Finds the first child element with the given tag name.
+     * Finds the first child element whose local name (i.e. tag name with any
+     * namespace prefix stripped) matches the given tag name.
      */
     private static Element findChildElement(
             final Element parent, final String tagName) {
@@ -302,12 +306,22 @@ public final class XmlValueAccessor implements ValueAccessor {
             final Node child = children.item(i);
             if (child.getNodeType() == Node.ELEMENT_NODE) {
                 final Element elem = (Element) child;
-                if (elem.getTagName().equals(tagName)) {
+                if (localName(elem.getTagName()).equals(tagName)) {
                     return elem;
                 }
             }
         }
         return null;
+    }
+
+    /**
+     * Strips any namespace prefix (e.g. {@code "ns:type"} → {@code "type"})
+     * so that path matching is namespace-agnostic, per the class-level
+     * "Namespace support" note above.
+     */
+    private static String localName(final String qualifiedName) {
+        final int colon = qualifiedName.indexOf(':');
+        return colon >= 0 ? qualifiedName.substring(colon + 1) : qualifiedName;
     }
 
     /**

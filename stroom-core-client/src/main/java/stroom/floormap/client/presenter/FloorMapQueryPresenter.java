@@ -18,11 +18,11 @@ package stroom.floormap.client.presenter;
 
 import stroom.docref.DocRef;
 import stroom.entity.client.presenter.HasToolbar;
-import stroom.floormap.client.FloorMapJsonKeys;
 import stroom.floormap.client.event.FloorMapDataEvent;
 import stroom.floormap.client.event.TimeChangeEvent;
 import stroom.floormap.client.presenter.FloorMapQueryPresenter.FloorMapQueryView;
 import stroom.floormap.shared.FloorMapDoc;
+import stroom.floormap.shared.FloorMapJsonKeys;
 import stroom.floormap.shared.FloorMapObject;
 import stroom.query.api.Column;
 import stroom.query.api.Row;

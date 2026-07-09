@@ -16,8 +16,8 @@
 
 package stroom.floormap.client.view;
 
-import stroom.floormap.client.FloorMapJsonKeys;
 import stroom.floormap.client.presenter.FloorMapObjectEditPresenter.FloorMapObjectEditView;
+import stroom.floormap.shared.FloorMapJsonKeys;
 import stroom.widget.datepicker.client.DateTimeBox;
 import stroom.widget.datepicker.client.DateTimePopup;
 import stroom.widget.form.client.FormGroup;

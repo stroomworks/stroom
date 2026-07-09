@@ -19,6 +19,7 @@ package stroom.floormap.client.presenter;
 import stroom.data.grid.client.MyDataGrid;
 import stroom.floormap.client.ValuePathAccessor;
 import stroom.floormap.client.presenter.FloorMapFactListPresenter.FloorMapFactListView;
+import stroom.floormap.shared.FloorMapEntryParser;
 import stroom.floormap.shared.FloorMapFieldMapping;
 import stroom.floormap.shared.FloorMapFieldMapping.Role;
 import stroom.svg.client.SvgPresets;
@@ -215,30 +216,13 @@ public class FloorMapFactListPresenter extends MyPresenterWidget<FloorMapFactLis
      * <p>Both the backing {@link ListDataProvider} and the visible
      * {@link MyDataGrid} row data are updated. The current selection is
      * <em>not</em> automatically adjusted — callers should follow up with
-     * {@link #setSelected(String)} or {@link #selectLast()} as appropriate.</p>
+     * {@link #setSelected(String)} as appropriate.</p>
      *
      * @param data the list of fact objects to display; must not be {@code null}
      */
     public void setData(final List<FactObject> data) {
         dataProvider.setList(data);
         dataGrid.setRowData(0, data);
-    }
-
-    /**
-     * Selects the last item in the grid, or clears the selection if the grid
-     * is empty.
-     *
-     * <p>Typically called after a new object is added so that the freshly
-     * created entry is immediately selected and visible to the user.</p>
-     */
-    public void selectLast() {
-        final List<FactObject> list = dataProvider.getList();
-        if (list != null && !list.isEmpty()) {
-            //noinspection SequencedCollectionMethodCanBeUsed
-            selectionModel.setSelected(list.get(list.size() - 1), true);
-        } else {
-            selectionModel.clear();
-        }
     }
 
     /**
