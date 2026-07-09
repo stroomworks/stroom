@@ -141,10 +141,6 @@ public class FloorMapEditorModel {
         return serverEntriesAtCurrentTime;
     }
 
-    //public void setServerEntriesAtCurrentTime(final List<TemporalEntry> entries) {
-    //    this.serverEntriesAtCurrentTime = entries != null ? entries : new ArrayList<>();
-    //}
-
     public FloorMapPendingChanges getPendingChanges() {
         return pendingChanges;
     }
