@@ -88,8 +88,7 @@ public class PathwaysProcessor {
                              final PathwaySerde pathwaySerde,
                              final ShardManager shardManager,
                              final NodeInfo nodeInfo,
-                             final ClusterLockService clusterLockService) {
-                             final NodeInfo nodeInfo,
+                             final ClusterLockService clusterLockService,
                              final PathwayEventsSerde pathwayEventsSerde/*TEMPORARY TODO 8192*/) {
         this.pathwaysStore = pathwaysStore;
         this.messageReceiverFactory = messageReceiverFactory;
@@ -98,7 +97,8 @@ public class PathwaysProcessor {
         this.shardManager = shardManager;
         this.nodeInfo = nodeInfo;
         this.clusterLockService = clusterLockService;
-        this.pathwayEventsSerde = pathwayEventsSerde;/*TEMPORARY TODO 8192*/
+        /*TEMPORARY TODO 8192*/
+        this.pathwayEventsSerde = pathwayEventsSerde;
 
         dbPath = pathCreator.toAppPath("${stroom.home}/pathways");
     }
@@ -158,7 +158,7 @@ public class PathwaysProcessor {
                                 break;
                             }
                         }
-                        String pathName = zeroIdx != -1
+                        final String pathName = zeroIdx != -1
                                 ? new String(kArr, 0, zeroIdx, StandardCharsets.UTF_8)
                                 : new String(kArr, StandardCharsets.UTF_8);
                         LOGGER.error("DB KEY FOUND: " + pathName);
@@ -182,7 +182,9 @@ public class PathwaysProcessor {
                     LOGGER.error("keyBb: " + Arrays.toString(keyArr));
 
                     LOGGER.error("if (valueByteBuffer == null) return;");
-                    if (valueByteBuffer == null) return;
+                    if (valueByteBuffer == null) {
+                        return;
+                    }
                     LOGGER.error("no return;");
 
                     LOGGER.error("valArr");
@@ -323,8 +325,8 @@ public class PathwaysProcessor {
                 eligible.size(), doc.getName());
 
         if (infoFeed != null && infoFeed.getName() != null) {
-            messageReceiverFactory.create(infoFeed.getName(), messageReceiver -> {
-                try (final LmdbWriter writer = pathwaysDb.createWriter()) {
+            try (final LmdbWriter writer = pathwaysDb.createWriter()) {
+                messageReceiverFactory.create(pathwaysDb, writer, infoFeed.getName(), messageReceiver -> {
                     final TraceProcessor traceProcessor =
                             new TraceProcessor(byteBuffers, pathwaySerde);
                     for (final byte[] traceId : eligible) {
@@ -336,9 +338,9 @@ public class PathwaysProcessor {
                                 doc,
                                 messageReceiver);
                     }
-                    writer.commit();
-                }
-            });
+                });
+                writer.commit();
+            }
         }
         return null;
     }

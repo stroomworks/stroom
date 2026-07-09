@@ -16,22 +16,21 @@
 
 package stroom.pathways.impl;
 
+import stroom.bytebuffer.impl6.ByteBuffers;
 import stroom.data.store.api.OutputStreamProvider;
 import stroom.data.store.api.Store;
 import stroom.data.store.api.Target;
 import stroom.meta.api.MetaProperties;
 import stroom.pathways.impl.events.PathwayEvent;
 import stroom.pathways.shared.PathwaysDoc;
+import stroom.planb.impl.db.LmdbWriter;
+import stroom.planb.impl.db.trace.PathwaysDb;
+import stroom.planb.impl.db.trace.PathwaysDb.SimpleDb;
 import stroom.util.logging.LambdaLogger;
 import stroom.util.logging.LambdaLoggerFactory;
 import stroom.util.shared.Severity;
 
 import com.google.inject.Inject;
-
-import stroom.bytebuffer.impl6.ByteBuffers;
-import stroom.planb.impl.db.LmdbWriter;
-import stroom.planb.impl.db.trace.PathwaysDb;
-import stroom.planb.impl.db.trace.PathwaysDb.SimpleDb;
 
 import java.io.IOException;
 import java.io.OutputStreamWriter;
@@ -62,7 +61,10 @@ public class MessageReceiverFactory {
         this.byteBuffers = byteBuffers;
     }
 
-    public void create(final PathwaysDb pathwaysDb, final LmdbWriter lmdbWriter, final String feedName, final Consumer<MessageReceiver> messageReceiverConsumer) {
+    public void create(final PathwaysDb pathwaysDb,
+                       final LmdbWriter lmdbWriter,
+                       final String feedName,
+                       final Consumer<MessageReceiver> messageReceiverConsumer) {
         final MetaProperties metaProperties = MetaProperties.builder()
                 .feedName(feedName)
                 .typeName("Report")
@@ -91,16 +93,20 @@ public class MessageReceiverFactory {
                             }
 
                             @Override
-                            public void event(final PathwaysDoc pathwaysDoc, final String pathwayName, final PathwayEvent event) {
+                            public void event(final PathwaysDoc pathwaysDoc,
+                                              final String pathwayName,
+                                              final PathwayEvent event) {
                                 buffer.computeIfAbsent(pathwayName, k -> new ArrayList<>()).add(event);
                                 eventCount++;
                                 if (eventCount >= MAX_BUFFER_SIZE) {
                                     flush();
                                 }
                             }
-                            
+
                             public void flush() {
-                                if (buffer.isEmpty()) return;
+                                if (buffer.isEmpty()) {
+                                    return;
+                                }
                                 try {
                                     final SimpleDb eventsDb = pathwaysDb.getPathwayEvents();
                                     for (final Map.Entry<String, List<PathwayEvent>> entry : buffer.entrySet()) {
@@ -110,7 +116,7 @@ public class MessageReceiverFactory {
                                                 keyBuf.put(pathBytes);
                                                 keyBuf.put((byte) 0);
                                                 keyBuf.putLong(sequenceId++);
-                                                
+
                                                 pathwayEventsSerde.writePathwayEvent(event, valBuf -> {
                                                     eventsDb.insert(lmdbWriter, keyBuf.flip(), valBuf);
                                                 });

@@ -24,7 +24,6 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.ws.rs.Consumes;
-import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.PUT;
@@ -42,6 +41,8 @@ public interface PathwaysResource extends RestResource, DirectRestService, Fetch
 
     String BASE_PATH = "/pathways" + ResourcePaths.V2;
     String FIND_PATHWAYS_SUB_PATH = "/findPathways";
+    String DELETE_PATHWAY_SUB_PATH = "/deletePathway";
+    String DELETE_AND_REPROCESS_PATHWAY_SUB_PATH = "/deleteAndReprocessPathway";
 
     @GET
     @Path("/{uuid}")
@@ -82,11 +83,19 @@ public interface PathwaysResource extends RestResource, DirectRestService, Fetch
     Boolean updatePathway(
             @Parameter(description = "change", required = true) UpdatePathway updatePathway);
 
-    @DELETE
-    @Path("/deletePathway")
+    @POST
+    @Path(DELETE_PATHWAY_SUB_PATH)
     @Operation(
             summary = "Delete pathway",
             operationId = "deletePathway")
     Boolean deletePathway(
             @Parameter(description = "change", required = true) DeletePathway deletePathway);
+
+    @POST
+    @Path(DELETE_AND_REPROCESS_PATHWAY_SUB_PATH)
+    @Operation(
+            summary = "Delete pathway and clear processing status so traces are reprocessed (debug)",
+            operationId = "deleteAndReprocessPathway")
+    Boolean deleteAndReprocessPathway(
+            @Parameter(description = "change", required = true) DeleteAndReprocessPathway request);
 }

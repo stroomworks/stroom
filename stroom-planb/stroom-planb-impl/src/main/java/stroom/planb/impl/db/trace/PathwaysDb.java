@@ -138,6 +138,12 @@ public class PathwaysDb {
             writer.tryCommit();
         }
 
+        public void delete(final LmdbWriter writer, final ByteBuffer keyByteBuffer) {
+            final Txn<ByteBuffer> writeTxn = writer.getWriteTxn();
+            dbi.delete(writeTxn, keyByteBuffer);
+            writer.tryCommit();
+        }
+
         public void iterate(final EntryConsumer consumer) {
             env.read(txn -> {
                 iterate(txn, consumer);

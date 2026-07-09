@@ -31,6 +31,7 @@ import stroom.docref.DocRef;
 import stroom.document.client.event.DirtyEvent;
 import stroom.entity.client.presenter.DocPresenter;
 import stroom.pathways.shared.AddPathway;
+import stroom.pathways.shared.DeleteAndReprocessPathway;
 import stroom.pathways.shared.DeletePathway;
 import stroom.pathways.shared.FindPathwayCriteria;
 import stroom.pathways.shared.PathwaysDoc;
@@ -73,6 +74,7 @@ public class PathwayListPresenter
     private final ButtonView newButton;
     private final ButtonView editButton;
     private final ButtonView removeButton;
+    private final ButtonView reprocessButton;
     private RestDataProvider<Pathway, ResultPage<Pathway>> dataProvider;
 
     private String filter;
@@ -103,6 +105,7 @@ public class PathwayListPresenter
         newButton = pagerView.addButton(SvgPresets.NEW_ITEM);
         editButton = pagerView.addButton(SvgPresets.EDIT);
         removeButton = pagerView.addButton(SvgPresets.DELETE);
+        reprocessButton = pagerView.addButton(SvgPresets.RERUN);
 
         addColumns();
         enableButtons();
@@ -133,6 +136,13 @@ public class PathwayListPresenter
                 }
             }
         }));
+        registerHandler(reprocessButton.addClickHandler(event -> {
+            if (!readOnly) {
+                if (MouseUtil.isPrimary(event)) {
+                    onDeleteAndReprocess();
+                }
+            }
+        }));
         registerHandler(selectionModel.addSelectionHandler(event -> {
             if (!readOnly) {
                 enableButtons();
@@ -156,6 +166,8 @@ public class PathwayListPresenter
 
     private void enableButtons() {
         newButton.setEnabled(!readOnly);
+        // Reprocess resets all traces for the doc regardless of selection, so it only depends on !readOnly.
+        reprocessButton.setEnabled(!readOnly);
         if (!readOnly) {
             final Pathway selectedElement = selectionModel.getSelected();
             final boolean enabled = selectedElement != null;
@@ -170,10 +182,12 @@ public class PathwayListPresenter
             newButton.setTitle("New pathway disabled as read only");
             editButton.setTitle("Edit pathway disabled as read only");
             removeButton.setTitle("Remove pathway disabled as read only");
+            reprocessButton.setTitle("Delete & reprocess disabled as read only");
         } else {
             newButton.setTitle("New Pathway");
             editButton.setTitle("Edit Pathway");
             removeButton.setTitle("Remove Pathway");
+            reprocessButton.setTitle("Delete Pathway & Reprocess All Traces");
         }
     }
 
@@ -295,6 +309,54 @@ public class PathwayListPresenter
                         restFactory
                                 .create(PATHWAYS_RESOURCE)
                                 .method(res -> res.deletePathway(new DeletePathway(docRef, pathway.getName())))
+                                .onSuccess(response -> {
+                                    selectionModel.clear();
+                                    refresh();
+                                    DirtyEvent.fire(PathwayListPresenter.this, true);
+                                })
+                                .taskMonitorFactory(pagerView)
+                                .exec();
+                    }
+                }
+            });
+        }
+    }
+
+    private void onDeleteAndReprocess() {
+        final List<Pathway> list = selectionModel.getSelectedItems();
+        if (list == null || list.isEmpty()) {
+            // Nothing selected: reset all traces for the doc without deleting a specific pathway.
+            ConfirmEvent.fire(this,
+                    "Clear the processing status for all traces so they are reprocessed on the next run?",
+                    result -> {
+                        if (result) {
+                            restFactory
+                                    .create(PATHWAYS_RESOURCE)
+                                    .method(res -> res.deleteAndReprocessPathway(
+                                            new DeleteAndReprocessPathway(docRef, null)))
+                                    .onSuccess(response -> {
+                                        refresh();
+                                        DirtyEvent.fire(PathwayListPresenter.this, true);
+                                    })
+                                    .taskMonitorFactory(pagerView)
+                                    .exec();
+                        }
+                    });
+        } else {
+            String message = "Delete the selected pathway AND clear the processing status for all traces "
+                             + "so they are reprocessed on the next run?";
+            if (list.size() > 1) {
+                message = "Delete the selected pathways AND clear the processing status for all traces "
+                          + "so they are reprocessed on the next run?";
+            }
+
+            ConfirmEvent.fire(this, message, result -> {
+                if (result) {
+                    for (final Pathway pathway : list) {
+                        restFactory
+                                .create(PATHWAYS_RESOURCE)
+                                .method(res -> res.deleteAndReprocessPathway(
+                                        new DeleteAndReprocessPathway(docRef, pathway.getName())))
                                 .onSuccess(response -> {
                                     selectionModel.clear();
                                     refresh();

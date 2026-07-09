@@ -20,6 +20,7 @@ import stroom.docref.DocRef;
 import stroom.event.logging.rs.api.AutoLogged;
 import stroom.event.logging.rs.api.AutoLogged.OperationType;
 import stroom.pathways.shared.AddPathway;
+import stroom.pathways.shared.DeleteAndReprocessPathway;
 import stroom.pathways.shared.DeletePathway;
 import stroom.pathways.shared.FindPathwayCriteria;
 import stroom.pathways.shared.PathwayResultPage;
@@ -86,5 +87,11 @@ class PathwaysResourceImpl implements PathwaysResource {
     @Override
     public Boolean deletePathway(final DeletePathway deletePathway) {
         return pathwaysServiceProvider.get().deletePathway(deletePathway);
+    }
+
+    @AutoLogged(OperationType.UNLOGGED)
+    @Override
+    public Boolean deleteAndReprocessPathway(final DeleteAndReprocessPathway request) {
+        return pathwaysServiceProvider.get().deleteAndReprocessPathway(request);
     }
 }
