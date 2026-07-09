@@ -14,14 +14,13 @@
  * limitations under the License.
  */
 
-package stroom.floormap.client.presenter;
+package stroom.floormap.shared;
 
-import stroom.sqlstore.shared.ApplyChangesRequest;
-import stroom.sqlstore.shared.ChangeOperation;
 import stroom.util.shared.TemporalEntry;
 import stroom.util.shared.TemporalEntryId;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
@@ -30,7 +29,7 @@ import java.util.Objects;
  *
  * <p>Every user action (create, update, delete) appends an operation to the
  * ordered {@link #changes} list. The list is preserved in exactly the order
- * the user performed the operations, so that {@link #toRequest()} can replay
+ * the user performed the operations, so that {@link #getChanges()} can replay
  * them server-side in the same order within a single transaction.</p>
  *
  * <h3>Optimistic UI</h3>
@@ -194,28 +193,14 @@ public class FloorMapPendingChanges {
         return result;
     }
 
-    // -----------------------------------------------------------------------
-    // Conversion to REST request
-    // -----------------------------------------------------------------------
-
     /**
-     * Converts the staged operations to an {@link ApplyChangesRequest}.
-     * Both {@link Creation} and {@link Update} map to UPSERT.
+     * Returns an unmodifiable view of the staged operations, in the order
+     * they were recorded. Used by the presenter to build a REST request.
      *
-     * @return a request ready to send; never {@code null}
+     * @return the list of pending changes; never {@code null}
      */
-    public ApplyChangesRequest toRequest() {
-        final List<ChangeOperation> ops = new ArrayList<>();
-        for (final PendingChange change : changes) {
-            if (change instanceof Creation) {
-                ops.add(ChangeOperation.upsert(((Creation) change).getEntry()));
-            } else if (change instanceof Update) {
-                ops.add(ChangeOperation.upsert(((Update) change).getEntry()));
-            } else if (change instanceof Deletion) {
-                ops.add(ChangeOperation.delete(((Deletion) change).getId()));
-            }
-        }
-        return new ApplyChangesRequest(ops);
+    public List<PendingChange> getChanges() {
+        return Collections.unmodifiableList(changes);
     }
 
     // -----------------------------------------------------------------------

@@ -18,6 +18,7 @@ package stroom.floormap.client.presenter;
 
 import stroom.data.grid.client.MyDataGrid;
 import stroom.floormap.client.presenter.FloorMapTimeListPresenter.FloorMapTimeListView;
+import stroom.floormap.shared.FloorMapEditorModel;
 import stroom.svg.client.SvgPresets;
 import stroom.util.client.JSONUtil;
 import stroom.util.shared.TemporalEntry;
@@ -190,17 +191,11 @@ public class FloorMapTimeListPresenter extends MyPresenterWidget<FloorMapTimeLis
         if (list == null || list.isEmpty()) {
             return;
         }
-        // List is sorted ascending by effective time; walk backwards to find
-        // the last entry whose time is <= timeMs.
-        TemporalEntry best = null;
-        for (int i = list.size() - 1; i >= 0; i--) {
-            if (list.get(i).getEffectiveTimeMs() <= timeMs) {
-                best = list.get(i);
-                break;
-            }
-        }
-        if (best != null) {
-            selectionModel.setSelected(best, true);
+        // List is sorted ascending by effective time; find the last entry whose
+        // time is <= timeMs using the shared, unit-tested selection logic.
+        final int index = FloorMapEditorModel.findActiveIndexAtTime(list, timeMs);
+        if (index >= 0) {
+            selectionModel.setSelected(list.get(index), true);
             // Explicitly enable the edit and delete buttons: setData() disables them
             // synchronously, and GWT's deferred SelectionChangeEvent may not
             // re-enable them reliably when clear() and setSelected() are coalesced.

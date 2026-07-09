@@ -20,12 +20,14 @@ import stroom.alert.client.event.AlertEvent;
 import stroom.alert.client.event.ConfirmEvent;
 import stroom.data.client.event.DataSelectionEvent;
 import stroom.document.asset.client.presenter.DocumentAssetDropDownPresenter;
-import stroom.floormap.client.FloorMapJsonKeys;
-import stroom.floormap.client.ParsedValue;
-import stroom.floormap.client.ValueAccessor;
+import stroom.floormap.client.ValueAccessorFactory;
 import stroom.floormap.client.presenter.FloorMapObjectEditPresenter.FloorMapObjectEditView;
 import stroom.floormap.shared.FloorMapDoc;
+import stroom.floormap.shared.FloorMapEntryParser;
 import stroom.floormap.shared.FloorMapFieldMapping.Role;
+import stroom.floormap.shared.FloorMapJsonKeys;
+import stroom.floormap.shared.ParsedValue;
+import stroom.floormap.shared.ValueAccessor;
 import stroom.util.shared.TemporalEntry;
 import stroom.widget.popup.client.event.ShowPopupEvent;
 import stroom.widget.popup.client.presenter.PopupType;
@@ -35,6 +37,7 @@ import com.google.web.bindery.event.shared.EventBus;
 import com.gwtplatform.mvp.client.MyPresenterWidget;
 import com.gwtplatform.mvp.client.View;
 
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import javax.inject.Inject;
 
@@ -162,19 +165,54 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
     }
 
     /**
-     * Shows the properties form as a modal OK/Cancel dialog.
+     * Shows the properties form as a modal OK/Cancel dialog for a
+     * <em>new</em> (not yet persisted) entry.
      *
      * <p>The form is pre-populated from {@code entry}. When the user clicks OK
      * the current form state is built into a {@link TemporalEntry} and passed
-     * to {@code onSave}. Clicking Cancel discards the changes.</p>
+     * to {@code onSave}. Clicking Cancel discards the changes. Editing the
+     * effective time simply sets the new entry's time — no move/clone
+     * question is asked, since there is no persisted version to move.</p>
      *
-     * @param caption the dialog title — e.g. "Add Time Properties" or "Edit Time Properties"
+     * @param caption the dialog title — e.g. "Add Time Properties" or "Add Object"
      * @param entry   the entry to pre-populate the form with; may be {@code null} for a blank form
      * @param onSave  called with the built entry when the user clicks OK
+     *
+     * TODO 4092: Is this correct? When is it called?
      */
     public void show(final String caption,
                      final TemporalEntry entry,
                      final Consumer<TemporalEntry> onSave) {
+        doShow(caption, entry, false, (built, clone) -> onSave.accept(built));
+    }
+
+    /**
+     * Shows the properties form as a modal OK/Cancel dialog for an
+     * <em>existing</em> entry.
+     *
+     * <p>Behaves like {@link #show(String, TemporalEntry, Consumer)}, except
+     * that when the user changes the effective time they are asked whether to
+     * <em>move</em> the version to the new time or <em>clone</em> it (keeping
+     * the original version at the old time). The choice is reported via the
+     * second argument of {@code onSave}.</p>
+     *
+     * @param caption the dialog title — e.g. "Edit Time Properties"
+     * @param entry   the entry to pre-populate the form with; must not be {@code null}
+     * @param onSave  called with the built entry when the user clicks OK; the
+     *                boolean is {@code true} when the user chose to clone
+     *                rather than move (only possible when the time changed)
+     */
+    public void showForEdit(final String caption,
+                            final TemporalEntry entry,
+                            final BiConsumer<TemporalEntry, Boolean> onSave) {
+        doShow(caption, entry, true, onSave);
+    }
+
+    // TODO 4092: Is this correct? When is it called?
+    private void doShow(final String caption,
+                        final TemporalEntry entry,
+                        final boolean askMoveOrClone,
+                        final BiConsumer<TemporalEntry, Boolean> onSave) {
         loadEntry(entry);
         //noinspection unused e
         ShowPopupEvent.builder(this)
@@ -192,20 +230,18 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
                             return;
                         }
                         final long time = getView().getEffectiveTime();
-                        if (entry != null && entry.getEffectiveTimeMs() != time) {
+                        if (askMoveOrClone && entry != null && entry.getEffectiveTimeMs() != time) {
                             // Effective time changed — ask whether to move or clone.
-                            //noinspection unused move
                             ConfirmEvent.fire(this,
                                     "You have changed the effective time. "
                                     + "Do you want to move the version to the new time? "
                                     + "(OK to move, Cancel to create a new cloned version at the new time)",
                                     move -> {
-                                        final TemporalEntry built = buildEntry(time);
-                                        onSave.accept(built);
+                                        onSave.accept(buildEntry(time), !move);
                                         e.hide();
                                     });
                         } else {
-                            onSave.accept(buildEntry(time));
+                            onSave.accept(buildEntry(time), false);
                             e.hide();
                         }
                     } else {
@@ -248,7 +284,7 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
      * @return the serialised value (JSON or XML); never {@code null}
      */
     private String buildValue() {
-        final ValueAccessor accessor = ValueAccessor.forFormat(floorMapDoc.getValueFormat());
+        final ValueAccessor accessor = ValueAccessorFactory.forFormat(floorMapDoc.getValueFormat());
         final ParsedValue newValue = accessor.createEmpty("entry");
 
         accessor.setString(newValue, pathForRole(Role.TYPE), getView().getType());
@@ -312,7 +348,7 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
             final double[] m2s = new double[]{1.0, 0.0, 0.0, 1.0, 0.0, 0.0};
 
             try {
-                final ValueAccessor accessor = ValueAccessor.forFormat(floorMapDoc.getValueFormat());
+                final ValueAccessor accessor = ValueAccessorFactory.forFormat(floorMapDoc.getValueFormat());
                 final ParsedValue parsed = accessor.parse(selected.getValue());
                 if (parsed != null) {
                     final String parsedName = accessor.getString(parsed, pathForRole(Role.LABEL));

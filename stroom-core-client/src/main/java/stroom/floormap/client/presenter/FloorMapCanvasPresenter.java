@@ -16,11 +16,11 @@
 
 package stroom.floormap.client.presenter;
 
-import stroom.floormap.client.FloorMapJsonKeys;
 import stroom.floormap.client.event.MapContextMenuEvent;
 import stroom.floormap.client.event.MapObjectMovedEvent;
 import stroom.floormap.client.event.MapObjectSelectedEvent;
 import stroom.floormap.client.presenter.FloorMapCanvasPresenter.FloorMapCanvasView;
+import stroom.floormap.shared.FloorMapJsonKeys;
 import stroom.floormap.shared.FloorMapObject;
 import stroom.floormap.shared.FloorMapTransformationMatrix;
 

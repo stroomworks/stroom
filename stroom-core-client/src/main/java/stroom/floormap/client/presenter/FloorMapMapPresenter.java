@@ -19,8 +19,6 @@ package stroom.floormap.client.presenter;
 import stroom.dispatch.client.RestFactory;
 import stroom.docref.DocRef;
 import stroom.entity.client.presenter.DocPresenter;
-
-import stroom.floormap.client.FloorMapJsonKeys;
 import stroom.floormap.client.ValuePathAccessor;
 import stroom.floormap.client.event.FloorMapDataEvent;
 import stroom.floormap.client.event.MapObjectMovedEvent;
@@ -28,8 +26,10 @@ import stroom.floormap.client.event.MapObjectSelectedEvent;
 import stroom.floormap.client.event.TimeChangeEvent;
 import stroom.floormap.client.presenter.FloorMapMapPresenter.FloorMapMapView;
 import stroom.floormap.shared.FloorMapDoc;
+import stroom.floormap.shared.FloorMapEntryParser;
 import stroom.floormap.shared.FloorMapFieldMapping;
 import stroom.floormap.shared.FloorMapFieldMapping.Role;
+import stroom.floormap.shared.FloorMapJsonKeys;
 import stroom.floormap.shared.FloorMapObject;
 import stroom.floormap.shared.FloorMapTransformationMatrix;
 import stroom.query.api.Column;
@@ -48,7 +48,6 @@ import stroom.query.client.presenter.ResultStoreModel;
 import stroom.query.shared.QueryTablePreferences;
 import stroom.sqlstore.shared.SqlTemporalStoreResource;
 import stroom.util.client.Console;
-
 import stroom.util.shared.TemporalEntry;
 import stroom.widget.histogram.client.HistogramDataModel;
 import stroom.widget.histogram.client.HistogramQueryHelper;
@@ -213,7 +212,13 @@ public class FloorMapMapPresenter
     @Override
     protected void onBind() {
         super.onBind();
-        registerHandler(getEventBus().addHandler(TimeChangeEvent.getType(), e -> onTimeChange(e.getTime())));
+        // Only react to this tab's own timeline — the Editor tab has its own
+        // timeline firing the same event type, and the tabs must not time-sync.
+        registerHandler(getEventBus().addHandler(TimeChangeEvent.getType(), e -> {
+            if (e.getSource() == floorMapTimelinePresenter) {
+                onTimeChange(e.getTime());
+            }
+        }));
         registerHandler(getEventBus().addHandler(FloorMapDataEvent.getType(), e ->
                 floorMapCanvasPresenter.setEventObjects(e.getObjects())));
 
@@ -222,13 +227,24 @@ public class FloorMapMapPresenter
                 runHistogramQuery(floorMapTimelinePresenter.getStartTime(),
                         floorMapTimelinePresenter.getEndTime()));
 
-        //noinspection unused e
+        // Canvas events are fired on the shared event bus by every FloorMap
+        // canvas instance (this tab, the Editor tab, and any other open
+        // FloorMap document), so each handler must ignore events from
+        // canvases other than its own. Without the source guard a drag on
+        // the Editor tab's canvas would trigger applyMove() here, silently
+        // persisting a new time record at this tab's selectedTime.
         registerHandler(getEventBus().addHandler(MapObjectSelectedEvent.getType(), e -> {
-            floorMapCanvasPresenter.setSelectedObjectId(null);
-            getView().setPropertiesVisible(false);
+            if (e.getSource() == floorMapCanvasPresenter) {
+                floorMapCanvasPresenter.setSelectedObjectId(null);
+                getView().setPropertiesVisible(false);
+            }
         }));
 
         registerHandler(getEventBus().addHandler(MapObjectMovedEvent.getType(), e -> {
+            if (e.getSource() != floorMapCanvasPresenter) {
+                return;
+            }
+
             final String mapName = getEntity() != null && getEntity().getFactsStoreRef() != null
                     ? getEntity().getFactsStoreRef().getName()
                     : null;

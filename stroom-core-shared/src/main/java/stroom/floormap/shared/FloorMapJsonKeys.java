@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package stroom.floormap.client;
+package stroom.floormap.shared;
 
 /**
  * JSON field-name constants for the temporal-store entry value schema

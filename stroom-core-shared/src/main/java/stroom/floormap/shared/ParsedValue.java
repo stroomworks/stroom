@@ -14,38 +14,36 @@
  * limitations under the License.
  */
 
-package stroom.floormap.client;
+package stroom.floormap.shared;
 
 /**
  * An opaque wrapper around a parsed value, which may be backed by either
- * a GWT {@code JSONObject} (for JSON format) or a GWT XML {@code Document}
- * (for XML format).
+ * a GWT {@code JSONObject} (for JSON format), a GWT XML {@code Document}
+ * (for XML format), or any other implementation-specific object (e.g. a
+ * {@code Map} in tests).
  *
  * <p>Consumers should never cast or inspect the underlying object directly.
  * Instead, all access should go through a {@link ValueAccessor}, which
  * provides format-independent read/write operations.</p>
  *
  * @see ValueAccessor
- * @see JsonValueAccessor
- * @see XmlValueAccessor
  */
 public final class ParsedValue {
 
     private final Object backing;
 
-    ParsedValue(final Object backing) {
+    public ParsedValue(final Object backing) {
         this.backing = backing;
     }
 
     /**
      * Returns the underlying backing object.
      *
-     * <p>Package-private — only {@link JsonValueAccessor} and
-     * {@link XmlValueAccessor} should call this.</p>
+     * <p>Only {@link ValueAccessor} implementations should call this.</p>
      *
      * @return the backing object (never {@code null})
      */
-    Object getBacking() {
+    public Object getBacking() {
         return backing;
     }
 }

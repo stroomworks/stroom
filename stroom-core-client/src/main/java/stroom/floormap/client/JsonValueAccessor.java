@@ -16,6 +16,9 @@
 
 package stroom.floormap.client;
 
+import stroom.floormap.shared.ParsedValue;
+import stroom.floormap.shared.ValueAccessor;
+
 import com.google.gwt.json.client.JSONArray;
 import com.google.gwt.json.client.JSONNumber;
 import com.google.gwt.json.client.JSONObject;
