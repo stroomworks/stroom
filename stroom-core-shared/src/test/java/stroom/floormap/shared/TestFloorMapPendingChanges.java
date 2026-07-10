@@ -227,6 +227,51 @@ class TestFloorMapPendingChanges {
     }
 
     // -----------------------------------------------------------------------
+    // Natural-key matching with boxed Long identity
+    // -----------------------------------------------------------------------
+
+    /**
+     * Natural-key matching must compare effective times by value, not by object
+     * identity. {@link Long} values outside the JVM's autobox cache
+     * ({@code -128}..{@code 127}) are distinct objects, so an accidental
+     * {@code ==} comparison would silently fail to match. This guards the update
+     * path: an update keyed on one {@code Long} instance must still overlay a
+     * server entry holding an equal-but-distinct {@code Long} instance.
+     */
+    @Test
+    void testApplyTo_update_effectiveTimeOutsideCacheRange() {
+        final long serverTime = 1_000_000_000_000L;
+        final long updateTime = Long.parseLong("1000000000000");
+        // Guard the guard: these must be distinct objects for the test to bite.
+        assertThat(serverTime).isNotSameAs(updateTime);
+
+        pendingChanges.recordUpdate(entry("k1", updateTime, "{\"v\":\"updated\"}"));
+        final List<TemporalEntry> result = pendingChanges.applyTo(
+                List.of(entry("k1", serverTime, "{\"v\":\"original\"}")));
+
+        assertThat(result).hasSize(1);
+        assertThat(result.getFirst().getValue()).isEqualTo("{\"v\":\"updated\"}");
+    }
+
+    /**
+     * As above, but for the deletion path: a deletion keyed on one {@code Long}
+     * instance must remove a server entry holding an equal-but-distinct
+     * {@code Long} instance.
+     */
+    @Test
+    void testApplyTo_deletion_effectiveTimeOutsideCacheRange() {
+        final long serverTime = 1_000_000_000_000L;
+        final long deletionTime = Long.parseLong("1000000000000");
+        assertThat(serverTime).isNotSameAs(deletionTime);
+
+        pendingChanges.recordDeletion(id("k1", deletionTime));
+        final List<TemporalEntry> result = pendingChanges.applyTo(
+                List.of(entry("k1", serverTime, "{\"v\":\"original\"}")));
+
+        assertThat(result).isEmpty();
+    }
+
+    // -----------------------------------------------------------------------
     // getChanges
     // -----------------------------------------------------------------------
 
