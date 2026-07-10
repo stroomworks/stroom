@@ -16,33 +16,35 @@
 
 package stroom.config.app;
 
-import stroom.activity.impl.db.ActivityConfig;
+import stroom.activity.impl.dao.ActivityConfig;
+import stroom.ai.impl.AiConfig;
 import stroom.ai.shared.AskStroomAIConfig;
 import stroom.analytics.impl.AnalyticsConfig;
 import stroom.annotation.impl.AnnotationConfig;
 import stroom.aws.s3.impl.S3Config;
 import stroom.bytebuffer.ByteBufferPoolConfig;
 import stroom.cluster.api.ClusterConfig;
-import stroom.cluster.lock.impl.db.ClusterLockConfig;
+import stroom.cluster.lock.impl.dao.ClusterLockConfig;
 import stroom.config.common.CommonDbConfig;
 import stroom.config.common.NodeUriConfig;
 import stroom.config.common.PublicUriConfig;
 import stroom.config.common.UiUriConfig;
+import stroom.contentindex.ContentIndexConfig;
 import stroom.contentstore.impl.ContentStoreConfig;
 import stroom.core.receive.AutoContentCreationConfig;
 import stroom.credentials.impl.CredentialsConfig;
 import stroom.dashboard.impl.DashboardConfig;
-import stroom.docstore.impl.db.DocStoreConfig;
+import stroom.docstore.impl.DocStoreConfig;
 import stroom.document.asset.impl.DocumentAssetConfig;
-import stroom.document.asset.impl.DocumentAssetConfig.DocumentAssetDbConfig;
+import stroom.document.asset.impl.db.DocumentAssetDbConfig;
 import stroom.event.logging.impl.LoggingConfig;
 import stroom.explorer.impl.ExplorerConfig;
 import stroom.feed.impl.FeedConfig;
-import stroom.gitrepo.api.GitRepoConfig;
+import stroom.gitrepo.impl.GitRepoConfig;
 import stroom.importexport.impl.ContentPackImportConfig;
 import stroom.importexport.impl.ExportConfig;
 import stroom.index.impl.IndexConfig;
-import stroom.index.impl.IndexFieldDbConfig;
+import stroom.index.impl.db.IndexFieldDbConfig;
 import stroom.index.impl.selection.VolumeConfig;
 import stroom.job.impl.JobSystemConfig;
 import stroom.kafka.impl.KafkaConfig;
@@ -73,6 +75,8 @@ import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 import com.fasterxml.jackson.annotation.JsonRootName;
 import jakarta.validation.constraints.AssertTrue;
 
+import java.util.Objects;
+
 @JsonRootName(AppConfig.NAME)
 @JsonPropertyOrder(alphabetic = true)
 public class AppConfig extends AbstractConfig implements IsStroomConfig {
@@ -80,12 +84,16 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
     public static final String NAME = "stroom";
     public static final PropertyPath ROOT_PROPERTY_PATH = PropertyPath.fromParts(NAME);
 
+    private static final boolean DEFAULT_HALT_BOOT_ON_CONFIG_VALIDATION_FAILURE = true;
+
     public static final String ROOT_PROPERTY_NAME = "appConfig";
 
     public static final String PROP_NAME_ACTIVITY = "activity";
+    public static final String PROP_NAME_AI = "ai";
     public static final String PROP_NAME_ANNOTATION = "annotation";
     public static final String PROP_NAME_ANALYTICS = "analytics";
     public static final String PROP_NAME_ASK_STROOM_AI = "askStroomAi";
+    public static final String PROP_NAME_CONTENT_INDEX = "contentIndex";
     public static final String PROP_NAME_CONTENT_STORE = "contentStore";
     public static final String PROP_NAME_AUTHENTICATION = "authentication";
     public static final String PROP_NAME_AUTO_CONTENT_CREATION = "autoContentCreation";
@@ -143,11 +151,13 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
     private final boolean haltBootOnConfigValidationFailure;
 
     private final CrossModuleConfig crossModuleConfig;
+    private final AiConfig aiConfig;
     private final ActivityConfig activityConfig;
     private final AnalyticsConfig analyticsConfig;
     private final AnnotationConfig annotationConfig;
     private final AskStroomAIConfig askStroomAIConfig;
     private final ContentStoreConfig contentStoreConfig;
+    private final ContentIndexConfig contentIndexConfig;
     private final AutoContentCreationConfig autoContentCreationConfig;
     private final ByteBufferPoolConfig byteBufferPoolConfig;
     private final ClusterConfig clusterConfig;
@@ -202,6 +212,7 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
         this(true,
                 new CrossModuleConfig(),
                 new ActivityConfig(),
+                new AiConfig(),
                 new AnalyticsConfig(),
                 new AnnotationConfig(),
                 new AskStroomAIConfig(),
@@ -211,6 +222,7 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
                 new ClusterLockConfig(),
                 new CommonDbConfig(),
                 new ContentPackImportConfig(),
+                new ContentIndexConfig(),
                 new ContentStoreConfig(),
                 new CredentialsConfig(),
                 new DashboardConfig(),
@@ -256,9 +268,10 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
 
     @SuppressWarnings("checkstyle:linelength")
     @JsonCreator
-    public AppConfig(@JsonProperty(PROP_NAME_HALT_BOOT_ON_CONFIG_VALIDATION_FAILURE) final boolean haltBootOnConfigValidationFailure,
+    public AppConfig(@JsonProperty(PROP_NAME_HALT_BOOT_ON_CONFIG_VALIDATION_FAILURE) final Boolean haltBootOnConfigValidationFailure,
                      @JsonProperty(CrossModuleConfig.NAME) final CrossModuleConfig crossModuleConfig,
                      @JsonProperty(PROP_NAME_ACTIVITY) final ActivityConfig activityConfig,
+                     @JsonProperty(PROP_NAME_AI) final AiConfig aiConfig,
                      @JsonProperty(PROP_NAME_ANALYTICS) final AnalyticsConfig analyticsConfig,
                      @JsonProperty(PROP_NAME_ANNOTATION) final AnnotationConfig annotationConfig,
                      @JsonProperty(PROP_NAME_ASK_STROOM_AI) final AskStroomAIConfig askStroomAIConfig,
@@ -268,6 +281,7 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
                      @JsonProperty(PROP_NAME_CLUSTER_LOCK) final ClusterLockConfig clusterLockConfig,
                      @JsonProperty(PROP_NAME_COMMON_DB_DETAILS) final CommonDbConfig commonDbConfig,
                      @JsonProperty(PROP_NAME_CONTENT_PACK_IMPORT) final ContentPackImportConfig contentPackImportConfig,
+                     @JsonProperty(PROP_NAME_CONTENT_INDEX) final ContentIndexConfig contentIndexConfig,
                      @JsonProperty(PROP_NAME_CONTENT_STORE) final ContentStoreConfig contentStoreConfig,
                      @JsonProperty(PROP_NAME_CREDENTIALS) final CredentialsConfig credentialsConfig,
                      @JsonProperty(PROP_NAME_DASHBOARD) final DashboardConfig dashboardConfig,
@@ -309,12 +323,15 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
                      @JsonProperty(PROP_NAME_DOCUMENT_ASSET) final DocumentAssetConfig documentAssetConfig,
                      @JsonProperty(PROP_NAME_DOCUMENT_ASSET_DB) final DocumentAssetDbConfig documentAssetDbConfig,
                      @JsonProperty(PROP_NAME_VOLUMES) final VolumeConfig volumeConfig) {
-        this.haltBootOnConfigValidationFailure = haltBootOnConfigValidationFailure;
+        this.haltBootOnConfigValidationFailure = Objects.requireNonNullElse(haltBootOnConfigValidationFailure,
+                DEFAULT_HALT_BOOT_ON_CONFIG_VALIDATION_FAILURE);
         this.crossModuleConfig = crossModuleConfig;
         this.activityConfig = activityConfig;
+        this.aiConfig = aiConfig;
         this.analyticsConfig = analyticsConfig;
         this.annotationConfig = annotationConfig;
         this.askStroomAIConfig = askStroomAIConfig;
+        this.contentIndexConfig = contentIndexConfig;
         this.contentStoreConfig = contentStoreConfig;
         this.autoContentCreationConfig = autoContentCreationConfig;
         this.byteBufferPoolConfig = byteBufferPoolConfig;
@@ -386,6 +403,11 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
         return activityConfig;
     }
 
+    @JsonProperty(PROP_NAME_AI)
+    public AiConfig getAiConfig() {
+        return aiConfig;
+    }
+
     @JsonProperty(PROP_NAME_ANALYTICS)
     public AnalyticsConfig getAnalyticsConfig() {
         return analyticsConfig;
@@ -399,6 +421,11 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
     @JsonProperty(PROP_NAME_ASK_STROOM_AI)
     public AskStroomAIConfig getAskStroomAIConfig() {
         return askStroomAIConfig;
+    }
+
+    @JsonProperty(PROP_NAME_CONTENT_INDEX)
+    public ContentIndexConfig getContentIndexConfig() {
+        return contentIndexConfig;
     }
 
     @JsonProperty(PROP_NAME_CONTENT_STORE)

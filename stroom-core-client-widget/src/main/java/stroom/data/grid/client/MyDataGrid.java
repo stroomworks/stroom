@@ -96,6 +96,8 @@ public class MyDataGrid<R> extends DataGrid<R> implements NativePreviewHandler {
 
     private final DoubleClickTester doubleClickTester = new DoubleClickTester();
 
+    private String tableName;
+
     public MyDataGrid(final HasHandlers globalEventBus) {
         this(globalEventBus, DEFAULT_LIST_PAGE_SIZE);
     }
@@ -143,6 +145,14 @@ public class MyDataGrid<R> extends DataGrid<R> implements NativePreviewHandler {
 
     public void setDomainTypeSupport(final MyDataGridDomainTypeSupport<R> domainTypeSupport) {
         this.domainTypeSupport = domainTypeSupport;
+    }
+
+    public String getTableName() {
+        return tableName;
+    }
+
+    public void setTableName(final String tableName) {
+        this.tableName = tableName;
     }
 
     public MultiSelectionModelImpl<R> addDefaultSelectionModel(final boolean allowMultiSelect) {

@@ -16,14 +16,15 @@
 
 package stroom.config.global.impl;
 
-import stroom.activity.impl.db.ActivityConfig;
+import stroom.activity.impl.dao.ActivityConfig;
+import stroom.ai.impl.AiConfig;
 import stroom.ai.shared.AskStroomAIConfig;
 import stroom.analytics.impl.AnalyticsConfig;
 import stroom.annotation.impl.AnnotationConfig;
 import stroom.aws.s3.impl.S3Config;
 import stroom.bytebuffer.ByteBufferPoolConfig;
 import stroom.cluster.api.ClusterConfig;
-import stroom.cluster.lock.impl.db.ClusterLockConfig;
+import stroom.cluster.lock.impl.dao.ClusterLockConfig;
 import stroom.config.app.AppConfig;
 import stroom.config.app.CrossModuleConfig;
 import stroom.config.app.DataConfig;
@@ -38,22 +39,23 @@ import stroom.config.common.PublicUriConfig;
 import stroom.config.common.UiUriConfig;
 import stroom.config.global.shared.ConfigProperty;
 import stroom.config.global.shared.OverrideValue;
+import stroom.contentindex.ContentIndexConfig;
 import stroom.contentstore.impl.ContentStoreConfig;
 import stroom.core.receive.AutoContentCreationConfig;
 import stroom.credentials.impl.CredentialsConfig;
 import stroom.dashboard.impl.DashboardConfig;
 import stroom.docref.DocRef;
-import stroom.docstore.impl.db.DocStoreConfig;
+import stroom.docstore.impl.DocStoreConfig;
 import stroom.document.asset.impl.DocumentAssetConfig;
-import stroom.document.asset.impl.DocumentAssetConfig.DocumentAssetDbConfig;
+import stroom.document.asset.impl.db.DocumentAssetDbConfig;
 import stroom.event.logging.impl.LoggingConfig;
 import stroom.explorer.impl.ExplorerConfig;
 import stroom.feed.impl.FeedConfig;
-import stroom.gitrepo.api.GitRepoConfig;
+import stroom.gitrepo.impl.GitRepoConfig;
 import stroom.importexport.impl.ContentPackImportConfig;
 import stroom.importexport.impl.ExportConfig;
 import stroom.index.impl.IndexConfig;
-import stroom.index.impl.IndexFieldDbConfig;
+import stroom.index.impl.db.IndexFieldDbConfig;
 import stroom.index.impl.selection.VolumeConfig;
 import stroom.job.impl.JobSystemConfig;
 import stroom.kafka.impl.KafkaConfig;
@@ -947,6 +949,7 @@ class TestConfigMapper {
                 @JsonProperty(PROP_NAME_HALT_BOOT_ON_CONFIG_VALIDATION_FAILURE) final boolean haltBootOnConfigValidationFailure,
                 @JsonProperty(CrossModuleConfig.NAME) final CrossModuleConfig crossModuleConfig,
                 @JsonProperty(PROP_NAME_ACTIVITY) final ActivityConfig activityConfig,
+                @JsonProperty(PROP_NAME_AI) final AiConfig aiConfig,
                 @JsonProperty(PROP_NAME_ANALYTICS) final AnalyticsConfig analyticsConfig,
                 @JsonProperty(PROP_NAME_ANNOTATION) final AnnotationConfig annotationConfig,
                 @JsonProperty(PROP_NAME_ASK_STROOM_AI) final AskStroomAIConfig askStroomAIConfig,
@@ -956,6 +959,7 @@ class TestConfigMapper {
                 @JsonProperty(PROP_NAME_CLUSTER_LOCK) final ClusterLockConfig clusterLockConfig,
                 @JsonProperty(PROP_NAME_COMMON_DB_DETAILS) final CommonDbConfig commonDbConfig,
                 @JsonProperty(PROP_NAME_CONTENT_PACK_IMPORT) final ContentPackImportConfig contentPackImportConfig,
+                @JsonProperty(PROP_NAME_CONTENT_INDEX) final ContentIndexConfig contentIndexConfig,
                 @JsonProperty(PROP_NAME_CONTENT_STORE) final ContentStoreConfig contentStoreConfig,
                 @JsonProperty(PROP_NAME_CREDENTIALS) final CredentialsConfig credentialsConfig,
                 @JsonProperty(PROP_NAME_DASHBOARD) final DashboardConfig dashboardConfig,
@@ -1015,6 +1019,7 @@ class TestConfigMapper {
             super(haltBootOnConfigValidationFailure,
                     crossModuleConfig,
                     activityConfig,
+                    aiConfig,
                     analyticsConfig,
                     annotationConfig,
                     askStroomAIConfig,
@@ -1024,6 +1029,7 @@ class TestConfigMapper {
                     clusterLockConfig,
                     commonDbConfig,
                     contentPackImportConfig,
+                    contentIndexConfig,
                     contentStoreConfig,
                     credentialsConfig,
                     dashboardConfig,

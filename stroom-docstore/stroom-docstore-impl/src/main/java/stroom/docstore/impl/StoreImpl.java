@@ -17,16 +17,17 @@
 package stroom.docstore.impl;
 
 import stroom.docref.DocRef;
-import stroom.docref.DocRefInfo;
 import stroom.docref.EmbeddedDocRef;
-import stroom.docrefinfo.api.DocRefDecorator;
 import stroom.docstore.api.DependencyRemapFunction;
 import stroom.docstore.api.DependencyRemapper;
+import stroom.docstore.api.DocFinder;
 import stroom.docstore.api.DocumentNotFoundException;
 import stroom.docstore.api.DocumentSerialiser2;
 import stroom.docstore.api.Store;
+import stroom.docstore.impl.db.jooq.tables.Doc;
 import stroom.docstore.shared.AbstractDoc;
 import stroom.docstore.shared.AbstractDoc.AbstractBuilder;
+import stroom.docstore.shared.AuditAction;
 import stroom.docstore.shared.DocRefUtil;
 import stroom.importexport.api.ImportExportAsset;
 import stroom.importexport.api.ImportExportDocument;
@@ -39,7 +40,6 @@ import stroom.security.shared.DocumentPermission;
 import stroom.util.entityevent.EntityAction;
 import stroom.util.entityevent.EntityEvent;
 import stroom.util.entityevent.EntityEventBus;
-import stroom.util.json.JsonUtil;
 import stroom.util.logging.LambdaLogger;
 import stroom.util.logging.LambdaLoggerFactory;
 import stroom.util.logging.LogUtil;
@@ -50,8 +50,6 @@ import stroom.util.shared.NullSafe;
 import stroom.util.shared.PermissionException;
 import stroom.util.shared.Severity;
 
-import com.fasterxml.jackson.annotation.JsonCreator;
-import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.inject.Inject;
 import jakarta.inject.Provider;
 
@@ -66,7 +64,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
@@ -81,7 +78,7 @@ public class StoreImpl<D extends AbstractDoc, B extends AbstractBuilder<D, ?>> i
     private final Persistence persistence;
     private final EntityEventBus entityEventBus;
     private final SecurityContext securityContext;
-    private final Provider<DocRefDecorator> docRefInfoServiceProvider;
+    private final Provider<DocFinder> docFinderProvider;
 
     private final DocumentSerialiser2<D> serialiser;
     private final String type;
@@ -92,7 +89,7 @@ public class StoreImpl<D extends AbstractDoc, B extends AbstractBuilder<D, ?>> i
     StoreImpl(final Persistence persistence,
               final EntityEventBus entityEventBus,
               final SecurityContext securityContext,
-              final Provider<DocRefDecorator> docRefInfoServiceProvider,
+              final Provider<DocFinder> docFinderProvider,
               final DocumentSerialiser2<D> serialiser,
               final String type,
               final Supplier<B> builderSupplier,
@@ -100,7 +97,7 @@ public class StoreImpl<D extends AbstractDoc, B extends AbstractBuilder<D, ?>> i
         this.persistence = persistence;
         this.entityEventBus = entityEventBus;
         this.securityContext = securityContext;
-        this.docRefInfoServiceProvider = docRefInfoServiceProvider;
+        this.docFinderProvider = docFinderProvider;
         this.serialiser = serialiser;
         this.type = type;
         this.builderSupplier = builderSupplier;
@@ -215,56 +212,8 @@ public class StoreImpl<D extends AbstractDoc, B extends AbstractBuilder<D, ?>> i
                     () -> "document: " + toDocRefDisplayString(docRef));
         }
 
-        persistence.getLockFactory().lock(docRef.getUuid(), () -> {
-            persistence.delete(docRef);
-            EntityEvent.fire(entityEventBus, docRef, EntityAction.DELETE);
-        });
-    }
-
-    @Override
-    public DocRefInfo info(final DocRef docRef) {
-        // Check that we have been passed a docref to get info for.
-        Objects.requireNonNull(docRef, "Null DocRef");
-        // Ensure the type matches the type expected for this store.
-        checkType(docRef);
-
-        // Check that the user has permission to read this item.
-        if (!securityContext.hasDocumentPermission(docRef, DocumentPermission.VIEW)) {
-            throwPermissionException(LogUtil.message("You are not authorised to read {}",
-                    toDocRefDisplayString(docRef)));
-        }
-
-        final ImportExportDocument importExportDocument = readPersistence(docRef);
-        if (importExportDocument != null) {
-            try {
-                // We only need to read the meta data in order to satisfy the request for info.
-                // No other data needs to be read at this point.
-                final ImportExportAsset asset = importExportDocument.getExtAsset(META);
-                final byte[] meta = asset.getInputData();
-                final GenericDoc document = JsonUtil.readValue(meta, GenericDoc.class);
-                return DocRefInfo
-                        .builder()
-                        .docRef(DocRef.builder()
-                                .type(docRef.getType())
-                                .uuid(document.getUuid())
-                                .name(document.getName())
-                                .build())
-                        .createTime(document.getCreateTimeMs())
-                        .createUser(document.getCreateUser())
-                        .updateTime(document.getUpdateTimeMs())
-                        .updateUser(document.getUpdateUser())
-                        .build();
-            } catch (final Exception e) {
-                LOGGER.error(e.getMessage(), e);
-                throw new RuntimeException(
-                        LogUtil.message("Error deserialising {} from store {}, {}",
-                                docRef,
-                                persistence.getClass().getSimpleName(),
-                                e.getMessage()), e);
-            }
-        } else {
-            throw new DocumentNotFoundException(docRef);
-        }
+        persistence.delete(docRef, securityContext.getUserRef());
+        EntityEvent.fire(entityEventBus, docRef, EntityAction.DELETE);
     }
 
     // ---------------------------------------------------------------------
@@ -436,43 +385,43 @@ public class StoreImpl<D extends AbstractDoc, B extends AbstractBuilder<D, ?>> i
                              final D existingDocument,
                              final String uuid,
                              final ImportExportDocument convertedImportExportDocument) {
-        return persistence.getLockFactory().lockResult(uuid, () -> {
-            try {
-                // Turn the data map into a document.
-                final D newDocument = serialiser.read(convertedImportExportDocument);
+        try {
+            // Turn the data map into a document.
+            final D newDocument = serialiser.read(convertedImportExportDocument);
 
-                // Get a builder to mutate the doc.
-                final AbstractBuilder<D, ?> builder = builderFunction.apply(newDocument);
+            // Get a builder to mutate the doc.
+            final AbstractBuilder<D, ?> builder = builderFunction.apply(newDocument);
 
-                // Copy create time and user from the existing document.
-                if (existingDocument != null) {
-                    builder
-                            .name(existingDocument.getName())
-                            .createTimeMs(existingDocument.getCreateTimeMs())
-                            .createUser(existingDocument.getCreateUser());
-                }
-
-                // Stamp audit data on the imported document.
-                builder.stampAudit(securityContext);
-
-                // Convert the document back into a data map.
-                final ImportExportDocument finalData = serialiser.write(builder.build());
-                // Write the data.
-                persistence.write(docRef, existingDocument != null, finalData);
-
-                // Fire an entity event to alert other services of the change.
-                if (existingDocument != null) {
-                    EntityEvent.fire(entityEventBus, docRef, EntityAction.UPDATE);
-                } else {
-                    EntityEvent.fire(entityEventBus, docRef, EntityAction.CREATE);
-                }
-
-                return newDocument;
-            } catch (final IOException e) {
-                LOGGER.error(e::getMessage, e);
-                throw new UncheckedIOException(e);
+            // Copy create time and user from the existing document.
+            if (existingDocument != null) {
+                builder
+                        .name(existingDocument.getName())
+                        .createTimeMs(existingDocument.getCreateTimeMs())
+                        .createUser(existingDocument.getCreateUser());
             }
-        });
+
+            // Stamp audit data on the imported document.
+            builder.stampAudit(securityContext);
+
+            final D builtDoc = builder.build();
+            // Convert the document back into a data map.
+            final ImportExportDocument finalData = serialiser.write(builtDoc);
+            // Write the data — import always succeeds, no version check.
+            persistence.write(docRef, AuditAction.IMPORT, securityContext.getUserRef(),
+                    finalData, null, builtDoc.getVersion());
+
+            // Fire an entity event to alert other services of the change.
+            if (existingDocument != null) {
+                EntityEvent.fire(entityEventBus, docRef, EntityAction.UPDATE);
+            } else {
+                EntityEvent.fire(entityEventBus, docRef, EntityAction.CREATE);
+            }
+
+            return newDocument;
+        } catch (final IOException e) {
+            LOGGER.error(e::getMessage, e);
+            throw new UncheckedIOException(e);
+        }
     }
 
     private D getExistingDocument(final DocRef docRef) {
@@ -575,14 +524,9 @@ public class StoreImpl<D extends AbstractDoc, B extends AbstractBuilder<D, ?>> i
         try {
             final DocRef docRef = createDocRef(document);
             final ImportExportDocument importExportDocument = serialiser.write(document);
-            persistence.getLockFactory().lock(document.getUuid(), () -> {
-                try {
-                    persistence.write(docRef, false, importExportDocument);
-                    EntityEvent.fire(entityEventBus, docRef, EntityAction.CREATE);
-                } catch (final IOException e) {
-                    throw new UncheckedIOException(e);
-                }
-            });
+            persistence.write(docRef, AuditAction.CREATE, securityContext.getUserRef(),
+                    importExportDocument, null, document.getVersion());
+            EntityEvent.fire(entityEventBus, docRef, EntityAction.CREATE);
         } catch (final IOException e) {
             LOGGER.error("Error serialising {}", document.getType(), e);
             throw new UncheckedIOException(e);
@@ -678,13 +622,14 @@ public class StoreImpl<D extends AbstractDoc, B extends AbstractBuilder<D, ?>> i
         }
 
         try {
-            // Get the current document version to make sure the document hasn't been changed by
-            // somebody else since we last read it.
+            // Capture the version the caller expects to be current.
             final String currentVersion = updatedDoc.getVersion();
-            // Copy and mutate the doc.
+            final String newVersion = UUID.randomUUID().toString();
+
+            // Copy and mutate the doc with a new version.
             final AbstractBuilder<D, ?> builder = builderFunction
                     .apply(updatedDoc)
-                    .version(UUID.randomUUID().toString());
+                    .version(newVersion);
 
             // Add audit data.
             builder.stampAudit(securityContext);
@@ -692,32 +637,12 @@ public class StoreImpl<D extends AbstractDoc, B extends AbstractBuilder<D, ?>> i
 
             final ImportExportDocument newData = serialiser.write(updatedDoc);
 
-            persistence.getLockFactory().lock(updatedDoc.getUuid(), () -> {
-                try {
-                    // Read existing data for this document.
-                    final ImportExportDocument importExportDocument = persistence.read(docRef);
-
-                    // Perform version check to ensure the item hasn't been updated by somebody
-                    // else before we try to update it.
-                    if (importExportDocument == null) {
-                        throw new DocumentNotFoundException(docRef);
-                    }
-
-                    final D existingDocument = serialiser.read(importExportDocument);
-
-                    // Perform version check to ensure the item hasn't been updated by somebody
-                    // else before we try to update it.
-                    if (!existingDocument.getVersion().equals(currentVersion)) {
-                        throw new RuntimeException(toDocRefDisplayString(docRef)
-                                                   + " has already been updated.");
-                    }
-
-                    persistence.write(docRef, true, newData);
-                    EntityEvent.fire(entityEventBus, docRef, oldDocRef, EntityAction.UPDATE);
-                } catch (final IOException e) {
-                    throw new UncheckedIOException(e);
-                }
-            });
+            // Single atomic call — persistence layer handles version check.
+            // For DB: UPDATE ... WHERE version = expectedVersion (optimistic lock).
+            // For FS: StripedLockFactory in StoreImpl.readPersistence() serialises access.
+            persistence.write(docRef, AuditAction.UPDATE, securityContext.getUserRef(),
+                    newData, currentVersion, newVersion);
+            EntityEvent.fire(entityEventBus, docRef, oldDocRef, EntityAction.UPDATE);
         } catch (final IOException e) {
             throw new UncheckedIOException(e);
         }
@@ -737,14 +662,6 @@ public class StoreImpl<D extends AbstractDoc, B extends AbstractBuilder<D, ?>> i
     @Override
     public List<DocRef> findDocRefsEmbeddedIn(final DocRef parent) {
         return persistence.findDocRefsEmbeddedIn(parent);
-    }
-
-    @Override
-    public List<DocRef> findByNames(final List<String> names, final boolean allowWildCards) {
-        return persistence.find(type, names, allowWildCards)
-                .stream()
-                .filter(this::canRead)
-                .collect(Collectors.toList());
     }
 
     @Override
@@ -782,44 +699,16 @@ public class StoreImpl<D extends AbstractDoc, B extends AbstractBuilder<D, ?>> i
     }
 
     private ImportExportDocument readPersistence(final DocRef docRef) {
-        return persistence.getLockFactory().lockResult(docRef.getUuid(), () -> {
-            try {
-                return persistence.read(docRef);
-            } catch (final IOException e) {
-                LOGGER.error(e.getMessage(), e);
-                throw new UncheckedIOException(
-                        LogUtil.message("Error reading {} from store {}, {}",
-                                toDocRefDisplayString(docRef),
-                                persistence.getClass().getSimpleName(),
-                                e.getMessage()), e);
-            }
-        });
-    }
-
-    @Deprecated // remove once pipelines have been migrated.
-    public void migratePipelines(final Function<Map<String, byte[]>, Optional<Map<String, byte[]>>> function) {
-        persistence.list(type).forEach(docRef ->
-                persistence.getLockFactory().lock(docRef.getUuid(), () -> {
-                    final ImportExportDocument importExportDocument = readPersistence(docRef);
-                    if (importExportDocument != null) {
-                        try {
-                            final Map<String, byte[]> mapIn = importExportDocument.toDataMap();
-                            final Optional<Map<String, byte[]>> migrated = function.apply(mapIn);
-                            migrated.ifPresent(newData -> {
-                                try {
-                                    final ImportExportDocument migratedDocument =
-                                            ImportExportDocument.fromDataMap(newData);
-
-                                    persistence.write(docRef, true, migratedDocument);
-                                } catch (final Exception e) {
-                                    LOGGER.error(e::getMessage, e);
-                                }
-                            });
-                        } catch (final Exception e) {
-                            LOGGER.error(e::getMessage, e);
-                        }
-                    }
-                }));
+        try {
+            return persistence.read(docRef);
+        } catch (final IOException e) {
+            LOGGER.error(e.getMessage(), e);
+            throw new UncheckedIOException(
+                    LogUtil.message("Error reading {} from store {}, {}",
+                            toDocRefDisplayString(docRef),
+                            persistence.getClass().getSimpleName(),
+                            e.getMessage()), e);
+        }
     }
 
     private String toDocRefDisplayString(final DocRef docRef) {
@@ -827,8 +716,7 @@ public class StoreImpl<D extends AbstractDoc, B extends AbstractBuilder<D, ?>> i
             return "";
         } else {
             try {
-                return DocRefUtil.createTypedDocRefString(docRefInfoServiceProvider.get()
-                        .decorate(docRef));
+                return DocRefUtil.createTypedDocRefString(docFinderProvider.get().decorate(docRef));
             } catch (final Exception e) {
                 // This method is for use in decorating the docref for exception messages
                 // so swallow any errors.
@@ -866,21 +754,4 @@ public class StoreImpl<D extends AbstractDoc, B extends AbstractBuilder<D, ?>> i
                 .build();
     }
 
-    /**
-     * Define a generic basic doc for deserialising common doc information fields.
-     */
-    private static class GenericDoc extends AbstractDoc {
-
-        @JsonCreator
-        public GenericDoc(@JsonProperty("type") final String type,
-                          @JsonProperty("uuid") final String uuid,
-                          @JsonProperty("name") final String name,
-                          @JsonProperty("version") final String version,
-                          @JsonProperty("createTimeMs") final Long createTimeMs,
-                          @JsonProperty("updateTimeMs") final Long updateTimeMs,
-                          @JsonProperty("createUser") final String createUser,
-                          @JsonProperty("updateUser") final String updateUser) {
-            super(type, uuid, name, version, createTimeMs, updateTimeMs, createUser, updateUser);
-        }
-    }
 }

@@ -29,6 +29,7 @@ import stroom.dashboard.impl.SampleGenerator;
 import stroom.dashboard.impl.download.DelimitedTarget;
 import stroom.dashboard.impl.download.ExcelTarget;
 import stroom.dashboard.impl.download.ExcelTarget.KV;
+import stroom.dashboard.impl.download.MarkdownTarget;
 import stroom.dashboard.impl.download.SearchResultWriter;
 import stroom.dashboard.shared.DownloadSearchResultFileType;
 import stroom.data.shared.StreamTypeNames;
@@ -110,6 +111,7 @@ public class ReportExecutor extends AbstractScheduledQueryExecutable<ReportDoc> 
                           final ReportStore reportStore,
                           final ResultStoreManager searchResponseCreatorManager,
                           final Provider<ErrorReceiverProxy> errorReceiverProxyProvider,
+                          final Provider<AnalyticRuleHolder> analyticRuleHolderProvider,
                           final SearchRequestFactory searchRequestFactory,
                           final ExpressionContextFactory expressionContextFactory,
                           final ExpressionPredicateFactory expressionPredicateFactory,
@@ -118,7 +120,7 @@ public class ReportExecutor extends AbstractScheduledQueryExecutable<ReportDoc> 
                           final Store streamStore,
                           final NotificationStateService notificationStateService,
                           final Provider<EmailSender> emailSenderProvider) {
-        super(analyticErrorWriterProvider, errorReceiverProxyProvider);
+        super(analyticErrorWriterProvider, errorReceiverProxyProvider, analyticRuleHolderProvider);
         this.reportStore = reportStore;
         this.searchResponseCreatorManager = searchResponseCreatorManager;
         this.searchRequestFactory = searchRequestFactory;
@@ -270,6 +272,7 @@ public class ReportExecutor extends AbstractScheduledQueryExecutable<ReportDoc> 
                 case CSV -> new DelimitedTarget(outputStream, ",");
                 case TSV -> new DelimitedTarget(outputStream, "\t");
                 case EXCEL -> new ExcelTarget(outputStream, dateTimeSettings);
+                case MARKDOWN -> new MarkdownTarget(outputStream);
             };
 
             // Write delimited file.

@@ -11,17 +11,27 @@ import java.util.List;
 public final class GeneralTableContext extends AskStroomAiContext {
 
     @JsonProperty
+    private final String description;
+    @JsonProperty
     private final List<String> columns;
     @JsonProperty
     private final List<List<String>> rows;
 
     @JsonCreator
-    public GeneralTableContext(@JsonProperty("chatMemoryId") final String chatMemoryId,
+    public GeneralTableContext(@JsonProperty("description") final String description,
                                @JsonProperty("columns") final List<String> columns,
                                @JsonProperty("rows") final List<List<String>> rows) {
-        super(chatMemoryId);
+        this.description = description;
         this.columns = columns;
         this.rows = rows;
+    }
+
+    @Override
+    public String getDescription() {
+        if (description != null) {
+            return description;
+        }
+        return "Table";
     }
 
     public List<String> getColumns() {

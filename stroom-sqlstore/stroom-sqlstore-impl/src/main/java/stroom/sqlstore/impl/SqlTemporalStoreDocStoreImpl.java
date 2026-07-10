@@ -17,7 +17,6 @@
 package stroom.sqlstore.impl;
 
 import stroom.docref.DocRef;
-import stroom.docref.DocRefInfo;
 import stroom.docstore.api.Store;
 import stroom.docstore.api.StoreFactory;
 import stroom.importexport.api.ImportExportDocument;
@@ -116,11 +115,6 @@ public class SqlTemporalStoreDocStoreImpl implements SqlTemporalStoreDocStore {
         store.deleteDocument(docRef);
     }
 
-    @Override
-    public DocRefInfo info(final DocRef docRef) {
-        return store.info(docRef);
-    }
-
     // ---------------------------------------------------------------------
     // END OF ExplorerActionHandler
     // ---------------------------------------------------------------------
@@ -208,11 +202,6 @@ public class SqlTemporalStoreDocStoreImpl implements SqlTemporalStoreDocStore {
     @Override
     public List<DocRef> list() {
         return store.list();
-    }
-
-    @Override
-    public List<DocRef> findByNames(final List<String> name, final boolean allowWildCards) {
-        return store.findByNames(name, allowWildCards);
     }
 
     @Override

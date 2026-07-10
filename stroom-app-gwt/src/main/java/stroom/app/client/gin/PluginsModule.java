@@ -22,7 +22,6 @@ import stroom.domaintype.client.DomainTypePlugin;
 import stroom.explorer.client.NavigationPlugin;
 import stroom.explorer.client.presenter.TabSessionManager;
 import stroom.help.client.HelpPlugin;
-import stroom.trackers.client.TrackersPlugin;
 
 public class PluginsModule extends PluginModule {
 
@@ -32,7 +31,6 @@ public class PluginsModule extends PluginModule {
 
         bindPlugin(DomainTypePlugin.class);
         bindPlugin(HelpPlugin.class);
-        bindPlugin(TrackersPlugin.class);
         bindPlugin(NavigationPlugin.class);
         bindPlugin(TabSessionManager.class);
     }

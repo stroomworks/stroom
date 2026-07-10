@@ -102,6 +102,8 @@ public class OpenAIModelSettingsPresenter extends DocPresenter<OpenAIModelSettin
         }
         getView().setModelId(model.getModelId());
         getView().setMaxContextWindowTokens(model.getMaxContextWindowTokens());
+        getView().setReasoningEffort(model.getReasoningEffort());
+        getView().setEmbeddingModelDimensions(model.getEmbeddingModelDimensions());
 
         httpClientConfiguration = model.getHttpClientConfiguration();
         if (httpClientConfiguration == null) {
@@ -126,6 +128,8 @@ public class OpenAIModelSettingsPresenter extends DocPresenter<OpenAIModelSettin
                         Credential::getName))
                 .modelId(getView().getModelId())
                 .maxContextWindowTokens(getView().getMaxContextWindowTokens())
+                .reasoningEffort(getView().getReasoningEffort())
+                .embeddingModelDimensions(getView().getEmbeddingModelDimensions())
                 .httpClientConfiguration(httpClientConfiguration)
                 .build();
     }
@@ -156,5 +160,13 @@ public class OpenAIModelSettingsPresenter extends DocPresenter<OpenAIModelSettin
         int getMaxContextWindowTokens();
 
         void setMaxContextWindowTokens(int maxContextWindowTokens);
+
+        String getReasoningEffort();
+
+        void setReasoningEffort(String reasoningEffort);
+
+        int getEmbeddingModelDimensions();
+
+        void setEmbeddingModelDimensions(int embeddingModelDimensions);
     }
 }
