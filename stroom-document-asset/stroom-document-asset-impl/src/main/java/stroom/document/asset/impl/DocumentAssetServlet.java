@@ -1,8 +1,8 @@
 package stroom.document.asset.impl;
 
 import stroom.docref.DocRef;
-import stroom.docref.DocRefInfo;
-import stroom.docrefinfo.api.DocRefInfoService;
+import stroom.explorer.api.ExplorerNodeService;
+import stroom.explorer.shared.ExplorerNode;
 import stroom.security.api.SecurityContext;
 import stroom.security.shared.DocumentPermission;
 import stroom.util.io.FileUtil;
@@ -125,7 +125,7 @@ public class DocumentAssetServlet extends HttpServlet implements IsServlet {
     /**
      * The service to resolve DocRefs
      */
-    private final DocRefInfoService docRefInfoService;
+    private final ExplorerNodeService explorerNodeService;
 
     /**
      * File extension to mimetype
@@ -155,12 +155,12 @@ public class DocumentAssetServlet extends HttpServlet implements IsServlet {
     @Inject
     public DocumentAssetServlet(final DocumentAssetService service,
                                 final SecurityContext securityContext,
-                                final DocRefInfoService docRefInfoService,
+                                final ExplorerNodeService explorerNodeService,
                                 final Provider<DocumentAssetConfig> configProvider,
                                 final PathCreator pathCreator) {
         this.service = service;
         this.securityContext = securityContext;
-        this.docRefInfoService = docRefInfoService;
+        this.explorerNodeService = explorerNodeService;
         final DocumentAssetConfig config = configProvider.get();
         this.mimetypes = config.getMimetypes();
         this.defaultMimetype = config.getDefaultMimetype();
@@ -302,8 +302,8 @@ public class DocumentAssetServlet extends HttpServlet implements IsServlet {
         final String docId = docIdAndPath.docId();
         final String path = docIdAndPath.path();
 
-        final DocRef docRef = docRefInfoService.info(docId)
-                .map(DocRefInfo::getDocRef)
+        final DocRef docRef = explorerNodeService.getNodeByUuid(docId)
+                .map(ExplorerNode::getDocRef)
                 .orElseThrow(() -> new EntityServiceException("Unknown document " + docId));
 
         if (securityContext.hasDocumentPermission(docRef, DocumentPermission.VIEW)) {

@@ -18,8 +18,7 @@ package stroom.processor.impl;
 
 import stroom.analytics.shared.AnalyticRuleDoc;
 import stroom.docref.DocRef;
-import stroom.docref.DocRefInfo;
-import stroom.docrefinfo.api.DocRefInfoService;
+import stroom.docstore.api.DocFinder;
 import stroom.entity.shared.ExpressionCriteria;
 import stroom.meta.api.MetaService;
 import stroom.meta.shared.FindMetaCriteria;
@@ -85,7 +84,7 @@ class ProcessorFilterServiceImpl implements ProcessorFilterService, HasUserDepen
     private final ProcessorTaskDao processorTaskDao;
     private final MetaService metaService;
     private final SecurityContext securityContext;
-    private final DocRefInfoService docRefInfoService;
+    private final DocFinder docFinder;
     private final UserRefLookup userRefLookup;
 
     @Inject
@@ -94,14 +93,14 @@ class ProcessorFilterServiceImpl implements ProcessorFilterService, HasUserDepen
                                final ProcessorTaskDao processorTaskDao,
                                final MetaService metaService,
                                final SecurityContext securityContext,
-                               final DocRefInfoService docRefInfoService,
+                               final DocFinder docFinder,
                                final UserRefLookup userRefLookup) {
         this.processorService = processorService;
         this.processorFilterDao = processorFilterDao;
         this.processorTaskDao = processorTaskDao;
         this.metaService = metaService;
         this.securityContext = securityContext;
-        this.docRefInfoService = docRefInfoService;
+        this.docFinder = docFinder;
         this.userRefLookup = userRefLookup;
     }
 
@@ -384,9 +383,7 @@ class ProcessorFilterServiceImpl implements ProcessorFilterService, HasUserDepen
                         for (final ProcessorFilter processorFilter : processorFilters.getValues()) {
                             if (processor.equals(processorFilter.getProcessor())) {
 
-                                // If the user is not an admin then only show them filters that are set to run as them.
-                                if (securityContext.isAdmin() ||
-                                    Objects.equals(currentUser, processorFilter.getRunAsUser())) {
+                                if (canSeeFilter(processorFilter, currentUser)) {
                                     final ProcessorFilter.Builder processorFilterBuilder = processorFilter.copy();
 
                                     // Decorate the expression with resolved dictionaries etc.
@@ -417,6 +414,36 @@ class ProcessorFilterServiceImpl implements ProcessorFilterService, HasUserDepen
 
             return ResultPage.createUnboundedList(values);
         });
+    }
+
+    private boolean canSeeFilter(final ProcessorFilter processorFilter, final UserRef currentUser) {
+        if (securityContext.isAdmin()) {
+            LOGGER.debug("canSeeFilter() - Is admin, current user: {}, processorFilter: {}",
+                    currentUser, processorFilter);
+            return true;
+        } else {
+            final UserRef runAsUser = processorFilter.getRunAsUser();
+            if (Objects.equals(currentUser, runAsUser)) {
+                LOGGER.debug("canSeeFilter() - Is runAsUser, current user: {}, runAsUser: {}, processorFilter: {}",
+                        currentUser, runAsUser, processorFilter);
+                return true;
+            } else if (runAsUser != null && runAsUser.isGroup()) {
+                final String groupName = runAsUser.getSubjectId();
+                if (securityContext.inGroup(groupName)) {
+                    LOGGER.debug("canSeeFilter() - Member of runAsUser group, current user: {}, runAsUser: {}, " +
+                                 "processorFilter: {}",
+                            currentUser, runAsUser, processorFilter);
+                    return true;
+                } else {
+                    LOGGER.debug("canSeeFilter() - Can't see filter, current user: {}, runAsUser: {}, " +
+                                 "processorFilter: {}",
+                            currentUser, runAsUser, processorFilter);
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
     }
 
     @Override
@@ -457,7 +484,7 @@ class ProcessorFilterServiceImpl implements ProcessorFilterService, HasUserDepen
                     .type(docType)
                     .uuid(uuid)
                     .build();
-            return docRefInfoService.name(pipelineDocRef);
+            return docFinder.getName(pipelineDocRef);
         } catch (final RuntimeException e) {
             // This error is expected in tests and the pipeline name isn't essential
             // as it is only used in here for logging purposes.
@@ -526,14 +553,14 @@ class ProcessorFilterServiceImpl implements ProcessorFilterService, HasUserDepen
 
                     try {
                         if (docRef != null) {
-                            final Optional<DocRefInfo> optionalDocRefInfo = docRefInfoService.info(docRef);
-                            if (optionalDocRefInfo.isPresent()) {
+                            final Optional<DocRef> optionalDocRef = docFinder.decorateIfExists(docRef);
+                            if (optionalDocRef.isPresent()) {
                                 expressionTerm = ExpressionTerm.builder()
                                         .enabled(expressionTerm.enabled())
                                         .field(expressionTerm.getField())
                                         .condition(expressionTerm.getCondition())
                                         .value(expressionTerm.getValue())
-                                        .docRef(optionalDocRefInfo.get().getDocRef())
+                                        .docRef(optionalDocRef.orElse(docRef))
                                         .build();
                             }
                         }
@@ -617,9 +644,7 @@ class ProcessorFilterServiceImpl implements ProcessorFilterService, HasUserDepen
     private String getPipelineDetails(final String uuid) {
         try {
             final DocRef pipelineDocRef = new DocRef("Pipeline", uuid);
-            final Optional<DocRefInfo> optionalDocRefInfo = docRefInfoService.info(pipelineDocRef);
-            return optionalDocRefInfo
-                    .map(DocRefInfo::getDocRef)
+            return docFinder.decorateIfExists(pipelineDocRef)
                     .map(DocRef::getName)
                     .map(name -> name + " (" + uuid + ")")
                     .orElse(uuid);
@@ -665,11 +690,11 @@ class ProcessorFilterServiceImpl implements ProcessorFilterService, HasUserDepen
                     try {
                         final String pipeUuid = Objects.requireNonNull(processorFilter.getPipelineUuid());
 
-                        DocRef pipelineDocRef = PipelineDoc.getDocRef(pipeUuid);
-                        pipelineDocRef = docRefInfoService.decorate(pipelineDocRef);
-
+                        final DocRef pipelineDocRef = PipelineDoc.getDocRef(pipeUuid);
+                        final DocRef decorated = docFinder.decorate(pipelineDocRef);
                         final String details = LogUtil.message(
-                                "Pipeline '{}' has a filter with a run-as dependency.", pipelineDocRef.getName());
+                                "Pipeline '{}' has a filter with a run-as dependency.",
+                                decorated.getName());
                         return new UserDependency(
                                 userRef,
                                 details,

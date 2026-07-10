@@ -27,6 +27,8 @@ import stroom.pipeline.filter.AbstractXMLFilter;
 import stroom.pipeline.shared.data.PipelineElementType;
 import stroom.pipeline.shared.data.PipelineElementType.Category;
 import stroom.pipeline.state.MetaHolder;
+import stroom.planb.impl.dao.ShardWriters;
+import stroom.planb.impl.dao.ShardWriters.ShardWriter;
 import stroom.planb.impl.data.RangeState;
 import stroom.planb.impl.data.Session;
 import stroom.planb.impl.data.SpanKV;
@@ -34,8 +36,6 @@ import stroom.planb.impl.data.State;
 import stroom.planb.impl.data.TemporalRangeState;
 import stroom.planb.impl.data.TemporalState;
 import stroom.planb.impl.data.TemporalValue;
-import stroom.planb.impl.db.ShardWriters;
-import stroom.planb.impl.db.ShardWriters.ShardWriter;
 import stroom.planb.impl.serde.keyprefix.KeyPrefix;
 import stroom.planb.impl.serde.keyprefix.Tag;
 import stroom.planb.impl.serde.temporalkey.TemporalKey;
@@ -924,7 +924,7 @@ public class PlanBFilter extends AbstractXMLFilter {
                 final ByteBuffer buffer = stagingValueOutputStream.getByteBuffer();
                 buffer.flip();
                 final Val val = ValXml.create(ByteBufferUtils.getBytes(buffer));
-                buffer.clear();
+                stagingValueOutputStream.clear();
                 yield val;
             }
             default -> ValNull.INSTANCE;
@@ -985,7 +985,7 @@ public class PlanBFilter extends AbstractXMLFilter {
         if (!isFastInfosetDocStarted) {
             LOGGER.trace("saxDocumentSerializer - startDocument()");
             saxDocumentSerializer.reset();
-            stagingValueOutputStream.reset();
+            stagingValueOutputStream.clear();
             appliedPrefixToUriMap.clear();
             saxDocumentSerializer.startDocument();
             isFastInfosetDocStarted = true;

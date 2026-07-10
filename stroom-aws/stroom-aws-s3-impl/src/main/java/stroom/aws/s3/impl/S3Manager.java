@@ -85,9 +85,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Duration;
-import java.time.Instant;
-import java.time.ZoneOffset;
-import java.time.ZonedDateTime;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -395,6 +392,7 @@ public class S3Manager {
     public String createBucketName(final String bucketNamePattern,
                                    final Meta meta) {
         String bucketName = bucketNamePattern;
+
         bucketName = pathCreator.replace(bucketName, "feed", meta::getFeedName);
         bucketName = pathCreator.replace(bucketName, "type", meta::getTypeName);
         bucketName = bucketName.toLowerCase(Locale.ROOT);
@@ -432,20 +430,22 @@ public class S3Manager {
 
     public PutObjectResponse upload(final Meta meta,
                                     final AttributeMap attributeMap,
-                                    final Path source) {
-        return upload(getBucketNamePattern(), getKeyNamePattern(), meta, attributeMap, source);
+                                    final Path source,
+                                    final S3UploadProperties uploadProperties) {
+        return upload(getBucketNamePattern(), getKeyNamePattern(), meta, attributeMap, source, uploadProperties);
     }
 
     public PutObjectResponse upload(final String bucketNamePattern,
                                     final String keyNamePattern,
                                     final Meta meta,
                                     final AttributeMap attributeMap,
-                                    final Path source) {
+                                    final Path source,
+                                    final S3UploadProperties uploadProperties) {
         final String bucketName = createBucketName(bucketNamePattern, meta);
         final String key = createKey(keyNamePattern, meta);
 
         try {
-            return tryUpload(bucketName, key, meta, attributeMap, source);
+            return tryUpload(bucketName, key, meta, attributeMap, source, uploadProperties);
         } catch (final RuntimeException e) {
             if (s3ClientConfig.isCreateBuckets()) {
                 debug("Error uploading: ", bucketName, key, e);
@@ -453,7 +453,7 @@ public class S3Manager {
                 // If we are creating buckets then try to create the bucket and upload again.
                 try {
                     createBucket(bucketName);
-                    return tryUpload(bucketName, key, meta, attributeMap, source);
+                    return tryUpload(bucketName, key, meta, attributeMap, source, uploadProperties);
                 } catch (final RuntimeException e2) {
                     error("Error uploading: ", bucketName, key, e2);
                     throw e2;
@@ -469,8 +469,9 @@ public class S3Manager {
                                         final String key,
                                         final Meta meta,
                                         final AttributeMap attributeMap,
-                                        final Path source) {
-        final PutObjectRequest request = createPutObjectRequest(bucketName, key, meta, attributeMap);
+                                        final Path source,
+                                        final S3UploadProperties uploadProperties) {
+        final PutObjectRequest request = createPutObjectRequest(bucketName, key, meta, attributeMap, uploadProperties);
         logRequest("Uploading: ", bucketName, key, request);
 
         final PutObjectResponse response;
@@ -636,15 +637,18 @@ public class S3Manager {
 
     public String createKey(final String keyPattern, final Meta meta) {
         String keyName = keyPattern;
-        final ZonedDateTime zonedDateTime =
-                ZonedDateTime.ofInstant(Instant.ofEpochMilli(meta.getCreateMs()), ZoneOffset.UTC);
         final String idPadded = padId(meta.getId());
-        keyName = pathCreator.replaceTimeVars(keyName, zonedDateTime);
+        // Use now() so when one of rolling, agg splitting and record splitting is used,
+        // the time vars can distinguish multiple files coming from the same stream
+        keyName = pathCreator.replaceTimeVars(keyName);
+        // Parse for stuff like partNo, pipeline, node, etc.
         keyName = pathCreator.replace(keyName, "feed", meta::getFeedName);
         keyName = pathCreator.replace(keyName, "type", meta::getTypeName);
         keyName = pathCreator.replace(keyName, "id", () -> String.valueOf(meta.getId()));
         keyName = pathCreator.replace(keyName, "idPath", () -> getIdPath(idPadded));
         keyName = pathCreator.replace(keyName, "idPadded", () -> idPadded);
+        keyName = pathCreator.replaceContextVars(keyName);
+        keyName = pathCreator.replaceUUIDVars(keyName);
 
         keyName = S3_KEY_NAME_PATTERN.matcher(keyName).replaceAll("-");
         keyName = MULTI_SLASH.matcher(keyName).replaceAll("/");
@@ -691,18 +695,27 @@ public class S3Manager {
     private PutObjectRequest createPutObjectRequest(final String bucketName,
                                                     final String key,
                                                     final Meta meta,
-                                                    final AttributeMap attributeMap) {
+                                                    final AttributeMap attributeMap,
+                                                    final S3UploadProperties uploadProperties) {
         final Map<String, String> metadata = attributeMap
                 .entrySet()
                 .stream()
                 .collect(Collectors.toMap(e -> createS3Name(e.getKey()), Entry::getValue));
 
-        return PutObjectRequest.builder()
+        final PutObjectRequest.Builder builder = PutObjectRequest.builder()
                 .bucket(bucketName)
                 .key(key)
                 .tagging(createTags(meta))
-                .metadata(metadata)
-                .build();
+                .metadata(metadata);
+
+        if (uploadProperties != null) {
+            NullSafe.consumeNonBlankString(uploadProperties.cacheControl(), builder::cacheControl);
+            NullSafe.consumeNonBlankString(uploadProperties.contentDisposition(), builder::contentDisposition);
+            NullSafe.consumeNonBlankString(uploadProperties.contentEncoding(), builder::contentEncoding);
+            NullSafe.consumeNonBlankString(uploadProperties.contentType(), builder::contentType);
+        }
+
+        return builder.build();
     }
 
     private void logRequest(final String message,
