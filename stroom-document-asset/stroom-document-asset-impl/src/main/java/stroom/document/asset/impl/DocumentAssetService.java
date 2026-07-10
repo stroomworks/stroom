@@ -59,7 +59,7 @@ public class DocumentAssetService {
     }
 
     private DocRef getDocRef(final String ownerId) {
-        return explorerNodeServiceProvider.get().getNode(DocRef.builder().uuid(ownerId).build())
+        return explorerNodeServiceProvider.get().getNodeByUuid(ownerId)
                 .map(ExplorerNode::getDocRef)
                 .orElseThrow(() -> new EntityServiceException("Unknown document " + ownerId));
     }

@@ -302,7 +302,7 @@ public class DocumentAssetServlet extends HttpServlet implements IsServlet {
         final String docId = docIdAndPath.docId();
         final String path = docIdAndPath.path();
 
-        final DocRef docRef = explorerNodeService.getNode(DocRef.builder().uuid(docId).build())
+        final DocRef docRef = explorerNodeService.getNodeByUuid(docId)
                 .map(ExplorerNode::getDocRef)
                 .orElseThrow(() -> new EntityServiceException("Unknown document " + docId));
 
