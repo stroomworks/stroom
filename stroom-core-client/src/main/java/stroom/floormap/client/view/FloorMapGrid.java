@@ -310,7 +310,7 @@ public final class FloorMapGrid {
 
     /**
      * Appends the origin indicator at world-space (0,0). Draws two axis
-     * lines (X rightward, Y downward), each one major grid division long,
+     * lines (X rightward, Y upward — map space is Y-up), each one major grid division long,
      * with arrowheads at the far end and a text label showing the world-
      * space distance (the major grid spacing) in map units.
      *
@@ -381,23 +381,24 @@ public final class FloorMapGrid {
                             "rotate(" + formatDouble(counterRotDeg)
                             + "," + xLabelX + ",0)"));
 
-            // --- Y axis: from (0,0) to (0, majorWorldSpacing) ---
+            // --- Y axis: from (0,0) to (0, -majorWorldSpacing) ---
+            // Map space is Y-up, so the Y axis points up the screen (negative SVG Y).
             originGroup.elem(SafeHtmlUtil.from("line"),
                     new Attribute("x1", "0"),
                     new Attribute("y1", "0"),
                     new Attribute("x2", "0"),
-                    new Attribute("y2", spacing),
+                    new Attribute("y2", "-" + spacing),
                     new Attribute("stroke", HIGHLIGHT_COLOUR),
                     new Attribute("stroke-width", axisStrokeWidth),
                     new Attribute("marker-end", markerUrl));
 
-            // Y axis label — positioned just past the arrowhead.
-            final String yLabelY = formatDouble(majorWorldSpacing + labelGap);
+            // Y axis label — positioned just past the (upward) arrowhead.
+            final String yLabelY = formatDouble(-(majorWorldSpacing + labelGap));
             originGroup.elem(label,
                     SafeHtmlUtil.from("text"),
                     new Attribute("x", "0"),
                     new Attribute("y", yLabelY),
-                    new Attribute("dy", "1em"),
+                    new Attribute("dy", "-0.35em"),
                     new Attribute("text-anchor", "middle"),
                     new Attribute("fill", HIGHLIGHT_COLOUR),
                     new Attribute("font-size", fontSize),
