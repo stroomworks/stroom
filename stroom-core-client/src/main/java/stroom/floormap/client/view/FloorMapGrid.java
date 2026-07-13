@@ -22,7 +22,10 @@ import stroom.widget.util.client.HtmlBuilder.Attribute;
 import stroom.widget.util.client.SafeHtmlUtil;
 
 /**
- * Generates an adaptive SVG grid background for the floor map canvas.
+ * Generates an adaptive SVG grid overlay for the floor map canvas.
+ *
+ * <p>The grid is a non-interactive UI aid that visualises map space; it is
+ * not a background and is not tied to any background image.</p>
  *
  * <p>The grid fills the entire SVG viewport and dynamically adjusts its
  * spacing based on the combined zoom level (world-to-map matrix scale
@@ -47,7 +50,7 @@ import stroom.widget.util.client.SafeHtmlUtil;
  * <p>This method should be called at the <strong>SVG root level</strong>,
  * outside the pan/zoom and matrix transform groups.</p>
  */
-public final class FloorMapGridBackground {
+public final class FloorMapGrid {
 
     // -- Appearance constants ------------------------------------------------
 
@@ -112,7 +115,7 @@ public final class FloorMapGridBackground {
     private static final String MAJOR_PATTERN_ID = "grid-major";
     private static final String ARROW_MARKER_ID = "origin-arrow";
 
-    private FloorMapGridBackground() {
+    private FloorMapGrid() {
         // utility class
     }
 

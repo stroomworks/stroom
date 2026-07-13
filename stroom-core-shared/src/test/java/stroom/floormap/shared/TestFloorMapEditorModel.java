@@ -394,6 +394,72 @@ class TestFloorMapEditorModel {
     }
 
     // -----------------------------------------------------------------------
+    // buildUpdatedBackgroundEntry
+    // -----------------------------------------------------------------------
+
+    /**
+     * A background move writes the new position into the translation
+     * components (indices 4, 5) of the map-to-screen matrix, and leaves the
+     * POSITION coords field untouched.
+     */
+    @Test
+    void testBuildUpdatedBackgroundEntry_updatesMatrixTranslation() {
+        final String json = "{\"type\":\"background\",\"coords\":[5,5],"
+                + "\"tm-map-to-screen\":[1,0,0,1,0,0]}";
+        final TemporalEntry original = entry("background", 100, json);
+
+        final TemporalEntry updated = FloorMapEditorModel.buildUpdatedBackgroundEntry(
+                original, 60.0, 80.0, SCHEMA, ACCESSOR);
+
+        final ParsedValue parsed = ACCESSOR.parse(updated.getValue());
+        final double[] m = ACCESSOR.getArray(parsed, ".tm-map-to-screen");
+        assertThat(m[4]).isCloseTo(60.0, within(0.001));
+        assertThat(m[5]).isCloseTo(80.0, within(0.001));
+        // The POSITION coords must NOT be used for the background.
+        final double[] coords = ACCESSOR.getArray(parsed, ".coords");
+        assertThat(coords[0]).isCloseTo(5.0, within(0.001));
+        assertThat(coords[1]).isCloseTo(5.0, within(0.001));
+    }
+
+    /**
+     * A background move preserves the existing rotation/scale components
+     * (a, b, c, d) of the map-to-screen matrix, changing only translation.
+     */
+    @Test
+    void testBuildUpdatedBackgroundEntry_preservesRotationScale() {
+        final String json = "{\"type\":\"background\","
+                + "\"tm-map-to-screen\":[2,0.5,-0.5,2,10,20]}";
+        final TemporalEntry original = entry("background", 100, json);
+
+        final TemporalEntry updated = FloorMapEditorModel.buildUpdatedBackgroundEntry(
+                original, 60.0, 80.0, SCHEMA, ACCESSOR);
+
+        final double[] m = ACCESSOR.getArray(ACCESSOR.parse(updated.getValue()), ".tm-map-to-screen");
+        assertThat(m[0]).isCloseTo(2.0, within(0.001));
+        assertThat(m[1]).isCloseTo(0.5, within(0.001));
+        assertThat(m[2]).isCloseTo(-0.5, within(0.001));
+        assertThat(m[3]).isCloseTo(2.0, within(0.001));
+        assertThat(m[4]).isCloseTo(60.0, within(0.001));
+        assertThat(m[5]).isCloseTo(80.0, within(0.001));
+    }
+
+    /**
+     * When the background entry has no map-to-screen matrix, it defaults to
+     * identity before the drag translation is applied.
+     */
+    @Test
+    void testBuildUpdatedBackgroundEntry_defaultsToIdentityWhenMissing() {
+        final String json = "{\"type\":\"background\"}";
+        final TemporalEntry original = entry("background", 100, json);
+
+        final TemporalEntry updated = FloorMapEditorModel.buildUpdatedBackgroundEntry(
+                original, 60.0, 80.0, SCHEMA, ACCESSOR);
+
+        final double[] m = ACCESSOR.getArray(ACCESSOR.parse(updated.getValue()), ".tm-map-to-screen");
+        assertThat(m).containsExactly(1.0, 0.0, 0.0, 1.0, 60.0, 80.0);
+    }
+
+    // -----------------------------------------------------------------------
     // Pending changes integration
     // -----------------------------------------------------------------------
 
@@ -663,6 +729,55 @@ class TestFloorMapEditorModel {
 
         assertThatThrownBy(() -> model.recordObjectMove("g1", 40.0, 60.0, List.of(), ACCESSOR))
                 .isInstanceOf(IllegalStateException.class);
+    }
+
+    /**
+     * Moving the background updates its map-to-screen matrix translation (not
+     * the POSITION coords), so the dragged position round-trips through the
+     * canvas parser.
+     */
+    @Test
+    void testRecordObjectMove_background_updatesMapToScreen() {
+        model.onEntriesFetched(List.of(entry("background", 100,
+                "{\"type\":\"background\",\"coords\":[5,5],"
+                        + "\"tm-map-to-screen\":[1,0,0,1,0,0]}")));
+
+        final boolean recorded = model.recordObjectMove("background", 60.0, 80.0, SCHEMA, ACCESSOR);
+
+        assertThat(recorded).isTrue();
+        final TemporalEntry moved = model.buildMergedCanvasEntries().stream()
+                .filter(e -> e.getKey().equals("background"))
+                .findFirst().orElseThrow();
+        final ParsedValue parsed = ACCESSOR.parse(moved.getValue());
+        final double[] m = ACCESSOR.getArray(parsed, ".tm-map-to-screen");
+        assertThat(m[4]).isCloseTo(60.0, within(0.001));
+        assertThat(m[5]).isCloseTo(80.0, within(0.001));
+        // coords left untouched
+        final double[] coords = ACCESSOR.getArray(parsed, ".coords");
+        assertThat(coords[0]).isCloseTo(5.0, within(0.001));
+        assertThat(coords[1]).isCloseTo(5.0, within(0.001));
+    }
+
+    /**
+     * The background is identified by type as well as key: an entry whose key
+     * is NOT "background" but whose type IS is still found and updated when the
+     * canvas fires the literal "background" id.
+     */
+    @Test
+    void testRecordObjectMove_backgroundByType_nonBackgroundKey() {
+        model.onEntriesFetched(List.of(entry("floorPlan", 100,
+                "{\"type\":\"background\",\"tm-map-to-screen\":[1,0,0,1,0,0]}")));
+
+        final boolean recorded = model.recordObjectMove("background", 12.0, 34.0, SCHEMA, ACCESSOR);
+
+        assertThat(recorded).isTrue();
+        // Update is staged against the entry's real key, not "background".
+        final TemporalEntry moved = model.buildMergedCanvasEntries().stream()
+                .filter(e -> e.getKey().equals("floorPlan"))
+                .findFirst().orElseThrow();
+        final double[] m = ACCESSOR.getArray(ACCESSOR.parse(moved.getValue()), ".tm-map-to-screen");
+        assertThat(m[4]).isCloseTo(12.0, within(0.001));
+        assertThat(m[5]).isCloseTo(34.0, within(0.001));
     }
 
     // -----------------------------------------------------------------------

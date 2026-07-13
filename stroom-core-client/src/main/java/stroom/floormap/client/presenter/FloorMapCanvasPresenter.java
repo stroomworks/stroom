@@ -124,6 +124,14 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     private boolean editMode = false;
     private String selectedObjectId = null;
 
+    /**
+     * Whether the grid overlay is drawn. The grid is a non-interactive UI aid
+     * (it visualises map space) and is independent of {@link #editMode} and of
+     * whether a background image is present. The Editor tab enables it; other
+     * tabs (e.g. the Map tab) can opt in via {@link #setShowGrid(boolean)}.
+     */
+    private boolean showGrid = false;
+
     // -------------------------------------------------------------------------
     // Playback / animation state
     // -------------------------------------------------------------------------
@@ -506,7 +514,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     private void redraw() {
         getView().draw(scale, offsetX, offsetY, backgroundImage, matrix,
                 buildAnimatedDrawList(/* nowMs — irrelevant when no animations */ 0.0),
-                selectedObjectId);
+                selectedObjectId, showGrid);
     }
 
     /**
@@ -665,7 +673,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
                     // Draw the current frame.
                     getView().draw(scale, offsetX, offsetY, backgroundImage, matrix,
-                            buildAnimatedDrawList(timestamp), selectedObjectId);
+                            buildAnimatedDrawList(timestamp), selectedObjectId, showGrid);
 
                     // Keep looping.
                     AnimationScheduler.get().requestAnimationFrame(this);
@@ -935,6 +943,18 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     }
 
     /**
+     * Controls whether the grid overlay is drawn. The grid is a non-interactive
+     * UI aid and is independent of edit mode and of whether a background image is
+     * present.
+     *
+     * @param showGrid {@code true} to always draw the grid, {@code false} to hide it
+     */
+    public void setShowGrid(final boolean showGrid) {
+        this.showGrid = showGrid;
+        redraw();
+    }
+
+    /**
      * Enables or disables object dragging within edit mode.
      *
      * @param isDraggingEnabled {@code true} to allow dragging selected objects
@@ -1072,7 +1092,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
          * selection change, data load) and rebuilds the entire SVG DOM.
          * The rendering layers are, from back to front:</p>
          * <ol>
-         *   <li>Adaptive grid background (when no image is set)</li>
+         *   <li>Grid overlay (drawn when {@code showGrid} is set)</li>
          *   <li>Background floor-plan image (transformed by {@code matrix})</li>
          *   <li>Map objects (gates, doors, people, etc.)</li>
          * </ol>
@@ -1081,16 +1101,18 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
          * @param x               the current pan offset X (pixels)
          * @param y               the current pan offset Y (pixels)
          * @param backgroundImage the Asset Store URL for the background image,
-         *                        or {@code null} for grid-only mode
+         *                        or {@code null} if no background image is set
          * @param matrix          the map-to-screen transformation matrix,
          *                        or {@code null} for identity
          * @param objects         the list of map objects to render
          * @param selectedObjectId the ID of the currently selected object,
          *                         or {@code null} if nothing is selected
+         * @param showGrid        {@code true} to draw the (non-interactive) grid
+         *                        overlay; independent of the background image
          */
         void draw(double scale, double x, double y, String backgroundImage,
                 FloorMapTransformationMatrix matrix, List<FloorMapObject> objects,
-                String selectedObjectId);
+                String selectedObjectId, boolean showGrid);
 
         /**
          * Registers a listener that is called whenever the view needs to

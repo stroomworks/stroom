@@ -176,8 +176,9 @@ public class FloorMapEditorPresenter
         this.floorMapTimeListPresenter = timeListProvider.get();
         this.floorMapObjectEditPresenter = propertiesProvider.get();
 
-        // Always in edit mode
+        // Always in edit mode, with the grid overlay shown as an editing aid.
         floorMapCanvasPresenter.setEditMode(true);
+        floorMapCanvasPresenter.setShowGrid(true);
 
         setInSlot(MAIN, floorMapCanvasPresenter);
         setInSlot(TIMELINE, floorMapTimelinePresenter);

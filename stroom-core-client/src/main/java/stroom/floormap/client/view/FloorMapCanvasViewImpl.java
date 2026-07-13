@@ -165,6 +165,8 @@ public class FloorMapCanvasViewImpl
      * @param matrix          map-to-screen transformation matrix, or {@code null} for identity
      * @param objects         list of map objects (gates, people, etc.) to render
      * @param selectedObjectId ID of the currently selected object, or {@code null}
+     * @param showGrid        {@code true} to draw the (non-interactive) grid overlay;
+     *                        independent of whether a background image is present
      */
     @Override
     public void draw(final double scale,
@@ -173,7 +175,8 @@ public class FloorMapCanvasViewImpl
                      final String backgroundImage,
                      final FloorMapTransformationMatrix matrix,
                      final List<FloorMapObject> objects,
-                     final String selectedObjectId) {
+                     final String selectedObjectId,
+                     final boolean showGrid) {
         final HtmlBuilder htmlBuilder = new HtmlBuilder();
         final FloorMapTransformationMatrix effectiveMatrix =
                 matrix != null ? matrix : FloorMapTransformationMatrix.identity();
@@ -188,13 +191,15 @@ public class FloorMapCanvasViewImpl
         htmlBuilder.elem(svg -> {
 
             // ----------------------------------------------------------------
-            // Background
+            // Grid overlay (UI-only, not a background)
             // ----------------------------------------------------------------
-            if (backgroundImage == null) {
-                // Adaptive grid background — fills the entire viewport.
-                // Spacing adjusts with zoom: white grid on dark background,
+            // The grid is a non-interactive UI overlay, drawn purely on the
+            // showGrid flag and independent of whether a background image is set.
+            if (showGrid) {
+                // Adaptive grid — fills the entire viewport.
+                // Spacing adjusts with zoom: light grid lines on a dark fill,
                 // with 10 subdivisions per major square that fade in/out.
-                FloorMapGridBackground.appendGrid(
+                FloorMapGrid.appendGrid(
                         svg, effectiveMatrix, scale, x, y);
             }
 
@@ -230,28 +235,6 @@ public class FloorMapCanvasViewImpl
                                 new Attribute("y", "0"),
                                 new Attribute("width", String.valueOf(IMAGE_DISPLAY_WIDTH)),
                                 new Attribute("height", String.valueOf(bgHeight)),
-                                new Attribute("fill", "none"),
-                                new Attribute("stroke", "#1e88e5"),
-                                new Attribute("stroke-width", "8"),
-                                new Attribute("vector-effect", "non-scaling-stroke"),
-                                new Attribute("pointer-events", "none"));
-                        }
-                    } else {
-                        // Remove the white rectangle for now
-                        /*matrixGroup.elem(SafeHtmlUtil.from("rect"),
-                            new Attribute("x", "0"),
-                            new Attribute("y", "0"),
-                            new Attribute("width", "1000"),
-                            new Attribute("height", "1000"),
-                            new Attribute("fill", "#f8f8f8"),
-                            new Attribute("id", "background"));*/
-
-                        if ("background".equals(selectedObjectId)) {
-                            matrixGroup.elem(SafeHtmlUtil.from("rect"),
-                                new Attribute("x", "0"),
-                                new Attribute("y", "0"),
-                                new Attribute("width", "1000"),
-                                new Attribute("height", "1000"),
                                 new Attribute("fill", "none"),
                                 new Attribute("stroke", "#1e88e5"),
                                 new Attribute("stroke-width", "8"),

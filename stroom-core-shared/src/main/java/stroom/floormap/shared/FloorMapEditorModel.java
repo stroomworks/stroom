@@ -291,21 +291,64 @@ public class FloorMapEditorModel {
                                     final double mapY,
                                     final List<FloorMapFieldMapping> schema,
                                     final ValueAccessor accessor) {
+        // The canvas always identifies the background by the literal id
+        // "background" regardless of the entry's actual key, so locate the
+        // background by the same rule the parser uses (key OR type).
+        final boolean wantBackground = FloorMapJsonKeys.BACKGROUND.equalsIgnoreCase(objectId);
         final List<TemporalEntry> all = pendingChanges.applyTo(serverEntriesAtCurrentTime);
         for (final TemporalEntry e : all) {
-            if (objectId.equals(e.getKey())) {
+            final boolean matches = wantBackground
+                    ? isBackgroundEntry(e, schema, accessor)
+                    : objectId.equals(e.getKey());
+            if (matches) {
                 if (schema == null || schema.isEmpty()) {
                     throw new IllegalStateException(
                             "No Value Schema is configured. "
                             + "Please configure a Value Schema in the Settings tab.");
                 }
-                final TemporalEntry updated = buildUpdatedEntryWithCoords(
-                        e, mapX, mapY, schema, accessor);
+                // The background's position is stored in its map-to-screen matrix,
+                // not in the POSITION coords field used by regular objects.
+                final TemporalEntry updated = wantBackground
+                        ? buildUpdatedBackgroundEntry(e, mapX, mapY, schema, accessor)
+                        : buildUpdatedEntryWithCoords(e, mapX, mapY, schema, accessor);
                 pendingChanges.recordUpdate(updated);
                 return true;
             }
         }
         return false;
+    }
+
+    /**
+     * Determines whether an entry represents the map background, using the same
+     * rule as {@link FloorMapEntryParser}: its key is {@code "background"} or its
+     * {@code TYPE} field is {@code "background"} (case-insensitive). Falls back to
+     * a key-only test when no schema is available.
+     *
+     * @param entry    the entry to test
+     * @param schema   the value schema, or {@code null}
+     * @param accessor the value accessor
+     * @return {@code true} if the entry is the background
+     */
+    private static boolean isBackgroundEntry(final TemporalEntry entry,
+                                             final List<FloorMapFieldMapping> schema,
+                                             final ValueAccessor accessor) {
+        if (FloorMapJsonKeys.BACKGROUND.equalsIgnoreCase(entry.getKey())) {
+            return true;
+        }
+        if (schema == null || schema.isEmpty()) {
+            return false;
+        }
+        try {
+            final ParsedValue parsed = accessor.parse(entry.getValue());
+            if (parsed == null) {
+                return false;
+            }
+            final String type = accessor.getString(
+                    parsed, FloorMapEntryParser.findPath(schema, Role.TYPE));
+            return FloorMapJsonKeys.BACKGROUND.equalsIgnoreCase(type);
+        } catch (final RuntimeException ex) {
+            return false;
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -480,6 +523,55 @@ public class FloorMapEditorModel {
         accessor.setArray(parsed,
                 FloorMapEntryParser.findPath(schema, Role.POSITION),
                 new double[]{worldX, worldY});
+        return new TemporalEntry(
+                original.getMap(),
+                original.getKey(),
+                original.getEffectiveTimeMs(),
+                accessor.serialize(parsed));
+    }
+
+    /**
+     * Builds an updated background entry, moving it to a new position by
+     * updating the translation components of its {@code MAP_TO_SCREEN} matrix.
+     *
+     * <p>Unlike a regular object (whose position lives in the {@code POSITION}
+     * coords field — see {@link #buildUpdatedEntryWithCoords}), the background's
+     * position is the translation of its map-to-screen matrix. Only the
+     * translation (matrix components {@code e} and {@code f}, i.e. indices 4 and
+     * 5) is changed; rotation/scale ({@code a,b,c,d}) is preserved, matching the
+     * canvas drag behaviour which only ever translates the background.</p>
+     *
+     * @param original the entry to update
+     * @param e        the new map-to-screen translation X (matrix component e)
+     * @param f        the new map-to-screen translation Y (matrix component f)
+     * @param schema   the value schema
+     * @param accessor the value accessor
+     * @return a new {@link TemporalEntry} with the updated matrix
+     * @throws IllegalStateException if the entry's value cannot be parsed
+     */
+    public static TemporalEntry buildUpdatedBackgroundEntry(final TemporalEntry original,
+                                                            final double e,
+                                                            final double f,
+                                                            final List<FloorMapFieldMapping> schema,
+                                                            final ValueAccessor accessor) {
+        final String raw = original.getValue();
+        final ParsedValue parsed = accessor.parse(raw);
+        if (parsed == null) {
+            throw new IllegalStateException(
+                    "Entry value could not be parsed: " + raw);
+        }
+
+        final String path = FloorMapEntryParser.findPath(schema, Role.MAP_TO_SCREEN);
+        double[] matrix = accessor.getArray(parsed, path);
+        if (matrix == null || matrix.length < 6) {
+            // No (usable) matrix present — start from identity, then translate.
+            matrix = new double[]{1, 0, 0, 1, 0, 0};
+        }
+        // Preserve rotation/scale (a, b, c, d); update only the translation (e, f).
+        matrix[4] = e;
+        matrix[5] = f;
+        accessor.setArray(parsed, path, matrix);
+
         return new TemporalEntry(
                 original.getMap(),
                 original.getKey(),
