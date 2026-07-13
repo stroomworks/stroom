@@ -265,7 +265,10 @@ public class FloorMapCanvasViewImpl
                     new Attribute("pointer-events", "none"));
             }
         }, SafeHtmlUtil.from("g"),
-                new Attribute("transform", fact.getWorldToMap().toSvgMatrix()));
+                // Local counter-flip: the raster is drawn Y-down, so undo the Y-up
+                // flip group here to keep images upright by default. The fact's
+                // world-to-map still handles placement, scale and rotation.
+                new Attribute("transform", fact.getWorldToMap().toSvgMatrix() + " scale(1,-1)"));
     }
 
     /**

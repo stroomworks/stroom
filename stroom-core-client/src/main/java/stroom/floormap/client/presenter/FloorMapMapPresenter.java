@@ -261,21 +261,8 @@ public class FloorMapMapPresenter
             applyMove(key, mapName, e.getX(), e.getY(), selectedTime);
         }));
 
-        this.floorMapCanvasPresenter.setDragHandler((objectId, x, y, bgMatrix) -> {
-            if (FloorMapJsonKeys.BACKGROUND.equals(objectId)) {
-                if (bgMatrix != null) {
-                    floorMapObjectEditPresenter.getView().setMapToScreenMatrix(new double[]{
-                            bgMatrix.getA(), bgMatrix.getB(),
-                            bgMatrix.getC(), bgMatrix.getD(),
-                            bgMatrix.getE(), bgMatrix.getF()
-                    });
-                }
-            } else {
-                // Identity scale/rotation with translation set to the drag position.
-                final double[] newW2m = new double[]{1, 0, 0, 1, x, y};
-                floorMapObjectEditPresenter.getView().setWorldToMapMatrix(newW2m);
-            }
-        });
+        // Drag-editing is performed on the Editor tab; the Map tab is view-focused,
+        // so no drag handler is installed here.
 
         this.floorMapObjectEditPresenter.addAssetSelectionHandler(e -> {
             if (e.getSelectedItem() != null) {

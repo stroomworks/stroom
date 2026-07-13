@@ -179,6 +179,8 @@ public class FloorMapEditorPresenter
         // Always in edit mode, with the grid overlay shown as an editing aid.
         floorMapCanvasPresenter.setEditMode(true);
         floorMapCanvasPresenter.setShowGrid(true);
+        // Persist a drag as a single translate of the whole selection.
+        floorMapCanvasPresenter.setDragHandler(this::onFactsTranslated);
 
         setInSlot(MAIN, floorMapCanvasPresenter);
         setInSlot(TIMELINE, floorMapTimelinePresenter);
@@ -598,6 +600,31 @@ public class FloorMapEditorPresenter
                     "Cannot update coordinates for object '" + objectId + "': "
                     + ex.getMessage(),
                     null);
+        }
+        refreshCanvasOnly();
+    }
+
+    /**
+     * Persists a completed drag as a single map-space translation applied to the
+     * whole selection (see {@link FloorMapCanvasPresenter.DragHandler}). Each
+     * fact's world-to-map matrix is shifted by {@code (dxMap, dyMap)}.
+     */
+    private void onFactsTranslated(final java.util.Collection<String> keys,
+                                   final double dxMap,
+                                   final double dyMap) {
+        if (getMapName() == null || keys == null || keys.isEmpty()) {
+            return;
+        }
+        try {
+            final int moved = model.translateFacts(keys, dxMap, dyMap,
+                    getEntity().getValueSchema(),
+                    ValueAccessorFactory.forFormat(getEntity().getValueFormat()));
+            if (moved > 0) {
+                setDirty(true);
+            }
+        } catch (final Exception ex) {
+            AlertEvent.fireError(this,
+                    "Cannot move selection: " + ex.getMessage(), null);
         }
         refreshCanvasOnly();
     }

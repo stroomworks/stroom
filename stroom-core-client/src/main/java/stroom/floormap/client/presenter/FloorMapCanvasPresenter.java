@@ -17,7 +17,6 @@
 package stroom.floormap.client.presenter;
 
 import stroom.floormap.client.event.MapContextMenuEvent;
-import stroom.floormap.client.event.MapObjectMovedEvent;
 import stroom.floormap.client.event.MapObjectSelectedEvent;
 import stroom.floormap.client.presenter.FloorMapCanvasPresenter.FloorMapCanvasView;
 import stroom.floormap.shared.Fact;
@@ -44,7 +43,6 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -116,6 +114,9 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     private boolean hasMoved = false;
     private double lastMouseX;
     private double lastMouseY;
+    /** Accumulated drag delta in map space (Y-up) for the current drag gesture. */
+    private double dragDxMap;
+    private double dragDyMap;
 
     // Objects on the map — kept in two separate lists so facts and events never overwrite each other.
     private List<FloorMapObject> factObjects = new ArrayList<>();
@@ -132,8 +133,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
      * Currently selected object ids, in selection order. Backed as a set so a
      * future rubber-band / modifier-key UI can select many; the current UI
      * selects exactly one (see {@link #setSelectedObjectId(String)}). The view
-     * highlights every id in this set; the single-object drag operates on the
-     * primary (first) selection ({@link #getPrimarySelectedId()}).
+     * highlights every id in this set; a drag translates the whole selection.
      */
     private final Set<String> selectedObjectIds = new LinkedHashSet<>();
 
@@ -301,6 +301,8 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                             MapObjectSelectedEvent.fire(this, id);
                             isDragging = true;
                             hasMoved = false;
+                            dragDxMap = 0;
+                            dragDyMap = 0;
                             lastMouseX = event.getX();
                             lastMouseY = event.getY();
 
@@ -337,51 +339,12 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                 final double deltaX = event.getX() - lastMouseX;
                 final double deltaY = event.getY() - lastMouseY;
 
-                final String selected = getPrimarySelectedId();
-                if (editMode && isDraggingEnabled && selected != null) {
-                    if (FloorMapJsonKeys.BACKGROUND.equals(selected)) {
-                        // Dragging the background (updates the background's tm-map-to-screen matrix)
-                        final double deltaUnzoomedX = deltaX / scale;
-                        final double deltaUnzoomedY = deltaY / scale;
-                        if (matrix != null) {
-                            matrix = new FloorMapTransformationMatrix(
-                                    matrix.getA(), matrix.getB(),
-                                    matrix.getC(), matrix.getD(),
-                                    matrix.getE() + deltaUnzoomedX,
-                                    matrix.getF() + deltaUnzoomedY
-                            );
-                        } else {
-                            matrix = new FloorMapTransformationMatrix(1, 0, 0, 1, deltaUnzoomedX, deltaUnzoomedY);
-                        }
-                        hasMoved = true;
-                        if (dragHandler != null) {
-                            dragHandler.onDrag(FloorMapJsonKeys.BACKGROUND, matrix.getE(), matrix.getF(), matrix);
-                        }
-                    } else {
-                        // Move the selected object.
-                        for (final FloorMapObject obj : factObjects) {
-                            if (obj.getId().equals(selected)) {
-                                // Revert scale to get unzoomed screen delta
-                                final double deltaUnzoomedX = deltaX / scale;
-                                final double deltaUnzoomedY = deltaY / scale;
-
-                                // Revert active background's M_map_to_screen matrix to get delta in map space
-                                final FloorMapTransformationMatrix invBgMatrix = matrix != null
-                                        ? matrix.inverse()
-                                        : FloorMapTransformationMatrix.identity();
-                                final double deltaMapX =
-                                        invBgMatrix.getA() * deltaUnzoomedX + invBgMatrix.getC() * deltaUnzoomedY;
-                                final double deltaMapY =
-                                        invBgMatrix.getB() * deltaUnzoomedX + invBgMatrix.getD() * deltaUnzoomedY;
-
-                                obj.setX(obj.getX() + deltaMapX);
-                                obj.setY(obj.getY() + deltaMapY);
-                                hasMoved = true;
-                                break;
-                            }
-                        }
-                    }
-
+                if (editMode && isDraggingEnabled && !selectedObjectIds.isEmpty()) {
+                    // Accumulate the drag in map space (Y-up) for live feedback and a
+                    // single translateFacts() applied to the whole selection on drop.
+                    dragDxMap += deltaX / scale;
+                    dragDyMap += -(deltaY / scale);
+                    hasMoved = true;
                     redraw();
                 } else {
                     // Pan the map
@@ -397,24 +360,18 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
         //noinspection unused event
         registerHandler(getView().getMouseUpHandlers().addMouseUpHandler(event -> {
-            // Only fire a move event when the object was actually dragged, not just clicked.
-            final String selected = getPrimarySelectedId();
-            if (isDragging && hasMoved && editMode && selected != null) {
-                if (FloorMapJsonKeys.BACKGROUND.equals(selected)) {
-                    MapObjectMovedEvent.fire(this, FloorMapJsonKeys.BACKGROUND, matrix.getE(), matrix.getF());
-                } else {
-                    // Find the object's current coordinates
-                    for (final FloorMapObject obj : factObjects) {
-                        if (obj.getId().equals(selected)) {
-                            MapObjectMovedEvent.fire(this, selected, obj.getX(), obj.getY());
-                            break;
-                        }
-                    }
-                }
-            }
-
+            // Persist the drag as a single translate of the whole selection.
+            final boolean moved = isDragging && hasMoved && editMode
+                    && !selectedObjectIds.isEmpty();
+            final double dx = dragDxMap;
+            final double dy = dragDyMap;
+            dragDxMap = 0;
+            dragDyMap = 0;
             isDragging = false;
             hasMoved = false;
+            if (moved && dragHandler != null) {
+                dragHandler.onTranslate(new ArrayList<>(selectedObjectIds), dx, dy);
+            }
         }));
 
         // Mouse Wheel (Zoom toward cursor)
@@ -528,7 +485,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     // =========================================================================
 
     private void redraw() {
-        getView().draw(scale, offsetX, offsetY, FloorMapZOrder.sort(facts, typeStyles),
+        getView().draw(scale, offsetX, offsetY, FloorMapZOrder.sort(factsForDraw(), typeStyles),
                 buildAnimatedDrawList(/* nowMs — irrelevant when no animations */ 0.0),
                 selectedObjectIds, typeStyles, showGrid);
     }
@@ -689,7 +646,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                     }
 
                     // Draw the current frame.
-                    getView().draw(scale, offsetX, offsetY, FloorMapZOrder.sort(facts, typeStyles),
+                    getView().draw(scale, offsetX, offsetY, FloorMapZOrder.sort(factsForDraw(), typeStyles),
                             buildAnimatedDrawList(timestamp), selectedObjectIds, typeStyles, showGrid);
 
                     // Keep looping.
@@ -819,12 +776,28 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     }
 
     /**
-     * The primary (first-selected) object id, or {@code null} if nothing is
-     * selected. The single-object drag operates on this.
+     * Returns the facts to render, applying any in-progress drag: selected facts
+     * have their world-to-map translated by the accumulated map-space delta so the
+     * drag is shown live. On drop the delta is persisted via
+     * {@link DragHandler#onTranslate}.
      */
-    private String getPrimarySelectedId() {
-        final Iterator<String> it = selectedObjectIds.iterator();
-        return it.hasNext() ? it.next() : null;
+    private List<Fact> factsForDraw() {
+        if (selectedObjectIds.isEmpty() || (dragDxMap == 0 && dragDyMap == 0)) {
+            return facts;
+        }
+        final List<Fact> out = new ArrayList<>(facts.size());
+        for (final Fact fact : facts) {
+            if (selectedObjectIds.contains(fact.getKey())) {
+                final FloorMapTransformationMatrix m = fact.getWorldToMap();
+                out.add(new Fact(fact.getKey(), fact.getType(), fact.getImage(),
+                        new FloorMapTransformationMatrix(m.getA(), m.getB(), m.getC(), m.getD(),
+                                m.getE() + dragDxMap, m.getF() + dragDyMap),
+                        fact.getPosition()));
+            } else {
+                out.add(fact);
+            }
+        }
+        return out;
     }
 
     /**
@@ -1043,11 +1016,17 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     }
 
     /**
-     * Callback interface for drag notifications.
+     * Callback invoked when a drag gesture completes, to persist the move as a
+     * single translation of the whole selection in map space.
      */
     public interface DragHandler {
 
-        void onDrag(String objectId, double x, double y, FloorMapTransformationMatrix matrix);
+        /**
+         * @param keys  the selected fact keys that were dragged
+         * @param dxMap the accumulated X translation in map space
+         * @param dyMap the accumulated Y translation in map space (Y-up)
+         */
+        void onTranslate(Collection<String> keys, double dxMap, double dyMap);
     }
 
     // =========================================================================
