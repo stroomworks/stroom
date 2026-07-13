@@ -20,9 +20,11 @@ import stroom.floormap.client.event.MapContextMenuEvent;
 import stroom.floormap.client.event.MapObjectMovedEvent;
 import stroom.floormap.client.event.MapObjectSelectedEvent;
 import stroom.floormap.client.presenter.FloorMapCanvasPresenter.FloorMapCanvasView;
+import stroom.floormap.shared.Fact;
 import stroom.floormap.shared.FloorMapJsonKeys;
 import stroom.floormap.shared.FloorMapObject;
 import stroom.floormap.shared.FloorMapTransformationMatrix;
+import stroom.floormap.shared.FloorMapZOrder;
 import stroom.floormap.shared.TypeStyle;
 
 import com.google.gwt.animation.client.AnimationScheduler;
@@ -145,6 +147,9 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
     /** Per-type presentation settings (z-order + default graphic); may be null. */
     private List<TypeStyle> typeStyles;
+
+    /** The facts to render (backgrounds + static facts), from the parser. */
+    private List<Fact> facts = new ArrayList<>();
 
     // -------------------------------------------------------------------------
     // Playback / animation state
@@ -530,7 +535,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     // =========================================================================
 
     private void redraw() {
-        getView().draw(scale, offsetX, offsetY, backgroundImage, matrix,
+        getView().draw(scale, offsetX, offsetY, FloorMapZOrder.sort(facts, typeStyles),
                 buildAnimatedDrawList(/* nowMs — irrelevant when no animations */ 0.0),
                 selectedObjectIds, typeStyles, showGrid);
     }
@@ -543,8 +548,9 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
      *              Pass {@code 0.0} when there are no active animations.
      */
     private List<FloorMapObject> buildAnimatedDrawList(final double nowMs) {
-        final List<FloorMapObject> combined = new ArrayList<>(factObjects);
-        combined.addAll(eventObjects); // non-person events are already in eventObjects
+        // Facts are rendered separately from the fact list; this list is the
+        // event/person overlay only.
+        final List<FloorMapObject> combined = new ArrayList<>(eventObjects);
 
         // People currently mid-animation — add at their interpolated position.
         for (final Map.Entry<String, UserAnimation> entry : activeAnimations.entrySet()) {
@@ -690,7 +696,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                     }
 
                     // Draw the current frame.
-                    getView().draw(scale, offsetX, offsetY, backgroundImage, matrix,
+                    getView().draw(scale, offsetX, offsetY, FloorMapZOrder.sort(facts, typeStyles),
                             buildAnimatedDrawList(timestamp), selectedObjectIds, typeStyles, showGrid);
 
                     // Keep looping.
@@ -1015,6 +1021,17 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     }
 
     /**
+     * Sets the facts to render (backgrounds + static facts) as produced by the
+     * parser. Replaces the legacy background-image/matrix/objects inputs.
+     *
+     * @param facts the facts; {@code null} is treated as empty
+     */
+    public void setFacts(final List<Fact> facts) {
+        this.facts = facts != null ? facts : new ArrayList<>();
+        redraw();
+    }
+
+    /**
      * Enables or disables object dragging within edit mode.
      *
      * @param isDraggingEnabled {@code true} to allow dragging selected objects
@@ -1153,29 +1170,25 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
          * The rendering layers are, from back to front:</p>
          * <ol>
          *   <li>Grid overlay (drawn when {@code showGrid} is set)</li>
-         *   <li>Background floor-plan image (transformed by {@code matrix})</li>
-         *   <li>Map objects (gates, doors, people, etc.)</li>
+         *   <li>Facts — image facts (incl. backgrounds) and imageless default graphics,
+         *       in the supplied paint (z) order</li>
+         *   <li>Events (people) drawn on top</li>
          * </ol>
          *
          * @param scale           the current zoom scale factor
          * @param x               the current pan offset X (pixels)
          * @param y               the current pan offset Y (pixels)
-         * @param backgroundImage the Asset Store URL for the background image,
-         *                        or {@code null} if no background image is set
-         * @param matrix          the map-to-screen transformation matrix,
-         *                        or {@code null} for identity
-         * @param objects         the list of map objects to render
+         * @param facts           the facts to render, already in paint (z) order
+         * @param events          the event/person overlay objects (map coordinates)
          * @param selectedObjectIds the IDs of the currently selected objects (all
          *                         highlighted); empty if nothing is selected
          * @param typeStyles      per-type presentation settings (default graphic
          *                        shape/colour for imageless facts); may be {@code null}
-         * @param showGrid        {@code true} to draw the (non-interactive) grid
-         *                        overlay; independent of the background image
+         * @param showGrid        {@code true} to draw the (non-interactive) grid overlay
          */
-        void draw(double scale, double x, double y, String backgroundImage,
-                FloorMapTransformationMatrix matrix, List<FloorMapObject> objects,
-                Set<String> selectedObjectIds, List<TypeStyle> typeStyles,
-                boolean showGrid);
+        void draw(double scale, double x, double y, List<Fact> facts,
+                List<FloorMapObject> events, Set<String> selectedObjectIds,
+                List<TypeStyle> typeStyles, boolean showGrid);
 
         /**
          * Registers a listener that is called whenever the view needs to

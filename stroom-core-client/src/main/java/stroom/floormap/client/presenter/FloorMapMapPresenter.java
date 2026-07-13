@@ -25,6 +25,7 @@ import stroom.floormap.client.event.MapObjectMovedEvent;
 import stroom.floormap.client.event.MapObjectSelectedEvent;
 import stroom.floormap.client.event.TimeChangeEvent;
 import stroom.floormap.client.presenter.FloorMapMapPresenter.FloorMapMapView;
+import stroom.floormap.shared.Fact;
 import stroom.floormap.shared.FloorMapDoc;
 import stroom.floormap.shared.FloorMapEntryParser;
 import stroom.floormap.shared.FloorMapFieldMapping;
@@ -527,6 +528,7 @@ public class FloorMapMapPresenter
         String activeBgImage = null;
         FloorMapTransformationMatrix activeBgMatrix = FloorMapTransformationMatrix.identity();
         final List<FloorMapObject> plottedObjects = new ArrayList<>();
+        final List<Fact> facts = new ArrayList<>();
 
         if (tableResult.getRows() != null) {
             for (final Row row : tableResult.getRows()) {
@@ -568,14 +570,23 @@ public class FloorMapMapPresenter
                             + worldToMap.getD() * worldY + worldToMap.getF();
 
                     plottedObjects.add(new FloorMapObject(key, type, mapX, mapY));
+                    facts.add(new Fact(key, type, img, worldToMap, new double[]{worldX, worldY}));
                 }
             }
         }
 
+        // Legacy inputs retained so the Map tab's applyMove()/getMatrix() keep working.
         floorMapCanvasPresenter.setBackgroundImage(
                 activeBgImage != null && !activeBgImage.isEmpty() ? activeBgImage : null);
         floorMapCanvasPresenter.setMatrix(activeBgMatrix);
         floorMapCanvasPresenter.setObjects(plottedObjects);
+
+        // Fact list the canvas actually renders (background painted behind).
+        if (activeBgImage != null && !activeBgImage.isEmpty()) {
+            facts.add(0, new Fact(FloorMapJsonKeys.BACKGROUND, FloorMapJsonKeys.BACKGROUND,
+                    activeBgImage, activeBgMatrix, null));
+        }
+        floorMapCanvasPresenter.setFacts(facts);
     }
 
     /**

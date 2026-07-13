@@ -529,10 +529,8 @@ public class FloorMapEditorPresenter
         final FloorMapEntryParser.ParseResult result = model.parseForCanvas(
                 entries, getEntity().getValueSchema(),
                 ValueAccessorFactory.forFormat(getEntity().getValueFormat()));
-        floorMapCanvasPresenter.setBackgroundImage(result.getBackgroundImage());
-        floorMapCanvasPresenter.setMatrix(result.getBackgroundMatrix());
         floorMapCanvasPresenter.setTypeStyles(getEntity().getTypeStyles());
-        floorMapCanvasPresenter.setObjects(result.getObjects());
+        floorMapCanvasPresenter.setFacts(result.getFacts());
         if (model.getSelectedFactKey() != null) {
             floorMapCanvasPresenter.setSelectedObjectId(model.getSelectedFactKey());
         }
@@ -615,10 +613,8 @@ public class FloorMapEditorPresenter
         final FloorMapEntryParser.ParseResult result = model.parseForCanvas(
                 canvasEntries, getEntity().getValueSchema(),
                 ValueAccessorFactory.forFormat(getEntity().getValueFormat()));
-        floorMapCanvasPresenter.setBackgroundImage(result.getBackgroundImage());
-        floorMapCanvasPresenter.setMatrix(result.getBackgroundMatrix());
         floorMapCanvasPresenter.setTypeStyles(getEntity().getTypeStyles());
-        floorMapCanvasPresenter.setObjects(result.getObjects());
+        floorMapCanvasPresenter.setFacts(result.getFacts());
         if (model.getSelectedFactKey() != null) {
             floorMapCanvasPresenter.setSelectedObjectId(model.getSelectedFactKey());
         }
