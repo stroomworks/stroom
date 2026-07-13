@@ -531,6 +531,7 @@ public class FloorMapEditorPresenter
                 ValueAccessorFactory.forFormat(getEntity().getValueFormat()));
         floorMapCanvasPresenter.setBackgroundImage(result.getBackgroundImage());
         floorMapCanvasPresenter.setMatrix(result.getBackgroundMatrix());
+        floorMapCanvasPresenter.setTypeStyles(getEntity().getTypeStyles());
         floorMapCanvasPresenter.setObjects(result.getObjects());
         if (model.getSelectedFactKey() != null) {
             floorMapCanvasPresenter.setSelectedObjectId(model.getSelectedFactKey());
@@ -616,6 +617,7 @@ public class FloorMapEditorPresenter
                 ValueAccessorFactory.forFormat(getEntity().getValueFormat()));
         floorMapCanvasPresenter.setBackgroundImage(result.getBackgroundImage());
         floorMapCanvasPresenter.setMatrix(result.getBackgroundMatrix());
+        floorMapCanvasPresenter.setTypeStyles(getEntity().getTypeStyles());
         floorMapCanvasPresenter.setObjects(result.getObjects());
         if (model.getSelectedFactKey() != null) {
             floorMapCanvasPresenter.setSelectedObjectId(model.getSelectedFactKey());

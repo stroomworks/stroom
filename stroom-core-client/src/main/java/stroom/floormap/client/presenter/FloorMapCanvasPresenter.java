@@ -23,6 +23,7 @@ import stroom.floormap.client.presenter.FloorMapCanvasPresenter.FloorMapCanvasVi
 import stroom.floormap.shared.FloorMapJsonKeys;
 import stroom.floormap.shared.FloorMapObject;
 import stroom.floormap.shared.FloorMapTransformationMatrix;
+import stroom.floormap.shared.TypeStyle;
 
 import com.google.gwt.animation.client.AnimationScheduler;
 import com.google.gwt.dom.client.Element;
@@ -141,6 +142,9 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
      * tabs (e.g. the Map tab) can opt in via {@link #setShowGrid(boolean)}.
      */
     private boolean showGrid = false;
+
+    /** Per-type presentation settings (z-order + default graphic); may be null. */
+    private List<TypeStyle> typeStyles;
 
     // -------------------------------------------------------------------------
     // Playback / animation state
@@ -528,7 +532,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     private void redraw() {
         getView().draw(scale, offsetX, offsetY, backgroundImage, matrix,
                 buildAnimatedDrawList(/* nowMs — irrelevant when no animations */ 0.0),
-                selectedObjectIds, showGrid);
+                selectedObjectIds, typeStyles, showGrid);
     }
 
     /**
@@ -687,7 +691,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
                     // Draw the current frame.
                     getView().draw(scale, offsetX, offsetY, backgroundImage, matrix,
-                            buildAnimatedDrawList(timestamp), selectedObjectIds, showGrid);
+                            buildAnimatedDrawList(timestamp), selectedObjectIds, typeStyles, showGrid);
 
                     // Keep looping.
                     AnimationScheduler.get().requestAnimationFrame(this);
@@ -1000,6 +1004,17 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     }
 
     /**
+     * Sets the per-type presentation settings (z-order + default graphic shape
+     * and colour). Used by the view to render imageless facts.
+     *
+     * @param typeStyles the ordered type styles, or {@code null}
+     */
+    public void setTypeStyles(final List<TypeStyle> typeStyles) {
+        this.typeStyles = typeStyles;
+        redraw();
+    }
+
+    /**
      * Enables or disables object dragging within edit mode.
      *
      * @param isDraggingEnabled {@code true} to allow dragging selected objects
@@ -1152,12 +1167,15 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
          * @param objects         the list of map objects to render
          * @param selectedObjectIds the IDs of the currently selected objects (all
          *                         highlighted); empty if nothing is selected
+         * @param typeStyles      per-type presentation settings (default graphic
+         *                        shape/colour for imageless facts); may be {@code null}
          * @param showGrid        {@code true} to draw the (non-interactive) grid
          *                        overlay; independent of the background image
          */
         void draw(double scale, double x, double y, String backgroundImage,
                 FloorMapTransformationMatrix matrix, List<FloorMapObject> objects,
-                Set<String> selectedObjectIds, boolean showGrid);
+                Set<String> selectedObjectIds, List<TypeStyle> typeStyles,
+                boolean showGrid);
 
         /**
          * Registers a listener that is called whenever the view needs to

@@ -21,7 +21,9 @@ import stroom.entity.client.presenter.ReadOnlyChangeHandler;
 import stroom.floormap.client.presenter.FloorMapCanvasPresenter.FloorMapCanvasView;
 import stroom.floormap.shared.FloorMapJsonKeys;
 import stroom.floormap.shared.FloorMapObject;
+import stroom.floormap.shared.FloorMapShapes;
 import stroom.floormap.shared.FloorMapTransformationMatrix;
+import stroom.floormap.shared.TypeStyle;
 import stroom.widget.util.client.HtmlBuilder;
 import stroom.widget.util.client.HtmlBuilder.Attribute;
 import stroom.widget.util.client.SafeHtmlUtil;
@@ -165,6 +167,7 @@ public class FloorMapCanvasViewImpl
      * @param matrix          map-to-screen transformation matrix, or {@code null} for identity
      * @param objects         list of map objects (gates, people, etc.) to render
      * @param selectedObjectIds IDs of the currently selected objects (all highlighted)
+     * @param typeStyles      per-type presentation settings (default graphic shape/colour)
      * @param showGrid        {@code true} to draw the (non-interactive) grid overlay;
      *                        independent of whether a background image is present
      */
@@ -176,6 +179,7 @@ public class FloorMapCanvasViewImpl
                      final FloorMapTransformationMatrix matrix,
                      final List<FloorMapObject> objects,
                      final Set<String> selectedObjectIds,
+                     final List<TypeStyle> typeStyles,
                      final boolean showGrid) {
         final HtmlBuilder htmlBuilder = new HtmlBuilder();
         final FloorMapTransformationMatrix effectiveMatrix =
@@ -325,21 +329,51 @@ public class FloorMapCanvasViewImpl
                                             new Attribute("pointer-events", "none"),
                                             new Attribute("transform", counterRotation));
                                 } else {
-                                    // ---- Static object: rounded rectangle ----
-                                    final String fillColour = colourForType(obj.getType());
+                                    // ---- Static object: per-type default graphic ----
+                                    // Imageless facts use the shape + colour configured for their
+                                    // type (Settings tab). Unconfigured types keep the default
+                                    // rounded rectangle. Fixed screen size (non-scaling stroke).
+                                    final String fillColour = colourForType(obj.getType(), typeStyles);
+                                    final TypeStyle.Shape shape = shapeForType(obj.getType(), typeStyles);
+                                    final String stroke = isSelected ? "#ff9800" : "none";
+                                    final String strokeWidth = isSelected ? "4" : "0";
+                                    final String vectorEffect = isSelected ? "non-scaling-stroke" : "none";
+                                    final String polygon = FloorMapShapes.polygonPoints(shape, OBJECT_SIZE / 2.0);
 
-                                    objGroup.elem(SafeHtmlUtil.from("rect"),
-                                        new Attribute("x", String.valueOf(-OBJECT_SIZE / 2)),
-                                        new Attribute("y", String.valueOf(-OBJECT_SIZE / 2)),
-                                        new Attribute("width", String.valueOf(OBJECT_SIZE)),
-                                        new Attribute("height", String.valueOf(OBJECT_SIZE)),
-                                        new Attribute("fill", fillColour),
-                                        new Attribute("rx", "6"),
-                                        new Attribute("ry", "6"),
-                                        new Attribute("stroke", isSelected ? "#ff9800" : "none"),
-                                        new Attribute("stroke-width", isSelected ? "4" : "0"),
-                                        new Attribute("vector-effect", isSelected ? "non-scaling-stroke" : "none"),
-                                        new Attribute("id", obj.getId()));
+                                    if (shape == TypeStyle.Shape.CIRCLE) {
+                                        objGroup.elem(SafeHtmlUtil.from("circle"),
+                                            new Attribute("cx", "0"),
+                                            new Attribute("cy", "0"),
+                                            new Attribute("r", String.valueOf(OBJECT_SIZE / 2)),
+                                            new Attribute("fill", fillColour),
+                                            new Attribute("stroke", stroke),
+                                            new Attribute("stroke-width", strokeWidth),
+                                            new Attribute("vector-effect", vectorEffect),
+                                            new Attribute("id", obj.getId()));
+                                    } else if (polygon != null) {
+                                        // TRIANGLE or DIAMOND
+                                        objGroup.elem(SafeHtmlUtil.from("polygon"),
+                                            new Attribute("points", polygon),
+                                            new Attribute("fill", fillColour),
+                                            new Attribute("stroke", stroke),
+                                            new Attribute("stroke-width", strokeWidth),
+                                            new Attribute("vector-effect", vectorEffect),
+                                            new Attribute("id", obj.getId()));
+                                    } else {
+                                        // SQUARE, PIN (path TODO) and unconfigured → rounded rect.
+                                        objGroup.elem(SafeHtmlUtil.from("rect"),
+                                            new Attribute("x", String.valueOf(-OBJECT_SIZE / 2)),
+                                            new Attribute("y", String.valueOf(-OBJECT_SIZE / 2)),
+                                            new Attribute("width", String.valueOf(OBJECT_SIZE)),
+                                            new Attribute("height", String.valueOf(OBJECT_SIZE)),
+                                            new Attribute("fill", fillColour),
+                                            new Attribute("rx", "6"),
+                                            new Attribute("ry", "6"),
+                                            new Attribute("stroke", stroke),
+                                            new Attribute("stroke-width", strokeWidth),
+                                            new Attribute("vector-effect", vectorEffect),
+                                            new Attribute("id", obj.getId()));
+                                    }
 
                                     objGroup.elem(displayLabel,
                                             SafeHtmlUtil.from("text"),
@@ -380,7 +414,16 @@ public class FloorMapCanvasViewImpl
      * @param type the object type string (e.g. "gate", "camera"), case-insensitive
      * @return a CSS hex colour string
      */
-    private static String colourForType(final String type) {
+    private static String colourForType(final String type, final List<TypeStyle> typeStyles) {
+        // Prefer the colour configured for this type on the Settings tab.
+        if (type != null && typeStyles != null) {
+            for (final TypeStyle style : typeStyles) {
+                if (style != null && type.equals(style.getType())
+                        && style.getColour() != null && !style.getColour().isEmpty()) {
+                    return style.getColour();
+                }
+            }
+        }
         if (type == null) {
             return "#607d8b"; // blue-grey default
         }
@@ -393,6 +436,22 @@ public class FloorMapCanvasViewImpl
             case "server", "servers" -> "#e53935"; // red
             default -> "#607d8b"; // blue-grey
         };
+    }
+
+    /**
+     * Returns the configured default-graphic shape for the given type, or
+     * {@code null} if the type is unconfigured or has no shape set (the view
+     * then falls back to the default rounded rectangle).
+     */
+    private static TypeStyle.Shape shapeForType(final String type, final List<TypeStyle> typeStyles) {
+        if (type != null && typeStyles != null) {
+            for (final TypeStyle style : typeStyles) {
+                if (style != null && type.equals(style.getType())) {
+                    return style.getShape();
+                }
+            }
+        }
+        return null;
     }
 
     /**
