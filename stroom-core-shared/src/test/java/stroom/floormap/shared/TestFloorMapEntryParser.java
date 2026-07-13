@@ -400,6 +400,99 @@ class TestFloorMapEntryParser {
     }
 
     // -----------------------------------------------------------------------
+    // getFacts() — the authoritative fact list
+    // -----------------------------------------------------------------------
+
+    /**
+     * Every entry becomes one {@link Fact}, in order — including the background.
+     */
+    @Test
+    void testFacts_oneFactPerEntry() {
+        final FloorMapEntryParser.ParseResult result = FloorMapEntryParser.parse(List.of(
+                        entry("background", 100,
+                                "{\"type\":\"background\",\"img\":\"floor.png\","
+                                        + "\"tm-map-to-screen\":[2,0,0,2,10,20]}"),
+                        entry("gate-1", 100,
+                                "{\"type\":\"gate\",\"coords\":[3,4]}")),
+                SCHEMA, ACCESSOR, warnings::add);
+
+        assertThat(result.getFacts()).hasSize(2);
+        assertThat(result.getFacts().get(0).getKey()).isEqualTo("background");
+        assertThat(result.getFacts().get(1).getKey()).isEqualTo("gate-1");
+    }
+
+    /**
+     * A background fact carries its image and its (map-to-screen) placement
+     * matrix, is flagged as background, and has no position.
+     */
+    @Test
+    void testFacts_backgroundFact() {
+        final FloorMapEntryParser.ParseResult result = FloorMapEntryParser.parse(List.of(
+                        entry("background", 100,
+                                "{\"type\":\"background\",\"img\":\"floor.png\","
+                                        + "\"tm-map-to-screen\":[2,0,0,2,10,20]}")),
+                SCHEMA, ACCESSOR, warnings::add);
+
+        final Fact bg = result.getFacts().getFirst();
+        assertThat(bg.isBackground()).isTrue();
+        assertThat(bg.hasImage()).isTrue();
+        assertThat(bg.getImage()).isEqualTo("floor.png");
+        assertThat(bg.getPosition()).isNull();
+        assertThat(bg.getWorldToMap().getA()).isEqualTo(2.0);
+        assertThat(bg.getWorldToMap().getE()).isEqualTo(10.0);
+        assertThat(bg.getWorldToMap().getF()).isEqualTo(20.0);
+    }
+
+    /**
+     * A regular fact carries its world position and world-to-map matrix, has no
+     * image, and is not flagged as background.
+     */
+    @Test
+    void testFacts_regularFact() {
+        final FloorMapEntryParser.ParseResult result = FloorMapEntryParser.parse(List.of(
+                        entry("gate-1", 100,
+                                "{\"type\":\"gate\",\"coords\":[3,4],"
+                                        + "\"tm-world-to-map\":[1,0,0,1,0,0]}")),
+                SCHEMA, ACCESSOR, warnings::add);
+
+        final Fact fact = result.getFacts().getFirst();
+        assertThat(fact.isBackground()).isFalse();
+        assertThat(fact.hasImage()).isFalse();
+        assertThat(fact.getType()).isEqualTo("gate");
+        assertThat(fact.getPosition()).containsExactly(3.0, 4.0);
+    }
+
+    /**
+     * The legacy {@code getObjects()} / {@code getBackground*} adapter stays
+     * consistent with the fact list it is derived from.
+     */
+    @Test
+    void testFacts_adapterConsistentWithFacts() {
+        final FloorMapEntryParser.ParseResult result = FloorMapEntryParser.parse(List.of(
+                        entry("background", 100,
+                                "{\"type\":\"background\",\"img\":\"floor.png\","
+                                        + "\"tm-map-to-screen\":[1,0,0,1,0,0]}"),
+                        entry("gate-1", 100, "{\"type\":\"gate\",\"coords\":[3,4]}")),
+                SCHEMA, ACCESSOR, warnings::add);
+
+        // One background fact + one object fact → one object, one background image.
+        assertThat(result.getFacts()).hasSize(2);
+        assertThat(result.getObjects()).hasSize(1);
+        assertThat(result.getObjects().getFirst().getId()).isEqualTo("gate-1");
+        assertThat(result.getBackgroundImage()).isEqualTo("floor.png");
+    }
+
+    /**
+     * A {@code null} entry list yields an empty (non-null) fact list.
+     */
+    @Test
+    void testFacts_nullEntries_emptyList() {
+        final FloorMapEntryParser.ParseResult result =
+                FloorMapEntryParser.parse(null, SCHEMA, ACCESSOR, warnings::add);
+        assertThat(result.getFacts()).isEmpty();
+    }
+
+    // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
 
