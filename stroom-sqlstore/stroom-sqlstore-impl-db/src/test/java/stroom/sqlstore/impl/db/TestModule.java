@@ -16,12 +16,14 @@
 
 package stroom.sqlstore.impl.db;
 
-import stroom.collection.mock.MockCollectionModule;
-import stroom.dictionary.mock.MockWordListProviderModule;
-import stroom.docrefinfo.mock.MockDocRefInfoModule;
+import stroom.collection.api.CollectionService;
+import stroom.dictionary.api.WordListProvider;
+import stroom.docstore.api.DocFinder;
 import stroom.test.common.util.db.DbTestModule;
 
 import com.google.inject.AbstractModule;
+
+import static org.mockito.Mockito.mock;
 
 /**
  * Guice wiring for the real-database {@link UpdatableTemporalStoreDaoImpl} tests.
@@ -32,9 +34,12 @@ import com.google.inject.AbstractModule;
  * parallel Gradle forks never collide.</p>
  *
  * <p>The DAO builds an {@code ExpressionMapper} whose {@code TermHandlerFactory}
- * needs {@code WordListProvider}, {@code CollectionService} and
- * {@code DocRefInfoService}; the three {@code Mock*Module}s satisfy those.
- * {@code SqlStoreDbConfig} is just-in-time constructed from its no-arg
+ * requires {@link WordListProvider}, {@link CollectionService} and
+ * {@link DocFinder}. These are bound here as Mockito mocks rather than via
+ * shared {@code Mock*Module}s: the test queries only use simple map-name and
+ * effective-time terms, so the collaborators are never actually invoked, and
+ * binding them directly keeps this test insulated from churn in the mock
+ * modules. {@code SqlStoreDbConfig} is just-in-time constructed from its no-arg
  * constructor.</p>
  */
 public class TestModule extends AbstractModule {
@@ -50,9 +55,9 @@ public class TestModule extends AbstractModule {
         // Test datasource: unique per-fork/thread DB, cleared after the run.
         install(new DbTestModule());
 
-        // Collaborators required by the ExpressionMapper term handlers.
-        install(new MockWordListProviderModule());
-        install(new MockCollectionModule());
-        install(new MockDocRefInfoModule());
+        // Collaborators required to construct the ExpressionMapper term handlers.
+        bind(WordListProvider.class).toInstance(mock(WordListProvider.class));
+        bind(CollectionService.class).toInstance(mock(CollectionService.class));
+        bind(DocFinder.class).toInstance(mock(DocFinder.class));
     }
 }

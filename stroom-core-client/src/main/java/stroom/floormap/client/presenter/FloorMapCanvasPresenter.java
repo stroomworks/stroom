@@ -23,6 +23,7 @@ import stroom.floormap.client.presenter.FloorMapCanvasPresenter.FloorMapCanvasVi
 import stroom.floormap.shared.FloorMapJsonKeys;
 import stroom.floormap.shared.FloorMapObject;
 import stroom.floormap.shared.FloorMapTransformationMatrix;
+import stroom.floormap.shared.FloorMapViewport;
 
 import com.google.gwt.animation.client.AnimationScheduler;
 import com.google.gwt.dom.client.Element;
@@ -80,25 +81,9 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     private static final double TRAIL_FADE_DURATION_MS = 2000.0;
 
     // -------------------------------------------------------------------------
-    /**
-     * Minimum zoom scale. At extreme zoom-out the grid decade selection and
-     * SVG coordinate values lose precision. This limit (~1e-12) provides
-     * roughly 12 orders of magnitude of zoom-out from the default — far
-     * beyond any practical use.
-     */
-    private static final double MIN_SCALE = 1e-12;
-
-    /**
-     * Maximum zoom scale. At extreme zoom-in the same precision issues
-     * apply. This limit (~1e12) provides roughly 12 orders of magnitude
-     * of zoom-in from the default.
-     */
-    private static final double MAX_SCALE = 1e12;
-
-    // Zoom and pan state
-    private double scale = 1.0;
-    private double offsetX = 0;
-    private double offsetY = 0;
+    // Zoom and pan state plus the pure coordinate maths (screen<->map, drag
+    // deltas, zoom-toward-cursor). Scale clamping lives in FloorMapViewport.
+    private final FloorMapViewport viewport = new FloorMapViewport();
     private String backgroundImage;
     private FloorMapTransformationMatrix matrix;
 
@@ -311,18 +296,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                 if (editMode && isDraggingEnabled && selectedObjectId != null) {
                     if (FloorMapJsonKeys.BACKGROUND.equals(selectedObjectId)) {
                         // Dragging the background (updates the background's tm-map-to-screen matrix)
-                        final double deltaUnzoomedX = deltaX / scale;
-                        final double deltaUnzoomedY = deltaY / scale;
-                        if (matrix != null) {
-                            matrix = new FloorMapTransformationMatrix(
-                                    matrix.getA(), matrix.getB(),
-                                    matrix.getC(), matrix.getD(),
-                                    matrix.getE() + deltaUnzoomedX,
-                                    matrix.getF() + deltaUnzoomedY
-                            );
-                        } else {
-                            matrix = new FloorMapTransformationMatrix(1, 0, 0, 1, deltaUnzoomedX, deltaUnzoomedY);
-                        }
+                        matrix = viewport.dragBackground(matrix, deltaX, deltaY);
                         hasMoved = true;
                         if (dragHandler != null) {
                             dragHandler.onDrag(FloorMapJsonKeys.BACKGROUND, matrix.getE(), matrix.getF(), matrix);
@@ -331,21 +305,12 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                         // Move the selected object.
                         for (final FloorMapObject obj : factObjects) {
                             if (obj.getId().equals(selectedObjectId)) {
-                                // Revert scale to get unzoomed screen delta
-                                final double deltaUnzoomedX = deltaX / scale;
-                                final double deltaUnzoomedY = deltaY / scale;
-
-                                // Revert active background's M_map_to_screen matrix to get delta in map space
-                                final FloorMapTransformationMatrix invBgMatrix = matrix != null
-                                        ? matrix.inverse()
-                                        : FloorMapTransformationMatrix.identity();
-                                final double deltaMapX =
-                                        invBgMatrix.getA() * deltaUnzoomedX + invBgMatrix.getC() * deltaUnzoomedY;
-                                final double deltaMapY =
-                                        invBgMatrix.getB() * deltaUnzoomedX + invBgMatrix.getD() * deltaUnzoomedY;
-
-                                obj.setX(obj.getX() + deltaMapX);
-                                obj.setY(obj.getY() + deltaMapY);
+                                // Convert the screen drag delta into a map-space
+                                // delta (reverses zoom and the background matrix).
+                                final double[] deltaMap =
+                                        viewport.dragItemMapDelta(matrix, deltaX, deltaY);
+                                obj.setX(obj.getX() + deltaMap[0]);
+                                obj.setY(obj.getY() + deltaMap[1]);
                                 hasMoved = true;
                                 break;
                             }
@@ -355,8 +320,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                     redraw();
                 } else {
                     // Pan the map
-                    offsetX += deltaX;
-                    offsetY += deltaY;
+                    viewport.pan(deltaX, deltaY);
                     redraw();
                 }
 
@@ -390,22 +354,12 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         registerHandler(getView().getMouseWheelHandlers().addMouseWheelHandler(event -> {
             event.preventDefault();
 
-            double zoomFactor = 1.1;
-            if (event.getNativeDeltaY() > 0) {
-                zoomFactor = 1 / zoomFactor; // Zoom out
-            }
+            // Positive deltaY means the wheel scrolled down -> zoom out.
+            final boolean zoomIn = event.getNativeDeltaY() <= 0;
 
-            final double mouseX = event.getX();
-            final double mouseY = event.getY();
-
-            // Coordinate shift to ensure we zoom toward the mouse pointer
-            offsetX = mouseX - (mouseX - offsetX) * zoomFactor;
-            offsetY = mouseY - (mouseY - offsetY) * zoomFactor;
-            scale *= zoomFactor;
-
-            // Clamp to prevent floating-point precision breakdown at
-            // extreme zoom levels.
-            scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale));
+            // Zoom toward the mouse pointer (keeps the point under the cursor
+            // fixed); scale clamping is handled inside the viewport.
+            viewport.zoom(event.getX(), event.getY(), zoomIn);
 
             redraw();
         }));
@@ -470,18 +424,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
      * @return a two-element array {@code {mapX, mapY}} in map space
      */
     private double[] screenToMapCoords(final double screenX, final double screenY) {
-        // Step 1: Remove the zoom/pan offset and scale
-        final double unzoomedX = (screenX - offsetX) / scale;
-        final double unzoomedY = (screenY - offsetY) / scale;
-
-        // Step 2: Apply the inverse of the background matrix
-        final FloorMapTransformationMatrix invMatrix = matrix != null
-                ? matrix.inverse()
-                : FloorMapTransformationMatrix.identity();
-        final double mapX = invMatrix.getA() * unzoomedX + invMatrix.getC() * unzoomedY + invMatrix.getE();
-        final double mapY = invMatrix.getB() * unzoomedX + invMatrix.getD() * unzoomedY + invMatrix.getF();
-
-        return new double[]{mapX, mapY};
+        return viewport.screenToMap(screenX, screenY, matrix);
     }
 
     /**
@@ -504,7 +447,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     // =========================================================================
 
     private void redraw() {
-        getView().draw(scale, offsetX, offsetY, backgroundImage, matrix,
+        getView().draw(viewport.getScale(), viewport.getOffsetX(), viewport.getOffsetY(), backgroundImage, matrix,
                 buildAnimatedDrawList(/* nowMs — irrelevant when no animations */ 0.0),
                 selectedObjectId);
     }
@@ -664,7 +607,8 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                     }
 
                     // Draw the current frame.
-                    getView().draw(scale, offsetX, offsetY, backgroundImage, matrix,
+                    getView().draw(viewport.getScale(), viewport.getOffsetX(), viewport.getOffsetY(),
+                            backgroundImage, matrix,
                             buildAnimatedDrawList(timestamp), selectedObjectId);
 
                     // Keep looping.
