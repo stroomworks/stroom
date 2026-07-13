@@ -17,25 +17,38 @@
 package stroom.floormap.client.presenter;
 
 import stroom.data.grid.client.MyDataGrid;
+import stroom.dispatch.client.RestFactory;
 import stroom.docref.DocRef;
 import stroom.document.client.event.DirtyUiHandlers;
 import stroom.entity.client.presenter.DocPresenter;
 import stroom.entity.client.presenter.ReadOnlyChangeHandler;
+import stroom.entity.shared.ExpressionCriteria;
 import stroom.explorer.client.presenter.DocSelectionBoxPresenter;
+import stroom.floormap.client.ValueAccessorFactory;
 import stroom.floormap.client.presenter.FloorMapSettingsPresenter.FloorMapSettingsView;
+import stroom.floormap.shared.Fact;
 import stroom.floormap.shared.FloorMapDoc;
+import stroom.floormap.shared.FloorMapEntryParser;
 import stroom.floormap.shared.FloorMapFieldMapping;
 import stroom.floormap.shared.FloorMapFieldMapping.Role;
+import stroom.floormap.shared.TypeStyle;
+import stroom.floormap.shared.TypeStyle.Shape;
 import stroom.floormap.shared.ValueFormat;
 import stroom.planb.shared.PlanBDoc;
+import stroom.query.api.ExpressionOperator;
+import stroom.query.api.ExpressionTerm;
+import stroom.query.api.ExpressionTerm.Condition;
 import stroom.security.shared.DocumentPermission;
 import stroom.sqlstore.shared.SqlTemporalStoreDoc;
+import stroom.sqlstore.shared.SqlTemporalStoreResource;
 import stroom.svg.client.SvgPresets;
+import stroom.util.shared.TemporalEntry;
 import stroom.widget.button.client.ButtonPanel;
 import stroom.widget.button.client.ButtonView;
 
 import com.google.gwt.cell.client.EditTextCell;
 import com.google.gwt.cell.client.SelectionCell;
+import com.google.gwt.core.client.GWT;
 import com.google.gwt.user.cellview.client.Column;
 import com.google.gwt.user.client.ui.ListBox;
 import com.google.gwt.user.client.ui.Widget;
@@ -49,7 +62,9 @@ import com.gwtplatform.mvp.client.View;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -94,11 +109,28 @@ public class FloorMapSettingsPresenter
     private final ButtonView removeButton;
     private boolean readOnly;
 
+    // Type Styles grid (per-type z-order + default graphic)
+    /** Dropdown label for "no configured shape" (falls back to the default rectangle). */
+    private static final String SHAPE_DEFAULT = "(default)";
+    private static final SqlTemporalStoreResource SQL_TEMPORAL_STORE_RESOURCE =
+            GWT.create(SqlTemporalStoreResource.class);
+    private final RestFactory restFactory;
+    private final MyDataGrid<TypeStyle> typeStylesGrid;
+    private final ListDataProvider<TypeStyle> typeStylesDataProvider;
+    private final SingleSelectionModel<TypeStyle> typeStylesSelectionModel;
+    private final ButtonView discoverButton;
+    private final ButtonView removeTypeButton;
+    private final ButtonView moveUpButton;
+    private final ButtonView moveDownButton;
+
     @Inject
     public FloorMapSettingsPresenter(final EventBus eventBus,
                                      final FloorMapSettingsView view,
-                                     final Provider<DocSelectionBoxPresenter> docSelectionBoxPresenterProvider) {
+                                     final Provider<DocSelectionBoxPresenter> docSelectionBoxPresenterProvider,
+                                     final RestFactory restFactory) {
         super(eventBus, view);
+
+        this.restFactory = restFactory;
 
         view.setUiHandlers(this);
 
@@ -139,6 +171,86 @@ public class FloorMapSettingsPresenter
 
         view.setSchemaToolbar(buttonPanel);
         view.setSchemaGrid(schemaGrid);
+
+        // Type Styles grid
+        typeStylesGrid = new MyDataGrid<>(this);
+        typeStylesSelectionModel = new SingleSelectionModel<>();
+        typeStylesGrid.setSelectionModel(typeStylesSelectionModel);
+        typeStylesDataProvider = new ListDataProvider<>();
+        typeStylesDataProvider.addDataDisplay(typeStylesGrid);
+        initTypeStyleColumns();
+
+        final ButtonPanel typeStylesToolbar = new ButtonPanel();
+        discoverButton = typeStylesToolbar.addButton(SvgPresets.REFRESH_BLUE);
+        discoverButton.setTitle("Discover types from the facts store");
+        moveUpButton = typeStylesToolbar.addButton(SvgPresets.ARROW_UP);
+        moveUpButton.setTitle("Move up (paint behind)");
+        moveUpButton.setEnabled(false);
+        moveDownButton = typeStylesToolbar.addButton(SvgPresets.ARROW_DOWN);
+        moveDownButton.setTitle("Move down (paint in front)");
+        moveDownButton.setEnabled(false);
+        removeTypeButton = typeStylesToolbar.addButton(SvgPresets.DELETE);
+        removeTypeButton.setTitle("Remove type");
+        removeTypeButton.setEnabled(false);
+
+        view.setTypeStylesToolbar(typeStylesToolbar);
+        view.setTypeStylesGrid(typeStylesGrid);
+    }
+
+    /**
+     * Initialises the columns of the Type Styles grid: the type name, its
+     * default-graphic shape (dropdown), and default-graphic colour (hex). The
+     * list order is the paint/z-order (top of the list paints behind).
+     */
+    private void initTypeStyleColumns() {
+        // Type name — editable text.
+        final Column<TypeStyle, String> typeColumn = new Column<>(new EditTextCell()) {
+            @Override
+            public String getValue(final TypeStyle style) {
+                return style.getType() != null ? style.getType() : "";
+            }
+        };
+        typeColumn.setFieldUpdater((index, style, val) -> {
+            if (!readOnly) {
+                replaceTypeStyle(index, new TypeStyle(val, style.getShape(), style.getColour()));
+            }
+        });
+        typeStylesGrid.addColumn(typeColumn, "Type");
+
+        // Shape — dropdown of the enum plus a "(default)" (null) option.
+        final List<String> shapeOptions = new ArrayList<>();
+        shapeOptions.add(SHAPE_DEFAULT);
+        for (final Shape shape : Shape.values()) {
+            shapeOptions.add(shape.name());
+        }
+        final Column<TypeStyle, String> shapeColumn = new Column<>(new SelectionCell(shapeOptions)) {
+            @Override
+            public String getValue(final TypeStyle style) {
+                return style.getShape() != null ? style.getShape().name() : SHAPE_DEFAULT;
+            }
+        };
+        shapeColumn.setFieldUpdater((index, style, val) -> {
+            if (!readOnly) {
+                final Shape newShape = SHAPE_DEFAULT.equals(val) ? null : Shape.valueOf(val);
+                replaceTypeStyle(index, new TypeStyle(style.getType(), newShape, style.getColour()));
+            }
+        });
+        typeStylesGrid.addColumn(shapeColumn, "Shape");
+
+        // Colour — editable hex text.
+        final Column<TypeStyle, String> colourColumn = new Column<>(new EditTextCell()) {
+            @Override
+            public String getValue(final TypeStyle style) {
+                return style.getColour() != null ? style.getColour() : "";
+            }
+        };
+        colourColumn.setFieldUpdater((index, style, val) -> {
+            if (!readOnly) {
+                final String colour = val != null && !val.isEmpty() ? val : null;
+                replaceTypeStyle(index, new TypeStyle(style.getType(), style.getShape(), colour));
+            }
+        });
+        typeStylesGrid.addColumn(colourColumn, "Colour");
     }
 
     /**
@@ -257,6 +369,17 @@ public class FloorMapSettingsPresenter
         registerHandler(addButton.addClickHandler(e -> onAddMapping()));
         //noinspection unused e
         registerHandler(removeButton.addClickHandler(e -> onRemoveMapping()));
+
+        //noinspection unused e
+        registerHandler(typeStylesSelectionModel.addSelectionChangeHandler(e -> updateTypeButtons()));
+        //noinspection unused e
+        registerHandler(discoverButton.addClickHandler(e -> onDiscoverTypes()));
+        //noinspection unused e
+        registerHandler(moveUpButton.addClickHandler(e -> moveSelectedType(-1)));
+        //noinspection unused e
+        registerHandler(moveDownButton.addClickHandler(e -> moveSelectedType(1)));
+        //noinspection unused e
+        registerHandler(removeTypeButton.addClickHandler(e -> onRemoveType()));
     }
 
     /**
@@ -308,6 +431,114 @@ public class FloorMapSettingsPresenter
         schemaGrid.setRowCount(list.size(), true);
     }
 
+    // -----------------------------------------------------------------------
+    // Type Styles
+    // -----------------------------------------------------------------------
+
+    private void replaceTypeStyle(final int index, final TypeStyle updated) {
+        final List<TypeStyle> list = typeStylesDataProvider.getList();
+        if (index >= 0 && index < list.size()) {
+            list.set(index, updated);
+            refreshTypeStylesGrid();
+            onChange();
+        }
+    }
+
+    private void refreshTypeStylesGrid() {
+        final List<TypeStyle> list = typeStylesDataProvider.getList();
+        typeStylesGrid.setRowData(0, list);
+        typeStylesGrid.setRowCount(list.size(), true);
+    }
+
+    private void updateTypeButtons() {
+        final List<TypeStyle> list = typeStylesDataProvider.getList();
+        final TypeStyle selected = typeStylesSelectionModel.getSelectedObject();
+        final int index = selected != null ? list.indexOf(selected) : -1;
+        removeTypeButton.setEnabled(!readOnly && index >= 0);
+        moveUpButton.setEnabled(!readOnly && index > 0);
+        moveDownButton.setEnabled(!readOnly && index >= 0 && index < list.size() - 1);
+    }
+
+    private void onRemoveType() {
+        final TypeStyle selected = typeStylesSelectionModel.getSelectedObject();
+        if (selected != null && !readOnly) {
+            typeStylesDataProvider.getList().remove(selected);
+            typeStylesSelectionModel.clear();
+            refreshTypeStylesGrid();
+            updateTypeButtons();
+            onChange();
+        }
+    }
+
+    /** Moves the selected type by {@code delta} places in the paint (z) order. */
+    private void moveSelectedType(final int delta) {
+        final TypeStyle selected = typeStylesSelectionModel.getSelectedObject();
+        if (selected == null || readOnly) {
+            return;
+        }
+        final List<TypeStyle> list = typeStylesDataProvider.getList();
+        final int index = list.indexOf(selected);
+        final int target = index + delta;
+        if (index >= 0 && target >= 0 && target < list.size()) {
+            list.remove(index);
+            list.add(target, selected);
+            refreshTypeStylesGrid();
+            typeStylesSelectionModel.setSelected(selected, true);
+            updateTypeButtons();
+            onChange();
+        }
+    }
+
+    /**
+     * Discovers the distinct types present in the configured facts store and
+     * merges any new ones into the type list (alphabetically; existing entries
+     * keep their position and settings). Backs the "Discover" toolbar button.
+     */
+    private void onDiscoverTypes() {
+        if (readOnly) {
+            return;
+        }
+        final DocRef storeRef = factsStoreRefPresenter.getSelectedEntityReference();
+        if (storeRef == null || storeRef.getName() == null || storeRef.getName().isEmpty()) {
+            return;
+        }
+        final ExpressionOperator expression = ExpressionOperator.builder()
+                .addTerm(ExpressionTerm.builder()
+                        .field("Map").condition(Condition.EQUALS).value(storeRef.getName())
+                        .build())
+                .build();
+        final ExpressionCriteria criteria = new ExpressionCriteria(expression);
+        final List<FloorMapFieldMapping> schema = new ArrayList<>(schemaDataProvider.getList());
+        restFactory.create(SQL_TEMPORAL_STORE_RESOURCE)
+                .method(res -> res.find(criteria))
+                .onSuccess(result -> {
+                    final List<TemporalEntry> entries = result != null ? result.getValues() : null;
+                    final FloorMapEntryParser.ParseResult parsed = FloorMapEntryParser.parse(
+                            entries, schema,
+                            ValueAccessorFactory.forFormat(currentValueFormat()), null);
+                    final Set<String> discovered = new LinkedHashSet<>();
+                    for (final Fact fact : parsed.getFacts()) {
+                        if (fact.getType() != null && !fact.getType().isEmpty()) {
+                            discovered.add(fact.getType());
+                        }
+                    }
+                    typeStylesDataProvider.setList(TypeStyle.merge(
+                            new ArrayList<>(typeStylesDataProvider.getList()), discovered));
+                    refreshTypeStylesGrid();
+                    updateTypeButtons();
+                    onChange();
+                })
+                .exec();
+    }
+
+    private ValueFormat currentValueFormat() {
+        try {
+            return ValueFormat.valueOf(valueFormatListBox.getSelectedValue());
+        } catch (final IllegalArgumentException e) {
+            return ValueFormat.JSON;
+        }
+    }
+
     /**
      * Populates the view from a persisted {@link FloorMapDoc}.
      *
@@ -353,6 +584,15 @@ public class FloorMapSettingsPresenter
 
         addButton.setEnabled(!readOnly);
         removeButton.setEnabled(!readOnly && schemaSelectionModel.getSelectedObject() != null);
+
+        // Type Styles
+        final List<TypeStyle> typeStyles = floorMapDoc.getTypeStyles() != null
+                ? new ArrayList<>(floorMapDoc.getTypeStyles())
+                : new ArrayList<>();
+        typeStylesDataProvider.setList(typeStyles);
+        refreshTypeStylesGrid();
+        discoverButton.setEnabled(!readOnly);
+        updateTypeButtons();
     }
 
     /**
@@ -383,6 +623,7 @@ public class FloorMapSettingsPresenter
                 .factsStoreRef(factsStoreRefPresenter.getSelectedEntityReference())
                 .valueFormat(vf)
                 .valueSchema(new ArrayList<>(schemaDataProvider.getList()))
+                .typeStyles(new ArrayList<>(typeStylesDataProvider.getList()))
                 .build();
     }
 
@@ -440,5 +681,20 @@ public class FloorMapSettingsPresenter
          * @param grid the {@link MyDataGrid} widget
          */
         void setSchemaGrid(Widget grid);
+
+        /**
+         * Sets the toolbar widget for the Type Styles grid (Discover / reorder /
+         * remove buttons).
+         *
+         * @param toolbar the toolbar widget
+         */
+        void setTypeStylesToolbar(Widget toolbar);
+
+        /**
+         * Sets the data grid widget that displays the per-type styles.
+         *
+         * @param grid the {@link MyDataGrid} widget
+         */
+        void setTypeStylesGrid(Widget grid);
     }
 }
