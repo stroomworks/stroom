@@ -501,17 +501,10 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
      * @return a two-element array {@code {mapX, mapY}} in map space
      */
     private double[] screenToMapCoords(final double screenX, final double screenY) {
-        // Step 1: Remove the zoom/pan offset and scale
-        final double unzoomedX = (screenX - offsetX) / scale;
-        final double unzoomedY = (screenY - offsetY) / scale;
-
-        // Step 2: Apply the inverse of the background matrix
-        final FloorMapTransformationMatrix invMatrix = matrix != null
-                ? matrix.inverse()
-                : FloorMapTransformationMatrix.identity();
-        final double mapX = invMatrix.getA() * unzoomedX + invMatrix.getC() * unzoomedY + invMatrix.getE();
-        final double mapY = invMatrix.getB() * unzoomedX + invMatrix.getD() * unzoomedY + invMatrix.getF();
-
+        // Remove the zoom/pan offset and scale, then undo the Y-up render flip
+        // (map space is Y-up; SVG is Y-down) — the inverse of the draw pipeline.
+        final double mapX = (screenX - offsetX) / scale;
+        final double mapY = -((screenY - offsetY) / scale);
         return new double[]{mapX, mapY};
     }
 

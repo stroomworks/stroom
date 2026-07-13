@@ -190,26 +190,31 @@ public class FloorMapCanvasViewImpl
             }
 
             // Pan/zoom group.
-            svg.elem(panGroup -> {
-                // ---- Facts (paint order = z-order supplied by the presenter) ----
-                if (facts != null) {
-                    for (final Fact fact : facts) {
-                        final boolean isSelected = selectedObjectIds.contains(fact.getKey());
-                        if (fact.hasImage()) {
-                            appendImageFact(panGroup, fact, isSelected);
-                        } else {
-                            appendDefaultGraphic(panGroup, fact, isSelected, typeStyles);
+            svg.elem(panGroup ->
+                // Y-up flip: map space is Y-up; scale(1,-1) maps it to the SVG's
+                // Y-down space. Imageless facts and events counter-flip so their
+                // glyphs stay upright; image facts carry the flip in their matrix.
+                panGroup.elem(flipGroup -> {
+                    // ---- Facts (paint order = z-order supplied by the presenter) ----
+                    if (facts != null) {
+                        for (final Fact fact : facts) {
+                            final boolean isSelected = selectedObjectIds.contains(fact.getKey());
+                            if (fact.hasImage()) {
+                                appendImageFact(flipGroup, fact, isSelected);
+                            } else {
+                                appendDefaultGraphic(flipGroup, fact, isSelected, typeStyles);
+                            }
                         }
                     }
-                }
 
-                // ---- Events (people) drawn on top ----
-                if (events != null) {
-                    for (final FloorMapObject ev : events) {
-                        appendEvent(panGroup, ev, selectedObjectIds.contains(ev.getId()));
+                    // ---- Events (people) drawn on top ----
+                    if (events != null) {
+                        for (final FloorMapObject ev : events) {
+                            appendEvent(flipGroup, ev, selectedObjectIds.contains(ev.getId()));
+                        }
                     }
-                }
-            }, SafeHtmlUtil.from("g"),
+                }, SafeHtmlUtil.from("g"), new Attribute("transform", "scale(1,-1)")),
+                SafeHtmlUtil.from("g"),
                     new Attribute("transform", "translate(" + x + "," + y + ") scale(" + scale + ")"));
         },
             SafeHtmlUtil.from("svg"),
@@ -333,7 +338,9 @@ public class FloorMapCanvasViewImpl
                     new Attribute("pointer-events", "none"));
         },
                 SafeHtmlUtil.from("g"),
-                new Attribute("transform", "translate(" + mapX + "," + mapY + ")"),
+                // Counter-flip (scale 1,-1) so the graphic + label stay upright
+                // inside the Y-up flip group.
+                new Attribute("transform", "translate(" + mapX + "," + mapY + ") scale(1,-1)"),
                 new Attribute("id", FloorMapJsonKeys.SVG_GROUP_PREFIX + fact.getKey()));
     }
 
@@ -429,7 +436,9 @@ public class FloorMapCanvasViewImpl
             }
         },
                 SafeHtmlUtil.from("g"),
-                new Attribute("transform", "translate(" + obj.getX() + "," + obj.getY() + ")"),
+                // Counter-flip so the circle/label stay upright in the Y-up flip group.
+                new Attribute("transform",
+                        "translate(" + obj.getX() + "," + obj.getY() + ") scale(1,-1)"),
                 new Attribute("id", FloorMapJsonKeys.SVG_GROUP_PREFIX + obj.getId()));
     }
 
