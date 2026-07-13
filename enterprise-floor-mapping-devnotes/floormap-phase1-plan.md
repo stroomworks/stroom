@@ -15,11 +15,11 @@ shape/colour draw, z-ordered paint, editor tools — is Phase 2/3.
 - **Model-first.** Prefer shared, unit-testable code (`stroom-core-shared`) over GWT client.
 - **Always green.** Each workstream compiles, tests pass, and an existing map still renders as it
   does today (via an adapter) until the Phase 2 renderer rework.
-- **No user-visible change** lands in Phase 1 except where unavoidable (Y-up — see WS5).
+- **No user-visible change** lands in Phase 1 — the app renders identically until Phase 2.
 
 ## Workstreams
 
-Rough dependency order: WS1 → (WS2, WS3, WS4 in parallel) → WS6. WS5 is optional in Phase 1.
+Rough dependency order: WS1 → (WS2, WS3, WS4 in parallel) → WS5 (migration).
 
 ### WS1 — Fact model + parser returns a list
 - Introduce a shared `Fact` representation `{ key, type, image?, worldToMap }`. Decide up front
@@ -63,15 +63,7 @@ Rough dependency order: WS1 → (WS2, WS3, WS4 in parallel) → WS6. WS5 is opti
 - **Tests:** full-matrix write; batch across a set; background and regular facts; preserve
   `a,b,c,d` on a translate.
 
-### WS5 — Y-up coordinate convention  *(optional in Phase 1 — has rendering deps)*
-- Define map space Y-up: add the single flip at the map→screen boundary and negate Y in
-  `screenToMapCoords`.
-- Because the flip mirrors text, this needs the **label counter-flip** — rendering work that sits
-  on the Phase 2 boundary. **Recommendation:** land Y-up *with* the Phase 2 renderer rework unless
-  lat/long plotting is needed sooner; doing it half-way (positions flipped, labels mirrored) would
-  ship a visible regression.
-
-### WS6 — Migration
+### WS5 — Migration
 - Existing single-background docs: convert the legacy whole-plane `map-to-screen` into the
   background fact's own `world-to-map`.
 - Decide rotation/scale carry-over (and whether to re-apply it to objects' `world-to-map` so the
@@ -91,8 +83,9 @@ Rough dependency order: WS1 → (WS2, WS3, WS4 in parallel) → WS6. WS5 is opti
 
 ## Out of scope (Phase 2/3)
 
-- Scaled multi-image rendering; per-type shape/colour draw; z-ordered paint; upright labels under
-  the flip.
+- **Y-up map space + render flip** (with upright labels) — moved to Phase 2, bundled with the
+  renderer rework to avoid a half-way visible regression.
+- Scaled multi-image rendering; per-type shape/colour draw; z-ordered paint.
 - Settings drag-to-reorder + shape/colour pickers UI.
 - Rubber-band + modifier multi-select; rotate/scale handles.
 - Zoom-out clustering.
@@ -100,7 +93,6 @@ Rough dependency order: WS1 → (WS2, WS3, WS4 in parallel) → WS6. WS5 is opti
 ## Risks / open
 
 - **`Fact` vs `FloorMapObject`** — commit to one representation to avoid dual types drifting.
-- **Y-up sequencing (WS5)** — it's the one visible change; confirm timing with the team.
 - **Migration correctness** for rotated/scaled legacy backgrounds — needs test data.
 - **Adapter lifetime** — the `ParseResult` adapter is scaffolding; track its removal in Phase 2 so
   it doesn't calcify.
