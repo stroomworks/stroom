@@ -781,6 +781,74 @@ class TestFloorMapEditorModel {
     }
 
     // -----------------------------------------------------------------------
+    // recordFactTransform / buildUpdatedEntryWithMatrix
+    // -----------------------------------------------------------------------
+
+    /**
+     * A full-matrix transform of a regular fact writes all six components into
+     * its WORLD_TO_MAP matrix.
+     */
+    @Test
+    void testRecordFactTransform_regularObject_writesWorldToMap() {
+        model.onEntriesFetched(List.of(entry("g1", 100,
+                "{\"type\":\"gate\",\"tm-world-to-map\":[1,0,0,1,0,0]}")));
+
+        final boolean recorded = model.recordFactTransform("g1",
+                new FloorMapTransformationMatrix(2, 0.1, -0.1, 2, 5, 6), SCHEMA, ACCESSOR);
+
+        assertThat(recorded).isTrue();
+        final TemporalEntry moved = model.buildMergedCanvasEntries().stream()
+                .filter(e -> e.getKey().equals("g1")).findFirst().orElseThrow();
+        final double[] m = ACCESSOR.getArray(ACCESSOR.parse(moved.getValue()), ".tm-world-to-map");
+        assertThat(m).containsExactly(2.0, 0.1, -0.1, 2.0, 5.0, 6.0);
+    }
+
+    /**
+     * A full-matrix transform of the background writes into its MAP_TO_SCREEN
+     * matrix.
+     */
+    @Test
+    void testRecordFactTransform_background_writesMapToScreen() {
+        model.onEntriesFetched(List.of(entry("background", 100,
+                "{\"type\":\"background\",\"tm-map-to-screen\":[1,0,0,1,0,0]}")));
+
+        final boolean recorded = model.recordFactTransform("background",
+                new FloorMapTransformationMatrix(3, 0, 0, 3, 7, 8), SCHEMA, ACCESSOR);
+
+        assertThat(recorded).isTrue();
+        final TemporalEntry moved = model.buildMergedCanvasEntries().stream()
+                .filter(e -> e.getKey().equals("background")).findFirst().orElseThrow();
+        final double[] m = ACCESSOR.getArray(ACCESSOR.parse(moved.getValue()), ".tm-map-to-screen");
+        assertThat(m).containsExactly(3.0, 0.0, 0.0, 3.0, 7.0, 8.0);
+    }
+
+    /**
+     * Transforming an unknown fact returns {@code false} and stages nothing.
+     */
+    @Test
+    void testRecordFactTransform_unknown_returnsFalse() {
+        model.onEntriesFetched(List.of(entry("g1", 100, "{\"type\":\"gate\"}")));
+        final boolean recorded = model.recordFactTransform("nope",
+                FloorMapTransformationMatrix.identity(), SCHEMA, ACCESSOR);
+        assertThat(recorded).isFalse();
+        assertThat(model.hasPendingChanges()).isFalse();
+    }
+
+    /**
+     * The static helper writes the full six-component matrix into the requested
+     * role's field.
+     */
+    @Test
+    void testBuildUpdatedEntryWithMatrix_writesFullMatrix() {
+        final TemporalEntry original = entry("g1", 100, "{\"type\":\"gate\"}");
+        final TemporalEntry updated = FloorMapEditorModel.buildUpdatedEntryWithMatrix(
+                original, FloorMapFieldMapping.Role.WORLD_TO_MAP,
+                new FloorMapTransformationMatrix(1, 2, 3, 4, 5, 6), SCHEMA, ACCESSOR);
+        final double[] m = ACCESSOR.getArray(ACCESSOR.parse(updated.getValue()), ".tm-world-to-map");
+        assertThat(m).containsExactly(1.0, 2.0, 3.0, 4.0, 5.0, 6.0);
+    }
+
+    // -----------------------------------------------------------------------
     // stageFactDeletion
     // -----------------------------------------------------------------------
 

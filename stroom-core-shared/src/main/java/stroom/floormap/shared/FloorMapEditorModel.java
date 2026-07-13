@@ -319,6 +319,49 @@ public class FloorMapEditorModel {
     }
 
     /**
+     * Records a full affine transform for a fact by writing all six components
+     * ({@code a,b,c,d,e,f}) of its placement matrix. This is the general
+     * capability behind future rotate/scale tools — a drag is simply the case
+     * where only the translation changes.
+     *
+     * <p>The matrix is written to the fact's placement role: {@code MAP_TO_SCREEN}
+     * for the background, {@code WORLD_TO_MAP} otherwise (matching where placement
+     * lives today). Fact lookup mirrors {@link #recordObjectMove} — by background
+     * identity or by key.</p>
+     *
+     * <p>Note: the live editor drag still goes through {@link #recordObjectMove};
+     * routing drag/rotate/scale through this method is Phase 2 work, once fact
+     * placement moves fully onto {@code WORLD_TO_MAP}.</p>
+     *
+     * @return {@code true} if a matching fact was found and an update staged
+     * @throws IllegalStateException if the schema is null or empty
+     */
+    public boolean recordFactTransform(final String objectId,
+                                       final FloorMapTransformationMatrix matrix,
+                                       final List<FloorMapFieldMapping> schema,
+                                       final ValueAccessor accessor) {
+        final boolean wantBackground = FloorMapJsonKeys.BACKGROUND.equalsIgnoreCase(objectId);
+        final List<TemporalEntry> all = pendingChanges.applyTo(serverEntriesAtCurrentTime);
+        for (final TemporalEntry e : all) {
+            final boolean matches = wantBackground
+                    ? isBackgroundEntry(e, schema, accessor)
+                    : objectId.equals(e.getKey());
+            if (matches) {
+                if (schema == null || schema.isEmpty()) {
+                    throw new IllegalStateException(
+                            "No Value Schema is configured. "
+                            + "Please configure a Value Schema in the Settings tab.");
+                }
+                final Role role = wantBackground ? Role.MAP_TO_SCREEN : Role.WORLD_TO_MAP;
+                pendingChanges.recordUpdate(
+                        buildUpdatedEntryWithMatrix(e, role, matrix, schema, accessor));
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * Determines whether an entry represents the map background, using the same
      * rule as {@link FloorMapEntryParser}: its key is {@code "background"} or its
      * {@code TYPE} field is {@code "background"} (case-insensitive). Falls back to
@@ -572,6 +615,41 @@ public class FloorMapEditorModel {
         matrix[5] = f;
         accessor.setArray(parsed, path, matrix);
 
+        return new TemporalEntry(
+                original.getMap(),
+                original.getKey(),
+                original.getEffectiveTimeMs(),
+                accessor.serialize(parsed));
+    }
+
+    /**
+     * Builds an updated entry with the given {@code role}'s matrix set to the
+     * full six components of {@code matrix}. This is the general full-affine
+     * write behind {@link #recordFactTransform} (translate, rotate and scale),
+     * as opposed to the translation-only {@link #buildUpdatedBackgroundEntry}.
+     *
+     * @param original the entry to update
+     * @param role     the matrix role to write (e.g. {@code WORLD_TO_MAP})
+     * @param matrix   the full transform to persist
+     * @param schema   the value schema
+     * @param accessor the value accessor
+     * @return a new {@link TemporalEntry} with the updated matrix
+     * @throws IllegalStateException if the entry's value cannot be parsed
+     */
+    public static TemporalEntry buildUpdatedEntryWithMatrix(
+            final TemporalEntry original,
+            final Role role,
+            final FloorMapTransformationMatrix matrix,
+            final List<FloorMapFieldMapping> schema,
+            final ValueAccessor accessor) {
+        final ParsedValue parsed = accessor.parse(original.getValue());
+        if (parsed == null) {
+            throw new IllegalStateException(
+                    "Entry value could not be parsed: " + original.getValue());
+        }
+        accessor.setArray(parsed, FloorMapEntryParser.findPath(schema, role),
+                new double[]{matrix.getA(), matrix.getB(), matrix.getC(),
+                        matrix.getD(), matrix.getE(), matrix.getF()});
         return new TemporalEntry(
                 original.getMap(),
                 original.getKey(),
