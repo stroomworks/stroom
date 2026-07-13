@@ -849,6 +849,104 @@ class TestFloorMapEditorModel {
     }
 
     // -----------------------------------------------------------------------
+    // Selection as a set
+    // -----------------------------------------------------------------------
+
+    /** The single-select façade sets/clears the whole selection. */
+    @Test
+    void testSelection_singleSelectFacade() {
+        model.setSelectedFactKey("a");
+        assertThat(model.getSelectedFactKey()).isEqualTo("a");
+        assertThat(model.getSelectedFactKeys()).containsExactly("a");
+
+        model.setSelectedFactKey(null);
+        assertThat(model.getSelectedFactKey()).isNull();
+        assertThat(model.getSelectedFactKeys()).isEmpty();
+    }
+
+    /** Multi-select APIs add/toggle/remove; the primary is the first-selected. */
+    @Test
+    void testSelection_multiSelectApis() {
+        model.addToSelection("a");
+        model.addToSelection("b");
+        assertThat(model.getSelectedFactKeys()).containsExactly("a", "b");
+        assertThat(model.getSelectedFactKey()).isEqualTo("a");
+        assertThat(model.isSelected("b")).isTrue();
+
+        model.toggleSelection("a");   // removes a
+        model.toggleSelection("c");   // adds c
+        assertThat(model.getSelectedFactKeys()).containsExactly("b", "c");
+
+        model.removeFromSelection("b");
+        assertThat(model.getSelectedFactKeys()).containsExactly("c");
+
+        model.clearSelection();
+        assertThat(model.getSelectedFactKeys()).isEmpty();
+    }
+
+    /** setSelection replaces the whole selection, preserving order. */
+    @Test
+    void testSelection_setSelection() {
+        model.setSelection(List.of("x", "y", "z"));
+        assertThat(model.getSelectedFactKeys()).containsExactly("x", "y", "z");
+        assertThat(model.getSelectedFactKey()).isEqualTo("x");
+    }
+
+    /** Deleting a selected fact removes it from the selection. */
+    @Test
+    void testSelection_stageDeletionDeselects() {
+        model.onEntriesFetched(List.of(entry("k1", 100, "{}")));
+        model.setSelectedFactKey("k1");
+        model.stageFactDeletion("k1");
+        assertThat(model.isSelected("k1")).isFalse();
+    }
+
+    // -----------------------------------------------------------------------
+    // translateFacts (batch move)
+    // -----------------------------------------------------------------------
+
+    /** Translating a regular fact shifts its WORLD_TO_MAP translation (e, f). */
+    @Test
+    void testTranslateFacts_regularObject() {
+        model.onEntriesFetched(List.of(entry("g1", 100,
+                "{\"type\":\"gate\",\"tm-world-to-map\":[1,0,0,1,10,20]}")));
+
+        final int moved = model.translateFacts(List.of("g1"), 5, -3, SCHEMA, ACCESSOR);
+
+        assertThat(moved).isEqualTo(1);
+        final TemporalEntry e = model.buildMergedCanvasEntries().stream()
+                .filter(x -> x.getKey().equals("g1")).findFirst().orElseThrow();
+        final double[] m = ACCESSOR.getArray(ACCESSOR.parse(e.getValue()), ".tm-world-to-map");
+        assertThat(m).containsExactly(1.0, 0.0, 0.0, 1.0, 15.0, 17.0);
+    }
+
+    /** Translating the background shifts its MAP_TO_SCREEN translation. */
+    @Test
+    void testTranslateFacts_background() {
+        model.onEntriesFetched(List.of(entry("background", 100,
+                "{\"type\":\"background\",\"tm-map-to-screen\":[2,0,0,2,0,0]}")));
+
+        final int moved = model.translateFacts(List.of("background"), 4, 4, SCHEMA, ACCESSOR);
+
+        assertThat(moved).isEqualTo(1);
+        final TemporalEntry e = model.buildMergedCanvasEntries().stream()
+                .filter(x -> x.getKey().equals("background")).findFirst().orElseThrow();
+        final double[] m = ACCESSOR.getArray(ACCESSOR.parse(e.getValue()), ".tm-map-to-screen");
+        assertThat(m).containsExactly(2.0, 0.0, 0.0, 2.0, 4.0, 4.0);
+    }
+
+    /** A batch translate moves every found fact; unknown ids are skipped. */
+    @Test
+    void testTranslateFacts_batchSkipsUnknown() {
+        model.onEntriesFetched(List.of(
+                entry("g1", 100, "{\"type\":\"gate\",\"tm-world-to-map\":[1,0,0,1,0,0]}"),
+                entry("g2", 100, "{\"type\":\"gate\",\"tm-world-to-map\":[1,0,0,1,0,0]}")));
+
+        final int moved = model.translateFacts(List.of("g1", "g2", "ghost"), 1, 1, SCHEMA, ACCESSOR);
+        assertThat(moved).isEqualTo(2);
+    }
+
+    // -----------------------------------------------------------------------
     // stageFactDeletion
     // -----------------------------------------------------------------------
 

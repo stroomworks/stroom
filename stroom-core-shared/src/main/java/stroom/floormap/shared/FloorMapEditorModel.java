@@ -21,8 +21,11 @@ import stroom.util.shared.TemporalEntry;
 import stroom.util.shared.TemporalEntryId;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Random;
 import java.util.Set;
@@ -38,7 +41,7 @@ import java.util.function.Consumer;
  *
  * <h3>Shared selection model (single source of truth)</h3>
  * <ul>
- *   <li>{@link #selectedFactKey} — key of the selected fact, or {@code null}</li>
+ *   <li>{@link #selectedFactKeys} — the selected fact keys (single-select today)</li>
  *   <li>{@link #selectedTime} — current timeline position in ms</li>
  *   <li>{@link #showAllFacts} — whether "show all" mode is active</li>
  *   <li>{@link #pendingChanges} — staged edits awaiting flush</li>
@@ -55,8 +58,16 @@ public class FloorMapEditorModel {
     // State
     // -----------------------------------------------------------------------
 
-    /** Currently selected fact key, or {@code null}. */
-    private String selectedFactKey;
+    /**
+     * Currently selected fact keys, in selection order. Backs both the
+     * single-select façade ({@link #getSelectedFactKey()} /
+     * {@link #setSelectedFactKey(String)}) used by the current UI and the
+     * multi-select API ({@link #getSelectedFactKeys()} etc.) that a future
+     * rubber-band / modifier-key UI will drive. A {@link java.util.LinkedHashSet}
+     * so the first-selected key can serve as the "primary" selection for the
+     * properties panel and time list.
+     */
+    private final Set<String> selectedFactKeys = new LinkedHashSet<>();
 
     /** Current timeline position in milliseconds. */
     private long selectedTime;
@@ -105,12 +116,71 @@ public class FloorMapEditorModel {
     // State accessors
     // -----------------------------------------------------------------------
 
+    /**
+     * The "primary" selected fact key — the first-selected of the current
+     * selection, or {@code null} if nothing is selected. Drives the properties
+     * panel and time list (single-fact views).
+     */
     public String getSelectedFactKey() {
-        return selectedFactKey;
+        final Iterator<String> it = selectedFactKeys.iterator();
+        return it.hasNext() ? it.next() : null;
     }
 
+    /**
+     * Single-select façade: replaces the whole selection with {@code key}
+     * (or clears it when {@code key} is {@code null}).
+     */
     public void setSelectedFactKey(final String selectedFactKey) {
-        this.selectedFactKey = selectedFactKey;
+        selectedFactKeys.clear();
+        if (selectedFactKey != null) {
+            selectedFactKeys.add(selectedFactKey);
+        }
+    }
+
+    /** The full selection, in selection order; never {@code null}. */
+    public Set<String> getSelectedFactKeys() {
+        return java.util.Collections.unmodifiableSet(selectedFactKeys);
+    }
+
+    /** Adds a key to the selection (multi-select). No-op if already selected. */
+    public void addToSelection(final String key) {
+        if (key != null) {
+            selectedFactKeys.add(key);
+        }
+    }
+
+    /** Removes a key from the selection. */
+    public void removeFromSelection(final String key) {
+        selectedFactKeys.remove(key);
+    }
+
+    /** Toggles a key's presence in the selection (multi-select with modifiers). */
+    public void toggleSelection(final String key) {
+        if (key != null && !selectedFactKeys.remove(key)) {
+            selectedFactKeys.add(key);
+        }
+    }
+
+    /** Replaces the whole selection with the given keys, in order. */
+    public void setSelection(final Collection<String> keys) {
+        selectedFactKeys.clear();
+        if (keys != null) {
+            for (final String key : keys) {
+                if (key != null) {
+                    selectedFactKeys.add(key);
+                }
+            }
+        }
+    }
+
+    /** Clears the selection. */
+    public void clearSelection() {
+        selectedFactKeys.clear();
+    }
+
+    /** Whether the given key is currently selected. */
+    public boolean isSelected(final String key) {
+        return selectedFactKeys.contains(key);
     }
 
     public long getSelectedTime() {
@@ -223,8 +293,9 @@ public class FloorMapEditorModel {
      *         never {@code null}
      */
     public List<TemporalEntry> buildMergedTimeList() {
+        final String primaryKey = getSelectedFactKey();
         final List<TemporalEntry> merged = pendingChanges.applyTo(serverEntriesForSelectedFact);
-        merged.removeIf(e -> !e.getKey().equals(selectedFactKey));
+        merged.removeIf(e -> !e.getKey().equals(primaryKey));
         merged.sort(Comparator.comparingLong(TemporalEntry::getEffectiveTimeMs));
         return merged;
     }
@@ -362,6 +433,64 @@ public class FloorMapEditorModel {
     }
 
     /**
+     * Translates each of the given facts by {@code (dx, dy)} in map space as a
+     * single batch action — the model side of a multi-select move. Each fact's
+     * placement matrix has {@code (dx, dy)} added to its translation
+     * ({@code e, f}); rotation/scale ({@code a, b, c, d}) are preserved. Facts
+     * not found are skipped.
+     *
+     * <p>This is the batch-move capability behind a future multi-select drag;
+     * the current single-select drag still uses {@link #recordObjectMove}.</p>
+     *
+     * @return the number of facts translated
+     * @throws IllegalStateException if the schema is null or empty
+     */
+    public int translateFacts(final Collection<String> objectIds,
+                              final double dx,
+                              final double dy,
+                              final List<FloorMapFieldMapping> schema,
+                              final ValueAccessor accessor) {
+        if (objectIds == null || objectIds.isEmpty()) {
+            return 0;
+        }
+        if (schema == null || schema.isEmpty()) {
+            throw new IllegalStateException(
+                    "No Value Schema is configured. "
+                    + "Please configure a Value Schema in the Settings tab.");
+        }
+        final List<TemporalEntry> all = pendingChanges.applyTo(serverEntriesAtCurrentTime);
+        int moved = 0;
+        for (final String objectId : objectIds) {
+            final boolean wantBackground =
+                    FloorMapJsonKeys.BACKGROUND.equalsIgnoreCase(objectId);
+            for (final TemporalEntry e : all) {
+                final boolean matches = wantBackground
+                        ? isBackgroundEntry(e, schema, accessor)
+                        : objectId.equals(e.getKey());
+                if (matches) {
+                    final Role role = wantBackground ? Role.MAP_TO_SCREEN : Role.WORLD_TO_MAP;
+                    final ParsedValue parsed = accessor.parse(e.getValue());
+                    if (parsed != null) {
+                        double[] m = accessor.getArray(
+                                parsed, FloorMapEntryParser.findPath(schema, role));
+                        if (m == null || m.length < 6) {
+                            m = new double[]{1, 0, 0, 1, 0, 0};
+                        }
+                        final FloorMapTransformationMatrix translated =
+                                new FloorMapTransformationMatrix(
+                                        m[0], m[1], m[2], m[3], m[4] + dx, m[5] + dy);
+                        pendingChanges.recordUpdate(buildUpdatedEntryWithMatrix(
+                                e, role, translated, schema, accessor));
+                        moved++;
+                    }
+                    break;
+                }
+            }
+        }
+        return moved;
+    }
+
+    /**
      * Determines whether an entry represents the map background, using the same
      * rule as {@link FloorMapEntryParser}: its key is {@code "background"} or its
      * {@code TYPE} field is {@code "background"} (case-insensitive). Falls back to
@@ -428,9 +557,8 @@ public class FloorMapEditorModel {
                 staged = true;
             }
         }
-        if (key.equals(selectedFactKey)) {
-            selectedFactKey = null;
-        }
+        // Deselect the deleted fact if it was part of the selection.
+        selectedFactKeys.remove(key);
         return staged;
     }
 

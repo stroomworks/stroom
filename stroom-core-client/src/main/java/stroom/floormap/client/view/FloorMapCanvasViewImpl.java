@@ -164,7 +164,7 @@ public class FloorMapCanvasViewImpl
      * @param backgroundImage Asset Store URL of the background image, or {@code null} for a plain rect
      * @param matrix          map-to-screen transformation matrix, or {@code null} for identity
      * @param objects         list of map objects (gates, people, etc.) to render
-     * @param selectedObjectId ID of the currently selected object, or {@code null}
+     * @param selectedObjectIds IDs of the currently selected objects (all highlighted)
      * @param showGrid        {@code true} to draw the (non-interactive) grid overlay;
      *                        independent of whether a background image is present
      */
@@ -175,7 +175,7 @@ public class FloorMapCanvasViewImpl
                      final String backgroundImage,
                      final FloorMapTransformationMatrix matrix,
                      final List<FloorMapObject> objects,
-                     final String selectedObjectId,
+                     final Set<String> selectedObjectIds,
                      final boolean showGrid) {
         final HtmlBuilder htmlBuilder = new HtmlBuilder();
         final FloorMapTransformationMatrix effectiveMatrix =
@@ -229,7 +229,7 @@ public class FloorMapCanvasViewImpl
                             new Attribute("preserveAspectRatio", "none"),
                             new Attribute("id", FloorMapJsonKeys.BACKGROUND));
 
-                        if (FloorMapJsonKeys.BACKGROUND.equals(selectedObjectId)) {
+                        if (selectedObjectIds.contains(FloorMapJsonKeys.BACKGROUND)) {
                             matrixGroup.elem(SafeHtmlUtil.from("rect"),
                                 new Attribute("x", "0"),
                                 new Attribute("y", "0"),
@@ -249,7 +249,7 @@ public class FloorMapCanvasViewImpl
                     if (objects != null) {
                         for (final FloorMapObject obj : objects) {
                             final boolean isPerson = FloorMapJsonKeys.PERSON.equalsIgnoreCase(obj.getType());
-                            final boolean isSelected = obj.getId().equals(selectedObjectId);
+                            final boolean isSelected = selectedObjectIds.contains(obj.getId());
 
                             // Short display label: use the part before '@' for email addresses,
                             // or the full ID if no '@' is present.

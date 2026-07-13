@@ -38,8 +38,11 @@ import com.gwtplatform.mvp.client.MyPresenterWidget;
 import com.gwtplatform.mvp.client.View;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -122,7 +125,14 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
     // Edit mode
     private boolean editMode = false;
-    private String selectedObjectId = null;
+    /**
+     * Currently selected object ids, in selection order. Backed as a set so a
+     * future rubber-band / modifier-key UI can select many; the current UI
+     * selects exactly one (see {@link #setSelectedObjectId(String)}). The view
+     * highlights every id in this set; the single-object drag operates on the
+     * primary (first) selection ({@link #getPrimarySelectedId()}).
+     */
+    private final Set<String> selectedObjectIds = new LinkedHashSet<>();
 
     /**
      * Whether the grid overlay is drawn. The grid is a non-interactive UI aid
@@ -274,10 +284,12 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                         if (!(FloorMapJsonKeys.BACKGROUND.equals(id)
                                 && (event.getNativeEvent().getCtrlKey()
                                 || event.getNativeEvent().getShiftKey()))) {
-                            selectedObjectId = id;
+                            // Single-select today: replace the whole selection.
+                            selectedObjectIds.clear();
+                            selectedObjectIds.add(id);
 
                             // Fire an event to tell the parent presenter to show the edit menu
-                            MapObjectSelectedEvent.fire(this, selectedObjectId);
+                            MapObjectSelectedEvent.fire(this, id);
                             isDragging = true;
                             hasMoved = false;
                             lastMouseX = event.getX();
@@ -290,7 +302,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                 }
 
                 // Clicked on background/empty space, clear selection and allow panning
-                selectedObjectId = null;
+                selectedObjectIds.clear();
             }
 
             // Normal panning logic
@@ -316,8 +328,9 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                 final double deltaX = event.getX() - lastMouseX;
                 final double deltaY = event.getY() - lastMouseY;
 
-                if (editMode && isDraggingEnabled && selectedObjectId != null) {
-                    if (FloorMapJsonKeys.BACKGROUND.equals(selectedObjectId)) {
+                final String selected = getPrimarySelectedId();
+                if (editMode && isDraggingEnabled && selected != null) {
+                    if (FloorMapJsonKeys.BACKGROUND.equals(selected)) {
                         // Dragging the background (updates the background's tm-map-to-screen matrix)
                         final double deltaUnzoomedX = deltaX / scale;
                         final double deltaUnzoomedY = deltaY / scale;
@@ -338,7 +351,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                     } else {
                         // Move the selected object.
                         for (final FloorMapObject obj : factObjects) {
-                            if (obj.getId().equals(selectedObjectId)) {
+                            if (obj.getId().equals(selected)) {
                                 // Revert scale to get unzoomed screen delta
                                 final double deltaUnzoomedX = deltaX / scale;
                                 final double deltaUnzoomedY = deltaY / scale;
@@ -376,14 +389,15 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         //noinspection unused event
         registerHandler(getView().getMouseUpHandlers().addMouseUpHandler(event -> {
             // Only fire a move event when the object was actually dragged, not just clicked.
-            if (isDragging && hasMoved && editMode && selectedObjectId != null) {
-                if (FloorMapJsonKeys.BACKGROUND.equals(selectedObjectId)) {
+            final String selected = getPrimarySelectedId();
+            if (isDragging && hasMoved && editMode && selected != null) {
+                if (FloorMapJsonKeys.BACKGROUND.equals(selected)) {
                     MapObjectMovedEvent.fire(this, FloorMapJsonKeys.BACKGROUND, matrix.getE(), matrix.getF());
                 } else {
                     // Find the object's current coordinates
                     for (final FloorMapObject obj : factObjects) {
-                        if (obj.getId().equals(selectedObjectId)) {
-                            MapObjectMovedEvent.fire(this, selectedObjectId, obj.getX(), obj.getY());
+                        if (obj.getId().equals(selected)) {
+                            MapObjectMovedEvent.fire(this, selected, obj.getX(), obj.getY());
                             break;
                         }
                     }
@@ -514,7 +528,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     private void redraw() {
         getView().draw(scale, offsetX, offsetY, backgroundImage, matrix,
                 buildAnimatedDrawList(/* nowMs — irrelevant when no animations */ 0.0),
-                selectedObjectId, showGrid);
+                selectedObjectIds, showGrid);
     }
 
     /**
@@ -673,7 +687,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
                     // Draw the current frame.
                     getView().draw(scale, offsetX, offsetY, backgroundImage, matrix,
-                            buildAnimatedDrawList(timestamp), selectedObjectId, showGrid);
+                            buildAnimatedDrawList(timestamp), selectedObjectIds, showGrid);
 
                     // Keep looping.
                     AnimationScheduler.get().requestAnimationFrame(this);
@@ -770,13 +784,44 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     // =========================================================================
 
     /**
-     * Sets the currently selected (highlighted) object on the canvas and redraws.
+     * Single-select façade: highlights exactly one object (or clears the
+     * highlight when {@code null}) and redraws.
      *
      * @param selectedObjectId the object ID to highlight, or {@code null} to clear
      */
     public void setSelectedObjectId(final String selectedObjectId) {
-        this.selectedObjectId = selectedObjectId;
+        selectedObjectIds.clear();
+        if (selectedObjectId != null) {
+            selectedObjectIds.add(selectedObjectId);
+        }
         redraw();
+    }
+
+    /**
+     * Highlights the given set of objects (multi-select) and redraws. Backs a
+     * future rubber-band / modifier-key selection UI.
+     *
+     * @param objectIds the object IDs to highlight; {@code null} clears
+     */
+    public void setSelectedObjectIds(final Collection<String> objectIds) {
+        selectedObjectIds.clear();
+        if (objectIds != null) {
+            for (final String id : objectIds) {
+                if (id != null) {
+                    selectedObjectIds.add(id);
+                }
+            }
+        }
+        redraw();
+    }
+
+    /**
+     * The primary (first-selected) object id, or {@code null} if nothing is
+     * selected. The single-object drag operates on this.
+     */
+    private String getPrimarySelectedId() {
+        final Iterator<String> it = selectedObjectIds.iterator();
+        return it.hasNext() ? it.next() : null;
     }
 
     /**
@@ -935,7 +980,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     public void setEditMode(final boolean editMode) {
         this.editMode = editMode;
         if (!editMode) {
-            selectedObjectId = null;
+            selectedObjectIds.clear();
         }
 
         isDraggingEnabled = false;
@@ -1105,14 +1150,14 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
          * @param matrix          the map-to-screen transformation matrix,
          *                        or {@code null} for identity
          * @param objects         the list of map objects to render
-         * @param selectedObjectId the ID of the currently selected object,
-         *                         or {@code null} if nothing is selected
+         * @param selectedObjectIds the IDs of the currently selected objects (all
+         *                         highlighted); empty if nothing is selected
          * @param showGrid        {@code true} to draw the (non-interactive) grid
          *                        overlay; independent of the background image
          */
         void draw(double scale, double x, double y, String backgroundImage,
                 FloorMapTransformationMatrix matrix, List<FloorMapObject> objects,
-                String selectedObjectId, boolean showGrid);
+                Set<String> selectedObjectIds, boolean showGrid);
 
         /**
          * Registers a listener that is called whenever the view needs to
