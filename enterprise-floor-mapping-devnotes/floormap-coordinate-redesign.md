@@ -152,12 +152,15 @@ Model first, UI later. Every phase leaves the app working.
 
 | Phase | Scope | |
 |-------|-------|---|
-| **1 · Model & core** | Unified fact parse (parser → *list*); `world-to-map` for all incl. images; per-type settings on the map — order (z) + default shape/colour, alphabetical default; selection as a set; full-matrix transform persistence; multiple backgrounds; migration. | now |
-| **2 · Rendering** | Y-up map space + single render flip (labels kept upright); image sizing in map space; imageless facts drawn with the per-type shape & colour; paint types in configured z-order (unconfigured on top); Settings tab: Discover button, drag-to-reorder, shape/colour pickers. | now |
+| **1 · Model & core** | Unified fact parse (parser → *list*); `world-to-map` for all incl. images; per-type settings on the map — order (z) + default shape/colour, alphabetical default; selection as a set; full-matrix transform persistence. | now |
+| **2 · Rendering** | Y-up map space + single render flip (labels kept upright); image sizing in map space + multiple backgrounds; imageless facts drawn with the per-type shape & colour; paint types in configured z-order (unconfigured on top); Settings tab: Discover button, drag-to-reorder, shape/colour pickers; migration of legacy backgrounds. | now |
 | **3 · Editor UI** | Rubber-band + Ctrl/Shift multi-select; drag-to-resize and rotate handles. | later |
 | **Backlog** | Cluster events & facts when zoomed out to cut on-screen clutter and object counts. | later |
 
 ## 9. Migration
+
+Lands in **Phase 2**, coupled to the parser/renderer flip (it can't run while the Phase 1 adapter
+still reads background placement from `.tm-map-to-screen`).
 
 - Existing single-background docs: convert the old whole-plane `map-to-screen` into the background
   fact's own `world-to-map`.

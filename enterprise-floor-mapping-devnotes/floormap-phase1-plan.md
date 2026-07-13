@@ -19,7 +19,8 @@ shape/colour draw, z-ordered paint, editor tools — is Phase 2/3.
 
 ## Workstreams
 
-Rough dependency order: WS1 → (WS2, WS3, WS4 in parallel) → WS5 (migration).
+Rough dependency order: WS1 → (WS2, WS3, WS4 in parallel). Migration has moved to
+Phase 2 (see WS5 below for why).
 
 ### WS1 — Fact model + parser returns a list
 - Introduce a shared `Fact` representation `{ key, type, image?, worldToMap }`. Decide up front
@@ -63,15 +64,19 @@ Rough dependency order: WS1 → (WS2, WS3, WS4 in parallel) → WS5 (migration).
 - **Tests:** full-matrix write; batch across a set; background and regular facts; preserve
   `a,b,c,d` on a translate.
 
-### WS5 — Migration
-- Existing single-background docs: convert the legacy whole-plane `map-to-screen` into the
-  background fact's own `world-to-map`.
-- Decide rotation/scale carry-over (and whether to re-apply it to objects' `world-to-map` so the
-  map looks unchanged post-upgrade).
-- Backgrounds gain real unique keys; the literal `"background"` id and key-or-type special-casing
-  retire. Regular objects unchanged.
-- Deliver as a versioned upgrade (serialiser bump) or lazy conversion on load — pick one and be
-  consistent.
+### WS5 — Migration → moved to Phase 2
+Migration was originally scoped here, but implementing Phase 1 showed it **cannot safely run
+before the Phase 2 renderer/parser flip**:
+
+- In Phase 1 the compatibility adapter keeps the background's placement in `.tm-map-to-screen`
+  (the parser reads it from there for backgrounds, and the current renderer draws it via
+  `ParseResult.backgroundMatrix`). Converting that matrix onto `world-to-map` now would make the
+  live renderer lose the background until Phase 2 reads `world-to-map` for backgrounds.
+- The data to migrate lives in the **temporal store** (fact entry values), not the `FloorMapDoc`
+  — so it is a store-wide data rewrite, not a serialiser bump.
+
+Migration therefore belongs with Phase 2, coupled to the parser/renderer change. See
+`floormap-phase2-plan.md`.
 
 ## Testing / verification
 
@@ -85,6 +90,8 @@ Rough dependency order: WS1 → (WS2, WS3, WS4 in parallel) → WS5 (migration).
 
 - **Y-up map space + render flip** (with upright labels) — moved to Phase 2, bundled with the
   renderer rework to avoid a half-way visible regression.
+- **Migration of legacy background data** — moved to Phase 2; it must accompany the parser/renderer
+  flip (see WS5).
 - Scaled multi-image rendering; per-type shape/colour draw; z-ordered paint.
 - Settings drag-to-reorder + shape/colour pickers UI.
 - Rubber-band + modifier multi-select; rotate/scale handles.
@@ -93,6 +100,5 @@ Rough dependency order: WS1 → (WS2, WS3, WS4 in parallel) → WS5 (migration).
 ## Risks / open
 
 - **`Fact` vs `FloorMapObject`** — commit to one representation to avoid dual types drifting.
-- **Migration correctness** for rotated/scaled legacy backgrounds — needs test data.
 - **Adapter lifetime** — the `ParseResult` adapter is scaffolding; track its removal in Phase 2 so
   it doesn't calcify.

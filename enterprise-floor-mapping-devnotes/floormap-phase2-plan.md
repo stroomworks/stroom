@@ -75,6 +75,19 @@ WS7 (cleanup). WS6 can run in parallel once `typeStyles` is read by the renderer
   canvas (selection/drag now key off real fact identity).
 - Delete the now-dead fixed-rect / single-background code paths.
 
+### WS8 — Migration (moved here from Phase 1)
+Must land **with** the parser/renderer flip above, not before it — in Phase 1 the adapter still
+reads background placement from `.tm-map-to-screen`, so migrating early would blank the background.
+
+- Convert legacy background entries so their placement lives in `world-to-map` (the field the new
+  parser reads), deciding rotation/scale carry-over and whether to re-apply it to objects so maps
+  look unchanged after upgrade.
+- Backgrounds gain real unique keys; the literal `"background"` id and the key-or-type
+  special-casing retire. Regular objects are unchanged.
+- This is a **temporal-store data rewrite** (fact entry values), not a `FloorMapDoc` serialiser
+  bump — design it as an idempotent batch over each map's entries, gated behind the new renderer.
+  Needs test data with a rotated/scaled legacy background.
+
 ## Testing / verification
 
 - **Shared unit tests** where logic allows: z-order sort (incl. unconfigured-on-top + tie-break),
