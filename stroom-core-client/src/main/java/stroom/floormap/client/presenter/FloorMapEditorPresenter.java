@@ -24,7 +24,6 @@ import stroom.entity.client.presenter.DocPresenter;
 import stroom.entity.shared.ExpressionCriteria;
 import stroom.floormap.client.ValueAccessorFactory;
 import stroom.floormap.client.event.MapContextMenuEvent;
-import stroom.floormap.client.event.MapObjectMovedEvent;
 import stroom.floormap.client.event.MapObjectSelectedEvent;
 import stroom.floormap.client.event.TimeChangeEvent;
 import stroom.floormap.client.presenter.FloorMapEditorPresenter.FloorMapEditorView;
@@ -204,12 +203,6 @@ public class FloorMapEditorPresenter
         registerHandler(getEventBus().addHandler(MapObjectSelectedEvent.getType(), event -> {
             if (event.getSource() == floorMapCanvasPresenter) {
                 onObjectSelectedOnCanvas(event.getObjectId());
-            }
-        }));
-
-        registerHandler(getEventBus().addHandler(MapObjectMovedEvent.getType(), event -> {
-            if (event.getSource() == floorMapCanvasPresenter) {
-                onObjectMovedOnCanvas(event.getObjectId(), event.getX(), event.getY());
             }
         }));
 
@@ -574,34 +567,6 @@ public class FloorMapEditorPresenter
         floorMapFactListPresenter.setSelected(objectId);
         // Load Time List
         loadTimeListForSelectedFact();
-    }
-
-    /**
-     * Called when the user finishes dragging an object on the canvas.
-     * Stages an update in the pending-changes buffer.
-     *
-     * @param objectId the moved object's fact key
-     * @param x        new X coordinate in map space
-     * @param y        new Y coordinate in map space
-     */
-    private void onObjectMovedOnCanvas(final String objectId, final double x, final double y) {
-        // The model searches the full canvas snapshot (all keys at current time) so that
-        // dragging any object works regardless of which key is selected in the Time List.
-        try {
-            final boolean recorded = model.recordObjectMove(
-                    objectId, x, y,
-                    getEntity().getValueSchema(),
-                    ValueAccessorFactory.forFormat(getEntity().getValueFormat()));
-            if (recorded) {
-                setDirty(true);
-            }
-        } catch (final Exception ex) {
-            AlertEvent.fireError(this,
-                    "Cannot update coordinates for object '" + objectId + "': "
-                    + ex.getMessage(),
-                    null);
-        }
-        refreshCanvasOnly();
     }
 
     /**

@@ -19,9 +19,7 @@ package stroom.floormap.client.presenter;
 import stroom.dispatch.client.RestFactory;
 import stroom.docref.DocRef;
 import stroom.entity.client.presenter.DocPresenter;
-import stroom.floormap.client.ValuePathAccessor;
 import stroom.floormap.client.event.FloorMapDataEvent;
-import stroom.floormap.client.event.MapObjectMovedEvent;
 import stroom.floormap.client.event.MapObjectSelectedEvent;
 import stroom.floormap.client.event.TimeChangeEvent;
 import stroom.floormap.client.presenter.FloorMapMapPresenter.FloorMapMapView;
@@ -54,10 +52,6 @@ import stroom.widget.histogram.client.HistogramDataModel;
 import stroom.widget.histogram.client.HistogramQueryHelper;
 
 import com.google.gwt.core.client.GWT;
-import com.google.gwt.json.client.JSONArray;
-import com.google.gwt.json.client.JSONNumber;
-import com.google.gwt.json.client.JSONObject;
-import com.google.gwt.json.client.JSONString;
 import com.google.inject.Inject;
 import com.google.inject.Provider;
 import com.google.web.bindery.event.shared.EventBus;
@@ -241,25 +235,6 @@ public class FloorMapMapPresenter
             }
         }));
 
-        registerHandler(getEventBus().addHandler(MapObjectMovedEvent.getType(), e -> {
-            if (e.getSource() != floorMapCanvasPresenter) {
-                return;
-            }
-
-            final String mapName = getEntity() != null && getEntity().getFactsStoreRef() != null
-                    ? getEntity().getFactsStoreRef().getName()
-                    : null;
-            if (mapName == null) {
-                return;
-            }
-
-            final String key = e.getObjectId();
-            if (key == null) {
-                return;
-            }
-
-            applyMove(key, mapName, e.getX(), e.getY(), selectedTime);
-        }));
 
         // Drag-editing is performed on the Editor tab; the Map tab is view-focused,
         // so no drag handler is installed here.
@@ -297,69 +272,6 @@ public class FloorMapMapPresenter
         // (scrub, step-back/forward, loop-around, stop-at-end).
         floorMapTimelinePresenter.setClearAnimationStateHandler(
                 floorMapCanvasPresenter::clearAnimationState);
-    }
-
-    /**
-     * Handles a drag-move operation on a map object or the background.
-     *
-     * <p>Builds a new {@link TemporalEntry} with the object's current state and persists
-     * it via {@link SqlTemporalStoreResource#update(TemporalEntry)}. On success, refreshes the
-     * canvas by re-running {@link #onTimeChange(long)}.</p>
-     *
-     * <p>For background objects the map-to-screen matrix from the canvas is persisted.
-     * For regular objects the world-to-map matrix translation components (e, f) are
-     * set to the given map position (assuming world-space origin and identity
-     * scale/rotation).</p>
-     *
-     * @param key           the object's unique key in the temporal store
-     * @param mapName       the name of the facts store (map name)
-     * @param mapX          the new X coordinate in map space
-     * @param mapY          the new Y coordinate in map space
-     * @param effectiveTime the effective timestamp to use for the updated entry
-     */
-    private void applyMove(final String key,
-                           final String mapName,
-                           final double mapX,
-                           final double mapY,
-                           final long effectiveTime) {
-        setDirty(true);
-
-        final JSONObject json = new JSONObject();
-
-        if (FloorMapJsonKeys.BACKGROUND.equals(key)) {
-            json.put(FloorMapJsonKeys.TYPE, new JSONString(FloorMapJsonKeys.BACKGROUND));
-            json.put(FloorMapJsonKeys.NAME, new JSONString(FloorMapJsonKeys.BACKGROUND_DISPLAY_NAME));
-            final FloorMapTransformationMatrix bgMatrix = floorMapCanvasPresenter.getMatrix();
-            ValuePathAccessor.set(json, pathForRole(Role.MAP_TO_SCREEN), matrixToJsonArray(bgMatrix));
-        } else {
-            ValuePathAccessor.set(json, pathForRole(Role.TYPE), new JSONString(""));
-            ValuePathAccessor.set(json, pathForRole(Role.LABEL), new JSONString(key));
-
-            // With default world coords (0,0) and identity scale/rotation,
-            // the translation components equal the map position directly.
-            ValuePathAccessor.set(json, pathForRole(Role.WORLD_TO_MAP),
-                    matrixToJsonArray(new FloorMapTransformationMatrix(
-                            1, 0, 0, 1, mapX, mapY)));
-
-            floorMapObjectEditPresenter.updateCoords(0, 0);
-        }
-
-        final TemporalEntry entry = new TemporalEntry(
-                mapName,
-                key,
-                effectiveTime,
-                json.toString()
-        );
-
-        //noinspection unused result
-        restFactory.create(SQL_TEMPORAL_STORE_RESOURCE)
-                .method(res -> res.update(entry))
-                .onSuccess(result -> {
-                    onTimeChange(selectedTime);
-                    floorMapObjectEditPresenter.setObject(key);
-                    floorMapObjectListPresenter.setSelected(key);
-                })
-                .exec();
     }
 
     /**
@@ -514,7 +426,6 @@ public class FloorMapMapPresenter
 
         String activeBgImage = null;
         FloorMapTransformationMatrix activeBgMatrix = FloorMapTransformationMatrix.identity();
-        final List<FloorMapObject> plottedObjects = new ArrayList<>();
         final List<Fact> facts = new ArrayList<>();
 
         if (tableResult.getRows() != null) {
@@ -556,38 +467,17 @@ public class FloorMapMapPresenter
                     final double mapY = worldToMap.getB() * worldX
                             + worldToMap.getD() * worldY + worldToMap.getF();
 
-                    plottedObjects.add(new FloorMapObject(key, type, mapX, mapY));
                     facts.add(new Fact(key, type, img, worldToMap, new double[]{worldX, worldY}));
                 }
             }
         }
 
-        // Legacy inputs retained so the Map tab's applyMove()/getMatrix() keep working.
-        floorMapCanvasPresenter.setBackgroundImage(
-                activeBgImage != null && !activeBgImage.isEmpty() ? activeBgImage : null);
-        floorMapCanvasPresenter.setMatrix(activeBgMatrix);
-        floorMapCanvasPresenter.setObjects(plottedObjects);
-
-        // Fact list the canvas actually renders (background painted behind).
+        // The canvas renders the fact list (background painted behind the objects).
         if (activeBgImage != null && !activeBgImage.isEmpty()) {
             facts.add(0, new Fact(FloorMapJsonKeys.BACKGROUND, FloorMapJsonKeys.BACKGROUND,
                     activeBgImage, activeBgMatrix, null));
         }
         floorMapCanvasPresenter.setFacts(facts);
-    }
-
-    /**
-     * Converts a {@link FloorMapTransformationMatrix} to a 6-element {@link JSONArray}.
-     */
-    private static JSONArray matrixToJsonArray(final FloorMapTransformationMatrix m) {
-        final JSONArray arr = new JSONArray();
-        arr.set(0, new JSONNumber(m.getA()));
-        arr.set(1, new JSONNumber(m.getB()));
-        arr.set(2, new JSONNumber(m.getC()));
-        arr.set(3, new JSONNumber(m.getD()));
-        arr.set(4, new JSONNumber(m.getE()));
-        arr.set(5, new JSONNumber(m.getF()));
-        return arr;
     }
 
     /**

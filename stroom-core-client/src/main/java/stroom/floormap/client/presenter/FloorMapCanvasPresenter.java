@@ -54,12 +54,12 @@ import javax.inject.Inject;
  *
  * <p>Manages zoom, pan, object selection and drag-move in edit mode, and
  * smooth person-movement animations with fading trails during timeline
- * playback.  Two separate object lists are maintained — {@code factObjects}
- * for static floor-plan items and {@code eventObjects} for event-driven
- * entities — so that facts and events never overwrite each other.</p>
+ * playback.  Static floor-plan content comes from the {@code facts} list
+ * (rendered by type z-order); event-driven entities come from
+ * {@code eventObjects} — so that facts and events never overwrite each other.</p>
  *
- * <p>The canvas view renders the combined draw list produced by
- * {@link #buildAnimatedDrawList(double)} via its
+ * <p>The canvas view renders the z-ordered facts plus the event draw list
+ * produced by {@link #buildAnimatedDrawList(double)} via its
  * {@link FloorMapCanvasView#draw draw()} method.</p>
  */
 public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasView> {
@@ -103,8 +103,8 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     private double scale = 1.0;
     private double offsetX = 0;
     private double offsetY = 0;
+    /** Background image URL set via the Map tab's asset picker (see setBackgroundImage). */
     private String backgroundImage;
-    private FloorMapTransformationMatrix matrix;
 
     // Dragging state
     private boolean isDraggingEnabled = false;
@@ -117,9 +117,6 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     /** Accumulated drag delta in map space (Y-up) for the current drag gesture. */
     private double dragDxMap;
     private double dragDyMap;
-
-    // Objects on the map — kept in two separate lists so facts and events never overwrite each other.
-    private List<FloorMapObject> factObjects = new ArrayList<>();
 
     /**
      * Non-person event objects (and people when NOT playing) set here directly.
@@ -800,24 +797,6 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         return out;
     }
 
-    /**
-     * Sets the background's map-to-screen transformation matrix and redraws.
-     *
-     * @param matrix the new transformation matrix
-     */
-    public void setMatrix(final FloorMapTransformationMatrix matrix) {
-        this.matrix = matrix;
-        redraw();
-    }
-
-    /**
-     * Returns the current background map-to-screen transformation matrix.
-     *
-     * @return the current matrix, or {@code null} if not yet set
-     */
-    public FloorMapTransformationMatrix getMatrix() {
-        return matrix;
-    }
 
     /**
      * Returns the map-space coordinates of the centre of the currently
@@ -849,44 +828,6 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     public void setBackgroundImage(final String backgroundImage) {
         this.backgroundImage = backgroundImage;
         redraw();
-    }
-
-    /**
-     * Sets the static floor-plan objects (facts query result).
-     * Gates, doors, desks etc. teleport; people with a {@code "person"} type
-     * are routed through the same animation machinery as event-driven people.
-     */
-    public void setFactObjects(final List<FloorMapObject> objects) {
-        final List<FloorMapObject> nonPersonFacts = new ArrayList<>();
-
-        if (objects != null) {
-            for (final FloorMapObject obj : objects) {
-                if (FloorMapJsonKeys.PERSON.equalsIgnoreCase(obj.getType())) {
-                    if (handlePersonUpdate(obj)) {
-                        // Person placed without animation (not playing, first appearance, etc.) —
-                        // add to draw list so it's visible.
-                        nonPersonFacts.add(obj);
-                    }
-                } else {
-                    nonPersonFacts.add(obj);
-                }
-            }
-        }
-
-        // One-shot: clear the teleport flag now that person positions have been committed.
-        // Without this, a pendingTeleport set by clearAnimationState() (loop-around, scrub,
-        // step, stop-at-end) would stick forever because setEventObjects — the only other
-        // place that clears it — may never be called for fact-sourced person objects.
-        pendingTeleport = false;
-
-        this.factObjects = nonPersonFacts;
-
-        if (isPlaying) {
-            ensureAnimationLoop();
-            // The animation loop calls draw(); avoid double-paint.
-        } else {
-            redraw();
-        }
     }
 
     /**
@@ -937,14 +878,6 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
         this.eventObjects = nonPersons;
         ensureAnimationLoop();
-    }
-
-    /**
-     * Legacy convenience alias — routes to {@link #setFactObjects} so existing
-     * edit-mode code paths (which only deal with facts) continue to work.
-     */
-    public void setObjects(final List<FloorMapObject> objects) {
-        setFactObjects(objects);
     }
 
     /**
