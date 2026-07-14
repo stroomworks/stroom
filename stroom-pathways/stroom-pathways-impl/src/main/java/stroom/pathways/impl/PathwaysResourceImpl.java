@@ -23,6 +23,8 @@ import stroom.pathways.shared.AddPathway;
 import stroom.pathways.shared.DeleteAndReprocessPathway;
 import stroom.pathways.shared.DeletePathway;
 import stroom.pathways.shared.FindPathwayCriteria;
+import stroom.pathways.shared.FindPathwayEventCriteria;
+import stroom.pathways.shared.PathwayEventResultPage;
 import stroom.pathways.shared.PathwayResultPage;
 import stroom.pathways.shared.PathwaysDoc;
 import stroom.pathways.shared.PathwaysResource;
@@ -69,6 +71,12 @@ class PathwaysResourceImpl implements PathwaysResource {
     @Override
     public PathwayResultPage findPathways(final FindPathwayCriteria criteria) {
         return pathwaysServiceProvider.get().findPathways(criteria);
+    }
+
+    @AutoLogged(OperationType.UNLOGGED)
+    @Override
+    public PathwayEventResultPage findPathwayEvents(final FindPathwayEventCriteria criteria) {
+        return pathwaysServiceProvider.get().findPathwayEvents(criteria);
     }
 
     @AutoLogged(OperationType.UNLOGGED)

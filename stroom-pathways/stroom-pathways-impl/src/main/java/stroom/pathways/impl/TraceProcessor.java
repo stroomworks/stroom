@@ -81,7 +81,9 @@ public class TraceProcessor {
                         writer.tryCommit();
                     } else {
                         final Trace trace = optTrace.get();
-                        LOGGER.debug(() -> "\n" + trace.toString());
+                        LOGGER.debug(() -> "\n" + trace);
+                        // Tag every event produced for this trace with the trace id.
+                        messageReceiver.beginTrace(traceId);
                         buildPathways(writer, trace, doc, messageReceiver, pathwaysDb);
                         processingStatus.insert(writer, keyByteBuffer, PROCESSED);
                         writer.tryCommit();

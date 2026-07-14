@@ -19,18 +19,19 @@ package stroom.pathways.impl;
 import stroom.bytebuffer.impl6.ByteBufferFactory;
 import stroom.bytebuffer.impl6.ByteBufferFactoryImpl;
 import stroom.bytebuffer.impl6.ByteBuffers;
+import stroom.lmdb.stream.LmdbKeyRange;
 import stroom.pathways.impl.events.PathwayEvent;
 import stroom.pathways.shared.FindTraceCriteria;
 import stroom.pathways.shared.GetTraceRequest;
 import stroom.pathways.shared.PathwaysDoc;
 import stroom.pathways.shared.TracePersistence;
 import stroom.pathways.shared.TraceWriter;
-import stroom.pathways.shared.otel.trace.NanoTime;
 import stroom.pathways.shared.otel.trace.Span;
 import stroom.pathways.shared.otel.trace.Trace;
 import stroom.pathways.shared.otel.trace.TraceRoot;
 import stroom.planb.impl.db.LmdbWriter;
 import stroom.planb.impl.db.trace.NanoTimeUtil;
+import stroom.planb.impl.db.trace.PathwayEventsDb;
 import stroom.planb.impl.db.trace.PathwaysDb;
 import stroom.planb.impl.db.trace.TraceDb;
 import stroom.planb.shared.PlanBDoc;
@@ -44,15 +45,17 @@ import stroom.util.shared.Severity;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -65,7 +68,8 @@ public class TestPathwayProcessor {
 
     @Test
     void test(@TempDir final Path traceDir,
-              @TempDir final Path pathwaysDir) {
+              @TempDir final Path pathwaysDir,
+              @TempDir final Path eventsDir) {
         // Read in sample data and create a map of traces.
         final PlanBDoc planBDoc = PlanBDoc.builder()
                 .uuid(UUID.randomUUID().toString())
@@ -110,32 +114,41 @@ public class TestPathwayProcessor {
             new TraceLoader().load(tracesStore);
 
             // Build and test pathways
-            testPathways(pathwaysDb, traceDb);
+            testPathways(pathwaysDb, traceDb, eventsDir);
 
             // Insert one more trace
             new TraceLoader().addOneMore(tracesStore);
 
             // Build and test more pathways
-            testPathways(pathwaysDb, traceDb);
+            testPathways(pathwaysDb, traceDb, eventsDir);
         }
     }
 
     void testPathways(final PathwaysDb pathwaysDb,
-                      final TraceDb traceDb) {
-        final Map<String, List<PathwayEvent>> events = new HashMap<>();
+                      final TraceDb traceDb,
+                      final Path eventsBaseDir) {
+        // Capture each generated event with the trace it came from and its arrival sequence, so it
+        // can be persisted with the same key layout MessageReceiverFactory uses in production.
+        final Map<String, List<CapturedEvent>> events = new HashMap<>();
         final MessageReceiver messageReceiver = new MessageReceiver() {
-            public void log(final Severity severity, final Supplier<String> message)
-            {
+            private byte[] currentTraceId = new byte[0];
+            private long seq = 0;
+
+            public void log(final Severity severity, final Supplier<String> message) {
                 switch (severity) {
                     case INFO -> LOGGER.info(message);
                     case WARNING -> LOGGER.warn(message);
                     case ERROR, FATAL_ERROR -> LOGGER.error(message);
                 }
             }
-            public void event(final PathwaysDoc pathwaysDoc, final String pathwayName, final PathwayEvent event)
-            {
-                events.computeIfAbsent(pathwayName, _ -> new ArrayList<>());
-                events.get(pathwayName).add(event);
+
+            public void beginTrace(final byte[] traceId) {
+                this.currentTraceId = traceId != null ? traceId : new byte[0];
+            }
+
+            public void event(final PathwaysDoc pathwaysDoc, final String pathwayName, final PathwayEvent event) {
+                events.computeIfAbsent(pathwayName, e -> new ArrayList<>())
+                        .add(new CapturedEvent(currentTraceId, seq++, event));
             }
         };
 
@@ -159,26 +172,40 @@ public class TestPathwayProcessor {
             writer.commit();
         }
 
-        final PathwayEventsSerde serde = new PathwayEventsSerde(BYTE_BUFFER_FACTORY, new PathwaySerde(BYTE_BUFFER_FACTORY));
-        final PathwaysDb.SimpleDb pathwayEventsDb = pathwaysDb.getPathwayEvents();
+        final PathwayEventsSerde serde = new PathwayEventsSerde(
+                BYTE_BUFFER_FACTORY,
+                new PathwaySerde(BYTE_BUFFER_FACTORY)
+        );
+        // Events now live in their own (per-shard) store; use a fresh one for this run.
+        final Path eventsDir = eventsBaseDir.resolve(UUID.randomUUID().toString());
+        try {
+            Files.createDirectories(eventsDir);
+        } catch (final IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        final PathwayEventsDb eventsDb = PathwayEventsDb.create(eventsDir, false);
+        final PathwaysDb.SimpleDb pathwayEventsDb = eventsDb.getPathwayEvents();
 
-        try (final LmdbWriter lmdbWriter = pathwaysDb.createWriter()) {
+        // Persist using the production key layout (see MessageReceiverFactory):
+        //   <pathwayName>\0 <timestampNanos:8B> <seq:8B> <traceId>
+        // Time-first (after the name prefix) so a per-pathway prefix scan returns events in time
+        // order; the trailing trace id keeps keys unique across traces and processing runs.
+        try (final LmdbWriter lmdbWriter = eventsDb.createWriter()) {
             events.keySet().stream().sorted().forEach(pathwayName -> {
-                final List<PathwayEvent> originalEvents = events.get(pathwayName);
-                long sequenceId = 0;
-                for (final PathwayEvent event : originalEvents) {
-                    final AtomicReference<ByteBuffer> bufferRef = new AtomicReference<>();
-                    serde.writePathwayEvent(event, bufferRef::set);
-
-                    final ByteBuffer key = ByteBuffer.allocateDirect(100);
-                    final byte[] pathBytes = pathwayName.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                final byte[] pathBytes = pathwayName.getBytes(StandardCharsets.UTF_8);
+                for (final CapturedEvent captured : events.get(pathwayName)) {
+                    final byte[] traceId = captured.traceId();
+                    final ByteBuffer key = ByteBuffer.allocateDirect(
+                            pathBytes.length + 1 + 8 + 8 + traceId.length);
                     key.put(pathBytes);
                     key.put((byte) 0);
-                    key.putLong(sequenceId++);
+                    key.putLong(NanoTimeUtil.toEpoch2000Nanos(captured.event().getTimestamp()));
+                    key.putLong(captured.seq());
+                    key.put(traceId);
                     key.flip();
 
-                    final ByteBuffer val = bufferRef.get();
-                    pathwayEventsDb.insert(lmdbWriter, key, val);
+                    serde.writePathwayEvent(captured.event(), val ->
+                            pathwayEventsDb.insert(lmdbWriter, key, val));
                 }
             });
             lmdbWriter.commit();
@@ -186,7 +213,9 @@ public class TestPathwayProcessor {
 
         final StringBuilder eventString = new StringBuilder();
         events.keySet().stream().sorted().forEach(pathwayName -> {
-            final List<PathwayEvent> originalEvents = events.get(pathwayName);
+            final List<PathwayEvent> originalEvents = events.get(pathwayName).stream()
+                    .map(CapturedEvent::event)
+                    .toList();
 
             final Map<String, String> uuidToNameMap = new HashMap<>();
             for (final PathwayEvent event : originalEvents) {
@@ -195,23 +224,13 @@ public class TestPathwayProcessor {
                 }
             }
 
-            final byte[] expectedPathBytes = pathwayName.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            // Recall this pathway's events via a prefix scan, exactly as PathwaysProcessor does.
+            final byte[] pathBytes = pathwayName.getBytes(StandardCharsets.UTF_8);
+            final ByteBuffer prefix = ByteBuffer.allocateDirect(pathBytes.length + 1);
+            prefix.put(pathBytes).put((byte) 0).flip();
             final List<PathwayEvent> deserializedEvents = new ArrayList<>();
-            pathwayEventsDb.iterate((keyBb, bb) -> {
-                if (bb == null) return;
-                boolean matches = true;
-                if (keyBb.limit() >= expectedPathBytes.length + 9) {
-                    for (int i=0; i<expectedPathBytes.length; i++) {
-                        if (keyBb.get(i) != expectedPathBytes[i]) {
-                           matches = false; break;
-                        }
-                    }
-                    if (keyBb.get(expectedPathBytes.length) != 0) matches = false;
-                } else {
-                    matches = false;
-                }
-
-                if (matches) {
+            pathwayEventsDb.iterate(LmdbKeyRange.builder().prefix(prefix).build(), (keyBb, bb) -> {
+                if (bb != null) {
                     deserializedEvents.add(serde.readPathwayEvent(bb, uuidToNameMap));
                 }
             });
@@ -221,17 +240,25 @@ public class TestPathwayProcessor {
             originalEvents.forEach(event -> {
                 if (event.getDescription().length() > 1) {
                     eventString.append("\n");
-                    eventString.append(DateUtil.createNormalDateTimeString(NanoTimeUtil.toInstant(event.getTimestamp())));
+                    eventString.append(
+                            DateUtil.createNormalDateTimeString(NanoTimeUtil.toInstant(event.getTimestamp()))
+                    );
                     eventString.append("\n");
                     eventString.append(event.getDescription());
                 } else {
                     LOGGER.error("Event without description\n" + event.getClass().getSimpleName());
                 }
-                assertThat(event.getDescription().length()).isGreaterThan(1); // Blank description means need more implementing
+                // Blank description means need more implementing, throw error
+                assertThat(event.getDescription().length()).isGreaterThan(1);
             });
             eventString.append("\n\n\n\n\n\n");
         });
         LOGGER.info(eventString.toString());
+        eventsDb.close();
+    }
+
+    /** A generated event together with the trace it came from and its arrival sequence. */
+    private record CapturedEvent(byte[] traceId, long seq, PathwayEvent event) {
     }
 }
 

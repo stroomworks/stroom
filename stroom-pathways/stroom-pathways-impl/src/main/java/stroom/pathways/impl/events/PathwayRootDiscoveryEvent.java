@@ -19,8 +19,6 @@ package stroom.pathways.impl.events;
 import stroom.pathways.shared.otel.trace.NanoTime;
 import stroom.planb.impl.db.trace.NanoTimeUtil;
 
-import java.time.Instant;
-
 public class PathwayRootDiscoveryEvent implements PathwayEvent {
     private final String nodeUuid;
     private final String nodeName;
@@ -65,9 +63,14 @@ public class PathwayRootDiscoveryEvent implements PathwayEvent {
     }
 
     @Override
+    public String getCategory() {
+        return "ROOT_DISCOVERY";
+    }
+
+    @Override
     public String getDescription() {
         final String descriptionTail = "a new pathway root: " + nodeName;
-        if(eventType == PathwayEventType.VIOLATION) {
+        if (eventType == PathwayEventType.VIOLATION) {
             return "VIOLATION: Attempted to discover " + descriptionTail;
         }
         return "MUTATION: Discovered " + descriptionTail;

@@ -84,9 +84,21 @@ public class ConstraintMutationEvent implements PathwayEvent {
     }
 
     @Override
+    public String getCategory() {
+        return "CONSTRAINT_MUTATION";
+    }
+
+    @Override
     public String getDescription() {
-        final String descriptionTail = "constraint " + originalConstraint.getName() + " for node " + nodeName + " from " + originalConstraint.getValue() + " to " + updatedConstraint.getValue();
-        if(eventType == PathwayEventType.VIOLATION) {
+        final String descriptionTail = "constraint "
+                                       + originalConstraint.getName()
+                                       + " for node "
+                                       + nodeName
+                                       + " from "
+                                       + originalConstraint.getValue()
+                                       + " to "
+                                       + updatedConstraint.getValue();
+        if (eventType == PathwayEventType.VIOLATION) {
             return "VIOLATION: Attempted to mutate " + descriptionTail;
         }
         return "MUTATION: Mutated " + descriptionTail;

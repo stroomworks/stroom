@@ -24,7 +24,8 @@ import stroom.meta.api.MetaProperties;
 import stroom.pathways.impl.events.PathwayEvent;
 import stroom.pathways.shared.PathwaysDoc;
 import stroom.planb.impl.db.LmdbWriter;
-import stroom.planb.impl.db.trace.PathwaysDb;
+import stroom.planb.impl.db.trace.NanoTimeUtil;
+import stroom.planb.impl.db.trace.PathwayEventsDb;
 import stroom.planb.impl.db.trace.PathwaysDb.SimpleDb;
 import stroom.util.logging.LambdaLogger;
 import stroom.util.logging.LambdaLoggerFactory;
@@ -47,6 +48,8 @@ public class MessageReceiverFactory {
 
     private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(MessageReceiverFactory.class);
 
+    private static final byte[] EMPTY_TRACE_ID = new byte[0];
+
     private final Store streamStore;
     private final PathwayEventsSerde pathwayEventsSerde;
     private final ByteBuffers byteBuffers;
@@ -61,7 +64,12 @@ public class MessageReceiverFactory {
         this.byteBuffers = byteBuffers;
     }
 
-    public void create(final PathwaysDb pathwaysDb,
+    /** A buffered event together with the trace id it was generated from and its per-run sequence. */
+    private record BufferedEvent(byte[] traceId, long seq, PathwayEvent event) {
+
+    }
+
+    public void create(final PathwayEventsDb eventsDb,
                        final LmdbWriter lmdbWriter,
                        final String feedName,
                        final Consumer<MessageReceiver> messageReceiverConsumer) {
@@ -75,9 +83,14 @@ public class MessageReceiverFactory {
                 try (final OutputStreamProvider outputStreamProvider = streamTarget.next()) {
                     try (final Writer writer = new OutputStreamWriter(outputStreamProvider.get())) {
                         class BufferingMessageReceiver implements MessageReceiver {
-                            private final Map<String, List<PathwayEvent>> buffer = new HashMap<>();
+                            private final Map<String, List<BufferedEvent>> buffer = new HashMap<>();
                             private int eventCount = 0;
-                            private long sequenceId = 0;
+                            // Monotonic within this processing run. Combined with the source trace id in the
+                            // key it makes every event key unique - a given trace is processed at most once,
+                            // so its (traceId, seq) pairs can never recur across runs. This replaces the old
+                            // per-run sequenceId that reset to 0 each run and silently overwrote earlier events.
+                            private long seq = 0;
+                            private byte[] currentTraceId = EMPTY_TRACE_ID;
                             private static final int MAX_BUFFER_SIZE = 10000;
 
                             @Override
@@ -93,10 +106,16 @@ public class MessageReceiverFactory {
                             }
 
                             @Override
+                            public void beginTrace(final byte[] traceId) {
+                                this.currentTraceId = traceId != null ? traceId : EMPTY_TRACE_ID;
+                            }
+
+                            @Override
                             public void event(final PathwaysDoc pathwaysDoc,
                                               final String pathwayName,
                                               final PathwayEvent event) {
-                                buffer.computeIfAbsent(pathwayName, k -> new ArrayList<>()).add(event);
+                                buffer.computeIfAbsent(pathwayName, k -> new ArrayList<>())
+                                        .add(new BufferedEvent(currentTraceId, seq++, event));
                                 eventCount++;
                                 if (eventCount >= MAX_BUFFER_SIZE) {
                                     flush();
@@ -108,18 +127,27 @@ public class MessageReceiverFactory {
                                     return;
                                 }
                                 try {
-                                    final SimpleDb eventsDb = pathwaysDb.getPathwayEvents();
-                                    for (final Map.Entry<String, List<PathwayEvent>> entry : buffer.entrySet()) {
+                                    final SimpleDb pathwayEvents = eventsDb.getPathwayEvents();
+                                    for (final Map.Entry<String, List<BufferedEvent>> entry : buffer.entrySet()) {
                                         final byte[] pathBytes = entry.getKey().getBytes(StandardCharsets.UTF_8);
-                                        for (final PathwayEvent event : entry.getValue()) {
-                                            byteBuffers.use(pathBytes.length + 9, keyBuf -> {
+                                        for (final BufferedEvent buffered : entry.getValue()) {
+                                            final byte[] traceId = buffered.traceId();
+                                            // Key: <pathwayName>\0 <timestampNanos:8B> <seq:8B> <traceId>
+                                            // Time-first (after the name prefix) so a prefix scan of a pathway
+                                            // returns its events in time order; the trailing trace id makes the
+                                            // key globally unique. All longs are big-endian so LMDB's byte
+                                            // ordering matches ascending time.
+                                            final int keyLen = pathBytes.length + 1 + 8 + 8 + traceId.length;
+                                            byteBuffers.use(keyLen, keyBuf -> {
                                                 keyBuf.put(pathBytes);
                                                 keyBuf.put((byte) 0);
-                                                keyBuf.putLong(sequenceId++);
+                                                keyBuf.putLong(NanoTimeUtil.toEpoch2000Nanos(
+                                                        buffered.event().getTimestamp()));
+                                                keyBuf.putLong(buffered.seq());
+                                                keyBuf.put(traceId);
 
-                                                pathwayEventsSerde.writePathwayEvent(event, valBuf -> {
-                                                    eventsDb.insert(lmdbWriter, keyBuf.flip(), valBuf);
-                                                });
+                                                pathwayEventsSerde.writePathwayEvent(buffered.event(), valBuf ->
+                                                        pathwayEvents.insert(lmdbWriter, keyBuf.flip(), valBuf));
                                             });
                                         }
                                     }
@@ -131,7 +159,7 @@ public class MessageReceiverFactory {
                                 }
                             }
                         }
-                        
+
                         final BufferingMessageReceiver receiver = new BufferingMessageReceiver();
                         messageReceiverConsumer.accept(receiver);
                         receiver.flush();

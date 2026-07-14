@@ -69,15 +69,19 @@ public class NodeDiscoveryEvent implements PathwayEvent {
     }
 
     @Override
-    public PathwayEventType getEventType()
-    {
+    public PathwayEventType getEventType() {
         return eventType;
+    }
+
+    @Override
+    public String getCategory() {
+        return "NODE_DISCOVERY";
     }
 
     @Override
     public String getDescription() {
         final String descriptionTail = "new path node: " + nodeName;
-        if(eventType == PathwayEventType.VIOLATION) {
+        if (eventType == PathwayEventType.VIOLATION) {
             return "VIOLATION: Attempted to add " + descriptionTail;
         }
         return "MUTATION: Added " + descriptionTail;

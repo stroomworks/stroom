@@ -22,10 +22,12 @@ import stroom.pathways.impl.events.ConstraintDiscoveryEvent;
 import stroom.pathways.impl.events.ConstraintMutationEvent;
 import stroom.pathways.impl.events.NodeDiscoveryEvent;
 import stroom.pathways.impl.events.PathwayEvent;
+import stroom.pathways.impl.events.PathwayEventType;
 import stroom.pathways.impl.events.PathwayRootDiscoveryEvent;
 import stroom.pathways.impl.events.RequiredConstraintAbsentEvent;
+import stroom.pathways.shared.otel.trace.NanoTime;
 import stroom.pathways.shared.pathway.Constraint;
-import stroom.pathways.shared.pathway.Pathway;
+import stroom.planb.impl.db.trace.NanoTimeUtil;
 
 import com.esotericsoftware.kryo.io.Input;
 import com.esotericsoftware.kryo.io.Output;
@@ -38,8 +40,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Consumer;
-import stroom.pathways.impl.events.PathwayEventType;
-import stroom.pathways.shared.otel.trace.NanoTime;
 
 public class PathwayEventsSerde {
 
@@ -157,8 +157,7 @@ public class PathwayEventsSerde {
     }
 
     private void writeNanoTime(final NanoTime timestamp, final Output output) {
-        final long totalNanos = ((timestamp.getSeconds() - 946684800L) * 1000000000L) + timestamp.getNanos();
-        output.writeLong(totalNanos);
+        output.writeLong(NanoTimeUtil.toEpoch2000Nanos(timestamp));
     }
 
     public List<PathwayEvent> readPathwayEvents(final ByteBuffer byteBuffer, final Map<String, String> uuidToNameMap) {
@@ -181,11 +180,21 @@ public class PathwayEventsSerde {
     private PathwayEvent readSingleEvent(final Input input, final Map<String, String> uuidToNameMap) {
         final byte type = input.readByte();
         switch (type) {
-            case TYPE_ROOT_DISCOVERY -> { return readPathwayRootDiscoveryEvent(input); }
-            case TYPE_NODE_DISCOVERY -> { return readNodeDiscoveryEvent(input); }
-            case TYPE_CONSTRAINT_DISCOVERY -> { return readConstraintDiscoveryEvent(input, uuidToNameMap); }
-            case TYPE_CONSTRAINT_MUTATION -> { return readConstraintMutationEvent(input, uuidToNameMap); }
-            case TYPE_REQUIRED_CONSTRAINT_ABSENT -> { return readRequiredConstraintAbsentEvent(input, uuidToNameMap); }
+            case TYPE_ROOT_DISCOVERY -> {
+                return readPathwayRootDiscoveryEvent(input);
+            }
+            case TYPE_NODE_DISCOVERY -> {
+                return readNodeDiscoveryEvent(input);
+            }
+            case TYPE_CONSTRAINT_DISCOVERY -> {
+                return readConstraintDiscoveryEvent(input, uuidToNameMap);
+            }
+            case TYPE_CONSTRAINT_MUTATION -> {
+                return readConstraintMutationEvent(input, uuidToNameMap);
+            }
+            case TYPE_REQUIRED_CONSTRAINT_ABSENT -> {
+                return readRequiredConstraintAbsentEvent(input, uuidToNameMap);
+            }
             default -> throw new IllegalArgumentException("Unknown PathwayEvent type id: " + type);
         }
     }
@@ -207,16 +216,20 @@ public class PathwayEventsSerde {
         return new NodeDiscoveryEvent(parentUuid, uuid, name, eventType, timestamp);
     }
 
-    private ConstraintDiscoveryEvent readConstraintDiscoveryEvent(final Input input, final Map<String, String> uuidToNameMap) {
+    private ConstraintDiscoveryEvent readConstraintDiscoveryEvent(final Input input,
+                                                                  final Map<String, String> uuidToNameMap) {
         final String uuid = readUuid(input);
         final PathwayEventType eventType = readEventType(input);
         final Constraint constraint = pathwaySerde.readConstraint(input);
         final NanoTime timestamp = readNanoTime(input);
-        final String name = uuidToNameMap != null ? uuidToNameMap.computeIfAbsent(uuid, k -> k) : null;
+        // Resolve the node name from the supplied map, falling back to the uuid. Uses a non-mutating
+        // lookup so an immutable/shared map can be passed safely.
+        final String name = uuidToNameMap != null ? uuidToNameMap.getOrDefault(uuid, uuid) : null;
         return new ConstraintDiscoveryEvent(uuid, name, constraint, eventType, timestamp);
     }
 
-    private ConstraintMutationEvent readConstraintMutationEvent(final Input input, final Map<String, String> uuidToNameMap) {
+    private ConstraintMutationEvent readConstraintMutationEvent(final Input input,
+                                                                final Map<String, String> uuidToNameMap) {
         final String uuid = readUuid(input);
         final PathwayEventType eventType = readEventType(input);
         final Constraint originalConstraint = pathwaySerde.readConstraint(input);
@@ -226,16 +239,21 @@ public class PathwayEventsSerde {
                 .optional(input.readBoolean())
                 .build();
         final NanoTime timestamp = readNanoTime(input);
-        final String name = uuidToNameMap != null ? uuidToNameMap.computeIfAbsent(uuid, k -> k) : null;
+        // Resolve the node name from the supplied map, falling back to the uuid. Uses a non-mutating
+        // lookup so an immutable/shared map can be passed safely.
+        final String name = uuidToNameMap != null ? uuidToNameMap.getOrDefault(uuid, uuid) : null;
         return new ConstraintMutationEvent(uuid, name, originalConstraint, updatedConstraint, eventType, timestamp);
     }
 
-    private RequiredConstraintAbsentEvent readRequiredConstraintAbsentEvent(final Input input, final Map<String, String> uuidToNameMap) {
+    private RequiredConstraintAbsentEvent readRequiredConstraintAbsentEvent(final Input input,
+                                                                            final Map<String, String> uuidToNameMap) {
         final String uuid = readUuid(input);
         final String constraintName = input.readString();
         final PathwayEventType eventType = readEventType(input);
         final NanoTime timestamp = readNanoTime(input);
-        final String name = uuidToNameMap != null ? uuidToNameMap.computeIfAbsent(uuid, k -> k) : null;
+        // Resolve the node name from the supplied map, falling back to the uuid. Uses a non-mutating
+        // lookup so an immutable/shared map can be passed safely.
+        final String name = uuidToNameMap != null ? uuidToNameMap.getOrDefault(uuid, uuid) : null;
         return new RequiredConstraintAbsentEvent(uuid, name, constraintName, eventType, timestamp);
     }
 
@@ -250,11 +268,7 @@ public class PathwayEventsSerde {
     }
 
     private NanoTime readNanoTime(final Input input) {
-        final long totalNanos = input.readLong();
-        // Math.floorDiv and floorMod are required to safely decode pre-epoch timestamps (negative nanos)
-        final long seconds = 946684800L + Math.floorDiv(totalNanos, 1000000000L);
-        final int nanos = (int) Math.floorMod(totalNanos, 1000000000L);
-        return new NanoTime(seconds, nanos);
+        return NanoTimeUtil.fromEpoch2000Nanos(input.readLong());
     }
 
 }

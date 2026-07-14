@@ -19,6 +19,7 @@ package stroom.planb.impl.db.trace;
 import stroom.bytebuffer.impl6.ByteBuffers;
 import stroom.lmdb.stream.LmdbIterable;
 import stroom.lmdb.stream.LmdbIterable.EntryConsumer;
+import stroom.lmdb.stream.LmdbKeyRange;
 import stroom.planb.impl.db.AbstractDb;
 import stroom.planb.impl.db.HashClashCommitRunnable;
 import stroom.planb.impl.db.LmdbWriter;
@@ -45,7 +46,6 @@ public class PathwaysDb {
     protected final ByteBuffers byteBuffers;
     protected final SimpleDb processingStatus;
     protected final SimpleDb pathways;
-    protected final SimpleDb pathwayEvents;
 
     private PathwaysDb(final PlanBEnv env,
                        final ByteBuffers byteBuffers) {
@@ -53,6 +53,8 @@ public class PathwaysDb {
         this.byteBuffers = byteBuffers;
 
         // Read and validate that the schema is as expected.
+        // The pathway model (and its per-trace processing-status replay guard) lives here.
+        // Pathway events live separately, sharded per trace shard, in PathwayEventsDb.
         processingStatus = new SimpleDb(
                 env,
                 env.openDbi("processing-status", DbiFlags.MDB_CREATE),
@@ -60,10 +62,6 @@ public class PathwaysDb {
         pathways = new SimpleDb(
                 env,
                 env.openDbi("pathways", DbiFlags.MDB_CREATE),
-                new PutFlags[]{});
-        pathwayEvents = new SimpleDb(
-                env,
-                env.openDbi("pathway-events", DbiFlags.MDB_CREATE),
                 new PutFlags[]{});
     }
 
@@ -73,10 +71,6 @@ public class PathwaysDb {
 
     public SimpleDb getPathways() {
         return pathways;
-    }
-
-    public SimpleDb getPathwayEvents() {
-        return pathwayEvents;
     }
 
     public LmdbWriter createWriter() {
@@ -151,13 +145,21 @@ public class PathwaysDb {
             });
         }
 
+        public void iterate(final LmdbKeyRange keyRange,
+                            final EntryConsumer consumer) {
+            env.read(txn -> {
+                iterate(txn, keyRange, consumer);
+                return null;
+            });
+        }
+
         public void iterate(final Txn<ByteBuffer> txn,
                             final EntryConsumer consumer) {
             LmdbIterable.iterate(txn, dbi, consumer);
         }
 
         public void iterate(final Txn<ByteBuffer> txn,
-                            final stroom.lmdb.stream.LmdbKeyRange keyRange,
+                            final LmdbKeyRange keyRange,
                             final EntryConsumer consumer) {
             LmdbIterable.iterate(txn, dbi, keyRange, consumer);
         }

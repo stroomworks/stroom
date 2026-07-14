@@ -16,11 +16,52 @@
 
 package stroom.pathways.impl.events;
 
-//public class PathwaySettingsChangeEvent implements PathwayEvent {
-//    private PathwayEventType event;
-//
-//    public PathwayEventType getType() {
-//        return event;
-//    }
-//
-//}
+import stroom.pathways.shared.otel.trace.NanoTime;
+import stroom.planb.impl.db.trace.NanoTimeUtil;
+
+/**
+ * Placeholder for an event describing a change to a pathways doc's settings.
+ *
+ * <p>TODO: Implement later post-locks.
+ */
+public class PathwaySettingsChangeEvent implements PathwayEvent {
+
+    private final PathwayEventType eventType;
+    private final NanoTime timestamp;
+
+    public PathwaySettingsChangeEvent(final PathwayEventType eventType) {
+        this.eventType = eventType;
+        this.timestamp = NanoTimeUtil.now();
+    }
+
+    @Override
+    public String getNodeUuid() {
+        return null;
+    }
+
+    @Override
+    public String getNodeName() {
+        return null;
+    }
+
+    @Override
+    public NanoTime getTimestamp() {
+        return timestamp;
+    }
+
+    @Override
+    public PathwayEventType getEventType() {
+        return eventType;
+    }
+
+    @Override
+    public String getCategory() {
+        return "SETTINGS_CHANGE";
+    }
+
+    @Override
+    public String getDescription() {
+        // TODO: describe the settings change once the payload is defined.
+        return "Pathway settings changed";
+    }
+}

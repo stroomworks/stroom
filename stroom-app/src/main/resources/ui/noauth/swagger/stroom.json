@@ -7922,8 +7922,38 @@
         "tags" : [ "Pathways" ]
       }
     },
+    "/pathways/v2/deleteAndReprocessPathway" : {
+      "post" : {
+        "operationId" : "deleteAndReprocessPathway",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/DeleteAndReprocessPathway"
+              }
+            }
+          },
+          "description" : "change",
+          "required" : true
+        },
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "type" : "boolean"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Delete pathway and clear processing status so traces are reprocessed (debug)",
+        "tags" : [ "Pathways" ]
+      }
+    },
     "/pathways/v2/deletePathway" : {
-      "delete" : {
+      "post" : {
         "operationId" : "deletePathway",
         "requestBody" : {
           "content" : {
@@ -7949,6 +7979,36 @@
           }
         },
         "summary" : "Delete pathway",
+        "tags" : [ "Pathways" ]
+      }
+    },
+    "/pathways/v2/findPathwayEvents" : {
+      "post" : {
+        "operationId" : "findPathwayEvents",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/FindPathwayEventCriteria"
+              }
+            }
+          },
+          "description" : "criteria",
+          "required" : true
+        },
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/PathwayEventResultPage"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Find pathway events",
         "tags" : [ "Pathways" ]
       }
     },
@@ -12249,6 +12309,69 @@
         "tags" : [ "Traces" ]
       }
     },
+    "/tracesDoc/v1/{uuid}" : {
+      "get" : {
+        "operationId" : "fetchTracesDoc",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "uuid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/TracesDoc"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Fetch a traces doc by its UUID",
+        "tags" : [ "Traces" ]
+      },
+      "put" : {
+        "operationId" : "updateTracesDoc",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "uuid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/TracesDoc"
+              }
+            }
+          },
+          "description" : "doc",
+          "required" : true
+        },
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/TracesDoc"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Update a traces doc",
+        "tags" : [ "Traces" ]
+      }
+    },
     "/userInfo/v1/{userUuid}" : {
       "get" : {
         "operationId" : "fetchUser",
@@ -14539,6 +14662,21 @@
           }
         }
       },
+      "ArchivalSettings" : {
+        "type" : "object",
+        "properties" : {
+          "duration" : {
+            "$ref" : "#/components/schemas/SimpleDuration"
+          },
+          "enabled" : {
+            "type" : "boolean"
+          },
+          "granularity" : {
+            "type" : "string",
+            "enum" : [ "HOUR", "DAY", "WEEK" ]
+          }
+        }
+      },
       "Arg" : {
         "type" : "object",
         "properties" : {
@@ -16672,6 +16810,17 @@
           "lineNo" : {
             "type" : "integer",
             "format" : "int32"
+          }
+        }
+      },
+      "DeleteAndReprocessPathway" : {
+        "type" : "object",
+        "properties" : {
+          "docRef" : {
+            "$ref" : "#/components/schemas/DocRef"
+          },
+          "name" : {
+            "type" : "string"
           }
         }
       },
@@ -19111,6 +19260,41 @@
             "items" : {
               "$ref" : "#/components/schemas/CriteriaFieldSort"
             }
+          }
+        }
+      },
+      "FindPathwayEventCriteria" : {
+        "type" : "object",
+        "properties" : {
+          "dataSourceRef" : {
+            "$ref" : "#/components/schemas/DocRef"
+          },
+          "filter" : {
+            "type" : "string"
+          },
+          "fromMs" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "pageRequest" : {
+            "$ref" : "#/components/schemas/PageRequest"
+          },
+          "pathwayName" : {
+            "type" : "string"
+          },
+          "sort" : {
+            "type" : "string",
+            "writeOnly" : true
+          },
+          "sortList" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/CriteriaFieldSort"
+            }
+          },
+          "toMs" : {
+            "type" : "integer",
+            "format" : "int64"
           }
         }
       },
@@ -21932,6 +22116,47 @@
           },
           "updateTime" : {
             "$ref" : "#/components/schemas/NanoTime"
+          }
+        }
+      },
+      "PathwayEventResultPage" : {
+        "type" : "object",
+        "properties" : {
+          "pageResponse" : {
+            "$ref" : "#/components/schemas/PageResponse"
+          },
+          "values" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/PathwayEventRow"
+            }
+          }
+        }
+      },
+      "PathwayEventRow" : {
+        "type" : "object",
+        "properties" : {
+          "category" : {
+            "type" : "string"
+          },
+          "description" : {
+            "type" : "string"
+          },
+          "eventType" : {
+            "type" : "string"
+          },
+          "nodeName" : {
+            "type" : "string"
+          },
+          "pathwayName" : {
+            "type" : "string"
+          },
+          "timeMs" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "traceId" : {
+            "type" : "string"
           }
         }
       },
@@ -25520,6 +25745,21 @@
           }
         }
       },
+      "SharedFileStoreSettings" : {
+        "type" : "object",
+        "properties" : {
+          "archival" : {
+            "$ref" : "#/components/schemas/ArchivalSettings"
+          },
+          "shardCount" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "sharedPath" : {
+            "type" : "string"
+          }
+        }
+      },
       "SharedStepData" : {
         "type" : "object",
         "properties" : {
@@ -27593,7 +27833,58 @@
         "type" : "object",
         "allOf" : [ {
           "$ref" : "#/components/schemas/AbstractPlanBSettings"
+        }, {
+          "type" : "object",
+          "properties" : {
+            "sharedFileStore" : {
+              "$ref" : "#/components/schemas/SharedFileStoreSettings"
+            }
+          }
         } ]
+      },
+      "TracesDoc" : {
+        "type" : "object",
+        "properties" : {
+          "createTimeMs" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "createUser" : {
+            "type" : "string"
+          },
+          "description" : {
+            "type" : "string"
+          },
+          "hasSharedFileStoreData" : {
+            "type" : "boolean"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "settings" : {
+            "$ref" : "#/components/schemas/AbstractPlanBSettings"
+          },
+          "stateType" : {
+            "type" : "string",
+            "enum" : [ "STATE", "TEMPORAL_STATE", "RANGED_STATE", "TEMPORAL_RANGED_STATE", "SESSION", "HISTOGRAM", "METRIC", "TRACE" ]
+          },
+          "type" : {
+            "type" : "string"
+          },
+          "updateTimeMs" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "updateUser" : {
+            "type" : "string"
+          },
+          "uuid" : {
+            "type" : "string"
+          },
+          "version" : {
+            "type" : "string"
+          }
+        }
       },
       "TracesResultPage" : {
         "type" : "object",

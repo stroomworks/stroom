@@ -44,19 +44,24 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Integration tests for the {@code trace-pathways-pending} DBI trigger
- * introduced as part of the completion-based pathways processing mechanism.
+ * Integration tests for the {@code trace-roots-merge-time} DBI that underpins
+ * the completion-based pathways processing mechanism.
  *
- * <p>These tests replace the old event-driven {@code PathwaysEntityEventHandler}
- * tests; they verify directly on {@link TraceDb} that:
+ * <p>They verify directly on {@link TraceDb} that:
  * <ul>
  *   <li>Inserting a root span (empty {@code parentSpanId}) populates the
- *       pending DBI.</li>
- *   <li>Inserting only child spans does NOT populate the pending DBI.</li>
+ *       merge-time index.</li>
+ *   <li>Inserting only child spans does NOT populate the merge-time index.</li>
  *   <li>The grace-period cutoff used by
- *       {@link PathwaysProcessor#exec()} correctly selects only
- *       traces whose root-span end time has elapsed the threshold.</li>
+ *       {@link PathwaysProcessor#exec()} (via {@link TraceDb#iterateRootsMergedBefore})
+ *       correctly selects only traces whose root-span merge time has elapsed the
+ *       threshold.</li>
  * </ul>
+ *
+ * <p>The index is keyed by the wall-clock time at which the root span was merged
+ * into the store ({@code System.currentTimeMillis()} at insertion), NOT by the
+ * span's declared end time — so the grace period is measured from receipt,
+ * independent of out-of-order delivery.
  */
 class TestPathwaysIntegration {
 
@@ -115,11 +120,11 @@ class TestPathwaysIntegration {
 
     /**
      * Inserting a root span (empty {@code parentSpanId}) into {@link TraceDb}
-     * must populate the {@code trace-pathways-pending} DBI with the trace-ID
-     * and the root span's end-time-epoch-ms.
+     * must populate the {@code trace-roots-merge-time} DBI, so the trace-ID is
+     * yielded by {@link TraceDb#iterateRootsMergedBefore}.
      */
     @Test
-    void testRootSpanPopulatesPendingDbi() throws Exception {
+    void testRootSpanPopulatesMergeTimeIndex() throws Exception {
         final TracesDoc doc = buildTracesDoc("traces_root_span_test");
         final Path dbPath = Files.createDirectories(tempDir.resolve("db_root"));
 
@@ -144,11 +149,11 @@ class TestPathwaysIntegration {
 
     /**
      * Inserting only child spans (non-empty {@code parentSpanId}) must NOT
-     * populate the {@code trace-pathways-pending} DBI — only root-span
+     * populate the {@code trace-roots-merge-time} DBI — only root-span
      * insertions trigger it.
      */
     @Test
-    void testChildSpanDoesNotPopulatePendingDbi() throws Exception {
+    void testChildSpanDoesNotPopulateMergeTimeIndex() throws Exception {
         final TracesDoc doc = buildTracesDoc("traces_child_span_test");
         final Path dbPath = Files.createDirectories(tempDir.resolve("db_child"));
 

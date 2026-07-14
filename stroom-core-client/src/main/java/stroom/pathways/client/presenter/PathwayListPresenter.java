@@ -34,6 +34,8 @@ import stroom.pathways.shared.AddPathway;
 import stroom.pathways.shared.DeleteAndReprocessPathway;
 import stroom.pathways.shared.DeletePathway;
 import stroom.pathways.shared.FindPathwayCriteria;
+import stroom.pathways.shared.FindPathwayEventCriteria;
+import stroom.pathways.shared.PathwayEventRow;
 import stroom.pathways.shared.PathwaysDoc;
 import stroom.pathways.shared.PathwaysResource;
 import stroom.pathways.shared.UpdatePathway;
@@ -75,6 +77,7 @@ public class PathwayListPresenter
     private final ButtonView editButton;
     private final ButtonView removeButton;
     private final ButtonView reprocessButton;
+    private final ButtonView eventsButton;
     private RestDataProvider<Pathway, ResultPage<Pathway>> dataProvider;
 
     private String filter;
@@ -106,6 +109,7 @@ public class PathwayListPresenter
         editButton = pagerView.addButton(SvgPresets.EDIT);
         removeButton = pagerView.addButton(SvgPresets.DELETE);
         reprocessButton = pagerView.addButton(SvgPresets.RERUN);
+        eventsButton = pagerView.addButton(SvgPresets.HISTORY);
 
         addColumns();
         enableButtons();
@@ -143,12 +147,16 @@ public class PathwayListPresenter
                 }
             }
         }));
+        // Viewing events is allowed even when read only.
+        registerHandler(eventsButton.addClickHandler(event -> {
+            if (MouseUtil.isPrimary(event)) {
+                onShowEvents();
+            }
+        }));
         registerHandler(selectionModel.addSelectionHandler(event -> {
-            if (!readOnly) {
-                enableButtons();
-                if (event.getSelectionType().isDoubleSelect()) {
-                    onEdit();
-                }
+            enableButtons();
+            if (!readOnly && event.getSelectionType().isDoubleSelect()) {
+                onEdit();
             }
         }));
         registerHandler(dataGrid.addColumnSortHandler(event -> refresh()));
@@ -168,6 +176,12 @@ public class PathwayListPresenter
         newButton.setEnabled(!readOnly);
         // Reprocess resets all traces for the doc regardless of selection, so it only depends on !readOnly.
         reprocessButton.setEnabled(!readOnly);
+        // Viewing events is a read-only action, so it only depends on a selection being present.
+        final boolean pathwaySelected = selectionModel.getSelected() != null;
+        eventsButton.setEnabled(pathwaySelected);
+        eventsButton.setTitle(pathwaySelected
+                ? "View Pathway Events"
+                : "Select a pathway to view its events");
         if (!readOnly) {
             final Pathway selectedElement = selectionModel.getSelected();
             final boolean enabled = selectedElement != null;
@@ -368,6 +382,55 @@ public class PathwayListPresenter
                 }
             });
         }
+    }
+
+    private void onShowEvents() {
+        final Pathway selected = selectionModel.getSelected();
+        if (selected == null) {
+            return;
+        }
+        final FindPathwayEventCriteria criteria = new FindPathwayEventCriteria(
+                CriteriaUtil.createPageRequest(new Range(0, 1000)),
+                null,
+                docRef,
+                selected.getName(),
+                null,
+                null,
+                null);
+        restFactory
+                .create(PATHWAYS_RESOURCE)
+                .method(res -> res.findPathwayEvents(criteria))
+                .onSuccess(result -> {
+                    final StringBuilder sb = new StringBuilder();
+                    for (final PathwayEventRow row : result.getValues()) {
+                        if (sb.length() > 0) {
+                            sb.append("\n");
+                        }
+                        if (row.getTimeMs() != null) {
+                            sb.append(dateTimeFormatter.format(row.getTimeMs())).append("  ");
+                        }
+                        if (row.getEventType() != null) {
+                            sb.append("[").append(row.getEventType()).append("]  ");
+                        }
+                        sb.append(row.getDescription() != null
+                                ? row.getDescription()
+                                : row.getCategory());
+                    }
+                    final long total = result.getPageResponse() != null && result.getPageResponse().getTotal() != null
+                            ? result.getPageResponse().getTotal()
+                            : result.getValues().size();
+                    if (sb.length() == 0) {
+                        sb.append("No events recorded for this pathway yet.");
+                    }
+                    AlertEvent.fireInfo(
+                            PathwayListPresenter.this,
+                            "Events for pathway '" + selected.getName() + "' (" + total + ")",
+                            sb.toString(),
+                            null);
+                })
+                .onFailure(new DefaultErrorHandler(this, null))
+                .taskMonitorFactory(pagerView)
+                .exec();
     }
 
     @Override

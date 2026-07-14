@@ -26,5 +26,12 @@ public interface MessageReceiver {
 
     void log(Severity severity, Supplier<String> message);
 
+    /**
+     * Signals that subsequent {@link #event} calls belong to the given trace, until the next
+     * {@code beginTrace}. The trace id is stored alongside each event so it can be traced back
+     * to its source and to guarantee event key uniqueness across processing runs.
+     */
+    void beginTrace(byte[] traceId);
+
     void event(final PathwaysDoc pathwaysDoc, final String pathwayName, final PathwayEvent event);
 }

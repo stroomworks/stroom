@@ -49,6 +49,7 @@ public class ConstraintDiscoveryEvent implements PathwayEvent {
         this.eventType = eventType;
         this.timestamp = timestamp;
     }
+
     public Constraint getConstraint() {
         return constraint;
     }
@@ -74,6 +75,11 @@ public class ConstraintDiscoveryEvent implements PathwayEvent {
     }
 
     @Override
+    public String getCategory() {
+        return "CONSTRAINT_DISCOVERY";
+    }
+
+    @Override
     public String getDescription() {
         final String descriptionTail = "constraint "
                                        + constraint.getName()
@@ -81,7 +87,7 @@ public class ConstraintDiscoveryEvent implements PathwayEvent {
                                        + nodeName
                                        + " with value "
                                        + constraint.getValue();
-        if(eventType == PathwayEventType.VIOLATION) {
+        if (eventType == PathwayEventType.VIOLATION) {
             return "VIOLATION: Attempted to discover " + descriptionTail;
         }
         return "MUTATION: Discovered " + descriptionTail;

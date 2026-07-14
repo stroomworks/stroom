@@ -102,15 +102,18 @@ public class TraceLoader {
 
         final StringBuilder messages = new StringBuilder();
         final MessageReceiver messageReceiver = new MessageReceiver() {
-            public void log(final Severity severity, final Supplier<String> message)
-            {
+            public void log(final Severity severity, final Supplier<String> message) {
                 messages.append(severity.getDisplayValue());
                 messages.append(": ");
                 messages.append(message.get());
                 messages.append("\n");
             }
-            public void event(final PathwaysDoc pathwaysDoc, final String pathwayName, final PathwayEvent event)
-            {
+
+            public void beginTrace(final byte[] traceId) {
+
+            }
+
+            public void event(final PathwaysDoc pathwaysDoc, final String pathwayName, final PathwayEvent event) {
 
             }
         };

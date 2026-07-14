@@ -41,6 +41,7 @@ public interface PathwaysResource extends RestResource, DirectRestService, Fetch
 
     String BASE_PATH = "/pathways" + ResourcePaths.V2;
     String FIND_PATHWAYS_SUB_PATH = "/findPathways";
+    String FIND_PATHWAY_EVENTS_SUB_PATH = "/findPathwayEvents";
     String DELETE_PATHWAY_SUB_PATH = "/deletePathway";
     String DELETE_AND_REPROCESS_PATHWAY_SUB_PATH = "/deleteAndReprocessPathway";
 
@@ -66,6 +67,14 @@ public interface PathwaysResource extends RestResource, DirectRestService, Fetch
             operationId = "findPathways")
     PathwayResultPage findPathways(
             @Parameter(description = "criteria", required = true) FindPathwayCriteria criteria);
+
+    @POST
+    @Path(FIND_PATHWAY_EVENTS_SUB_PATH)
+    @Operation(
+            summary = "Find pathway events",
+            operationId = "findPathwayEvents")
+    PathwayEventResultPage findPathwayEvents(
+            @Parameter(description = "criteria", required = true) FindPathwayEventCriteria criteria);
 
     @POST
     @Path("/addPathway")

@@ -74,7 +74,16 @@ public class RequiredConstraintAbsentEvent implements PathwayEvent {
     }
 
     @Override
+    public String getCategory() {
+        return "REQUIRED_CONSTRAINT_ABSENT";
+    }
+
+    @Override
     public String getDescription() {
-        return "";
+        final String descriptionTail = "required constraint " + constraintName + " for node " + nodeName;
+        if (eventType == PathwayEventType.VIOLATION) {
+            return "VIOLATION: Missing " + descriptionTail;
+        }
+        return "MUTATION: Made optional " + descriptionTail;
     }
 }

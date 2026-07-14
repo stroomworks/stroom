@@ -118,7 +118,11 @@ public class NodeMutatorImpl {
                           final Map<String, Map<PathKey, PathNodeSequence>> map,
                           final MessageReceiver messageReceiver,
                           final PathwaysDoc pathwaysDoc) {
-        final PathNode.Builder pathNodeBuilder = addConstraints(parentNode, parentSpan, trace.root().getName(), messageReceiver, pathwaysDoc);
+        final PathNode.Builder pathNodeBuilder = addConstraints(parentNode,
+                                                                parentSpan,
+                                                                trace.root().getName(),
+                                                                messageReceiver,
+                                                                pathwaysDoc);
 
         final List<Span> childSpans = trace.children(parentSpan);
         final List<Span> sortedSpans = new ArrayList<>(childSpans);
@@ -153,7 +157,11 @@ public class NodeMutatorImpl {
 //                    messageReceiver.log(Severity.INFO, () -> "Adding new path: " + path);
                     pathNode = new PathNode(span.getName(), path);
                     messageReceiver.event(pathwaysDoc, trace.root().getName(),
-                            new NodeDiscoveryEvent(parentNode.getUuid(), pathNode.getUuid(), pathNode.getName(), PathwayEventType.MUTATION));
+                            new NodeDiscoveryEvent(parentNode.getUuid(),
+                                                   pathNode.getUuid(),
+                                                   pathNode.getName(),
+                                                   PathwayEventType.MUTATION)
+                    );
                 }
 
                 // Follow the path deeper.
@@ -206,13 +214,34 @@ public class NodeMutatorImpl {
         final NanoTime endTime = NanoTime.fromString(span.getEndTimeUnixNano());
         final NanoTime duration = endTime.subtract(startTime);
 
-        setOrExpand(constraints, pathNode, "duration", duration, false, rootName, messageReceiver, pathwaysDoc);
+        setOrExpand(constraints,
+                    pathNode,
+                    "duration",
+                    duration,
+                    false,
+                    rootName,
+                    messageReceiver,
+                    pathwaysDoc);
 
         // Set or expand flags.
-        setOrExpand(constraints, pathNode, "flags", span.getFlags(), false, rootName, messageReceiver, pathwaysDoc);
+        setOrExpand(constraints,
+                    pathNode,
+                    "flags",
+                    span.getFlags(),
+                    false,
+                    rootName,
+                    messageReceiver,
+                    pathwaysDoc);
 
         // Set or expand kind.
-        setOrExpand(constraints, pathNode, "kind", span.getKind().name(), false, rootName, messageReceiver, pathwaysDoc);
+        setOrExpand(constraints,
+                    pathNode,
+                    "kind",
+                    span.getKind().name(),
+                    false,
+                    rootName,
+                    messageReceiver,
+                    pathwaysDoc);
 
         // Create attribute sets.
         final Map<String, KeyValue> attributes = span
@@ -252,8 +281,15 @@ public class NodeMutatorImpl {
         });
 
         // Set or expand attributes.
-        attributes.forEach((key, value) ->
-                setOrExpand(newConstraints, pathNode, key, value.getValue(), optional, rootName, messageReceiver, pathwaysDoc));
+        attributes.forEach((key, value) -> setOrExpand(newConstraints,
+                                                                      pathNode,
+                                                                      key,
+                                                                      value.getValue(),
+                                                                      optional,
+                                                                      rootName,
+                                                                      messageReceiver,
+                                                                      pathwaysDoc)
+        );
 
         pathNodeBuilder.constraints(newConstraints);
         return pathNodeBuilder;
@@ -286,15 +322,15 @@ public class NodeMutatorImpl {
             final ConstraintValue newConstraintValue;
             switch (value) {
                 case final Integer val ->
-                        newConstraintValue = calcIntConstraintChange(getConstraintValue(constraint), val);
+                    newConstraintValue = calcIntConstraintChange(getConstraintValue(constraint), val);
                 case final Long val ->
-                        newConstraintValue = calcLongConstraintChange(getConstraintValue(constraint), val);
+                    newConstraintValue = calcLongConstraintChange(getConstraintValue(constraint), val);
                 case final Boolean val ->
-                        newConstraintValue = calcBooleanConstraintChange(getConstraintValue(constraint), val);
+                    newConstraintValue = calcBooleanConstraintChange(getConstraintValue(constraint), val);
                 case final String val ->
-                        newConstraintValue = calcStringConstraintChange(getConstraintValue(constraint), val);
+                    newConstraintValue = calcStringConstraintChange(getConstraintValue(constraint), val);
                 case final NanoTime val ->
-                        newConstraintValue = calcNanoTimeConstraintChange(getConstraintValue(constraint), val);
+                    newConstraintValue = calcNanoTimeConstraintChange(getConstraintValue(constraint), val);
                 case final AnyValue val -> {
                     // Unwrap.
                     if (val.getStringValue() != null) {
@@ -355,7 +391,7 @@ public class NodeMutatorImpl {
             //Constraint mutation
             } else {
                 final boolean mutationAllowed = pathwaysDoc.isAllowConstraintMutation();
-                if(mutationAllowed) {
+                if (mutationAllowed) {
                     constraints.put(name, newConstraint);
                 }
                 messageReceiver.event(pathwaysDoc, rootName, new ConstraintMutationEvent(
@@ -532,13 +568,13 @@ public class NodeMutatorImpl {
             case final StringSet stringSet -> {
                 final Set<String> set = new HashSet<>(stringSet.getSet());
                 if (set.add(value)) {
-                        if (set.size() > MAX_SET_SIZE) {
-                            // Convert to pattern.
-                            // TODO : Create some sort of pattern expansion if possible.
-                            return new Regex(".*");
-                        } else {
-                            return new StringSet(set);
-                        }
+                    if (set.size() > MAX_SET_SIZE) {
+                        // Convert to pattern.
+                        // TODO : Create some sort of pattern expansion if possible.
+                        return new Regex(".*");
+                    } else {
+                        return new StringSet(set);
+                    }
                 }
             }
             case final Regex stringPattern -> {

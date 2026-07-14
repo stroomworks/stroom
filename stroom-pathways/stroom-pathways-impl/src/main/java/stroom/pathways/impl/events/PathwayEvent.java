@@ -17,9 +17,6 @@
 package stroom.pathways.impl.events;
 
 import stroom.pathways.shared.otel.trace.NanoTime;
-import stroom.pathways.shared.pathway.Pathway;
-
-import java.time.Instant;
 
 public interface PathwayEvent {
 
@@ -30,6 +27,13 @@ public interface PathwayEvent {
     NanoTime getTimestamp();
 
     PathwayEventType getEventType();
+
+    /**
+     * A stable, machine-facing category for this event type (e.g. {@code "CONSTRAINT_MUTATION"}),
+     * used in the recall API/UI. Deliberately independent of the implementing class name so
+     * renaming a class cannot silently change the API.
+     */
+    String getCategory();
 
     String getDescription();
 }
