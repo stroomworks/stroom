@@ -239,15 +239,6 @@ public class FloorMapMapPresenter
         // Drag-editing is performed on the Editor tab; the Map tab is view-focused,
         // so no drag handler is installed here.
 
-        this.floorMapObjectEditPresenter.addAssetSelectionHandler(e -> {
-            if (e.getSelectedItem() != null) {
-                final String type = floorMapObjectEditPresenter.getView().getType();
-                if (FloorMapJsonKeys.BACKGROUND.equalsIgnoreCase(type)) {
-                    floorMapCanvasPresenter.setBackgroundImage(e.getSelectedItem());
-                }
-            }
-        });
-
         this.floorMapObjectListPresenter.setSelectionConsumer(factObj -> {
             if (factObj != null) {
                 floorMapObjectEditPresenter.setObject(factObj.getKey());

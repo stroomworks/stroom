@@ -18,7 +18,6 @@ package stroom.floormap.client.presenter;
 
 import stroom.alert.client.event.AlertEvent;
 import stroom.alert.client.event.ConfirmEvent;
-import stroom.data.client.event.DataSelectionEvent;
 import stroom.document.asset.client.presenter.DocumentAssetDropDownPresenter;
 import stroom.floormap.client.ValueAccessorFactory;
 import stroom.floormap.client.presenter.FloorMapObjectEditPresenter.FloorMapObjectEditView;
@@ -405,19 +404,6 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
             getView().setWorldToMapMatrix(new double[]{1.0, 0.0, 0.0, 1.0, 0.0, 0.0});
             getView().setMapToScreenMatrix(new double[]{1.0, 0.0, 0.0, 1.0, 0.0, 0.0});
         }
-    }
-
-    /**
-     * Registers a handler that is notified whenever the user selects an asset
-     * from the image dropdown.
-     *
-     * <p>The handler registration is bound to this presenter's lifecycle via
-     * {@link #registerHandler}, so it is automatically removed on unbind.</p>
-     *
-     * @param handler the selection handler to register
-     */
-    public void addAssetSelectionHandler(final DataSelectionEvent.DataSelectionHandler<String> handler) {
-        registerHandler(documentAssetDropDownPresenter.addDataSelectionHandler(handler));
     }
 
     // --------------------------------------------------------------------------------

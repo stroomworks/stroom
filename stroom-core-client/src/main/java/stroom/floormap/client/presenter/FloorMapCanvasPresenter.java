@@ -103,8 +103,6 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     private double scale = 1.0;
     private double offsetX = 0;
     private double offsetY = 0;
-    /** Background image URL set via the Map tab's asset picker (see setBackgroundImage). */
-    private String backgroundImage;
 
     // Dragging state
     private boolean isDraggingEnabled = false;
@@ -652,8 +650,8 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
             };
 
     /**
-     * Shared logic for handling a person position update from either the facts
-     * query ({@link #setFactObjects}) or the events query ({@link #setEventObjects}).
+     * Handles a person position update from the events query
+     * ({@link #setEventObjects}).
      * <p>
      * When not playing: records the position in {@link #lastPersonPositions} so
      * play-start has a valid "from" anchor.  The caller is responsible for
@@ -814,20 +812,6 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         final double centreX = panel.getOffsetWidth() / 2.0;
         final double centreY = panel.getOffsetHeight() / 2.0;
         return screenToMapCoords(centreX, centreY);
-    }
-
-    /**
-     * Updates the background image for the SVG map.
-     *
-     * <p>Background images must be served from the Asset Store — base64
-     * data-URIs are not supported.</p>
-     *
-     * @param backgroundImage the Asset Store URL for the background image,
-     *                        or {@code null} to clear the background
-     */
-    public void setBackgroundImage(final String backgroundImage) {
-        this.backgroundImage = backgroundImage;
-        redraw();
     }
 
     /**
