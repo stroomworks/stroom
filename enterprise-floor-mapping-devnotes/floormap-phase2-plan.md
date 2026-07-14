@@ -75,18 +75,36 @@ WS7 (cleanup). WS6 can run in parallel once `typeStyles` is read by the renderer
   canvas (selection/drag now key off real fact identity).
 - Delete the now-dead fixed-rect / single-background code paths.
 
-### WS8 — Migration (moved here from Phase 1)
-Must land **with** the parser/renderer flip above, not before it — in Phase 1 the adapter still
-reads background placement from `.tm-map-to-screen`, so migrating early would blank the background.
+> **Open cleanup (2026-07-14): remove the literal `"background"` id/type special-casing.**
+> Now unblocked — with migration dropped (WS8) a background is just an ordinary image fact, so this
+> can be **deleted outright** rather than phased out behind a data rewrite. It is **not yet done**
+> and is wider than "the canvas" — the `FloorMapJsonKeys.BACKGROUND` literal (`= "background"`) is
+> branched on across:
+> - `FloorMapEntryParser` — treats an entry as a background when its key *or* type is `"background"`.
+> - `Fact.isBackground()` — same key-or-type test.
+> - `FloorMapEditorModel` — several `wantBackground` / `isBackground` branches.
+> - `FloorMapCanvasPresenter` — the Ctrl/Shift-pan-over-background guard.
+> - `FloorMapMapPresenter` — canvas-id mapping, the synthesised background `Fact`, and the type check.
+> - `FloorMapObjectEditPresenter` / `FloorMapObjectEditViewImpl` — the `Background` display name and
+>   the map→screen-vs-world→map matrix toggle.
+>
+> Target: identify a background by its real fact identity + presence of an image (and its low
+> z-order), not a magic key/type string; keep `BACKGROUND_DISPLAY_NAME` only if a background still
+> needs a friendly label. Scope the full removal before starting — it touches shared model code, so
+> re-run `:stroom-core-shared:test` + `:stroom-core-client:test`.
 
-- Convert legacy background entries so their placement lives in `world-to-map` (the field the new
-  parser reads), deciding rotation/scale carry-over and whether to re-apply it to objects so maps
-  look unchanged after upgrade.
-- Backgrounds gain real unique keys; the literal `"background"` id and the key-or-type
-  special-casing retire. Regular objects are unchanged.
-- This is a **temporal-store data rewrite** (fact entry values), not a `FloorMapDoc` serialiser
-  bump — design it as an idempotent batch over each map's entries, gated behind the new renderer.
-  Needs test data with a rotated/scaled legacy background.
+### WS8 — Migration ~~(moved here from Phase 1)~~ — **dropped**
+**Not required (decision, 2026-07-14).** Old maps will not be migrated — there is no legacy data
+that must be preserved in place, so this workstream is dropped. See `floormap-coordinate-redesign.md`
+§9.
+
+Consequence for the other workstreams: the literal `"background"` id and the key-or-type
+special-casing (WS7) can simply be **removed** rather than phased out behind a migration — no
+temporal-store data rewrite is needed.
+
+*(Superseded plan, kept for context: this would have been an idempotent batch over each map's
+temporal-store entries, converting the old whole-plane `map-to-screen` into each background fact's
+`world-to-map` and giving backgrounds real unique keys.)*
 
 ## Testing / verification
 

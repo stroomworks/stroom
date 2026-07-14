@@ -153,22 +153,24 @@ Model first, UI later. Every phase leaves the app working.
 | Phase | Scope | |
 |-------|-------|---|
 | **1 · Model & core** | Unified fact parse (parser → *list*); `world-to-map` for all incl. images; per-type settings on the map — order (z) + default shape/colour, alphabetical default; selection as a set; full-matrix transform persistence. | now |
-| **2 · Rendering** | Y-up map space + single render flip (labels kept upright); image sizing in map space + multiple backgrounds; imageless facts drawn with the per-type shape & colour; paint types in configured z-order (unconfigured on top); Settings tab: Discover button, drag-to-reorder, shape/colour pickers; migration of legacy backgrounds. | now |
+| **2 · Rendering** | Y-up map space + single render flip (labels kept upright); image sizing in map space + multiple backgrounds; imageless facts drawn with the per-type shape & colour; paint types in configured z-order (unconfigured on top); Settings tab: Discover button, drag-to-reorder, shape/colour pickers. (Legacy-background migration dropped — see §9.) | now |
 | **3 · Editor UI** | Rubber-band + Ctrl/Shift multi-select; drag-to-resize and rotate handles. | later |
 | **Backlog** | Cluster events & facts when zoomed out to cut on-screen clutter and object counts. | later |
 
 ## 9. Migration
 
-Lands in **Phase 2**, coupled to the parser/renderer flip (it can't run while the Phase 1 adapter
-still reads background placement from `.tm-map-to-screen`).
+**Not required — dropped (decision, 2026-07-14).** Old maps will not be migrated; there is no
+legacy data that must be preserved in place. The new parser/renderer read each fact's
+`world-to-map` directly, so nothing needs converting from the old whole-plane `map-to-screen`.
 
-- Existing single-background docs: convert the old whole-plane `map-to-screen` into the background
-  fact's own `world-to-map`.
-- Decide whether that matrix's rotation/scale should carry into the image alone — and, if objects
-  were visually pinned to it, whether to re-apply it to their `world-to-map` so the map looks
-  unchanged after upgrade.
-- Backgrounds gain real unique keys; the literal `"background"` id and the key-or-type
-  special-casing retire. Regular objects are unchanged.
+- The literal `"background"` id and the key-or-type special-casing can simply be **removed** when
+  convenient — no data conversion is needed to phase them out.
+- Any old single-background doc that is still wanted is re-authored in the new model rather than
+  upgraded automatically.
+
+*(Superseded plan, kept for context: migration was originally to land in Phase 2, converting the
+old whole-plane `map-to-screen` into each background fact's own `world-to-map` and giving
+backgrounds real unique keys.)*
 
 ## 10. Code touchpoints
 
