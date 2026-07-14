@@ -77,8 +77,14 @@ public class FloorMapCanvasViewImpl
      */
     private static final int IMAGE_DISPLAY_WIDTH = 1000;
 
-    private static final int OBJECT_SIZE = 100;
-    private static final int PERSON_RADIUS = 30;
+    /**
+     * On-screen size (SVG user-units, i.e. pixels at the fixed-size transform) of
+     * an imageless default graphic and of an event marker. 0.6&times; the original
+     * 100 — the label {@code font-size} is deliberately left unchanged.
+     */
+    private static final int OBJECT_SIZE = 60;
+    /** On-screen radius of a person marker: 0.6&times; the original 30. */
+    private static final int PERSON_RADIUS = 18;
 
     private final Widget widget;
 
@@ -167,8 +173,9 @@ public class FloorMapCanvasViewImpl
      * Rebuilds the entire SVG DOM to reflect the current map state.
      *
      * <p>The SVG structure is {@code <svg> → <g pan/zoom> → [facts…, events…]}.
-     * Each image fact is wrapped in its own {@code <g matrix>}; imageless facts
-     * and events are positioned by a {@code translate}.</p>
+     * Each image fact is wrapped in its own {@code <g matrix>} and scales with
+     * the map; imageless facts and events are anchored in map space but drawn at
+     * a fixed screen size (see {@link #fixedSizeTransform}).</p>
      *
      * @param scale            current zoom factor (1.0 = 100 %)
      * @param x                horizontal pan offset in SVG user-units
@@ -201,8 +208,10 @@ public class FloorMapCanvasViewImpl
             // Pan/zoom group.
             svg.elem(panGroup ->
                 // Y-up flip: map space is Y-up; scale(1,-1) maps it to the SVG's
-                // Y-down space. Imageless facts and events counter-flip so their
-                // glyphs stay upright; image facts carry the flip in their matrix.
+                // Y-down space. Imageless facts and events counter-flip AND
+                // counter-scale so their glyphs stay upright and fixed screen
+                // size; image facts carry the flip in their matrix and scale
+                // with the map.
                 panGroup.elem(flipGroup -> {
                     // ---- Facts (paint order = z-order supplied by the presenter) ----
                     if (facts != null) {
@@ -211,7 +220,7 @@ public class FloorMapCanvasViewImpl
                             if (fact.hasImage()) {
                                 appendImageFact(flipGroup, fact, isSelected);
                             } else {
-                                appendDefaultGraphic(flipGroup, fact, isSelected, typeStyles);
+                                appendDefaultGraphic(flipGroup, fact, isSelected, typeStyles, scale);
                             }
                         }
                     }
@@ -219,7 +228,7 @@ public class FloorMapCanvasViewImpl
                     // ---- Events (people) drawn on top ----
                     if (events != null) {
                         for (final FloorMapObject ev : events) {
-                            appendEvent(flipGroup, ev, selectedObjectIds.contains(ev.getId()));
+                            appendEvent(flipGroup, ev, selectedObjectIds.contains(ev.getId()), scale);
                         }
                     }
                 }, SafeHtmlUtil.from("g"), new Attribute("transform", "scale(1,-1)")),
@@ -283,12 +292,14 @@ public class FloorMapCanvasViewImpl
     /**
      * Draws the default graphic for an imageless fact at its map position
      * (world-to-map applied to the fact's world coordinates), using the shape and
-     * colour configured for its type. Fixed screen size (non-scaling stroke).
+     * colour configured for its type. The graphic and its label are drawn at a
+     * fixed screen size (independent of zoom) via {@link #fixedSizeTransform}.
      */
     private void appendDefaultGraphic(final HtmlBuilder parent,
                                       final Fact fact,
                                       final boolean isSelected,
-                                      final List<TypeStyle> typeStyles) {
+                                      final List<TypeStyle> typeStyles,
+                                      final double scale) {
         final double[] pos = fact.getPosition();
         final double worldX = pos != null ? pos[0] : 0;
         final double worldY = pos != null ? pos[1] : 0;
@@ -350,9 +361,9 @@ public class FloorMapCanvasViewImpl
                     new Attribute("pointer-events", "none"));
         },
                 SafeHtmlUtil.from("g"),
-                // Counter-flip (scale 1,-1) so the graphic + label stay upright
-                // inside the Y-up flip group.
-                new Attribute("transform", "translate(" + mapX + "," + mapY + ") scale(1,-1)"),
+                // Counter-flip + counter-scale so the graphic + label stay
+                // upright and a fixed screen size inside the Y-up flip / zoom group.
+                new Attribute("transform", fixedSizeTransform(mapX, mapY, scale)),
                 new Attribute("id", FloorMapJsonKeys.SVG_GROUP_PREFIX + fact.getKey()));
     }
 
@@ -363,7 +374,8 @@ public class FloorMapCanvasViewImpl
      */
     private void appendEvent(final HtmlBuilder parent,
                              final FloorMapObject obj,
-                             final boolean isSelected) {
+                             final boolean isSelected,
+                             final double scale) {
         final boolean isPerson = FloorMapJsonKeys.PERSON.equalsIgnoreCase(obj.getType());
         final String displayLabel = shortLabel(obj.getId());
 
@@ -448,10 +460,35 @@ public class FloorMapCanvasViewImpl
             }
         },
                 SafeHtmlUtil.from("g"),
-                // Counter-flip so the circle/label stay upright in the Y-up flip group.
-                new Attribute("transform",
-                        "translate(" + obj.getX() + "," + obj.getY() + ") scale(1,-1)"),
+                // Counter-flip + counter-scale so the circle/label stay upright
+                // and a fixed screen size in the Y-up flip / zoom group. (The
+                // movement trail above stays in map space so it scales with the map.)
+                new Attribute("transform", fixedSizeTransform(obj.getX(), obj.getY(), scale)),
                 new Attribute("id", FloorMapJsonKeys.SVG_GROUP_PREFIX + obj.getId()));
+    }
+
+    /**
+     * Builds the SVG transform for a <strong>fixed-screen-size</strong> glyph
+     * anchored at a map-space point.
+     *
+     * <p>The {@code translate} places the glyph's origin in map space, so it
+     * tracks pan/zoom position exactly like everything else. The
+     * {@code scale(1/zoom, -1/zoom)} then cancels two things at once: the
+     * pan/zoom group's {@code scale(zoom)} (so the glyph's own geometry renders
+     * at a constant screen size regardless of zoom) and the Y-up
+     * {@code scale(1,-1)} flip (so the glyph and its label stay upright — the
+     * two negatives cancel).</p>
+     *
+     * @param mapX  map-space X of the anchor point
+     * @param mapY  map-space Y of the anchor point
+     * @param scale the current zoom factor (never zero — clamped by the presenter)
+     * @return the {@code transform} attribute value
+     */
+    private static String fixedSizeTransform(final double mapX,
+                                             final double mapY,
+                                             final double scale) {
+        final double inv = 1.0 / scale;
+        return "translate(" + mapX + "," + mapY + ") scale(" + inv + "," + (-inv) + ")";
     }
 
     /**
