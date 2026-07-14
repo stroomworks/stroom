@@ -60,6 +60,14 @@ public class FloorMapQueryPresenter extends MyPresenterWidget<FloorMapQueryView>
     private String currentEntityColumn;
     private String currentLocationColumn;
 
+    /**
+     * The time-change source (this document's Map-tab timeline) that this query
+     * should follow. The event bus is shared across tabs and across any other
+     * open FloorMap document, so time-changes from a different source must be
+     * ignored. {@code null} until wired — see {@link #setTimeSource}.
+     */
+    private Object timeSource;
+
     @Inject
     public FloorMapQueryPresenter(final EventBus eventBus,
                                   final FloorMapQueryView view,
@@ -95,6 +103,14 @@ public class FloorMapQueryPresenter extends MyPresenterWidget<FloorMapQueryView>
 
         // Listen to timeline playback changes to automatically update query time and re-run.
         registerHandler(getEventBus().addHandler(TimeChangeEvent.getType(), e -> {
+            // Only react to this document's own time source. The bus is shared
+            // across tabs and across any other open FloorMap document, so an
+            // unguarded handler would re-run this query for the Editor tab's
+            // timeline or a second document. Until a source is wired we fall
+            // back to reacting to all, preserving the previous behaviour.
+            if (timeSource != null && e.getSource() != timeSource) {
+                return;
+            }
             final TimeRange timeRange = new TimeRange(
                     "CUSTOM",
                     String.valueOf(e.getTime()),
@@ -102,6 +118,18 @@ public class FloorMapQueryPresenter extends MyPresenterWidget<FloorMapQueryView>
             queryEditPresenter.setTimeRange(timeRange);
             queryEditPresenter.start();
         }));
+    }
+
+    /**
+     * Sets the time-change source this query should follow — the owning
+     * document's Map-tab timeline. Time-change events from any other source
+     * (the Editor tab's timeline, or another open FloorMap document) are
+     * ignored.
+     *
+     * @param timeSource the timeline presenter to follow; may be {@code null}
+     */
+    public void setTimeSource(final Object timeSource) {
+        this.timeSource = timeSource;
     }
 
     /**

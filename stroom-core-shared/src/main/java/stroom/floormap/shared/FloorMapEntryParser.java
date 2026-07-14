@@ -111,7 +111,7 @@ public final class FloorMapEntryParser {
         final List<FloorMapObject> objects = new ArrayList<>();
 
         if (entries == null) {
-            return new ParseResult(null, null, objects);
+            return new ParseResult(null, bgMatrix, objects);
         }
 
         // Resolve the path for each role from the schema.

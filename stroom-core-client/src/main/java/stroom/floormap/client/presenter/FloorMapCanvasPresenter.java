@@ -798,10 +798,12 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
         if (isPlaying) {
             ensureAnimationLoop();
-            // The animation loop calls draw(); avoid double-paint.
-        } else {
-            redraw();
         }
+        // Always paint the updated state. The animation loop returns without
+        // drawing when nothing is animating or fading, so fact overlays that
+        // change over the timeline (or people who didn't move) would otherwise
+        // not repaint during playback.
+        redraw();
     }
 
     /**
@@ -852,6 +854,10 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
         this.eventObjects = nonPersons;
         ensureAnimationLoop();
+        // Force a paint so updates that don't start a person animation (e.g. new
+        // non-person overlays) still repaint during playback — the animation
+        // loop returns without drawing when there is nothing to animate.
+        redraw();
     }
 
     /**

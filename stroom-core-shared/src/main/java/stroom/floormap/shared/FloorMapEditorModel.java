@@ -299,6 +299,14 @@ public class FloorMapEditorModel {
                             "No Value Schema is configured. "
                             + "Please configure a Value Schema in the Settings tab.");
                 }
+                if (FloorMapEntryParser.findPath(schema, Role.POSITION) == null) {
+                    // Without a Position mapping the new coordinates have
+                    // nowhere to be written; fail loudly rather than staging an
+                    // update that would silently persist nothing.
+                    throw new IllegalStateException(
+                            "No Position field is mapped in the Value Schema. "
+                            + "Add a field with the Position role in the Settings tab.");
+                }
                 final TemporalEntry updated = buildUpdatedEntryWithCoords(
                         e, mapX, mapY, schema, accessor);
                 pendingChanges.recordUpdate(updated);

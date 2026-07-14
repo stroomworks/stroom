@@ -679,16 +679,43 @@ public class FloorMapMapPresenter
 
         // Prefer the events query — it typically selects from the same store
         // as the facts query and already includes a timestamp column.
-        final String eventsHistQuery = buildEventsHistogramQuery();
+        // Resolve param('EventStore')/param('FactStore') in the text: the
+        // histogram helpers run with no params, so an unresolved from-clause
+        // would make the query fail and leave the density bars empty.
+        final String eventsHistQuery = resolveQueryParams(buildEventsHistogramQuery());
         if (eventsHistQuery != null && !eventsHistQuery.trim().isEmpty()) {
             histogramQueryHelper.run(eventsHistQuery);
         } else {
             // No events query configured — fall back to the facts query.
-            final String factsHistQuery = getFactsQueryToUse();
+            final String factsHistQuery = resolveQueryParams(getFactsQueryToUse());
             if (factsHistQuery != null && !factsHistQuery.trim().isEmpty()) {
                 factsHistogramQueryHelper.run(factsHistQuery);
             }
         }
+    }
+
+    /**
+     * Resolves {@code param('X')} references (e.g. {@code param('EventStore')},
+     * {@code param('FactStore')}) against the configured store names, mirroring
+     * the substitution done for the playback query in {@link #onTimeChange}.
+     *
+     * @param query the raw query text; may be {@code null}
+     * @return the query with param references substituted, or the original
+     *         value if it (or the entity) is {@code null}
+     */
+    private String resolveQueryParams(final String query) {
+        if (query == null || getEntity() == null) {
+            return query;
+        }
+        final Map<String, String> vars =
+                FloorMapQueryPresenter.buildQueryVariables(getEntity());
+        String resolved = query;
+        for (final Map.Entry<String, String> entry : vars.entrySet()) {
+            resolved = resolved.replace(
+                    "param('" + entry.getKey() + "')",
+                    "\"" + entry.getValue() + "\"");
+        }
+        return resolved;
     }
 
     /**
@@ -730,6 +757,17 @@ public class FloorMapMapPresenter
      */
     public void pauseTimeline() {
         floorMapTimelinePresenter.pause();
+    }
+
+    /**
+     * Returns this tab's timeline presenter, used as the time-change source
+     * that the events Query tab should follow (so it ignores time-changes from
+     * the Editor tab or from other open FloorMap documents).
+     *
+     * @return the Map tab's timeline presenter
+     */
+    public FloorMapTimelinePresenter getTimelinePresenter() {
+        return floorMapTimelinePresenter;
     }
 
     public interface FloorMapMapView extends View {

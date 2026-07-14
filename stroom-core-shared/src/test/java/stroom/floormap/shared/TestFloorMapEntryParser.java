@@ -115,6 +115,10 @@ class TestFloorMapEntryParser {
                 FloorMapEntryParser.parse(null, SCHEMA, ACCESSOR, warnings::add);
         assertThat(result.getObjects()).isEmpty();
         assertThat(result.getBackgroundImage()).isNull();
+        // Background matrix defaults to identity on every path, including this one,
+        // so callers can safely dereference it without a null check.
+        assertThat(result.getBackgroundMatrix())
+                .isEqualTo(FloorMapTransformationMatrix.identity());
         assertThat(warnings).isEmpty();
     }
 
