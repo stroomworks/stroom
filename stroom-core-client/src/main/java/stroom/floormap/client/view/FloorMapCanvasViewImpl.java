@@ -85,6 +85,7 @@ public class FloorMapCanvasViewImpl
     private final Map<String, Double> imageAspectRatioCache = new HashMap<>();
     private final Set<String> loadingImages = new HashSet<>();
     private Runnable redrawListener;
+    private Runnable resizeListener;
 
     @UiField
     HTML svgContainer;
@@ -123,11 +124,19 @@ public class FloorMapCanvasViewImpl
         final int width = parent.getOffsetWidth();
         final int height = parent.getOffsetHeight();
 
-        // Defer the drawing logic if the parent hasn't been rendered yet.
+        // Defer if the parent hasn't been laid out yet — retry once the browser
+        // gives it a size.
         if (width <= 0 || height <= 0) {
             Scheduler.get().scheduleDeferred((this::onResize));
+            return;
         }
-        // SVG handles its own responsiveness via 100% width/height.
+
+        // SVG handles its own responsiveness via 100% width/height. Notify the
+        // presenter that the canvas now has a real size so it can apply its
+        // size-dependent default view (see setResizeListener).
+        if (resizeListener != null) {
+            resizeListener.run();
+        }
     }
 
     /** {@inheritDoc} */
@@ -473,18 +482,9 @@ public class FloorMapCanvasViewImpl
                 }
             }
         }
-        if (type == null) {
-            return "#607d8b"; // blue-grey default
-        }
-        return switch (type.toLowerCase()) {
-            case FloorMapJsonKeys.BACKGROUND -> "#90a4ae";
-            case "gates", "gate" -> "#43a047"; // green
-            case "door", "doors" -> "#fb8c00"; // amber
-            case "camera", "cameras" -> "#8e24aa"; // purple
-            case "desk", "desks" -> "#039be5"; // light blue
-            case "server", "servers" -> "#e53935"; // red
-            default -> "#607d8b"; // blue-grey
-        };
+
+        // Return default
+        return "#607d8b"; // blue-grey
     }
 
     /**
@@ -512,6 +512,12 @@ public class FloorMapCanvasViewImpl
     @Override
     public void setRedrawListener(final Runnable redrawListener) {
         this.redrawListener = redrawListener;
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public void setResizeListener(final Runnable resizeListener) {
+        this.resizeListener = resizeListener;
     }
 
     /**

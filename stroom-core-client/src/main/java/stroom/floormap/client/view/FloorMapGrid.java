@@ -453,6 +453,24 @@ public final class FloorMapGrid {
     }
 
     /**
+     * Returns the on-screen pixel distance spanned by one major grid division
+     * at the given effective scale &mdash; i.e. {@code majorWorldSpacing ×
+     * effectiveScale}.
+     *
+     * <p>This is the single source of truth for the adaptive decade, shared by
+     * any caller that positions the view relative to the grid (for example the
+     * initial pan that insets the origin by half a division) so it stays aligned
+     * with the drawn grid at whatever zoom is in effect.</p>
+     *
+     * @param effectiveScale combined pixels-per-world-unit
+     *                       ({@code matrixScale × userZoom})
+     * @return the major grid division size in screen pixels
+     */
+    public static double majorDivisionScreenPx(final double effectiveScale) {
+        return computeGridParams(effectiveScale)[0] * effectiveScale;
+    }
+
+    /**
      * Formats the major grid spacing as a clean, human-readable label in
      * map units (e.g. "1", "10", "100", "0.1", "0.01"). Since the
      * spacing is always a power of 10, the result is always a short,

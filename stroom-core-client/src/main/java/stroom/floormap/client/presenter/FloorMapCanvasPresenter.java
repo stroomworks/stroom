@@ -19,6 +19,7 @@ package stroom.floormap.client.presenter;
 import stroom.floormap.client.event.MapContextMenuEvent;
 import stroom.floormap.client.event.MapObjectSelectedEvent;
 import stroom.floormap.client.presenter.FloorMapCanvasPresenter.FloorMapCanvasView;
+import stroom.floormap.client.view.FloorMapGrid;
 import stroom.floormap.shared.Fact;
 import stroom.floormap.shared.FloorMapJsonKeys;
 import stroom.floormap.shared.FloorMapObject;
@@ -99,10 +100,27 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
      */
     private static final double MAX_SCALE = 1e12;
 
+    /** The zoom level a freshly opened map starts at (100 %). */
+    private static final double DEFAULT_SCALE = 1.0;
+
+    /**
+     * How far the origin (0,0) is inset from the bottom-left corner in the
+     * default view, expressed in major grid divisions. Half a division places
+     * the axis indicator comfortably clear of the corner (e.g. the bottom-left
+     * of the screen reads as (-50,-50) when the major division is 100).
+     */
+    private static final double ORIGIN_INSET_MAJOR_DIVISIONS = 0.5;
+
     // Zoom and pan state
-    private double scale = 1.0;
+    private double scale = DEFAULT_SCALE;
     private double offsetX = 0;
     private double offsetY = 0;
+    /**
+     * Whether the size-dependent default view has been applied yet. Applied
+     * once, the first time the canvas has a real height (see
+     * {@link #applyDefaultView()}); user pan/zoom afterwards is left untouched.
+     */
+    private boolean defaultViewApplied = false;
 
     // Dragging state
     private boolean isDraggingEnabled = false;
@@ -211,11 +229,52 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         handleMouseEvents();
 
         if (getView() != null) {
-            getView().onResize();
             getView().setRedrawListener(this::redraw);
+            // Apply the bottom-left default view as soon as the canvas has a
+            // real size. onResize() self-defers until layout completes, then
+            // fires this back.
+            getView().setResizeListener(this::applyDefaultView);
+            getView().onResize();
         }
 
         // Perform initial draw
+        redraw();
+    }
+
+    /**
+     * Positions the initial view so the map origin (0,0) sits near the
+     * bottom-left corner of the canvas, inset by
+     * {@link #ORIGIN_INSET_MAJOR_DIVISIONS} of a major grid division at the
+     * default zoom.
+     *
+     * <p>Runs once, the first time the canvas has a real height, so the result
+     * is correct at any window size and any default zoom; the inset is derived
+     * from the grid's own adaptive-decade sizing so it always matches the drawn
+     * grid. Subsequent user pan/zoom is left untouched.</p>
+     */
+    private void applyDefaultView() {
+        if (defaultViewApplied) {
+            return;
+        }
+        final int height = getView().getFocusPanel().getElement().getOffsetHeight();
+        if (height <= 0) {
+            // Canvas not laid out yet — a later onResize will call back.
+            return;
+        }
+
+        // Half a major grid division, in screen pixels, at the default zoom.
+        // The grid is drawn with an identity world-to-map matrix, so its
+        // effective scale is simply the user zoom (DEFAULT_SCALE).
+        final double insetPx = ORIGIN_INSET_MAJOR_DIVISIONS
+                * FloorMapGrid.majorDivisionScreenPx(DEFAULT_SCALE);
+
+        // The origin (0,0) renders at screen pixel (offsetX, offsetY). Inset it
+        // from the left and up from the bottom (SVG Y grows downward), so the
+        // bottom-left corner reads as (-inset, -inset) in map space.
+        scale = DEFAULT_SCALE;
+        offsetX = insetPx;
+        offsetY = height - insetPx;
+        defaultViewApplied = true;
         redraw();
     }
 
@@ -1088,6 +1147,17 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
          *                       {@code FloorMapCanvasPresenter::redraw}
          */
         void setRedrawListener(Runnable redrawListener);
+
+        /**
+         * Registers a listener that is called once the canvas has a real
+         * (non-zero) on-screen size — i.e. after layout completes. The
+         * presenter uses this to apply its size-dependent default view (which
+         * needs the canvas height to place the origin at the bottom-left).
+         *
+         * @param resizeListener the callback to invoke, typically
+         *                       {@code FloorMapCanvasPresenter::applyDefaultView}
+         */
+        void setResizeListener(Runnable resizeListener);
     }
 
 }

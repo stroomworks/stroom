@@ -201,4 +201,24 @@ class TestFloorMapGrid {
         assertThat(FloorMapGrid.formatScaleLabel(0.01)).isEqualTo("0.01");
         assertThat(FloorMapGrid.formatScaleLabel(0.001)).isEqualTo("0.001");
     }
+
+    @Test
+    void majorDivisionScreenPxMatchesSpacingTimesScale() {
+        // At the default zoom (effectiveScale = 1) the major division is 100
+        // world units, which is 100 screen pixels — so half a division (the
+        // default origin inset) is 50 px, i.e. the bottom-left corner reads as
+        // (-50,-50) in map space.
+        assertThat(FloorMapGrid.majorDivisionScreenPx(1.0)).isEqualTo(100.0);
+        assertThat(FloorMapGrid.majorDivisionScreenPx(1.0) / 2.0).isEqualTo(50.0);
+
+        // It always equals majorWorldSpacing × effectiveScale, so it tracks the
+        // drawn grid at any zoom.
+        for (final double effectiveScale : new double[]{0.001, 0.3, 2, 5, 30, 1000}) {
+            final double expected =
+                    FloorMapGrid.computeGridParams(effectiveScale)[0] * effectiveScale;
+            assertThat(FloorMapGrid.majorDivisionScreenPx(effectiveScale))
+                    .as("majorDivisionScreenPx at effectiveScale=%s", effectiveScale)
+                    .isEqualTo(expected);
+        }
+    }
 }
