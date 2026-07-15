@@ -110,6 +110,21 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     private String selectedObjectId = null;
 
     // -------------------------------------------------------------------------
+    // User tracking (Map tab)
+    // -------------------------------------------------------------------------
+
+    /** Id of the person the viewport is following, or {@code null} when not tracking. */
+    private String trackedPersonId = null;
+
+    /**
+     * {@code true} after a manual pan or zoom while tracking — the highlight
+     * stays but the camera stops following until the user re-selects (or
+     * re-clicks) the tracked person, which calls
+     * {@link #setTrackedPersonId(String)} again and clears this flag.
+     */
+    private boolean followPaused = false;
+
+    // -------------------------------------------------------------------------
     // Playback / animation state
     // -------------------------------------------------------------------------
 
@@ -268,6 +283,21 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
                 // Clicked on background/empty space, clear selection and allow panning
                 selectedObjectId = null;
+            } else {
+                // Read-only (Map tab) mode: clicking an object shape announces
+                // it so the parent presenter can select/track it (people only —
+                // the parent filters). No event fires for background/empty
+                // clicks: mousedown on empty space is how panning starts, and
+                // deselection is handled by the tracking panel instead.
+                final EventTarget target = event.getNativeEvent().getEventTarget();
+                if (Element.is(target)) {
+                    final String id = Element.as(target).getId();
+                    if (id != null && !id.isEmpty()
+                            && !id.startsWith(FloorMapJsonKeys.SVG_GROUP_PREFIX)
+                            && !FloorMapJsonKeys.BACKGROUND.equals(id)) {
+                        MapObjectSelectedEvent.fire(this, id);
+                    }
+                }
             }
 
             // Normal panning logic
@@ -319,7 +349,10 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
                     redraw();
                 } else {
-                    // Pan the map
+                    // Pan the map. A manual pan takes the camera off the
+                    // tracked person, so pause following until they are
+                    // re-selected.
+                    followPaused = true;
                     viewport.pan(deltaX, deltaY);
                     redraw();
                 }
@@ -356,6 +389,10 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
             // Positive deltaY means the wheel scrolled down -> zoom out.
             final boolean zoomIn = event.getNativeDeltaY() <= 0;
+
+            // A manual zoom repositions the camera deliberately — pause
+            // following until the tracked person is re-selected.
+            followPaused = true;
 
             // Zoom toward the mouse pointer (keeps the point under the cursor
             // fixed); scale clamping is handled inside the viewport.
@@ -606,6 +643,9 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                         trailFadeStartTimes.remove(id);
                     }
 
+                    // Keep the camera on the tracked person as they interpolate.
+                    applyFollow();
+
                     // Draw the current frame.
                     getView().draw(viewport.getScale(), viewport.getOffsetX(), viewport.getOffsetY(),
                             backgroundImage, matrix,
@@ -713,6 +753,70 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     public void setSelectedObjectId(final String selectedObjectId) {
         this.selectedObjectId = selectedObjectId;
         redraw();
+    }
+
+    /**
+     * Starts tracking the given person: highlights them via the selection
+     * mechanism and follows them with the viewport as they move. Passing
+     * {@code null} stops tracking and clears the highlight. Calling this again
+     * with the same id resumes following after a manual pan/zoom paused it.
+     *
+     * @param trackedPersonId the person's object id, or {@code null} to stop tracking
+     */
+    public void setTrackedPersonId(final String trackedPersonId) {
+        this.trackedPersonId = trackedPersonId;
+        this.followPaused = false;
+        applyFollow();
+        setSelectedObjectId(trackedPersonId);
+    }
+
+    /**
+     * Pans the viewport (via {@link FloorMapViewport#follow}) so the tracked
+     * person stays within the view's central dead zone. No-op when nothing is
+     * tracked, following is paused, or the person's position is unknown.
+     * Callers are responsible for redrawing afterwards.
+     */
+    private void applyFollow() {
+        if (trackedPersonId == null || followPaused) {
+            return;
+        }
+        final double[] pos = trackedPosition();
+        if (pos == null) {
+            return;
+        }
+        final Element panel = getView().getFocusPanel().getElement();
+        viewport.follow(pos[0], pos[1], matrix,
+                panel.getOffsetWidth(), panel.getOffsetHeight(),
+                FloorMapViewport.DEFAULT_FOLLOW_MARGIN);
+    }
+
+    /**
+     * Resolves the tracked person's current map-space position, preferring the
+     * live interpolated animation position, then the last known rendered
+     * position, then the draw lists.
+     *
+     * @return {@code {mapX, mapY}}, or {@code null} if the person is unknown
+     */
+    private double[] trackedPosition() {
+        final UserAnimation animation = activeAnimations.get(trackedPersonId);
+        if (animation != null) {
+            return new double[]{animation.currentX(), animation.currentY()};
+        }
+        final double[] last = lastPersonPositions.get(trackedPersonId);
+        if (last != null) {
+            return last;
+        }
+        for (final FloorMapObject obj : eventObjects) {
+            if (trackedPersonId.equals(obj.getId())) {
+                return new double[]{obj.getX(), obj.getY()};
+            }
+        }
+        for (final FloorMapObject obj : factObjects) {
+            if (trackedPersonId.equals(obj.getId())) {
+                return new double[]{obj.getX(), obj.getY()};
+            }
+        }
+        return null;
     }
 
     /**
@@ -832,6 +936,8 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
             }
             // One-shot: clear the teleport flag now that positions are committed.
             pendingTeleport = false;
+            // Keep the tracked person in view after a scrub/paused refresh.
+            applyFollow();
             redraw();
             return;
         }
@@ -854,6 +960,9 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
         this.eventObjects = nonPersons;
         ensureAnimationLoop();
+        // Covers the tracked person's first appearance while playing (placed
+        // without an animation) — subsequent frames follow via the loop.
+        applyFollow();
         // Force a paint so updates that don't start a person animation (e.g. new
         // non-person overlays) still repaint during playback — the animation
         // loop returns without drawing when there is nothing to animate.

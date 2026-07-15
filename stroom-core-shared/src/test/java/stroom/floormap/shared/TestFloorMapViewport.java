@@ -222,4 +222,137 @@ class TestFloorMapViewport {
         assertThat(delta[0]).isCloseTo(80 / 4.0, within(TOLERANCE));
         assertThat(delta[1]).isCloseTo(-40 / 4.0, within(TOLERANCE));
     }
+
+    // -----------------------------------------------------------------------
+    // Follow (dead-zone camera)
+    // -----------------------------------------------------------------------
+
+    private static final double VIEW_WIDTH = 800;
+    private static final double VIEW_HEIGHT = 600;
+    private static final double MARGIN = 0.2;
+
+    /**
+     * A point already inside the central dead zone must not move the camera.
+     */
+    @Test
+    void testFollow_insideDeadZoneIsNoOp() {
+        final FloorMapViewport viewport = new FloorMapViewport(1.0, 25, -40);
+        // Choose the map point that currently sits at the view centre.
+        final double[] centre = viewport.screenToMap(
+                VIEW_WIDTH / 2, VIEW_HEIGHT / 2, BACKGROUND);
+
+        final boolean panned = viewport.follow(
+                centre[0], centre[1], BACKGROUND, VIEW_WIDTH, VIEW_HEIGHT, MARGIN);
+
+        assertThat(panned).isFalse();
+        assertThat(viewport.getOffsetX()).isEqualTo(25);
+        assertThat(viewport.getOffsetY()).isEqualTo(-40);
+    }
+
+    /**
+     * A point past the right/bottom margin pans the camera by the minimum
+     * amount: afterwards the point sits exactly on the margin boundary.
+     */
+    @Test
+    void testFollow_pansMinimallyToMarginEdge() {
+        final FloorMapViewport viewport = new FloorMapViewport(1.0, 0, 0);
+        // A map point currently just past the right and bottom margins.
+        final double[] target = viewport.screenToMap(
+                VIEW_WIDTH - 10, VIEW_HEIGHT - 10, BACKGROUND);
+
+        final boolean panned = viewport.follow(
+                target[0], target[1], BACKGROUND, VIEW_WIDTH, VIEW_HEIGHT, MARGIN);
+
+        assertThat(panned).isTrue();
+        final double[] screen = viewport.mapToScreen(target[0], target[1], BACKGROUND);
+        assertThat(screen[0]).isCloseTo(VIEW_WIDTH * (1 - MARGIN), within(TOLERANCE));
+        assertThat(screen[1]).isCloseTo(VIEW_HEIGHT * (1 - MARGIN), within(TOLERANCE));
+    }
+
+    /**
+     * A point far off-screen to the top-left is brought back to the top-left
+     * margin corner.
+     */
+    @Test
+    void testFollow_farOffScreenPointBroughtToMargin() {
+        final FloorMapViewport viewport = new FloorMapViewport(1.0, 0, 0);
+        final double[] target = viewport.screenToMap(-5000, -3000, BACKGROUND);
+
+        final boolean panned = viewport.follow(
+                target[0], target[1], BACKGROUND, VIEW_WIDTH, VIEW_HEIGHT, MARGIN);
+
+        assertThat(panned).isTrue();
+        final double[] screen = viewport.mapToScreen(target[0], target[1], BACKGROUND);
+        assertThat(screen[0]).isCloseTo(VIEW_WIDTH * MARGIN, within(TOLERANCE));
+        assertThat(screen[1]).isCloseTo(VIEW_HEIGHT * MARGIN, within(TOLERANCE));
+    }
+
+    /**
+     * The dead zone is evaluated in screen space, so following behaves the same
+     * under zoom: the point still lands on the margin boundary.
+     */
+    @Test
+    void testFollow_worksUnderZoom() {
+        final FloorMapViewport viewport = new FloorMapViewport(3.5, 120, -60);
+        final double[] target = viewport.screenToMap(
+                VIEW_WIDTH + 200, VIEW_HEIGHT / 2, BACKGROUND);
+
+        final boolean panned = viewport.follow(
+                target[0], target[1], BACKGROUND, VIEW_WIDTH, VIEW_HEIGHT, MARGIN);
+
+        assertThat(panned).isTrue();
+        assertThat(viewport.getScale()).isEqualTo(3.5); // follow never zooms
+        final double[] screen = viewport.mapToScreen(target[0], target[1], BACKGROUND);
+        assertThat(screen[0]).isCloseTo(VIEW_WIDTH * (1 - MARGIN), within(TOLERANCE));
+        // Y was already inside the dead zone — unchanged.
+        assertThat(screen[1]).isCloseTo(VIEW_HEIGHT / 2, within(TOLERANCE));
+    }
+
+    /**
+     * A margin of 0.5 collapses the dead zone to the centre point, degenerating
+     * to hard-centering.
+     */
+    @Test
+    void testFollow_halfMarginHardCenters() {
+        final FloorMapViewport viewport = new FloorMapViewport(1.0, 0, 0);
+        final double[] target = viewport.screenToMap(700, 100, BACKGROUND);
+
+        viewport.follow(target[0], target[1], BACKGROUND, VIEW_WIDTH, VIEW_HEIGHT, 0.5);
+
+        final double[] screen = viewport.mapToScreen(target[0], target[1], BACKGROUND);
+        assertThat(screen[0]).isCloseTo(VIEW_WIDTH / 2, within(TOLERANCE));
+        assertThat(screen[1]).isCloseTo(VIEW_HEIGHT / 2, within(TOLERANCE));
+    }
+
+    /**
+     * Out-of-range margin fractions are clamped rather than producing an
+     * inverted dead zone.
+     */
+    @Test
+    void testFollow_clampsMarginFraction() {
+        final FloorMapViewport viewport = new FloorMapViewport(1.0, 0, 0);
+        final double[] target = viewport.screenToMap(700, 100, BACKGROUND);
+
+        // 0.9 clamps to 0.5 → hard-centering.
+        viewport.follow(target[0], target[1], BACKGROUND, VIEW_WIDTH, VIEW_HEIGHT, 0.9);
+
+        final double[] screen = viewport.mapToScreen(target[0], target[1], BACKGROUND);
+        assertThat(screen[0]).isCloseTo(VIEW_WIDTH / 2, within(TOLERANCE));
+        assertThat(screen[1]).isCloseTo(VIEW_HEIGHT / 2, within(TOLERANCE));
+    }
+
+    /**
+     * A view with no size (e.g. before the canvas has been attached/laid out)
+     * must be a no-op rather than panning to garbage offsets.
+     */
+    @Test
+    void testFollow_zeroViewSizeIsNoOp() {
+        final FloorMapViewport viewport = new FloorMapViewport(1.0, 10, 20);
+
+        assertThat(viewport.follow(1000, 1000, BACKGROUND, 0, 600, MARGIN)).isFalse();
+        assertThat(viewport.follow(1000, 1000, BACKGROUND, 800, 0, MARGIN)).isFalse();
+        assertThat(viewport.follow(1000, 1000, BACKGROUND, -1, -1, MARGIN)).isFalse();
+        assertThat(viewport.getOffsetX()).isEqualTo(10);
+        assertThat(viewport.getOffsetY()).isEqualTo(20);
+    }
 }

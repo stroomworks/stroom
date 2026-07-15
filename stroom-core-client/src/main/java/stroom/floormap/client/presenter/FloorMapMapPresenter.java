@@ -32,6 +32,7 @@ import stroom.floormap.shared.FloorMapFieldMapping.Role;
 import stroom.floormap.shared.FloorMapJsonKeys;
 import stroom.floormap.shared.FloorMapObject;
 import stroom.floormap.shared.FloorMapTransformationMatrix;
+import stroom.floormap.shared.FloorMapUserList;
 import stroom.query.api.Column;
 import stroom.query.api.DestroyReason;
 import stroom.query.api.GroupSelection;
@@ -63,6 +64,7 @@ import com.google.web.bindery.event.shared.EventBus;
 import com.gwtplatform.mvp.client.View;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
@@ -77,6 +79,7 @@ import java.util.Map;
  * <h3>Layout slots</h3>
  * <ul>
  *     <li>{@link #MAP} – the {@link FloorMapCanvasPresenter} (canvas / visualisation)</li>
+ *     <li>{@link #USER_LIST} – the {@link FloorMapUserListPresenter} (user tracking panel)</li>
  *     <li>{@link #TIMELINE} – the {@link FloorMapTimelinePresenter} (timeline scrubber)</li>
  * </ul>
  *
@@ -88,6 +91,7 @@ public class FloorMapMapPresenter
         extends DocPresenter<FloorMapMapView, FloorMapDoc> {
 
     public static final Object MAP = new Object();
+    public static final Object USER_LIST = new Object();
     public static final Object TIMELINE = new Object();
     private static final int HISTOGRAM_BINS = 100;
     private static final stroom.sqlstore.shared.SqlTemporalStoreResource SQL_TEMPORAL_STORE_RESOURCE =
@@ -96,8 +100,11 @@ public class FloorMapMapPresenter
     private final FloorMapCanvasPresenter floorMapCanvasPresenter;
     private final FloorMapTimelinePresenter floorMapTimelinePresenter;
     private final FloorMapObjectEditPresenter floorMapObjectEditPresenter;
-    private final FloorMapFactListPresenter floorMapObjectListPresenter;
+    private final FloorMapUserListPresenter floorMapUserListPresenter;
     private final RestFactory restFactory;
+
+    /** Roster of every user seen on the map, feeding the tracking panel. */
+    private final FloorMapUserList userList = new FloorMapUserList();
 
     private final QueryModel queryModel;
     private final HistogramQueryHelper histogramQueryHelper;
@@ -138,19 +145,20 @@ public class FloorMapMapPresenter
                                 final Provider<FloorMapCanvasPresenter> floorMapCanvasPresenterProvider,
                                 final Provider<FloorMapTimelinePresenter> floorMapTimelinePresenterProvider,
                                 final Provider<FloorMapObjectEditPresenter> floorMapObjectEditPresenterProvider,
-                                final Provider<FloorMapFactListPresenter> floorMapObjectListPresenterProvider) {
+                                final Provider<FloorMapUserListPresenter> floorMapUserListPresenterProvider) {
         super(eventBus, view);
 
         this.restFactory = restFactory;
         this.floorMapCanvasPresenter = floorMapCanvasPresenterProvider.get();
         this.floorMapTimelinePresenter = floorMapTimelinePresenterProvider.get();
         this.floorMapObjectEditPresenter = floorMapObjectEditPresenterProvider.get();
-        this.floorMapObjectListPresenter = floorMapObjectListPresenterProvider.get();
+        this.floorMapUserListPresenter = floorMapUserListPresenterProvider.get();
 
         // Default initial time
         this.selectedTime = System.currentTimeMillis();
 
         setInSlot(MAP, floorMapCanvasPresenter);
+        setInSlot(USER_LIST, floorMapUserListPresenter);
         setInSlot(TIMELINE, floorMapTimelinePresenter);
 
         // Result component to parse and handle Facts query results
@@ -219,8 +227,19 @@ public class FloorMapMapPresenter
                 onTimeChange(e.getTime());
             }
         }));
-        registerHandler(getEventBus().addHandler(FloorMapDataEvent.getType(), e ->
-                floorMapCanvasPresenter.setEventObjects(e.getObjects())));
+        registerHandler(getEventBus().addHandler(FloorMapDataEvent.getType(), e -> {
+            floorMapCanvasPresenter.setEventObjects(e.getObjects());
+            // Keep the user-tracking panel's roster up to date. Only re-push
+            // grid data when membership actually changed so playback refreshes
+            // (~300ms apart) don't churn the grid. Restoring the selected id
+            // does not re-fire the selection consumer because UserEntry
+            // equality is id-based.
+            if (userList.update(e.getObjects())) {
+                final String selectedId = floorMapUserListPresenter.getSelectedId();
+                floorMapUserListPresenter.setData(userList.getUsers());
+                floorMapUserListPresenter.setSelected(selectedId);
+            }
+        }));
 
         // Re-run the histogram whenever the user changes the visible date range via the settings popup.
         floorMapTimelinePresenter.setTimeRangeChangeHandler(() ->
@@ -233,10 +252,16 @@ public class FloorMapMapPresenter
         // canvases other than its own. Without the source guard a drag on
         // the Editor tab's canvas would trigger applyMove() here, silently
         // persisting a new time record at this tab's selectedTime.
+        //
+        // Clicking a person on this tab's canvas selects them in the tracking
+        // panel and starts (or resumes) following them. Ids not in the roster
+        // (static facts such as gates) are ignored.
         registerHandler(getEventBus().addHandler(MapObjectSelectedEvent.getType(), e -> {
-            if (e.getSource() == floorMapCanvasPresenter) {
-                floorMapCanvasPresenter.setSelectedObjectId(null);
-                getView().setPropertiesVisible(false);
+            if (e.getSource() == floorMapCanvasPresenter
+                    && e.getObjectId() != null
+                    && userList.contains(e.getObjectId())) {
+                floorMapUserListPresenter.setSelected(e.getObjectId());
+                floorMapCanvasPresenter.setTrackedPersonId(e.getObjectId());
             }
         }));
 
@@ -285,20 +310,14 @@ public class FloorMapMapPresenter
             }
         });
 
-        this.floorMapObjectListPresenter.setSelectionConsumer(factObj -> {
-            if (factObj != null) {
-                floorMapObjectEditPresenter.setObject(factObj.getKey());
-                final String canvasId = FloorMapJsonKeys.BACKGROUND.equals(factObj.getKey())
-                        ? FloorMapJsonKeys.BACKGROUND
-                        : factObj.getKey();
-                floorMapCanvasPresenter.setSelectedObjectId(canvasId);
-                floorMapCanvasPresenter.setIsDraggingEnabled(true);
-                getView().setPropertiesVisible(true);
-            } else {
-                floorMapCanvasPresenter.setSelectedObjectId(null);
-                floorMapCanvasPresenter.setIsDraggingEnabled(false);
-            }
-        });
+        // Selecting a user in the tracking panel highlights them on the canvas
+        // and follows them as they move; selecting nothing stops tracking.
+        // Re-clicking the selected row re-invokes this consumer, which resumes
+        // following after a manual pan/zoom paused it.
+        this.floorMapUserListPresenter.setSelectionConsumer(entry ->
+                floorMapCanvasPresenter.setTrackedPersonId(entry != null
+                        ? entry.getId()
+                        : null));
 
         // Keep the canvas informed of play/pause transitions so it can switch
         // between animate-on-move and teleport behaviour.
@@ -369,7 +388,6 @@ public class FloorMapMapPresenter
                 .onSuccess(result -> {
                     onTimeChange(selectedTime);
                     floorMapObjectEditPresenter.setObject(key);
-                    floorMapObjectListPresenter.setSelected(key);
                 })
                 .exec();
     }
@@ -396,6 +414,10 @@ public class FloorMapMapPresenter
             floorMapObjectEditPresenter.setMapName(document.getFactsStoreRef().getName());
         }
         floorMapObjectEditPresenter.setFloorMapDoc(document);
+
+        // A (re-)opened document starts with a fresh user roster.
+        userList.clear();
+        floorMapUserListPresenter.setData(Collections.emptyList());
 
         // Start timeline (and histogram query) only after models are ready.
         updateTimelineRange();
@@ -772,11 +794,5 @@ public class FloorMapMapPresenter
 
     public interface FloorMapMapView extends View {
 
-        /**
-         * Shows or hides the object properties panel.
-         *
-         * @param visible {@code true} to show, {@code false} to hide
-         */
-        void setPropertiesVisible(boolean visible);
     }
 }

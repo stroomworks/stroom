@@ -41,6 +41,12 @@ public final class FloorMapViewport {
     public static final double MAX_SCALE = 1e12;
     /** Multiplicative zoom step applied per wheel notch. */
     public static final double ZOOM_STEP = 1.1;
+    /**
+     * Default dead-zone margin for {@link #follow} as a fraction of each view
+     * dimension. 0.2 means the tracked point may roam the central 60% of the
+     * view before the camera pans.
+     */
+    public static final double DEFAULT_FOLLOW_MARGIN = 0.2;
 
     private double scale;
     private double offsetX;
@@ -151,6 +157,60 @@ public final class FloorMapViewport {
         offsetX = cursorX - (cursorX - offsetX) * zoomFactor;
         offsetY = cursorY - (cursorY - offsetY) * zoomFactor;
         scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale * zoomFactor));
+    }
+
+    /**
+     * Pans the viewport the minimum amount needed to keep the given map-space
+     * point inside the central "dead zone" rectangle of the view. Used to
+     * follow a tracked person: while they roam within the dead zone the camera
+     * stays still; when they cross a margin the camera pans just enough to
+     * bring them back to the margin edge, rather than re-centering on every
+     * update.
+     *
+     * @param mapX           map-space X of the point to keep in view
+     * @param mapY           map-space Y of the point to keep in view
+     * @param background     the active background's map-to-screen matrix; may
+     *                       be {@code null} (treated as identity)
+     * @param viewWidth      the visible canvas width in screen pixels
+     * @param viewHeight     the visible canvas height in screen pixels
+     * @param marginFraction the dead-zone margin as a fraction of each view
+     *                       dimension, clamped to {@code [0, 0.5]}; 0.5
+     *                       collapses the dead zone to the centre point
+     *                       (hard-centering)
+     * @return {@code true} if the viewport panned
+     */
+    public boolean follow(final double mapX,
+                          final double mapY,
+                          final FloorMapTransformationMatrix background,
+                          final double viewWidth,
+                          final double viewHeight,
+                          final double marginFraction) {
+        if (viewWidth <= 0 || viewHeight <= 0) {
+            return false;
+        }
+        final double margin = Math.max(0.0, Math.min(0.5, marginFraction));
+        final double[] screen = mapToScreen(mapX, mapY, background);
+        final double marginX = viewWidth * margin;
+        final double marginY = viewHeight * margin;
+
+        double deltaX = 0;
+        double deltaY = 0;
+        if (screen[0] < marginX) {
+            deltaX = marginX - screen[0];
+        } else if (screen[0] > viewWidth - marginX) {
+            deltaX = (viewWidth - marginX) - screen[0];
+        }
+        if (screen[1] < marginY) {
+            deltaY = marginY - screen[1];
+        } else if (screen[1] > viewHeight - marginY) {
+            deltaY = (viewHeight - marginY) - screen[1];
+        }
+
+        if (deltaX != 0 || deltaY != 0) {
+            pan(deltaX, deltaY);
+            return true;
+        }
+        return false;
     }
 
     // -----------------------------------------------------------------------

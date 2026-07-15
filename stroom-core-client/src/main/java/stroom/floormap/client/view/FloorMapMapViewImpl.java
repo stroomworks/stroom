@@ -29,9 +29,11 @@ import com.gwtplatform.mvp.client.ViewImpl;
 /**
  * View implementation for the floor map canvas area.
  *
- * <p>Uses a UiBinder split layout to host the map canvas in the main area and
- * the timeline control strip beneath it. Slot routing directs content from
- * {@link FloorMapMapPresenter#MAP} into the map panel and
+ * <p>Uses a UiBinder split layout to host the map canvas in the main area,
+ * the user-tracking panel in a resizable east column beside it, and the
+ * timeline control strip beneath both. Slot routing directs content from
+ * {@link FloorMapMapPresenter#MAP} into the map panel,
+ * {@link FloorMapMapPresenter#USER_LIST} into the user list panel, and
  * {@link FloorMapMapPresenter#TIMELINE} into the timeline panel.</p>
  */
 public class FloorMapMapViewImpl extends ViewImpl implements FloorMapMapView {
@@ -40,6 +42,8 @@ public class FloorMapMapViewImpl extends ViewImpl implements FloorMapMapView {
 
     @UiField
     SimplePanel mapPanel;
+    @UiField
+    SimplePanel userListPanel;
     @UiField
     SimplePanel timelinePanel;
 
@@ -54,20 +58,17 @@ public class FloorMapMapViewImpl extends ViewImpl implements FloorMapMapView {
     }
 
     /**
-     * Routes GWTP slot content into the map or timeline panel.
+     * Routes GWTP slot content into the map, user list, or timeline panel.
      */
     @Override
     public void setInSlot(final Object slot, final Widget content) {
         if (FloorMapMapPresenter.MAP.equals(slot)) {
             mapPanel.setWidget(content);
+        } else if (FloorMapMapPresenter.USER_LIST.equals(slot)) {
+            userListPanel.setWidget(content);
         } else if (FloorMapMapPresenter.TIMELINE.equals(slot)) {
             timelinePanel.setWidget(content);
         }
-    }
-
-    @Override
-    public void setPropertiesVisible(final boolean visible) {
-        // TODO: Show/hide properties panel when the UI layout supports it.
     }
 
     public interface Binder extends UiBinder<Widget, FloorMapMapViewImpl> {

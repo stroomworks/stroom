@@ -41,6 +41,8 @@ import stroom.floormap.client.presenter.FloorMapTimelinePresenter;
 import stroom.floormap.client.presenter.FloorMapTimelinePresenter.FloorMapTimelineView;
 import stroom.floormap.client.presenter.FloorMapTimelineSettingsPresenter;
 import stroom.floormap.client.presenter.FloorMapTimelineSettingsPresenter.FloorMapTimelineSettingsView;
+import stroom.floormap.client.presenter.FloorMapUserListPresenter;
+import stroom.floormap.client.presenter.FloorMapUserListPresenter.FloorMapUserListView;
 import stroom.floormap.client.view.FloorMapCanvasViewImpl;
 import stroom.floormap.client.view.FloorMapEditorViewImpl;
 import stroom.floormap.client.view.FloorMapFactListViewImpl;
@@ -52,6 +54,7 @@ import stroom.floormap.client.view.FloorMapSettingsViewImpl;
 import stroom.floormap.client.view.FloorMapTimeListViewImpl;
 import stroom.floormap.client.view.FloorMapTimelineSettingsViewImpl;
 import stroom.floormap.client.view.FloorMapTimelineViewImpl;
+import stroom.floormap.client.view.FloorMapUserListViewImpl;
 
 /**
  * GIN module for the Floor Map feature.
@@ -103,5 +106,9 @@ public class FloorMapModule extends PluginModule {
         bindPresenterWidget(FloorMapTimeListPresenter.class,
                 FloorMapTimeListView.class,
                 FloorMapTimeListViewImpl.class);
+
+        bindPresenterWidget(FloorMapUserListPresenter.class,
+                FloorMapUserListView.class,
+                FloorMapUserListViewImpl.class);
     }
 }
