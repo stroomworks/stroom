@@ -46,7 +46,7 @@
             <g:SimplePanel ui:field="valueFormatContainer" />
         </form:FormGroup>
         <!-- Value Schema -->
-        <form:FormGroup label="Value Schema">
+        <form:FormGroup label="Value Schema" addStyleNames="stroom-floormap-settings-section">
             <form:HelpHTML>
                 <p>Tells the map how to read each stored value by mapping a <strong>Role</strong>
                     (what the renderer needs) to a <strong>Path</strong> within the value.
@@ -73,7 +73,7 @@
             </g:FlowPanel>
         </form:FormGroup>
         <!-- Type Styles (z-order + default graphic per type) -->
-        <form:FormGroup label="Type Styles">
+        <form:FormGroup label="Type Styles" addStyleNames="stroom-floormap-settings-section">
             <form:HelpHTML>
                 <p>Controls how each type of fact is presented.</p>
                 <ul>
