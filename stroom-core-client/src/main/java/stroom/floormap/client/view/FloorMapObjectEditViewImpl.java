@@ -17,10 +17,8 @@
 package stroom.floormap.client.view;
 
 import stroom.floormap.client.presenter.FloorMapObjectEditPresenter.FloorMapObjectEditView;
-import stroom.floormap.shared.FloorMapJsonKeys;
 import stroom.widget.datepicker.client.DateTimeBox;
 import stroom.widget.datepicker.client.DateTimePopup;
-import stroom.widget.form.client.FormGroup;
 
 import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
@@ -35,9 +33,9 @@ import com.gwtplatform.mvp.client.ViewImpl;
  * View implementation for the floor map object (fact) edit dialog.
  *
  * <p>Renders form fields for the object's name, type, effective time, position (x/y),
- * an image chooser, and two sets of affine-transform matrix fields (world→map and
- * map→screen). The matrix fields are conditionally visible based on the object type:
- * "background" objects show the map→screen matrix, all others show world→map.</p>
+ * an image chooser, and the world→map affine-transform matrix fields. Every fact —
+ * backgrounds included — is placed by its world→map matrix, so there is a single set
+ * of matrix fields.</p>
  */
 public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObjectEditView {
 
@@ -57,15 +55,6 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
     SimplePanel chooseImgContainer;
 
     @UiField
-    FormGroup w2mTranslationGroup;
-    @UiField
-    FormGroup w2mScaleRotGroup;
-    @UiField
-    FormGroup m2sTranslationGroup;
-    @UiField
-    FormGroup m2sScaleRotGroup;
-
-    @UiField
     TextBox w2mTx;
     @UiField
     TextBox w2mTy;
@@ -76,27 +65,11 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
     @UiField
     TextBox w2mRot;
 
-    @UiField
-    TextBox m2sTx;
-    @UiField
-    TextBox m2sTy;
-    @UiField
-    TextBox m2sSx;
-    @UiField
-    TextBox m2sSy;
-    @UiField
-    TextBox m2sRot;
-
     @Inject
     public FloorMapObjectEditViewImpl(final Binder binder,
                                       final Provider<DateTimePopup> dateTimePopupProvider) {
         widget = binder.createAndBindUi(this);
         effectiveTimeBox.setPopupProvider(dateTimePopupProvider);
-
-        //noinspection unused e
-        typeBox.addKeyUpHandler(e -> updateMatrixVisibility(typeBox.getText()));
-        //noinspection unused e
-        typeBox.addValueChangeHandler(e -> updateMatrixVisibility(typeBox.getText()));
     }
 
     @Override
@@ -160,7 +133,6 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
     @Override
     public void setType(final String type) {
         typeBox.setText(type == null ? "" : type);
-        updateMatrixVisibility(type);
     }
 
     @Override
@@ -176,16 +148,6 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
     @Override
     public void setWorldToMapMatrix(final double[] m) {
         populateMatrixFields(m, w2mTx, w2mTy, w2mSx, w2mSy, w2mRot);
-    }
-
-    @Override
-    public double[] getMapToScreenMatrix() {
-        return parseMatrixFields(m2sTx, m2sTy, m2sSx, m2sSy, m2sRot);
-    }
-
-    @Override
-    public void setMapToScreenMatrix(final double[] m) {
-        populateMatrixFields(m, m2sTx, m2sTy, m2sSx, m2sSy, m2sRot);
     }
 
     /**
@@ -263,31 +225,12 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
         effectiveTimeBox.setEnabled(enabled);
         setTextBoxesEnabled(enabled,
                 xBox, yBox, nameBox, typeBox,
-                w2mTx, w2mTy, w2mSx, w2mSy, w2mRot,
-                m2sTx, m2sTy, m2sSx, m2sSy, m2sRot);
+                w2mTx, w2mTy, w2mSx, w2mSy, w2mRot);
     }
 
     private static void setTextBoxesEnabled(final boolean enabled, final TextBox... boxes) {
         for (final TextBox box : boxes) {
             box.setEnabled(enabled);
-        }
-    }
-
-    /**
-     * Toggles which matrix fields are visible based on the object type. "background"
-     * objects show the map→screen matrix; all other types show world→map.
-     */
-    private void updateMatrixVisibility(final String type) {
-        final boolean isBackground = FloorMapJsonKeys.BACKGROUND.equalsIgnoreCase(type == null ? "" : type.trim());
-        setVisibleIfPresent(w2mTranslationGroup, !isBackground);
-        setVisibleIfPresent(w2mScaleRotGroup, !isBackground);
-        setVisibleIfPresent(m2sTranslationGroup, isBackground);
-        setVisibleIfPresent(m2sScaleRotGroup, isBackground);
-    }
-
-    private static void setVisibleIfPresent(final Widget widget, final boolean visible) {
-        if (widget != null) {
-            widget.setVisible(visible);
         }
     }
 

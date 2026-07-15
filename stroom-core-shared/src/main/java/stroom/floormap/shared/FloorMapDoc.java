@@ -237,6 +237,16 @@ public class FloorMapDoc extends AbstractDoc {
     private final List<FloorMapFieldMapping> valueSchema;
 
     /**
+     * Ordered per-type presentation settings (see {@link TypeStyle}). The list
+     * <strong>order is the z-order</strong> (earlier types paint behind later
+     * ones), and each entry carries the default graphic for imageless facts of
+     * that type. Populated via the Settings tab's "Discover" button; may be
+     * {@code null}/empty for documents that have never discovered their types.
+     */
+    @JsonProperty
+    private final List<TypeStyle> typeStyles;
+
+    /**
      * Constructs a {@code FloorMapDoc} from its constituent fields.
      *
      * <p>This constructor is invoked by Jackson during deserialisation and
@@ -310,7 +320,8 @@ public class FloorMapDoc extends AbstractDoc {
                        @JsonProperty("eventsQueryTablePreferences")
                            final QueryTablePreferences eventsQueryTablePreferences,
                        @JsonProperty("valueFormat") final ValueFormat valueFormat,
-                       @JsonProperty("valueSchema") final List<FloorMapFieldMapping> valueSchema) {
+                       @JsonProperty("valueSchema") final List<FloorMapFieldMapping> valueSchema,
+                       @JsonProperty("typeStyles") final List<TypeStyle> typeStyles) {
         super(TYPE, uuid,
                 name,
                 version,
@@ -334,6 +345,7 @@ public class FloorMapDoc extends AbstractDoc {
 
         this.valueFormat = valueFormat;
         this.valueSchema = valueSchema;
+        this.typeStyles = typeStyles;
     }
 
     /**
@@ -487,6 +499,16 @@ public class FloorMapDoc extends AbstractDoc {
     }
 
     /**
+     * Returns the ordered per-type presentation settings (z-order and default
+     * graphic per type). The list order is the paint/z-order.
+     *
+     * @return the type styles, or {@code null} if none have been configured
+     */
+    public List<TypeStyle> getTypeStyles() {
+        return typeStyles;
+    }
+
+    /**
      * Returns a new {@link DocRef.TypedBuilder} pre-configured with this
      * document's {@link #TYPE}.
      *
@@ -540,7 +562,8 @@ public class FloorMapDoc extends AbstractDoc {
                Objects.equals(eventsQueryTimeRange, that.eventsQueryTimeRange) &&
                Objects.equals(eventsQueryTablePreferences, that.eventsQueryTablePreferences) &&
                Objects.equals(valueFormat, that.valueFormat) &&
-               Objects.equals(valueSchema, that.valueSchema);
+               Objects.equals(valueSchema, that.valueSchema) &&
+               Objects.equals(typeStyles, that.typeStyles);
     }
 
     /** {@inheritDoc} */
@@ -559,7 +582,8 @@ public class FloorMapDoc extends AbstractDoc {
                 eventsQueryTimeRange,
                 eventsQueryTablePreferences,
                 valueFormat,
-                valueSchema);
+                valueSchema,
+                typeStyles);
     }
 
     /**
@@ -608,6 +632,7 @@ public class FloorMapDoc extends AbstractDoc {
         private QueryTablePreferences eventsQueryTablePreferences;
         private ValueFormat valueFormat;
         private List<FloorMapFieldMapping> valueSchema;
+        private List<TypeStyle> typeStyles;
 
         /**
          * Creates an empty builder. All fields default to {@code null}.
@@ -635,6 +660,7 @@ public class FloorMapDoc extends AbstractDoc {
             this.eventsQueryTablePreferences = doc.eventsQueryTablePreferences;
             this.valueFormat = doc.valueFormat;
             this.valueSchema = doc.valueSchema;
+            this.typeStyles = doc.typeStyles;
         }
 
         /**
@@ -786,6 +812,18 @@ public class FloorMapDoc extends AbstractDoc {
             return self();
         }
 
+        /**
+         * Sets the ordered per-type presentation settings (z-order + default
+         * graphic per type).
+         *
+         * @param typeStyles the ordered {@link TypeStyle} list, or {@code null}
+         * @return this builder
+         */
+        public Builder typeStyles(final List<TypeStyle> typeStyles) {
+            this.typeStyles = typeStyles;
+            return self();
+        }
+
         @Override
         protected Builder self() {
             return this;
@@ -818,7 +856,8 @@ public class FloorMapDoc extends AbstractDoc {
                     eventsQueryTimeRange,
                     eventsQueryTablePreferences,
                     valueFormat,
-                    valueSchema);
+                    valueSchema,
+                    typeStyles);
         }
     }
 }

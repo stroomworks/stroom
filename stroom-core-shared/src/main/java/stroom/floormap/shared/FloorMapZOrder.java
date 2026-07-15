@@ -1,0 +1,76 @@
+/*
+ * Copyright 2016-2026 Crown Copyright
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package stroom.floormap.shared;
+
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+
+/**
+ * Applies the per-type paint order (see {@link TypeStyle} and the redesign §6
+ * "Type settings") to a list of facts.
+ *
+ * <p>Facts paint in the order their type appears in the configured
+ * {@code typeStyles} list — earlier types behind later ones. A type <em>not</em>
+ * in the configured order (e.g. one seen in the data but not yet discovered)
+ * sorts <strong>last</strong>, so it paints on top and stays visible. Within a
+ * single type, the original list order is preserved (a stable sort), which
+ * carries the parser's entry order.</p>
+ *
+ * <p>Pure logic with no GWT dependencies, so it can be unit-tested directly.</p>
+ */
+public final class FloorMapZOrder {
+
+    private FloorMapZOrder() {
+        // Utility class
+    }
+
+    /**
+     * The index of {@code type} within the configured order, or
+     * {@link Integer#MAX_VALUE} if it is not configured (so it paints on top).
+     */
+    public static int indexOf(final String type, final List<TypeStyle> order) {
+        if (order != null && type != null) {
+            for (int i = 0; i < order.size(); i++) {
+                final TypeStyle style = order.get(i);
+                if (style != null && type.equals(style.getType())) {
+                    return i;
+                }
+            }
+        }
+        return Integer.MAX_VALUE;
+    }
+
+    /**
+     * Returns a new list of the given facts, stably ordered back-to-front by
+     * their type's position in {@code order}; unconfigured types come last.
+     *
+     * @param facts the facts to order (unchanged; a new list is returned)
+     * @param order the configured type styles, or {@code null}/empty (then the
+     *              input order is preserved)
+     * @return a new, paint-ordered list; never {@code null}
+     */
+    public static List<Fact> sort(final List<Fact> facts, final List<TypeStyle> order) {
+        final List<Fact> result = new ArrayList<>();
+        if (facts != null) {
+            result.addAll(facts);
+        }
+        // List.sort is stable, so facts of the same type keep their input order.
+        result.sort(Comparator.comparingInt(fact -> indexOf(fact.getType(), order)));
+        return result;
+    }
+}

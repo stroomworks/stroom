@@ -394,6 +394,85 @@ class TestFloorMapEditorModel {
     }
 
     // -----------------------------------------------------------------------
+    // Background translation via WORLD_TO_MAP
+    //
+    // A background is no longer moved through a separate map-to-screen write
+    // path (buildUpdatedBackgroundEntry is gone). It is translated like any
+    // other fact, by shifting its WORLD_TO_MAP matrix translation. These tests
+    // preserve the original intents — translation-only, rotation/scale
+    // preserved, identity default — re-pointed at translateFacts / WORLD_TO_MAP.
+    // -----------------------------------------------------------------------
+
+    /**
+     * Translating a background shifts the translation components (indices 4, 5)
+     * of its WORLD_TO_MAP matrix, and leaves the POSITION coords field
+     * untouched.
+     */
+    @Test
+    void testBackgroundTranslate_updatesMatrixTranslation() {
+        model.onEntriesFetched(List.of(entry("background", 100,
+                "{\"type\":\"background\",\"coords\":[5,5],"
+                        + "\"tm-world-to-map\":[1,0,0,1,0,0]}")));
+
+        final int moved = model.translateFacts(List.of("background"), 60.0, 80.0, SCHEMA, ACCESSOR);
+        assertThat(moved).isEqualTo(1);
+
+        final TemporalEntry updated = model.buildMergedCanvasEntries().stream()
+                .filter(e -> e.getKey().equals("background")).findFirst().orElseThrow();
+        final ParsedValue parsed = ACCESSOR.parse(updated.getValue());
+        final double[] m = ACCESSOR.getArray(parsed, ".tm-world-to-map");
+        assertThat(m[4]).isCloseTo(60.0, within(0.001));
+        assertThat(m[5]).isCloseTo(80.0, within(0.001));
+        // The POSITION coords are not touched by a matrix translation.
+        final double[] coords = ACCESSOR.getArray(parsed, ".coords");
+        assertThat(coords[0]).isCloseTo(5.0, within(0.001));
+        assertThat(coords[1]).isCloseTo(5.0, within(0.001));
+    }
+
+    /**
+     * Translating a background preserves the existing rotation/scale components
+     * (a, b, c, d) of its WORLD_TO_MAP matrix, changing only translation.
+     */
+    @Test
+    void testBackgroundTranslate_preservesRotationScale() {
+        model.onEntriesFetched(List.of(entry("background", 100,
+                "{\"type\":\"background\","
+                        + "\"tm-world-to-map\":[2,0.5,-0.5,2,10,20]}")));
+
+        // Shift by (50, 60) so the translation lands on (60, 80).
+        final int moved = model.translateFacts(List.of("background"), 50.0, 60.0, SCHEMA, ACCESSOR);
+        assertThat(moved).isEqualTo(1);
+
+        final TemporalEntry updated = model.buildMergedCanvasEntries().stream()
+                .filter(e -> e.getKey().equals("background")).findFirst().orElseThrow();
+        final double[] m = ACCESSOR.getArray(ACCESSOR.parse(updated.getValue()), ".tm-world-to-map");
+        assertThat(m[0]).isCloseTo(2.0, within(0.001));
+        assertThat(m[1]).isCloseTo(0.5, within(0.001));
+        assertThat(m[2]).isCloseTo(-0.5, within(0.001));
+        assertThat(m[3]).isCloseTo(2.0, within(0.001));
+        assertThat(m[4]).isCloseTo(60.0, within(0.001));
+        assertThat(m[5]).isCloseTo(80.0, within(0.001));
+    }
+
+    /**
+     * When the background entry has no WORLD_TO_MAP matrix, it defaults to
+     * identity before the translation is applied.
+     */
+    @Test
+    void testBackgroundTranslate_defaultsToIdentityWhenMissing() {
+        model.onEntriesFetched(List.of(entry("background", 100,
+                "{\"type\":\"background\"}")));
+
+        final int moved = model.translateFacts(List.of("background"), 60.0, 80.0, SCHEMA, ACCESSOR);
+        assertThat(moved).isEqualTo(1);
+
+        final TemporalEntry updated = model.buildMergedCanvasEntries().stream()
+                .filter(e -> e.getKey().equals("background")).findFirst().orElseThrow();
+        final double[] m = ACCESSOR.getArray(ACCESSOR.parse(updated.getValue()), ".tm-world-to-map");
+        assertThat(m).containsExactly(1.0, 0.0, 0.0, 1.0, 60.0, 80.0);
+    }
+
+    // -----------------------------------------------------------------------
     // Pending changes integration
     // -----------------------------------------------------------------------
 
@@ -546,8 +625,9 @@ class TestFloorMapEditorModel {
     // -----------------------------------------------------------------------
 
     /**
-     * Parsing a valid batch of entries for the canvas yields the background
-     * image and the regular objects, with no warnings emitted.
+     * Parsing a valid batch of entries for the canvas yields one fact per
+     * entry — the image (background) fact and the regular object — with no
+     * warnings emitted.
      */
     @Test
     void testParseForCanvas() {
@@ -555,12 +635,77 @@ class TestFloorMapEditorModel {
                 entry("bg", 100, "{\"type\":\"background\",\"img\":\"f.png\"}"),
                 entry("g1", 100, "{\"type\":\"gate\",\"coords\":[10,20]}"));
 
-        final FloorMapEntryParser.ParseResult result =
-                model.parseForCanvas(entries, SCHEMA, ACCESSOR);
+        final List<Fact> facts = model.parseForCanvas(entries, SCHEMA, ACCESSOR);
 
-        assertThat(result.getBackgroundImage()).isEqualTo("f.png");
-        assertThat(result.getObjects()).hasSize(1);
+        assertThat(facts).hasSize(2);
+        assertThat(facts.stream().filter(Fact::hasImage).findFirst().orElseThrow().getImage())
+                .isEqualTo("f.png");
+        assertThat(facts.stream().filter(f -> !f.hasImage()).count()).isEqualTo(1L);
         assertThat(warnings).as("valid entries should not emit warnings").isEmpty();
+    }
+
+    /**
+     * The canvas shows, per key, the single shard active at the scrubber time —
+     * so an object never renders (or drags) as several overlaid time versions,
+     * and moving the scrubber changes which shard is shown. Here the scrubber
+     * sits between shards, so the earlier one is active and the later is ignored.
+     */
+    @Test
+    void testParseForCanvas_showsShardActiveAtSelectedTime() {
+        model.setSelectedTime(250);
+        final List<TemporalEntry> entries = List.of(
+                entry("bg", 100, "{\"type\":\"background\",\"img\":\"old.png\"}"),
+                entry("bg", 300, "{\"type\":\"background\",\"img\":\"future.png\"}"),
+                entry("bg", 200, "{\"type\":\"background\",\"img\":\"active.png\"}"),
+                entry("g1", 100, "{\"type\":\"gate\",\"coords\":[10,20]}"));
+
+        final List<Fact> facts = model.parseForCanvas(entries, SCHEMA, ACCESSOR);
+
+        assertThat(facts).as("one fact per key").hasSize(2);
+        final Fact bg = facts.stream().filter(f -> "bg".equals(f.getKey())).findFirst().orElseThrow();
+        assertThat(bg.getImage())
+                .as("shard active at t=250 (t=200) wins; the future t=300 shard is ignored")
+                .isEqualTo("active.png");
+        assertThat(facts.stream().anyMatch(f -> "g1".equals(f.getKey()))).isTrue();
+    }
+
+    /**
+     * When the entry list holds several shards per key (e.g. pending changes
+     * staged at other effective times overlaid on the server data) and the
+     * scrubber sits at/after all of them, each key shows its latest active
+     * shard — no key is dropped.
+     */
+    @Test
+    void testParseForCanvas_scrubberAtLatest_keepsAllKeys() {
+        model.setSelectedTime(1000);
+        final List<TemporalEntry> entries = List.of(
+                entry("bg", 100, "{\"type\":\"background\",\"img\":\"old.png\"}"),
+                entry("bg", 300, "{\"type\":\"background\",\"img\":\"new.png\"}"),
+                entry("g1", 200, "{\"type\":\"gate\",\"coords\":[10,20]}"));
+
+        final List<Fact> facts = model.parseForCanvas(entries, SCHEMA, ACCESSOR);
+
+        assertThat(facts).as("one fact per key, none dropped").hasSize(2);
+        final Fact bg = facts.stream().filter(f -> "bg".equals(f.getKey())).findFirst().orElseThrow();
+        assertThat(bg.getImage()).as("latest active shard (t=300) wins").isEqualTo("new.png");
+    }
+
+    /**
+     * With the scrubber time unset ({@code <= 0}) the time filter is skipped and
+     * the latest shard per key wins, so the canvas is not blanked before the
+     * scrubber is initialised.
+     */
+    @Test
+    void testParseForCanvas_collapsesToLatestWhenTimeUnset() {
+        model.setSelectedTime(0);
+        final List<TemporalEntry> entries = List.of(
+                entry("bg", 100, "{\"type\":\"background\",\"img\":\"old.png\"}"),
+                entry("bg", 300, "{\"type\":\"background\",\"img\":\"new.png\"}"));
+
+        final List<Fact> facts = model.parseForCanvas(entries, SCHEMA, ACCESSOR);
+
+        assertThat(facts).hasSize(1);
+        assertThat(facts.getFirst().getImage()).as("latest shard (t=300) wins").isEqualTo("new.png");
     }
 
     /**
@@ -573,11 +718,10 @@ class TestFloorMapEditorModel {
                 entry("good", 100, "{\"type\":\"gate\",\"coords\":[5,10]}"),
                 entry("bad", 100, "not-json"));
 
-        final FloorMapEntryParser.ParseResult result =
-                model.parseForCanvas(entries, SCHEMA, ACCESSOR);
+        final List<Fact> facts = model.parseForCanvas(entries, SCHEMA, ACCESSOR);
 
-        assertThat(result.getObjects()).hasSize(1);
-        assertThat(result.getObjects().getFirst().getId()).isEqualTo("good");
+        assertThat(facts).hasSize(1);
+        assertThat(facts.getFirst().getKey()).isEqualTo("good");
         assertThat(warnings).as("malformed entry should trigger a warning")
                 .hasSize(1);
         assertThat(warnings.getFirst()).contains("bad");
@@ -663,6 +807,217 @@ class TestFloorMapEditorModel {
 
         assertThatThrownBy(() -> model.recordObjectMove("g1", 40.0, 60.0, List.of(), ACCESSOR))
                 .isInstanceOf(IllegalStateException.class);
+    }
+
+    /**
+     * A "background" key is not special-cased: moving it writes the new
+     * position into the POSITION coords field, exactly like any other fact
+     * (there is no separate matrix write path any more). With an identity
+     * world-to-map, the map-space drag position is written straight into coords.
+     */
+    @Test
+    void testRecordObjectMove_backgroundKey_updatesCoords() {
+        model.onEntriesFetched(List.of(entry("background", 100,
+                "{\"type\":\"background\",\"coords\":[5,5],"
+                        + "\"tm-world-to-map\":[1,0,0,1,0,0]}")));
+
+        final boolean recorded = model.recordObjectMove("background", 60.0, 80.0, SCHEMA, ACCESSOR);
+
+        assertThat(recorded).isTrue();
+        final TemporalEntry moved = model.buildMergedCanvasEntries().stream()
+                .filter(e -> e.getKey().equals("background"))
+                .findFirst().orElseThrow();
+        final ParsedValue parsed = ACCESSOR.parse(moved.getValue());
+        final double[] coords = ACCESSOR.getArray(parsed, ".coords");
+        assertThat(coords[0]).isCloseTo(60.0, within(0.001));
+        assertThat(coords[1]).isCloseTo(80.0, within(0.001));
+    }
+
+    /**
+     * Facts are matched by key only — there is no type-based "background"
+     * detection any more. Firing the literal "background" id against an entry
+     * whose key is NOT "background" (even if its type is) matches nothing, so
+     * the move is not recorded and nothing is staged.
+     */
+    @Test
+    void testRecordObjectMove_matchesByKeyOnly_notType() {
+        model.onEntriesFetched(List.of(entry("floorPlan", 100,
+                "{\"type\":\"background\",\"tm-world-to-map\":[1,0,0,1,0,0]}")));
+
+        final boolean recorded = model.recordObjectMove("background", 12.0, 34.0, SCHEMA, ACCESSOR);
+
+        assertThat(recorded).isFalse();
+        assertThat(model.hasPendingChanges()).isFalse();
+    }
+
+    // -----------------------------------------------------------------------
+    // recordFactTransform / buildUpdatedEntryWithMatrix
+    // -----------------------------------------------------------------------
+
+    /**
+     * A full-matrix transform of a regular fact writes all six components into
+     * its WORLD_TO_MAP matrix.
+     */
+    @Test
+    void testRecordFactTransform_regularObject_writesWorldToMap() {
+        model.onEntriesFetched(List.of(entry("g1", 100,
+                "{\"type\":\"gate\",\"tm-world-to-map\":[1,0,0,1,0,0]}")));
+
+        final boolean recorded = model.recordFactTransform("g1",
+                new FloorMapTransformationMatrix(2, 0.1, -0.1, 2, 5, 6), SCHEMA, ACCESSOR);
+
+        assertThat(recorded).isTrue();
+        final TemporalEntry moved = model.buildMergedCanvasEntries().stream()
+                .filter(e -> e.getKey().equals("g1")).findFirst().orElseThrow();
+        final double[] m = ACCESSOR.getArray(ACCESSOR.parse(moved.getValue()), ".tm-world-to-map");
+        assertThat(m).containsExactly(2.0, 0.1, -0.1, 2.0, 5.0, 6.0);
+    }
+
+    /**
+     * A full-matrix transform of the background writes into its WORLD_TO_MAP
+     * matrix — backgrounds are not special-cased, they use WORLD_TO_MAP like
+     * every other fact.
+     */
+    @Test
+    void testRecordFactTransform_background_writesWorldToMap() {
+        model.onEntriesFetched(List.of(entry("background", 100,
+                "{\"type\":\"background\",\"tm-world-to-map\":[1,0,0,1,0,0]}")));
+
+        final boolean recorded = model.recordFactTransform("background",
+                new FloorMapTransformationMatrix(3, 0, 0, 3, 7, 8), SCHEMA, ACCESSOR);
+
+        assertThat(recorded).isTrue();
+        final TemporalEntry moved = model.buildMergedCanvasEntries().stream()
+                .filter(e -> e.getKey().equals("background")).findFirst().orElseThrow();
+        final double[] m = ACCESSOR.getArray(ACCESSOR.parse(moved.getValue()), ".tm-world-to-map");
+        assertThat(m).containsExactly(3.0, 0.0, 0.0, 3.0, 7.0, 8.0);
+    }
+
+    /**
+     * Transforming an unknown fact returns {@code false} and stages nothing.
+     */
+    @Test
+    void testRecordFactTransform_unknown_returnsFalse() {
+        model.onEntriesFetched(List.of(entry("g1", 100, "{\"type\":\"gate\"}")));
+        final boolean recorded = model.recordFactTransform("nope",
+                FloorMapTransformationMatrix.identity(), SCHEMA, ACCESSOR);
+        assertThat(recorded).isFalse();
+        assertThat(model.hasPendingChanges()).isFalse();
+    }
+
+    /**
+     * The static helper writes the full six-component matrix into the requested
+     * role's field.
+     */
+    @Test
+    void testBuildUpdatedEntryWithMatrix_writesFullMatrix() {
+        final TemporalEntry original = entry("g1", 100, "{\"type\":\"gate\"}");
+        final TemporalEntry updated = FloorMapEditorModel.buildUpdatedEntryWithMatrix(
+                original, FloorMapFieldMapping.Role.WORLD_TO_MAP,
+                new FloorMapTransformationMatrix(1, 2, 3, 4, 5, 6), SCHEMA, ACCESSOR);
+        final double[] m = ACCESSOR.getArray(ACCESSOR.parse(updated.getValue()), ".tm-world-to-map");
+        assertThat(m).containsExactly(1.0, 2.0, 3.0, 4.0, 5.0, 6.0);
+    }
+
+    // -----------------------------------------------------------------------
+    // Selection as a set
+    // -----------------------------------------------------------------------
+
+    /** The single-select façade sets/clears the whole selection. */
+    @Test
+    void testSelection_singleSelectFacade() {
+        model.setSelectedFactKey("a");
+        assertThat(model.getSelectedFactKey()).isEqualTo("a");
+        assertThat(model.getSelectedFactKeys()).containsExactly("a");
+
+        model.setSelectedFactKey(null);
+        assertThat(model.getSelectedFactKey()).isNull();
+        assertThat(model.getSelectedFactKeys()).isEmpty();
+    }
+
+    /** Multi-select APIs add/toggle/remove; the primary is the first-selected. */
+    @Test
+    void testSelection_multiSelectApis() {
+        model.addToSelection("a");
+        model.addToSelection("b");
+        assertThat(model.getSelectedFactKeys()).containsExactly("a", "b");
+        assertThat(model.getSelectedFactKey()).isEqualTo("a");
+        assertThat(model.isSelected("b")).isTrue();
+
+        model.toggleSelection("a");   // removes a
+        model.toggleSelection("c");   // adds c
+        assertThat(model.getSelectedFactKeys()).containsExactly("b", "c");
+
+        model.removeFromSelection("b");
+        assertThat(model.getSelectedFactKeys()).containsExactly("c");
+
+        model.clearSelection();
+        assertThat(model.getSelectedFactKeys()).isEmpty();
+    }
+
+    /** setSelection replaces the whole selection, preserving order. */
+    @Test
+    void testSelection_setSelection() {
+        model.setSelection(List.of("x", "y", "z"));
+        assertThat(model.getSelectedFactKeys()).containsExactly("x", "y", "z");
+        assertThat(model.getSelectedFactKey()).isEqualTo("x");
+    }
+
+    /** Deleting a selected fact removes it from the selection. */
+    @Test
+    void testSelection_stageDeletionDeselects() {
+        model.onEntriesFetched(List.of(entry("k1", 100, "{}")));
+        model.setSelectedFactKey("k1");
+        model.stageFactDeletion("k1");
+        assertThat(model.isSelected("k1")).isFalse();
+    }
+
+    // -----------------------------------------------------------------------
+    // translateFacts (batch move)
+    // -----------------------------------------------------------------------
+
+    /** Translating a regular fact shifts its WORLD_TO_MAP translation (e, f). */
+    @Test
+    void testTranslateFacts_regularObject() {
+        model.onEntriesFetched(List.of(entry("g1", 100,
+                "{\"type\":\"gate\",\"tm-world-to-map\":[1,0,0,1,10,20]}")));
+
+        final int moved = model.translateFacts(List.of("g1"), 5, -3, SCHEMA, ACCESSOR);
+
+        assertThat(moved).isEqualTo(1);
+        final TemporalEntry e = model.buildMergedCanvasEntries().stream()
+                .filter(x -> x.getKey().equals("g1")).findFirst().orElseThrow();
+        final double[] m = ACCESSOR.getArray(ACCESSOR.parse(e.getValue()), ".tm-world-to-map");
+        assertThat(m).containsExactly(1.0, 0.0, 0.0, 1.0, 15.0, 17.0);
+    }
+
+    /**
+     * Translating the background shifts its WORLD_TO_MAP translation — a
+     * background is translated like any other fact.
+     */
+    @Test
+    void testTranslateFacts_background() {
+        model.onEntriesFetched(List.of(entry("background", 100,
+                "{\"type\":\"background\",\"tm-world-to-map\":[2,0,0,2,0,0]}")));
+
+        final int moved = model.translateFacts(List.of("background"), 4, 4, SCHEMA, ACCESSOR);
+
+        assertThat(moved).isEqualTo(1);
+        final TemporalEntry e = model.buildMergedCanvasEntries().stream()
+                .filter(x -> x.getKey().equals("background")).findFirst().orElseThrow();
+        final double[] m = ACCESSOR.getArray(ACCESSOR.parse(e.getValue()), ".tm-world-to-map");
+        assertThat(m).containsExactly(2.0, 0.0, 0.0, 2.0, 4.0, 4.0);
+    }
+
+    /** A batch translate moves every found fact; unknown ids are skipped. */
+    @Test
+    void testTranslateFacts_batchSkipsUnknown() {
+        model.onEntriesFetched(List.of(
+                entry("g1", 100, "{\"type\":\"gate\",\"tm-world-to-map\":[1,0,0,1,0,0]}"),
+                entry("g2", 100, "{\"type\":\"gate\",\"tm-world-to-map\":[1,0,0,1,0,0]}")));
+
+        final int moved = model.translateFacts(List.of("g1", "g2", "ghost"), 1, 1, SCHEMA, ACCESSOR);
+        assertThat(moved).isEqualTo(2);
     }
 
     // -----------------------------------------------------------------------

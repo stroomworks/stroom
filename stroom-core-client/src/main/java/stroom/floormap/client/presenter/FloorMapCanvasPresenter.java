@@ -17,12 +17,15 @@
 package stroom.floormap.client.presenter;
 
 import stroom.floormap.client.event.MapContextMenuEvent;
-import stroom.floormap.client.event.MapObjectMovedEvent;
 import stroom.floormap.client.event.MapObjectSelectedEvent;
 import stroom.floormap.client.presenter.FloorMapCanvasPresenter.FloorMapCanvasView;
+import stroom.floormap.client.view.FloorMapGrid;
+import stroom.floormap.shared.Fact;
 import stroom.floormap.shared.FloorMapJsonKeys;
 import stroom.floormap.shared.FloorMapObject;
 import stroom.floormap.shared.FloorMapTransformationMatrix;
+import stroom.floormap.shared.FloorMapZOrder;
+import stroom.floormap.shared.TypeStyle;
 
 import com.google.gwt.animation.client.AnimationScheduler;
 import com.google.gwt.dom.client.Element;
@@ -38,8 +41,10 @@ import com.gwtplatform.mvp.client.MyPresenterWidget;
 import com.gwtplatform.mvp.client.View;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -50,12 +55,12 @@ import javax.inject.Inject;
  *
  * <p>Manages zoom, pan, object selection and drag-move in edit mode, and
  * smooth person-movement animations with fading trails during timeline
- * playback.  Two separate object lists are maintained — {@code factObjects}
- * for static floor-plan items and {@code eventObjects} for event-driven
- * entities — so that facts and events never overwrite each other.</p>
+ * playback.  Static floor-plan content comes from the {@code facts} list
+ * (rendered by type z-order); event-driven entities come from
+ * {@code eventObjects} — so that facts and events never overwrite each other.</p>
  *
- * <p>The canvas view renders the combined draw list produced by
- * {@link #buildAnimatedDrawList(double)} via its
+ * <p>The canvas view renders the z-ordered facts plus the event draw list
+ * produced by {@link #buildAnimatedDrawList(double)} via its
  * {@link FloorMapCanvasView#draw draw()} method.</p>
  */
 public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasView> {
@@ -95,12 +100,27 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
      */
     private static final double MAX_SCALE = 1e12;
 
+    /** The zoom level a freshly opened map starts at (100 %). */
+    private static final double DEFAULT_SCALE = 1.0;
+
+    /**
+     * How far the origin (0,0) is inset from the bottom-left corner in the
+     * default view, expressed in major grid divisions. Half a division places
+     * the axis indicator comfortably clear of the corner (e.g. the bottom-left
+     * of the screen reads as (-50,-50) when the major division is 100).
+     */
+    private static final double ORIGIN_INSET_MAJOR_DIVISIONS = 0.5;
+
     // Zoom and pan state
-    private double scale = 1.0;
+    private double scale = DEFAULT_SCALE;
     private double offsetX = 0;
     private double offsetY = 0;
-    private String backgroundImage;
-    private FloorMapTransformationMatrix matrix;
+    /**
+     * Whether the size-dependent default view has been applied yet. Applied
+     * once, the first time the canvas has a real height (see
+     * {@link #applyDefaultView()}); user pan/zoom afterwards is left untouched.
+     */
+    private boolean defaultViewApplied = false;
 
     // Dragging state
     private boolean isDraggingEnabled = false;
@@ -110,9 +130,9 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     private boolean hasMoved = false;
     private double lastMouseX;
     private double lastMouseY;
-
-    // Objects on the map — kept in two separate lists so facts and events never overwrite each other.
-    private List<FloorMapObject> factObjects = new ArrayList<>();
+    /** Accumulated drag delta in map space (Y-up) for the current drag gesture. */
+    private double dragDxMap;
+    private double dragDyMap;
 
     /**
      * Non-person event objects (and people when NOT playing) set here directly.
@@ -122,7 +142,27 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
     // Edit mode
     private boolean editMode = false;
-    private String selectedObjectId = null;
+    /**
+     * Currently selected object ids, in selection order. Backed as a set so a
+     * future rubber-band / modifier-key UI can select many; the current UI
+     * selects exactly one (see {@link #setSelectedObjectId(String)}). The view
+     * highlights every id in this set; a drag translates the whole selection.
+     */
+    private final Set<String> selectedObjectIds = new LinkedHashSet<>();
+
+    /**
+     * Whether the grid overlay is drawn. The grid is a non-interactive UI aid
+     * (it visualises map space) and is independent of {@link #editMode} and of
+     * whether a background image is present. The Editor tab enables it; other
+     * tabs (e.g. the Map tab) can opt in via {@link #setShowGrid(boolean)}.
+     */
+    private boolean showGrid = false;
+
+    /** Per-type presentation settings (z-order + default graphic); may be null. */
+    private List<TypeStyle> typeStyles;
+
+    /** The facts to render (backgrounds + static facts), from the parser. */
+    private List<Fact> facts = new ArrayList<>();
 
     // -------------------------------------------------------------------------
     // Playback / animation state
@@ -189,11 +229,52 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         handleMouseEvents();
 
         if (getView() != null) {
-            getView().onResize();
             getView().setRedrawListener(this::redraw);
+            // Apply the bottom-left default view as soon as the canvas has a
+            // real size. onResize() self-defers until layout completes, then
+            // fires this back.
+            getView().setResizeListener(this::applyDefaultView);
+            getView().onResize();
         }
 
         // Perform initial draw
+        redraw();
+    }
+
+    /**
+     * Positions the initial view so the map origin (0,0) sits near the
+     * bottom-left corner of the canvas, inset by
+     * {@link #ORIGIN_INSET_MAJOR_DIVISIONS} of a major grid division at the
+     * default zoom.
+     *
+     * <p>Runs once, the first time the canvas has a real height, so the result
+     * is correct at any window size and any default zoom; the inset is derived
+     * from the grid's own adaptive-decade sizing so it always matches the drawn
+     * grid. Subsequent user pan/zoom is left untouched.</p>
+     */
+    private void applyDefaultView() {
+        if (defaultViewApplied) {
+            return;
+        }
+        final int height = getView().getFocusPanel().getElement().getOffsetHeight();
+        if (height <= 0) {
+            // Canvas not laid out yet — a later onResize will call back.
+            return;
+        }
+
+        // Half a major grid division, in screen pixels, at the default zoom.
+        // The grid is drawn with an identity world-to-map matrix, so its
+        // effective scale is simply the user zoom (DEFAULT_SCALE).
+        final double insetPx = ORIGIN_INSET_MAJOR_DIVISIONS
+                * FloorMapGrid.majorDivisionScreenPx(DEFAULT_SCALE);
+
+        // The origin (0,0) renders at screen pixel (offsetX, offsetY). Inset it
+        // from the left and up from the bottom (SVG Y grows downward), so the
+        // bottom-left corner reads as (-inset, -inset) in map space.
+        scale = DEFAULT_SCALE;
+        offsetX = insetPx;
+        offsetY = height - insetPx;
+        defaultViewApplied = true;
         redraw();
     }
 
@@ -262,16 +343,21 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                     // (whose ID does NOT start with the SVG group prefix)
                     if (id != null && !id.isEmpty()
                             && !id.startsWith(FloorMapJsonKeys.SVG_GROUP_PREFIX)) {
-                        // If Ctrl or Shift is pressed and it is the background, allow panning
-                        if (!(FloorMapJsonKeys.BACKGROUND.equals(id)
-                                && (event.getNativeEvent().getCtrlKey()
-                                || event.getNativeEvent().getShiftKey()))) {
-                            selectedObjectId = id;
+                        // Holding Ctrl or Shift lets the user pan even when the
+                        // click lands on an object — needed when a full-canvas
+                        // background fact would otherwise intercept every drag.
+                        if (!(event.getNativeEvent().getCtrlKey()
+                                || event.getNativeEvent().getShiftKey())) {
+                            // Single-select today: replace the whole selection.
+                            selectedObjectIds.clear();
+                            selectedObjectIds.add(id);
 
                             // Fire an event to tell the parent presenter to show the edit menu
-                            MapObjectSelectedEvent.fire(this, selectedObjectId);
+                            MapObjectSelectedEvent.fire(this, id);
                             isDragging = true;
                             hasMoved = false;
+                            dragDxMap = 0;
+                            dragDyMap = 0;
                             lastMouseX = event.getX();
                             lastMouseY = event.getY();
 
@@ -282,7 +368,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                 }
 
                 // Clicked on background/empty space, clear selection and allow panning
-                selectedObjectId = null;
+                selectedObjectIds.clear();
             }
 
             // Normal panning logic
@@ -308,50 +394,13 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                 final double deltaX = event.getX() - lastMouseX;
                 final double deltaY = event.getY() - lastMouseY;
 
-                if (editMode && isDraggingEnabled && selectedObjectId != null) {
-                    if (FloorMapJsonKeys.BACKGROUND.equals(selectedObjectId)) {
-                        // Dragging the background (updates the background's tm-map-to-screen matrix)
-                        final double deltaUnzoomedX = deltaX / scale;
-                        final double deltaUnzoomedY = deltaY / scale;
-                        if (matrix != null) {
-                            matrix = new FloorMapTransformationMatrix(
-                                    matrix.getA(), matrix.getB(),
-                                    matrix.getC(), matrix.getD(),
-                                    matrix.getE() + deltaUnzoomedX,
-                                    matrix.getF() + deltaUnzoomedY
-                            );
-                        } else {
-                            matrix = new FloorMapTransformationMatrix(1, 0, 0, 1, deltaUnzoomedX, deltaUnzoomedY);
-                        }
-                        hasMoved = true;
-                        if (dragHandler != null) {
-                            dragHandler.onDrag(FloorMapJsonKeys.BACKGROUND, matrix.getE(), matrix.getF(), matrix);
-                        }
-                    } else {
-                        // Move the selected object.
-                        for (final FloorMapObject obj : factObjects) {
-                            if (obj.getId().equals(selectedObjectId)) {
-                                // Revert scale to get unzoomed screen delta
-                                final double deltaUnzoomedX = deltaX / scale;
-                                final double deltaUnzoomedY = deltaY / scale;
-
-                                // Revert active background's M_map_to_screen matrix to get delta in map space
-                                final FloorMapTransformationMatrix invBgMatrix = matrix != null
-                                        ? matrix.inverse()
-                                        : FloorMapTransformationMatrix.identity();
-                                final double deltaMapX =
-                                        invBgMatrix.getA() * deltaUnzoomedX + invBgMatrix.getC() * deltaUnzoomedY;
-                                final double deltaMapY =
-                                        invBgMatrix.getB() * deltaUnzoomedX + invBgMatrix.getD() * deltaUnzoomedY;
-
-                                obj.setX(obj.getX() + deltaMapX);
-                                obj.setY(obj.getY() + deltaMapY);
-                                hasMoved = true;
-                                break;
-                            }
-                        }
-                    }
-
+                if (editMode && isDraggingEnabled && !selectedObjectIds.isEmpty()) {
+                    // Accumulate the drag in map space (Y-up) for live feedback and a
+                    // single translateFacts() applied to the whole selection on drop.
+                    dragDxMap += deltaX / scale;
+                    //noinspection UnnecessaryUnaryMinus
+                    dragDyMap += -(deltaY / scale);
+                    hasMoved = true;
                     redraw();
                 } else {
                     // Pan the map
@@ -367,23 +416,18 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
         //noinspection unused event
         registerHandler(getView().getMouseUpHandlers().addMouseUpHandler(event -> {
-            // Only fire a move event when the object was actually dragged, not just clicked.
-            if (isDragging && hasMoved && editMode && selectedObjectId != null) {
-                if (FloorMapJsonKeys.BACKGROUND.equals(selectedObjectId)) {
-                    MapObjectMovedEvent.fire(this, FloorMapJsonKeys.BACKGROUND, matrix.getE(), matrix.getF());
-                } else {
-                    // Find the object's current coordinates
-                    for (final FloorMapObject obj : factObjects) {
-                        if (obj.getId().equals(selectedObjectId)) {
-                            MapObjectMovedEvent.fire(this, selectedObjectId, obj.getX(), obj.getY());
-                            break;
-                        }
-                    }
-                }
-            }
-
+            // Persist the drag as a single translate of the whole selection.
+            final boolean moved = isDragging && hasMoved && editMode
+                    && !selectedObjectIds.isEmpty();
+            final double dx = dragDxMap;
+            final double dy = dragDyMap;
+            dragDxMap = 0;
+            dragDyMap = 0;
             isDragging = false;
             hasMoved = false;
+            if (moved && dragHandler != null) {
+                dragHandler.onTranslate(new ArrayList<>(selectedObjectIds), dx, dy);
+            }
         }));
 
         // Mouse Wheel (Zoom toward cursor)
@@ -470,17 +514,10 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
      * @return a two-element array {@code {mapX, mapY}} in map space
      */
     private double[] screenToMapCoords(final double screenX, final double screenY) {
-        // Step 1: Remove the zoom/pan offset and scale
-        final double unzoomedX = (screenX - offsetX) / scale;
-        final double unzoomedY = (screenY - offsetY) / scale;
-
-        // Step 2: Apply the inverse of the background matrix
-        final FloorMapTransformationMatrix invMatrix = matrix != null
-                ? matrix.inverse()
-                : FloorMapTransformationMatrix.identity();
-        final double mapX = invMatrix.getA() * unzoomedX + invMatrix.getC() * unzoomedY + invMatrix.getE();
-        final double mapY = invMatrix.getB() * unzoomedX + invMatrix.getD() * unzoomedY + invMatrix.getF();
-
+        // Remove the zoom/pan offset and scale, then undo the Y-up render flip
+        // (map space is Y-up; SVG is Y-down) — the inverse of the draw pipeline.
+        final double mapX = (screenX - offsetX) / scale;
+        final double mapY = -((screenY - offsetY) / scale);
         return new double[]{mapX, mapY};
     }
 
@@ -504,9 +541,9 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     // =========================================================================
 
     private void redraw() {
-        getView().draw(scale, offsetX, offsetY, backgroundImage, matrix,
+        getView().draw(scale, offsetX, offsetY, FloorMapZOrder.sort(factsForDraw(), typeStyles),
                 buildAnimatedDrawList(/* nowMs — irrelevant when no animations */ 0.0),
-                selectedObjectId);
+                selectedObjectIds, typeStyles, showGrid);
     }
 
     /**
@@ -517,8 +554,9 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
      *              Pass {@code 0.0} when there are no active animations.
      */
     private List<FloorMapObject> buildAnimatedDrawList(final double nowMs) {
-        final List<FloorMapObject> combined = new ArrayList<>(factObjects);
-        combined.addAll(eventObjects); // non-person events are already in eventObjects
+        // Facts are rendered separately from the fact list; this list is the
+        // event/person overlay only.
+        final List<FloorMapObject> combined = new ArrayList<>(eventObjects);
 
         // People currently mid-animation — add at their interpolated position.
         for (final Map.Entry<String, UserAnimation> entry : activeAnimations.entrySet()) {
@@ -664,8 +702,8 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                     }
 
                     // Draw the current frame.
-                    getView().draw(scale, offsetX, offsetY, backgroundImage, matrix,
-                            buildAnimatedDrawList(timestamp), selectedObjectId);
+                    getView().draw(scale, offsetX, offsetY, FloorMapZOrder.sort(factsForDraw(), typeStyles),
+                            buildAnimatedDrawList(timestamp), selectedObjectIds, typeStyles, showGrid);
 
                     // Keep looping.
                     AnimationScheduler.get().requestAnimationFrame(this);
@@ -673,8 +711,8 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
             };
 
     /**
-     * Shared logic for handling a person position update from either the facts
-     * query ({@link #setFactObjects}) or the events query ({@link #setEventObjects}).
+     * Handles a person position update from the events query
+     * ({@link #setEventObjects}).
      * <p>
      * When not playing: records the position in {@link #lastPersonPositions} so
      * play-start has a valid "from" anchor.  The caller is responsible for
@@ -762,33 +800,62 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     // =========================================================================
 
     /**
-     * Sets the currently selected (highlighted) object on the canvas and redraws.
+     * Single-select façade: highlights exactly one object (or clears the
+     * highlight when {@code null}) and redraws.
      *
      * @param selectedObjectId the object ID to highlight, or {@code null} to clear
      */
     public void setSelectedObjectId(final String selectedObjectId) {
-        this.selectedObjectId = selectedObjectId;
+        selectedObjectIds.clear();
+        if (selectedObjectId != null) {
+            selectedObjectIds.add(selectedObjectId);
+        }
         redraw();
     }
 
     /**
-     * Sets the background's map-to-screen transformation matrix and redraws.
+     * Highlights the given set of objects (multi-select) and redraws. Backs a
+     * future rubber-band / modifier-key selection UI.
      *
-     * @param matrix the new transformation matrix
+     * @param objectIds the object IDs to highlight; {@code null} clears
      */
-    public void setMatrix(final FloorMapTransformationMatrix matrix) {
-        this.matrix = matrix;
+    public void setSelectedObjectIds(final Collection<String> objectIds) {
+        selectedObjectIds.clear();
+        if (objectIds != null) {
+            for (final String id : objectIds) {
+                if (id != null) {
+                    selectedObjectIds.add(id);
+                }
+            }
+        }
         redraw();
     }
 
     /**
-     * Returns the current background map-to-screen transformation matrix.
-     *
-     * @return the current matrix, or {@code null} if not yet set
+     * Returns the facts to render, applying any in-progress drag: selected facts
+     * have their world-to-map translated by the accumulated map-space delta so the
+     * drag is shown live. On drop the delta is persisted via
+     * {@link DragHandler#onTranslate}.
      */
-    public FloorMapTransformationMatrix getMatrix() {
-        return matrix;
+    private List<Fact> factsForDraw() {
+        if (selectedObjectIds.isEmpty() || (dragDxMap == 0 && dragDyMap == 0)) {
+            return facts;
+        }
+        final List<Fact> out = new ArrayList<>(facts.size());
+        for (final Fact fact : facts) {
+            if (selectedObjectIds.contains(fact.getKey())) {
+                final FloorMapTransformationMatrix m = fact.getWorldToMap();
+                out.add(new Fact(fact.getKey(), fact.getType(), fact.getImage(),
+                        new FloorMapTransformationMatrix(m.getA(), m.getB(), m.getC(), m.getD(),
+                                m.getE() + dragDxMap, m.getF() + dragDyMap),
+                        fact.getPosition()));
+            } else {
+                out.add(fact);
+            }
+        }
+        return out;
     }
+
 
     /**
      * Returns the map-space coordinates of the centre of the currently
@@ -806,58 +873,6 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         final double centreX = panel.getOffsetWidth() / 2.0;
         final double centreY = panel.getOffsetHeight() / 2.0;
         return screenToMapCoords(centreX, centreY);
-    }
-
-    /**
-     * Updates the background image for the SVG map.
-     *
-     * <p>Background images must be served from the Asset Store — base64
-     * data-URIs are not supported.</p>
-     *
-     * @param backgroundImage the Asset Store URL for the background image,
-     *                        or {@code null} to clear the background
-     */
-    public void setBackgroundImage(final String backgroundImage) {
-        this.backgroundImage = backgroundImage;
-        redraw();
-    }
-
-    /**
-     * Sets the static floor-plan objects (facts query result).
-     * Gates, doors, desks etc. teleport; people with a {@code "person"} type
-     * are routed through the same animation machinery as event-driven people.
-     */
-    public void setFactObjects(final List<FloorMapObject> objects) {
-        final List<FloorMapObject> nonPersonFacts = new ArrayList<>();
-
-        if (objects != null) {
-            for (final FloorMapObject obj : objects) {
-                if (FloorMapJsonKeys.PERSON.equalsIgnoreCase(obj.getType())) {
-                    if (handlePersonUpdate(obj)) {
-                        // Person placed without animation (not playing, first appearance, etc.) —
-                        // add to draw list so it's visible.
-                        nonPersonFacts.add(obj);
-                    }
-                } else {
-                    nonPersonFacts.add(obj);
-                }
-            }
-        }
-
-        // One-shot: clear the teleport flag now that person positions have been committed.
-        // Without this, a pendingTeleport set by clearAnimationState() (loop-around, scrub,
-        // step, stop-at-end) would stick forever because setEventObjects — the only other
-        // place that clears it — may never be called for fact-sourced person objects.
-        pendingTeleport = false;
-
-        this.factObjects = nonPersonFacts;
-
-        if (isPlaying) {
-            ensureAnimationLoop();
-            // The animation loop calls draw(); avoid double-paint.
-        } else {
-            redraw();
-        }
     }
 
     /**
@@ -911,14 +926,6 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     }
 
     /**
-     * Legacy convenience alias — routes to {@link #setFactObjects} so existing
-     * edit-mode code paths (which only deal with facts) continue to work.
-     */
-    public void setObjects(final List<FloorMapObject> objects) {
-        setFactObjects(objects);
-    }
-
-    /**
      * Toggles edit mode. When disabled, the object selection is cleared and
      * object dragging is turned off.
      *
@@ -927,10 +934,44 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     public void setEditMode(final boolean editMode) {
         this.editMode = editMode;
         if (!editMode) {
-            selectedObjectId = null;
+            selectedObjectIds.clear();
         }
 
         isDraggingEnabled = false;
+        redraw();
+    }
+
+    /**
+     * Controls whether the grid overlay is drawn. The grid is a non-interactive
+     * UI aid and is independent of edit mode and of whether a background image is
+     * present.
+     *
+     * @param showGrid {@code true} to always draw the grid, {@code false} to hide it
+     */
+    public void setShowGrid(final boolean showGrid) {
+        this.showGrid = showGrid;
+        redraw();
+    }
+
+    /**
+     * Sets the per-type presentation settings (z-order + default graphic shape
+     * and colour). Used by the view to render imageless facts.
+     *
+     * @param typeStyles the ordered type styles, or {@code null}
+     */
+    public void setTypeStyles(final List<TypeStyle> typeStyles) {
+        this.typeStyles = typeStyles;
+        redraw();
+    }
+
+    /**
+     * Sets the facts to render (backgrounds + static facts) as produced by the
+     * parser. Replaces the legacy background-image/matrix/objects inputs.
+     *
+     * @param facts the facts; {@code null} is treated as empty
+     */
+    public void setFacts(final List<Fact> facts) {
+        this.facts = facts != null ? facts : new ArrayList<>();
         redraw();
     }
 
@@ -953,11 +994,17 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     }
 
     /**
-     * Callback interface for drag notifications.
+     * Callback invoked when a drag gesture completes, to persist the move as a
+     * single translation of the whole selection in map space.
      */
     public interface DragHandler {
 
-        void onDrag(String objectId, double x, double y, FloorMapTransformationMatrix matrix);
+        /**
+         * @param keys  the selected fact keys that were dragged
+         * @param dxMap the accumulated X translation in map space
+         * @param dyMap the accumulated Y translation in map space (Y-up)
+         */
+        void onTranslate(Collection<String> keys, double dxMap, double dyMap);
     }
 
     // =========================================================================
@@ -1072,25 +1119,26 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
          * selection change, data load) and rebuilds the entire SVG DOM.
          * The rendering layers are, from back to front:</p>
          * <ol>
-         *   <li>Adaptive grid background (when no image is set)</li>
-         *   <li>Background floor-plan image (transformed by {@code matrix})</li>
-         *   <li>Map objects (gates, doors, people, etc.)</li>
+         *   <li>Grid overlay (drawn when {@code showGrid} is set)</li>
+         *   <li>Facts — image facts (incl. backgrounds) and imageless default graphics,
+         *       in the supplied paint (z) order</li>
+         *   <li>Events (people) drawn on top</li>
          * </ol>
          *
          * @param scale           the current zoom scale factor
          * @param x               the current pan offset X (pixels)
          * @param y               the current pan offset Y (pixels)
-         * @param backgroundImage the Asset Store URL for the background image,
-         *                        or {@code null} for grid-only mode
-         * @param matrix          the map-to-screen transformation matrix,
-         *                        or {@code null} for identity
-         * @param objects         the list of map objects to render
-         * @param selectedObjectId the ID of the currently selected object,
-         *                         or {@code null} if nothing is selected
+         * @param facts           the facts to render, already in paint (z) order
+         * @param events          the event/person overlay objects (map coordinates)
+         * @param selectedObjectIds the IDs of the currently selected objects (all
+         *                         highlighted); empty if nothing is selected
+         * @param typeStyles      per-type presentation settings (default graphic
+         *                        shape/colour for imageless facts); may be {@code null}
+         * @param showGrid        {@code true} to draw the (non-interactive) grid overlay
          */
-        void draw(double scale, double x, double y, String backgroundImage,
-                FloorMapTransformationMatrix matrix, List<FloorMapObject> objects,
-                String selectedObjectId);
+        void draw(double scale, double x, double y, List<Fact> facts,
+                List<FloorMapObject> events, Set<String> selectedObjectIds,
+                List<TypeStyle> typeStyles, boolean showGrid);
 
         /**
          * Registers a listener that is called whenever the view needs to
@@ -1101,6 +1149,17 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
          *                       {@code FloorMapCanvasPresenter::redraw}
          */
         void setRedrawListener(Runnable redrawListener);
+
+        /**
+         * Registers a listener that is called once the canvas has a real
+         * (non-zero) on-screen size — i.e. after layout completes. The
+         * presenter uses this to apply its size-dependent default view (which
+         * needs the canvas height to place the origin at the bottom-left).
+         *
+         * @param resizeListener the callback to invoke, typically
+         *                       {@code FloorMapCanvasPresenter::applyDefaultView}
+         */
+        void setResizeListener(Runnable resizeListener);
     }
 
 }

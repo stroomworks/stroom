@@ -107,69 +107,74 @@ class TestFloorMapEntryParser {
     // -----------------------------------------------------------------------
 
     /**
-     * A {@code null} entry list produces an empty result with no warnings.
+     * A {@code null} entry list produces an empty fact list with no warnings.
      */
     @Test
     void testParse_nullEntries() {
-        final FloorMapEntryParser.ParseResult result =
+        final List<Fact> facts =
                 FloorMapEntryParser.parse(null, SCHEMA, ACCESSOR, warnings::add);
-        assertThat(result.getObjects()).isEmpty();
-        assertThat(result.getBackgroundImage()).isNull();
+        assertThat(facts).isEmpty();
         assertThat(warnings).isEmpty();
     }
 
     /**
-     * An empty entry list produces an empty result with no warnings.
+     * An empty entry list produces an empty fact list with no warnings.
      */
     @Test
     void testParse_emptyEntries() {
-        final FloorMapEntryParser.ParseResult result =
+        final List<Fact> facts =
                 FloorMapEntryParser.parse(List.of(), SCHEMA, ACCESSOR, warnings::add);
-        assertThat(result.getObjects()).isEmpty();
+        assertThat(facts).isEmpty();
         assertThat(warnings).isEmpty();
     }
 
     // -----------------------------------------------------------------------
-    // parse — background entry
+    // parse — background (image) entry
     // -----------------------------------------------------------------------
 
     /**
-     * A background entry (declared via {@code type}) yields its image and
-     * transform matrix, and contributes no regular objects.
+     * A background entry (declared via {@code type} and carrying an image)
+     * yields a single fact with that image and its world-to-map placement
+     * matrix. A background is no longer special-cased: it is just an image
+     * fact placed by {@code WORLD_TO_MAP}.
      */
     @Test
     void testParse_backgroundEntry() {
         final String json = "{\"type\":\"background\",\"img\":\"floor1.png\","
-                + "\"tm-map-to-screen\":[2,0,0,2,10,20]}";
+                + "\"tm-world-to-map\":[2,0,0,2,10,20]}";
         final TemporalEntry bgEntry = entry("background", 100, json);
 
-        final FloorMapEntryParser.ParseResult result =
+        final List<Fact> facts =
                 FloorMapEntryParser.parse(List.of(bgEntry), SCHEMA, ACCESSOR, warnings::add);
 
-        assertThat(result.getBackgroundImage()).isEqualTo("floor1.png");
-        assertThat(result.getBackgroundMatrix()).isNotNull();
-        assertThat(result.getBackgroundMatrix().getA()).isEqualTo(2.0);
-        assertThat(result.getBackgroundMatrix().getE()).isEqualTo(10.0);
-        assertThat(result.getBackgroundMatrix().getF()).isEqualTo(20.0);
-        assertThat(result.getObjects()).isEmpty();
+        assertThat(facts).hasSize(1);
+        final Fact bg = facts.getFirst();
+        assertThat(bg.hasImage()).isTrue();
+        assertThat(bg.getImage()).isEqualTo("floor1.png");
+        assertThat(bg.getType()).isEqualToIgnoringCase("background");
+        assertThat(bg.getWorldToMap()).isNotNull();
+        assertThat(bg.getWorldToMap().getA()).isEqualTo(2.0);
+        assertThat(bg.getWorldToMap().getE()).isEqualTo(10.0);
+        assertThat(bg.getWorldToMap().getF()).isEqualTo(20.0);
         assertThat(warnings).as("valid background should not emit warnings").isEmpty();
     }
 
     /**
-     * An entry keyed {@code "background"} is treated as the background even
-     * when its {@code type} field is absent.
+     * An image-bearing entry with no {@code type} still becomes an image fact.
+     * (Under the new model there is no key- or type-based "background"
+     * detection: any fact carrying an image is an image fact.)
      */
     @Test
-    void testParse_backgroundDetectedByKey() {
-        // Even if type is missing, if the key is "background" it should
-        // be treated as background.
+    void testParse_imageEntry_noType() {
         final String json = "{\"img\":\"floor1.png\"}";
         final TemporalEntry bgEntry = entry("background", 100, json);
 
-        final FloorMapEntryParser.ParseResult result =
+        final List<Fact> facts =
                 FloorMapEntryParser.parse(List.of(bgEntry), SCHEMA, ACCESSOR, warnings::add);
-        assertThat(result.getBackgroundImage()).isEqualTo("floor1.png");
-        assertThat(result.getObjects()).isEmpty();
+        assertThat(facts).hasSize(1);
+        final Fact fact = facts.getFirst();
+        assertThat(fact.hasImage()).isTrue();
+        assertThat(fact.getImage()).isEqualTo("floor1.png");
         assertThat(warnings).isEmpty();
     }
 
@@ -179,7 +184,7 @@ class TestFloorMapEntryParser {
 
     /**
      * A regular object entry with no world-to-map matrix is parsed with its
-     * raw coordinates unchanged.
+     * raw (world) coordinates unchanged and an identity placement matrix.
      */
     @Test
     void testParse_regularObject_identityMatrix() {
@@ -187,21 +192,24 @@ class TestFloorMapEntryParser {
                 + "\"coords\":[100,200]}";
         final TemporalEntry objEntry = entry("gate-1", 100, json);
 
-        final FloorMapEntryParser.ParseResult result =
+        final List<Fact> facts =
                 FloorMapEntryParser.parse(List.of(objEntry), SCHEMA, ACCESSOR, warnings::add);
 
-        assertThat(result.getObjects()).hasSize(1);
-        final FloorMapObject obj = result.getObjects().getFirst();
-        assertThat(obj.getId()).isEqualTo("gate-1");
-        assertThat(obj.getType()).isEqualTo("gate");
-        assertThat(obj.getX()).isCloseTo(100.0, within(0.001));
-        assertThat(obj.getY()).isCloseTo(200.0, within(0.001));
+        assertThat(facts).hasSize(1);
+        final Fact fact = facts.getFirst();
+        assertThat(fact.getKey()).isEqualTo("gate-1");
+        assertThat(fact.getType()).isEqualTo("gate");
+        assertThat(fact.getPosition()).isNotNull();
+        assertThat(fact.getPosition()[0]).isCloseTo(100.0, within(0.001));
+        assertThat(fact.getPosition()[1]).isCloseTo(200.0, within(0.001));
+        assertThat(fact.getWorldToMap()).isEqualTo(FloorMapTransformationMatrix.identity());
         assertThat(warnings).as("valid entry should not emit warnings").isEmpty();
     }
 
     /**
-     * A regular object entry's coordinates are transformed through its
-     * world-to-map matrix (scale and translation) into map space.
+     * A regular object entry carries its world position and its world-to-map
+     * matrix. Composing the two (as the canvas does) maps the world point into
+     * map space (scale and translation applied).
      */
     @Test
     void testParse_regularObject_withWorldToMapTransform() {
@@ -212,47 +220,56 @@ class TestFloorMapEntryParser {
                 + "\"tm-world-to-map\":[2,0,0,2,50,100]}";
         final TemporalEntry objEntry = entry("cam-1", 100, json);
 
-        final FloorMapEntryParser.ParseResult result =
+        final List<Fact> facts =
                 FloorMapEntryParser.parse(List.of(objEntry), SCHEMA, ACCESSOR, null);
 
-        assertThat(result.getObjects()).hasSize(1);
-        final FloorMapObject obj = result.getObjects().getFirst();
-        assertThat(obj.getX()).isCloseTo(70.0, within(0.001));
-        assertThat(obj.getY()).isCloseTo(140.0, within(0.001));
+        assertThat(facts).hasSize(1);
+        final Fact fact = facts.getFirst();
+        // Position is stored in world space.
+        assertThat(fact.getPosition()[0]).isCloseTo(10.0, within(0.001));
+        assertThat(fact.getPosition()[1]).isCloseTo(20.0, within(0.001));
+        // Composing world→map places the point at (70, 140) in map space.
+        final FloorMapTransformationMatrix m = fact.getWorldToMap();
+        final double[] p = fact.getPosition();
+        final double mapX = m.getA() * p[0] + m.getC() * p[1] + m.getE();
+        final double mapY = m.getB() * p[0] + m.getD() * p[1] + m.getF();
+        assertThat(mapX).isCloseTo(70.0, within(0.001));
+        assertThat(mapY).isCloseTo(140.0, within(0.001));
     }
 
     /**
-     * An object entry with no {@code coords} field defaults to (0, 0) rather
-     * than failing to parse.
+     * An object entry with no {@code coords} field has a {@code null} position
+     * (rather than defaulting to a point), and still parses without warning.
      */
     @Test
-    void testParse_missingCoords_defaultsToZero() {
+    void testParse_missingCoords_nullPosition() {
         final String json = "{\"type\":\"sensor\",\"name\":\"S1\"}";
         final TemporalEntry objEntry = entry("s1", 100, json);
 
-        final FloorMapEntryParser.ParseResult result =
+        final List<Fact> facts =
                 FloorMapEntryParser.parse(List.of(objEntry), SCHEMA, ACCESSOR, null);
 
-        assertThat(result.getObjects()).hasSize(1);
-        assertThat(result.getObjects().getFirst().getX()).isEqualTo(0.0);
-        assertThat(result.getObjects().getFirst().getY()).isEqualTo(0.0);
+        assertThat(facts).hasSize(1);
+        assertThat(facts.getFirst().getPosition()).isNull();
     }
 
     /**
-     * An object entry with no world-to-map matrix passes its coordinates
-     * through unchanged, i.e. as if transformed by the identity matrix.
+     * An object entry with no world-to-map matrix defaults to the identity
+     * placement matrix, so its world position passes through unchanged.
      */
     @Test
     void testParse_missingMatrix_usesIdentity() {
-        // Without a world-to-map matrix, coordinates should pass through unchanged
+        // Without a world-to-map matrix, the placement matrix is identity.
         final String json = "{\"type\":\"gate\",\"coords\":[50,75]}";
         final TemporalEntry objEntry = entry("g1", 100, json);
 
-        final FloorMapEntryParser.ParseResult result =
+        final List<Fact> facts =
                 FloorMapEntryParser.parse(List.of(objEntry), SCHEMA, ACCESSOR, null);
 
-        assertThat(result.getObjects().getFirst().getX()).isCloseTo(50.0, within(0.001));
-        assertThat(result.getObjects().getFirst().getY()).isCloseTo(75.0, within(0.001));
+        final Fact fact = facts.getFirst();
+        assertThat(fact.getWorldToMap()).isEqualTo(FloorMapTransformationMatrix.identity());
+        assertThat(fact.getPosition()[0]).isCloseTo(50.0, within(0.001));
+        assertThat(fact.getPosition()[1]).isCloseTo(75.0, within(0.001));
     }
 
     // -----------------------------------------------------------------------
@@ -260,9 +277,9 @@ class TestFloorMapEntryParser {
     // -----------------------------------------------------------------------
 
     /**
-     * A mixed batch of one background entry and several regular objects is
-     * split correctly between {@code getBackgroundImage} and
-     * {@code getObjects}.
+     * A mixed batch of one background (image) entry and several regular objects
+     * produces one fact per entry: the image fact carries the image, the others
+     * do not.
      */
     @Test
     void testParse_backgroundAndMultipleObjects() {
@@ -270,14 +287,17 @@ class TestFloorMapEntryParser {
         final String obj1Json = "{\"type\":\"gate\",\"coords\":[10,20]}";
         final String obj2Json = "{\"type\":\"camera\",\"coords\":[30,40]}";
 
-        final FloorMapEntryParser.ParseResult result = FloorMapEntryParser.parse(
+        final List<Fact> facts = FloorMapEntryParser.parse(
                 List.of(entry("background", 100, bgJson),
                         entry("gate-1", 100, obj1Json),
                         entry("cam-1", 100, obj2Json)),
                 SCHEMA, ACCESSOR, null);
 
-        assertThat(result.getBackgroundImage()).isEqualTo("floor.png");
-        assertThat(result.getObjects()).hasSize(2);
+        assertThat(facts).hasSize(3);
+        assertThat(facts.stream().filter(Fact::hasImage).count()).isEqualTo(1L);
+        assertThat(facts.stream().filter(Fact::hasImage).findFirst().orElseThrow().getImage())
+                .isEqualTo("floor.png");
+        assertThat(facts.stream().filter(f -> !f.hasImage()).count()).isEqualTo(2L);
     }
 
     // -----------------------------------------------------------------------
@@ -295,12 +315,12 @@ class TestFloorMapEntryParser {
         final TemporalEntry goodEntry = entry("good", 100,
                 "{\"type\":\"gate\",\"coords\":[1,2]}");
 
-        final FloorMapEntryParser.ParseResult result = FloorMapEntryParser.parse(
+        final List<Fact> facts = FloorMapEntryParser.parse(
                 List.of(badEntry, goodEntry), SCHEMA, ACCESSOR, warnings::add);
 
         // Only the good entry should be parsed
-        assertThat(result.getObjects()).hasSize(1);
-        assertThat(result.getObjects().getFirst().getId()).isEqualTo("good");
+        assertThat(facts).hasSize(1);
+        assertThat(facts.getFirst().getKey()).isEqualTo("good");
         // A warning should have been emitted for the bad entry
         assertThat(warnings).hasSize(1);
         assertThat(warnings.getFirst()).contains("bad");
@@ -329,13 +349,13 @@ class TestFloorMapEntryParser {
      */
     @Test
     void testParse_multipleMalformedEntries_emitsMultipleWarnings() {
-        final FloorMapEntryParser.ParseResult result = FloorMapEntryParser.parse(
+        final List<Fact> facts = FloorMapEntryParser.parse(
                 List.of(entry("bad1", 100, "xxx"),
                         entry("bad2", 100, "yyy"),
                         entry("good", 100, "{\"type\":\"gate\",\"coords\":[1,2]}")),
                 SCHEMA, ACCESSOR, warnings::add);
 
-        assertThat(result.getObjects()).hasSize(1);
+        assertThat(facts).hasSize(1);
         assertThat(warnings).hasSize(2);
         assertThat(warnings.getFirst()).contains("bad1");
         assertThat(warnings.get(1)).contains("bad2");
@@ -349,9 +369,9 @@ class TestFloorMapEntryParser {
     void testParse_nullWarningConsumer_doesNotThrow() {
         // Passing null consumer should silently skip, not NPE
         final TemporalEntry badEntry = entry("bad", 100, "not-json");
-        final FloorMapEntryParser.ParseResult result = FloorMapEntryParser.parse(
+        final List<Fact> facts = FloorMapEntryParser.parse(
                 List.of(badEntry), SCHEMA, ACCESSOR, null);
-        assertThat(result.getObjects()).isEmpty();
+        assertThat(facts).isEmpty();
     }
 
     /**
@@ -361,9 +381,9 @@ class TestFloorMapEntryParser {
     @Test
     void testParse_nullValue_emitsWarning() {
         final TemporalEntry nullValue = new TemporalEntry(MAP, "k1", 100L, null);
-        final FloorMapEntryParser.ParseResult result =
+        final List<Fact> facts =
                 FloorMapEntryParser.parse(List.of(nullValue), SCHEMA, ACCESSOR, warnings::add);
-        assertThat(result.getObjects()).isEmpty();
+        assertThat(facts).isEmpty();
         assertThat(warnings).as("null value should emit a warning").hasSize(1);
         assertThat(warnings.getFirst()).contains("k1").contains("null");
     }
@@ -375,9 +395,9 @@ class TestFloorMapEntryParser {
     @Test
     void testParse_emptyValue_emitsWarning() {
         final TemporalEntry emptyValue = entry("k1", 100, "");
-        final FloorMapEntryParser.ParseResult result =
+        final List<Fact> facts =
                 FloorMapEntryParser.parse(List.of(emptyValue), SCHEMA, ACCESSOR, warnings::add);
-        assertThat(result.getObjects()).isEmpty();
+        assertThat(facts).isEmpty();
         assertThat(warnings).as("empty value should emit a warning").hasSize(1);
         assertThat(warnings.getFirst()).contains("k1");
     }
@@ -391,12 +411,107 @@ class TestFloorMapEntryParser {
         final String json = "{\"coords\":[5,10]}";
         final TemporalEntry objEntry = entry("k1", 100, json);
 
-        final FloorMapEntryParser.ParseResult result =
+        final List<Fact> facts =
                 FloorMapEntryParser.parse(List.of(objEntry), SCHEMA, ACCESSOR, warnings::add);
 
-        assertThat(result.getObjects()).hasSize(1);
-        assertThat(result.getObjects().getFirst().getType()).isEmpty();
+        assertThat(facts).hasSize(1);
+        assertThat(facts.getFirst().getType()).isEmpty();
         assertThat(warnings).as("missing type is not a warning-worthy condition").isEmpty();
+    }
+
+    // -----------------------------------------------------------------------
+    // parse — the authoritative fact list
+    // -----------------------------------------------------------------------
+
+    /**
+     * Every entry becomes one {@link Fact}, in order — including the background.
+     */
+    @Test
+    void testFacts_oneFactPerEntry() {
+        final List<Fact> facts = FloorMapEntryParser.parse(List.of(
+                        entry("background", 100,
+                                "{\"type\":\"background\",\"img\":\"floor.png\","
+                                        + "\"tm-world-to-map\":[2,0,0,2,10,20]}"),
+                        entry("gate-1", 100,
+                                "{\"type\":\"gate\",\"coords\":[3,4]}")),
+                SCHEMA, ACCESSOR, warnings::add);
+
+        assertThat(facts).hasSize(2);
+        assertThat(facts.get(0).getKey()).isEqualTo("background");
+        assertThat(facts.get(1).getKey()).isEqualTo("gate-1");
+    }
+
+    /**
+     * A background fact carries its image and its world-to-map placement
+     * matrix, is typed {@code "background"}, and has no position.
+     */
+    @Test
+    void testFacts_backgroundFact() {
+        final List<Fact> facts = FloorMapEntryParser.parse(List.of(
+                        entry("background", 100,
+                                "{\"type\":\"background\",\"img\":\"floor.png\","
+                                        + "\"tm-world-to-map\":[2,0,0,2,10,20]}")),
+                SCHEMA, ACCESSOR, warnings::add);
+
+        final Fact bg = facts.getFirst();
+        assertThat(bg.getType()).isEqualToIgnoringCase("background");
+        assertThat(bg.hasImage()).isTrue();
+        assertThat(bg.getImage()).isEqualTo("floor.png");
+        assertThat(bg.getPosition()).isNull();
+        assertThat(bg.getWorldToMap().getA()).isEqualTo(2.0);
+        assertThat(bg.getWorldToMap().getE()).isEqualTo(10.0);
+        assertThat(bg.getWorldToMap().getF()).isEqualTo(20.0);
+    }
+
+    /**
+     * A regular fact carries its world position and world-to-map matrix, has no
+     * image, and is not a background.
+     */
+    @Test
+    void testFacts_regularFact() {
+        final List<Fact> facts = FloorMapEntryParser.parse(List.of(
+                        entry("gate-1", 100,
+                                "{\"type\":\"gate\",\"coords\":[3,4],"
+                                        + "\"tm-world-to-map\":[1,0,0,1,0,0]}")),
+                SCHEMA, ACCESSOR, warnings::add);
+
+        final Fact fact = facts.getFirst();
+        assertThat(fact.hasImage()).isFalse();
+        assertThat(fact.getType()).isEqualTo("gate");
+        assertThat(fact.getPosition()).containsExactly(3.0, 4.0);
+    }
+
+    /**
+     * A mixed batch of one background (image) entry and one object entry yields
+     * one image fact and one non-image fact, in entry order.
+     */
+    @Test
+    void testFacts_mixedBackgroundAndObject() {
+        final List<Fact> facts = FloorMapEntryParser.parse(List.of(
+                        entry("background", 100,
+                                "{\"type\":\"background\",\"img\":\"floor.png\","
+                                        + "\"tm-world-to-map\":[1,0,0,1,0,0]}"),
+                        entry("gate-1", 100, "{\"type\":\"gate\",\"coords\":[3,4]}")),
+                SCHEMA, ACCESSOR, warnings::add);
+
+        assertThat(facts).hasSize(2);
+        // The background fact carries the image.
+        assertThat(facts.getFirst().getKey()).isEqualTo("background");
+        assertThat(facts.getFirst().hasImage()).isTrue();
+        assertThat(facts.getFirst().getImage()).isEqualTo("floor.png");
+        // The object fact does not.
+        assertThat(facts.get(1).getKey()).isEqualTo("gate-1");
+        assertThat(facts.get(1).hasImage()).isFalse();
+    }
+
+    /**
+     * A {@code null} entry list yields an empty (non-null) fact list.
+     */
+    @Test
+    void testFacts_nullEntries_emptyList() {
+        final List<Fact> facts =
+                FloorMapEntryParser.parse(null, SCHEMA, ACCESSOR, warnings::add);
+        assertThat(facts).isEmpty();
     }
 
     // -----------------------------------------------------------------------

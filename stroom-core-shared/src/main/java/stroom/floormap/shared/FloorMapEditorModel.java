@@ -21,9 +21,14 @@ import stroom.util.shared.TemporalEntry;
 import stroom.util.shared.TemporalEntryId;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 import java.util.Set;
 import java.util.function.Consumer;
@@ -38,7 +43,7 @@ import java.util.function.Consumer;
  *
  * <h3>Shared selection model (single source of truth)</h3>
  * <ul>
- *   <li>{@link #selectedFactKey} — key of the selected fact, or {@code null}</li>
+ *   <li>{@link #selectedFactKeys} — the selected fact keys (single-select today)</li>
  *   <li>{@link #selectedTime} — current timeline position in ms</li>
  *   <li>{@link #showAllFacts} — whether "show all" mode is active</li>
  *   <li>{@link #pendingChanges} — staged edits awaiting flush</li>
@@ -55,8 +60,16 @@ public class FloorMapEditorModel {
     // State
     // -----------------------------------------------------------------------
 
-    /** Currently selected fact key, or {@code null}. */
-    private String selectedFactKey;
+    /**
+     * Currently selected fact keys, in selection order. Backs both the
+     * single-select façade ({@link #getSelectedFactKey()} /
+     * {@link #setSelectedFactKey(String)}) used by the current UI and the
+     * multi-select API ({@link #getSelectedFactKeys()} etc.) that a future
+     * rubber-band / modifier-key UI will drive. A {@link java.util.LinkedHashSet}
+     * so the first-selected key can serve as the "primary" selection for the
+     * properties panel and time list.
+     */
+    private final Set<String> selectedFactKeys = new LinkedHashSet<>();
 
     /** Current timeline position in milliseconds. */
     private long selectedTime;
@@ -105,12 +118,71 @@ public class FloorMapEditorModel {
     // State accessors
     // -----------------------------------------------------------------------
 
+    /**
+     * The "primary" selected fact key — the first-selected of the current
+     * selection, or {@code null} if nothing is selected. Drives the properties
+     * panel and time list (single-fact views).
+     */
     public String getSelectedFactKey() {
-        return selectedFactKey;
+        final Iterator<String> it = selectedFactKeys.iterator();
+        return it.hasNext() ? it.next() : null;
     }
 
+    /**
+     * Single-select façade: replaces the whole selection with {@code key}
+     * (or clears it when {@code key} is {@code null}).
+     */
     public void setSelectedFactKey(final String selectedFactKey) {
-        this.selectedFactKey = selectedFactKey;
+        selectedFactKeys.clear();
+        if (selectedFactKey != null) {
+            selectedFactKeys.add(selectedFactKey);
+        }
+    }
+
+    /** The full selection, in selection order; never {@code null}. */
+    public Set<String> getSelectedFactKeys() {
+        return java.util.Collections.unmodifiableSet(selectedFactKeys);
+    }
+
+    /** Adds a key to the selection (multi-select). No-op if already selected. */
+    public void addToSelection(final String key) {
+        if (key != null) {
+            selectedFactKeys.add(key);
+        }
+    }
+
+    /** Removes a key from the selection. */
+    public void removeFromSelection(final String key) {
+        selectedFactKeys.remove(key);
+    }
+
+    /** Toggles a key's presence in the selection (multi-select with modifiers). */
+    public void toggleSelection(final String key) {
+        if (key != null && !selectedFactKeys.remove(key)) {
+            selectedFactKeys.add(key);
+        }
+    }
+
+    /** Replaces the whole selection with the given keys, in order. */
+    public void setSelection(final Collection<String> keys) {
+        selectedFactKeys.clear();
+        if (keys != null) {
+            for (final String key : keys) {
+                if (key != null) {
+                    selectedFactKeys.add(key);
+                }
+            }
+        }
+    }
+
+    /** Clears the selection. */
+    public void clearSelection() {
+        selectedFactKeys.clear();
+    }
+
+    /** Whether the given key is currently selected. */
+    public boolean isSelected(final String key) {
+        return selectedFactKeys.contains(key);
     }
 
     public long getSelectedTime() {
@@ -211,6 +283,19 @@ public class FloorMapEditorModel {
     }
 
     /**
+     * Overlays the pending changes on an arbitrary entry list <em>without</em>
+     * touching the canvas snapshot ({@code serverEntriesAtCurrentTime}). Used
+     * for side lists fetched independently of the canvas — e.g. the "show all"
+     * Fact List — so unflushed creations/updates still appear in them.
+     *
+     * @param entries the server-sourced entries; may be {@code null}
+     * @return the entries with pending changes applied; never {@code null}
+     */
+    public List<TemporalEntry> mergePendingChanges(final List<TemporalEntry> entries) {
+        return pendingChanges.applyTo(entries);
+    }
+
+    /**
      * Builds a merged and filtered time list for the currently selected fact.
      *
      * <p>The returned list is independent of the current timeline position:
@@ -223,8 +308,9 @@ public class FloorMapEditorModel {
      *         never {@code null}
      */
     public List<TemporalEntry> buildMergedTimeList() {
+        final String primaryKey = getSelectedFactKey();
         final List<TemporalEntry> merged = pendingChanges.applyTo(serverEntriesForSelectedFact);
-        merged.removeIf(e -> !e.getKey().equals(selectedFactKey));
+        merged.removeIf(e -> !e.getKey().equals(primaryKey));
         merged.sort(Comparator.comparingLong(TemporalEntry::getEffectiveTimeMs));
         return merged;
     }
@@ -255,18 +341,60 @@ public class FloorMapEditorModel {
     // -----------------------------------------------------------------------
 
     /**
-     * Parses merged entries into canvas-ready data.
+     * Parses merged entries into the ordered {@link Fact} list the canvas renders.
+     *
+     * <p>The canvas renders, per key, the single shard <strong>active at
+     * {@link #getSelectedTime()}</strong> — the latest shard whose effective
+     * time is {@code <= selectedTime}. The server fetch is already
+     * time-filtered one-per-key, so for server entries this is a no-op; the
+     * filter matters for the overlaid <em>pending changes</em>, which may sit
+     * at other effective times (an edit of a future shard, a translate staged
+     * against an earlier shard). Without it a key could render — and drag — as
+     * several overlaid time versions, or show a not-yet-effective pending
+     * value.</p>
+     *
+     * <p>Safety net: when the selected time is unset ({@code <= 0}) no time
+     * filter is applied and the latest shard per key wins, so the canvas is not
+     * blanked before the scrubber is initialised.</p>
      *
      * @param entries  the merged entries to parse
      * @param schema   the value schema
      * @param accessor the value accessor
-     * @return the parse result; never {@code null}
+     * @return the fact list, one per key active at the scrubber; never {@code null}
      */
-    public FloorMapEntryParser.ParseResult parseForCanvas(
+    public List<Fact> parseForCanvas(
             final List<TemporalEntry> entries,
             final List<FloorMapFieldMapping> schema,
             final ValueAccessor accessor) {
-        return FloorMapEntryParser.parse(entries, schema, accessor, warningConsumer);
+        return FloorMapEntryParser.parse(
+                activeEntriesAtSelectedTime(entries), schema, accessor, warningConsumer);
+    }
+
+    /**
+     * Reduces entries to a single entry per key — the one with the greatest
+     * effective time that is active at {@link #selectedTime} (i.e.
+     * {@code effectiveTime <= selectedTime}) — preserving first-seen key order.
+     * Shards not yet effective at the scrubber are dropped. When
+     * {@code selectedTime <= 0} the time filter is skipped and the latest shard
+     * per key wins. Returns {@code null} unchanged so the parser's own null
+     * handling applies.
+     */
+    private List<TemporalEntry> activeEntriesAtSelectedTime(final List<TemporalEntry> entries) {
+        if (entries == null) {
+            return null;
+        }
+        final Map<String, TemporalEntry> byKey = new LinkedHashMap<>();
+        for (final TemporalEntry e : entries) {
+            if (selectedTime > 0 && e.getEffectiveTimeMs() > selectedTime) {
+                continue;
+            }
+            final TemporalEntry existing = byKey.get(e.getKey());
+            if (existing == null
+                    || e.getEffectiveTimeMs() >= existing.getEffectiveTimeMs()) {
+                byKey.put(e.getKey(), e);
+            }
+        }
+        return new ArrayList<>(byKey.values());
     }
 
     // -----------------------------------------------------------------------
@@ -299,13 +427,97 @@ public class FloorMapEditorModel {
                             "No Value Schema is configured. "
                             + "Please configure a Value Schema in the Settings tab.");
                 }
-                final TemporalEntry updated = buildUpdatedEntryWithCoords(
-                        e, mapX, mapY, schema, accessor);
-                pendingChanges.recordUpdate(updated);
+                pendingChanges.recordUpdate(
+                        buildUpdatedEntryWithCoords(e, mapX, mapY, schema, accessor));
                 return true;
             }
         }
         return false;
+    }
+
+    /**
+     * Records a full affine transform for a fact by writing all six components
+     * ({@code a,b,c,d,e,f}) of its placement matrix. This is the general
+     * capability behind future rotate/scale tools — a drag is simply the case
+     * where only the translation changes.
+     *
+     * <p>The matrix is written to the fact's {@code WORLD_TO_MAP} role; the fact
+     * is looked up by key. Backgrounds are not special-cased — they use
+     * {@code WORLD_TO_MAP} like every other fact.</p>
+     *
+     * @return {@code true} if a matching fact was found and an update staged
+     * @throws IllegalStateException if the schema is null or empty
+     */
+    public boolean recordFactTransform(final String objectId,
+                                       final FloorMapTransformationMatrix matrix,
+                                       final List<FloorMapFieldMapping> schema,
+                                       final ValueAccessor accessor) {
+        final List<TemporalEntry> all = pendingChanges.applyTo(serverEntriesAtCurrentTime);
+        for (final TemporalEntry e : all) {
+            if (objectId.equals(e.getKey())) {
+                if (schema == null || schema.isEmpty()) {
+                    throw new IllegalStateException(
+                            "No Value Schema is configured. "
+                            + "Please configure a Value Schema in the Settings tab.");
+                }
+                pendingChanges.recordUpdate(buildUpdatedEntryWithMatrix(
+                        e, Role.WORLD_TO_MAP, matrix, schema, accessor));
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Translates each of the given facts by {@code (dx, dy)} in map space as a
+     * single batch action — the model side of a multi-select move. Each fact's
+     * placement matrix has {@code (dx, dy)} added to its translation
+     * ({@code e, f}); rotation/scale ({@code a, b, c, d}) are preserved. Facts
+     * not found are skipped.
+     *
+     * <p>This is the batch-move capability behind a future multi-select drag;
+     * the current single-select drag still uses {@link #recordObjectMove}.</p>
+     *
+     * @return the number of facts translated
+     * @throws IllegalStateException if the schema is null or empty
+     */
+    public int translateFacts(final Collection<String> objectIds,
+                              final double dx,
+                              final double dy,
+                              final List<FloorMapFieldMapping> schema,
+                              final ValueAccessor accessor) {
+        if (objectIds == null || objectIds.isEmpty()) {
+            return 0;
+        }
+        if (schema == null || schema.isEmpty()) {
+            throw new IllegalStateException(
+                    "No Value Schema is configured. "
+                    + "Please configure a Value Schema in the Settings tab.");
+        }
+        final List<TemporalEntry> all = pendingChanges.applyTo(serverEntriesAtCurrentTime);
+        int moved = 0;
+        for (final String objectId : objectIds) {
+            for (final TemporalEntry e : all) {
+                if (objectId.equals(e.getKey())) {
+                    final ParsedValue parsed = accessor.parse(e.getValue());
+                    if (parsed != null) {
+                        double[] m = accessor.getArray(
+                                parsed, FloorMapEntryParser.findPath(schema, Role.WORLD_TO_MAP));
+                        if (m == null || m.length < 6) {
+                            m = new double[]{1, 0, 0, 1, 0, 0};
+                        }
+                        final FloorMapTransformationMatrix translated =
+                                new FloorMapTransformationMatrix(
+                                        m[0], m[1], m[2], m[3], m[4] + dx, m[5] + dy);
+                        pendingChanges.recordUpdate(buildUpdatedEntryWithMatrix(
+                                e, Role.WORLD_TO_MAP, translated, schema, accessor));
+                        moved++;
+                    }
+                    break;
+                }
+            }
+        }
+        return moved;
     }
 
     // -----------------------------------------------------------------------
@@ -342,9 +554,8 @@ public class FloorMapEditorModel {
                 staged = true;
             }
         }
-        if (key.equals(selectedFactKey)) {
-            selectedFactKey = null;
-        }
+        // Deselect the deleted fact if it was part of the selection.
+        selectedFactKeys.remove(key);
         return staged;
     }
 
@@ -480,6 +691,40 @@ public class FloorMapEditorModel {
         accessor.setArray(parsed,
                 FloorMapEntryParser.findPath(schema, Role.POSITION),
                 new double[]{worldX, worldY});
+        return new TemporalEntry(
+                original.getMap(),
+                original.getKey(),
+                original.getEffectiveTimeMs(),
+                accessor.serialize(parsed));
+    }
+
+    /**
+     * Builds an updated entry with the given {@code role}'s matrix set to the
+     * full six components of {@code matrix}. This is the general full-affine
+     * write behind {@link #recordFactTransform} (translate, rotate and scale).
+     *
+     * @param original the entry to update
+     * @param role     the matrix role to write (e.g. {@code WORLD_TO_MAP})
+     * @param matrix   the full transform to persist
+     * @param schema   the value schema
+     * @param accessor the value accessor
+     * @return a new {@link TemporalEntry} with the updated matrix
+     * @throws IllegalStateException if the entry's value cannot be parsed
+     */
+    public static TemporalEntry buildUpdatedEntryWithMatrix(
+            final TemporalEntry original,
+            final Role role,
+            final FloorMapTransformationMatrix matrix,
+            final List<FloorMapFieldMapping> schema,
+            final ValueAccessor accessor) {
+        final ParsedValue parsed = accessor.parse(original.getValue());
+        if (parsed == null) {
+            throw new IllegalStateException(
+                    "Entry value could not be parsed: " + original.getValue());
+        }
+        accessor.setArray(parsed, FloorMapEntryParser.findPath(schema, role),
+                new double[]{matrix.getA(), matrix.getB(), matrix.getC(),
+                        matrix.getD(), matrix.getE(), matrix.getF()});
         return new TemporalEntry(
                 original.getMap(),
                 original.getKey(),

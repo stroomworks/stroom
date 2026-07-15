@@ -287,6 +287,17 @@ public class FloorMapTimeListPresenter extends MyPresenterWidget<FloorMapTimeLis
     // -----------------------------------------------------------------------
 
     private void initGridColumns() {
+        // TODO 4092 Take this out again when issues diagnosed
+        // Key column — every row in the time list should carry the selected
+        // fact's key; showing it makes any mismatch immediately visible.
+        final Column<TemporalEntry, String> keyColumn = new TextColumn<>() {
+            @Override
+            public String getValue(final TemporalEntry entry) {
+                return entry.getKey();
+            }
+        };
+        dataGrid.addColumn(keyColumn, "Key");
+
         final Column<TemporalEntry, String> timeColumn = new TextColumn<>() {
             @Override
             public String getValue(final TemporalEntry entry) {

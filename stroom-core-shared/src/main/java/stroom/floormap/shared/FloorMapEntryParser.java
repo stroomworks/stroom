@@ -26,9 +26,8 @@ import java.util.function.Consumer;
 
 /**
  * Shared utility that parses a list of {@link TemporalEntry}
- * objects into canvas-ready data: a background image, a background
- * transformation matrix, the background's temporal-store key, and a list of
- * {@link FloorMapObject}s.
+ * objects into an ordered list of {@link Fact}s — the authoritative model the
+ * canvas renders from. Backgrounds, static facts and events are all just facts.
  *
  * <p>Parsing is driven by a list of {@link FloorMapFieldMapping}s (the value
  * schema). Each mapping's {@link Role} determines how the extracted value is
@@ -49,69 +48,30 @@ public final class FloorMapEntryParser {
     }
 
     /**
-     * Result of parsing a list of temporal entries for canvas rendering.
-     */
-    public static final class ParseResult {
-
-        private final String backgroundImage;
-        private final FloorMapTransformationMatrix backgroundMatrix;
-        private final List<FloorMapObject> objects;
-
-        public ParseResult(final String backgroundImage,
-                           final FloorMapTransformationMatrix backgroundMatrix,
-                           final List<FloorMapObject> objects) {
-            this.backgroundImage = backgroundImage;
-            this.backgroundMatrix = backgroundMatrix;
-            this.objects = objects;
-        }
-
-        /** The background image path, or {@code null} if none. */
-        public String getBackgroundImage() {
-            return backgroundImage;
-        }
-
-        /** The map-to-screen transformation matrix for the background. */
-        public FloorMapTransformationMatrix getBackgroundMatrix() {
-            return backgroundMatrix;
-        }
-
-        /** The list of regular (non-background) objects to plot. */
-        public List<FloorMapObject> getObjects() {
-            return objects;
-        }
-    }
-
-    /**
-     * Parses temporal entries into canvas-ready data using the supplied schema
-     * and value accessor.
+     * Parses temporal entries into an ordered list of {@link Fact}s.
      *
-     * <p>For each entry:</p>
-     * <ul>
-     *   <li>If the type is {@code "background"} (or the key is
-     *       {@code "background"}), extracts the image path and map-to-screen
-     *       matrix.</li>
-     *   <li>Otherwise, extracts coords and the world-to-map matrix, applies the
-     *       coordinate transformation, and adds a {@link FloorMapObject}.</li>
-     * </ul>
+     * <p>Every entry becomes one fact placed by its {@code WORLD_TO_MAP} matrix —
+     * backgrounds are not special-cased; a background is simply an entry that
+     * carries an image (and typically a {@code "background"} type for z-order).
+     * The optional {@code POSITION} coords are read for every fact (used by the
+     * imageless default-graphic renderer); an image fact usually has none.</p>
      *
      * @param entries         the temporal entries to parse; may be {@code null} or empty
      * @param schema          the value schema to use; may be {@code null}
      * @param accessor        the value accessor for parsing; must not be {@code null}
      * @param warningConsumer callback for warning messages (e.g. malformed entries);
      *                        may be {@code null} to silently ignore warnings
-     * @return the parse result; never {@code null}
+     * @return the ordered fact list; never {@code null}
      */
-    public static ParseResult parse(
+    public static List<Fact> parse(
             final List<TemporalEntry> entries,
             final List<FloorMapFieldMapping> schema,
             final ValueAccessor accessor,
             final Consumer<String> warningConsumer) {
-        String backgroundImage = null;
-        FloorMapTransformationMatrix bgMatrix = FloorMapTransformationMatrix.identity();
-        final List<FloorMapObject> objects = new ArrayList<>();
+        final List<Fact> facts = new ArrayList<>();
 
         if (entries == null) {
-            return new ParseResult(null, null, objects);
+            return facts;
         }
 
         // Resolve the path for each role from the schema.
@@ -119,7 +79,6 @@ public final class FloorMapEntryParser {
         final String positionPath = findPath(schema, Role.POSITION);
         final String imagePath = findPath(schema, Role.IMAGE);
         final String worldToMapPath = findPath(schema, Role.WORLD_TO_MAP);
-        final String mapToScreenPath = findPath(schema, Role.MAP_TO_SCREEN);
 
         for (final TemporalEntry entry : entries) {
             try {
@@ -144,48 +103,30 @@ public final class FloorMapEntryParser {
                 final String type = typePath != null
                         ? accessor.getString(parsed, typePath)
                         : null;
+                final String image = imagePath != null
+                        ? accessor.getString(parsed, imagePath)
+                        : null;
 
-                if (FloorMapJsonKeys.BACKGROUND.equalsIgnoreCase(type)
-                        || FloorMapJsonKeys.BACKGROUND.equalsIgnoreCase(entry.getKey())) {
-                    // Background entry
-                    backgroundImage = imagePath != null
-                            ? accessor.getString(parsed, imagePath)
-                            : null;
+                // Every fact — background or not — is placed by its WORLD_TO_MAP.
+                final FloorMapTransformationMatrix worldToMap =
+                        parseMatrix(accessor, parsed, worldToMapPath);
 
-                    bgMatrix = parseMatrix(accessor, parsed, mapToScreenPath);
-                } else {
-                    // Regular object
-                    double worldX = 0;
-                    double worldY = 0;
-                    if (positionPath != null) {
-                        final double[] coords = accessor.getArray(parsed, positionPath);
-                        if (coords != null && coords.length >= 2) {
-                            worldX = coords[0];
-                            worldY = coords[1];
-                        }
+                double[] position = null;
+                if (positionPath != null) {
+                    final double[] coords = accessor.getArray(parsed, positionPath);
+                    if (coords != null && coords.length >= 2) {
+                        position = new double[]{coords[0], coords[1]};
                     }
-
-                    final FloorMapTransformationMatrix worldToMap =
-                            parseMatrix(accessor, parsed, worldToMapPath);
-
-                    // Apply world-to-map transformation
-                    final double mapX =
-                            worldToMap.getA() * worldX + worldToMap.getC() * worldY
-                                    + worldToMap.getE();
-                    final double mapY =
-                            worldToMap.getB() * worldX + worldToMap.getD() * worldY
-                                    + worldToMap.getF();
-
-                    objects.add(new FloorMapObject(
-                            entry.getKey(), type != null ? type : "", mapX, mapY));
                 }
+
+                facts.add(new Fact(entry.getKey(), type, image, worldToMap, position));
             } catch (final Exception ex) {
                 warn(warningConsumer, "Skipping malformed temporal entry (key='"
                         + entry.getKey() + "'): " + ex.getMessage());
             }
         }
 
-        return new ParseResult(backgroundImage, bgMatrix, objects);
+        return facts;
     }
 
 
