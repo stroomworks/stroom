@@ -48,7 +48,6 @@ import stroom.util.client.Console;
 import stroom.widget.histogram.client.HistogramDataModel;
 import stroom.widget.histogram.client.HistogramQueryHelper;
 
-import com.google.gwt.core.client.GWT;
 import com.google.inject.Inject;
 import com.google.inject.Provider;
 import com.google.web.bindery.event.shared.EventBus;
@@ -83,14 +82,11 @@ public class FloorMapMapPresenter
     public static final Object MAP = new Object();
     public static final Object TIMELINE = new Object();
     private static final int HISTOGRAM_BINS = 100;
-    private static final stroom.sqlstore.shared.SqlTemporalStoreResource SQL_TEMPORAL_STORE_RESOURCE =
-            GWT.create(stroom.sqlstore.shared.SqlTemporalStoreResource.class);
 
     private final FloorMapCanvasPresenter floorMapCanvasPresenter;
     private final FloorMapTimelinePresenter floorMapTimelinePresenter;
     private final FloorMapObjectEditPresenter floorMapObjectEditPresenter;
     private final FloorMapFactListPresenter floorMapObjectListPresenter;
-    private final RestFactory restFactory;
 
     private final QueryModel queryModel;
     private final HistogramQueryHelper histogramQueryHelper;
@@ -134,7 +130,6 @@ public class FloorMapMapPresenter
                                 final Provider<FloorMapFactListPresenter> floorMapObjectListPresenterProvider) {
         super(eventBus, view);
 
-        this.restFactory = restFactory;
         this.floorMapCanvasPresenter = floorMapCanvasPresenterProvider.get();
         this.floorMapTimelinePresenter = floorMapTimelinePresenterProvider.get();
         this.floorMapObjectEditPresenter = floorMapObjectEditPresenterProvider.get();
