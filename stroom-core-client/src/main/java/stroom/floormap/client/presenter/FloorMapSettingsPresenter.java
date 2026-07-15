@@ -16,6 +16,7 @@
 
 package stroom.floormap.client.presenter;
 
+import stroom.cell.colour.client.ColourInputCell;
 import stroom.data.grid.client.MyDataGrid;
 import stroom.dispatch.client.RestFactory;
 import stroom.docref.DocRef;
@@ -238,6 +239,7 @@ public class FloorMapSettingsPresenter
         typeStylesGrid.addColumn(shapeColumn, "Shape");
 
         // Colour — editable hex text.
+        /*
         final Column<TypeStyle, String> colourColumn = new Column<>(new EditTextCell()) {
             @Override
             public String getValue(final TypeStyle style) {
@@ -248,6 +250,20 @@ public class FloorMapSettingsPresenter
             if (!readOnly) {
                 final String colour = val != null && !val.isEmpty() ? val : null;
                 replaceTypeStyle(index, new TypeStyle(style.getType(), style.getShape(), colour));
+            }
+        });
+        */
+        final ColourInputCell colourInputCell = new ColourInputCell();
+        final Column<TypeStyle, String> colourColumn = new Column<>(colourInputCell) {
+            @Override
+            public String getValue(final TypeStyle style) {
+                return style.getColour();
+            }
+        };
+        colourColumn.setFieldUpdater((index, style, val) -> {
+            if (!readOnly) {
+                final String color = val != null && !val.isEmpty() ? val : null;
+                replaceTypeStyle(index, new TypeStyle(style.getType(), style.getShape(), color));
             }
         });
         typeStylesGrid.addColumn(colourColumn, "Colour");
