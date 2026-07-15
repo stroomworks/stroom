@@ -48,25 +48,44 @@ public abstract class AbstractSubmitCompleteHandler implements SubmitHandler, Su
 
     @Override
     public void onSubmitComplete(final SubmitCompleteEvent event) {
-        final String result = event.getResults();
-        if (result != null) {
-            try {
-                final PropertyMap propertyMap = new PropertyMap();
-                propertyMap.loadArgLine(result);
+        try {
+            final String result = event.getResults();
+            if (result == null || result.trim().isEmpty()) {
+                // A form upload that comes back with no response body almost always means
+                // the request never reached the servlet — e.g. it was rejected by a filter
+                // (HTTP 403), the session expired, or the file exceeded the server's size
+                // limit. There is no server-supplied detail to show, so explain the likely
+                // causes rather than opening an empty error dialog.
+                onFailure("The file could not be uploaded because the server returned no "
+                        + "response. This usually means the request was rejected (you may not "
+                        + "have permission, or your session may have expired) or the file was "
+                        + "too large.");
+            } else {
+                try {
+                    final PropertyMap propertyMap = new PropertyMap();
+                    propertyMap.loadArgLine(result);
 
-                if (propertyMap.isSuccess()) {
-                    final ResourceKey resourceKey = new ResourceKey(propertyMap);
-                    onSuccess(resourceKey);
-                } else {
-                    onFailure(propertyMap.get("exception"));
+                    if (propertyMap.isSuccess()) {
+                        onSuccess(new ResourceKey(propertyMap));
+                    } else {
+                        onFailure(orDefault(propertyMap.get("exception"),
+                                "The file upload failed but the server did not report why."));
+                    }
+                } catch (final RuntimeException e) {
+                    onFailure(orDefault(e.getMessage(),
+                            "The upload response could not be read: " + e.getClass().getSimpleName()));
                 }
-            } catch (final RuntimeException e) {
-                onFailure(e.getMessage());
             }
-        } else {
-            onFailure("Unable to read file");
+        } finally {
+            taskMonitor.onEnd(task);
         }
-        taskMonitor.onEnd(task);
+    }
+
+    /** Returns {@code value} if it has non-blank content, otherwise {@code fallback}. */
+    private static String orDefault(final String value, final String fallback) {
+        return value != null && !value.trim().isEmpty()
+                ? value
+                : fallback;
     }
 
     protected abstract void onSuccess(ResourceKey resourceKey);
