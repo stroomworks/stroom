@@ -28,7 +28,6 @@ import stroom.floormap.shared.FloorMapDoc;
 import stroom.floormap.shared.FloorMapEntryParser;
 import stroom.floormap.shared.FloorMapFieldMapping;
 import stroom.floormap.shared.FloorMapFieldMapping.Role;
-import stroom.floormap.shared.FloorMapJsonKeys;
 import stroom.floormap.shared.FloorMapObject;
 import stroom.floormap.shared.FloorMapTransformationMatrix;
 import stroom.query.api.Column;
@@ -45,9 +44,7 @@ import stroom.query.client.presenter.QueryModel;
 import stroom.query.client.presenter.ResultComponent;
 import stroom.query.client.presenter.ResultStoreModel;
 import stroom.query.shared.QueryTablePreferences;
-import stroom.sqlstore.shared.SqlTemporalStoreResource;
 import stroom.util.client.Console;
-import stroom.util.shared.TemporalEntry;
 import stroom.widget.histogram.client.HistogramDataModel;
 import stroom.widget.histogram.client.HistogramQueryHelper;
 
@@ -58,6 +55,7 @@ import com.google.web.bindery.event.shared.EventBus;
 import com.gwtplatform.mvp.client.View;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -242,10 +240,7 @@ public class FloorMapMapPresenter
         this.floorMapObjectListPresenter.setSelectionConsumer(factObj -> {
             if (factObj != null) {
                 floorMapObjectEditPresenter.setObject(factObj.getKey());
-                final String canvasId = FloorMapJsonKeys.BACKGROUND.equals(factObj.getKey())
-                        ? FloorMapJsonKeys.BACKGROUND
-                        : factObj.getKey();
-                floorMapCanvasPresenter.setSelectedObjectId(canvasId);
+                floorMapCanvasPresenter.setSelectedObjectId(factObj.getKey());
                 floorMapCanvasPresenter.setIsDraggingEnabled(true);
                 getView().setPropertiesVisible(true);
             } else {
@@ -385,7 +380,6 @@ public class FloorMapMapPresenter
         int coordsIdx = -1;
         int imgIdx = -1;
         int worldToMapIdx = -1;
-        int mapToScreenIdx = -1;
 
         final List<Column> columns = tableResult.getColumns();
         if (columns == null) {
@@ -409,15 +403,15 @@ public class FloorMapMapPresenter
             } else if (colName.equalsIgnoreCase(FloorMapQueryBuilder.buildColumnAlias(
                     pathForRole(Role.WORLD_TO_MAP), vf))) {
                 worldToMapIdx = i;
-            } else if (colName.equalsIgnoreCase(FloorMapQueryBuilder.buildColumnAlias(
-                    pathForRole(Role.MAP_TO_SCREEN), vf))) {
-                mapToScreenIdx = i;
             }
         }
 
-        String activeBgImage = null;
-        FloorMapTransformationMatrix activeBgMatrix = FloorMapTransformationMatrix.identity();
-        final List<Fact> facts = new ArrayList<>();
+        // The query returns every effective-time shard of every key (rows are in
+        // ascending effective-time order), so collapse to one fact per key — a
+        // later shard overwrites the earlier one. This shows a single current
+        // instance per object rather than every time version at once; distinct
+        // keys (e.g. several backgrounds) are preserved.
+        final Map<String, Fact> factsByKey = new LinkedHashMap<>();
 
         if (tableResult.getRows() != null) {
             for (final Row row : tableResult.getRows()) {
@@ -426,48 +420,32 @@ public class FloorMapMapPresenter
                 final String type = typeIdx != -1 && values.size() > typeIdx ? values.get(typeIdx) : "";
                 final String img = imgIdx != -1 && values.size() > imgIdx ? values.get(imgIdx) : null;
 
-                if (FloorMapJsonKeys.BACKGROUND.equalsIgnoreCase(type)) {
-                    activeBgImage = img;
-                    if (mapToScreenIdx != -1 && values.size() > mapToScreenIdx) {
-                        final String matrixStr = values.get(mapToScreenIdx);
-                        activeBgMatrix = parseMatrix(matrixStr);
+                // Every row is a fact placed by its WORLD_TO_MAP matrix — a
+                // background is simply an image fact, not a special case.
+                double worldX = 0;
+                double worldY = 0;
+                if (coordsIdx != -1 && values.size() > coordsIdx) {
+                    final double[] xy = parseCoords(values.get(coordsIdx));
+                    if (xy != null) {
+                        worldX = xy[0];
+                        worldY = xy[1];
                     }
-                } else {
-                    double worldX = 0;
-                    double worldY = 0;
-                    if (coordsIdx != -1 && values.size() > coordsIdx) {
-                        final String coordsStr = values.get(coordsIdx);
-                        final double[] xy = parseCoords(coordsStr);
-                        if (xy != null) {
-                            worldX = xy[0];
-                            worldY = xy[1];
-                        }
-                    }
-
-                    FloorMapTransformationMatrix worldToMap = FloorMapTransformationMatrix.identity();
-                    if (worldToMapIdx != -1 && values.size() > worldToMapIdx) {
-                        final String worldToMapStr = values.get(worldToMapIdx);
-                        worldToMap = parseMatrix(worldToMapStr);
-                    }
-
-                    // Apply coordinates transformation:
-                    // mapX = a * worldX + c * worldY + e
-                    // mapY = b * worldX + d * worldY + f
-                    final double mapX = worldToMap.getA() * worldX
-                            + worldToMap.getC() * worldY + worldToMap.getE();
-                    final double mapY = worldToMap.getB() * worldX
-                            + worldToMap.getD() * worldY + worldToMap.getF();
-
-                    facts.add(new Fact(key, type, img, worldToMap, new double[]{worldX, worldY}));
                 }
+
+                FloorMapTransformationMatrix worldToMap = FloorMapTransformationMatrix.identity();
+                if (worldToMapIdx != -1 && values.size() > worldToMapIdx) {
+                    worldToMap = parseMatrix(values.get(worldToMapIdx));
+                }
+
+                factsByKey.put(key, new Fact(key, type, img, worldToMap, new double[]{worldX, worldY}));
             }
         }
 
-        // The canvas renders the fact list (background painted behind the objects).
-        if (activeBgImage != null && !activeBgImage.isEmpty()) {
-            facts.add(0, new Fact(FloorMapJsonKeys.BACKGROUND, FloorMapJsonKeys.BACKGROUND,
-                    activeBgImage, activeBgMatrix, null));
-        }
+        final List<Fact> facts = new ArrayList<>(factsByKey.values());
+
+        // Facts paint in the configured type z-order (order backgrounds first on
+        // the Settings tab so they sit behind); events draw on top.
+        floorMapCanvasPresenter.setTypeStyles(getEntity().getTypeStyles());
         floorMapCanvasPresenter.setFacts(facts);
     }
 

@@ -75,23 +75,30 @@ WS7 (cleanup). WS6 can run in parallel once `typeStyles` is read by the renderer
   canvas (selection/drag now key off real fact identity).
 - Delete the now-dead fixed-rect / single-background code paths.
 
-> **Open cleanup (2026-07-14): remove the literal `"background"` id/type special-casing.**
-> Now unblocked — with migration dropped (WS8) a background is just an ordinary image fact, so this
-> can be **deleted outright** rather than phased out behind a data rewrite. It is **not yet done**
-> and is wider than "the canvas" — the `FloorMapJsonKeys.BACKGROUND` literal (`= "background"`) is
-> branched on across:
-> - `FloorMapEntryParser` — treats an entry as a background when its key *or* type is `"background"`.
-> - `Fact.isBackground()` — same key-or-type test.
-> - `FloorMapEditorModel` — several `wantBackground` / `isBackground` branches.
-> - `FloorMapCanvasPresenter` — the Ctrl/Shift-pan-over-background guard.
-> - `FloorMapMapPresenter` — canvas-id mapping, the synthesised background `Fact`, and the type check.
-> - `FloorMapObjectEditPresenter` / `FloorMapObjectEditViewImpl` — the `Background` display name and
->   the map→screen-vs-world→map matrix toggle.
+> **✅ Done (2026-07-14): background-literal special-casing removed; full unification onto
+> `WORLD_TO_MAP`.** A background is now an ordinary image fact placed by its `WORLD_TO_MAP` matrix,
+> identified by having an image (+ its `"background"` type only for z-order). Changes:
+> - `FloorMapEntryParser` — reads `WORLD_TO_MAP` (+ `POSITION`) for **every** entry; the background
+>   branch and the legacy `ParseResult` Pass-2 adapter are gone; `parse()` now returns `List<Fact>`.
+> - `Fact.isBackground()` — deleted.
+> - `FloorMapEditorModel` — `recordObjectMove` / `recordFactTransform` / `translateFacts` match by
+>   key and write `WORLD_TO_MAP`; `isBackgroundEntry` + `buildUpdatedBackgroundEntry` deleted.
+> - `FloorMapObjectEditPresenter` — reads/writes only `WORLD_TO_MAP` (kept the friendly `Background`
+>   default name/type per the "keep the display name" note).
+> - `FloorMapCanvasPresenter` — the pan modifier now works over any object, not just the background.
+> - `FloorMapMapPresenter` — every query row builds a fact; the synthesised background + canvas-id
+>   remap are gone; it now passes `typeStyles` so z-order (background ordered first) is honoured.
+> - `FloorMapFieldMapping` — `MAP_TO_SCREEN` dropped from the default schema; the enum constant is
+>   **kept (deprecated)** so existing docs still deserialise.
+> - Tests rewritten (`TestFloorMapEntryParser` / `…Xml` / `TestFloorMapEditorModel`); shared +
+>   client compile and floormap tests pass.
 >
-> Target: identify a background by its real fact identity + presence of an image (and its low
-> z-order), not a magic key/type string; keep `BACKGROUND_DISPLAY_NAME` only if a background still
-> needs a friendly label. Scope the full removal before starting — it touches shared model code, so
-> re-run `:stroom-core-shared:test` + `:stroom-core-client:test`.
+> - Edit dialog — the map→screen matrix UI is fully removed: the `m2s*` widgets (`FloorMapObjectEditViewImpl`
+>   + `.ui.xml`) and the `get/setMapToScreenMatrix` view methods are gone, leaving a single world→map
+>   matrix editor shown for every fact.
+>
+> **Consequence (accepted, migration dropped):** an existing map that stored its background
+> placement in `MAP_TO_SCREEN` renders its background at identity until re-placed.
 
 ### WS8 — Migration ~~(moved here from Phase 1)~~ — **dropped**
 **Not required (decision, 2026-07-14).** Old maps will not be migrated — there is no legacy data

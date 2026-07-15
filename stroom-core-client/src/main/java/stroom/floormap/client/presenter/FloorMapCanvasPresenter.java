@@ -343,10 +343,11 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                     // (whose ID does NOT start with the SVG group prefix)
                     if (id != null && !id.isEmpty()
                             && !id.startsWith(FloorMapJsonKeys.SVG_GROUP_PREFIX)) {
-                        // If Ctrl or Shift is pressed and it is the background, allow panning
-                        if (!(FloorMapJsonKeys.BACKGROUND.equals(id)
-                                && (event.getNativeEvent().getCtrlKey()
-                                || event.getNativeEvent().getShiftKey()))) {
+                        // Holding Ctrl or Shift lets the user pan even when the
+                        // click lands on an object — needed when a full-canvas
+                        // background fact would otherwise intercept every drag.
+                        if (!(event.getNativeEvent().getCtrlKey()
+                                || event.getNativeEvent().getShiftKey())) {
                             // Single-select today: replace the whole selection.
                             selectedObjectIds.clear();
                             selectedObjectIds.add(id);
@@ -397,6 +398,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                     // Accumulate the drag in map space (Y-up) for live feedback and a
                     // single translateFacts() applied to the whole selection on drop.
                     dragDxMap += deltaX / scale;
+                    //noinspection UnnecessaryUnaryMinus
                     dragDyMap += -(deltaY / scale);
                     hasMoved = true;
                     redraw();

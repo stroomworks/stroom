@@ -82,9 +82,15 @@ public class FloorMapFieldMapping {
         POSITION,
         /** Background image URL/data. */
         IMAGE,
-        /** Transformation matrix – 6-element array (world to map). */
+        /** Transformation matrix – 6-element array (world to map). Every fact,
+         * backgrounds included, is placed by this matrix. */
         WORLD_TO_MAP,
-        /** Background transformation matrix – 6-element array (map to screen). */
+        /**
+         * Legacy background matrix (map to screen). No longer read or written —
+         * backgrounds now use {@link #WORLD_TO_MAP}. Retained only so existing
+         * documents whose schema references this role still deserialise; it is
+         * not added to new default schemas.
+         */
         MAP_TO_SCREEN,
         /** Extra user-defined field. */
         CUSTOM
@@ -177,8 +183,6 @@ public class FloorMapFieldMapping {
      *   <tr><td>{@code .img}</td><td>{@link Role#IMAGE}</td><td>Image</td><td>{@code null}</td></tr>
      *   <tr><td>{@code .tm-world-to-map}</td><td>{@link Role#WORLD_TO_MAP}</td>
      *       <td>{@code null}</td><td>{@code null}</td></tr>
-     *   <tr><td>{@code .tm-map-to-screen}</td><td>{@link Role#MAP_TO_SCREEN}</td>
-     *       <td>{@code null}</td><td>{@code null}</td></tr>
      * </table>
      *
      * <p>The returned list is created via {@link List#of(Object...)} and is
@@ -193,8 +197,7 @@ public class FloorMapFieldMapping {
                 new FloorMapFieldMapping(".name", Role.LABEL, "Name", null),
                 new FloorMapFieldMapping(".coords", Role.POSITION, "Coords", null),
                 new FloorMapFieldMapping(".img", Role.IMAGE, "Image", null),
-                new FloorMapFieldMapping(".tm-world-to-map", Role.WORLD_TO_MAP, null, null),
-                new FloorMapFieldMapping(".tm-map-to-screen", Role.MAP_TO_SCREEN, null, null)
+                new FloorMapFieldMapping(".tm-world-to-map", Role.WORLD_TO_MAP, null, null)
         );
     }
 

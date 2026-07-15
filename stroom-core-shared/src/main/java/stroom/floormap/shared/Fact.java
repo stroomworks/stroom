@@ -30,11 +30,10 @@ package stroom.floormap.shared;
  * object with no serialisation dependencies — it never crosses the wire (the
  * {@code TemporalEntry} does).</p>
  *
- * <p><strong>Transitional note:</strong> {@link #getWorldToMap()} holds the affine
- * that places this fact into map space. For a background entry it currently
- * carries the entry's {@code MAP_TO_SCREEN} matrix (where background placement
- * lives today); for a regular fact it carries {@code WORLD_TO_MAP}. Migration
- * (redesign Phase 1 · WS5) will unify these onto {@code WORLD_TO_MAP}.</p>
+ * <p>{@link #getWorldToMap()} holds the affine that places this fact into map
+ * space. Every fact — backgrounds included — uses {@code WORLD_TO_MAP}; a
+ * background is not special-cased, it is simply an image fact placed by its own
+ * matrix and painted early (low z-order).</p>
  */
 public final class Fact {
 
@@ -96,14 +95,5 @@ public final class Fact {
         return position != null
                 ? new double[]{position[0], position[1]}
                 : null;
-    }
-
-    /**
-     * Whether this fact is the map background, using the same rule as the parser:
-     * its key or type equals {@code "background"} (case-insensitive).
-     */
-    public boolean isBackground() {
-        return FloorMapJsonKeys.BACKGROUND.equalsIgnoreCase(type)
-                || FloorMapJsonKeys.BACKGROUND.equalsIgnoreCase(key);
     }
 }

@@ -513,11 +513,11 @@ public class FloorMapSettingsPresenter
                 .method(res -> res.find(criteria))
                 .onSuccess(result -> {
                     final List<TemporalEntry> entries = result != null ? result.getValues() : null;
-                    final FloorMapEntryParser.ParseResult parsed = FloorMapEntryParser.parse(
+                    final List<Fact> parsed = FloorMapEntryParser.parse(
                             entries, schema,
                             ValueAccessorFactory.forFormat(currentValueFormat()), null);
                     final Set<String> discovered = new LinkedHashSet<>();
-                    for (final Fact fact : parsed.getFacts()) {
+                    for (final Fact fact : parsed) {
                         if (fact.getType() != null && !fact.getType().isEmpty()) {
                             discovered.add(fact.getType());
                         }

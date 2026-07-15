@@ -27,6 +27,7 @@ import stroom.floormap.client.event.MapContextMenuEvent;
 import stroom.floormap.client.event.MapObjectSelectedEvent;
 import stroom.floormap.client.event.TimeChangeEvent;
 import stroom.floormap.client.presenter.FloorMapEditorPresenter.FloorMapEditorView;
+import stroom.floormap.shared.Fact;
 import stroom.floormap.shared.FloorMapDoc;
 import stroom.floormap.shared.FloorMapEditorModel;
 import stroom.floormap.shared.FloorMapEntryParser;
@@ -424,8 +425,15 @@ public class FloorMapEditorPresenter
     // -----------------------------------------------------------------------
 
     /**
-     * Fetches facts at the given time (or all facts if {@code showAllFacts} is
-     * active) and reloads the canvas and Fact List.
+     * Reloads the canvas (and Fact List) for the given timeline position.
+     *
+     * <p>The canvas always shows the facts <strong>active at the scrubber
+     * time</strong>, so the canvas data is always the time-filtered fetch —
+     * the "Show all" toggle does not change what the canvas renders. When
+     * "Show all" is on, an additional fetch retrieves one row per key (each
+     * key's latest shard) purely so the <strong>Fact List</strong> can list
+     * every fact in the store, selectable regardless of whether it is on
+     * screen at the current time.</p>
      *
      * @param timeMs the point in time to query
      */
@@ -435,17 +443,16 @@ public class FloorMapEditorPresenter
             return;
         }
 
+        fetchAtTime(mapName, timeMs);
         if (model.isShowAllFacts()) {
-            fetchAll(mapName);
-        } else {
-            fetchAtTime(mapName, timeMs);
+            fetchAllKeysForFactList(mapName);
         }
     }
 
     /**
      * Fetches the most recent entry per key at or before {@code timeMs}
      * from the server, then calls {@link #onEntriesFetched} to update
-     * the canvas and fact list.
+     * the canvas (and, outside "Show all" mode, the Fact List).
      *
      * @param mapName the temporal store name
      * @param timeMs  the upper bound for effective_time
@@ -459,25 +466,45 @@ public class FloorMapEditorPresenter
     }
 
     /**
-     * Fetches all entries (server-side timeTo = now + ONE_DAY_MS).
+     * Fetches one row per key — each key's latest shard, with no time bound —
+     * to populate the Fact List in "Show all" mode. Feeds the Fact List
+     * <em>only</em>; the canvas is owned by the {@link #fetchAtTime} path.
      *
      * @param mapName the temporal store name
      */
-    private void fetchAll(final String mapName) {
+    private void fetchAllKeysForFactList(final String mapName) {
         restFactory.create(SQL_TEMPORAL_STORE_RESOURCE)
                 .method(res -> res.fetchAll(mapName))
-                .onSuccess(this::onEntriesFetched)
+                .onSuccess(this::onAllKeysFetched)
                 .exec();
     }
 
     /**
-     * Shared callback for {@link #fetchAtTime} and {@link #fetchAll}.
-     * Stores the server entries, merges pending changes, then refreshes
-     * the canvas and Fact List.
+     * Callback for {@link #fetchAtTime}. Stores the server entries, merges
+     * pending changes, then refreshes the canvas. The Fact List is refreshed
+     * too unless "Show all" is on — in that mode the list is owned by
+     * {@link #onAllKeysFetched}, and rebuilding it here would race the two
+     * responses and clobber the full key list with the time-filtered subset.
      */
     private void onEntriesFetched(final List<TemporalEntry> entries) {
         final List<TemporalEntry> merged = model.onEntriesFetched(entries);
-        updateCanvasAndFactList(merged);
+        updateCanvas(merged);
+        if (!model.isShowAllFacts()) {
+            updateFactList(merged);
+        }
+    }
+
+    /**
+     * Callback for {@link #fetchAllKeysForFactList}: refreshes the Fact List
+     * (one row per key, pending changes overlaid so unflushed creations still
+     * appear). Ignored if "Show all" was toggled off while the request was in
+     * flight — the time-filtered path owns the list again.
+     */
+    private void onAllKeysFetched(final List<TemporalEntry> entries) {
+        if (!model.isShowAllFacts()) {
+            return;
+        }
+        updateFactList(model.mergePendingChanges(entries));
     }
 
     /**
@@ -513,28 +540,33 @@ public class FloorMapEditorPresenter
     // -----------------------------------------------------------------------
 
     /**
-     * Updates the canvas and Fact List from a merged entry list.
-     * Parses the name and type out of the entries and creates a list of FactObjects.
-     * Also ensures the currently selected fact remains highlighted on the canvas.
+     * Updates the canvas from a merged entry list, rendering the facts active
+     * at the current scrubber time. Also ensures the currently selected fact
+     * remains highlighted on the canvas.
      *
      * @param entries merged entries (server data + pending changes)
      */
-    private void updateCanvasAndFactList(final List<TemporalEntry> entries) {
+    private void updateCanvas(final List<TemporalEntry> entries) {
         // Update canvas using shared parser (applies world-to-map transform)
-        final FloorMapEntryParser.ParseResult result = model.parseForCanvas(
+        final List<Fact> facts = model.parseForCanvas(
                 entries, getEntity().getValueSchema(),
                 ValueAccessorFactory.forFormat(getEntity().getValueFormat()));
         floorMapCanvasPresenter.setTypeStyles(getEntity().getTypeStyles());
-        floorMapCanvasPresenter.setFacts(result.getFacts());
+        floorMapCanvasPresenter.setFacts(facts);
         if (model.getSelectedFactKey() != null) {
             floorMapCanvasPresenter.setSelectedObjectId(model.getSelectedFactKey());
         }
+    }
 
-        // Update Fact List — one row per unique key.
-        // The merged entry list may contain multiple entries for the same key
-        // (e.g. when "Show All" mode is on, or when a pending creation overlaps
-        // with a server-returned entry). We deduplicate by key so the fact list
-        // shows each object exactly once.
+    /**
+     * Updates the Fact List from a merged entry list — one row per unique key.
+     * The entry list may contain multiple entries for the same key (e.g. when a
+     * pending creation overlaps with a server-returned entry), so it is
+     * deduplicated by key to show each object exactly once.
+     *
+     * @param entries merged entries (server data + pending changes)
+     */
+    private void updateFactList(final List<TemporalEntry> entries) {
         final List<FloorMapFieldMapping> schema = getEntity().getValueSchema();
         final List<FloorMapFactListPresenter.FactObject> factObjects = new ArrayList<>();
         final Set<String> seenKeys = new HashSet<>();
@@ -601,15 +633,7 @@ public class FloorMapEditorPresenter
      * and cascade into the Time List).
      */
     private void refreshCanvasOnly() {
-        final List<TemporalEntry> canvasEntries = model.buildMergedCanvasEntries();
-        final FloorMapEntryParser.ParseResult result = model.parseForCanvas(
-                canvasEntries, getEntity().getValueSchema(),
-                ValueAccessorFactory.forFormat(getEntity().getValueFormat()));
-        floorMapCanvasPresenter.setTypeStyles(getEntity().getTypeStyles());
-        floorMapCanvasPresenter.setFacts(result.getFacts());
-        if (model.getSelectedFactKey() != null) {
-            floorMapCanvasPresenter.setSelectedObjectId(model.getSelectedFactKey());
-        }
+        updateCanvas(model.buildMergedCanvasEntries());
     }
 
     /**
@@ -871,31 +895,27 @@ public class FloorMapEditorPresenter
                     .build());
 
             // Add Time Version at scrubber position
-            if (!FloorMapJsonKeys.BACKGROUND.equals(objectId)) {
-                menuItems.add(new IconMenuItem.Builder()
-                        .priority(2)
-                        .icon(SvgImage.HISTORY)
-                        .text("Add Time Version")
-                        .command(() -> {
-                            // Select the object first so the time list loads
-                            model.setSelectedFactKey(objectId);
-                            floorMapCanvasPresenter.setSelectedObjectId(objectId);
-                            floorMapFactListPresenter.setSelected(objectId);
-                            // Trigger the same flow as "Add Time" on the Time List
-                            onAddTimeInTimeList();
-                        })
-                        .build());
-            }
+            menuItems.add(new IconMenuItem.Builder()
+                    .priority(2)
+                    .icon(SvgImage.HISTORY)
+                    .text("Add Time Version")
+                    .command(() -> {
+                        // Select the object first so the time list loads
+                        model.setSelectedFactKey(objectId);
+                        floorMapCanvasPresenter.setSelectedObjectId(objectId);
+                        floorMapFactListPresenter.setSelected(objectId);
+                        // Trigger the same flow as "Add Time" on the Time List
+                        onAddTimeInTimeList();
+                    })
+                    .build());
 
             // Duplicate Object
-            if (!FloorMapJsonKeys.BACKGROUND.equals(objectId)) {
-                menuItems.add(new IconMenuItem.Builder()
-                        .priority(3)
-                        .icon(SvgImage.COPY)
-                        .text("Duplicate Object")
-                        .command(() -> onDuplicateObject(objectId, mapX, mapY))
-                        .build());
-            }
+            menuItems.add(new IconMenuItem.Builder()
+                    .priority(3)
+                    .icon(SvgImage.COPY)
+                    .text("Duplicate Object")
+                    .command(() -> onDuplicateObject(objectId, mapX, mapY))
+                    .build());
 
             // Delete Object
             menuItems.add(new IconMenuItem.Builder()

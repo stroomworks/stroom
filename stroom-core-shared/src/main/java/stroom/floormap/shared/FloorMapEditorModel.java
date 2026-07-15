@@ -25,8 +25,10 @@ import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 import java.util.Set;
 import java.util.function.Consumer;
@@ -281,6 +283,19 @@ public class FloorMapEditorModel {
     }
 
     /**
+     * Overlays the pending changes on an arbitrary entry list <em>without</em>
+     * touching the canvas snapshot ({@code serverEntriesAtCurrentTime}). Used
+     * for side lists fetched independently of the canvas — e.g. the "show all"
+     * Fact List — so unflushed creations/updates still appear in them.
+     *
+     * @param entries the server-sourced entries; may be {@code null}
+     * @return the entries with pending changes applied; never {@code null}
+     */
+    public List<TemporalEntry> mergePendingChanges(final List<TemporalEntry> entries) {
+        return pendingChanges.applyTo(entries);
+    }
+
+    /**
      * Builds a merged and filtered time list for the currently selected fact.
      *
      * <p>The returned list is independent of the current timeline position:
@@ -326,18 +341,60 @@ public class FloorMapEditorModel {
     // -----------------------------------------------------------------------
 
     /**
-     * Parses merged entries into canvas-ready data.
+     * Parses merged entries into the ordered {@link Fact} list the canvas renders.
+     *
+     * <p>The canvas renders, per key, the single shard <strong>active at
+     * {@link #getSelectedTime()}</strong> — the latest shard whose effective
+     * time is {@code <= selectedTime}. The server fetch is already
+     * time-filtered one-per-key, so for server entries this is a no-op; the
+     * filter matters for the overlaid <em>pending changes</em>, which may sit
+     * at other effective times (an edit of a future shard, a translate staged
+     * against an earlier shard). Without it a key could render — and drag — as
+     * several overlaid time versions, or show a not-yet-effective pending
+     * value.</p>
+     *
+     * <p>Safety net: when the selected time is unset ({@code <= 0}) no time
+     * filter is applied and the latest shard per key wins, so the canvas is not
+     * blanked before the scrubber is initialised.</p>
      *
      * @param entries  the merged entries to parse
      * @param schema   the value schema
      * @param accessor the value accessor
-     * @return the parse result; never {@code null}
+     * @return the fact list, one per key active at the scrubber; never {@code null}
      */
-    public FloorMapEntryParser.ParseResult parseForCanvas(
+    public List<Fact> parseForCanvas(
             final List<TemporalEntry> entries,
             final List<FloorMapFieldMapping> schema,
             final ValueAccessor accessor) {
-        return FloorMapEntryParser.parse(entries, schema, accessor, warningConsumer);
+        return FloorMapEntryParser.parse(
+                activeEntriesAtSelectedTime(entries), schema, accessor, warningConsumer);
+    }
+
+    /**
+     * Reduces entries to a single entry per key — the one with the greatest
+     * effective time that is active at {@link #selectedTime} (i.e.
+     * {@code effectiveTime <= selectedTime}) — preserving first-seen key order.
+     * Shards not yet effective at the scrubber are dropped. When
+     * {@code selectedTime <= 0} the time filter is skipped and the latest shard
+     * per key wins. Returns {@code null} unchanged so the parser's own null
+     * handling applies.
+     */
+    private List<TemporalEntry> activeEntriesAtSelectedTime(final List<TemporalEntry> entries) {
+        if (entries == null) {
+            return null;
+        }
+        final Map<String, TemporalEntry> byKey = new LinkedHashMap<>();
+        for (final TemporalEntry e : entries) {
+            if (selectedTime > 0 && e.getEffectiveTimeMs() > selectedTime) {
+                continue;
+            }
+            final TemporalEntry existing = byKey.get(e.getKey());
+            if (existing == null
+                    || e.getEffectiveTimeMs() >= existing.getEffectiveTimeMs()) {
+                byKey.put(e.getKey(), e);
+            }
+        }
+        return new ArrayList<>(byKey.values());
     }
 
     // -----------------------------------------------------------------------
@@ -362,27 +419,16 @@ public class FloorMapEditorModel {
                                     final double mapY,
                                     final List<FloorMapFieldMapping> schema,
                                     final ValueAccessor accessor) {
-        // The canvas always identifies the background by the literal id
-        // "background" regardless of the entry's actual key, so locate the
-        // background by the same rule the parser uses (key OR type).
-        final boolean wantBackground = FloorMapJsonKeys.BACKGROUND.equalsIgnoreCase(objectId);
         final List<TemporalEntry> all = pendingChanges.applyTo(serverEntriesAtCurrentTime);
         for (final TemporalEntry e : all) {
-            final boolean matches = wantBackground
-                    ? isBackgroundEntry(e, schema, accessor)
-                    : objectId.equals(e.getKey());
-            if (matches) {
+            if (objectId.equals(e.getKey())) {
                 if (schema == null || schema.isEmpty()) {
                     throw new IllegalStateException(
                             "No Value Schema is configured. "
                             + "Please configure a Value Schema in the Settings tab.");
                 }
-                // The background's position is stored in its map-to-screen matrix,
-                // not in the POSITION coords field used by regular objects.
-                final TemporalEntry updated = wantBackground
-                        ? buildUpdatedBackgroundEntry(e, mapX, mapY, schema, accessor)
-                        : buildUpdatedEntryWithCoords(e, mapX, mapY, schema, accessor);
-                pendingChanges.recordUpdate(updated);
+                pendingChanges.recordUpdate(
+                        buildUpdatedEntryWithCoords(e, mapX, mapY, schema, accessor));
                 return true;
             }
         }
@@ -395,14 +441,9 @@ public class FloorMapEditorModel {
      * capability behind future rotate/scale tools — a drag is simply the case
      * where only the translation changes.
      *
-     * <p>The matrix is written to the fact's placement role: {@code MAP_TO_SCREEN}
-     * for the background, {@code WORLD_TO_MAP} otherwise (matching where placement
-     * lives today). Fact lookup mirrors {@link #recordObjectMove} — by background
-     * identity or by key.</p>
-     *
-     * <p>Note: the live editor drag still goes through {@link #recordObjectMove};
-     * routing drag/rotate/scale through this method is Phase 2 work, once fact
-     * placement moves fully onto {@code WORLD_TO_MAP}.</p>
+     * <p>The matrix is written to the fact's {@code WORLD_TO_MAP} role; the fact
+     * is looked up by key. Backgrounds are not special-cased — they use
+     * {@code WORLD_TO_MAP} like every other fact.</p>
      *
      * @return {@code true} if a matching fact was found and an update staged
      * @throws IllegalStateException if the schema is null or empty
@@ -411,21 +452,16 @@ public class FloorMapEditorModel {
                                        final FloorMapTransformationMatrix matrix,
                                        final List<FloorMapFieldMapping> schema,
                                        final ValueAccessor accessor) {
-        final boolean wantBackground = FloorMapJsonKeys.BACKGROUND.equalsIgnoreCase(objectId);
         final List<TemporalEntry> all = pendingChanges.applyTo(serverEntriesAtCurrentTime);
         for (final TemporalEntry e : all) {
-            final boolean matches = wantBackground
-                    ? isBackgroundEntry(e, schema, accessor)
-                    : objectId.equals(e.getKey());
-            if (matches) {
+            if (objectId.equals(e.getKey())) {
                 if (schema == null || schema.isEmpty()) {
                     throw new IllegalStateException(
                             "No Value Schema is configured. "
                             + "Please configure a Value Schema in the Settings tab.");
                 }
-                final Role role = wantBackground ? Role.MAP_TO_SCREEN : Role.WORLD_TO_MAP;
-                pendingChanges.recordUpdate(
-                        buildUpdatedEntryWithMatrix(e, role, matrix, schema, accessor));
+                pendingChanges.recordUpdate(buildUpdatedEntryWithMatrix(
+                        e, Role.WORLD_TO_MAP, matrix, schema, accessor));
                 return true;
             }
         }
@@ -461,18 +497,12 @@ public class FloorMapEditorModel {
         final List<TemporalEntry> all = pendingChanges.applyTo(serverEntriesAtCurrentTime);
         int moved = 0;
         for (final String objectId : objectIds) {
-            final boolean wantBackground =
-                    FloorMapJsonKeys.BACKGROUND.equalsIgnoreCase(objectId);
             for (final TemporalEntry e : all) {
-                final boolean matches = wantBackground
-                        ? isBackgroundEntry(e, schema, accessor)
-                        : objectId.equals(e.getKey());
-                if (matches) {
-                    final Role role = wantBackground ? Role.MAP_TO_SCREEN : Role.WORLD_TO_MAP;
+                if (objectId.equals(e.getKey())) {
                     final ParsedValue parsed = accessor.parse(e.getValue());
                     if (parsed != null) {
                         double[] m = accessor.getArray(
-                                parsed, FloorMapEntryParser.findPath(schema, role));
+                                parsed, FloorMapEntryParser.findPath(schema, Role.WORLD_TO_MAP));
                         if (m == null || m.length < 6) {
                             m = new double[]{1, 0, 0, 1, 0, 0};
                         }
@@ -480,7 +510,7 @@ public class FloorMapEditorModel {
                                 new FloorMapTransformationMatrix(
                                         m[0], m[1], m[2], m[3], m[4] + dx, m[5] + dy);
                         pendingChanges.recordUpdate(buildUpdatedEntryWithMatrix(
-                                e, role, translated, schema, accessor));
+                                e, Role.WORLD_TO_MAP, translated, schema, accessor));
                         moved++;
                     }
                     break;
@@ -488,39 +518,6 @@ public class FloorMapEditorModel {
             }
         }
         return moved;
-    }
-
-    /**
-     * Determines whether an entry represents the map background, using the same
-     * rule as {@link FloorMapEntryParser}: its key is {@code "background"} or its
-     * {@code TYPE} field is {@code "background"} (case-insensitive). Falls back to
-     * a key-only test when no schema is available.
-     *
-     * @param entry    the entry to test
-     * @param schema   the value schema, or {@code null}
-     * @param accessor the value accessor
-     * @return {@code true} if the entry is the background
-     */
-    private static boolean isBackgroundEntry(final TemporalEntry entry,
-                                             final List<FloorMapFieldMapping> schema,
-                                             final ValueAccessor accessor) {
-        if (FloorMapJsonKeys.BACKGROUND.equalsIgnoreCase(entry.getKey())) {
-            return true;
-        }
-        if (schema == null || schema.isEmpty()) {
-            return false;
-        }
-        try {
-            final ParsedValue parsed = accessor.parse(entry.getValue());
-            if (parsed == null) {
-                return false;
-            }
-            final String type = accessor.getString(
-                    parsed, FloorMapEntryParser.findPath(schema, Role.TYPE));
-            return FloorMapJsonKeys.BACKGROUND.equalsIgnoreCase(type);
-        } catch (final RuntimeException ex) {
-            return false;
-        }
     }
 
     // -----------------------------------------------------------------------
@@ -702,59 +699,9 @@ public class FloorMapEditorModel {
     }
 
     /**
-     * Builds an updated background entry, moving it to a new position by
-     * updating the translation components of its {@code MAP_TO_SCREEN} matrix.
-     *
-     * <p>Unlike a regular object (whose position lives in the {@code POSITION}
-     * coords field — see {@link #buildUpdatedEntryWithCoords}), the background's
-     * position is the translation of its map-to-screen matrix. Only the
-     * translation (matrix components {@code e} and {@code f}, i.e. indices 4 and
-     * 5) is changed; rotation/scale ({@code a,b,c,d}) is preserved, matching the
-     * canvas drag behaviour which only ever translates the background.</p>
-     *
-     * @param original the entry to update
-     * @param e        the new map-to-screen translation X (matrix component e)
-     * @param f        the new map-to-screen translation Y (matrix component f)
-     * @param schema   the value schema
-     * @param accessor the value accessor
-     * @return a new {@link TemporalEntry} with the updated matrix
-     * @throws IllegalStateException if the entry's value cannot be parsed
-     */
-    public static TemporalEntry buildUpdatedBackgroundEntry(final TemporalEntry original,
-                                                            final double e,
-                                                            final double f,
-                                                            final List<FloorMapFieldMapping> schema,
-                                                            final ValueAccessor accessor) {
-        final String raw = original.getValue();
-        final ParsedValue parsed = accessor.parse(raw);
-        if (parsed == null) {
-            throw new IllegalStateException(
-                    "Entry value could not be parsed: " + raw);
-        }
-
-        final String path = FloorMapEntryParser.findPath(schema, Role.MAP_TO_SCREEN);
-        double[] matrix = accessor.getArray(parsed, path);
-        if (matrix == null || matrix.length < 6) {
-            // No (usable) matrix present — start from identity, then translate.
-            matrix = new double[]{1, 0, 0, 1, 0, 0};
-        }
-        // Preserve rotation/scale (a, b, c, d); update only the translation (e, f).
-        matrix[4] = e;
-        matrix[5] = f;
-        accessor.setArray(parsed, path, matrix);
-
-        return new TemporalEntry(
-                original.getMap(),
-                original.getKey(),
-                original.getEffectiveTimeMs(),
-                accessor.serialize(parsed));
-    }
-
-    /**
      * Builds an updated entry with the given {@code role}'s matrix set to the
      * full six components of {@code matrix}. This is the general full-affine
-     * write behind {@link #recordFactTransform} (translate, rotate and scale),
-     * as opposed to the translation-only {@link #buildUpdatedBackgroundEntry}.
+     * write behind {@link #recordFactTransform} (translate, rotate and scale).
      *
      * @param original the entry to update
      * @param role     the matrix role to write (e.g. {@code WORLD_TO_MAP})

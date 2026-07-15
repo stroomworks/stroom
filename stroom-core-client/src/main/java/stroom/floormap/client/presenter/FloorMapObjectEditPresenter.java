@@ -51,9 +51,7 @@ import javax.inject.Inject;
  *       Selecting a row in the Time List calls {@link #loadEntry(TemporalEntry)}
  *       to populate the inline form.</li>
  *   <li><strong>Map tab</strong> ({@link FloorMapMapPresenter}) — embedded as an inline
- *       panel. Coordinate fields are updated live by
- *       {@link #updateCoords(double, double)} when the user drags objects on the
- *       canvas.</li>
+ *       panel. </li>
  * </ul>
  *
  * <h3>Managed form fields</h3>
@@ -132,21 +130,6 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
     public void setFloorMapDoc(final FloorMapDoc floorMapDoc) {
         this.floorMapDoc = floorMapDoc;
         documentAssetDropDownPresenter.setDocument(floorMapDoc);
-    }
-
-    /**
-     * Updates the X and Y coordinate display fields in the form.
-     *
-     * <p>Called from {@link FloorMapMapPresenter} when the user drags an
-     * object on the SVG canvas (via {@code applyMove}), so that the
-     * coordinate fields stay in sync with the visual position.</p>
-     *
-     * @param x the new X coordinate (map-space)
-     * @param y the new Y coordinate (map-space)
-     */
-    public void updateCoords(final double x, final double y) {
-        getView().setX(x);
-        getView().setY(y);
     }
 
     @Inject
@@ -296,13 +279,9 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
         accessor.setArray(newValue, pathForRole(Role.POSITION),
                 new double[]{getView().getX(), getView().getY()});
 
+        // Every fact — background included — is placed by its WORLD_TO_MAP matrix.
         accessor.setArray(newValue, pathForRole(Role.WORLD_TO_MAP),
                 getView().getWorldToMapMatrix());
-
-        if (FloorMapJsonKeys.BACKGROUND.equalsIgnoreCase(getView().getType())) {
-            accessor.setArray(newValue, pathForRole(Role.MAP_TO_SCREEN),
-                    getView().getMapToScreenMatrix());
-        }
 
         return accessor.serialize(newValue);
     }
@@ -344,7 +323,6 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
             String type = "";
             String img = "";
             final double[] w2m = new double[]{1.0, 0.0, 0.0, 1.0, 0.0, 0.0};
-            final double[] m2s = new double[]{1.0, 0.0, 0.0, 1.0, 0.0, 0.0};
 
             try {
                 final ValueAccessor accessor = ValueAccessorFactory.forFormat(floorMapDoc.getValueFormat());
@@ -373,11 +351,6 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
                     if (parsedW2m != null && parsedW2m.length >= 6) {
                         System.arraycopy(parsedW2m, 0, w2m, 0, 6);
                     }
-
-                    final double[] parsedM2s = accessor.getArray(parsed, pathForRole(Role.MAP_TO_SCREEN));
-                    if (parsedM2s != null && parsedM2s.length >= 6) {
-                        System.arraycopy(parsedM2s, 0, m2s, 0, 6);
-                    }
                 }
             } catch (final Exception ex) {
                 // Ignore
@@ -388,7 +361,6 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
             getView().setType(type);
             documentAssetDropDownPresenter.setSelectedAssetPath(img);
             getView().setWorldToMapMatrix(w2m);
-            getView().setMapToScreenMatrix(m2s);
         } else {
             getView().setEffectiveTime(0L);
             getView().setX(0.0);
@@ -402,7 +374,6 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
             }
             documentAssetDropDownPresenter.setSelectedAssetPath("");
             getView().setWorldToMapMatrix(new double[]{1.0, 0.0, 0.0, 1.0, 0.0, 0.0});
-            getView().setMapToScreenMatrix(new double[]{1.0, 0.0, 0.0, 1.0, 0.0, 0.0});
         }
     }
 
@@ -459,12 +430,6 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
 
         /** Sets the 6-element world-to-map affine transformation matrix. */
         void setWorldToMapMatrix(double[] matrix);
-
-        /** Returns the 6-element map-to-screen affine transformation matrix. */
-        double[] getMapToScreenMatrix();
-
-        /** Sets the 6-element map-to-screen affine transformation matrix. */
-        void setMapToScreenMatrix(double[] matrix);
 
         /**
          * Enables or disables all form fields.

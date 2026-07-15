@@ -283,10 +283,14 @@ public class FloorMapCanvasViewImpl
                     new Attribute("pointer-events", "none"));
             }
         }, SafeHtmlUtil.from("g"),
-                // Local counter-flip: the raster is drawn Y-down, so undo the Y-up
-                // flip group here to keep images upright by default. The fact's
-                // world-to-map still handles placement, scale and rotation.
-                new Attribute("transform", fact.getWorldToMap().toSvgMatrix() + " scale(1,-1)"));
+                // Anchor the raster at its BOTTOM-left in map space: translate up
+                // by its own height, then counter-flip (scale 1,-1) to undo the
+                // Y-up flip group and keep it upright. So an identity world-to-map
+                // places the image in the visible first quadrant (up-and-right of
+                // the origin) rather than below it; a real world-to-map (applied
+                // outermost) then positions/scales/rotates from there.
+                new Attribute("transform", fact.getWorldToMap().toSvgMatrix()
+                        + " translate(0," + imgHeight + ") scale(1,-1)"));
     }
 
     /**
