@@ -2,7 +2,6 @@ package stroom.document.asset.impl.db;
 
 import stroom.db.util.AbstractFlyWayDbModule;
 import stroom.db.util.DataSourceProxy;
-import stroom.document.asset.impl.DocumentAssetConfig.DocumentAssetDbConfig;
 
 import java.util.List;
 import javax.sql.DataSource;

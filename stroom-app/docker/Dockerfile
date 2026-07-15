@@ -62,6 +62,9 @@ EXPOSE 8081
 # A Bind mount volume RO to the container for config files.
 VOLUME /stroom/config/
 
+# Create Docker volume for indexed doc content.
+VOLUME /stroom/content_index/
+
 # Create Docker volume for the content_pack_import dir as this will be mutated on 
 VOLUME /stroom/content_pack_import/
 
@@ -125,6 +128,7 @@ RUN \
     mkdir -p /stroom/config && \
     mkdir -p /stroom/config_fallback && \
     mkdir -p /stroom/content_pack_import && \
+    mkdir -p /stroom/content_index && \
     mkdir -p /stroom/data_feed_identities && \
     mkdir -p /stroom/git_repo && \
     mkdir -p /stroom/lmdb && \

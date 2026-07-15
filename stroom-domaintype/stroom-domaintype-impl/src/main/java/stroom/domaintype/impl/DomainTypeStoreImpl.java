@@ -17,7 +17,6 @@
 package stroom.domaintype.impl;
 
 import stroom.docref.DocRef;
-import stroom.docref.DocRefInfo;
 import stroom.docstore.api.DependencyRemapFunction;
 import stroom.docstore.api.Store;
 import stroom.docstore.api.StoreFactory;
@@ -139,11 +138,6 @@ public class DomainTypeStoreImpl implements DomainTypeStore {
     }
 
     @Override
-    public DocRefInfo info(final DocRef docRef) {
-        return store.info(docRef);
-    }
-
-    @Override
     public String getType() {
         return DomainTypeDoc.TYPE;
     }
@@ -183,16 +177,6 @@ public class DomainTypeStoreImpl implements DomainTypeStore {
                                   final Map<DocRef, DocRef> remappings,
                                   final DependencyRemapFunction<DomainTypeDoc> mapper) {
         store.remapDependencies(docRef, remappings, mapper);
-    }
-
-    @Override
-    public List<DocRef> findByName(final String name) {
-        return store.findByName(name);
-    }
-
-    @Override
-    public List<DocRef> findByNames(final List<String> names, final boolean ignoreCase) {
-        return store.findByNames(names, ignoreCase);
     }
 
     @Override

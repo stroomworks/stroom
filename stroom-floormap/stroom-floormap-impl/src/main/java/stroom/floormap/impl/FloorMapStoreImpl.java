@@ -17,7 +17,6 @@
 package stroom.floormap.impl;
 
 import stroom.docref.DocRef;
-import stroom.docref.DocRefInfo;
 import stroom.docstore.api.Store;
 import stroom.docstore.api.StoreFactory;
 import stroom.docstore.api.UniqueNameUtil;
@@ -118,11 +117,6 @@ class FloorMapStoreImpl implements FloorMapStore {
     }
 
     @Override
-    public DocRefInfo info(final DocRef docRef) {
-        return store.info(docRef);
-    }
-
-    @Override
     public Map<DocRef, Set<DocRef>> getDependencies() {
         return store.getDependencies(null);
     }
@@ -181,11 +175,6 @@ class FloorMapStoreImpl implements FloorMapStore {
     @Override
     public List<DocRef> list() {
         return store.list();
-    }
-
-    @Override
-    public List<DocRef> findByNames(final List<String> name, final boolean allowWildCards) {
-        return store.findByNames(name, allowWildCards);
     }
 
     @Override

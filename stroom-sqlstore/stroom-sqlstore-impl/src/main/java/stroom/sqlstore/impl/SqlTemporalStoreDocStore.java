@@ -32,6 +32,4 @@ public interface SqlTemporalStoreDocStore extends
         ContentIndexable {
 
     List<DocRef> list();
-
-    List<DocRef> findByNames(List<String> name, boolean allowWildCards);
 }

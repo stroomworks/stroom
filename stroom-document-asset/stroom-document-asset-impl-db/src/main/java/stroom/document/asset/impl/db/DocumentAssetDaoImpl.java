@@ -1,6 +1,7 @@
 package stroom.document.asset.impl.db;
 
 import stroom.db.util.JooqUtil;
+import stroom.docstore.shared.DocDataType;
 import stroom.document.asset.impl.DocumentAssetDao;
 import stroom.document.asset.impl.db.jooq.Tables;
 import stroom.document.asset.shared.DocumentAsset;
@@ -114,7 +115,8 @@ public class DocumentAssetDaoImpl implements DocumentAssetDao {
     private List<ImportExportAsset> resultToImportExportAssets(final Result<Record2<String, byte[]>> result) {
         final List<ImportExportAsset> assets = new ArrayList<>(result.size());
         for (final Record2<String, byte[]> record : result) {
-            final ImportExportAsset asset = new ByteArrayImportExportAsset(record.value1(), record.value2());
+            final ImportExportAsset asset =
+                    new ByteArrayImportExportAsset(record.value1(), DocDataType.BINARY, record.value2());
             assets.add(asset);
         }
         return assets;

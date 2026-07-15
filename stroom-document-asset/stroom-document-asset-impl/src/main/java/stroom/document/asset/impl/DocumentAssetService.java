@@ -1,9 +1,9 @@
 package stroom.document.asset.impl;
 
 import stroom.docref.DocRef;
-import stroom.docref.DocRefInfo;
-import stroom.docrefinfo.api.DocRefInfoService;
 import stroom.document.asset.shared.DocumentAssets;
+import stroom.explorer.api.ExplorerNodeService;
+import stroom.explorer.shared.ExplorerNode;
 import stroom.importexport.api.ImportExportAsset;
 import stroom.resource.api.ResourceStore;
 import stroom.security.api.SecurityContext;
@@ -44,23 +44,23 @@ public class DocumentAssetService {
     /** Security checks */
     private final SecurityContext securityContext;
 
-    private final Provider<DocRefInfoService> docRefInfoServiceProvider;
+    private final Provider<ExplorerNodeService> explorerNodeServiceProvider;
 
     @SuppressWarnings("unused")
     @Inject
     public DocumentAssetService(final DocumentAssetDao dao,
                                 final ResourceStore resourceStore,
                                 final SecurityContext securityContext,
-                                final Provider<DocRefInfoService> docRefInfoServiceProvider) {
+                                final Provider<ExplorerNodeService> explorerNodeServiceProvider) {
         this.dao = dao;
         this.resourceStore = resourceStore;
         this.securityContext = securityContext;
-        this.docRefInfoServiceProvider = docRefInfoServiceProvider;
+        this.explorerNodeServiceProvider = explorerNodeServiceProvider;
     }
 
     private DocRef getDocRef(final String ownerId) {
-        return docRefInfoServiceProvider.get().info(ownerId)
-                .map(DocRefInfo::getDocRef)
+        return explorerNodeServiceProvider.get().getNodeByUuid(ownerId)
+                .map(ExplorerNode::getDocRef)
                 .orElseThrow(() -> new EntityServiceException("Unknown document " + ownerId));
     }
 

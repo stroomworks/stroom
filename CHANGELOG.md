@@ -13,16 +13,127 @@ DO NOT ADD CHANGES HERE - ADD THEM USING log_change.sh
 ~~~
 
 
-## [v7.12.4] - 2026-05-14
+## [v7.13-beta.5] - 2026-07-06
+
+* Feature **#5599** : Add XPath to query functions so that users can pull XML apart in Dashboard Tables.
+
+* Feature **#5600** : Add JQ to query functions so that users can pull JSON apart in Dashboard Tables.
+
+* Feature **#5559** : Improve node selection for node groups to allow select all and selection inversion.
+
+* Bug **#5560** : Fix processing schedule list label.
+
+* Feature **#5561** : Add feature to delete individual attachments and messages from AI chat history.
+
+* Feature **#5561** : Add time tooltips to AI chat messages.
+
+* Feature **#5561** : Fix user preferences resetting stroom AI preferences.
+
+* Feature **#5561** : Open and view attachments in the AI chat window.
+
+* Feature **#5561** : Add names to tables so they can be identified by stroom AI.
+
+* Bug **#5548** : Fix PlanB filter XML value bug.
+
+* Bug **#5562** : Add missing tab types to session restore.
+
+* Feature **#5565** : Make vector embedding dimension count configurable.
+
+* Feature **#5616** : Add  XSLT function for computing the similarity of two float vectors.
+
+* Bug **#5617** : Fix tab visibility on resize.
+
+* Bug **#5621** : Support numeric comparators for Elasticsearch float and double fields.
+
+* Dependency **#5624** : Upgrade langchain4j and openai-java libs.
+
+* Feature **#5622** : Change Stroom UI auth flow so redirects are no longer required. Allows Stroom UI to be served from another location with BFF proxy.
+
+* Bug **#5573** : Fix Ask Stroom AI error handling behaviour when requests are too large.
+
+* Bug **#5574** : Fix Ask Stroom AI dock behaviour.
+
+* Feature **#5630** : Make embedding dimensions optional.
+
+* Bug **#5575** : Change ask Stroom AI table page menu item.
+
+* Bug **#5576** : Increase default AI model HTTP timeouts to 10 minutes.
+
+* Bug **#5585** : Fix dashboard tab rename bug.
+
+* Bug **#5577** : Fix bug affecting AI chat model selection.
+
+* Bug **#5601** : Fix bug stopping embedded queries being edited.
+
+* Bug **#5568** : Add analytic rule info to error stream messages.
+
+* Bug **#5636** : Fix expression term quote removal bug.
+
+* Bug **#5640** : Fix CSRF checks.
+
+* Bug **#5596** : Change S3Appender to replace path variables using the current time rather than the stream create time. This is to bring it into line with the FileAppender.
+
+* Bug **#5637** : Fix doc perm issue.
+
+* Bug **#5606** : Fix processor filter RunAs permissions.
+
+* Bug **#5605** : Fix pipeline stepping bug.
+
+
+## [v7.13-beta.4] - 2026-06-26
+
+* Dependency : Uplift AWS SDK to 2.46.7 and hbase-shaded-netty to 4.1.13.
+
+* Dependency : Uplift Dropwizard to 5.0.2.
+
+* Bug : Change the behaviour of JSON deserialisation to not error when a null value is encountered for a primitive type. This is how it used to behave in 7.12. However it now logs an error if a null primitive is encountered, so the corresponding Java class can be fixed to properly support null values.
+
+* Refactor **#5557** : Change config class constructors to correctly handle and default null primitive values on deserialisation from YAML.
+
+* Feature **#5567** : Stop the content index rebuilding on first use after a node reboot. Add config props `stroom.contentIndex.contentIndexDir` (defaults to `content_index`), `stroom.contentIndex.storageType` (one of `TEMP|LOCAL|SHARED`, defaults to `LOCAL`) and `stroom.contentIndex.minRebuildAge` (defaults to `PT1M`). Thus the content index can now be stored locally on each node for better performance or on shared storage. Stroom now eagerly builds the content index on boot if the storage type is `SHARED`.
+
+* Bug **#5579** : Change test collation to utf8mb4_0900_ai_ci.
+
+* Bug **#5558** : Fix processor profiles allowing processing for disabled node groups.
+
+* Bug **#5584** : Change the way the special singleton documents `DataRetentionRules`, `ReceiveDataRuleSet` and `ContentTemplates` are created for the first time. Now uses a cluster lock to ensure only one of each is ever created.
+
+* Bug **#5592** : Fix `Volume Cache` so entries are invalidated when a data volume is changed/deleted. Also fix data volume selection so that the cached map of available volumes is cleared when a volume is changed/deleted/created. Default value for `stroom.data.filesystemVolume.volumeCache.expireAfterAccess` has changed from PT10M to null and `stroom.data.filesystemVolume.volumeCache.expireAfterWrite` has changed from null to PT10M. This is to ensure that cached items are not held indefinitely.
+
+
+## [v7.13-beta.3] - 2026-06-03
+
+* Dependency : Uplift DropWizard to v5.0.1.
+
+* Dependency : Uplift `net.openhft:zero-allocation-hashing` to `2026.0`.
+
+* Dependency : Add Jackson JSON library `3.1.2` in addition to the existing `2.21.2` version. Stroom/Stroom-Proxy are now using v3 with the exception of a few specific areas that need legacy capability only available in v2. v3 is a significant change from v2 with some breaking changes and some differences in behaviour. Special attention should be paid to the output of JSONParser pipeline element to ensure it is behaving as expected.
+
+* Feature **#5515** : Change JSONParser pipeline element to truncate very long strings values. Currently very long string values can result in Out of Memory errors in Stroom. The following configuration properties have been added to the JSONParser element; `stringTruncateLength` (default 10,000) to truncate very long strings, `maxStringLength` (default 100,000,000) to cause a fatal error if a long string is encountered, `maxDepth` (default 500) to limit the depth of deeply nested documents. The JSONParser has also been changed so that the characters of string values are streamed to the downstream pipeline elements rather than reading the whole string into memory. NOTE: It is still possible for downstream XSLT XPATH functions to result in the entire string being read into memory.
+
+* Bug : Fix DocRef hover copy/open links not appearing.
+
+* Bug **#5535** : Fix simple string values not appearing in Pipeline Property table.
+
+* Bug : Fix Null Pointer type bug on Data Receipt Rules screen.
+
+* Refactor : Change json (de)serialisation to not go via a String when dealing only with byte[] data.
+
+* Dependency : Uplift base docker images to `eclipse-temurin:25.0.3_9-jdk-alpine-3.23`.
+
+* Feature **#5303** : Improve Stroom AI to add dockable panel, chat history, attachments, copy, download, chat details etc.
+
+* Feature **#5552** : Add additional S3 properties to S3Appender.
+
+* Bug : Fix typo in query snippet name (`Eval first first value` => `Eval first value`).
+
+* Bug **#5549** : Make jffi extract its native library to the same dir as the LMDB native library file. Add the config prop `providedJffiLibraryPath` to allow for a provided jffi lib.
 
 * Refactor : Improve logging and system info output for Data Feed Keys.
 
 * Feature **#5526** : Add event logging to ask stroom AI.
 
 * Bug **#5544** : Fix DocRef bug.
-
-
-## [v7.12.3] - 2026-05-11
 
 * Feature **#5183** : Add title to dashboard link function.
 
@@ -36,20 +147,11 @@ DO NOT ADD CHANGES HERE - ADD THEM USING log_change.sh
 
 * Bug : Fix permission exceptions when getting volume system info.
 
-
-## [v7.12.2] - 2026-05-05
-
 * Bug **#5532** : Relax Data Feed Identities validation so salt is optional.
-
-
-## [v7.12.1] - 2026-04-27
 
 * Bug **#5520** : Fix annotation decoration in queries/dashboards not working if the EventId/StreamId columns are not longs.
 
 * Feature : Add config prop `stroom.annotation.eventLinkCacheSizeLimit` (default 1,000,000) to protect Stroom from caching too many annotation to event links. If this limit is exceeded, the query will error.
-
-
-## [v7.12.0] - 2026-04-27
 
 * Feature : Change the annotation caching to invalidate on a field basis rather than the whole annotation.
 
@@ -2243,7 +2345,10 @@ DO NOT ADD CHANGES HERE - ADD THEM USING log_change.sh
 * Issue **#3830** : Add S3 data storage option.
 
 
-[Unreleased]: https://github.com/gchq/stroom/compare/v7.13-beta.2...HEAD
+[Unreleased]: https://github.com/gchq/stroom/compare/v7.13-beta.5...HEAD
+[v7.13-beta.5]: https://github.com/gchq/stroom/compare/v7.13-beta.4...v7.13-beta.5
+[v7.13-beta.4]: https://github.com/gchq/stroom/compare/v7.13-beta.3...v7.13-beta.4
+[v7.13-beta.3]: https://github.com/gchq/stroom/compare/v7.13-beta.2...v7.13-beta.3
 [v7.13-beta.2]: https://github.com/gchq/stroom/compare/v7.13-beta.1...v7.13-beta.2
 [v7.13-beta.1]: https://github.com/gchq/stroom/compare/v7.12-beta.1...v7.13-beta.1
 [v7.12-beta.1]: https://github.com/gchq/stroom/compare/v7.11.6...v7.12-beta.1
