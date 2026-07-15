@@ -5,18 +5,68 @@
     <g:FlowPanel styleName="max dock-container-vertical form-padding form">
         <!-- Events Store (PlanB Temporal State) Reference Selection -->
         <form:FormGroup label="Events Store">
+            <form:HelpHTML>
+                <p>The temporal store supplying the map's time-varying <strong>events</strong> —
+                    for example people or vehicles whose position changes over time. Events are
+                    drawn as the overlay that moves (and leaves a fading trail) as the timeline
+                    plays.</p>
+                <p>Must be a <strong>PlanB</strong> temporal-state store. Leave blank if the map
+                    has no moving events.</p>
+            </form:HelpHTML>
             <g:SimplePanel ui:field="eventsStoreRefContainer" />
         </form:FormGroup>
         <!-- Facts Store (SQL Temporal Store) Reference Selection -->
         <form:FormGroup label="Facts Store">
+            <form:HelpHTML>
+                <p>The temporal store supplying the map's <strong>facts</strong> — the
+                    longer-lived content such as background images, gates, desks and rooms.</p>
+                <p>Each fact is versioned over time, so the map shows how the space was arranged
+                    at the moment selected on the timeline. This is also the store the Editor tab
+                    reads and writes, and the one <strong>Discover</strong> (below) scans for
+                    types.</p>
+                <p>Must be an <strong>SQL Temporal Store</strong>.</p>
+            </form:HelpHTML>
             <g:SimplePanel ui:field="factsStoreRefContainer" />
         </form:FormGroup>
         <!-- Value Format -->
         <form:FormGroup label="Value Format">
+            <form:HelpHTML>
+                <p>How each stored entry's <em>value</em> is encoded. The <strong>Value
+                    Schema</strong> paths below are interpreted against this format.</p>
+                <ul>
+                    <li><strong>JSON</strong> — paths are JSON field names, e.g.
+                        <code>.type</code> or <code>.coords</code>.</li>
+                    <li><strong>XML</strong> — paths address elements/attributes within the XML
+                        value.</li>
+                </ul>
+                <p>Set this to match how your feed or pipeline writes the store. Changing it
+                    re-interprets every entry, so only change it if the stored format really
+                    changed.</p>
+            </form:HelpHTML>
             <g:SimplePanel ui:field="valueFormatContainer" />
         </form:FormGroup>
         <!-- Value Schema -->
         <form:FormGroup label="Value Schema">
+            <form:HelpHTML>
+                <p>Tells the map how to read each stored value by mapping a <strong>Role</strong>
+                    (what the renderer needs) to a <strong>Path</strong> within the value.
+                    <em>Display Name</em> is an optional label for the field and <em>Default</em>
+                    is used when the field is absent from an entry.</p>
+                <p>The main roles:</p>
+                <ul>
+                    <li><strong>Type</strong> — the fact's type; drives paint order and the
+                        default graphic (see Type Styles).</li>
+                    <li><strong>Label</strong> — the name shown on the map.</li>
+                    <li><strong>Position</strong> — the world coordinates <code>[x, y]</code> of a
+                        point fact.</li>
+                    <li><strong>Image</strong> — an Asset Store image URL. A fact with an image is
+                        drawn as a scaled image; a background is simply an image fact.</li>
+                    <li><strong>World-to-Map</strong> — a 6-element affine matrix
+                        <code>[a, b, c, d, e, f]</code> that positions, scales and rotates the fact
+                        in map space.</li>
+                </ul>
+                <p>Use the toolbar to add or remove a mapping.</p>
+            </form:HelpHTML>
             <g:FlowPanel>
                 <g:SimplePanel ui:field="schemaToolbarContainer" />
                 <g:SimplePanel ui:field="schemaGridContainer" height="250px" />
@@ -24,6 +74,21 @@
         </form:FormGroup>
         <!-- Type Styles (z-order + default graphic per type) -->
         <form:FormGroup label="Type Styles">
+            <form:HelpHTML>
+                <p>Controls how each type of fact is presented.</p>
+                <ul>
+                    <li><strong>Order is paint (z) order:</strong> types higher in the list are
+                        painted <em>behind</em> those lower down — so put background types at the
+                        top. Reorder with the up/down buttons. A type present in the data but not
+                        yet listed is painted on top until you add it.</li>
+                    <li><strong>Shape</strong> and <strong>Colour</strong> define the default
+                        graphic drawn for an <em>imageless</em> fact of that type. A fact that
+                        carries an image is drawn as that image and ignores these.</li>
+                </ul>
+                <p><strong>Discover</strong> scans the Facts Store for the distinct type values in
+                    your data and adds any that are missing (alphabetically); existing rows keep
+                    their order. <strong>Delete</strong> removes a type's style.</p>
+            </form:HelpHTML>
             <g:FlowPanel>
                 <g:SimplePanel ui:field="typeStylesToolbarContainer" />
                 <g:SimplePanel ui:field="typeStylesGridContainer" height="250px" />
