@@ -23,24 +23,25 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * Accumulating roster of the person objects seen on a floor map.
+ * Accumulating roster of every entity seen on a floor map's events stream —
+ * people, assets, vehicles, or any other typed event object.
  *
- * <p>The events query at a given playback instant only returns users with
- * events near that time, so this roster is a union of every person seen since
- * the last {@link #clear()} — users are never removed when absent from a
+ * <p>The events query at a given playback instant only returns entities with
+ * events near that time, so this roster is a union of everything seen since
+ * the last {@link #clear()} — entities are never removed when absent from a
  * refresh. This keeps the tracking panel's rows (and the user's selection)
  * stable across the ~300ms playback query refreshes.</p>
  *
  * <p>Holds no GWT or DOM types so it can be unit-tested on the JVM.</p>
  */
-public class FloorMapUserList {
+public class FloorMapEntityList {
 
-    private final Map<String, UserEntry> byId = new HashMap<>();
+    private final Map<String, EntityEntry> byId = new HashMap<>();
 
     /**
-     * Derives the short display name for a user id, matching the rule used for
-     * canvas labels: the portion before an {@code '@'} when one is present
-     * beyond the first character, otherwise the full id.
+     * Derives the short display name for an entity id, matching the rule used
+     * for canvas labels: the portion before an {@code '@'} when one is present
+     * beyond the first character (email-style person ids), otherwise the full id.
      */
     public static String displayName(final String id) {
         if (id == null) {
@@ -53,19 +54,9 @@ public class FloorMapUserList {
     }
 
     /**
-     * Returns {@code true} if the object is a person. Type-only check — the
-     * {@code '@'}-in-id fallback is applied upstream when event rows are
-     * parsed, so by the time objects reach this class the type is definitive.
-     */
-    public static boolean isPerson(final FloorMapObject object) {
-        return object != null
-               && FloorMapJsonKeys.PERSON.equalsIgnoreCase(object.getType());
-    }
-
-    /**
-     * Merges the person objects from a query refresh into the roster.
-     * Non-person objects and null/empty ids are ignored; repeated ids are
-     * deduplicated.
+     * Merges the entities from a query refresh into the roster. Every event
+     * object is admitted regardless of type; null/empty ids are ignored and
+     * repeated ids are deduplicated (first-seen type wins).
      *
      * @param objects the objects from the latest refresh; may be {@code null}
      * @return {@code true} only if the roster membership changed, so callers
@@ -77,10 +68,13 @@ public class FloorMapUserList {
         }
         boolean changed = false;
         for (final FloorMapObject object : objects) {
-            if (isPerson(object)) {
+            if (object != null) {
                 final String id = object.getId();
                 if (id != null && !id.isEmpty() && !byId.containsKey(id)) {
-                    byId.put(id, new UserEntry(id, displayName(id)));
+                    final String type = object.getType() != null
+                            ? object.getType()
+                            : "";
+                    byId.put(id, new EntityEntry(id, displayName(id), type));
                     changed = true;
                 }
             }
@@ -92,15 +86,15 @@ public class FloorMapUserList {
      * Returns the roster sorted by display name (case-insensitive), with the
      * full id as a tiebreak so the order is stable.
      */
-    public List<UserEntry> getUsers() {
-        final List<UserEntry> users = new ArrayList<>(byId.values());
-        users.sort((a, b) -> {
+    public List<EntityEntry> getEntities() {
+        final List<EntityEntry> entities = new ArrayList<>(byId.values());
+        entities.sort((a, b) -> {
             final int cmp = a.getDisplayName().compareToIgnoreCase(b.getDisplayName());
             return cmp != 0
                     ? cmp
                     : a.getId().compareTo(b.getId());
         });
-        return users;
+        return entities;
     }
 
     public boolean contains(final String id) {
@@ -112,18 +106,20 @@ public class FloorMapUserList {
     }
 
     /**
-     * A single user row. Equality is on {@link #id} only so that a re-created
-     * entry for the same user compares equal to the one a selection model is
+     * A single entity row. Equality is on {@link #id} only so that a re-created
+     * entry for the same entity compares equal to the one a selection model is
      * already holding — a grid data refresh must not read as a selection change.
      */
-    public static class UserEntry {
+    public static class EntityEntry {
 
         private final String id;
         private final String displayName;
+        private final String type;
 
-        public UserEntry(final String id, final String displayName) {
+        public EntityEntry(final String id, final String displayName, final String type) {
             this.id = id;
             this.displayName = displayName;
+            this.type = type;
         }
 
         public String getId() {
@@ -134,12 +130,16 @@ public class FloorMapUserList {
             return displayName;
         }
 
+        public String getType() {
+            return type;
+        }
+
         @Override
         public boolean equals(final Object o) {
             if (this == o) {
                 return true;
             }
-            if (!(o instanceof final UserEntry that)) {
+            if (!(o instanceof final EntityEntry that)) {
                 return false;
             }
             return Objects.equals(id, that.id);

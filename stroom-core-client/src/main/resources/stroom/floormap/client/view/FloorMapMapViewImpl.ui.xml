@@ -21,11 +21,11 @@
         <!-- Split layout for map above and timeline below -->
         <g:center>
             <g:ThinSplitLayoutPanel vSplits="0.9" styleName="max">
-                <!-- Top section: The SVG map with the user-tracking panel docked east -->
+                <!-- Top section: The SVG map with the entity-tracking panel docked east -->
                 <g:north size="200">
                     <g:ThinSplitLayoutPanel hSplits="0.25" styleName="max">
                         <g:east size="250">
-                            <g:SimplePanel ui:field="userListPanel"
+                            <g:SimplePanel ui:field="entityListPanel"
                                            addStyleNames="max dashboard-panel overflow-hidden"/>
                         </g:east>
                         <g:center>

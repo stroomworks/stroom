@@ -22,6 +22,8 @@ import stroom.floormap.client.presenter.FloorMapCanvasPresenter;
 import stroom.floormap.client.presenter.FloorMapCanvasPresenter.FloorMapCanvasView;
 import stroom.floormap.client.presenter.FloorMapEditorPresenter;
 import stroom.floormap.client.presenter.FloorMapEditorPresenter.FloorMapEditorView;
+import stroom.floormap.client.presenter.FloorMapEntityListPresenter;
+import stroom.floormap.client.presenter.FloorMapEntityListPresenter.FloorMapEntityListView;
 import stroom.floormap.client.presenter.FloorMapFactListPresenter;
 import stroom.floormap.client.presenter.FloorMapFactListPresenter.FloorMapFactListView;
 import stroom.floormap.client.presenter.FloorMapInitPresenter;
@@ -41,10 +43,9 @@ import stroom.floormap.client.presenter.FloorMapTimelinePresenter;
 import stroom.floormap.client.presenter.FloorMapTimelinePresenter.FloorMapTimelineView;
 import stroom.floormap.client.presenter.FloorMapTimelineSettingsPresenter;
 import stroom.floormap.client.presenter.FloorMapTimelineSettingsPresenter.FloorMapTimelineSettingsView;
-import stroom.floormap.client.presenter.FloorMapUserListPresenter;
-import stroom.floormap.client.presenter.FloorMapUserListPresenter.FloorMapUserListView;
 import stroom.floormap.client.view.FloorMapCanvasViewImpl;
 import stroom.floormap.client.view.FloorMapEditorViewImpl;
+import stroom.floormap.client.view.FloorMapEntityListViewImpl;
 import stroom.floormap.client.view.FloorMapFactListViewImpl;
 import stroom.floormap.client.view.FloorMapInitViewImpl;
 import stroom.floormap.client.view.FloorMapMapViewImpl;
@@ -54,7 +55,6 @@ import stroom.floormap.client.view.FloorMapSettingsViewImpl;
 import stroom.floormap.client.view.FloorMapTimeListViewImpl;
 import stroom.floormap.client.view.FloorMapTimelineSettingsViewImpl;
 import stroom.floormap.client.view.FloorMapTimelineViewImpl;
-import stroom.floormap.client.view.FloorMapUserListViewImpl;
 
 /**
  * GIN module for the Floor Map feature.
@@ -107,8 +107,8 @@ public class FloorMapModule extends PluginModule {
                 FloorMapTimeListView.class,
                 FloorMapTimeListViewImpl.class);
 
-        bindPresenterWidget(FloorMapUserListPresenter.class,
-                FloorMapUserListView.class,
-                FloorMapUserListViewImpl.class);
+        bindPresenterWidget(FloorMapEntityListPresenter.class,
+                FloorMapEntityListView.class,
+                FloorMapEntityListViewImpl.class);
     }
 }

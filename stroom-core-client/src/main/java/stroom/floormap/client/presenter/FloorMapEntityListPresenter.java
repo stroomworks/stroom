@@ -17,8 +17,8 @@
 package stroom.floormap.client.presenter;
 
 import stroom.data.grid.client.MyDataGrid;
-import stroom.floormap.client.presenter.FloorMapUserListPresenter.FloorMapUserListView;
-import stroom.floormap.shared.FloorMapUserList.UserEntry;
+import stroom.floormap.client.presenter.FloorMapEntityListPresenter.FloorMapEntityListView;
+import stroom.floormap.shared.FloorMapEntityList.EntityEntry;
 import stroom.svg.client.SvgPresets;
 import stroom.widget.button.client.ButtonPanel;
 import stroom.widget.button.client.ButtonView;
@@ -38,29 +38,30 @@ import java.util.List;
 import java.util.function.Consumer;
 
 /**
- * Presenter for the User Tracking panel on the Map tab — a grid listing every
- * user (person object) seen on the floor map during playback.
+ * Presenter for the Tracking panel on the Map tab — a grid listing every
+ * entity (person, asset, vehicle, or any other typed event object) seen on
+ * the floor map's events stream during playback.
  *
- * <p>Selecting a row tracks that user: the parent presenter highlights them on
- * the canvas and the viewport follows them as they move. Because a manual
- * pan/zoom pauses following, clicking the <em>already-selected</em> row
- * re-invokes the selection consumer (a plain {@code SelectionChangeEvent}
- * would not fire) so the user can resume following without deselecting first.
- * The toolbar's single <strong>Stop Tracking</strong> button clears the
- * selection.</p>
+ * <p>Selecting a row tracks that entity: the parent presenter highlights it on
+ * the canvas, centres the camera on it, and follows it as it moves. Because a
+ * deliberate manual pan pauses following, clicking the
+ * <em>already-selected</em> row re-invokes the selection consumer (a plain
+ * {@code SelectionChangeEvent} would not fire) so the user can resume
+ * following without deselecting first. The toolbar's single
+ * <strong>Stop Tracking</strong> button clears the selection.</p>
  */
-public class FloorMapUserListPresenter extends MyPresenterWidget<FloorMapUserListView> {
+public class FloorMapEntityListPresenter extends MyPresenterWidget<FloorMapEntityListView> {
 
-    private final MyDataGrid<UserEntry> dataGrid;
-    private final ListDataProvider<UserEntry> dataProvider = new ListDataProvider<>();
-    private final SingleSelectionModel<UserEntry> selectionModel = new SingleSelectionModel<>();
-    private Consumer<UserEntry> selectionConsumer;
+    private final MyDataGrid<EntityEntry> dataGrid;
+    private final ListDataProvider<EntityEntry> dataProvider = new ListDataProvider<>();
+    private final SingleSelectionModel<EntityEntry> selectionModel = new SingleSelectionModel<>();
+    private Consumer<EntityEntry> selectionConsumer;
 
     private final ButtonView stopTrackingButton;
 
     @Inject
-    public FloorMapUserListPresenter(final EventBus eventBus,
-                                     final FloorMapUserListView view) {
+    public FloorMapEntityListPresenter(final EventBus eventBus,
+                                       final FloorMapEntityListView view) {
         super(eventBus, view);
 
         dataGrid = new MyDataGrid<>(this);
@@ -81,7 +82,7 @@ public class FloorMapUserListPresenter extends MyPresenterWidget<FloorMapUserLis
         super.onBind();
         //noinspection unused e
         registerHandler(selectionModel.addSelectionChangeHandler(e -> {
-            final UserEntry selected = selectionModel.getSelectedObject();
+            final EntityEntry selected = selectionModel.getSelectedObject();
             stopTrackingButton.setEnabled(selected != null);
             if (selectionConsumer != null) {
                 selectionConsumer.accept(selected);
@@ -90,10 +91,10 @@ public class FloorMapUserListPresenter extends MyPresenterWidget<FloorMapUserLis
 
         // Clicking the row that is already selected does not fire a
         // SelectionChangeEvent, but it must still re-invoke the consumer —
-        // that is the "resume following after a manual pan/zoom" gesture.
-        registerHandler(dataGrid.addCellPreviewHandler((final CellPreviewEvent<UserEntry> e) -> {
+        // that is the "re-centre / resume following after a manual pan" gesture.
+        registerHandler(dataGrid.addCellPreviewHandler((final CellPreviewEvent<EntityEntry> e) -> {
             if ("click".equals(e.getNativeEvent().getType())) {
-                final UserEntry clicked = e.getValue();
+                final EntityEntry clicked = e.getValue();
                 if (clicked != null
                         && clicked.equals(selectionModel.getSelectedObject())
                         && selectionConsumer != null) {
@@ -109,18 +110,27 @@ public class FloorMapUserListPresenter extends MyPresenterWidget<FloorMapUserLis
 
     private void initGridColumns() {
         // Name Column
-        final Column<UserEntry, String> nameColumn = new TextColumn<>() {
+        final Column<EntityEntry, String> nameColumn = new TextColumn<>() {
             @Override
-            public String getValue(final UserEntry entry) {
+            public String getValue(final EntityEntry entry) {
                 return entry.getDisplayName();
             }
         };
         dataGrid.addColumn(nameColumn, "Name");
 
-        // Id Column (the full entity id, e.g. an email address)
-        final Column<UserEntry, String> idColumn = new TextColumn<>() {
+        // Type Column (e.g. person, vehicle, object)
+        final Column<EntityEntry, String> typeColumn = new TextColumn<>() {
             @Override
-            public String getValue(final UserEntry entry) {
+            public String getValue(final EntityEntry entry) {
+                return entry.getType();
+            }
+        };
+        dataGrid.addColumn(typeColumn, "Type");
+
+        // Id Column (the full entity id, e.g. an email address)
+        final Column<EntityEntry, String> idColumn = new TextColumn<>() {
+            @Override
+            public String getValue(final EntityEntry entry) {
                 return entry.getId();
             }
         };
@@ -132,28 +142,28 @@ public class FloorMapUserListPresenter extends MyPresenterWidget<FloorMapUserLis
      *
      * <p>The current selection is <em>not</em> automatically adjusted —
      * callers should follow up with {@link #setSelected(String)}. Because
-     * {@link UserEntry} equality is id-based, restoring the same id does not
+     * {@link EntityEntry} equality is id-based, restoring the same id does not
      * re-fire the selection consumer.</p>
      *
-     * @param data the users to display; must not be {@code null}
+     * @param data the entities to display; must not be {@code null}
      */
-    public void setData(final List<UserEntry> data) {
+    public void setData(final List<EntityEntry> data) {
         dataProvider.setList(data);
         dataGrid.setRowData(0, data);
     }
 
     /**
-     * Selects the grid row whose user id matches the given value.
+     * Selects the grid row whose entity id matches the given value.
      *
      * <p>If {@code id} is {@code null} or no matching row is found, the
      * current selection is cleared.</p>
      *
-     * @param id the user id to look for; may be {@code null}
+     * @param id the entity id to look for; may be {@code null}
      */
     public void setSelected(final String id) {
-        final List<UserEntry> list = dataProvider.getList();
+        final List<EntityEntry> list = dataProvider.getList();
         if (list != null && id != null) {
-            for (final UserEntry entry : list) {
+            for (final EntityEntry entry : list) {
                 if (id.equals(entry.getId())) {
                     selectionModel.setSelected(entry, true);
                     return;
@@ -164,37 +174,37 @@ public class FloorMapUserListPresenter extends MyPresenterWidget<FloorMapUserLis
     }
 
     /**
-     * Returns the id of the currently selected user, or {@code null} if
+     * Returns the id of the currently selected entity, or {@code null} if
      * nothing is selected.
      */
     public String getSelectedId() {
-        final UserEntry selected = selectionModel.getSelectedObject();
+        final EntityEntry selected = selectionModel.getSelectedObject();
         return selected != null
                 ? selected.getId()
                 : null;
     }
 
     /**
-     * Registers a callback invoked whenever the tracked user changes.
+     * Registers a callback invoked whenever the tracked entity changes.
      *
-     * <p>The consumer receives the newly selected {@link UserEntry}, or
+     * <p>The consumer receives the newly selected {@link EntityEntry}, or
      * {@code null} when tracking stops. It is also re-invoked with the current
-     * entry when the already-selected row is clicked again (resume-follow
-     * gesture).</p>
+     * entry when the already-selected row is clicked again (re-centre /
+     * resume-follow gesture).</p>
      *
      * @param selectionConsumer called on every selection change or re-click
      */
-    public void setSelectionConsumer(final Consumer<UserEntry> selectionConsumer) {
+    public void setSelectionConsumer(final Consumer<EntityEntry> selectionConsumer) {
         this.selectionConsumer = selectionConsumer;
     }
 
     /**
-     * View contract for the User Tracking panel.
+     * View contract for the Tracking panel.
      *
      * <p>Implementations provide the layout that hosts the data grid and the
      * toolbar strip above it.</p>
      */
-    public interface FloorMapUserListView extends View {
+    public interface FloorMapEntityListView extends View {
 
         /**
          * Sets the data-grid widget into the main content area of the panel.

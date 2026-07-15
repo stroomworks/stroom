@@ -166,19 +166,38 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     private List<Fact> facts = new ArrayList<>();
 
     // -------------------------------------------------------------------------
-    // User tracking (Map tab)
+    // Entity tracking (Map tab)
     // -------------------------------------------------------------------------
 
-    /** Id of the person the viewport is following, or {@code null} when not tracking. */
-    private String trackedPersonId = null;
+    /**
+     * How far (px) the mouse must move with the button down before the gesture
+     * counts as a deliberate pan rather than click jitter. Without this, the
+     * couple of pixels of movement inside an ordinary click would pause
+     * following the instant it was enabled.
+     */
+    private static final double PAN_INTENT_THRESHOLD_PX = 4.0;
+
+    /** Id of the entity the camera is following, or {@code null} when not tracking. */
+    private String trackedObjectId = null;
 
     /**
-     * {@code true} after a manual pan or zoom while tracking — the highlight
+     * {@code true} after a deliberate manual pan while tracking — the highlight
      * stays but the camera stops following until the user re-selects (or
-     * re-clicks) the tracked person, which calls
-     * {@link #setTrackedPersonId(String)} again and clears this flag.
+     * re-clicks) the tracked entity, which calls
+     * {@link #setTrackedObjectId(String)} again and clears this flag.
      */
     private boolean followPaused = false;
+
+    /**
+     * When {@code true}, the next follow with a known position hard-centres the
+     * tracked entity instead of dead-zone panning. Set on (re-)selection so
+     * tracking gives immediate visible feedback even when the entity is
+     * already somewhere on screen.
+     */
+    private boolean centreOnNextFollow = false;
+
+    /** Manual pan distance accumulated since the last mousedown, in px. */
+    private double manualPanPx = 0;
 
     // -------------------------------------------------------------------------
     // Playback / animation state
@@ -404,6 +423,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
             // Normal panning logic
             isDragging = true;
+            manualPanPx = 0;
             lastMouseX = event.getX();
             lastMouseY = event.getY();
         }));
@@ -434,10 +454,15 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                     hasMoved = true;
                     redraw();
                 } else {
-                    // Pan the map. A manual pan takes the camera off the
-                    // tracked person, so pause following until they are
-                    // re-selected.
-                    followPaused = true;
+                    // Pan the map. A deliberate manual pan takes the camera off
+                    // the tracked entity, so pause following until it is
+                    // re-selected — but ignore the few pixels of jitter inside
+                    // an ordinary click, which would otherwise pause following
+                    // the moment click-to-track enabled it.
+                    manualPanPx += Math.abs(deltaX) + Math.abs(deltaY);
+                    if (manualPanPx > PAN_INTENT_THRESHOLD_PX) {
+                        followPaused = true;
+                    }
                     offsetX += deltaX;
                     offsetY += deltaY;
                     redraw();
@@ -473,9 +498,9 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                 zoomFactor = 1 / zoomFactor; // Zoom out
             }
 
-            // A manual zoom repositions the camera deliberately — pause
-            // following until the tracked person is re-selected.
-            followPaused = true;
+            // Note: zooming deliberately does NOT pause following — zooming in
+            // on a tracked entity is the natural way to watch it, and the
+            // dead-zone follow simply keeps it in view at the new zoom level.
 
             final double mouseX = event.getX();
             final double mouseY = event.getY();
@@ -855,28 +880,34 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     }
 
     /**
-     * Starts tracking the given person: highlights them via the selection
-     * mechanism and follows them with the camera as they move. Passing
-     * {@code null} stops tracking and clears the highlight. Calling this again
-     * with the same id resumes following after a manual pan/zoom paused it.
+     * Starts tracking the given entity: highlights it via the selection
+     * mechanism, immediately centres the camera on it, and follows it as it
+     * moves. Passing {@code null} stops tracking and clears the highlight.
+     * Calling this again with the same id re-centres and resumes following
+     * after a manual pan paused it.
      *
-     * @param trackedPersonId the person's object id, or {@code null} to stop tracking
+     * @param trackedObjectId the entity's object id, or {@code null} to stop tracking
      */
-    public void setTrackedPersonId(final String trackedPersonId) {
-        this.trackedPersonId = trackedPersonId;
+    public void setTrackedObjectId(final String trackedObjectId) {
+        this.trackedObjectId = trackedObjectId;
         this.followPaused = false;
+        // Hard-centre on (re-)selection so tracking visibly engages even when
+        // the entity is already on screen. If its position isn't known yet
+        // (no events loaded), the flag holds until the first update that has one.
+        this.centreOnNextFollow = trackedObjectId != null;
         applyFollow();
-        setSelectedObjectId(trackedPersonId);
+        setSelectedObjectId(trackedObjectId);
     }
 
     /**
      * Pans the camera (via {@link FloorMapViewport#followDelta}) so the tracked
-     * person stays within the view's central dead zone. No-op when nothing is
-     * tracked, following is paused, or the person's position is unknown.
-     * Callers are responsible for redrawing afterwards.
+     * entity stays within the view's central dead zone — or hard-centres it
+     * when {@link #centreOnNextFollow} is set. No-op when nothing is tracked,
+     * following is paused, or the entity's position is unknown. Callers are
+     * responsible for redrawing afterwards.
      */
     private void applyFollow() {
-        if (trackedPersonId == null || followPaused) {
+        if (trackedObjectId == null || followPaused) {
             return;
         }
         final double[] pos = trackedPosition();
@@ -888,53 +919,39 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         final double screenX = offsetX + scale * pos[0];
         final double screenY = offsetY - scale * pos[1];
         final Element panel = getView().getFocusPanel().getElement();
+        // Margin 0.5 collapses the dead zone to the centre point (hard-centre).
+        final double margin = centreOnNextFollow
+                ? 0.5
+                : FloorMapViewport.DEFAULT_FOLLOW_MARGIN;
+        centreOnNextFollow = false;
         final double[] delta = FloorMapViewport.followDelta(screenX, screenY,
-                panel.getOffsetWidth(), panel.getOffsetHeight(),
-                FloorMapViewport.DEFAULT_FOLLOW_MARGIN);
+                panel.getOffsetWidth(), panel.getOffsetHeight(), margin);
         offsetX += delta[0];
         offsetY += delta[1];
     }
 
     /**
-     * Resolves the tracked person's current map-space position, preferring the
+     * Resolves the tracked entity's current map-space position, preferring the
      * live interpolated animation position, then the last known rendered
      * position, then the event draw list.
      *
-     * @return {@code {mapX, mapY}}, or {@code null} if the person is unknown
+     * @return {@code {mapX, mapY}}, or {@code null} if the entity is unknown
      */
     private double[] trackedPosition() {
-        final UserAnimation animation = activeAnimations.get(trackedPersonId);
+        final UserAnimation animation = activeAnimations.get(trackedObjectId);
         if (animation != null) {
             return new double[]{animation.currentX(), animation.currentY()};
         }
-        final double[] last = lastPersonPositions.get(trackedPersonId);
+        final double[] last = lastPersonPositions.get(trackedObjectId);
         if (last != null) {
             return last;
         }
         for (final FloorMapObject obj : eventObjects) {
-            if (trackedPersonId.equals(obj.getId())) {
+            if (trackedObjectId.equals(obj.getId())) {
                 return new double[]{obj.getX(), obj.getY()};
             }
         }
         return null;
-    }
-
-    /**
-     * Highlights the given set of objects (multi-select) and redraws. Backs a
-     * future rubber-band / modifier-key selection UI.
-     *
-     * @param objectIds the object IDs to highlight; {@code null} clears
-     */
-    public void setSelectedObjectIds(final Collection<String> objectIds) {
-        selectedObjectIds.clear();
-        if (objectIds != null) {
-            for (final String id : objectIds) {
-                if (id != null) {
-                    selectedObjectIds.add(id);
-                }
-            }
-        }
-        redraw();
     }
 
     /**
