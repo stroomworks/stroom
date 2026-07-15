@@ -22,5 +22,12 @@
                 <g:SimplePanel ui:field="schemaGridContainer" height="250px" />
             </g:FlowPanel>
         </form:FormGroup>
+        <!-- Type Styles (z-order + default graphic per type) -->
+        <form:FormGroup label="Type Styles">
+            <g:FlowPanel>
+                <g:SimplePanel ui:field="typeStylesToolbarContainer" />
+                <g:SimplePanel ui:field="typeStylesGridContainer" height="250px" />
+            </g:FlowPanel>
+        </form:FormGroup>
     </g:FlowPanel>
 </ui:UiBinder>

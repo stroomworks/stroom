@@ -355,4 +355,53 @@ class TestFloorMapViewport {
         assertThat(viewport.getOffsetX()).isEqualTo(10);
         assertThat(viewport.getOffsetY()).isEqualTo(20);
     }
+
+    // -----------------------------------------------------------------------
+    // followDelta (static, screen-space — used by the canvas's Y-up pipeline)
+    // -----------------------------------------------------------------------
+
+    /**
+     * A screen point inside the central dead zone needs no pan.
+     */
+    @Test
+    void testFollowDelta_insideDeadZoneIsZero() {
+        assertThat(FloorMapViewport.followDelta(
+                VIEW_WIDTH / 2, VIEW_HEIGHT / 2, VIEW_WIDTH, VIEW_HEIGHT, MARGIN))
+                .containsExactly(0.0, 0.0);
+        // Exactly on the margin boundary counts as inside.
+        assertThat(FloorMapViewport.followDelta(
+                VIEW_WIDTH * MARGIN, VIEW_HEIGHT * MARGIN, VIEW_WIDTH, VIEW_HEIGHT, MARGIN))
+                .containsExactly(0.0, 0.0);
+    }
+
+    /**
+     * A point past a margin yields the minimal delta that lands it exactly on
+     * the margin boundary — per axis, independently.
+     */
+    @Test
+    void testFollowDelta_minimalDeltaPerAxis() {
+        // Past the right edge only.
+        final double[] right = FloorMapViewport.followDelta(
+                VIEW_WIDTH - 10, VIEW_HEIGHT / 2, VIEW_WIDTH, VIEW_HEIGHT, MARGIN);
+        assertThat(right[0]).isCloseTo((VIEW_WIDTH * (1 - MARGIN)) - (VIEW_WIDTH - 10),
+                within(TOLERANCE));
+        assertThat(right[1]).isEqualTo(0.0);
+
+        // Above the top edge only.
+        final double[] top = FloorMapViewport.followDelta(
+                VIEW_WIDTH / 2, -40, VIEW_WIDTH, VIEW_HEIGHT, MARGIN);
+        assertThat(top[0]).isEqualTo(0.0);
+        assertThat(top[1]).isCloseTo(VIEW_HEIGHT * MARGIN + 40, within(TOLERANCE));
+    }
+
+    /**
+     * The zero-size guard applies to the static form too.
+     */
+    @Test
+    void testFollowDelta_zeroViewSizeIsZero() {
+        assertThat(FloorMapViewport.followDelta(5000, 5000, 0, VIEW_HEIGHT, MARGIN))
+                .containsExactly(0.0, 0.0);
+        assertThat(FloorMapViewport.followDelta(5000, 5000, VIEW_WIDTH, 0, MARGIN))
+                .containsExactly(0.0, 0.0);
+    }
 }

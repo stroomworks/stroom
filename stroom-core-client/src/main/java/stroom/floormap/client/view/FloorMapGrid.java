@@ -22,7 +22,10 @@ import stroom.widget.util.client.HtmlBuilder.Attribute;
 import stroom.widget.util.client.SafeHtmlUtil;
 
 /**
- * Generates an adaptive SVG grid background for the floor map canvas.
+ * Generates an adaptive SVG grid overlay for the floor map canvas.
+ *
+ * <p>The grid is a non-interactive UI aid that visualises map space; it is
+ * not a background and is not tied to any background image.</p>
  *
  * <p>The grid fills the entire SVG viewport and dynamically adjusts its
  * spacing based on the combined zoom level (world-to-map matrix scale
@@ -47,7 +50,7 @@ import stroom.widget.util.client.SafeHtmlUtil;
  * <p>This method should be called at the <strong>SVG root level</strong>,
  * outside the pan/zoom and matrix transform groups.</p>
  */
-public final class FloorMapGridBackground {
+public final class FloorMapGrid {
 
     // -- Appearance constants ------------------------------------------------
 
@@ -112,7 +115,7 @@ public final class FloorMapGridBackground {
     private static final String MAJOR_PATTERN_ID = "grid-major";
     private static final String ARROW_MARKER_ID = "origin-arrow";
 
-    private FloorMapGridBackground() {
+    private FloorMapGrid() {
         // utility class
     }
 
@@ -307,7 +310,7 @@ public final class FloorMapGridBackground {
 
     /**
      * Appends the origin indicator at world-space (0,0). Draws two axis
-     * lines (X rightward, Y downward), each one major grid division long,
+     * lines (X rightward, Y upward — map space is Y-up), each one major grid division long,
      * with arrowheads at the far end and a text label showing the world-
      * space distance (the major grid spacing) in map units.
      *
@@ -378,23 +381,24 @@ public final class FloorMapGridBackground {
                             "rotate(" + formatDouble(counterRotDeg)
                             + "," + xLabelX + ",0)"));
 
-            // --- Y axis: from (0,0) to (0, majorWorldSpacing) ---
+            // --- Y axis: from (0,0) to (0, -majorWorldSpacing) ---
+            // Map space is Y-up, so the Y axis points up the screen (negative SVG Y).
             originGroup.elem(SafeHtmlUtil.from("line"),
                     new Attribute("x1", "0"),
                     new Attribute("y1", "0"),
                     new Attribute("x2", "0"),
-                    new Attribute("y2", spacing),
+                    new Attribute("y2", "-" + spacing),
                     new Attribute("stroke", HIGHLIGHT_COLOUR),
                     new Attribute("stroke-width", axisStrokeWidth),
                     new Attribute("marker-end", markerUrl));
 
-            // Y axis label — positioned just past the arrowhead.
-            final String yLabelY = formatDouble(majorWorldSpacing + labelGap);
+            // Y axis label — positioned just past the (upward) arrowhead.
+            final String yLabelY = formatDouble(-(majorWorldSpacing + labelGap));
             originGroup.elem(label,
                     SafeHtmlUtil.from("text"),
                     new Attribute("x", "0"),
                     new Attribute("y", yLabelY),
-                    new Attribute("dy", "1em"),
+                    new Attribute("dy", "-0.35em"),
                     new Attribute("text-anchor", "middle"),
                     new Attribute("fill", HIGHLIGHT_COLOUR),
                     new Attribute("font-size", fontSize),
@@ -446,6 +450,24 @@ public final class FloorMapGridBackground {
         final double minorOpacity = clampZeroToOne(t) * MINOR_MAX_OPACITY;
 
         return new double[]{majorWorldSpacing, minorOpacity};
+    }
+
+    /**
+     * Returns the on-screen pixel distance spanned by one major grid division
+     * at the given effective scale &mdash; i.e. {@code majorWorldSpacing ×
+     * effectiveScale}.
+     *
+     * <p>This is the single source of truth for the adaptive decade, shared by
+     * any caller that positions the view relative to the grid (for example the
+     * initial pan that insets the origin by half a division) so it stays aligned
+     * with the drawn grid at whatever zoom is in effect.</p>
+     *
+     * @param effectiveScale combined pixels-per-world-unit
+     *                       ({@code matrixScale × userZoom})
+     * @return the major grid division size in screen pixels
+     */
+    public static double majorDivisionScreenPx(final double effectiveScale) {
+        return computeGridParams(effectiveScale)[0] * effectiveScale;
     }
 
     /**

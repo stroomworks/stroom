@@ -185,32 +185,59 @@ public final class FloorMapViewport {
                           final double viewWidth,
                           final double viewHeight,
                           final double marginFraction) {
+        final double[] screen = mapToScreen(mapX, mapY, background);
+        final double[] delta = followDelta(
+                screen[0], screen[1], viewWidth, viewHeight, marginFraction);
+        if (delta[0] != 0 || delta[1] != 0) {
+            pan(delta[0], delta[1]);
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Pure dead-zone camera maths, independent of any coordinate convention:
+     * given a tracked point's current <em>screen</em> position, returns the pan
+     * delta needed to bring it back inside the view's central dead-zone
+     * rectangle. Returns {@code {0, 0}} when the point is already inside the
+     * zone or the view has no size — callers apply the delta to their own
+     * offsets however their draw pipeline is oriented.
+     *
+     * @param screenX        the tracked point's on-screen X
+     * @param screenY        the tracked point's on-screen Y
+     * @param viewWidth      the visible canvas width in screen pixels
+     * @param viewHeight     the visible canvas height in screen pixels
+     * @param marginFraction the dead-zone margin as a fraction of each view
+     *                       dimension, clamped to {@code [0, 0.5]}; 0.5
+     *                       collapses the dead zone to the centre point
+     *                       (hard-centering)
+     * @return {@code {deltaX, deltaY}} to add to the pan offsets
+     */
+    public static double[] followDelta(final double screenX,
+                                       final double screenY,
+                                       final double viewWidth,
+                                       final double viewHeight,
+                                       final double marginFraction) {
         if (viewWidth <= 0 || viewHeight <= 0) {
-            return false;
+            return new double[]{0, 0};
         }
         final double margin = Math.max(0.0, Math.min(0.5, marginFraction));
-        final double[] screen = mapToScreen(mapX, mapY, background);
         final double marginX = viewWidth * margin;
         final double marginY = viewHeight * margin;
 
         double deltaX = 0;
         double deltaY = 0;
-        if (screen[0] < marginX) {
-            deltaX = marginX - screen[0];
-        } else if (screen[0] > viewWidth - marginX) {
-            deltaX = (viewWidth - marginX) - screen[0];
+        if (screenX < marginX) {
+            deltaX = marginX - screenX;
+        } else if (screenX > viewWidth - marginX) {
+            deltaX = (viewWidth - marginX) - screenX;
         }
-        if (screen[1] < marginY) {
-            deltaY = marginY - screen[1];
-        } else if (screen[1] > viewHeight - marginY) {
-            deltaY = (viewHeight - marginY) - screen[1];
+        if (screenY < marginY) {
+            deltaY = marginY - screenY;
+        } else if (screenY > viewHeight - marginY) {
+            deltaY = (viewHeight - marginY) - screenY;
         }
-
-        if (deltaX != 0 || deltaY != 0) {
-            pan(deltaX, deltaY);
-            return true;
-        }
-        return false;
+        return new double[]{deltaX, deltaY};
     }
 
     // -----------------------------------------------------------------------
