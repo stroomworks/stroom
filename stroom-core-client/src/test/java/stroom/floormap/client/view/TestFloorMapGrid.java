@@ -203,6 +203,28 @@ class TestFloorMapGrid {
     }
 
     @Test
+    void minorWorldSpacingIsOneTenthOfMajor() {
+        // Minor spacing is always 1/10th of the adaptive major spacing.
+        for (final double effectiveScale : new double[]{0.001, 0.3, 1, 2, 5, 30, 1000}) {
+            final double expected =
+                    FloorMapGrid.computeGridParams(effectiveScale)[0] / 10.0;
+            assertThat(FloorMapGrid.minorWorldSpacing(effectiveScale))
+                    .as("minorWorldSpacing at effectiveScale=%s", effectiveScale)
+                    .isEqualTo(expected);
+        }
+    }
+
+    @Test
+    void fiveMinorDivisionsEqualsFiftyAtDefaultZoom() {
+        // At the default zoom (effectiveScale = 1) the major division is 100
+        // world units, so a minor division is 10 and five of them is 50 — i.e.
+        // the value the duplicate-object offset was previously hard-coded to,
+        // now derived so it adapts to zoom.
+        assertThat(FloorMapGrid.minorWorldSpacing(1.0)).isEqualTo(10.0);
+        assertThat(5.0 * FloorMapGrid.minorWorldSpacing(1.0)).isEqualTo(50.0);
+    }
+
+    @Test
     void majorDivisionScreenPxMatchesSpacingTimesScale() {
         // At the default zoom (effectiveScale = 1) the major division is 100
         // world units, which is 100 screen pixels — so half a division (the
