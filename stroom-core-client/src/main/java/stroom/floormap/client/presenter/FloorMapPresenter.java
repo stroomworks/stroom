@@ -106,6 +106,11 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
                                final DocRef docRef,
                                final FloorMapDoc document,
                                final boolean readOnly) {
+                // Scope the query's timeline listening to this document's Map-tab
+                // timeline so it ignores the Editor timeline and other documents.
+                if (floorMapMapPresenter != null) {
+                    presenter.setTimeSource(floorMapMapPresenter.getTimelinePresenter());
+                }
                 presenter.read(docRef, document.getEventsQuery(), document.getEventsQueryTimeRange(),
                         document.getEventsQueryTablePreferences(), document.getEntityIdColumn(),
                         document.getLocationIdColumn(), true,

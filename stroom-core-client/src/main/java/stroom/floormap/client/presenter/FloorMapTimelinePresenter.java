@@ -77,6 +77,14 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
     /** Latest timestamp observed in histogram data — used by Show All. */
     private long dataRangeMax = Long.MIN_VALUE;
 
+    /**
+     * Number of histogram bins, learned from the data supplied to
+     * {@link #setHistogramData(int[])}. Used to size a single step-back/forward
+     * to exactly one bin width. Defaults to the histogram's bin count until
+     * data arrives.
+     */
+    private int histogramBinCount = 100;
+
     private boolean playing;
     private double playbackSpeed;
     /** Tracks whether the last programmatic setCurrentTime() was out of the visible range. */
@@ -371,10 +379,10 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
         if (endTime <= startTime) {
             return;
         }
-        // Use the same bin count that the histogram uses (default 50 if not set).
+        // Step by one histogram bin width, using the actual bin count from the
+        // rendered histogram (see histogramBinCount / setHistogramData).
         final long duration = endTime - startTime;
-        final int binCount = 50;
-        final long stepMs = duration / binCount * bins;
+        final long stepMs = duration / histogramBinCount * bins;
         final long newTime = Math.max(startTime, Math.min(endTime, currentTime + stepMs));
         setCurrentTime(newTime);
         TimeChangeEvent.fire(this, newTime);
@@ -503,6 +511,9 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
      * @param binCounts  Array of event counts per bin.
      */
     public void setHistogramData(final int[] binCounts) {
+        if (binCounts != null && binCounts.length > 0) {
+            histogramBinCount = binCounts.length;
+        }
         getView().setHistogramData(binCounts);
     }
 

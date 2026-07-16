@@ -989,6 +989,26 @@ class TestFloorMapEditorModel {
     }
 
     /**
+     * Moving an object with a non-empty schema that has no Position mapping
+     * throws {@code IllegalStateException} and stages nothing — rather than
+     * silently reporting success while persisting no coordinates.
+     */
+    @Test
+    void testRecordObjectMove_noPositionRole_throws() {
+        model.onEntriesFetched(List.of(
+                entry("g1", 100, "{\"type\":\"gate\",\"coords\":[0,0]}")));
+        // Non-empty schema, but nothing mapped to the POSITION role.
+        final List<FloorMapFieldMapping> schemaWithoutPosition = List.of(
+                new FloorMapFieldMapping(".type", FloorMapFieldMapping.Role.TYPE, "Type", null));
+
+        assertThatThrownBy(() ->
+                model.recordObjectMove("g1", 40.0, 60.0, schemaWithoutPosition, ACCESSOR))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Position");
+        assertThat(model.hasPendingChanges()).isFalse();
+    }
+
+    /**
      * A "background" key is not special-cased: moving it writes the new
      * position into the POSITION coords field, exactly like any other fact
      * (there is no separate matrix write path any more). With an identity

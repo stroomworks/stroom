@@ -25,6 +25,7 @@ import stroom.floormap.client.event.TimeChangeEvent;
 import stroom.floormap.client.presenter.FloorMapMapPresenter.FloorMapMapView;
 import stroom.floormap.shared.Fact;
 import stroom.floormap.shared.FloorMapDoc;
+import stroom.floormap.shared.FloorMapEntityList;
 import stroom.floormap.shared.FloorMapEntryParser;
 import stroom.floormap.shared.FloorMapFieldMapping;
 import stroom.floormap.shared.FloorMapFieldMapping.Role;
@@ -54,6 +55,7 @@ import com.google.web.bindery.event.shared.EventBus;
 import com.gwtplatform.mvp.client.View;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -69,6 +71,7 @@ import java.util.Map;
  * <h3>Layout slots</h3>
  * <ul>
  *     <li>{@link #MAP} – the {@link FloorMapCanvasPresenter} (canvas / visualisation)</li>
+ *     <li>{@link #ENTITY_LIST} – the {@link FloorMapEntityListPresenter} (entity tracking panel)</li>
  *     <li>{@link #TIMELINE} – the {@link FloorMapTimelinePresenter} (timeline scrubber)</li>
  * </ul>
  *
@@ -80,13 +83,17 @@ public class FloorMapMapPresenter
         extends DocPresenter<FloorMapMapView, FloorMapDoc> {
 
     public static final Object MAP = new Object();
+    public static final Object ENTITY_LIST = new Object();
     public static final Object TIMELINE = new Object();
     private static final int HISTOGRAM_BINS = 100;
 
     private final FloorMapCanvasPresenter floorMapCanvasPresenter;
     private final FloorMapTimelinePresenter floorMapTimelinePresenter;
     private final FloorMapObjectEditPresenter floorMapObjectEditPresenter;
-    private final FloorMapFactListPresenter floorMapObjectListPresenter;
+    private final FloorMapEntityListPresenter floorMapEntityListPresenter;
+
+    /** Roster of every entity seen on the map, feeding the tracking panel. */
+    private final FloorMapEntityList entityList = new FloorMapEntityList();
 
     private final QueryModel queryModel;
     private final HistogramQueryHelper histogramQueryHelper;
@@ -127,18 +134,19 @@ public class FloorMapMapPresenter
                                 final Provider<FloorMapCanvasPresenter> floorMapCanvasPresenterProvider,
                                 final Provider<FloorMapTimelinePresenter> floorMapTimelinePresenterProvider,
                                 final Provider<FloorMapObjectEditPresenter> floorMapObjectEditPresenterProvider,
-                                final Provider<FloorMapFactListPresenter> floorMapObjectListPresenterProvider) {
+                                final Provider<FloorMapEntityListPresenter> floorMapEntityListPresenterProvider) {
         super(eventBus, view);
 
         this.floorMapCanvasPresenter = floorMapCanvasPresenterProvider.get();
         this.floorMapTimelinePresenter = floorMapTimelinePresenterProvider.get();
         this.floorMapObjectEditPresenter = floorMapObjectEditPresenterProvider.get();
-        this.floorMapObjectListPresenter = floorMapObjectListPresenterProvider.get();
+        this.floorMapEntityListPresenter = floorMapEntityListPresenterProvider.get();
 
         // Default initial time
         this.selectedTime = System.currentTimeMillis();
 
         setInSlot(MAP, floorMapCanvasPresenter);
+        setInSlot(ENTITY_LIST, floorMapEntityListPresenter);
         setInSlot(TIMELINE, floorMapTimelinePresenter);
 
         // Result component to parse and handle Facts query results
@@ -207,8 +215,19 @@ public class FloorMapMapPresenter
                 onTimeChange(e.getTime());
             }
         }));
-        registerHandler(getEventBus().addHandler(FloorMapDataEvent.getType(), e ->
-                floorMapCanvasPresenter.setEventObjects(e.getObjects())));
+        registerHandler(getEventBus().addHandler(FloorMapDataEvent.getType(), e -> {
+            floorMapCanvasPresenter.setEventObjects(e.getObjects());
+            // Keep the tracking panel's roster up to date. Only re-push grid
+            // data when membership actually changed so playback refreshes
+            // (~300ms apart) don't churn the grid. Restoring the selected id
+            // does not re-fire the selection consumer because EntityEntry
+            // equality is id-based.
+            if (entityList.update(e.getObjects())) {
+                final String selectedId = floorMapEntityListPresenter.getSelectedId();
+                floorMapEntityListPresenter.setData(entityList.getEntities());
+                floorMapEntityListPresenter.setSelected(selectedId);
+            }
+        }));
 
         // Re-run the histogram whenever the user changes the visible date range via the settings popup.
         floorMapTimelinePresenter.setTimeRangeChangeHandler(() ->
@@ -218,13 +237,18 @@ public class FloorMapMapPresenter
         // Canvas events are fired on the shared event bus by every FloorMap
         // canvas instance (this tab, the Editor tab, and any other open
         // FloorMap document), so each handler must ignore events from
-        // canvases other than its own. Without the source guard a drag on
-        // the Editor tab's canvas would trigger applyMove() here, silently
-        // persisting a new time record at this tab's selectedTime.
+        // canvases other than its own — without the source guard a selection
+        // on the Editor tab's canvas would change this tab's tracking state.
+        //
+        // Clicking an entity on this tab's canvas selects it in the tracking
+        // panel and starts (or resumes) following it. Ids not in the roster
+        // (static facts such as gates) are ignored.
         registerHandler(getEventBus().addHandler(MapObjectSelectedEvent.getType(), e -> {
-            if (e.getSource() == floorMapCanvasPresenter) {
-                floorMapCanvasPresenter.setSelectedObjectId(null);
-                getView().setPropertiesVisible(false);
+            if (e.getSource() == floorMapCanvasPresenter
+                    && e.getObjectId() != null
+                    && entityList.contains(e.getObjectId())) {
+                floorMapEntityListPresenter.setSelected(e.getObjectId());
+                floorMapCanvasPresenter.setTrackedObjectId(e.getObjectId());
             }
         }));
 
@@ -232,17 +256,15 @@ public class FloorMapMapPresenter
         // Drag-editing is performed on the Editor tab; the Map tab is view-focused,
         // so no drag handler is installed here.
 
-        this.floorMapObjectListPresenter.setSelectionConsumer(factObj -> {
-            if (factObj != null) {
-                floorMapObjectEditPresenter.setObject(factObj.getKey());
-                floorMapCanvasPresenter.setSelectedObjectId(factObj.getKey());
-                floorMapCanvasPresenter.setIsDraggingEnabled(true);
-                getView().setPropertiesVisible(true);
-            } else {
-                floorMapCanvasPresenter.setSelectedObjectId(null);
-                floorMapCanvasPresenter.setIsDraggingEnabled(false);
-            }
-        });
+        // Selecting an entity in the tracking panel highlights it on the
+        // canvas, centres the camera on it, and follows it as it moves;
+        // selecting nothing stops tracking. Re-clicking the selected row
+        // re-invokes this consumer, which re-centres and resumes following
+        // after a manual pan paused it.
+        this.floorMapEntityListPresenter.setSelectionConsumer(entry ->
+                floorMapCanvasPresenter.setTrackedObjectId(entry != null
+                        ? entry.getId()
+                        : null));
 
         // Keep the canvas informed of play/pause transitions so it can switch
         // between animate-on-move and teleport behaviour.
@@ -277,6 +299,10 @@ public class FloorMapMapPresenter
             floorMapObjectEditPresenter.setMapName(document.getFactsStoreRef().getName());
         }
         floorMapObjectEditPresenter.setFloorMapDoc(document);
+
+        // A (re-)opened document starts with a fresh entity roster.
+        entityList.clear();
+        floorMapEntityListPresenter.setData(Collections.emptyList());
 
         // Start timeline (and histogram query) only after models are ready.
         updateTimelineRange();
@@ -531,16 +557,43 @@ public class FloorMapMapPresenter
 
         // Prefer the events query — it typically selects from the same store
         // as the facts query and already includes a timestamp column.
-        final String eventsHistQuery = buildEventsHistogramQuery();
+        // Resolve param('EventStore')/param('FactStore') in the text: the
+        // histogram helpers run with no params, so an unresolved from-clause
+        // would make the query fail and leave the density bars empty.
+        final String eventsHistQuery = resolveQueryParams(buildEventsHistogramQuery());
         if (eventsHistQuery != null && !eventsHistQuery.trim().isEmpty()) {
             histogramQueryHelper.run(eventsHistQuery);
         } else {
             // No events query configured — fall back to the facts query.
-            final String factsHistQuery = getFactsQueryToUse();
+            final String factsHistQuery = resolveQueryParams(getFactsQueryToUse());
             if (factsHistQuery != null && !factsHistQuery.trim().isEmpty()) {
                 factsHistogramQueryHelper.run(factsHistQuery);
             }
         }
+    }
+
+    /**
+     * Resolves {@code param('X')} references (e.g. {@code param('EventStore')},
+     * {@code param('FactStore')}) against the configured store names, mirroring
+     * the substitution done for the playback query in {@link #onTimeChange}.
+     *
+     * @param query the raw query text; may be {@code null}
+     * @return the query with param references substituted, or the original
+     *         value if it (or the entity) is {@code null}
+     */
+    private String resolveQueryParams(final String query) {
+        if (query == null || getEntity() == null) {
+            return query;
+        }
+        final Map<String, String> vars =
+                FloorMapQueryPresenter.buildQueryVariables(getEntity());
+        String resolved = query;
+        for (final Map.Entry<String, String> entry : vars.entrySet()) {
+            resolved = resolved.replace(
+                    "param('" + entry.getKey() + "')",
+                    "\"" + entry.getValue() + "\"");
+        }
+        return resolved;
     }
 
     /**
@@ -584,13 +637,18 @@ public class FloorMapMapPresenter
         floorMapTimelinePresenter.pause();
     }
 
+    /**
+     * Returns this tab's timeline presenter, used as the time-change source
+     * that the events Query tab should follow (so it ignores time-changes from
+     * the Editor tab or from other open FloorMap documents).
+     *
+     * @return the Map tab's timeline presenter
+     */
+    public FloorMapTimelinePresenter getTimelinePresenter() {
+        return floorMapTimelinePresenter;
+    }
+
     public interface FloorMapMapView extends View {
 
-        /**
-         * Shows or hides the object properties panel.
-         *
-         * @param visible {@code true} to show, {@code false} to hide
-         */
-        void setPropertiesVisible(boolean visible);
     }
 }
