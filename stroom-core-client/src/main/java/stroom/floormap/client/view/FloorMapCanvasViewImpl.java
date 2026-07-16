@@ -53,13 +53,14 @@ import java.util.Set;
  * GWT view implementation for the interactive SVG floor-map canvas.
  *
  * <p>Renders the map from a list of {@link Fact}s — each fact placed by its own
- * {@code world-to-map} matrix — plus an event/person overlay:</p>
+ * {@code world-to-map} matrix — plus an event entity overlay:</p>
  * <ul>
  *   <li>Facts with an image are drawn as scaled images (multiple backgrounds are
  *       simply several image facts).</li>
- *   <li>Imageless facts are drawn as a fixed-size default graphic whose shape and
- *       colour come from the per-type settings ({@link TypeStyle}).</li>
- *   <li>Events (people) are drawn as filled circles with movement trails.</li>
+ *   <li>Imageless facts and event entities are drawn as the same fixed-size
+ *       default graphic whose shape and colour come from the per-type settings
+ *       ({@link TypeStyle}); event entities additionally carry movement trails
+ *       tinted with the type colour.</li>
  * </ul>
  *
  * <p>Facts are painted in the order supplied by the presenter (the configured
@@ -83,8 +84,6 @@ public class FloorMapCanvasViewImpl
      * 100 — the label {@code font-size} is deliberately left unchanged.
      */
     private static final int OBJECT_SIZE = 60;
-    /** On-screen radius of a person marker: 0.6&times; the original 30. */
-    private static final int PERSON_RADIUS = 18;
 
     private final Widget widget;
 
@@ -225,10 +224,11 @@ public class FloorMapCanvasViewImpl
                         }
                     }
 
-                    // ---- Events (people) drawn on top ----
+                    // ---- Event entities drawn on top ----
                     if (events != null) {
                         for (final FloorMapObject ev : events) {
-                            appendEvent(flipGroup, ev, selectedObjectIds.contains(ev.getId()), scale);
+                            appendEvent(flipGroup, ev, selectedObjectIds.contains(ev.getId()),
+                                    typeStyles, scale);
                         }
                     }
                 }, SafeHtmlUtil.from("g"), new Attribute("transform", "scale(1,-1)")),
@@ -311,80 +311,22 @@ public class FloorMapCanvasViewImpl
         final double mapX = w2m.getA() * worldX + w2m.getC() * worldY + w2m.getE();
         final double mapY = w2m.getB() * worldX + w2m.getD() * worldY + w2m.getF();
 
-        final String fillColour = colourForType(fact.getType(), typeStyles);
-        final TypeStyle.Shape shape = shapeForType(fact.getType(), typeStyles);
-        final String stroke = isSelected ? "#ff9800" : "none";
-        final String strokeWidth = isSelected ? "4" : "0";
-        final String vectorEffect = isSelected ? "non-scaling-stroke" : "none";
-        final String polygon = FloorMapShapes.polygonPoints(shape, OBJECT_SIZE / 2.0);
-        final String label = shortLabel(fact.getKey());
-
-        parent.elem(objGroup -> {
-            if (shape == TypeStyle.Shape.CIRCLE) {
-                objGroup.elem(SafeHtmlUtil.from("circle"),
-                    new Attribute("cx", "0"),
-                    new Attribute("cy", "0"),
-                    new Attribute("r", String.valueOf(OBJECT_SIZE / 2)),
-                    new Attribute("fill", fillColour),
-                    new Attribute("stroke", stroke),
-                    new Attribute("stroke-width", strokeWidth),
-                    new Attribute("vector-effect", vectorEffect),
-                    new Attribute("id", fact.getKey()));
-            } else if (polygon != null) {
-                objGroup.elem(SafeHtmlUtil.from("polygon"),
-                    new Attribute("points", polygon),
-                    new Attribute("fill", fillColour),
-                    new Attribute("stroke", stroke),
-                    new Attribute("stroke-width", strokeWidth),
-                    new Attribute("vector-effect", vectorEffect),
-                    new Attribute("id", fact.getKey()));
-            } else {
-                objGroup.elem(SafeHtmlUtil.from("rect"),
-                    new Attribute("x", String.valueOf(-OBJECT_SIZE / 2)),
-                    new Attribute("y", String.valueOf(-OBJECT_SIZE / 2)),
-                    new Attribute("width", String.valueOf(OBJECT_SIZE)),
-                    new Attribute("height", String.valueOf(OBJECT_SIZE)),
-                    new Attribute("fill", fillColour),
-                    new Attribute("rx", "6"),
-                    new Attribute("ry", "6"),
-                    new Attribute("stroke", stroke),
-                    new Attribute("stroke-width", strokeWidth),
-                    new Attribute("vector-effect", vectorEffect),
-                    new Attribute("id", fact.getKey()));
-            }
-
-            objGroup.elem(label,
-                    SafeHtmlUtil.from("text"),
-                    new Attribute("x", "0"),
-                    new Attribute("y", "0"),
-                    new Attribute("dy", "0.35em"),
-                    new Attribute("text-anchor", "middle"),
-                    new Attribute("fill", "white"),
-                    new Attribute("font-size", "14px"),
-                    new Attribute("font-family", "sans-serif"),
-                    new Attribute("pointer-events", "none"));
-        },
-                SafeHtmlUtil.from("g"),
-                // Counter-flip + counter-scale so the graphic + label stay
-                // upright and a fixed screen size inside the Y-up flip / zoom group.
-                new Attribute("transform", fixedSizeTransform(mapX, mapY, scale)),
-                new Attribute("id", FloorMapJsonKeys.SVG_GROUP_PREFIX + fact.getKey()));
+        appendStyledGlyph(parent, fact.getKey(), fact.getType(), mapX, mapY,
+                isSelected, typeStyles, scale);
     }
 
     /**
-     * Draws an event overlay object at its map coordinates: a person as a filled
-     * circle with an optional movement trail, or any other event type as a small
-     * coloured rectangle. Both carry a short label.
+     * Draws an event entity at its map coordinates: the type-styled default
+     * graphic (same rendering as an imageless fact), preceded by its movement
+     * trail — a fading path tinted with the entity's type colour.
      */
     private void appendEvent(final HtmlBuilder parent,
                              final FloorMapObject obj,
                              final boolean isSelected,
+                             final List<TypeStyle> typeStyles,
                              final double scale) {
-        final boolean isPerson = FloorMapJsonKeys.PERSON.equalsIgnoreCase(obj.getType());
-        final String displayLabel = shortLabel(obj.getId());
-
-        // Movement trail (people only) — rendered before the circle so it sits behind.
-        if (isPerson && obj.getTrail() != null && obj.getTrail().size() >= 2) {
+        // Movement trail — rendered before the glyph so it sits behind.
+        if (obj.getTrail() != null && obj.getTrail().size() >= 2) {
             final List<double[]> trail = obj.getTrail();
             final StringBuilder pathD = new StringBuilder();
             double maxAlpha = 0.0;
@@ -403,7 +345,7 @@ public class FloorMapCanvasViewImpl
                 parent.elem(SafeHtmlUtil.from("path"),
                     new Attribute("d", pathD.toString()),
                     new Attribute("fill", "none"),
-                    new Attribute("stroke", "#1f77b4"),
+                    new Attribute("stroke", colourForType(obj.getType(), typeStyles)),
                     new Attribute("stroke-width", "6"),
                     new Attribute("stroke-linecap", "round"),
                     new Attribute("stroke-linejoin", "round"),
@@ -413,31 +355,55 @@ public class FloorMapCanvasViewImpl
             }
         }
 
+        // The trail above stays in map space so it scales with the map; the
+        // glyph itself is fixed screen size.
+        appendStyledGlyph(parent, obj.getId(), obj.getType(), obj.getX(), obj.getY(),
+                isSelected, typeStyles, scale);
+    }
+
+    /**
+     * Draws the type-styled default graphic — the single glyph rendering shared
+     * by imageless facts and event entities — anchored at a map-space point and
+     * drawn at a fixed screen size. Shape and colour come from the type's
+     * {@link TypeStyle}; the shape element carries {@code id} so click-detection
+     * works, and a centred short label is drawn on top.
+     */
+    private void appendStyledGlyph(final HtmlBuilder parent,
+                                   final String id,
+                                   final String type,
+                                   final double mapX,
+                                   final double mapY,
+                                   final boolean isSelected,
+                                   final List<TypeStyle> typeStyles,
+                                   final double scale) {
+        final String fillColour = colourForType(type, typeStyles);
+        final TypeStyle.Shape shape = shapeForType(type, typeStyles);
+        final String stroke = isSelected ? "#ff9800" : "none";
+        final String strokeWidth = isSelected ? "4" : "0";
+        final String vectorEffect = isSelected ? "non-scaling-stroke" : "none";
+        final String polygon = FloorMapShapes.polygonPoints(shape, OBJECT_SIZE / 2.0);
+        final String label = shortLabel(id);
+
         parent.elem(objGroup -> {
-            if (isPerson) {
+            if (shape == TypeStyle.Shape.CIRCLE) {
                 objGroup.elem(SafeHtmlUtil.from("circle"),
                     new Attribute("cx", "0"),
                     new Attribute("cy", "0"),
-                    new Attribute("r", String.valueOf(PERSON_RADIUS)),
-                    new Attribute("fill", "#1f77b4"),
-                    new Attribute("stroke", isSelected ? "#ff9800" : "#ffffff"),
-                    new Attribute("stroke-width", isSelected ? "4" : "2"),
-                    new Attribute("vector-effect", "non-scaling-stroke"),
-                    new Attribute("id", obj.getId()));
-
-                objGroup.elem(displayLabel,
-                        SafeHtmlUtil.from("text"),
-                        new Attribute("x", "0"),
-                        new Attribute("y", String.valueOf(PERSON_RADIUS + 4)),
-                        new Attribute("dy", "0.85em"),
-                        new Attribute("text-anchor", "middle"),
-                        new Attribute("fill", "#1f77b4"),
-                        new Attribute("font-size", "14px"),
-                        new Attribute("font-family", "sans-serif"),
-                        new Attribute("font-weight", "600"),
-                        new Attribute("pointer-events", "none"));
+                    new Attribute("r", String.valueOf(OBJECT_SIZE / 2)),
+                    new Attribute("fill", fillColour),
+                    new Attribute("stroke", stroke),
+                    new Attribute("stroke-width", strokeWidth),
+                    new Attribute("vector-effect", vectorEffect),
+                    new Attribute("id", id));
+            } else if (polygon != null) {
+                objGroup.elem(SafeHtmlUtil.from("polygon"),
+                    new Attribute("points", polygon),
+                    new Attribute("fill", fillColour),
+                    new Attribute("stroke", stroke),
+                    new Attribute("stroke-width", strokeWidth),
+                    new Attribute("vector-effect", vectorEffect),
+                    new Attribute("id", id));
             } else {
-                final String fillColour = colourForType(obj.getType(), null);
                 objGroup.elem(SafeHtmlUtil.from("rect"),
                     new Attribute("x", String.valueOf(-OBJECT_SIZE / 2)),
                     new Attribute("y", String.valueOf(-OBJECT_SIZE / 2)),
@@ -446,29 +412,28 @@ public class FloorMapCanvasViewImpl
                     new Attribute("fill", fillColour),
                     new Attribute("rx", "6"),
                     new Attribute("ry", "6"),
-                    new Attribute("stroke", isSelected ? "#ff9800" : "none"),
-                    new Attribute("stroke-width", isSelected ? "4" : "0"),
-                    new Attribute("vector-effect", isSelected ? "non-scaling-stroke" : "none"),
-                    new Attribute("id", obj.getId()));
-
-                objGroup.elem(displayLabel,
-                        SafeHtmlUtil.from("text"),
-                        new Attribute("x", "0"),
-                        new Attribute("y", "0"),
-                        new Attribute("dy", "0.35em"),
-                        new Attribute("text-anchor", "middle"),
-                        new Attribute("fill", "white"),
-                        new Attribute("font-size", "14px"),
-                        new Attribute("font-family", "sans-serif"),
-                        new Attribute("pointer-events", "none"));
+                    new Attribute("stroke", stroke),
+                    new Attribute("stroke-width", strokeWidth),
+                    new Attribute("vector-effect", vectorEffect),
+                    new Attribute("id", id));
             }
+
+            objGroup.elem(label,
+                    SafeHtmlUtil.from("text"),
+                    new Attribute("x", "0"),
+                    new Attribute("y", "0"),
+                    new Attribute("dy", "0.35em"),
+                    new Attribute("text-anchor", "middle"),
+                    new Attribute("fill", "white"),
+                    new Attribute("font-size", "14px"),
+                    new Attribute("font-family", "sans-serif"),
+                    new Attribute("pointer-events", "none"));
         },
                 SafeHtmlUtil.from("g"),
-                // Counter-flip + counter-scale so the circle/label stay upright
-                // and a fixed screen size in the Y-up flip / zoom group. (The
-                // movement trail above stays in map space so it scales with the map.)
-                new Attribute("transform", fixedSizeTransform(obj.getX(), obj.getY(), scale)),
-                new Attribute("id", FloorMapJsonKeys.SVG_GROUP_PREFIX + obj.getId()));
+                // Counter-flip + counter-scale so the graphic + label stay
+                // upright and a fixed screen size inside the Y-up flip / zoom group.
+                new Attribute("transform", fixedSizeTransform(mapX, mapY, scale)),
+                new Attribute("id", FloorMapJsonKeys.SVG_GROUP_PREFIX + id));
     }
 
     /**
@@ -524,22 +489,30 @@ public class FloorMapCanvasViewImpl
             }
         }
 
-        // Return default
+        // Built-in defaults: people keep their traditional blue on maps that
+        // haven't configured a person TypeStyle yet.
+        if (FloorMapJsonKeys.PERSON.equalsIgnoreCase(type)) {
+            return "#1f77b4"; // blue
+        }
         return "#607d8b"; // blue-grey
     }
 
     /**
-     * Returns the configured default-graphic shape for the given type, or
-     * {@code null} if the type is unconfigured or has no shape set (the view then
+     * Returns the configured default-graphic shape for the given type. Falls
+     * back to a circle for unconfigured {@code person} types (continuity with
+     * the traditional person marker), or {@code null} otherwise (the view then
      * falls back to the default rounded rectangle).
      */
     private static TypeStyle.Shape shapeForType(final String type, final List<TypeStyle> typeStyles) {
         if (type != null && typeStyles != null) {
             for (final TypeStyle style : typeStyles) {
-                if (style != null && type.equals(style.getType())) {
+                if (style != null && type.equals(style.getType()) && style.getShape() != null) {
                     return style.getShape();
                 }
             }
+        }
+        if (FloorMapJsonKeys.PERSON.equalsIgnoreCase(type)) {
+            return TypeStyle.Shape.CIRCLE;
         }
         return null;
     }
