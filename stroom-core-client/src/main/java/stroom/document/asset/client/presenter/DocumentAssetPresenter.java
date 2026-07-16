@@ -165,7 +165,9 @@ public class DocumentAssetPresenter<D extends AbstractDoc>
     private final DocumentAssetState assetDirtyState = new DocumentAssetState();
 
     /**
-     * Whether the assets on the server are dirty (draft != live)
+     * True if the server has pending draft asset changes that have not yet been saved to live,
+     * as reported by the assets' isDirty() on the last fetch. Drives isDirty()
+     * (and therefore the Save/revert buttons) via {@link #hasAssociatedDirty()}.
      */
     private boolean serverDirty;
 
@@ -1035,9 +1037,9 @@ public class DocumentAssetPresenter<D extends AbstractDoc>
                     // Mark the editor content as clean
                     assetDirtyState.onFetchDraftAssets();
 
+                    // Set dirty state from the state of the DB, i.e. whether the user has pending
+                    // draft asset changes not yet saved to live.
                     this.serverDirty = assets.isDirty();
-
-                    // Set dirty state from the state of the DB
                     onChange();
 
                     // Restore the open/closed state of the tree

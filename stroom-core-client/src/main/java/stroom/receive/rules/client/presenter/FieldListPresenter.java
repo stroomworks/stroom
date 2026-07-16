@@ -21,7 +21,6 @@ import stroom.data.grid.client.EndColumn;
 import stroom.data.grid.client.MyDataGrid;
 import stroom.data.grid.client.PagerView;
 import stroom.docref.DocRef;
-import stroom.document.client.event.DirtyEvent;
 import stroom.entity.client.presenter.DocPresenter;
 import stroom.query.api.datasource.QueryField;
 import stroom.receive.rules.shared.ReceiveDataRules;
@@ -41,7 +40,6 @@ import com.google.inject.Inject;
 import com.google.web.bindery.event.shared.EventBus;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
@@ -55,7 +53,6 @@ public class FieldListPresenter extends DocPresenter<PagerView, ReceiveDataRules
 
     private final MyDataGrid<QueryField> dataGrid;
     private final MultiSelectionModelImpl<QueryField> selectionModel;
-    private final UiConfigCache uiConfigCache;
     private final FieldEditPresenter fieldEditPresenter;
     private final ButtonView newButton;
     private final ButtonView editButton;
@@ -79,7 +76,6 @@ public class FieldListPresenter extends DocPresenter<PagerView, ReceiveDataRules
         view.setDataWidget(dataGrid);
 
         this.fieldEditPresenter = fieldEditPresenter;
-        this.uiConfigCache = uiConfigCache;
 
         newButton = getView().addButton(SvgPresets.NEW_ITEM);
         newButton.setTitle("New Field");
@@ -238,7 +234,7 @@ public class FieldListPresenter extends DocPresenter<PagerView, ReceiveDataRules
                     fields.add(newField);
                     refresh();
                     e.hide();
-                    DirtyEvent.fire(FieldListPresenter.this, true);
+                    onChange();
                 } else {
                     e.reset();
                 }
@@ -269,7 +265,7 @@ public class FieldListPresenter extends DocPresenter<PagerView, ReceiveDataRules
 
                         refresh();
                         e.hide();
-                        DirtyEvent.fire(FieldListPresenter.this, true);
+                        onChange();
                     } else {
                         e.reset();
                     }
@@ -293,7 +289,7 @@ public class FieldListPresenter extends DocPresenter<PagerView, ReceiveDataRules
                     fields.removeAll(list);
                     selectionModel.clear();
                     refresh();
-                    DirtyEvent.fire(FieldListPresenter.this, true);
+                    onChange();
                 }
             });
         }
@@ -342,7 +338,7 @@ public class FieldListPresenter extends DocPresenter<PagerView, ReceiveDataRules
 //                if (column instanceof OrderByColumn<?, ?> orderByColumn) {
 //                    final String sortField = orderByColumn.getField();
 //                    final boolean isAscending = columnSortInfo.isAscending();
-////                    GWT.log("sortField " + i + ": " + sortField + " isAscending: " + isAscending);
+//                    GWT.log("sortField " + i + ": " + sortField + " isAscending: " + isAscending);
 //
 //                    Comparator<QueryField> comparator = null;
 //                    if (NAME_FIELD.equals(sortField)) {

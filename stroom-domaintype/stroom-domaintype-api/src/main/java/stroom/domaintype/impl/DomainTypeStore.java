@@ -16,13 +16,13 @@
 
 package stroom.domaintype.impl;
 
-import stroom.docstore.api.DocumentActionHandler;
-import stroom.docstore.api.Store;
+import stroom.docref.DocRef;
+import stroom.docstore.api.DocumentStore;
 import stroom.domaintype.shared.DomainTypeDoc;
-import stroom.explorer.api.ExplorerActionHandler;
-import stroom.importexport.api.ImportExportActionHandler;
 
-public interface DomainTypeStore
-        extends Store<DomainTypeDoc>, DocumentActionHandler<DomainTypeDoc>, ExplorerActionHandler,
-        ImportExportActionHandler {
+import java.util.List;
+
+public interface DomainTypeStore extends DocumentStore<DomainTypeDoc> {
+
+    List<DocRef> list();
 }

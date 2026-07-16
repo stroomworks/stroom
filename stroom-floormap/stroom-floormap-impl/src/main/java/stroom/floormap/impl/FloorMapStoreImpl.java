@@ -17,39 +17,34 @@
 package stroom.floormap.impl;
 
 import stroom.docref.DocRef;
-import stroom.docstore.api.Store;
+import stroom.docstore.api.AbstractDocumentStore;
+import stroom.docstore.api.DependencyRemapFunction;
 import stroom.docstore.api.StoreFactory;
 import stroom.docstore.api.UniqueNameUtil;
 import stroom.floormap.shared.FloorMapDoc;
-import stroom.importexport.api.ImportExportDocument;
-import stroom.importexport.shared.ImportSettings;
-import stroom.importexport.shared.ImportState;
 import stroom.security.api.SecurityContext;
 import stroom.util.logging.LambdaLogger;
 import stroom.util.logging.LambdaLoggerFactory;
-import stroom.util.shared.Message;
 
 import jakarta.inject.Inject;
 import jakarta.inject.Provider;
 import jakarta.inject.Singleton;
 
-import java.util.List;
-import java.util.Map;
 import java.util.Set;
 
 /**
- * Singleton implementation of {@link FloorMapStore} that delegates to a generic
- * {@link Store Store&lt;FloorMapDoc&gt;} for document persistence.
+ * Singleton implementation of {@link FloorMapStore} built on {@link AbstractDocumentStore},
+ * which handles the standard document CRUD, import/export and dependency delegation.
  * <p>
- * Handles document CRUD operations, import/export, dependency tracking, and
- * cleans up associated processor filters when a floor map document is deleted.
+ * This class adds floor-map specific behaviour: it materialises newly created documents as a
+ * processing user, performs a deep copy when duplicating, cleans up associated processor filters
+ * when a floor map document is deleted, and remaps the facts/events store references it depends on.
  */
 @Singleton
-class FloorMapStoreImpl implements FloorMapStore {
+class FloorMapStoreImpl extends AbstractDocumentStore<FloorMapDoc> implements FloorMapStore {
 
     private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(FloorMapStoreImpl.class);
 
-    private final Store<FloorMapDoc> store;
     private final SecurityContext securityContext;
     private final Provider<FloorMapProcessors> floorMapProcessorsProvider;
 
@@ -58,7 +53,7 @@ class FloorMapStoreImpl implements FloorMapStore {
                       final FloorMapSerialiser serialiser,
                       final SecurityContext securityContext,
                       final Provider<FloorMapProcessors> floorMapProcessorsProvider) {
-        this.store = storeFactory.createStore(
+        super(storeFactory,
                 serialiser,
                 FloorMapDoc.TYPE,
                 FloorMapDoc::builder,
@@ -69,13 +64,13 @@ class FloorMapStoreImpl implements FloorMapStore {
 
     @Override
     public DocRef createDocument(final String name) {
-        final DocRef docRef = store.createDocument(name);
+        final DocRef docRef = getStore().createDocument(name);
 
         // Read and write as a processing user to ensure we are allowed as documents do not have permissions added to
         // them until after they are created in the store.
         securityContext.asProcessingUser(() -> {
-            final FloorMapDoc floorMapDoc = store.readDocument(docRef);
-            store.writeDocument(floorMapDoc);
+            final FloorMapDoc floorMapDoc = getStore().readDocument(docRef);
+            getStore().writeDocument(floorMapDoc);
         });
         return docRef;
     }
@@ -86,8 +81,8 @@ class FloorMapStoreImpl implements FloorMapStore {
                                final boolean makeNameUnique,
                                final Set<String> existingNames) {
         final String newName = UniqueNameUtil.getCopyName(name, makeNameUnique, existingNames);
-        final FloorMapDoc document = store.readDocument(docRef);
-        return store.createDocument(newName,
+        final FloorMapDoc document = getStore().readDocument(docRef);
+        return getStore().createDocument(newName,
                 (uuid, docName, version, createTime, updateTime, createUser, updateUser) ->
                         document.copy()
                                 .uuid(uuid)
@@ -101,85 +96,23 @@ class FloorMapStoreImpl implements FloorMapStore {
     }
 
     @Override
-    public DocRef moveDocument(final DocRef docRef) {
-        return store.moveDocument(docRef);
-    }
-
-    @Override
-    public DocRef renameDocument(final DocRef docRef, final String name) {
-        return store.renameDocument(docRef, name);
-    }
-
-    @Override
     public void deleteDocument(final DocRef docRef) {
         deleteProcessorFilter(docRef);
-        store.deleteDocument(docRef);
+        super.deleteDocument(docRef);
     }
 
     @Override
-    public Map<DocRef, Set<DocRef>> getDependencies() {
-        return store.getDependencies(null);
-    }
-
-    @Override
-    public Set<DocRef> getDependencies(final DocRef docRef) {
-        return store.getDependencies(docRef, null);
-    }
-
-    @Override
-    public void remapDependencies(final DocRef docRef,
-                                  final Map<DocRef, DocRef> remappings) {
-        store.remapDependencies(docRef, remappings, null);
-    }
-
-    @Override
-    public FloorMapDoc readDocument(final DocRef docRef) {
-        return store.readDocument(docRef);
-    }
-
-    @Override
-    public FloorMapDoc writeDocument(final FloorMapDoc document) {
-        return store.writeDocument(document);
-    }
-
-    @Override
-    public Set<DocRef> listDocuments() {
-        return store.listDocuments();
-    }
-
-    @Override
-    public DocRef importDocument(final DocRef docRef,
-                                 final ImportExportDocument importExportDocument,
-                                 final ImportState importState,
-                                 final ImportSettings importSettings) {
-        return store.importDocument(docRef, importExportDocument, importState, importSettings);
-    }
-
-    @Override
-    public ImportExportDocument exportDocument(final DocRef docRef,
-                                               final boolean omitAuditFields,
-                                               final List<Message> messageList) {
-        return store.exportDocument(docRef, omitAuditFields, messageList);
-    }
-
-    @Override
-    public String getType() {
-        return store.getType();
-    }
-
-    @Override
-    public Set<DocRef> findAssociatedNonExplorerDocRefs(final DocRef docRef) {
-        return null;
-    }
-
-    @Override
-    public List<DocRef> list() {
-        return store.list();
-    }
-
-    @Override
-    public Map<String, String> getIndexableData(final DocRef docRef) {
-        return store.getIndexableData(docRef);
+    protected DependencyRemapFunction<FloorMapDoc> getDependencyRemapFunction() {
+        return (doc, dependencyRemapper) -> {
+            final FloorMapDoc.Builder builder = doc.copy();
+            if (doc.getFactsStoreRef() != null) {
+                builder.factsStoreRef(dependencyRemapper.remap(doc.getFactsStoreRef()));
+            }
+            if (doc.getEventsStoreRef() != null) {
+                builder.eventsStoreRef(dependencyRemapper.remap(doc.getEventsStoreRef()));
+            }
+            return builder.build();
+        };
     }
 
     private void deleteProcessorFilter(final DocRef docRef) {

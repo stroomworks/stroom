@@ -82,7 +82,7 @@ public class IndexFieldEditPresenter
                 indexField,
                 IndexField::getDenseVectorFieldConfig,
                 DenseVectorFieldConfig.builder().build()));
-        onDirty();
+        onChange();
     }
 
     public IndexFieldImpl write() {
@@ -129,7 +129,7 @@ public class IndexFieldEditPresenter
         } else {
             getView().setDomainAttributes(null);
         }
-        onDirty();
+        onChange();
     }
 
     public void show(final String caption, final HidePopupRequestEvent.Handler handler) {
@@ -144,7 +144,7 @@ public class IndexFieldEditPresenter
     }
 
     @Override
-    public void onDirty() {
+    public void onChange() {
         getView().setDenseVectorOptionsVisible(FieldType.DENSE_VECTOR.equals(getView().getType()));
     }
 
