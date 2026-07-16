@@ -416,6 +416,99 @@ class TestFloorMapEditorModel {
     }
 
     // -----------------------------------------------------------------------
+    // buildDuplicateEntry
+    // -----------------------------------------------------------------------
+
+    /**
+     * A duplicate is created under the new key at the requested effective time,
+     * with its placement-matrix translation (indices 4, 5) shifted by (dx, dy) —
+     * the offset that positions image facts, which are placed solely by the
+     * matrix.
+     */
+    @Test
+    void testBuildDuplicateEntry_offsetsMatrixTranslation() {
+        final TemporalEntry source = entry("gate-1", 100,
+                "{\"type\":\"gate\",\"tm-world-to-map\":[1,0,0,1,10,20]}");
+
+        final TemporalEntry dup = FloorMapEditorModel.buildDuplicateEntry(
+                source, MAP, "gate-1-copy", 250, 50.0, 50.0, SCHEMA, ACCESSOR);
+
+        assertThat(dup.getMap()).isEqualTo(MAP);
+        assertThat(dup.getKey()).isEqualTo("gate-1-copy");
+        assertThat(dup.getEffectiveTimeMs()).isEqualTo(250);
+        final double[] m = ACCESSOR.getArray(ACCESSOR.parse(dup.getValue()), ".tm-world-to-map");
+        assertThat(m[4]).isCloseTo(60.0, within(0.001));
+        assertThat(m[5]).isCloseTo(70.0, within(0.001));
+    }
+
+    /**
+     * The offset changes only the matrix translation; rotation/scale (a, b, c, d)
+     * are preserved.
+     */
+    @Test
+    void testBuildDuplicateEntry_preservesRotationScale() {
+        final TemporalEntry source = entry("bg", 100,
+                "{\"type\":\"background\",\"tm-world-to-map\":[2,0.5,-0.5,2,10,20]}");
+
+        final TemporalEntry dup = FloorMapEditorModel.buildDuplicateEntry(
+                source, MAP, "bg-copy", 100, 50.0, 60.0, SCHEMA, ACCESSOR);
+
+        final double[] m = ACCESSOR.getArray(ACCESSOR.parse(dup.getValue()), ".tm-world-to-map");
+        assertThat(m[0]).isCloseTo(2.0, within(0.001));
+        assertThat(m[1]).isCloseTo(0.5, within(0.001));
+        assertThat(m[2]).isCloseTo(-0.5, within(0.001));
+        assertThat(m[3]).isCloseTo(2.0, within(0.001));
+        assertThat(m[4]).isCloseTo(60.0, within(0.001));
+        assertThat(m[5]).isCloseTo(80.0, within(0.001));
+    }
+
+    /**
+     * When the source has no placement matrix it defaults to identity before the
+     * offset is applied, so the duplicate lands at (dx, dy).
+     */
+    @Test
+    void testBuildDuplicateEntry_defaultsToIdentityWhenNoMatrix() {
+        final TemporalEntry source = entry("gate-1", 100, "{\"type\":\"gate\"}");
+
+        final TemporalEntry dup = FloorMapEditorModel.buildDuplicateEntry(
+                source, MAP, "gate-1-copy", 100, 50.0, 50.0, SCHEMA, ACCESSOR);
+
+        final double[] m = ACCESSOR.getArray(ACCESSOR.parse(dup.getValue()), ".tm-world-to-map");
+        assertThat(m).containsExactly(1.0, 0.0, 0.0, 1.0, 50.0, 50.0);
+    }
+
+    /**
+     * The duplicate's label is repointed at the new key.
+     */
+    @Test
+    void testBuildDuplicateEntry_relabelsToNewKey() {
+        final TemporalEntry source = entry("gate-1", 100,
+                "{\"type\":\"gate\",\"name\":\"gate-1\",\"tm-world-to-map\":[1,0,0,1,0,0]}");
+
+        final TemporalEntry dup = FloorMapEditorModel.buildDuplicateEntry(
+                source, MAP, "gate-1-copy", 100, 5.0, 5.0, SCHEMA, ACCESSOR);
+
+        assertThat(ACCESSOR.getString(ACCESSOR.parse(dup.getValue()), ".name"))
+                .isEqualTo("gate-1-copy");
+    }
+
+    /**
+     * The offset is applied to the matrix, not to POSITION, so a fact's coords
+     * are carried over unchanged.
+     */
+    @Test
+    void testBuildDuplicateEntry_leavesPositionCoordsUntouched() {
+        final TemporalEntry source = entry("gate-1", 100,
+                "{\"type\":\"gate\",\"coords\":[7,9],\"tm-world-to-map\":[1,0,0,1,0,0]}");
+
+        final TemporalEntry dup = FloorMapEditorModel.buildDuplicateEntry(
+                source, MAP, "gate-1-copy", 100, 50.0, 50.0, SCHEMA, ACCESSOR);
+
+        final double[] coords = ACCESSOR.getArray(ACCESSOR.parse(dup.getValue()), ".coords");
+        assertThat(coords).containsExactly(7.0, 9.0);
+    }
+
+    // -----------------------------------------------------------------------
     // buildUpdatedEntryWithCoords
     // -----------------------------------------------------------------------
 

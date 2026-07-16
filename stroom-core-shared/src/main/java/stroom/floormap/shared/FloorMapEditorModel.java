@@ -661,6 +661,63 @@ public class FloorMapEditorModel {
         return cloneEntryAtTime(source, mapName, getSelectedFactKey(), timeMs);
     }
 
+    /**
+     * Builds a duplicate of {@code source} under {@code newKey}, offset by
+     * ({@code dx}, {@code dy}) map-space units so it does not sit on top of the
+     * original.
+     *
+     * <p>The offset is applied to the fact's {@code WORLD_TO_MAP} translation —
+     * the same components a drag-move shifts (see {@link #translateFacts}) —
+     * because that is what actually positions a fact on the canvas: image facts
+     * are placed solely by the matrix, and imageless facts are placed by their
+     * POSITION <em>through</em> the matrix. Offsetting only POSITION would
+     * therefore leave an image-bearing duplicate directly on top of the
+     * original. The copy's label is repointed at {@code newKey}.</p>
+     *
+     * <p>If the source value cannot be parsed it is copied verbatim under the
+     * new key (no offset, no relabel).</p>
+     *
+     * @param source          the entry to duplicate
+     * @param mapName         the temporal store map name
+     * @param newKey          the key for the duplicate
+     * @param effectiveTimeMs the effective time for the duplicate
+     * @param dx              the map-space X offset
+     * @param dy              the map-space Y offset
+     * @param schema          the value schema
+     * @param accessor        the value accessor
+     * @return the new duplicate entry; never {@code null}
+     */
+    public static TemporalEntry buildDuplicateEntry(final TemporalEntry source,
+                                                    final String mapName,
+                                                    final String newKey,
+                                                    final long effectiveTimeMs,
+                                                    final double dx,
+                                                    final double dy,
+                                                    final List<FloorMapFieldMapping> schema,
+                                                    final ValueAccessor accessor) {
+        final ParsedValue parsed = accessor.parse(source.getValue());
+        if (parsed == null) {
+            return new TemporalEntry(mapName, newKey, effectiveTimeMs, source.getValue());
+        }
+
+        // Shift the placement matrix's translation (indices 4, 5) by (dx, dy) in
+        // map space so the duplicate moves clear of the original — for image and
+        // imageless facts alike. Defaults to identity when no matrix is present.
+        final String w2mPath = FloorMapEntryParser.findPath(schema, Role.WORLD_TO_MAP);
+        double[] m = accessor.getArray(parsed, w2mPath);
+        if (m == null || m.length < 6) {
+            m = new double[]{1, 0, 0, 1, 0, 0};
+        }
+        m[4] += dx;
+        m[5] += dy;
+        accessor.setArray(parsed, w2mPath, m);
+
+        // Repoint the copy's label at its new key.
+        accessor.setString(parsed, FloorMapEntryParser.findPath(schema, Role.LABEL), newKey);
+
+        return new TemporalEntry(mapName, newKey, effectiveTimeMs, accessor.serialize(parsed));
+    }
+
 
     /**
      * Builds a copy of {@code original} with its {@code coords} field replaced

@@ -923,7 +923,7 @@ public class FloorMapEditorPresenter
                     .priority(3)
                     .icon(SvgImage.COPY)
                     .text("Duplicate Object")
-                    .command(() -> onDuplicateObject(objectId, mapX, mapY))
+                    .command(() -> onDuplicateObject(objectId))
                     .build());
 
             // Delete Object
@@ -1016,21 +1016,18 @@ public class FloorMapEditorPresenter
     }
 
     /**
-     * Duplicates an existing object with a new key, offset slightly from
-     * the original position.
+     * Duplicates an existing object with a new key, offset from the original so
+     * the copy is visible rather than sitting directly on top of it.
      *
      * <p>The new object is a clone of the original's current state at the
-     * timeline scrubber position, with coordinates shifted by a small offset
-     * to avoid overlapping the original. Uses the scrubber time as the
-     * effective time for the new entry.</p>
+     * timeline scrubber position (which is also its effective time), shifted by
+     * five minor grid divisions in both axes — a visually consistent nudge at
+     * any zoom. The offset is applied to the placement matrix (as a drag-move
+     * would be), so it moves image facts and imageless facts alike.</p>
      *
      * @param originalKey the key of the object to duplicate
-     * @param mapX        the original object's map-space X coordinate
-     * @param mapY        the original object's map-space Y coordinate
      */
-    private void onDuplicateObject(final String originalKey,
-                                    final double mapX,
-                                    final double mapY) {
+    private void onDuplicateObject(final String originalKey) {
         final String mapName = getMapName();
         if (mapName == null) {
             return;
@@ -1052,22 +1049,15 @@ public class FloorMapEditorPresenter
 
         try {
             final String newKey = generateObjectKey(originalKey + "-copy");
-            final ValueFormat format = getEntity().getValueFormat();
-            final ValueAccessor accessor = ValueAccessorFactory.forFormat(format);
-            final ParsedValue parsed = accessor.parse(sourceEntry.getValue());
-            if (parsed != null) {
-                // Offset the position slightly so the duplicate doesn't sit on top
-                accessor.setArray(parsed, pathForRole(Role.POSITION),
-                        new double[]{mapX + 50, mapY + 50});
-                accessor.setString(parsed, pathForRole(Role.LABEL), newKey);
-            }
-
-            final String valueStr = parsed != null
-                    ? accessor.serialize(parsed)
-                    : sourceEntry.getValue();
-
-            final TemporalEntry newEntry = new TemporalEntry(
-                    mapName, newKey, model.getSelectedTime(), valueStr);
+            // Offset by five minor grid divisions in both axes so the duplicate
+            // doesn't sit on top of the original, at a visually consistent
+            // distance regardless of zoom.
+            final double offset = floorMapCanvasPresenter.minorGridDivisionsToMapUnits(5.0);
+            final TemporalEntry newEntry = FloorMapEditorModel.buildDuplicateEntry(
+                    sourceEntry, mapName, newKey, model.getSelectedTime(),
+                    offset, offset,
+                    getEntity().getValueSchema(),
+                    ValueAccessorFactory.forFormat(getEntity().getValueFormat()));
 
             model.getPendingChanges().recordCreation(newEntry);
             setDirty(true);

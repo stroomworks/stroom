@@ -876,6 +876,24 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     }
 
     /**
+     * Converts a number of minor grid divisions into a map-space distance at
+     * the current zoom level, using the same adaptive-decade sizing that draws
+     * the grid ({@link FloorMapGrid}). Because the grid's spacing is chosen to
+     * keep grid cells a comfortable on-screen size at any zoom, an offset
+     * expressed this way stays visually consistent regardless of magnification.
+     *
+     * <p>The grid is drawn with an identity world-to-map matrix (see the
+     * {@code appendGrid} call in the view), so its effective scale is simply
+     * the user zoom and its world space coincides with map space.</p>
+     *
+     * @param minorDivisions the number of minor grid divisions
+     * @return the equivalent distance in map-space units
+     */
+    public double minorGridDivisionsToMapUnits(final double minorDivisions) {
+        return minorDivisions * FloorMapGrid.minorWorldSpacing(scale);
+    }
+
+    /**
      * Sets the event-driven entity overlays (events query result).
      * <p>
      * When the timeline is <em>not</em> playing, all objects are placed at their
