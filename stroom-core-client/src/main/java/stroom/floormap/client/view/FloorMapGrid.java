@@ -471,6 +471,24 @@ public final class FloorMapGrid {
     }
 
     /**
+     * Returns the world-unit distance between adjacent minor grid lines at the
+     * given effective scale &mdash; i.e. one tenth of the adaptive major
+     * spacing.
+     *
+     * <p>Exposed so callers that position content relative to the grid (for
+     * example nudging a duplicated object clear of its original) can express an
+     * offset as a number of minor grid divisions, keeping it visually
+     * consistent at any magnification.</p>
+     *
+     * @param effectiveScale combined pixels-per-world-unit
+     *                       ({@code matrixScale × userZoom})
+     * @return the minor grid spacing in world-space units
+     */
+    public static double minorWorldSpacing(final double effectiveScale) {
+        return computeGridParams(effectiveScale)[0] / 10.0;
+    }
+
+    /**
      * Formats the major grid spacing as a clean, human-readable label in
      * map units (e.g. "1", "10", "100", "0.1", "0.01"). Since the
      * spacing is always a power of 10, the result is always a short,

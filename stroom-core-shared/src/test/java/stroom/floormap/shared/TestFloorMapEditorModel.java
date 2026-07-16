@@ -330,6 +330,185 @@ class TestFloorMapEditorModel {
     }
 
     // -----------------------------------------------------------------------
+    // buildNewEntryAtTime
+    // -----------------------------------------------------------------------
+
+    /**
+     * A new entry built at a time between two shards is stamped with that time
+     * and inherits its value from the earlier (in-effect) shard.
+     */
+    @Test
+    void testBuildNewEntryAtTime_betweenShards_clonesActiveShard() {
+        model.setSelectedFactKey("k1");
+        model.setServerEntriesForSelectedFact(List.of(
+                entry("k1", 100, "{\"type\":\"gate\"}"),
+                entry("k1", 200, "{\"type\":\"camera\"}")));
+
+        final TemporalEntry created = model.buildNewEntryAtTime(MAP, 150);
+        assertThat(created.getMap()).isEqualTo(MAP);
+        assertThat(created.getKey()).isEqualTo("k1");
+        assertThat(created.getEffectiveTimeMs()).isEqualTo(150);
+        assertThat(created.getValue()).isEqualTo("{\"type\":\"gate\"}");
+    }
+
+    /**
+     * A new entry built after the latest shard inherits that latest shard's
+     * value.
+     */
+    @Test
+    void testBuildNewEntryAtTime_afterAllShards_clonesLatest() {
+        model.setSelectedFactKey("k1");
+        model.setServerEntriesForSelectedFact(List.of(
+                entry("k1", 100, "{\"type\":\"gate\"}"),
+                entry("k1", 200, "{\"type\":\"camera\"}")));
+
+        final TemporalEntry created = model.buildNewEntryAtTime(MAP, 250);
+        assertThat(created.getEffectiveTimeMs()).isEqualTo(250);
+        assertThat(created.getValue()).isEqualTo("{\"type\":\"camera\"}");
+    }
+
+    /**
+     * A time exactly on an existing shard clones that shard (the collision case
+     * that arises when the scrubber snaps to a selected row); the pending-change
+     * upsert then treats saving it as a replace rather than a duplicate.
+     */
+    @Test
+    void testBuildNewEntryAtTime_exactlyOnShard_clonesThatShard() {
+        model.setSelectedFactKey("k1");
+        model.setServerEntriesForSelectedFact(List.of(
+                entry("k1", 100, "{\"type\":\"gate\"}"),
+                entry("k1", 200, "{\"type\":\"camera\"}")));
+
+        final TemporalEntry created = model.buildNewEntryAtTime(MAP, 200);
+        assertThat(created.getEffectiveTimeMs()).isEqualTo(200);
+        assertThat(created.getValue()).isEqualTo("{\"type\":\"camera\"}");
+    }
+
+    /**
+     * A time before every shard has no active shard, so a blank entry is built
+     * at the requested time.
+     */
+    @Test
+    void testBuildNewEntryAtTime_beforeAllShards_blankValue() {
+        model.setSelectedFactKey("k1");
+        model.setServerEntriesForSelectedFact(List.of(
+                entry("k1", 100, "{\"type\":\"gate\"}"),
+                entry("k1", 200, "{\"type\":\"camera\"}")));
+
+        final TemporalEntry created = model.buildNewEntryAtTime(MAP, 50);
+        assertThat(created.getEffectiveTimeMs()).isEqualTo(50);
+        assertThat(created.getValue()).isEqualTo("{}");
+    }
+
+    /**
+     * The source shard is chosen from the merged list, so a pending creation
+     * (not yet flushed to the server) can be the shard cloned from.
+     */
+    @Test
+    void testBuildNewEntryAtTime_clonesFromPendingCreation() {
+        model.setSelectedFactKey("k1");
+        model.setServerEntriesForSelectedFact(List.of(entry("k1", 100, "{\"type\":\"gate\"}")));
+        model.getPendingChanges().recordCreation(entry("k1", 200, "{\"type\":\"door\"}"));
+
+        final TemporalEntry created = model.buildNewEntryAtTime(MAP, 250);
+        assertThat(created.getEffectiveTimeMs()).isEqualTo(250);
+        assertThat(created.getValue()).isEqualTo("{\"type\":\"door\"}");
+    }
+
+    // -----------------------------------------------------------------------
+    // buildDuplicateEntry
+    // -----------------------------------------------------------------------
+
+    /**
+     * A duplicate is created under the new key at the requested effective time,
+     * with its placement-matrix translation (indices 4, 5) shifted by (dx, dy) —
+     * the offset that positions image facts, which are placed solely by the
+     * matrix.
+     */
+    @Test
+    void testBuildDuplicateEntry_offsetsMatrixTranslation() {
+        final TemporalEntry source = entry("gate-1", 100,
+                "{\"type\":\"gate\",\"tm-world-to-map\":[1,0,0,1,10,20]}");
+
+        final TemporalEntry dup = FloorMapEditorModel.buildDuplicateEntry(
+                source, MAP, "gate-1-copy", 250, 50.0, 50.0, SCHEMA, ACCESSOR);
+
+        assertThat(dup.getMap()).isEqualTo(MAP);
+        assertThat(dup.getKey()).isEqualTo("gate-1-copy");
+        assertThat(dup.getEffectiveTimeMs()).isEqualTo(250);
+        final double[] m = ACCESSOR.getArray(ACCESSOR.parse(dup.getValue()), ".tm-world-to-map");
+        assertThat(m[4]).isCloseTo(60.0, within(0.001));
+        assertThat(m[5]).isCloseTo(70.0, within(0.001));
+    }
+
+    /**
+     * The offset changes only the matrix translation; rotation/scale (a, b, c, d)
+     * are preserved.
+     */
+    @Test
+    void testBuildDuplicateEntry_preservesRotationScale() {
+        final TemporalEntry source = entry("bg", 100,
+                "{\"type\":\"background\",\"tm-world-to-map\":[2,0.5,-0.5,2,10,20]}");
+
+        final TemporalEntry dup = FloorMapEditorModel.buildDuplicateEntry(
+                source, MAP, "bg-copy", 100, 50.0, 60.0, SCHEMA, ACCESSOR);
+
+        final double[] m = ACCESSOR.getArray(ACCESSOR.parse(dup.getValue()), ".tm-world-to-map");
+        assertThat(m[0]).isCloseTo(2.0, within(0.001));
+        assertThat(m[1]).isCloseTo(0.5, within(0.001));
+        assertThat(m[2]).isCloseTo(-0.5, within(0.001));
+        assertThat(m[3]).isCloseTo(2.0, within(0.001));
+        assertThat(m[4]).isCloseTo(60.0, within(0.001));
+        assertThat(m[5]).isCloseTo(80.0, within(0.001));
+    }
+
+    /**
+     * When the source has no placement matrix it defaults to identity before the
+     * offset is applied, so the duplicate lands at (dx, dy).
+     */
+    @Test
+    void testBuildDuplicateEntry_defaultsToIdentityWhenNoMatrix() {
+        final TemporalEntry source = entry("gate-1", 100, "{\"type\":\"gate\"}");
+
+        final TemporalEntry dup = FloorMapEditorModel.buildDuplicateEntry(
+                source, MAP, "gate-1-copy", 100, 50.0, 50.0, SCHEMA, ACCESSOR);
+
+        final double[] m = ACCESSOR.getArray(ACCESSOR.parse(dup.getValue()), ".tm-world-to-map");
+        assertThat(m).containsExactly(1.0, 0.0, 0.0, 1.0, 50.0, 50.0);
+    }
+
+    /**
+     * The duplicate's label is repointed at the new key.
+     */
+    @Test
+    void testBuildDuplicateEntry_relabelsToNewKey() {
+        final TemporalEntry source = entry("gate-1", 100,
+                "{\"type\":\"gate\",\"name\":\"gate-1\",\"tm-world-to-map\":[1,0,0,1,0,0]}");
+
+        final TemporalEntry dup = FloorMapEditorModel.buildDuplicateEntry(
+                source, MAP, "gate-1-copy", 100, 5.0, 5.0, SCHEMA, ACCESSOR);
+
+        assertThat(ACCESSOR.getString(ACCESSOR.parse(dup.getValue()), ".name"))
+                .isEqualTo("gate-1-copy");
+    }
+
+    /**
+     * The offset is applied to the matrix, not to POSITION, so a fact's coords
+     * are carried over unchanged.
+     */
+    @Test
+    void testBuildDuplicateEntry_leavesPositionCoordsUntouched() {
+        final TemporalEntry source = entry("gate-1", 100,
+                "{\"type\":\"gate\",\"coords\":[7,9],\"tm-world-to-map\":[1,0,0,1,0,0]}");
+
+        final TemporalEntry dup = FloorMapEditorModel.buildDuplicateEntry(
+                source, MAP, "gate-1-copy", 100, 50.0, 50.0, SCHEMA, ACCESSOR);
+
+        final double[] coords = ACCESSOR.getArray(ACCESSOR.parse(dup.getValue()), ".coords");
+        assertThat(coords).containsExactly(7.0, 9.0);
+    }
+
+    // -----------------------------------------------------------------------
     // buildUpdatedEntryWithCoords
     // -----------------------------------------------------------------------
 
