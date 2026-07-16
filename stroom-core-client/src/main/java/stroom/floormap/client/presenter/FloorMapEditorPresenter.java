@@ -667,11 +667,19 @@ public class FloorMapEditorPresenter
      * {@link stroom.floormap.client.event.TimeChangeEvent} — so there is no
      * feedback loop back into {@link #onTimeChange}.</p>
      *
+     * <p>Selecting a shard first <strong>stops playback</strong> if the timeline
+     * is auto-advancing: otherwise the scrubber would keep moving and immediately
+     * change the active shard out from under the user's selection. The pause is a
+     * no-op when the timeline is already paused.</p>
+     *
      * @param entry the selected entry, or {@code null}
      */
     private void onTimeSelectedInTimeList(final TemporalEntry entry) {
         floorMapCanvasPresenter.setIsDraggingEnabled(entry != null);
         if (entry != null) {
+            // Stop auto-advance before repositioning, so playback can't race the
+            // selection and move the scrubber off the chosen shard.
+            floorMapTimelinePresenter.pause();
             model.setSelectedTime(entry.getEffectiveTimeMs());
             floorMapTimelinePresenter.setCurrentTime(model.getSelectedTime());
             loadAtTime(model.getSelectedTime());
