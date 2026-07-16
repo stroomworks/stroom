@@ -717,8 +717,9 @@ public class FloorMapEditorPresenter
 
     /**
      * Called when the Time List's Add button is clicked.
-     * Creates a new entry cloned from the currently selected one (or defaults),
-     * staged in the pending-changes buffer.
+     * Creates a new entry defaulted to the timeline scrubber position and cloned
+     * from the shard in effect at that time (the latest shard whose effective
+     * time is at or before the scrubber), staged in the pending-changes buffer.
      */
     private void onAddTimeInTimeList() {
         final String mapName = getMapName();
@@ -726,10 +727,10 @@ public class FloorMapEditorPresenter
             return;
         }
 
-        final long newTime = System.currentTimeMillis();
-        final TemporalEntry selected = floorMapTimeListPresenter.getSelectedEntry();
-        final TemporalEntry newEntry = FloorMapEditorModel.cloneEntryAtTime(
-                selected, mapName, model.getSelectedFactKey(), newTime);
+        // Default the new shard to the timeline scrubber position, cloning its
+        // attributes from the shard in effect at that time.
+        final long newTime = model.getSelectedTime();
+        final TemporalEntry newEntry = model.buildNewEntryAtTime(mapName, newTime);
 
         floorMapObjectEditPresenter.show(
                 "Add Time Properties",

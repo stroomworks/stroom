@@ -234,11 +234,6 @@ public class FloorMapTimeListPresenter extends MyPresenterWidget<FloorMapTimeLis
         deleteButton.setEnabled(true);
     }
 
-    /** Returns the currently selected entry, or {@code null} if none. */
-    public TemporalEntry getSelectedEntry() {
-        return selectionModel.getSelectedObject();
-    }
-
     // -----------------------------------------------------------------------
     // Consumer wiring
     // -----------------------------------------------------------------------

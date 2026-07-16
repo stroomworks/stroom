@@ -330,6 +330,92 @@ class TestFloorMapEditorModel {
     }
 
     // -----------------------------------------------------------------------
+    // buildNewEntryAtTime
+    // -----------------------------------------------------------------------
+
+    /**
+     * A new entry built at a time between two shards is stamped with that time
+     * and inherits its value from the earlier (in-effect) shard.
+     */
+    @Test
+    void testBuildNewEntryAtTime_betweenShards_clonesActiveShard() {
+        model.setSelectedFactKey("k1");
+        model.setServerEntriesForSelectedFact(List.of(
+                entry("k1", 100, "{\"type\":\"gate\"}"),
+                entry("k1", 200, "{\"type\":\"camera\"}")));
+
+        final TemporalEntry created = model.buildNewEntryAtTime(MAP, 150);
+        assertThat(created.getMap()).isEqualTo(MAP);
+        assertThat(created.getKey()).isEqualTo("k1");
+        assertThat(created.getEffectiveTimeMs()).isEqualTo(150);
+        assertThat(created.getValue()).isEqualTo("{\"type\":\"gate\"}");
+    }
+
+    /**
+     * A new entry built after the latest shard inherits that latest shard's
+     * value.
+     */
+    @Test
+    void testBuildNewEntryAtTime_afterAllShards_clonesLatest() {
+        model.setSelectedFactKey("k1");
+        model.setServerEntriesForSelectedFact(List.of(
+                entry("k1", 100, "{\"type\":\"gate\"}"),
+                entry("k1", 200, "{\"type\":\"camera\"}")));
+
+        final TemporalEntry created = model.buildNewEntryAtTime(MAP, 250);
+        assertThat(created.getEffectiveTimeMs()).isEqualTo(250);
+        assertThat(created.getValue()).isEqualTo("{\"type\":\"camera\"}");
+    }
+
+    /**
+     * A time exactly on an existing shard clones that shard (the collision case
+     * that arises when the scrubber snaps to a selected row); the pending-change
+     * upsert then treats saving it as a replace rather than a duplicate.
+     */
+    @Test
+    void testBuildNewEntryAtTime_exactlyOnShard_clonesThatShard() {
+        model.setSelectedFactKey("k1");
+        model.setServerEntriesForSelectedFact(List.of(
+                entry("k1", 100, "{\"type\":\"gate\"}"),
+                entry("k1", 200, "{\"type\":\"camera\"}")));
+
+        final TemporalEntry created = model.buildNewEntryAtTime(MAP, 200);
+        assertThat(created.getEffectiveTimeMs()).isEqualTo(200);
+        assertThat(created.getValue()).isEqualTo("{\"type\":\"camera\"}");
+    }
+
+    /**
+     * A time before every shard has no active shard, so a blank entry is built
+     * at the requested time.
+     */
+    @Test
+    void testBuildNewEntryAtTime_beforeAllShards_blankValue() {
+        model.setSelectedFactKey("k1");
+        model.setServerEntriesForSelectedFact(List.of(
+                entry("k1", 100, "{\"type\":\"gate\"}"),
+                entry("k1", 200, "{\"type\":\"camera\"}")));
+
+        final TemporalEntry created = model.buildNewEntryAtTime(MAP, 50);
+        assertThat(created.getEffectiveTimeMs()).isEqualTo(50);
+        assertThat(created.getValue()).isEqualTo("{}");
+    }
+
+    /**
+     * The source shard is chosen from the merged list, so a pending creation
+     * (not yet flushed to the server) can be the shard cloned from.
+     */
+    @Test
+    void testBuildNewEntryAtTime_clonesFromPendingCreation() {
+        model.setSelectedFactKey("k1");
+        model.setServerEntriesForSelectedFact(List.of(entry("k1", 100, "{\"type\":\"gate\"}")));
+        model.getPendingChanges().recordCreation(entry("k1", 200, "{\"type\":\"door\"}"));
+
+        final TemporalEntry created = model.buildNewEntryAtTime(MAP, 250);
+        assertThat(created.getEffectiveTimeMs()).isEqualTo(250);
+        assertThat(created.getValue()).isEqualTo("{\"type\":\"door\"}");
+    }
+
+    // -----------------------------------------------------------------------
     // buildUpdatedEntryWithCoords
     // -----------------------------------------------------------------------
 

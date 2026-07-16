@@ -644,6 +644,23 @@ public class FloorMapEditorModel {
         return new TemporalEntry(mapName, key, newTime, value != null ? value : "{}");
     }
 
+    /**
+     * Builds a new time shard for the currently selected fact at the given
+     * scrubber time, cloning its attributes from the shard active at that time
+     * (the latest shard whose effective time is at or before {@code timeMs}).
+     * When the time precedes every shard, a blank entry is returned.
+     *
+     * @param mapName the temporal store map name
+     * @param timeMs  the effective time for the new shard (the scrubber position)
+     * @return the new entry; never {@code null}
+     */
+    public TemporalEntry buildNewEntryAtTime(final String mapName, final long timeMs) {
+        final List<TemporalEntry> timeList = buildMergedTimeList();
+        final int activeIndex = findActiveIndexAtTime(timeList, timeMs);
+        final TemporalEntry source = activeIndex >= 0 ? timeList.get(activeIndex) : null;
+        return cloneEntryAtTime(source, mapName, getSelectedFactKey(), timeMs);
+    }
+
 
     /**
      * Builds a copy of {@code original} with its {@code coords} field replaced
