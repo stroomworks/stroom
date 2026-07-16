@@ -19,6 +19,7 @@ package stroom.floormap.client.presenter;
 import stroom.dispatch.client.RestFactory;
 import stroom.docref.DocRef;
 import stroom.entity.client.presenter.DocPresenter;
+import stroom.entity.client.presenter.HasToolbar;
 import stroom.floormap.client.event.FloorMapDataEvent;
 import stroom.floormap.client.event.MapObjectSelectedEvent;
 import stroom.floormap.client.event.TimeChangeEvent;
@@ -45,10 +46,14 @@ import stroom.query.client.presenter.QueryModel;
 import stroom.query.client.presenter.ResultComponent;
 import stroom.query.client.presenter.ResultStoreModel;
 import stroom.query.shared.QueryTablePreferences;
+import stroom.svg.shared.SvgImage;
 import stroom.util.client.Console;
+import stroom.widget.button.client.ButtonPanel;
+import stroom.widget.button.client.InlineSvgToggleButton;
 import stroom.widget.histogram.client.HistogramDataModel;
 import stroom.widget.histogram.client.HistogramQueryHelper;
 
+import com.google.gwt.user.client.ui.Widget;
 import com.google.inject.Inject;
 import com.google.inject.Provider;
 import com.google.web.bindery.event.shared.EventBus;
@@ -80,7 +85,8 @@ import java.util.Map;
  * bars.</p>
  */
 public class FloorMapMapPresenter
-        extends DocPresenter<FloorMapMapView, FloorMapDoc> {
+        extends DocPresenter<FloorMapMapView, FloorMapDoc>
+        implements HasToolbar {
 
     public static final Object MAP = new Object();
     public static final Object ENTITY_LIST = new Object();
@@ -99,6 +105,14 @@ public class FloorMapMapPresenter
     private final HistogramQueryHelper histogramQueryHelper;
     private final HistogramQueryHelper factsHistogramQueryHelper;
     private final HistogramDataModel histogramDataModel;
+
+    /**
+     * Toolbar toggle controlling the canvas grid overlay. Shown next to the
+     * document save buttons via {@link HasToolbar} whenever the Map tab is
+     * active. Off by default — the Map tab is view-focused, so the grid is
+     * opt-in (unlike the Editor tab, where it defaults on).
+     */
+    private final InlineSvgToggleButton showGridButton;
 
     private long selectedTime;
 
@@ -148,6 +162,13 @@ public class FloorMapMapPresenter
         setInSlot(MAP, floorMapCanvasPresenter);
         setInSlot(ENTITY_LIST, floorMapEntityListPresenter);
         setInSlot(TIMELINE, floorMapTimelinePresenter);
+
+        // Grid on/off toggle, surfaced next to the save buttons (HasToolbar).
+        // SvgImage has no dedicated grid glyph; TABLE renders as a grid of cells.
+        showGridButton = new InlineSvgToggleButton();
+        showGridButton.setSvg(SvgImage.TABLE);
+        showGridButton.setTitle("Show Grid");
+        showGridButton.setState(false);
 
         // Result component to parse and handle Facts query results
         final ResultComponent resultConsumer = new ResultComponent() {
@@ -208,6 +229,12 @@ public class FloorMapMapPresenter
     @Override
     protected void onBind() {
         super.onBind();
+
+        // ---- Toolbar ---------------------------------------------------------
+        //noinspection unused e
+        registerHandler(showGridButton.addClickHandler(e ->
+                floorMapCanvasPresenter.setShowGrid(showGridButton.getState())));
+
         // Only react to this tab's own timeline — the Editor tab has its own
         // timeline firing the same event type, and the tabs must not time-sync.
         registerHandler(getEventBus().addHandler(TimeChangeEvent.getType(), e -> {
@@ -275,6 +302,18 @@ public class FloorMapMapPresenter
         // (scrub, step-back/forward, loop-around, stop-at-end).
         floorMapTimelinePresenter.setClearAnimationStateHandler(
                 floorMapCanvasPresenter::clearAnimationState);
+    }
+
+    /**
+     * Returns the Map tab's toolbar widgets. {@link FloorMapPresenter}'s
+     * base class ({@code DocTabPresenter}) appends these after the document
+     * save buttons whenever this tab is selected.
+     */
+    @Override
+    public List<Widget> getToolbars() {
+        final ButtonPanel toolbar = new ButtonPanel();
+        toolbar.addButton(showGridButton);
+        return Collections.singletonList(toolbar);
     }
 
     /**

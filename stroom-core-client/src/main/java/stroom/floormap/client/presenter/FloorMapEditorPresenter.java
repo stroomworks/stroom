@@ -21,6 +21,7 @@ import stroom.alert.client.event.ConfirmEvent;
 import stroom.dispatch.client.RestFactory;
 import stroom.docref.DocRef;
 import stroom.entity.client.presenter.DocPresenter;
+import stroom.entity.client.presenter.HasToolbar;
 import stroom.entity.shared.ExpressionCriteria;
 import stroom.floormap.client.ValueAccessorFactory;
 import stroom.floormap.client.event.MapContextMenuEvent;
@@ -52,17 +53,21 @@ import stroom.svg.shared.SvgImage;
 import stroom.util.client.Console;
 import stroom.util.shared.TemporalEntry;
 import stroom.util.shared.TemporalEntryId;
+import stroom.widget.button.client.ButtonPanel;
+import stroom.widget.button.client.InlineSvgToggleButton;
 import stroom.widget.menu.client.presenter.IconMenuItem;
 import stroom.widget.menu.client.presenter.Item;
 import stroom.widget.menu.client.presenter.ShowMenuEvent;
 import stroom.widget.popup.client.presenter.PopupPosition;
 
 import com.google.gwt.core.client.GWT;
+import com.google.gwt.user.client.ui.Widget;
 import com.google.inject.Inject;
 import com.google.web.bindery.event.shared.EventBus;
 import com.gwtplatform.mvp.client.View;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
@@ -110,7 +115,8 @@ import javax.inject.Provider;
  * from the server.</p>
  */
 public class FloorMapEditorPresenter
-        extends DocPresenter<FloorMapEditorView, FloorMapDoc> {
+        extends DocPresenter<FloorMapEditorView, FloorMapDoc>
+        implements HasToolbar {
 
     /** REST endpoint */
     private static final SqlTemporalStoreResource SQL_TEMPORAL_STORE_RESOURCE =
@@ -152,6 +158,13 @@ public class FloorMapEditorPresenter
     /** The GWT-free model containing all shared state and pure logic. */
     private final FloorMapEditorModel model;
 
+    /**
+     * Toolbar toggle controlling the canvas grid overlay. Shown next to the
+     * document save buttons via {@link HasToolbar} whenever the Editor tab is
+     * active. On by default — the grid is the primary editing aid.
+     */
+    private final InlineSvgToggleButton showGridButton;
+
     // -----------------------------------------------------------------------
 
     @Inject
@@ -179,6 +192,13 @@ public class FloorMapEditorPresenter
         // Always in edit mode, with the grid overlay shown as an editing aid.
         floorMapCanvasPresenter.setEditMode(true);
         floorMapCanvasPresenter.setShowGrid(true);
+
+        // Grid on/off toggle, surfaced next to the save buttons (HasToolbar).
+        // SvgImage has no dedicated grid glyph; TABLE renders as a grid of cells.
+        showGridButton = new InlineSvgToggleButton();
+        showGridButton.setSvg(SvgImage.TABLE);
+        showGridButton.setTitle("Show Grid");
+        showGridButton.setState(true);
         // Persist a drag as a single translate of the whole selection.
         floorMapCanvasPresenter.setDragHandler(this::onFactsTranslated);
 
@@ -192,6 +212,11 @@ public class FloorMapEditorPresenter
     @Override
     protected void onBind() {
         super.onBind();
+
+        // ---- Toolbar ---------------------------------------------------------
+        //noinspection unused e
+        registerHandler(showGridButton.addClickHandler(e ->
+                floorMapCanvasPresenter.setShowGrid(showGridButton.getState())));
 
         // ---- Timeline events ------------------------------------------------
         registerHandler(getEventBus().addHandler(TimeChangeEvent.getType(), event -> {
@@ -226,6 +251,22 @@ public class FloorMapEditorPresenter
         floorMapTimeListPresenter.setEditConsumer(this::onEditTimeInTimeList);
         floorMapTimeListPresenter.setAddConsumer(this::onAddTimeInTimeList);
         floorMapTimeListPresenter.setDeleteConsumer(this::onDeleteTimeFromTimeList);
+    }
+
+    // -----------------------------------------------------------------------
+    // HasToolbar
+    // -----------------------------------------------------------------------
+
+    /**
+     * Returns the Editor tab's toolbar widgets. {@link FloorMapPresenter}'s
+     * base class ({@code DocTabPresenter}) appends these after the document
+     * save buttons whenever this tab is selected.
+     */
+    @Override
+    public List<Widget> getToolbars() {
+        final ButtonPanel toolbar = new ButtonPanel();
+        toolbar.addButton(showGridButton);
+        return Collections.singletonList(toolbar);
     }
 
     // -----------------------------------------------------------------------
