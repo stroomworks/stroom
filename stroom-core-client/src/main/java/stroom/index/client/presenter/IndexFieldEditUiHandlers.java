@@ -16,9 +16,9 @@
 
 package stroom.index.client.presenter;
 
-import stroom.document.client.event.DirtyUiHandlers;
+import stroom.document.client.event.ChangeUiHandlers;
 
-public interface IndexFieldEditUiHandlers extends DirtyUiHandlers {
+public interface IndexFieldEditUiHandlers extends ChangeUiHandlers {
 
     void onClassChange(String classPart);
 }

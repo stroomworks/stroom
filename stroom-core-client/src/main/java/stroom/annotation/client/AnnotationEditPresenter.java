@@ -162,6 +162,11 @@ public class AnnotationEditPresenter
     private String currentTitle;
     private String currentSubject;
 
+    // When re-reading the entity purely to update local state (e.g. after a title change), suppress
+    // onRead()'s history refresh - the change's own success callback already refreshes history with the
+    // persisted data, so refreshing again here would be a redundant fetch of momentarily-stale data.
+    private boolean suppressHistoryUpdate;
+
     private final Set<Long> expandedItems = new HashSet<>();
 
     @Inject
@@ -284,7 +289,15 @@ public class AnnotationEditPresenter
                     new ChangeTitle(selected));
             change(request);
 
-            read(getEntity().asDocRef(), getEntity().copy().name(selected).build(), isReadOnly());
+            // Re-read to update the entity's name (used for the tab title) and refresh the view, but
+            // suppress the history refresh - change()'s success callback refreshes it once with the
+            // persisted data.
+            suppressHistoryUpdate = true;
+            try {
+                read(getEntity().asDocRef(), getEntity().copy().name(selected).build(), isReadOnly());
+            } finally {
+                suppressHistoryUpdate = false;
+            }
             RefreshContentTabEvent.fire(this, parent);
         }
     }
@@ -850,6 +863,7 @@ public class AnnotationEditPresenter
                                  final AnnotationEntryGroup group,
                                  final long nowMs,
                                  final SafeHtml line) {
+        @SuppressWarnings("SequencedCollectionMethodCanBeUsed")
         final AnnotationEntry first = group.getEntries().get(0);
         final boolean expanded = expandedItems.contains(first.getId());
         final AnnotationEntryType entryType = first.getEntryType();
@@ -1330,7 +1344,9 @@ public class AnnotationEditPresenter
         setCollections(annotation.getCollections());
         setRetentionPeriod(annotation.getRetentionPeriod());
 
-        updateHistory();
+        if (!suppressHistoryUpdate) {
+            updateHistory();
+        }
     }
 
     @Override

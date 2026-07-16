@@ -17,46 +17,36 @@
 package stroom.sqlstore.impl;
 
 import stroom.docref.DocRef;
-import stroom.docstore.api.Store;
+import stroom.docstore.api.AbstractDocumentStore;
 import stroom.docstore.api.StoreFactory;
-import stroom.importexport.api.ImportExportDocument;
-import stroom.importexport.shared.ImportSettings;
-import stroom.importexport.shared.ImportState;
 import stroom.sqlstore.shared.SqlTemporalStoreDoc;
 import stroom.util.shared.EntityServiceException;
-import stroom.util.shared.Message;
 
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 
-import java.util.List;
-import java.util.Map;
 import java.util.Set;
 
 @Singleton
-public class SqlTemporalStoreDocStoreImpl implements SqlTemporalStoreDocStore {
-
-    private final Store<SqlTemporalStoreDoc> store;
+public class SqlTemporalStoreDocStoreImpl
+        extends AbstractDocumentStore<SqlTemporalStoreDoc>
+        implements SqlTemporalStoreDocStore {
 
     @Inject
     public SqlTemporalStoreDocStoreImpl(
             final StoreFactory storeFactory,
             final SqlTemporalStoreSerialiser serialiser) {
-        this.store = storeFactory.createStore(
+        super(storeFactory,
                 serialiser,
                 SqlTemporalStoreDoc.TYPE,
                 SqlTemporalStoreDoc::builder,
                 SqlTemporalStoreDoc::copy);
     }
 
-    // ---------------------------------------------------------------------
-    // START OF ExplorerActionHandler
-    // ---------------------------------------------------------------------
-
     @Override
     public DocRef createDocument(final String name) {
         checkNameNotInUse(name);
-        return store.createDocument(name);
+        return super.createDocument(name);
     }
 
     @Override
@@ -65,18 +55,13 @@ public class SqlTemporalStoreDocStoreImpl implements SqlTemporalStoreDocStore {
                                final boolean makeNameUnique,
                                final Set<String> existingNames) {
         checkNameNotInUse(name);
-        return store.copyDocument(docRef.getUuid(), name);
-    }
-
-    @Override
-    public DocRef moveDocument(final DocRef docRef) {
-        return store.moveDocument(docRef);
+        return getStore().copyDocument(docRef.getUuid(), name);
     }
 
     @Override
     public DocRef renameDocument(final DocRef docRef, final String name) {
         checkNameNotInUseByOther(name, docRef.getUuid());
-        return store.renameDocument(docRef, name);
+        return super.renameDocument(docRef, name);
     }
 
     /**
@@ -84,7 +69,7 @@ public class SqlTemporalStoreDocStoreImpl implements SqlTemporalStoreDocStore {
      * Used by create and copy operations where any existing match is a conflict.
      */
     private void checkNameNotInUse(final String name) {
-        final boolean inUse = store.list().stream()
+        final boolean inUse = getStore().list().stream()
                 .anyMatch(dr -> dr.getName().equals(name));
         if (inUse) {
             throwNameClash(name);
@@ -96,7 +81,7 @@ public class SqlTemporalStoreDocStoreImpl implements SqlTemporalStoreDocStore {
      * Used by rename operations where the document being renamed is excluded.
      */
     private void checkNameNotInUseByOther(final String name, final String selfUuid) {
-        final boolean inUse = store.list().stream()
+        final boolean inUse = getStore().list().stream()
                 .anyMatch(dr -> dr.getName().equals(name)
                         && !dr.getUuid().equals(selfUuid));
         if (inUse) {
@@ -108,104 +93,5 @@ public class SqlTemporalStoreDocStoreImpl implements SqlTemporalStoreDocStore {
         throw new EntityServiceException(
                 "A SqlTemporalStore with name '" + name + "' already exists. "
                 + "Names must be unique because they are used as map identifiers.");
-    }
-
-    @Override
-    public void deleteDocument(final DocRef docRef) {
-        store.deleteDocument(docRef);
-    }
-
-    // ---------------------------------------------------------------------
-    // END OF ExplorerActionHandler
-    // ---------------------------------------------------------------------
-
-    // ---------------------------------------------------------------------
-    // START OF DocumentActionHandler
-    // ---------------------------------------------------------------------
-
-    @Override
-    public SqlTemporalStoreDoc readDocument(final DocRef docRef) {
-        return store.readDocument(docRef);
-    }
-
-    @Override
-    public SqlTemporalStoreDoc writeDocument(final SqlTemporalStoreDoc document) {
-        return store.writeDocument(document);
-    }
-
-    // ---------------------------------------------------------------------
-    // END OF DocumentActionHandler
-    // ---------------------------------------------------------------------
-
-    // ---------------------------------------------------------------------
-    // START OF HasDependencies
-    // ---------------------------------------------------------------------
-
-    @Override
-    public Map<DocRef, Set<DocRef>> getDependencies() {
-        return store.getDependencies(null);
-    }
-
-    @Override
-    public Set<DocRef> getDependencies(final DocRef docRef) {
-        return store.getDependencies(docRef, null);
-    }
-
-    @Override
-    public void remapDependencies(final DocRef docRef,
-                                  final Map<DocRef, DocRef> remappings) {
-        store.remapDependencies(docRef, remappings, null);
-    }
-
-    // ---------------------------------------------------------------------
-    // END OF HasDependencies
-    // ---------------------------------------------------------------------
-
-    // ---------------------------------------------------------------------
-    // START OF ImportExportActionHandler
-    // ---------------------------------------------------------------------
-
-    @Override
-    public Set<DocRef> listDocuments() {
-        return store.listDocuments();
-    }
-
-    @Override
-    public DocRef importDocument(final DocRef docRef,
-                                 final ImportExportDocument importExportDocument,
-                                 final ImportState importState,
-                                 final ImportSettings importSettings) {
-        return store.importDocument(docRef, importExportDocument, importState, importSettings);
-    }
-
-    @Override
-    public ImportExportDocument exportDocument(final DocRef docRef,
-                                              final boolean omitAuditFields,
-                                              final List<Message> messageList) {
-        return store.exportDocument(docRef, omitAuditFields, messageList);
-    }
-
-    @Override
-    public String getType() {
-        return store.getType();
-    }
-
-    @Override
-    public Set<DocRef> findAssociatedNonExplorerDocRefs(final DocRef docRef) {
-        return null;
-    }
-
-    // ---------------------------------------------------------------------
-    // END OF ImportExportActionHandler
-    // ---------------------------------------------------------------------
-
-    @Override
-    public List<DocRef> list() {
-        return store.list();
-    }
-
-    @Override
-    public Map<String, String> getIndexableData(final DocRef docRef) {
-        return store.getIndexableData(docRef);
     }
 }

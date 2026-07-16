@@ -48,7 +48,7 @@ public class DictionarySettingsPresenter extends DocPresenter<DictionarySettings
     @Override
     protected void onBind() {
         super.onBind();
-        registerHandler(dictionaryListPresenter.addDirtyHandler(event -> onChange()));
+        registerHandler(dictionaryListPresenter.addChangeHandler(this::onChange));
         dictionaryListPresenter.registerDictionarySelectionHandler(wordListPresenter::setDocRef);
     }
 
@@ -57,6 +57,7 @@ public class DictionarySettingsPresenter extends DocPresenter<DictionarySettings
         dictionaryListPresenter.read(docRef, doc, readOnly);
         final List<DocRef> imports = doc.getImports();
         if (NullSafe.hasItems(imports)) {
+            //noinspection SequencedCollectionMethodCanBeUsed
             wordListPresenter.setDocRef(imports.get(0));
         }
     }

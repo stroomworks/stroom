@@ -213,7 +213,7 @@ public class IndexFieldEditViewImpl
     @SuppressWarnings("unused")
     public void onTypeChange(final ValueChangeEvent<?> event) {
         if (getUiHandlers() != null) {
-            getUiHandlers().onDirty();
+            getUiHandlers().onChange();
         }
     }
 
@@ -229,7 +229,7 @@ public class IndexFieldEditViewImpl
     @SuppressWarnings("unused")
     public void onDomainAttributeChange(final ValueChangeEvent<String> event) {
         if (getUiHandlers() != null) {
-            getUiHandlers().onDirty();
+            getUiHandlers().onChange();
         }
     }
 
