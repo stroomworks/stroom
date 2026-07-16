@@ -116,6 +116,14 @@ public class FloorMapMapPresenter
 
     private long selectedTime;
 
+    /**
+     * True once the timeline range has been initialised by the first document
+     * read. Saving the document triggers a re-read of every tab, and the
+     * timeline must not be re-initialised then — it would silently discard
+     * the user's chosen range (e.g. after "Show All").
+     */
+    private boolean timelineInitialised;
+
     private static final long ONE_DAY_MS = 24L * 60 * 60 * 1000;
 
     /**
@@ -321,7 +329,8 @@ public class FloorMapMapPresenter
      *
      * <p>Initialises and resets both the facts and histogram {@link QueryModel} instances,
      * configures the object edit presenter with the document's store reference, then starts
-     * the timeline and triggers an initial time-change to load facts.</p>
+     * the timeline and triggers an initial time-change to load facts. The timeline range is
+     * only initialised on the first read; save-triggered re-reads preserve it.</p>
      */
     @Override
     protected void onRead(final DocRef docRef, final FloorMapDoc document, final boolean readOnly) {
@@ -344,7 +353,17 @@ public class FloorMapMapPresenter
         floorMapEntityListPresenter.setData(Collections.emptyList());
 
         // Start timeline (and histogram query) only after models are ready.
-        updateTimelineRange();
+        // Initialise the range on the first read only; on a save-triggered
+        // re-read, keep the user's range and current position but still
+        // re-run the histogram query in case the settings change altered
+        // the underlying queries or stores.
+        if (!timelineInitialised) {
+            timelineInitialised = true;
+            updateTimelineRange();
+        } else {
+            runHistogramQuery(floorMapTimelinePresenter.getStartTime(),
+                    floorMapTimelinePresenter.getEndTime());
+        }
         onTimeChange(selectedTime);
     }
 
