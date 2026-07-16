@@ -82,6 +82,11 @@ import java.util.stream.Collectors;
  *   <li>The <strong>Value Schema</strong> – an editable grid of
  *       {@link FloorMapFieldMapping} entries that define the fields, their roles, paths,
  *       display names, and default values.</li>
+ *   <li>The <strong>Type Styles</strong> – an ordered grid of {@link TypeStyle} entries,
+ *       one per fact type. The list order is the paint (z) order — types higher in the
+ *       list paint behind those lower down — and each row's shape and colour define the
+ *       default graphic drawn for an imageless fact of that type. A <em>Discover</em>
+ *       action scans the Facts Store for the distinct types present in the data.</li>
  * </ul>
  *
  * <p>It extends {@link DocPresenter} and is embedded as a tab within
@@ -91,6 +96,7 @@ import java.util.stream.Collectors;
  * @see FloorMapPresenter
  * @see FloorMapDoc
  * @see FloorMapFieldMapping
+ * @see TypeStyle
  */
 public class FloorMapSettingsPresenter
         extends DocPresenter<FloorMapSettingsView, FloorMapDoc>

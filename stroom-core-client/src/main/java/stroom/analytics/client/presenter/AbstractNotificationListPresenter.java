@@ -175,9 +175,9 @@ public abstract class AbstractNotificationListPresenter<D extends AbstractAnalyt
         dataGrid.addColumn(
                 DataGridUtil.updatableTickBoxColumnBuilder(
                                 TickBoxState.createTickBoxFunc(NotificationConfig::isEnabled))
-                        .withFieldUpdater((ignored, row, value) -> {
+                        .withFieldUpdater((ignored, row, val) -> {
                             final NotificationConfig updated = row.copy()
-                                    .enabled(TickBoxState.getAsBoolean(value))
+                                    .enabled(TickBoxState.getAsBoolean(val))
                                     .build();
                             replace(row, updated);
                             onChange();
@@ -215,9 +215,9 @@ public abstract class AbstractNotificationListPresenter<D extends AbstractAnalyt
                 DataGridUtil.updatableTickBoxColumnBuilder(TickBoxState.createTickBoxFunc(
                                 NotificationConfig::isLimitNotifications))
                         .enabledWhen(NotificationConfig::isEnabled)
-                        .withFieldUpdater((ignored, row, value) -> {
+                        .withFieldUpdater((ignored, row, val) -> {
                             final NotificationConfig updated = row.copy()
-                                    .limitNotifications(TickBoxState.getAsBoolean(value))
+                                    .limitNotifications(TickBoxState.getAsBoolean(val))
                                     .build();
                             replace(row, updated);
                             onChange();
