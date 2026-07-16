@@ -136,7 +136,9 @@ public class ScheduledProcessEditViewImpl
         this.node.clear();
         this.node.addItems(nodes);
         if (selectedNode == null) {
+            //noinspection SizeReplaceableByIsEmpty
             if (nodes.size() > 0) {
+                //noinspection SequencedCollectionMethodCanBeUsed
                 this.node.setValue(nodes.get(0));
             }
         } else {
@@ -181,27 +183,27 @@ public class ScheduledProcessEditViewImpl
 
     @UiHandler("name")
     public void onName(final ValueChangeEvent<String> event) {
-        getUiHandlers().onDirty();
+        getUiHandlers().onChange();
     }
 
     @UiHandler("enabled")
     public void onEnabled(final ValueChangeEvent<Boolean> event) {
-        getUiHandlers().onDirty();
+        getUiHandlers().onChange();
     }
 
     @UiHandler("node")
     public void onNode(final ValueChangeEvent<String> event) {
-        getUiHandlers().onDirty();
+        getUiHandlers().onChange();
     }
 
     @UiHandler("startTime")
     public void onStartTime(final ValueChangeEvent<String> event) {
-        getUiHandlers().onDirty();
+        getUiHandlers().onChange();
     }
 
     @UiHandler("endTime")
     public void onEndTime(final ValueChangeEvent<String> event) {
-        getUiHandlers().onDirty();
+        getUiHandlers().onChange();
     }
 
     public interface Binder extends UiBinder<Widget, ScheduledProcessEditViewImpl> {

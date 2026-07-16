@@ -95,7 +95,9 @@ public class TableBuilderProcessingViewImpl
         this.node.clear();
         this.node.addItems(nodes);
         if (selectedNode == null) {
+            //noinspection SizeReplaceableByIsEmpty
             if (nodes.size() > 0) {
+                //noinspection SequencedCollectionMethodCanBeUsed
                 this.node.setValue(nodes.get(0));
             }
         } else {
@@ -168,32 +170,32 @@ public class TableBuilderProcessingViewImpl
 
     @UiHandler("enabled")
     public void onEnabled(final ValueChangeEvent<Boolean> event) {
-        getUiHandlers().onDirty();
+        getUiHandlers().onChange();
     }
 
     @UiHandler("node")
     public void onNode(final ValueChangeEvent<String> event) {
-        getUiHandlers().onDirty();
+        getUiHandlers().onChange();
     }
 
     @UiHandler("minMetaCreateTimeMs")
     public void onMinMetaCreateTimeMs(final ValueChangeEvent<String> event) {
-        getUiHandlers().onDirty();
+        getUiHandlers().onChange();
     }
 
     @UiHandler("maxMetaCreateTimeMs")
     public void onMaxMetaCreateTimeMs(final ValueChangeEvent<String> event) {
-        getUiHandlers().onDirty();
+        getUiHandlers().onChange();
     }
 
     @UiHandler("timeToWaitForData")
     public void onTimeToWaitForData(final ValueChangeEvent<SimpleDuration> event) {
-        getUiHandlers().onDirty();
+        getUiHandlers().onChange();
     }
 
     @UiHandler("dataRetention")
     public void onDataRetention(final ValueChangeEvent<SimpleDuration> event) {
-        getUiHandlers().onDirty();
+        getUiHandlers().onChange();
     }
 
     @UiHandler("refresh")
