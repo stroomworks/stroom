@@ -404,4 +404,46 @@ class TestFloorMapViewport {
         assertThat(FloorMapViewport.followDelta(5000, 5000, VIEW_WIDTH, 0, MARGIN))
                 .containsExactly(0.0, 0.0);
     }
+
+    // -----------------------------------------------------------------------
+    // dampingFactor (damped camera-follow steps)
+    // -----------------------------------------------------------------------
+
+    /**
+     * One time constant of elapsed time covers ~63% of the outstanding
+     * correction (1 - 1/e), the defining property of exponential damping.
+     */
+    @Test
+    void testDampingFactor_oneTimeConstant() {
+        assertThat(FloorMapViewport.dampingFactor(300, 300))
+                .isCloseTo(1 - Math.exp(-1), within(TOLERANCE));
+    }
+
+    /**
+     * Repeated small steps converge on the same total coverage as one large
+     * step of the same elapsed time — damping is frame-rate independent.
+     */
+    @Test
+    void testDampingFactor_frameRateIndependent() {
+        // Two 150ms steps: remaining fraction after each is exp(-150/300).
+        final double perStep = FloorMapViewport.dampingFactor(150, 300);
+        final double afterTwoSteps = 1 - (1 - perStep) * (1 - perStep);
+
+        assertThat(afterTwoSteps)
+                .isCloseTo(FloorMapViewport.dampingFactor(300, 300), within(TOLERANCE));
+    }
+
+    /**
+     * The factor is a valid fraction: 0 for no elapsed time (no movement),
+     * approaching 1 for long gaps, and full (1) for a degenerate non-positive
+     * time constant.
+     */
+    @Test
+    void testDampingFactor_bounds() {
+        assertThat(FloorMapViewport.dampingFactor(0, 300)).isEqualTo(0);
+        assertThat(FloorMapViewport.dampingFactor(-5, 300)).isEqualTo(0);
+        assertThat(FloorMapViewport.dampingFactor(1_000_000, 300))
+                .isCloseTo(1.0, within(1e-6));
+        assertThat(FloorMapViewport.dampingFactor(16, 0)).isEqualTo(1);
+    }
 }

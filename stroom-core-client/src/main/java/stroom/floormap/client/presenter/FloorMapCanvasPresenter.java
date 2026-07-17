@@ -179,6 +179,13 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
      */
     private static final double PAN_INTENT_THRESHOLD_PX = 4.0;
 
+    /**
+     * Below this outstanding follow correction (px) the camera snaps the
+     * remainder instead of gliding, so a damped follow terminates rather than
+     * trailing sub-pixel movements forever.
+     */
+    private static final double FOLLOW_SNAP_PX = 0.5;
+
     /** Id of the entity the camera is following, or {@code null} when not tracking. */
     private String trackedObjectId = null;
 
@@ -745,13 +752,6 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                             : 16.0;
                     lastAnimationTimestamp = timestamp;
 
-                    if (activeAnimations.isEmpty() && trailFadeStartTimes.isEmpty()) {
-                        // Nothing left to animate or fade — let the loop terminate.
-                        animationLoopRunning = false;
-                        lastAnimationTimestamp = 0;
-                        return;
-                    }
-
                     // Advance each active animation by the fraction of ANIMATION_DURATION_MS
                     // that elapsed since the last frame.  This is independent of any absolute
                     // clock, so it works correctly regardless of the time-base used by the
@@ -795,8 +795,17 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                         trailFadeStartTimes.remove(id);
                     }
 
-                    // Keep the camera on the tracked entity as it interpolates.
-                    applyFollow();
+                    // Glide the camera after the tracked entity (damped).
+                    final boolean cameraMoved = followStep(deltaMs);
+
+                    if (!cameraMoved
+                            && activeAnimations.isEmpty()
+                            && trailFadeStartTimes.isEmpty()) {
+                        // Nothing left to animate, fade, or glide — let the loop terminate.
+                        animationLoopRunning = false;
+                        lastAnimationTimestamp = 0;
+                        return;
+                    }
 
                     // Draw the current frame.
                     final List<FloorMapObject> overlay = buildAnimatedDrawList(timestamp);
@@ -930,24 +939,35 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         // the entity is already on screen. If its position isn't known yet
         // (no events loaded), the flag holds until the first update that has one.
         this.centreOnNextFollow = trackedObjectId != null;
-        applyFollow();
+        followStep(0);
         setSelectedObjectId(trackedObjectId);
     }
 
     /**
-     * Pans the camera (via {@link FloorMapViewport#followDelta}) so the tracked
-     * entity stays within the view's central dead zone — or hard-centres it
-     * when {@link #centreOnNextFollow} is set. No-op when nothing is tracked,
-     * following is paused, or the entity's position is unknown. Callers are
-     * responsible for redrawing afterwards.
+     * Applies one damped camera-follow step: computes the pan needed to bring
+     * the tracked entity back inside the view's central dead zone (via
+     * {@link FloorMapViewport#followDelta}) and applies a time-proportional
+     * fraction of it, so the camera glides after the entity instead of
+     * snapping. The full correction is applied at once when hard-centring on
+     * (re-)selection ({@link #centreOnNextFollow}) or when the remainder is
+     * sub-pixel.
+     *
+     * <p>No-op when nothing is tracked, following is paused, or the entity's
+     * position is unknown. Callers are responsible for redrawing afterwards.</p>
+     *
+     * @param deltaMs elapsed time since the previous step (ms); {@code 0}
+     *                applies the full correction immediately
+     * @return {@code true} if the camera moved (a glide is in progress), so
+     *         the animation loop keeps running until the correction is spent
      */
-    private void applyFollow() {
+    private boolean followStep(final double deltaMs) {
         if (trackedObjectId == null || followPaused) {
-            return;
+            return false;
         }
         final double[] pos = trackedPosition();
         if (pos == null) {
-            return;
+            // Keep centreOnNextFollow armed until we have a position fix.
+            return false;
         }
         // Project the map-space position through the draw transform (map space
         // is Y-up; SVG is Y-down, hence the flip) to get the on-screen point.
@@ -955,14 +975,26 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         final double screenY = offsetY - scale * pos[1];
         final Element panel = getView().getFocusPanel().getElement();
         // Margin 0.5 collapses the dead zone to the centre point (hard-centre).
-        final double margin = centreOnNextFollow
+        final boolean centre = centreOnNextFollow;
+        centreOnNextFollow = false;
+        final double margin = centre
                 ? 0.5
                 : FloorMapViewport.DEFAULT_FOLLOW_MARGIN;
-        centreOnNextFollow = false;
         final double[] delta = FloorMapViewport.followDelta(screenX, screenY,
                 panel.getOffsetWidth(), panel.getOffsetHeight(), margin);
-        offsetX += delta[0];
-        offsetY += delta[1];
+        if (delta[0] == 0 && delta[1] == 0) {
+            return false;
+        }
+
+        final boolean snap = centre
+                || deltaMs <= 0
+                || (Math.abs(delta[0]) < FOLLOW_SNAP_PX && Math.abs(delta[1]) < FOLLOW_SNAP_PX);
+        final double factor = snap
+                ? 1.0
+                : FloorMapViewport.dampingFactor(deltaMs, FloorMapViewport.DEFAULT_FOLLOW_DAMPING_MS);
+        offsetX += delta[0] * factor;
+        offsetY += delta[1] * factor;
+        return true;
     }
 
     /**
@@ -1074,8 +1106,12 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
             }
             // One-shot: clear the teleport flag now that positions are committed.
             pendingTeleport = false;
-            // Keep the tracked entity in view after a scrub/paused refresh.
-            applyFollow();
+            // Glide the camera after the tracked entity's new position (the
+            // damped follow runs on animation frames, so make sure the loop is
+            // ticking even though nothing is animating).
+            if (trackedObjectId != null && !followPaused) {
+                ensureAnimationLoop();
+            }
             redraw();
             return;
         }
@@ -1093,13 +1129,12 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         }
 
         this.eventObjects = unanimated;
+        // The loop advances animations AND glides the damped camera-follow —
+        // including toward an entity's first appearance while playing.
         ensureAnimationLoop();
-        // Covers the tracked entity's first appearance while playing (placed
-        // without an animation) — subsequent frames follow via the loop.
-        applyFollow();
         // Force a paint so updates that don't start an animation still repaint
         // during playback — the animation loop returns without drawing when
-        // there is nothing to animate.
+        // there is nothing to animate or glide.
         redraw();
     }
 

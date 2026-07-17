@@ -43,10 +43,18 @@ public final class FloorMapViewport {
     public static final double ZOOM_STEP = 1.1;
     /**
      * Default dead-zone margin for {@link #follow} as a fraction of each view
-     * dimension. 0.2 means the tracked point may roam the central 60% of the
-     * view before the camera pans.
+     * dimension. 0.35 means the tracked point may roam the central 30% of the
+     * view before the camera starts panning — small movements leave the camera
+     * still, larger ones pull it along.
      */
-    public static final double DEFAULT_FOLLOW_MARGIN = 0.2;
+    public static final double DEFAULT_FOLLOW_MARGIN = 0.35;
+
+    /**
+     * Default time constant (ms) for damped camera-follow movement: the camera
+     * covers ~63% of the outstanding follow correction per this interval, so
+     * it glides after the tracked point instead of snapping.
+     */
+    public static final double DEFAULT_FOLLOW_DAMPING_MS = 300.0;
 
     private double scale;
     private double offsetX;
@@ -238,6 +246,28 @@ public final class FloorMapViewport {
             deltaY = (viewHeight - marginY) - screenY;
         }
         return new double[]{deltaX, deltaY};
+    }
+
+    /**
+     * Exponential damping factor for frame-based camera movement: the fraction
+     * of an outstanding correction to apply after {@code deltaMs} elapsed, such
+     * that repeated application converges on the target at a rate set by the
+     * time constant (~63% covered per {@code timeConstantMs}) independently of
+     * frame rate.
+     *
+     * @param deltaMs        elapsed time since the previous step, in ms
+     * @param timeConstantMs damping time constant, in ms (larger = floatier)
+     * @return a factor in {@code [0, 1]}; {@code 0} for non-positive
+     *         {@code deltaMs}, {@code 1} for a non-positive time constant
+     */
+    public static double dampingFactor(final double deltaMs, final double timeConstantMs) {
+        if (deltaMs <= 0) {
+            return 0;
+        }
+        if (timeConstantMs <= 0) {
+            return 1;
+        }
+        return 1 - Math.exp(-deltaMs / timeConstantMs);
     }
 
     // -----------------------------------------------------------------------
