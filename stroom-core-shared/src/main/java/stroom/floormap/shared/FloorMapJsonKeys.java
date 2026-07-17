@@ -57,6 +57,16 @@ public final class FloorMapJsonKeys {
      */
     public static final String SVG_GROUP_PREFIX = "__g_";
 
+    /**
+     * ID prefix applied to the selection transform handles (scale/rotate) drawn
+     * over the current selection in edit mode. The mousedown hit-test checks
+     * this prefix <em>first</em> so a handle drag starts a scale/rotate gesture
+     * rather than being treated as a click on an object literally named
+     * {@code "__handle_..."}. The id format is {@code HANDLE_PREFIX + role}
+     * (e.g. {@code "__handle_scale-nw"}, {@code "__handle_rotate"}).
+     */
+    public static final String HANDLE_PREFIX = "__handle_";
+
     private FloorMapJsonKeys() {
         // Utility class
     }

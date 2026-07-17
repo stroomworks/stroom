@@ -200,6 +200,87 @@ class TestFloorMapTransformationMatrix {
     }
 
     // -----------------------------------------------------------------------
+    // Composition, factories and point transform
+    // -----------------------------------------------------------------------
+
+    @Test
+    void testTranslateFactory() {
+        assertMatrixCloseTo(FloorMapTransformationMatrix.translate(3, 4),
+                new FloorMapTransformationMatrix(1, 0, 0, 1, 3, 4));
+    }
+
+    @Test
+    void testScaleFactory() {
+        assertMatrixCloseTo(FloorMapTransformationMatrix.scale(2, 5),
+                new FloorMapTransformationMatrix(2, 0, 0, 5, 0, 0));
+    }
+
+    @Test
+    void testTransformPoint() {
+        // (2,0,0,3,10,20) applied to (5,7): x'=2*5+10=20, y'=3*7+20=41.
+        final double[] p = new FloorMapTransformationMatrix(2, 0, 0, 3, 10, 20)
+                .transformPoint(5, 7);
+        assertThat(p[0]).isCloseTo(20, within(TOLERANCE));
+        assertThat(p[1]).isCloseTo(41, within(TOLERANCE));
+    }
+
+    @Test
+    void testMultiplyThisTimesOther() {
+        // translate(10,20) · scale(2,3): scale applied first, then translate.
+        final FloorMapTransformationMatrix result =
+                FloorMapTransformationMatrix.translate(10, 20)
+                        .multiply(FloorMapTransformationMatrix.scale(2, 3));
+        assertMatrixCloseTo(result, new FloorMapTransformationMatrix(2, 0, 0, 3, 10, 20));
+    }
+
+    @Test
+    void testMultiplyOrderMatters() {
+        // scale(2,3) · translate(10,20): translation is scaled → (20,60).
+        final FloorMapTransformationMatrix result =
+                FloorMapTransformationMatrix.scale(2, 3)
+                        .multiply(FloorMapTransformationMatrix.translate(10, 20));
+        assertMatrixCloseTo(result, new FloorMapTransformationMatrix(2, 0, 0, 3, 20, 60));
+    }
+
+    @Test
+    void testMultiplyIdentityIsUnit() {
+        final FloorMapTransformationMatrix m =
+                new FloorMapTransformationMatrix(1.2, 0.9, -0.9, 1.2, 100, 50);
+        assertMatrixCloseTo(m.multiply(FloorMapTransformationMatrix.identity()), m);
+        assertMatrixCloseTo(FloorMapTransformationMatrix.identity().multiply(m), m);
+    }
+
+    @Test
+    void testRotateAboutNonOriginPivot() {
+        // 90° CCW about (10,10): (5,10) → (10,5); the pivot is left fixed.
+        final FloorMapTransformationMatrix t = FloorMapTransformationMatrix.rotateAbout(90, 10, 10);
+        final double[] p = t.transformPoint(5, 10);
+        assertThat(p[0]).isCloseTo(10, within(TOLERANCE));
+        assertThat(p[1]).isCloseTo(5, within(TOLERANCE));
+        final double[] pivot = t.transformPoint(10, 10);
+        assertThat(pivot[0]).isCloseTo(10, within(TOLERANCE));
+        assertThat(pivot[1]).isCloseTo(10, within(TOLERANCE));
+    }
+
+    @Test
+    void testScaleAboutNonOriginPivot() {
+        // 2× about (10,10): (5,10) → (0,10); the pivot is left fixed.
+        final FloorMapTransformationMatrix t = FloorMapTransformationMatrix.scaleAbout(2, 2, 10, 10);
+        final double[] p = t.transformPoint(5, 10);
+        assertThat(p[0]).isCloseTo(0, within(TOLERANCE));
+        assertThat(p[1]).isCloseTo(10, within(TOLERANCE));
+        final double[] pivot = t.transformPoint(10, 10);
+        assertThat(pivot[0]).isCloseTo(10, within(TOLERANCE));
+        assertThat(pivot[1]).isCloseTo(10, within(TOLERANCE));
+    }
+
+    @Test
+    void testRotateAboutZeroDegreesIsIdentity() {
+        assertMatrixCloseTo(FloorMapTransformationMatrix.rotateAbout(0, 7, 7),
+                FloorMapTransformationMatrix.identity());
+    }
+
+    // -----------------------------------------------------------------------
     // Serialisation
     // -----------------------------------------------------------------------
 

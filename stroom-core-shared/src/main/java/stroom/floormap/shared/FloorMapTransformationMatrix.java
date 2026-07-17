@@ -151,6 +151,95 @@ public class FloorMapTransformationMatrix {
     }
 
     /**
+     * Returns a pure translation matrix.
+     *
+     * @param dx the x translation
+     * @param dy the y translation
+     * @return {@code (1,0,0,1,dx,dy)}
+     */
+    public static FloorMapTransformationMatrix translate(final double dx, final double dy) {
+        return new FloorMapTransformationMatrix(1, 0, 0, 1, dx, dy);
+    }
+
+    /**
+     * Returns a pure scale matrix (about the origin).
+     *
+     * @param sx the x scale factor
+     * @param sy the y scale factor
+     * @return {@code (sx,0,0,sy,0,0)}
+     */
+    public static FloorMapTransformationMatrix scale(final double sx, final double sy) {
+        return new FloorMapTransformationMatrix(sx, 0, 0, sy, 0, 0);
+    }
+
+    /**
+     * Multiplies this matrix by {@code o}, returning {@code this · o}.
+     *
+     * <p>Convention (matching SVG/DOMMatrix {@code .multiply()} and CSS): for a
+     * column vector {@code v}, {@code this.multiply(o).transformPoint(v)} applies
+     * {@code o} <strong>first</strong>, then {@code this}. So to apply a map-space
+     * transform {@code T} to a fact whose placement is {@code worldToMap}, use
+     * {@code T.multiply(worldToMap)} (= {@code T · worldToMap}).</p>
+     *
+     * @param o the matrix to apply before this one
+     * @return the composed matrix {@code this · o}
+     */
+    public FloorMapTransformationMatrix multiply(final FloorMapTransformationMatrix o) {
+        return new FloorMapTransformationMatrix(
+                a * o.a + c * o.b,
+                b * o.a + d * o.b,
+                a * o.c + c * o.d,
+                b * o.c + d * o.d,
+                a * o.e + c * o.f + e,
+                b * o.e + d * o.f + f);
+    }
+
+    /**
+     * Applies this matrix to the point {@code (x, y)}.
+     *
+     * @param x the x coordinate
+     * @param y the y coordinate
+     * @return {@code {a*x + c*y + e, b*x + d*y + f}}
+     */
+    public double[] transformPoint(final double x, final double y) {
+        return new double[]{a * x + c * y + e, b * x + d * y + f};
+    }
+
+    /**
+     * Returns a rotation about an arbitrary pivot {@code (px, py)} — i.e.
+     * {@code translate(px,py) · rotate(degrees) · translate(-px,-py)}. The pivot
+     * is left fixed by the resulting transform.
+     *
+     * @param degrees the rotation angle in degrees (counter-clockwise positive)
+     * @param px      the pivot x
+     * @param py      the pivot y
+     * @return the rotation-about-pivot matrix
+     */
+    public static FloorMapTransformationMatrix rotateAbout(final double degrees,
+                                                           final double px,
+                                                           final double py) {
+        return translate(px, py).multiply(rotate(degrees)).multiply(translate(-px, -py));
+    }
+
+    /**
+     * Returns a scale about an arbitrary pivot {@code (px, py)} — i.e.
+     * {@code translate(px,py) · scale(sx,sy) · translate(-px,-py)}. The pivot is
+     * left fixed by the resulting transform.
+     *
+     * @param sx the x scale factor
+     * @param sy the y scale factor
+     * @param px the pivot x
+     * @param py the pivot y
+     * @return the scale-about-pivot matrix
+     */
+    public static FloorMapTransformationMatrix scaleAbout(final double sx,
+                                                          final double sy,
+                                                          final double px,
+                                                          final double py) {
+        return translate(px, py).multiply(scale(sx, sy)).multiply(translate(-px, -py));
+    }
+
+    /**
      * Computes the inverse of this transformation matrix.
      * <p>
      * If the matrix is singular (determinant ≈ 0), the identity matrix is
