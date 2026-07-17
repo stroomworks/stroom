@@ -54,6 +54,7 @@ import stroom.util.client.Console;
 import stroom.util.shared.TemporalEntry;
 import stroom.util.shared.TemporalEntryId;
 import stroom.widget.button.client.ButtonPanel;
+import stroom.widget.button.client.InlineSvgToggleButton;
 import stroom.widget.help.client.HelpButton;
 import stroom.widget.menu.client.presenter.IconMenuItem;
 import stroom.widget.menu.client.presenter.Item;
@@ -67,7 +68,7 @@ import com.google.web.bindery.event.shared.EventBus;
 import com.gwtplatform.mvp.client.View;
 
 import java.util.ArrayList;
-import java.util.Collections;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
@@ -159,6 +160,13 @@ public class FloorMapEditorPresenter
     private final FloorMapEditorModel model;
 
     /**
+     * Toolbar toggle controlling the canvas grid overlay. Shown next to the
+     * document save buttons via {@link HasToolbar} whenever the Editor tab is
+     * active. On by default — the grid is the primary editing aid.
+     */
+    private final InlineSvgToggleButton showGridButton;
+
+    /**
      * Contribution to the document toolbar (Save / Save As …): a single help
      * button for the map-interaction help, shown only while the Editor tab is
      * active (via {@link HasToolbar#getToolbars()}).
@@ -192,6 +200,13 @@ public class FloorMapEditorPresenter
         // Always in edit mode, with the grid overlay shown as an editing aid.
         floorMapCanvasPresenter.setEditMode(true);
         floorMapCanvasPresenter.setShowGrid(true);
+
+        // Grid on/off toggle, surfaced next to the save buttons (HasToolbar).
+        // SvgImage has no dedicated grid glyph; TABLE renders as a grid of cells.
+        showGridButton = new InlineSvgToggleButton();
+        showGridButton.setSvg(SvgImage.TABLE);
+        showGridButton.setTitle("Show Grid");
+        showGridButton.setState(true);
         // Persist a drag as a single translate of the whole selection.
         floorMapCanvasPresenter.setDragHandler(this::onFactsTransformed);
         floorMapCanvasPresenter.setSelectionHandler(this::onCanvasSelectionChanged);
@@ -216,6 +231,11 @@ public class FloorMapEditorPresenter
     @Override
     protected void onBind() {
         super.onBind();
+
+        // ---- Toolbar ---------------------------------------------------------
+        //noinspection unused e
+        registerHandler(showGridButton.addClickHandler(e ->
+                floorMapCanvasPresenter.setShowGrid(showGridButton.getState())));
 
         // ---- Timeline events ------------------------------------------------
         registerHandler(getEventBus().addHandler(TimeChangeEvent.getType(), event -> {
@@ -250,16 +270,16 @@ public class FloorMapEditorPresenter
     // -----------------------------------------------------------------------
 
     /**
-     * Builds the Editor's contribution to the document toolbar: a single help
-     * button describing the map interaction model, pushed to the right-hand end
-     * of the toolbar.
+     * Builds the help panel for the document toolbar: a single help button
+     * describing the map interaction model, pushed to the right-hand end of the
+     * toolbar.
      *
      * @return the help toolbar panel
      */
     private ButtonPanel createHelpToolbar() {
         final ButtonPanel buttonPanel = new ButtonPanel();
         // Float the panel to the right-hand end of the flex toolbar container,
-        // past the Save / Save As buttons.
+        // past the save and grid buttons.
         buttonPanel.getElement().getStyle().setProperty("marginLeft", "auto");
         final HelpButton helpButton = HelpButton.create("Floor Map Editor help");
         helpButton.setHelpContentHeading("Floor Map Editor");
@@ -271,12 +291,16 @@ public class FloorMapEditorPresenter
     /**
      * {@inheritDoc}
      *
-     * <p>Contributes the help button to the document toolbar (added after the
-     * Save / Save As buttons) whenever the Editor tab is shown.</p>
+     * <p>Contributes the Editor tab's toolbar buttons whenever the tab is shown:
+     * the grid toggle (next to the document Save / Save As buttons) and, at the
+     * right-hand end, the map help button. {@code DocTabPresenter} appends these
+     * after the save buttons.</p>
      */
     @Override
     public List<Widget> getToolbars() {
-        return Collections.singletonList(helpToolbar);
+        final ButtonPanel gridToolbar = new ButtonPanel();
+        gridToolbar.addButton(showGridButton);
+        return Arrays.asList(gridToolbar, helpToolbar);
     }
 
     // -----------------------------------------------------------------------
