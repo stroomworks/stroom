@@ -31,36 +31,83 @@
     <g:FlowPanel addStyleNames="max dock-container-vertical form overflow-y-auto">
 
                 <form:FormGroup label="Name">
+                    <form:HelpHTML>
+                        <p>The object's display name. It appears in the <em>Fact List</em> (the
+                            Name column) and the <em>Time List</em> summary. It is not drawn on
+                            the map: a shape (imageless) object is labelled on the map with its
+                            key, and image objects carry no text label.</p>
+                    </form:HelpHTML>
                     <g:TextBox ui:field="nameBox" addStyleNames="stroom-control wide-control" />
                 </form:FormGroup>
 
                 <form:FormGroup label="Type">
+                    <form:HelpHTML>
+                        <p>The object's <strong>type</strong> — for example <code>gate</code>,
+                            <code>camera</code> or <code>person</code>. The type drives the paint
+                            (z) order and the default shape and colour used when the object has no
+                            image (see <em>Type Styles</em> on the Settings tab).</p>
+                        <p><strong>Required</strong> — the object cannot be saved without a
+                            type.</p>
+                    </form:HelpHTML>
                     <g:TextBox ui:field="typeBox" addStyleNames="stroom-control wide-control" />
                 </form:FormGroup>
 
                 <form:FormGroup label="Image">
+                    <form:HelpHTML>
+                        <p>An optional image chosen from the Asset store. When set, the object is
+                            drawn as that image (a background is simply an image fact); leave it
+                            empty to draw the type's default shape instead.</p>
+                    </form:HelpHTML>
                     <g:SimplePanel ui:field="chooseImgContainer" addStyleNames="wide-control" />
                 </form:FormGroup>
 
                 <form:FormGroup label="Effective From Time">
+                    <form:HelpHTML>
+                        <p>The time from which this version of the object takes effect. The map
+                            shows the version in force at the timeline position, so an object can
+                            change over time.</p>
+                        <p>Changing this on an existing version asks whether to <em>move</em> the
+                            version to the new time or keep a <em>copy</em> at the old time.</p>
+                    </form:HelpHTML>
                     <datetimebox:DateTimeBox ui:field="effectiveTimeBox" addStyleNames="timeline-date-box wide-control" />
                 </form:FormGroup>
 
                 <form:FormGroup label="World X Coordinate">
+                    <form:HelpHTML>
+                        <p>The object's X position in world coordinates, before the
+                            World&#8209;to&#8209;Map transform below is applied.</p>
+                    </form:HelpHTML>
                     <g:TextBox ui:field="xBox" addStyleNames="stroom-control wide-control" />
                 </form:FormGroup>
 
                 <form:FormGroup label="World Y Coordinate">
+                    <form:HelpHTML>
+                        <p>The object's Y position in world coordinates, before the
+                            World&#8209;to&#8209;Map transform below is applied.</p>
+                    </form:HelpHTML>
                     <g:TextBox ui:field="yBox" addStyleNames="stroom-control wide-control" />
                 </form:FormGroup>
 
                 <form:FormGroup label="World-to-Map Translation (X, Y)">
+                    <form:HelpHTML>
+                        <p>The <strong>translation</strong> part of the transform that places the
+                            object on the map — it shifts the object across map space.</p>
+                        <p>Dragging the object on the map edits this for you, so you rarely need to
+                            type it by hand.</p>
+                    </form:HelpHTML>
                     <g:FlowPanel addStyleNames="dock-container-horizontal align-center">
                         <g:TextBox ui:field="w2mTx" addStyleNames="stroom-control {style.matrixBox}" />
                         <g:TextBox ui:field="w2mTy" addStyleNames="stroom-control {style.matrixBox}" />
                     </g:FlowPanel>
                 </form:FormGroup>
                 <form:FormGroup label="World-to-Map Scale (X, Y) &amp; Rotation (deg)">
+                    <form:HelpHTML>
+                        <p>The <strong>scale</strong> and <strong>rotation</strong> parts of the
+                            transform that places the object on the map. Together with the
+                            translation above they position, size and rotate the object.</p>
+                        <p>Scaling and rotating the object on the map (using its selection handles)
+                            edits these for you, so you rarely need to type them by hand.</p>
+                    </form:HelpHTML>
                     <g:FlowPanel addStyleNames="dock-container-horizontal align-center">
                         <g:TextBox ui:field="w2mSx" addStyleNames="stroom-control {style.matrixBox}" />
                         <g:TextBox ui:field="w2mSy" addStyleNames="stroom-control {style.matrixBox}" />

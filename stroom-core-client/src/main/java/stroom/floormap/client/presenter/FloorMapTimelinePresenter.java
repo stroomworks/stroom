@@ -21,8 +21,10 @@ import stroom.floormap.client.presenter.FloorMapTimelinePresenter.FloorMapTimeli
 import stroom.svg.client.Preset;
 import stroom.svg.shared.SvgImage;
 import stroom.widget.datepicker.client.UTCDate;
+import stroom.widget.help.client.HelpButton;
 
 import com.google.gwt.animation.client.AnimationScheduler;
+import com.google.gwt.safehtml.shared.SafeHtml;
 import com.google.gwt.user.client.ui.Widget;
 import com.google.inject.Inject;
 import com.google.web.bindery.event.shared.EventBus;
@@ -533,6 +535,22 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
         }
     }
 
+    /**
+     * Adds a help button to the timeline's right-hand controls.
+     *
+     * <p>Called by the Editor tab only, so the read-only Map tab (which shares
+     * this presenter) shows no help button. Clicking the button (or activating
+     * it from the keyboard) opens the standard in-app help popup.</p>
+     *
+     * @param helpContent the HTML help body to show in the popup
+     */
+    public void setHelpContent(final SafeHtml helpContent) {
+        final HelpButton helpButton = HelpButton.create("Timeline help");
+        helpButton.setHelpContentHeading("Timeline");
+        helpButton.setHelpContent(helpContent);
+        getView().addRightControl(helpButton);
+    }
+
     public interface FloorMapTimelineView extends View {
 
         void setProgressPct(double pct);
@@ -595,6 +613,14 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
          * Returns the settings button widget so the popup can be anchored to it.
          */
         Widget getSettingsButtonWidget();
+
+        /**
+         * Appends a widget to the right-hand controls (beside the settings gear).
+         * Used by the Editor tab to add a help button.
+         *
+         * @param widget the widget to append
+         */
+        void addRightControl(Widget widget);
 
         /**
          * Updates the speed badge label shown beside the settings button (e.g. "1×").

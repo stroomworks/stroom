@@ -87,6 +87,8 @@ public class FloorMapTimelineViewImpl extends ViewImpl implements FloorMapTimeli
     @UiField
     SvgButton settingsButton;
     @UiField
+    FlowPanel rightControls;
+    @UiField
     Label speedBadge;
     @UiField
     Label startDateLabel;
@@ -139,8 +141,10 @@ public class FloorMapTimelineViewImpl extends ViewImpl implements FloorMapTimeli
         histogramContainer.setWidget(histogramWidget);
 
         // Set tooltip text for out-of-range indicators (labels are declared in UiBinder).
+        //noinspection UnnecessaryUnicodeEscape
         outOfRangeLeftLabel.setText("\u00AB"); // «
         outOfRangeLeftLabel.setTitle("Object out of range. Extend timeline range to view object.");
+        //noinspection UnnecessaryUnicodeEscape
         outOfRangeRightLabel.setText("\u00BB"); // »
         outOfRangeRightLabel.setTitle("Object out of range. Extend timeline range to view object.");
     }
@@ -260,6 +264,11 @@ public class FloorMapTimelineViewImpl extends ViewImpl implements FloorMapTimeli
     @Override
     public Widget getSettingsButtonWidget() {
         return settingsButton;
+    }
+
+    @Override
+    public void addRightControl(final Widget widget) {
+        rightControls.add(widget);
     }
 
     // -----------------------------------------------------------------------

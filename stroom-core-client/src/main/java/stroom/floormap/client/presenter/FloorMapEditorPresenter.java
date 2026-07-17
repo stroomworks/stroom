@@ -21,7 +21,9 @@ import stroom.alert.client.event.ConfirmEvent;
 import stroom.dispatch.client.RestFactory;
 import stroom.docref.DocRef;
 import stroom.entity.client.presenter.DocPresenter;
+import stroom.entity.client.presenter.HasToolbar;
 import stroom.entity.shared.ExpressionCriteria;
+import stroom.floormap.client.FloorMapEditorHelp;
 import stroom.floormap.client.ValueAccessorFactory;
 import stroom.floormap.client.event.MapContextMenuEvent;
 import stroom.floormap.client.event.TimeChangeEvent;
@@ -51,17 +53,21 @@ import stroom.svg.shared.SvgImage;
 import stroom.util.client.Console;
 import stroom.util.shared.TemporalEntry;
 import stroom.util.shared.TemporalEntryId;
+import stroom.widget.button.client.ButtonPanel;
+import stroom.widget.help.client.HelpButton;
 import stroom.widget.menu.client.presenter.IconMenuItem;
 import stroom.widget.menu.client.presenter.Item;
 import stroom.widget.menu.client.presenter.ShowMenuEvent;
 import stroom.widget.popup.client.presenter.PopupPosition;
 
 import com.google.gwt.core.client.GWT;
+import com.google.gwt.user.client.ui.Widget;
 import com.google.inject.Inject;
 import com.google.web.bindery.event.shared.EventBus;
 import com.gwtplatform.mvp.client.View;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
@@ -109,7 +115,8 @@ import javax.inject.Provider;
  * from the server.</p>
  */
 public class FloorMapEditorPresenter
-        extends DocPresenter<FloorMapEditorView, FloorMapDoc> {
+        extends DocPresenter<FloorMapEditorView, FloorMapDoc>
+        implements HasToolbar {
 
     /** REST endpoint */
     private static final SqlTemporalStoreResource SQL_TEMPORAL_STORE_RESOURCE =
@@ -151,6 +158,13 @@ public class FloorMapEditorPresenter
     /** The GWT-free model containing all shared state and pure logic. */
     private final FloorMapEditorModel model;
 
+    /**
+     * Contribution to the document toolbar (Save / Save As …): a single help
+     * button for the map-interaction help, shown only while the Editor tab is
+     * active (via {@link HasToolbar#getToolbars()}).
+     */
+    private final ButtonPanel helpToolbar;
+
     // -----------------------------------------------------------------------
 
     @Inject
@@ -181,6 +195,16 @@ public class FloorMapEditorPresenter
         // Persist a drag as a single translate of the whole selection.
         floorMapCanvasPresenter.setDragHandler(this::onFactsTransformed);
         floorMapCanvasPresenter.setSelectionHandler(this::onCanvasSelectionChanged);
+
+        // Contextual help. The map-interaction help sits on the document toolbar
+        // (Save / Save As …) at the right-hand end, contributed via HasToolbar so
+        // it appears only while the Editor tab is active — keeping it off the
+        // canvas itself. The timeline gets its own help button; the Editor-only
+        // Fact List and Time List panels add theirs. (The read-only Map tab
+        // reuses the canvas and timeline but is not a HasToolbar for this
+        // presenter, so no map-help button appears there.)
+        helpToolbar = createHelpToolbar();
+        floorMapTimelinePresenter.setHelpContent(FloorMapEditorHelp.timeline());
 
         setInSlot(MAIN, floorMapCanvasPresenter);
         setInSlot(TIMELINE, floorMapTimelinePresenter);
@@ -219,6 +243,40 @@ public class FloorMapEditorPresenter
         floorMapTimeListPresenter.setEditConsumer(this::onEditTimeInTimeList);
         floorMapTimeListPresenter.setAddConsumer(this::onAddTimeInTimeList);
         floorMapTimeListPresenter.setDeleteConsumer(this::onDeleteTimeFromTimeList);
+    }
+
+    // -----------------------------------------------------------------------
+    // Toolbar contribution (HasToolbar)
+    // -----------------------------------------------------------------------
+
+    /**
+     * Builds the Editor's contribution to the document toolbar: a single help
+     * button describing the map interaction model, pushed to the right-hand end
+     * of the toolbar.
+     *
+     * @return the help toolbar panel
+     */
+    private ButtonPanel createHelpToolbar() {
+        final ButtonPanel buttonPanel = new ButtonPanel();
+        // Float the panel to the right-hand end of the flex toolbar container,
+        // past the Save / Save As buttons.
+        buttonPanel.getElement().getStyle().setProperty("marginLeft", "auto");
+        final HelpButton helpButton = HelpButton.create("Floor Map Editor help");
+        helpButton.setHelpContentHeading("Floor Map Editor");
+        helpButton.setHelpContent(FloorMapEditorHelp.canvas());
+        buttonPanel.addButton(helpButton);
+        return buttonPanel;
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Contributes the help button to the document toolbar (added after the
+     * Save / Save As buttons) whenever the Editor tab is shown.</p>
+     */
+    @Override
+    public List<Widget> getToolbars() {
+        return Collections.singletonList(helpToolbar);
     }
 
     // -----------------------------------------------------------------------
