@@ -2063,6 +2063,36 @@
         "tags" : [ "Authentication" ]
       }
     },
+    "/authentication/v1/noauth/resetPassword" : {
+      "post" : {
+        "operationId" : "resetPassword",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ResetPasswordRequest"
+              }
+            }
+          },
+          "description" : "resetPasswordRequest",
+          "required" : true
+        },
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ChangePasswordResponse"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Set a new password using the token emailed to a user who has forgotten theirs.",
+        "tags" : [ "Authentication" ]
+      }
+    },
     "/authproxy/v1/noauth/fetchClientCredsToken" : {
       "post" : {
         "operationId" : "fetchClientCredsToken",
@@ -24321,6 +24351,20 @@
           "severity" : {
             "type" : "string",
             "enum" : [ "INFO", "WARN", "ERROR", "FATAL" ]
+          }
+        }
+      },
+      "ResetPasswordRequest" : {
+        "type" : "object",
+        "properties" : {
+          "confirmNewPassword" : {
+            "type" : "string"
+          },
+          "newPassword" : {
+            "type" : "string"
+          },
+          "token" : {
+            "type" : "string"
           }
         }
       },
