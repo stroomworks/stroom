@@ -1220,6 +1220,132 @@ class TestFloorMapEditorModel {
     }
 
     // -----------------------------------------------------------------------
+    // transformFacts (group move / rotate / scale via a map-space transform)
+    // -----------------------------------------------------------------------
+
+    /**
+     * Rotating a group 90° about a pivot repositions each fact (its e,f) AND
+     * rotates its own orientation (a,b,c,d). Facts a=(anchor 5,10) and
+     * b=(anchor 15,10) rotate 90° CCW about (10,10) → anchors (10,5) and (10,15).
+     */
+    @Test
+    void testTransformFacts_groupRotate90_repositionsAndReorients() {
+        model.onEntriesFetched(List.of(
+                entry("a", 100, "{\"type\":\"img\",\"tm-world-to-map\":[1,0,0,1,5,10]}"),
+                entry("b", 100, "{\"type\":\"img\",\"tm-world-to-map\":[1,0,0,1,15,10]}")));
+
+        final int n = model.transformFacts(List.of("a", "b"),
+                FloorMapTransformationMatrix.rotateAbout(90, 10, 10), SCHEMA, ACCESSOR);
+
+        assertThat(n).isEqualTo(2);
+        assertMatrix(mergedMatrix("a"), 0, 1, -1, 0, 10, 5);
+        assertMatrix(mergedMatrix("b"), 0, 1, -1, 0, 10, 15);
+    }
+
+    /** Scaling a group 2× about a pivot scales orientation and spreads anchors. */
+    @Test
+    void testTransformFacts_groupScale2xAboutPivot() {
+        model.onEntriesFetched(List.of(
+                entry("a", 100, "{\"type\":\"img\",\"tm-world-to-map\":[1,0,0,1,5,10]}"),
+                entry("b", 100, "{\"type\":\"img\",\"tm-world-to-map\":[1,0,0,1,15,10]}")));
+
+        model.transformFacts(List.of("a", "b"),
+                FloorMapTransformationMatrix.scaleAbout(2, 2, 10, 10), SCHEMA, ACCESSOR);
+
+        assertMatrix(mergedMatrix("a"), 2, 0, 0, 2, 0, 10);
+        assertMatrix(mergedMatrix("b"), 2, 0, 0, 2, 20, 10);
+    }
+
+    /**
+     * A single fact rotated about its own anchor keeps its anchor fixed and
+     * takes on the rotation in a,b,c,d.
+     */
+    @Test
+    void testTransformFacts_singleFactRotateAboutOwnCentre() {
+        model.onEntriesFetched(List.of(
+                entry("g", 100, "{\"type\":\"img\",\"tm-world-to-map\":[1,0,0,1,50,50]}")));
+
+        model.transformFacts(List.of("g"),
+                FloorMapTransformationMatrix.rotateAbout(45, 50, 50), SCHEMA, ACCESSOR);
+
+        final double cos45 = Math.cos(Math.toRadians(45));
+        assertMatrix(mergedMatrix("g"), cos45, cos45, -cos45, cos45, 50, 50);
+    }
+
+    /** A missing matrix defaults to identity before the transform is applied. */
+    @Test
+    void testTransformFacts_defaultsToIdentityWhenNoMatrix() {
+        model.onEntriesFetched(List.of(entry("g", 100, "{\"type\":\"img\"}")));
+
+        model.transformFacts(List.of("g"),
+                FloorMapTransformationMatrix.translate(5, 5), SCHEMA, ACCESSOR);
+
+        assertMatrix(mergedMatrix("g"), 1, 0, 0, 1, 5, 5);
+    }
+
+    /** Unknown ids are skipped; the return count reflects only facts found. */
+    @Test
+    void testTransformFacts_batchSkipsUnknown() {
+        model.onEntriesFetched(List.of(
+                entry("g1", 100, "{\"type\":\"img\",\"tm-world-to-map\":[1,0,0,1,0,0]}"),
+                entry("g2", 100, "{\"type\":\"img\",\"tm-world-to-map\":[1,0,0,1,0,0]}")));
+
+        final int n = model.transformFacts(List.of("g1", "g2", "ghost"),
+                FloorMapTransformationMatrix.scale(2, 2), SCHEMA, ACCESSOR);
+        assertThat(n).isEqualTo(2);
+    }
+
+    /** Null/empty id collections are a no-op returning zero. */
+    @Test
+    void testTransformFacts_emptyIds_returnsZero() {
+        assertThat(model.transformFacts(List.of(),
+                FloorMapTransformationMatrix.scale(2, 2), SCHEMA, ACCESSOR)).isZero();
+    }
+
+    /** A null/empty schema throws, mirroring translateFacts/recordObjectMove. */
+    @Test
+    void testTransformFacts_noSchema_throws() {
+        model.onEntriesFetched(List.of(
+                entry("g", 100, "{\"type\":\"img\",\"tm-world-to-map\":[1,0,0,1,0,0]}")));
+        assertThatThrownBy(() -> model.transformFacts(List.of("g"),
+                FloorMapTransformationMatrix.scale(2, 2), List.of(), ACCESSOR))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    /** The transform edits WORLD_TO_MAP only; POSITION coords are untouched. */
+    @Test
+    void testTransformFacts_leavesPositionCoordsUntouched() {
+        model.onEntriesFetched(List.of(
+                entry("g", 100,
+                        "{\"type\":\"img\",\"coords\":[7,9],\"tm-world-to-map\":[1,0,0,1,0,0]}")));
+
+        model.transformFacts(List.of("g"),
+                FloorMapTransformationMatrix.rotateAbout(30, 0, 0), SCHEMA, ACCESSOR);
+
+        final TemporalEntry e = model.buildMergedCanvasEntries().stream()
+                .filter(x -> x.getKey().equals("g")).findFirst().orElseThrow();
+        final double[] coords = ACCESSOR.getArray(ACCESSOR.parse(e.getValue()), ".coords");
+        assertThat(coords).containsExactly(7.0, 9.0);
+    }
+
+    private double[] mergedMatrix(final String key) {
+        final TemporalEntry e = model.buildMergedCanvasEntries().stream()
+                .filter(x -> x.getKey().equals(key)).findFirst().orElseThrow();
+        return ACCESSOR.getArray(ACCESSOR.parse(e.getValue()), ".tm-world-to-map");
+    }
+
+    private static void assertMatrix(final double[] m,
+                                     final double a, final double b, final double c,
+                                     final double d, final double e, final double f) {
+        assertThat(m[0]).isCloseTo(a, within(0.001));
+        assertThat(m[1]).isCloseTo(b, within(0.001));
+        assertThat(m[2]).isCloseTo(c, within(0.001));
+        assertThat(m[3]).isCloseTo(d, within(0.001));
+        assertThat(m[4]).isCloseTo(e, within(0.001));
+        assertThat(m[5]).isCloseTo(f, within(0.001));
+    }
+
+    // -----------------------------------------------------------------------
     // stageFactDeletion
     // -----------------------------------------------------------------------
 

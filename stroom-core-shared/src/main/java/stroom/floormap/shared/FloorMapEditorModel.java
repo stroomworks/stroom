@@ -483,8 +483,9 @@ public class FloorMapEditorModel {
      * ({@code e, f}); rotation/scale ({@code a, b, c, d}) are preserved. Facts
      * not found are skipped.
      *
-     * <p>This is the batch-move capability behind a future multi-select drag;
-     * the current single-select drag still uses {@link #recordObjectMove}.</p>
+     * <p>Thin wrapper over {@link #transformFacts} with a pure-translation
+     * transform: {@code translate(dx,dy) · oldMatrix} adds {@code (dx,dy)} to
+     * {@code e, f} and leaves {@code a, b, c, d} untouched.</p>
      *
      * @return the number of facts translated
      * @throws IllegalStateException if the schema is null or empty
@@ -492,6 +493,36 @@ public class FloorMapEditorModel {
     public int translateFacts(final Collection<String> objectIds,
                               final double dx,
                               final double dy,
+                              final List<FloorMapFieldMapping> schema,
+                              final ValueAccessor accessor) {
+        return transformFacts(objectIds,
+                FloorMapTransformationMatrix.translate(dx, dy), schema, accessor);
+    }
+
+    /**
+     * Applies a map-space affine {@code mapSpaceTransform} to each of the given
+     * facts as a single batch action — the model side of a multi-select
+     * move/rotate/scale. Because a fact's placement is {@code map = worldToMap ·
+     * world}, transforming the whole selection by {@code T} means setting each
+     * fact's {@code newWorldToMap = T · oldWorldToMap} (via
+     * {@link FloorMapTransformationMatrix#multiply}). This simultaneously
+     * repositions the fact (its {@code e, f}) and reorients/rescales its own
+     * {@code a, b, c, d} about the transform's pivot — correct for both single
+     * and group transforms. A missing/short matrix defaults to identity. Facts
+     * not found are skipped, and {@code POSITION} coords are left untouched
+     * (placement is matrix-based).
+     *
+     * <p>Build {@code mapSpaceTransform} with the pivot baked in — e.g.
+     * {@link FloorMapTransformationMatrix#rotateAbout} /
+     * {@link FloorMapTransformationMatrix#scaleAbout} about the selection's
+     * bounding-box centre. Reads the merged (server + pending) state so gestures
+     * compose onto already-staged edits.</p>
+     *
+     * @return the number of facts transformed
+     * @throws IllegalStateException if the schema is null or empty
+     */
+    public int transformFacts(final Collection<String> objectIds,
+                              final FloorMapTransformationMatrix mapSpaceTransform,
                               final List<FloorMapFieldMapping> schema,
                               final ValueAccessor accessor) {
         if (objectIds == null || objectIds.isEmpty()) {
@@ -503,7 +534,7 @@ public class FloorMapEditorModel {
                     + "Please configure a Value Schema in the Settings tab.");
         }
         final List<TemporalEntry> all = pendingChanges.applyTo(serverEntriesAtCurrentTime);
-        int moved = 0;
+        int transformed = 0;
         for (final String objectId : objectIds) {
             for (final TemporalEntry e : all) {
                 if (objectId.equals(e.getKey())) {
@@ -514,18 +545,20 @@ public class FloorMapEditorModel {
                         if (m == null || m.length < 6) {
                             m = new double[]{1, 0, 0, 1, 0, 0};
                         }
-                        final FloorMapTransformationMatrix translated =
+                        final FloorMapTransformationMatrix oldMatrix =
                                 new FloorMapTransformationMatrix(
-                                        m[0], m[1], m[2], m[3], m[4] + dx, m[5] + dy);
+                                        m[0], m[1], m[2], m[3], m[4], m[5]);
+                        final FloorMapTransformationMatrix newMatrix =
+                                mapSpaceTransform.multiply(oldMatrix);
                         pendingChanges.recordUpdate(buildUpdatedEntryWithMatrix(
-                                e, Role.WORLD_TO_MAP, translated, schema, accessor));
-                        moved++;
+                                e, Role.WORLD_TO_MAP, newMatrix, schema, accessor));
+                        transformed++;
                     }
                     break;
                 }
             }
         }
-        return moved;
+        return transformed;
     }
 
     // -----------------------------------------------------------------------

@@ -85,12 +85,31 @@ public class FloorMapCanvasViewImpl
      */
     private static final int OBJECT_SIZE = 60;
 
+    /** On-screen size (px) of a square scale handle. */
+    private static final double HANDLE_SIZE_PX = 8;
+    /** On-screen radius (px) of the round rotation handle. */
+    private static final double ROTATE_HANDLE_RADIUS_PX = 5;
+    /** Gap (px) between the top edge of the selection frame and the rotation handle. */
+    private static final double ROTATE_HANDLE_OFFSET_PX = 24;
+    /** Minimum on-screen frame size (px) so the handles stay separable on tiny objects. */
+    private static final double MIN_FRAME_PX = 24;
+    private static final String HANDLE_STROKE = "#1e88e5";
+    private static final String HANDLE_FILL = "#ffffff";
+
     private final Widget widget;
 
     private final Map<String, Double> imageAspectRatioCache = new HashMap<>();
     private final Set<String> loadingImages = new HashSet<>();
     private Runnable redrawListener;
     private Runnable resizeListener;
+
+    // Geometry of the last draw(), captured so hitTestScreenRect() can project
+    // fact bounds to screen after the fact (map→screen uses these + pan/zoom).
+    private double lastScale = 1;
+    private double lastOffsetX;
+    private double lastOffsetY;
+    private List<Fact> lastFacts;
+    private Set<String> lastSelectedIds;
 
     @UiField
     HTML svgContainer;
@@ -193,8 +212,19 @@ public class FloorMapCanvasViewImpl
                      final List<FloorMapObject> events,
                      final Set<String> selectedObjectIds,
                      final List<TypeStyle> typeStyles,
-                     final boolean showGrid) {
+                     final boolean showGrid,
+                     final double[] marqueeRectPx,
+                     final boolean drawSelectionHandles) {
         final HtmlBuilder htmlBuilder = new HtmlBuilder();
+
+        // Cache this frame's geometry so hitTestScreenRect()/getSelectionFrame()
+        // can project fact bounds to screen afterwards (image sizes live only in
+        // this view).
+        this.lastScale = scale;
+        this.lastOffsetX = x;
+        this.lastOffsetY = y;
+        this.lastFacts = facts;
+        this.lastSelectedIds = selectedObjectIds;
 
         htmlBuilder.elem(svg -> {
 
@@ -234,6 +264,17 @@ public class FloorMapCanvasViewImpl
                 }, SafeHtmlUtil.from("g"), new Attribute("transform", "scale(1,-1)")),
                 SafeHtmlUtil.from("g"),
                     new Attribute("transform", "translate(" + x + "," + y + ") scale(" + scale + ")"));
+
+            // Rubber-band selection marquee — screen space, drawn at the SVG
+            // root (no pan/zoom transform), painted on top of the scene.
+            if (marqueeRectPx != null) {
+                appendMarquee(svg, marqueeRectPx);
+            }
+
+            // Selection frame + scale/rotate handles — screen space, on top.
+            if (drawSelectionHandles) {
+                appendSelectionHandles(svg);
+            }
         },
             SafeHtmlUtil.from("svg"),
             new Attribute("width", "100%"),
@@ -242,6 +283,217 @@ public class FloorMapCanvasViewImpl
         );
 
         svgContainer.setHTML(htmlBuilder.toSafeHtml());
+    }
+
+    /**
+     * Draws the rubber-band selection rectangle at the SVG root in screen space.
+     *
+     * @param svg    the SVG root builder
+     * @param rectPx {@code {minX, minY, maxX, maxY}} in element pixels
+     */
+    private void appendMarquee(final HtmlBuilder svg, final double[] rectPx) {
+        svg.elem(SafeHtmlUtil.from("rect"),
+                new Attribute("x", String.valueOf(rectPx[0])),
+                new Attribute("y", String.valueOf(rectPx[1])),
+                new Attribute("width", String.valueOf(rectPx[2] - rectPx[0])),
+                new Attribute("height", String.valueOf(rectPx[3] - rectPx[1])),
+                new Attribute("fill", "#1e88e5"),
+                new Attribute("fill-opacity", "0.12"),
+                new Attribute("stroke", "#1e88e5"),
+                new Attribute("stroke-width", "1"),
+                new Attribute("stroke-dasharray", "4,4"),
+                new Attribute("pointer-events", "none"));
+    }
+
+    @Override
+    public Set<String> hitTestScreenRect(final double[] rectPx) {
+        final Set<String> hits = new HashSet<>();
+        if (lastFacts == null || rectPx == null) {
+            return hits;
+        }
+        final double minX = rectPx[0];
+        final double minY = rectPx[1];
+        final double maxX = rectPx[2];
+        final double maxY = rectPx[3];
+        for (final Fact fact : lastFacts) {
+            final double[] b = factScreenBounds(fact);
+            // AABB intersection (touch counts as a hit).
+            if (b != null && b[0] <= maxX && b[2] >= minX && b[1] <= maxY && b[3] >= minY) {
+                hits.add(fact.getKey());
+            }
+        }
+        return hits;
+    }
+
+    /**
+     * Returns a fact's on-screen bounding box {@code {minX, minY, maxX, maxY}}
+     * using the last-drawn scale/pan. Image facts use the projected corners of
+     * their placed image rect; imageless glyphs use a fixed-size box around the
+     * projected anchor. Returns {@code null} if the fact has no matrix.
+     */
+    private double[] factScreenBounds(final Fact fact) {
+        final FloorMapTransformationMatrix w2m = fact.getWorldToMap();
+        if (w2m == null) {
+            return null;
+        }
+        if (fact.hasImage()) {
+            final Double ar = imageAspectRatioCache.get(fact.getImage());
+            final double aspect = ar != null ? ar : 1.0;
+            final double w = IMAGE_DISPLAY_WIDTH;
+            final double h = w / aspect;
+            // image-local → map space (matches the render wrapper transform:
+            // worldToMap · translate(0,h) · scale(1,-1)).
+            final FloorMapTransformationMatrix m = w2m
+                    .multiply(FloorMapTransformationMatrix.translate(0, h))
+                    .multiply(FloorMapTransformationMatrix.scale(1, -1));
+            final double[][] corners = {
+                    m.transformPoint(0, 0), m.transformPoint(w, 0),
+                    m.transformPoint(0, h), m.transformPoint(w, h)};
+            double minX = Double.MAX_VALUE;
+            double minY = Double.MAX_VALUE;
+            double maxX = -Double.MAX_VALUE;
+            double maxY = -Double.MAX_VALUE;
+            for (final double[] c : corners) {
+                final double sx = lastOffsetX + lastScale * c[0];
+                final double sy = lastOffsetY - lastScale * c[1];
+                minX = Math.min(minX, sx);
+                minY = Math.min(minY, sy);
+                maxX = Math.max(maxX, sx);
+                maxY = Math.max(maxY, sy);
+            }
+            return new double[]{minX, minY, maxX, maxY};
+        }
+        // Imageless glyph: a fixed screen-size box around the projected anchor.
+        final double[] pos = fact.getPosition();
+        final double[] mapPt = w2m.transformPoint(
+                pos != null ? pos[0] : 0, pos != null ? pos[1] : 0);
+        final double sx = lastOffsetX + lastScale * mapPt[0];
+        final double sy = lastOffsetY - lastScale * mapPt[1];
+        final double half = OBJECT_SIZE / 2.0;
+        return new double[]{sx - half, sy - half, sx + half, sy + half};
+    }
+
+    @Override
+    public double[] getSelectionFrame() {
+        return computeSelectionFrame();
+    }
+
+    /**
+     * Returns the screen-space bounding box {@code {minX, minY, maxX, maxY}} of
+     * the currently selected facts (union of their on-screen bounds), padded to
+     * a minimum size so the handles stay separable. Returns {@code null} when
+     * nothing is selected or laid out.
+     */
+    private double[] computeSelectionFrame() {
+        if (lastFacts == null || lastSelectedIds == null || lastSelectedIds.isEmpty()) {
+            return null;
+        }
+        double minX = Double.MAX_VALUE;
+        double minY = Double.MAX_VALUE;
+        double maxX = -Double.MAX_VALUE;
+        double maxY = -Double.MAX_VALUE;
+        boolean any = false;
+        for (final Fact f : lastFacts) {
+            if (lastSelectedIds.contains(f.getKey())) {
+                final double[] b = factScreenBounds(f);
+                if (b != null) {
+                    minX = Math.min(minX, b[0]);
+                    minY = Math.min(minY, b[1]);
+                    maxX = Math.max(maxX, b[2]);
+                    maxY = Math.max(maxY, b[3]);
+                    any = true;
+                }
+            }
+        }
+        if (!any) {
+            return null;
+        }
+        if (maxX - minX < MIN_FRAME_PX) {
+            final double c = (minX + maxX) / 2;
+            minX = c - MIN_FRAME_PX / 2;
+            maxX = c + MIN_FRAME_PX / 2;
+        }
+        if (maxY - minY < MIN_FRAME_PX) {
+            final double c = (minY + maxY) / 2;
+            minY = c - MIN_FRAME_PX / 2;
+            maxY = c + MIN_FRAME_PX / 2;
+        }
+        return new double[]{minX, minY, maxX, maxY};
+    }
+
+    /**
+     * Draws the selection frame outline, the 4 corner scale handles and the
+     * rotation handle above the top edge, all in screen space at the SVG root.
+     * Each handle carries an id of {@code FloorMapJsonKeys.HANDLE_PREFIX + role}
+     * so the presenter can route a mousedown on it to a scale/rotate gesture.
+     * Scaling is always aspect-preserving, so only corner handles are offered.
+     */
+    private void appendSelectionHandles(final HtmlBuilder svg) {
+        final double[] f = computeSelectionFrame();
+        if (f == null) {
+            return;
+        }
+        final double minX = f[0];
+        final double minY = f[1];
+        final double maxX = f[2];
+        final double maxY = f[3];
+        final double cx = (minX + maxX) / 2;
+
+        // Frame outline (non-interactive).
+        svg.elem(SafeHtmlUtil.from("rect"),
+                new Attribute("x", String.valueOf(minX)),
+                new Attribute("y", String.valueOf(minY)),
+                new Attribute("width", String.valueOf(maxX - minX)),
+                new Attribute("height", String.valueOf(maxY - minY)),
+                new Attribute("fill", "none"),
+                new Attribute("stroke", HANDLE_STROKE),
+                new Attribute("stroke-width", "1"),
+                new Attribute("stroke-dasharray", "4,3"),
+                new Attribute("pointer-events", "none"));
+
+        // Rotation handle above the top edge, with a connector line.
+        final double ry = minY - ROTATE_HANDLE_OFFSET_PX;
+        svg.elem(SafeHtmlUtil.from("line"),
+                new Attribute("x1", String.valueOf(cx)),
+                new Attribute("y1", String.valueOf(minY)),
+                new Attribute("x2", String.valueOf(cx)),
+                new Attribute("y2", String.valueOf(ry)),
+                new Attribute("stroke", HANDLE_STROKE),
+                new Attribute("stroke-width", "1"),
+                new Attribute("pointer-events", "none"));
+        appendRotateHandle(svg, cx, ry);
+
+        // 4 corner scale handles (aspect-preserving scale about the opposite corner).
+        appendScaleHandle(svg, minX, minY, "scale-nw", "nwse-resize");
+        appendScaleHandle(svg, maxX, minY, "scale-ne", "nesw-resize");
+        appendScaleHandle(svg, maxX, maxY, "scale-se", "nwse-resize");
+        appendScaleHandle(svg, minX, maxY, "scale-sw", "nesw-resize");
+    }
+
+    private void appendScaleHandle(final HtmlBuilder svg, final double x, final double y,
+                                   final String role, final String cursor) {
+        svg.elem(SafeHtmlUtil.from("rect"),
+                new Attribute("id", FloorMapJsonKeys.HANDLE_PREFIX + role),
+                new Attribute("x", String.valueOf(x - HANDLE_SIZE_PX / 2)),
+                new Attribute("y", String.valueOf(y - HANDLE_SIZE_PX / 2)),
+                new Attribute("width", String.valueOf(HANDLE_SIZE_PX)),
+                new Attribute("height", String.valueOf(HANDLE_SIZE_PX)),
+                new Attribute("fill", HANDLE_FILL),
+                new Attribute("stroke", HANDLE_STROKE),
+                new Attribute("stroke-width", "1"),
+                new Attribute("cursor", cursor));
+    }
+
+    private void appendRotateHandle(final HtmlBuilder svg, final double x, final double y) {
+        svg.elem(SafeHtmlUtil.from("circle"),
+                new Attribute("id", FloorMapJsonKeys.HANDLE_PREFIX + "rotate"),
+                new Attribute("cx", String.valueOf(x)),
+                new Attribute("cy", String.valueOf(y)),
+                new Attribute("r", String.valueOf(ROTATE_HANDLE_RADIUS_PX)),
+                new Attribute("fill", HANDLE_FILL),
+                new Attribute("stroke", HANDLE_STROKE),
+                new Attribute("stroke-width", "1"),
+                new Attribute("cursor", "grab"));
     }
 
     /**
