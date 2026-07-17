@@ -76,9 +76,10 @@ class TestFloorMapQueryBuilder {
         final String query = FloorMapQueryBuilder.buildFactsQuery(
                 schema, ValueFormat.JSON);
 
-        // Hyphenated keys need quoting in jq
+        // Hyphenated keys need quoting in jq — with the leading dot for field
+        // access (a bare quoted string is a jq literal, not a lookup).
         assertThat(query).contains(
-                "jq(Value, \"\\\"tm-world-to-map\\\"\") as tm_world_to_map");
+                "jq(Value, \".\\\"tm-world-to-map\\\"\") as tm_world_to_map");
     }
 
     @Test
@@ -155,7 +156,7 @@ class TestFloorMapQueryBuilder {
         final String expr = FloorMapQueryBuilder.buildExtractExpression(
                 ".tm-world-to-map", ValueFormat.JSON);
         assertThat(expr).isEqualTo(
-                "jq(Value, \"\\\"tm-world-to-map\\\"\")");
+                "jq(Value, \".\\\"tm-world-to-map\\\"\")");
     }
 
     @Test

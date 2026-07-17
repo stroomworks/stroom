@@ -33,15 +33,28 @@ public class FloorMapObject {
     private double y;
 
     /**
-     * Optional movement trail for animated person objects during playback.
+     * Optional movement trail for animated objects during playback.
      * Each entry is a {@code double[3]} of {@code [mapX, mapY, alpha]}, where
      * {@code alpha} is in [0.0, 1.0] and represents how opaque that trail segment
      * should be (1.0 = fully visible, 0.0 = invisible).
      * <p>
      * This field is purely a client-side decoration and is never serialised to
-     * the server.  It is {@code null} for all non-person or non-animated objects.
+     * the server.  It is {@code null} for non-animated objects.
      */
     private List<double[]> trail;
+
+    /**
+     * Optional image-bearing fact twin for this entity: when the same key
+     * exists as a fact carrying an image (an asset attached to the entity),
+     * the canvas renders that image — scaled by the fact's world-to-map
+     * matrix — at this object's live position, instead of the generic type
+     * glyph.
+     * <p>
+     * Purely a client-side decoration set by the canvas presenter; never
+     * serialised to the server. {@code null} when the entity has no
+     * image-bearing fact.
+     */
+    private Fact imageFact;
 
     public FloorMapObject(final String id,
                           final String type,
@@ -93,5 +106,21 @@ public class FloorMapObject {
      */
     public void setTrail(final List<double[]> trail) {
         this.trail = trail;
+    }
+
+    /**
+     * Returns this entity's image-bearing fact twin, or {@code null} when the
+     * entity should render as the generic type glyph.
+     */
+    public Fact getImageFact() {
+        return imageFact;
+    }
+
+    /**
+     * Attaches (or clears, with {@code null}) the image-bearing fact twin.
+     * Only set by the client-side canvas presenter; never serialised.
+     */
+    public void setImageFact(final Fact imageFact) {
+        this.imageFact = imageFact;
     }
 }

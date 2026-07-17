@@ -88,7 +88,10 @@ public final class FloorMapQueryBuilder {
             case JSON -> {
                 final String key = ValuePathAccessor.toKey(path);
                 if (needsQuoting(key)) {
-                    yield "jq(Value, \"\\\"" + key + "\\\"\")";
+                    // Field access on a quoted key needs the leading dot:
+                    // ."tm-world-to-map". Without it the jq expression is just
+                    // a string literal that evaluates to itself.
+                    yield "jq(Value, \".\\\"" + key + "\\\"\")";
                 } else {
                     yield "jq(Value, \"" + path + "\")";
                 }

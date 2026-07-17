@@ -178,6 +178,15 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
             } else if (previousContent == floorMapEditorPresenter && floorMapEditorPresenter != null) {
                 floorMapEditorPresenter.pauseTimeline();
             }
+
+            // Returning to the Map tab re-queries facts so edits saved from the
+            // Editor tab (moved objects, new icons/backgrounds) are visible —
+            // the Map tab otherwise only re-queries on its own timeline moves.
+            if (content == floorMapMapPresenter && floorMapMapPresenter != null
+                    && previousContent != null) {
+                floorMapMapPresenter.refresh();
+            }
+
             previousContent = content;
         }
 
@@ -238,7 +247,15 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
     private void flushEditorThenSaveAssets(final FloorMapDoc document,
                                             final Consumer<FloorMapDoc> callback) {
         if (floorMapEditorPresenter != null && floorMapEditorPresenter.hasPendingChanges()) {
-            floorMapEditorPresenter.onSave(document, doc -> documentAssetPresenter.onSave(doc, callback));
+            floorMapEditorPresenter.onSave(document, doc -> {
+                // The flush has landed in the temporal store — refresh the Map
+                // tab so it picks up the newly-persisted facts (it might be the
+                // visible tab, e.g. when saving via the keyboard shortcut).
+                if (floorMapMapPresenter != null) {
+                    floorMapMapPresenter.refresh();
+                }
+                documentAssetPresenter.onSave(doc, callback);
+            });
         } else {
             documentAssetPresenter.onSave(document, callback);
         }

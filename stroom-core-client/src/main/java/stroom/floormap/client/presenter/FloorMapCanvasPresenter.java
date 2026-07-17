@@ -1010,6 +1010,23 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
             }
         }
 
+        // Decorate each entity with its image-bearing fact twin (if any) so
+        // the view renders the entity's configured icon at the live position
+        // instead of the generic type glyph. The static twin itself is
+        // suppressed by factsExcludingOverlay, so without this the icon would
+        // vanish the moment the entity appears in the events stream. Set
+        // unconditionally (null clears) because eventObjects instances are
+        // reused across draws.
+        final Map<String, Fact> imageFactsByKey = new HashMap<>();
+        for (final Fact fact : facts) {
+            if (fact.hasImage()) {
+                imageFactsByKey.put(fact.getKey(), fact);
+            }
+        }
+        for (final FloorMapObject obj : combined) {
+            obj.setImageFact(imageFactsByKey.get(obj.getId()));
+        }
+
         return combined;
     }
 

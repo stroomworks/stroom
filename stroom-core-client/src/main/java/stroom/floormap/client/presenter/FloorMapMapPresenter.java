@@ -696,6 +696,22 @@ public class FloorMapMapPresenter
     }
 
     /**
+     * Re-runs the facts query at the current time so the canvas reflects the
+     * latest persisted state.
+     *
+     * <p>Called by {@link FloorMapPresenter} when the user selects the Map tab
+     * and after the Editor tab's staged changes are flushed on save — the Map
+     * tab otherwise only re-queries on its own timeline changes, so edits made
+     * on the Editor tab (moved objects, new icons/backgrounds) would not appear
+     * here until the timeline was next moved.</p>
+     */
+    public void refresh() {
+        if (getEntity() != null) {
+            onTimeChange(selectedTime);
+        }
+    }
+
+    /**
      * Returns this tab's timeline presenter, used as the time-change source
      * that the events Query tab should follow (so it ignores time-changes from
      * the Editor tab or from other open FloorMap documents).

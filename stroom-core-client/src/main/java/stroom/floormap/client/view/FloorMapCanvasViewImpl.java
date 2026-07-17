@@ -504,12 +504,50 @@ public class FloorMapCanvasViewImpl
     private void appendImageFact(final HtmlBuilder parent,
                                  final Fact fact,
                                  final boolean isSelected) {
+        appendImageGlyph(parent, fact, fact.getWorldToMap(), false, isSelected, "#1e88e5");
+    }
+
+    /**
+     * Draws an image glyph — an {@code <image>} at its local size, wrapped in a
+     * {@code <g>} carrying the given placement matrix so it is placed and
+     * scaled in map space. Used for image facts (placed by their own
+     * world-to-map) and for event entities with an image-bearing fact twin
+     * (placed by the twin's scale/rotation but the entity's live position).
+     *
+     * @param placement       the full placement matrix to apply
+     * @param centred         when {@code true}, the image's centre (rather than
+     *                        its bottom-left corner) lands on the placement
+     *                        translation point — used for event entities so the
+     *                        icon sits on the entity position like a shape
+     *                        glyph would
+     * @param selectionColour selection border colour when selected (facts use
+     *                        the Editor blue, tracked entities the orange
+     *                        selection colour)
+     */
+    private void appendImageGlyph(final HtmlBuilder parent,
+                                  final Fact fact,
+                                  final FloorMapTransformationMatrix placement,
+                                  final boolean centred,
+                                  final boolean isSelected,
+                                  final String selectionColour) {
         final Double cachedAspectRatio = imageAspectRatioCache.get(fact.getImage());
         final double aspectRatio = cachedAspectRatio != null ? cachedAspectRatio : 1.0;
         if (cachedAspectRatio == null) {
             loadImageAspectRatio(fact.getImage());
         }
         final double imgHeight = (double) IMAGE_DISPLAY_WIDTH / aspectRatio;
+
+        FloorMapTransformationMatrix effective = placement;
+        if (centred) {
+            // Shift the translation by the placement-transformed local centre
+            // so the image's midpoint lands on the translation point.
+            final double cx = IMAGE_DISPLAY_WIDTH / 2.0;
+            final double cy = imgHeight / 2.0;
+            effective = new FloorMapTransformationMatrix(
+                    placement.getA(), placement.getB(), placement.getC(), placement.getD(),
+                    placement.getE() - (placement.getA() * cx + placement.getC() * cy),
+                    placement.getF() - (placement.getB() * cx + placement.getD() * cy));
+        }
 
         parent.elem(imgGroup -> {
             imgGroup.elem(SafeHtmlUtil.from("image"),
@@ -529,7 +567,7 @@ public class FloorMapCanvasViewImpl
                     new Attribute("width", String.valueOf(IMAGE_DISPLAY_WIDTH)),
                     new Attribute("height", String.valueOf(imgHeight)),
                     new Attribute("fill", "none"),
-                    new Attribute("stroke", "#1e88e5"),
+                    new Attribute("stroke", selectionColour),
                     new Attribute("stroke-width", "8"),
                     new Attribute("vector-effect", "non-scaling-stroke"),
                     new Attribute("pointer-events", "none"));
@@ -537,11 +575,11 @@ public class FloorMapCanvasViewImpl
         }, SafeHtmlUtil.from("g"),
                 // Anchor the raster at its BOTTOM-left in map space: translate up
                 // by its own height, then counter-flip (scale 1,-1) to undo the
-                // Y-up flip group and keep it upright. So an identity world-to-map
+                // Y-up flip group and keep it upright. So an identity placement
                 // places the image in the visible first quadrant (up-and-right of
-                // the origin) rather than below it; a real world-to-map (applied
-                // outermost) then positions/scales/rotates from there.
-                new Attribute("transform", fact.getWorldToMap().toSvgMatrix()
+                // the origin) rather than below it; a real placement matrix
+                // (applied outermost) then positions/scales/rotates from there.
+                new Attribute("transform", effective.toSvgMatrix()
                         + " translate(0," + imgHeight + ") scale(1,-1)"));
     }
 
@@ -568,9 +606,12 @@ public class FloorMapCanvasViewImpl
     }
 
     /**
-     * Draws an event entity at its map coordinates: the type-styled default
-     * graphic (same rendering as an imageless fact), preceded by its movement
-     * trail — a fading path tinted with the entity's type colour.
+     * Draws an event entity at its map coordinates, preceded by its movement
+     * trail — a fading path tinted with the entity's type colour. The entity
+     * itself renders as its attached icon (when an image-bearing fact twin is
+     * present, scaled/rotated by that fact's world-to-map but placed at the
+     * live position) or otherwise as the type-styled default graphic, the same
+     * rendering as an imageless fact.
      */
     private void appendEvent(final HtmlBuilder parent,
                              final FloorMapObject obj,
@@ -607,10 +648,22 @@ public class FloorMapCanvasViewImpl
             }
         }
 
-        // The trail above stays in map space so it scales with the map; the
-        // glyph itself is fixed screen size.
-        appendStyledGlyph(parent, obj.getId(), obj.getType(), obj.getX(), obj.getY(),
-                isSelected, typeStyles, scale);
+        final Fact imageFact = obj.getImageFact();
+        if (imageFact != null) {
+            // The entity has an attached icon: keep the icon's configured
+            // scale/rotation (a,b,c,d) but centre it on the entity's live
+            // position, so the icon follows the events and animates.
+            final FloorMapTransformationMatrix w2m = imageFact.getWorldToMap();
+            final FloorMapTransformationMatrix placement = new FloorMapTransformationMatrix(
+                    w2m.getA(), w2m.getB(), w2m.getC(), w2m.getD(),
+                    obj.getX(), obj.getY());
+            appendImageGlyph(parent, imageFact, placement, true, isSelected, "#ff9800");
+        } else {
+            // The trail above stays in map space so it scales with the map;
+            // the glyph itself is fixed screen size.
+            appendStyledGlyph(parent, obj.getId(), obj.getType(), obj.getX(), obj.getY(),
+                    isSelected, typeStyles, scale);
+        }
     }
 
     /**
