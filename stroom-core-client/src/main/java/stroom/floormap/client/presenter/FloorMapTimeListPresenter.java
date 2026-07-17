@@ -17,6 +17,7 @@
 package stroom.floormap.client.presenter;
 
 import stroom.data.grid.client.MyDataGrid;
+import stroom.floormap.client.FloorMapEditorHelp;
 import stroom.floormap.client.presenter.FloorMapTimeListPresenter.FloorMapTimeListView;
 import stroom.floormap.shared.FloorMapEditorModel;
 import stroom.svg.client.SvgPresets;
@@ -24,6 +25,7 @@ import stroom.util.client.JSONUtil;
 import stroom.util.shared.TemporalEntry;
 import stroom.widget.button.client.ButtonPanel;
 import stroom.widget.button.client.ButtonView;
+import stroom.widget.help.client.HelpButton;
 
 import com.google.gwt.dom.client.TableRowElement;
 import com.google.gwt.json.client.JSONObject;
@@ -86,6 +88,13 @@ public class FloorMapTimeListPresenter extends MyPresenterWidget<FloorMapTimeLis
         addButton = toolbar.addButton(SvgPresets.ADD);
         deleteButton = toolbar.addButton(SvgPresets.DELETE);
         deleteButton.setEnabled(false);
+
+        // Help button (Editor-only panel).
+        final HelpButton helpButton = HelpButton.create("Time List help");
+        helpButton.setHelpContentHeading("Time List");
+        helpButton.setHelpContent(FloorMapEditorHelp.timeList());
+        toolbar.addButton(helpButton);
+
         view.setToolbar(toolbar);
     }
 
