@@ -17,6 +17,7 @@
 package stroom.floormap.client.presenter;
 
 import stroom.data.grid.client.MyDataGrid;
+import stroom.floormap.client.FloorMapEditorHelp;
 import stroom.floormap.client.ValuePathAccessor;
 import stroom.floormap.client.presenter.FloorMapFactListPresenter.FloorMapFactListView;
 import stroom.floormap.shared.FloorMapEntryParser;
@@ -28,6 +29,7 @@ import stroom.util.client.JSONUtil;
 import stroom.widget.button.client.ButtonPanel;
 import stroom.widget.button.client.ButtonView;
 import stroom.widget.button.client.InlineSvgToggleButton;
+import stroom.widget.help.client.HelpButton;
 import stroom.widget.util.client.MultiSelectionModelImpl;
 
 import com.google.gwt.json.client.JSONObject;
@@ -117,6 +119,13 @@ public class FloorMapFactListPresenter extends MyPresenterWidget<FloorMapFactLis
         showAllButton.setTitle("Show All (ignore time filter)");
         showAllButton.setState(false);
         buttonPanel.addButton(showAllButton);
+
+        // Help button (Editor-only panel).
+        final HelpButton helpButton = HelpButton.create("Fact List help");
+        helpButton.setHelpContentHeading("Fact List");
+        helpButton.setHelpContent(FloorMapEditorHelp.factList());
+        buttonPanel.addButton(helpButton);
+
         view.setToolbar(buttonPanel);
 
         //noinspection unused e

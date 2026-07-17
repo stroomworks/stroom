@@ -30,8 +30,8 @@
                 </g:FlowPanel>
             </g:FlowPanel>
 
-            <!-- Right controls: speed badge, settings gear icon -->
-            <g:FlowPanel addStyleNames="stroom-floormap-timeline-right-controls">
+            <!-- Right controls: speed badge, settings gear icon, optional help button -->
+            <g:FlowPanel ui:field="rightControls" addStyleNames="stroom-floormap-timeline-right-controls">
                 <g:Label ui:field="speedBadge" addStyleNames="stroom-floormap-timeline-speed-badge" />
                 <b:SvgButton ui:field="settingsButton" addStyleNames="stroom-floormap-timeline-settings-button" />
             </g:FlowPanel>
