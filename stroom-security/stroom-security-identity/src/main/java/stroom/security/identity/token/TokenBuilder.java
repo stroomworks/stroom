@@ -42,9 +42,38 @@ public class TokenBuilder {
     private String state;
     private PublicJsonWebKey publicJsonWebKey;
     private String clientId;
+    private String purpose;
+    private Long passwordLastChangedMs;
+    private String resetTokenNonce;
 
     public TokenBuilder subject(final String subject) {
         this.subject = subject;
+        return this;
+    }
+
+    /**
+     * Restrict what the token may be used for, see {@link OpenId#CLAIM__STROOM_PURPOSE}. Leave unset for
+     * a normal token that can be used to authenticate API requests.
+     */
+    public TokenBuilder purpose(final String purpose) {
+        this.purpose = purpose;
+        return this;
+    }
+
+    /**
+     * Bind the token to the account's current password, see
+     * {@link OpenId#CLAIM__STROOM_PASSWORD_LAST_CHANGED_MS}.
+     */
+    public TokenBuilder passwordLastChangedMs(final Long passwordLastChangedMs) {
+        this.passwordLastChangedMs = passwordLastChangedMs;
+        return this;
+    }
+
+    /**
+     * Identify which password reset token this is, see {@link OpenId#CLAIM__STROOM_RESET_TOKEN_NONCE}.
+     */
+    public TokenBuilder resetTokenNonce(final String resetTokenNonce) {
+        this.resetTokenNonce = resetTokenNonce;
         return this;
     }
 
@@ -100,6 +129,15 @@ public class TokenBuilder {
         }
         if (state != null) {
             claims.setClaim(OpenId.STATE, state);
+        }
+        if (purpose != null) {
+            claims.setClaim(OpenId.CLAIM__STROOM_PURPOSE, purpose);
+        }
+        if (passwordLastChangedMs != null) {
+            claims.setClaim(OpenId.CLAIM__STROOM_PASSWORD_LAST_CHANGED_MS, passwordLastChangedMs);
+        }
+        if (resetTokenNonce != null) {
+            claims.setClaim(OpenId.CLAIM__STROOM_RESET_TOKEN_NONCE, resetTokenNonce);
         }
 
         final JsonWebSignature jws = new JsonWebSignature();

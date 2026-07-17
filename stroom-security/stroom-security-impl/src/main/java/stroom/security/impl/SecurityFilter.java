@@ -252,6 +252,9 @@ class SecurityFilter implements Filter {
         // Test for internal IdP sign in request.
         if (ResourcePaths.UI_SERVLET_NAME.equals(servletName)
             || ResourcePaths.SIGN_IN_SERVLET_NAME.equals(servletName)
+            // The password reset page is for users who cannot sign in, so like the sign in page it
+            // must be served without authenticating first.
+            || ResourcePaths.RESET_PASSWORD_SERVLET_NAME.equals(servletName)
             || ResourcePaths.STROOM_SERVLET_NAME.equals(servletName)) {
             LOGGER.debug("Unauthenticated static content, servletName: {}, fullPath: {}, servletPath: {}",
                     servletName, fullPath, servletPath);

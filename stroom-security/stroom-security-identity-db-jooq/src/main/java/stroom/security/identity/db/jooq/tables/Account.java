@@ -4,9 +4,9 @@
 package stroom.security.identity.db.jooq.tables;
 
 
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.List;
+import stroom.security.identity.db.jooq.Keys;
+import stroom.security.identity.db.jooq.Stroom;
+import stroom.security.identity.db.jooq.tables.records.AccountRecord;
 
 import org.jooq.Condition;
 import org.jooq.Field;
@@ -26,9 +26,9 @@ import org.jooq.impl.DSL;
 import org.jooq.impl.SQLDataType;
 import org.jooq.impl.TableImpl;
 
-import stroom.security.identity.db.jooq.Keys;
-import stroom.security.identity.db.jooq.Stroom;
-import stroom.security.identity.db.jooq.tables.records.AccountRecord;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.List;
 
 
 /**
@@ -167,6 +167,16 @@ public class Account extends TableImpl<AccountRecord> {
      */
     public final TableField<AccountRecord, Boolean> PROCESSING_ACCOUNT = createField(DSL.name("processing_account"), SQLDataType.BOOLEAN.nullable(false).defaultValue(DSL.inline("0", SQLDataType.BOOLEAN)), this, "");
 
+    /**
+     * The column <code>stroom.account.reset_token_nonce</code>.
+     */
+    public final TableField<AccountRecord, String> RESET_TOKEN_NONCE = createField(DSL.name("reset_token_nonce"), SQLDataType.VARCHAR(36), this, "");
+
+    /**
+     * The column <code>stroom.account.reset_email_requested_ms</code>.
+     */
+    public final TableField<AccountRecord, Long> RESET_EMAIL_REQUESTED_MS = createField(DSL.name("reset_email_requested_ms"), SQLDataType.BIGINT, this, "");
+
     private Account(Name alias, Table<AccountRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }
@@ -213,7 +223,7 @@ public class Account extends TableImpl<AccountRecord> {
 
     @Override
     public List<UniqueKey<AccountRecord>> getUniqueKeys() {
-        return Arrays.asList(Keys.KEY_ACCOUNT_USER_ID);
+        return Arrays.asList(Keys.KEY_ACCOUNT_USER_ID, Keys.KEY_ACCOUNT_ACCOUNT_EMAIL_IDX);
     }
 
     @Override

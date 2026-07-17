@@ -18,6 +18,7 @@ package stroom.security.impl;
 
 import stroom.security.common.impl.JwtContextFactory;
 import stroom.security.common.impl.JwtUtil;
+import stroom.security.openid.api.OpenId;
 import stroom.security.openid.api.OpenIdClientFactory;
 import stroom.security.openid.api.OpenIdConfiguration;
 import stroom.security.openid.api.PublicJsonWebKeyProvider;
@@ -123,6 +124,10 @@ class InternalJwtContextFactory implements JwtContextFactory {
             final JwtConsumer jwtConsumer = newJwtConsumer();
             final JwtContext jwtContext = jwtConsumer.process(jwt);
 
+            if (hasRestrictedPurpose(jwtContext)) {
+                return Optional.empty();
+            }
+
             if (LOGGER.isDebugEnabled()) {
                 final String uniqueIdentityClaim = openIdConfigurationProvider.get().getUniqueIdentityClaim();
                 final String userDisplayNameClaim = openIdConfigurationProvider.get().getUserDisplayNameClaim();
@@ -165,6 +170,33 @@ class InternalJwtContextFactory implements JwtContextFactory {
             }
         }
         return optJwtContext;
+    }
+
+    /**
+     * A token that was issued for a single stated purpose, e.g. the short lived token emailed to a user
+     * so they can reset a forgotten password, must never be usable as a general credential. Such a token
+     * is otherwise indistinguishable from a normal one as it is signed with the same key and carries the
+     * same subject, issuer and audience.
+     * <p>
+     * This deliberately rejects any stated purpose rather than allow listing known bad ones, so that new
+     * kinds of restricted token fail closed here without this method having to change. Normal tokens do
+     * not carry the claim at all.
+     * </p>
+     */
+    private boolean hasRestrictedPurpose(final JwtContext jwtContext) {
+        // Read the raw claim rather than asking for a String. JwtUtil.getClaimValue swallows the
+        // MalformedClaimException thrown for a value of any other type and returns empty, which would
+        // mean a token whose purpose claim is, say, a number or an array was treated as having no
+        // purpose at all and accepted as a credential. The presence of the claim is what matters here,
+        // whatever it contains.
+        final Object purpose = jwtContext.getJwtClaims().getClaimValue(OpenId.CLAIM__STROOM_PURPOSE);
+        if (purpose == null) {
+            return false;
+        }
+        LOGGER.warn(() -> LogUtil.message(
+                "Rejecting a token that was issued for the purpose '{}'. Such a token cannot be used "
+                + "to authenticate a request.", purpose));
+        return true;
     }
 
     private JwtConsumer newJwtConsumer() {

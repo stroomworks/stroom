@@ -4,10 +4,10 @@
 package stroom.security.identity.db.jooq.tables.records;
 
 
+import stroom.security.identity.db.jooq.tables.Account;
+
 import org.jooq.Record1;
 import org.jooq.impl.UpdatableRecordImpl;
-
-import stroom.security.identity.db.jooq.tables.Account;
 
 
 /**
@@ -340,6 +340,34 @@ public class AccountRecord extends UpdatableRecordImpl<AccountRecord> {
         return (Boolean) get(22);
     }
 
+    /**
+     * Setter for <code>stroom.account.reset_token_nonce</code>.
+     */
+    public void setResetTokenNonce(String value) {
+        set(23, value);
+    }
+
+    /**
+     * Getter for <code>stroom.account.reset_token_nonce</code>.
+     */
+    public String getResetTokenNonce() {
+        return (String) get(23);
+    }
+
+    /**
+     * Setter for <code>stroom.account.reset_email_requested_ms</code>.
+     */
+    public void setResetEmailRequestedMs(Long value) {
+        set(24, value);
+    }
+
+    /**
+     * Getter for <code>stroom.account.reset_email_requested_ms</code>.
+     */
+    public Long getResetEmailRequestedMs() {
+        return (Long) get(24);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -363,7 +391,7 @@ public class AccountRecord extends UpdatableRecordImpl<AccountRecord> {
     /**
      * Create a detached, initialised AccountRecord
      */
-    public AccountRecord(Integer id, Integer version, Long createTimeMs, String createUser, Long updateTimeMs, String updateUser, String userId, String email, String passwordHash, Long passwordLastChangedMs, String firstName, String lastName, String comments, Integer loginCount, Integer loginFailures, Long lastLoginMs, Long reactivatedMs, Boolean forcePasswordChange, Boolean neverExpires, Boolean enabled, Boolean inactive, Boolean locked, Boolean processingAccount) {
+    public AccountRecord(Integer id, Integer version, Long createTimeMs, String createUser, Long updateTimeMs, String updateUser, String userId, String email, String passwordHash, Long passwordLastChangedMs, String firstName, String lastName, String comments, Integer loginCount, Integer loginFailures, Long lastLoginMs, Long reactivatedMs, Boolean forcePasswordChange, Boolean neverExpires, Boolean enabled, Boolean inactive, Boolean locked, Boolean processingAccount, String resetTokenNonce, Long resetEmailRequestedMs) {
         super(Account.ACCOUNT);
 
         setId(id);
@@ -389,6 +417,8 @@ public class AccountRecord extends UpdatableRecordImpl<AccountRecord> {
         setInactive(inactive);
         setLocked(locked);
         setProcessingAccount(processingAccount);
+        setResetTokenNonce(resetTokenNonce);
+        setResetEmailRequestedMs(resetEmailRequestedMs);
         resetChangedOnNotNull();
     }
 }

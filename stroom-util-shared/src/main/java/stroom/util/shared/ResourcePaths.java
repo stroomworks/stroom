@@ -43,6 +43,12 @@ public interface ResourcePaths {
     String SIGN_IN_PATH = "/signIn";
 
     /**
+     * Used as the path for the internal IdP page that lets a user who has forgotten their password set
+     * a new one using the token that was emailed to them.
+     */
+    String RESET_PASSWORD_PATH = "/resetPassword";
+
+    /**
      * Used as the root path for all REST resources
      */
     String API_ROOT_PATH = "/api";
@@ -77,6 +83,7 @@ public interface ResourcePaths {
     String UI_SERVLET_NAME = "UI";
     String STROOM_SERVLET_NAME = "StroomServlet";
     String SIGN_IN_SERVLET_NAME = "SignInServlet";
+    String RESET_PASSWORD_SERVLET_NAME = "ResetPasswordServlet";
     String SESSION_LIST_SERVLET_NAME = "SessionListServlet";
 
 

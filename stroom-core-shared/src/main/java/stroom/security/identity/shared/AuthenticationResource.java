@@ -92,6 +92,16 @@ public interface AuthenticationResource extends RestResource, DirectRestService 
     Boolean resetEmail(
             @Parameter(description = "email", required = true) @NotNull String emailAddress);
 
+    @POST
+    @Path("/noauth/resetPassword")
+    @NotNull
+    @Operation(
+            summary = "Set a new password using the token emailed to a user who has forgotten theirs.",
+            operationId = "resetPassword")
+    ChangePasswordResponse resetPassword(
+            @Parameter(description = "resetPasswordRequest", required = true)
+            @NotNull ResetPasswordRequest resetPasswordRequest);
+
     @GET
     @Path("/noauth/fetchPasswordPolicy")
     @NotNull

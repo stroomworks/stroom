@@ -1116,6 +1116,7 @@ appConfig:
       secretEncryptionKey: ""
     identity:
       allowCertificateAuthentication: false
+      allowLockedAccountPasswordReset: false
       autoCreateAdminAccountOnBoot: false
       certificateCnCaptureGroupIndex: 1
       certificateCnPattern: ".*\\((.*)\\)"
@@ -1142,7 +1143,6 @@ appConfig:
         passwordResetSubject: "Password reset for Stroom"
         passwordResetText: "A password reset has been requested for this email address.\
           \ Please visit the following URL to reset your password: %s."
-        passwordResetUrl: "/s/resetPassword/?user=%s&token=%s"
         smtp:
           host: "localhost"
           password: null
@@ -1175,6 +1175,8 @@ appConfig:
           \ required to use a sufficiently strong password. Password must be more\
           \ than 8 characters."
         unusedAccountDeactivationThreshold: "P90D"
+      passwordResetRequestCooldown: "PT1M"
+      reactivateInactiveAccountsOnLogin: false
       token:
         accessTokenExpiration: "PT1H"
         algorithm: "RS256"

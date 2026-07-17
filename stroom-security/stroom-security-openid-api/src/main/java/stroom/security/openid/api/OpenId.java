@@ -84,5 +84,37 @@ public class OpenId {
      */
     public static final String CLAIM__NAME = "name";
 
+    /**
+     * A stroom specific claim recording what a token was issued to be used for. A token with no such
+     * claim is a normal token that may be used to authenticate API requests. A token with this claim
+     * may only be used for the stated purpose and must be rejected everywhere else.
+     * <p>
+     * The name is deliberately prefixed to reduce the chance of colliding with a claim of the same name
+     * issued by someone else. Tokens from an external IDP are verified by StandardJwtContextFactory
+     * rather than InternalJwtContextFactory, so they are not subject to the check that reads this.
+     * </p>
+     */
+    public static final String CLAIM__STROOM_PURPOSE = "stroom_purpose";
+
+    /**
+     * The value of {@link OpenId#CLAIM__STROOM_PURPOSE} on the short lived token that is emailed to a
+     * user so that they can reset a forgotten password. Such a token grants nothing except the ability
+     * to set a new password for its subject.
+     */
+    public static final String STROOM_PURPOSE__PASSWORD_RESET = "password_reset";
+
+    /**
+     * A stroom specific claim binding a password reset token to the password it was issued against, by
+     * recording the account's password last changed time. Once the password changes the claim no longer
+     * matches the account, which makes the token single use.
+     */
+    public static final String CLAIM__STROOM_PASSWORD_LAST_CHANGED_MS = "stroom_password_last_changed_ms";
+
+    /**
+     * A stroom specific claim identifying which password reset token this is. The account records the
+     * nonce of the most recently issued one, so issuing a new reset token stops any earlier one working.
+     */
+    public static final String CLAIM__STROOM_RESET_TOKEN_NONCE = "stroom_reset_token_nonce";
+
     public static final String ID_TOKEN = "id_token";
 }

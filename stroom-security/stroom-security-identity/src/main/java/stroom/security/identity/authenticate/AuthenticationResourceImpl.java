@@ -29,6 +29,7 @@ import stroom.security.identity.shared.ConfirmPasswordResponse;
 import stroom.security.identity.shared.InternalIdpPasswordPolicyConfig;
 import stroom.security.identity.shared.LoginRequest;
 import stroom.security.identity.shared.LoginResponse;
+import stroom.security.identity.shared.ResetPasswordRequest;
 import stroom.util.servlet.HttpServletRequestHolder;
 import stroom.util.shared.Unauthenticated;
 
@@ -46,7 +47,6 @@ import jakarta.inject.Inject;
 import jakarta.inject.Provider;
 import jakarta.inject.Singleton;
 import jakarta.servlet.http.HttpServletRequest;
-import jakarta.ws.rs.NotFoundException;
 import jakarta.ws.rs.RedirectionException;
 import jakarta.ws.rs.core.Response.Status;
 import jakarta.ws.rs.core.UriBuilder;
@@ -239,7 +239,7 @@ class AuthenticationResourceImpl implements AuthenticationResource {
     @Unauthenticated
     @Timed
     @Override
-    public Boolean resetEmail(final String emailAddress) throws NoSuchUserException {
+    public Boolean resetEmail(final String emailAddress) {
         final AuthenticateEventAction.Builder<Void> eventBuilder = event.logging.AuthenticateEventAction.builder()
                 .withAuthenticationEntity(event.logging.User.builder()
                         .withEmailAddress(emailAddress)
@@ -247,11 +247,10 @@ class AuthenticationResourceImpl implements AuthenticationResource {
                 .withAction(AuthenticateAction.RESET_PASSWORD);
 
         try {
-            final boolean resetEmailSent = serviceProvider.get().resetEmail(emailAddress);
-            if (resetEmailSent) {
-                return true;
-            }
-            throw new NotFoundException("User does not exist");
+            // Always reports success, even for an unknown email address, so that the response does not
+            // say which email addresses have accounts. See resetEmail for the timing side channel that
+            // this does not close.
+            return serviceProvider.get().resetEmail(emailAddress);
         } catch (final Throwable e) {
             eventBuilder.withOutcome(AuthenticateOutcome.builder()
                     .withSuccess(false)
@@ -268,6 +267,48 @@ class AuthenticationResourceImpl implements AuthenticationResource {
             stroomEventLoggingServiceProvider.get().log(
                     "AuthenticationResourceImpl.resetEmail",
                     "User requested a password email to be sent.",
+                    eventBuilder.build());
+        }
+    }
+
+    @Unauthenticated
+    @Timed
+    @Override
+    public ChangePasswordResponse resetPassword(final ResetPasswordRequest resetPasswordRequest) {
+        // The user this is for is inside the signed token, so nothing useful can be logged about them
+        // until the service has verified it. The service logs the reset itself once it knows who it is
+        // for; this event records the attempt.
+        final AuthenticateEventAction.Builder<Void> eventBuilder = AuthenticateEventAction.builder()
+                .withAction(AuthenticateAction.RESET_PASSWORD);
+
+        try {
+            final ChangePasswordResponse response = serviceProvider.get()
+                    .resetPasswordUsingToken(resetPasswordRequest);
+
+            if (!response.isChangeSucceeded()) {
+                eventBuilder.withOutcome(AuthenticateOutcome.builder()
+                        .withSuccess(false)
+                        .withReason(AuthenticateOutcomeReason.OTHER)
+                        .withDescription(response.getMessage())
+                        .build());
+            }
+            return response;
+
+        } catch (final Throwable e) {
+            eventBuilder.withOutcome(AuthenticateOutcome.builder()
+                    .withSuccess(false)
+                    .withReason(AuthenticateOutcomeReason.OTHER)
+                    .withDescription(e.getMessage())
+                    .withData(Data.builder()
+                            .withName("Error")
+                            .withValue(e.getMessage())
+                            .build())
+                    .build());
+            throw e;
+        } finally {
+            stroomEventLoggingServiceProvider.get().log(
+                    "AuthenticationResourceImpl.resetPassword",
+                    "A user attempted to set a new password using an emailed password reset token.",
                     eventBuilder.build());
         }
     }
