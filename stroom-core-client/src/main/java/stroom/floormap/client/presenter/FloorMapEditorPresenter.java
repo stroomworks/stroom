@@ -25,7 +25,6 @@ import stroom.entity.client.presenter.HasToolbar;
 import stroom.entity.shared.ExpressionCriteria;
 import stroom.floormap.client.ValueAccessorFactory;
 import stroom.floormap.client.event.MapContextMenuEvent;
-import stroom.floormap.client.event.MapObjectSelectedEvent;
 import stroom.floormap.client.event.TimeChangeEvent;
 import stroom.floormap.client.presenter.FloorMapEditorPresenter.FloorMapEditorView;
 import stroom.floormap.shared.Fact;
@@ -200,7 +199,8 @@ public class FloorMapEditorPresenter
         showGridButton.setTitle("Show Grid");
         showGridButton.setState(true);
         // Persist a drag as a single translate of the whole selection.
-        floorMapCanvasPresenter.setDragHandler(this::onFactsTranslated);
+        floorMapCanvasPresenter.setDragHandler(this::onFactsTransformed);
+        floorMapCanvasPresenter.setSelectionHandler(this::onCanvasSelectionChanged);
 
         setInSlot(MAIN, floorMapCanvasPresenter);
         setInSlot(TIMELINE, floorMapTimelinePresenter);
@@ -225,13 +225,6 @@ public class FloorMapEditorPresenter
             }
         }));
 
-        // ---- Canvas events --------------------------------------------------
-        registerHandler(getEventBus().addHandler(MapObjectSelectedEvent.getType(), event -> {
-            if (event.getSource() == floorMapCanvasPresenter) {
-                onObjectSelectedOnCanvas(event.getObjectId());
-            }
-        }));
-
         // ---- Canvas context menu --------------------------------------------
         registerHandler(getEventBus().addHandler(MapContextMenuEvent.getType(), event -> {
             if (event.getSource() == floorMapCanvasPresenter) {
@@ -240,7 +233,7 @@ public class FloorMapEditorPresenter
         }));
 
         // ---- Fact List selection + Show All toggle --------------------------
-        floorMapFactListPresenter.setSelectionConsumer(this::onFactSelectedInFactList);
+        floorMapFactListPresenter.setMultiSelectionConsumer(this::onFactListSelectionChanged);
         floorMapFactListPresenter.setShowAllConsumer(() -> onShowAllFactsToggled(true));
         floorMapFactListPresenter.setShowTimeFilteredConsumer(() -> onShowAllFactsToggled(false));
         floorMapFactListPresenter.setAddConsumer(this::onAddFactToFactList);
@@ -594,9 +587,9 @@ public class FloorMapEditorPresenter
                 ValueAccessorFactory.forFormat(getEntity().getValueFormat()));
         floorMapCanvasPresenter.setTypeStyles(getEntity().getTypeStyles());
         floorMapCanvasPresenter.setFacts(facts);
-        if (model.getSelectedFactKey() != null) {
-            floorMapCanvasPresenter.setSelectedObjectId(model.getSelectedFactKey());
-        }
+        // Restore the full (multi-)selection highlight after re-rendering, so a
+        // group stays selected across canvas refreshes (e.g. after a transform).
+        floorMapCanvasPresenter.setSelectedObjectIds(model.getSelectedFactKeys());
     }
 
     /**
@@ -619,10 +612,9 @@ public class FloorMapEditorPresenter
 
         floorMapFactListPresenter.setData(factObjects);
 
-        // Restore selection highlight without re-firing selection event
-        if (model.getSelectedFactKey() != null) {
-            floorMapFactListPresenter.setSelected(model.getSelectedFactKey());
-        }
+        // Restore the full (multi-)selection highlight without re-firing, so the
+        // Fact List stays in sync with the canvas across data refreshes.
+        floorMapFactListPresenter.setSelectedKeys(model.getSelectedFactKeys());
     }
 
     // -----------------------------------------------------------------------
@@ -630,39 +622,75 @@ public class FloorMapEditorPresenter
     // -----------------------------------------------------------------------
 
     /**
-     * Called when a canvas object is clicked.
+     * Called when a canvas interaction changes the selection (click, Shift-click
+     * toggle, or rubber-band marquee). The canvas already holds the highlight;
+     * this syncs the model, Fact List and side panels.
      *
-     * @param objectId the ID of the clicked object (= fact key)
+     * @param keys    the full selection in selection order
+     * @param primary the first-selected id, or {@code null} when empty (derived
+     *                from {@code keys}, so unused here)
      */
-    private void onObjectSelectedOnCanvas(final String objectId) {
-        model.setSelectedFactKey(objectId);
-        // Highlight in Fact List without re-firing the consumer
-        floorMapFactListPresenter.setSelected(objectId);
-        // Load Time List
-        loadTimeListForSelectedFact();
+    private void onCanvasSelectionChanged(final java.util.Collection<String> keys,
+                                          final String primary) {
+        applySelection(keys);
     }
 
     /**
-     * Persists a completed drag as a single map-space translation applied to the
-     * whole selection (see {@link FloorMapCanvasPresenter.DragHandler}). Each
-     * fact's world-to-map matrix is shifted by {@code (dxMap, dyMap)}.
+     * Makes {@code keys} the current selection across the model, the canvas
+     * highlight and the Fact List, then reflects it into the Time List and
+     * Properties panel. Loop-safe: the canvas and Fact List inbound setters do
+     * not re-fire their change callbacks.
+     *
+     * @param keys the fact keys to select
      */
-    private void onFactsTranslated(final java.util.Collection<String> keys,
-                                   final double dxMap,
-                                   final double dyMap) {
+    private void applySelection(final java.util.Collection<String> keys) {
+        model.setSelection(keys);
+        floorMapCanvasPresenter.setSelectedObjectIds(keys);
+        floorMapFactListPresenter.setSelectedKeys(keys);
+        reflectSelectionSideEffects(keys);
+    }
+
+    /**
+     * Updates the Time List and Properties panel for the current selection. The
+     * time shard list is meaningful only for a single fact, so it is shown only
+     * when exactly one fact is selected and blanked otherwise (nothing selected,
+     * or a multi-selection).
+     *
+     * @param keys the current selection
+     */
+    private void reflectSelectionSideEffects(final java.util.Collection<String> keys) {
+        if (keys != null && keys.size() == 1) {
+            final String primary = keys.iterator().next();
+            floorMapObjectEditPresenter.setMapName(getMapName());
+            floorMapObjectEditPresenter.setObject(primary);
+            loadTimeListForSelectedFact();
+        } else {
+            floorMapTimeListPresenter.setData(new ArrayList<>());
+            floorMapObjectEditPresenter.setObject(null);
+        }
+    }
+
+    /**
+     * Persists a completed transform gesture (move/rotate/scale) as a single
+     * map-space affine applied to the whole selection (see
+     * {@link FloorMapCanvasPresenter.DragHandler}). Each fact's world-to-map
+     * matrix is composed as {@code transform · oldMatrix}.
+     */
+    private void onFactsTransformed(final java.util.Collection<String> keys,
+                                    final FloorMapTransformationMatrix transform) {
         if (getMapName() == null || keys == null || keys.isEmpty()) {
             return;
         }
         try {
-            final int moved = model.translateFacts(keys, dxMap, dyMap,
+            final int n = model.transformFacts(keys, transform,
                     getEntity().getValueSchema(),
                     ValueAccessorFactory.forFormat(getEntity().getValueFormat()));
-            if (moved > 0) {
+            if (n > 0) {
                 setDirty(true);
             }
         } catch (final Exception ex) {
             AlertEvent.fireError(this,
-                    "Cannot move selection: " + ex.getMessage(), null);
+                    "Cannot transform selection: " + ex.getMessage(), null);
         }
         refreshCanvasOnly();
     }
@@ -678,25 +706,19 @@ public class FloorMapEditorPresenter
     }
 
     /**
-     * Called when a row in the Fact List is selected.
+     * Called when the Fact List selection changes through user interaction
+     * (click, ctrl/shift-click). Mirrors the selection onto the canvas, model
+     * and side panels via {@link #applySelection}.
      *
-     * @param factObject the selected fact, or {@code null}
+     * @param factObjects the selected fact objects (possibly empty)
      */
-    private void onFactSelectedInFactList(final FloorMapFactListPresenter.FactObject factObject) {
-        if (factObject == null) {
-            model.setSelectedFactKey(null);
-            floorMapCanvasPresenter.setSelectedObjectId(null);
-            floorMapTimeListPresenter.setData(new ArrayList<>());
-            return;
+    private void onFactListSelectionChanged(
+            final java.util.List<FloorMapFactListPresenter.FactObject> factObjects) {
+        final java.util.List<String> keys = new ArrayList<>();
+        for (final FloorMapFactListPresenter.FactObject o : factObjects) {
+            keys.add(o.getKey());
         }
-        model.setSelectedFactKey(factObject.getKey());
-        floorMapCanvasPresenter.setSelectedObjectId(model.getSelectedFactKey());
-
-        // Pass object info to Properties panel
-        floorMapObjectEditPresenter.setMapName(getMapName());
-        floorMapObjectEditPresenter.setObject(model.getSelectedFactKey());
-
-        loadTimeListForSelectedFact();
+        applySelection(keys);
     }
 
     /**
@@ -716,7 +738,6 @@ public class FloorMapEditorPresenter
      * @param entry the selected entry, or {@code null}
      */
     private void onTimeSelectedInTimeList(final TemporalEntry entry) {
-        floorMapCanvasPresenter.setIsDraggingEnabled(entry != null);
         if (entry != null) {
             // Stop auto-advance before repositioning, so playback can't race the
             // selection and move the scrubber off the chosen shard.
@@ -917,8 +938,25 @@ public class FloorMapEditorPresenter
                     .text("Add Object Here")
                     .command(() -> onAddObjectAtPosition(mapX, mapY))
                     .build());
+        } else if (model.getSelectedFactKeys().size() > 1
+                && model.getSelectedFactKeys().contains(objectId)) {
+            // ---- Right-clicked within a multi-selection: group actions ----
+            final List<String> keys = new ArrayList<>(model.getSelectedFactKeys());
+            final int n = keys.size();
+            menuItems.add(new IconMenuItem.Builder()
+                    .priority(1)
+                    .icon(SvgImage.COPY)
+                    .text("Duplicate Selected (" + n + ")")
+                    .command(() -> onDuplicateObjects(keys))
+                    .build());
+            menuItems.add(new IconMenuItem.Builder()
+                    .priority(2)
+                    .icon(SvgImage.DELETE)
+                    .text("Delete Selected (" + n + ")")
+                    .command(() -> onDeleteObjects(keys))
+                    .build());
         } else {
-            // ---- Right-clicked on an object ----
+            // ---- Right-clicked on a single object ----
 
             // Edit Properties
             menuItems.add(new IconMenuItem.Builder()
@@ -1043,9 +1081,6 @@ public class FloorMapEditorPresenter
                         model.setServerEntriesForSelectedFact(new ArrayList<>());
                         refreshTimeListAtTime(model.getSelectedTime());
 
-                        // Enable dragging so the user can immediately reposition
-                        floorMapCanvasPresenter.setIsDraggingEnabled(true);
-
                         loadAtTime(model.getSelectedTime());
                     });
         } catch (final IllegalStateException ex) {
@@ -1110,6 +1145,50 @@ public class FloorMapEditorPresenter
                     "Cannot duplicate object: " + ex.getMessage(),
                     null);
         }
+    }
+
+    /**
+     * Duplicates every fact in {@code keys} (group duplicate). Each copy is
+     * offset by the same grid nudge, so the group keeps its formation.
+     *
+     * @param keys the fact keys to duplicate
+     */
+    private void onDuplicateObjects(final java.util.Collection<String> keys) {
+        for (final String key : keys) {
+            onDuplicateObject(key);
+        }
+    }
+
+    /**
+     * Deletes every fact in {@code keys} (group delete) after a single
+     * confirmation, then clears the selection and refreshes.
+     *
+     * @param keys the fact keys to delete
+     */
+    private void onDeleteObjects(final java.util.Collection<String> keys) {
+        if (keys.isEmpty()) {
+            return;
+        }
+        ConfirmEvent.fire(this,
+                "Delete all entries for the " + keys.size()
+                + " selected objects? This cannot be undone.",
+                ok -> {
+                    if (ok) {
+                        boolean any = false;
+                        for (final String key : keys) {
+                            if (model.stageFactDeletion(key)) {
+                                any = true;
+                            }
+                        }
+                        if (any) {
+                            setDirty(true);
+                        }
+                        // Clear the selection across model/canvas/list + side
+                        // panels, then refresh so the deleted facts disappear.
+                        applySelection(new ArrayList<>());
+                        loadAtTime(model.getSelectedTime());
+                    }
+                });
     }
 
     // -----------------------------------------------------------------------

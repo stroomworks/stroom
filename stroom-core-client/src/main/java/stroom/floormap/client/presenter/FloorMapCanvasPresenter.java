@@ -35,6 +35,7 @@ import com.google.gwt.event.dom.client.ContextMenuEvent;
 import com.google.gwt.event.dom.client.HasMouseMoveHandlers;
 import com.google.gwt.event.dom.client.HasMouseUpHandlers;
 import com.google.gwt.event.dom.client.HasMouseWheelHandlers;
+import com.google.gwt.event.dom.client.KeyCodes;
 import com.google.gwt.user.client.ui.FocusPanel;
 import com.google.gwt.user.client.ui.RequiresResize;
 import com.google.web.bindery.event.shared.EventBus;
@@ -126,8 +127,8 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     private boolean defaultViewApplied = false;
 
     // Dragging state
-    private boolean isDraggingEnabled = false;
     private DragHandler dragHandler;
+    private SelectionHandler selectionHandler;
     private boolean isDragging = false;
     /** True only if the mouse actually moved while dragging an object (distinguishes click-to-select from drag). */
     private boolean hasMoved = false;
@@ -136,6 +137,55 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     /** Accumulated drag delta in map space (Y-up) for the current drag gesture. */
     private double dragDxMap;
     private double dragDyMap;
+
+    /** The kind of pointer gesture currently in progress. */
+    private enum Gesture {
+        NONE, PANNING, MOVING, MARQUEE, SCALING, ROTATING
+    }
+
+    private Gesture gesture = Gesture.NONE;
+
+    /** Rubber-band marquee corners in element-pixel space (valid while MARQUEE). */
+    private double marqueeStartX;
+    private double marqueeStartY;
+    private double marqueeCurX;
+    private double marqueeCurY;
+
+    /**
+     * On a plain press over the background fact or empty canvas, the fact key to
+     * select if the press turns out to be a click rather than a pan
+     * ({@code null} for empty canvas). Lets a click select the background image
+     * while a drag still pans.
+     */
+    private String pendingClickSelectId;
+
+    /**
+     * The in-progress map-space transform for the current MOVING/SCALING/ROTATING
+     * gesture (composed onto each selected fact for live preview and committed on
+     * release). {@code null} when no transform gesture is active.
+     */
+    private FloorMapTransformationMatrix pendingTransform;
+    /** Scale pivot in map space (opposite corner / edge midpoint), for SCALING. */
+    private double gesturePivotX;
+    private double gesturePivotY;
+    /** The grabbed scale handle's map-space position at gesture start, for SCALING. */
+    private double gestureRefX;
+    private double gestureRefY;
+    /** Rotation centre in map space, for ROTATING. */
+    private double gestureCentreX;
+    private double gestureCentreY;
+    /** Pointer position in map space at gesture start, for ROTATING. */
+    private double gestureStartMapX;
+    private double gestureStartMapY;
+    /** Smallest scale factor a handle drag may produce (avoids zero/flip/singular). */
+    private static final double MIN_SCALE_FACTOR = 0.05;
+
+    /**
+     * Keys of facts that behave like the canvas background: a plain drag over
+     * them pans (matching the read-only Map viewer) rather than moving them.
+     * Recomputed on each {@link #setFacts(List)}.
+     */
+    private final Set<String> backgroundKeys = new HashSet<>();
 
     /**
      * Event entities that are not currently animated. When playing, moving
@@ -376,62 +426,92 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                 return;
             }
 
-            // Check if we clicked an object while in edit mode
+            // Shift, Ctrl or Meta (⌘) all act as the multi-select modifier, so a
+            // modifier-click toggles an object in/out of the selection — matching
+            // the Fact List grid, whose native selection manager also treats
+            // Ctrl/Meta as the toggle key.
+            final boolean modifier = event.getNativeEvent().getShiftKey()
+                    || event.getNativeEvent().getCtrlKey()
+                    || event.getNativeEvent().getMetaKey();
+            final String hitId = hitObjectId(event.getNativeEvent().getEventTarget());
+
             if (editMode) {
-                final EventTarget target = event.getNativeEvent().getEventTarget();
+                // (1) A transform handle takes priority over object/background
+                // hit-testing so a handle drag starts a scale/rotate gesture.
+                final String handle = handleRole(event.getNativeEvent().getEventTarget());
+                if (handle != null && !selectedObjectIds.isEmpty()) {
+                    beginHandleGesture(handle, event.getX(), event.getY());
+                    return;
+                }
 
-                if (Element.is(target)) {
-                    final Element element = Element.as(target);
-                    final String id = element.getId();
+                // A real (draggable) object is any non-background fact, OR a
+                // background fact that is already selected — so an unselected
+                // background press still pans, but once you have selected the
+                // background (by clicking it) you can drag it to move it.
+                final boolean isBackground = hitId != null && backgroundKeys.contains(hitId);
+                final boolean onObject = hitId != null
+                        && (!isBackground || selectedObjectIds.contains(hitId));
 
-                    // Check if we clicked on an actual map object shape
-                    // (whose ID does NOT start with the SVG group prefix)
-                    if (id != null && !id.isEmpty()
-                            && !id.startsWith(FloorMapJsonKeys.SVG_GROUP_PREFIX)) {
-                        // Holding Ctrl or Shift lets the user pan even when the
-                        // click lands on an object — needed when a full-canvas
-                        // background fact would otherwise intercept every drag.
-                        if (!(event.getNativeEvent().getCtrlKey()
-                                || event.getNativeEvent().getShiftKey())) {
-                            // Single-select today: replace the whole selection.
-                            selectedObjectIds.clear();
-                            selectedObjectIds.add(id);
-
-                            // Fire an event to tell the parent presenter to show the edit menu
-                            MapObjectSelectedEvent.fire(this, id);
-                            isDragging = true;
-                            hasMoved = false;
-                            dragDxMap = 0;
-                            dragDyMap = 0;
-                            lastMouseX = event.getX();
-                            lastMouseY = event.getY();
-
-                            // Stop panning
-                            return;
+                if (onObject) {
+                    if (modifier) {
+                        // Shift/Ctrl-click toggles the object in the selection.
+                        if (!selectedObjectIds.remove(hitId)) {
+                            selectedObjectIds.add(hitId);
                         }
+                        fireSelectionChanged();
+                        gesture = Gesture.NONE;
+                        isDragging = false;
+                        return;
                     }
+                    // Plain click: select just this object (unless it is already
+                    // part of a multi-selection — then keep the group) and begin
+                    // moving the whole selection.
+                    if (!selectedObjectIds.contains(hitId)) {
+                        selectedObjectIds.clear();
+                        selectedObjectIds.add(hitId);
+                        fireSelectionChanged();
+                    }
+                    gesture = Gesture.MOVING;
+                    isDragging = true;
+                    hasMoved = false;
+                    dragDxMap = 0;
+                    dragDyMap = 0;
+                    lastMouseX = event.getX();
+                    lastMouseY = event.getY();
+                    return;
                 }
 
-                // Clicked on background/empty space, clear selection and allow panning
-                selectedObjectIds.clear();
-            } else {
-                // Read-only (Map tab) mode: clicking an object shape announces
-                // it so the parent presenter can select/track it (people only —
-                // the parent filters). No event fires for background/empty
-                // clicks: mousedown on empty space is how panning starts, and
-                // deselection is handled by the tracking panel instead.
-                final EventTarget target = event.getNativeEvent().getEventTarget();
-                if (Element.is(target)) {
-                    final String id = Element.as(target).getId();
-                    if (id != null && !id.isEmpty()
-                            && !id.startsWith(FloorMapJsonKeys.SVG_GROUP_PREFIX)
-                            && !FloorMapJsonKeys.BACKGROUND.equals(id)) {
-                        MapObjectSelectedEvent.fire(this, id);
-                    }
+                // Empty canvas or the background fact.
+                if (modifier) {
+                    // Shift/Ctrl-drag draws a rubber-band selection marquee.
+                    gesture = Gesture.MARQUEE;
+                    isDragging = true;
+                    hasMoved = false;
+                    marqueeStartX = marqueeCurX = event.getX();
+                    marqueeStartY = marqueeCurY = event.getY();
+                    return;
                 }
+                // Plain press: a drag pans (matching the read-only Map viewer); a
+                // click (no drag) selects the background fact under the cursor, or
+                // clears the selection on truly empty canvas. Resolved on mouseup
+                // by whether the pointer actually panned, so the selection is left
+                // intact during a pan.
+                pendingClickSelectId = hitId;
+                gesture = Gesture.PANNING;
+                isDragging = true;
+                manualPanPx = 0;
+                lastMouseX = event.getX();
+                lastMouseY = event.getY();
+                return;
             }
 
-            // Normal panning logic
+            // Read-only (Map tab) mode: clicking an object shape announces it so
+            // the parent presenter can select/track it (people only — the parent
+            // filters). Empty/background clicks start a pan.
+            if (hitId != null && !FloorMapJsonKeys.BACKGROUND.equals(hitId)) {
+                MapObjectSelectedEvent.fire(this, hitId);
+            }
+            gesture = Gesture.PANNING;
             isDragging = true;
             manualPanPx = 0;
             lastMouseX = event.getX();
@@ -448,6 +528,8 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
             if (isDragging && nativeButtons(event.getNativeEvent()) == 0) {
                 isDragging = false;
                 hasMoved = false;
+                gesture = Gesture.NONE;
+                pendingTransform = null;
                 return;
             }
 
@@ -455,27 +537,61 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                 final double deltaX = event.getX() - lastMouseX;
                 final double deltaY = event.getY() - lastMouseY;
 
-                if (editMode && isDraggingEnabled && !selectedObjectIds.isEmpty()) {
-                    // Accumulate the drag in map space (Y-up) for live feedback and a
-                    // single translateFacts() applied to the whole selection on drop.
-                    dragDxMap += deltaX / scale;
-                    //noinspection UnnecessaryUnaryMinus
-                    dragDyMap += -(deltaY / scale);
-                    hasMoved = true;
-                    redraw();
-                } else {
-                    // Pan the map. A deliberate manual pan takes the camera off
-                    // the tracked entity, so pause following until it is
-                    // re-selected — but ignore the few pixels of jitter inside
-                    // an ordinary click, which would otherwise pause following
-                    // the moment click-to-track enabled it.
-                    manualPanPx += Math.abs(deltaX) + Math.abs(deltaY);
-                    if (manualPanPx > PAN_INTENT_THRESHOLD_PX) {
-                        followPaused = true;
+                switch (gesture) {
+                    case MOVING:
+                        // Accumulate the drag in map space (Y-up) for live feedback
+                        // and a single transform applied to the selection on drop.
+                        dragDxMap += deltaX / scale;
+                        //noinspection UnnecessaryUnaryMinus
+                        dragDyMap += -(deltaY / scale);
+                        pendingTransform = FloorMapTransformationMatrix.translate(
+                                dragDxMap, dragDyMap);
+                        hasMoved = true;
+                        redraw();
+                        break;
+                    case MARQUEE:
+                        marqueeCurX = event.getX();
+                        marqueeCurY = event.getY();
+                        hasMoved = true;
+                        redraw();
+                        break;
+                    case SCALING:
+                        pendingTransform = computeScaleTransform(event.getX(), event.getY());
+                        hasMoved = true;
+                        redraw();
+                        break;
+                    case ROTATING: {
+                        final double[] cur = screenToMapCoords(event.getX(), event.getY());
+                        final double a0 = Math.atan2(gestureStartMapY - gestureCentreY,
+                                gestureStartMapX - gestureCentreX);
+                        final double a1 = Math.atan2(cur[1] - gestureCentreY,
+                                cur[0] - gestureCentreX);
+                        double deg = Math.toDegrees(a1 - a0);
+                        if (event.getNativeEvent().getShiftKey()) {
+                            // Snap to 15° increments.
+                            deg = Math.round(deg / 15.0) * 15.0;
+                        }
+                        pendingTransform = FloorMapTransformationMatrix.rotateAbout(
+                                deg, gestureCentreX, gestureCentreY);
+                        hasMoved = true;
+                        redraw();
+                        break;
                     }
-                    offsetX += deltaX;
-                    offsetY += deltaY;
-                    redraw();
+                    case PANNING:
+                    default:
+                        // Pan the map. A deliberate manual pan takes the camera off
+                        // the tracked entity, so pause following until it is
+                        // re-selected — but ignore the few pixels of jitter inside
+                        // an ordinary click, which would otherwise pause following
+                        // the moment click-to-track enabled it.
+                        manualPanPx += Math.abs(deltaX) + Math.abs(deltaY);
+                        if (manualPanPx > PAN_INTENT_THRESHOLD_PX) {
+                            followPaused = true;
+                        }
+                        offsetX += deltaX;
+                        offsetY += deltaY;
+                        redraw();
+                        break;
                 }
 
                 lastMouseX = event.getX();
@@ -485,17 +601,52 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
         //noinspection unused event
         registerHandler(getView().getMouseUpHandlers().addMouseUpHandler(event -> {
-            // Persist the drag as a single translate of the whole selection.
-            final boolean moved = isDragging && hasMoved && editMode
-                    && !selectedObjectIds.isEmpty();
-            final double dx = dragDxMap;
-            final double dy = dragDyMap;
+            final Gesture finished = gesture;
+            final FloorMapTransformationMatrix transform = pendingTransform;
+            final boolean moved = hasMoved;
+            final double panned = manualPanPx;
+            final String clickSelectId = pendingClickSelectId;
+
             dragDxMap = 0;
             dragDyMap = 0;
             isDragging = false;
             hasMoved = false;
-            if (moved && dragHandler != null) {
-                dragHandler.onTranslate(new ArrayList<>(selectedObjectIds), dx, dy);
+            gesture = Gesture.NONE;
+            pendingTransform = null;
+            pendingClickSelectId = null;
+
+            if (finished == Gesture.MOVING
+                    || finished == Gesture.SCALING
+                    || finished == Gesture.ROTATING) {
+                // Persist the move/scale/rotate as a single map-space transform
+                // of the whole selection.
+                if (moved && transform != null && !selectedObjectIds.isEmpty()
+                        && dragHandler != null) {
+                    dragHandler.onTransform(new ArrayList<>(selectedObjectIds), transform);
+                }
+            } else if (finished == Gesture.MARQUEE) {
+                // Select every fact the rubber-band touched, adding to the
+                // existing selection (the marquee is a Shift/Ctrl gesture).
+                final double[] rect = {
+                        Math.min(marqueeStartX, marqueeCurX),
+                        Math.min(marqueeStartY, marqueeCurY),
+                        Math.max(marqueeStartX, marqueeCurX),
+                        Math.max(marqueeStartY, marqueeCurY)};
+                selectedObjectIds.addAll(getView().hitTestScreenRect(rect));
+                fireSelectionChanged();
+                redraw();
+            } else if (finished == Gesture.PANNING
+                    && panned <= PAN_INTENT_THRESHOLD_PX) {
+                // A press that didn't pan is a click: select the background fact
+                // under the cursor, or clear the selection on empty canvas.
+                if (clickSelectId != null) {
+                    selectedObjectIds.clear();
+                    selectedObjectIds.add(clickSelectId);
+                    fireSelectionChanged();
+                } else if (!selectedObjectIds.isEmpty()) {
+                    selectedObjectIds.clear();
+                    fireSelectionChanged();
+                }
             }
         }));
 
@@ -569,6 +720,17 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
             MapContextMenuEvent.fire(this, objectId, mapCoords[0], mapCoords[1], clientX, clientY);
         }, ContextMenuEvent.getType()));
+
+        // Escape clears the selection, so you can pan again after selecting the
+        // full-canvas background (an unselected background press pans).
+        registerHandler(getView().getFocusPanel().addKeyDownHandler(event -> {
+            if (editMode
+                    && event.getNativeKeyCode() == KeyCodes.KEY_ESCAPE
+                    && !selectedObjectIds.isEmpty()) {
+                selectedObjectIds.clear();
+                fireSelectionChanged();
+            }
+        }));
     }
 
     /**
@@ -618,7 +780,168 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                 buildAnimatedDrawList(/* nowMs — irrelevant when no animations */ 0.0);
         getView().draw(scale, offsetX, offsetY,
                 FloorMapZOrder.sort(factsExcludingOverlay(overlay), typeStyles),
-                overlay, selectedObjectIds, typeStyles, showGrid);
+                overlay, selectedObjectIds, typeStyles, showGrid,
+                gesture == Gesture.MARQUEE ? currentMarqueeRect() : null,
+                editMode && !selectedObjectIds.isEmpty() && gesture != Gesture.MARQUEE);
+    }
+
+    /**
+     * The current rubber-band rectangle in element-pixel space as
+     * {@code {minX, minY, maxX, maxY}}. Only meaningful while a MARQUEE gesture
+     * is in progress.
+     */
+    private double[] currentMarqueeRect() {
+        return new double[]{
+                Math.min(marqueeStartX, marqueeCurX),
+                Math.min(marqueeStartY, marqueeCurY),
+                Math.max(marqueeStartX, marqueeCurX),
+                Math.max(marqueeStartY, marqueeCurY)};
+    }
+
+    /**
+     * Resolves the id of the map object under an event target, or {@code null}
+     * if the target is not a real object shape. Wrapper {@code <g>} groups
+     * (prefixed {@link FloorMapJsonKeys#SVG_GROUP_PREFIX}) and transform handles
+     * (prefixed {@link FloorMapJsonKeys#HANDLE_PREFIX}) are not objects.
+     */
+    private String hitObjectId(final EventTarget target) {
+        if (Element.is(target)) {
+            final String id = Element.as(target).getId();
+            if (id != null && !id.isEmpty()
+                    && !id.startsWith(FloorMapJsonKeys.SVG_GROUP_PREFIX)
+                    && !id.startsWith(FloorMapJsonKeys.HANDLE_PREFIX)) {
+                return id;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Returns the transform-handle role under an event target (the id suffix
+     * after {@link FloorMapJsonKeys#HANDLE_PREFIX}, e.g. {@code "scale-nw"} or
+     * {@code "rotate"}), or {@code null} if the target is not a handle.
+     */
+    private String handleRole(final EventTarget target) {
+        if (Element.is(target)) {
+            final String id = Element.as(target).getId();
+            if (id != null && id.startsWith(FloorMapJsonKeys.HANDLE_PREFIX)) {
+                return id.substring(FloorMapJsonKeys.HANDLE_PREFIX.length());
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Begins a scale or rotate gesture from the given handle, snapshotting the
+     * pivot/centre (in map space) from the current selection frame.
+     *
+     * @param role the handle role ({@code "scale-*"} or {@code "rotate"})
+     * @param px   the pointer X at gesture start (element pixels)
+     * @param py   the pointer Y at gesture start (element pixels)
+     */
+    private void beginHandleGesture(final String role, final double px, final double py) {
+        final double[] frame = getView().getSelectionFrame();
+        if (frame == null) {
+            return;
+        }
+        final double minX = frame[0];
+        final double minY = frame[1];
+        final double maxX = frame[2];
+        final double maxY = frame[3];
+        final double cx = (minX + maxX) / 2;
+        final double cy = (minY + maxY) / 2;
+
+        isDragging = true;
+        hasMoved = false;
+        pendingTransform = null;
+        lastMouseX = px;
+        lastMouseY = py;
+
+        if ("rotate".equals(role)) {
+            gesture = Gesture.ROTATING;
+            final double[] centre = screenToMapCoords(cx, cy);
+            gestureCentreX = centre[0];
+            gestureCentreY = centre[1];
+            final double[] start = screenToMapCoords(px, py);
+            gestureStartMapX = start[0];
+            gestureStartMapY = start[1];
+        } else {
+            gesture = Gesture.SCALING;
+            final String dir = role.startsWith("scale-")
+                    ? role.substring("scale-".length())
+                    : role;
+            // Scale about the opposite corner/edge; the grabbed handle is the
+            // moving reference point.
+            final double[] pivotScreen = pointForDir(oppositeDir(dir), minX, minY, maxX, maxY, cx, cy);
+            final double[] refScreen = pointForDir(dir, minX, minY, maxX, maxY, cx, cy);
+            final double[] pivot = screenToMapCoords(pivotScreen[0], pivotScreen[1]);
+            final double[] ref = screenToMapCoords(refScreen[0], refScreen[1]);
+            gesturePivotX = pivot[0];
+            gesturePivotY = pivot[1];
+            gestureRefX = ref[0];
+            gestureRefY = ref[1];
+        }
+    }
+
+    /**
+     * Computes the map-space scale transform for the current SCALING gesture
+     * given the current pointer position. Scaling is always uniform
+     * (aspect-preserving): the factor is the projection of the pointer-from-pivot
+     * vector onto the grabbed-corner-from-pivot vector. Uniform scale never
+     * shears, so it is correct even for a rotated fact. The factor is clamped to
+     * {@link #MIN_SCALE_FACTOR} to avoid zero/flip/singular.
+     */
+    private FloorMapTransformationMatrix computeScaleTransform(final double px, final double py) {
+        final double[] cur = screenToMapCoords(px, py);
+        final double dx0 = gestureRefX - gesturePivotX;
+        final double dy0 = gestureRefY - gesturePivotY;
+        final double denom = dx0 * dx0 + dy0 * dy0;
+        final double s = denom > 1e-9
+                ? ((cur[0] - gesturePivotX) * dx0 + (cur[1] - gesturePivotY) * dy0) / denom
+                : 1;
+        final double clamped = clampScale(s);
+        return FloorMapTransformationMatrix.scaleAbout(
+                clamped, clamped, gesturePivotX, gesturePivotY);
+    }
+
+    private static double clampScale(final double s) {
+        return Math.max(s, MIN_SCALE_FACTOR);
+    }
+
+    /** Screen-space position of a corner frame handle by direction (nw/ne/se/sw). */
+    private static double[] pointForDir(final String dir,
+                                        final double minX, final double minY,
+                                        final double maxX, final double maxY,
+                                        final double cx, final double cy) {
+        //noinspection EnhancedSwitchMigration
+        switch (dir) {
+            case "nw":
+                return new double[]{minX, minY};
+            case "ne":
+                return new double[]{maxX, minY};
+            case "se":
+                return new double[]{maxX, maxY};
+            case "sw":
+                return new double[]{minX, maxY};
+            default:
+                return new double[]{cx, cy};
+        }
+    }
+
+    private static String oppositeDir(final String dir) {
+        //noinspection EnhancedSwitchMigration
+        switch (dir) {
+            case "nw":
+                return "se";
+            case "ne":
+                return "sw";
+            case "se":
+                return "nw";
+            case "sw":
+                return "ne";
+            default:
+                return dir;
+        }
     }
 
     /**
@@ -807,11 +1130,11 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                         return;
                     }
 
-                    // Draw the current frame.
+                    // Draw the current frame. No marquee/handles during playback.
                     final List<FloorMapObject> overlay = buildAnimatedDrawList(timestamp);
                     getView().draw(scale, offsetX, offsetY,
                             FloorMapZOrder.sort(factsExcludingOverlay(overlay), typeStyles),
-                            overlay, selectedObjectIds, typeStyles, showGrid);
+                            overlay, selectedObjectIds, typeStyles, showGrid, null, false);
 
                     // Keep looping.
                     AnimationScheduler.get().requestAnimationFrame(this);
@@ -924,6 +1247,23 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     }
 
     /**
+     * Replaces the highlighted selection with the given object ids (multi-select
+     * facade beside {@link #setSelectedObjectId}) and redraws. Selection order is
+     * preserved so the first id is treated as the primary. Does <em>not</em> fire
+     * the {@link SelectionHandler} — this is the inbound path used by callers
+     * (e.g. the editor) that already hold the selection.
+     *
+     * @param objectIds the ids to select; {@code null} clears the selection
+     */
+    public void setSelectedObjectIds(final Collection<String> objectIds) {
+        selectedObjectIds.clear();
+        if (objectIds != null) {
+            selectedObjectIds.addAll(objectIds);
+        }
+        redraw();
+    }
+
+    /**
      * Starts tracking the given entity: highlights it via the selection
      * mechanism, immediately centres the camera on it, and follows it as it
      * moves. Passing {@code null} stops tracking and clears the highlight.
@@ -1022,22 +1362,20 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     }
 
     /**
-     * Returns the facts to render, applying any in-progress drag: selected facts
-     * have their world-to-map translated by the accumulated map-space delta so the
-     * drag is shown live. On drop the delta is persisted via
-     * {@link DragHandler#onTranslate}.
+     * Returns the facts to render, applying any in-progress transform gesture:
+     * each selected fact's world-to-map matrix is composed as
+     * {@code pendingTransform · oldMatrix} so a move/scale/rotate is shown live.
+     * On release the same transform is persisted via {@link DragHandler#onTransform}.
      */
     private List<Fact> factsForDraw() {
-        if (selectedObjectIds.isEmpty() || (dragDxMap == 0 && dragDyMap == 0)) {
+        if (pendingTransform == null || selectedObjectIds.isEmpty()) {
             return facts;
         }
         final List<Fact> out = new ArrayList<>(facts.size());
         for (final Fact fact : facts) {
             if (selectedObjectIds.contains(fact.getKey())) {
-                final FloorMapTransformationMatrix m = fact.getWorldToMap();
                 out.add(new Fact(fact.getKey(), fact.getType(), fact.getImage(),
-                        new FloorMapTransformationMatrix(m.getA(), m.getB(), m.getC(), m.getD(),
-                                m.getE() + dragDxMap, m.getF() + dragDyMap),
+                        pendingTransform.multiply(fact.getWorldToMap()),
                         fact.getPosition()));
             } else {
                 out.add(fact);
@@ -1139,8 +1477,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     }
 
     /**
-     * Toggles edit mode. When disabled, the object selection is cleared and
-     * object dragging is turned off.
+     * Toggles edit mode. When disabled, the object selection is cleared.
      *
      * @param editMode {@code true} to enter edit mode, {@code false} to leave
      */
@@ -1149,8 +1486,6 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         if (!editMode) {
             selectedObjectIds.clear();
         }
-
-        isDraggingEnabled = false;
         redraw();
     }
 
@@ -1185,17 +1520,18 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
      */
     public void setFacts(final List<Fact> facts) {
         this.facts = facts != null ? facts : new ArrayList<>();
+        // Recompute which facts act as the background (plain drag over them
+        // pans rather than moving them), keyed by the BACKGROUND key or type.
+        backgroundKeys.clear();
+        for (final Fact fact : this.facts) {
+            if (FloorMapJsonKeys.BACKGROUND.equals(fact.getKey())
+                    || FloorMapJsonKeys.BACKGROUND.equals(fact.getType())) {
+                backgroundKeys.add(fact.getKey());
+            }
+        }
         redraw();
     }
 
-    /**
-     * Enables or disables object dragging within edit mode.
-     *
-     * @param isDraggingEnabled {@code true} to allow dragging selected objects
-     */
-    public void setIsDraggingEnabled(final boolean isDraggingEnabled) {
-        this.isDraggingEnabled = isDraggingEnabled;
-    }
 
     /**
      * Sets the handler that is notified while an object is being dragged.
@@ -1207,17 +1543,57 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     }
 
     /**
-     * Callback invoked when a drag gesture completes, to persist the move as a
-     * single translation of the whole selection in map space.
+     * Sets the handler notified when the selection changes as a result of a
+     * canvas interaction (click, Shift-click toggle, or rubber-band marquee).
+     *
+     * @param selectionHandler the callback, or {@code null} to remove
+     */
+    public void setSelectionHandler(final SelectionHandler selectionHandler) {
+        this.selectionHandler = selectionHandler;
+    }
+
+    /**
+     * Notifies the {@link SelectionHandler} of the current selection, if one is
+     * set. The primary key is the first-selected id, or {@code null} when empty.
+     */
+    private void fireSelectionChanged() {
+        if (selectionHandler != null) {
+            final String primary = selectedObjectIds.isEmpty()
+                    ? null
+                    : selectedObjectIds.iterator().next();
+            selectionHandler.onSelectionChanged(
+                    new ArrayList<>(selectedObjectIds), primary);
+        }
+    }
+
+    /**
+     * Callback invoked when a transform gesture (move/rotate/scale) completes,
+     * to persist the change as a single map-space affine applied to the whole
+     * selection. A plain move is just a translation transform.
      */
     public interface DragHandler {
 
         /**
-         * @param keys  the selected fact keys that were dragged
-         * @param dxMap the accumulated X translation in map space
-         * @param dyMap the accumulated Y translation in map space (Y-up)
+         * Persists an arbitrary map-space transform applied to the whole
+         * selection.
+         *
+         * @param keys the selected fact keys being transformed
+         * @param mapSpaceTransform the accumulated map-space affine to compose
+         *                          onto each fact ({@code newWorldToMap = T · old})
          */
-        void onTranslate(Collection<String> keys, double dxMap, double dyMap);
+        void onTransform(Collection<String> keys, FloorMapTransformationMatrix mapSpaceTransform);
+    }
+
+    /**
+     * Callback invoked when a canvas interaction changes the selection.
+     */
+    public interface SelectionHandler {
+
+        /**
+         * @param keys    the full selection in selection order
+         * @param primary the first-selected id (the "primary"), or {@code null}
+         */
+        void onSelectionChanged(Collection<String> keys, String primary);
     }
 
     // =========================================================================
@@ -1351,7 +1727,28 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
          */
         void draw(double scale, double x, double y, List<Fact> facts,
                 List<FloorMapObject> events, Set<String> selectedObjectIds,
-                List<TypeStyle> typeStyles, boolean showGrid);
+                List<TypeStyle> typeStyles, boolean showGrid, double[] marqueeRectPx,
+                boolean drawSelectionHandles);
+
+        /**
+         * Returns the keys of facts whose on-screen bounds intersect the given
+         * rubber-band rectangle (element-pixel space, {@code {minX, minY, maxX,
+         * maxY}}). Uses the geometry of the last {@link #draw} call — including
+         * image aspect ratios, which are known only to the view.
+         *
+         * @param rectPx the marquee rectangle in element pixels
+         * @return the intersecting fact keys; never {@code null}
+         */
+        Set<String> hitTestScreenRect(double[] rectPx);
+
+        /**
+         * Returns the screen-space bounding box {@code {minX, minY, maxX, maxY}}
+         * of the current selection (from the last {@link #draw}), or {@code null}
+         * if nothing is selected. Used to seed a scale/rotate gesture.
+         *
+         * @return the selection frame in element pixels, or {@code null}
+         */
+        double[] getSelectionFrame();
 
         /**
          * Registers a listener that is called whenever the view needs to

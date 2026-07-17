@@ -28,18 +28,20 @@ import stroom.util.client.JSONUtil;
 import stroom.widget.button.client.ButtonPanel;
 import stroom.widget.button.client.ButtonView;
 import stroom.widget.button.client.InlineSvgToggleButton;
+import stroom.widget.util.client.MultiSelectionModelImpl;
 
 import com.google.gwt.json.client.JSONObject;
 import com.google.gwt.user.cellview.client.Column;
 import com.google.gwt.user.cellview.client.TextColumn;
 import com.google.gwt.user.client.ui.Widget;
 import com.google.gwt.view.client.ListDataProvider;
-import com.google.gwt.view.client.SingleSelectionModel;
 import com.google.inject.Inject;
 import com.google.web.bindery.event.shared.EventBus;
 import com.gwtplatform.mvp.client.MyPresenterWidget;
 import com.gwtplatform.mvp.client.View;
 
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.function.Consumer;
 
@@ -76,8 +78,9 @@ public class FloorMapFactListPresenter extends MyPresenterWidget<FloorMapFactLis
 
     private final MyDataGrid<FactObject> dataGrid;
     private final ListDataProvider<FactObject> dataProvider = new ListDataProvider<>();
-    private final SingleSelectionModel<FactObject> selectionModel = new SingleSelectionModel<>();
-    private Consumer<FactObject> selectionConsumer;
+    private final MultiSelectionModelImpl<FactObject> selectionModel;
+    /** Called with the full multi-selection on every change. Used by the Editor tab. */
+    private Consumer<List<FactObject>> multiSelectionConsumer;
     private Runnable showAllConsumer;
     private Runnable showTimeFilteredConsumer;
     private boolean showingAll = false;
@@ -93,7 +96,9 @@ public class FloorMapFactListPresenter extends MyPresenterWidget<FloorMapFactLis
         super(eventBus, view);
 
         dataGrid = new MyDataGrid<>(this);
-        dataGrid.setSelectionModel(selectionModel);
+        // Multi-select: ctrl/shift-click extends the selection natively via the
+        // grid's selection event manager.
+        selectionModel = dataGrid.addDefaultSelectionModel(true);
         view.setGridView(dataGrid);
         initGridColumns();
         dataProvider.addDataDisplay(dataGrid);
@@ -133,17 +138,18 @@ public class FloorMapFactListPresenter extends MyPresenterWidget<FloorMapFactLis
     protected void onBind() {
         super.onBind();
         //noinspection unused e
-        registerHandler(selectionModel.addSelectionChangeHandler(e -> {
-            final FactObject selected = selectionModel.getSelectedObject();
-            deleteButton.setEnabled(selected != null);
-            if (selectionConsumer != null) {
-                selectionConsumer.accept(selected);
+        registerHandler(selectionModel.addSelectionHandler(e -> {
+            final List<FactObject> selected = selectionModel.getSelectedItems();
+            final FactObject primary = selectionModel.getSelected();
+            deleteButton.setEnabled(!selected.isEmpty());
+            if (multiSelectionConsumer != null) {
+                multiSelectionConsumer.accept(selected);
             }
 
-            if (selected != null) {
+            if (primary != null) {
                 final List<FactObject> list = dataProvider.getList();
                 if (list != null) {
-                    final int index = list.indexOf(selected);
+                    final int index = list.indexOf(primary);
                     if (index >= 0) {
                         com.google.gwt.core.client.Scheduler.get().scheduleDeferred(() -> {
                             if (index < dataGrid.getVisibleItemCount()) {
@@ -173,7 +179,7 @@ public class FloorMapFactListPresenter extends MyPresenterWidget<FloorMapFactLis
         //noinspection unused e
         registerHandler(deleteButton.addClickHandler(e -> {
             if (deleteConsumer != null) {
-                final FactObject selected = selectionModel.getSelectedObject();
+                final FactObject selected = selectionModel.getSelected();
                 if (selected != null) {
                     deleteConsumer.accept(selected.getKey());
                 }
@@ -236,39 +242,52 @@ public class FloorMapFactListPresenter extends MyPresenterWidget<FloorMapFactLis
      * @param key the temporal-store key to look for; may be {@code null}
      */
     public void setSelected(final String key) {
+        setSelectedKeys(key == null
+                ? java.util.Collections.emptyList()
+                : java.util.Collections.singletonList(key));
+    }
+
+    /**
+     * Selects every row whose key is in {@code keys}, replacing the current
+     * selection. Unknown keys are ignored; a {@code null}/empty collection
+     * clears the selection. Does <em>not</em> fire the selection consumers
+     * (this is the programmatic inbound path used to reflect a selection made
+     * elsewhere, e.g. on the canvas).
+     *
+     * @param keys the keys to select; may be {@code null}
+     */
+    public void setSelectedKeys(final Collection<String> keys) {
         final List<FactObject> list = dataProvider.getList();
-        if (list != null && key != null) {
+        final List<FactObject> toSelect = new ArrayList<>();
+        if (list != null && keys != null && !keys.isEmpty()) {
             for (final FactObject obj : list) {
-                if (key.equals(obj.getKey())) {
-                    selectionModel.setSelected(obj, true);
-                    return;
+                if (keys.contains(obj.getKey())) {
+                    toSelect.add(obj);
                 }
             }
         }
-        selectionModel.clear();
+        selectionModel.setSelectedItems(toSelect);
     }
 
     /**
-     * Returns the currently selected {@link FactObject}, or {@code null} if
-     * nothing is selected.
+     * Returns the primary (first) selected {@link FactObject}, or {@code null}
+     * if nothing is selected.
      *
-     * @return the selected fact object, or {@code null}
+     * @return the primary selected fact object, or {@code null}
      */
     public FactObject getSelectedObject() {
-        return selectionModel.getSelectedObject();
+        return selectionModel.getSelected();
     }
 
     /**
-     * Registers a callback that is invoked whenever the grid selection changes.
+     * Registers a callback invoked whenever the grid selection changes, with the
+     * full multi-selection (empty when nothing is selected). Used by the Editor
+     * tab to keep the canvas selection and side panels in sync.
      *
-     * <p>The consumer receives the newly selected {@link FactObject}, or
-     * {@code null} if the selection was cleared. Both the Editor tab and the
-     * Map tab register a consumer here to react to selection changes.</p>
-     *
-     * @param selectionConsumer called on every selection change
+     * @param multiSelectionConsumer called on every selection change
      */
-    public void setSelectionConsumer(final Consumer<FactObject> selectionConsumer) {
-        this.selectionConsumer = selectionConsumer;
+    public void setMultiSelectionConsumer(final Consumer<List<FactObject>> multiSelectionConsumer) {
+        this.multiSelectionConsumer = multiSelectionConsumer;
     }
 
     /**
