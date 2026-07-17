@@ -18,7 +18,6 @@ package stroom.security.identity.db;
 
 import stroom.db.util.ExpressionMapper;
 import stroom.db.util.ExpressionMapperFactory;
-import stroom.db.util.GenericDao;
 import stroom.db.util.JooqUtil;
 import stroom.security.identity.account.AccountDao;
 import stroom.security.identity.authenticate.CredentialValidationResult;
@@ -30,6 +29,7 @@ import stroom.security.identity.shared.AccountFields;
 import stroom.security.identity.shared.AccountResultPage;
 import stroom.security.identity.shared.FindAccountRequest;
 import stroom.util.ResultPageFactory;
+import stroom.util.exception.DataChangedException;
 import stroom.util.logging.LambdaLogger;
 import stroom.util.logging.LambdaLoggerFactory;
 import stroom.util.shared.NullSafe;
@@ -54,7 +54,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.function.BiFunction;
 import java.util.function.Function;
 
 import static stroom.security.identity.db.jooq.tables.Account.ACCOUNT;
@@ -102,33 +101,6 @@ class AccountDaoImpl implements AccountDao {
         return account;
     };
 
-    private static final BiFunction<Account, AccountRecord, AccountRecord> ACCOUNT_TO_RECORD_MAPPER =
-            (account, record) -> {
-                record.setId(account.getId());
-                record.setVersion(account.getVersion());
-                record.setCreateTimeMs(account.getCreateTimeMs());
-                record.setUpdateTimeMs(account.getUpdateTimeMs());
-                record.setCreateUser(account.getCreateUser());
-                record.setUpdateUser(account.getUpdateUser());
-                record.setUserId(account.getUserId());
-                record.setEmail(account.getEmail());
-                record.setFirstName(account.getFirstName());
-                record.setLastName(account.getLastName());
-                record.setComments(account.getComments());
-                record.setLoginCount(account.getLoginCount());
-                record.setLoginFailures(account.getLoginFailures());
-                record.setLastLoginMs(account.getLastLoginMs());
-                record.setReactivatedMs(account.getReactivatedMs());
-                record.setForcePasswordChange(account.isForcePasswordChange());
-                record.setNeverExpires(account.isNeverExpires());
-                record.setEnabled(account.isEnabled());
-                record.setInactive(account.isInactive());
-                record.setLocked(account.isLocked());
-                record.setProcessingAccount(account.isProcessingAccount());
-
-                return record;
-            };
-
     private static final Map<String, Field<?>> FIELD_MAP = Map.ofEntries(
             Map.entry("id", ACCOUNT.ID),
             Map.entry("version", ACCOUNT.VERSION),
@@ -155,7 +127,6 @@ class AccountDaoImpl implements AccountDao {
 
     private final Provider<IdentityConfig> identityConfigProvider;
     private final IdentityDbConnProvider identityDbConnProvider;
-    private final GenericDao<AccountRecord, Account, Integer> genericDao;
     private final ExpressionMapper expressionMapper;
 
     @Inject
@@ -164,12 +135,6 @@ class AccountDaoImpl implements AccountDao {
                           final ExpressionMapperFactory expressionMapperFactory) {
         this.identityConfigProvider = identityConfigProvider;
         this.identityDbConnProvider = identityDbConnProvider;
-        genericDao = new GenericDao<>(
-                identityDbConnProvider,
-                ACCOUNT,
-                ACCOUNT.ID,
-                ACCOUNT_TO_RECORD_MAPPER,
-                RECORD_TO_ACCOUNT_MAPPER);
 
         expressionMapper = expressionMapperFactory.create()
                 .map(AccountFields.FIELD_USER_ID, ACCOUNT.USER_ID, String::valueOf)
@@ -223,16 +188,49 @@ class AccountDaoImpl implements AccountDao {
 
     @Override
     public Account create(final Account account, final String password) {
-        final String passwordHash = hashPassword(password);
-        final AccountRecord record = ACCOUNT_TO_RECORD_MAPPER.apply(
-                account, ACCOUNT.newRecord());
-        record.setPasswordHash(passwordHash);
+        // Everything written is listed here, so that what a new account starts out as is something you
+        // can read rather than infer. Deliberately absent, and so left as the column defaults:
+        //   id                        assigned by the database
+        //   password_last_changed_ms  null until the password is first changed, which
+        //                             getPasswordLastChangedMs reads as 'never, so use the create time'
+        //   reset_token_nonce         no password reset has been asked for yet
+        //   reset_email_requested_ms  ditto
+        final Integer id;
         try {
-            final AccountRecord accountRecord = JooqUtil.create(identityDbConnProvider, record);
-            return RECORD_TO_ACCOUNT_MAPPER.apply(accountRecord);
+            id = JooqUtil.contextResult(identityDbConnProvider, context -> context
+                            .insertInto(ACCOUNT)
+                            .set(ACCOUNT.VERSION, 1)
+                            .set(ACCOUNT.CREATE_TIME_MS, account.getCreateTimeMs())
+                            .set(ACCOUNT.CREATE_USER, account.getCreateUser())
+                            .set(ACCOUNT.UPDATE_TIME_MS, account.getUpdateTimeMs())
+                            .set(ACCOUNT.UPDATE_USER, account.getUpdateUser())
+                            .set(ACCOUNT.USER_ID, account.getUserId())
+                            .set(ACCOUNT.EMAIL, account.getEmail())
+                            .set(ACCOUNT.PASSWORD_HASH, hashPassword(password))
+                            .set(ACCOUNT.FIRST_NAME, account.getFirstName())
+                            .set(ACCOUNT.LAST_NAME, account.getLastName())
+                            .set(ACCOUNT.COMMENTS, account.getComments())
+                            .set(ACCOUNT.LOGIN_COUNT, account.getLoginCount())
+                            .set(ACCOUNT.LOGIN_FAILURES, account.getLoginFailures())
+                            .set(ACCOUNT.LAST_LOGIN_MS, account.getLastLoginMs())
+                            .set(ACCOUNT.REACTIVATED_MS, account.getReactivatedMs())
+                            .set(ACCOUNT.FORCE_PASSWORD_CHANGE, account.isForcePasswordChange())
+                            .set(ACCOUNT.NEVER_EXPIRES, account.isNeverExpires())
+                            .set(ACCOUNT.ENABLED, account.isEnabled())
+                            .set(ACCOUNT.INACTIVE, account.isInactive())
+                            .set(ACCOUNT.LOCKED, account.isLocked())
+                            .set(ACCOUNT.PROCESSING_ACCOUNT, account.isProcessingAccount())
+                            .returning(ACCOUNT.ID)
+                            .fetchOne())
+                    .getId();
         } catch (final RuntimeException e) {
             throw describeIfDuplicate(account, e);
         }
+
+        // Read back rather than echoing what we were given, so the caller sees what was actually stored.
+        return get(id).orElseThrow(() ->
+                new RuntimeException("Account " + account.getUserId() + " could not be read back after "
+                                     + "being created"));
     }
 
     @Override
@@ -392,46 +390,65 @@ class AccountDaoImpl implements AccountDao {
 
     @Override
     public void update(final Account account) {
+        // Matching on the version and bumping it in the same statement is what makes this safe against a
+        // concurrent edit: an update made from a stale copy of the account matches no rows and is
+        // refused, rather than quietly overwriting whatever someone else did.
+        //
+        // The password and the password reset state are deliberately not listed, so they survive an
+        // update; they are only ever written by the methods that own them.
+        final int count;
         try {
-            genericDao.update(account);
+            count = JooqUtil.contextResult(identityDbConnProvider, context -> context
+                    .update(ACCOUNT)
+                    .set(ACCOUNT.VERSION, ACCOUNT.VERSION.plus(1))
+                    .set(ACCOUNT.CREATE_TIME_MS, account.getCreateTimeMs())
+                    .set(ACCOUNT.CREATE_USER, account.getCreateUser())
+                    .set(ACCOUNT.UPDATE_TIME_MS, account.getUpdateTimeMs())
+                    .set(ACCOUNT.UPDATE_USER, account.getUpdateUser())
+                    .set(ACCOUNT.USER_ID, account.getUserId())
+                    .set(ACCOUNT.EMAIL, account.getEmail())
+                    .set(ACCOUNT.FIRST_NAME, account.getFirstName())
+                    .set(ACCOUNT.LAST_NAME, account.getLastName())
+                    .set(ACCOUNT.COMMENTS, account.getComments())
+                    .set(ACCOUNT.LOGIN_COUNT, account.getLoginCount())
+                    .set(ACCOUNT.LOGIN_FAILURES, account.getLoginFailures())
+                    .set(ACCOUNT.LAST_LOGIN_MS, account.getLastLoginMs())
+                    .set(ACCOUNT.REACTIVATED_MS, account.getReactivatedMs())
+                    .set(ACCOUNT.FORCE_PASSWORD_CHANGE, account.isForcePasswordChange())
+                    .set(ACCOUNT.NEVER_EXPIRES, account.isNeverExpires())
+                    .set(ACCOUNT.ENABLED, account.isEnabled())
+                    .set(ACCOUNT.INACTIVE, account.isInactive())
+                    .set(ACCOUNT.LOCKED, account.isLocked())
+                    .set(ACCOUNT.PROCESSING_ACCOUNT, account.isProcessingAccount())
+                    .where(ACCOUNT.ID.eq(account.getId()))
+                    .and(ACCOUNT.VERSION.eq(account.getVersion()))
+                    .execute());
         } catch (final RuntimeException e) {
             throw describeIfDuplicate(account, e);
         }
 
-//        AccountRecord usersRecord = JooqUtil.contextResult(authDbConnProvider, context -> context
-//                .selectFrom(ACCOUNT)
-//                .where(ACCOUNT.EMAIL.eq(account.getEmail())).fetchSingle());
-//
-//        UserMapper.mapToRecord(account, usersRecord);
-//
-//        JooqUtil.contextResult(authDbConnProvider, context -> context
-//                .update(ACCOUNT)
-//                .set(usersRecord)
-//                .where(ACCOUNT.ID.eq(account.getId())}.execute());
+        if (count == 0) {
+            throw new DataChangedException("This account has been changed by someone else since it was "
+                                           + "read, so it has not been updated. Read it again and reapply "
+                                           + "the change.");
+        }
     }
 
     @Override
     public void delete(final int id) {
-        genericDao.delete(id);
-
-//        JooqUtil.context(authDbConnProvider, context -> context
-//                .deleteFrom(ACCOUNT)
-//                .where(ACCOUNT.ID.eq(id)).execute());
+        JooqUtil.context(identityDbConnProvider, context -> context
+                .deleteFrom(ACCOUNT)
+                .where(ACCOUNT.ID.eq(id))
+                .execute());
     }
 
     @Override
     public Optional<Account> get(final int id) {
-        return genericDao.fetch(id);
-
-//        Optional<AccountRecord> userQuery = JooqUtil.contextResult(authDbConnProvider, context -> context
-//                .selectFrom(ACCOUNT)
-//                .where(ACCOUNT.ID.eq(id)).fetchOptional());
-//
-//        return userQuery.map(record -> {
-//            final Account account = new Account();
-//            UserMapper.mapFromRecord(record, account);
-//            return account;
-//        });
+        return JooqUtil.contextResult(identityDbConnProvider, context -> context
+                        .selectFrom(ACCOUNT)
+                        .where(ACCOUNT.ID.eq(id))
+                        .fetchOptional())
+                .map(RECORD_TO_ACCOUNT_MAPPER);
     }
 
 

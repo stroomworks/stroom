@@ -25,6 +25,7 @@ import stroom.security.identity.config.IdentityConfig;
 import stroom.security.identity.shared.Account;
 import stroom.security.mock.MockSecurityContext;
 import stroom.test.common.util.db.DbTestModule;
+import stroom.util.exception.DataChangedException;
 
 import com.google.inject.AbstractModule;
 import com.google.inject.Guice;
@@ -286,6 +287,26 @@ class TestAccountDaoImpl {
         assertThatThrownBy(() -> accountDao.update(second))
                 .hasMessageContaining(takenEmail)
                 .hasMessageContaining("already used by another account");
+    }
+
+    @Test
+    void updatingFromAStaleCopyOfAnAccountIsRejected() {
+        // The version column gives optimistic locking, so an edit made against a copy of the account that
+        // someone else has since changed is refused rather than silently overwriting them. Nothing else
+        // covers this, so it would be easy to drop by accident.
+        final String userId = createAccount(account -> {
+        });
+        final Account first = accountDao.get(userId).orElseThrow();
+        final Account stale = accountDao.get(userId).orElseThrow();
+
+        first.setFirstName("First");
+        accountDao.update(first);
+
+        stale.setFirstName("Second");
+        assertThatThrownBy(() -> accountDao.update(stale))
+                .isInstanceOf(DataChangedException.class);
+
+        assertThat(accountDao.get(userId).orElseThrow().getFirstName()).isEqualTo("First");
     }
 
     @Test
