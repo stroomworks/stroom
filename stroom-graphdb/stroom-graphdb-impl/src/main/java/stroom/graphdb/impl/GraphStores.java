@@ -40,15 +40,15 @@ import java.util.stream.Stream;
 
 /**
  * Owns and provisions every internal store a {@link GraphDbDoc} needs, as a single unit (design doc &sect;2.1;
- * implementation plan Task PoC.0). A graph's user never addresses these stores directly — only through the
+ * implementation plan Tasks PoC.0/PoC.4). A graph's user never addresses these stores directly — only through the
  * document's {@link GraphDbDoc#getUuid()}-named on-disk directory, opened via this class.
  *
- * <p>At this phase (PoC.0) the owned stores are the four interning namespaces the frozen physical model (design
- * doc &sect;5.1) fixes: node-external-id, label, edge-type and property-key, each a {@link UidLookupDb} with a
- * <b>fixed-width</b> UID (see the class constants) rather than {@code UidLookupDb}'s variable-width default — a
- * variable-width UID would silently break the composite-key prefix scans the node/adjacency stores (PoC.4) depend
- * on. The node, adjacency and property-index stores themselves are added to this class once PoC.4 lands; they
- * reuse the same owned {@link PlanBEnv}.
+ * <p>The owned stores are the four interning namespaces the frozen physical model (design doc &sect;5.1) fixes
+ * (node-external-id, label, edge-type, property-key — each a {@link UidLookupDb} with a <b>fixed-width</b> UID
+ * per the class constants, rather than {@code UidLookupDb}'s variable-width default, which would silently break
+ * the composite-key prefix scans below) plus the node store ({@link GraphNodeDb}), out-edge adjacency
+ * ({@link GraphAdjacencyDb}), and property-value index ({@link GraphPropertyIndex}) — all sharing one owned
+ * {@link PlanBEnv}. The in-edge adjacency mirror (reverse/undirected traversal) is P1, not this class.
  */
 public final class GraphStores implements AutoCloseable {
 
@@ -70,17 +70,26 @@ public final class GraphStores implements AutoCloseable {
     private final UidLookupDb labelUids;
     private final UidLookupDb edgeTypeUids;
     private final UidLookupDb propertyKeyUids;
+    private final GraphNodeDb nodes;
+    private final GraphAdjacencyDb outEdges;
+    private final GraphPropertyIndex propertyIndex;
 
     private GraphStores(final PlanBEnv env,
                         final UidLookupDb nodeUids,
                         final UidLookupDb labelUids,
                         final UidLookupDb edgeTypeUids,
-                        final UidLookupDb propertyKeyUids) {
+                        final UidLookupDb propertyKeyUids,
+                        final GraphNodeDb nodes,
+                        final GraphAdjacencyDb outEdges,
+                        final GraphPropertyIndex propertyIndex) {
         this.env = env;
         this.nodeUids = nodeUids;
         this.labelUids = labelUids;
         this.edgeTypeUids = edgeTypeUids;
         this.propertyKeyUids = propertyKeyUids;
+        this.nodes = nodes;
+        this.outEdges = outEdges;
+        this.propertyIndex = propertyIndex;
     }
 
     /**
@@ -146,7 +155,11 @@ public final class GraphStores implements AutoCloseable {
             final UidLookupDb propertyKeyUids = new UidLookupDb(
                     env, byteBuffers, "property-key-uid",
                     new StaticUnsignedBytesFactory(UnsignedBytesInstances.ofLength(TYPE_UID_WIDTH)));
-            return new GraphStores(env, nodeUids, labelUids, edgeTypeUids, propertyKeyUids);
+            final GraphNodeDb nodes = new GraphNodeDb(env);
+            final GraphAdjacencyDb outEdges = new GraphAdjacencyDb(env);
+            final GraphPropertyIndex propertyIndex = new GraphPropertyIndex(env);
+            return new GraphStores(
+                    env, nodeUids, labelUids, edgeTypeUids, propertyKeyUids, nodes, outEdges, propertyIndex);
         } catch (final RuntimeException e) {
             env.close();
             throw e;
@@ -179,6 +192,27 @@ public final class GraphStores implements AutoCloseable {
      */
     public UidLookupDb getPropertyKeyUids() {
         return propertyKeyUids;
+    }
+
+    /**
+     * @return the node store.
+     */
+    public GraphNodeDb getNodes() {
+        return nodes;
+    }
+
+    /**
+     * @return the out-edge adjacency store.
+     */
+    public GraphAdjacencyDb getOutEdges() {
+        return outEdges;
+    }
+
+    /**
+     * @return the property-value anchor index.
+     */
+    public GraphPropertyIndex getPropertyIndex() {
+        return propertyIndex;
     }
 
     /**
