@@ -1,0 +1,825 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stroom Query Optimiser — Design Plan</title>
+<style>
+  :root {
+    --bg: #f5f7fa;
+    --surface: #ffffff;
+    --surface-2: #eef1f7;
+    --ink: #1b2430;
+    --ink-soft: #566178;
+    --line: #d6dde8;
+    --accent: #3457d5;
+    --accent-soft: #e7ecff;
+    --green: #1f9d6b;
+    --green-soft: #e2f5ec;
+    --amber: #b9760a;
+    --amber-soft: #fbeed4;
+    --red: #cf3d54;
+    --red-soft: #fbe4e8;
+    --purple: #7048c4;
+    --purple-soft: #ede6fb;
+    --radius: 12px;
+    --shadow: 0 1px 2px rgba(20,30,45,.06), 0 6px 20px rgba(20,30,45,.06);
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f141b;
+      --surface: #161d27;
+      --surface-2: #1e2632;
+      --ink: #e7ecf3;
+      --ink-soft: #9aa7ba;
+      --line: #2b3543;
+      --accent: #7d97ff;
+      --accent-soft: #1a2440;
+      --green: #4cc38a;
+      --green-soft: #12271e;
+      --amber: #e0a136;
+      --amber-soft: #2c220f;
+      --red: #ef6a7e;
+      --red-soft: #2c161b;
+      --purple: #a98bf0;
+      --purple-soft: #201738;
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35);
+    }
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    line-height: 1.6;
+    font-size: 16px;
+  }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 0 20px 96px; }
+
+  header.hero {
+    background: linear-gradient(135deg, var(--accent) 0%, #5a3fbf 100%);
+    color: #fff;
+    padding: 56px 20px 48px;
+  }
+  header.hero .inner { max-width: 1040px; margin: 0 auto; }
+  header.hero .eyebrow {
+    text-transform: uppercase; letter-spacing: .14em; font-size: 12.5px;
+    font-weight: 700; opacity: .85; margin: 0 0 10px;
+  }
+  header.hero h1 { margin: 0 0 12px; font-size: clamp(28px, 5vw, 42px); line-height: 1.15; font-weight: 800; }
+  header.hero p.lede { margin: 0; font-size: clamp(16px, 2.4vw, 19px); max-width: 70ch; opacity: .95; }
+  .badges { margin-top: 22px; display: flex; flex-wrap: wrap; gap: 8px; }
+  .badge {
+    background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.28);
+    color: #fff; padding: 5px 11px; border-radius: 999px; font-size: 13px; font-weight: 600;
+    backdrop-filter: blur(2px);
+  }
+
+  h2 {
+    font-size: 25px; margin: 52px 0 8px; padding-top: 8px;
+    display: flex; align-items: center; gap: 12px;
+  }
+  h2 .num {
+    display: inline-grid; place-items: center; width: 30px; height: 30px; flex: none;
+    background: var(--accent-soft); color: var(--accent); border-radius: 8px;
+    font-size: 15px; font-weight: 800;
+  }
+  h3 { font-size: 18px; margin: 30px 0 6px; }
+  p, li { color: var(--ink); }
+  .muted { color: var(--ink-soft); }
+  a { color: var(--accent); }
+  code {
+    font-family: var(--mono); font-size: .88em;
+    background: var(--surface-2); padding: 1.5px 6px; border-radius: 6px;
+    border: 1px solid var(--line);
+  }
+  section > p:first-of-type { margin-top: 10px; }
+
+  .card {
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 20px 22px; box-shadow: var(--shadow); margin: 16px 0;
+  }
+  .grid { display: grid; gap: 16px; }
+  .grid.cols-2 { grid-template-columns: repeat(2, 1fr); }
+  .grid.cols-4 { grid-template-columns: repeat(4, 1fr); }
+  @media (max-width: 760px) { .grid.cols-2, .grid.cols-4 { grid-template-columns: 1fr; } }
+
+  .decision { border-left: 4px solid var(--accent); }
+  .decision .q { font-size: 13px; font-weight: 700; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .04em; margin: 0 0 6px; }
+  .decision .a { font-size: 17px; font-weight: 700; margin: 0 0 6px; }
+  .decision .why { font-size: 14.5px; color: var(--ink-soft); margin: 0; }
+
+  .callout { border-radius: var(--radius); padding: 14px 18px; margin: 16px 0; border: 1px solid; }
+  .callout.info { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+  .callout.good { background: var(--green-soft); border-color: color-mix(in srgb, var(--green) 40%, transparent); }
+  .callout.warn { background: var(--amber-soft); border-color: color-mix(in srgb, var(--amber) 45%, transparent); }
+  .callout .lbl { font-weight: 800; font-size: 13px; letter-spacing: .03em; text-transform: uppercase; display: block; margin-bottom: 4px; }
+  .callout.info .lbl { color: var(--accent); }
+  .callout.good .lbl { color: var(--green); }
+  .callout.warn .lbl { color: var(--amber); }
+
+  .diagram {
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 18px; margin: 18px 0; overflow-x: auto; box-shadow: var(--shadow);
+  }
+  .diagram svg { display: block; width: 100%; height: auto; min-width: 560px; }
+  .diagram .cap { font-size: 13.5px; color: var(--ink-soft); margin: 12px 4px 2px; text-align: center; }
+
+  /* SVG semantic classes (inherit CSS vars) */
+  .s-box { fill: var(--surface-2); stroke: var(--line); stroke-width: 1.5; }
+  .s-box-accent { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; }
+  .s-box-green { fill: var(--green-soft); stroke: var(--green); stroke-width: 1.5; }
+  .s-box-red { fill: var(--red-soft); stroke: var(--red); stroke-width: 1.5; }
+  .s-box-purple { fill: var(--purple-soft); stroke: var(--purple); stroke-width: 1.5; }
+  .s-box-amber { fill: var(--amber-soft); stroke: var(--amber); stroke-width: 1.5; }
+  .s-t { fill: var(--ink); font-family: var(--sans); font-size: 13px; }
+  .s-t-b { fill: var(--ink); font-family: var(--sans); font-size: 13px; font-weight: 700; }
+  .s-t-s { fill: var(--ink-soft); font-family: var(--sans); font-size: 11.5px; }
+  .s-t-mono { fill: var(--ink); font-family: var(--mono); font-size: 11.5px; }
+  .s-arrow { stroke: var(--ink-soft); stroke-width: 1.8; fill: none; }
+  .s-tag { fill: var(--accent); font-family: var(--sans); font-size: 10.5px; font-weight: 700; }
+
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 14.5px; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--ink-soft); font-size: 12.5px; text-transform: uppercase; letter-spacing: .04em; }
+  tbody tr:hover { background: var(--surface-2); }
+  .phase-pill { display: inline-block; font-weight: 800; color: var(--accent); font-variant-numeric: tabular-nums; }
+
+  ul.clean { padding-left: 20px; }
+  ul.clean li { margin: 5px 0; }
+
+  .toc { display: flex; flex-wrap: wrap; gap: 8px; margin: 22px 0 8px; }
+  .toc a {
+    text-decoration: none; font-size: 13.5px; font-weight: 600;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 999px;
+    padding: 6px 13px; color: var(--ink-soft);
+  }
+  .toc a:hover { border-color: var(--accent); color: var(--accent); }
+
+  footer { border-top: 1px solid var(--line); margin-top: 40px; padding-top: 18px; color: var(--ink-soft); font-size: 13.5px; }
+  .kbd { font-family: var(--mono); font-size: .85em; background: var(--surface-2); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="inner">
+    <p class="eyebrow">Internal design plan · Proposed</p>
+    <h1>A grammar-driven parser &amp; cost-based query optimiser for Stroom</h1>
+    <p class="lede">Replace the hand-coded StroomQL engine with a formal ANTLR grammar, a rule-rewrite + cost-based
+      optimiser that automatically chooses the cheapest way to answer a query — including joins across data
+      sources — and a pre-run estimate of how long the query will take.</p>
+    <div class="badges">
+      <span class="badge">ANTLR4 grammar</span>
+      <span class="badge">Rule rewrites → cost-based choice</span>
+      <span class="badge">Estimates from existing metadata</span>
+      <span class="badge">Cross-source joins</span>
+      <span class="badge">Domain-type aware</span>
+      <span class="badge">Incremental · behind a flag</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <nav class="toc" aria-label="Contents">
+    <a href="#why">Why</a>
+    <a href="#today">Today</a>
+    <a href="#decisions">Decisions</a>
+    <a href="#architecture">Architecture</a>
+    <a href="#thinking">How it decides</a>
+    <a href="#estimate">Time estimate</a>
+    <a href="#joins">Joins</a>
+    <a href="#domain-types">Domain types</a>
+    <a href="#seam">Where it plugs in</a>
+    <a href="#roadmap">Roadmap</a>
+    <a href="#scope">Scope</a>
+    <a href="#parity">Proving it works</a>
+    <a href="#graph">Graph consumer</a>
+  </nav>
+
+  <!-- WHY -->
+  <section id="why">
+    <h2><span class="num">1</span>Why we're doing this</h2>
+    <p>StroomQL is compiled by a hand-coded pipeline: a regex <code>Tokeniser</code>, a <code>StructureBuilder</code>,
+      and a ~1,490-line <code>SearchRequestFactory</code>. There is <strong>no formal grammar</strong>, so error
+      messages are approximate and the language is hard to grow.</p>
+    <p>There is also <strong>no optimiser</strong>. A query is routed to exactly one backend by document type, and the
+      <em>user</em> must manually decide which predicates are index-eligible (<code>where</code>) versus applied in
+      memory afterwards (<code>filter</code>). The engine never chooses an access path, never prunes by an index's
+      time partitions, and cannot tell you how long a query will take before you run it.</p>
+    <div class="grid cols-4">
+      <div class="card"><strong>Formal grammar</strong><p class="muted" style="margin:6px 0 0;font-size:14px">Precise, evolvable syntax with real error positions.</p></div>
+      <div class="card"><strong>Automatic planning</strong><p class="muted" style="margin:6px 0 0;font-size:14px">The engine, not the user, decides how to fetch data.</p></div>
+      <div class="card"><strong>Pre-run estimate</strong><p class="muted" style="margin:6px 0 0;font-size:14px">Know the likely cost &amp; duration before hitting Run.</p></div>
+      <div class="card"><strong>Joins</strong><p class="muted" style="margin:6px 0 0;font-size:14px">Combine an index with a state store or another index.</p></div>
+    </div>
+  </section>
+
+  <!-- TODAY -->
+  <section id="today">
+    <h2><span class="num">2</span>The engine today</h2>
+    <div class="diagram">
+      <svg viewBox="0 0 940 300" role="img" aria-label="Current hand-coded pipeline">
+        <!-- boxes -->
+        <g>
+          <rect class="s-box" x="16" y="40" width="128" height="58" rx="9"/>
+          <text class="s-t-b" x="80" y="66" text-anchor="middle">StroomQL</text>
+          <text class="s-t-s" x="80" y="83" text-anchor="middle">query text</text>
+
+          <rect class="s-box-red" x="176" y="40" width="128" height="58" rx="9"/>
+          <text class="s-t-b" x="240" y="66" text-anchor="middle">Tokeniser</text>
+          <text class="s-t-s" x="240" y="83" text-anchor="middle">regex passes</text>
+
+          <rect class="s-box-red" x="336" y="40" width="128" height="58" rx="9"/>
+          <text class="s-t-b" x="400" y="66" text-anchor="middle">Structure</text>
+          <text class="s-t-b" x="400" y="82" text-anchor="middle">Builder</text>
+
+          <rect class="s-box-red" x="496" y="40" width="150" height="58" rx="9"/>
+          <text class="s-t-b" x="571" y="66" text-anchor="middle">SearchRequest</text>
+          <text class="s-t-s" x="571" y="83" text-anchor="middle">Factory · ~1,490 lines</text>
+
+          <rect class="s-box" x="678" y="40" width="120" height="58" rx="9"/>
+          <text class="s-t-b" x="738" y="66" text-anchor="middle">Search</text>
+          <text class="s-t-b" x="738" y="82" text-anchor="middle">Request</text>
+
+          <rect class="s-box" x="830" y="40" width="96" height="58" rx="9"/>
+          <text class="s-t-b" x="878" y="63" text-anchor="middle">1 back-</text>
+          <text class="s-t-b" x="878" y="79" text-anchor="middle">end</text>
+          <text class="s-t-s" x="878" y="93" text-anchor="middle">by type</text>
+        </g>
+        <!-- arrows -->
+        <g>
+          <path class="s-arrow" d="M144 69 L172 69" marker-end="url(#ah)"/>
+          <path class="s-arrow" d="M304 69 L332 69" marker-end="url(#ah)"/>
+          <path class="s-arrow" d="M464 69 L492 69" marker-end="url(#ah)"/>
+          <path class="s-arrow" d="M646 69 L674 69" marker-end="url(#ah)"/>
+          <path class="s-arrow" d="M798 69 L826 69" marker-end="url(#ah)"/>
+        </g>
+        <!-- problem annotations -->
+        <g>
+          <rect class="s-box-red" x="150" y="150" width="330" height="46" rx="8"/>
+          <text class="s-t" x="165" y="170">No formal grammar — regex-driven,</text>
+          <text class="s-t" x="165" y="188">approximate error reporting.</text>
+          <path class="s-arrow" d="M315 150 L360 100" marker-end="url(#ah)" stroke-dasharray="4 3"/>
+
+          <rect class="s-box-red" x="150" y="218" width="330" height="46" rx="8"/>
+          <text class="s-t" x="165" y="238">User must hand-split where / filter;</text>
+          <text class="s-t" x="165" y="256">no access-path or partition choice.</text>
+          <path class="s-arrow" d="M480 232 L565 100" marker-end="url(#ah)" stroke-dasharray="4 3"/>
+
+          <rect class="s-box-red" x="560" y="150" width="366" height="46" rx="8"/>
+          <text class="s-t" x="575" y="170">One data source per query.</text>
+          <text class="s-t" x="575" y="188">No cost model — no pre-run time estimate.</text>
+          <path class="s-arrow" d="M878 150 L878 100" marker-end="url(#ah)" stroke-dasharray="4 3"/>
+        </g>
+        <defs>
+          <marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="var(--ink-soft)"/>
+          </marker>
+        </defs>
+      </svg>
+      <p class="cap">Current path: text → regex tokeniser → structure builder → SearchRequestFactory → one backend. Red = the parts we are changing.</p>
+    </div>
+    <div class="callout good">
+      <span class="lbl">Good news — the foundation is already there</span>
+      Every field already advertises a <code>ConditionSet</code> declaring which predicates its backend supports, and
+      Stroom already tracks per-shard document counts, file sizes, throughput, and index time partitions. The optimiser
+      is built on metadata we already have — not a new statistics subsystem.
+    </div>
+  </section>
+
+  <!-- DECISIONS -->
+  <section id="decisions">
+    <h2><span class="num">3</span>Design decisions</h2>
+    <p>Four forks were agreed up front. They shape everything below.</p>
+    <div class="grid cols-2">
+      <div class="card decision">
+        <p class="q">Parser technology</p>
+        <p class="a">ANTLR4 grammar</p>
+        <p class="why">A formal <code>.g4</code> grammar generating a Java parser (server-side only — the GWT client
+          parses nothing, it calls REST). Strong error messages, easy to evolve.</p>
+      </div>
+      <div class="card decision">
+        <p class="q">How plans are chosen</p>
+        <p class="a">Rule rewrites → cost-based choice</p>
+        <p class="why">Heuristic rewrites first (pushdown, prune, reorder), then pick the cheapest plan by estimated
+          cost. Standard RDBMS design; the same cost model powers the time estimate.</p>
+      </div>
+      <div class="card decision">
+        <p class="q">Where estimates come from</p>
+        <p class="a">Existing metadata</p>
+        <p class="why">Shard doc counts, index time-partition overlap, meta counts by feed/type/time, and condition
+          selectivity heuristics. No new storage; ships fastest. Telemetry calibration can come later.</p>
+      </div>
+      <div class="card decision">
+        <p class="q">Delivery</p>
+        <p class="a">Incremental, behind a flag</p>
+        <p class="why">New parser + optimiser coexist with the current engine behind a config flag. One switch point,
+          instant revert, existing StroomQL keeps working throughout.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ARCHITECTURE -->
+  <section id="architecture">
+    <h2><span class="num">4</span>Target architecture</h2>
+    <p>A proper compiler pipeline. Each stage has a clear responsibility, and the phase tag shows when it lands.</p>
+    <div class="diagram">
+      <svg viewBox="0 0 900 520" role="img" aria-label="Target compilation pipeline">
+        <defs>
+          <marker id="ah2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="var(--ink-soft)"/>
+          </marker>
+        </defs>
+        <!-- vertical stack, centered column x ~ 250, side notes at x 540 -->
+        <!-- stage helper: box width 380, height 46 -->
+        <g>
+          <rect class="s-box" x="60" y="16" width="380" height="46" rx="9"/>
+          <text class="s-t-b" x="250" y="44" text-anchor="middle">StroomQL query text</text>
+
+          <rect class="s-box-accent" x="60" y="86" width="380" height="46" rx="9"/>
+          <text class="s-t-b" x="250" y="108" text-anchor="middle">ANTLR lexer + parser → typed AST</text>
+          <text class="s-t-s" x="250" y="124" text-anchor="middle">StroomQL.g4 · precise syntax errors</text>
+          <text class="s-tag" x="450" y="112">Phase 1</text>
+
+          <rect class="s-box-accent" x="60" y="156" width="380" height="46" rx="9"/>
+          <text class="s-t-b" x="250" y="178" text-anchor="middle">Bind &amp; validate</text>
+          <text class="s-t-s" x="250" y="194" text-anchor="middle">resolve source + fields · check ConditionSet</text>
+          <text class="s-tag" x="450" y="182">Phase 2</text>
+
+          <rect class="s-box-purple" x="60" y="226" width="380" height="46" rx="9"/>
+          <text class="s-t-b" x="250" y="248" text-anchor="middle">Logical plan IR</text>
+          <text class="s-t-s" x="250" y="264" text-anchor="middle">Scan · Filter · Eval · Join · Aggregate · Sort · Limit</text>
+          <text class="s-tag" x="450" y="252">Phase 2</text>
+
+          <rect class="s-box-purple" x="60" y="296" width="380" height="46" rx="9"/>
+          <text class="s-t-b" x="250" y="318" text-anchor="middle">Rule rewrites</text>
+          <text class="s-t-s" x="250" y="334" text-anchor="middle">pushdown · push below joins · reorder · prune · fold</text>
+          <text class="s-tag" x="450" y="322">Phase 2</text>
+
+          <rect class="s-box-green" x="60" y="366" width="380" height="46" rx="9"/>
+          <text class="s-t-b" x="250" y="388" text-anchor="middle">Physical planning + cost-based choice</text>
+          <text class="s-t-s" x="250" y="404" text-anchor="middle">access path &amp; join algorithm ── CostModel</text>
+          <text class="s-tag" x="450" y="392">Phase 3/6</text>
+
+          <rect class="s-box" x="60" y="436" width="180" height="46" rx="9"/>
+          <text class="s-t-b" x="150" y="458" text-anchor="middle">EXPLAIN + estimate</text>
+          <text class="s-tag" x="150" y="428" text-anchor="middle">Phase 4</text>
+
+          <rect class="s-box" x="260" y="436" width="180" height="46" rx="9"/>
+          <text class="s-t-b" x="350" y="452" text-anchor="middle">Executor →</text>
+          <text class="s-t-s" x="350" y="468" text-anchor="middle">existing SearchProviders</text>
+          <text class="s-tag" x="350" y="428" text-anchor="middle">Phase 5/6</text>
+        </g>
+        <!-- vertical arrows -->
+        <g>
+          <path class="s-arrow" d="M250 62 L250 84" marker-end="url(#ah2)"/>
+          <path class="s-arrow" d="M250 132 L250 154" marker-end="url(#ah2)"/>
+          <path class="s-arrow" d="M250 202 L250 224" marker-end="url(#ah2)"/>
+          <path class="s-arrow" d="M250 272 L250 294" marker-end="url(#ah2)"/>
+          <path class="s-arrow" d="M250 342 L250 364" marker-end="url(#ah2)"/>
+          <path class="s-arrow" d="M250 412 L250 434" marker-end="url(#ah2)"/>
+          <path class="s-arrow" d="M150 482 L150 500 L350 500 L350 482" marker-end="url(#ah2)"/>
+        </g>
+      </svg>
+      <p class="cap">Blue = front end (grammar). Purple = logical plan &amp; rewrites. Green = cost-based physical planning. The executor reuses today's search machinery.</p>
+    </div>
+    <div class="callout good">
+      <span class="lbl">We reuse the execution engine</span>
+      The optimiser <em>emits into</em> the existing machinery — <code>SearchProvider</code>s, <code>ResultStore</code>,
+      coprocessors, extraction pipelines, and the federated cluster executor. We are not rewriting execution; we are
+      making smarter decisions about what to ask it to do.
+    </div>
+  </section>
+
+  <!-- HOW IT DECIDES -->
+  <section id="thinking">
+    <h2><span class="num">5</span>How the optimiser decides</h2>
+    <p>Two stages. First, <strong>rule rewrites</strong> transform the plan into an equivalent but cheaper shape.
+      Then, <strong>cost-based choice</strong> picks between physical alternatives.</p>
+    <h3>Rule rewrites (always-safe transformations)</h3>
+    <ul class="clean">
+      <li><strong>Predicate pushdown</strong> — automatically derive the <code>where</code>/<code>filter</code> split
+        the user does by hand today: index-eligible terms (per each field's <code>ConditionSet</code>) go to the
+        backend; the rest become post-filters.</li>
+      <li><strong>Push filters below joins</strong> — apply each single-source condition before joining, so every side
+        scans as little as possible.</li>
+      <li><strong>Time-range extraction</strong> — isolate the time predicate so the planner can prune index shards
+        whose partition window doesn't overlap the query.</li>
+      <li><strong>Constant folding, prune redundant terms, expand dictionaries.</strong></li>
+    </ul>
+    <h3>Cost-based choice (pick the cheapest equivalent plan)</h3>
+    <p>For each data source the planner enumerates access paths — an <em>index scan</em> with partition pruning, a
+      <em>full scan</em>, or a <em>state lookup</em> — estimates each, and keeps the cheapest. For joins it also
+      chooses the algorithm (next section).</p>
+    <div class="callout info">
+      <span class="lbl">Backwards compatible</span>
+      Queries that already spell out <code>where</code> / <code>filter</code> keep compiling to the same thing. The
+      optimiser only <em>improves</em> placement when it can prove the result is unchanged.
+    </div>
+  </section>
+
+  <!-- ESTIMATE -->
+  <section id="estimate">
+    <h2><span class="num">6</span>Estimating cost &amp; time before you run</h2>
+    <p>The cost model turns metadata Stroom already keeps into an estimate of rows, bytes, and wall-clock duration.</p>
+    <div class="diagram">
+      <svg viewBox="0 0 920 340" role="img" aria-label="Cost model inputs and outputs">
+        <defs>
+          <marker id="ah3" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="var(--ink-soft)"/>
+          </marker>
+        </defs>
+        <!-- input signals (left) -->
+        <text class="s-t-s" x="30" y="24">Metadata signals (already tracked)</text>
+        <g>
+          <rect class="s-box" x="30" y="36" width="250" height="40" rx="8"/>
+          <text class="s-t" x="44" y="61">Index shard <tspan class="s-t-mono">documentCount</tspan> · <tspan class="s-t-mono">fileSize</tspan></text>
+          <rect class="s-box" x="30" y="84" width="250" height="40" rx="8"/>
+          <text class="s-t" x="44" y="109">Shard partition <tspan class="s-t-mono">from/toTime</tspan></text>
+          <rect class="s-box" x="30" y="132" width="250" height="40" rx="8"/>
+          <text class="s-t" x="44" y="157">Meta counts by feed / type / time</text>
+          <rect class="s-box" x="30" y="180" width="250" height="40" rx="8"/>
+          <text class="s-t" x="44" y="205">Throughput <tspan class="s-t-mono">commitDocumentCountPs</tspan></text>
+          <rect class="s-box" x="30" y="228" width="250" height="40" rx="8"/>
+          <text class="s-t" x="44" y="253">ConditionSet selectivity heuristics</text>
+          <rect class="s-box" x="30" y="276" width="250" height="40" rx="8"/>
+          <text class="s-t" x="44" y="301">Cluster size (node parallelism)</text>
+        </g>
+        <!-- cost model -->
+        <rect class="s-box-green" x="360" y="120" width="180" height="96" rx="12"/>
+        <text class="s-t-b" x="450" y="162" text-anchor="middle">CostModel</text>
+        <text class="s-t-s" x="450" y="182" text-anchor="middle">selectivity ×</text>
+        <text class="s-t-s" x="450" y="198" text-anchor="middle">rows ÷ throughput</text>
+        <!-- outputs -->
+        <g>
+          <rect class="s-box-accent" x="620" y="70" width="270" height="40" rx="8"/>
+          <text class="s-t-b" x="634" y="95">Estimated rows scanned</text>
+          <rect class="s-box-accent" x="620" y="120" width="270" height="40" rx="8"/>
+          <text class="s-t-b" x="634" y="145">Estimated bytes read</text>
+          <rect class="s-box-accent" x="620" y="170" width="270" height="40" rx="8"/>
+          <text class="s-t-b" x="634" y="195">Estimated duration + confidence</text>
+          <rect class="s-box" x="620" y="220" width="270" height="40" rx="8"/>
+          <text class="s-t" x="634" y="245">EXPLAIN plan tree (notes)</text>
+        </g>
+        <!-- arrows -->
+        <g>
+          <path class="s-arrow" d="M280 56 C 330 56 320 150 358 150" marker-end="url(#ah3)"/>
+          <path class="s-arrow" d="M280 104 C 330 104 325 156 358 156" marker-end="url(#ah3)"/>
+          <path class="s-arrow" d="M280 152 L358 162" marker-end="url(#ah3)"/>
+          <path class="s-arrow" d="M280 200 C 330 200 325 176 358 172" marker-end="url(#ah3)"/>
+          <path class="s-arrow" d="M280 248 C 330 248 320 182 358 178" marker-end="url(#ah3)"/>
+          <path class="s-arrow" d="M280 296 C 335 296 315 190 358 184" marker-end="url(#ah3)"/>
+          <path class="s-arrow" d="M540 150 C 585 150 585 90 618 90" marker-end="url(#ah3)"/>
+          <path class="s-arrow" d="M540 162 L618 140" marker-end="url(#ah3)"/>
+          <path class="s-arrow" d="M540 174 C 585 174 585 190 618 190" marker-end="url(#ah3)"/>
+          <path class="s-arrow" d="M540 186 C 585 210 585 240 618 240" marker-end="url(#ah3)"/>
+        </g>
+      </svg>
+      <p class="cap">Example: a tight time range overlaps fewer shards → fewer docs → lower cost; an equality predicate is cheaper than a range, which is cheaper than an unindexed scan.</p>
+    </div>
+    <p class="muted">The estimate is surfaced in the query editor before <span class="kbd">Run</span>, with a warning
+      when it exceeds a configurable threshold. Calibration constants live in config; later we can fit them to real
+      measured durations without changing the interface.</p>
+  </section>
+
+  <!-- JOINS -->
+  <section id="joins">
+    <h2><span class="num">7</span>Joins across data sources</h2>
+    <p>New capability: a single query can combine sources — e.g. enrich an event index with a PlanB/State store, or
+      join two indexes on a shared key. v1 supports <strong>equi-joins</strong>, <strong>INNER</strong> and
+      <strong>LEFT OUTER</strong>.</p>
+    <div class="card">
+      <p style="margin:0 0 8px" class="muted">Example query</p>
+      <pre style="margin:0;overflow-x:auto"><code>from Events as e
+left join UserState as u on e.userId = u.userId
+where e.time between 2026-07-01T00:00:00.000Z and 2026-07-17T00:00:00.000Z
+select e.time, e.userId, u.department</code></pre>
+    </div>
+    <div class="diagram">
+      <svg viewBox="0 0 900 340" role="img" aria-label="Join plan: logical to physical">
+        <defs>
+          <marker id="ah4" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="var(--ink-soft)"/>
+          </marker>
+        </defs>
+        <text class="s-t-s" x="20" y="22">Logical plan (after filter pushdown)</text>
+        <!-- logical tree -->
+        <g>
+          <rect class="s-box" x="120" y="34" width="150" height="38" rx="8"/>
+          <text class="s-t-b" x="195" y="58" text-anchor="middle">Project / Select</text>
+
+          <rect class="s-box-purple" x="110" y="100" width="170" height="40" rx="8"/>
+          <text class="s-t-b" x="195" y="120" text-anchor="middle">Left Join</text>
+          <text class="s-t-s" x="195" y="134" text-anchor="middle">e.userId = u.userId</text>
+
+          <rect class="s-box-amber" x="20" y="176" width="160" height="52" rx="8"/>
+          <text class="s-t-b" x="100" y="198" text-anchor="middle">Filter</text>
+          <text class="s-t-s" x="100" y="214" text-anchor="middle">e.time between …</text>
+
+          <rect class="s-box" x="210" y="176" width="150" height="52" rx="8"/>
+          <text class="s-t-b" x="285" y="198" text-anchor="middle">Scan</text>
+          <text class="s-t-s" x="285" y="214" text-anchor="middle">UserState (u)</text>
+
+          <rect class="s-box" x="40" y="262" width="120" height="40" rx="8"/>
+          <text class="s-t-b" x="100" y="286" text-anchor="middle">Scan Events (e)</text>
+        </g>
+        <g>
+          <path class="s-arrow" d="M195 72 L195 98" marker-end="url(#ah4)"/>
+          <path class="s-arrow" d="M160 140 L110 174" marker-end="url(#ah4)"/>
+          <path class="s-arrow" d="M240 140 L285 174" marker-end="url(#ah4)"/>
+          <path class="s-arrow" d="M100 228 L100 260" marker-end="url(#ah4)"/>
+        </g>
+
+        <!-- divider -->
+        <line x1="420" y1="30" x2="420" y2="310" stroke="var(--line)" stroke-width="1.5" stroke-dasharray="5 5"/>
+
+        <text class="s-t-s" x="470" y="22">Physical choice — cost-based</text>
+        <g>
+          <rect class="s-box-green" x="470" y="44" width="400" height="70" rx="10"/>
+          <text class="s-t-b" x="490" y="70">Broadcast-lookup join</text>
+          <text class="s-t-s" x="490" y="90">UserState is small → build side; probe per Events row</text>
+          <text class="s-t-s" x="490" y="106">reuses existing GetState / StateFetcher functions</text>
+
+          <rect class="s-box" x="470" y="128" width="400" height="54" rx="10"/>
+          <text class="s-t-b" x="490" y="150">Hash join</text>
+          <text class="s-t-s" x="490" y="168">chosen when both sides are large — materialise + probe</text>
+
+          <rect class="s-box" x="470" y="196" width="400" height="50" rx="10"/>
+          <text class="s-t-b" x="490" y="217">Nested-loop</text>
+          <text class="s-t-s" x="490" y="234">fallback</text>
+
+          <rect class="s-box-accent" x="470" y="260" width="400" height="52" rx="10"/>
+          <text class="s-t-b" x="490" y="282">Chosen: smaller estimated side becomes build side;</text>
+          <text class="s-t-b" x="490" y="299">filters already pushed down to shrink inputs.</text>
+        </g>
+      </svg>
+      <p class="cap">Filters are pushed to each side first; then the planner costs broadcast-lookup vs hash vs nested-loop and picks the cheapest, using the smaller side to build.</p>
+    </div>
+    <p>Each side runs as its own sub-query through the existing <code>SearchProvider</code>s and federated executor;
+      a join operator combines the streams using <code>ResultStore</code>/coprocessors — <strong>no new storage
+      layer</strong>. Enrichment lookups reuse the existing state-fetch functions rather than a new mechanism.</p>
+    <div class="callout warn">
+      <span class="lbl">Out of scope for v1</span>
+      Non-equi joins, temporal stream-to-stream correlation joins, and RIGHT/FULL OUTER joins. These build on the same
+      operator later (the windowing infrastructure already exists for temporal joins).
+    </div>
+  </section>
+
+  <!-- DOMAIN TYPES -->
+  <section id="domain-types">
+    <h2><span class="num">8</span>Domain types — querying by meaning</h2>
+    <p>Stroom already tags fields with a <strong>domain type</strong>: a semantic label such as
+      <code>Host.ipaddress</code> or <code>Asset.location</code>, with wildcards like <code>*.ipaddress</code>. Today
+      it only powers the grid's "Jump&nbsp;to&nbsp;…" navigation. The new engine becomes its first
+      <em>execution-side</em> consumer — using it as an <strong>advisory</strong> signal that sharpens exactly the
+      features this project adds (joins, cross-source enrichment, costing). It is never required: a query whose fields
+      carry no domain type plans exactly as it does today.</p>
+    <div class="diagram">
+      <svg viewBox="0 0 900 250" role="img" aria-label="Matching two differently-named columns by domain type">
+        <defs>
+          <marker id="ah6" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="var(--ink-soft)"/>
+          </marker>
+        </defs>
+        <rect class="s-box-accent" x="24" y="40" width="256" height="60" rx="9"/>
+        <text class="s-t-b" x="40" y="66">Events index · <tspan class="s-t-mono">src_ip</tspan></text>
+        <text class="s-t-s" x="40" y="86">domain type <tspan class="s-t-mono">Host.ipaddress</tspan></text>
+
+        <rect class="s-box-green" x="24" y="150" width="256" height="60" rx="9"/>
+        <text class="s-t-b" x="40" y="176">State store · <tspan class="s-t-mono">ipAddress</tspan></text>
+        <text class="s-t-s" x="40" y="196">domain type <tspan class="s-t-mono">*.ipaddress</tspan></text>
+
+        <rect class="s-box-purple" x="352" y="86" width="232" height="78" rx="11"/>
+        <text class="s-t-b" x="468" y="116" text-anchor="middle">canAccept ✓</text>
+        <text class="s-t-s" x="468" y="136" text-anchor="middle">compatible by meaning,</text>
+        <text class="s-t-s" x="468" y="152" text-anchor="middle">not by column name</text>
+
+        <rect class="s-box-accent" x="652" y="86" width="224" height="78" rx="11"/>
+        <text class="s-t-b" x="764" y="116" text-anchor="middle">Join key validated</text>
+        <text class="s-t-s" x="764" y="136" text-anchor="middle">(or inferred, or flagged</text>
+        <text class="s-t-s" x="764" y="152" text-anchor="middle">as a nonsense join)</text>
+
+        <path class="s-arrow" d="M280 70 C 322 70 322 118 350 118" marker-end="url(#ah6)"/>
+        <path class="s-arrow" d="M280 180 C 322 180 322 132 350 132" marker-end="url(#ah6)"/>
+        <path class="s-arrow" d="M584 125 L650 125" marker-end="url(#ah6)"/>
+      </svg>
+      <p class="cap">Two sources name the same real-world thing differently; their domain types make them join-compatible, so the planner can validate — or infer — the equi-key by meaning.</p>
+    </div>
+    <div class="grid cols-2">
+      <div class="card">
+        <h3 style="margin-top:0">Smarter, safer joins</h3>
+        <p class="muted" style="margin:6px 0 0;font-size:14.5px">Validate an equi-join's keys by domain type (reject
+          <code>Asset.id = Host.ipaddress</code> at plan time) and infer the key when compatible types line up under
+          different names. Where a type owns a canonical form, normalise both sides so <code>192.168.0.1</code> matches
+          <code>3232235521</code>.</p>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0">Find the source that answers a type</h3>
+        <p class="muted" style="margin:6px 0 0;font-size:14.5px">The execution-side twin of the dashboard
+          "Jump&nbsp;to" registry: stores declare which domain types they answer for, so an enrichment join can
+          <em>discover</em> the right State / PlanB / reference source for a typed key instead of being wired by hand.</p>
+      </div>
+    </div>
+    <div class="callout info">
+      <span class="lbl">Advisory, always</span>
+      Domain types add nothing to single-source planning and are never required. Later they can also sharpen cost
+      estimation (better distinct-value counts for join sizing) once a statistics source exists — a post-v1 upgrade.
+    </div>
+  </section>
+
+  <!-- SEAM -->
+  <section id="seam">
+    <h2><span class="num">9</span>Where it plugs in</h2>
+    <p>The whole thing hangs off <strong>one method</strong>. Both validation and execution funnel through
+      <code>searchRequestFactory.create(...)</code> in <code>QueryServiceImpl</code> (and <code>QueryStoreImpl</code>).
+      We introduce a <code>QueryCompiler</code> facade with two implementations and let a config flag choose.</p>
+    <div class="diagram">
+      <svg viewBox="0 0 860 210" role="img" aria-label="QueryCompiler facade and feature flag">
+        <defs>
+          <marker id="ah5" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="var(--ink-soft)"/>
+          </marker>
+        </defs>
+        <rect class="s-box" x="30" y="80" width="190" height="52" rx="9"/>
+        <text class="s-t-b" x="125" y="102" text-anchor="middle">QueryServiceImpl</text>
+        <text class="s-t-s" x="125" y="118" text-anchor="middle">search() &amp; validateQuery()</text>
+
+        <rect class="s-box-accent" x="300" y="80" width="180" height="52" rx="9"/>
+        <text class="s-t-b" x="390" y="102" text-anchor="middle">QueryCompiler</text>
+        <text class="s-t-s" x="390" y="118" text-anchor="middle">facade · reads flag</text>
+
+        <rect class="s-box" x="580" y="24" width="250" height="52" rx="9"/>
+        <text class="s-t-b" x="705" y="46" text-anchor="middle">LegacyQueryCompiler</text>
+        <text class="s-t-s" x="705" y="62" text-anchor="middle">wraps SearchRequestFactory (default)</text>
+
+        <rect class="s-box-green" x="580" y="118" width="250" height="60" rx="9"/>
+        <text class="s-t-b" x="705" y="142" text-anchor="middle">OptimisingQueryCompiler</text>
+        <text class="s-t-s" x="705" y="160" text-anchor="middle">grammar + planner →</text>
+        <text class="s-t-s" x="705" y="174" text-anchor="middle">SearchRequest + CostEstimate</text>
+
+        <path class="s-arrow" d="M220 106 L298 106" marker-end="url(#ah5)"/>
+        <path class="s-arrow" d="M480 100 C 540 100 540 55 578 52" marker-end="url(#ah5)" stroke-dasharray="4 3"/>
+        <path class="s-arrow" d="M480 112 C 540 112 540 145 578 148" marker-end="url(#ah5)"/>
+        <text class="s-tag" x="500" y="88">flag off</text>
+        <text class="s-tag" x="500" y="170">flag on</text>
+      </svg>
+      <p class="cap">Flag <code>stroom.query.optimiser.enabled</code> (default off). One switch point means instant revert to the legacy compiler.</p>
+    </div>
+  </section>
+
+  <!-- ROADMAP -->
+  <section id="roadmap">
+    <h2><span class="num">10</span>Roadmap</h2>
+    <p>Two new server-side modules — <code>stroom-query-grammar</code> (ANTLR + AST) and <code>stroom-query-planner</code>
+      (IR, rewrites, cost model) — plus the facade. Delivered in phases, each shippable behind the flag.</p>
+    <table>
+      <thead><tr><th>Phase</th><th>Delivers</th><th>Proof it's done</th></tr></thead>
+      <tbody>
+        <tr><td><span class="phase-pill">0</span></td><td>Scaffolding: modules, <code>QueryCompiler</code> facade, config flag (off). Legacy delegates.</td><td>No behaviour change; wired through the facade.</td></tr>
+        <tr><td><span class="phase-pill">1</span></td><td>ANTLR grammar + AST at parity; join syntax reserved (parsed, rejected). Emits the same <code>SearchRequest</code>.</td><td>Golden test: legacy vs new identical over the existing corpus.</td></tr>
+        <tr><td><span class="phase-pill">2</span></td><td>Logical plan IR (incl. <code>Join</code>), binding/validation, rule rewrites.</td><td>Rewrite unit tests; explicit where/filter preserved.</td></tr>
+        <tr><td><span class="phase-pill">3</span></td><td>Cost model from existing metadata + access-path choice; join-cost interface defined.</td><td>Monotonic, sane estimates on synthetic metadata.</td></tr>
+        <tr><td><span class="phase-pill">4</span></td><td>EXPLAIN + pre-run estimate endpoint, surfaced in the query editor.</td><td>Estimate + plan tree shown before Run; threshold warning.</td></tr>
+        <tr><td><span class="phase-pill">5</span></td><td>Single-source plan-driven execution; actual-vs-estimate logging. Rollout begins.</td><td>Identical results to legacy; estimates track measured durations.</td></tr>
+        <tr><td><span class="phase-pill">6</span></td><td>Joins: enable syntax + multi-source join executor (broadcast / hash / nested-loop).</td><td>INNER &amp; LEFT OUTER correctness across two sources; then deprecate legacy.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- SCOPE -->
+  <section id="scope">
+    <h2><span class="num">11</span>Scope &amp; non-goals</h2>
+    <div class="grid cols-2">
+      <div class="card">
+        <h3 style="margin-top:0">In scope</h3>
+        <ul class="clean">
+          <li>ANTLR grammar + typed AST replacing the regex tokeniser.</li>
+          <li>Logical plan, rule rewrites, cost-based physical choice.</li>
+          <li>Pre-run cost &amp; duration estimate + EXPLAIN.</li>
+          <li>Equi-joins (INNER, LEFT OUTER) across data sources.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0">Not in v1</h3>
+        <ul class="clean">
+          <li>Non-equi &amp; temporal stream-stream correlation joins; RIGHT/FULL OUTER.</li>
+          <li>Replacing the expression/function engine (kept as-is).</li>
+          <li>Changing result storage, coprocessors, or cluster protocol.</li>
+          <li>A statistics-collection job or query-telemetry store (later accuracy upgrade).</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- PARITY -->
+  <section id="parity">
+    <h2><span class="num">12</span>Proving it works — dual-run parity</h2>
+    <p>Because both compilers sit behind the one facade and both emit a <code>SearchRequest</code>, the
+      <strong>legacy engine is a live oracle</strong> for the new one: any query can be compiled by both and the
+      outputs compared — in a test, a fuzzer, or production. The work is done <strong>test-first</strong>, and no
+      phase merges until its parity gate is green.</p>
+    <div class="diagram">
+      <svg viewBox="0 0 880 220" role="img" aria-label="Dual-run: compile one query through both engines and compare">
+        <defs>
+          <marker id="ah7" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="var(--ink-soft)"/>
+          </marker>
+        </defs>
+        <rect class="s-box" x="20" y="82" width="150" height="56" rx="9"/>
+        <text class="s-t-b" x="95" y="106" text-anchor="middle">StroomQL</text>
+        <text class="s-t-s" x="95" y="123" text-anchor="middle">one query</text>
+
+        <rect class="s-box" x="230" y="30" width="230" height="52" rx="9"/>
+        <text class="s-t-b" x="345" y="52" text-anchor="middle">Legacy compiler</text>
+        <text class="s-t-s" x="345" y="68" text-anchor="middle">SearchRequest · the oracle</text>
+
+        <rect class="s-box-green" x="230" y="140" width="230" height="52" rx="9"/>
+        <text class="s-t-b" x="345" y="162" text-anchor="middle">Optimising compiler</text>
+        <text class="s-t-s" x="345" y="178" text-anchor="middle">SearchRequest</text>
+
+        <rect class="s-box-accent" x="520" y="82" width="160" height="56" rx="9"/>
+        <text class="s-t-b" x="600" y="106" text-anchor="middle">Compare</text>
+        <text class="s-t-s" x="600" y="123" text-anchor="middle">canonical JSON</text>
+
+        <rect class="s-box" x="720" y="82" width="150" height="56" rx="9"/>
+        <text class="s-t-b" x="795" y="106" text-anchor="middle">Identical? ✓</text>
+        <text class="s-t-s" x="795" y="123" text-anchor="middle">else log divergence</text>
+
+        <path class="s-arrow" d="M170 100 C 200 100 200 56 228 56" marker-end="url(#ah7)"/>
+        <path class="s-arrow" d="M170 120 C 200 120 200 166 228 166" marker-end="url(#ah7)"/>
+        <path class="s-arrow" d="M460 56 C 492 56 492 104 518 104" marker-end="url(#ah7)"/>
+        <path class="s-arrow" d="M460 166 C 492 166 492 116 518 116" marker-end="url(#ah7)"/>
+        <path class="s-arrow" d="M680 110 L718 110" marker-end="url(#ah7)"/>
+      </svg>
+      <p class="cap">The same query, both engines, one comparison — run as a unit test, a generator, and a production shadow.</p>
+    </div>
+    <div class="grid cols-2">
+      <div class="card">
+        <h3 style="margin-top:0">Three layers, tightening</h3>
+        <ul class="clean" style="margin:6px 0 0">
+          <li><strong>Golden differential</strong> (hard merge gate) — both engines over the existing corpus, compared on a canonical normal form; negative tests assert precise error positions.</li>
+          <li><strong>Generative fuzz</strong> — random valid queries diffed the same way; failing seeds become permanent fixtures.</li>
+          <li><strong>Shadow mode</strong> — in production the legacy result is served while the optimiser compiles in parallel; divergences are logged, never served. Flip to "on" only after a clean soak.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0">Two altitudes of "same"</h3>
+        <p class="muted" style="margin:6px 0 0;font-size:14.5px"><strong>Same plan</strong> — a byte-identical
+          <code>SearchRequest</code> where the optimiser is told not to reorder (parity mode). <strong>Same answer</strong>
+          — identical results, cost no worse, where it does optimise. Joins have no legacy twin, so they're checked
+          against hand-computed results and the invariant that join order / algorithm never changes the answer.</p>
+      </div>
+    </div>
+    <p class="muted">Alongside parity, each component has focused unit tests — rewrite rules (input plan → expected
+      plan), cost-model monotonicity, join cardinality &amp; algorithm selection — plus an end-to-end pass via the
+      Stroom MCP tools (<code>validateQuery</code>, the estimate endpoint, <code>csvQuery</code>) including a
+      cross-source join, with estimates held to a target error band.</p>
+    <div class="callout info">
+      <span class="lbl">Risk posture</span>
+      Grammar drift is caught by the parity gate; estimate inaccuracy is bounded by confidence bands + config
+      calibration; rollout risk is neutralised by the flag + shadow mode; joins ship last, after single-source is proven.
+    </div>
+  </section>
+
+  <!-- GRAPH -->
+  <section id="graph">
+    <h2><span class="num">13</span>Downstream consumer — the temporal Cypher graph</h2>
+    <p>A second project, the <a href="temporal-cypher-graph.html">temporal Cypher graph</a>, is designed to build
+      directly on this query core rather than ship its own parser/planner. This is <strong>not a requirement on this
+      plan's scope</strong> — just a flag that a second consumer exists, and a further reason to keep the
+      <code>Join</code> IR <strong>shape-complete early</strong> (Phase 2). In it, graph "traversal" <em>is</em> a join:
+      a hop <code>MATCH (a)-[r]-&gt;(b)</code> lowers to a join of an edge/adjacency relation to a node relation.</p>
+    <div class="grid cols-2">
+      <div class="card">
+        <h3 style="margin-top:0">Consumes from this core</h3>
+        <ul class="clean">
+          <li>The <strong>grammar module</strong> — a <code>Cypher.g4</code> alongside <code>StroomQL.g4</code> &rarr; the same logical IR.</li>
+          <li>The <strong><code>Join</code> operator</strong> (Phase 2) + <strong>join algorithms</strong> (Phase 6): a hop runs as the <strong>broadcast-lookup / index-nested-loop</strong> join over an adjacency prefix-scan access path.</li>
+          <li>The <strong>rewrite rules + cost model</strong> and the existing execution machinery (providers, <code>ResultStore</code>, coprocessors).</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0">Adds on top (out of scope here)</h3>
+        <ul class="clean">
+          <li>A <strong>variable-length-path / fixpoint</strong> operator (bounded transitive closure) — beyond the equi-join set.</li>
+          <li>An <strong>as-of temporal join</strong> — reuses the enrichment-lookup path (<code>GetState</code>/<code>StateProvider</code>); <em>distinct from</em> the windowed stream-stream correlation joins deferred in &sect;11.</li>
+          <li>A <strong>Plan B graph datasource</strong> (node/edge/adjacency relations with cost signals).</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <p>Status: <strong>Proposed</strong> · This page mirrors the internal plan and is self-contained (inline SVG, no
+      external assets) — open it directly in any browser or commit it alongside the code. Feedback welcome before Phase 0.</p>
+  </footer>
+
+</div>
+</body>
+</html>
