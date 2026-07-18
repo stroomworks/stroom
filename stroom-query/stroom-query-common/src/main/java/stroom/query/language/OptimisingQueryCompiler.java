@@ -19,20 +19,25 @@ package stroom.query.language;
 import stroom.docref.DocRef;
 import stroom.query.api.ExplainPlan;
 import stroom.query.api.ExpressionOperator;
+import stroom.query.api.JoinSpec;
 import stroom.query.api.ResultRequest;
 import stroom.query.api.SearchRequest;
 import stroom.query.api.TableSettings;
 import stroom.query.api.TimeRange;
 import stroom.query.api.datasource.QueryFieldProvider;
+import stroom.query.api.token.TokenException;
+import stroom.query.common.v2.JoinDataSourceType;
 import stroom.query.grammar.ast.AstQuery;
 import stroom.query.grammar.parse.StroomQlParser;
 import stroom.query.language.functions.ExpressionContext;
 import stroom.query.planner.bind.Binder;
 import stroom.query.planner.cost.CostModel;
 import stroom.query.planner.logical.Aggregate;
+import stroom.query.planner.logical.EquiKey;
 import stroom.query.planner.logical.Filter;
 import stroom.query.planner.logical.Having;
 import stroom.query.planner.logical.Join;
+import stroom.query.planner.logical.JoinType;
 import stroom.query.planner.logical.Limit;
 import stroom.query.planner.logical.LogicalPlan;
 import stroom.query.planner.logical.Project;
@@ -56,6 +61,7 @@ import org.jspecify.annotations.Nullable;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.UUID;
 import java.util.function.Consumer;
 
 /**
@@ -116,8 +122,100 @@ public class OptimisingQueryCompiler implements QueryCompiler {
         Objects.requireNonNull(query, "query");
         Objects.requireNonNull(in, "in");
         Objects.requireNonNull(expressionContext, "expressionContext");
+        final AstQuery ast = StroomQlParser.parse(query);
+        if (!ast.from().joins().isEmpty()) {
+            return createJoin(query, ast, in, expressionContext);
+        }
         final SearchRequest searchRequest = newMapper().create(query, in, expressionContext);
         return applyPlanEnhancements(query, searchRequest, expressionContext);
+    }
+
+    /**
+     * Task 6.1x (see {@code docs/query-optimiser-implementation-plan.md}, Phase 6): the outer {@link
+     * SearchRequest} for a join query. Scoped, like Task 6.1, to the common shape: exactly one {@code join}
+     * (two sources), both sides either a bare {@code Scan} or a {@code Filter} directly over one (see {@link
+     * #findScanAndFilter} - {@code PushFiltersBelowJoinsRule} can push a where-clause term down into exactly this
+     * shape when it references only one side's alias, so a bare-{@code Scan}-only check would wrongly reject a
+     * query this project's own rewrite pipeline already knows how to optimise). An N-way chain or a
+     * nested/nested-source join rejects cleanly (see {@link #findJoin}) rather than silently mis-binding. Unlike
+     * {@link #applyPlanEnhancements}, there's no established "prior behaviour" to protect here - every join query
+     * used to just throw - so this method is <b>not</b> fail-open; a genuine failure (an unsupported shape, a
+     * domain-type-incompatible equi-key, ...) propagates normally.
+     *
+     * <p>Reuses {@link AstToSearchRequestMapper#create(String, SearchRequest, ExpressionContext, boolean)} (Task
+     * 6.1x's `allowJoins` overload) to build the *outer* request's {@code where}/{@code select}/{@code group}/
+     * {@code having}/{@code sort}/{@code limit} - verified safe: a dotted {@code alias.field} reference is one
+     * bareword token at the grammar level, so the mapper's existing blind text-passthrough (no field/alias
+     * validation at all) already produces byte-identical {@code ExpressionTerm.field}/{@code Column.expression}
+     * values to what {@code Binder.bindTerm}/{@code qualifiedName} compute for the same source text - see the
+     * plan doc's Phase 6 section for the full finding. The mapper resolves {@code Query.dataSource} to the
+     * {@code from} clause's left source (its only concept of "the" datasource) - overridden below with the
+     * sentinel {@link JoinDataSourceType#TYPE} plus the {@link JoinSpec} the real datasources/equi-keys live on.</p>
+     */
+    private SearchRequest createJoin(
+            final String query, final AstQuery ast, final SearchRequest in, final ExpressionContext expressionContext) {
+        if (ast.from().joins().size() > 1) {
+            throw new TokenException(
+                    null, "Only a single join is supported for now - N-way join chains are not yet enabled.");
+        }
+
+        final LogicalPlan bound = new Binder(fieldInfoSource).bind(ast);
+        final LogicalPlan rewritten = RewritePipeline.standard(fieldInfoSource).run(bound);
+        final Join join = findJoin(rewritten);
+        final ScanAndFilter leftSide = join == null ? null : findScanAndFilter(join.left());
+        final ScanAndFilter rightSide = join == null ? null : findScanAndFilter(join.right());
+        if (leftSide == null || rightSide == null) {
+            throw new TokenException(
+                    null, "This join shape is not yet supported - both sides must be plain datasource scans "
+                          + "(optionally filtered).");
+        }
+
+        final SearchRequest leftRequest = compileJoinSide(leftSide.scan(), leftSide.filter(), expressionContext);
+        final SearchRequest rightRequest = compileJoinSide(rightSide.scan(), rightSide.filter(), expressionContext);
+        final List<JoinSpec.JoinEquiKey> equiKeys = join.equiKeys().stream()
+                .map(OptimisingQueryCompiler::toWireEquiKey)
+                .toList();
+        final JoinSpec joinSpec = JoinSpec.builder()
+                .left(leftRequest)
+                .right(rightRequest)
+                .joinType(join.joinType() == JoinType.LEFT
+                        ? JoinSpec.JoinType.LEFT
+                        : JoinSpec.JoinType.INNER)
+                .equiKeys(equiKeys)
+                .build();
+
+        final SearchRequest outer = newMapper().create(query, in, expressionContext, true);
+        final DocRef sentinelDataSource = new DocRef(
+                JoinDataSourceType.TYPE, UUID.randomUUID().toString(),
+                leftSide.scan().dataSourceName() + " ⋈ " + rightSide.scan().dataSourceName());
+        return outer.copy()
+                .query(outer.getQuery().copy().dataSource(sentinelDataSource).joinSpec(joinSpec).build())
+                .build();
+    }
+
+    private static JoinSpec.JoinEquiKey toWireEquiKey(final EquiKey equiKey) {
+        return new JoinSpec.JoinEquiKey(
+                equiKey.left().alias(), equiKey.left().field(),
+                equiKey.right().alias(), equiKey.right().field());
+    }
+
+    /**
+     * Descends through single-input wrapper nodes (Project/Aggregate/Having/Window/Sort/Limit) to find a {@code
+     * Join} node - null if there isn't one (a bare {@code Scan}/{@code Filter} plan) or if it's nested beneath
+     * another {@code Join} (an N-way chain - {@link #createJoin} only supports exactly one join).
+     */
+    private static @Nullable Join findJoin(final LogicalPlan plan) {
+        return switch (plan) {
+            case final Join j -> j;
+            case final Scan s -> null;
+            case final Filter f -> findJoin(f.input());
+            case final Project p -> findJoin(p.input());
+            case final Aggregate a -> findJoin(a.input());
+            case final Having h -> findJoin(h.input());
+            case final Window w -> findJoin(w.input());
+            case final Sort s -> findJoin(s.input());
+            case final Limit l -> findJoin(l.input());
+        };
     }
 
     /**
@@ -287,29 +385,42 @@ public class OptimisingQueryCompiler implements QueryCompiler {
     }
 
     /**
-     * Task 6.1b (first slice only - see {@code docs/query-optimiser-implementation-plan.md}, Phase 6): compiles
-     * one join side's {@code Scan} leaf into its own ordinary, single-source {@link SearchRequest}, by
-     * synthesising a trivial "select every field" sub-query and reusing {@link AstToSearchRequestMapper} rather
-     * than hand-building wire types - {@code scan} never has a {@code where}/{@code filter} predicate of its own
-     * (verified: {@code Binder.bindFromAndJoins} always attaches join-query predicates above the whole join, not
-     * to either side individually - the grammar has no syntax for a per-side clause), so nothing beyond field
-     * selection is needed here.
-     *
-     * <p><b>Not yet wired into {@link #create}</b> - see the class Javadoc/plan doc: {@link
-     * AstToSearchRequestMapper} rejects any join-containing query at the very first line of its own {@code
-     * create()}, so it can't build the *outer* (post-join) {@code SearchRequest} either, and that request's
-     * {@code where}/{@code select}/{@code group}/{@code having} clauses reference alias-qualified fields
-     * ({@code a.field}) that nothing in this module can compile to a wire {@link stroom.query.api.ExpressionOperator}
-     * yet ({@link stroom.query.planner.bind.Binder} only validates such references, it doesn't lower them to wire
-     * types). That's a separate, not-yet-scoped capability - this method is deliberately just the piece that's
-     * ready.</p>
+     * Task 6.1b (see {@code docs/query-optimiser-implementation-plan.md}, Phase 6): compiles one join side's
+     * {@code Scan} leaf (optionally with a {@code Filter} directly over it - see {@link #createJoin}'s Javadoc
+     * on why a side isn't always a bare {@code Scan}) into its own ordinary, single-source {@link SearchRequest},
+     * by synthesising a trivial "select every field" sub-query and reusing {@link AstToSearchRequestMapper}
+     * rather than hand-building wire types for the field-selection part; {@code filter}'s predicate(s), when
+     * present, are applied directly onto the result as {@code ExpressionOperator}s (the same "already a wire
+     * type, just assign it" pattern Task 5.2/5.3 use) rather than re-derived through StroomQL text. Called from
+     * {@link #createJoin} for each side of a join.
      */
-    SearchRequest compileJoinSide(final Scan scan, final ExpressionContext expressionContext) {
+    SearchRequest compileJoinSide(
+            final Scan scan, final @Nullable Filter filter, final ExpressionContext expressionContext) {
         Objects.requireNonNull(scan, "scan");
         Objects.requireNonNull(expressionContext, "expressionContext");
         final String syntheticQuery = "from \"" + escapeForDoubleQuotedString(scan.dataSourceName()) + "\" select *";
         final SearchRequest seed = new SearchRequest(null, null, null, null, null, false, null);
-        return newMapper().create(syntheticQuery, seed, expressionContext);
+        final SearchRequest base = newMapper().create(syntheticQuery, seed, expressionContext);
+        if (filter == null) {
+            return base;
+        }
+
+        SearchRequest result = base;
+        if (filter.wherePredicate() != null) {
+            result = result.copy()
+                    .query(result.getQuery().copy().expression(filter.wherePredicate()).build())
+                    .build();
+        }
+        if (filter.filterPredicate() != null) {
+            final List<ResultRequest> resultRequests = result.getResultRequests();
+            final List<ResultRequest> updated = resultRequests == null
+                    ? null
+                    : resultRequests.stream()
+                            .map(resultRequest -> applyValueFilter(resultRequest, filter.filterPredicate()))
+                            .toList();
+            result = result.copy().resultRequests(updated).build();
+        }
+        return result;
     }
 
     private static String escapeForDoubleQuotedString(final String raw) {

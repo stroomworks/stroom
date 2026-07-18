@@ -34,11 +34,12 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Task 6.1b (first slice): proves {@link OptimisingQueryCompiler#compileJoinSide} turns a join side's bare
- * {@code Scan} into a perfectly ordinary, valid single-source {@link SearchRequest} - reusing
- * {@link AstToSearchRequestMapper} via a synthesised "select every field" sub-query rather than hand-building
- * wire types. Not yet wired into {@link OptimisingQueryCompiler#create} - see that method's Javadoc for the
- * separate, not-yet-scoped capability (alias-aware outer-expression compilation) blocking that.
+ * Task 6.1b: proves {@link OptimisingQueryCompiler#compileJoinSide} turns a join side's bare {@code Scan} (with
+ * no {@code Filter} - the {@code null} second argument throughout this class) into a perfectly ordinary, valid
+ * single-source {@link SearchRequest} - reusing {@link AstToSearchRequestMapper} via a synthesised "select every
+ * field" sub-query rather than hand-building wire types. See {@link TestOptimisingQueryCompilerJoin} for the
+ * full join-query compilation this feeds into (Task 6.1x), and {@code compileJoinSide}'s own Javadoc for the
+ * {@code Filter}-present case this class doesn't exercise.
  */
 class TestOptimisingQueryCompilerJoinSideCompilation {
 
@@ -70,7 +71,7 @@ class TestOptimisingQueryCompilerJoinSideCompilation {
     void compilesTheScanAsAnOrdinarySingleSourceSearchRequest() {
         final Scan scan = new Scan("a", "Events", new AstPosition(1, 0));
 
-        final SearchRequest result = compiler().compileJoinSide(scan, expressionContext());
+        final SearchRequest result = compiler().compileJoinSide(scan, null, expressionContext());
 
         assertThat(result.getQuery()).isNotNull();
         assertThat(result.getQuery().getDataSource().getName()).isEqualTo("Events");
@@ -81,7 +82,7 @@ class TestOptimisingQueryCompilerJoinSideCompilation {
     void selectsEveryFieldTheDataSourceExposes() {
         final Scan scan = new Scan("a", "Events", new AstPosition(1, 0));
 
-        final SearchRequest result = compiler().compileJoinSide(scan, expressionContext());
+        final SearchRequest result = compiler().compileJoinSide(scan, null, expressionContext());
 
         final boolean hasStreamIdColumn = result.getResultRequests().stream()
                 .flatMap(rr -> rr.getMappings().stream())
@@ -95,8 +96,8 @@ class TestOptimisingQueryCompilerJoinSideCompilation {
         final Scan scanA = new Scan("a", "Events", new AstPosition(1, 0));
         final Scan scanB = new Scan("b", "Events", new AstPosition(1, 0));
 
-        final SearchRequest resultA = compiler().compileJoinSide(scanA, expressionContext());
-        final SearchRequest resultB = compiler().compileJoinSide(scanB, expressionContext());
+        final SearchRequest resultA = compiler().compileJoinSide(scanA, null, expressionContext());
+        final SearchRequest resultB = compiler().compileJoinSide(scanB, null, expressionContext());
 
         assertThat(resultA.getQuery().getDataSource()).isEqualTo(resultB.getQuery().getDataSource());
     }

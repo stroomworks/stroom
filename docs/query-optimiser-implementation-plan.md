@@ -1323,25 +1323,72 @@ wrong answer.
     `compileJoinSide` on both sides, and build the outer `SearchRequest`/`JoinSpec`/sentinel `DocRef` - blocked on
     the alias-aware outer-expression-compilation gap above. `create()` still throws for any join query today,
     unchanged from before this task - no regression, no half-wired behaviour.
-  - **Done-when**: `compileJoinSide` returns a valid, normal single-source `SearchRequest` for a bare `Scan`,
-    selecting every field the datasource exposes; two different aliases over the same datasource name compile to
-    identical sub-requests (the alias itself isn't - and doesn't need to be - encoded in the per-side request; it
-    only matters to `JoinSpec.JoinEquiKey`/the outer query, both still to come).
+  - **Done-when**: `compileJoinSide` returns a valid, normal single-source `SearchRequest` for a bare `Scan`
+    (optionally with a `Filter` directly over it - see the T6.1x update below), selecting every field the
+    datasource exposes; two different aliases over the same datasource name compile to identical sub-requests
+    when unfiltered.
   - **Verify**: `./gradlew :stroom-query:stroom-query-common:test`.
-  - **Status: done (first slice only, as scoped above).** `TestOptimisingQueryCompilerJoinSideCompilation` (3
-    tests) proves the sub-request shape, the "select every field" behaviour, and alias-independence.
+  - **Status: done, and now fully wired into `create()`** - see T6.1x below, which resolved the blocker this
+    task's first pass hit. `compileJoinSide` also gained a `@Nullable Filter` parameter (applying
+    `wherePredicate`/`filterPredicate` directly onto the compiled sub-request as already-wire-typed
+    `ExpressionOperator`s, the same "assign, don't re-derive" pattern as Task 5.2/5.3) once it turned out a join
+    side isn't always a bare `Scan` post-rewrite - see T6.1x's finding on `PushFiltersBelowJoinsRule`.
+    `TestOptimisingQueryCompilerJoinSideCompilation` (3 tests, `Filter` always `null`) covers the bare-`Scan`
+    case; `TestOptimisingQueryCompilerJoin` (T6.1x's own tests) exercises the full path including a pushed-down
+    per-side filter.
 
-- **T6.1x (new, not-yet-scoped, blocks wiring T6.1b/T6.1d into `create()`) — Alias-aware outer-expression
-  compilation.** A join query's post-join `where`/`select`/`group`/`having` clauses reference alias-qualified
-  fields (`a.field`); nothing compiles such a reference to a wire `ExpressionOperator`/`Column` today (`Binder`
-  only *validates* them via `Scope`/`QualifiedField`, for `explain()`; `AstToSearchRequestMapper`'s expression
-  building has never needed to understand more than one datasource's fields, unqualified). This likely means
-  either teaching `AstToSearchRequestMapper` about `Scope`-aware field resolution (a second, non-trivial code path
-  next to the one it already has for single-source unqualified fields), or a different approach entirely (e.g.
-  lowering the *rewritten* `LogicalPlan`'s outer nodes - `Project`/`Aggregate`/`Having`/`Sort`/`Limit` - directly
-  to wire types now that their field references are already `QualifiedField`s, rather than re-deriving them from
-  AST text). Needs its own research-then-plan pass before implementation, the same way Phase 5 and Phase 6 itself
-  did - **not assumed here**.
+- **T6.1x — Alias-aware outer-expression compilation (resolved - far smaller than the T6.1b finding feared).**
+  - **Research finding, in order of discovery:**
+    1. `Filter.wherePredicate()`/`filterPredicate()` and `Having.predicate()` are *already* real, wire-typed
+       `ExpressionOperator`s - `Binder.bindTerm`/`qualifiedName` (`Binder.java` lines ~310-359) build
+       `ExpressionTerm.field` as `"alias.field"` for an explicitly-qualified reference, and even *auto-attaches*
+       an alias to an unqualified-but-unambiguous field once a query has ≥2 scans. So the where/filter/having side
+       of a join's outer clauses needs **no new machinery at all** - Task 5.2/5.3's "it's already a wire type,
+       just assign it" pattern applies unchanged.
+    2. `AstToSearchRequestMapper.buildTerm`/`createColumn`/`processEval`/`processSortBy`/`processGroupBy` all take
+       raw `AstToken` text (`.unescapedText()`/`.rawText()`) straight into `ExpressionTerm.field`/`Column.expression`/
+       map keys, with **zero field-existence or alias validation anywhere** except `expandStarredField`'s
+       single-`DocRef` lookup for `select *`. Since a dotted `alias.field` reference is lexed as **one bareword
+       token** (confirmed: `StroomQL.g4`'s header, `QualifiedField`'s Javadoc), the mapper's blind passthrough
+       produces `ExpressionTerm.field`/`Column.expression` values for an explicitly-qualified reference that are
+       **byte-identical** to what `Binder` computes for the same source text - the mapper was never "wrong" for
+       joins, it just had an unconditional `rejectJoinsIfPresent` throw standing in front of otherwise-working
+       logic.
+    3. Net effect: the *only* real gaps are (a) `Query.dataSource` resolving to the `from` clause's left source
+       only (the mapper has no second-datasource concept - fixed by overriding it afterward, same as T6.1a always
+       planned), and (b) `select *`/a starred select-param, which would silently expand against only that one
+       `DocRef` (fixed by rejecting it outright when joins are present - a documented, narrow restriction: list
+       fields explicitly in a joined query - not a permanent one).
+    4. **Found while wiring this in** (not part of the original research): `PushFiltersBelowJoinsRule` (Task 2.3)
+       can rewrite a join side from a bare `Scan` into `Filter(Scan, wherePush, filterPush, ...)` when a
+       where-clause term references only that side's alias (`PushFiltersBelowJoinsRule.pushOnto`, lines 126-140) -
+       so Task 6.1's "both sides are a bare Scan" shape check needed loosening to "bare `Scan` **or** `Filter`
+       directly over one" (reusing `findScanAndFilter`, already built for Task 5.2/5.3) with T6.1b's
+       `compileJoinSide` applying the pushed-down predicate(s) onto the per-side sub-request.
+  - **Files**: `AstToSearchRequestMapper.java` - new `hasJoins` per-compile field; `create(String, SearchRequest,
+    ExpressionContext, boolean allowJoins)` overload (the old 3-arg `create` delegates with `allowJoins=false`,
+    unchanged for every existing caller); `expandStarredField` throws `TokenException` when `hasJoins` is true.
+    `OptimisingQueryCompiler.java` - `create()` parses first and dispatches to a new `createJoin(...)` when
+    `ast.from().joins()` is non-empty; `createJoin` binds+rewrites, finds the `Join` node (`findJoin`, descending
+    through the same wrapper nodes `findScanAndFilter` does), validates both sides via `findScanAndFilter`,
+    compiles each side (T6.1b), builds `JoinSpec`/`JoinEquiKey`s from `Join.equiKeys()`, calls the mapper's
+    `allowJoins=true` overload for the outer request, then overrides `Query.dataSource`/`joinSpec` on the result.
+    Restricted to exactly one join (an N-way chain throws a clear, dedicated message - deferred, not silently
+    mis-bound).
+  - **Contract**: unlike every other Phase 5/6 enhancement, this is **not fail-open** - there is no prior
+    "working" behaviour for a join query to protect (every join used to just throw), so a genuine failure (an
+    unsupported shape, a domain-type-incompatible equi-key from `Binder`, ...) propagates normally rather than
+    silently falling back.
+  - **Done-when**: a two-source `INNER`/`LEFT` join query (explicit aliases, no `select *`) compiles to a
+    `SearchRequest` whose `Query.dataSource.getType()` is the sentinel type with a populated `JoinSpec` (both
+    sides' sub-requests, equi-keys, join type); a where-clause term referencing only one side's alias still
+    compiles correctly even after `PushFiltersBelowJoinsRule` pushes it down into that side; `select *` and an
+    N-way chain both reject with a clear message.
+  - **Verify**: `./gradlew :stroom-query:stroom-query-common:test`.
+  - **Status: done.** `TestOptimisingQueryCompilerJoin` (4 tests: populated `JoinSpec` end-to-end including the
+    pushed-down-filter case, `LEFT` join type mapping, `select *` rejection) plus the `Filter`-parameter addition
+    to T6.1b's own tests. Full module suite (parity tests included) green - zero regression to single-source
+    compilation.
 
 - **T6.1c — In-memory join execution engine.**
   - **Files**: new `stroom-query-planner/src/main/java/stroom/query/planner/join/JoinExecutor.java` (or similar) -
@@ -1414,13 +1461,25 @@ wrong answer.
   - **Status: done (orchestration mechanics only, as scoped above).** `TestJoinSearchProvider` (5 tests) covers
     all of the above; new `stroom-searchable-impl → stroom-query-planner` dependency (for `JoinExecutor`),
     confirmed cycle-free the same way T6.1c's new dependency was.
+  - **Update after T6.1x resolved**: the "outer `FieldIndex` positions" blocker described above turned out to have
+    a concrete answer once T6.1x confirmed the outer `TableSettings`'s `Column.expression` strings already contain
+    alias-qualified text (`"a.StreamId"`) - see the Task 6.1 gate note. Re-verify at implementation time (don't
+    assume this note is still accurate), but this may unblock finishing `createResultStore` for real rather than
+    needing a separately-scoped follow-up.
 
 **Task 6.1 gate**: a two-source `index ⋈ index` (or `Searchable ⋈ Searchable`) INNER and LEFT join returns correct
 rows end-to-end through `QueryServiceImpl.search(...)`, gated behind `mode=on`/`shadow` like everything else in
 this project; a join outside the direct-`Scan`/`Filter` shape still rejects cleanly rather than silently
-mis-executing. **Not yet met**: T6.1x (alias-aware outer-expression compilation) remains the single blocker for
-both the `create()` wiring (T6.1b) and the final coprocessor-feeding step (T6.1d) - resolving it is what closes
-this gate.
+mis-executing. **Not yet met**: `create()` now compiles a join query all the way to a `SearchRequest` with a
+populated `JoinSpec` (T6.1x resolved that blocker), but `JoinSearchProvider.createResultStore` still throws at
+the last step - feeding joined rows into a real `Coprocessors`/`ResultStore`. **Found while resolving T6.1x, worth
+re-checking before assuming this is still hard**: `CoprocessorsFactory.create(outerSearchRequest, ...)` builds its
+`FieldIndex` from the outer `TableSettings.fields[].expression` strings, which (per T6.1x's finding) already
+contain alias-qualified text like `"a.StreamId"` for an explicit reference - so the position `JoinSearchProvider`
+needs for a given side's field is likely just `fieldIndex.getPos("<alias>.<fieldName>")` for each field that side
+exposes, a plain lookup against real data now that T6.1x produces genuine alias-qualified `Column.expression`
+strings - this may be considerably closer to done than it looked when T6.1d's own section was written, but
+re-verify before implementing rather than assuming.
 
 ### Task 6.2 — Enrichment joins (State/PlanB broadcast-lookup) + domain-type source discovery
 - **Goal**: a join whose build side is a State/PlanB store uses the existing single-key lookup functions

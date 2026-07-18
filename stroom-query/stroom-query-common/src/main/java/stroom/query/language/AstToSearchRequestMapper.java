@@ -144,6 +144,7 @@ final class AstToSearchRequestMapper {
     private final List<AstToken> additionalFields = new ArrayList<>();
     private boolean inHaving;
     private Optional<CompiledWindow> optionalCompiledWindow = Optional.empty();
+    private boolean hasJoins;
 
     AstToSearchRequestMapper(final VisualisationTokenConsumer visualisationTokenConsumer,
                             final DataSourceResolver dataSourceResolver,
@@ -188,13 +189,33 @@ final class AstToSearchRequestMapper {
      *                        parity".
      */
     SearchRequest create(final String query, final SearchRequest in, final ExpressionContext expressionContext) {
+        return create(query, in, expressionContext, false);
+    }
+
+    /**
+     * Task 6.1x (see {@code docs/query-optimiser-implementation-plan.md}, Phase 6): same contract as {@link
+     * #create(String, SearchRequest, ExpressionContext)}, except when {@code allowJoins} is true, a query
+     * containing join clauses is not rejected. This method still has no concept of a second datasource, though -
+     * {@code Query.dataSource} resolves to the {@code from} clause's own (left) source only, which the caller
+     * (see {@code OptimisingQueryCompiler}'s join-handling path) must override afterward, alongside setting
+     * {@code Query.joinSpec}. {@code select *} (or a starred select-param) is rejected outright when joins are
+     * present ({@link #expandStarredField}'s single-{@code DocRef} field lookup would silently omit the right
+     * side's fields) - callers must list fields explicitly in a joined query; not a permanent restriction, just
+     * this task's documented scope.
+     */
+    SearchRequest create(final String query, final SearchRequest in, final ExpressionContext expressionContext,
+                        final boolean allowJoins) {
         Objects.requireNonNull(in, "Null sample request");
         Objects.requireNonNull(expressionContext, "Null expression context");
         Objects.requireNonNull(expressionContext.getDateTimeSettings(), "Null date time settings");
         this.expressionContext = expressionContext;
 
         final AstQuery ast = StroomQlParser.parse(query);
-        rejectJoinsIfPresent(ast.from());
+        if (allowJoins) {
+            this.hasJoins = !ast.from().joins().isEmpty();
+        } else {
+            rejectJoinsIfPresent(ast.from());
+        }
 
         final Query.Builder queryBuilder = Query.builder();
         if (in.getQuery() != null) {
@@ -689,6 +710,11 @@ final class AstToSearchRequestMapper {
                                     final Map<String, AtomicInteger> columnCount,
                                     final List<Column> columns,
                                     final String fieldNameFilter) {
+        if (hasJoins) {
+            throw new TokenException(null,
+                    "'select *' (or a starred select-param) is not supported for join queries - "
+                    + "list fields explicitly.");
+        }
         final DocRef dataSource = queryBuilder.build().getDataSource();
         if (dataSource == null) {
             return;
