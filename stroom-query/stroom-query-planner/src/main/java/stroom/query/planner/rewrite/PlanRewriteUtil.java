@@ -18,14 +18,17 @@ package stroom.query.planner.rewrite;
 
 import stroom.query.api.ExpressionOperator;
 import stroom.query.planner.logical.Aggregate;
+import stroom.query.planner.logical.Expand;
 import stroom.query.planner.logical.Filter;
 import stroom.query.planner.logical.Having;
 import stroom.query.planner.logical.Join;
 import stroom.query.planner.logical.Limit;
 import stroom.query.planner.logical.LogicalPlan;
+import stroom.query.planner.logical.NodeScan;
 import stroom.query.planner.logical.Project;
 import stroom.query.planner.logical.Scan;
 import stroom.query.planner.logical.Sort;
+import stroom.query.planner.logical.VarLengthExpand;
 import stroom.query.planner.logical.Window;
 
 import java.util.LinkedHashMap;
@@ -74,6 +77,18 @@ final class PlanRewriteUtil {
                     w.usingFunction(), w.position());
             case final Sort s -> new Sort(mapPredicates(s.input(), transform), s.keys(), s.position());
             case final Limit l -> new Limit(mapPredicates(l.input(), transform), l.values(), l.position());
+            // Graph nodes (Task PoC.2): a NodeScan's property anchor IS a predicate in this sense, so transform
+            // it like any other optional predicate slot; Expand/VarLengthExpand carry no predicate of their own.
+            case final NodeScan ns -> new NodeScan(
+                    ns.variable(), ns.labels(),
+                    ns.propertyAnchor() == null ? null : transform.apply(ns.propertyAnchor()),
+                    ns.position());
+            case final Expand e -> new Expand(
+                    mapPredicates(e.input(), transform), e.edgeType(), e.direction(), e.targetVariable(),
+                    e.position());
+            case final VarLengthExpand vle -> new VarLengthExpand(
+                    mapPredicates(vle.input(), transform), vle.edgeType(), vle.direction(),
+                    vle.minHops(), vle.maxHops(), vle.targetVariable(), vle.position());
         };
     }
 
@@ -102,6 +117,11 @@ final class PlanRewriteUtil {
             case final Window w -> collectScans(w.input());
             case final Sort s -> collectScans(s.input());
             case final Limit l -> collectScans(l.input());
+            // Graph nodes (Task PoC.2): a NodeScan is not a relational Scan (no alias.field join model applies
+            // to graph pattern variables), so it contributes no entries; Expand/VarLengthExpand recurse through.
+            case final NodeScan ns -> Map.of();
+            case final Expand e -> collectScans(e.input());
+            case final VarLengthExpand vle -> collectScans(vle.input());
         };
     }
 

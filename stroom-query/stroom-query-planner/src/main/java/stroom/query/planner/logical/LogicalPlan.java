@@ -25,9 +25,15 @@ import stroom.query.grammar.ast.AstPosition;
  * {@code select} columns), {@link Join}, {@link Aggregate} ({@code group by}), {@link Having} (a post-aggregation
  * predicate), {@link Window}, {@link Sort}, and {@link Limit}. Nodes with an input form a tree rooted at the
  * final clause applied (typically {@link Limit} or {@link Project}), with {@link Scan} at the leaves.
+ *
+ * <p>{@link NodeScan}, {@link Expand}, and {@link VarLengthExpand} are the graph front-end's leaf/hop nodes (see
+ * {@code docs/temporal-cypher-graph-implementation-plan.md}, Task PoC.2) - Cypher's analogue of {@link Scan} and
+ * the graph's traversal operators, added to this same IR (rather than a forked one) so the graph reuses the
+ * shared planner, rewrite rules, and cost model unchanged.</p>
  */
 public sealed interface LogicalPlan
-        permits Scan, Filter, Project, Join, Aggregate, Having, Window, Sort, Limit {
+        permits Scan, Filter, Project, Join, Aggregate, Having, Window, Sort, Limit,
+        NodeScan, Expand, VarLengthExpand {
 
     /**
      * @return never null; the position of the StroomQL clause this node was bound from, for error/EXPLAIN

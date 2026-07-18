@@ -158,4 +158,74 @@ class TestLogicalPlan {
         assertThatThrownBy(() -> limit.values().add(4L))
                 .isInstanceOf(UnsupportedOperationException.class);
     }
+
+    /**
+     * Task PoC.2: the graph front-end's leaf/hop nodes build a usable tree and enforce the same contracts as
+     * the relational nodes above.
+     */
+    @Test
+    void graphNodes_buildAUsableTree() {
+        final ExpressionOperator propertyAnchor = ExpressionOperator.builder()
+                .children(List.of(ExpressionTerm.builder()
+                        .field("id")
+                        .condition(Condition.EQUALS)
+                        .value("d-42")
+                        .build()))
+                .build();
+        final NodeScan device = new NodeScan("d", List.of("Device"), propertyAnchor, POS);
+        final Expand toAccount = new Expand(device, "CONNECTED_TO", Direction.OUT, "a", POS);
+        final VarLengthExpand toGroups = new VarLengthExpand(toAccount, "MEMBER_OF", Direction.OUT, 1, 3, "g", POS);
+
+        assertThat(toAccount.input()).isSameAs(device);
+        assertThat(toGroups.input()).isSameAs(toAccount);
+        assertThat(device.variable()).isEqualTo("d");
+        assertThat(device.labels()).containsExactly("Device");
+        assertThat(device.propertyAnchor()).isSameAs(propertyAnchor);
+        assertThat(toAccount.edgeType()).isEqualTo("CONNECTED_TO");
+        assertThat(toAccount.direction()).isEqualTo(Direction.OUT);
+        assertThat(toAccount.targetVariable()).isEqualTo("a");
+        assertThat(toGroups.minHops()).isEqualTo(1);
+        assertThat(toGroups.maxHops()).isEqualTo(3);
+
+        final List<LogicalPlan> allNodes = List.of(device, toAccount, toGroups);
+        assertThat(allNodes).allSatisfy(node -> assertThat(node.position()).isSameAs(POS));
+    }
+
+    @Test
+    void graphNodes_requiredFieldsRejectNull() {
+        final NodeScan device = new NodeScan("d", List.of("Device"), null, POS);
+
+        assertThatNullPointerException().isThrownBy(() -> new NodeScan(null, List.of(), null, POS));
+        assertThatNullPointerException().isThrownBy(() -> new NodeScan("d", null, null, POS));
+        assertThatNullPointerException().isThrownBy(() -> new NodeScan("d", List.of(), null, null));
+        assertThatNullPointerException().isThrownBy(() -> new Expand(null, "T", Direction.OUT, "a", POS));
+        assertThatNullPointerException().isThrownBy(() -> new Expand(device, "T", null, "a", POS));
+        assertThatNullPointerException().isThrownBy(() -> new Expand(device, "T", Direction.OUT, null, POS));
+        assertThatNullPointerException().isThrownBy(
+                () -> new VarLengthExpand(null, "T", Direction.OUT, 1, 2, "a", POS));
+        assertThatNullPointerException().isThrownBy(
+                () -> new VarLengthExpand(device, "T", null, 1, 2, "a", POS));
+    }
+
+    @Test
+    void varLengthExpand_rejectsInvalidHopBounds() {
+        final NodeScan device = new NodeScan("d", List.of("Device"), null, POS);
+
+        assertThatIllegalArgumentException().isThrownBy(
+                () -> new VarLengthExpand(device, "T", Direction.OUT, -1, 2, "a", POS));
+        assertThatIllegalArgumentException().isThrownBy(
+                () -> new VarLengthExpand(device, "T", Direction.OUT, 3, 2, "a", POS));
+    }
+
+    @Test
+    void nodeScan_labelsAreDefensivelyCopiedAndImmutable() {
+        final List<String> mutableLabels = new ArrayList<>(List.of("Device"));
+
+        final NodeScan device = new NodeScan("d", mutableLabels, null, POS);
+        mutableLabels.add("Sensor");
+
+        assertThat(device.labels()).containsExactly("Device");
+        assertThatThrownBy(() -> device.labels().add("Other"))
+                .isInstanceOf(UnsupportedOperationException.class);
+    }
 }

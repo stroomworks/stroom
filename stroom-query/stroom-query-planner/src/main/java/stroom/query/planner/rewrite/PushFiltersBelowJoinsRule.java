@@ -22,14 +22,17 @@ import stroom.query.api.ExpressionOperator.Op;
 import stroom.query.api.ExpressionTerm;
 import stroom.query.grammar.ast.AstPosition;
 import stroom.query.planner.logical.Aggregate;
+import stroom.query.planner.logical.Expand;
 import stroom.query.planner.logical.Filter;
 import stroom.query.planner.logical.Having;
 import stroom.query.planner.logical.Join;
 import stroom.query.planner.logical.Limit;
 import stroom.query.planner.logical.LogicalPlan;
+import stroom.query.planner.logical.NodeScan;
 import stroom.query.planner.logical.Project;
 import stroom.query.planner.logical.Scan;
 import stroom.query.planner.logical.Sort;
+import stroom.query.planner.logical.VarLengthExpand;
 import stroom.query.planner.logical.Window;
 
 import org.jspecify.annotations.Nullable;
@@ -66,6 +69,13 @@ public final class PushFiltersBelowJoinsRule implements RewriteRule {
                     apply(w.input()), w.field(), w.windowSize(), w.advanceSize(), w.usingFunction(), w.position());
             case final Sort s -> new Sort(apply(s.input()), s.keys(), s.position());
             case final Limit l -> new Limit(apply(l.input()), l.values(), l.position());
+            // Graph nodes (Task PoC.2): this rule only ever pushes a Filter directly above a Join; a graph plan
+            // has no Join to push onto, so leave these unchanged, recursing through the wrappers.
+            case final NodeScan ns -> ns;
+            case final Expand e -> new Expand(apply(e.input()), e.edgeType(), e.direction(), e.targetVariable(),
+                    e.position());
+            case final VarLengthExpand vle -> new VarLengthExpand(apply(vle.input()), vle.edgeType(),
+                    vle.direction(), vle.minHops(), vle.maxHops(), vle.targetVariable(), vle.position());
         };
     }
 

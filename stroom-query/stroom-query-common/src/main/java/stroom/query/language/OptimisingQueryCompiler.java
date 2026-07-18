@@ -34,15 +34,18 @@ import stroom.query.planner.bind.Binder;
 import stroom.query.planner.cost.CostModel;
 import stroom.query.planner.logical.Aggregate;
 import stroom.query.planner.logical.EquiKey;
+import stroom.query.planner.logical.Expand;
 import stroom.query.planner.logical.Filter;
 import stroom.query.planner.logical.Having;
 import stroom.query.planner.logical.Join;
 import stroom.query.planner.logical.JoinType;
 import stroom.query.planner.logical.Limit;
 import stroom.query.planner.logical.LogicalPlan;
+import stroom.query.planner.logical.NodeScan;
 import stroom.query.planner.logical.Project;
 import stroom.query.planner.logical.Scan;
 import stroom.query.planner.logical.Sort;
+import stroom.query.planner.logical.VarLengthExpand;
 import stroom.query.planner.logical.Window;
 import stroom.query.planner.port.FieldInfoSource;
 import stroom.query.planner.port.IndexShardStats;
@@ -221,6 +224,11 @@ public class OptimisingQueryCompiler implements QueryCompiler {
             case final Window w -> findJoin(w.input());
             case final Sort s -> findJoin(s.input());
             case final Limit l -> findJoin(l.input());
+            // Graph plans (Task PoC.2) never contain a relational Join - a Cypher hop is an Expand, not this
+            // node - so a NodeScan leaf ends the search, and Expand/VarLengthExpand simply recurse through.
+            case final NodeScan ns -> null;
+            case final Expand e -> findJoin(e.input());
+            case final VarLengthExpand vle -> findJoin(vle.input());
         };
     }
 
@@ -352,6 +360,11 @@ public class OptimisingQueryCompiler implements QueryCompiler {
             case final Sort s -> findScanAndFilter(s.input());
             case final Limit l -> findScanAndFilter(l.input());
             case final Join j -> null;
+            // Graph plans (Task PoC.2): a NodeScan is not a relational Scan, so this "single relational
+            // source" cost-explain path doesn't apply to it; Expand/VarLengthExpand simply recurse through.
+            case final NodeScan ns -> null;
+            case final Expand e -> findScanAndFilter(e.input());
+            case final VarLengthExpand vle -> findScanAndFilter(vle.input());
         };
     }
 

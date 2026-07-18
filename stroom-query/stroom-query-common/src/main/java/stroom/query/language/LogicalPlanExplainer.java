@@ -25,15 +25,18 @@ import stroom.query.planner.cost.JoinCostModel;
 import stroom.query.planner.cost.JoinPlan;
 import stroom.query.planner.cost.StateLookup;
 import stroom.query.planner.logical.Aggregate;
+import stroom.query.planner.logical.Expand;
 import stroom.query.planner.logical.Filter;
 import stroom.query.planner.logical.Having;
 import stroom.query.planner.logical.Join;
 import stroom.query.planner.logical.Limit;
 import stroom.query.planner.logical.LogicalPlan;
+import stroom.query.planner.logical.NodeScan;
 import stroom.query.planner.logical.Project;
 import stroom.query.planner.logical.QualifiedField;
 import stroom.query.planner.logical.Scan;
 import stroom.query.planner.logical.Sort;
+import stroom.query.planner.logical.VarLengthExpand;
 import stroom.query.planner.logical.Window;
 import stroom.query.planner.port.FieldInfoSource;
 
@@ -94,6 +97,19 @@ final class LogicalPlanExplainer {
             case final Window w -> wrap("Window by " + describeField(w.field()), toNode(w.input()));
             case final Sort s -> wrap("Sort", toNode(s.input()));
             case final Limit l -> wrap("Limit " + l.values(), toNode(l.input()));
+            case final NodeScan ns -> new Node(
+                    ExplainPlan.builder()
+                            .description("NodeScan " + ns.variable()
+                                    + (ns.labels().isEmpty() ? "" : ":" + String.join(":", ns.labels())))
+                            .build(),
+                    null);
+            case final Expand e -> wrap(
+                    "Expand " + e.direction() + " " + e.edgeType() + " as " + e.targetVariable(),
+                    toNode(e.input()));
+            case final VarLengthExpand vle -> wrap(
+                    "VarLengthExpand " + vle.direction() + " " + vle.edgeType()
+                            + "*" + vle.minHops() + ".." + vle.maxHops() + " as " + vle.targetVariable(),
+                    toNode(vle.input()));
         };
     }
 
