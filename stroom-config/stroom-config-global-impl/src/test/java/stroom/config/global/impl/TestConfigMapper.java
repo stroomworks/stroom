@@ -67,6 +67,7 @@ import stroom.pipeline.PipelineConfig;
 import stroom.pipeline.refdata.ReferenceDataLmdbConfig;
 import stroom.planb.impl.PlanBConfig;
 import stroom.processor.impl.ProcessorConfig;
+import stroom.query.common.v2.QueryConfig;
 import stroom.receive.common.ReceiveDataConfig;
 import stroom.receive.rules.impl.StroomReceiptPolicyConfig;
 import stroom.search.elastic.ElasticConfig;
@@ -982,6 +983,7 @@ class TestConfigMapper {
                 @JsonProperty(PROP_NAME_PROCESSOR) final ProcessorConfig processorConfig,
                 @JsonProperty(PROP_NAME_PROPERTIES) final PropertyServiceConfig propertyServiceConfig,
                 @JsonProperty(PROP_NAME_PUBLIC_URI) final PublicUriConfig publicUri,
+                @JsonProperty(PROP_NAME_QUERY) final QueryConfig queryConfig,
                 @JsonProperty(PROP_NAME_QUERY_DATASOURCE) final IndexFieldDbConfig queryDataSourceConfig,
                 @JsonProperty(PROP_NAME_RECEIVE) final ReceiveDataConfig receiveDataConfig,
                 @JsonProperty(PROP_NAME_RECEIPT_POLICY) final StroomReceiptPolicyConfig receiptPolicyConfig,
@@ -1052,6 +1054,7 @@ class TestConfigMapper {
                     processorConfig,
                     propertyServiceConfig,
                     publicUri,
+                    queryConfig,
                     queryDataSourceConfig,
                     receiveDataConfig,
                     receiptPolicyConfig,

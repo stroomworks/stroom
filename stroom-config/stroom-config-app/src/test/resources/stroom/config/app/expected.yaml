@@ -897,6 +897,9 @@ appConfig:
     pathPrefix: null
     port: null
     scheme: "https"
+  query:
+    optimiser:
+      enabled: false
   queryDataSource:
     db:
       connection:

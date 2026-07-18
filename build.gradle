@@ -532,6 +532,8 @@ subprojects {
         configureEach {
             include("**/stroom/**/*.java")
             exclude("**/db/jooq/**/*.java")
+            // ANTLR-generated parser code (stroom-query-grammar) - not hand-written, don't lint it.
+            exclude("**/query/grammar/antlr/**/*.java")
         }
     }
 }

@@ -21,7 +21,7 @@ import stroom.docstore.api.AbstractDocumentStore;
 import stroom.docstore.api.DependencyRemapFunction;
 import stroom.docstore.api.StoreFactory;
 import stroom.query.common.v2.DataSourceProviderRegistry;
-import stroom.query.language.SearchRequestFactory;
+import stroom.query.language.QueryCompiler;
 import stroom.query.shared.QueryDoc;
 import stroom.security.api.SecurityContext;
 import stroom.util.logging.LambdaLogger;
@@ -43,14 +43,14 @@ class QueryStoreImpl
 
     private final SecurityContext securityContext;
     private final Provider<DataSourceProviderRegistry> dataSourceProviderRegistryProvider;
-    private final SearchRequestFactory searchRequestFactory;
+    private final QueryCompiler queryCompiler;
 
     @Inject
     QueryStoreImpl(final StoreFactory storeFactory,
                    final QuerySerialiser serialiser,
                    final SecurityContext securityContext,
                    final Provider<DataSourceProviderRegistry> dataSourceProviderRegistryProvider,
-                   final SearchRequestFactory searchRequestFactory) {
+                   final QueryCompiler queryCompiler) {
         super(storeFactory,
                 serialiser,
                 QueryDoc.TYPE,
@@ -58,7 +58,7 @@ class QueryStoreImpl
                 QueryDoc::copy);
         this.securityContext = securityContext;
         this.dataSourceProviderRegistryProvider = dataSourceProviderRegistryProvider;
-        this.searchRequestFactory = searchRequestFactory;
+        this.queryCompiler = queryCompiler;
     }
 
     @Override
@@ -80,7 +80,7 @@ class QueryStoreImpl
             final QueryDoc.Builder builder = doc.copy();
             try {
                 if (doc.getQuery() != null) {
-                    searchRequestFactory.extractDataSourceOnly(doc.getQuery(), docRef -> {
+                    queryCompiler.extractDataSourceOnly(doc.getQuery(), docRef -> {
                         try {
                             if (docRef != null) {
                                 final DataSourceProviderRegistry dataSourceProviderRegistry =

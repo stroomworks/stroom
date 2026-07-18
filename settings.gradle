@@ -254,8 +254,10 @@ include 'stroom-pathways:stroom-pathways-impl'
 // Query
 include 'stroom-query:stroom-query-api'
 include 'stroom-query:stroom-query-common'
+include 'stroom-query:stroom-query-grammar'
 include 'stroom-query:stroom-query-impl'
 include 'stroom-query:stroom-query-language'
+include 'stroom-query:stroom-query-planner'
 
 // Suggestions
 include 'stroom-suggestions:stroom-suggestions-api'

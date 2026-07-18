@@ -54,6 +54,7 @@ import stroom.node.impl.NodeConfig;
 import stroom.pipeline.PipelineConfig;
 import stroom.planb.impl.PlanBConfig;
 import stroom.processor.impl.ProcessorConfig;
+import stroom.query.common.v2.QueryConfig;
 import stroom.receive.common.ReceiveDataConfig;
 import stroom.receive.rules.impl.StroomReceiptPolicyConfig;
 import stroom.search.elastic.ElasticConfig;
@@ -127,6 +128,7 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
     public static final String PROP_NAME_PIPELINE = "pipeline";
     public static final String PROP_NAME_PROCESSOR = "processor";
     public static final String PROP_NAME_PROPERTIES = "properties";
+    public static final String PROP_NAME_QUERY = "query";
     public static final String PROP_NAME_QUERY_DATASOURCE = "queryDataSource";
     public static final String PROP_NAME_PUBLIC_URI = "publicUri";
     public static final String PROP_NAME_QUERY_HISTORY = "queryHistory";
@@ -185,6 +187,7 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
     private final ProcessorConfig processorConfig;
     private final PropertyServiceConfig propertyServiceConfig;
     private final PublicUriConfig publicUri;
+    private final QueryConfig queryConfig;
     private final IndexFieldDbConfig queryDataSourceConfig;
     private final ReceiveDataConfig receiveDataConfig;
     private final StroomReceiptPolicyConfig receiptPolicyConfig;
@@ -245,6 +248,7 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
                 new ProcessorConfig(),
                 new PropertyServiceConfig(),
                 new PublicUriConfig(),
+                new QueryConfig(),
                 new IndexFieldDbConfig(),
                 new ReceiveDataConfig(),
                 new StroomReceiptPolicyConfig(),
@@ -304,6 +308,7 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
                      @JsonProperty(PROP_NAME_PROCESSOR) final ProcessorConfig processorConfig,
                      @JsonProperty(PROP_NAME_PROPERTIES) final PropertyServiceConfig propertyServiceConfig,
                      @JsonProperty(PROP_NAME_PUBLIC_URI) final PublicUriConfig publicUri,
+                     @JsonProperty(PROP_NAME_QUERY) final QueryConfig queryConfig,
                      @JsonProperty(PROP_NAME_QUERY_DATASOURCE) final IndexFieldDbConfig queryDataSourceConfig,
                      @JsonProperty(PROP_NAME_RECEIVE) final ReceiveDataConfig receiveDataConfig,
                      @JsonProperty(PROP_NAME_RECEIPT_POLICY) final StroomReceiptPolicyConfig receiptPolicyConfig,
@@ -360,6 +365,7 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
         this.processorConfig = processorConfig;
         this.propertyServiceConfig = propertyServiceConfig;
         this.publicUri = publicUri;
+        this.queryConfig = queryConfig;
         this.queryDataSourceConfig = queryDataSourceConfig;
         this.receiveDataConfig = receiveDataConfig;
         this.receiptPolicyConfig = receiptPolicyConfig;
@@ -580,6 +586,11 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
     @JsonProperty(PROP_NAME_PUBLIC_URI)
     public PublicUriConfig getPublicUri() {
         return publicUri;
+    }
+
+    @JsonProperty(PROP_NAME_QUERY)
+    public QueryConfig getQueryConfig() {
+        return queryConfig;
     }
 
     @JsonProperty(PROP_NAME_QUERY_DATASOURCE)

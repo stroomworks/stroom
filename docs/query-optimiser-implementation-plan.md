@@ -242,6 +242,12 @@ config flag, and the seam consumers migrated to the facade. Legacy behaviour ide
 > If the Gradle `antlr` plugin does not automatically place `antlr4-runtime` on the runtime classpath in this Gradle
 > version, the explicit `implementation libs.antlr4.runtime` above covers it — keep it.
 
+> **Found while implementing**: the root `build.gradle`'s `tasks.withType(Checkstyle)` block excludes generated jOOQ
+> code (`exclude("**/db/jooq/**/*.java")`, ~L534). ANTLR's generated parser hits the same problem (tabs, missing
+> trailing newline, star imports) and needs the same treatment — add a sibling exclude
+> `exclude("**/query/grammar/antlr/**/*.java")` right next to it. Without this, `checkstyleMain` fails on the
+> generated sources even though Code standards exempts them from the *Javadoc* requirement.
+
 ### Task 0.2 — `QueryCompiler` facade + `LegacyQueryCompiler`
 - **Goal**: one interface that mirrors the two `SearchRequestFactory` methods, with a legacy impl that delegates.
 - **Depends on**: 0.1.
@@ -279,13 +285,52 @@ config flag, and the seam consumers migrated to the facade. Legacy behaviour ide
     field + default in no-arg ctor + `@JsonProperty` ctor param + getter), following the `search`/`queryHistory`
     examples already in the file. Confirm `stroom-config-app` depends on `stroom-query-common` (SearchConfig lives in
     `stroom-search-impl` and is referenced here, so wide config deps already exist); add the Gradle dep if missing.
-- **Steps**: after wiring, **regenerate** the providers module:
-  `./gradlew :stroom-config:stroom-config-global-impl:test --tests '*GenerateConfigProvidersModule*'` then confirm
-  `ConfigProvidersModule.java` gained a `@Provides QueryOptimiserConfig` method. Do not edit that file by hand.
+- **Steps**: after wiring, **regenerate** the providers module.
+
+  > **Found while implementing**: `GenerateConfigProvidersModule` is **not a JUnit test** — it's a plain class with a
+  > `public static void main`, so `./gradlew test --tests '*GenerateConfigProvidersModule*'` reports "No tests
+  > found". Run it as a Java application against the module's test runtime classpath instead, e.g. via a throwaway
+  > Gradle `JavaExec` task (an `--init-script` avoids permanently touching the build):
+  > ```groovy
+  > rootProject.afterEvaluate {
+  >     def p = project(':stroom-config:stroom-config-global-impl')
+  >     p.tasks.register('runConfigProvidersGenerator', JavaExec) {
+  >         dependsOn p.tasks.named('testClasses')
+  >         classpath = p.sourceSets.test.runtimeClasspath
+  >         mainClass.set('stroom.config.global.impl.GenerateConfigProvidersModule')
+  >         workingDir = p.projectDir
+  >     }
+  > }
+  > ```
+  > then `./gradlew --init-script <file> :stroom-config:stroom-config-global-impl:runConfigProvidersGenerator`.
+  > Expect **only additive/cosmetic diffs** in `ConfigProvidersModule.java`: a new `@Provides` method per new config
+  > class, plus possible method-name suffix churn if a new class's simple name collides with an existing one
+  > elsewhere in the app (Guice binds by return type, not method name, so a `getXConfig`/`getXConfig2` rename on an
+  > unrelated class is harmless — but confirm the diff is *only* additive/rename, never a deletion).
+  >
+  > A second, near-identical golden generator will need the same treatment in Task 0.3's own verification: after
+  > wiring `QueryConfig`, `stroom-config-app`'s `TestStroomYamlUtil.testGeneratedYamlAgainstExpected()` fails because
+  > `expected.yaml` doesn't yet contain the new `query:` node. Its own doc-comment names the fix:
+  > `stroom.config.app.GenerateExpectedYaml`'s `main` (also not a JUnit test — same `JavaExec` treatment, target
+  > `:stroom-config:stroom-config-app`, `sourceSets.test.runtimeClasspath`). Expect a small, purely additive diff to
+  > `expected.yaml` (the new node, defaulted). Confirm `stroom-config-app` compiles against `QueryConfig` first — it
+  > has **no existing dependency on `stroom-query-common`** despite transitively holding `SearchConfig` (which lives
+  > in `stroom-search-impl`); `implementation` deps aren't transitive, so add
+  > `implementation project(':stroom-query:stroom-query-common')` to `stroom-config-app/build.gradle` directly.
+  >
+  > Also: any hand-written subclass of `AppConfig` (e.g. a test fixture with its own `@JsonCreator` constructor that
+  > mirrors `AppConfig`'s full param list and forwards via `super(...)`) breaks at compile time when a param is
+  > inserted — grep for `extends AppConfig` and fix each one by inserting the new param + `super(...)` arg at the
+  > same relative position as in `AppConfig` itself.
+
+  Confirm `ConfigProvidersModule.java` gained `@Provides QueryConfig`/`@Provides QueryOptimiserConfig` methods. Do
+  not edit either generated file by hand.
 - **Done-when**: `QueryOptimiserConfig` is `@Inject`-able; property path resolves as `stroom.query.optimiser.enabled`;
   default false; full build green.
 - **Verify**: a small test that injects `QueryOptimiserConfig` and asserts `!isEnabled()`; `./gradlew build` (or at
-  least the config + query modules) green.
+  least the config + query modules) green. (One pre-existing, unrelated failure to expect in a sandbox with no live
+  DB: `stroom-config-global-impl`'s `TestConfigPropertyDaoImpl` needs a real MySQL connection and fails with
+  `Communications link failure` regardless of this change — not a regression.)
 
 ### Task 0.4 — Migrate the seam to the facade
 - **Goal**: consumers depend on `QueryCompiler`, not `SearchRequestFactory`; bound to `LegacyQueryCompiler`.

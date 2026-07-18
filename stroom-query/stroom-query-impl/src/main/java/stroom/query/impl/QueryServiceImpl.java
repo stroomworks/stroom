@@ -74,7 +74,7 @@ import stroom.query.common.v2.RowUtil;
 import stroom.query.common.v2.TableResultCreator;
 import stroom.query.common.v2.ValPredicateFactory;
 import stroom.query.common.v2.format.FormatterFactory;
-import stroom.query.language.SearchRequestFactory;
+import stroom.query.language.QueryCompiler;
 import stroom.query.language.functions.ExpressionContext;
 import stroom.query.language.functions.Val;
 import stroom.query.language.functions.Values;
@@ -158,7 +158,7 @@ class QueryServiceImpl implements QueryService, QueryFieldProvider {
     private final DataSourceProviderRegistry dataSourceProviderRegistry;
     private final ResultStoreManager searchResponseCreatorManager;
     private final NodeInfo nodeInfo;
-    private final SearchRequestFactory searchRequestFactory;
+    private final QueryCompiler queryCompiler;
     private final ExpressionContextFactory expressionContextFactory;
     private final ResourceStore resourceStore;
     private final ExpressionPredicateFactory expressionPredicateFactory;
@@ -176,7 +176,7 @@ class QueryServiceImpl implements QueryService, QueryFieldProvider {
                      final DataSourceProviderRegistry dataSourceProviderRegistry,
                      final ResultStoreManager searchResponseCreatorManager,
                      final NodeInfo nodeInfo,
-                     final SearchRequestFactory searchRequestFactory,
+                     final QueryCompiler queryCompiler,
                      final ExpressionContextFactory expressionContextFactory,
                      final ResourceStore resourceStore,
                      final ExpressionPredicateFactory expressionPredicateFactory,
@@ -192,7 +192,7 @@ class QueryServiceImpl implements QueryService, QueryFieldProvider {
         this.dataSourceProviderRegistry = dataSourceProviderRegistry;
         this.searchResponseCreatorManager = searchResponseCreatorManager;
         this.nodeInfo = nodeInfo;
-        this.searchRequestFactory = searchRequestFactory;
+        this.queryCompiler = queryCompiler;
         this.expressionContextFactory = expressionContextFactory;
         this.resourceStore = resourceStore;
         this.expressionPredicateFactory = expressionPredicateFactory;
@@ -602,7 +602,7 @@ class QueryServiceImpl implements QueryService, QueryFieldProvider {
                 searchRequest.isIncremental(),
                 searchRequest.getTimeout());
         final ExpressionContext expressionContext = expressionContextFactory.createContext(sampleRequest);
-        SearchRequest mappedRequest = searchRequestFactory.create(query, sampleRequest, expressionContext);
+        SearchRequest mappedRequest = queryCompiler.create(query, sampleRequest, expressionContext);
 
         // Mutate expression with selection expression.
         final Query qry = mappedRequest.getQuery();
@@ -823,7 +823,7 @@ class QueryServiceImpl implements QueryService, QueryFieldProvider {
         return securityContext.useAsReadResult(() -> {
             final AtomicReference<DocRef> ref = new AtomicReference<>();
             try {
-                searchRequestFactory.extractDataSourceOnly(query, ref::set);
+                queryCompiler.extractDataSourceOnly(query, ref::set);
             } catch (final RuntimeException e) {
                 // Will get an exception if the datasource does not exist, which is likely
                 // if the user has not finished typing yet.
@@ -1151,7 +1151,7 @@ class QueryServiceImpl implements QueryService, QueryFieldProvider {
                         false,
                         null);
                 final ExpressionContext expressionContext = expressionContextFactory.createContext(sampleRequest);
-                final SearchRequest mappedRequest = searchRequestFactory.create(
+                final SearchRequest mappedRequest = queryCompiler.create(
                         query,
                         sampleRequest,
                         expressionContext

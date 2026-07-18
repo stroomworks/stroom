@@ -3,6 +3,7 @@
 eventLogging = "5.0-beta.31_schema-v4.0-beta.3"
 
 # ------------3rd-party------------
+antlr4 = "4.13.2"
 aws = "2.46.7"
 commons-io = "2.19.0"
 dropwizard = "5.0.2" # used to set the dropwizard-bom version, that controls lots of dependency versions
@@ -28,6 +29,8 @@ swagger = "2.2.42"
 eventLogging = { module = "uk.gov.gchq.eventlogging:event-logging", version.ref = "eventLogging" }
 
 #------3rd Party-libs---------------
+antlr4 = { module = "org.antlr:antlr4", version.ref = "antlr4" }
+antlr4-runtime = { module = "org.antlr:antlr4-runtime", version.ref = "antlr4" }
 assertj-core = { module = "org.assertj:assertj-core" } # version controlled by dropwizard-dependencies
 aws-bom = { module = "software.amazon.awssdk:bom", version.ref = "aws" }
 aws-crt = { module = "software.amazon.awssdk.crt:aws-crt", version = "0.47.0" }
