@@ -18,6 +18,7 @@ package stroom.searchable.impl;
 
 import stroom.docref.DocRef;
 import stroom.query.api.Column;
+import stroom.query.api.ExpressionOperator;
 import stroom.query.api.JoinSpec;
 import stroom.query.api.JoinSpec.JoinEquiKey;
 import stroom.query.api.OffsetRange;
@@ -25,15 +26,21 @@ import stroom.query.api.SearchRequest;
 import stroom.query.api.TimeFilter;
 import stroom.query.api.datasource.FindFieldCriteria;
 import stroom.query.api.datasource.QueryField;
+import stroom.query.common.v2.CoprocessorsFactory;
+import stroom.query.common.v2.CoprocessorsImpl;
 import stroom.query.common.v2.DataStore;
+import stroom.query.common.v2.DataStoreSettings;
 import stroom.query.common.v2.IdentityItemMapper;
 import stroom.query.common.v2.JoinDataSourceType;
 import stroom.query.common.v2.OpenGroups;
 import stroom.query.common.v2.ResultStore;
+import stroom.query.common.v2.ResultStoreFactory;
 import stroom.query.common.v2.SearchProvider;
 import stroom.query.common.v2.SearchProviderRegistry;
 import stroom.query.language.SearchRequestFactory;
+import stroom.query.language.functions.FieldIndex;
 import stroom.query.language.functions.Val;
+import stroom.query.language.functions.ValNull;
 import stroom.query.planner.cost.JoinAlgorithm;
 import stroom.query.planner.join.JoinExecutor;
 import stroom.query.planner.join.JoinExecutor.Side;
@@ -59,23 +66,40 @@ import java.util.Objects;
  * member of - injecting the registry directly would be a construction-time cycle; {@code Provider.get()} defers
  * the lookup until {@link #createResultStore} actually runs, by which point both are fully constructed.</p>
  *
- * <p><b>Task 6.1d scope (see the plan doc's Phase 6 section for the full finding)</b>: realises each side as its
- * own sub-query and combines the rows via {@link JoinExecutor} - both genuinely ready, tested via {@link
- * #realiseSide}/{@code JoinExecutor} directly. <b>Not yet implemented</b>: feeding the combined rows into a fresh
- * {@code Coprocessors} built from the outer request's {@code TableSettings}. That step needs each joined row's
- * values placed at the exact positions the outer coprocessor's {@code FieldIndex} assigns as it compiles the
- * outer query's {@code where}/{@code select}/{@code group}/{@code having} column expressions - and nothing
- * compiles an alias-qualified ({@code a.field}) expression to a wire type yet (tracked as Task 6.1x, a
- * prerequisite for this method to return real results instead of throwing).</p>
+ * <p><b>Scope (Task 6.1d / 6.1x - see the plan doc's Phase 6 section)</b>: a two-source {@code INNER}/{@code LEFT}
+ * join <b>with no {@code where} clause</b> executes end-to-end and returns real rows. Each side is run as its own
+ * sub-query, the rows are combined by {@link JoinExecutor}, and each combined row is placed at the outer
+ * coprocessor's {@link FieldIndex} positions (which key on the outer {@code select} columns' alias-qualified
+ * expression text, e.g. {@code "a.field"} - see {@link #buildFieldMapping}) and fed via {@code accept(Val[])}.
+ * From there the existing coprocessor/{@link ResultStore} machinery applies {@code select}/{@code group}/
+ * {@code having}/{@code sort}/{@code limit} exactly as for any other query.</p>
+ *
+ * <p><b>Deliberately rejected at execution (not silently mishandled)</b>: a {@code where} clause anywhere in a
+ * join query. A join's {@code where} references fields across the join boundary and resolves through a different
+ * code path (column-name-keyed {@code ValFilter}, not the {@code FieldIndex}) than the {@code select} columns -
+ * getting it correct across the join is its own increment. Such a query still <i>compiles</i> fine (Task 6.1x
+ * populates its {@code JoinSpec}); it just can't be <i>executed</i> here yet, so this throws with a clear
+ * message rather than returning wrong rows.</p>
+ *
+ * <p><b>Simplification</b>: {@link #createResultStore} realises both sides and feeds all rows <i>synchronously</i>
+ * before returning an already-complete {@link ResultStore} - unlike {@link SearchableSearchProvider}, which runs
+ * its feed asynchronously on an {@code Executor}. A join here blocks until both sides complete; moving it
+ * off-thread is a later optimisation, not a correctness concern.</p>
  */
 class JoinSearchProvider implements SearchProvider {
 
     private final Provider<SearchProviderRegistry> searchProviderRegistryProvider;
+    private final CoprocessorsFactory coprocessorsFactory;
+    private final ResultStoreFactory resultStoreFactory;
 
     @Inject
-    JoinSearchProvider(final Provider<SearchProviderRegistry> searchProviderRegistryProvider) {
+    JoinSearchProvider(final Provider<SearchProviderRegistry> searchProviderRegistryProvider,
+                       final CoprocessorsFactory coprocessorsFactory,
+                       final ResultStoreFactory resultStoreFactory) {
         this.searchProviderRegistryProvider =
                 Objects.requireNonNull(searchProviderRegistryProvider, "searchProviderRegistryProvider");
+        this.coprocessorsFactory = Objects.requireNonNull(coprocessorsFactory, "coprocessorsFactory");
+        this.resultStoreFactory = Objects.requireNonNull(resultStoreFactory, "resultStoreFactory");
     }
 
     @Override
@@ -109,9 +133,11 @@ class JoinSearchProvider implements SearchProvider {
             throw new IllegalArgumentException(
                     "SearchRequest routed to " + JoinDataSourceType.TYPE + " must carry a JoinSpec");
         }
+        rejectIfWhereClausePresent(searchRequest, joinSpec);
 
         final RealisedSide left = realiseSide(joinSpec.getLeft());
         final RealisedSide right = realiseSide(joinSpec.getRight());
+        final List<Val[]> joinedRows;
         try {
             final Side leftSide = new Side(left.rows, keyPositions(left.columns, joinSpec.getEquiKeys(), true),
                     left.columns.size());
@@ -120,21 +146,60 @@ class JoinSearchProvider implements SearchProvider {
             final JoinType joinType = joinSpec.getJoinType() == JoinSpec.JoinType.LEFT
                     ? JoinType.LEFT
                     : JoinType.INNER;
-
-            // T6.1c: the combined rows are correct - see JoinExecutor's own tests. What's missing is placing
-            // them at the outer coprocessor's FieldIndex positions (Task 6.1x - see class Javadoc).
-            final List<Val[]> joinedRows = JoinExecutor.join(leftSide, rightSide, joinType, JoinAlgorithm.HASH_JOIN);
-
-            throw new UnsupportedOperationException(
-                    "Join execution produced " + joinedRows.size() + " combined row(s), but feeding them into the "
-                    + "outer query's Coprocessors is not yet implemented - see "
-                    + "docs/query-optimiser-implementation-plan.md, Task 6.1x (alias-aware outer-expression "
-                    + "compilation is a prerequisite: the outer FieldIndex positions these rows must be placed "
-                    + "at don't exist until that's built).");
+            joinedRows = JoinExecutor.join(leftSide, rightSide, joinType, JoinAlgorithm.HASH_JOIN);
         } finally {
             left.resultStore.destroy();
             right.resultStore.destroy();
         }
+
+        // Build the outer query's coprocessors and feed each joined row at the FieldIndex positions its
+        // alias-qualified select-column expressions claimed.
+        final CoprocessorsImpl coprocessors = coprocessorsFactory.create(
+                searchRequest, DataStoreSettings.createBasicSearchResultStoreSettings());
+        final int[] mapping = buildFieldMapping(
+                coprocessors.getFieldIndex(),
+                left.columns,
+                right.columns,
+                joinSpec.getEquiKeys().getFirst().getLeftAlias(),
+                joinSpec.getEquiKeys().getFirst().getRightAlias());
+
+        final ResultStore resultStore = resultStoreFactory.create(
+                searchRequest.getSearchRequestSource(), coprocessors);
+        try {
+            for (final Val[] joinedRow : joinedRows) {
+                coprocessors.accept(assembleRow(joinedRow, mapping));
+            }
+        } catch (final RuntimeException e) {
+            resultStore.addError(e);
+        } finally {
+            resultStore.signalComplete();
+        }
+        return resultStore;
+    }
+
+    /**
+     * Task 6.1d/6.1x scope: a {@code where} clause in a join query compiles (its terms end up either pushed to a
+     * side's sub-request or in the outer {@code Query.expression}) but can't be executed here yet - see the class
+     * Javadoc. Reject cleanly rather than silently dropping the predicate.
+     */
+    private static void rejectIfWhereClausePresent(final SearchRequest searchRequest, final JoinSpec joinSpec) {
+        if (!isTrivialExpression(searchRequest.getQuery().getExpression())
+            || sideHasExpression(joinSpec.getLeft())
+            || sideHasExpression(joinSpec.getRight())) {
+            throw new UnsupportedOperationException(
+                    "A 'where' clause in a join query is not yet supported at execution time (it compiles, but "
+                    + "executing it correctly across the join boundary is a separate increment - see "
+                    + "docs/query-optimiser-implementation-plan.md, Phase 6). Remove the where clause to run this "
+                    + "join.");
+        }
+    }
+
+    private static boolean sideHasExpression(final SearchRequest sideRequest) {
+        return sideRequest.getQuery() != null && !isTrivialExpression(sideRequest.getQuery().getExpression());
+    }
+
+    private static boolean isTrivialExpression(final ExpressionOperator expression) {
+        return expression == null || expression.getChildren() == null || expression.getChildren().isEmpty();
     }
 
     /**
@@ -194,6 +259,71 @@ class JoinSearchProvider implements SearchProvider {
         }
         throw new IllegalStateException("Equi-key field '" + fieldName + "' not found among compiled columns "
                                          + columns.stream().map(Column::getName).toList());
+    }
+
+    /**
+     * Maps each position in the outer coprocessor's {@code fieldIndex} to a position in the <i>combined</i> joined
+     * row (left side's columns then right side's columns). The {@code fieldIndex} keys on the outer {@code select}
+     * columns' alias-qualified expression text ({@code "a.field"}); this splits that into alias + field, decides
+     * which side the alias names, and finds that field's position within that side's own columns. A
+     * {@code fieldIndex} entry that isn't an {@code alias.field} naming one of the two join sides (e.g. an
+     * auto-added special {@code StreamId}/{@code EventId} navigation column) maps to {@code -1} - {@link
+     * #assembleRow} fills those with {@link ValNull} rather than a wrong value.
+     *
+     * @return an array of length {@code fieldIndex.size()}; entry {@code i} is the combined-row position feeding
+     *         outer field position {@code i}, or {@code -1} for "no source".
+     */
+    static int[] buildFieldMapping(
+            final FieldIndex fieldIndex,
+            final List<Column> leftColumns,
+            final List<Column> rightColumns,
+            final String leftAlias,
+            final String rightAlias) {
+        final int leftWidth = leftColumns.size();
+        final int[] mapping = new int[fieldIndex.size()];
+        for (int outerPos = 0; outerPos < mapping.length; outerPos++) {
+            final String name = fieldIndex.getField(outerPos);
+            mapping[outerPos] = -1;
+            final int dot = name == null ? -1 : name.indexOf('.');
+            if (dot <= 0) {
+                continue;
+            }
+            final String alias = name.substring(0, dot);
+            final String field = name.substring(dot + 1);
+            if (alias.equals(leftAlias)) {
+                final int col = indexOfColumn(leftColumns, field);
+                if (col >= 0) {
+                    mapping[outerPos] = col;
+                }
+            } else if (alias.equals(rightAlias)) {
+                final int col = indexOfColumn(rightColumns, field);
+                if (col >= 0) {
+                    mapping[outerPos] = leftWidth + col;
+                }
+            }
+        }
+        return mapping;
+    }
+
+    private static int indexOfColumn(final List<Column> columns, final String fieldName) {
+        for (int i = 0; i < columns.size(); i++) {
+            if (columns.get(i).getName().equals(fieldName)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * Reorders one combined joined row into the {@code Val[]} the outer coprocessor expects, per the {@code
+     * mapping} from {@link #buildFieldMapping}. Unmapped outer positions ({@code -1}) become {@link ValNull}.
+     */
+    static Val[] assembleRow(final Val[] combinedRow, final int[] mapping) {
+        final Val[] out = new Val[mapping.length];
+        for (int i = 0; i < mapping.length; i++) {
+            out[i] = mapping[i] < 0 ? ValNull.INSTANCE : combinedRow[mapping[i]];
+        }
+        return out;
     }
 
     private record RealisedSide(ResultStore resultStore, List<Column> columns, List<Val[]> rows) {

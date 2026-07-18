@@ -18,156 +18,306 @@ package stroom.searchable.impl;
 
 import stroom.docref.DocRef;
 import stroom.query.api.Column;
+import stroom.query.api.DateTimeSettings;
+import stroom.query.api.ExpressionOperator;
 import stroom.query.api.JoinSpec;
 import stroom.query.api.JoinSpec.JoinEquiKey;
+import stroom.query.api.OffsetRange;
 import stroom.query.api.Query;
+import stroom.query.api.QueryKey;
+import stroom.query.api.ResultRequest;
+import stroom.query.api.ResultRequest.Fetch;
+import stroom.query.api.ResultRequest.ResultStyle;
 import stroom.query.api.SearchRequest;
+import stroom.query.api.SearchRequestSource;
+import stroom.query.api.TableSettings;
+import stroom.query.api.TimeFilter;
 import stroom.query.common.v2.CoprocessorsFactory;
 import stroom.query.common.v2.DataStore;
+import stroom.query.common.v2.ExpressionContextFactory;
+import stroom.query.common.v2.ExpressionPredicateFactory;
+import stroom.query.common.v2.IdentityItemMapper;
 import stroom.query.common.v2.Item;
 import stroom.query.common.v2.JoinDataSourceType;
+import stroom.query.common.v2.MapDataStoreFactory;
+import stroom.query.common.v2.OpenGroups;
 import stroom.query.common.v2.ResultStore;
 import stroom.query.common.v2.ResultStoreFactory;
+import stroom.query.common.v2.ResultStoreSettingsFactory;
 import stroom.query.common.v2.SearchProvider;
 import stroom.query.common.v2.SearchProviderRegistry;
+import stroom.query.common.v2.SearchResultStoreConfig;
+import stroom.query.common.v2.Sizes;
+import stroom.query.common.v2.SizesProvider;
 import stroom.query.language.SearchRequestFactory;
+import stroom.query.language.functions.FieldIndex;
 import stroom.query.language.functions.Val;
 import stroom.query.language.functions.ValLong;
+import stroom.query.language.functions.ValNull;
 import stroom.query.language.functions.ValString;
-import stroom.security.api.SecurityContext;
-import stroom.task.api.TaskContextFactory;
-import stroom.task.api.TaskManager;
-import stroom.ui.config.shared.UiConfig;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.Executor;
 import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * Task 6.1a/6.1d: proves the sentinel-type registration route works, and that {@link
- * JoinSearchProvider#createResultStore} correctly realises both join sides (via each side's own {@link
- * SearchProvider}) and invokes {@code JoinExecutor} with the right equi-key positions - the orchestration
- * mechanics Task 6.1d scoped as ready. The final "feed joined rows into the outer query's Coprocessors" step is
- * deliberately not implemented yet (see {@link JoinSearchProvider}'s class Javadoc, Task 6.1x) - proven by the
- * {@link UnsupportedOperationException} every successful-realisation test expects.
+ * Task 6.1d/6.1x: the sentinel-type registration route, the structural rejections, and - the point of "closing
+ * the gap" - a real end-to-end test proving a where-less two-source join returns actual joined rows through a
+ * real outer {@code Coprocessors}/{@code ResultStore} (only the two join sides are faked). Plus direct unit tests
+ * of the {@code buildFieldMapping}/{@code assembleRow} helpers, the novel positional logic.
  */
 class TestJoinSearchProvider {
 
     private static final DocRef LEFT_DATA_SOURCE = new DocRef("LeftType", "left-uuid", "Left");
     private static final DocRef RIGHT_DATA_SOURCE = new DocRef("RightType", "right-uuid", "Right");
+    private static final Executor DIRECT_EXECUTOR = Runnable::run;
+    private static final SizesProvider SIZES_PROVIDER = Sizes::unlimited;
 
-    private SearchProviderRegistryImpl registry(final SearchProvider... providers) {
-        return new SearchProviderRegistryImpl(
-                mock(Executor.class),
-                mock(TaskManager.class),
-                mock(TaskContextFactory.class),
-                mock(UiConfig.class),
-                mock(CoprocessorsFactory.class),
-                mock(ResultStoreFactory.class),
-                mock(SecurityContext.class),
-                Set.of(providers),
-                Map.of());
+    /**
+     * A real {@link CoprocessorsFactory} backed by the lightweight {@link MapDataStoreFactory} (no LMDB/temp-dir),
+     * plus a {@link ResultStoreFactory} mock that wraps whatever coprocessors it's handed in a genuine
+     * {@link ResultStore} - so {@code createResultStore}'s full path (real FieldIndex, real accept, real readback)
+     * is exercised without standing up NodeInfo/SecurityContext/etc.
+     */
+    private JoinSearchProvider provider(final SearchProviderRegistry registry) {
+        final CoprocessorsFactory coprocessorsFactory = new CoprocessorsFactory(
+                new MapDataStoreFactory(SearchResultStoreConfig::new),
+                new ExpressionContextFactory(),
+                SIZES_PROVIDER,
+                () -> DIRECT_EXECUTOR);
+
+        final ResultStoreFactory resultStoreFactory = mock(ResultStoreFactory.class);
+        when(resultStoreFactory.create(any(), any())).thenAnswer(inv -> new ResultStore(
+                inv.getArgument(0),
+                SIZES_PROVIDER,
+                null,
+                inv.getArgument(1),
+                "node",
+                new ResultStoreSettingsFactory().get(),
+                new MapDataStoreFactory(SearchResultStoreConfig::new),
+                new ExpressionPredicateFactory(),
+                () -> DIRECT_EXECUTOR));
+
+        return new JoinSearchProvider(() -> registry, coprocessorsFactory, resultStoreFactory);
     }
+
+    private JoinSearchProvider providerWithMockDeps(final SearchProviderRegistry registry) {
+        return new JoinSearchProvider(
+                () -> registry, mock(CoprocessorsFactory.class), mock(ResultStoreFactory.class));
+    }
+
+    private SearchProviderRegistry registry(final SearchProvider... providers) {
+        final SearchProviderRegistry registry = mock(SearchProviderRegistry.class);
+        for (final SearchProvider provider : providers) {
+            when(registry.getSearchProvider(argThatMatchesType(provider.getDataSourceType())))
+                    .thenReturn(java.util.Optional.of(provider));
+        }
+        return registry;
+    }
+
+    private static DocRef argThatMatchesType(final String type) {
+        return org.mockito.ArgumentMatchers.argThat(docRef -> docRef != null && type.equals(docRef.getType()));
+    }
+
+    // ------------------------------------------------------------------------------------------------------
+    // Structural / registration
+    // ------------------------------------------------------------------------------------------------------
 
     @Test
     void getDataSourceType_isTheSentinelType() {
-        assertThat(new JoinSearchProvider(() -> mock(SearchProviderRegistry.class)).getDataSourceType())
+        assertThat(providerWithMockDeps(mock(SearchProviderRegistry.class)).getDataSourceType())
                 .isEqualTo(JoinDataSourceType.TYPE);
     }
 
     @Test
     void searchProviderRegistry_resolvesItForTheSentinelType_noRegistryChangeNeeded() {
-        final JoinSearchProvider joinSearchProvider = new JoinSearchProvider(() -> mock(SearchProviderRegistry.class));
-        final SearchProviderRegistryImpl registry = registry(joinSearchProvider);
+        final JoinSearchProvider joinSearchProvider = providerWithMockDeps(mock(SearchProviderRegistry.class));
+        final SearchProviderRegistryImpl realRegistry = new SearchProviderRegistryImpl(
+                mock(Executor.class),
+                mock(stroom.task.api.TaskManager.class),
+                mock(stroom.task.api.TaskContextFactory.class),
+                mock(stroom.ui.config.shared.UiConfig.class),
+                mock(CoprocessorsFactory.class),
+                mock(ResultStoreFactory.class),
+                mock(stroom.security.api.SecurityContext.class),
+                java.util.Set.of(joinSearchProvider),
+                java.util.Map.of());
 
-        final DocRef joinDocRef = new DocRef(JoinDataSourceType.TYPE, "join-uuid", "A ⋈ B");
-
-        assertThat(registry.getSearchProvider(joinDocRef)).contains(joinSearchProvider);
+        assertThat(realRegistry.getSearchProvider(new DocRef(JoinDataSourceType.TYPE, "u", "A ⋈ B")))
+                .contains(joinSearchProvider);
     }
 
     @Test
     void missingJoinSpec_rejectedClearly() {
-        final JoinSearchProvider joinSearchProvider = new JoinSearchProvider(() -> mock(SearchProviderRegistry.class));
         final SearchRequest requestWithNoJoinSpec = SearchRequest.builder()
                 .query(Query.builder().dataSource(new DocRef(JoinDataSourceType.TYPE, "u", "n")).build())
                 .build();
 
-        assertThatThrownBy(() -> joinSearchProvider.createResultStore(requestWithNoJoinSpec))
+        assertThatThrownBy(() -> providerWithMockDeps(mock(SearchProviderRegistry.class))
+                .createResultStore(requestWithNoJoinSpec))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
-    void noSearchProviderForASide_rejectedClearly() {
-        final SearchProviderRegistry emptyRegistry = registry();
-        final JoinSearchProvider joinSearchProvider = new JoinSearchProvider(() -> emptyRegistry);
+    void whereClauseInAJoin_rejectedAtExecution_withAClearMessage() {
+        // Outer request carries a non-trivial Query.expression (a where clause) - compiles fine, but not runnable.
+        final SearchRequest requestWithWhere = outerRequest(ExpressionOperator.builder()
+                .addTerm("a.UserId", stroom.query.api.ExpressionTerm.Condition.EQUALS, "1")
+                .build());
 
-        assertThatThrownBy(() -> joinSearchProvider.createResultStore(searchRequestWithJoinSpec()))
-                .isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> providerWithMockDeps(mock(SearchProviderRegistry.class))
+                .createResultStore(requestWithWhere))
+                .isInstanceOf(UnsupportedOperationException.class)
+                .hasMessageContaining("where");
+    }
+
+    // ------------------------------------------------------------------------------------------------------
+    // End-to-end: real outer coprocessors, faked sides, real joined rows back
+    // ------------------------------------------------------------------------------------------------------
+
+    @Test
+    void innerJoin_returnsRealJoinedRows_throughRealCoprocessors() {
+        // Left: [UserId] rows 1,2. Right: [Id, Name] row (2, "Bob"). INNER join on a.UserId = b.Id.
+        final SearchProvider leftProvider = fakeSideProvider(
+                LEFT_DATA_SOURCE, List.of("UserId"),
+                List.of(new Val[]{ValLong.create(1)}, new Val[]{ValLong.create(2)}));
+        final SearchProvider rightProvider = fakeSideProvider(
+                RIGHT_DATA_SOURCE, List.of("Id", "Name"),
+                List.<Val[]>of(new Val[]{ValLong.create(2), ValString.create("Bob")}));
+
+        final ResultStore resultStore = provider(registry(leftProvider, rightProvider))
+                .createResultStore(outerRequest(ExpressionOperator.builder().build()));
+
+        final List<Val[]> rows = readTableRows(resultStore);
+        assertThat(rows).hasSize(1);
+        // Outer select columns are [a.UserId, b.Name] - see outerRequest(). The one matching row is UserId=2.
+        assertThat(rows.getFirst()[0]).isEqualTo(ValLong.create(2));
+        assertThat(rows.getFirst()[1]).isEqualTo(ValString.create("Bob"));
+    }
+
+    // ------------------------------------------------------------------------------------------------------
+    // Pure positional helpers
+    // ------------------------------------------------------------------------------------------------------
+
+    @Test
+    void buildFieldMapping_mapsAliasQualifiedFieldsToTheirCombinedRowPositions() {
+        // Populate a FieldIndex exactly the way a real coprocessor does - by the select columns' expression text.
+        final FieldIndex fieldIndex = new FieldIndex();
+        fieldIndex.create("a.UserId");
+        fieldIndex.create("b.Name");
+
+        final int[] mapping = JoinSearchProvider.buildFieldMapping(
+                fieldIndex,
+                List.of(column("UserId")),
+                List.of(column("Id"), column("Name")),
+                "a",
+                "b");
+
+        // a.UserId -> left column 0 (combined pos 0); b.Name -> right column 1 (combined pos leftWidth(1)+1 = 2).
+        assertThat(mapping).containsExactly(0, 2);
     }
 
     @Test
-    void realisesBothSides_andInvokesJoinExecutor_thenThrowsAtTheDocumentedGap() {
-        final SearchProvider leftProvider = fakeSideProvider(
-                LEFT_DATA_SOURCE,
-                List.of("id", "name"),
-                List.of(new Val[]{ValLong.create(1), ValString.create("a")},
-                        new Val[]{ValLong.create(2), ValString.create("b")}));
-        final SearchProvider rightProvider = fakeSideProvider(
-                RIGHT_DATA_SOURCE,
-                List.of("id", "amount"),
-                List.<Val[]>of(new Val[]{ValLong.create(2), ValLong.create(200)}));
+    void buildFieldMapping_unrecognisedOrUnqualifiedNames_mapToMinusOne() {
+        final FieldIndex fieldIndex = new FieldIndex();
+        fieldIndex.create("StreamId");        // unqualified (e.g. an auto-added special column) -> -1
+        fieldIndex.create("c.Whatever");      // alias matches neither side -> -1
+        fieldIndex.create("a.Missing");       // left alias but no such column -> -1
 
-        final SearchProviderRegistry testRegistry = registry(leftProvider, rightProvider);
-        final JoinSearchProvider joinSearchProvider = new JoinSearchProvider(() -> testRegistry);
+        final int[] mapping = JoinSearchProvider.buildFieldMapping(
+                fieldIndex, List.of(column("UserId")), List.of(column("Id")), "a", "b");
 
-        assertThatThrownBy(() -> joinSearchProvider.createResultStore(searchRequestWithJoinSpec()))
-                .isInstanceOf(UnsupportedOperationException.class)
-                // Proves it reached the end (2 rows realised, joined on id=id, 1 match) rather than failing earlier.
-                .hasMessageContaining("1 combined row");
+        assertThat(mapping).containsExactly(-1, -1, -1);
     }
 
-    private static SearchRequest searchRequestWithJoinSpec() {
-        final SearchRequest left = SearchRequest.builder()
+    @Test
+    void assembleRow_placesValuesPerMappingAndNullsTheRest() {
+        final Val[] combined = {ValLong.create(2), ValLong.create(99), ValString.create("Bob")};
+        final Val[] out = JoinSearchProvider.assembleRow(combined, new int[]{0, 2, -1});
+
+        assertThat(out).containsExactly(ValLong.create(2), ValString.create("Bob"), ValNull.INSTANCE);
+    }
+
+    // ------------------------------------------------------------------------------------------------------
+    // Fixtures
+    // ------------------------------------------------------------------------------------------------------
+
+    private static Column column(final String name) {
+        return Column.builder().id(name).name(name).expression(name).build();
+    }
+
+    /** Outer join request: select a.UserId, b.Name; dataSource = sentinel; joinSpec = a.UserId = b.Id INNER. */
+    private static SearchRequest outerRequest(final ExpressionOperator outerExpression) {
+        final SearchRequest leftSide = SearchRequest.builder()
                 .query(Query.builder().dataSource(LEFT_DATA_SOURCE).build())
                 .build();
-        final SearchRequest right = SearchRequest.builder()
+        final SearchRequest rightSide = SearchRequest.builder()
                 .query(Query.builder().dataSource(RIGHT_DATA_SOURCE).build())
                 .build();
         final JoinSpec joinSpec = JoinSpec.builder()
-                .left(left)
-                .right(right)
+                .left(leftSide)
+                .right(rightSide)
                 .joinType(JoinSpec.JoinType.INNER)
-                .addEquiKey(new JoinEquiKey("a", "id", "b", "id"))
+                .addEquiKey(new JoinEquiKey("a", "UserId", "b", "Id"))
                 .build();
+
+        final TableSettings tableSettings = TableSettings.builder()
+                .addColumns(column("a.UserId"), column("b.Name"))
+                .extractValues(true)
+                .build();
+        final ResultRequest tableResultRequest = ResultRequest.builder()
+                .componentId(SearchRequestFactory.TABLE_COMPONENT_ID)
+                .mappings(List.of(tableSettings))
+                .resultStyle(ResultStyle.TABLE)
+                .fetch(Fetch.ALL)
+                .build();
+
         return SearchRequest.builder()
+                .searchRequestSource(SearchRequestSource.createBasic())
+                .key(new QueryKey("test-join"))
                 .query(Query.builder()
-                        .dataSource(new DocRef(JoinDataSourceType.TYPE, "join-uuid", "A join B"))
+                        .dataSource(new DocRef(JoinDataSourceType.TYPE, "join-uuid", "A ⋈ B"))
+                        .expression(outerExpression)
                         .joinSpec(joinSpec)
                         .build())
+                .resultRequests(List.of(tableResultRequest))
+                .dateTimeSettings(DateTimeSettings.builder().referenceTime(0L).build())
+                .incremental(false)
                 .build();
+    }
+
+    private static List<Val[]> readTableRows(final ResultStore resultStore) {
+        final DataStore dataStore = resultStore.getData(SearchRequestFactory.TABLE_COMPONENT_ID);
+        final List<Val[]> rows = new ArrayList<>();
+        dataStore.fetch(
+                dataStore.getColumns(),
+                OffsetRange.UNBOUNDED,
+                OpenGroups.ALL,
+                new TimeFilter(0, Long.MAX_VALUE),
+                IdentityItemMapper.INSTANCE,
+                item -> rows.add(item.toArray()),
+                count -> {
+                });
+        return rows;
     }
 
     @SuppressWarnings("unchecked")
     private static SearchProvider fakeSideProvider(
             final DocRef dataSource, final List<String> columnNames, final List<Val[]> rows) {
-        final List<Column> columns = columnNames.stream()
-                .map(name -> Column.builder().id(name).name(name).expression(name).build())
-                .toList();
+        final List<Column> columns = columnNames.stream().map(TestJoinSearchProvider::column).toList();
 
         final DataStore dataStore = mock(DataStore.class);
         when(dataStore.getColumns()).thenReturn(columns);
-        doAnswer(invocation -> {
+        org.mockito.Mockito.doAnswer(invocation -> {
             final Consumer<Item> resultConsumer = invocation.getArgument(5);
             for (final Val[] row : rows) {
                 final Item item = mock(Item.class);

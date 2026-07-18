@@ -1461,25 +1461,48 @@ wrong answer.
   - **Status: done (orchestration mechanics only, as scoped above).** `TestJoinSearchProvider` (5 tests) covers
     all of the above; new `stroom-searchable-impl → stroom-query-planner` dependency (for `JoinExecutor`),
     confirmed cycle-free the same way T6.1c's new dependency was.
-  - **Update after T6.1x resolved**: the "outer `FieldIndex` positions" blocker described above turned out to have
-    a concrete answer once T6.1x confirmed the outer `TableSettings`'s `Column.expression` strings already contain
-    alias-qualified text (`"a.StreamId"`) - see the Task 6.1 gate note. Re-verify at implementation time (don't
-    assume this note is still accurate), but this may unblock finishing `createResultStore` for real rather than
-    needing a separately-scoped follow-up.
+  - **Update — `createResultStore` now returns real results for the where-less case.** The row-feeding step is
+    implemented: `createResultStore` builds the outer `CoprocessorsImpl` via `coprocessorsFactory.create(request,
+    DataStoreSettings.createBasicSearchResultStoreSettings())`, maps each combined joined row onto the outer
+    `FieldIndex`'s positions (`buildFieldMapping`/`assembleRow`, see below), feeds them via `coprocessors.accept
+    (Val[])`, wraps the coprocessors in a `ResultStore` via `resultStoreFactory.create(...)`, and
+    `signalComplete()`s - from there `ResultStoreManager`'s normal polling serves it. `JoinSearchProvider` gained
+    `CoprocessorsFactory`/`ResultStoreFactory` constructor deps (both already in the injector).
+    - **Confirmed the T6.1x-resolution hunch, with a refinement**: the outer `FieldIndex` does key on the
+      select columns' alias-qualified expression text (`"a.StreamId"`) - verified via two research passes and a
+      real-coprocessor end-to-end test. But it's *not* a direct `fieldIndex.getPos("a.field")` against a
+      like-named side field: each side's sub-request is `select *`, so its columns are named by the *bare* field
+      (`StreamId`, not `a.StreamId`). So `buildFieldMapping` splits each outer `alias.field` entry, routes the
+      alias to the left/right side (via the equi-key's recorded aliases), finds that bare `field` among that
+      side's columns, and computes its position in the *combined* (left-cols-then-right-cols) joined row.
+      `assembleRow` then reorders each combined row into the `Val[]` the outer coprocessor expects (unmapped
+      positions - e.g. auto-added special `StreamId`/`EventId` navigation columns that name no join side - become
+      `ValNull`). Both are pure static methods, unit-tested directly against a hand-populated `FieldIndex`.
+    - **Scope: where-less joins only.** A `where` clause in a join query still *compiles* (T6.1x populates the
+      `JoinSpec`) but is *rejected at execution* with a clear message. Reason (confirmed by research): a join's
+      `where` resolves through a *different* path than the `select` columns - `TableSettings.valueFilter`
+      (the `filter` clause) is keyed by **column name** against a `RowUtil.createColumnNameValExtractor` map, not
+      the `FieldIndex`, and `Query.expression` (the `where` clause) is the datasource's job, which for a join has
+      no natural home. Getting `where`-across-a-join correct is its own increment (T6.2-adjacent), not a guess
+      buried here.
+    - **Simplification**: the feed runs synchronously (blocks until both sides complete) rather than async on an
+      `Executor` like `SearchableSearchProvider` - documented in the class Javadoc, a later optimisation not a
+      correctness concern.
+  - **Status: done for the where-less case.** `TestJoinSearchProvider` (8 tests): sentinel registration, missing-
+    `JoinSpec`/`where`-clause rejections, the pure `buildFieldMapping`/`assembleRow` logic, and - the point of
+    "closing the gap" - `innerJoin_returnsRealJoinedRows_throughRealCoprocessors`, which runs a where-less join
+    through a **real** outer `CoprocessorsImpl`/`ResultStore` (only the two sides faked) and asserts the actual
+    joined rows come back. New `stroom-searchable-impl → stroom-query-planner` dependency (for `JoinExecutor`),
+    confirmed cycle-free the same way T6.1c's was.
 
 **Task 6.1 gate**: a two-source `index ⋈ index` (or `Searchable ⋈ Searchable`) INNER and LEFT join returns correct
 rows end-to-end through `QueryServiceImpl.search(...)`, gated behind `mode=on`/`shadow` like everything else in
 this project; a join outside the direct-`Scan`/`Filter` shape still rejects cleanly rather than silently
-mis-executing. **Not yet met**: `create()` now compiles a join query all the way to a `SearchRequest` with a
-populated `JoinSpec` (T6.1x resolved that blocker), but `JoinSearchProvider.createResultStore` still throws at
-the last step - feeding joined rows into a real `Coprocessors`/`ResultStore`. **Found while resolving T6.1x, worth
-re-checking before assuming this is still hard**: `CoprocessorsFactory.create(outerSearchRequest, ...)` builds its
-`FieldIndex` from the outer `TableSettings.fields[].expression` strings, which (per T6.1x's finding) already
-contain alias-qualified text like `"a.StreamId"` for an explicit reference - so the position `JoinSearchProvider`
-needs for a given side's field is likely just `fieldIndex.getPos("<alias>.<fieldName>")` for each field that side
-exposes, a plain lookup against real data now that T6.1x produces genuine alias-qualified `Column.expression`
-strings - this may be considerably closer to done than it looked when T6.1d's own section was written, but
-re-verify before implementing rather than assuming.
+mis-executing. **Substantially met for where-less joins**: `create()` compiles a join to a `SearchRequest` with a
+`JoinSpec` (T6.1x), and `JoinSearchProvider.createResultStore` now executes it end-to-end returning real rows
+(proven against real coprocessors in-module; a real cross-provider `index ⋈ index` run against a live backend is
+the remaining manual verification). **Still open**: `where`-clause support in joins (rejected cleanly today), and
+the efficiency items (per-side filter push-down through the join, async feed) - all documented above.
 
 ### Task 6.2 — Enrichment joins (State/PlanB broadcast-lookup) + domain-type source discovery
 - **Goal**: a join whose build side is a State/PlanB store uses the existing single-key lookup functions
