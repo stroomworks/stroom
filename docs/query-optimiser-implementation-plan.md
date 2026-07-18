@@ -1356,6 +1356,17 @@ wrong answer.
   - **Done-when**: unit tests - INNER/LEFT correctness for small hand-built row sets, both algorithms; an
     unmatched-key case for LEFT produces a null-padded row, not a dropped one.
   - **Verify**: `./gradlew :stroom-query:stroom-query-planner:test`.
+  - **Status: done.** `JoinExecutor.join(Side left, Side right, JoinType, JoinAlgorithm)` - `Side` bundles a
+    side's realised rows, equi-key column position(s) (composite keys supported), and row width. New
+    `stroom-query-planner → stroom-query-language` dependency (for `Val`/`ValNull`) - confirmed cycle-free
+    (`stroom-query-language` only depends on `stroom-query-api`). Equi-key matching uses each key `Val`'s
+    `toString()` as a canonical form, identically in both algorithms, so a different algorithm choice never
+    changes which rows match (`TestJoinExecutor.bothAlgorithms_produceTheSameResultSet` proves this directly, not
+    just by inspection). **Scope note (documented in the class Javadoc)**: `HASH_JOIN` always materialises the
+    *right* side regardless of `JoinCostModel`'s build-side preference - correct for both `INNER` and `LEFT`
+    (materialising the side that must appear unconditionally would need extra bookkeeping to still emit its
+    unmatched rows); honouring the cost model's build-side choice for performance is a deferred optimisation, not
+    a correctness gap. 6 tests, including a one-to-many fan-out case and the empty-key-positions guard.
 
 - **T6.1d — `JoinSearchProvider`: orchestration.**
   - **Files**: `JoinSearchProvider.createResultStore(SearchRequest)` - reads `Query.joinSpec`, for each side calls
@@ -1371,17 +1382,45 @@ wrong answer.
     `QueryKey` in `ResultStoreManager.resultStoreMap` - it's an implementation detail of the join, not an
     independently pollable query) - `terminate()`/cleanup it once its rows are read, so an abandoned/failed join
     doesn't leak a dangling sub-search.
-  - **Done-when**: an integration-shaped test (two `Searchable`-backed or otherwise test-double-backed sides,
-    since a real Lucene index is out of scope for this module's tests) proving a two-source INNER/LEFT join
-    returns correct combined rows through the full `SearchProvider`/`ResultStore` path, not just `JoinExecutor` in
-    isolation.
-  - **Verify**: whichever module ends up hosting `JoinSearchProvider` (confirm cycle-free direction first, Task
-    3.1-style) - `./gradlew :<that module>:test`.
+  - **Found while implementing - the final step needs T6.1x too, not just T6.1c/6.1d's own pieces.** Feeding
+    joined rows into a fresh `CoprocessorsImpl` requires placing each row's values at the exact positions the
+    outer coprocessor's `FieldIndex` assigns as it compiles the outer query's `where`/`select`/`group`/`having`
+    column expressions - the same alias-aware compilation capability T6.1b found missing (see T6.1x). Asked the
+    user how to scope this given the discovery (same pattern as T6.1b); resolved the same way: land the
+    orchestration mechanics that are ready, leave the final step as a documented, explicit gap rather than a
+    silent placeholder.
+  - **Files (done)**: `JoinSearchProvider` constructor now takes `Provider<SearchProviderRegistry>` (not
+    `SearchProviderRegistry` directly - injecting the registry itself would be a construction-time cycle, since
+    `SearchProviderRegistryImpl` is built from `Set<SearchProvider>`, which `JoinSearchProvider` is a member of;
+    `Provider.get()` defers the lookup until `createResultStore` actually runs). `createResultStore`: validates
+    `Query.joinSpec` is present; realises each side via `searchProviderRegistryProvider.get().getSearchProvider(...)`
+    → `createResultStore(side)` → `awaitCompletion()` → `getData(SearchRequestFactory.TABLE_COMPONENT_ID).fetch(...)`
+    (exactly the finding above - `OffsetRange.UNBOUNDED`/`OpenGroups.ALL`/`IdentityItemMapper.INSTANCE` to read
+    every row, not a UI-paginated window); resolves each equi-key's column position per side by name-matching
+    against `DataStore.getColumns()`; invokes `JoinExecutor.join(...)` (T6.1c); destroys both side `ResultStore`s
+    in a `finally` (not registered under their own `QueryKey` - implementation details of the join, not
+    independently pollable queries); then throws `UnsupportedOperationException` naming the row count actually
+    produced, clearly pointing at T6.1x as the remaining blocker.
+  - **Files (not done)**: building the fresh outer `CoprocessorsImpl`/feeding joined rows into it/returning a real
+    `ResultStore` - blocked on T6.1x.
+  - **Done-when**: a test-double-backed test (two fake `SearchProvider`s, `DataStore.fetch(...)` stubbed to invoke
+    the `Consumer<Item>` callback with hand-built rows) proving: a missing `JoinSpec` is rejected with
+    `IllegalArgumentException`; a side with no registered `SearchProvider` is rejected with
+    `IllegalStateException`; a real two-source INNER join realises both sides correctly, resolves equi-key
+    positions by name, and reaches the documented `UnsupportedOperationException` with the *correct* joined row
+    count in its message (proving the orchestration produced the right answer up to the point it deliberately
+    stops, not just that something eventually throws).
+  - **Verify**: `./gradlew :stroom-search:stroom-searchable-impl:test`.
+  - **Status: done (orchestration mechanics only, as scoped above).** `TestJoinSearchProvider` (5 tests) covers
+    all of the above; new `stroom-searchable-impl → stroom-query-planner` dependency (for `JoinExecutor`),
+    confirmed cycle-free the same way T6.1c's new dependency was.
 
 **Task 6.1 gate**: a two-source `index ⋈ index` (or `Searchable ⋈ Searchable`) INNER and LEFT join returns correct
 rows end-to-end through `QueryServiceImpl.search(...)`, gated behind `mode=on`/`shadow` like everything else in
 this project; a join outside the direct-`Scan`/`Filter` shape still rejects cleanly rather than silently
-mis-executing.
+mis-executing. **Not yet met**: T6.1x (alias-aware outer-expression compilation) remains the single blocker for
+both the `create()` wiring (T6.1b) and the final coprocessor-feeding step (T6.1d) - resolving it is what closes
+this gate.
 
 ### Task 6.2 — Enrichment joins (State/PlanB broadcast-lookup) + domain-type source discovery
 - **Goal**: a join whose build side is a State/PlanB store uses the existing single-key lookup functions
