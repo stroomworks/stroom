@@ -24,8 +24,10 @@ import java.util.Optional;
 
 /**
  * A {@link FieldInfoSource} that never resolves anything - for tests of {@link OptimisingQueryCompiler#create}
- * (Task 1.4's byte-parity path, which never reads this dependency) that don't care about {@code explain()}
- * (Task 4.1). Not lambda-compatible like the single-method cost ports since it has two methods.
+ * that don't care about {@code explain()} (Task 4.1) or the Task 5.2 time-range enhancement: since this always
+ * returns no time field, {@code create()}'s enhancement step (Phase 5) is a guaranteed no-op here, same as it
+ * always was for Task 1.4's byte-parity path before Phase 5 existed. Not lambda-compatible like the
+ * single-method cost ports since it has two methods.
  */
 final class EmptyFieldInfoSource implements FieldInfoSource {
 

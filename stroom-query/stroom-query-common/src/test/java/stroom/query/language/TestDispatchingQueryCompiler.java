@@ -20,6 +20,7 @@ import stroom.docref.DocRef;
 import stroom.query.api.ExplainPlan;
 import stroom.query.api.SearchRequest;
 import stroom.query.common.v2.QueryOptimiserConfig;
+import stroom.query.common.v2.QueryOptimiserMode;
 import stroom.query.language.functions.ExpressionContext;
 
 import org.junit.jupiter.api.Test;
@@ -31,13 +32,15 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * Proves {@link DispatchingQueryCompiler} routes every call to {@link LegacyQueryCompiler} while the flag is off
- * (the default) and to {@link OptimisingQueryCompiler} while it is on, re-reading the flag on every call rather
- * than caching it - see docs/query-optimiser-implementation-plan.md, Task 1.5.
+ * Proves {@link DispatchingQueryCompiler} routes every call to {@link LegacyQueryCompiler} while the mode is
+ * {@code OFF} (the default) and to {@link OptimisingQueryCompiler} while it is {@code ON}, re-reading the mode on
+ * every call rather than caching it (Task 1.5) - and that {@code SHADOW} always serves legacy's result (Task
+ * 5.4), unaffected by whatever the optimising compiler does, even when it throws.
  */
 class TestDispatchingQueryCompiler {
 
@@ -50,79 +53,141 @@ class TestDispatchingQueryCompiler {
     private final SearchRequest optimisingResult = mock(SearchRequest.class);
     private final ExpressionContext expressionContext = mock(ExpressionContext.class);
 
-    private DispatchingQueryCompiler dispatcher(final boolean enabled) {
-        return new DispatchingQueryCompiler(legacy, optimising, () -> new QueryOptimiserConfig(enabled));
+    private DispatchingQueryCompiler dispatcher(final QueryOptimiserMode mode) {
+        return new DispatchingQueryCompiler(legacy, optimising, () -> new QueryOptimiserConfig(mode));
     }
 
     @Test
-    void flagOff_delegatesToLegacy() {
+    void modeOff_delegatesToLegacy() {
         when(legacy.create(QUERY, seed, expressionContext)).thenReturn(legacyResult);
 
-        final SearchRequest result = dispatcher(false).create(QUERY, seed, expressionContext);
+        final SearchRequest result = dispatcher(QueryOptimiserMode.OFF).create(QUERY, seed, expressionContext);
 
         assertThat(result).isSameAs(legacyResult);
         verify(optimising, never()).create(any(), any(), any());
     }
 
     @Test
-    void flagOn_delegatesToOptimising() {
+    void modeOn_delegatesToOptimising() {
         when(optimising.create(QUERY, seed, expressionContext)).thenReturn(optimisingResult);
 
-        final SearchRequest result = dispatcher(true).create(QUERY, seed, expressionContext);
+        final SearchRequest result = dispatcher(QueryOptimiserMode.ON).create(QUERY, seed, expressionContext);
 
         assertThat(result).isSameAs(optimisingResult);
         verify(legacy, never()).create(any(), any(), any());
     }
 
     @Test
-    @SuppressWarnings("unchecked")
-    void extractDataSourceOnly_respectsFlagToo() {
-        final Consumer<DocRef> consumer = mock(Consumer.class);
+    void modeShadow_alwaysServesLegacyResult_butAlsoCallsOptimising() {
+        when(legacy.create(QUERY, seed, expressionContext)).thenReturn(legacyResult);
+        when(optimising.create(QUERY, seed, expressionContext)).thenReturn(optimisingResult);
 
-        dispatcher(true).extractDataSourceOnly(QUERY, consumer);
-        verify(optimising).extractDataSourceOnly(QUERY, consumer);
-        verify(legacy, never()).extractDataSourceOnly(any(), any());
+        final SearchRequest result = dispatcher(QueryOptimiserMode.SHADOW).create(QUERY, seed, expressionContext);
 
-        dispatcher(false).extractDataSourceOnly(QUERY, consumer);
-        verify(legacy).extractDataSourceOnly(QUERY, consumer);
+        assertThat(result).isSameAs(legacyResult);
+        verify(legacy).create(QUERY, seed, expressionContext);
+        verify(optimising).create(QUERY, seed, expressionContext);
     }
 
     @Test
-    void explain_respectsFlagToo() {
+    void modeShadow_optimisingThrowing_stillServesLegacyResult() {
+        when(legacy.create(QUERY, seed, expressionContext)).thenReturn(legacyResult);
+        when(optimising.create(QUERY, seed, expressionContext)).thenThrow(new RuntimeException("boom"));
+
+        final SearchRequest result = dispatcher(QueryOptimiserMode.SHADOW).create(QUERY, seed, expressionContext);
+
+        assertThat(result).isSameAs(legacyResult);
+    }
+
+    @Test
+    void modeShadow_alsoAsksForAnEstimate_viaExplain() {
+        when(legacy.create(QUERY, seed, expressionContext)).thenReturn(legacyResult);
+        when(optimising.create(QUERY, seed, expressionContext)).thenReturn(optimisingResult);
+        when(optimising.explain(QUERY, expressionContext)).thenReturn(mock(ExplainPlan.class));
+
+        dispatcher(QueryOptimiserMode.SHADOW).create(QUERY, seed, expressionContext);
+
+        verify(optimising).explain(QUERY, expressionContext);
+    }
+
+    @Test
+    void modeShadow_explainThrowing_stillServesLegacyResult() {
+        when(legacy.create(QUERY, seed, expressionContext)).thenReturn(legacyResult);
+        when(optimising.create(QUERY, seed, expressionContext)).thenReturn(optimisingResult);
+        when(optimising.explain(QUERY, expressionContext)).thenThrow(new RuntimeException("boom"));
+
+        final SearchRequest result = dispatcher(QueryOptimiserMode.SHADOW).create(QUERY, seed, expressionContext);
+
+        assertThat(result).isSameAs(legacyResult);
+    }
+
+    @Test
+    void modeOff_andModeOn_neverAskForAnEstimateDuringCreate() {
+        when(legacy.create(QUERY, seed, expressionContext)).thenReturn(legacyResult);
+        when(optimising.create(QUERY, seed, expressionContext)).thenReturn(optimisingResult);
+
+        dispatcher(QueryOptimiserMode.OFF).create(QUERY, seed, expressionContext);
+        dispatcher(QueryOptimiserMode.ON).create(QUERY, seed, expressionContext);
+
+        verify(optimising, never()).explain(any(), any());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void extractDataSourceOnly_respectsModeToo() {
+        final Consumer<DocRef> consumer = mock(Consumer.class);
+
+        dispatcher(QueryOptimiserMode.ON).extractDataSourceOnly(QUERY, consumer);
+        verify(optimising).extractDataSourceOnly(QUERY, consumer);
+        verify(legacy, never()).extractDataSourceOnly(any(), any());
+
+        dispatcher(QueryOptimiserMode.OFF).extractDataSourceOnly(QUERY, consumer);
+        verify(legacy).extractDataSourceOnly(QUERY, consumer);
+
+        // SHADOW behaves exactly like OFF here - nothing to shadow-diff for a datasource-only extraction.
+        dispatcher(QueryOptimiserMode.SHADOW).extractDataSourceOnly(QUERY, consumer);
+        verify(legacy, times(2)).extractDataSourceOnly(QUERY, consumer);
+    }
+
+    @Test
+    void explain_respectsModeToo() {
         final ExplainPlan legacyPlan = mock(ExplainPlan.class);
         final ExplainPlan optimisingPlan = mock(ExplainPlan.class);
         when(legacy.explain(QUERY, expressionContext)).thenReturn(legacyPlan);
         when(optimising.explain(QUERY, expressionContext)).thenReturn(optimisingPlan);
 
-        assertThat(dispatcher(true).explain(QUERY, expressionContext)).isSameAs(optimisingPlan);
+        assertThat(dispatcher(QueryOptimiserMode.ON).explain(QUERY, expressionContext)).isSameAs(optimisingPlan);
         verify(legacy, never()).explain(any(), any());
 
-        assertThat(dispatcher(false).explain(QUERY, expressionContext)).isSameAs(legacyPlan);
+        assertThat(dispatcher(QueryOptimiserMode.OFF).explain(QUERY, expressionContext)).isSameAs(legacyPlan);
         verify(optimising).explain(QUERY, expressionContext);
+
+        // SHADOW behaves exactly like OFF here - explain() is already advisory-only, nothing to shadow-diff.
+        assertThat(dispatcher(QueryOptimiserMode.SHADOW).explain(QUERY, expressionContext)).isSameAs(legacyPlan);
     }
 
     @Test
-    void flagIsReReadPerCall_notCachedAtConstruction() {
-        final boolean[] enabled = {false};
+    void modeIsReReadPerCall_notCachedAtConstruction() {
+        final QueryOptimiserMode[] mode = {QueryOptimiserMode.OFF};
         final DispatchingQueryCompiler dispatcher =
-                new DispatchingQueryCompiler(legacy, optimising, () -> new QueryOptimiserConfig(enabled[0]));
+                new DispatchingQueryCompiler(legacy, optimising, () -> new QueryOptimiserConfig(mode[0]));
 
         when(legacy.create(QUERY, seed, expressionContext)).thenReturn(legacyResult);
         when(optimising.create(QUERY, seed, expressionContext)).thenReturn(optimisingResult);
 
         assertThat(dispatcher.create(QUERY, seed, expressionContext)).isSameAs(legacyResult);
 
-        enabled[0] = true;
+        mode[0] = QueryOptimiserMode.ON;
         assertThat(dispatcher.create(QUERY, seed, expressionContext)).isSameAs(optimisingResult);
     }
 
     @Test
     void constructorRejectsNullArguments() {
         assertThatThrownBy(() ->
-                new DispatchingQueryCompiler(null, optimising, () -> new QueryOptimiserConfig(false)))
+                new DispatchingQueryCompiler(null, optimising, () -> new QueryOptimiserConfig(QueryOptimiserMode.OFF)))
                 .isInstanceOf(NullPointerException.class);
         assertThatThrownBy(() ->
-                new DispatchingQueryCompiler(legacy, null, () -> new QueryOptimiserConfig(false)))
+                new DispatchingQueryCompiler(legacy, null, () -> new QueryOptimiserConfig(QueryOptimiserMode.OFF)))
                 .isInstanceOf(NullPointerException.class);
         assertThatThrownBy(() -> new DispatchingQueryCompiler(legacy, optimising, null))
                 .isInstanceOf(NullPointerException.class);

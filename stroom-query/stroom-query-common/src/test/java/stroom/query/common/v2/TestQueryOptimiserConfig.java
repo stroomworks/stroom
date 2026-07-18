@@ -23,38 +23,45 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Proves the {@code stroom.query.optimiser.enabled} feature flag (see
- * {@code docs/query-optimiser-implementation-plan.md}, Task 0.3) defaults to off, both as a bare object and when
- * nested under {@link QueryConfig} the way {@code AppConfig} nests it.
+ * Proves the {@code stroom.query.optimiser.mode} feature flag (see
+ * {@code docs/query-optimiser-implementation-plan.md}, Tasks 0.3 and 5.4) defaults to {@link
+ * QueryOptimiserMode#OFF}, both as a bare object and when nested under {@link QueryConfig} the way
+ * {@code AppConfig} nests it.
  */
 class TestQueryOptimiserConfig {
 
     @Test
-    void defaultConstructor_isDisabled() {
-        assertThat(new QueryOptimiserConfig().isEnabled()).isFalse();
+    void defaultConstructor_isOff() {
+        assertThat(new QueryOptimiserConfig().getMode()).isEqualTo(QueryOptimiserMode.OFF);
     }
 
     @Test
-    void queryConfigDefaultConstructor_nestsADisabledOptimiser() {
-        assertThat(new QueryConfig().getOptimiserConfig().isEnabled()).isFalse();
+    void queryConfigDefaultConstructor_nestsAnOffOptimiser() {
+        assertThat(new QueryConfig().getOptimiserConfig().getMode()).isEqualTo(QueryOptimiserMode.OFF);
     }
 
     @Test
-    void jsonDeserialisation_missingEnabled_defaultsToFalse() {
+    void jsonDeserialisation_missingMode_defaultsToOff() {
         final QueryOptimiserConfig config = JsonUtil.readValue("{}", QueryOptimiserConfig.class);
-        assertThat(config.isEnabled()).isFalse();
+        assertThat(config.getMode()).isEqualTo(QueryOptimiserMode.OFF);
     }
 
     @Test
-    void jsonDeserialisation_explicitTrue_isRespected() {
-        final QueryOptimiserConfig config = JsonUtil.readValue("{\"enabled\":true}", QueryOptimiserConfig.class);
-        assertThat(config.isEnabled()).isTrue();
+    void jsonDeserialisation_explicitShadow_isRespected() {
+        final QueryOptimiserConfig config = JsonUtil.readValue("{\"mode\":\"SHADOW\"}", QueryOptimiserConfig.class);
+        assertThat(config.getMode()).isEqualTo(QueryOptimiserMode.SHADOW);
+    }
+
+    @Test
+    void jsonDeserialisation_explicitOn_isRespected() {
+        final QueryOptimiserConfig config = JsonUtil.readValue("{\"mode\":\"ON\"}", QueryOptimiserConfig.class);
+        assertThat(config.getMode()).isEqualTo(QueryOptimiserMode.ON);
     }
 
     @Test
     void jsonSerialisation_roundTrips() {
         final QueryOptimiserConfig config = JsonUtil.readValue(
                 JsonUtil.writeValueAsString(new QueryOptimiserConfig()), QueryOptimiserConfig.class);
-        assertThat(config.isEnabled()).isFalse();
+        assertThat(config.getMode()).isEqualTo(QueryOptimiserMode.OFF);
     }
 }

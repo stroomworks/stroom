@@ -107,14 +107,52 @@ these two conditions as taking no value).
 
 ---
 
+## 3. Bare `where` clause mixing index-eligible and index-ineligible terms
+
+Unlike entries 1–2 above, this is not a Phase 1 parsing divergence — both compilers parse and accept the query
+identically. It's a Phase 5 (`docs/query-optimiser-implementation-plan.md`, Task 5.3) divergence in the *compiled
+`SearchRequest`*, and (by inference, traced through the code rather than proven by an end-to-end search test in
+this codebase — see caveat below) in the *result rows a real search would return*.
+
+**What legacy does**: puts the entire bare `where` predicate into `Query.expression` (scan-time), unconditionally
+— `AstToSearchRequestMapper`/`SearchRequestFactory` never check a field's `queryable()`/`ConditionSet` before
+placing a term there (confirmed: zero matches for either check in either class). Traced one concrete consequence
+of this into `stroom-index-lucene/.../SearchExpressionQueryBuilder.getTermQuery`: a term referencing a field
+**unknown to the index** compiles to `new MatchNoDocsQuery()`; ANDed into the top-level boolean query, that makes
+the **entire query return zero rows**, not just fail to match on that one term. (This is the traced part; whether
+Lucene behaves the same way for a field that *is* known to the index but simply isn't indexed was not confirmed
+either way — the important, confirmed case is the unknown-field one.)
+
+**What the new compiler does**: `AutoWhereFilterSplitRule` (Task 2.3) already classified such a term as
+index-ineligible when compiling `explain()`'s advisory plan; Task 5.3 wires that same classification into
+`create()`'s real output — the ineligible remainder moves to `TableSettings.valueFilter` (extraction-time,
+post-scan), so it's evaluated correctly instead of zeroing the scan. A query that's entirely index-eligible is
+untouched (the rule is a documented no-op there), and a query that already has its own explicit `filter` clause is
+also untouched (same no-op guarantee, since `AutoWhereFilterSplitRule` only ever acts on a bare `where`).
+
+**Why this is a bug, not a design choice**: nothing about StroomQL's `where`/`filter` split is documented as
+"non-indexed fields must go in `filter`, or the query silently returns nothing" — a user writing a perfectly
+reasonable `where a = 1 and freeTextField = 'x'` today gets zero rows with no error, indistinguishable from "no
+data exists", which is a footgun, not an intentional constraint.
+
+**Test**: `TestOptimisingQueryCompilerWhereFilterSplit.mixedEligibility_movesIneligibleTermToValueFilter` (and the
+no-op controls, `allTermsEligible_leavesExpressionAndValueFilterUnchanged` /
+`explicitFilterClauseAlready_isUntouched`). Unlike entries 1–2, there is no companion assertion here proving what
+legacy *actually* returns end-to-end (that needs a real index/search backend, out of scope for this module's unit
+tests) — the "legacy returns zero rows" claim rests on the traced `MatchNoDocsQuery` code path above, not a
+runtime comparison.
+
+---
+
 ## Cross-references
 
 - `docs/query-optimiser-implementation-plan.md`'s Open Decision D2 records this resolution for `is null`/`is not
   null`.
-- `TestQueryCompilerParity` (the hand corpus, Task 1.6) does not currently contain a query matching either shape
-  above — nothing to exclude there today, but if one is ever added to the corpus it must be added to this document
-  instead of `KNOWN_ERROR_TEXT_DEVIATIONS` (that map is for cases where **both** sides still reject, just with
-  different text; these are one-directional).
+- `TestQueryCompilerParity` (the hand corpus, Task 1.6) does not currently contain a query matching any of the
+  three shapes above — nothing to exclude there today, but if one is ever added to the corpus it must be added to
+  this document instead of `KNOWN_ERROR_TEXT_DEVIATIONS` (that map is for cases where **both** sides still reject,
+  just with different text; these are one-directional) or, for entry 3, instead of asserting byte-parity at all.
 - `TestQueryCompilerGenerativeParity` (Task 1.7) can generate the bracket-adjacent-`not` shape (never `is null` —
   the generator doesn't produce that syntax) and special-cases it via `BRACKET_ADJACENT_LOGICAL_KEYWORD`, asserting
-  the asymmetry explicitly rather than skipping the comparison.
+  the asymmetry explicitly rather than skipping the comparison. It does not generate queries against a
+  `FieldInfoSource` with non-queryable fields, so entry 3 above doesn't affect it either.

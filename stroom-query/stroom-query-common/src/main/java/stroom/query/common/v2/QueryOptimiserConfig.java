@@ -28,30 +28,37 @@ import java.util.Objects;
 
 /**
  * Feature flag for the grammar-driven parser and cost-based query optimiser
- * (see {@code docs/query-optimiser-implementation-plan.md}, Task 0.3). Resolves to the property path
- * {@code stroom.query.optimiser.enabled}. Defaults to {@code false}: the legacy {@code SearchRequestFactory}
- * compiler is used until this is explicitly enabled.
+ * (see {@code docs/query-optimiser-implementation-plan.md}, Tasks 0.3 and 5.4). Resolves to the property path
+ * {@code stroom.query.optimiser.mode}. Defaults to {@link QueryOptimiserMode#OFF}: the legacy
+ * {@code SearchRequestFactory} compiler serves every query until this is explicitly changed. No shipped YAML has
+ * ever set this (it has only ever run at this Java-side default), so the {@code enabled} (boolean) property name
+ * used before Task 5.4 was renamed to {@code mode} (three-value) rather than overloading a boolean-shaped name -
+ * there was no deployed config to migrate.
  */
 @JsonPropertyOrder(alphabetic = true)
 public class QueryOptimiserConfig extends AbstractConfig implements IsStroomConfig {
 
-    private static final boolean DEFAULT_ENABLED = false;
+    private static final QueryOptimiserMode DEFAULT_MODE = QueryOptimiserMode.OFF;
 
-    private final boolean enabled;
+    private final QueryOptimiserMode mode;
 
     public QueryOptimiserConfig() {
-        enabled = DEFAULT_ENABLED;
+        mode = DEFAULT_MODE;
     }
 
     @JsonCreator
-    public QueryOptimiserConfig(@JsonProperty("enabled") final Boolean enabled) {
-        this.enabled = Objects.requireNonNullElse(enabled, DEFAULT_ENABLED);
+    public QueryOptimiserConfig(@JsonProperty("mode") final QueryOptimiserMode mode) {
+        this.mode = Objects.requireNonNullElse(mode, DEFAULT_MODE);
     }
 
-    @JsonProperty("enabled")
-    @JsonPropertyDescription("Route StroomQL through the experimental grammar+optimiser compiler instead of the " +
-                             "legacy factory. Default false.")
-    public boolean isEnabled() {
-        return enabled;
+    @JsonProperty("mode")
+    @JsonPropertyDescription("Controls how StroomQL is compiled. OFF (default): the legacy factory compiles and " +
+                             "serves every query, the optimiser never runs. SHADOW: legacy compiles and serves " +
+                             "every query exactly as in OFF, but the optimiser also compiles the same query, " +
+                             "best-effort, purely to log any divergence and an actual-vs-estimated duration " +
+                             "comparison - zero risk to served results. ON: the optimiser compiles and serves " +
+                             "every query, legacy never runs.")
+    public QueryOptimiserMode getMode() {
+        return mode;
     }
 }
