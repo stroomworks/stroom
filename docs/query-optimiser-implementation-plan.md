@@ -1193,29 +1193,247 @@ half is explicitly deferred, not part of this gate). Only after a clean soak doe
 `mode=on` become a rollout decision (operational, not a coding task) — per environment, not global, and
 reversible by config alone at any time.
 
-## 9. Phase 6 — Joins (multi-source) — task outline (re-plan in detail on arrival)
+## 9. Phase 6 — Joins (multi-source execution)
 
-Shape-complete but intentionally lighter than Phase 5 above; expand into 0/1-style tasks when you reach it, using
-the same *Files/Contract/Done-when/Verify* structure. The design doc's Phase 6 section is the spec.
+Outcome: `create()` can compile and actually execute a query with `join`, producing correct INNER/LEFT-OUTER
+results over two (or, by recursion, more) datasources, driven by the cost-chosen algorithm; enrichment joins to a
+State/PlanB store reuse the existing lookup functions rather than a new mechanism; EXPLAIN shows join
+order/algorithm for real (not just the direct-`Scan`-sides case Phase 4 already covers).
 
-- **T6.1**: enable the reserved join grammar; lower `Join` nodes to a physical join executor (run each side as a
-  sub-query via `SearchProvider`/`FederatedSearchExecutor`; combine with the cost-chosen algorithm; INNER + LEFT
-  OUTER).
-- **T6.2**: enrichment joins reuse `GetState`/`StateProvider`/`StateFetcher`; **discover candidate sources by domain
-  type** (planner-side analogue of `DashboardStoreImpl.findByType`).
-- **T6.3**: extend EXPLAIN/CostEstimate with join order/algorithm/per-side estimates.
-- **T6.4 (extension — domain relationships; see D7)**: add an optional `List<RelationshipType>` to `DomainTypeDoc`
-  (`stroom-core-shared/.../domaintype/shared/`) — a `{ type, from, to, directed }` record with `DomainType` endpoints
-  matched by `canAccept`. Extend join binding/routing so a join whose two keys are *related* entities (not the **same**
-  domain type) is planned as an **enrichment join through the store that materialises the relationship** (edge/adjacency
-  or State), reusing T6.2's source discovery; single-hop, advisory, skipped when no relationship/source exists. Shared
-  with the temporal Cypher graph, where the same catalogue drives edges
-  ([temporal-cypher-graph.md §5.6](temporal-cypher-graph.md#56-domain-type-integration-semantic-layer)). **Gate**: a
-  two-source query joined via a catalogued relationship returns the same rows as the explicit edge-store join; absence of
-  a relationship type never changes an existing plan.
-- **Gate**: INNER/LEFT-OUTER correctness over two sources (index⋈state, index⋈index); filter-pushdown-below-join and
-  join-reordering give identical results; roll out behind the flag after single-source soak; then deprecate
-  `SearchRequestFactory`.
+**This phase is materially bigger than Phases 0–5.** Every prior phase either built standalone, unwired machinery
+(Phases 2–3) or *parameterised* an existing, unchanged execution path (Phase 5's `create()` enhancements only ever
+added/overrode fields on a `SearchRequest` that `AstToSearchRequestMapper` already builds). A join has **no**
+representation in that wire format at all — `Query.dataSource` is a single `DocRef`, and `ResultStoreManager`
+routes purely by that one `DocRef`'s type. Making joins real means teaching the execution layer, not just the
+compiler, about a genuinely new shape of query - see the findings below, gathered before writing any code.
+
+> **Found while planning — where a join query would actually route.** `SearchProviderRegistry.getSearchProvider
+> (DocRef)`'s only implementation (`SearchProviderRegistryImpl.java:74-78`) resolves purely by
+> `docRef.getType()` against a flat `Map<String, SearchProvider>`, self-populated by each `SearchProvider`'s own
+> `getDataSourceType()` (verified: this is exactly how `SearchableSearchProvider` registers itself once per
+> `Searchable`, no special-casing anywhere in the registry). A join query has no single natural `DocRef` - the
+> resolution: a **sentinel `DocRef` type** (e.g. `type="StroomQLJoin"`) that a new `JoinSearchProvider` registers
+> itself under, exactly mirroring the existing `Searchable` registration pattern - no change to
+> `SearchProviderRegistry`/`ResultStoreManager` routing logic itself, only a new provider added to the existing
+> `Set<SearchProvider>` multibinding.
+
+> **Found while planning — how a join's results reach the user without a parallel execution engine.**
+> `Coprocessors`/`CoprocessorsImpl` extend `ValuesConsumer` (`accept(Val[] values)`) and are built purely from
+> `TableSettings`/`FieldIndex` (`CoprocessorsFactory.create(...)`, verified: zero references to Lucene, an index
+> shard, or any physical datasource in that class). This ingestion point is **already** fed by non-Lucene sources
+> in production - `SearchableSearchProvider` passes a `CoprocessorsImpl` directly as the `ValuesConsumer` to
+> `Searchable.search(...)` for SQL-stats/PlanB-shard-info sources - and directly by hand in
+> `TestSearchResultCreation` (`stroom-search-impl` test), which builds a `CoprocessorsImpl` from a bare
+> `TableSettings` and manually calls `consumer.accept(Val.of(vals))` per row, no search task involved at all. So a
+> join executor's only genuinely new job is producing `Val[]` rows that represent joined tuples; **everything
+> downstream** - the original query's post-join `where`/`select`/`group by`/`having`/`sort`/`limit` - reuses the
+> existing `Coprocessors`/`DataStore`/`ResultStore` pipeline unchanged, fed via the same `accept(Val[])` call any
+> other row producer already uses. This is the literal realisation of the design doc's "reuse `ResultStore`,
+> coprocessors" instruction for Phase 6, not just a loose paraphrase of it.
+
+> **Found while planning — realising each join side as a sub-query is already possible with public, synchronous
+> APIs.** `ResultStore.awaitCompletion()` (`ResultStore.java:144-151`) blocks until a store's search finishes (not
+> just a polling loop); `ResultStore.getData(componentId)` (line 219) returns the underlying `DataStore` directly,
+> bypassing the UI-paginated `search()`/`ResultCreator` path entirely. `QueryServiceImpl.getColumnValues`
+> (`QueryServiceImpl.java:390-440`) is existing, working precedent for reading **every** row of a completed store
+> (`dataStore.fetch(columns, OffsetRange.UNBOUNDED, OpenGroups.ALL, timeFilter, IdentityItemMapper.INSTANCE, ...)`)
+> rather than a UI-sized window. A join executor can therefore run each side as `searchProvider.createResultStore
+> (sideRequest)` → `awaitCompletion()` → `getData(...).fetch(...)` and get back every row of that side, using
+> nothing beyond what `QueryServiceImpl` itself already relies on elsewhere.
+
+> **Found while planning — the logical-plan and cost-model groundwork already exists, unused.** `Join`
+> (`stroom-query-planner/.../logical/Join.java`: `left`, `right`, `joinType`, `equiKeys`) is already produced by
+> `Binder` for any join clause (verified: `Binder.bindFromAndJoins`, left-deep for N-way chains), with each
+> `EquiKey`'s two `QualifiedField`s already domain-type-validated (`Binder.validateDomainTypeCompatibility`, Phase
+> 2). `JoinCostModel.chooseAlgorithm`/`estimateCardinality` (Phase 3) already picks `BROADCAST_LOOKUP`/
+> `HASH_JOIN`/`NESTED_LOOP` given each side's `CostedAccessPath` - it has just never been called by anything real
+> (Phase 3's own documented scope). `LogicalPlanExplainer.explainJoin` (Phase 4) already annotates a `Join` node
+> with the chosen algorithm/cardinality **when both sides are direct `Scan`s** - i.e. Task 6.3 below is mostly
+> "stop passing `0, 0` for distinct-key counts and wire this into execution", not new machinery.
+
+### Task 6.1 — Physical join executor (INNER/LEFT-OUTER, two direct-`Scan`/`Filter` sides)
+Scoped, like every prior phase's first pass, to the common shape: both join sides are a bare `Scan` or a `Filter`
+directly over one - the same shape `findScanAndFilter` (Task 5.2) already recognises. A join where either side is
+itself nested (a sub-join, an `Aggregate`, etc.) is out of scope for this task - document it as a case that still
+falls back to rejection (`TokenException`/`BindException`, whichever is already thrown today), not a silent
+wrong answer.
+
+- **T6.1a — `JoinSpec` wire type + sentinel routing.**
+  - **Files**: new `stroom-query-api/src/main/java/stroom/query/api/JoinSpec.java` (GWT-safe, Builder+Jackson,
+    matching `ExplainPlan`'s house style) - carries the two sides' fully-compiled `SearchRequest`s (each a normal,
+    valid single-source request built the same way a non-join query already is), the join `type` (`INNER`/`LEFT`),
+    and the equi-key field-name pairs (with each side's alias). New field on `Query`: `@Nullable JoinSpec
+    joinSpec` (mirrors how `timeRange` is an optional, purely-additive field already).
+  - **Files**: new `stroom-query-impl`-or-`stroom-search-impl` (confirm no cycle before choosing, the way Task 3.1
+    verified module direction before writing code) `JoinSearchProvider implements SearchProvider` -
+    `getDataSourceType()` returns the sentinel type constant (e.g. `"StroomQLJoin"`); registered via the existing
+    `Set<SearchProvider>` Guice multibinding, no `SearchProviderRegistry` changes needed (see the finding above).
+  - **Contract**: a query compiling to a `Join` produces a `SearchRequest` whose `Query.dataSource` is
+    `new DocRef("StroomQLJoin", <synthetic-uuid>, <descriptive name, e.g. "A ⋈ B">)` and whose `Query.joinSpec` is
+    populated; `Query.expression`/`TableSettings` on the *outer* request carry the original query's post-join
+    `where`/`select`/`group`/`having`/`sort`/`limit` exactly as `AstToSearchRequestMapper` already builds them
+    today for a single-source query (the join is invisible to that mapping - it only ever sees "the datasource is
+    a join", not the join's internals).
+  - **Done-when**: `JoinSpec` round-trips through Jackson; `SearchProviderRegistryImpl` resolves `JoinSearchProvider`
+    for the sentinel type without any change to that class (proving the "no registry change needed" finding).
+  - **Verify**: `./gradlew :stroom-query:stroom-query-api:build`.
+  - **Status: done.** `JoinSpec`/`JoinSpec.JoinEquiKey`/`JoinSpec.JoinType` in `stroom-query-api`; `Query` gained
+    `getJoinSpec()`/`Builder.joinSpec(...)` (a 4-arg legacy constructor overload kept so the existing `Builder`
+    needed no other changes). The sentinel type constant (`"StroomQLJoin"`) lives in `stroom-query-common`'s new
+    `JoinDataSourceType` so both `OptimisingQueryCompiler` (same module) and `JoinSearchProvider` can reference it
+    without a new dependency edge. `JoinSearchProvider` (package-private stub, `stroom-searchable-impl` -
+    confirmed cycle-free: that module already depends on `stroom-query-common`, and already hosts
+    `SearchProviderRegistryImpl`/`SearchableSearchProvider`) registers via the exact same
+    `GuiceUtil.buildMultiBinder(binder(), SearchProvider.class).addBinding(...)` pattern `SearchModule` uses for
+    `LuceneSearchProvider` - added to `SearchableModule`. `createResultStore` throws `UnsupportedOperationException`
+    (Tasks 6.1b-6.1d not built yet) rather than silently returning something wrong.
+    **Found while implementing**: adding `Query.getJoinSpec()` tripped `ModelChangeDetector`
+    (`stroom-query-api/src/test/java/stroom/query/api/current/ModelChangeDetector.java`) - a deliberate golden-file
+    test that fails on *any* `SearchRequest`-reachable model shape change and requires a conscious developer
+    acknowledgment (temporarily uncomment a `Files.write(...)` line, rerun, re-comment) plus an API-version note
+    ("breaking → major bump, additive → minor/patch") before committing. Confirmed this is purely additive
+    (new, nullable, `@JsonInclude(NON_NULL)` field/classes; nothing existing changed) - a minor-version-bump-shaped
+    change, not a breaking one; updated `searchRequestPortrait-current.txt` accordingly. Nobody hit this for any
+    earlier phase's wire types (`ExplainPlan` isn't reachable from `SearchRequest`) - Task 6.1a is the first time
+    this project has touched a type `ModelChangeDetector` actually walks.
+
+- **T6.1b — `Join` leaf → per-side `SearchRequest` lowering. NOT yet wired into `create()` - see finding below.**
+  - **Found while implementing - `create()` cannot be wired up yet; this is bigger than originally scoped.**
+    `AstToSearchRequestMapper.create()` calls `rejectJoinsIfPresent(ast.from())` as its very first act (throws
+    `TokenException` for any join, before touching `where`/`select`/`group`/`having` at all) - so it cannot build
+    the *outer* (post-join) `SearchRequest` either, not just each side, contradicting T6.1a's Contract text (which
+    assumed the outer request could still be built "exactly as `AstToSearchRequestMapper` already builds them
+    today"). Worse: the outer query's `where`/`select`/`group`/`having` clauses reference alias-qualified fields
+    (`a.field`, `b.field`), and **nothing in this codebase compiles an alias-qualified reference to a wire
+    `ExpressionOperator`/`Column` today** - only `Binder` resolves `a.field` (via `Scope`/`QualifiedField`), and
+    only for *validation*, never lowering it to a wire type. Asked the user how to scope this given the
+    discovery; resolved as: land the piece that's ready (per-side compilation, below), leave `create()`
+    unwired, and treat "alias-aware outer-expression compilation" as its own explicitly-tracked, not-yet-scoped
+    follow-up task (not squeezed into T6.1b).
+  - **Files (done)**: `OptimisingQueryCompiler.compileJoinSide(Scan, ExpressionContext) -> SearchRequest`
+    (package-private) - synthesises a trivial `from "<dataSourceName>" select *` sub-query and compiles it via the
+    existing `newMapper()` (`AstToSearchRequestMapper`), reusing 100% of that machinery rather than hand-building
+    wire types. Works because a join side's `Scan` never carries its own `where`/`filter` predicate (verified:
+    `Binder.bindFromAndJoins` always attaches a join query's predicates *above* the whole join chain, never to an
+    individual side - the grammar has no syntax for a per-side clause anyway, `where`/`filter` are single
+    top-level clauses after `from`+`join*`). "Select every field" sidesteps needing to know which fields the
+    *outer* query will eventually reference from this side - a deliberate, documented simplification (some
+    over-selection today, not a correctness gap) rather than the harder "referenced-fields-only" analysis.
+  - **Files (not done)**: the `create()` branch that would detect a `Join`-shaped rewritten plan, call
+    `compileJoinSide` on both sides, and build the outer `SearchRequest`/`JoinSpec`/sentinel `DocRef` - blocked on
+    the alias-aware outer-expression-compilation gap above. `create()` still throws for any join query today,
+    unchanged from before this task - no regression, no half-wired behaviour.
+  - **Done-when**: `compileJoinSide` returns a valid, normal single-source `SearchRequest` for a bare `Scan`,
+    selecting every field the datasource exposes; two different aliases over the same datasource name compile to
+    identical sub-requests (the alias itself isn't - and doesn't need to be - encoded in the per-side request; it
+    only matters to `JoinSpec.JoinEquiKey`/the outer query, both still to come).
+  - **Verify**: `./gradlew :stroom-query:stroom-query-common:test`.
+  - **Status: done (first slice only, as scoped above).** `TestOptimisingQueryCompilerJoinSideCompilation` (3
+    tests) proves the sub-request shape, the "select every field" behaviour, and alias-independence.
+
+- **T6.1x (new, not-yet-scoped, blocks wiring T6.1b/T6.1d into `create()`) — Alias-aware outer-expression
+  compilation.** A join query's post-join `where`/`select`/`group`/`having` clauses reference alias-qualified
+  fields (`a.field`); nothing compiles such a reference to a wire `ExpressionOperator`/`Column` today (`Binder`
+  only *validates* them via `Scope`/`QualifiedField`, for `explain()`; `AstToSearchRequestMapper`'s expression
+  building has never needed to understand more than one datasource's fields, unqualified). This likely means
+  either teaching `AstToSearchRequestMapper` about `Scope`-aware field resolution (a second, non-trivial code path
+  next to the one it already has for single-source unqualified fields), or a different approach entirely (e.g.
+  lowering the *rewritten* `LogicalPlan`'s outer nodes - `Project`/`Aggregate`/`Having`/`Sort`/`Limit` - directly
+  to wire types now that their field references are already `QualifiedField`s, rather than re-deriving them from
+  AST text). Needs its own research-then-plan pass before implementation, the same way Phase 5 and Phase 6 itself
+  did - **not assumed here**.
+
+- **T6.1c — In-memory join execution engine.**
+  - **Files**: new `stroom-query-planner/src/main/java/stroom/query/planner/join/JoinExecutor.java` (or similar) -
+    pure JVM logic, no I/O, following the exact "standalone, thoroughly unit-tested, not wired into anything yet"
+    posture Phase 3's `CostModel`/`JoinCostModel` used. Takes each side's rows (already realised - see T6.1d) plus
+    the equi-keys/join type, produces combined `Val[]` rows.
+  - **Contract**: implements `HASH_JOIN` (materialise the smaller side into a hash map keyed by the equi-key
+    values, probe with the larger) and `NESTED_LOOP` (fallback, Task 3.3's "neither side has a usable estimate"
+    case) over row data; `BROADCAST_LOOKUP` is Task 6.2's job specifically (it needs `StateFetcher`, not two
+    materialised row sets). Honours `INNER` (drop unmatched) vs `LEFT` (unmatched left rows padded with nulls on
+    the right side's columns) per `JoinType`.
+  - **Done-when**: unit tests - INNER/LEFT correctness for small hand-built row sets, both algorithms; an
+    unmatched-key case for LEFT produces a null-padded row, not a dropped one.
+  - **Verify**: `./gradlew :stroom-query:stroom-query-planner:test`.
+
+- **T6.1d — `JoinSearchProvider`: orchestration.**
+  - **Files**: `JoinSearchProvider.createResultStore(SearchRequest)` - reads `Query.joinSpec`, for each side calls
+    `searchProviderRegistry.getSearchProvider(side.getQuery().getDataSource())` →
+    `.createResultStore(side)`/`awaitCompletion()`/`getData(componentId).fetch(...)` (per the finding above) to
+    realise every row of that side; runs `JoinExecutor` (T6.1c) over the two row sets; builds a fresh
+    `CoprocessorsImpl` from the *outer* request's `TableSettings` (`coprocessorsFactory.create(...)`, per the
+    finding above) and calls `.accept(Val[])` once per joined row; signals completion
+    (`coprocessors.getCompletionState().signalComplete()`); returns the `ResultStore` wrapping those coprocessors -
+    from here on, `ResultStoreManager`'s existing polling/`search()`/`getData()` machinery serves it exactly like
+    any other query, unaware a join happened underneath.
+  - **Contract**: each side's sub-`ResultStore` is scoped to this call only (not registered under its own
+    `QueryKey` in `ResultStoreManager.resultStoreMap` - it's an implementation detail of the join, not an
+    independently pollable query) - `terminate()`/cleanup it once its rows are read, so an abandoned/failed join
+    doesn't leak a dangling sub-search.
+  - **Done-when**: an integration-shaped test (two `Searchable`-backed or otherwise test-double-backed sides,
+    since a real Lucene index is out of scope for this module's tests) proving a two-source INNER/LEFT join
+    returns correct combined rows through the full `SearchProvider`/`ResultStore` path, not just `JoinExecutor` in
+    isolation.
+  - **Verify**: whichever module ends up hosting `JoinSearchProvider` (confirm cycle-free direction first, Task
+    3.1-style) - `./gradlew :<that module>:test`.
+
+**Task 6.1 gate**: a two-source `index ⋈ index` (or `Searchable ⋈ Searchable`) INNER and LEFT join returns correct
+rows end-to-end through `QueryServiceImpl.search(...)`, gated behind `mode=on`/`shadow` like everything else in
+this project; a join outside the direct-`Scan`/`Filter` shape still rejects cleanly rather than silently
+mis-executing.
+
+### Task 6.2 — Enrichment joins (State/PlanB broadcast-lookup) + domain-type source discovery
+- **Goal**: a join whose build side is a State/PlanB store uses the existing single-key lookup functions
+  (`GetState`/`StateProvider`/`StateFetcher`) instead of materialising that side as a full sub-query, and
+  candidate enrichment sources for a typed probe key are *discovered* by domain type rather than hard-wired by the
+  query author.
+- **Depends on**: T6.1 (reuses its probe-side row realisation and outer-coprocessor wiring; only the build side's
+  mechanism differs).
+- **Files**: extends `JoinExecutor` (T6.1c) with a `BROADCAST_LOOKUP` path calling `StateFetcher.getState(map, key,
+  effectiveTimeMs)` (`stroom-query-language/.../functions/StateFetcher.java`) once per probe-side row - the same
+  synchronous, single-key call `GetState`'s own per-row `Gen.eval` already makes today, just driven by the join
+  executor instead of a StroomQL function call.
+- **Found while planning — domain-type source discovery has no existing analogue to extend, only a *precedent*
+  to follow.** `DashboardStoreImpl.findByType` (`stroom-dashboard-impl/.../DashboardStoreImpl.java:208-225`) is
+  the *shape* to mirror (`List<DomainType> domainTypes` on a doc, filtered by `DomainType.canAccept`) but is
+  hard-wired to `DashboardDoc` specifically - not a generic `DocumentStore<T>` capability, and Dashboards aren't
+  queryable datasources anyway. This task needs a **new**, planner-side index (design doc: "generalise the
+  dashboard 'handled types' registry... into a planner-side index of which datasources can be looked up/joined by
+  a given domain type") - which State/PlanB doc type(s) declare their handled domain types, and how the join
+  executor/`Binder` queries that index, are open design questions for whoever picks this up, not resolved here.
+- **Done-when**: unit tests on the new `BROADCAST_LOOKUP` path (fake `StateFetcher`, mirroring `FakeMetaStats`-
+  style test doubles from Phase 3) proving a probe row with no matching state key produces the `LEFT`-join-correct
+  null-padded row (or is dropped for `INNER`), and a matching key produces the enriched row.
+- **Verify**: `./gradlew :stroom-query:stroom-query-planner:test` plus wherever `JoinSearchProvider` lives.
+
+### Task 6.3 — EXPLAIN extension for real join execution
+- **Goal**: once T6.1 makes joins real, extend `LogicalPlanExplainer.explainJoin` (which already exists from
+  Phase 4 for the direct-`Scan`-sides case) to use real distinct-key counts instead of the placeholder `0, 0`
+  passed to `JoinCostModel.estimateCardinality` today, and to annotate the nested-join case it currently leaves
+  bare (see `LogicalPlanExplainer`'s own class Javadoc scope note).
+- **Depends on**: T6.1 (real execution is what makes a better cardinality estimate worth having - Phase 4's
+  version was always going to be a placeholder until something consumed it for real).
+- **Done-when**: existing `TestOptimisingQueryCompilerExplain`-style tests extended for the join case; nested-join
+  annotation covered by a new test proving a `Filter(Join(...))`-shaped plan gets a real algorithm/cardinality
+  note where Phase 4 left it blank.
+- **Verify**: `./gradlew :stroom-query:stroom-query-common:test`.
+
+### Task 6.4 (extension — domain relationships; see D7)
+Unchanged from the original outline - still explicitly a fast-follow, not v1 scope:
+add an optional `List<RelationshipType>` to `DomainTypeDoc` (`stroom-core-shared/.../domaintype/shared/`) — a
+`{ type, from, to, directed }` record with `DomainType` endpoints matched by `canAccept`. Extend join binding/routing
+so a join whose two keys are *related* entities (not the **same** domain type) is planned as an **enrichment join
+through the store that materialises the relationship** (edge/adjacency or State), reusing T6.2's source discovery;
+single-hop, advisory, skipped when no relationship/source exists. Shared with the temporal Cypher graph, where the
+same catalogue drives edges
+([temporal-cypher-graph.md §5.6](temporal-cypher-graph.md#56-domain-type-integration-semantic-layer)). **Gate**: a
+two-source query joined via a catalogued relationship returns the same rows as the explicit edge-store join; absence
+of a relationship type never changes an existing plan.
+
+**Phase 6 gate**: INNER/LEFT-OUTER correctness over two sources (index⋈state, index⋈index); filter-pushdown-below-
+join and join-reordering give identical results; roll out behind the flag after single-source soak; then deprecate
+`SearchRequestFactory`.
 
 ---
 

@@ -285,4 +285,34 @@ public class OptimisingQueryCompiler implements QueryCompiler {
         return new AstToSearchRequestMapper(
                 visualisationTokenConsumer, dataSourceResolver, queryFieldProviderProvider, securityContext);
     }
+
+    /**
+     * Task 6.1b (first slice only - see {@code docs/query-optimiser-implementation-plan.md}, Phase 6): compiles
+     * one join side's {@code Scan} leaf into its own ordinary, single-source {@link SearchRequest}, by
+     * synthesising a trivial "select every field" sub-query and reusing {@link AstToSearchRequestMapper} rather
+     * than hand-building wire types - {@code scan} never has a {@code where}/{@code filter} predicate of its own
+     * (verified: {@code Binder.bindFromAndJoins} always attaches join-query predicates above the whole join, not
+     * to either side individually - the grammar has no syntax for a per-side clause), so nothing beyond field
+     * selection is needed here.
+     *
+     * <p><b>Not yet wired into {@link #create}</b> - see the class Javadoc/plan doc: {@link
+     * AstToSearchRequestMapper} rejects any join-containing query at the very first line of its own {@code
+     * create()}, so it can't build the *outer* (post-join) {@code SearchRequest} either, and that request's
+     * {@code where}/{@code select}/{@code group}/{@code having} clauses reference alias-qualified fields
+     * ({@code a.field}) that nothing in this module can compile to a wire {@link stroom.query.api.ExpressionOperator}
+     * yet ({@link stroom.query.planner.bind.Binder} only validates such references, it doesn't lower them to wire
+     * types). That's a separate, not-yet-scoped capability - this method is deliberately just the piece that's
+     * ready.</p>
+     */
+    SearchRequest compileJoinSide(final Scan scan, final ExpressionContext expressionContext) {
+        Objects.requireNonNull(scan, "scan");
+        Objects.requireNonNull(expressionContext, "expressionContext");
+        final String syntheticQuery = "from \"" + escapeForDoubleQuotedString(scan.dataSourceName()) + "\" select *";
+        final SearchRequest seed = new SearchRequest(null, null, null, null, null, false, null);
+        return newMapper().create(syntheticQuery, seed, expressionContext);
+    }
+
+    private static String escapeForDoubleQuotedString(final String raw) {
+        return raw.replace("\\", "\\\\").replace("\"", "\\\"");
+    }
 }

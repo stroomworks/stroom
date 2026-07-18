@@ -33,7 +33,7 @@ import java.util.Objects;
 /**
  * {@value #CLASS_DESC}
  */
-@JsonPropertyOrder({"dataSource", "expression", "params", "timeRange"})
+@JsonPropertyOrder({"dataSource", "expression", "params", "timeRange", "joinSpec"})
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @Schema(description = Query.CLASS_DESC)
 public final class Query {
@@ -58,15 +58,30 @@ public final class Query {
     @JsonProperty
     private final TimeRange timeRange;
 
+    @JsonPropertyDescription("Present only when dataSource is the sentinel join type - see " +
+            "docs/query-optimiser-implementation-plan.md, Task 6.1a. Never set for an ordinary, single-source " +
+            "query.")
+    @JsonProperty
+    private final JoinSpec joinSpec;
+
     @JsonCreator
     public Query(@JsonProperty("dataSource") final DocRef dataSource,
                  @JsonProperty("expression") final ExpressionOperator expression,
                  @JsonProperty("params") final List<Param> params,
-                 @JsonProperty("timeRange") final TimeRange timeRange) {
+                 @JsonProperty("timeRange") final TimeRange timeRange,
+                 @JsonProperty("joinSpec") final JoinSpec joinSpec) {
         this.dataSource = dataSource;
         this.expression = expression;
         this.params = params;
         this.timeRange = timeRange;
+        this.joinSpec = joinSpec;
+    }
+
+    public Query(final DocRef dataSource,
+                 final ExpressionOperator expression,
+                 final List<Param> params,
+                 final TimeRange timeRange) {
+        this(dataSource, expression, params, timeRange, null);
     }
 
     public DocRef getDataSource() {
@@ -85,6 +100,10 @@ public final class Query {
         return timeRange;
     }
 
+    public JoinSpec getJoinSpec() {
+        return joinSpec;
+    }
+
     @Override
     public boolean equals(final Object o) {
         if (this == o) {
@@ -97,12 +116,13 @@ public final class Query {
         return Objects.equals(dataSource, query.dataSource) &&
                 Objects.equals(expression, query.expression) &&
                 Objects.equals(params, query.params) &&
-                Objects.equals(timeRange, query.timeRange);
+                Objects.equals(timeRange, query.timeRange) &&
+                Objects.equals(joinSpec, query.joinSpec);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(dataSource, expression, params, timeRange);
+        return Objects.hash(dataSource, expression, params, timeRange, joinSpec);
     }
 
     @Override
@@ -112,6 +132,7 @@ public final class Query {
                 ", expression=" + expression +
                 ", params=" + params +
                 ", timeRange=" + timeRange +
+                ", joinSpec=" + joinSpec +
                 '}';
     }
 
@@ -132,6 +153,7 @@ public final class Query {
         private ExpressionOperator expression;
         private List<Param> params;
         private TimeRange timeRange;
+        private JoinSpec joinSpec;
 
         private Builder() {
         }
@@ -141,6 +163,7 @@ public final class Query {
             this.expression = query.expression;
             this.params = query.params;
             this.timeRange = query.timeRange;
+            this.joinSpec = query.joinSpec;
         }
 
         /**
@@ -205,8 +228,17 @@ public final class Query {
             return this;
         }
 
+        /**
+         * @param joinSpec see {@link Query#getJoinSpec()} - never set for an ordinary, single-source query.
+         * @return The {@link Builder}, enabling method chaining
+         */
+        public Builder joinSpec(final JoinSpec joinSpec) {
+            this.joinSpec = joinSpec;
+            return this;
+        }
+
         public Query build() {
-            return new Query(dataSource, expression, params, timeRange);
+            return new Query(dataSource, expression, params, timeRange, joinSpec);
         }
     }
 }

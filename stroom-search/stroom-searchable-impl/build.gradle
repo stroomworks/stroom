@@ -36,4 +36,7 @@ dependencies {
     implementation libs.slf4j.api
     implementation libs.swagger.annotations
     implementation libs.ws.rs.api
+
+    testImplementation libs.bundles.common.test.implementation
+    testRuntimeOnly libs.bundles.common.test.runtime
 }

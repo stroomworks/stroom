@@ -70,6 +70,15 @@ class [Lstroom.query.api.Format$Type; - public final void java.lang.Object.wait(
 class [Lstroom.query.api.Format$Type; - public final void java.lang.Object.wait(long,int) throws java.lang.InterruptedException
 class [Lstroom.query.api.Format$Type; - public java.lang.String java.lang.Object.toString()
 class [Lstroom.query.api.Format$Type; - public native int java.lang.Object.hashCode()
+class [Lstroom.query.api.JoinSpec$JoinType; - public boolean java.lang.Object.equals(java.lang.Object)
+class [Lstroom.query.api.JoinSpec$JoinType; - public final native java.lang.Class<?> java.lang.Object.getClass()
+class [Lstroom.query.api.JoinSpec$JoinType; - public final native void java.lang.Object.notify()
+class [Lstroom.query.api.JoinSpec$JoinType; - public final native void java.lang.Object.notifyAll()
+class [Lstroom.query.api.JoinSpec$JoinType; - public final void java.lang.Object.wait() throws java.lang.InterruptedException
+class [Lstroom.query.api.JoinSpec$JoinType; - public final void java.lang.Object.wait(long) throws java.lang.InterruptedException
+class [Lstroom.query.api.JoinSpec$JoinType; - public final void java.lang.Object.wait(long,int) throws java.lang.InterruptedException
+class [Lstroom.query.api.JoinSpec$JoinType; - public java.lang.String java.lang.Object.toString()
+class [Lstroom.query.api.JoinSpec$JoinType; - public native int java.lang.Object.hashCode()
 class [Lstroom.query.api.Param; - public boolean java.lang.Object.equals(java.lang.Object)
 class [Lstroom.query.api.Param; - public final native java.lang.Class<?> java.lang.Object.getClass()
 class [Lstroom.query.api.Param; - public final native void java.lang.Object.notify()
@@ -711,6 +720,66 @@ class stroom.query.api.IncludeExcludeFilter$Builder - public stroom.query.api.In
 class stroom.query.api.IncludeExcludeFilter$Builder - public stroom.query.api.IncludeExcludeFilter$Builder stroom.query.api.IncludeExcludeFilter$Builder.excludes(java.lang.String)
 class stroom.query.api.IncludeExcludeFilter$Builder - public stroom.query.api.IncludeExcludeFilter$Builder stroom.query.api.IncludeExcludeFilter$Builder.includeDictionaries(java.util.List<stroom.docref.DocRef>)
 class stroom.query.api.IncludeExcludeFilter$Builder - public stroom.query.api.IncludeExcludeFilter$Builder stroom.query.api.IncludeExcludeFilter$Builder.includes(java.lang.String)
+class stroom.query.api.JoinSpec - public boolean stroom.query.api.JoinSpec.equals(java.lang.Object)
+class stroom.query.api.JoinSpec - public final native java.lang.Class<?> java.lang.Object.getClass()
+class stroom.query.api.JoinSpec - public final native void java.lang.Object.notify()
+class stroom.query.api.JoinSpec - public final native void java.lang.Object.notifyAll()
+class stroom.query.api.JoinSpec - public final void java.lang.Object.wait() throws java.lang.InterruptedException
+class stroom.query.api.JoinSpec - public final void java.lang.Object.wait(long) throws java.lang.InterruptedException
+class stroom.query.api.JoinSpec - public final void java.lang.Object.wait(long,int) throws java.lang.InterruptedException
+class stroom.query.api.JoinSpec - public int stroom.query.api.JoinSpec.hashCode()
+class stroom.query.api.JoinSpec - public java.lang.String stroom.query.api.JoinSpec.toString()
+class stroom.query.api.JoinSpec - public java.util.List<stroom.query.api.JoinSpec$JoinEquiKey> stroom.query.api.JoinSpec.getEquiKeys()
+class stroom.query.api.JoinSpec - public static stroom.query.api.JoinSpec$Builder stroom.query.api.JoinSpec.builder()
+class stroom.query.api.JoinSpec - public stroom.query.api.JoinSpec$JoinType stroom.query.api.JoinSpec.getJoinType()
+class stroom.query.api.JoinSpec - public stroom.query.api.SearchRequest stroom.query.api.JoinSpec.getLeft()
+class stroom.query.api.JoinSpec - public stroom.query.api.SearchRequest stroom.query.api.JoinSpec.getRight()
+class stroom.query.api.JoinSpec$Builder - public boolean java.lang.Object.equals(java.lang.Object)
+class stroom.query.api.JoinSpec$Builder - public final native java.lang.Class<?> java.lang.Object.getClass()
+class stroom.query.api.JoinSpec$Builder - public final native void java.lang.Object.notify()
+class stroom.query.api.JoinSpec$Builder - public final native void java.lang.Object.notifyAll()
+class stroom.query.api.JoinSpec$Builder - public final void java.lang.Object.wait() throws java.lang.InterruptedException
+class stroom.query.api.JoinSpec$Builder - public final void java.lang.Object.wait(long) throws java.lang.InterruptedException
+class stroom.query.api.JoinSpec$Builder - public final void java.lang.Object.wait(long,int) throws java.lang.InterruptedException
+class stroom.query.api.JoinSpec$Builder - public java.lang.String java.lang.Object.toString()
+class stroom.query.api.JoinSpec$Builder - public native int java.lang.Object.hashCode()
+class stroom.query.api.JoinSpec$Builder - public stroom.query.api.JoinSpec stroom.query.api.JoinSpec$Builder.build()
+class stroom.query.api.JoinSpec$Builder - public stroom.query.api.JoinSpec$Builder stroom.query.api.JoinSpec$Builder.addEquiKey(stroom.query.api.JoinSpec$JoinEquiKey)
+class stroom.query.api.JoinSpec$Builder - public stroom.query.api.JoinSpec$Builder stroom.query.api.JoinSpec$Builder.equiKeys(java.util.List<stroom.query.api.JoinSpec$JoinEquiKey>)
+class stroom.query.api.JoinSpec$Builder - public stroom.query.api.JoinSpec$Builder stroom.query.api.JoinSpec$Builder.joinType(stroom.query.api.JoinSpec$JoinType)
+class stroom.query.api.JoinSpec$Builder - public stroom.query.api.JoinSpec$Builder stroom.query.api.JoinSpec$Builder.left(stroom.query.api.SearchRequest)
+class stroom.query.api.JoinSpec$Builder - public stroom.query.api.JoinSpec$Builder stroom.query.api.JoinSpec$Builder.right(stroom.query.api.SearchRequest)
+class stroom.query.api.JoinSpec$JoinEquiKey - public boolean stroom.query.api.JoinSpec$JoinEquiKey.equals(java.lang.Object)
+class stroom.query.api.JoinSpec$JoinEquiKey - public final native java.lang.Class<?> java.lang.Object.getClass()
+class stroom.query.api.JoinSpec$JoinEquiKey - public final native void java.lang.Object.notify()
+class stroom.query.api.JoinSpec$JoinEquiKey - public final native void java.lang.Object.notifyAll()
+class stroom.query.api.JoinSpec$JoinEquiKey - public final void java.lang.Object.wait() throws java.lang.InterruptedException
+class stroom.query.api.JoinSpec$JoinEquiKey - public final void java.lang.Object.wait(long) throws java.lang.InterruptedException
+class stroom.query.api.JoinSpec$JoinEquiKey - public final void java.lang.Object.wait(long,int) throws java.lang.InterruptedException
+class stroom.query.api.JoinSpec$JoinEquiKey - public int stroom.query.api.JoinSpec$JoinEquiKey.hashCode()
+class stroom.query.api.JoinSpec$JoinEquiKey - public java.lang.String stroom.query.api.JoinSpec$JoinEquiKey.getLeftAlias()
+class stroom.query.api.JoinSpec$JoinEquiKey - public java.lang.String stroom.query.api.JoinSpec$JoinEquiKey.getLeftField()
+class stroom.query.api.JoinSpec$JoinEquiKey - public java.lang.String stroom.query.api.JoinSpec$JoinEquiKey.getRightAlias()
+class stroom.query.api.JoinSpec$JoinEquiKey - public java.lang.String stroom.query.api.JoinSpec$JoinEquiKey.getRightField()
+class stroom.query.api.JoinSpec$JoinEquiKey - public java.lang.String stroom.query.api.JoinSpec$JoinEquiKey.toString()
+class stroom.query.api.JoinSpec$JoinType - public final boolean java.lang.Enum.equals(java.lang.Object)
+class stroom.query.api.JoinSpec$JoinType - public final int java.lang.Enum.compareTo(E)
+class stroom.query.api.JoinSpec$JoinType - public final int java.lang.Enum.hashCode()
+class stroom.query.api.JoinSpec$JoinType - public final int java.lang.Enum.ordinal()
+class stroom.query.api.JoinSpec$JoinType - public final java.lang.Class<E> java.lang.Enum.getDeclaringClass()
+class stroom.query.api.JoinSpec$JoinType - public final java.lang.String java.lang.Enum.name()
+class stroom.query.api.JoinSpec$JoinType - public final java.util.Optional<java.lang.Enum$EnumDesc<E>> java.lang.Enum.describeConstable()
+class stroom.query.api.JoinSpec$JoinType - public final native java.lang.Class<?> java.lang.Object.getClass()
+class stroom.query.api.JoinSpec$JoinType - public final native void java.lang.Object.notify()
+class stroom.query.api.JoinSpec$JoinType - public final native void java.lang.Object.notifyAll()
+class stroom.query.api.JoinSpec$JoinType - public final void java.lang.Object.wait() throws java.lang.InterruptedException
+class stroom.query.api.JoinSpec$JoinType - public final void java.lang.Object.wait(long) throws java.lang.InterruptedException
+class stroom.query.api.JoinSpec$JoinType - public final void java.lang.Object.wait(long,int) throws java.lang.InterruptedException
+class stroom.query.api.JoinSpec$JoinType - public int java.lang.Enum.compareTo(java.lang.Object)
+class stroom.query.api.JoinSpec$JoinType - public java.lang.String java.lang.Enum.toString()
+class stroom.query.api.JoinSpec$JoinType - public static <T extends java.lang.Enum<T>> T java.lang.Enum.valueOf(java.lang.Class<T>,java.lang.String)
+class stroom.query.api.JoinSpec$JoinType - public static stroom.query.api.JoinSpec$JoinType stroom.query.api.JoinSpec$JoinType.valueOf(java.lang.String)
+class stroom.query.api.JoinSpec$JoinType - public static stroom.query.api.JoinSpec$JoinType[] stroom.query.api.JoinSpec$JoinType.values()
 class stroom.query.api.OffsetRange - public boolean stroom.query.api.OffsetRange.equals(java.lang.Object)
 class stroom.query.api.OffsetRange - public final native java.lang.Class<?> java.lang.Object.getClass()
 class stroom.query.api.OffsetRange - public final native void java.lang.Object.notify()
@@ -785,6 +854,7 @@ class stroom.query.api.Query - public java.util.List<stroom.query.api.Param> str
 class stroom.query.api.Query - public static stroom.query.api.Query$Builder stroom.query.api.Query.builder()
 class stroom.query.api.Query - public stroom.docref.DocRef stroom.query.api.Query.getDataSource()
 class stroom.query.api.Query - public stroom.query.api.ExpressionOperator stroom.query.api.Query.getExpression()
+class stroom.query.api.Query - public stroom.query.api.JoinSpec stroom.query.api.Query.getJoinSpec()
 class stroom.query.api.Query - public stroom.query.api.Query$Builder stroom.query.api.Query.copy()
 class stroom.query.api.Query - public stroom.query.api.TimeRange stroom.query.api.Query.getTimeRange()
 class stroom.query.api.Query$Builder - public boolean java.lang.Object.equals(java.lang.Object)
@@ -801,6 +871,7 @@ class stroom.query.api.Query$Builder - public stroom.query.api.Query$Builder str
 class stroom.query.api.Query$Builder - public stroom.query.api.Query$Builder stroom.query.api.Query$Builder.addParams(stroom.query.api.Param...)
 class stroom.query.api.Query$Builder - public stroom.query.api.Query$Builder stroom.query.api.Query$Builder.dataSource(stroom.docref.DocRef)
 class stroom.query.api.Query$Builder - public stroom.query.api.Query$Builder stroom.query.api.Query$Builder.expression(stroom.query.api.ExpressionOperator)
+class stroom.query.api.Query$Builder - public stroom.query.api.Query$Builder stroom.query.api.Query$Builder.joinSpec(stroom.query.api.JoinSpec)
 class stroom.query.api.Query$Builder - public stroom.query.api.Query$Builder stroom.query.api.Query$Builder.params(java.util.List<stroom.query.api.Param>)
 class stroom.query.api.Query$Builder - public stroom.query.api.Query$Builder stroom.query.api.Query$Builder.timeRange(stroom.query.api.TimeRange)
 class stroom.query.api.QueryKey - public boolean stroom.query.api.QueryKey.equals(java.lang.Object)

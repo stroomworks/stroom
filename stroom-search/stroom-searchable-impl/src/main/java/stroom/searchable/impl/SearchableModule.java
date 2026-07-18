@@ -17,6 +17,7 @@
 package stroom.searchable.impl;
 
 import stroom.explorer.api.IsSpecialExplorerDataSource;
+import stroom.query.common.v2.SearchProvider;
 import stroom.query.common.v2.SearchProviderRegistry;
 import stroom.util.guice.GuiceUtil;
 import stroom.util.guice.RestResourcesBinder;
@@ -30,6 +31,8 @@ public class SearchableModule extends AbstractModule {
         bind(SearchProviderRegistry.class).to(SearchProviderRegistryImpl.class);
         GuiceUtil.buildMultiBinder(binder(), IsSpecialExplorerDataSource.class)
                 .addBinding(SpecialExplorerDataSourceImpl.class);
+        GuiceUtil.buildMultiBinder(binder(), SearchProvider.class)
+                .addBinding(JoinSearchProvider.class);
 
         RestResourcesBinder.create(binder())
                 .bind(SearchableResourceImpl.class);
