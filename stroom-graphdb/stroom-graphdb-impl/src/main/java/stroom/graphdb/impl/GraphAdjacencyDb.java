@@ -24,6 +24,7 @@ import stroom.lmdb.stream.LmdbKeyRange;
 import stroom.planb.impl.dao.LmdbWriter;
 import stroom.planb.impl.dao.PlanBEnv;
 import stroom.planb.impl.serde.time.MillisecondTimeSerde;
+import stroom.query.language.functions.Val;
 
 import org.lmdbjava.Dbi;
 import org.lmdbjava.DbiFlags;
@@ -31,6 +32,7 @@ import org.lmdbjava.Txn;
 
 import java.nio.ByteBuffer;
 import java.time.Instant;
+import java.util.Map;
 import java.util.Objects;
 import java.util.function.Consumer;
 
@@ -42,8 +44,8 @@ import java.util.function.Consumer;
  * mirror (for reverse/undirected traversal) is P1, not this class - only out-edges are in the PoC's compiled
  * shape ({@code Direction.OUT}).
  *
- * <p>Value encoding: a 1-byte tag ({@link #TOMBSTONE}/{@link #PRESENT}) then, if present, an opaque edge-property
- * blob (interpretation left to later phases, as {@link GraphNodeDb}'s property blob is).</p>
+ * <p>Value encoding: a 1-byte tag ({@link #TOMBSTONE}/{@link #PRESENT}) then, if present, the edge's named
+ * properties via {@link GraphPropsCodec} (as {@link GraphNodeDb} encodes its own).</p>
  */
 public final class GraphAdjacencyDb {
 
@@ -70,15 +72,16 @@ public final class GraphAdjacencyDb {
      * any instant &ge; {@code validFrom} (and before this edge's next version, if any) includes {@code dstUid}.
      */
     public void insert(final LmdbWriter writer, final long srcUid, final long edgeTypeUid, final long dstUid,
-                       final Instant validFrom, final byte[] edgeProps) {
+                       final Instant validFrom, final Map<String, Val> properties) {
         Objects.requireNonNull(writer, "writer");
         Objects.requireNonNull(validFrom, "validFrom");
-        Objects.requireNonNull(edgeProps, "edgeProps");
+        Objects.requireNonNull(properties, "properties");
 
+        final byte[] propsBlob = GraphPropsCodec.encode(properties);
         final ByteBuffer key = buildKey(srcUid, edgeTypeUid, dstUid, validFrom);
-        final ByteBuffer value = ByteBuffer.allocateDirect(1 + edgeProps.length);
+        final ByteBuffer value = ByteBuffer.allocateDirect(1 + propsBlob.length);
         value.put(PRESENT);
-        value.put(edgeProps);
+        value.put(propsBlob);
         value.flip();
         dbi.put(writer.getWriteTxn(), key, value);
     }
@@ -154,9 +157,9 @@ public final class GraphAdjacencyDb {
         if (tag == TOMBSTONE) {
             return null;
         }
-        final byte[] edgeProps = new byte[v.remaining()];
-        v.get(edgeProps);
-        return new Neighbour(dstUid, edgeProps);
+        final byte[] propsBlob = new byte[v.remaining()];
+        v.get(propsBlob);
+        return new Neighbour(dstUid, GraphPropsCodec.decode(propsBlob));
     }
 
     private static ByteBuffer buildKey(final long srcUid, final long edgeTypeUid, final long dstUid,
@@ -173,13 +176,13 @@ public final class GraphAdjacencyDb {
     /**
      * A neighbour reached by {@link #expandOut}, as of the requested instant.
      *
-     * @param dstUid    the neighbour node's UID.
-     * @param edgeProps never null; opaque to this class.
+     * @param dstUid          the neighbour node's UID.
+     * @param edgeProperties never null; possibly empty; this edge version's named properties.
      */
-    public record Neighbour(long dstUid, byte[] edgeProps) {
+    public record Neighbour(long dstUid, Map<String, Val> edgeProperties) {
 
         public Neighbour {
-            Objects.requireNonNull(edgeProps, "edgeProps");
+            Objects.requireNonNull(edgeProperties, "edgeProperties");
         }
     }
 }

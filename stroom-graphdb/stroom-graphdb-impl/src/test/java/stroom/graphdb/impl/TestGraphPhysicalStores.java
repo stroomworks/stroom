@@ -19,6 +19,7 @@ package stroom.graphdb.impl;
 import stroom.graphdb.shared.GraphDbDoc;
 import stroom.lmdb.serde.UnsignedBytesInstances;
 import stroom.planb.impl.dao.UidLookupDb;
+import stroom.query.language.functions.ValString;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -29,6 +30,7 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -59,17 +61,18 @@ class TestGraphPhysicalStores {
             final long accountBUid = intern(stores, stores.getNodeUids(), "account-b");
 
             stores.write(writer -> {
-                stores.getNodes().insert(writer, deviceUid, T1, List.of(deviceLabel), new byte[0]);
-                stores.getNodes().insert(writer, accountAUid, T1, List.of(accountLabel), new byte[0]);
-                stores.getNodes().insert(writer, accountBUid, T1, List.of(accountLabel), new byte[0]);
+                stores.getNodes().insert(
+                        writer, deviceUid, T1, List.of(deviceLabel), Map.of("id", ValString.create("d-42")));
+                stores.getNodes().insert(writer, accountAUid, T1, List.of(accountLabel), Map.of());
+                stores.getNodes().insert(writer, accountBUid, T1, List.of(accountLabel), Map.of());
 
                 // Anchor the device by its external id.
                 stores.getPropertyIndex().insert(
                         writer, deviceLabel, idKey, "d-42".getBytes(StandardCharsets.UTF_8), deviceUid);
 
                 // d-42 -> account-a from T1 (still current); d-42 -> account-b only from T2 onward.
-                stores.getOutEdges().insert(writer, deviceUid, connectedTo, accountAUid, T1, new byte[0]);
-                stores.getOutEdges().insert(writer, deviceUid, connectedTo, accountBUid, T2, new byte[0]);
+                stores.getOutEdges().insert(writer, deviceUid, connectedTo, accountAUid, T1, Map.of());
+                stores.getOutEdges().insert(writer, deviceUid, connectedTo, accountBUid, T2, Map.of());
                 return null;
             });
 
@@ -101,6 +104,7 @@ class TestGraphPhysicalStores {
                     readTxn -> stores.getNodes().getNode(readTxn, deviceUid, T2));
             assertThat(device).isPresent();
             assertThat(device.get().labelUids()).containsExactly(deviceLabel);
+            assertThat(device.get().properties()).containsEntry("id", ValString.create("d-42"));
         }
     }
 
@@ -112,7 +116,7 @@ class TestGraphPhysicalStores {
             final long edgeType = intern(stores, stores.getEdgeTypeUids(), "LINKS_TO");
 
             stores.write(writer -> {
-                stores.getOutEdges().insert(writer, src, edgeType, dst, T1, new byte[0]);
+                stores.getOutEdges().insert(writer, src, edgeType, dst, T1, Map.of());
                 stores.getOutEdges().delete(writer, src, edgeType, dst, T2);
                 return null;
             });
@@ -141,7 +145,7 @@ class TestGraphPhysicalStores {
             final long label = intern(stores, stores.getLabelUids(), "Thing");
 
             stores.write(writer -> {
-                stores.getNodes().insert(writer, nodeUid, T2, List.of(label), new byte[0]);
+                stores.getNodes().insert(writer, nodeUid, T2, List.of(label), Map.of());
                 return null;
             });
 

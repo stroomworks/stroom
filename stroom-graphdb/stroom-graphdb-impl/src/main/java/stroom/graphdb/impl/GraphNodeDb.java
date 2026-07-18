@@ -25,6 +25,7 @@ import stroom.lmdb.stream.LmdbKeyRange;
 import stroom.planb.impl.dao.LmdbWriter;
 import stroom.planb.impl.dao.PlanBEnv;
 import stroom.planb.impl.serde.time.MillisecondTimeSerde;
+import stroom.query.language.functions.Val;
 
 import org.lmdbjava.Dbi;
 import org.lmdbjava.DbiFlags;
@@ -34,6 +35,7 @@ import java.nio.ByteBuffer;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -45,8 +47,9 @@ import java.util.Optional;
  *
  * <p>Value encoding (an implementation detail the P0.1 frozen model left open - only the key layout was fixed):
  * a 1-byte tag ({@link #TOMBSTONE} or {@link #PRESENT}), then (if present) a 1-byte label count, that many
- * 4-byte label UIDs, a 4-byte property-blob length, then the property blob itself (opaque to this class - the
- * ingest/query layers own its interpretation, not yet designed as of PoC.4).</p>
+ * 4-byte label UIDs, then the node's named properties via {@link GraphPropsCodec} (added in Task PoC.5, once
+ * the traversal engine needed to actually resolve {@code a.property} references against real values, not an
+ * opaque blob).</p>
  */
 public final class GraphNodeDb {
 
@@ -74,20 +77,20 @@ public final class GraphNodeDb {
      * &ge; {@code validFrom} (and before the next version, if any) returns this version.
      */
     public void insert(final LmdbWriter writer, final long nodeUid, final Instant validFrom,
-                       final List<Long> labelUids, final byte[] propsBlob) {
+                       final List<Long> labelUids, final Map<String, Val> properties) {
         Objects.requireNonNull(writer, "writer");
         Objects.requireNonNull(validFrom, "validFrom");
         Objects.requireNonNull(labelUids, "labelUids");
-        Objects.requireNonNull(propsBlob, "propsBlob");
+        Objects.requireNonNull(properties, "properties");
 
+        final byte[] propsBlob = GraphPropsCodec.encode(properties);
         final ByteBuffer key = buildKey(nodeUid, validFrom);
-        final ByteBuffer value = ByteBuffer.allocateDirect(1 + 1 + labelUids.size() * 4 + 4 + propsBlob.length);
+        final ByteBuffer value = ByteBuffer.allocateDirect(1 + 1 + labelUids.size() * 4 + propsBlob.length);
         value.put(PRESENT);
         value.put((byte) labelUids.size());
         for (final long labelUid : labelUids) {
             LABEL_UID_BYTES.put(value, labelUid);
         }
-        value.putInt(propsBlob.length);
         value.put(propsBlob);
         value.flip();
         dbi.put(writer.getWriteTxn(), key, value);
@@ -147,10 +150,9 @@ public final class GraphNodeDb {
         for (int i = 0; i < labelCount; i++) {
             labelUids.add(LABEL_UID_BYTES.get(v));
         }
-        final int propsLength = v.getInt();
-        final byte[] propsBlob = new byte[propsLength];
+        final byte[] propsBlob = new byte[v.remaining()];
         v.get(propsBlob);
-        return new NodeVersion(labelUids, propsBlob);
+        return new NodeVersion(labelUids, GraphPropsCodec.decode(propsBlob));
     }
 
     private static ByteBuffer buildKey(final long nodeUid, final Instant validFrom) {
@@ -162,16 +164,16 @@ public final class GraphNodeDb {
     }
 
     /**
-     * A node's labels and opaque property blob, as returned by {@link #getNode}.
+     * A node's labels and named properties, as returned by {@link #getNode}.
      *
-     * @param labelUids never null; the label namespace UIDs this node version carries.
-     * @param propsBlob never null; opaque to this class.
+     * @param labelUids  never null; the label namespace UIDs this node version carries.
+     * @param properties never null; possibly empty.
      */
-    public record NodeVersion(List<Long> labelUids, byte[] propsBlob) {
+    public record NodeVersion(List<Long> labelUids, Map<String, Val> properties) {
 
         public NodeVersion {
             Objects.requireNonNull(labelUids, "labelUids");
-            Objects.requireNonNull(propsBlob, "propsBlob");
+            Objects.requireNonNull(properties, "properties");
         }
     }
 }
