@@ -170,8 +170,14 @@ public class OptimisingQueryCompiler implements QueryCompiler {
                           + "(optionally filtered).");
         }
 
-        final SearchRequest leftRequest = compileJoinSide(leftSide.scan(), leftSide.filter(), expressionContext);
-        final SearchRequest rightRequest = compileJoinSide(rightSide.scan(), rightSide.filter(), expressionContext);
+        // Compile each side as a pure "select *" (no per-side predicate). The full where clause stays in the
+        // outer Query.expression and is applied across the joined rows by JoinSearchProvider (see the plan doc's
+        // Phase 6 "where across joins" note). Pushing single-side terms down into a side's own sub-query - which
+        // would let it pre-filter before the join - is a later efficiency optimisation; it needs the pushed
+        // predicate's alias stripped (a single-source side knows the field as "field", not "alias.field"), which
+        // is deliberately not done here.
+        final SearchRequest leftRequest = compileJoinSide(leftSide.scan(), null, expressionContext);
+        final SearchRequest rightRequest = compileJoinSide(rightSide.scan(), null, expressionContext);
         final List<JoinSpec.JoinEquiKey> equiKeys = join.equiKeys().stream()
                 .map(OptimisingQueryCompiler::toWireEquiKey)
                 .toList();

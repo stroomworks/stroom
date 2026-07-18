@@ -1478,31 +1478,51 @@ wrong answer.
       `assembleRow` then reorders each combined row into the `Val[]` the outer coprocessor expects (unmapped
       positions - e.g. auto-added special `StreamId`/`EventId` navigation columns that name no join side - become
       `ValNull`). Both are pure static methods, unit-tested directly against a hand-populated `FieldIndex`.
-    - **Scope: where-less joins only.** A `where` clause in a join query still *compiles* (T6.1x populates the
-      `JoinSpec`) but is *rejected at execution* with a clear message. Reason (confirmed by research): a join's
-      `where` resolves through a *different* path than the `select` columns - `TableSettings.valueFilter`
-      (the `filter` clause) is keyed by **column name** against a `RowUtil.createColumnNameValExtractor` map, not
-      the `FieldIndex`, and `Query.expression` (the `where` clause) is the datasource's job, which for a join has
-      no natural home. Getting `where`-across-a-join correct is its own increment (T6.2-adjacent), not a guess
-      buried here.
     - **Simplification**: the feed runs synchronously (blocks until both sides complete) rather than async on an
       `Executor` like `SearchableSearchProvider` - documented in the class Javadoc, a later optimisation not a
       correctness concern.
-  - **Status: done for the where-less case.** `TestJoinSearchProvider` (8 tests): sentinel registration, missing-
-    `JoinSpec`/`where`-clause rejections, the pure `buildFieldMapping`/`assembleRow` logic, and - the point of
-    "closing the gap" - `innerJoin_returnsRealJoinedRows_throughRealCoprocessors`, which runs a where-less join
-    through a **real** outer `CoprocessorsImpl`/`ResultStore` (only the two sides faked) and asserts the actual
-    joined rows come back. New `stroom-searchable-impl → stroom-query-planner` dependency (for `JoinExecutor`),
-    confirmed cycle-free the same way T6.1c's was.
+  - **Status: done, including `where` across joins (see T6.1w below).** `TestJoinSearchProvider`: sentinel
+    registration, missing-`JoinSpec` rejection, the pure `buildFieldMapping`/`assembleRow` logic, and the
+    end-to-end `innerJoin_returnsRealJoinedRows_throughRealCoprocessors`, which runs a join through a **real**
+    outer `CoprocessorsImpl`/`ResultStore` (only the two sides faked) and asserts the actual joined rows come
+    back. New `stroom-searchable-impl → stroom-query-planner` dependency (for `JoinExecutor`), confirmed
+    cycle-free the same way T6.1c's was.
+
+- **T6.1w — `where` across joins (resolved).** The first pass ([T6.1d](#task-61d)) rejected join queries with a
+  `where` clause at execution; this lifts that restriction.
+  - **Research finding that made it tractable**: `ExpressionPredicateFactory.createOptional(ExpressionOperator,
+    ValueFunctionFactories<T>, DateTimeSettings)` builds a `Predicate<T>` from an expression given a
+    name→extractor map - exactly what's needed to evaluate a `where` clause over an arbitrary row. And its
+    "general" term path (`createGeneralTermPredicate`) tries date → numeric → text extraction in turn, so a
+    numeric/date comparison works correctly even against a field the accessor reports as `TEXT` (verified by a
+    dedicated numeric-semantics test: `a.UserId >= 3` keeps `10`, which a lexicographic string compare would
+    wrongly drop).
+  - **Design (Strategy: evaluate at the join level, no push-down)**: a join's `where` references both aliases, so
+    no single side can evaluate it. `OptimisingQueryCompiler.createJoin` now compiles each side as a pure
+    `select *` (the pushed-down per-side `Filter` from `PushFiltersBelowJoinsRule` is *not* applied to the
+    sub-request - doing so would need the alias stripped, since a single-source side knows the field as `field`,
+    not `alias.field`). The full original `where` clause stays in the outer `Query.expression` (as
+    `AstToSearchRequestMapper` already builds it, alias-qualified). `JoinSearchProvider.whereRowPredicate` then
+    builds a `Predicate<Values>` from that expression, with a `ValueFunctionFactories` mapping each
+    `alias.field` to its position in the *combined* joined row (reusing the very `ValuesFunctionFactory` the
+    coprocessor's own `valueFilter` uses, so comparison semantics match); each combined row is tested and only
+    survivors are fed to the coprocessor.
+  - **Deliberately not done (efficiency, documented)**: per-side push-down (pre-filtering each side before the
+    join) - each side is realised in full and filtered post-join. Correct, just not yet optimal.
+  - **Done-when / status: done.** `TestJoinSearchProvider` gained `whereClauseAcrossAJoin_filtersCombinedRowsByEquality`
+    and `whereClauseAcrossAJoin_numericComparisonUsesNumericSemantics`, both running through a real outer
+    coprocessor. `JoinSearchProvider` gained an `ExpressionPredicateFactory` constructor dep.
+  - **Verify**: `./gradlew :stroom-search:stroom-searchable-impl:test`.
 
 **Task 6.1 gate**: a two-source `index ⋈ index` (or `Searchable ⋈ Searchable`) INNER and LEFT join returns correct
 rows end-to-end through `QueryServiceImpl.search(...)`, gated behind `mode=on`/`shadow` like everything else in
 this project; a join outside the direct-`Scan`/`Filter` shape still rejects cleanly rather than silently
-mis-executing. **Substantially met for where-less joins**: `create()` compiles a join to a `SearchRequest` with a
-`JoinSpec` (T6.1x), and `JoinSearchProvider.createResultStore` now executes it end-to-end returning real rows
-(proven against real coprocessors in-module; a real cross-provider `index ⋈ index` run against a live backend is
-the remaining manual verification). **Still open**: `where`-clause support in joins (rejected cleanly today), and
-the efficiency items (per-side filter push-down through the join, async feed) - all documented above.
+mis-executing. **Substantially met, including `where` across joins**: `create()` compiles a two-source
+`INNER`/`LEFT` join to a `SearchRequest` with a `JoinSpec` (T6.1x), and `JoinSearchProvider.createResultStore`
+executes it end-to-end returning real rows, applying an outer `where` clause across the combined rows (T6.1d +
+T6.1w) - all proven against real coprocessors in-module. A real cross-provider `index ⋈ index` run against a
+live backend is the remaining manual verification. **Still open**: the efficiency items (per-side filter
+push-down through the join, async feed) and N-way join chains - all documented above.
 
 ### Task 6.2 — Enrichment joins (State/PlanB broadcast-lookup) + domain-type source discovery
 - **Goal**: a join whose build side is a State/PlanB store uses the existing single-key lookup functions

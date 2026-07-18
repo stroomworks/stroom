@@ -20,6 +20,7 @@ import stroom.docref.DocRef;
 import stroom.query.api.Column;
 import stroom.query.api.DateTimeSettings;
 import stroom.query.api.ExpressionOperator;
+import stroom.query.api.ExpressionTerm.Condition;
 import stroom.query.api.JoinSpec;
 import stroom.query.api.JoinSpec.JoinEquiKey;
 import stroom.query.api.OffsetRange;
@@ -107,12 +108,14 @@ class TestJoinSearchProvider {
                 new ExpressionPredicateFactory(),
                 () -> DIRECT_EXECUTOR));
 
-        return new JoinSearchProvider(() -> registry, coprocessorsFactory, resultStoreFactory);
+        return new JoinSearchProvider(
+                () -> registry, coprocessorsFactory, resultStoreFactory, new ExpressionPredicateFactory());
     }
 
     private JoinSearchProvider providerWithMockDeps(final SearchProviderRegistry registry) {
         return new JoinSearchProvider(
-                () -> registry, mock(CoprocessorsFactory.class), mock(ResultStoreFactory.class));
+                () -> registry, mock(CoprocessorsFactory.class), mock(ResultStoreFactory.class),
+                new ExpressionPredicateFactory());
     }
 
     private SearchProviderRegistry registry(final SearchProvider... providers) {
@@ -167,19 +170,6 @@ class TestJoinSearchProvider {
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
-    @Test
-    void whereClauseInAJoin_rejectedAtExecution_withAClearMessage() {
-        // Outer request carries a non-trivial Query.expression (a where clause) - compiles fine, but not runnable.
-        final SearchRequest requestWithWhere = outerRequest(ExpressionOperator.builder()
-                .addTerm("a.UserId", stroom.query.api.ExpressionTerm.Condition.EQUALS, "1")
-                .build());
-
-        assertThatThrownBy(() -> providerWithMockDeps(mock(SearchProviderRegistry.class))
-                .createResultStore(requestWithWhere))
-                .isInstanceOf(UnsupportedOperationException.class)
-                .hasMessageContaining("where");
-    }
-
     // ------------------------------------------------------------------------------------------------------
     // End-to-end: real outer coprocessors, faked sides, real joined rows back
     // ------------------------------------------------------------------------------------------------------
@@ -202,6 +192,54 @@ class TestJoinSearchProvider {
         // Outer select columns are [a.UserId, b.Name] - see outerRequest(). The one matching row is UserId=2.
         assertThat(rows.getFirst()[0]).isEqualTo(ValLong.create(2));
         assertThat(rows.getFirst()[1]).isEqualTo(ValString.create("Bob"));
+    }
+
+    @Test
+    void whereClauseAcrossAJoin_filtersCombinedRowsByEquality() {
+        // Left UserId 1,2,3; right Id->Name for all three. INNER join -> 3 combined rows. where b.Name = 'Bob'.
+        final SearchProvider leftProvider = fakeSideProvider(
+                LEFT_DATA_SOURCE, List.of("UserId"),
+                List.of(new Val[]{ValLong.create(1)}, new Val[]{ValLong.create(2)}, new Val[]{ValLong.create(3)}));
+        final SearchProvider rightProvider = fakeSideProvider(
+                RIGHT_DATA_SOURCE, List.of("Id", "Name"),
+                List.of(new Val[]{ValLong.create(1), ValString.create("Alice")},
+                        new Val[]{ValLong.create(2), ValString.create("Bob")},
+                        new Val[]{ValLong.create(3), ValString.create("Carol")}));
+
+        final ExpressionOperator where = ExpressionOperator.builder()
+                .addTerm("b.Name", Condition.EQUALS, "Bob")
+                .build();
+        final ResultStore resultStore = provider(registry(leftProvider, rightProvider))
+                .createResultStore(outerRequest(where));
+
+        final List<Val[]> rows = readTableRows(resultStore);
+        assertThat(rows).hasSize(1);
+        assertThat(rows.getFirst()[0]).isEqualTo(ValLong.create(2));
+        assertThat(rows.getFirst()[1]).isEqualTo(ValString.create("Bob"));
+    }
+
+    @Test
+    void whereClauseAcrossAJoin_numericComparisonUsesNumericSemantics() {
+        // UserIds 2 and 10. `a.UserId >= 3` must keep 10 (numeric), not drop it (a string compare of "10" vs "3"
+        // would exclude it). Proves the join where-predicate compares numerically, not lexicographically.
+        final SearchProvider leftProvider = fakeSideProvider(
+                LEFT_DATA_SOURCE, List.of("UserId"),
+                List.of(new Val[]{ValLong.create(2)}, new Val[]{ValLong.create(10)}));
+        final SearchProvider rightProvider = fakeSideProvider(
+                RIGHT_DATA_SOURCE, List.of("Id", "Name"),
+                List.of(new Val[]{ValLong.create(2), ValString.create("Bob")},
+                        new Val[]{ValLong.create(10), ValString.create("Zoe")}));
+
+        final ExpressionOperator where = ExpressionOperator.builder()
+                .addTerm("a.UserId", Condition.GREATER_THAN_OR_EQUAL_TO, "3")
+                .build();
+        final ResultStore resultStore = provider(registry(leftProvider, rightProvider))
+                .createResultStore(outerRequest(where));
+
+        final List<Val[]> rows = readTableRows(resultStore);
+        assertThat(rows).hasSize(1);
+        assertThat(rows.getFirst()[0]).isEqualTo(ValLong.create(10));
+        assertThat(rows.getFirst()[1]).isEqualTo(ValString.create("Zoe"));
     }
 
     // ------------------------------------------------------------------------------------------------------

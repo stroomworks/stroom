@@ -30,6 +30,9 @@ import stroom.query.common.v2.CoprocessorsFactory;
 import stroom.query.common.v2.CoprocessorsImpl;
 import stroom.query.common.v2.DataStore;
 import stroom.query.common.v2.DataStoreSettings;
+import stroom.query.common.v2.ExpressionPredicateFactory;
+import stroom.query.common.v2.ExpressionPredicateFactory.ValueFunctionFactories;
+import stroom.query.common.v2.ExpressionPredicateFactory.ValueFunctionFactory;
 import stroom.query.common.v2.IdentityItemMapper;
 import stroom.query.common.v2.JoinDataSourceType;
 import stroom.query.common.v2.OpenGroups;
@@ -37,10 +40,12 @@ import stroom.query.common.v2.ResultStore;
 import stroom.query.common.v2.ResultStoreFactory;
 import stroom.query.common.v2.SearchProvider;
 import stroom.query.common.v2.SearchProviderRegistry;
+import stroom.query.common.v2.ValuesFunctionFactory;
 import stroom.query.language.SearchRequestFactory;
 import stroom.query.language.functions.FieldIndex;
 import stroom.query.language.functions.Val;
 import stroom.query.language.functions.ValNull;
+import stroom.query.language.functions.Values;
 import stroom.query.planner.cost.JoinAlgorithm;
 import stroom.query.planner.join.JoinExecutor;
 import stroom.query.planner.join.JoinExecutor.Side;
@@ -51,8 +56,11 @@ import jakarta.inject.Inject;
 import jakarta.inject.Provider;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.function.Predicate;
 
 /**
  * Routes execution for a query compiled with a {@code join} clause - see
@@ -66,40 +74,41 @@ import java.util.Objects;
  * member of - injecting the registry directly would be a construction-time cycle; {@code Provider.get()} defers
  * the lookup until {@link #createResultStore} actually runs, by which point both are fully constructed.</p>
  *
- * <p><b>Scope (Task 6.1d / 6.1x - see the plan doc's Phase 6 section)</b>: a two-source {@code INNER}/{@code LEFT}
- * join <b>with no {@code where} clause</b> executes end-to-end and returns real rows. Each side is run as its own
- * sub-query, the rows are combined by {@link JoinExecutor}, and each combined row is placed at the outer
- * coprocessor's {@link FieldIndex} positions (which key on the outer {@code select} columns' alias-qualified
- * expression text, e.g. {@code "a.field"} - see {@link #buildFieldMapping}) and fed via {@code accept(Val[])}.
- * From there the existing coprocessor/{@link ResultStore} machinery applies {@code select}/{@code group}/
- * {@code having}/{@code sort}/{@code limit} exactly as for any other query.</p>
+ * <p><b>Scope (Task 6.1d / 6.1x / where-across-joins - see the plan doc's Phase 6 section)</b>: a two-source
+ * {@code INNER}/{@code LEFT} join executes end-to-end and returns real rows, including one with a {@code where}
+ * clause. Each side is run as its own {@code select *} sub-query, the rows are combined by {@link JoinExecutor},
+ * the outer {@code where} clause is applied across each combined row (see {@link #whereRowPredicate}), and each
+ * surviving row is placed at the outer coprocessor's {@link FieldIndex} positions (which key on the outer
+ * {@code select} columns' alias-qualified expression text, e.g. {@code "a.field"} - see
+ * {@link #buildFieldMapping}) and fed via {@code accept(Val[])}. From there the existing coprocessor/
+ * {@link ResultStore} machinery applies {@code select}/{@code group}/{@code having}/{@code sort}/{@code limit}
+ * exactly as for any other query.</p>
  *
- * <p><b>Deliberately rejected at execution (not silently mishandled)</b>: a {@code where} clause anywhere in a
- * join query. A join's {@code where} references fields across the join boundary and resolves through a different
- * code path (column-name-keyed {@code ValFilter}, not the {@code FieldIndex}) than the {@code select} columns -
- * getting it correct across the join is its own increment. Such a query still <i>compiles</i> fine (Task 6.1x
- * populates its {@code JoinSpec}); it just can't be <i>executed</i> here yet, so this throws with a clear
- * message rather than returning wrong rows.</p>
- *
- * <p><b>Simplification</b>: {@link #createResultStore} realises both sides and feeds all rows <i>synchronously</i>
- * before returning an already-complete {@link ResultStore} - unlike {@link SearchableSearchProvider}, which runs
- * its feed asynchronously on an {@code Executor}. A join here blocks until both sides complete; moving it
- * off-thread is a later optimisation, not a correctness concern.</p>
+ * <p><b>Simplifications (later optimisations, not correctness concerns)</b>: each side is realised in full and
+ * the {@code where} clause applied post-join, rather than pushing single-side terms down into each side's
+ * sub-query to pre-filter (which needs alias-stripping the pushed predicate). And {@link #createResultStore}
+ * realises both sides and feeds all rows <i>synchronously</i> before returning an already-complete
+ * {@link ResultStore} - unlike {@link SearchableSearchProvider}, which runs its feed asynchronously on an
+ * {@code Executor}.</p>
  */
 class JoinSearchProvider implements SearchProvider {
 
     private final Provider<SearchProviderRegistry> searchProviderRegistryProvider;
     private final CoprocessorsFactory coprocessorsFactory;
     private final ResultStoreFactory resultStoreFactory;
+    private final ExpressionPredicateFactory expressionPredicateFactory;
 
     @Inject
     JoinSearchProvider(final Provider<SearchProviderRegistry> searchProviderRegistryProvider,
                        final CoprocessorsFactory coprocessorsFactory,
-                       final ResultStoreFactory resultStoreFactory) {
+                       final ResultStoreFactory resultStoreFactory,
+                       final ExpressionPredicateFactory expressionPredicateFactory) {
         this.searchProviderRegistryProvider =
                 Objects.requireNonNull(searchProviderRegistryProvider, "searchProviderRegistryProvider");
         this.coprocessorsFactory = Objects.requireNonNull(coprocessorsFactory, "coprocessorsFactory");
         this.resultStoreFactory = Objects.requireNonNull(resultStoreFactory, "resultStoreFactory");
+        this.expressionPredicateFactory =
+                Objects.requireNonNull(expressionPredicateFactory, "expressionPredicateFactory");
     }
 
     @Override
@@ -133,7 +142,6 @@ class JoinSearchProvider implements SearchProvider {
             throw new IllegalArgumentException(
                     "SearchRequest routed to " + JoinDataSourceType.TYPE + " must carry a JoinSpec");
         }
-        rejectIfWhereClausePresent(searchRequest, joinSpec);
 
         final RealisedSide left = realiseSide(joinSpec.getLeft());
         final RealisedSide right = realiseSide(joinSpec.getRight());
@@ -152,7 +160,14 @@ class JoinSearchProvider implements SearchProvider {
             right.resultStore.destroy();
         }
 
-        // Build the outer query's coprocessors and feed each joined row at the FieldIndex positions its
+        // Apply the outer where clause across the joined rows (see whereRowPredicate) - the join's "where" can't
+        // be applied by either single-source side (it references both aliases), so it's evaluated here on the
+        // combined row, then only matching rows are fed to the coprocessor.
+        final Predicate<Values> whereRowPredicate = whereRowPredicate(searchRequest, left.columns, right.columns,
+                joinSpec.getEquiKeys().getFirst().getLeftAlias(),
+                joinSpec.getEquiKeys().getFirst().getRightAlias());
+
+        // Build the outer query's coprocessors and feed each surviving joined row at the FieldIndex positions its
         // alias-qualified select-column expressions claimed.
         final CoprocessorsImpl coprocessors = coprocessorsFactory.create(
                 searchRequest, DataStoreSettings.createBasicSearchResultStoreSettings());
@@ -167,7 +182,9 @@ class JoinSearchProvider implements SearchProvider {
                 searchRequest.getSearchRequestSource(), coprocessors);
         try {
             for (final Val[] joinedRow : joinedRows) {
-                coprocessors.accept(assembleRow(joinedRow, mapping));
+                if (whereRowPredicate.test(Values.of(joinedRow))) {
+                    coprocessors.accept(assembleRow(joinedRow, mapping));
+                }
             }
         } catch (final RuntimeException e) {
             resultStore.addError(e);
@@ -178,28 +195,47 @@ class JoinSearchProvider implements SearchProvider {
     }
 
     /**
-     * Task 6.1d/6.1x scope: a {@code where} clause in a join query compiles (its terms end up either pushed to a
-     * side's sub-request or in the outer {@code Query.expression}) but can't be executed here yet - see the class
-     * Javadoc. Reject cleanly rather than silently dropping the predicate.
+     * Builds a predicate over the <i>combined</i> joined row (left columns then right columns) from the outer
+     * query's {@code where} clause ({@code Query.expression}) - see
+     * {@code docs/query-optimiser-implementation-plan.md}, Phase 6 "where across joins". The where clause
+     * references alias-qualified fields ({@code a.field}/{@code b.field}); each is resolved to its combined-row
+     * position (left columns at their own index, right columns offset by the left width) and extracted via the
+     * same {@link ValuesFunctionFactory} the coprocessor's own {@code valueFilter} uses, so numeric/date/text
+     * comparison semantics match. A trivial/absent where clause yields an always-true predicate.
+     *
+     * <p>Evaluating the where clause here, on the combined row, is the correct physical position for a join: a
+     * single side can't evaluate a predicate that references both aliases, and the combined row is where every
+     * referenced field resolves. Per-side push-down (pre-filtering each side before the join) is a later
+     * efficiency optimisation, not done here - so each side is realised in full and filtered post-join.</p>
      */
-    private static void rejectIfWhereClausePresent(final SearchRequest searchRequest, final JoinSpec joinSpec) {
-        if (!isTrivialExpression(searchRequest.getQuery().getExpression())
-            || sideHasExpression(joinSpec.getLeft())
-            || sideHasExpression(joinSpec.getRight())) {
-            throw new UnsupportedOperationException(
-                    "A 'where' clause in a join query is not yet supported at execution time (it compiles, but "
-                    + "executing it correctly across the join boundary is a separate increment - see "
-                    + "docs/query-optimiser-implementation-plan.md, Phase 6). Remove the where clause to run this "
-                    + "join.");
+    private Predicate<Values> whereRowPredicate(
+            final SearchRequest searchRequest,
+            final List<Column> leftColumns,
+            final List<Column> rightColumns,
+            final String leftAlias,
+            final String rightAlias) {
+        final ExpressionOperator where = searchRequest.getQuery() == null
+                ? null
+                : searchRequest.getQuery().getExpression();
+        if (where == null || where.getChildren() == null || where.getChildren().isEmpty()) {
+            return values -> true;
         }
-    }
 
-    private static boolean sideHasExpression(final SearchRequest sideRequest) {
-        return sideRequest.getQuery() != null && !isTrivialExpression(sideRequest.getQuery().getExpression());
-    }
+        final Map<String, ValueFunctionFactory<Values>> accessors = new HashMap<>();
+        for (int i = 0; i < leftColumns.size(); i++) {
+            accessors.put(leftAlias + "." + leftColumns.get(i).getName(),
+                    new ValuesFunctionFactory(leftColumns.get(i), i));
+        }
+        final int leftWidth = leftColumns.size();
+        for (int j = 0; j < rightColumns.size(); j++) {
+            accessors.put(rightAlias + "." + rightColumns.get(j).getName(),
+                    new ValuesFunctionFactory(rightColumns.get(j), leftWidth + j));
+        }
+        final ValueFunctionFactories<Values> factories = accessors::get;
 
-    private static boolean isTrivialExpression(final ExpressionOperator expression) {
-        return expression == null || expression.getChildren() == null || expression.getChildren().isEmpty();
+        return expressionPredicateFactory
+                .createOptional(where, factories, searchRequest.getDateTimeSettings())
+                .orElse(values -> true);
     }
 
     /**

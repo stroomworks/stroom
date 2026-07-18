@@ -87,10 +87,10 @@ plan** → **rewrite rules** → a **cost model** → a `SearchRequest` for the 
 
 Be aware of the current boundaries:
 
-- **`where` clauses in join queries are not executed.** A join *with* a `where` clause compiles fine, but running
-  it is rejected with a clear message. Joins *without* a `where` clause execute and return real results. (See
-  [§8](#8-where-the-system-goes-next) for why, and the plan.)
 - **Only a single join** (two sources). N-way join chains are rejected with a clear message.
+- **Joins realise each side in full before filtering.** A join's `where` clause is evaluated *after* the two
+  sides are combined, not pushed down to pre-filter each side — correct, but each side scans everything first
+  (an efficiency optimisation, not a correctness gap; see [§8](#8-where-the-system-goes-next)).
 - **No enrichment / broadcast-lookup joins yet** against State/Plan B stores.
 - **Index and State cost signals are placeholders.** The cost model has a real adapter for stream/meta counts,
   but the per-index-shard and per-state-store cost adapters are stubs today, so `EXPLAIN` for index/state scans
@@ -299,9 +299,22 @@ Result (INNER join — only users present in both):
 | 2024-01-01T09:15:00.000Z | 200 | Alice Smith |
 | 2024-02-01T10:00:00.000Z | 500 | Alice Smith |
 
-> **Today's limit:** a join with a `where` clause compiles but is rejected at execution with a clear message.
-> Keep join queries where-free for now, or filter each side by querying it separately. `LEFT` joins pad
-> unmatched left rows with nulls on the right-hand columns.
+A `where` clause on a join works too — it's evaluated across the combined rows, so it can reference fields from
+either side:
+
+```
+from "Events" as a
+join "Users" as b on a.User = b.Id
+where a.Status >= 500
+select a.EventTime, a.Status, b.Name
+```
+
+returns only the joined rows where `a.Status >= 500` (numeric comparison — the optimiser evaluates the predicate
+with the right type, not as a string).
+
+> **`LEFT` joins** pad unmatched left rows with nulls on the right-hand columns. Each side is currently realised
+> in full before the join, so a `where` clause narrows the *result*, not the amount each side scans (see
+> [§8](#8-where-the-system-goes-next)).
 
 ---
 
@@ -360,8 +373,8 @@ The backend is well ahead of the query-editor UI. What exists and what's still n
   divergences to admins rather than only in logs.
 - **Join authoring help.** Autocomplete for `join … on …`, and domain-type-aware suggestions of compatible join
   keys across sources.
-- **Clear surfacing of the deliberate rejections.** When a join `where` clause or an N-way join is rejected, the
-  editor should present the (already clear) message helpfully rather than as a raw error.
+- **Clear surfacing of the deliberate rejections.** When an N-way join (or another unsupported shape) is
+  rejected, the editor should present the (already clear) message helpfully rather than as a raw error.
 
 ---
 
@@ -370,13 +383,10 @@ The backend is well ahead of the query-editor UI. What exists and what's still n
 The remaining work, roughly in priority order. Full detail (with the research findings behind each) is in
 [`query-optimiser-implementation-plan.md`](query-optimiser-implementation-plan.md), Phase 6.
 
-- **`where` across joins.** The single biggest gap. A join's `where` references fields on both sides and — unlike
-  a `select` column — resolves through a different internal path than the join-row assembly currently uses.
-  Getting it correct (which physical position each term is applied at; residual cross-side predicates; stripping
-  the alias when a term is pushed to a single side's sub-query) is its own increment. Until then, join `where`
-  clauses are rejected at execution.
-- **Per-side filter push-down through the join.** Once alias-handling lands, terms referencing only one side can
-  be pushed into that side's sub-query so it pre-filters before the join — a real efficiency win.
+- **Per-side filter push-down through the join.** `where` across joins now works (§5.6) — but each side is
+  realised in full and the predicate applied afterward. Terms referencing only one side could instead be pushed
+  into that side's sub-query so it pre-filters before the join — a real efficiency win. It needs the pushed
+  predicate's alias stripped (a single-source side knows the field as `field`, not `alias.field`).
 - **N-way joins.** Extend beyond a single two-source join to left-deep chains.
 - **Enrichment / broadcast-lookup joins.** A join whose build side is a State/Plan B store should reuse the
   existing single-key lookup functions (`GetState`) instead of materialising that side in full — with candidate
@@ -413,7 +423,7 @@ OFF  →  SHADOW (soak, watch divergence logs)  →  ON
 | Automatic `where`/`filter` split | ✅ |
 | `EXPLAIN` / pre-run cost estimate (backend) | ✅ |
 | Pre-run duration warning (UI) | ✅ minimal |
-| Two-source join, no `where` clause | ✅ executes, returns real rows |
-| Two-source join *with* `where` clause | ⚠️ compiles, rejected at execution |
+| Two-source join (INNER/LEFT), with or without a `where` clause | ✅ executes, returns real rows |
+| Per-side filter push-down through the join (efficiency) | ⛔ future |
 | N-way joins, enrichment joins, domain relationships | ⛔ future |
 | Real index/state cost adapters, join `EXPLAIN` | ⛔ future |
