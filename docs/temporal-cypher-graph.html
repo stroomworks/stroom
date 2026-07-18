@@ -144,6 +144,7 @@
     <li><a href="#primer">Primer: graph on a KV store</a></li>
     <li><a href="#reuse">What Stroom already gives us</a></li>
     <li><a href="#arch">Architecture</a></li>
+    <li><a href="#ux">User experience</a></li>
     <li><a href="#example">Worked example</a></li>
     <li><a href="#reused-new">Reused vs. built new</a></li>
     <li><a href="#risks">Risks &amp; hard problems</a></li>
@@ -234,6 +235,8 @@
 
 <h2 id="arch">5. Architecture</h2>
 
+<div class="callout"><strong>The <code>GraphDbDoc</code> wrapper.</strong> A graph is a single explorer document — a <code>GraphDbDoc</code> — that <em>owns and encapsulates</em> every physical store below (the Plan B temporal sub-stores <em>and</em> the anchor index). The user creates one <strong>Graph</strong> document; the internal stores are provisioned, rebuilt, retained and deleted together as its hidden implementation, never separately created or wired. This deliberately shrinks the configurable surface to the genuine choices, so a graph is hard to misconfigure — see <a href="#ux">§6 User experience</a>. The sub-stores below are that one document's internals, not things a user assembles.</div>
+
 <figure>
 <svg viewBox="0 0 900 430" role="img" aria-label="Data-flow diagram: ingest on top, Plan B graph store in the middle, query flow at the bottom">
   <defs>
@@ -291,8 +294,8 @@
 <figcaption>Ingest materializes events into the Plan B graph store; the new <code>GraphSearchProvider</code> parses Cypher, traverses Plan B, and streams rows into Stroom's existing result plumbing. Amber boxes = new components.</figcaption>
 </figure>
 
-<h3>5.1 Physical graph model on Plan B</h3>
-<p>The graph is composed of several LMDB sub-stores, exactly as Plan B already composes <code>UidLookupDb</code> + data DBs today.</p>
+<h3>5.1 Physical graph model (internal to the <code>GraphDbDoc</code>)</h3>
+<p>The graph is composed of several LMDB sub-stores, exactly as Plan B already composes <code>UidLookupDb</code> + data DBs today. <strong>All of these are owned by the <code>GraphDbDoc</code> and hidden from the user</strong> — they are the document's implementation, opened and managed as a unit under its lifecycle.</p>
 <ul>
   <li><strong>Interning DBs</strong> (<code>UidLookupDb</code>): four UID namespaces — node external id, label, edge-type, property-key.</li>
   <li><strong>Node store</strong> (temporal): <code>nodeUid &rarr; {labels, properties}</code>, time-stamped so node property <em>history</em> is an as-of lookup.</li>
@@ -359,7 +362,101 @@ PropIndex: [labelUid][propKeyUid][valueBytes]       -&gt; nodeUid</code></pre>
 </ul>
 <div class="callout"><strong>Gap — relationships aren't in the catalogue.</strong> <code>DomainType</code> models entities + attributes, not edges; node/property mapping is well-supported but <strong>edge semantics need a design choice</strong> (see Open questions). Matching stays deliberately blunt (two segments, one <code>*</code>, no subtyping) — strong enough to <em>confirm</em> an entity mapping, so inference always <strong>confirms</strong> rather than silently rewrites.</div>
 
-<h2 id="example">6. Worked example</h2>
+<h2 id="ux">6. User experience</h2>
+
+<p>The guiding principle (§5) is that a graph is <strong>one document</strong> — a <code>GraphDbDoc</code> — and everything else is machinery the user never sees or wires. So the experience is deliberately the <em>same</em> explorer, pipeline, and dashboard flow a Stroom user already knows for indexes and Plan B stores; there is no new "graph console" to learn, and almost nothing to get wrong.</p>
+
+<h3>6.1 What the user interacts with</h3>
+<ul>
+  <li><strong>The Explorer tree</strong> — to create and open the <strong>Graph</strong> document, exactly like creating an Index or a Dictionary. It's a normal document: it has a folder location, permissions, and can be exported/imported.</li>
+  <li><strong>The Graph document editor</strong> — tabbed like the Lucene <em>Index</em> editor (which has <code>Settings / Fields / Shards / Data / Documentation / Permissions</code>). A graph shows a small <strong>Settings</strong> tab (§6.3 — the <em>entire</em> configuration surface; the internal Plan B stores and anchor index never appear here or anywhere else) and a <strong>Data</strong> tab (§6.5 — a default, editable query that shows the store has data and what its shape is).</li>
+  <li><strong>A normal ingest pipeline</strong> — a standard processing pipeline whose translation emits graph-mutation events and whose final element is a <strong>GraphFilter</strong> pointing at the Graph document. Authored with the existing pipeline editor; no graph-specific tooling.</li>
+  <li><strong>The query editor / dashboard</strong> — the same query pane used for StroomQL, with the Graph document chosen as the data source and <strong>Cypher</strong> typed into it.</li>
+  <li><strong>The results table (and, later, a graph visualisation)</strong> — Cypher results come back as ordinary dashboard table rows, sortable/pageable/exportable like any query result. Interactive node-link visualisation is a later stretch (§8/§11).</li>
+</ul>
+
+<h3>6.2 Creating a graph database</h3>
+<p>Creating a graph is a single action — right-click a folder in the Explorer, <em>New &rarr; Graph</em>, give it a name:</p>
+<pre><code>Explorer                          New document
+  System                            +---------------------------+
+  +-- Reference Data                | Type:  [ Graph        v ]  |
+  +-- Event Sources                 | Name:  [ Network Graph  ] |
+  +-- Graphs            (right-click)| Folder:[ /Graphs        ] |
+        (New -> Graph) --------------+        [ Cancel ] [ OK ]  |
+                                     +---------------------------+</code></pre>
+<p>On <em>OK</em>, Stroom provisions an empty, immediately-queryable graph. Behind the scenes the <code>GraphDbDoc</code> creates all its internal stores (node, out/in adjacency, interning, anchor index) as one unit — but the user sees only the new <strong>Network Graph</strong> document appear in the tree. There is <strong>no</strong> separate Plan B store or Index to create first and wire up, which is the whole point: nothing to connect wrongly.</p>
+
+<h3>6.3 Configuring it</h3>
+<p>Opening the Graph document shows a short settings screen. The design rule is that the user can only set things they <em>must</em> decide; everything physical is an internal default:</p>
+<pre><code> Network Graph                                    [ Save ]
+ -------------------------------------------------------------
+  Description   [ Devices, accounts and owners, over time   ]
+
+  Retention     Keep history for  [ 2 years   v ]
+                (older node/edge versions are condensed away)
+
+  Time precision [ Milliseconds  v ]   (granularity of "as of")
+
+  Node / edge mapping
+     ( ) Derive from Domain Type catalogue        <-- zero-config
+     (o) Custom mapping...   [ Edit mapping ]
+ -------------------------------------------------------------
+  Advanced (storage layout, indexing, sharding)     hidden —
+  managed automatically for this graph</code></pre>
+<div class="table-wrap"><table>
+  <thead><tr><th>Exposed to the user (genuine choices)</th><th>Hidden / automatic (no knob)</th></tr></thead>
+  <tbody>
+    <tr><td>Name, description, folder, permissions (standard doc metadata)</td><td>Physical key/byte layout, order-preserving serdes</td></tr>
+    <tr><td>Retention policy (how long to keep old versions)</td><td>Interning scheme (UID namespaces)</td></tr>
+    <tr><td>Temporal precision (granularity of <code>AS OF</code>)</td><td>Node / out-edge / in-edge stores</td></tr>
+    <tr><td>Node/edge <strong>schema mapping</strong> — which fields become which nodes/edges/labels (often <em>derived</em> from the Domain Type catalogue, §5.6, so frequently zero-config)</td><td>Anchor-index technology (Plan B state vs Lucene), sharding, snapshot/merge</td></tr>
+  </tbody>
+</table></div>
+<div class="callout"><strong>Why so little?</strong> Every field a user can set is a way to misconfigure a graph. By having the <code>GraphDbDoc</code> own and default all the physical machinery, the settings above are the complete surface — a graph either works or fails to be created; it can't be silently wired wrong.</div>
+
+<h3>6.4 Feeding data in</h3>
+<p>Populating the graph reuses Stroom's normal ingest, with one new pipeline element:</p>
+<ol>
+  <li>Send events to a <strong>feed</strong> as usual (raw streams remain the rebuildable source of truth).</li>
+  <li>Build a <strong>pipeline</strong> whose XSLT translates events into graph-mutation XML (node/edge upserts with a <code>validFrom</code> time), ending in a <strong>GraphFilter</strong> element whose target is the <strong>Network Graph</strong> document.</li>
+  <li>Processing populates the graph. Because it is a <em>materialized projection</em>, re-running the pipeline over stored streams <strong>rebuilds</strong> the graph — the same reprocessing users already use for indexes, so schema changes and backfills need no special handling.</li>
+</ol>
+<p>If the node/edge mapping is derived from the Domain Type catalogue, even the XSLT can be largely generic: fields tagged (say) <code>User.id</code> and <code>Host.ipaddress</code> become <code>:User</code>/<code>:Host</code> nodes automatically, and the same domain type across two feeds resolves to the <em>same</em> node — so heterogeneous sources form one connected graph rather than islands (§5.6).</p>
+
+<h3>6.5 The Data tab — confirming the graph is populated</h3>
+<p>Like the Lucene Index editor's <strong>Data</strong> tab, the Graph document has a Data tab that runs a <strong>default, editable query</strong> whenever it's opened. Its job is not analysis but reassurance and orientation: at a glance the user sees <em>that</em> data has landed in the store and <em>what shape</em> it has (labels, property names, a few sample rows). The default is a small, cheap Cypher query the user can then edit in place to explore further:</p>
+<pre><code> Network Graph            [ Settings | Data ]           tab: Data
+ -------------------------------------------------------------
+  MATCH (n)-[r]->(m)                                     <- default,
+  RETURN labels(n), type(r), labels(m), n, m             editable
+  LIMIT 20                                               [ Run ]
+ -------------------------------------------------------------
+  labels(n)   type(r)         labels(m)   n.id     m.id
+  Device      CONNECTED_TO    Account     d-42     acct-118
+  Owner       OWNS            Account     o-7      acct-118
+  ... up to 20 sample rows ...
+ -------------------------------------------------------------
+  20 rows  ·  as of: latest   [ change... ]</code></pre>
+<p>An empty store shows zero rows (a clear "nothing ingested yet" signal rather than an error). The default query is seeded from the graph's schema mapping / domain-type catalogue where available, so it names the labels and edge types this graph actually contains; a user with no Cypher knowledge still learns the graph's format just by opening the tab. Editing and re-running the query here uses the same execution path as a dashboard query (§6.6) — the Data tab is simply a built-in, pre-filled query pane scoped to this one graph.</p>
+
+<h3>6.6 Querying and viewing results</h3>
+<p>Querying is the existing dashboard/query experience, with the Graph document as the data source and Cypher (plus the temporal extension) as the language:</p>
+<pre><code>Data source: [ Network Graph            v ]
+
+  MATCH (d:Device {id: 'd-42'})-[:CONNECTED_TO]->(a:Account)
+  AS OF datetime('2026-07-01T09:00:00Z')
+  RETURN a.id, a.owner
+  ORDER BY a.id
+
+  [ Run ]
+ ------------------------------------------------------
+  a.id        a.owner
+  acct-118    Alice
+  acct-204    Bob
+  ... rows stream into the normal results table ...</code></pre>
+<p>Results are ordinary table rows in a dashboard: they sort, page, export, and respect document permissions exactly like a StroomQL result, because everything below the query language is reused unchanged (coprocessors &rarr; result store &rarr; dashboard/REST). The temporal clauses (<code>AS OF</code>, <code>AROUND&nbsp;&plusmn;&nbsp;d</code>, <code>BETWEEN</code>) are the only graph-specific syntax a querying user learns; a query with none of them simply returns the latest state. A worked end-to-end example follows in §7.</p>
+
+<h2 id="example">7. Worked example</h2>
 <p><strong>Question:</strong> <em>"Which accounts did device <code>d-42</code> talk to within an hour of 2026-07-01T09:00Z, and who owned those accounts as of that instant?"</em></p>
 <pre><code>MATCH (d:Device {id: 'd-42'})-[c:CONNECTED_TO]-&gt;(a:Account)&lt;-[:OWNS]-(o:Owner)
 AROUND datetime('2026-07-01T09:00:00Z') &plusmn; duration('PT1H')
@@ -376,7 +473,7 @@ ORDER BY c.startTime</code></pre>
 </ol>
 <p>This shows both temporal modes in one query: a <strong>window</strong> (<code>CONNECTED_TO … AROUND &plusmn; 1h</code>) and an <strong>as-of floor lookup</strong> (<code>OWNS</code> ownership at the instant).</p>
 
-<h2 id="reused-new">7. What's reused vs. built new</h2>
+<h2 id="reused-new">8. What's reused vs. built new</h2>
 <p><strong>Reused (the bulk):</strong> Plan B storage, temporal floor lookups, interning, sharding, snapshot/retention; pipelines, XSLT, processor filters, reprocessing; the entire query result stack; dashboards and query REST; explorer, doc-refs, permissions; Lucene for anchor lookups.</p>
 <p><strong>Built new (focused surface):</strong></p>
 <ol>
@@ -388,7 +485,7 @@ ORDER BY c.startTime</code></pre>
   <li>(Optional) graph-aware UI / visualisation.</li>
 </ol>
 
-<h2 id="risks">8. Risks &amp; hard problems</h2>
+<h2 id="risks">9. Risks &amp; hard problems</h2>
 <div class="table-wrap"><table>
   <thead><tr><th>Risk</th><th>Why it matters</th><th>Mitigation</th></tr></thead>
   <tbody>
@@ -403,7 +500,7 @@ ORDER BY c.startTime</code></pre>
   </tbody>
 </table></div>
 
-<h2 id="effort">9. Effort estimate</h2>
+<h2 id="effort">10. Effort estimate</h2>
 <p>Independently estimated and cross-checked against the codebase. Effort in <strong>person-weeks (pw)</strong>, low–high, assuming experienced Java engineers <em>new to</em> LMDB/Plan B internals, ANTLR/Cypher, and GWT.</p>
 <div class="callout"><strong>Baseline:</strong> these figures assume the <strong>query core</strong> (grammar + ANTLR parser + relational logical plan + planner + joins) is delivered by the companion <a href="query-optimiser-plan.html">query-optimiser-plan</a>. That project is estimated separately; the WBS below is the <strong>incremental graph work on top of it</strong>. Where the core already provides a capability (parser framework, planner, join executor, expression eval, aggregation, result projection) the graph inherits it, and the line is reduced or removed versus a from-scratch graph engine.</div>
 
@@ -476,7 +573,7 @@ ORDER BY c.startTime</code></pre>
   <li><strong>Critical path:</strong> P0 model + partitioning spike &rarr; storage DBs &rarr; <strong>graph operators (<code>expand</code> + variable-length) on the core</strong> &rarr; temporal execution. Everything hinges on <strong>freezing the physical model and partitioning scheme early</strong>, and on the query core's logical IR being available.</li>
 </ul>
 
-<h2 id="roadmap">10. Phased roadmap</h2>
+<h2 id="roadmap">11. Phased roadmap</h2>
 <ol>
   <li><strong>Design spikes (P0):</strong> freeze the physical model + partitioning; align Cypher with the query-core grammar; define temporal semantics. <em>Gate: no storage code until the model is frozen.</em></li>
   <li><strong>Reusable query core</strong> <em>(companion <a href="query-optimiser-plan.html">query-optimiser-plan</a>)</em>: grammar + ANTLR parser + logical IR (incl. <code>Join</code>) + rule/cost planner + equi-joins + EXPLAIN/estimate. The graph consumes this and StroomQL benefits too. <em>The recommended first engineering stage — graph-agnostic, independently valuable, and it turns the graph work into a set of extensions.</em></li>
@@ -486,7 +583,7 @@ ORDER BY c.startTime</code></pre>
   <li><strong>UI + scale-out:</strong> Graph document type UX, visualisation, cross-shard traversal as a <strong>distributed join / exchange</strong>; optional bitemporal.</li>
 </ol>
 
-<h2 id="open">11. Open questions / de-risking spikes</h2>
+<h2 id="open">12. Open questions / de-risking spikes</h2>
 <ul>
   <li><strong>Plan B shard partitioning</strong> — exact scheme and whether a graph's adjacency can be co-located (partition by graph/tenant id) to minimise cross-shard hops. <em>Blocks the scale-out estimate; resolve in P0.</em></li>
   <li><strong>Property-index technology</strong> — Plan B <code>STATE</code> sub-store vs Lucene (write cost vs query flexibility). <em>Resolve in P0.</em></li>
@@ -519,7 +616,7 @@ ORDER BY c.startTime</code></pre>
   </li>
 </ul>
 
-<h2 id="glossary">12. Glossary</h2>
+<h2 id="glossary">13. Glossary</h2>
 <ul>
   <li><strong>Node / edge</strong> — a graph vertex / a directed relationship; both carry labels/types and properties.</li>
   <li><strong>Adjacency (list)</strong> — a node's edges, stored so neighbours are a contiguous key range (prefix scan).</li>

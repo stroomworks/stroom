@@ -3,6 +3,7 @@
 **Status:** Design proposal / feasibility study
 **Audience:** Stroom engineering team
 **Scope:** Architecture and effort estimate for a property-graph database, queried with Cypher, with native point-in-time (temporal) querying, built on Stroom's existing data stores.
+**Companion build plan:** [`temporal-cypher-graph-implementation-plan.md`](temporal-cypher-graph-implementation-plan.md) — the agent-ready, task-by-task implementation plan (verified repo facts, module layout, fully-specified P0 spikes, a file/signature-level PoC, and contract-level outlines for P1–P8). This document is the *design* (what & why); that one is the *build plan* (which files, what signatures, how to prove done).
 
 ---
 
@@ -18,7 +19,8 @@ The **recommended stack**:
 
 | Concern | Recommendation |
 |---|---|
-| Storage substrate | **Plan B (LMDB)** as the primary store; **Lucene** as a secondary "find the anchor node" index. |
+| Packaging | **A single `GraphDbDoc` document type** that *encapsulates and owns* every physical store the graph needs (see §5.1). The user creates one "Graph" document; the internal Plan B temporal stores, interning, and anchor index are **hidden implementation detail**, never separately created or wired. This deliberately shrinks the user's configuration surface to the genuine choices, so the graph is hard to misconfigure. |
+| Storage substrate | **Plan B (LMDB)**, owned internally by the `GraphDbDoc`, as the primary store; an internal anchor index (Plan B `STATE` sub-store or a wrapped **Lucene** index) for "find the anchor node". Both are internal to the doc. |
 | Query language | **Cypher**, parsed from the open-source **openCypher ANTLR grammar**, sitting alongside `StroomQL.g4` in the shared grammar module — not a bespoke hand-written parser. |
 | Query engine | **Build on the planned query core** — grammar + ANTLR parser + relational logical plan + planner + joins (see the companion [query-optimiser-plan.md](query-optimiser-plan.md)). Cypher compiles to the **same logical IR**; graph traversal is an **index-nested-loop join** (`expand`) over adjacency; a **Graph datasource + `SearchProvider`** executes the plan and streams rows into the existing coprocessor / result-store / dashboard / REST plumbing. |
 | Temporal model | **Single-axis valid time** first (`AS OF t`, `AROUND t ± d`, `BETWEEN t1 AND t2`), matching Plan B's temporal state exactly. Bitemporal deferred. |
@@ -92,9 +94,29 @@ All paths are relative to the repo root. These are the load-bearing reuse points
 
 ## 5. Architecture
 
-### 5.1 Physical graph model on Plan B
+**The `GraphDbDoc` wrapper.** A graph is a single explorer document — a `GraphDbDoc` — that *owns and encapsulates*
+every physical store it needs. Rather than asking a user to create a Plan B store, an anchor index, and wire them
+together (each an opportunity to get it wrong), the user creates one **Graph** document and the system provisions
+and manages the internal stores as a hidden unit:
+
+- **Owned internally (hidden):** the Plan B temporal sub-stores (§5.1 — node, out/in adjacency, interning) *and*
+  the anchor index (a Plan B `STATE` sub-store or a wrapped Lucene index). None of these appear in the explorer or
+  are separately configurable; they are created, opened, rebuilt (on reprocess), retained/condensed, and deleted
+  **together, as part of the `GraphDbDoc`'s lifecycle**.
+- **User-configurable (the genuine choices only):** name/description (standard doc metadata); a retention /
+  temporal-precision policy; and the node/edge **schema mapping** — which fields become which nodes/edges/labels
+  (this can be derived from the domain-type catalogue, §5.6, or set on the ingest pipeline, so even this is often
+  zero-config). Everything physical — byte layouts, interning scheme, in/out-edge stores, anchor-index technology,
+  sharding, snapshot/merge — is an internal default, not a knob.
+
+The result: the configuration a user *can* do is limited to decisions they *must* make, so a graph is hard to
+misconfigure. The sub-stores below are the encapsulated internals of that one document, not things a user assembles.
+
+### 5.1 Physical graph model (internal to the `GraphDbDoc`)
 
 The graph is composed of several LMDB sub-stores, exactly as Plan B already composes `UidLookupDb` + data DBs today.
+**All of these are owned by the `GraphDbDoc` and hidden from the user** — they are the doc's implementation, opened
+and managed as a unit under its lifecycle.
 
 - **Interning DBs** (`UidLookupDb`): four UID namespaces — node external id, label, edge-type, property-key — mapping strings ↔ compact UIDs.
 - **Node store** (temporal state): `nodeUid → {labels, properties}`, time-stamped so node property *history* is an as-of lookup.
@@ -137,7 +159,7 @@ The graph integration is then a clean fit:
 
 - **Cypher is a second front-end** — a `Cypher.g4` grammar alongside `StroomQL.g4` in the shared `stroom-query-grammar` module, compiled to the **same logical IR**.
 - **A hop is a join.** `MATCH (a)-[r]->(b)` lowers to a join of the edge (adjacency) relation to the node relation; physically it runs as the core's **index-nested-loop / broadcast-lookup** join, with the adjacency prefix-scan as the access path. "Native traversal" and "join execution" are the same plan.
-- **The Plan B graph store is a new datasource** exposing node/edge/adjacency relations (with field metadata + cost signals), executed by a **`GraphSearchProvider`** built on the core's execution machinery.
+- **The `GraphDbDoc` is a new datasource** — the *document* is what you query (`Query.dataSource` is the `GraphDbDoc`'s `DocRef`), exposing node/edge/adjacency relations (with field metadata + cost signals). Its `GraphSearchProvider` resolves the doc and traverses its **internal** stores; the wrapped Plan B/anchor-index stores are never addressed directly by a query. Registration is one Guice multibinder line, as `PlanBModule` does today.
 
 Everything downstream is reused unchanged: coprocessors, result stores, incremental/paged results, dashboards, query REST, and document-level security. A **"Graph" document type** makes a graph queryable like any other source; provider registration is one Guice multibinder line (as `PlanBModule` does today).
 
@@ -210,12 +232,15 @@ This shows both temporal modes in one query: a **window** (`CONNECTED_TO … ARO
 
 **Built new (focused surface):**
 
-1. Graph physical schema + order-preserving serdes on Plan B (node, out/in adjacency, property index).
-2. `GraphFilter` ingest element + a small graph-mutation XML schema.
-3. A `Cypher.g4` grammar + AST→IR visitor, alongside `StroomQL.g4` in the shared grammar module (the parser *framework*, planner, and join executor come from the query core).
-4. Graph-specific operators on the core's executor: **`expand`** (adjacency access path for the index-nested-loop join), a **variable-length-path / fixpoint** operator, and an **as-of join** for temporal — plus a Plan B **graph datasource** with cost signals.
-5. `GraphSearchProvider` + a "Graph" document type + result mapping.
-6. (Optional) graph-aware UI / visualisation.
+1. A **`GraphDbDoc` document type that owns and encapsulates its internal stores** (§5.1) — provisioning, opening,
+   rebuilding, retaining, and deleting them as a hidden unit; the user-facing surface is only the genuine choices.
+2. Graph physical schema + order-preserving serdes on Plan B (node, out/in adjacency, property index) — the doc's
+   hidden internals.
+3. `GraphFilter` ingest element + a small graph-mutation XML schema, writing into the owning `GraphDbDoc`'s stores.
+4. A `Cypher.g4` grammar + AST→IR visitor, alongside `StroomQL.g4` in the shared grammar module (the parser *framework*, planner, and join executor come from the query core).
+5. Graph-specific operators on the core's executor: **`expand`** (adjacency access path for the index-nested-loop join), a **variable-length-path / fixpoint** operator, and an **as-of join** for temporal — plus a **graph datasource** (the `GraphDbDoc`) with cost signals.
+6. `GraphSearchProvider` (resolves a `GraphDbDoc`, traverses its internal stores) + result mapping.
+7. (Optional) graph-aware UI / visualisation.
 
 ---
 
