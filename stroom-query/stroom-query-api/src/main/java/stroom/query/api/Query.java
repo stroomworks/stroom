@@ -33,7 +33,7 @@ import java.util.Objects;
 /**
  * {@value #CLASS_DESC}
  */
-@JsonPropertyOrder({"dataSource", "expression", "params", "timeRange", "joinSpec"})
+@JsonPropertyOrder({"dataSource", "expression", "params", "timeRange", "joinSpec", "graphSpec"})
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @Schema(description = Query.CLASS_DESC)
 public final class Query {
@@ -64,24 +64,32 @@ public final class Query {
     @JsonProperty
     private final JoinSpec joinSpec;
 
+    @JsonPropertyDescription("Present only when dataSource is a GraphDbDoc and the query was compiled from " +
+            "Cypher - see docs/temporal-cypher-graph-implementation-plan.md, Task PoC.6. Never set for an " +
+            "ordinary StroomQL query.")
+    @JsonProperty
+    private final GraphSpec graphSpec;
+
     @JsonCreator
     public Query(@JsonProperty("dataSource") final DocRef dataSource,
                  @JsonProperty("expression") final ExpressionOperator expression,
                  @JsonProperty("params") final List<Param> params,
                  @JsonProperty("timeRange") final TimeRange timeRange,
-                 @JsonProperty("joinSpec") final JoinSpec joinSpec) {
+                 @JsonProperty("joinSpec") final JoinSpec joinSpec,
+                 @JsonProperty("graphSpec") final GraphSpec graphSpec) {
         this.dataSource = dataSource;
         this.expression = expression;
         this.params = params;
         this.timeRange = timeRange;
         this.joinSpec = joinSpec;
+        this.graphSpec = graphSpec;
     }
 
     public Query(final DocRef dataSource,
                  final ExpressionOperator expression,
                  final List<Param> params,
                  final TimeRange timeRange) {
-        this(dataSource, expression, params, timeRange, null);
+        this(dataSource, expression, params, timeRange, null, null);
     }
 
     public DocRef getDataSource() {
@@ -104,6 +112,10 @@ public final class Query {
         return joinSpec;
     }
 
+    public GraphSpec getGraphSpec() {
+        return graphSpec;
+    }
+
     @Override
     public boolean equals(final Object o) {
         if (this == o) {
@@ -117,12 +129,13 @@ public final class Query {
                 Objects.equals(expression, query.expression) &&
                 Objects.equals(params, query.params) &&
                 Objects.equals(timeRange, query.timeRange) &&
-                Objects.equals(joinSpec, query.joinSpec);
+                Objects.equals(joinSpec, query.joinSpec) &&
+                Objects.equals(graphSpec, query.graphSpec);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(dataSource, expression, params, timeRange, joinSpec);
+        return Objects.hash(dataSource, expression, params, timeRange, joinSpec, graphSpec);
     }
 
     @Override
@@ -133,6 +146,7 @@ public final class Query {
                 ", params=" + params +
                 ", timeRange=" + timeRange +
                 ", joinSpec=" + joinSpec +
+                ", graphSpec=" + graphSpec +
                 '}';
     }
 
@@ -154,6 +168,7 @@ public final class Query {
         private List<Param> params;
         private TimeRange timeRange;
         private JoinSpec joinSpec;
+        private GraphSpec graphSpec;
 
         private Builder() {
         }
@@ -164,6 +179,7 @@ public final class Query {
             this.params = query.params;
             this.timeRange = query.timeRange;
             this.joinSpec = query.joinSpec;
+            this.graphSpec = query.graphSpec;
         }
 
         /**
@@ -237,8 +253,17 @@ public final class Query {
             return this;
         }
 
+        /**
+         * @param graphSpec see {@link Query#getGraphSpec()} - never set for an ordinary StroomQL query.
+         * @return The {@link Builder}, enabling method chaining
+         */
+        public Builder graphSpec(final GraphSpec graphSpec) {
+            this.graphSpec = graphSpec;
+            return this;
+        }
+
         public Query build() {
-            return new Query(dataSource, expression, params, timeRange, joinSpec);
+            return new Query(dataSource, expression, params, timeRange, joinSpec, graphSpec);
         }
     }
 }

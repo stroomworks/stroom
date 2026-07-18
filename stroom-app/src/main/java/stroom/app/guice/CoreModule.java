@@ -60,6 +60,7 @@ public class CoreModule extends AbstractModule {
         install(new stroom.dashboard.impl.script.ScriptModule());
         install(new stroom.gitrepo.impl.GitRepoModule());
         install(new stroom.gitrepo.impl.dao.GitRepoDaoModule());
+        install(new stroom.graphdb.impl.GraphDbModule());
         install(new stroom.dashboard.impl.visualisation.VisualisationModule());
         install(new stroom.document.asset.impl.db.DocumentAssetDaoModule());
         install(new stroom.document.asset.impl.DocumentAssetModule());

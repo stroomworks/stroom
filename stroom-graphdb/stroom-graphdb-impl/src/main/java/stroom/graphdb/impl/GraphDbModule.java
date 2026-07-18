@@ -1,0 +1,59 @@
+/*
+ * Copyright 2016-2026 Crown Copyright
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package stroom.graphdb.impl;
+
+import stroom.docstore.api.DocumentStoreBinder;
+import stroom.graphdb.shared.GraphDbDoc;
+import stroom.query.api.datasource.DataSourceProvider;
+import stroom.query.common.v2.IndexFieldProvider;
+import stroom.query.common.v2.SearchProvider;
+import stroom.util.entityevent.EntityEvent;
+import stroom.util.guice.GuiceUtil;
+import stroom.util.shared.Clearable;
+
+import com.google.inject.AbstractModule;
+
+/**
+ * Registers {@link GraphDbDoc}'s document store/cache and {@link GraphSearchProvider} (Task PoC.6), mirroring
+ * {@code stroom.planb.impl.PlanBModule} - {@code PlanBModule} itself is not edited (Decision D1). No REST
+ * resource or ingest pipeline element is bound yet: a document-management API and real {@code GraphFilter}
+ * ingest are P2/P5 concerns, not this PoC.
+ */
+public class GraphDbModule extends AbstractModule {
+
+    @Override
+    protected void configure() {
+        bind(GraphDbDocCache.class).to(GraphDbDocCacheImpl.class);
+        bind(GraphStoreManager.class).to(GraphStoreManagerImpl.class);
+
+        GuiceUtil.buildMultiBinder(binder(), EntityEvent.Handler.class)
+                .addBinding(GraphDbDocCacheImpl.class);
+
+        GuiceUtil.buildMultiBinder(binder(), Clearable.class)
+                .addBinding(GraphDbDocCacheImpl.class);
+
+        DocumentStoreBinder.create(binder())
+                .bind(GraphDbDoc.TYPE, GraphDbDocStore.class, GraphDbDocStoreImpl.class);
+
+        GuiceUtil.buildMultiBinder(binder(), DataSourceProvider.class)
+                .addBinding(GraphSearchProvider.class);
+        GuiceUtil.buildMultiBinder(binder(), SearchProvider.class)
+                .addBinding(GraphSearchProvider.class);
+        GuiceUtil.buildMultiBinder(binder(), IndexFieldProvider.class)
+                .addBinding(GraphSearchProvider.class);
+    }
+}

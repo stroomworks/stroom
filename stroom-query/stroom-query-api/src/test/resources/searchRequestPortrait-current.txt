@@ -656,6 +656,28 @@ class stroom.query.api.Format$Type - public java.lang.String stroom.query.api.Fo
 class stroom.query.api.Format$Type - public static <T extends java.lang.Enum<T>> T java.lang.Enum.valueOf(java.lang.Class<T>,java.lang.String)
 class stroom.query.api.Format$Type - public static stroom.query.api.Format$Type stroom.query.api.Format$Type.valueOf(java.lang.String)
 class stroom.query.api.Format$Type - public static stroom.query.api.Format$Type[] stroom.query.api.Format$Type.values()
+class stroom.query.api.GraphSpec - public boolean stroom.query.api.GraphSpec.equals(java.lang.Object)
+class stroom.query.api.GraphSpec - public final native java.lang.Class<?> java.lang.Object.getClass()
+class stroom.query.api.GraphSpec - public final native void java.lang.Object.notify()
+class stroom.query.api.GraphSpec - public final native void java.lang.Object.notifyAll()
+class stroom.query.api.GraphSpec - public final void java.lang.Object.wait() throws java.lang.InterruptedException
+class stroom.query.api.GraphSpec - public final void java.lang.Object.wait(long) throws java.lang.InterruptedException
+class stroom.query.api.GraphSpec - public final void java.lang.Object.wait(long,int) throws java.lang.InterruptedException
+class stroom.query.api.GraphSpec - public int stroom.query.api.GraphSpec.hashCode()
+class stroom.query.api.GraphSpec - public java.lang.String stroom.query.api.GraphSpec.getCypher()
+class stroom.query.api.GraphSpec - public java.lang.String stroom.query.api.GraphSpec.toString()
+class stroom.query.api.GraphSpec - public static stroom.query.api.GraphSpec$Builder stroom.query.api.GraphSpec.builder()
+class stroom.query.api.GraphSpec$Builder - public boolean java.lang.Object.equals(java.lang.Object)
+class stroom.query.api.GraphSpec$Builder - public final native java.lang.Class<?> java.lang.Object.getClass()
+class stroom.query.api.GraphSpec$Builder - public final native void java.lang.Object.notify()
+class stroom.query.api.GraphSpec$Builder - public final native void java.lang.Object.notifyAll()
+class stroom.query.api.GraphSpec$Builder - public final void java.lang.Object.wait() throws java.lang.InterruptedException
+class stroom.query.api.GraphSpec$Builder - public final void java.lang.Object.wait(long) throws java.lang.InterruptedException
+class stroom.query.api.GraphSpec$Builder - public final void java.lang.Object.wait(long,int) throws java.lang.InterruptedException
+class stroom.query.api.GraphSpec$Builder - public java.lang.String java.lang.Object.toString()
+class stroom.query.api.GraphSpec$Builder - public native int java.lang.Object.hashCode()
+class stroom.query.api.GraphSpec$Builder - public stroom.query.api.GraphSpec stroom.query.api.GraphSpec$Builder.build()
+class stroom.query.api.GraphSpec$Builder - public stroom.query.api.GraphSpec$Builder stroom.query.api.GraphSpec$Builder.cypher(java.lang.String)
 class stroom.query.api.GroupSelection - public boolean stroom.query.api.GroupSelection.equals(java.lang.Object)
 class stroom.query.api.GroupSelection - public boolean stroom.query.api.GroupSelection.hasClosedGroups()
 class stroom.query.api.GroupSelection - public boolean stroom.query.api.GroupSelection.hasGroupsSelected()
@@ -854,6 +876,7 @@ class stroom.query.api.Query - public java.util.List<stroom.query.api.Param> str
 class stroom.query.api.Query - public static stroom.query.api.Query$Builder stroom.query.api.Query.builder()
 class stroom.query.api.Query - public stroom.docref.DocRef stroom.query.api.Query.getDataSource()
 class stroom.query.api.Query - public stroom.query.api.ExpressionOperator stroom.query.api.Query.getExpression()
+class stroom.query.api.Query - public stroom.query.api.GraphSpec stroom.query.api.Query.getGraphSpec()
 class stroom.query.api.Query - public stroom.query.api.JoinSpec stroom.query.api.Query.getJoinSpec()
 class stroom.query.api.Query - public stroom.query.api.Query$Builder stroom.query.api.Query.copy()
 class stroom.query.api.Query - public stroom.query.api.TimeRange stroom.query.api.Query.getTimeRange()
@@ -871,6 +894,7 @@ class stroom.query.api.Query$Builder - public stroom.query.api.Query$Builder str
 class stroom.query.api.Query$Builder - public stroom.query.api.Query$Builder stroom.query.api.Query$Builder.addParams(stroom.query.api.Param...)
 class stroom.query.api.Query$Builder - public stroom.query.api.Query$Builder stroom.query.api.Query$Builder.dataSource(stroom.docref.DocRef)
 class stroom.query.api.Query$Builder - public stroom.query.api.Query$Builder stroom.query.api.Query$Builder.expression(stroom.query.api.ExpressionOperator)
+class stroom.query.api.Query$Builder - public stroom.query.api.Query$Builder stroom.query.api.Query$Builder.graphSpec(stroom.query.api.GraphSpec)
 class stroom.query.api.Query$Builder - public stroom.query.api.Query$Builder stroom.query.api.Query$Builder.joinSpec(stroom.query.api.JoinSpec)
 class stroom.query.api.Query$Builder - public stroom.query.api.Query$Builder stroom.query.api.Query$Builder.params(java.util.List<stroom.query.api.Param>)
 class stroom.query.api.Query$Builder - public stroom.query.api.Query$Builder stroom.query.api.Query$Builder.timeRange(stroom.query.api.TimeRange)
