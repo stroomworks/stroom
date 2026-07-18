@@ -36,6 +36,7 @@ import stroom.node.api.NodeInfo;
 import stroom.query.api.Column;
 import stroom.query.api.ConditionalFormattingRule;
 import stroom.query.api.DateTimeSettings;
+import stroom.query.api.ExplainPlan;
 import stroom.query.api.ExpressionOperator;
 import stroom.query.api.ExpressionUtil;
 import stroom.query.api.OffsetRange;
@@ -1157,6 +1158,27 @@ class QueryServiceImpl implements QueryService, QueryFieldProvider {
                         expressionContext
                 );
                 return mappedRequest.getQuery().getExpression();
+            } catch (final RuntimeException e) {
+                LOGGER.debug(e.getMessage(), e);
+                throw e;
+            }
+        });
+    }
+
+    @Override
+    public ExplainPlan explainQuery(final String query) {
+        return securityContext.useAsReadResult(() -> {
+            try {
+                final SearchRequest sampleRequest = new SearchRequest(
+                        null,
+                        null,
+                        Query.builder().build(),
+                        null,
+                        null,
+                        false,
+                        null);
+                final ExpressionContext expressionContext = expressionContextFactory.createContext(sampleRequest);
+                return queryCompiler.explain(query, expressionContext);
             } catch (final RuntimeException e) {
                 LOGGER.debug(e.getMessage(), e);
                 throw e;

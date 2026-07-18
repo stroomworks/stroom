@@ -16,10 +16,12 @@
 
 package stroom.query.client.presenter;
 
+import stroom.alert.client.event.AlertEvent;
 import stroom.dashboard.shared.DashboardSearchResponse;
 import stroom.dispatch.client.RestFactory;
 import stroom.docref.DocRef;
 import stroom.query.api.DestroyReason;
+import stroom.query.api.ExplainPlan;
 import stroom.query.api.ExpressionOperator;
 import stroom.query.api.GroupSelection;
 import stroom.query.api.OffsetRange;
@@ -38,6 +40,7 @@ import stroom.task.client.HasTaskMonitorFactory;
 import stroom.task.client.TaskMonitorFactory;
 import stroom.util.client.Console;
 import stroom.util.shared.ErrorMessage;
+import stroom.util.shared.ModelStringUtil;
 import stroom.util.shared.NullSafe;
 import stroom.util.shared.Severity;
 import stroom.util.shared.TokenError;
@@ -59,6 +62,9 @@ import java.util.function.Supplier;
 public class QueryModel implements HasTaskMonitorFactory, HasHandlers {
 
     private static final QueryResource QUERY_RESOURCE = GWT.create(QueryResource.class);
+
+    // Not yet backed by a configuration property - see Task 4.2 in query-optimiser-implementation-plan.md.
+    private static final long SLOW_QUERY_WARNING_THRESHOLD_MS = 10_000;
 
     public static final String TABLE_COMPONENT_ID = "table";
     public static final String VIS_COMPONENT_ID = "vis";
@@ -205,8 +211,36 @@ public class QueryModel implements HasTaskMonitorFactory, HasHandlers {
             // Start polling.
             polling = true;
             poll(storeHistory);
+
+            // Advisory only - failures or a slow response must not affect the search above.
+            estimateQuery(query);
 //            }
         }
+    }
+
+    /**
+     * Ask the server to estimate how expensive this query will be to run and warn the user if it looks slow.
+     * This is advisory only: it never blocks or otherwise affects the search started by {@link #startNewSearch}.
+     */
+    private void estimateQuery(final String query) {
+        restFactory
+                .create(QUERY_RESOURCE)
+                .method(res -> res.explainQuery(query))
+                .onSuccess(explainPlan -> {
+                    final Long estimatedDurationMs = NullSafe.get(
+                            explainPlan, ExplainPlan::getEstimatedDurationMs);
+                    if (estimatedDurationMs != null && estimatedDurationMs > SLOW_QUERY_WARNING_THRESHOLD_MS) {
+                        AlertEvent.fireWarn(
+                                this,
+                                "This query is estimated to take about "
+                                        + ModelStringUtil.formatDurationString(estimatedDurationMs)
+                                        + ". You may want to narrow it before running.",
+                                null);
+                    }
+                })
+                .onFailure(throwable -> Console.info("Failed to estimate query cost: " + throwable.getMessage()))
+                .taskMonitorFactory(taskMonitorFactory)
+                .exec();
     }
 
     public void forceNewSearch(final String componentId,

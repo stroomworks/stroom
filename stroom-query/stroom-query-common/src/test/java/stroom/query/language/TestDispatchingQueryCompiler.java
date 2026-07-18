@@ -17,6 +17,7 @@
 package stroom.query.language;
 
 import stroom.docref.DocRef;
+import stroom.query.api.ExplainPlan;
 import stroom.query.api.SearchRequest;
 import stroom.query.common.v2.QueryOptimiserConfig;
 import stroom.query.language.functions.ExpressionContext;
@@ -84,6 +85,20 @@ class TestDispatchingQueryCompiler {
 
         dispatcher(false).extractDataSourceOnly(QUERY, consumer);
         verify(legacy).extractDataSourceOnly(QUERY, consumer);
+    }
+
+    @Test
+    void explain_respectsFlagToo() {
+        final ExplainPlan legacyPlan = mock(ExplainPlan.class);
+        final ExplainPlan optimisingPlan = mock(ExplainPlan.class);
+        when(legacy.explain(QUERY, expressionContext)).thenReturn(legacyPlan);
+        when(optimising.explain(QUERY, expressionContext)).thenReturn(optimisingPlan);
+
+        assertThat(dispatcher(true).explain(QUERY, expressionContext)).isSameAs(optimisingPlan);
+        verify(legacy, never()).explain(any(), any());
+
+        assertThat(dispatcher(false).explain(QUERY, expressionContext)).isSameAs(legacyPlan);
+        verify(optimising).explain(QUERY, expressionContext);
     }
 
     @Test

@@ -17,6 +17,7 @@
 package stroom.query.language;
 
 import stroom.docref.DocRef;
+import stroom.query.api.ExplainPlan;
 import stroom.query.api.SearchRequest;
 import stroom.query.common.v2.QueryOptimiserConfig;
 import stroom.query.language.functions.ExpressionContext;
@@ -65,6 +66,11 @@ public class DispatchingQueryCompiler implements QueryCompiler {
     @Override
     public void extractDataSourceOnly(final String query, final Consumer<DocRef> consumer) {
         delegate().extractDataSourceOnly(query, consumer);
+    }
+
+    @Override
+    public ExplainPlan explain(final String query, final ExpressionContext expressionContext) {
+        return delegate().explain(query, expressionContext);
     }
 
     private QueryCompiler delegate() {

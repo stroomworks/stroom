@@ -30,6 +30,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.Random;
 import java.util.regex.Pattern;
 
@@ -79,7 +80,11 @@ class TestQueryCompilerGenerativeParity {
                 (keywordGroup, parentTableSettings) -> null,
                 MockDataSourceResolver.getInstance(),
                 () -> criteria -> null,
-                MockSecurityContext.getInstance());
+                MockSecurityContext.getInstance(),
+                EmptyFieldInfoSource.INSTANCE,
+                (feedName, from, to) -> Optional.empty(),
+                (indexName, from, to) -> Optional.empty(),
+                storeName -> Optional.empty());
     }
 
     private String compile(final QueryCompiler compiler, final String query) {

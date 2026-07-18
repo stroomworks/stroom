@@ -18,6 +18,7 @@ package stroom.query.language;
 
 import stroom.docref.DocRef;
 import stroom.query.api.DateTimeSettings;
+import stroom.query.api.ExplainPlan;
 import stroom.query.api.Query;
 import stroom.query.api.QueryKey;
 import stroom.query.api.ResultRequest;
@@ -100,6 +101,21 @@ class TestLegacyQueryCompiler {
         new LegacyQueryCompiler(newSearchRequestFactory()).extractDataSourceOnly(SAMPLE_QUERY, actual::set);
 
         assertThat(actual.get()).isEqualTo(expected.get());
+    }
+
+    @Test
+    void explain_degradesGracefully_datasourceNameOnlyNoCostEstimate() {
+        final SearchRequest seed = newSeedRequest();
+        final ExpressionContext expressionContext = newExpressionContext(seed.getDateTimeSettings());
+
+        final ExplainPlan plan = new LegacyQueryCompiler(newSearchRequestFactory())
+                .explain(SAMPLE_QUERY, expressionContext);
+
+        assertThat(plan.getDescription()).contains("MY-INDEX").contains("legacy engine");
+        assertThat(plan.getEstimatedRows()).isNull();
+        assertThat(plan.getEstimatedDurationMs()).isNull();
+        assertThat(plan.getConfidence()).isNull();
+        assertThat(plan.getChildren()).isEmpty();
     }
 
     @Test

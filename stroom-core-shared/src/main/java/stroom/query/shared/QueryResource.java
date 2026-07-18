@@ -20,6 +20,7 @@ import stroom.dashboard.shared.ColumnValues;
 import stroom.dashboard.shared.DashboardSearchResponse;
 import stroom.dashboard.shared.ValidateExpressionResult;
 import stroom.docref.DocRef;
+import stroom.query.api.ExplainPlan;
 import stroom.query.api.ExpressionOperator;
 import stroom.util.shared.FetchWithUuid;
 import stroom.util.shared.ResourceGeneration;
@@ -199,5 +200,13 @@ public interface QueryResource extends RestResource, DirectRestService, FetchWit
             summary = "Parse a query string into an ExpressionOperator",
             operationId = "parseQuery")
     ExpressionOperator parseQuery(
+            @Parameter(description = "query", required = true) String query);
+
+    @POST
+    @Path("/explainQuery")
+    @Operation(
+            summary = "Explain how a query would be compiled, with a cost estimate where one is available",
+            operationId = "explainQuery")
+    ExplainPlan explainQuery(
             @Parameter(description = "query", required = true) String query);
 }

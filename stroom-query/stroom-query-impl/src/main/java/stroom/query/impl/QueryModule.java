@@ -20,7 +20,15 @@ import stroom.docstore.api.DocumentStoreBinder;
 import stroom.event.logging.api.ObjectInfoProviderBinder;
 import stroom.query.api.datasource.QueryFieldProvider;
 import stroom.query.language.DispatchingQueryCompiler;
+import stroom.query.language.FieldInfoSourceAdapter;
+import stroom.query.language.MetaStatsAdapter;
+import stroom.query.language.NoOpIndexShardStats;
+import stroom.query.language.NoOpStateStoreStats;
 import stroom.query.language.QueryCompiler;
+import stroom.query.planner.port.FieldInfoSource;
+import stroom.query.planner.port.IndexShardStats;
+import stroom.query.planner.port.MetaStats;
+import stroom.query.planner.port.StateStoreStats;
 import stroom.query.shared.QueryDoc;
 import stroom.util.guice.RestResourcesBinder;
 
@@ -33,6 +41,12 @@ public class QueryModule extends AbstractModule {
         bind(QueryService.class).to(QueryServiceImpl.class);
         bind(QueryFieldProvider.class).to(QueryServiceImpl.class);
         bind(QueryCompiler.class).to(DispatchingQueryCompiler.class);
+        bind(FieldInfoSource.class).to(FieldInfoSourceAdapter.class);
+        bind(MetaStats.class).to(MetaStatsAdapter.class);
+        // NoOp placeholders - Task 3.1 deferred the real adapters (a dependency-cycle finding: they must live
+        // inside stroom-index-impl/stroom-planb-impl, not here). Replace these bindings when those land.
+        bind(IndexShardStats.class).to(NoOpIndexShardStats.class);
+        bind(StateStoreStats.class).to(NoOpStateStoreStats.class);
 
         DocumentStoreBinder.create(binder())
                 .bind(QueryDoc.TYPE, QueryStore.class, QueryStoreImpl.class);

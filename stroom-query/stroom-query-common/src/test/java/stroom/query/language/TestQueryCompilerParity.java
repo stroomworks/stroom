@@ -34,6 +34,7 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -90,7 +91,11 @@ class TestQueryCompilerParity {
                 (keywordGroup, parentTableSettings) -> null,
                 MockDataSourceResolver.getInstance(),
                 () -> criteria -> null,
-                MockSecurityContext.getInstance());
+                MockSecurityContext.getInstance(),
+                EmptyFieldInfoSource.INSTANCE,
+                (feedName, from, to) -> Optional.empty(),
+                (indexName, from, to) -> Optional.empty(),
+                storeName -> Optional.empty());
     }
 
     private List<String> readCorpus() throws Exception {

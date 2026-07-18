@@ -17,6 +17,7 @@
 package stroom.query.language;
 
 import stroom.docref.DocRef;
+import stroom.query.api.ExplainPlan;
 import stroom.query.api.SearchRequest;
 import stroom.query.language.functions.ExpressionContext;
 
@@ -63,4 +64,19 @@ public interface QueryCompiler {
      *                 {@code from} clause resolves to one. Never invoked with a null argument.
      */
     void extractDataSourceOnly(String query, Consumer<DocRef> consumer);
+
+    /**
+     * Explains how {@code query} would be compiled/executed, with a cost estimate where one is available - see
+     * {@code docs/query-optimiser-implementation-plan.md}, Task 4.1. A genuinely new operation (not a changed
+     * {@link #create}): never used to drive execution, only to inform a user before they run a query.
+     *
+     * @param query              the StroomQL text to explain. Same acceptance rules as {@link #create}.
+     * @param expressionContext context used the same way as in {@link #create}.
+     * @return never null; a tree with one node per logical operator. Cost figures
+     *         ({@code estimatedRows}/{@code estimatedDurationMs}/{@code confidence}) are present only where a
+     *         cost model actually produced one - implementations with no cost model (e.g. the legacy engine)
+     *         return a plan with descriptive text only, never a fabricated number. Malformed queries are
+     *         reported by throwing, exactly as {@link #create} does.
+     */
+    ExplainPlan explain(String query, ExpressionContext expressionContext);
 }

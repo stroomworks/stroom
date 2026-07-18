@@ -23,6 +23,7 @@ import stroom.docref.DocRef;
 import stroom.event.logging.rs.api.AutoLogged;
 import stroom.event.logging.rs.api.AutoLogged.OperationType;
 import stroom.node.api.NodeService;
+import stroom.query.api.ExplainPlan;
 import stroom.query.api.ExpressionOperator;
 import stroom.query.api.OffsetRange;
 import stroom.query.api.TableResult;
@@ -154,6 +155,12 @@ class QueryResourceImpl implements QueryResource {
     @AutoLogged(OperationType.UNLOGGED)
     public ValidateExpressionResult validateQuery(final String query) {
         return queryServiceProvider.get().validateQuery(query);
+    }
+
+    @Override
+    @AutoLogged(OperationType.UNLOGGED)
+    public ExplainPlan explainQuery(final String query) {
+        return queryServiceProvider.get().explainQuery(query);
     }
 
     @AutoLogged(OperationType.MANUALLY_LOGGED)

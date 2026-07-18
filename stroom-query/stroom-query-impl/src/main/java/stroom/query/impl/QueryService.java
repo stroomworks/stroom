@@ -20,6 +20,7 @@ import stroom.dashboard.shared.ColumnValues;
 import stroom.dashboard.shared.DashboardSearchResponse;
 import stroom.dashboard.shared.ValidateExpressionResult;
 import stroom.docref.DocRef;
+import stroom.query.api.ExplainPlan;
 import stroom.query.api.ExpressionOperator;
 import stroom.query.api.datasource.FindFieldCriteria;
 import stroom.query.api.datasource.QueryField;
@@ -54,6 +55,8 @@ public interface QueryService {
     Optional<DocRef> getReferencedDataSource(String query);
 
     ExpressionOperator parseQuery(String query);
+
+    ExplainPlan explainQuery(String query);
 
     ContextualQueryHelp getQueryHelpContext(String query, int row, int col);
 

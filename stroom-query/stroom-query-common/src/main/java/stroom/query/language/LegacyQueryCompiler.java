@@ -17,6 +17,7 @@
 package stroom.query.language;
 
 import stroom.docref.DocRef;
+import stroom.query.api.ExplainPlan;
 import stroom.query.api.SearchRequest;
 import stroom.query.language.functions.ExpressionContext;
 
@@ -24,6 +25,7 @@ import jakarta.inject.Inject;
 import org.jspecify.annotations.NullMarked;
 
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 /**
@@ -75,5 +77,27 @@ public class LegacyQueryCompiler implements QueryCompiler {
         Objects.requireNonNull(query, "query");
         Objects.requireNonNull(consumer, "consumer");
         searchRequestFactory.extractDataSourceOnly(query, consumer);
+    }
+
+    /**
+     * Legacy has no logical-plan/cost pipeline to reuse, so this degrades gracefully rather than fabricating a
+     * cost figure: a single node naming the query's datasource, with no cost estimate at all.
+     *
+     * @param query same contract as {@link QueryCompiler#explain}.
+     * @param expressionContext same contract as {@link QueryCompiler#explain} (unused here - legacy's
+     *                          {@link SearchRequestFactory#extractDataSourceOnly} needs no expression context).
+     * @return never null; see this method's class-level contract note above.
+     */
+    @Override
+    public ExplainPlan explain(final String query, final ExpressionContext expressionContext) {
+        Objects.requireNonNull(query, "query");
+        Objects.requireNonNull(expressionContext, "expressionContext");
+        final AtomicReference<DocRef> dataSourceRef = new AtomicReference<>();
+        extractDataSourceOnly(query, dataSourceRef::set);
+        final DocRef docRef = dataSourceRef.get();
+        final String name = docRef == null ? "?" : docRef.getName();
+        return ExplainPlan.builder()
+                .description("Scan " + name + " (legacy engine - no cost estimate available)")
+                .build();
     }
 }
