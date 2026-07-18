@@ -14,21 +14,17 @@
  * limitations under the License.
  */
 
-ext.moduleName = 'stroom.query.planner'
+package stroom.query.grammar.ast;
 
-dependencies {
-    //--------Stroom libs------
-    implementation project(':stroom-core-shared')
-    implementation project(':stroom-docref')
-    implementation project(':stroom-query:stroom-query-grammar')
-    implementation project(':stroom-query:stroom-query-api')
-    implementation project(':stroom-util-shared')
+/**
+ * A single boolean-expression leaf term. See {@link AstIsNullTerm}'s own Javadoc for why it is implemented
+ * (unlike legacy, which always rejects {@code is [not] null} due to an unimplemented-feature bug).
+ */
+public sealed interface AstTerm
+        permits AstComparisonTerm, AstBetweenTerm, AstInTerm, AstInDictionaryTerm, AstIsNullTerm {
 
-    //--------3rd party--------
-    implementation libs.jspecify
+    /** @return never null; the field/param this term tests. */
+    AstToken field();
 
-    testImplementation project(':stroom-test-common')
-
-    testImplementation libs.bundles.common.test.implementation
-    testRuntimeOnly libs.bundles.common.test.runtime
+    AstPosition position();
 }

@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bringing Domain Types to the Floor Map</title>
+<style>
+  :root{
+    --accent:#2196f3;
+    --accent-2:#4caf50;
+    --accent-weak:rgba(33,150,243,.12);
+    --accent-weak-2:rgba(76,175,80,.14);
+    --amber-weak:rgba(255,167,38,.16);
+    --amber:#e58a00;
+    --bg:#ffffff;
+    --surface:#f7f8fa;
+    --surface-2:#eef2f7;
+    --border:#e2e6ec;
+    --border-strong:#cfd6e0;
+    --text:#151515;
+    --text-muted:#5a6472;
+    --shadow:0 1px 2px rgba(20,30,50,.05),0 6px 20px rgba(20,30,50,.06);
+    --radius:14px;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --accent:#4aa8ff;
+      --accent-2:#5dc264;
+      --accent-weak:rgba(74,168,255,.15);
+      --accent-weak-2:rgba(93,194,100,.16);
+      --amber-weak:rgba(255,183,77,.16);
+      --amber:#ffb74d;
+      --bg:#12151b;
+      --surface:#1a1e26;
+      --surface-2:#222833;
+      --border:#2b323d;
+      --border-strong:#3a424f;
+      --text:#e8ecf2;
+      --text-muted:#9aa6b6;
+      --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="dark"]{
+    --accent:#4aa8ff;--accent-2:#5dc264;--accent-weak:rgba(74,168,255,.15);--accent-weak-2:rgba(93,194,100,.16);
+    --amber-weak:rgba(255,183,77,.16);--amber:#ffb74d;--bg:#12151b;--surface:#1a1e26;--surface-2:#222833;
+    --border:#2b323d;--border-strong:#3a424f;--text:#e8ecf2;--text-muted:#9aa6b6;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.35);
+  }
+  :root[data-theme="light"]{
+    --accent:#2196f3;--accent-2:#4caf50;--accent-weak:rgba(33,150,243,.12);--accent-weak-2:rgba(76,175,80,.14);
+    --amber-weak:rgba(255,167,38,.16);--amber:#e58a00;--bg:#ffffff;--surface:#f7f8fa;--surface-2:#eef2f7;
+    --border:#e2e6ec;--border-strong:#cfd6e0;--text:#151515;--text-muted:#5a6472;
+    --shadow:0 1px 2px rgba(20,30,50,.05),0 6px 20px rgba(20,30,50,.06);
+  }
+
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0;background:var(--bg);color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    line-height:1.6;font-size:16px;
+  }
+  .wrap{max-width:960px;margin:0 auto;padding:0 24px 96px}
+
+  /* ---- header ---- */
+  header{
+    padding:56px 0 34px;border-bottom:1px solid var(--border);margin-bottom:8px;
+  }
+  .brand{display:flex;align-items:center;gap:14px;color:var(--text-muted);margin-bottom:30px}
+  .brand svg{height:26px;width:auto;display:block;color:var(--text)}
+  .brand .tag{
+    font-size:12px;letter-spacing:.12em;text-transform:uppercase;font-weight:600;
+    padding:4px 10px;border:1px solid var(--border);border-radius:999px;
+  }
+  h1{
+    font-size:clamp(28px,4.4vw,44px);line-height:1.12;margin:0 0 14px;letter-spacing:-.02em;font-weight:750;
+  }
+  h1 .hl{color:var(--accent)}
+  .dek{font-size:clamp(16px,2.1vw,19px);color:var(--text-muted);max-width:44em;margin:0}
+  .meta{margin-top:22px;display:flex;flex-wrap:wrap;gap:8px}
+  .chip{
+    font-size:12.5px;color:var(--text-muted);background:var(--surface);border:1px solid var(--border);
+    border-radius:999px;padding:5px 12px;
+  }
+
+  /* ---- sections ---- */
+  section{padding:44px 0 8px}
+  .eyebrow{
+    font-size:12px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:var(--accent);
+    margin:0 0 8px;
+  }
+  h2{font-size:clamp(22px,3vw,30px);margin:0 0 14px;letter-spacing:-.01em;font-weight:700}
+  h3{font-size:19px;margin:0 0 6px;font-weight:650}
+  p{margin:0 0 16px}
+  .lead{font-size:17.5px;color:var(--text)}
+  .muted{color:var(--text-muted)}
+
+  /* ---- cards ---- */
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:8px 0 4px}
+  @media(max-width:680px){.two{grid-template-columns:1fr}}
+  .card{
+    background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+    padding:22px 22px 20px;box-shadow:var(--shadow);
+  }
+  .card h3{display:flex;align-items:center;gap:9px}
+  .card .dot{width:10px;height:10px;border-radius:50%;flex:0 0 auto}
+  .card p{font-size:15px;color:var(--text-muted);margin-bottom:12px}
+  .limit{
+    font-size:13.5px;background:var(--amber-weak);color:var(--text);border-radius:9px;
+    padding:9px 12px;border:1px solid transparent;
+  }
+  .limit b{color:var(--amber)}
+
+  /* ---- diagram frame ---- */
+  figure{margin:22px 0;padding:0}
+  .diagram{
+    background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+    padding:20px;box-shadow:var(--shadow);overflow-x:auto;
+  }
+  .diagram svg{display:block;width:100%;height:auto;min-width:520px}
+  figcaption{font-size:13.5px;color:var(--text-muted);margin-top:10px;text-align:center}
+  figcaption b{color:var(--text)}
+
+  /* svg diagram theming */
+  .d-box{fill:var(--surface-2);stroke:var(--border-strong)}
+  .d-box-accent{fill:var(--accent-weak);stroke:var(--accent)}
+  .d-box-green{fill:var(--accent-weak-2);stroke:var(--accent-2)}
+  .d-box-amber{fill:var(--amber-weak);stroke:var(--amber)}
+  .d-title{fill:var(--text);font-weight:650}
+  .d-text{fill:var(--text)}
+  .d-muted{fill:var(--text-muted)}
+  .d-accent{fill:var(--accent)}
+  .d-stroke{stroke:var(--border-strong);fill:none}
+  .d-flow{stroke:var(--accent);fill:none;stroke-width:2}
+  .d-flow-2{stroke:var(--accent-2);fill:none;stroke-width:2}
+  .d-dash{stroke:var(--border-strong);fill:none;stroke-width:2;stroke-dasharray:5 5}
+  .ah{fill:var(--accent)}
+  .ah2{fill:var(--accent-2)}
+  .d-svg text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+
+  /* ---- theme groups ---- */
+  .theme{
+    border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);
+    margin:16px 0;box-shadow:var(--shadow);overflow:hidden;
+  }
+  .theme > .theme-head{
+    display:flex;align-items:center;gap:14px;padding:18px 22px;border-bottom:1px solid var(--border);
+    background:linear-gradient(0deg,transparent, var(--accent-weak));
+  }
+  .theme-badge{
+    flex:0 0 auto;width:34px;height:34px;border-radius:10px;display:grid;place-items:center;
+    background:var(--accent);color:#fff;font-weight:800;font-size:16px;
+  }
+  .theme-head h3{margin:0;font-size:18px}
+  .theme-head .sub{margin:0;font-size:13.5px;color:var(--text-muted)}
+  .ideas{padding:6px 22px 14px}
+  .idea{padding:16px 0;border-bottom:1px dashed var(--border)}
+  .idea:last-child{border-bottom:0}
+  .idea .id-head{display:flex;align-items:baseline;gap:10px;margin-bottom:4px;flex-wrap:wrap}
+  .idea .code{
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;font-weight:700;
+    color:var(--accent);background:var(--accent-weak);border-radius:6px;padding:2px 8px;flex:0 0 auto;
+  }
+  .idea .name{font-weight:650;font-size:16.5px}
+  .idea .pitch{margin:0 0 6px;font-size:15px}
+  .idea .value{margin:0;font-size:14px;color:var(--text-muted)}
+  .idea .value b{color:var(--accent-2);font-weight:650}
+
+  /* ---- roadmap ---- */
+  .tiers{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:8px}
+  @media(max-width:760px){.tiers{grid-template-columns:1fr}}
+  .tier{border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);box-shadow:var(--shadow);overflow:hidden}
+  .tier .t-head{padding:14px 18px;font-weight:750;color:#fff;display:flex;align-items:center;justify-content:space-between}
+  .tier.q .t-head{background:var(--accent-2)}
+  .tier.m .t-head{background:var(--accent)}
+  .tier.a .t-head{background:#7e57c2}
+  @media(prefers-color-scheme:dark){.tier.a .t-head{background:#9575cd}}
+  .tier .t-head .when{font-size:12px;font-weight:600;opacity:.9}
+  .tier ul{list-style:none;margin:0;padding:12px 16px 16px}
+  .tier li{padding:8px 0;border-bottom:1px dashed var(--border);font-size:14.5px;display:flex;gap:9px;align-items:baseline}
+  .tier li:last-child{border-bottom:0}
+  .tier li .code{
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;font-weight:700;
+    color:var(--text-muted);flex:0 0 auto;min-width:2.4em;
+  }
+  .rationale{margin-top:16px;font-size:14.5px;color:var(--text-muted);background:var(--surface);border-left:3px solid var(--accent);padding:12px 16px;border-radius:0 10px 10px 0}
+
+  /* ---- risks ---- */
+  .risks{display:grid;grid-template-columns:1fr;gap:10px;margin-top:6px}
+  .risk{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px}
+  .risk h3{font-size:15.5px;margin:0 0 3px}
+  .risk p{margin:0;font-size:14px;color:var(--text-muted)}
+
+  footer{margin-top:60px;padding-top:24px;border-top:1px solid var(--border);color:var(--text-muted);font-size:13.5px}
+  a{color:var(--accent)}
+  .toc{
+    display:flex;flex-wrap:wrap;gap:8px;margin:26px 0 0;
+  }
+  .toc a{
+    text-decoration:none;font-size:13px;color:var(--text-muted);background:var(--surface);
+    border:1px solid var(--border);border-radius:999px;padding:5px 13px;
+  }
+  .toc a:hover{color:var(--accent);border-color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="brand">
+      <!-- Stroom wordmark (currentColor, themes automatically) -->
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2278.5303 617.98476" role="img" aria-label="Stroom"><g style="fill:currentColor"><path d="M 121.99991,205.98497 C 54.999958,205.98497 0,259.98493 0,327.98487 0,394.98481 54.999958,449.98476 121.99991,449.98476 l 167.99987,0 c 24.99998,0 44.99996,20.99998 44.99996,44.99996 0,24.99998 -19.99998,44.99996 -44.99996,44.99996 l -180.79049,0 C 65.984126,553.87219 27.100843,581.57313 0.01093599,617.98462 l 289.98884401,0 c 66.99994,0 121.99991,-54.99996 121.99991,-122.9999 0,-66.99994 -54.99997,-121.99989 -121.99991,-121.99989 l -167.99987,0 c -24.999984,0 -44.999969,-19.99999 -44.999969,-44.99996 0,-24.99998 19.999985,-44.99996 44.999969,-44.99996 l 228.79045,0 c 26.9905,-35.88325 65.47093,-63.18547 108.21554,-76.99994 l -337.00599,0 z"/><path d="M 601.44485,-7.7860649e-4 C 572.6583,8.3697982 546.49491,22.822962 524.44491,41.902305 l 0,163.887385 0.002,0.19528 -0.002,0 c -65.11,4.8e-4 -123.03145,30.0199 -160.74675,76.99994 l 160.74675,0 0,334.99971 76.99994,0 0,-334.99971 144.85298,0 c 27.16134,-36.05885 65.96411,-63.39275 109.02184,-76.99994 l -253.87482,0 0,-205.98574860649 z"/><path d="m 919.42586,205.98497 c -113.99519,0 -205.99537,92.00648 -206.00296,205.99982 -1.5e-4,68.67178 0,137.32749 0,205.99983 l 77.99994,0 c -0.012,-68.6493 0.0176,-137.46869 0,-205.99983 0.0846,-70.92785 57.05747,-128.99988 128.00462,-128.99988 5.28623,0 10.49823,0.32864 15.62183,0.95311 18.2219,-24.51229 41.78461,-45.0838 68.42501,-60.15146 -25.65065,-11.43799 -54.08662,-17.80159 -84.04684,-17.80159 l 0,0 z"/><path d="m 1109.4153,205.98457 c -113.99994,0 -205.99983,91.99993 -205.99983,205.99984 0,112.9999 91.99989,205.9998 205.99983,205.9998 114,0 205.9999,-92.9999 205.9999,-205.9998 0,-113.99991 -91.9999,-205.99984 -205.9999,-205.99984 z m 0,333.99974 c -70.9999,0 -128.99994,-56.99996 -128.99994,-127.9999 0,-70.99995 58.00004,-128.9999 128.99994,-128.9999 71,0 128.9999,57.99995 128.9999,128.9999 0,70.99994 -57.9999,127.9999 -128.9999,127.9999 z"/><path d="m 1444.4737,205.98457 c -113.9999,0 -205.9998,91.99993 -205.9998,205.99984 0,112.9999 91.9999,205.9998 205.9998,205.9998 113.9999,0 205.9999,-92.9999 205.9999,-205.9998 0,-113.99991 -92,-205.99984 -205.9999,-205.99984 z m 0,333.99974 c -70.9999,0 -128.9999,-56.99996 -128.9999,-127.9999 0,-70.99995 58,-128.9999 128.9999,-128.9999 71,0 128.9999,57.99995 128.9999,128.9999 0,70.99994 -57.9999,127.9999 -128.9999,127.9999 z"/><path d="m 1738.5308,379.98447 c 0,-53 43,-97 95.9999,-97 53,0 97,44 97,97 l 0,237.9997 76.9999,0 0,-237.9997 c 0,-53 43,-97 96.9999,-97 53,0 95.9999,44 95.9999,97 l 0,237.9997 77,0 0,-237.9997 c 0,-96 -77,-173.9999 -172.9999,-173.9999 -54.9999,0 -103.9999,24.99998 -135.9999,64.99995 -31.9999,-39.99997 -79.9999,-64.99995 -134.9999,-64.99995 -95.9999,0 -173.9998,77.9999 -173.9998,173.9999 l 0,237.9997 77.9999,0 z"/></g></svg>
+      <span class="tag">Ideas &amp; discussion</span>
+    </div>
+    <h1>Bringing <span class="hl">Domain Types</span> to the Floor Map</h1>
+    <p class="dek">Today, an object on a floor map is just a shape on a picture. Domain Types can make it something you can follow, act on, and recognise anywhere in Stroom. Here is a catalogue of ways to connect the two — and where I'd start.</p>
+    <div class="meta">
+      <span class="chip">Product concept</span>
+      <span class="chip">~20 ideas, 7 themes</span>
+      <span class="chip">Recommended roadmap included</span>
+      <span class="chip">Companion: <a href="floormap-layers-ux.html">Layers UX</a></span>
+      <span class="chip">17 Jul 2026</span>
+    </div>
+    <nav class="toc">
+      <a href="#why">Why</a>
+      <a href="#today">Today</a>
+      <a href="#idea">The core idea</a>
+      <a href="#themeA">A · Jump to the map</a>
+      <a href="#themeB">B · Act from an object</a>
+      <a href="#themeC">C · Consistent look</a>
+      <a href="#themeD">D · Authoring</a>
+      <a href="#themeE">E · Data binding</a>
+      <a href="#themeF">F · Entity actions</a>
+      <a href="#themeG">G · Platform</a>
+      <a href="#roadmap">Roadmap</a>
+      <a href="#risks">Open questions</a>
+    </nav>
+  </header>
+
+  <!-- WHY -->
+  <section id="why">
+    <p class="eyebrow">Why this matters</p>
+    <h2>Two features that should talk to each other</h2>
+    <p class="lead">The floor map is a live, time-scrubbable picture of a place — desks, cameras, gates, and the people or assets moving between them. Domain Types are Stroom's way of saying <i>what a value means</i> — that this column holds an IP address, that one a location, that one an asset ID — so the system can offer the right action for it.</p>
+    <p>Right now these two live in separate worlds. Connecting them pays off three ways: <b>cross-navigation</b> (get from a table row to the exact spot on a map and back), a <b>consistent visual language</b> (a camera looks like a camera everywhere), and <b>richer, more robust data binding</b> (live events attach to the right object by meaning, not by a brittle key match).</p>
+  </section>
+
+  <!-- TODAY -->
+  <section id="today">
+    <p class="eyebrow">The two pieces today</p>
+    <h2>What each one can — and can't — do right now</h2>
+    <div class="two">
+      <div class="card">
+        <h3><span class="dot" style="background:var(--accent)"></span>Floor Map</h3>
+        <p>Every background and placed object is a "fact" with a <i>type</i> (gate, camera, desk…). That type decides its shape, colour, and stacking order. You can move, scale, rotate and multi-select objects, scrub through time, and watch live events animate across the plan.</p>
+        <div class="limit"><b>But:</b> an object's type is just a label for drawing. An object links to <b>nothing</b> — you can't get from it to the data behind it, and nothing elsewhere can point at it.</div>
+      </div>
+      <div class="card">
+        <h3><span class="dot" style="background:var(--accent-2)"></span>Domain Types</h3>
+        <p>A domain type is a semantic tag like <code>Host.ipaddress</code> or <code>Asset.location</code>, with wildcards (<code>*.ipaddress</code>). Columns carry it; dashboards declare which types they handle. Right-click a typed cell and you get "Jump to&nbsp;…" the dashboards that understand it, carrying the value and time range across.</p>
+        <div class="limit"><b>But:</b> the only thing a domain type does today is offer a jump <b>to a dashboard, from a grid cell</b>. Maps neither produce these actions nor receive them.</div>
+      </div>
+    </div>
+
+    <figure>
+      <div class="diagram">
+        <svg class="d-svg" viewBox="0 0 720 250" role="img" aria-label="Diagram: today the two features are separate worlds">
+          <!-- left world: floor map -->
+          <text x="120" y="26" text-anchor="middle" class="d-title" font-size="15">Floor Map</text>
+          <rect x="30" y="44" width="180" height="70" rx="10" class="d-box-accent"/>
+          <text x="120" y="74" text-anchor="middle" class="d-text" font-size="13">object</text>
+          <text x="120" y="94" text-anchor="middle" class="d-muted" font-size="11.5">type = "camera"</text>
+          <line x1="120" y1="114" x2="120" y2="150" class="d-flow" marker-end="url(#ahb)"/>
+          <rect x="40" y="150" width="160" height="46" rx="10" class="d-box"/>
+          <text x="120" y="171" text-anchor="middle" class="d-muted" font-size="12">shape · colour</text>
+          <text x="120" y="187" text-anchor="middle" class="d-muted" font-size="12">stacking order</text>
+          <text x="120" y="224" text-anchor="middle" class="d-muted" font-size="11.5" font-style="italic">…and stops there</text>
+
+          <!-- divider -->
+          <line x1="360" y1="40" x2="360" y2="210" class="d-dash"/>
+          <text x="360" y="128" text-anchor="middle" class="d-muted" font-size="12">no&#160;link</text>
+
+          <!-- right world: domain types -->
+          <text x="600" y="26" text-anchor="middle" class="d-title" font-size="15">Domain Types</text>
+          <rect x="510" y="44" width="180" height="70" rx="10" class="d-box-green"/>
+          <text x="600" y="74" text-anchor="middle" class="d-text" font-size="13">grid cell</text>
+          <text x="600" y="94" text-anchor="middle" class="d-muted" font-size="11.5">Host.ipaddress</text>
+          <line x1="600" y1="114" x2="600" y2="150" class="d-flow-2" marker-end="url(#ahg)"/>
+          <rect x="520" y="150" width="160" height="46" rx="10" class="d-box"/>
+          <text x="600" y="178" text-anchor="middle" class="d-muted" font-size="12">Jump to dashboard</text>
+          <text x="600" y="224" text-anchor="middle" class="d-muted" font-size="11.5" font-style="italic">one behaviour only</text>
+
+          <defs>
+            <marker id="ahb" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" class="ah"/></marker>
+            <marker id="ahg" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" class="ah2"/></marker>
+          </defs>
+        </svg>
+      </div>
+      <figcaption><b>D1 · Today.</b> The map's "type" only drives drawing; the domain type only drives one jump — and the two never meet.</figcaption>
+    </figure>
+  </section>
+
+  <!-- CORE IDEA -->
+  <section id="idea">
+    <p class="eyebrow">The core idea</p>
+    <h2>Give map objects a <span style="color:var(--accent)">meaning</span>, not just a look</h2>
+    <p class="lead">The map already has a "type" on every object. If that type (and the columns of the query feeding the map) also carried a <i>domain type</i>, each object would gain a meaning the rest of Stroom already understands. That single change turns an object into three things at once:</p>
+    <figure>
+      <div class="diagram">
+        <svg class="d-svg" viewBox="0 0 720 300" role="img" aria-label="Diagram: a semantically typed object becomes a destination, an origin, and consistently styled">
+          <!-- centre object -->
+          <rect x="270" y="118" width="180" height="66" rx="12" class="d-box-accent"/>
+          <text x="360" y="145" text-anchor="middle" class="d-text" font-size="13.5" font-weight="650">map object</text>
+          <text x="360" y="165" text-anchor="middle" class="d-accent" font-size="11.5">+ Asset.location</text>
+
+          <!-- destination (inbound, left) -->
+          <rect x="30" y="126" width="170" height="50" rx="10" class="d-box-green"/>
+          <text x="115" y="149" text-anchor="middle" class="d-text" font-size="12.5">a dashboard cell</text>
+          <text x="115" y="166" text-anchor="middle" class="d-muted" font-size="11">elsewhere in Stroom</text>
+          <path d="M205,151 L262,151" class="d-flow-2" marker-end="url(#ahg2)"/>
+          <text x="233" y="142" text-anchor="middle" class="d-muted" font-size="10.5">jump to</text>
+
+          <!-- origin (outbound, right) -->
+          <rect x="520" y="126" width="170" height="50" rx="10" class="d-box-green"/>
+          <text x="605" y="149" text-anchor="middle" class="d-text" font-size="12.5">dashboards &amp; queries</text>
+          <text x="605" y="166" text-anchor="middle" class="d-muted" font-size="11">that understand it</text>
+          <path d="M458,151 L515,151" class="d-flow" marker-end="url(#ahb2)"/>
+          <text x="486" y="142" text-anchor="middle" class="d-muted" font-size="10.5">jump from</text>
+
+          <!-- consistent look (below) -->
+          <path d="M360,188 L360,232" class="d-flow" marker-end="url(#ahb2)"/>
+          <rect x="250" y="232" width="220" height="46" rx="10" class="d-box"/>
+          <text x="360" y="254" text-anchor="middle" class="d-text" font-size="12.5">a consistent icon &amp; colour</text>
+          <text x="360" y="270" text-anchor="middle" class="d-muted" font-size="11">shared with grids &amp; dashboards</text>
+
+          <!-- labels top -->
+          <text x="115" y="112" text-anchor="middle" class="d-accent" font-size="12" font-weight="700">A DESTINATION</text>
+          <text x="605" y="112" text-anchor="middle" class="d-accent" font-size="12" font-weight="700">AN ORIGIN</text>
+
+          <defs>
+            <marker id="ahb2" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" class="ah"/></marker>
+            <marker id="ahg2" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" class="ah2"/></marker>
+          </defs>
+        </svg>
+      </div>
+      <figcaption><b>D2 · The bridge.</b> One semantic tag makes an object a jump <b>destination</b>, a jump <b>origin</b>, and a <b>consistently styled</b> thing — reusing mechanisms Stroom already has.</figcaption>
+    </figure>
+    <p class="muted">The rest of this document is a catalogue of what that unlocks, grouped into seven themes, followed by a recommended order of attack.</p>
+  </section>
+
+  <!-- THEME A -->
+  <section id="themeA">
+    <p class="eyebrow">Theme A</p>
+    <h2>The map as a place you can jump <i>to</i></h2>
+    <div class="theme">
+      <div class="theme-head">
+        <div class="theme-badge">A</div>
+        <div>
+          <h3>Inbound — landing on the map from anywhere</h3>
+          <p class="sub">Make a floor map a first-class jump destination, like dashboards already are.</p>
+        </div>
+      </div>
+      <div class="ideas">
+        <div class="idea">
+          <div class="id-head"><span class="code">A1</span><span class="name">Locate on map</span></div>
+          <p class="pitch">From any domain-typed value anywhere in Stroom — a table cell, a query result — offer "Show on floor map". The map opens already focused on the matching object.</p>
+          <p class="value"><b>Value:</b> close the loop from "there's an alert on Asset&nbsp;42" to "here it is, in this room" in one click.</p>
+        </div>
+        <div class="idea">
+          <div class="id-head"><span class="code">A2</span><span class="name">Maps declare what they handle</span></div>
+          <p class="pitch">Let a floor map register which domain types it can show (e.g. this map handles <code>*.location</code> for the north campus). It then appears automatically in the "Jump to…" menu across Stroom — exactly the way dashboards opt in today.</p>
+          <p class="value"><b>Value:</b> maps become discoverable destinations without anyone wiring links by hand.</p>
+        </div>
+        <div class="idea">
+          <div class="id-head"><span class="code">A3</span><span class="name">Land at the right moment</span></div>
+          <p class="pitch">Carry the source's time range along with the jump, so you arrive on the map already scrubbed to when the thing happened, not to "now".</p>
+          <p class="value"><b>Value:</b> the map shows the world as it was at the moment you were investigating.</p>
+        </div>
+      </div>
+    </div>
+
+    <figure>
+      <div class="diagram">
+        <svg class="d-svg" viewBox="0 0 720 150" role="img" aria-label="Diagram: jump from a dashboard cell into a focused floor map">
+          <rect x="20" y="50" width="150" height="54" rx="10" class="d-box-green"/>
+          <text x="95" y="72" text-anchor="middle" class="d-text" font-size="12.5">dashboard cell</text>
+          <text x="95" y="90" text-anchor="middle" class="d-muted" font-size="11">Asset.location = R12</text>
+
+          <path d="M172,77 L232,77" class="d-flow" marker-end="url(#ahA)"/>
+          <text x="202" y="68" text-anchor="middle" class="d-muted" font-size="10.5">Jump to map</text>
+
+          <rect x="234" y="34" width="180" height="86" rx="10" class="d-box"/>
+          <text x="324" y="55" text-anchor="middle" class="d-muted" font-size="11">matching map</text>
+          <rect x="252" y="66" width="144" height="42" rx="6" class="d-stroke"/>
+          <circle cx="356" cy="87" r="9" class="d-box-accent"/>
+          <text x="290" y="91" text-anchor="middle" class="d-muted" font-size="10">room R12</text>
+
+          <path d="M416,77 L476,77" class="d-flow" marker-end="url(#ahA)"/>
+
+          <rect x="478" y="50" width="222" height="54" rx="10" class="d-box-accent"/>
+          <text x="589" y="72" text-anchor="middle" class="d-text" font-size="12.5">focused &amp; time-scrubbed</text>
+          <text x="589" y="90" text-anchor="middle" class="d-muted" font-size="11">object highlighted at the right time</text>
+          <defs><marker id="ahA" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" class="ah"/></marker></defs>
+        </svg>
+      </div>
+      <figcaption><b>D3 · Jump to the map.</b> A typed value carries you to the object, framed and scrubbed to the right moment (A1–A3).</figcaption>
+    </figure>
+  </section>
+
+  <!-- THEME B -->
+  <section id="themeB">
+    <p class="eyebrow">Theme B</p>
+    <h2>The map's objects as things you can act <i>from</i></h2>
+    <div class="theme">
+      <div class="theme-head">
+        <div class="theme-badge">B</div>
+        <div>
+          <h3>Outbound — element-level linking that doesn't exist today</h3>
+          <p class="sub">Turn each object into an actionable thing, not just a drawing.</p>
+        </div>
+      </div>
+      <div class="ideas">
+        <div class="idea">
+          <div class="id-head"><span class="code">B4</span><span class="name">Jump from an object</span></div>
+          <p class="pitch">Right-click an object on the map → "Jump to…" the dashboards and queries that understand its type, carrying the object's own values across. This is the element-level linking the map has never had.</p>
+          <p class="value"><b>Value:</b> the map becomes a launchpad — click the camera, land in its footage dashboard.</p>
+        </div>
+        <div class="idea">
+          <div class="id-head"><span class="code">B5</span><span class="name">Actionable tooltips</span></div>
+          <p class="pitch">The pop-up that appears over an object renders its meaningful attributes as live actions — jump, annotate, copy — instead of plain text.</p>
+          <p class="value"><b>Value:</b> the detail you were already showing becomes the place you act.</p>
+        </div>
+        <div class="idea">
+          <div class="id-head"><span class="code">B6</span><span class="name">Map tables get the grid superpowers</span></div>
+          <p class="pitch">The map's own tables — the fact list and the events-query results — gain the exact "Jump to" behaviour that dashboard grids already have. Essentially free once their columns carry a type.</p>
+          <p class="value"><b>Value:</b> consistency, at almost no cost — the same right-click works everywhere.</p>
+        </div>
+        <div class="idea">
+          <div class="id-head"><span class="code">B7</span><span class="name">Live cross-highlight</span></div>
+          <p class="pitch">Selecting a row in a linked view highlights the matching object on the map, and selecting an object highlights its row — a two-way "these are the same thing" link, beyond one-shot navigation.</p>
+          <p class="value"><b>Value:</b> keep a table and a map open side by side and have them stay in sync.</p>
+        </div>
+      </div>
+    </div>
+
+    <figure>
+      <div class="diagram">
+        <svg class="d-svg" viewBox="0 0 720 150" role="img" aria-label="Diagram: right-click an object to jump out to dashboards it understands">
+          <rect x="20" y="34" width="170" height="86" rx="10" class="d-box"/>
+          <text x="105" y="55" text-anchor="middle" class="d-muted" font-size="11">floor map</text>
+          <circle cx="70" cy="88" r="10" class="d-box-accent"/>
+          <rect x="92" y="70" width="84" height="20" rx="4" class="d-box-green"/>
+          <text x="134" y="84" text-anchor="middle" class="d-muted" font-size="9.5">right-click</text>
+
+          <path d="M192,77 L252,77" class="d-flow" marker-end="url(#ahB)"/>
+
+          <rect x="254" y="44" width="176" height="66" rx="10" class="d-box-accent"/>
+          <text x="342" y="68" text-anchor="middle" class="d-text" font-size="12">Jump to…</text>
+          <text x="342" y="86" text-anchor="middle" class="d-muted" font-size="10.5">+ object's own values</text>
+          <text x="342" y="101" text-anchor="middle" class="d-muted" font-size="10.5">+ time range</text>
+
+          <path d="M432,77 L492,77" class="d-flow" marker-end="url(#ahB)"/>
+
+          <rect x="494" y="44" width="206" height="66" rx="10" class="d-box-green"/>
+          <text x="597" y="72" text-anchor="middle" class="d-text" font-size="12.5">dashboard / query</text>
+          <text x="597" y="90" text-anchor="middle" class="d-muted" font-size="11">opens, pre-filtered</text>
+          <defs><marker id="ahB" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" class="ah"/></marker></defs>
+        </svg>
+      </div>
+      <figcaption><b>D4 · Act from an object.</b> The same "Jump to" mechanism dashboards use, now launched from an object on the map (B4–B6).</figcaption>
+    </figure>
+  </section>
+
+  <!-- THEME C -->
+  <section id="themeC">
+    <p class="eyebrow">Theme C</p>
+    <h2>One consistent semantic look</h2>
+    <div class="theme">
+      <div class="theme-head">
+        <div class="theme-badge">C</div>
+        <div>
+          <h3>Style by meaning, not by a hand-typed label</h3>
+          <p class="sub">Make the same kind of thing look the same, everywhere.</p>
+        </div>
+      </div>
+      <div class="ideas">
+        <div class="idea">
+          <div class="id-head"><span class="code">C8</span><span class="name">Style by meaning</span></div>
+          <p class="pitch">Drive an object's icon and colour from its domain type rather than a free-typed string — with class-level defaults and attribute-level overrides (everything under <code>Camera.*</code> looks like a camera; <code>Camera.ptz</code> can differ).</p>
+          <p class="value"><b>Value:</b> no more the same real-world thing looking different because someone typed the label two ways.</p>
+        </div>
+        <div class="idea">
+          <div class="id-head"><span class="code">C9</span><span class="name">A shared visual vocabulary</span></div>
+          <p class="pitch">Define the icon and colour for a domain type once and reuse it across the map, dashboards, and grids.</p>
+          <p class="value"><b>Value:</b> users learn one visual language and read it fluently across the whole product.</p>
+        </div>
+        <div class="idea">
+          <div class="id-head"><span class="code">C10</span><span class="name">Smarter "Discover"</span></div>
+          <p class="pitch">When new object types appear in the data, the map's discover step pre-assigns their icon, colour, and behaviour from the domain type instead of leaving them as anonymous blobs.</p>
+          <p class="value"><b>Value:</b> new data shows up already looking right, with no manual styling.</p>
+        </div>
+        <div class="idea">
+          <div class="id-head"><span class="code">C11</span><span class="name">Semantic legend &amp; filter</span></div>
+          <p class="pitch">A legend keyed by meaning lets you toggle or spotlight everything of a given type — "show only the doors", "dim everything that isn't a camera".</p>
+          <p class="value"><b>Value:</b> cut a busy plan down to just what you care about, by meaning.</p>
+        </div>
+      </div>
+    </div>
+    <p class="rationale"><b>Relationship to Layers:</b> this meaning-driven styling is exactly what the
+    companion <a href="floormap-layers-ux.html">Layers UX</a> proposal renders as each layer's
+    swatch and legend. Today that swatch comes from the free-typed <code>TypeStyle</code>; Theme&nbsp;C
+    moves the source of truth to the domain type, so the two docs must agree there is <b>one</b> place a
+    thing's look is defined. That doc's "a layer is a type" (Option&nbsp;A) then evolves to "a layer is a
+    domain type", and its smart-layer legend is the same surface as <b>C11</b> above — one control, built
+    once.</p>
+  </section>
+
+  <!-- THEME D -->
+  <section id="themeD">
+    <p class="eyebrow">Theme D</p>
+    <h2>Authoring becomes semantic</h2>
+    <div class="theme">
+      <div class="theme-head">
+        <div class="theme-badge">D</div>
+        <div>
+          <h3>Make the map easier and safer to build</h3>
+          <p class="sub">Reuse Stroom's existing type machinery in the editor.</p>
+        </div>
+      </div>
+      <div class="ideas">
+        <div class="idea">
+          <div class="id-head"><span class="code">D12</span><span class="name">Reuse the standard pickers</span></div>
+          <p class="pitch">Configure object types and field mappings with the same class/attribute pickers used everywhere else in Stroom, drawing from the shared catalogue of known types.</p>
+          <p class="value"><b>Value:</b> familiar UI, fewer typos, and every map speaks the same vocabulary.</p>
+        </div>
+        <div class="idea">
+          <div class="id-head"><span class="code">D13</span><span class="name">Auto-detect identity &amp; location columns</span></div>
+          <p class="pitch">Infer which columns of the events query carry the entity's identity and its location from their domain types, instead of asking the author to pick them by hand.</p>
+          <p class="value"><b>Value:</b> less setup, fewer misconfigurations — the map wires itself up.</p>
+        </div>
+        <div class="idea">
+          <div class="id-head"><span class="code">D14</span><span class="name">Validate against the catalogue</span></div>
+          <p class="pitch">Warn at authoring time when an object uses a domain type that isn't in the known catalogue, or that no handler understands.</p>
+          <p class="value"><b>Value:</b> catch a dead-end link while building, not when a user clicks it.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- THEME E -->
+  <section id="themeE">
+    <p class="eyebrow">Theme E</p>
+    <h2>Smarter data binding</h2>
+    <div class="theme">
+      <div class="theme-head">
+        <div class="theme-badge">E</div>
+        <div>
+          <h3>Attach live data to objects by meaning</h3>
+          <p class="sub">Use semantics to make live binding robust — and to link maps together.</p>
+        </div>
+      </div>
+      <div class="ideas">
+        <div class="idea">
+          <div class="id-head"><span class="code">E15</span><span class="name">Bind by meaning</span></div>
+          <p class="pitch">Match a live event to a placed object by a semantic value — this event's <code>Host.ipaddress</code> equals that object's — rather than by an exact, brittle key. Wildcard matching decides what's compatible.</p>
+          <p class="value"><b>Value:</b> live tracking keeps working even when identifiers are formatted differently across sources.</p>
+        </div>
+        <div class="idea">
+          <div class="id-head"><span class="code">E16</span><span class="name">Map-to-map drill-down</span></div>
+          <p class="pitch">An object typed as a place — a site or a building — jumps to <i>that place's own floor map</i>, because the map registers itself as the handler for that type (Theme A). Campus → building → room becomes a natural navigation path.</p>
+          <p class="value"><b>Value:</b> a whole estate becomes browsable by drilling from the big picture down to the room.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- THEME F -->
+  <section id="themeF">
+    <p class="eyebrow">Theme F</p>
+    <h2>Entity-centric actions</h2>
+    <div class="theme">
+      <div class="theme-head">
+        <div class="theme-badge">F</div>
+        <div>
+          <h3>Act on the thing, not the pixel</h3>
+          <p class="sub">Anchor actions to what an object represents.</p>
+        </div>
+      </div>
+      <div class="ideas">
+        <div class="idea">
+          <div class="id-head"><span class="code">F17</span><span class="name">Annotate the entity, not the spot</span></div>
+          <p class="pitch">Attach annotations to an object's semantic identity rather than a coordinate, so a note about "Asset 42" follows it as it moves and shows up wherever that asset appears.</p>
+          <p class="value"><b>Value:</b> investigative notes stay with the real-world thing, across maps and across time.</p>
+        </div>
+        <div class="idea">
+          <div class="id-head"><span class="code">F18</span><span class="name">Where-used</span></div>
+          <p class="pitch">From a domain-typed value, list every floor map, dashboard, and index that references it.</p>
+          <p class="value"><b>Value:</b> answer "where does this thing show up in Stroom?" instantly.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- THEME G -->
+  <section id="themeG">
+    <p class="eyebrow">Theme G</p>
+    <h2>Make the mechanism first-class</h2>
+    <div class="theme">
+      <div class="theme-head">
+        <div class="theme-badge">G</div>
+        <div>
+          <h3>Platform-level ideas that lift every feature at once</h3>
+          <p class="sub">Turn "domain type behaviour" into shared infrastructure.</p>
+        </div>
+      </div>
+      <div class="ideas">
+        <div class="idea">
+          <div class="id-head"><span class="code">G19</span><span class="name">A shared action registry</span></div>
+          <p class="pitch">Instead of each surface hard-coding "Jump to dashboard", keep one registry of actions per domain type — jump, locate-on-map, annotate, decorate. Maps, dashboards, and grids all draw from it.</p>
+          <p class="value"><b>Value:</b> add a behaviour once and it lights up everywhere, including the map, for free.</p>
+        </div>
+        <div class="idea">
+          <div class="id-head"><span class="code">G20</span><span class="name">Domain types in the dependency graph</span></div>
+          <p class="pitch">Surface which maps and dashboards handle a given type in Stroom's dependency and impact tooling.</p>
+          <p class="value"><b>Value:</b> see the blast radius before changing a type — who relies on <code>Asset.location</code>?</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ROADMAP -->
+  <section id="roadmap">
+    <p class="eyebrow">Where I'd start</p>
+    <h2>A recommended roadmap</h2>
+    <p class="lead">Start where the machinery already exists, then bring it down to individual objects, then unify it across the product. Each tier delivers something usable on its own.</p>
+
+    <div class="tiers">
+      <div class="tier q">
+        <div class="t-head"><span>Quick wins</span><span class="when">reuse what exists</span></div>
+        <ul>
+          <li><span class="code">B6</span> Map tables get the grid "Jump to" for free</li>
+          <li><span class="code">D12</span> Standard type pickers in the editor</li>
+          <li><span class="code">A1·A2</span> Maps register &amp; become jump destinations</li>
+          <li><span class="code">D14</span> Validate types against the catalogue</li>
+        </ul>
+      </div>
+      <div class="tier m">
+        <div class="t-head"><span>Medium</span><span class="when">new UI on the canvas</span></div>
+        <ul>
+          <li><span class="code">B4·B5</span> Jump &amp; act from an object / tooltip</li>
+          <li><span class="code">C8·C9</span> Style objects by meaning, shared look</li>
+          <li><span class="code">D13</span> Auto-detect identity &amp; location columns</li>
+          <li><span class="code">C10·C11</span> Smarter discover · semantic legend</li>
+        </ul>
+      </div>
+      <div class="tier a">
+        <div class="t-head"><span>Ambitious</span><span class="when">deeper &amp; cross-cutting</span></div>
+        <ul>
+          <li><span class="code">E15</span> Bind live data by meaning</li>
+          <li><span class="code">E16</span> Map-to-map drill-down</li>
+          <li><span class="code">F17·F18</span> Entity annotations · where-used</li>
+          <li><span class="code">B7·G19·G20</span> Cross-highlight · registry · deps</li>
+        </ul>
+      </div>
+    </div>
+
+    <figure>
+      <div class="diagram">
+        <svg class="d-svg" viewBox="0 0 720 132" role="img" aria-label="Diagram: three-phase roadmap from quick wins to ambitious">
+          <line x1="40" y1="66" x2="680" y2="66" class="d-stroke" stroke-width="2"/>
+          <!-- phase 1 -->
+          <circle cx="130" cy="66" r="11" class="d-box-green"/>
+          <text x="130" y="38" text-anchor="middle" class="d-title" font-size="13">Quick wins</text>
+          <text x="130" y="98" text-anchor="middle" class="d-muted" font-size="11">reuse existing</text>
+          <text x="130" y="113" text-anchor="middle" class="d-muted" font-size="11">plumbing</text>
+          <!-- phase 2 -->
+          <circle cx="360" cy="66" r="11" class="d-box-accent"/>
+          <text x="360" y="38" text-anchor="middle" class="d-title" font-size="13">Medium</text>
+          <text x="360" y="98" text-anchor="middle" class="d-muted" font-size="11">objects become</text>
+          <text x="360" y="113" text-anchor="middle" class="d-muted" font-size="11">interactive</text>
+          <!-- phase 3 -->
+          <circle cx="590" cy="66" r="11" class="d-box-amber"/>
+          <text x="590" y="38" text-anchor="middle" class="d-title" font-size="13">Ambitious</text>
+          <text x="590" y="98" text-anchor="middle" class="d-muted" font-size="11">unify across</text>
+          <text x="590" y="113" text-anchor="middle" class="d-muted" font-size="11">the platform</text>
+          <path d="M655,66 L672,66" class="d-flow" marker-end="url(#ahR)"/>
+          <defs><marker id="ahR" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" class="ah"/></marker></defs>
+        </svg>
+      </div>
+      <figcaption><b>D5 · Phasing.</b> Value at every step: usable navigation first, a richer canvas next, platform unification last.</figcaption>
+    </figure>
+
+    <p class="rationale"><b>Why this order:</b> the quick wins lean entirely on mechanisms Stroom already ships — the grid "Jump to", the way dashboards register the types they handle, and the existing type pickers — so they carry low risk and prove the concept early. The medium tier is where the map's canvas gains genuinely new interaction. The ambitious tier is worth doing only once the ideas above have shown their value, because it changes shared infrastructure.</p>
+  </section>
+
+  <!-- RISKS -->
+  <section id="risks">
+    <p class="eyebrow">To resolve together</p>
+    <h2>Open questions &amp; risks</h2>
+    <div class="risks">
+      <div class="risk">
+        <h3>Add alongside, or replace?</h3>
+        <p>Do map objects gain a domain type <i>in addition to</i> today's free-form type, or does the domain type replace it? The former keeps every existing map working; the latter is cleaner but needs a migration story. This is the same fork the companion <a href="floormap-layers-ux.html">Layers UX</a> doc frames as "is a layer a type, or a richer grouping?" (its §6) — it should be decided once for both.</p>
+      </div>
+      <div class="risk">
+        <h3>Cost of matching while animating</h3>
+        <p>The map redraws continually during playback. Resolving semantic matches (styling, binding) needs to be cheap enough not to stutter the animation — likely pre-computed rather than done per frame.</p>
+      </div>
+      <div class="risk">
+        <h3>Who curates the vocabulary?</h3>
+        <p>Most of the value depends on domain types being used consistently. That needs an owner for the catalogue and some governance, or the shared visual language and cross-links fragment.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <p>This is an ideas document to open a conversation, not a commitment to build any particular item. The themes and roadmap are a starting point for prioritisation — the numbering is for reference in discussion, not an implementation order beyond the tiers shown.</p>
+    <p>Companion proposal: <a href="floormap-layers-ux.html">FloorMap — Layers: a UX proposal</a>, which builds the editor's layer / visibility model on the same type &amp; z-order machinery these ideas would make semantic.</p>
+    <p class="muted">Stroom · Floor Map × Domain Types · 17 July 2026</p>
+  </footer>
+
+</div>
+</body>
+</html>

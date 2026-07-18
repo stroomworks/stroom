@@ -14,21 +14,13 @@
  * limitations under the License.
  */
 
-ext.moduleName = 'stroom.query.planner'
+/**
+ * Ports the binder (Task 2.2) needs from the host application - kept as small interfaces here so
+ * {@code stroom-query-planner} never depends on {@code stroom-query-common} (which will depend on this module,
+ * not the reverse, once the binder is wired into {@code OptimisingQueryCompiler} in a later phase). Concrete
+ * adapters live in {@code stroom-query-common}.
+ */
+@NullMarked
+package stroom.query.planner.port;
 
-dependencies {
-    //--------Stroom libs------
-    implementation project(':stroom-core-shared')
-    implementation project(':stroom-docref')
-    implementation project(':stroom-query:stroom-query-grammar')
-    implementation project(':stroom-query:stroom-query-api')
-    implementation project(':stroom-util-shared')
-
-    //--------3rd party--------
-    implementation libs.jspecify
-
-    testImplementation project(':stroom-test-common')
-
-    testImplementation libs.bundles.common.test.implementation
-    testRuntimeOnly libs.bundles.common.test.runtime
-}
+import org.jspecify.annotations.NullMarked;

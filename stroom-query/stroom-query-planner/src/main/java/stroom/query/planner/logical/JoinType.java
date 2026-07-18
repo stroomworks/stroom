@@ -14,21 +14,14 @@
  * limitations under the License.
  */
 
-ext.moduleName = 'stroom.query.planner'
+package stroom.query.planner.logical;
 
-dependencies {
-    //--------Stroom libs------
-    implementation project(':stroom-core-shared')
-    implementation project(':stroom-docref')
-    implementation project(':stroom-query:stroom-query-grammar')
-    implementation project(':stroom-query:stroom-query-api')
-    implementation project(':stroom-util-shared')
-
-    //--------3rd party--------
-    implementation libs.jspecify
-
-    testImplementation project(':stroom-test-common')
-
-    testImplementation libs.bundles.common.test.implementation
-    testRuntimeOnly libs.bundles.common.test.runtime
+/**
+ * Mirrors {@code stroom.query.grammar.ast.AstJoin.JoinType} (the grammar's reserved {@code [left] join} syntax -
+ * see {@code StroomQL.g4}'s file header) at the logical-plan level - same two values, same names, so the binder's
+ * mapping between them is a trivial 1:1 translation, not a design decision in its own right.
+ */
+public enum JoinType {
+    LEFT,
+    INNER
 }

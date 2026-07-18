@@ -14,21 +14,11 @@
  * limitations under the License.
  */
 
-ext.moduleName = 'stroom.query.planner'
+/**
+ * The typed, immutable AST built from a {@code StroomQL.g4} parse tree by {@link AstBuilder}, decoupling
+ * downstream code from ANTLR types entirely (see {@code docs/query-optimiser-implementation-plan.md}, Task 1.2).
+ */
+@NullMarked
+package stroom.query.grammar.ast;
 
-dependencies {
-    //--------Stroom libs------
-    implementation project(':stroom-core-shared')
-    implementation project(':stroom-docref')
-    implementation project(':stroom-query:stroom-query-grammar')
-    implementation project(':stroom-query:stroom-query-api')
-    implementation project(':stroom-util-shared')
-
-    //--------3rd party--------
-    implementation libs.jspecify
-
-    testImplementation project(':stroom-test-common')
-
-    testImplementation libs.bundles.common.test.implementation
-    testRuntimeOnly libs.bundles.common.test.runtime
-}
+import org.jspecify.annotations.NullMarked;

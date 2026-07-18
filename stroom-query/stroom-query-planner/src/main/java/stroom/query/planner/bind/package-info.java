@@ -14,21 +14,12 @@
  * limitations under the License.
  */
 
-ext.moduleName = 'stroom.query.planner'
+/**
+ * The binder (Task 2.2): {@code (AstQuery, FieldInfoSource) -> LogicalPlan}, failing fast with a
+ * {@code BindException} on the first unresolvable field, unsupported condition, unknown join alias, or
+ * domain-incompatible join key.
+ */
+@NullMarked
+package stroom.query.planner.bind;
 
-dependencies {
-    //--------Stroom libs------
-    implementation project(':stroom-core-shared')
-    implementation project(':stroom-docref')
-    implementation project(':stroom-query:stroom-query-grammar')
-    implementation project(':stroom-query:stroom-query-api')
-    implementation project(':stroom-util-shared')
-
-    //--------3rd party--------
-    implementation libs.jspecify
-
-    testImplementation project(':stroom-test-common')
-
-    testImplementation libs.bundles.common.test.implementation
-    testRuntimeOnly libs.bundles.common.test.runtime
-}
+import org.jspecify.annotations.NullMarked;

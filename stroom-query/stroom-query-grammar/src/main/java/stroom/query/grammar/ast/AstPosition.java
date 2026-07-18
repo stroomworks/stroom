@@ -14,21 +14,14 @@
  * limitations under the License.
  */
 
-ext.moduleName = 'stroom.query.planner'
+package stroom.query.grammar.ast;
 
-dependencies {
-    //--------Stroom libs------
-    implementation project(':stroom-core-shared')
-    implementation project(':stroom-docref')
-    implementation project(':stroom-query:stroom-query-grammar')
-    implementation project(':stroom-query:stroom-query-api')
-    implementation project(':stroom-util-shared')
-
-    //--------3rd party--------
-    implementation libs.jspecify
-
-    testImplementation project(':stroom-test-common')
-
-    testImplementation libs.bundles.common.test.implementation
-    testRuntimeOnly libs.bundles.common.test.runtime
+/**
+ * A 1-based line and 0-based column (matching ANTLR's own convention) identifying where an AST node started in
+ * the original query text, for precise error reporting (see Task 1.3).
+ *
+ * @param line   1-based source line.
+ * @param column 0-based column offset within {@link #line}.
+ */
+public record AstPosition(int line, int column) {
 }

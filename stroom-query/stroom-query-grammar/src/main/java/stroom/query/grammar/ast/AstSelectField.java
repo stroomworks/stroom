@@ -14,21 +14,24 @@
  * limitations under the License.
  */
 
-ext.moduleName = 'stroom.query.planner'
+package stroom.query.grammar.ast;
 
-dependencies {
-    //--------Stroom libs------
-    implementation project(':stroom-core-shared')
-    implementation project(':stroom-docref')
-    implementation project(':stroom-query:stroom-query-grammar')
-    implementation project(':stroom-query:stroom-query-api')
-    implementation project(':stroom-util-shared')
+import org.jspecify.annotations.Nullable;
 
-    //--------3rd party--------
-    implementation libs.jspecify
+import java.util.Objects;
 
-    testImplementation project(':stroom-test-common')
+/**
+ * A plain field reference select column, e.g. {@code StreamId} or {@code StreamId as "Stream Id"}.
+ *
+ * @param field    never null.
+ * @param alias    nullable.
+ * @param position never null.
+ */
+public record AstSelectField(AstToken field, @Nullable AstToken alias, AstPosition position)
+        implements AstSelectItem {
 
-    testImplementation libs.bundles.common.test.implementation
-    testRuntimeOnly libs.bundles.common.test.runtime
+    public AstSelectField {
+        Objects.requireNonNull(field, "field");
+        Objects.requireNonNull(position, "position");
+    }
 }

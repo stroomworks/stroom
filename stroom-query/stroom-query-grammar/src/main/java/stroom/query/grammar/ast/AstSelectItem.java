@@ -14,21 +14,18 @@
  * limitations under the License.
  */
 
-ext.moduleName = 'stroom.query.planner'
+package stroom.query.grammar.ast;
 
-dependencies {
-    //--------Stroom libs------
-    implementation project(':stroom-core-shared')
-    implementation project(':stroom-docref')
-    implementation project(':stroom-query:stroom-query-grammar')
-    implementation project(':stroom-query:stroom-query-api')
-    implementation project(':stroom-util-shared')
+import org.jspecify.annotations.Nullable;
 
-    //--------3rd party--------
-    implementation libs.jspecify
+/**
+ * One item in a {@code select} list: {@code *}, a function call, a plain field, or a {@code ${param}} reference,
+ * each optionally aliased with {@code as}.
+ */
+public sealed interface AstSelectItem permits AstSelectStar, AstSelectFunction, AstSelectField, AstSelectParam {
 
-    testImplementation project(':stroom-test-common')
+    /** @return nullable; set iff {@code as <alias>} was present. */
+    @Nullable AstToken alias();
 
-    testImplementation libs.bundles.common.test.implementation
-    testRuntimeOnly libs.bundles.common.test.runtime
+    AstPosition position();
 }

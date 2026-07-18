@@ -14,21 +14,22 @@
  * limitations under the License.
  */
 
-ext.moduleName = 'stroom.query.planner'
+package stroom.query.grammar.ast;
 
-dependencies {
-    //--------Stroom libs------
-    implementation project(':stroom-core-shared')
-    implementation project(':stroom-docref')
-    implementation project(':stroom-query:stroom-query-grammar')
-    implementation project(':stroom-query:stroom-query-api')
-    implementation project(':stroom-util-shared')
+import java.util.List;
+import java.util.Objects;
 
-    //--------3rd party--------
-    implementation libs.jspecify
+/**
+ * {@code select item, item, ...}.
+ *
+ * @param items    never null; never empty.
+ * @param position never null.
+ */
+public record AstSelectClause(List<AstSelectItem> items, AstPosition position) implements AstClause {
 
-    testImplementation project(':stroom-test-common')
-
-    testImplementation libs.bundles.common.test.implementation
-    testRuntimeOnly libs.bundles.common.test.runtime
+    public AstSelectClause {
+        Objects.requireNonNull(items, "items");
+        Objects.requireNonNull(position, "position");
+        items = List.copyOf(items);
+    }
 }

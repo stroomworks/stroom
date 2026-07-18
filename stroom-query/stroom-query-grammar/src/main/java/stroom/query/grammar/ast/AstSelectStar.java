@@ -14,21 +14,22 @@
  * limitations under the License.
  */
 
-ext.moduleName = 'stroom.query.planner'
+package stroom.query.grammar.ast;
 
-dependencies {
-    //--------Stroom libs------
-    implementation project(':stroom-core-shared')
-    implementation project(':stroom-docref')
-    implementation project(':stroom-query:stroom-query-grammar')
-    implementation project(':stroom-query:stroom-query-api')
-    implementation project(':stroom-util-shared')
+import org.jspecify.annotations.Nullable;
 
-    //--------3rd party--------
-    implementation libs.jspecify
+import java.util.Objects;
 
-    testImplementation project(':stroom-test-common')
+/**
+ * {@code select *} - expands to every field of the query's datasource at bind time (see
+ * {@code SearchRequestFactory.expandStarredField}, a Task 1.4 concern).
+ *
+ * @param alias    nullable (an alias on {@code *} is unusual but legacy's grammar does not forbid it).
+ * @param position never null.
+ */
+public record AstSelectStar(@Nullable AstToken alias, AstPosition position) implements AstSelectItem {
 
-    testImplementation libs.bundles.common.test.implementation
-    testRuntimeOnly libs.bundles.common.test.runtime
+    public AstSelectStar {
+        Objects.requireNonNull(position, "position");
+    }
 }

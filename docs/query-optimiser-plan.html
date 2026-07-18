@@ -802,6 +802,7 @@ select e.time, e.userId, u.department</code></pre>
           <li>The <strong>grammar module</strong> — a <code>Cypher.g4</code> alongside <code>StroomQL.g4</code> &rarr; the same logical IR.</li>
           <li>The <strong><code>Join</code> operator</strong> (Phase 2) + <strong>join algorithms</strong> (Phase 6): a hop runs as the <strong>broadcast-lookup / index-nested-loop</strong> join over an adjacency prefix-scan access path.</li>
           <li>The <strong>rewrite rules + cost model</strong> and the existing execution machinery (providers, <code>ResultStore</code>, coprocessors).</li>
+          <li>The <strong>semantic (domain-type) layer</strong> (<a href="#domain-types">§8</a>) — <code>domainType</code> + <code>canAccept</code> + the enrichment-source-routing index for <strong>entity resolution</strong> (same domain type ⇒ same node across sources) and catalogue-driven node mapping; see the graph's <a href="temporal-cypher-graph.html#domain-types">domain-type integration</a>.</li>
         </ul>
       </div>
       <div class="card">

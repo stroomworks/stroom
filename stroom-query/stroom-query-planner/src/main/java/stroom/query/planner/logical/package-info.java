@@ -14,21 +14,12 @@
  * limitations under the License.
  */
 
-ext.moduleName = 'stroom.query.planner'
+/**
+ * The logical plan IR (see {@code docs/query-optimiser-implementation-plan.md}, Task 2.1): a front-end-agnostic
+ * tree of relational operators that {@code stroom.query.planner.bind.Binder} produces from a bound query, that
+ * {@code stroom.query.planner.rewrite} rules transform, and that later phases cost and execute.
+ */
+@NullMarked
+package stroom.query.planner.logical;
 
-dependencies {
-    //--------Stroom libs------
-    implementation project(':stroom-core-shared')
-    implementation project(':stroom-docref')
-    implementation project(':stroom-query:stroom-query-grammar')
-    implementation project(':stroom-query:stroom-query-api')
-    implementation project(':stroom-util-shared')
-
-    //--------3rd party--------
-    implementation libs.jspecify
-
-    testImplementation project(':stroom-test-common')
-
-    testImplementation libs.bundles.common.test.implementation
-    testRuntimeOnly libs.bundles.common.test.runtime
-}
+import org.jspecify.annotations.NullMarked;

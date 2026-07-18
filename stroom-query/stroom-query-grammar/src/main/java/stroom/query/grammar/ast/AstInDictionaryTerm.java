@@ -14,21 +14,23 @@
  * limitations under the License.
  */
 
-ext.moduleName = 'stroom.query.planner'
+package stroom.query.grammar.ast;
 
-dependencies {
-    //--------Stroom libs------
-    implementation project(':stroom-core-shared')
-    implementation project(':stroom-docref')
-    implementation project(':stroom-query:stroom-query-grammar')
-    implementation project(':stroom-query:stroom-query-api')
-    implementation project(':stroom-util-shared')
+import java.util.Objects;
 
-    //--------3rd party--------
-    implementation libs.jspecify
+/**
+ * {@code field in dictionary "name"}.
+ *
+ * @param field          never null.
+ * @param dictionaryName never null.
+ * @param position       never null.
+ */
+public record AstInDictionaryTerm(AstToken field, AstToken dictionaryName,
+                                  AstPosition position) implements AstTerm {
 
-    testImplementation project(':stroom-test-common')
-
-    testImplementation libs.bundles.common.test.implementation
-    testRuntimeOnly libs.bundles.common.test.runtime
+    public AstInDictionaryTerm {
+        Objects.requireNonNull(field, "field");
+        Objects.requireNonNull(dictionaryName, "dictionaryName");
+        Objects.requireNonNull(position, "position");
+    }
 }

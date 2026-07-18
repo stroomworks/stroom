@@ -338,7 +338,8 @@ What the graph **consumes from this core**:
 - the **`Join` logical operator** (Phase 2) and the **join algorithms** (Phase 6) — a graph hop `MATCH (a)-[r]->(b)`
   lowers to a join of an edge/adjacency relation to a node relation, run as the **broadcast-lookup / index-nested-loop**
   join with an adjacency prefix-scan as the access path (i.e. graph "traversal" *is* a join);
-- the **rewrite rules + cost model** and the existing execution machinery (providers, `ResultStore`, coprocessors).
+- the **rewrite rules + cost model** and the existing execution machinery (providers, `ResultStore`, coprocessors);
+- the **semantic (domain-type) layer** ([§ Domain types](#domain-types-semantic-layer)) — the graph reuses `domainType` + `canAccept` and the enrichment-source-routing index for **entity resolution** (same domain type ⇒ same node across sources) and catalogue-driven node mapping (`class`→label, `attribute`→key property); see the graph's [domain-type integration](temporal-cypher-graph.md#56-domain-type-integration-semantic-layer).
 
 What the graph **adds on top** (out of scope here, listed for context):
 - a **variable-length-path / fixpoint** operator (bounded transitive closure) — beyond the equi-join set;

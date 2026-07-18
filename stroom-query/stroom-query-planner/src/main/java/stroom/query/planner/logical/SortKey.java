@@ -14,21 +14,20 @@
  * limitations under the License.
  */
 
-ext.moduleName = 'stroom.query.planner'
+package stroom.query.planner.logical;
 
-dependencies {
-    //--------Stroom libs------
-    implementation project(':stroom-core-shared')
-    implementation project(':stroom-docref')
-    implementation project(':stroom-query:stroom-query-grammar')
-    implementation project(':stroom-query:stroom-query-api')
-    implementation project(':stroom-util-shared')
+import java.util.Objects;
 
-    //--------3rd party--------
-    implementation libs.jspecify
+/**
+ * One {@code sort by <field> [asc|desc]} item.
+ *
+ * @param field      never null.
+ * @param descending true for {@code desc}, false for {@code asc} or unspecified (legacy's default - see
+ *                   {@code SearchRequestFactory.processSortBy}).
+ */
+public record SortKey(QualifiedField field, boolean descending) {
 
-    testImplementation project(':stroom-test-common')
-
-    testImplementation libs.bundles.common.test.implementation
-    testRuntimeOnly libs.bundles.common.test.runtime
+    public SortKey {
+        Objects.requireNonNull(field, "field");
+    }
 }

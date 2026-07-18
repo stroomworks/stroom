@@ -1,0 +1,161 @@
+/*
+ * Copyright 2016-2026 Crown Copyright
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package stroom.query.planner.logical;
+
+import stroom.query.api.ExpressionOperator;
+import stroom.query.api.ExpressionOperator.Op;
+import stroom.query.api.ExpressionTerm;
+import stroom.query.api.ExpressionTerm.Condition;
+import stroom.query.grammar.ast.AstPosition;
+
+import org.junit.jupiter.api.Test;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
+import static org.assertj.core.api.Assertions.assertThatNullPointerException;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+/**
+ * Task 2.1: proves every {@link LogicalPlan} node builds a usable tree, and that the constructor contracts
+ * (non-null required fields, non-empty required lists, defensive copying) are actually enforced, not just
+ * documented - per this project's code standards.
+ */
+class TestLogicalPlan {
+
+    private static final AstPosition POS = new AstPosition(1, 0);
+
+    @Test
+    void oneTreeExercisesEveryNodeKind() {
+        final Scan events = new Scan("e", "Events", POS);
+        final Scan users = new Scan("u", "Users", POS);
+
+        final ExpressionOperator wherePredicate = ExpressionOperator.builder()
+                .children(List.of(ExpressionTerm.builder()
+                        .field("StreamId")
+                        .condition(Condition.GREATER_THAN)
+                        .value("0")
+                        .build()))
+                .build();
+        final Filter filtered = new Filter(events, wherePredicate, null, POS);
+
+        final Join joined = new Join(
+                filtered,
+                users,
+                JoinType.INNER,
+                List.of(new EquiKey(new QualifiedField("e", "UserId"), new QualifiedField("u", "Id"))),
+                POS);
+
+        final Project projected = new Project(
+                joined,
+                List.of(
+                        new ProjectField("upper", "upperCase(${u.Name})", false, null, POS),
+                        new ProjectField("UserName", "upper", true, "UserName", POS)),
+                POS);
+
+        final Aggregate aggregated = new Aggregate(
+                projected, List.of(new QualifiedField(null, "UserName")), POS);
+
+        final Having having = new Having(
+                aggregated,
+                ExpressionOperator.builder()
+                        .op(Op.AND)
+                        .children(List.of(ExpressionTerm.builder()
+                                .field("UserName")
+                                .condition(Condition.NOT_EQUALS)
+                                .value("")
+                                .build()))
+                        .build(),
+                POS);
+
+        final Window windowed = new Window(
+                having, new QualifiedField(null, "EventTime"), "1h", "10m", "sum", POS);
+
+        final Sort sorted = new Sort(
+                windowed, List.of(new SortKey(new QualifiedField(null, "UserName"), false)), POS);
+
+        final Limit limited = new Limit(sorted, List.of(100L), POS);
+
+        assertThat(limited.input()).isSameAs(sorted);
+        assertThat(sorted.input()).isSameAs(windowed);
+        assertThat(windowed.input()).isSameAs(having);
+        assertThat(having.input()).isSameAs(aggregated);
+        assertThat(aggregated.input()).isSameAs(projected);
+        assertThat(projected.input()).isSameAs(joined);
+        assertThat(joined.left()).isSameAs(filtered);
+        assertThat(joined.right()).isSameAs(users);
+        assertThat(filtered.input()).isSameAs(events);
+
+        assertThat(limited.values()).containsExactly(100L);
+        assertThat(sorted.keys()).extracting(SortKey::descending).containsExactly(false);
+        assertThat(windowed.advanceSize()).isEqualTo("10m");
+        assertThat(aggregated.groupFields()).extracting(QualifiedField::field).containsExactly("UserName");
+        assertThat(projected.fields()).hasSize(2);
+        assertThat(joined.equiKeys()).hasSize(1);
+        assertThat(filtered.wherePredicate()).isSameAs(wherePredicate);
+        assertThat(filtered.filterPredicate()).isNull();
+
+        // Every node reports its position (needed for later error/EXPLAIN reporting).
+        final List<LogicalPlan> allNodes = List.of(
+                events, filtered, joined, projected, aggregated, having, windowed, sorted, limited);
+        assertThat(allNodes).allSatisfy(node -> assertThat(node.position()).isSameAs(POS));
+    }
+
+    @Test
+    void requiredFieldsRejectNull() {
+        final Scan scan = new Scan("e", "Events", POS);
+
+        assertThatNullPointerException().isThrownBy(() -> new Scan(null, "Events", POS));
+        assertThatNullPointerException().isThrownBy(() -> new Scan("e", null, POS));
+        assertThatNullPointerException().isThrownBy(() -> new Filter(null, null, null, POS));
+        assertThatNullPointerException().isThrownBy(() -> new Filter(scan, null, null, null));
+        assertThatNullPointerException().isThrownBy(() -> new Project(null, List.of(), POS));
+        assertThatNullPointerException().isThrownBy(() -> new Join(null, scan, JoinType.INNER, List.of(
+                new EquiKey(new QualifiedField(null, "a"), new QualifiedField(null, "b"))), POS));
+        assertThatNullPointerException().isThrownBy(() -> new Having(scan, null, POS));
+        assertThatNullPointerException().isThrownBy(() -> new Window(
+                scan, null, "1h", null, null, POS));
+        assertThatThrownBy(() -> new QualifiedField(null, null)).isInstanceOf(NullPointerException.class);
+        assertThatNullPointerException().isThrownBy(() -> new EquiKey(null, new QualifiedField(null, "b")));
+    }
+
+    @Test
+    void requiredNonEmptyListsRejectEmpty() {
+        final Scan scan = new Scan("e", "Events", POS);
+
+        assertThatIllegalArgumentException().isThrownBy(() -> new Join(
+                scan, scan, JoinType.INNER, List.of(), POS));
+        assertThatIllegalArgumentException().isThrownBy(() -> new Aggregate(scan, List.of(), POS));
+        assertThatIllegalArgumentException().isThrownBy(() -> new Sort(scan, List.of(), POS));
+        assertThatIllegalArgumentException().isThrownBy(() -> new Limit(scan, List.of(), POS));
+    }
+
+    @Test
+    void listsAreDefensivelyCopiedAndImmutable() {
+        final Scan scan = new Scan("e", "Events", POS);
+        final List<Long> mutableValues = new ArrayList<>(List.of(1L, 2L));
+
+        final Limit limit = new Limit(scan, mutableValues, POS);
+        mutableValues.add(3L);
+
+        assertThat(limit.values()).containsExactly(1L, 2L);
+        assertThatThrownBy(() -> limit.values().add(4L))
+                .isInstanceOf(UnsupportedOperationException.class);
+    }
+}

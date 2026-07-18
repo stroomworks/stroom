@@ -1,0 +1,876 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FloorMap — Layers: a UX proposal</title>
+<style>
+  :root{
+    --bg:#f5f7fa; --surface:#ffffff; --surface-2:#f0f3f7;
+    --text:#1a1f29; --muted:#5a6472; --faint:#8b95a4;
+    --border:#e2e7ee; --border-strong:#cdd5e0;
+    --accent:#2563eb; --accent-weak:#e8f0fe;
+    --ok:#16a34a; --warn:#b45309; --warn-weak:#fef3e2;
+    --map-bg:#fbfcfe; --map-line:#c3ccd8;
+    --shadow:0 1px 2px rgba(16,24,40,.06), 0 4px 16px rgba(16,24,40,.06);
+    --radius:12px;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#0e1219; --surface:#161c26; --surface-2:#1c232f;
+      --text:#e6eaf1; --muted:#9aa5b4; --faint:#6b7686;
+      --border:#28313e; --border-strong:#3a4553;
+      --accent:#5b9bff; --accent-weak:#152238;
+      --ok:#3ddc84; --warn:#f0a94c; --warn-weak:#2a2213;
+      --map-bg:#0c1015; --map-line:#39424f;
+      --shadow:0 1px 2px rgba(0,0,0,.4), 0 6px 22px rgba(0,0,0,.35);
+    }
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:var(--sans); line-height:1.62; font-size:16px;
+    -webkit-font-smoothing:antialiased;
+  }
+  a{color:var(--accent); text-decoration:none}
+  a:hover{text-decoration:underline}
+  code{font-family:var(--mono); font-size:.86em; background:var(--surface-2);
+    border:1px solid var(--border); border-radius:5px; padding:.08em .38em}
+
+  /* Masthead */
+  header.masthead{
+    background:linear-gradient(180deg,var(--surface),var(--bg));
+    border-bottom:1px solid var(--border);
+    padding:54px 24px 34px;
+  }
+  .masthead-inner{max-width:1120px; margin:0 auto}
+  .eyebrow{font-size:12.5px; letter-spacing:.14em; text-transform:uppercase;
+    color:var(--accent); font-weight:700; margin:0 0 10px}
+  h1{font-size:clamp(28px,4.4vw,44px); line-height:1.1; margin:0 0 14px; letter-spacing:-.02em}
+  .lede{font-size:clamp(16px,2vw,19px); color:var(--muted); max-width:70ch; margin:0}
+  .meta{margin-top:20px; display:flex; flex-wrap:wrap; gap:8px}
+  .tag{font-size:12.5px; color:var(--muted); background:var(--surface-2);
+    border:1px solid var(--border); border-radius:999px; padding:4px 12px}
+
+  /* Layout */
+  .wrap{max-width:1120px; margin:0 auto; padding:0 24px 96px;
+    display:grid; grid-template-columns:232px minmax(0,1fr); gap:44px}
+  nav.toc{position:sticky; top:22px; align-self:start; font-size:14px; padding-top:34px}
+  nav.toc .toc-title{font-size:11.5px; letter-spacing:.12em; text-transform:uppercase;
+    color:var(--faint); font-weight:700; margin:0 0 12px}
+  nav.toc ol{list-style:none; margin:0; padding:0; counter-reset:sec}
+  nav.toc li{counter-increment:sec; margin:2px 0}
+  nav.toc a{display:block; color:var(--muted); padding:5px 10px; border-radius:7px;
+    border-left:2px solid transparent}
+  nav.toc a::before{content:counter(sec) ". "; color:var(--faint)}
+  nav.toc a:hover{background:var(--surface-2); color:var(--text); text-decoration:none}
+  main{padding-top:34px; min-width:0}
+
+  section{margin:0 0 52px; scroll-margin-top:20px}
+  h2{font-size:26px; letter-spacing:-.015em; margin:0 0 6px; padding-top:8px}
+  h2 .num{color:var(--faint); font-weight:600; margin-right:10px; font-variant-numeric:tabular-nums}
+  h3{font-size:18.5px; margin:30px 0 8px; letter-spacing:-.01em}
+  h4{font-size:14px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted);
+    margin:22px 0 6px}
+  p{margin:12px 0}
+  .section-sub{color:var(--muted); margin-top:2px; font-size:15px}
+  ul,ol{padding-left:22px; margin:12px 0}
+  li{margin:6px 0}
+  strong{font-weight:650}
+
+  /* Callouts */
+  .callout{border:1px solid var(--border); border-left-width:4px; border-radius:10px;
+    padding:14px 18px; margin:20px 0; background:var(--surface); box-shadow:var(--shadow)}
+  .callout .k{font-size:12px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
+    display:block; margin-bottom:4px}
+  .callout p{margin:6px 0}
+  .callout.rec{border-left-color:var(--accent)} .callout.rec .k{color:var(--accent)}
+  .callout.decide{border-left-color:var(--ok)} .callout.decide .k{color:var(--ok)}
+  .callout.q{border-left-color:var(--warn); background:var(--warn-weak)} .callout.q .k{color:var(--warn)}
+  .callout.reuse{border-left-color:#8b5cf6} .callout.reuse .k{color:#8b5cf6}
+
+  /* Cards / grids */
+  .cards{display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:14px; margin:18px 0}
+  .card{background:var(--surface); border:1px solid var(--border); border-radius:10px;
+    padding:16px 16px; box-shadow:var(--shadow)}
+  .card h4{margin:0 0 6px; color:var(--text); text-transform:none; letter-spacing:normal; font-size:15.5px}
+  .card p{margin:4px 0; font-size:14.5px; color:var(--muted)}
+  .card .ico{font-size:22px; line-height:1; margin-bottom:8px; display:block}
+
+  .opt{background:var(--surface); border:1px solid var(--border); border-radius:12px;
+    padding:0; margin:16px 0; box-shadow:var(--shadow); overflow:hidden}
+  .opt > .head{display:flex; align-items:baseline; gap:12px; padding:14px 18px;
+    background:var(--surface-2); border-bottom:1px solid var(--border)}
+  .opt .badge{font-family:var(--mono); font-size:12px; font-weight:700; color:#fff;
+    background:var(--faint); border-radius:6px; padding:3px 8px; letter-spacing:.02em}
+  .opt.a .badge{background:var(--accent)} .opt.b .badge{background:#8b5cf6} .opt.c .badge{background:var(--ok)}
+  .opt .head h3{margin:0; font-size:17px}
+  .opt .head .tagline{color:var(--muted); font-size:14px; margin-left:auto}
+  .opt .body{padding:6px 18px 16px}
+  .pc{display:grid; grid-template-columns:1fr 1fr; gap:0 24px}
+  @media(max-width:620px){.pc{grid-template-columns:1fr}}
+  .pc h4{margin:12px 0 2px}
+  .pc ul{margin:2px 0 8px; font-size:14.5px}
+  .pro::before{content:"+ "; color:var(--ok); font-weight:800}
+  .con::before{content:"– "; color:#e0526b; font-weight:800}
+  .pc li{list-style:none; margin:5px 0} .pc ul{padding-left:2px}
+
+  table{border-collapse:collapse; width:100%; margin:16px 0; font-size:14.5px;
+    display:block; overflow-x:auto}
+  th,td{border:1px solid var(--border); padding:9px 12px; text-align:left; vertical-align:top}
+  th{background:var(--surface-2); font-weight:650}
+  tbody tr:nth-child(even){background:var(--surface)}
+
+  .roadmap{list-style:none; padding:0; margin:18px 0; counter-reset:step}
+  .roadmap li{counter-increment:step; position:relative; padding:14px 16px 14px 62px;
+    background:var(--surface); border:1px solid var(--border); border-radius:10px; margin:10px 0;
+    box-shadow:var(--shadow)}
+  .roadmap li::before{content:counter(step); position:absolute; left:14px; top:14px;
+    width:32px; height:32px; border-radius:50%; background:var(--accent-weak); color:var(--accent);
+    display:flex; align-items:center; justify-content:center; font-weight:800; font-size:15px;
+    border:1px solid var(--accent)}
+  .roadmap .ph{font-weight:700} .roadmap .when{float:right; font-size:12.5px; color:var(--faint);
+    text-transform:uppercase; letter-spacing:.05em}
+  .roadmap p{margin:4px 0 0; font-size:14.5px; color:var(--muted)}
+
+  /* ---- Interactive demo ---- */
+  .demo{background:var(--surface); border:1px solid var(--border-strong); border-radius:14px;
+    box-shadow:var(--shadow); overflow:hidden; margin:22px 0}
+  .demo-bar{display:flex; align-items:center; gap:10px; padding:11px 16px;
+    border-bottom:1px solid var(--border); background:var(--surface-2)}
+  .demo-bar .dot{width:11px; height:11px; border-radius:50%; background:var(--border-strong)}
+  .demo-bar .title{font-weight:650; font-size:14px}
+  .demo-bar .title small{color:var(--faint); font-weight:400}
+  .demo-bar .spacer{flex:1}
+  .btn{font:inherit; font-size:13px; cursor:pointer; color:var(--text);
+    background:var(--surface); border:1px solid var(--border-strong); border-radius:8px;
+    padding:6px 12px; display:inline-flex; align-items:center; gap:6px}
+  .btn:hover{background:var(--surface-2)}
+  .demo-body{display:grid; grid-template-columns:1.35fr 1fr; gap:0}
+  @media(max-width:760px){.demo-body{grid-template-columns:1fr}}
+  .stage{padding:16px; background:var(--map-bg); display:flex; flex-direction:column; gap:10px;
+    border-right:1px solid var(--border)}
+  #mapSvg{width:100%; height:auto; display:block; border-radius:8px}
+  /* SVG styling via CSS so theme var()s resolve (they don't in SVG presentation attrs) */
+  #lyr-background .cutout{fill:var(--map-bg)}
+  #lyr-events circle{stroke:var(--map-bg); stroke-width:2}
+  #lyr-labels text{font-family:var(--sans); font-weight:600; font-size:12px; fill:#8b5cf6;
+    paint-order:stroke; stroke:var(--map-bg); stroke-width:3.2px}
+  .stage .status{font-size:12.5px; color:var(--muted); font-variant-numeric:tabular-nums;
+    display:flex; align-items:center; gap:8px}
+  .stage .status b{color:var(--text); font-weight:650}
+
+  .panel{padding:0; background:var(--surface)}
+  .panel-head{display:flex; align-items:center; gap:8px; padding:11px 14px;
+    border-bottom:1px solid var(--border); font-weight:650; font-size:13.5px}
+  .panel-head .hint{margin-left:auto; font-weight:400; font-size:11.5px; color:var(--faint)}
+  ul.layers{list-style:none; margin:0; padding:6px}
+  .lyr-row{display:grid; grid-template-columns:auto auto 1fr auto; align-items:center;
+    gap:8px; padding:7px 8px; border-radius:9px; border:1px solid transparent}
+  .lyr-row + .lyr-row{margin-top:2px}
+  .lyr-row:hover{background:var(--surface-2)}
+  .lyr-row.is-dimmed{opacity:.5}
+  .lyr-row.is-locked .name{color:var(--muted)}
+  .reorder{display:flex; flex-direction:column; gap:0}
+  .reorder button, .icon-btn{background:none; border:0; cursor:pointer; color:var(--muted);
+    padding:2px; border-radius:5px; display:inline-flex; line-height:0}
+  .reorder button:hover, .icon-btn:hover{background:var(--border); color:var(--text)}
+  .reorder button:disabled{opacity:.28; cursor:default; background:none}
+  .icon-btn.on{color:var(--accent)}
+  .icon-btn.solo.on{color:#fff; background:var(--accent)}
+  .icon-btn.lock.on{color:var(--warn)}
+  .icon-btn.off{color:var(--faint)}
+  svg.icon{width:17px; height:17px; stroke:currentColor; fill:none; stroke-width:2;
+    stroke-linecap:round; stroke-linejoin:round}
+  .grip{color:var(--faint); cursor:grab; line-height:0}
+  .lyr-mid{display:flex; align-items:center; gap:9px; min-width:0}
+  .swatch{width:12px; height:12px; border-radius:3px; flex:0 0 auto; border:1px solid rgba(0,0,0,.15)}
+  .name{font-size:13.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .count{font-size:11px; color:var(--faint); background:var(--surface-2);
+    border:1px solid var(--border); border-radius:999px; padding:1px 7px; font-variant-numeric:tabular-nums}
+  .lyr-right{display:flex; align-items:center; gap:5px}
+  input[type=range].op{width:62px; accent-color:var(--accent); cursor:pointer}
+  .caption{font-size:13px; color:var(--muted); margin:8px 2px 0}
+
+  .kbd{font-family:var(--mono); font-size:12px; background:var(--surface-2);
+    border:1px solid var(--border-strong); border-bottom-width:2px; border-radius:5px; padding:1px 6px}
+  footer{max-width:1120px; margin:0 auto; padding:26px 24px 60px; color:var(--faint);
+    font-size:13px; border-top:1px solid var(--border)}
+  .anchor{color:var(--faint); text-decoration:none; margin-left:8px; opacity:0; font-weight:400}
+  h2:hover .anchor{opacity:1}
+  @media(max-width:900px){
+    .wrap{grid-template-columns:1fr; gap:0}
+    nav.toc{display:none}
+  }
+</style>
+</head>
+<body>
+
+<!-- icon defs -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3.2"/></symbol>
+  <symbol id="i-eye-off" viewBox="0 0 24 24"><path d="M17.9 17.9A10.4 10.4 0 0 1 12 20C5 20 1 12 1 12a18.6 18.6 0 0 1 5.1-5.9m3.8-1.8A9.3 9.3 0 0 1 12 4c7 0 11 8 11 8a18.7 18.7 0 0 1-2.2 3.2"/><path d="M9.9 9.9a3.2 3.2 0 0 0 4.5 4.5"/><line x1="1" y1="1" x2="23" y2="23"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="3.5" y="11" width="17" height="10.5" rx="2.2"/><path d="M7.2 11V7.4a4.8 4.8 0 0 1 9.6 0V11"/></symbol>
+  <symbol id="i-unlock" viewBox="0 0 24 24"><rect x="3.5" y="11" width="17" height="10.5" rx="2.2"/><path d="M7.2 11V7.4A4.8 4.8 0 0 1 16.4 6"/></symbol>
+  <symbol id="i-solo" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3.4" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24"><polyline points="6 14.5 12 8.5 18 14.5"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><polyline points="6 9.5 12 15.5 18 9.5"/></symbol>
+  <symbol id="i-grip" viewBox="0 0 24 24" stroke-width="2.6"><path d="M9 5h.01M9 12h.01M9 19h.01M15 5h.01M15 12h.01M15 19h.01"/></symbol>
+</svg>
+
+<header class="masthead">
+  <div class="masthead-inner">
+    <p class="eyebrow">FloorMap Editor · UX Proposal</p>
+    <h1>Layers for the floor map</h1>
+    <p class="lede">Ideas for bringing the <strong>layers</strong> people know from graphics editors and CAD
+      — show/hide, lock, dim, isolate, restack — to the FloorMap editor, so a busy map stays readable and
+      safe to edit. Written for the team to react to, not a finished spec.</p>
+    <div class="meta">
+      <span class="tag">Status: Draft for discussion</span>
+      <span class="tag">2026-07-17</span>
+      <span class="tag">branch <code>enterprise-floor-mapping-editor</code></span>
+      <span class="tag">Companion to <code>floormap-coordinate-redesign.md</code></span>
+      <span class="tag">Companion to <code>floormap-domain-types.html</code></span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+  <nav class="toc" aria-label="Contents">
+    <p class="toc-title">Contents</p>
+    <ol>
+      <li><a href="#why">Why layers</a></li>
+      <li><a href="#model">What a layer is</a></li>
+      <li><a href="#fit">How it fits FloorMap</a></li>
+      <li><a href="#panel">The Layers panel</a></li>
+      <li><a href="#controls">Per-layer controls</a></li>
+      <li><a href="#decision">Layers vs. types</a></li>
+      <li><a href="#smart">Smart layers</a></li>
+      <li><a href="#timeline">Layers &amp; the timeline</a></li>
+      <li><a href="#viewer">The read-only Map tab</a></li>
+      <li><a href="#edges">Interactions &amp; edge cases</a></li>
+      <li><a href="#phasing">Suggested phasing</a></li>
+      <li><a href="#questions">Open questions</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </nav>
+
+  <main>
+
+    <!-- 1 -->
+    <section id="why">
+      <h2><span class="num">1</span>Why layers<a class="anchor" href="#why">#</a></h2>
+      <p class="section-sub">A floor map gets crowded fast, and today there is only one way to organise it.</p>
+      <p>The editor draws everything on the map as a <strong>fact</strong> — the background floor plan, gates,
+      desks, cameras, and the moving <strong>events</strong> (people) that stream over the top. A real site
+      map ends up holding hundreds of facts across a dozen types, plus multiple background images, all layered
+      in time. Three problems show up as soon as it fills:</p>
+      <ul>
+        <li><strong>You can't focus.</strong> There is no way to say "just show me the cameras and the
+        floor plan" while I check coverage, or to hide the swarm of live events so I can tidy the desks.</li>
+        <li><strong>Editing is risky.</strong> Because the background image is itself a fact, it is easy to
+        grab it, an already-placed camera, or someone else's furniture by accident and nudge it. Nothing can
+        be <em>pinned down</em>.</li>
+        <li><strong>Everything competes for attention.</strong> Backgrounds, fixed assets and live events all
+        render at full strength. There is no way to push the plan into the background as a faint reference
+        while the thing you care about pops.</li>
+      </ul>
+      <p>Today the <em>only</em> organising axis is the fact's <strong>type</strong>. The Settings tab already
+      keeps types as an <strong>ordered list</strong> whose order <em>is</em> the paint order (z-order), with a
+      default shape and colour per type. That is genuinely a proto-layer system — it just has no way to hide,
+      lock, dim, or isolate anything, and no surface on the canvas itself. Layers are the natural next step,
+      and most of the plumbing is a rename-and-grow of something we already have.</p>
+      <div class="callout reuse">
+        <span class="k">Already in the model</span>
+        <p>An ordered, per-type list drives z-order today (<code>FloorMapDoc.typeStyles</code> →
+        <code>FloorMapZOrder</code>). "Reorder the list to restack the map" is a shipped behaviour we can
+        expose more richly — not something we have to invent.</p>
+      </div>
+    </section>
+
+    <!-- 2 -->
+    <section id="model">
+      <h2><span class="num">2</span>What we mean by "a layer"<a class="anchor" href="#model">#</a></h2>
+      <p class="section-sub">Borrowing a mental model people already carry from Photoshop, Figma, AutoCAD and QGIS.</p>
+      <p>Across design and CAD tools a "layer" is the same handful of ideas. If we adopt the metaphor, users
+      arrive already knowing what the controls do. A layer gives you:</p>
+      <div class="cards">
+        <div class="card"><span class="ico">🗂️</span><h4>Stacking</h4><p>Layers sit in an order; higher layers
+          paint in front. Drag to restack.</p></div>
+        <div class="card"><span class="ico">👁️</span><h4>Visibility</h4><p>An eye toggle shows or hides
+          everything on the layer at once. <em>Solo</em> isolates one.</p></div>
+        <div class="card"><span class="ico">🔒</span><h4>Lock</h4><p>A locked layer still shows but can't be
+          selected or edited — it can't be nudged by accident.</p></div>
+        <div class="card"><span class="ico">◐</span><h4>Opacity</h4><p>Dim a layer to a faint reference
+          without hiding it, so the active work stands out.</p></div>
+        <div class="card"><span class="ico">🧷</span><h4>Grouping</h4><p>Related things travel together —
+          name them, reorder them, toggle them as one.</p></div>
+        <div class="card"><span class="ico">🎯</span><h4>Scope</h4><p>Selection, "select all", and nudges act
+          within the layers you can currently touch.</p></div>
+      </div>
+      <p>Every tool frames the same primitives slightly differently. Worth stealing the best of each:</p>
+      <table>
+        <thead><tr><th>Tool</th><th>What they nailed</th><th>Worth borrowing</th></tr></thead>
+        <tbody>
+          <tr><td>Photoshop / Figma</td><td>Eye + lock per row, drag to reorder, opacity slider,
+            <em>alt/opt-click the eye</em> to solo.</td><td>The row anatomy and the muscle memory.</td></tr>
+          <tr><td>AutoCAD</td><td>Layer is the primary organising unit; a "current" layer new objects land on;
+            freeze vs. hide (freeze also skips redraw).</td><td>A <em>default target layer</em> for new facts;
+            hide that truly stops drawing (matters for our redraw cost).</td></tr>
+          <tr><td>QGIS / mapping</td><td>Layers driven by data/queries, not manual filing; a layer panel that
+            doubles as a legend.</td><td>Query-driven "smart" layers — see §7 — and legend-as-panel.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- 3 -->
+    <section id="fit">
+      <h2><span class="num">3</span>How this fits the FloorMap model<a class="anchor" href="#fit">#</a></h2>
+      <p class="section-sub">Being honest about what exists so we grow it rather than bolt something on the side.</p>
+      <p>The renderer already composites in passes — grid, then facts (in type z-order), then events on top.
+      User-facing layers should sit <em>on top of that fact model</em>, mapping cleanly onto it:</p>
+      <table>
+        <thead><tr><th>Layer idea</th><th>FloorMap today</th><th>Proposed</th></tr></thead>
+        <tbody>
+          <tr><td>Stacking order</td><td>Order of the <code>typeStyles</code> list = paint order</td>
+            <td>The layer panel <em>is</em> that ordering, made draggable and visible on the canvas</td></tr>
+          <tr><td>What's on a layer</td><td>Facts grouped implicitly by <code>type</code></td>
+            <td>A layer = one type (start), later a group of types or a saved query (§6–§7)</td></tr>
+          <tr><td>Appearance</td><td>Per-type default shape + colour</td>
+            <td>Same fields, shown as the layer's swatch/legend row</td></tr>
+          <tr><td>Show / hide</td><td>— (nothing)</td><td>Per-layer eye; hidden layers are skipped in
+            <code>draw()</code></td></tr>
+          <tr><td>Lock</td><td>— (nothing)</td><td>Per-layer lock excludes its facts from hit-testing &amp;
+            the selection set</td></tr>
+          <tr><td>Opacity</td><td>— (nothing)</td><td>Per-layer group opacity applied at the fact-group level</td></tr>
+        </tbody>
+      </table>
+      <div class="callout rec">
+        <span class="k">The shape of the idea</span>
+        <p>Layers are largely a <strong>control surface over the ordered type list we already persist</strong>,
+        plus three new per-layer flags (visible, locked, opacity). The debate that actually matters is whether a
+        layer stays 1:1 with a type or becomes a richer grouping — that's §6.</p>
+      </div>
+    </section>
+
+    <!-- 4 -->
+    <section id="panel">
+      <h2><span class="num">4</span>The Layers panel<a class="anchor" href="#panel">#</a></h2>
+      <p class="section-sub">The centrepiece. A dockable panel beside the canvas — try it below.</p>
+      <p>Give the Editor a <strong>Layers</strong> panel, sitting alongside the existing Fact List / Time List
+      tabs. Top row = front of the map (the Figma/Photoshop convention). Each row carries the whole vocabulary
+      from §2 in a scannable strip. Below is a live, throwaway mock-up — the map on the left reacts to the panel
+      on the right. It's illustrative, not the real widget.</p>
+
+      <div class="demo" id="demo">
+        <div class="demo-bar">
+          <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+          <span class="title">FloorMap&nbsp;<small>— Editor · interactive mock-up</small></span>
+          <span class="spacer"></span>
+          <button class="btn" id="resetBtn" type="button" title="Restore the demo to its starting state">↺ Reset</button>
+        </div>
+        <div class="demo-body">
+          <div class="stage">
+            <svg id="mapSvg" viewBox="0 0 560 380" role="img" aria-label="Schematic floor map that responds to the layers panel">
+              <!-- groups are (re)ordered and toggled by JS -->
+              <g id="lyr-background">
+                <rect x="28" y="28" width="504" height="324" rx="8" fill="rgba(100,116,139,.10)" stroke="#64748b" stroke-width="2"/>
+                <path d="M262 28 v324 M28 200 h234" stroke="#64748b" stroke-width="1.4" stroke-dasharray="5 6" opacity=".7"/>
+                <rect class="cutout" x="250" y="336" width="60" height="16" stroke="#64748b" stroke-width="2"/>
+              </g>
+              <g id="lyr-rooms">
+                <rect x="46" y="46" width="196" height="140" rx="4" fill="rgba(59,130,246,.10)" stroke="#3b82f6" stroke-width="2"/>
+                <rect x="282" y="46" width="120" height="140" rx="4" fill="rgba(59,130,246,.10)" stroke="#3b82f6" stroke-width="2"/>
+                <rect x="420" y="46" width="94" height="140" rx="4" fill="rgba(59,130,246,.10)" stroke="#3b82f6" stroke-width="2"/>
+                <rect x="46" y="214" width="200" height="120" rx="4" fill="rgba(59,130,246,.08)" stroke="#3b82f6" stroke-width="2"/>
+              </g>
+              <g id="lyr-desks" fill="rgba(34,197,94,.28)" stroke="#22c55e" stroke-width="1.6">
+                <rect x="66" y="70" width="26" height="16" rx="2"/><rect x="106" y="70" width="26" height="16" rx="2"/>
+                <rect x="146" y="70" width="26" height="16" rx="2"/><rect x="66" y="104" width="26" height="16" rx="2"/>
+                <rect x="106" y="104" width="26" height="16" rx="2"/><rect x="146" y="104" width="26" height="16" rx="2"/>
+                <rect x="66" y="138" width="26" height="16" rx="2"/><rect x="106" y="138" width="26" height="16" rx="2"/>
+                <rect x="300" y="70" width="26" height="16" rx="2"/><rect x="340" y="70" width="26" height="16" rx="2"/>
+                <rect x="300" y="104" width="26" height="16" rx="2"/><rect x="340" y="104" width="26" height="16" rx="2"/>
+              </g>
+              <g id="lyr-assets">
+                <!-- cameras: diamonds -->
+                <g fill="rgba(245,158,11,.85)" stroke="#b45309" stroke-width="1.4">
+                  <path d="M52 52 l9 9 -9 9 -9 -9 z"/><path d="M508 52 l9 9 -9 9 -9 -9 z"/>
+                  <path d="M508 328 l9 9 -9 9 -9 -9 z"/><path d="M240 328 l9 9 -9 9 -9 -9 z"/>
+                </g>
+                <!-- gates: triangles at doorways -->
+                <g fill="rgba(245,158,11,.9)" stroke="#b45309" stroke-width="1.4">
+                  <path d="M262 120 l10 18 -20 0 z"/><path d="M411 120 l10 18 -20 0 z"/>
+                </g>
+                <!-- entrance pin -->
+                <path d="M280 330 c0 -12 -16 -12 -16 0 c0 8 16 20 16 20 c0 0 0 -12 0 -20 z" transform="translate(0,-2)" fill="#f59e0b" stroke="#b45309" stroke-width="1.4"/>
+              </g>
+              <g id="lyr-events" fill="#ef4444">
+                <circle cx="120" cy="250" r="7"/><circle cx="170" cy="285" r="7"/>
+                <circle cx="330" cy="150" r="7"/><circle cx="455" cy="110" r="7"/>
+                <circle cx="272" cy="300" r="7"/>
+              </g>
+              <g id="lyr-labels">
+                <text x="60" y="176">Open plan</text>
+                <text x="296" y="176">Meeting</text>
+                <text x="430" y="176">Server</text>
+                <text x="60" y="326">Lobby</text>
+                <text x="228" y="360" text-anchor="middle">Entrance</text>
+              </g>
+            </svg>
+            <div class="status" id="status"></div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-head">Layers <span class="hint">top = front · drag-equivalent&nbsp;▲▼</span></div>
+            <ul class="layers" id="layerList"></ul>
+          </div>
+        </div>
+      </div>
+      <p class="caption">Toggle the <strong>eye</strong> to hide a layer, <strong>solo</strong> (◎) to isolate
+      one, slide <strong>opacity</strong> to dim, <strong>lock</strong> (🔒) to protect it, and <strong>▲▼</strong>
+      to restack — watch the paint order change on the map. The map is schematic; real facts carry images and
+      live positions.</p>
+
+      <h3>Anatomy of a row</h3>
+      <p>Left to right, each row is a fixed grammar so the eye can scan a column at a time:</p>
+      <ul>
+        <li><strong>Reorder ▲▼ / drag handle</strong> — stacking. Dragging is the primary gesture; the arrows
+        are the keyboard/accessible equivalent (and what the mock-up uses).</li>
+        <li><strong>Eye</strong> — visibility. Alt/Opt-click to <em>solo</em> (hide all others); alt-click
+        again to restore.</li>
+        <li><strong>Lock</strong> — protect from selection and edits.</li>
+        <li><strong>Swatch + name</strong> — the layer's colour/shape doubles as a legend; the name is the type
+        (or a group name). Double-click to rename a group.</li>
+        <li><strong>Count</strong> — how many facts are on the layer <em>at the current time</em> (see §8).</li>
+        <li><strong>Opacity</strong> — a compact slider; also lives in the overflow menu.</li>
+      </ul>
+    </section>
+
+    <!-- 5 -->
+    <section id="controls">
+      <h2><span class="num">5</span>Per-layer controls in depth<a class="anchor" href="#controls">#</a></h2>
+      <p class="section-sub">The four superpowers, and how each behaves against our renderer.</p>
+
+      <h3>Visibility &amp; isolation</h3>
+      <p>The eye hides the layer's facts entirely — they are skipped when the canvas rebuilds, so hiding a heavy
+      layer is also a performance win (the redraw loop rebuilds the whole SVG each frame today, so "not drawn"
+      genuinely means "not built"). <strong>Solo / isolate</strong> is the fast path everyone reaches for:
+      show only this layer, remember what was on, restore on toggle-off. A visible <em>Isolate</em> chip while
+      soloing avoids the "why is half my map gone?" trap.</p>
+
+      <h3>Lock</h3>
+      <p>A locked layer still draws but is inert: its facts are removed from hit-testing and can never enter the
+      selection set, so clicks fall through to whatever is behind, and rubber-band selection skips them. This is
+      the single biggest safety win — lock the <em>Background</em> and you stop dragging the floor plan when you
+      meant to grab a desk. Locking also disables the layer's move/scale/rotate handles.</p>
+      <div class="callout reuse">
+        <span class="k">Reuses the selection set</span>
+        <p>Selection is already a <em>set of keys</em> (from the coordinate redesign, §7). "Locked layers can't
+        be selected" is a filter on what may enter that set and on hit-testing — no new selection model.</p>
+      </div>
+
+      <h3>Opacity &amp; dimming</h3>
+      <p>Per-layer opacity applied to the fact group. The high-value pattern is <em>reference dimming</em>: drop
+      the background plan to ~30% so it reads as a faint tracing sheet while your working layer stays at full
+      strength. Consider a one-click <strong>"dim others"</strong> (a softer solo) that fades every layer except
+      the active one rather than hiding them.</p>
+
+      <h3>Stacking</h3>
+      <p>Drag a row to restack; the map repaints in the new order. This is exactly today's
+      "reorder the type list = change z-order", now direct-manipulation and visible on the canvas.
+      <em>Unconfigured</em> facts (a type seen in the data but not yet placed) already paint on top today — in
+      the panel they surface as a highlighted <strong>"Unassigned"</strong> layer at the very top, a standing
+      nudge to file them.</p>
+    </section>
+
+    <!-- 6 -->
+    <section id="decision">
+      <h2><span class="num">6</span>The design decision: are layers the same as types?<a class="anchor" href="#decision">#</a></h2>
+      <p class="section-sub">This is the fork in the road. Everything else is comparatively mechanical.</p>
+      <p>We already group facts by type and order those types. The question is whether a <strong>layer</strong>
+      is just a nicer face on a type, or a new grouping that sits above types. Three options, cheapest first:</p>
+
+      <div class="opt a">
+        <div class="head"><span class="badge">Option A</span><h3>A layer <em>is</em> a type</h3>
+          <span class="tagline">Promote the Type Styles list</span></div>
+        <div class="body">
+          <p>The existing ordered type list becomes the Layers panel verbatim. Each discovered type is one
+          layer; we add <code>visible</code>, <code>locked</code>, <code>opacity</code> to <code>TypeStyle</code>.
+          No membership concept — a fact's layer is its type.</p>
+          <div class="pc">
+            <div><h4>For</h4><ul>
+              <li class="pro">Almost no new model; ships fastest.</li>
+              <li class="pro">Ordering, discovery, shape/colour already done.</li>
+              <li class="pro">Zero ambiguity about "which layer is this fact on".</li>
+            </ul></div>
+            <div><h4>Against</h4><ul>
+              <li class="con">Can't group several types into one layer (e.g. "Security" = cameras + gates).</li>
+              <li class="con">Can't split one type across layers (e.g. by floor).</li>
+              <li class="con">Many types ⇒ a very long panel.</li>
+            </ul></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="opt b">
+        <div class="head"><span class="badge">Option B</span><h3>A layer <em>groups</em> types / facts</h3>
+          <span class="tagline">New layer entity + membership</span></div>
+        <div class="body">
+          <p>Introduce a first-class <code>Layer</code> that owns an ordered set of types (or explicit facts).
+          Types nest under layers; layers carry the flags. Full graphics-editor power.</p>
+          <div class="pc">
+            <div><h4>For</h4><ul>
+              <li class="pro">Arbitrary, meaningful grouping ("Security", "Furniture", "Live").</li>
+              <li class="pro">Collapse/expand groups; nested stacking.</li>
+              <li class="pro">Closest to what CAD users expect.</li>
+            </ul></div>
+            <div><h4>Against</h4><ul>
+              <li class="con">New persisted model + membership rules on the doc.</li>
+              <li class="con">Manual per-fact filing fights our data-driven facts.</li>
+              <li class="con">More UI: two-level tree, drag between groups, precedence.</li>
+            </ul></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="opt c">
+        <div class="head"><span class="badge">Option C</span><h3>Smart layers (saved rules)</h3>
+          <span class="tagline">Layer = a rule over facts</span></div>
+        <div class="body">
+          <p>A layer is a named, ordered <em>rule</em>: "all facts of type X", or "facts matching this query",
+          or "these pinned keys". Membership is computed, not filed. This is how GIS tools think, and our facts
+          already arrive <em>from queries</em>.</p>
+          <div class="pc">
+            <div><h4>For</h4><ul>
+              <li class="pro">Membership stays correct as data changes — no re-filing.</li>
+              <li class="pro">Native to Stroom: reuses the query the map already runs.</li>
+              <li class="pro">"Type = X" is just the simplest rule, so A is a strict subset.</li>
+            </ul></div>
+            <div><h4>Against</h4><ul>
+              <li class="con">Rule-authoring UI to design.</li>
+              <li class="con">Overlap: a fact matching two layers needs precedence (top wins).</li>
+              <li class="con">More concept to teach than a plain list.</li>
+            </ul></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="callout rec">
+        <span class="k">Recommendation</span>
+        <p><strong>Ship A, design toward C.</strong> Turn the Type Styles list into a real Layers panel now
+        (eye · lock · opacity · drag-to-restack) — high value, tiny model change, reuses everything. Then let a
+        layer optionally be a <em>rule</em> (type, query, or pinned keys), which makes "one layer = one type"
+        the default case and unlocks grouping without per-fact filing. Treat Option B's manual filing as a
+        last resort, only if users genuinely need to hand-place individual facts.</p>
+      </div>
+
+      <div class="callout reuse">
+        <span class="k">See also · Domain Types</span>
+        <p>This "is a layer a type?" fork is the same modelling question the companion
+        <a href="floormap-domain-types.html">Domain Types</a> proposal raises from the other side —
+        whether a map object's identity stays a free-typed string or gains a semantic
+        <strong>domain type</strong>. If it does, <em>"layer = type"</em> becomes
+        <em>"layer = domain type"</em>, and Option&nbsp;C's rule-based membership lines up with that
+        doc's query- and meaning-driven grouping. Worth deciding once, across both docs.</p>
+      </div>
+    </section>
+
+    <!-- 7 -->
+    <section id="smart">
+      <h2><span class="num">7</span>Smart layers — membership from data<a class="anchor" href="#smart">#</a></h2>
+      <p class="section-sub">Where FloorMap can beat a generic graphics editor.</p>
+      <p>Facts already come from a query against the Facts Store, and events from the Events Store. So the most
+      powerful "grouping" isn't manual — it's a saved filter. Three membership modes, in one panel:</p>
+      <ul>
+        <li><strong>By type</strong> — the default; equals Option A. "Cameras", "Desks".</li>
+        <li><strong>By query / filter</strong> — "desks where <code>status = free</code>", "events for
+        <code>badge in (VIP list)</code>", "anything on <code>floor = 2</code>". The layer is a live view.</li>
+        <li><strong>Pinned</strong> — a hand-picked set of fact keys, for the odd "these three, specifically"
+        case, without a general filing system.</li>
+      </ul>
+      <p>Smart layers double as a <strong>legend</strong> and give us natural switches for common asks: a
+      "Live people" layer you flick off to declutter, a "Coverage" layer that shows only cameras and their
+      fields of view, a "Vacant desks" layer for facilities. Because membership is computed, it stays correct
+      as the timeline moves and as data updates.</p>
+      <div class="callout q">
+        <span class="k">Open question</span>
+        <p>When a fact matches two smart layers, which wins for visibility, lock and paint order? Simplest rule:
+        <strong>the topmost matching layer owns it</strong> (its flags apply; it paints there). Needs a sanity
+        check against real data before we commit.</p>
+      </div>
+      <div class="callout reuse">
+        <span class="k">See also · Domain Types</span>
+        <p>A smart layer that toggles or spotlights everything of a kind is the same capability the companion
+        <a href="floormap-domain-types.html">Domain Types</a> doc calls a <em>semantic legend &amp; filter</em>
+        (C11), and its query-driven membership is the flip side of that doc's <em>bind-by-meaning</em> (E15).
+        Build the legend/filter surface once and let both framings share it.</p>
+      </div>
+    </section>
+
+    <!-- 8 -->
+    <section id="timeline">
+      <h2><span class="num">8</span>Layers &amp; the timeline<a class="anchor" href="#timeline">#</a></h2>
+      <p class="section-sub">FloorMap is temporal; layers have to play nicely with time.</p>
+      <p>The map already shows facts <em>as they were at the selected time</em>, and playback animates through
+      time like a video. Layers are a spatial/organisational axis and should stay orthogonal to that:</p>
+      <ul>
+        <li><strong>Counts are time-aware.</strong> A layer's count reflects facts present <em>at the current
+        time</em>, matching the Fact List's default. (The Fact List's "Show all" clock toggle has a natural
+        per-layer echo.)</li>
+        <li><strong>Visibility is not animated.</strong> Hiding a layer hides it across all time; it isn't a
+        keyframe. Time controls <em>what exists</em>; layers control <em>what you're looking at</em>.</li>
+        <li><strong>Onion-skinning, per layer (later).</strong> A tempting extra: let a layer show faint
+        "ghosts" of an event's recent past positions — a per-layer trail toggle — without cluttering the rest.</li>
+        <li><strong>Play only what's visible.</strong> If the "Live events" layer is hidden, playback needn't
+        animate it — again, a redraw saving.</li>
+      </ul>
+    </section>
+
+    <!-- 9 -->
+    <section id="viewer">
+      <h2><span class="num">9</span>Layers on the read-only Map tab<a class="anchor" href="#viewer">#</a></h2>
+      <p class="section-sub">The editor authors; the viewer consumes. Layers matter on both.</p>
+      <p>There are two faces: the editable <strong>Editor</strong> tab and the read-only <strong>Map</strong> tab
+      that shares the same canvas. Locking and reordering are authoring concerns, but <em>visibility</em> is
+      exactly what a viewer wants — "show me just coverage", "hide the furniture". Proposal:</p>
+      <ul>
+        <li><strong>Saved layer presets ("views").</strong> The author defines named visibility sets —
+        <em>Security review</em>, <em>Facilities</em>, <em>Live ops</em> — stored on the doc. The Map tab offers
+        them as one-click switches. This is the layer feature most likely to be used daily.</li>
+        <li><strong>Default state on open.</strong> Each layer carries a default visibility/opacity used when the
+        map first loads, so a shared map opens sensibly rather than showing everything at once.</li>
+        <li><strong>Viewer can toggle, not restructure.</strong> On the Map tab, eyes and presets are live but
+        lock/reorder/membership are hidden — the viewer explores without changing the authored map.</li>
+      </ul>
+    </section>
+
+    <!-- 10 -->
+    <section id="edges">
+      <h2><span class="num">10</span>Interaction details &amp; edge cases<a class="anchor" href="#edges">#</a></h2>
+      <p class="section-sub">The small stuff that decides whether it feels good.</p>
+      <ul>
+        <li><strong>Clicking into a hidden layer.</strong> You can't — hidden facts aren't hit-tested. Selecting
+        a fact from the Fact List whose layer is hidden should offer to reveal it (or flash it), not silently
+        do nothing.</li>
+        <li><strong>Selecting into a locked layer.</strong> Blocked, with a subtle cue (cursor/toast). "Select
+        all" and rubber-band act only on unlocked, visible layers.</li>
+        <li><strong>New facts need a home.</strong> Borrow AutoCAD's <em>current layer</em>: <em>Add Object
+        Here</em> lands the fact on the active layer (or its type's layer). Facts of an unknown type land on the
+        top "Unassigned" layer until filed.</li>
+        <li><strong>Empty &amp; loading states.</strong> Before Discover runs, the panel shows a friendly empty
+        state with a <em>Discover types</em> button (the action already exists). A layer with zero facts
+        <em>now</em> but some in other time ranges shows a muted count, not disappearance.</li>
+        <li><strong>Keyboard.</strong> Arrow keys move focus between rows; <span class="kbd">Space</span>
+        toggles visibility; <span class="kbd">L</span> toggles lock; <span class="kbd">[</span>/<span class="kbd">]</span>
+        restack; <span class="kbd">Esc</span> clears selection (as today).</li>
+        <li><strong>Performance.</strong> Each frame rebuilds the SVG DOM, so visibility must short-circuit
+        <em>before</em> building a layer's facts, not just set <code>display:none</code>. Hidden and locked-but-off
+        layers are the cheap escape hatch for heavy maps.</li>
+        <li><strong>Don't overload "type".</strong> If we keep A (layer = type), make sure Settings'
+        shape/colour and the panel's swatch are the <em>same</em> setting shown twice, never two places to edit
+        the same thing that can drift. And if the companion <a href="floormap-domain-types.html">Domain
+        Types</a> styling (Theme&nbsp;C) lands, that single source of truth should be the domain type's shared
+        style — the swatch then reflects the semantic style rather than a free-typed one.</li>
+      </ul>
+    </section>
+
+    <!-- 11 -->
+    <section id="phasing">
+      <h2><span class="num">11</span>Suggested phasing<a class="anchor" href="#phasing">#</a></h2>
+      <p class="section-sub">Each step ships something useful on its own.</p>
+      <ol class="roadmap">
+        <li><span class="ph">Panel + visibility<span class="when">MVP</span></span>
+          <p>Render the existing ordered type list as a Layers panel with an <strong>eye</strong> per row and
+          <strong>solo</strong>. Hidden layers are skipped in <code>draw()</code>. Pure win, tiny surface.</p></li>
+        <li><span class="ph">Lock + opacity<span class="when">Next</span></span>
+          <p>Add <code>locked</code> and <code>opacity</code> to <code>TypeStyle</code>; lock filters
+          hit-testing/selection, opacity applies to the fact group. The safety + focus story lands here.</p></li>
+        <li><span class="ph">Drag-to-restack<span class="when">Next</span></span>
+          <p>Direct-manipulation reorder in the panel, replacing "edit the list order in Settings". Surfaces the
+          "Unassigned" layer at the top.</p></li>
+        <li><span class="ph">Presets &amp; viewer<span class="when">Then</span></span>
+          <p>Named visibility presets + per-layer default state, exposed as switches on the read-only Map tab.</p></li>
+        <li><span class="ph">Smart / grouped layers<span class="when">Later</span></span>
+          <p>Let a layer be a rule (type / query / pinned) so several types can share a layer and membership
+          stays data-driven. Only add manual per-fact filing if the need is proven.</p></li>
+      </ol>
+    </section>
+
+    <!-- 12 -->
+    <section id="questions">
+      <h2><span class="num">12</span>Open questions for the team<a class="anchor" href="#questions">#</a></h2>
+      <div class="callout q"><span class="k">Layer = type, or more?</span><p>Do real maps need to group several
+        types into one layer (§6), or is one-layer-per-type enough for v1?</p></div>
+      <div class="callout q"><span class="k">Events as a layer</span><p>Are moving events (people) just another
+        layer, or special enough to deserve dedicated treatment (density, clustering, trails)?</p></div>
+      <div class="callout q"><span class="k">Where does the panel live?</span><p>A new tab beside Fact List /
+        Time List, a collapsible rail, or folded into the existing Settings type grid?</p></div>
+      <div class="callout q"><span class="k">Freeze vs. hide</span><p>Is "hidden but still counted" enough, or do
+        we also want AutoCAD-style <em>freeze</em> (excluded from queries/redraw entirely) for very heavy maps?</p></div>
+      <div class="callout q"><span class="k">Overlap precedence</span><p>If we go to smart layers, is "topmost
+        matching layer wins" the rule everyone expects (§7)?</p></div>
+    </section>
+
+    <!-- 13 -->
+    <section id="glossary">
+      <h2><span class="num">13</span>Glossary — tool term → FloorMap<a class="anchor" href="#glossary">#</a></h2>
+      <table>
+        <thead><tr><th>Graphics/CAD term</th><th>FloorMap equivalent</th></tr></thead>
+        <tbody>
+          <tr><td>Layer</td><td>Proposed: a type (v1), later a group/rule over facts</td></tr>
+          <tr><td>Object / shape on a layer</td><td>A <strong>fact</strong> (background, gate, desk, camera, event)</td></tr>
+          <tr><td>Z-order / stacking</td><td>Order of the type list (<code>typeStyles</code> → <code>FloorMapZOrder</code>)</td></tr>
+          <tr><td>Fill / stroke style</td><td>Per-type default shape + colour (<code>TypeStyle</code>)</td></tr>
+          <tr><td>Canvas</td><td>The Y-up map space, rendered with a single flip + pan/zoom</td></tr>
+          <tr><td>Frames / animation</td><td>The timeline (temporal facts + playback)</td></tr>
+          <tr><td>Current layer</td><td>Proposed: the target layer new facts are added to</td></tr>
+          <tr><td>Solo / isolate</td><td>Proposed: show only this layer</td></tr>
+          <tr><td>Freeze (AutoCAD)</td><td>Proposed (open): exclude a layer from redraw/query, not just view</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+  </main>
+</div>
+
+<footer>
+  FloorMap layers — UX discussion draft, 2026-07-17. Grounded in the current editor
+  (<code>FloorMapDoc</code>, <code>TypeStyle</code>, <code>FloorMapZOrder</code>,
+  <code>FloorMapCanvasPresenter</code>) and the coordinate/rendering redesign. The mock-up above is illustrative.
+  Open in any browser; no network access required.
+  Companion proposal: <a href="floormap-domain-types.html">Bringing Domain Types to the Floor Map</a> — it would
+  make this doc's type-keyed layers, swatches and legend semantic; the two share the same type &amp; z-order model.
+</footer>
+
+<script>
+(function(){
+  "use strict";
+  // Panel order is front -> back (top row paints on top, like Figma/Photoshop).
+  var INITIAL = [
+    {id:"labels",     name:"Labels",              color:"#8b5cf6", visible:true,  locked:false, opacity:1,    count:5},
+    {id:"events",     name:"Live events",         color:"#ef4444", visible:true,  locked:false, opacity:1,    count:5},
+    {id:"assets",     name:"Fixed assets",        color:"#f59e0b", visible:true,  locked:false, opacity:1,    count:7},
+    {id:"desks",      name:"Desks",               color:"#22c55e", visible:true,  locked:false, opacity:1,    count:12},
+    {id:"rooms",      name:"Rooms",               color:"#3b82f6", visible:true,  locked:true,  opacity:1,    count:4},
+    {id:"background", name:"Background (plan)",    color:"#64748b", visible:true,  locked:true,  opacity:0.55, count:1}
+  ];
+  function clone(a){ return a.map(function(o){ var n={}; for(var k in o) n[k]=o[k]; return n; }); }
+  var state = { layers: clone(INITIAL), soloId: null };
+
+  var svg = document.getElementById("mapSvg");
+  var list = document.getElementById("layerList");
+  var statusEl = document.getElementById("status");
+  var groups = {};
+  state.layers.forEach(function(l){ groups[l.id] = svg.getElementById("lyr-"+l.id); });
+
+  function isVisible(l){ return state.soloId ? (l.id === state.soloId) : l.visible; }
+
+  function renderMap(){
+    // Append back -> front so the front layer is painted last (on top).
+    for (var i = state.layers.length - 1; i >= 0; i--){
+      var g = groups[state.layers[i].id];
+      if (g) svg.appendChild(g);
+    }
+    state.layers.forEach(function(l){
+      var g = groups[l.id]; if (!g) return;
+      var vis = isVisible(l);
+      g.style.display = vis ? "" : "none";
+      g.style.opacity = String(l.opacity);
+    });
+  }
+
+  function icon(id){ return '<svg class="icon" aria-hidden="true"><use href="#'+id+'"/></svg>'; }
+
+  function renderPanel(){
+    var html = state.layers.map(function(l, i){
+      var dimmed = state.soloId && state.soloId !== l.id;
+      var eyeIcon = l.visible ? "i-eye" : "i-eye-off";
+      var lockIcon = l.locked ? "i-lock" : "i-unlock";
+      var soloOn = state.soloId === l.id;
+      return ''
+        + '<li class="lyr-row'+(l.locked?" is-locked":"")+(dimmed?" is-dimmed":"")+'" data-id="'+l.id+'">'
+        +   '<div class="reorder">'
+        +     '<button type="button" data-act="up" title="Move forward" aria-label="Move '+l.name+' forward"'+(i===0?" disabled":"")+'>'+icon("i-up")+'</button>'
+        +     '<button type="button" data-act="down" title="Move back" aria-label="Move '+l.name+' back"'+(i===state.layers.length-1?" disabled":"")+'>'+icon("i-down")+'</button>'
+        +   '</div>'
+        +   '<button type="button" class="icon-btn '+(l.visible?"on":"off")+'" data-act="vis" title="Show / hide (alt-click to solo)" aria-label="Toggle visibility of '+l.name+'">'+icon(eyeIcon)+'</button>'
+        +   '<div class="lyr-mid">'
+        +     '<span class="swatch" style="background:'+l.color+'"></span>'
+        +     '<span class="name">'+l.name+'</span>'
+        +     '<span class="count" title="facts on this layer at the current time">'+l.count+'</span>'
+        +   '</div>'
+        +   '<div class="lyr-right">'
+        +     '<input class="op" type="range" min="0" max="100" value="'+Math.round(l.opacity*100)+'" title="Opacity '+Math.round(l.opacity*100)+'%" aria-label="Opacity of '+l.name+'">'
+        +     '<button type="button" class="icon-btn solo '+(soloOn?"on":"")+'" data-act="solo" title="Isolate this layer" aria-label="Isolate '+l.name+'">'+icon("i-solo")+'</button>'
+        +     '<button type="button" class="icon-btn lock '+(l.locked?"on":"")+'" data-act="lock" title="Lock / unlock" aria-label="Toggle lock of '+l.name+'">'+icon(lockIcon)+'</button>'
+        +   '</div>'
+        + '</li>';
+    }).join("");
+    list.innerHTML = html;
+  }
+
+  function renderStatus(){
+    var shown = state.layers.filter(isVisible);
+    var facts = shown.reduce(function(a,l){ return a + l.count; }, 0);
+    var msg = '<b>'+shown.length+'</b>/'+state.layers.length+' layers · <b>'+facts+'</b> facts visible';
+    if (state.soloId){
+      var s = state.layers.filter(function(l){ return l.id===state.soloId; })[0];
+      msg += ' · isolating <b>'+(s?s.name:"")+'</b>';
+    }
+    statusEl.innerHTML = msg;
+  }
+
+  function update(){ renderMap(); renderPanel(); renderStatus(); }
+
+  function idx(id){ for (var i=0;i<state.layers.length;i++) if (state.layers[i].id===id) return i; return -1; }
+  function swap(i,j){ var t=state.layers[i]; state.layers[i]=state.layers[j]; state.layers[j]=t; }
+
+  list.addEventListener("click", function(e){
+    var btn = e.target.closest("button[data-act]"); if (!btn) return;
+    var row = e.target.closest(".lyr-row"); if (!row) return;
+    var i = idx(row.getAttribute("data-id"));
+    if (i < 0) return;
+    var act = btn.getAttribute("data-act");
+    if (act === "vis"){
+      if (e.altKey){ // alt-click = solo, matching Figma/Photoshop
+        state.soloId = (state.soloId === state.layers[i].id) ? null : state.layers[i].id;
+      } else {
+        state.layers[i].visible = !state.layers[i].visible;
+        state.soloId = null;
+      }
+    } else if (act === "lock"){
+      state.layers[i].locked = !state.layers[i].locked;
+    } else if (act === "solo"){
+      state.soloId = (state.soloId === state.layers[i].id) ? null : state.layers[i].id;
+    } else if (act === "up" && i > 0){
+      swap(i, i-1);
+    } else if (act === "down" && i < state.layers.length-1){
+      swap(i, i+1);
+    }
+    update();
+  });
+
+  list.addEventListener("input", function(e){
+    var r = e.target.closest('input[type="range"]'); if (!r) return;
+    var row = e.target.closest(".lyr-row"); if (!row) return;
+    var i = idx(row.getAttribute("data-id"));
+    if (i < 0) return;
+    state.layers[i].opacity = (+r.value) / 100;
+    update();
+  });
+
+  document.getElementById("resetBtn").addEventListener("click", function(){
+    state.layers = clone(INITIAL);
+    state.soloId = null;
+    update();
+  });
+
+  update();
+})();
+</script>
+</body>
+</html>

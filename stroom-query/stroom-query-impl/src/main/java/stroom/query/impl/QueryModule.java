@@ -19,7 +19,7 @@ package stroom.query.impl;
 import stroom.docstore.api.DocumentStoreBinder;
 import stroom.event.logging.api.ObjectInfoProviderBinder;
 import stroom.query.api.datasource.QueryFieldProvider;
-import stroom.query.language.LegacyQueryCompiler;
+import stroom.query.language.DispatchingQueryCompiler;
 import stroom.query.language.QueryCompiler;
 import stroom.query.shared.QueryDoc;
 import stroom.util.guice.RestResourcesBinder;
@@ -32,7 +32,7 @@ public class QueryModule extends AbstractModule {
     protected void configure() {
         bind(QueryService.class).to(QueryServiceImpl.class);
         bind(QueryFieldProvider.class).to(QueryServiceImpl.class);
-        bind(QueryCompiler.class).to(LegacyQueryCompiler.class);
+        bind(QueryCompiler.class).to(DispatchingQueryCompiler.class);
 
         DocumentStoreBinder.create(binder())
                 .bind(QueryDoc.TYPE, QueryStore.class, QueryStoreImpl.class);

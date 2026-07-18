@@ -14,21 +14,12 @@
  * limitations under the License.
  */
 
-ext.moduleName = 'stroom.query.planner'
+/**
+ * The single entry point ({@code StroomQlParser}) that wires the ANTLR lexer/parser, precise syntax-error
+ * reporting, and {@link stroom.query.grammar.ast.AstBuilder} together into one {@code text -> AstQuery} call (see
+ * {@code docs/query-optimiser-implementation-plan.md}, Task 1.3).
+ */
+@NullMarked
+package stroom.query.grammar.parse;
 
-dependencies {
-    //--------Stroom libs------
-    implementation project(':stroom-core-shared')
-    implementation project(':stroom-docref')
-    implementation project(':stroom-query:stroom-query-grammar')
-    implementation project(':stroom-query:stroom-query-api')
-    implementation project(':stroom-util-shared')
-
-    //--------3rd party--------
-    implementation libs.jspecify
-
-    testImplementation project(':stroom-test-common')
-
-    testImplementation libs.bundles.common.test.implementation
-    testRuntimeOnly libs.bundles.common.test.runtime
-}
+import org.jspecify.annotations.NullMarked;
