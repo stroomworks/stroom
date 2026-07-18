@@ -122,18 +122,18 @@ and managed as a unit under its lifecycle.
 - **Node store** (temporal state): `nodeUid → {labels, properties}`, time-stamped so node property *history* is an as-of lookup.
 - **Out-edge adjacency** (temporal): key `(srcUid, edgeTypeUid, validFrom, dstUid) → edgeProps`. A **prefix scan on `srcUid`** (optionally `+ edgeTypeUid`) yields all out-neighbours; the time component + reverse cursor gives the set **as of T**.
 - **In-edge adjacency** (mirror): key `(dstUid, edgeTypeUid, validFrom, srcUid) → edgeProps`, for reverse / incoming / undirected traversal.
-- **Property-value index**: `(labelUid, propKeyUid, value) → nodeUid` (a Plan B `STATE` sub-store) **or** a Lucene index — decided by the P0 spike — used to find anchor nodes.
+- **Property-value index**: `(labelUid, propKeyUid, value) → nodeUid` — a Plan B `STATE` sub-store (the P0.1 spike chose this over a Lucene index, so it stays under the doc's single LMDB env / lifecycle) used to find anchor nodes.
 
-Conceptual key layout (exact byte encoding is a P0 deliverable, not fixed here):
+Key layout — **frozen by the P0.1 spike** (byte-level widths in the [implementation plan](temporal-cypher-graph-implementation-plan.md)'s Frozen-model box, §3 Task 0.1):
 
 ```
-Node:      [nodeUid][validFrom]                         -> {labelsBitset, propsRef}
-Out-edge:  [srcUid][edgeTypeUid][validFrom][dstUid]     -> edgeProps
-In-edge:   [dstUid][edgeTypeUid][validFrom][srcUid]     -> edgeProps
+Node:      [nodeUid][validFrom]                         -> {labelsBitset, propsBlob | tombstone}
+Out-edge:  [srcUid][edgeTypeUid][dstUid][validFrom]     -> edgeProps | tombstone
+In-edge:   [dstUid][edgeTypeUid][srcUid][validFrom]     -> edgeProps | tombstone
 PropIndex: [labelUid][propKeyUid][valueBytes]           -> nodeUid
 ```
 
-Numeric components (UIDs, timestamps) are encoded **big-endian / order-preserving** so LMDB's byte ordering matches logical ordering — the same technique Plan B's `TimeSerde` and temporal key serdes already use. `TraceDb` is a working precedent for composite keys + a custom `search()` on Plan B.
+Two things the spike fixed that the conceptual sketch left open. **(1) Fixed-width UIDs** (via `UidLookupDb` + a static unsigned-bytes factory): `UidLookupDb`'s default *variable* width would silently break the composite-key prefix scans once a namespace grew past a width boundary. **(2) `validFrom` last, with `dst` before it** (refining the earlier `…[validFrom][dst]` sketch): putting `dst` ahead of `validFrom` keeps each edge's version history a contiguous, floor-lookable run — so an edge's state *as of T* is the very same single reverse-cursor lookup Plan B's `TemporalStateDb.getState` already performs, and a version's validity-interval end is just the adjacent key. Numeric components (UIDs; `validFrom` via 6-byte `MillisecondTimeSerde`) are **big-endian / order-preserving**, so LMDB's byte order matches logical order — the technique Plan B's temporal key serdes already use. `TraceDb` / `SpanKeySerde` is the working fixed-layout composite-key precedent.
 
 ### 5.2 Ingest path
 
@@ -168,8 +168,10 @@ Everything downstream is reused unchanged: coprocessors, result stores, incremen
 Cypher has no standard as-of syntax, so we add a small, resolved-before-execution extension:
 
 - `AS OF <timestamp>` — one snapshot instant applied to every Plan B floor lookup and adjacency filter (`MATCH ... AS OF ...`).
-- `AROUND <timestamp> ± <duration>` / `BETWEEN <t1> AND <t2>` — a **bounded window scan** over `TEMPORAL_RANGED_STATE`, returning versions/edges whose validity interval intersects the window. This is the *"at or around a point in time"* requirement.
+- `AROUND <timestamp> ± <duration>` / `BETWEEN <t1> AND <t2>` — a **bounded window scan** returning versions/edges whose validity interval intersects the window (P0.3 fixes the exact intersection rule below). This is the *"at or around a point in time"* requirement.
 - No clause → latest.
+
+**Semantics frozen by the P0.3 spike** (worked examples in the [implementation plan](temporal-cypher-graph-implementation-plan.md)'s §3 Task 0.3 outcome). A version has a half-open validity interval `[validFrom, nextValidFrom)`. `AS OF t` is applied **per-edge** — every hop is floor-looked-up at the *same* instant *t*, so the result is "the graph as it existed at *t*", and a path is returned iff every edge and node on it was valid at *t* (per-path as-of is rejected as ambiguous for v1). For windows, bounds are **inclusive** and a version intersects `[w1, w2]` iff `validFrom ≤ w2 AND nextValidFrom > w1`; a path is returned iff every edge has a version intersecting the window (the versions need not be simultaneous). Tombstone versions (from a supersede/delete) mean "absent" and are never emitted.
 
 Model choice: **single-axis valid time** first (each node/edge version carries `validFrom`; a supersede/delete writes a new version). This matches Plan B's temporal state 1:1, and Plan B's existing `condense` / `deleteOldData` handle retention of old versions. Bitemporal (separate transaction time) is a later extension, not a v1 requirement.
 
@@ -293,7 +295,7 @@ Independently estimated and cross-checked against the codebase. Effort is in **p
 | *(inherited from core: parser framework, logical/physical planner, join executor, expression eval, aggregation, result projection)* | | *0* | — |
 | **P4 — Temporal Cypher extension** | | **5–10** | |
 | 4.1 Temporal syntax | `AS OF` / `AROUND±d` / `BETWEEN` grammar + AST | 1–2 | ANTLR/parsers |
-| 4.2 As-of / window execution | As-of join reusing the core's State-lookup path + Plan B floor lookup; window scans over `TEMPORAL_RANGED_STATE` | 2–4 | LMDB/serde + engine |
+| 4.2 As-of / window execution | As-of join reusing the core's State-lookup path + Plan B floor lookup; window scans (interval intersection over adjacency version runs, per P0.3) | 2–4 | LMDB/serde + engine |
 | 4.3 Temporal correctness tests | As-of across multi-hop, interval edge cases | 2–4 | Test design |
 | **P5 — Query integration** | | **5–10** | |
 | 5.1 `GraphSearchProvider` | Copy `StateSearchProvider`; drive engine → coprocessors | 2–4 | Stroom search stack |
@@ -346,9 +348,9 @@ Independently estimated and cross-checked against the codebase. Effort is in **p
 
 ## 11. Open questions / de-risking spikes
 
-- **Plan B shard partitioning** — exact scheme and whether a graph's adjacency can be co-located (partition by graph/tenant id rather than node id) to minimise cross-shard hops. *Blocks the scale-out estimate; resolve in P0.*
-- **Property-index technology** — Plan B `STATE` sub-store vs Lucene for anchor lookups (write cost vs query flexibility). *Resolve in P0.*
-- **openCypher grammar** — which maintained grammar to adopt into the shared `stroom-query-grammar` module created by the query-core project (that project also removes the "no ANTLR precedent" risk).
+- **Plan B shard partitioning** — ***resolved in P0.1:*** v1 partitions **by graph id** (a `GraphDbDoc`'s stores fully co-located → zero cross-shard hops); scale-out hash-partitions the out-edge store by `srcUid` (in-edge by `dstUid`) so a node's out-adjacency is local to the expanding cursor. *The cross-shard-hop **benchmark number** is a scale-out (P8) input, measured then — not a v1 gate (v1 is single-shard).*
+- **Property-index technology** — ***resolved in P0.1 (D3):*** a Plan B `STATE` sub-store (kept under the `GraphDbDoc`'s single LMDB env / lifecycle; equality/prefix anchors cover the v1 subset). A wrapped Lucene index is the documented escalation path if free-text / range anchoring is needed.
+- **openCypher grammar** — ***resolved in P0.2 (D4):*** the openCypher project's reference ANTLR grammar (Apache-2.0), trimmed to the v1 subset, in the shared `stroom-query-grammar` module. *Pin the exact upstream commit and re-confirm the licence at import.*
 - **Reference-data store** — confirm its effective-time semantics as an alternative/secondary temporal store (not on the critical path).
 - **Relationship (edge) semantics in the catalogue** — `DomainType` models entities + attributes, not relationships; decide whether edges come from a convention (event co-occurrence) or a lightweight relationship-type extension to `DomainTypeDoc`. *Pairs with the domain-type integration (§5.6).*
 

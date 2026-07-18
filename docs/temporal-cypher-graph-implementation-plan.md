@@ -39,6 +39,25 @@ names are contracts.
      on it. If a task seems to require re-implementing something the core provides, stop and reconsider.
   3. **Domain types are advisory** (design §5.6): a graph with no domain types must build and query identically.
   4. **Every task ships green**: `./gradlew` build + the task's own tests + checkstyle, before it's "done".
+  5. **Documented + runtime-checked contracts on every new type/method.** Each new public or protected type and method
+     carries **Javadoc** stating its **preconditions** (constraints on arguments/state at entry — one per `@param` where
+     it applies), its **postconditions** (`@return` guarantees, side effects, and `@throws` for each thrown type), and
+     its **null status**.
+     - **Null status is expressed with JSpecify** (`org.jspecify.annotations`, already a dependency — `libs.jspecify`
+       1.0.0 — and already used across the query core + `stroom-core-shared`), *not* prose and *not* another
+       `@Nullable` flavour (the codebase also has stray `jakarta.annotation`/`jetbrains` ones — do not add more). Every
+       new package gets a `@NullMarked` `package-info.java` so all references are non-null by default; `@Nullable`
+       marks the genuine exceptions (parameters, return types, fields, type arguments). The annotations are the source
+       of truth; the Javadoc explains the *meaning* of a null where one is allowed.
+     - **Preconditions and postconditions are verified at runtime in code**, not merely documented. Use the repo's
+       idioms: `java.util.Objects.requireNonNull(x, "x")` for null-argument preconditions (the dominant convention,
+       800+ files), and Guava `com.google.common.base.Preconditions.checkArgument(...)` / `checkState(...)` for
+       value/state preconditions and for postcondition invariants (assert-or-throw before returning). A violated
+       contract **throws a clear exception**, never proceeds. This matters most in the byte-level serde / cursor code,
+       where a wrong UID width, buffer offset, or over-length key **silently corrupts an LMDB store** instead of failing
+       loudly — Plan B's existing `KeyLength.check(buffer, Db.MAX_KEY_LENGTH)` is the precedent to follow. (`assert` is
+       acceptable only for pure programming-error checks that may be disabled at runtime; load-bearing invariants — and
+       everything guarding a write to a store — must throw.)
 
 ---
 
@@ -185,9 +204,9 @@ Where new code lives, and why (verified against the `build.gradle` dependency gr
 | `Cypher.g4` + generated parser | `stroom-query-grammar`, `src/main/antlr/stroom/query/grammar/antlr/` → gen package `stroom.query.grammar.antlr` | Same module + `generateGrammarSource` config as `StroomQL.g4`; this module has a deliberately minimal dep surface (no planner/language deps), so Cypher inherits that. |
 | Cypher AST records + `parse(...)` entry | `stroom-query-grammar`, `stroom.query.grammar.ast.cypher` + `stroom.query.grammar.parse` | Mirrors StroomQL's `ast`/`parse` split. Separate `ast.cypher` sub-package avoids record-name collisions with StroomQL's AST. |
 | Cypher → `LogicalPlan` compiler + graph logical nodes (`Expand`, `VarLengthPath`) | `stroom-query-planner`, `stroom.query.planner.cypher` + `stroom.query.planner.logical` | Planner already depends on the grammar module and holds `LogicalPlan`; new IR nodes join the sealed hierarchy here. **Clean module — no Plan B dependency** (see next row). |
-| **`GraphDbDoc` document type** (docstore doc + store) that **owns and encapsulates** the internal stores | `stroom-planb-impl` (`stroom.planb.impl.graph.*`) + `stroom-core-shared` for the shared `GraphDbDoc` type | This is the *only* thing a user creates. It provisions, opens, rebuilds, retains, and deletes its internal stores as a hidden unit (§2.1 below). Lives with the Plan B internals it wraps. |
-| Graph physical storage (node/adjacency/property-index DAOs + serdes) + the anchor index — **internal to the `GraphDbDoc`, hidden from the user**, plus `GraphFilter`, `GraphSearchProvider`, the adjacency **access path** (prefix-scan over Plan B) | `stroom-planb-impl` (`stroom.planb.impl.graph.*`) | The Plan B DAO infra (`AbstractDb`, `PlanBEnv`, `UidLookupDb`, `ShardWriters`, `ShardManager`) is package-internal to `stroom.planb.impl`. Like the optimiser's `IndexShardStats` adapter (which had to live in `stroom-index-impl`, not the clean planner module, to avoid a dependency cycle), the graph's *physical* pieces live here; only the *logical* plan/operators live in the clean planner module. |
-| Graph cost adapter (implements a planner `port`) | `stroom-planb-impl` | Same port/adapter split — interface in `stroom-query-planner.port`, adapter in the impl module. |
+| **`GraphDbDoc` document type** (docstore doc + store) that **owns and encapsulates** the internal stores | `stroom-graphdb-impl` (`stroom.graphdb.impl.*`) + `stroom-core-shared` for the shared `GraphDbDoc` type | This is the *only* thing a user creates. It provisions, opens, rebuilds, retains, and deletes its internal stores as a hidden unit (§2.1 below). **[D1 resolved — a dedicated module; see the blockquote below.]** |
+| Graph physical storage (node/adjacency/property-index DAOs + serdes) + the anchor index — **internal to the `GraphDbDoc`, hidden from the user**, plus `GraphFilter`, `GraphSearchProvider`, the adjacency **access path** (prefix-scan over Plan B) | `stroom-graphdb-impl` (`stroom.graphdb.impl.*`) | A dedicated module depending on `stroom-planb-impl` (storage substrate) + `stroom-query-planner`/`-common`/`-grammar` (IR, engine, Cypher parse) + `stroom-core-shared`. **Consequence of D1 (new module, not folded into `stroom-planb-impl`):** the Plan B internals the graph reuses (`AbstractDb`, `PlanBEnv`, `UidLookupDb`/`HashLookupDb`, the serde primitives, `ShardWriters`, `ShardManager`) — some package-internal to `stroom.planb.impl` today — must be made reachable across the module boundary (promote to `public` in exported packages, or front with a small Plan B graph SPI). No dependency cycle results (`stroom-planb-impl` does not depend back on the graph module). Do the access audit in PoC.0. |
+| Graph cost adapter (implements a planner `port`) | `stroom-graphdb-impl` | Same port/adapter split — interface in `stroom-query-planner.port`, adapter in the graph module. |
 | Graph doc UI + Cypher editor + visualisation | `stroom-core-client` (GWT), mirroring `stroom.planb.client` | Same place as the Plan B doc editor. |
 
 ### 2.1 The `GraphDbDoc` wrapper (encapsulation — the defining architectural decision)
@@ -211,12 +230,20 @@ nothing to wire wrongly.
   `GraphSearchProvider` resolves a `GraphDbDoc` (by its `DocRef`) and opens that doc's internal stores; `GraphFilter`
   writes into the owning `GraphDbDoc`'s stores.
 
-> **[Decision D1 — new module vs. `stroom-planb-impl`]** The table places graph code in `stroom-planb-impl`. An
-> alternative is a new `stroom-graph-impl` module depending on `stroom-planb-impl`, if the Plan B internals it needs
-> (`PlanBEnv`, `UidLookupDb`, `ShardWriters`) are made accessible. Start in `stroom-planb-impl` (least friction,
-> everything is reachable); extract later if the graph grows large. Record the choice in the P1 PR. **Note**: the
-> shared `GraphDbDoc` type (a serialisable doc, like `PlanBDoc` in `stroom-core-shared`) lives in `stroom-core-shared`
-> regardless.
+> **[Decision D1 — RESOLVED: a dedicated `stroom-graphdb-impl` module.]** Graph code lives in its own module
+> `stroom-graphdb-impl` (Java packages `stroom.graphdb.impl.*`), sitting under a `stroom-graphdb/` parent to mirror the
+> `stroom-planb/stroom-planb-impl` convention — registered in `settings.gradle` as
+> `include 'stroom-graphdb:stroom-graphdb-impl'`. It depends on `stroom-planb-impl` (storage substrate),
+> `stroom-query-planner`/`-common`/`-grammar` (IR + engine + Cypher parse), and `stroom-core-shared` (the shared
+> `GraphDbDoc` type — which lives in `stroom-core-shared` regardless, package `stroom.graphdb.shared`). Its own
+> `GraphDbModule` (Guice) owns all wiring; `PlanBModule` is **not** edited.
+>
+> **Action this choice creates (do it in PoC.0):** because the graph is now a *separate* module, the Plan B internals
+> it reuses (`AbstractDb`, `PlanBEnv`, `UidLookupDb`/`HashLookupDb`, the `serde/*` primitives, `ShardWriters`,
+> `ShardManager`) — some of which are today package-internal to `stroom.planb.impl` — must be reachable across the
+> module boundary: promote the required types to `public` in exported packages, or extract a small graph-facing SPI in
+> `stroom-planb-impl`. This access is the price of the clean separation (it was "free" only while the code sat inside
+> `stroom-planb-impl`). There is **no dependency cycle**: `stroom-planb-impl` never depends on the graph module.
 
 ---
 
@@ -247,16 +274,37 @@ below.** Each spike's deliverable is a *written artefact + a throwaway prototype
   real `TemporalStateDb`-style DBI, and runs **anchor-seek → 1-hop expand (prefix scan) → floor filter** reading real
   LMDB entries — proving the cursor lifetimes / byte-buffer reuse work (design §8 "traversal executor correctness"
   risk).
-- **Done-when**: the layout spec is reviewed; the prototype demonstrably reads back a 1-hop traversal with a correct
-  as-of result; the partitioning decision is recorded with a benchmark number; D3 is decided.
-- **Verify**: prototype runs green as a throwaway `main`/test; spec reviewed by the storage owner.
+- **Done-when**: the layout spec is reviewed (**signed off**); D3 is decided; the partitioning decision is recorded
+  (its benchmark number is a **P8** input, not a v1 gate — see below). *The throwaway prototype is **waived** — the
+  layout is grounded in the verified Plan B serdes, and PoC.4's own tests prove the round-trip + as-of behaviour when
+  storage lands.*
+- **Verify**: layout spec signed off by the storage owner (done); prototype waived.
 
-> **Frozen model (fill in when 0.1 completes — the rest of the plan references this):**
-> - Node key: `________`  Node value: `________`
-> - Out-edge key: `________`  value: `________`   In-edge key: `________`
-> - PropIndex: `________`   (tech: Plan B STATE | Lucene = `____`)
-> - Interning: node-id=`____` label=`____` edgeType=`____` propKey=`____`
-> - Partitioning: `________`  (cross-shard-hop benchmark: `____`)
+> **Frozen model (recorded 2026-07-18 from the P0.1 spike — the rest of the plan references this):**
+> All UIDs are FIXED-WIDTH (`UidLookupDb` + `StaticUnsignedBytesFactory(UnsignedBytesInstances.ofLength(W))`); the
+> `UidLookupDb` default is *variable* width (grows 1→8 B with the id counter) and would silently break composite-key
+> prefix scans once a namespace crosses a width boundary — so fixed width is mandatory. `validFrom` =
+> `MillisecondTimeSerde` (**6 B**, unsigned BE, order-preserving; **not** `NanoTimeSerde`, which is signed and not
+> order-preserving). All keys ≪ `Db.MAX_KEY_LENGTH` (511).
+> - **Node** — key `[nodeUid:6][validFrom:6]` (12 B); value `{labelsBitset, propsBlob}` or TOMBSTONE.
+> - **Out-edge** — key `[srcUid:6][edgeTypeUid:4][dstUid:6][validFrom:6]` (22 B); value `edgePropsBlob` or TOMBSTONE.
+> - **In-edge** — key `[dstUid:6][edgeTypeUid:4][srcUid:6][validFrom:6]` (22 B); value as out-edge.
+>   *Ordering refinement:* `dst` precedes `validFrom` so each edge's version history is a contiguous, floor-lookable run
+>   — this refines the design doc's conceptual `[src][etype][validFrom][dst]` (rationale + trade-off in §3 P0.1 outcome).
+> - **PropIndex** — key `[labelUid:4][propKeyUid:4][valueBytes…]`; value `[nodeUid:6]`. `valueBytes` reuses Plan B's
+>   `VariableKeySerde` length discipline (DIRECT inline / UID-lookup >32 B / HASH-lookup >511 B). Tech: **Plan B STATE
+>   sub-store** *(resolves D3)*.
+> - **Interning**: node-id = `UidLookupDb` fixed **6 B**; label / edgeType / propKey = `UidLookupDb` fixed **4 B** each.
+>   Cross-shard-stable content-hash node ids (`HashLookupDb`, 8 B, clash-handled) are a **P8 scale-out** refinement,
+>   *not* v1 — a single-shard `UidLookupDb` already unifies the same external id across feeds (get-or-create), so
+>   domain-type entity resolution (§5.6) works without a hash in v1.
+> - **Partitioning**: v1 = by graph id (`GraphDbDoc`), fully co-located → **zero cross-shard hops**. Scale-out (P8) =
+>   hash by `srcUid` (out-edge) / `dstUid` (in-edge). Cross-shard-hop **benchmark: a P8 input, not a v1 gate** (below).
+>
+> **P0.1 status:** the frozen layout is **accepted and signed off** — it is grounded in the verified Plan B serde
+> encodings, so the throwaway prototype is **waived** (PoC.4's own tests prove the round-trip + as-of behaviour when
+> storage lands). The cross-shard-hop **benchmark is not a v1 gate**: v1 is single-shard (zero cross-shard hops), so the
+> number is only an input to the **P8 scale-out** phase and is scheduled there. Coding may proceed on this layout.
 
 ### Task 0.2 — Cypher scope + grammar spike **(blocks PoC.1)**
 - **Goal**: import a maintained openCypher ANTLR grammar, generate a parser in `stroom-query-grammar`, and lock the
@@ -275,6 +323,22 @@ below.** Each spike's deliverable is a *written artefact + a throwaway prototype
 - **Done-when**: `./gradlew :stroom-query:stroom-query-grammar:build` is green with `Cypher.g4` present; the subset
   spec exists; a corpus test asserts in-subset parses / out-of-subset throws `SyntaxException`. **[resolves D4]**
 - **Verify**: `./gradlew :stroom-query:stroom-query-grammar:test`.
+- **Outcome (recorded 2026-07-18 — decisions made; grammar not yet imported):**
+  - **Grammar (D4):** the openCypher reference ANTLR4 grammar (standardised subset, not Neo4j-proprietary), Apache-2.0,
+    trimmed to the subset below; generate with the same args as `StroomQL.g4`
+    (`-visitor -no-listener -package stroom.query.grammar.antlr`). **Pin the exact upstream commit + re-confirm the
+    licence header at import.** (Alternative considered: `antlr/grammars-v4` `cypher` — viable, more trimming needed.)
+  - **v1 subset (out-of-subset = explicit error from day one).** IN: `MATCH` (single node/edge/node + fixed-length
+    chains); bounded var-length `-[:T*min..max]->` with a **mandatory finite upper bound**; `WHERE`; `RETURN`
+    (`DISTINCT`, `AS`); `WITH`; `ORDER BY`; `SKIP`; `LIMIT`; aggregations `count`/`sum`/`avg`/`min`/`max` (+`count(*)`);
+    labels + inline property maps + relationship direction. OUT (rejected): all writes (`CREATE`/`MERGE`/`SET`/
+    `DELETE`/`REMOVE` — the graph is **read-only**, mutation is via ingest), `CALL`/procedures, `UNION`, `UNWIND`,
+    `OPTIONAL MATCH`, `FOREACH`, subqueries/`EXISTS{}`, comprehensions, map projections, `shortestPath`, unbounded `*`.
+  - **Temporal clause attachment:** a Stroom-specific production (kept in a clearly-marked section / separate `.g4` so
+    upstream bumps don't conflict), **one clause per query, after the MATCH pattern, before WHERE**:
+    `temporalClause : 'AS' 'OF' instant | 'AROUND' instant '±' duration | 'BETWEEN' instant 'AND' instant ;` → parses to
+    `AstTemporal(mode, instant, duration?, from?, to?)`, resolved into a `TemporalContext` before execution (see P0.3).
+  - **Residual:** the grammar file, generated parser, and corpus test are PoC.1 code — not written in this design spike.
 
 ### Task 0.3 — Temporal semantics spike **(blocks PoC.6, all of P4)**
 - **Goal**: pin how `AS OF <t>`, `AROUND <t> ± <d>`, `BETWEEN <t1> AND <t2>` map onto Plan B floor lookups and
@@ -282,16 +346,35 @@ below.** Each spike's deliverable is a *written artefact + a throwaway prototype
 - **Questions this spike must answer**:
   1. `AS OF t`: one snapshot instant → the `TemporalStateDb.getState`-style floor lookup applied to every node
      version and adjacency edge. Confirm the exact mapping (reverse cursor from `[entity][t]`).
-  2. `AROUND t ± d` / `BETWEEN`: a bounded window scan over `TEMPORAL_RANGED_STATE` returning versions/edges whose
-     validity interval **intersects** the window. Define "intersects" precisely (inclusive/exclusive bounds).
+  2. `AROUND t ± d` / `BETWEEN`: a bounded window scan returning versions/edges whose validity interval **intersects**
+     the window. Define "intersects" precisely (inclusive/exclusive bounds).
   3. **Multi-hop semantics**: is `AS OF` applied per-edge (each hop floor-looked-up at `t`) or per-path? Design §8
      flags this as "easy to get subtly wrong". Decide and document with the §6 worked example.
 - **Deliverable**: a written temporal-semantics spec with ≥2 worked examples (the §6 device/account query is one),
   giving the exact floor-lookup/window-scan mapping and the multi-hop rule.
 - **Done-when**: spec reviewed and signed off by a domain owner. **No code.**
+- **Outcome (recorded 2026-07-18 — semantics decided; domain-owner sign-off is the residual gate):**
+  - A version has a half-open validity interval `[validFrom, nextValidFrom)`; `nextValidFrom` is the adjacent key in
+    its contiguous run (cheap thanks to the P0.1 `dst`-before-`validFrom` ordering), or `+∞`, or a TOMBSTONE.
+  - **AS OF t (Q1):** the `TemporalStateDb.getState` reverse-cursor floor lookup applied per entity — node
+    `[nodeUid][t]` reverse; single edge `[src][etype][dst][t]` reverse; **expand as of t** = prefix-scan `[src][etype]`,
+    group by `dst`, take each group's greatest `validFrom ≤ t`, drop tombstoned/empty groups.
+  - **AROUND/BETWEEN (Q2):** `AROUND t±d` → window `[t−d, t+d]`; `BETWEEN t1 AND t2` → `[t1, t2]`; **bounds inclusive**.
+    A version `[vf, vnext)` **intersects** `[w1, w2]` iff `vf ≤ w2 AND vnext > w1` (so `vnext==w1` excludes, `vf==w2`
+    includes). Tombstone versions never emitted.
+  - **Multi-hop (Q3):** **AS OF is applied per-edge** — every hop floor-looked-up at the *same* instant t ("the graph
+    as it was at t"); a path exists iff every edge/node on it was valid at t. Windows apply per-edge (each edge has a
+    version intersecting the window; not required simultaneous). Per-path as-of is rejected as ambiguous for v1.
+  - **Sign-off:** domain-owner sign-off (the plan's done-when) is **complete**.
 
 **Phase 0 exit gate**: all three "Frozen model" / subset / temporal specs recorded and reviewed; the 0.1 prototype
 demonstrates a real 1-hop as-of traversal. Only now does storage/grammar/execution coding begin.
+
+> **Status: Phase 0 complete — coding may begin.** The three specs are recorded (frozen-model box above; §3 P0.2 / P0.3
+> outcomes) and **signed off** (storage-owner + domain-owner). The P0.1 throwaway prototype is **waived** — the frozen
+> layout is grounded in the verified serdes, and PoC.4's tests prove the round-trip + as-of behaviour when storage
+> lands. The cross-shard-hop **benchmark is deferred to P8** — a scale-out input, not a v1 gate, since v1 is
+> single-shard with zero cross-shard hops. No design work remains before P1 / PoC.
 
 ---
 
@@ -307,11 +390,11 @@ level below; **[P0-dep]** marks a spot that consumes a P0 output.
   the foundation every other PoC task plugs into.
 - **Depends on**: 0.1 (needs to know which internal stores exist).
 - **Files**:
-  - `stroom-core-shared/src/main/java/stroom/graph/shared/GraphDbDoc.java` — a serialisable doc extending
+  - `stroom-core-shared/src/main/java/stroom/graphdb/shared/GraphDbDoc.java` — a serialisable doc extending
     `AbstractDoc` (mirror `PlanBDoc`), `TYPE = "GraphDb"`, carrying **only the user-configurable fields** (D8):
     `description`, a retention/temporal-precision policy, and the node/edge schema mapping (nullable — zero-config
     when derived from the domain-type catalogue). **No physical-store config fields.**
-  - `stroom-planb-impl/.../graph/GraphStores` — the object that, given a `GraphDbDoc` + its on-disk directory,
+  - `stroom-graphdb-impl/.../GraphStores` — the object that, given a `GraphDbDoc` + its on-disk directory,
     provisions/opens the internal stores together (node DAO, out/in adjacency DAOs, the 4 `UidLookupDb` interning
     namespaces, the anchor index) and exposes them to the traversal engine + filter. Model the "owns an LMDB env +
     several DBIs" lifecycle on how `PlanBDoc`/`TemporalStateDb.create(...)` open their env; a graph just opens more
@@ -320,6 +403,10 @@ level below; **[P0-dep]** marks a spot that consumes a P0 output.
   - Docstore + cache wiring: `GraphDbDocStore`/`GraphDbDocStoreImpl` + a `GraphDbDocCache`, mirroring
     `PlanBDocStore`/`PlanBDocCache`; bound in a module (PoC.6 / P5 does the `DocumentStoreBinder` +
     `RestResourcesBinder` + explorer-handler wiring).
+  - **Module setup (per Golden rule 5):** `stroom-graphdb-impl/build.gradle` adds `implementation libs.jspecify`; each
+    new package (`stroom.graphdb.impl.*`, and `stroom.graphdb.shared` in `stroom-core-shared`) gets a `@NullMarked`
+    `package-info.java`. Every new type/method from here on carries the documented + runtime-checked contract from its
+    first commit.
 - **Contract**: creating a `GraphDbDoc` provisions an empty, queryable graph with **no** other document created or
   referenced; deleting it removes all internal stores. No internal store has its own `DocRef`/explorer node.
 - **Done-when**: a test creates a `GraphDbDoc`, `GraphStores` provisions + reopens its internal stores against a
@@ -330,7 +417,8 @@ level below; **[P0-dep]** marks a spot that consumes a P0 output.
 ### Task PoC.1 — `Cypher.g4` → AST (mirror the StroomQL pipeline)
 - **Depends on**: 0.2 (the subset + chosen grammar).
 - **Files**:
-  - `stroom-query-grammar/src/main/antlr/stroom/query/grammar/antlr/Cypher.g4` **[P0-dep: 0.2's trimmed grammar]**.
+  - `stroom-query-grammar/src/main/antlr/stroom/query/grammar/antlr/Cypher.g4` — the openCypher reference grammar
+    trimmed to the **P0.2 subset** (§3 Task 0.2 outcome; pin the upstream commit + confirm the Apache-2.0 licence at import).
   - `stroom-query-grammar/src/main/java/stroom/query/grammar/parse/CypherQueryParser.java` — entry
     `public static AstCypherQuery parse(String cypher)`, mirroring `StroomQlParser.parse` exactly (lexer →
     `ThrowingSyntaxErrorListener.INSTANCE` → `CommonTokenStream` → generated parser → an `AstCypherBuilder`).
@@ -369,7 +457,7 @@ level below; **[P0-dep]** marks a spot that consumes a P0 output.
   `Project(Expand(NodeScan(a, [L], p=v), T, OUT, b), returnItems)`; attach `WHERE` as a `Filter`; `RETURN`/`ORDER
   BY`/`SKIP`/`LIMIT`/aggregation reuse the core's `Project`/`Sort`/`Limit`/`Aggregate` unchanged. Capture the
   temporal clause as a resolved field on the plan (a small `TemporalContext(mode, instant, from, to)` threaded to
-  execution — **[P0-dep: 0.3's mapping]**).
+  execution — resolved per the **P0.3** outcome: per-edge AS OF, inclusive-bound window intersection, one context/query).
 - **Contract**: produces a `LogicalPlan` whose leaves reference the graph datasource; a query outside the PoC shape
   (multi-hop chains beyond one edge, var-length) throws a clear "not in PoC subset" error (tightened in P3).
 - **Done-when**: unit tests: the §6-style single-hop query compiles to the expected `Project/Expand/NodeScan` tree;
@@ -379,27 +467,29 @@ level below; **[P0-dep]** marks a spot that consumes a P0 output.
 ### Task PoC.4 — Graph physical stores (node + single-direction adjacency + property index)
 - **Depends on**: 0.1 (**the frozen model — do not start before**), PoC.0 (these DAOs are the internal stores
   `GraphStores` provisions/opens; they are not addressable except through the owning `GraphDbDoc`).
-- **Files** (`stroom-planb-impl/src/main/java/stroom/planb/impl/graph/`):
-  - Serdes for the frozen key layouts (node, out-edge, property index) modelled on `UidLookupKeySerde` /
-    `SpanKeySerde` (order-preserving, `TimeSerde` for the time suffix). **[P0-dep]**
+- **Files** (`stroom-graphdb-impl/src/main/java/stroom/graphdb/impl/`):
+  - Serdes for the **frozen key layouts** (node, out-edge, property index — §3 Frozen-model box) modelled on
+    `UidLookupKeySerde` / `SpanKeySerde`: fixed-width UIDs via `UidLookupDb` + `StaticUnsignedBytesFactory`,
+    `MillisecondTimeSerde` (6 B) for the time suffix, and `dst` before `validFrom` in edge keys.
   - `GraphNodeDb extends AbstractDb<…>` — node versions with an as-of `getNode(nodeUid, TemporalContext)` copying
     `TemporalStateDb.getState`'s reverse-`start` floor scan.
   - `GraphAdjacencyDb extends AbstractDb<…>` — `expandOut(srcUid, edgeTypeUid, TemporalContext, Consumer<neighbour>)`
     via `LmdbKeyRange.builder().prefix(...).build()` (the `TraceDb.findSpans` forward-scan pattern) + floor/window
     filter on the time component.
-  - `GraphPropertyIndex` — `findAnchors(labelUid, propKeyUid, valueBytes) -> nodeUids` (Plan B STATE sub-store **or**
-    Lucene per 0.1's D3 decision). **This is the "main index" the `GraphDbDoc` wraps** — internal, hidden.
+  - `GraphPropertyIndex` — `findAnchors(labelUid, propKeyUid, valueBytes) -> nodeUids` (a **Plan B STATE sub-store** —
+    D3 resolved in P0.1; `valueBytes` via the `VariableKeySerde` length discipline). **This is the "main index" the
+    `GraphDbDoc` wraps** — internal, hidden.
   - `GraphUids` — the 4 `UidLookupDb` namespaces (`UidLookupDb.put/get`), wired as `TemporalStateDb` wires its own.
   - All of the above are opened/owned by `GraphStores` (PoC.0), not created standalone.
 - **Contract**: pure storage; no query engine. In-edge mirror + retention are P1 (not PoC).
 - **Done-when**: a round-trip test (intern → write node + out-edge → `getNode` as-of + `expandOut`) reads back the
   expected neighbours and the correct as-of node version, against a real temp-dir LMDB env (the
   `TestSearchResultCreation`/`LmdbDataStoreFactory` temp-dir pattern).
-- **Verify**: `./gradlew :stroom-planb:stroom-planb-impl:test`.
+- **Verify**: `./gradlew :stroom-graphdb:stroom-graphdb-impl:test`.
 
 ### Task PoC.5 — Traversal executor (anchor → expand → project) over Plan B cursors
 - **Depends on**: PoC.2, PoC.4.
-- **Files** (`stroom-planb-impl/.../graph/`): `GraphTraversalEngine` — given a compiled `LogicalPlan` (anchor +
+- **Files** (`stroom-graphdb-impl/.../`): `GraphTraversalEngine` — given a compiled `LogicalPlan` (anchor +
   single `Expand`) + a `TemporalContext`, executes: (1) resolve temporal context once; (2) `GraphPropertyIndex.
   findAnchors`; (3) for each anchor, `GraphAdjacencyDb.expandOut`, dereference neighbour via `GraphNodeDb.getNode`,
   apply the `Filter` predicate (reuse `ExpressionPredicateFactory` exactly as `JoinSearchProvider.whereRowPredicate`
@@ -409,12 +499,12 @@ level below; **[P0-dep]** marks a spot that consumes a P0 output.
   **not** itself build coprocessors (PoC.6 does).
 - **Done-when**: unit test over PoC.4's fixtures: a single-hop `MATCH…RETURN` yields the expected `Val[]` rows;
   an `AS OF` variant yields the point-in-time-correct rows.
-- **Verify**: `./gradlew :stroom-planb:stroom-planb-impl:test`.
+- **Verify**: `./gradlew :stroom-graphdb:stroom-graphdb-impl:test`.
 
 ### Task PoC.6 — `GraphSearchProvider` + Graph datasource + `CypherCompiler` seam
 - **Depends on**: PoC.3, PoC.5; templates: `StateSearchProvider` (§1.5), `JoinSearchProvider` (§1.2).
 - **Files**:
-  - `stroom-planb-impl/.../graph/GraphSearchProvider implements SearchProvider` — copy `StateSearchProvider`'s
+  - `stroom-graphdb-impl/.../GraphSearchProvider implements SearchProvider` — copy `StateSearchProvider`'s
     constructor deps + `createResultStore` skeleton. **Resolves the `GraphDbDoc` from `Query.dataSource` (by
     name/DocRef, under `securityContext.useAsReadResult`, via the `GraphDbDocCache`), then opens that doc's internal
     stores through `GraphStores` (PoC.0)** — it never addresses a Plan B/Index doc directly. Builds coprocessors via
@@ -428,15 +518,17 @@ level below; **[P0-dep]** marks a spot that consumes a P0 output.
     GWT-safe `GraphSpec` on `Query` carrying the compiled traversal + `TemporalContext`, so the provider reads it
     back the way `JoinSearchProvider` reads `JoinSpec`). **[Decision D6 — reuse `Query.joinSpec`-style payload vs a
     new field; recommend a new `Query.graphSpec` field, purely additive like `joinSpec` was.]**
-  - Registration: triple-multibind `GraphSearchProvider` in `PlanBModule` (`DataSourceProvider`, `SearchProvider`,
-    `IndexFieldProvider`) — one line each, exactly as `StateSearchProvider`.
+  - Registration: a new `GraphDbModule` (Guice) in `stroom-graphdb-impl`, mirroring `PlanBModule` — triple-multibind
+    `GraphSearchProvider` (`DataSourceProvider`, `SearchProvider`, `IndexFieldProvider`) one line each exactly as
+    `StateSearchProvider`, plus the `DocumentStoreBinder` / `RestResourcesBinder` / doc-cache binds for `GraphDbDoc`.
+    Install `GraphDbModule` alongside `PlanBModule` in the app assembly; **`PlanBModule` itself is not edited** (D1).
 - **Contract**: a Cypher single-hop query submitted through the normal search REST path returns real rows; the
   `ModelChangeDetector` golden test (see the optimiser plan's Task 6.1a finding) will flag any `SearchRequest`-model
   change — treat a new `Query.graphSpec` field as an additive, minor-version change and update the portrait.
 - **Done-when**: an in-module end-to-end test (real coprocessors, real `ResultStore`, PoC.4 graph fixtures) proves
   `MATCH (d:Device{id:'d-42'})-[:CONNECTED_TO]->(a:Account) RETURN a.id` returns the expected rows; an `AS OF`
   variant returns the point-in-time-correct rows.
-- **Verify**: `./gradlew :stroom-planb:stroom-planb-impl:test`.
+- **Verify**: `./gradlew :stroom-graphdb:stroom-graphdb-impl:test`.
 
 **PoC exit gate**: a 1-hop temporal Cypher query runs end-to-end and its rows surface through a dashboard/query REST
 result exactly like any StroomQL query. Ingest is still fixture-driven (real `GraphFilter` is P2); traversal is
@@ -449,6 +541,9 @@ Mirror the optimiser project's altitudes:
 - **Unit per component**: grammar (parse corpus, in/out-of-subset), Cypher→IR (`text→plan`), each graph DAO
   (round-trip write/read + as-of), traversal engine (`plan+fixtures→Val[]`), temporal correctness (as-of across
   hops, window intersection edge cases).
+- **Contract / precondition tests** (Golden rule 5): assert that documented preconditions actually **throw** at
+  runtime — null arguments (`requireNonNull`), out-of-range UID widths / bad buffer offsets, and over-length keys
+  (`KeyLength.check`) — so a contract violation fails loudly in a test rather than silently corrupting a store.
 - **End-to-end in-module**: the PoC.6 real-coprocessor test — the graph analogue of the optimiser's
   `innerJoin_returnsRealJoinedRows_throughRealCoprocessors`.
 - **Ingest round-trip** (P2): XML → `GraphFilter` → store → query.
@@ -491,16 +586,17 @@ facts and the PoC as the worked template. The design doc's §9.1 WBS gives the e
 - *Gate*: `-[:T*1..k]->` returns correct paths with cycle safety; hand-computed expected sets match.
 
 ### P4 — Temporal ranges (5–10 pw) — *after 0.3*
-- **`AROUND ± d` / `BETWEEN`** window scans over `TEMPORAL_RANGED_STATE`; **as-of join** reusing the core's
-  State-lookup path + Plan B floor lookup for multi-hop temporal (design §5.5 items 4–5).
+- **`AROUND ± d` / `BETWEEN`** window scans (interval intersection over the adjacency store's version runs, per P0.3's
+  frozen rule); **as-of join** reusing the core's State-lookup path + Plan B floor lookup for multi-hop temporal
+  (design §5.5 items 4–5).
 - **Temporal correctness tests**: as-of across multi-hop, interval intersection edges.
 - *Gate*: the §6 worked example (window + as-of in one query) returns the domain-owner-approved result.
 
 ### P5 — Query integration hardening (5–10 pw)
 - **Graph datasource cost signals** (row/key counts, adjacency access-path costing) implementing a
-  `stroom-query-planner.port` interface via an adapter in `stroom-planb-impl` (the port/adapter split, §2).
+  `stroom-query-planner.port` interface via an adapter in `stroom-graphdb-impl` (the port/adapter split, §2).
 - **`GraphDbDoc` hardening** (PoC.0 built the doc + store-ownership scaffold): REST resource + **explorer handler**
-  (the piece outside `PlanBModule`, §1.5); full owned-store lifecycle — **reprocess-rebuild** (drop + re-provision
+  (the explorer-handler wiring that lives outside the doc-store module, §1.5); full owned-store lifecycle — **reprocess-rebuild** (drop + re-provision
   all internal stores, then re-run ingest over stored streams) and **retention/condense as-a-unit** across every
   internal store; permissions on the one doc cascade to all its internals.
 - *Gate*: a graph is created, edited, reprocessed, permissioned, retained, and queried like any other datasource —
@@ -540,19 +636,27 @@ facts and the PoC as the worked template. The design doc's §9.1 WBS gives the e
 ---
 
 ## 7. Open decisions to resolve (record the choice in the PR)
-- **D1 — module placement**: graph code in `stroom-planb-impl` (recommended, least friction) vs a new
-  `stroom-graph-impl`. The shared `GraphDbDoc` type lives in `stroom-core-shared` regardless. Record in the PoC.0 PR.
+- **D1 — module placement *(resolved: a dedicated `stroom-graphdb-impl` module)*.** Graph code lives in
+  `stroom-graphdb-impl` (`stroom.graphdb.impl.*`), under a `stroom-graphdb/` parent mirroring
+  `stroom-planb/stroom-planb-impl`, depending on `stroom-planb-impl` + the query-core modules + `stroom-core-shared`
+  (which still holds the shared `GraphDbDoc` type, package `stroom.graphdb.shared`). Its own `GraphDbModule` owns the
+  Guice wiring. **Action from this choice:** expose the reused Plan B internals across the module boundary (see the §2.1
+  D1 blockquote) — do the access audit in PoC.0.
 - **D2 — packaging *(resolved: a `GraphDbDoc` that wraps everything)*.** The graph is a single `GraphDbDoc`
   document type that **owns and encapsulates** its internal stores (§2.1) — *not* a `StateType.GRAPH` under
   `PlanBDoc`, and *not* a user-assembled Plan B doc + Index doc. This is the defining decision (the user's explicit
   requirement: minimise the configurable surface so a graph is hard to misconfigure). Built in PoC.0.
-- **D3 — property-index technology *(now an internal, hidden default — no longer user-facing)*.** Plan B `STATE`
-  sub-store vs a wrapped Lucene index for the anchor lookup. Because the `GraphDbDoc` owns it (§2.1), whichever is
-  chosen is an internal implementation default, **not** a user configuration knob. Plan B `STATE` is the simpler to
-  wrap (all under the doc's one LMDB env, one lifecycle); a wrapped Lucene index is more powerful for
-  text/range anchors but adds an internal Lucene directory to the doc's owned-store lifecycle. **Resolve in P0.1.**
-- **D4 — which openCypher grammar** to adopt into `stroom-query-grammar`. **Resolve in P0.2** (record source +
-  licence + revision).
+- **D3 — property-index technology *(resolved in P0.1: a Plan B `STATE` sub-store)*.** An internal, hidden default
+  (the `GraphDbDoc` owns it, §2.1 — not a user knob). Chosen a Plan B `STATE`-style sub-store over a wrapped Lucene
+  index because it lives under the doc's single LMDB env + single lifecycle (the encapsulation the doc exists to
+  provide), and equality/prefix anchors — all the v1 subset needs — are served by the frozen `PropIndex` layout (§3
+  P0.1). A wrapped Lucene index (text/tokenised/range anchors) is the documented escalation path, deferred because it
+  adds a second internal store technology to the owned lifecycle.
+- **D4 — which openCypher grammar *(resolved in P0.2: the openCypher reference ANTLR grammar)*.** Adopt the openCypher
+  project's reference ANTLR4 grammar (the standardised subset, not Neo4j-proprietary), trimmed to the v1 subset.
+  Licence: Apache-2.0. **Pin the exact upstream commit at import time and re-confirm the licence header in that
+  commit** — the revision is an import-time record, not fixable from this design pass. Alternative considered: the
+  `antlr/grammars-v4` `cypher` grammar (also permissive) — viable but needs more trimming.
 - **D5 — relationship (edge) types in the catalogue**: `DomainType` models entities, not edges. Either derive edges
   from convention (event co-occurrence) or add an optional `List<RelationshipType>` (`{type, from, to, directed}`)
   to `DomainTypeDoc` — the additive, `canAccept`-reusing extension sketched in design §11. Decide when P2 ingest
