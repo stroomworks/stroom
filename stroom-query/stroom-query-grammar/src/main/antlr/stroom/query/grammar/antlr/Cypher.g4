@@ -1,0 +1,270 @@
+/*
+ * Copyright 2016-2026 Crown Copyright
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+// Cypher grammar (see docs/temporal-cypher-graph-implementation-plan.md, Task 0.2 / PoC.1).
+//
+// This is a HAND-TRIMMED subset grammar modelled on the openCypher reference grammar's structure and covering
+// exactly the v1 subset the P0.2 spike locked (see the implementation plan's Task 0.2 outcome): MATCH (single +
+// fixed-length chains + bounded variable-length), WHERE, RETURN (incl. DISTINCT/AS), WITH, ORDER BY, SKIP, LIMIT,
+// count/sum/avg/min/max aggregation, node labels + inline property maps, relationship types + direction, plus a
+// Stroom-specific temporal extension (AS OF / AROUND +/- / BETWEEN). Everything NOT listed here (writes,
+// CALL/procedures, UNION, UNWIND, OPTIONAL MATCH, FOREACH, subqueries, comprehensions, map projections,
+// shortestPath, unbounded var-length) is simply absent from the grammar - omission IS the rejection mechanism: an
+// unsupported construct is not a keyword/rule at all, so it fails to parse and the caller sees a SyntaxException,
+// satisfying "out-of-subset = explicit parse error from day one" without needing bespoke reject rules.
+//
+// Deliberate v1 simplifications (narrower than full openCypher, not narrower than the locked subset):
+// - A relationship pattern carries at most ONE type (`-[:TYPE]->`), not openCypher's `:T1|T2` alternation - the
+//   PoC.3 compiler only ever resolves a single edge type per hop, and the graph's own adjacency stores are keyed
+//   per edge type (design doc Section 5.1), so multi-type patterns would need to fan out into multiple physical
+//   scans - a real feature, deliberately deferred rather than silently mis-parsed.
+// - Bounded variable-length paths (`-[:T*min..max]->`) REQUIRE an explicit finite upper bound at the GRAMMAR level
+//   (`varLength` has no alternative omitting `max`) - this is what makes unbounded `-[:T*]->` a parse-time error
+//   from day one, rather than a semantic check bolted on later.
+// - `AS OF` / `AROUND <value> +/- <value>` / `BETWEEN <value> AND <value>` are a Stroom-specific addition (not
+//   standard Cypher), attached directly after a MATCH clause's pattern and before its WHERE, per the P0.2 spike's
+//   "one temporal clause per query" decision. The instant/duration/bound values reuse the general `value` rule
+//   (typically a function-call literal like `datetime('...')`/`duration('PT1H')`, matching the design doc's
+//   worked example), not a bespoke date/duration literal syntax.
+// - Grammar accepts the FULL locked subset (multiple MATCH/WITH stages, chains, var-length) even though the
+//   PoC.3 compiler only lowers the single-hop PoC shape for now and rejects the rest with a clear "not in PoC
+//   subset" error at compile time - the same "parse now, compile progressively" discipline StroomQL.g4 uses for
+//   joins (see that grammar's file header).
+grammar Cypher;
+
+// ============================================================================
+// Parser rules
+// ============================================================================
+
+query
+    : readingClause+ returnClause EOF
+    ;
+
+readingClause
+    : matchClause
+    | withClause
+    ;
+
+matchClause
+    : MATCH pattern temporalClause? whereClause?
+    ;
+
+withClause
+    : WITH returnItem (COMMA returnItem)* orderByClause? skipClause? limitClause?
+    ;
+
+returnClause
+    : RETURN DISTINCT? returnItem (COMMA returnItem)* orderByClause? skipClause? limitClause?
+    ;
+
+// ----- graph patterns -----
+
+pattern
+    : nodePattern patternHop*
+    ;
+
+patternHop
+    : edgePattern nodePattern
+    ;
+
+nodePattern
+    : OPEN_PAREN variable=NAME? nodeLabels? propertyMap? CLOSE_PAREN
+    ;
+
+nodeLabels
+    : (COLON label+=NAME)+
+    ;
+
+// Direction is carried by which arrowhead (if either) is present; `edgeDetail` (the `[...]` part) is optional in
+// all three, matching bare `-->`/`<--`/`--` patterns.
+edgePattern
+    : LARROW edgeDetail? DASH     # edgeIn
+    | DASH edgeDetail? RARROW     # edgeOut
+    | DASH edgeDetail? DASH       # edgeBoth
+    ;
+
+// See file header: at most one edge TYPE (not openCypher's `:T1|T2`).
+edgeDetail
+    : OPEN_BRACKET variable=NAME? (COLON edgeType=NAME)? varLength? propertyMap? CLOSE_BRACKET
+    ;
+
+// `max` is mandatory - see file header (this is the parse-level enforcement of "bounded, not unbounded").
+varLength
+    : STAR min=NUMBER? DOTDOT max=NUMBER
+    ;
+
+propertyMap
+    : OPEN_BRACE (propertyKeyValue (COMMA propertyKeyValue)*)? CLOSE_BRACE
+    ;
+
+propertyKeyValue
+    : key=NAME COLON value
+    ;
+
+// ----- Stroom's temporal extension (not standard Cypher; see file header) -----
+
+temporalClause
+    : AS OF instant=value                                   # asOfClause
+    | AROUND instant=value PLUSMINUS duration=value          # aroundClause
+    | BETWEEN from=value AND to=value                        # betweenClause
+    ;
+
+// ----- WHERE: boolean expression over matched variables' properties -----
+
+whereClause : WHERE expr ;
+
+expr    : orExpr ;
+orExpr  : andExpr (OR andExpr)* ;
+andExpr : notExpr (AND notExpr)* ;
+notExpr
+    : NOT notExpr
+    | primary
+    ;
+primary
+    : OPEN_PAREN expr CLOSE_PAREN
+    | comparisonPredicate
+    ;
+comparisonPredicate
+    : left=expression op=comparisonOp right=expression
+    ;
+comparisonOp
+    : EQ | NEQ | LT | LE | GT | GE
+    ;
+
+// ----- expressions: shared by RETURN/WITH items, ORDER BY items, and WHERE operands -----
+
+expression
+    : aggregateCall
+    | propertyAccess
+    | variableRef=NAME
+    | value
+    ;
+
+aggregateCall
+    : fn=(COUNT | SUM | AVG | MIN | MAX) OPEN_PAREN (STAR | expression) CLOSE_PAREN
+    ;
+
+propertyAccess
+    : variable=NAME DOT property=NAME
+    ;
+
+functionCall
+    : name=NAME OPEN_PAREN (value (COMMA value)*)? CLOSE_PAREN
+    ;
+
+value
+    : STRING          # stringValue
+    | NUMBER          # numberValue
+    | (TRUE | FALSE)  # booleanValue
+    | PARAM           # paramValue
+    | functionCall    # functionValue
+    ;
+
+returnItem
+    : expression (AS alias=NAME)?
+    ;
+
+orderByClause
+    : ORDER BY orderItem (COMMA orderItem)*
+    ;
+orderItem
+    : expression (ASC | DESC)?
+    ;
+
+skipClause  : SKIP_ NUMBER ;
+limitClause : LIMIT NUMBER ;
+
+// ============================================================================
+// Lexer rules
+// ============================================================================
+
+// ----- skipped -----
+COMMENT : '//' ~[\r\n]* -> channel(HIDDEN) ;
+WS      : [ \t\r\n]+    -> channel(HIDDEN) ;
+
+// ----- literals -----
+PARAM : '$' [a-zA-Z_][a-zA-Z0-9_]* ;
+
+fragment ESC : '\\' . ;
+STRING : '\'' (ESC | ~['\\])* '\'' | '"' (ESC | ~["\\])* '"' ;
+
+// Declared before NAME so an all-digit run is never mis-tokenised as an identifier.
+NUMBER : DIGIT+ ('.' DIGIT+)? ;
+
+// ----- keywords (case-insensitive; declared before NAME) -----
+MATCH    : M A T C H ;
+RETURN   : R E T U R N ;
+WITH     : W I T H ;
+WHERE    : W H E R E ;
+AS       : A S ;
+OF       : O F ;
+DISTINCT : D I S T I N C T ;
+ORDER    : O R D E R ;
+BY       : B Y ;
+ASC      : A S C ;
+DESC     : D E S C ;
+SKIP_    : S K I P ;
+LIMIT    : L I M I T ;
+AND      : A N D ;
+OR       : O R ;
+NOT      : N O T ;
+TRUE     : T R U E ;
+FALSE    : F A L S E ;
+COUNT    : C O U N T ;
+SUM      : S U M ;
+AVG      : A V G ;
+MIN      : M I N ;
+MAX      : M A X ;
+AROUND   : A R O U N D ;
+BETWEEN  : B E T W E E N ;
+
+// ----- structural / operator tokens -----
+OPEN_PAREN    : '(' ;
+CLOSE_PAREN   : ')' ;
+OPEN_BRACKET  : '[' ;
+CLOSE_BRACKET : ']' ;
+OPEN_BRACE    : '{' ;
+CLOSE_BRACE   : '}' ;
+COLON         : ':' ;
+COMMA         : ',' ;
+DOTDOT        : '..' ;
+DOT           : '.' ;
+STAR          : '*' ;
+// The Unicode '±' sign, or the ASCII fallback '+/-' (typing '±' directly is impractical for most users/editors).
+PLUSMINUS     : '±' | '+/-' ;
+RARROW        : '->' ;
+LARROW        : '<-' ;
+DASH          : '-' ;
+NEQ : '<>' | '!=' ;
+LE  : '<=' ;
+GE  : '>=' ;
+LT  : '<' ;
+GT  : '>' ;
+EQ  : '=' ;
+
+// ----- identifier (after all keywords, so keywords win) -----
+NAME : [a-zA-Z_][a-zA-Z0-9_]* ;
+
+// ----- case-insensitive letter fragments, used only to build keyword rules above -----
+fragment A : [aA] ; fragment B : [bB] ; fragment C : [cC] ; fragment D : [dD] ;
+fragment E : [eE] ; fragment F : [fF] ; fragment G : [gG] ; fragment H : [hH] ;
+fragment I : [iI] ; fragment J : [jJ] ; fragment K : [kK] ; fragment L : [lL] ;
+fragment M : [mM] ; fragment N : [nN] ; fragment O : [oO] ; fragment P : [pP] ;
+fragment Q : [qQ] ; fragment R : [rR] ; fragment S : [sS] ; fragment T : [tT] ;
+fragment U : [uU] ; fragment V : [vV] ; fragment W : [wW] ; fragment X : [xX] ;
+fragment Y : [yY] ; fragment Z : [zZ] ;
+
+fragment DIGIT : [0-9] ;

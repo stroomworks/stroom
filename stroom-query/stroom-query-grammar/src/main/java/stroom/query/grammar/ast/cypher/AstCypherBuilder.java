@@ -1,0 +1,438 @@
+/*
+ * Copyright 2016-2026 Crown Copyright
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package stroom.query.grammar.ast.cypher;
+
+import stroom.query.grammar.antlr.CypherParser;
+import stroom.query.grammar.antlr.CypherParser.AggregateCallContext;
+import stroom.query.grammar.antlr.CypherParser.AndExprContext;
+import stroom.query.grammar.antlr.CypherParser.AroundClauseContext;
+import stroom.query.grammar.antlr.CypherParser.AsOfClauseContext;
+import stroom.query.grammar.antlr.CypherParser.BetweenClauseContext;
+import stroom.query.grammar.antlr.CypherParser.BooleanValueContext;
+import stroom.query.grammar.antlr.CypherParser.ComparisonOpContext;
+import stroom.query.grammar.antlr.CypherParser.ComparisonPredicateContext;
+import stroom.query.grammar.antlr.CypherParser.EdgeBothContext;
+import stroom.query.grammar.antlr.CypherParser.EdgeDetailContext;
+import stroom.query.grammar.antlr.CypherParser.EdgeInContext;
+import stroom.query.grammar.antlr.CypherParser.EdgeOutContext;
+import stroom.query.grammar.antlr.CypherParser.EdgePatternContext;
+import stroom.query.grammar.antlr.CypherParser.ExpressionContext;
+import stroom.query.grammar.antlr.CypherParser.FunctionCallContext;
+import stroom.query.grammar.antlr.CypherParser.FunctionValueContext;
+import stroom.query.grammar.antlr.CypherParser.LimitClauseContext;
+import stroom.query.grammar.antlr.CypherParser.MatchClauseContext;
+import stroom.query.grammar.antlr.CypherParser.NodeLabelsContext;
+import stroom.query.grammar.antlr.CypherParser.NodePatternContext;
+import stroom.query.grammar.antlr.CypherParser.NotExprContext;
+import stroom.query.grammar.antlr.CypherParser.NumberValueContext;
+import stroom.query.grammar.antlr.CypherParser.OrExprContext;
+import stroom.query.grammar.antlr.CypherParser.OrderByClauseContext;
+import stroom.query.grammar.antlr.CypherParser.OrderItemContext;
+import stroom.query.grammar.antlr.CypherParser.ParamValueContext;
+import stroom.query.grammar.antlr.CypherParser.PatternContext;
+import stroom.query.grammar.antlr.CypherParser.PatternHopContext;
+import stroom.query.grammar.antlr.CypherParser.PrimaryContext;
+import stroom.query.grammar.antlr.CypherParser.PropertyAccessContext;
+import stroom.query.grammar.antlr.CypherParser.PropertyKeyValueContext;
+import stroom.query.grammar.antlr.CypherParser.PropertyMapContext;
+import stroom.query.grammar.antlr.CypherParser.QueryContext;
+import stroom.query.grammar.antlr.CypherParser.ReadingClauseContext;
+import stroom.query.grammar.antlr.CypherParser.ReturnClauseContext;
+import stroom.query.grammar.antlr.CypherParser.ReturnItemContext;
+import stroom.query.grammar.antlr.CypherParser.SkipClauseContext;
+import stroom.query.grammar.antlr.CypherParser.StringValueContext;
+import stroom.query.grammar.antlr.CypherParser.TemporalClauseContext;
+import stroom.query.grammar.antlr.CypherParser.ValueContext;
+import stroom.query.grammar.antlr.CypherParser.VarLengthContext;
+import stroom.query.grammar.antlr.CypherParser.WhereClauseContext;
+import stroom.query.grammar.antlr.CypherParser.WithClauseContext;
+import stroom.query.grammar.ast.AstPosition;
+
+import org.antlr.v4.runtime.ParserRuleContext;
+import org.antlr.v4.runtime.Token;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
+
+/**
+ * Converts an ANTLR {@code Cypher.g4} parse tree into a plain-Java {@link AstCypherQuery}, decoupling downstream
+ * code (Task PoC.3's {@code CypherToLogicalPlan}) from ANTLR types entirely - mirrors
+ * {@code stroom.query.grammar.ast.AstBuilder}'s approach for StroomQL exactly (a direct set of typed helper
+ * methods, not a generated-visitor subclass, since labelled alternatives already give each call site a
+ * statically-known context type).
+ */
+public final class AstCypherBuilder {
+
+    /**
+     * <b>Preconditions:</b> {@code ctx} is not null.
+     * <b>Postconditions:</b> returns a full, decoupled AST for the whole query.
+     * <b>Null status:</b> neither the parameter nor the return value is nullable.
+     *
+     * @param ctx the root parse tree node, as produced by {@code CypherParser.query()}.
+     * @return never null.
+     */
+    public AstCypherQuery build(final QueryContext ctx) {
+        Objects.requireNonNull(ctx, "ctx");
+        final List<AstReadingClause> readingClauses = new ArrayList<>(ctx.readingClause().size());
+        for (final ReadingClauseContext readingClauseCtx : ctx.readingClause()) {
+            readingClauses.add(buildReadingClause(readingClauseCtx));
+        }
+        return new AstCypherQuery(readingClauses, buildReturn(ctx.returnClause()), position(ctx));
+    }
+
+    // ------------------------------------------------------------------------------------------------------
+    // reading clauses: MATCH / WITH
+    // ------------------------------------------------------------------------------------------------------
+
+    private AstReadingClause buildReadingClause(final ReadingClauseContext ctx) {
+        if (ctx.matchClause() != null) {
+            return buildMatch(ctx.matchClause());
+        } else if (ctx.withClause() != null) {
+            return buildWith(ctx.withClause());
+        }
+        throw new IllegalStateException("Unrecognised reading clause: " + ctx.getText());
+    }
+
+    private AstMatch buildMatch(final MatchClauseContext ctx) {
+        return new AstMatch(
+                buildPattern(ctx.pattern()),
+                ctx.temporalClause() == null ? null : buildTemporal(ctx.temporalClause()),
+                ctx.whereClause() == null ? null : buildWhere(ctx.whereClause()),
+                position(ctx));
+    }
+
+    private AstWith buildWith(final WithClauseContext ctx) {
+        final List<AstReturnItem> items = new ArrayList<>(ctx.returnItem().size());
+        for (final ReturnItemContext itemCtx : ctx.returnItem()) {
+            items.add(buildReturnItem(itemCtx));
+        }
+        return new AstWith(
+                items,
+                ctx.orderByClause() == null ? null : buildOrderBy(ctx.orderByClause()),
+                ctx.skipClause() == null ? null : buildSkip(ctx.skipClause()),
+                ctx.limitClause() == null ? null : buildLimit(ctx.limitClause()),
+                position(ctx));
+    }
+
+    private AstReturnClause buildReturn(final ReturnClauseContext ctx) {
+        final List<AstReturnItem> items = new ArrayList<>(ctx.returnItem().size());
+        for (final ReturnItemContext itemCtx : ctx.returnItem()) {
+            items.add(buildReturnItem(itemCtx));
+        }
+        return new AstReturnClause(
+                ctx.DISTINCT() != null,
+                items,
+                ctx.orderByClause() == null ? null : buildOrderBy(ctx.orderByClause()),
+                ctx.skipClause() == null ? null : buildSkip(ctx.skipClause()),
+                ctx.limitClause() == null ? null : buildLimit(ctx.limitClause()),
+                position(ctx));
+    }
+
+    // ------------------------------------------------------------------------------------------------------
+    // graph patterns
+    // ------------------------------------------------------------------------------------------------------
+
+    private AstPathPattern buildPattern(final PatternContext ctx) {
+        final List<AstPatternHop> hops = new ArrayList<>(ctx.patternHop().size());
+        for (final PatternHopContext hopCtx : ctx.patternHop()) {
+            hops.add(buildPatternHop(hopCtx));
+        }
+        return new AstPathPattern(buildNodePattern(ctx.nodePattern()), hops, position(ctx));
+    }
+
+    private AstPatternHop buildPatternHop(final PatternHopContext ctx) {
+        return new AstPatternHop(
+                buildEdgePattern(ctx.edgePattern()),
+                buildNodePattern(ctx.nodePattern()),
+                position(ctx));
+    }
+
+    private AstNodePattern buildNodePattern(final NodePatternContext ctx) {
+        final List<String> labels;
+        if (ctx.nodeLabels() != null) {
+            labels = buildNodeLabels(ctx.nodeLabels());
+        } else {
+            labels = List.of();
+        }
+        final List<AstPropertyKeyValue> properties;
+        if (ctx.propertyMap() != null) {
+            properties = buildPropertyMap(ctx.propertyMap());
+        } else {
+            properties = List.of();
+        }
+        return new AstNodePattern(
+                ctx.variable == null ? null : ctx.variable.getText(),
+                labels,
+                properties,
+                position(ctx));
+    }
+
+    private List<String> buildNodeLabels(final NodeLabelsContext ctx) {
+        final List<String> labels = new ArrayList<>(ctx.label.size());
+        for (final Token labelToken : ctx.label) {
+            labels.add(labelToken.getText());
+        }
+        return labels;
+    }
+
+    private AstEdgePattern buildEdgePattern(final EdgePatternContext ctx) {
+        final AstEdgeDirection direction;
+        final EdgeDetailContext detailCtx;
+        if (ctx instanceof final EdgeInContext inCtx) {
+            direction = AstEdgeDirection.IN;
+            detailCtx = inCtx.edgeDetail();
+        } else if (ctx instanceof final EdgeOutContext outCtx) {
+            direction = AstEdgeDirection.OUT;
+            detailCtx = outCtx.edgeDetail();
+        } else if (ctx instanceof final EdgeBothContext bothCtx) {
+            direction = AstEdgeDirection.BOTH;
+            detailCtx = bothCtx.edgeDetail();
+        } else {
+            throw new IllegalStateException("Unrecognised edge pattern: " + ctx.getText());
+        }
+
+        if (detailCtx == null) {
+            return new AstEdgePattern(null, null, direction, null, List.of(), position(ctx));
+        }
+        return new AstEdgePattern(
+                detailCtx.variable == null ? null : detailCtx.variable.getText(),
+                detailCtx.edgeType == null ? null : detailCtx.edgeType.getText(),
+                direction,
+                detailCtx.varLength() == null ? null : buildVarLength(detailCtx.varLength()),
+                detailCtx.propertyMap() == null ? List.of() : buildPropertyMap(detailCtx.propertyMap()),
+                position(ctx));
+    }
+
+    private AstVarLength buildVarLength(final VarLengthContext ctx) {
+        return new AstVarLength(
+                ctx.min == null ? null : Integer.valueOf(ctx.min.getText()),
+                Integer.parseInt(ctx.max.getText()),
+                position(ctx));
+    }
+
+    private List<AstPropertyKeyValue> buildPropertyMap(final PropertyMapContext ctx) {
+        final List<AstPropertyKeyValue> properties = new ArrayList<>(ctx.propertyKeyValue().size());
+        for (final PropertyKeyValueContext propertyCtx : ctx.propertyKeyValue()) {
+            properties.add(buildPropertyKeyValue(propertyCtx));
+        }
+        return properties;
+    }
+
+    private AstPropertyKeyValue buildPropertyKeyValue(final PropertyKeyValueContext ctx) {
+        return new AstPropertyKeyValue(ctx.key.getText(), buildValue(ctx.value()), position(ctx));
+    }
+
+    // ------------------------------------------------------------------------------------------------------
+    // temporal clause
+    // ------------------------------------------------------------------------------------------------------
+
+    private AstTemporal buildTemporal(final TemporalClauseContext ctx) {
+        if (ctx instanceof final AsOfClauseContext asOfCtx) {
+            return new AstAsOf(buildValue(asOfCtx.instant), position(ctx));
+        } else if (ctx instanceof final AroundClauseContext aroundCtx) {
+            return new AstAround(buildValue(aroundCtx.instant), buildValue(aroundCtx.duration), position(ctx));
+        } else if (ctx instanceof final BetweenClauseContext betweenCtx) {
+            return new AstBetween(buildValue(betweenCtx.from), buildValue(betweenCtx.to), position(ctx));
+        }
+        throw new IllegalStateException("Unrecognised temporal clause: " + ctx.getText());
+    }
+
+    // ------------------------------------------------------------------------------------------------------
+    // WHERE: boolean expression
+    // ------------------------------------------------------------------------------------------------------
+
+    private AstWhere buildWhere(final WhereClauseContext ctx) {
+        return new AstWhere(buildOrExpr(ctx.expr().orExpr()), position(ctx));
+    }
+
+    private AstBooleanExpr buildOrExpr(final OrExprContext ctx) {
+        if (ctx.andExpr().size() == 1) {
+            return buildAndExpr(ctx.andExpr(0));
+        }
+        final List<AstBooleanExpr> operands = new ArrayList<>(ctx.andExpr().size());
+        for (final AndExprContext andCtx : ctx.andExpr()) {
+            operands.add(buildAndExpr(andCtx));
+        }
+        return new AstOrExpr(operands, position(ctx));
+    }
+
+    private AstBooleanExpr buildAndExpr(final AndExprContext ctx) {
+        if (ctx.notExpr().size() == 1) {
+            return buildNotExpr(ctx.notExpr(0));
+        }
+        final List<AstBooleanExpr> operands = new ArrayList<>(ctx.notExpr().size());
+        for (final NotExprContext notCtx : ctx.notExpr()) {
+            operands.add(buildNotExpr(notCtx));
+        }
+        return new AstAndExpr(operands, position(ctx));
+    }
+
+    private AstBooleanExpr buildNotExpr(final NotExprContext ctx) {
+        if (ctx.NOT() != null) {
+            return new AstNotExpr(buildNotExpr(ctx.notExpr()), position(ctx));
+        }
+        return buildPrimary(ctx.primary());
+    }
+
+    private AstBooleanExpr buildPrimary(final PrimaryContext ctx) {
+        if (ctx.expr() != null) {
+            return buildOrExpr(ctx.expr().orExpr());
+        }
+        return buildComparisonPredicate(ctx.comparisonPredicate());
+    }
+
+    private AstComparisonPredicate buildComparisonPredicate(final ComparisonPredicateContext ctx) {
+        return new AstComparisonPredicate(
+                buildExpression(ctx.left),
+                buildComparisonOp(ctx.op),
+                buildExpression(ctx.right),
+                position(ctx));
+    }
+
+    private AstComparisonOp buildComparisonOp(final ComparisonOpContext ctx) {
+        return switch (ctx.getStart().getType()) {
+            case CypherParser.EQ -> AstComparisonOp.EQ;
+            case CypherParser.NEQ -> AstComparisonOp.NEQ;
+            case CypherParser.LT -> AstComparisonOp.LT;
+            case CypherParser.LE -> AstComparisonOp.LE;
+            case CypherParser.GT -> AstComparisonOp.GT;
+            case CypherParser.GE -> AstComparisonOp.GE;
+            default -> throw new IllegalStateException("Unrecognised comparison operator: " + ctx.getText());
+        };
+    }
+
+    // ------------------------------------------------------------------------------------------------------
+    // expressions: RETURN/WITH/ORDER BY items, WHERE operands
+    // ------------------------------------------------------------------------------------------------------
+
+    private AstExpression buildExpression(final ExpressionContext ctx) {
+        if (ctx.aggregateCall() != null) {
+            return buildAggregateCall(ctx.aggregateCall());
+        } else if (ctx.propertyAccess() != null) {
+            return buildPropertyAccess(ctx.propertyAccess());
+        } else if (ctx.variableRef != null) {
+            return new AstVariableExpr(ctx.variableRef.getText(), position(ctx));
+        } else if (ctx.value() != null) {
+            return new AstLiteralExpr(buildValue(ctx.value()), position(ctx));
+        }
+        throw new IllegalStateException("Unrecognised expression: " + ctx.getText());
+    }
+
+    private AstAggregateExpr buildAggregateCall(final AggregateCallContext ctx) {
+        final AstAggregateFunction function = switch (ctx.fn.getType()) {
+            case CypherParser.COUNT -> AstAggregateFunction.COUNT;
+            case CypherParser.SUM -> AstAggregateFunction.SUM;
+            case CypherParser.AVG -> AstAggregateFunction.AVG;
+            case CypherParser.MIN -> AstAggregateFunction.MIN;
+            case CypherParser.MAX -> AstAggregateFunction.MAX;
+            default -> throw new IllegalStateException("Unrecognised aggregate function: " + ctx.getText());
+        };
+        if (ctx.STAR() != null) {
+            return new AstAggregateExpr(function, null, true, position(ctx));
+        }
+        return new AstAggregateExpr(function, buildExpression(ctx.expression()), false, position(ctx));
+    }
+
+    private AstPropertyAccessExpr buildPropertyAccess(final PropertyAccessContext ctx) {
+        return new AstPropertyAccessExpr(ctx.variable.getText(), ctx.property.getText(), position(ctx));
+    }
+
+    private AstFunctionValue buildFunctionCall(final FunctionCallContext ctx) {
+        final List<AstValue> arguments = new ArrayList<>(ctx.value().size());
+        for (final ValueContext valueCtx : ctx.value()) {
+            arguments.add(buildValue(valueCtx));
+        }
+        return new AstFunctionValue(ctx.name.getText(), arguments, position(ctx));
+    }
+
+    private AstValue buildValue(final ValueContext ctx) {
+        if (ctx instanceof final StringValueContext stringCtx) {
+            return new AstStringValue(unescapeString(stringCtx.STRING().getText()), position(ctx));
+        } else if (ctx instanceof final NumberValueContext numberCtx) {
+            return new AstNumberValue(numberCtx.NUMBER().getText(), position(ctx));
+        } else if (ctx instanceof final BooleanValueContext booleanCtx) {
+            return new AstBooleanValue(booleanCtx.TRUE() != null, position(ctx));
+        } else if (ctx instanceof final ParamValueContext paramCtx) {
+            // Strip the leading '$'.
+            return new AstParameterValue(paramCtx.PARAM().getText().substring(1), position(ctx));
+        } else if (ctx instanceof final FunctionValueContext functionCtx) {
+            return buildFunctionCall(functionCtx.functionCall());
+        }
+        throw new IllegalStateException("Unrecognised value: " + ctx.getText());
+    }
+
+    /**
+     * Strips the surrounding quote characters and resolves {@code \x} backslash escapes (matching
+     * {@code Cypher.g4}'s {@code ESC: '\\' . ;} fragment - a backslash escapes exactly the one following
+     * character, whatever it is).
+     */
+    private String unescapeString(final String quoted) {
+        final String inner = quoted.substring(1, quoted.length() - 1);
+        final StringBuilder sb = new StringBuilder(inner.length());
+        for (int i = 0; i < inner.length(); i++) {
+            final char c = inner.charAt(i);
+            if (c == '\\' && i + 1 < inner.length()) {
+                i++;
+                sb.append(inner.charAt(i));
+            } else {
+                sb.append(c);
+            }
+        }
+        return sb.toString();
+    }
+
+    // ------------------------------------------------------------------------------------------------------
+    // RETURN/WITH items, ORDER BY, SKIP, LIMIT
+    // ------------------------------------------------------------------------------------------------------
+
+    private AstReturnItem buildReturnItem(final ReturnItemContext ctx) {
+        return new AstReturnItem(
+                buildExpression(ctx.expression()),
+                ctx.alias == null ? null : ctx.alias.getText(),
+                position(ctx));
+    }
+
+    private AstOrderBy buildOrderBy(final OrderByClauseContext ctx) {
+        final List<AstOrderItem> items = new ArrayList<>(ctx.orderItem().size());
+        for (final OrderItemContext itemCtx : ctx.orderItem()) {
+            items.add(buildOrderItem(itemCtx));
+        }
+        return new AstOrderBy(items, position(ctx));
+    }
+
+    private AstOrderItem buildOrderItem(final OrderItemContext ctx) {
+        return new AstOrderItem(buildExpression(ctx.expression()), ctx.DESC() != null, position(ctx));
+    }
+
+    private AstSkip buildSkip(final SkipClauseContext ctx) {
+        return new AstSkip(Long.parseLong(ctx.NUMBER().getText()), position(ctx));
+    }
+
+    private AstLimit buildLimit(final LimitClauseContext ctx) {
+        return new AstLimit(Long.parseLong(ctx.NUMBER().getText()), position(ctx));
+    }
+
+    // ------------------------------------------------------------------------------------------------------
+    // shared leaf
+    // ------------------------------------------------------------------------------------------------------
+
+    private AstPosition position(final ParserRuleContext ctx) {
+        final Token token = ctx.getStart();
+        return new AstPosition(token.getLine(), token.getCharPositionInLine());
+    }
+}
