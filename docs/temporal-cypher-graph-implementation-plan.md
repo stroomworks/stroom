@@ -529,10 +529,35 @@ level below; **[P0-dep]** marks a spot that consumes a P0 output.
   `MATCH (d:Device{id:'d-42'})-[:CONNECTED_TO]->(a:Account) RETURN a.id` returns the expected rows; an `AS OF`
   variant returns the point-in-time-correct rows.
 - **Verify**: `./gradlew :stroom-graphdb:stroom-graphdb-impl:test`.
+- **Outcome (recorded 2026-07-18 — implemented and verified):** `GraphSpec` (a plain additive `Query` field,
+  wire-safe sibling of `JoinSpec`) carries the Cypher source text rather than a serialised `LogicalPlan` —
+  `stroom-query-planner` depends on `stroom-query-api`, so embedding the plan type itself would be a circular
+  module dependency; re-parsing the short single-hop text at execution time is cheap. `CypherCompiler` attaches a
+  `GraphSpec` after an eager parse+compile fail-fast check; it does not formally implement the `QueryCompiler`
+  interface (dispatch routing between StroomQL/Cypher, and `ExplainPlan` support, are explicitly deferred — see
+  "What remains" below). `GraphSearchProvider` resolves the doc via `GraphDbDocCache`, opens its stores via a new,
+  deliberately minimal `GraphStoreManager` (no snapshotting/eviction, unlike `ShardManager`), and runs
+  `GraphTraversalEngine` synchronously (mirroring `JoinSearchProvider`'s shape, not `StateSearchProvider`'s async
+  one — the engine is a single-LMDB-txn call with no shard fan-out). Feeds real `Coprocessors`/`ResultStore` via a
+  `buildFieldMapping`/`assembleRow` pair adapted from `JoinSearchProvider`'s: since the engine's `Val[]` output
+  order is fixed to the compiled `Project` node's `RETURN`-item order, the mapping resolves each field's
+  `FieldIndex` position by name rather than assuming the two orderings coincide. `GraphDbModule` registers the
+  triple `DataSourceProvider`/`SearchProvider`/`IndexFieldProvider` binding plus the doc store/cache, mirroring
+  `PlanBModule` (left unedited, per D1), and is installed into the app assembly (`CoreModule`). The in-module
+  end-to-end test proves both the "latest" and `AS OF` variants of the device/account query return the expected
+  rows through genuine coprocessors and a genuine `ResultStore`.
+  - **What remains before this is reachable from a real dashboard/query REST call (deliberately out of this
+    PoC's scope):** nothing routes an incoming query string to `CypherCompiler` vs the StroomQL compilers — that
+    dispatch decision (by query syntax sniffing, by target doc type, or by an explicit query-language selector)
+    is a P5+ concern; no REST resource or explorer wiring exists for `GraphDbDoc` yet (P5); ingest is still
+    fixture-driven — there is no real `GraphFilter` writing into `GraphStores` from a pipeline (P2).
 
-**PoC exit gate**: a 1-hop temporal Cypher query runs end-to-end and its rows surface through a dashboard/query REST
-result exactly like any StroomQL query. Ingest is still fixture-driven (real `GraphFilter` is P2); traversal is
-single-hop single-shard.
+**PoC exit gate — reached (2026-07-18):** a 1-hop temporal Cypher query runs end-to-end from Cypher text to real
+rows through genuine coprocessors and a genuine `ResultStore`, exactly as any StroomQL query would once compiled
+to a `SearchRequest` — proven by the PoC.6 in-module test. The one piece of "exactly like any StroomQL query" not
+yet true is *reachability*: nothing yet routes a query submitted through the actual dashboard/query REST path to
+`CypherCompiler` (see PoC.6's "what remains" above) — that routing, plus real ingest, are the first P-phase
+concerns. Ingest is still fixture-driven (real `GraphFilter` is P2); traversal is single-hop single-shard.
 
 ---
 
