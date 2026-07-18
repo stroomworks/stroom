@@ -237,6 +237,9 @@ include 'stroom-pipeline'
 // Plan B
 include 'stroom-planb:stroom-planb-impl'
 
+// Graph DB
+include 'stroom-graphdb:stroom-graphdb-impl'
+
 // Processor
 include 'stroom-processor:stroom-processor-api'
 include 'stroom-processor:stroom-processor-impl'
