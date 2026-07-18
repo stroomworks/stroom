@@ -626,6 +626,18 @@ select e.time, e.userId, u.department</code></pre>
           <em>discover</em> the right State / PlanB / reference source for a typed key instead of being wired by hand.</p>
       </div>
     </div>
+    <p><strong>Relationship types — a shared, later extension.</strong> <code>DomainType</code> names entities, not the
+      <em>relationships</em> between them. An optional <code>List&lt;RelationshipType&gt;</code> on <code>DomainTypeDoc</code>
+      — a <code>{ type, from, to, directed }</code> record whose endpoints are <code>DomainType</code>s matched by
+      <code>canAccept</code> (sketched in the graph doc's
+      <a href="temporal-cypher-graph.html#domain-types">domain-type integration</a>) — pays off in <em>both</em> languages.
+      For the graph it is first-class edges; for <strong>StroomQL</strong> it extends joins from same-entity equi-joins to
+      <strong>relationship-mediated enrichment joins</strong>: when two keys are <em>different but related</em> entities
+      (<code>User.id</code> —<code>OWNS</code>→ <code>Account.number</code>), the planner routes the join through the store
+      that <em>materialises</em> the relationship (edge/adjacency or State) via the same broadcast-lookup / source-routing
+      path — plus join validation and autocomplete. Advisory and <strong>single-hop</strong> (multi-hop stays Cypher's);
+      out of v1 scope (needs a <code>DomainTypeDoc</code> change + a materialised source) but a natural completion of the
+      join story.</p>
     <div class="callout info">
       <span class="lbl">Advisory, always</span>
       Domain types add nothing to single-source planning and are never required. Later they can also sharpen cost

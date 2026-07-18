@@ -162,6 +162,19 @@ as cross-source joins mature; selectivity-from-stats waits for telemetry. Matchi
 segments, one `*`, no subtyping) — strong enough to *validate* a join, so auto-inference always **confirms** rather
 than silently rewrites.
 
+**Relationship types — a shared, later extension.** `DomainType` names entities, not the *relationships* between them.
+An optional `List<RelationshipType>` on `DomainTypeDoc` — a `{ type, from, to, directed }` record whose endpoints are
+`DomainType`s matched by `canAccept` (sketched in the graph doc's
+[domain-type integration](temporal-cypher-graph.md#56-domain-type-integration-semantic-layer)) — pays off in *both*
+languages. For the graph it is first-class edges; for **StroomQL** it extends joins from same-entity equi-joins
+(`a.canAccept(b)`) to **relationship-mediated enrichment joins**: when the two join keys are *different but related*
+entities (`User.id` --`OWNS`--> `Account.number`), the planner routes the join through the store that *materialises* the
+relationship (an edge/adjacency or State store) via the same broadcast-lookup / enrichment-source-routing path as
+Phase 6 — plus semantic join validation and query-builder autocomplete. It stays advisory and **single-hop** (StroomQL
+has no traversal syntax; multi-hop stays Cypher's). Out of v1 scope — it needs a `DomainTypeDoc` model change and a
+materialised relationship source — but a natural completion of the domain-type join story; tracked in the
+[implementation plan](query-optimiser-implementation-plan.md) Phase 6 (T6.4).
+
 ## Phased delivery
 
 ### Phase 0 — Scaffolding

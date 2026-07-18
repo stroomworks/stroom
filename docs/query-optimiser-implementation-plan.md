@@ -521,7 +521,9 @@ the flag **off**, nothing changed. `SearchRequestFactory` is still the legacy en
 
 Outcome: a logical plan tree shared by every future front-end (StroomQL now, Cypher later per the graph-DB design
 doc) and every later phase; a `Binder` that turns a bound `AstQuery` into that tree or a fail-fast `BindException`;
-rewrite rules designed in detail (implementation deferred — see T2.3).
+and four rewrite rules (structural cleanup, auto where/filter split, push-below-joins) composed into a fixed
+pipeline — two further rules (dictionary expansion, time-range extraction) explicitly deferred pending
+infrastructure Phase 2 doesn't otherwise need — see T2.3.
 
 **Not wired into `OptimisingQueryCompiler` yet.** Phase 1's compiler (AST → `SearchRequest` directly) is untouched
 and still the byte-parity path; this phase adds a **second, standalone** module (`stroom-query-planner`'s
@@ -625,37 +627,61 @@ actually produce a `SearchRequest` — is Phase 5's job, once there's a physical
 - **Goal**: pure `LogicalPlan → LogicalPlan` transformations, each unit-tested in isolation and in combination,
   that improve physical placement without changing results.
 - **Depends on**: T2.1, T2.2.
-- **Files**: `stroom-query-planner/src/main/java/stroom/query/planner/rewrite/*.java` — one class per rule, a
-  small `RewriteRule` functional interface, and a fixed-order pipeline runner.
-- **Rules** (rationale in the design doc's [Domain types](query-optimiser-plan.md#domain-types-semantic-layer)
-  section and its Phase 2 write-up):
-  - **Auto where/filter split**: for a `Filter` node whose `filterPredicate` is `null` pre-rewrite (the user
-    relied solely on `where`), split `wherePredicate`'s top-level AND-conjuncts by index-eligibility
-    (`QueryField.queryable()` + the term's condition being in the field's `ConditionSet` — the same lookup the
-    binder used, so this rule needs the owning `Scan`'s field metadata too, not just the plan shape) into an
-    index-pushed remainder (stays as `wherePredicate`) and a non-eligible remainder (becomes `filterPredicate`).
-    **Invariant**: if the user already wrote an explicit `filter` clause (`filterPredicate != null` before this
-    rule runs), it's a no-op — the query rewrites to itself byte-for-byte.
-  - **Push single-source filters below joins**: for `Filter(Join(...))` whose predicate only references one
-    side's fields, push the `Filter` below the `Join` onto that side.
-  - **Constant folding**: purely mechanical, no field metadata or legacy oracle needed (legacy does nothing like
-    this today) — the simplest rule to implement and test first.
-  - **Redundant-term pruning**: drop a term subsumed by another in the same AND-conjunction (e.g. `x=1 AND x=1`).
-  - **Dictionary expansion**: resolve `in dictionary` at plan time where feasible.
-  - **Time-range extraction**: isolate the time-field predicate into a dedicated slot on `Scan` (needed by Phase
-    3's partition pruning) — needs `FieldInfoSource.getTimeField`, already defined in T2.2.
-- **Done-when**: each rule has isolation tests (hand-built input plan → expected output plan) and at least one
-  combination test (the fixed pipeline, several rules in sequence); the two invariants above (`explicit
-  where+filter → unchanged`, `auto-split → provably equivalent`) are each their own named test.
+- **Files**: `stroom-query-planner/src/main/java/stroom/query/planner/rewrite/*.java` — `RewriteRule` (functional
+  interface), `PlanRewriteUtil` (shared tree-walk helpers: `mapPredicates`, `collectScans`, `aliasOf`), one class
+  per rule, and `RewritePipeline` (the fixed-order runner, `RewritePipeline.standard(FieldInfoSource)`).
+- **Implemented** (rationale in the design doc's
+  [Domain types](query-optimiser-plan.md#domain-types-semantic-layer) section and its Phase 2 write-up):
+  - **`ConstantFoldingRule`**: StroomQL terms have no boolean-literal equivalent, so this folds *structural*
+    redundancy rather than literal constants — double negation (`NOT(NOT(x))` → `x`) and single-child
+    `AND`/`OR` collapse (`AND(x)`/`OR(x)` → `x`). Purely mechanical, no field metadata needed.
+  - **`RedundantTermPruningRule`**: drops a term subsumed by an identical one in the same AND-conjunction (e.g.
+    `x=1 AND x=1`) — flattens through nested `Op.AND` only (matching the binder's own left-nested pairwise fold)
+    and de-dupes the flat list; deliberately does **not** reach into an `OR`/`NOT` sub-tree for a duplicate
+    against a sibling outside it (`(x=1 OR y=2) AND x=1` must not become `(x=1 OR y=2)` — that changes which
+    rows match). Each sub-tree is still pruned independently within itself.
+  - **`AutoWhereFilterSplitRule`**: for a `Filter` node whose `filterPredicate` is `null` pre-rewrite, splits
+    `wherePredicate`'s top-level AND-conjuncts by index-eligibility (`QueryField.queryable()` + the term's
+    condition in the field's `ConditionSet` — needs `FieldInfoSource`, so this rule takes one in its
+    constructor) into an index-pushed remainder (stays `wherePredicate`) and a non-eligible remainder (becomes
+    `filterPredicate`). **Invariant** (its own test): an already-present `filter` clause makes this a no-op. A
+    top-level `OR`/`NOT` predicate is treated as one atomic, all-or-nothing unit (can't partially push without
+    evaluating every branch at the datasource) and left entirely in `where`. Anything unresolvable (unknown
+    field, missing `ConditionSet`) is treated conservatively as *not* eligible — a wrong "leave it in `where`"
+    guess is still safe, a wrong "push it" guess could send an unsupported condition to a datasource that
+    rejects it.
+  - **`PushFiltersBelowJoinsRule`**: for a `Filter` directly above a `Join`, considers `wherePredicate` and
+    `filterPredicate` independently and pushes either one below the `Join` onto whichever side **every** field
+    reference in it belongs to (all `alias.field`-qualified, all the same alias) — merging into an existing
+    `Filter` there via `AND` if one already exists. An unqualified reference, or references spanning both
+    sides, leaves that predicate exactly where it was. If both slots end up pushed, the enclosing `Filter` node
+    is removed entirely.
+  - **`RewritePipeline.standard`** composes them in this order: `ConstantFoldingRule` →
+    `RedundantTermPruningRule` (structural cleanup, so the predicate `AutoWhereFilterSplitRule` partitions is
+    already in its simplest shape) → `AutoWhereFilterSplitRule` → `PushFiltersBelowJoinsRule` (relocates
+    whichever predicates the split just placed in `where`/`filter`).
+- **Deferred** (need new infrastructure this task didn't build, rather than a design gap):
+  - **Dictionary expansion**: needs a dictionary-lookup port (resolving a dictionary name to its values/`DocRef`)
+    that doesn't exist yet — `AstInDictionaryTerm` binding (T2.2) already defers `DocRef` resolution for the
+    same reason. Building the port is its own port/adapter task, the same shape as T2.2's `FieldInfoSource`.
+  - **Time-range extraction**: needs a new `Scan.timeRangePredicate`-shaped slot with no consumer yet (Phase 3's
+    partition pruning, not built). Adding a field to the Logical IR that nothing reads would be exactly the
+    kind of speculative abstraction this project's own coding standard says to avoid — defer until Phase 3
+    actually needs it, then extend `Scan` and add this rule together.
+- **Done-when**: each implemented rule has isolation tests (hand-built input plan → expected output plan) —
+  `TestConstantFoldingRule` (5), `TestRedundantTermPruningRule` (7), `TestAutoWhereFilterSplitRule` (8),
+  `TestPushFiltersBelowJoinsRule` (7) — plus a combination test (`TestRewritePipeline`) running all four rules
+  in sequence, where each rule's output is what the next needs (structural cleanup → split → push-down),
+  ending in a fully pushed-down `Join` with the enclosing `Filter` removed. The two invariants
+  (`explicit where+filter → unchanged`, `auto-split → provably equivalent`) are each covered by a named test in
+  `TestAutoWhereFilterSplitRule`.
 - **Verify**: `./gradlew :stroom-query:stroom-query-planner:test`.
-- **Status: designed here, not yet implemented.** Each rule needs "index-eligible" pinned down against real
-  `QueryField`/`ConditionSet` behaviour, which is more naturally tackled with T2.2's binder (and its tests) as a
-  foundation to build on rather than concurrently with it. Treat as the next task when resuming this phase.
 
-**Phase 2 exit gate (T2.1 + T2.2, T2.3 deferred)**: the binder's own test suite is green (unit tests + the
-`FieldInfoSourceAdapter` seam test), and the existing Phase 0/1 gates (grammar/common modules) are undisturbed —
-`stroom-query-planner` has no behavioural wiring into `OptimisingQueryCompiler` yet, so there is no new
-parity-corpus assertion to satisfy in this phase.
+**Phase 2 exit gate**: T2.1 + T2.2 + T2.3 (four of six designed rules; two explicitly deferred, see above) are
+green — unit tests, the `FieldInfoSourceAdapter` seam test, and the rewrite pipeline's isolation + combination
+tests all pass, checkstyle clean — and the existing Phase 0/1 gates (grammar/common modules) are undisturbed.
+`stroom-query-planner` still has no behavioural wiring into `OptimisingQueryCompiler` — that's Phase 5's job,
+once there's a physical plan and executor to justify it.
 
 ---
 
@@ -701,6 +727,15 @@ same *Files/Contract/Done-when/Verify* structure. The design doc's phase section
 - **T6.2**: enrichment joins reuse `GetState`/`StateProvider`/`StateFetcher`; **discover candidate sources by domain
   type** (planner-side analogue of `DashboardStoreImpl.findByType`).
 - **T6.3**: extend EXPLAIN/CostEstimate with join order/algorithm/per-side estimates.
+- **T6.4 (extension — domain relationships; see D7)**: add an optional `List<RelationshipType>` to `DomainTypeDoc`
+  (`stroom-core-shared/.../domaintype/shared/`) — a `{ type, from, to, directed }` record with `DomainType` endpoints
+  matched by `canAccept`. Extend join binding/routing so a join whose two keys are *related* entities (not the **same**
+  domain type) is planned as an **enrichment join through the store that materialises the relationship** (edge/adjacency
+  or State), reusing T6.2's source discovery; single-hop, advisory, skipped when no relationship/source exists. Shared
+  with the temporal Cypher graph, where the same catalogue drives edges
+  ([temporal-cypher-graph.md §5.6](temporal-cypher-graph.md#56-domain-type-integration-semantic-layer)). **Gate**: a
+  two-source query joined via a catalogued relationship returns the same rows as the explicit edge-store join; absence of
+  a relationship type never changes an existing plan.
 - **Gate**: INNER/LEFT-OUTER correctness over two sources (index⋈state, index⋈index); filter-pushdown-below-join and
   join-reordering give identical results; roll out behind the flag after single-source soak; then deprecate
   `SearchRequestFactory`.
@@ -752,3 +787,8 @@ is the method; the concrete harness is:
   bump the version if not.
 - **D6 — `QueryConfig` placement**: new `stroom.query` node in `AppConfig` with a `QueryConfig` parent (chosen) vs
   hanging `optimiser` off an existing config. Default: new node, path `stroom.query.optimiser.enabled`.
+- **D7 — Domain relationships (relationship types)**: whether the `DomainTypeDoc` `List<RelationshipType>` extension +
+  relationship-mediated enrichment joins (T6.4) land in this project's Phase 6 or as a fast-follow. It needs a shared
+  `stroom-core-shared` model change and is shared with the temporal Cypher graph (its edges). Default: **fast-follow**
+  after single-source + INNER/LEFT-OUTER equi-joins prove out — the design plan's
+  [Domain types](query-optimiser-plan.md#domain-types-semantic-layer) section is the spec.
