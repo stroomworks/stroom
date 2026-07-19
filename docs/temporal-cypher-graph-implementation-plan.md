@@ -1232,14 +1232,160 @@ existing temporal modes. P4 (Tasks P4.1-P4.2) is complete; P5 (Query integration
 explicit go-ahead.
 
 ### P5 — Query integration hardening (5–10 pw)
-- **Graph datasource cost signals** (row/key counts, adjacency access-path costing) implementing a
-  `stroom-query-planner.port` interface via an adapter in `stroom-graphdb-impl` (the port/adapter split, §2).
-- **`GraphDbDoc` hardening** (PoC.0 built the doc + store-ownership scaffold): REST resource + **explorer handler**
-  (the explorer-handler wiring that lives outside the doc-store module, §1.5); full owned-store lifecycle — **reprocess-rebuild** (drop + re-provision
-  all internal stores, then re-run ingest over stored streams) and **retention/condense as-a-unit** across every
-  internal store; permissions on the one doc cascade to all its internals.
-- *Gate*: a graph is created, edited, reprocessed, permissioned, retained, and queried like any other datasource —
-  with **no** internal store ever visible or separately configurable (the §2.1 encapsulation invariant).
+
+> **Scoping note (recorded 2026-07-19):** the rough outline above bundles a cost-signal task and a broad
+> "`GraphDbDoc` hardening" bucket. A research pass against the current code (not just the design doc) found this
+> phase's real remaining scope is considerably narrower than the outline suggests - several items are already
+> built, one item has no reusable pattern anywhere in the codebase to build against, and one has a documented,
+> already-accepted gap from Task P1.4 rather than a silent one:
+> - **`DocumentStoreBinder` is already bound** (`GraphDbModule.java`), and that alone already gives
+>   `GraphDbDocStoreImpl` `ExplorerActionHandler`/`ImportExportActionHandler`/`ContentIndexable`/
+>   `DocumentActionHandlerBinder` registration for free - `DocumentStore<D>` itself extends
+>   `ExplorerActionHandler`, so this is generic docstore-module behaviour, not per-doc-type code. The "explorer
+>   handler" bullet's *only* genuinely missing piece is `ExplorerFlags.DOC_TYPE_TO_DEFAULT_FLAG_MAP` not yet
+>   listing `GraphDbDoc.TYPE` - a one-line addition, not a new handler class.
+> - **Permission cascade is already generic infrastructure, not bespoke code**: `StoreImpl` checks
+>   `DocumentPermission` uniformly for every doc type, and `GraphDbDocCacheImpl.get` already enforces
+>   `DocumentPermission.USE`. Since internal stores have no `DocRef` of their own (by design, PoC.0) and are only
+>   reachable via `GraphStoreManager.getOrOpen(doc)` fed an already-permission-checked doc, this bullet needs no
+>   new code at all, only the REST-resource gap below closed (so there is a permission-checked path onto the doc
+>   in the first place).
+> - **`GraphStores.rebuild(directory, doc)` (drop + re-provision) already exists**, unit-tested in
+>   `TestGraphStores`. "Re-run ingest over stored streams" - re-triggering the pipeline processor framework over
+>   previously-ingested streams for a feed/pipeline - has **no equivalent anywhere in the codebase to mirror**
+>   (Plan B, the acknowledged model for everything else in this plan, has no reprocess-rebuild mechanism either).
+>   Building this from scratch is a cross-cutting Stroom capability (wiring into `ProcessorFilter`/meta-expression
+>   creation, not a graph-specific concern) far outside a "hardening" task's scope - deferred to a future phase
+>   once a real need for it is confirmed, not built speculatively here.
+> - **Retention/condense already covers 3 of 5 interning namespaces as a unit**, wired to a live scheduled job
+>   (`GraphDbModule.GraphRetentionRunnable`, Decision D9) - Task P1.4's own Javadoc already documents and accepts
+>   that the property-value anchor index (which carries no time dimension at all, P0.1/P1.3) has no per-entry
+>   staleness to sweep incrementally, with `rebuild()` as the accepted backstop. This is a signed-off decision
+>   already on record, not a new gap for P5 to close.
+> - **A genuine, previously-undiscovered correctness gap**: `GraphDbDocCacheImpl`'s `EntityAction.DELETE` handler
+>   only evicts the doc cache - it never calls anything that removes the doc's on-disk LMDB stores, so deleting a
+>   `GraphDbDoc` orphans its physical data on disk indefinitely. Not called out in the original outline at all,
+>   but squarely a "full owned-store lifecycle" gap, and cheap to close now that P5.3 already touches this class.
+>
+> Net effect: three concrete, independently-verifiable tasks below, each far smaller than "5-10 pw" of the
+> original two-bullet outline.
+
+#### Task P5.1 — Graph datasource cost port + adapter
+- **Depends on**: none beyond PoC.4 (`GraphNodeDb`)/PoC.6 (`GraphSearchProvider`).
+- **Gap this closes**: `stroom-query-planner`'s `CostModel` (design doc &sect;2's port/adapter split) has three
+  cost ports (`MetaStats`, `IndexShardStats`, `StateStoreStats`); none of them, and no graph-specific port, has
+  ever been asked about a graph datasource - a repo-wide grep for `CostModel|StateStoreStats|FieldInfoSource`
+  under `stroom-graphdb/` returns zero hits. `GraphSearchProvider` is completely invisible to query costing.
+- **Files**:
+  - `stroom-query-planner/src/main/java/stroom/query/planner/port/GraphStoreStats.java` (new) - mirrors
+    `StateStoreStats` exactly in shape (`Optional<RowCountSignal> estimate(String graphName)`, "never null; the
+    graph's name as it would appear in a `MATCH`'s datasource"), since a graph's anchor/adjacency access is also
+    key-addressed point/prefix-lookup shaped, not a Lucene-style partitioned scan.
+  - `GraphNodeDb.java` (modified) - add `long count(Txn<ByteBuffer> readTxn)` wrapping `dbi.stat(readTxn).entries`
+    (the exact pattern `stroom-planb-impl`'s `AbstractDb.count()` and `stroom-lmdb`'s `LmdbDb`/`AbstractLmdbDb`
+    already use for this). **Documented approximation** (mirroring how every other cost signal in this codebase
+    documents its own approximations, e.g. `CostModel`'s placeholder throughput notes): this counts version
+    *rows*, not distinct nodes - a node with N historical versions inflates the estimate by N. Acceptable for a
+    cost *signal* (an order-of-magnitude scan-cost proxy, not an exact cardinality), not acceptable if ever
+    mistaken for "number of nodes in the graph" - the Javadoc says so explicitly.
+  - `stroom-graphdb-impl/.../GraphStoreStatsAdapter.java` (new) - implements `GraphStoreStats`, injecting
+    `GraphDbDocCache` + `GraphStoreManager` (the exact resolve-by-name path `GraphSearchProvider` already uses:
+    `graphDbDocCache.get(graphName)` &rarr; `graphStoreManager.getOrOpen(doc)` &rarr; `.getNodes().count(readTxn)`
+    inside a read transaction). Catches the cache's own "no doc found for name" `NullPointerException` and
+    returns `Optional.empty()` (matching every other port's "empty if not a known store" contract); a
+    `PermissionException` from the cache's own check is allowed to propagate, not swallowed - an access-control
+    signal, not an "unknown store" one.
+  - `GraphDbModule.java` (modified) - `bind(GraphStoreStats.class).to(GraphStoreStatsAdapter.class)`, so the port
+    is genuinely resolvable the moment something (a future `CostModel` binding site) asks Guice for it.
+  - **Deliberately not done**: extending `CostModel`'s constructor with a 4th port. `CostModel` itself is not
+    Guice-bound anywhere yet (`CostModel`'s own Javadoc: "Not wired into anything yet") and its two other
+    non-`MetaStats` ports (`IndexShardStats`, `StateStoreStats`) are in the exact same "port exists, no adapter,
+    not consulted yet" state this task leaves `GraphStoreStats` in - adding a 4th constructor parameter would
+    force-update every one of `TestCostModel`'s ten-plus call sites in a different initiative's module for a
+    class that isn't wired into anything regardless. Out of proportion for this task; revisit once `CostModel`
+    itself gets bound into a real query path.
+  - Tests: `GraphNodeDb.count` (in `TestGraphPhysicalStores`) - zero for an empty store, matches insert count,
+    counts every version row (not deduplicated by `nodeUid`) so the documented approximation is itself verified,
+    not just asserted in prose. `GraphStoreStatsAdapter` (new test file) - resolves a real `GraphStores` fixture's
+    node count via a mocked `GraphDbDocCache`/real `GraphStoreManagerImpl`; returns empty for an unknown name
+    (mocked cache throwing `NullPointerException`); a `PermissionException` from the cache propagates unchanged.
+- **Contract**: `GraphStoreStats` never throws for an unknown graph name (empty instead); the count reflects the
+  node store only (edges/property-index rows are out of scope for this first signal, matching how
+  `StateStoreStats` only ever answers with one number per store, not a per-index-type breakdown).
+- **Done-when**: the new adapter test resolves the correct node-version-row count against a real temp-dir
+  `GraphStores` fixture with a mix of single- and multi-version nodes; `GraphDbModule`'s binding resolves via
+  Guice without error.
+- **Verify**: `./gradlew :stroom-query:stroom-query-planner:test :stroom-graphdb:stroom-graphdb-impl:test`.
+
+#### Task P5.2 — `GraphDbDoc` REST resource + explorer registration
+- **Depends on**: none beyond PoC.0.
+- **Gap this closes**: no `@Path`-annotated REST resource exists for `GraphDbDoc` anywhere in the repo (verified
+  by a repo-wide `find`), so a `GraphDbDoc` cannot be fetched/updated over the REST API the way every other doc
+  type can - blocking any UI editor (P6) from existing at all. Separately, `GraphDbDoc.TYPE` is absent from
+  `ExplorerFlags.DOC_TYPE_TO_DEFAULT_FLAG_MAP`, so the explorer tree doesn't know to flag it as a data source
+  the way it already does for `PlanBDoc`/`LuceneIndexDoc`/etc.
+- **Files**:
+  - `stroom-core-shared/src/main/java/stroom/graphdb/shared/GraphDbResource.java` (new) - mirrors
+    `stroom.planb.shared.PlanBDocResource` exactly: `@Path("/graphDb" + V1)`, `extends RestResource,
+    DirectRestService, FetchWithUuid<GraphDbDoc>`, a `GET /{uuid}` `fetch` and a `PUT /{uuid}` `update`.
+  - `stroom-graphdb-impl/.../GraphDbResourceImpl.java` (new) - mirrors `PlanBDocResourceImpl` exactly: delegates
+    both methods to `DocumentResourceHelper` against a `Provider<GraphDbDocStore>`, `@AutoLogged`, `update`
+    rejects a UUID mismatch between the path and the body via `EntityServiceException` (the same guard
+    `PlanBDocResourceImpl.update` has).
+  - `GraphDbModule.java` (modified) - `RestResourcesBinder.create(binder()).bind(GraphDbResourceImpl.class)`.
+  - `stroom-explorer/stroom-explorer-impl/src/main/java/stroom/explorer/impl/ExplorerFlags.java` (modified) -
+    add `DOC_TYPE_TO_DEFAULT_FLAG_MAP.put(GraphDbDoc.TYPE, NodeFlag.DATA_SOURCE)` alongside the existing entries
+    (`stroom-explorer-impl` already depends on `stroom-core-shared`, where `GraphDbDoc` lives - no new build-graph
+    edge).
+  - Tests: none - mirrors `PlanBDocResourceImpl`, which itself has no dedicated unit test in this codebase (a
+    thin pass-through to `DocumentResourceHelper`, exercised at a REST/integration level this repo checkout
+    doesn't contain); writing one here would test framework plumbing, not graph-specific logic. Checked directly:
+    a repo-wide search for `TestPlanBDocResource` returns nothing, confirming this is the established precedent,
+    not an oversight to fix incidentally while here.
+- **Contract**: identical wire contract to every other simple fetch/update doc resource in the codebase - no
+  graph-specific validation beyond what `PlanBDocResource`'s pattern already provides.
+- **Done-when**: `stroom-graphdb-impl`/`stroom-core-shared` compile with the new resource bound and Guice
+  resolves `GraphDbResourceImpl`'s dependencies without error; `ExplorerFlags.getStandardFlagByDocType
+  (GraphDbDoc.TYPE)` returns `NodeFlag.DATA_SOURCE`.
+- **Verify**: `./gradlew :stroom-core-shared:test :stroom-graphdb:stroom-graphdb-impl:test
+  :stroom-explorer:stroom-explorer-impl:test`.
+
+#### Task P5.3 — Doc-delete cleans up its physical stores
+- **Depends on**: none beyond PoC.0/PoC.6.
+- **Gap this closes**: `GraphDbDocCacheImpl`'s `EntityAction.DELETE` handler (`onChange`) only calls `clear()` -
+  the doc-cache eviction all three of `DELETE`/`UPDATE`/`CLEAR_CACHE` already share. Nothing removes the deleted
+  doc's on-disk LMDB environment (`GraphStoreManagerImpl`'s `openStores` map keeps it open indefinitely, and the
+  directory is never deleted), so deleting a `GraphDbDoc` through the normal docstore/explorer delete flow
+  silently orphans its physical data forever - a real "full owned-store lifecycle" gap the original P5 outline
+  didn't even name.
+- **Files**:
+  - `GraphStoreManager.java` (modified) - add `void delete(String uuid)`: closes the cached `GraphStores` for
+    `uuid` if open (removing it from the manager's map first, mirroring `getOrOpen`'s own keying) and always
+    calls the static `GraphStores.delete(directory)` for that UUID's directory afterward, whether or not it was
+    open (an unopened-but-still-on-disk store, e.g. after a restart, must still be removable).
+  - `GraphStoreManagerImpl.java` (modified) - implements the above using the same `directoryFor(uuid)` helper
+    `getOrOpen` already uses.
+  - `GraphDbDocCacheImpl.java` (modified) - inject `GraphStoreManager`; in `onChange`, additionally call
+    `graphStoreManager.delete(event.getDocRef().getUuid())` specifically for `EntityAction.DELETE` (not
+    `UPDATE`/`CLEAR_CACHE`, which must keep the store open - only a real delete tears anything down).
+  - Tests: `TestGraphStoreManagerImpl` - a new `delete` test proving the directory is removed and a subsequent
+    `getOrOpen` for the same UUID provisions a fresh, empty store rather than reopening stale data; a case
+    deleting a UUID that was never opened still removes its directory if present, and is a no-op (not an error)
+    if the directory never existed. `TestGraphDbDocCacheImpl` - a new test asserting `onChange` with
+    `EntityAction.DELETE` calls `graphStoreManager.delete` with the event's UUID, while the existing
+    `onChange_forUpdateDeleteOrClearCache_...` test (parameterised only over cache-clearing behaviour) keeps
+    proving `UPDATE`/`CLEAR_CACHE` do *not* trigger store deletion.
+- **Contract**: `UPDATE`/`CLEAR_CACHE` behaviour is bit-for-bit unchanged (still cache-eviction only); only
+  `DELETE` additionally tears down the physical store. Deleting a not-currently-open store is not an error.
+- **Done-when**: the new `TestGraphStoreManagerImpl`/`TestGraphDbDocCacheImpl` cases pass; every pre-existing
+  test in both files passes unmodified.
+- **Verify**: `./gradlew :stroom-graphdb:stroom-graphdb-impl:test`.
+
+**P5 exit gate**: a `GraphDbDoc` can be fetched/updated over REST like any other document, appears as a data
+source in the explorer tree, exposes a real (if approximate) cost signal to the query-planner port interface,
+and no longer leaks on-disk data when deleted - all without a single internal store ever gaining its own
+`DocRef`, REST endpoint, or explorer node (the encapsulation invariant, unchanged). Reprocess-rebuild-from-UI and
+full anchor-index retention remain explicitly out of scope, per the scoping note above.
 
 ### P6 — UI (7–16 pw)
 - **Graph doc editor** — a **tabbed** GWT presenter/view mirroring the Lucene Index editor
