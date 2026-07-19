@@ -25,6 +25,7 @@ import stroom.planb.impl.dao.LmdbWriter;
 import stroom.planb.impl.dao.PlanBEnv;
 import stroom.planb.impl.dao.UidLookupDb;
 import stroom.planb.impl.dao.UidLookupDb.StaticUnsignedBytesFactory;
+import stroom.planb.impl.dao.UidLookupRecorder;
 
 import org.lmdbjava.Txn;
 
@@ -49,6 +50,13 @@ import java.util.stream.Stream;
  * the composite-key prefix scans below) plus the node store ({@link GraphNodeDb}), out-edge adjacency
  * ({@link GraphAdjacencyDb}), in-edge adjacency ({@link GraphInEdgeDb}, Task P1.1), and property-value index
  * ({@link GraphPropertyIndex}) — all sharing one owned {@link PlanBEnv}.
+ *
+ * <p>Each of the four interning namespaces also gets a {@link UidLookupRecorder} (Task P1.2) - a mark-and-sweep
+ * used-lookups recorder mirroring Plan B's own DAOs (e.g. {@code TemporalStateDb}): a retention pass (Task P1.4)
+ * calls {@code recordUsed} for every UID a surviving row still references, then {@code deleteUnused} once every
+ * DAO has finished recording, sweeping any UID no longer referenced by anything. Recording and sweeping is not
+ * this class's own concern - it only owns and exposes the recorders; the DAOs that reference each namespace call
+ * them during their own retention passes.</p>
  */
 public final class GraphStores implements AutoCloseable {
 
@@ -70,6 +78,10 @@ public final class GraphStores implements AutoCloseable {
     private final UidLookupDb labelUids;
     private final UidLookupDb edgeTypeUids;
     private final UidLookupDb propertyKeyUids;
+    private final UidLookupRecorder nodeUidRecorder;
+    private final UidLookupRecorder labelUidRecorder;
+    private final UidLookupRecorder edgeTypeUidRecorder;
+    private final UidLookupRecorder propertyKeyUidRecorder;
     private final GraphNodeDb nodes;
     private final GraphAdjacencyDb outEdges;
     private final GraphInEdgeDb inEdges;
@@ -80,6 +92,10 @@ public final class GraphStores implements AutoCloseable {
                         final UidLookupDb labelUids,
                         final UidLookupDb edgeTypeUids,
                         final UidLookupDb propertyKeyUids,
+                        final UidLookupRecorder nodeUidRecorder,
+                        final UidLookupRecorder labelUidRecorder,
+                        final UidLookupRecorder edgeTypeUidRecorder,
+                        final UidLookupRecorder propertyKeyUidRecorder,
                         final GraphNodeDb nodes,
                         final GraphAdjacencyDb outEdges,
                         final GraphInEdgeDb inEdges,
@@ -89,6 +105,10 @@ public final class GraphStores implements AutoCloseable {
         this.labelUids = labelUids;
         this.edgeTypeUids = edgeTypeUids;
         this.propertyKeyUids = propertyKeyUids;
+        this.nodeUidRecorder = nodeUidRecorder;
+        this.labelUidRecorder = labelUidRecorder;
+        this.edgeTypeUidRecorder = edgeTypeUidRecorder;
+        this.propertyKeyUidRecorder = propertyKeyUidRecorder;
         this.nodes = nodes;
         this.outEdges = outEdges;
         this.inEdges = inEdges;
@@ -158,13 +178,18 @@ public final class GraphStores implements AutoCloseable {
             final UidLookupDb propertyKeyUids = new UidLookupDb(
                     env, byteBuffers, "property-key-uid",
                     new StaticUnsignedBytesFactory(UnsignedBytesInstances.ofLength(TYPE_UID_WIDTH)));
+            final UidLookupRecorder nodeUidRecorder = new UidLookupRecorder(env, nodeUids);
+            final UidLookupRecorder labelUidRecorder = new UidLookupRecorder(env, labelUids);
+            final UidLookupRecorder edgeTypeUidRecorder = new UidLookupRecorder(env, edgeTypeUids);
+            final UidLookupRecorder propertyKeyUidRecorder = new UidLookupRecorder(env, propertyKeyUids);
             final GraphNodeDb nodes = new GraphNodeDb(env);
             final GraphAdjacencyDb outEdges = new GraphAdjacencyDb(env);
             final GraphInEdgeDb inEdges = new GraphInEdgeDb(env);
             final GraphPropertyIndex propertyIndex = new GraphPropertyIndex(env);
             return new GraphStores(
-                    env, nodeUids, labelUids, edgeTypeUids, propertyKeyUids, nodes, outEdges, inEdges,
-                    propertyIndex);
+                    env, nodeUids, labelUids, edgeTypeUids, propertyKeyUids,
+                    nodeUidRecorder, labelUidRecorder, edgeTypeUidRecorder, propertyKeyUidRecorder,
+                    nodes, outEdges, inEdges, propertyIndex);
         } catch (final RuntimeException e) {
             env.close();
             throw e;
@@ -197,6 +222,34 @@ public final class GraphStores implements AutoCloseable {
      */
     public UidLookupDb getPropertyKeyUids() {
         return propertyKeyUids;
+    }
+
+    /**
+     * @return the {@link #getNodeUids()} namespace's used-lookups recorder (Task P1.2).
+     */
+    public UidLookupRecorder getNodeUidRecorder() {
+        return nodeUidRecorder;
+    }
+
+    /**
+     * @return the {@link #getLabelUids()} namespace's used-lookups recorder (Task P1.2).
+     */
+    public UidLookupRecorder getLabelUidRecorder() {
+        return labelUidRecorder;
+    }
+
+    /**
+     * @return the {@link #getEdgeTypeUids()} namespace's used-lookups recorder (Task P1.2).
+     */
+    public UidLookupRecorder getEdgeTypeUidRecorder() {
+        return edgeTypeUidRecorder;
+    }
+
+    /**
+     * @return the {@link #getPropertyKeyUids()} namespace's used-lookups recorder (Task P1.2).
+     */
+    public UidLookupRecorder getPropertyKeyUidRecorder() {
+        return propertyKeyUidRecorder;
     }
 
     /**

@@ -96,6 +96,30 @@ class TestGraphStores {
     }
 
     @Test
+    void usedLookupsRecorder_marksSurvivorsAndSweepsEverythingElse(@TempDir final Path root) {
+        // Task P1.2: recordUsed marks a UID as still-referenced; deleteUnused then removes any UID in the
+        // namespace that was never marked - mirrors Plan B's TemporalStateDb.deleteOldData's record-then-sweep
+        // pattern (env.write { ...; env.read { recorder.deleteUnused(readTxn, writer) } }).
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph-recorder-test"), DOC)) {
+            final long usedUid = intern(stores, stores.getNodeUids(), "used", GraphStores.NODE_UID_WIDTH);
+            final long unusedUid = intern(stores, stores.getNodeUids(), "unused", GraphStores.NODE_UID_WIDTH);
+
+            stores.write(writer -> {
+                stores.getNodeUidRecorder().recordUsed(writer, usedUid);
+                stores.read(readTxn -> {
+                    stores.getNodeUidRecorder().deleteUnused(readTxn, writer);
+                    return null;
+                });
+                return null;
+            });
+
+            assertThat(lookup(stores, stores.getNodeUids(), "used")).contains(usedUid);
+            assertThat(lookup(stores, stores.getNodeUids(), "unused")).isEmpty();
+            assertThat(unusedUid).isNotEqualTo(usedUid);
+        }
+    }
+
+    @Test
     void delete_removesTheDirectory(@TempDir final Path root) {
         final Path dir = root.resolve("graph3");
 
