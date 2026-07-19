@@ -97,6 +97,11 @@ public abstract class AbstractQueryDataPresenter<V extends QueryDataView, D>
     protected void onRead(final DocRef docRef, final D doc, final boolean readOnly) {
         this.currentDocRef = docRef;
         this.currentDoc = doc;
+        // The doc being previewed is also this search's owning doc-ref - populating it lets the server resolve
+        // an alternative (non-StroomQL) compiler for datasource types that need one, e.g. a GraphDb's Cypher
+        // Data tab (implementation plan Task P6.1); for every other doc type this only makes the "Owner Doc"
+        // audit/display info (previously never populated for this flow) more accurate, not a behaviour change.
+        queryModel.init(docRef);
         tablePresenter.setPreferredColumns(getPreferredColumns(doc));
         getView().setQuery(getDefaultQuery(docRef, doc));
         getView().clearError();

@@ -1515,6 +1515,15 @@ complete; P6 (UI) is next, pending explicit go-ahead.
   every pre-existing test across `stroom-query-common`/`stroom-query-impl`/`stroom-graphdb-impl` passes unmodified.
 - **Verify**: `./gradlew :stroom-query:stroom-query-common:test :stroom-query:stroom-query-impl:test
   :stroom-graphdb:stroom-graphdb-impl:test`.
+- **Status: done (2026-07-19)**. `AlternativeQueryCompiler`/`AlternativeQueryCompilerResolver` added to
+  `stroom-query-common` with `TestAlternativeQueryCompilerResolver` (4 tests). `QueryModule` binds the empty-default
+  `Set<AlternativeQueryCompiler>` multibinder; `QueryServiceImpl.mapRequest` resolves it from the (new)
+  `ownerDocRef`-derived lookup and dispatches to the matching compiler when present, otherwise the pre-existing
+  `queryCompiler.create(...)` call is untouched. `AbstractQueryDataPresenter.onRead` now calls `queryModel.init(docRef)`.
+  `GraphCypherQueryCompiler` (new, `stroom-graphdb-impl`) adapts `CypherCompiler` to the port and is bound in
+  `GraphDbModule`'s multibinder, giving `CypherCompiler` its first production caller. `TestGraphCypherQueryCompiler`
+  (4 tests) passes. Full verification sweep green: `stroom-query-common:test`, `stroom-query-impl:test`,
+  `stroom-graphdb-impl:test`, checkstyleMain/Test on all three, plus `stroom-core-client:compileJava` - all clean.
 
 #### Task P6.2 — `GraphDbDoc` client plugin + editor
 - **Depends on**: P6.1 (so the Data tab's default query is verifiably functional, not merely present).

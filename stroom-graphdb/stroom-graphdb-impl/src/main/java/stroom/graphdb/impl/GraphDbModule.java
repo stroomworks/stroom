@@ -24,6 +24,7 @@ import stroom.job.api.ScheduledJobsBinder;
 import stroom.query.api.datasource.DataSourceProvider;
 import stroom.query.common.v2.IndexFieldProvider;
 import stroom.query.common.v2.SearchProvider;
+import stroom.query.language.AlternativeQueryCompiler;
 import stroom.query.planner.port.GraphStoreStats;
 import stroom.util.RunnableWrapper;
 import stroom.util.entityevent.EntityEvent;
@@ -67,6 +68,11 @@ public class GraphDbModule extends AbstractModule {
                 .bind(GraphDbResourceImpl.class);
 
         bind(GraphStoreStats.class).to(GraphStoreStatsAdapter.class);
+
+        // Task P6.1: gives CypherCompiler a real caller - QueryServiceImpl resolves this from the
+        // Set<AlternativeQueryCompiler> multibinder when a search's owning doc-ref is a GraphDbDoc.
+        GuiceUtil.buildMultiBinder(binder(), AlternativeQueryCompiler.class)
+                .addBinding(GraphCypherQueryCompiler.class);
 
         GuiceUtil.buildMultiBinder(binder(), DataSourceProvider.class)
                 .addBinding(GraphSearchProvider.class);

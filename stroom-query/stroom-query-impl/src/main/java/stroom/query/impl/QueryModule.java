@@ -19,6 +19,7 @@ package stroom.query.impl;
 import stroom.docstore.api.DocumentStoreBinder;
 import stroom.event.logging.api.ObjectInfoProviderBinder;
 import stroom.query.api.datasource.QueryFieldProvider;
+import stroom.query.language.AlternativeQueryCompiler;
 import stroom.query.language.DispatchingQueryCompiler;
 import stroom.query.language.FieldInfoSourceAdapter;
 import stroom.query.language.MetaStatsAdapter;
@@ -30,6 +31,7 @@ import stroom.query.planner.port.IndexShardStats;
 import stroom.query.planner.port.MetaStats;
 import stroom.query.planner.port.StateStoreStats;
 import stroom.query.shared.QueryDoc;
+import stroom.util.guice.GuiceUtil;
 import stroom.util.guice.RestResourcesBinder;
 
 import com.google.inject.AbstractModule;
@@ -41,6 +43,11 @@ public class QueryModule extends AbstractModule {
         bind(QueryService.class).to(QueryServiceImpl.class);
         bind(QueryFieldProvider.class).to(QueryServiceImpl.class);
         bind(QueryCompiler.class).to(DispatchingQueryCompiler.class);
+
+        // Task P6.1: ensures Set<AlternativeQueryCompiler> always resolves (empty unless some other module, e.g.
+        // stroom-graphdb-impl's GraphDbModule, contributes a binding) - QueryServiceImpl's dispatch seam needs no
+        // compile-time dependency on any specific alternative-language module.
+        GuiceUtil.buildMultiBinder(binder(), AlternativeQueryCompiler.class);
         bind(FieldInfoSource.class).to(FieldInfoSourceAdapter.class);
         bind(MetaStats.class).to(MetaStatsAdapter.class);
         // NoOp placeholders - Task 3.1 deferred the real adapters (a dependency-cycle finding: they must live

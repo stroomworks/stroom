@@ -75,6 +75,8 @@ import stroom.query.common.v2.RowUtil;
 import stroom.query.common.v2.TableResultCreator;
 import stroom.query.common.v2.ValPredicateFactory;
 import stroom.query.common.v2.format.FormatterFactory;
+import stroom.query.language.AlternativeQueryCompiler;
+import stroom.query.language.AlternativeQueryCompilerResolver;
 import stroom.query.language.QueryCompiler;
 import stroom.query.language.functions.ExpressionContext;
 import stroom.query.language.functions.Val;
@@ -165,6 +167,7 @@ class QueryServiceImpl implements QueryService, QueryFieldProvider {
     private final ExpressionPredicateFactory expressionPredicateFactory;
     private final ValPredicateFactory valPredicateFactory;
     private final QueryNodeResolver queryNodeResolver;
+    private final Set<AlternativeQueryCompiler> alternativeQueryCompilers;
 
     @Inject
     QueryServiceImpl(final QueryStore queryStore,
@@ -182,7 +185,8 @@ class QueryServiceImpl implements QueryService, QueryFieldProvider {
                      final ResourceStore resourceStore,
                      final ExpressionPredicateFactory expressionPredicateFactory,
                      final ValPredicateFactory valPredicateFactory,
-                     final QueryNodeResolver queryNodeResolver) {
+                     final QueryNodeResolver queryNodeResolver,
+                     final Set<AlternativeQueryCompiler> alternativeQueryCompilers) {
         this.queryStore = queryStore;
         this.documentResourceHelper = documentResourceHelper;
         this.searchEventLog = searchEventLog;
@@ -199,6 +203,7 @@ class QueryServiceImpl implements QueryService, QueryFieldProvider {
         this.expressionPredicateFactory = expressionPredicateFactory;
         this.valPredicateFactory = valPredicateFactory;
         this.queryNodeResolver = queryNodeResolver;
+        this.alternativeQueryCompilers = alternativeQueryCompilers;
     }
 
     @Override
@@ -603,7 +608,28 @@ class QueryServiceImpl implements QueryService, QueryFieldProvider {
                 searchRequest.isIncremental(),
                 searchRequest.getTimeout());
         final ExpressionContext expressionContext = expressionContextFactory.createContext(sampleRequest);
-        SearchRequest mappedRequest = queryCompiler.create(query, sampleRequest, expressionContext);
+
+        // Task P6.1: a search whose owning doc-ref (e.g. the Data tab of the doc it previews) is supported by an
+        // alternative (non-StroomQL) compiler is routed there instead - the target datasource is pre-set on the
+        // sample request rather than extracted from the query text, since e.g. Cypher has no FROM-equivalent
+        // clause of its own. Every existing caller (which never populates ownerDocRef for this flow) is routed
+        // through the unchanged queryCompiler.create(...) call below, exactly as before this task.
+        final DocRef ownerDocRef = NullSafe.get(
+                searchRequest.getSearchRequestSource(), SearchRequestSource::getOwnerDocRef);
+        final Optional<AlternativeQueryCompiler> alternativeQueryCompiler =
+                AlternativeQueryCompilerResolver.resolve(ownerDocRef, alternativeQueryCompilers);
+
+        SearchRequest mappedRequest;
+        if (alternativeQueryCompiler.isPresent()) {
+            final SearchRequest sampleRequestWithDataSource = sampleRequest
+                    .copy()
+                    .query(sampleQuery.copy().dataSource(ownerDocRef).build())
+                    .build();
+            mappedRequest = alternativeQueryCompiler.get()
+                    .create(query, sampleRequestWithDataSource, expressionContext);
+        } else {
+            mappedRequest = queryCompiler.create(query, sampleRequest, expressionContext);
+        }
 
         // Mutate expression with selection expression.
         final Query qry = mappedRequest.getQuery();
