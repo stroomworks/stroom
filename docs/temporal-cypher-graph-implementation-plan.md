@@ -585,14 +585,198 @@ Mirror the optimiser project's altitudes:
 Shape-complete but intentionally lighter — expand each into 0/1-style tasks when you reach it, using §1's verified
 facts and the PoC as the worked template. The design doc's §9.1 WBS gives the effort; the pw ranges below are from it.
 
-### P1 — Physical graph model, completed (11–23 pw) — *after PoC proves the shape*
-- **In-edge adjacency mirror** (`[dstUid][edgeTypeUid][validFrom][srcUid]`) for reverse/undirected traversal — a
-  mirror of PoC.4's out-edge DAO.
-- **Interning hardening**: all 4 UID namespaces + used-lookup recorders (the `getUsedLookupsRecorder` pattern that
-  Plan B serdes already use for retention).
-- **Retention / condense / snapshot**: extend Plan B's `deleteOldData`/`condense` to the graph DBs (design §5.4).
-- **Property-index build-out** to whatever 0.1/D3 chose.
-- *Gate*: reverse + undirected traversal correct; retention removes old versions without corrupting adjacency.
+### P1 — Physical graph model, completed (11–23 pw WBS row; narrower in practice — see note) — *after PoC proves the shape*
+
+> **Scoping note (recorded 2026-07-19):** the design doc's §9.1 WBS row (11–23 pw) bundles node store (1.1,
+> 2–4 pw), out-edge adjacency (1.2, 3–5 pw) and a first-cut property index (part of 1.5, 2–5 pw) into P1 — but
+> PoC.4/PoC.5 already built and tested all three (`GraphNodeDb`, `GraphAdjacencyDb`, `GraphPropertyIndex`,
+> `GraphTraversalEngine`). P1's actual remaining scope is narrower: the in-edge mirror (1.3, 1–2 pw), interning
+> recorders (1.4, 2–4 pw), the property-index value-tiering gap (a slice of 1.5), and retention/condense/snapshot
+> (1.6, 1–3 pw) — roughly **5–12 pw**, not the full WBS row.
+
+Four tasks, each independently verifiable and committable, following the PoC's Depends-on/Files/Contract/
+Done-when/Verify shape.
+
+#### Task P1.1 — In-edge adjacency store + direction-aware traversal
+- **Depends on**: PoC.4 (`GraphAdjacencyDb` as the structural template), PoC.5 (`GraphTraversalEngine`).
+- **Gap this closes**: there is no in-edge DAO at all today — `GraphAdjacencyDb`'s own Javadoc says so explicitly
+  ("the in-edge mirror ... is P1, not this class"). Separately, and more importantly, **`GraphTraversalEngine`
+  today ignores `Expand.direction()` entirely** — `expandOneHop` unconditionally calls
+  `stores.getOutEdges().expandOut(...)`, so a Cypher `<-[:TYPE]-` (`Direction.IN`) or `-[:TYPE]-` (`Direction.BOTH`)
+  pattern currently executes as if it were `Direction.OUT` — silently wrong, not rejected. Fixing this is the real
+  point of P1.1; the new DAO alone doesn't help until the engine uses it.
+- **Files**:
+  - `stroom-graphdb-impl/.../GraphInEdgeDb.java` (new) — structurally mirrors `GraphAdjacencyDb` exactly, with
+    `srcUid`/`dstUid` swapped throughout: Dbi name `"graph-in-edge"`, key `[dstUid:6][edgeTypeUid:4][srcUid:6]
+    [validFrom:6]` (design doc §5.1), value = 1-byte tombstone/present tag + `GraphPropsCodec`-encoded properties.
+    `insert`/`delete` mirror `GraphAdjacencyDb`'s exactly (same tombstone-write-not-key-delete semantics — this is
+    also an append-only temporal store). `expandIn(Txn readTxn, long dstUid, @Nullable Long edgeTypeUid, Instant
+    asOf, Consumer<Neighbour> consumer)` mirrors `expandOut`: prefix-scan `[dstUid][edgeTypeUid]`, group by
+    contiguous `srcUid` runs, emit each group's floor version. Same `Neighbour(long neighbourUid, Map<String,Val>
+    edgeProperties)`-shaped record (rename the field generically since it's now the *source*, not the destination).
+  - `GraphStores.java` (modified) — add an `inEdges` field + `getInEdges()` getter, opened alongside `outEdges` in
+    `open(...)`.
+  - `GraphTraversalEngine.java` (modified) — `expandOneHop` dispatches on `expand.direction()`:
+    `Direction.OUT` → `stores.getOutEdges().expandOut(...)` (today's only path); `Direction.IN` →
+    `stores.getInEdges().expandIn(...)`; `Direction.BOTH` → union the neighbour sets from both (a neighbour
+    reachable via both an out-edge and an in-edge with the same edge type is one row per direction it's reachable
+    by — Cypher's undirected pattern semantics match a relational union, not a distinct-neighbour dedup, matching
+    how openCypher itself treats `-[:T]-`). Every edge write path (currently only test fixtures until P2's
+    `GraphFilter` exists) must write **both** the out-edge and in-edge entry for a single logical edge — document
+    this dual-write contract prominently on `GraphAdjacencyDb`/`GraphInEdgeDb`'s Javadoc now, since P2's
+    `GraphFilter` will be the first real caller and must not forget the second write.
+  - Tests: `TestGraphInEdgeDb` (round-trip write/read/as-of, mirroring `TestGraphPhysicalStores`'s out-edge
+    coverage); extend `TestGraphTraversalEngine` with `<-[:TYPE]-` and `-[:TYPE]-` query cases proving they now
+    return the correct (previously wrong) rows.
+- **Contract**: for a single logical edge `(src, edgeType, dst, validFrom)`, both `GraphAdjacencyDb` (keyed by
+  `src`) and `GraphInEdgeDb` (keyed by `dst`) hold a version with identical `validFrom`/properties — callers are
+  responsible for writing both (no cross-DAO transactional enforcement is added here; a mismatch is a caller bug,
+  not a storage-layer concern, exactly as Plan B trusts its own DAO callers).
+- **Done-when**: a `<-[:CONNECTED_TO]-` query against the existing device/account fixture (reversed: seed the edge
+  from account to device, query `MATCH (a:Account)<-[:CONNECTED_TO]-(d:Device...)`) returns the same row a
+  forward query would for the mirror-image edge; a `-[:CONNECTED_TO]-` query returns the union.
+- **Verify**: `./gradlew :stroom-graphdb:stroom-graphdb-impl:test`.
+
+#### Task P1.2 — Interning hardening (used-lookups recorders)
+- **Depends on**: P1.1 (so all three adjacency-shaped DAOs exist before wiring recorders into their retention
+  passes — recorders are consumed by P1.4, but registered here since they're a per-namespace concern independent
+  of retention's own scheduling).
+- **Gap this closes**: none of `GraphStores`'s four `UidLookupDb` namespaces (`node-uid`, `label-uid`,
+  `edge-type-uid`, `property-key-uid`) has a `UsedLookupsRecorder` today — a UID interned once (e.g. a label used
+  by a single node that's since been retention-deleted) stays in the lookup table forever, an unbounded leak once
+  P2 ingest starts writing continuously. Plan B's own DAOs (`TemporalStateDb` et al.) already solve this with
+  `UidLookupRecorder`/`HashLookupRecorder` (`stroom.planb.impl.dao`) — mark-and-sweep: `recordUsed` during a
+  retention pass marks a UID as still-referenced; `deleteUnused` afterwards walks the whole lookup table and
+  drops anything unmarked.
+- **Files**:
+  - `GraphStores.java` (modified) — construct a `UidLookupRecorder` for each of the 4 `UidLookupDb`s (mirroring
+    `TemporalStateDb`'s constructor pattern: `this.xUidRecorder = new UidLookupRecorder(env, "<name>", xUidDb)` —
+    confirm the exact constructor shape against `UidLookupRecorder`'s real signature, not assumed here) and expose
+    them (package-private getters, or pass them directly into the DAOs that need them at construction — prefer
+    the latter, matching how Plan B DAOs take their recorders as constructor args rather than reaching back into
+    a shared owner).
+  - `GraphNodeDb.java` (modified) — its `deleteOldData`/`condense` (built in P1.4, but the call sites for
+    `labelUidRecorder.recordUsed(...)`/`propertyKeyUidRecorder.recordUsed(...)` per surviving row belong here,
+    since P1.4 depends on this task providing the recorders to call).
+  - `GraphAdjacencyDb.java`/`GraphInEdgeDb.java` (modified) — same, for `edgeTypeUidRecorder` (and `nodeUidDb`'s
+    recorder, since `srcUid`/`dstUid` are also interned node UIDs referenced from the adjacency stores, not just
+    from `GraphNodeDb`'s own key prefix).
+  - `GraphPropertyIndex.java` (modified) — `nodeUidRecorder` (the `nodeUid` suffix in its key is also an
+    interning reference) plus whatever P1.3's tiering introduces (a `UID_LOOKUP`/`HASH_LOOKUP` tier needs its own
+    recorder, via `VariableUsedLookupsRecorder` — see P1.3).
+  - Tests: `TestGraphStores`/DAO-level tests proving a UID referenced only by now-deleted rows is actually swept
+    after a `deleteUnused` pass, and a UID still referenced by a surviving row is not.
+- **Contract**: `recordUsed` is called for every UID a *surviving* row references, before `deleteUnused` runs for
+  that namespace; calling `deleteUnused` before all recorders have finished their `recordUsed` pass for a given
+  retention cycle would incorrectly sweep still-live UIDs — document this ordering constraint clearly (mirrors
+  Plan B's own `deleteOldData` pattern: record-then-sweep, never interleaved across DAOs).
+- **Done-when**: a node/edge/label/property-key interned, then fully retention-deleted (no surviving reference
+  anywhere), no longer appears in its `UidLookupDb` after a full retention pass across all four graph DAOs;
+  a UID still referenced by any surviving row survives the sweep.
+- **Verify**: `./gradlew :stroom-graphdb:stroom-graphdb-impl:test`.
+
+#### Task P1.3 — Property-index value tiering
+- **Depends on**: none beyond PoC.4 (`GraphPropertyIndex` already exists; this task modifies it in place).
+- **Gap this closes**: `GraphPropertyIndex.insert` inlines `valueBytes` directly into the LMDB key unconditionally
+  — its own Javadoc admits the composite key "must not exceed `Db.MAX_KEY_LENGTH` (511) — the caller is
+  responsible for keeping anchor values short... a documented future hash-lookup escalation, not handled here."
+  Any property value near/over that bound (long strings, e.g.) simply fails today rather than escalating. Plan
+  B's `VariableKeySerde` (`stroom.planb.impl.serde.temporalkey`/`.keyprefix`) already solves exactly this with a
+  3-tier scheme: **≤32 bytes → DIRECT inline; >32 and ≤511 bytes → `UidLookupDb`-backed `UID_LOOKUP` tier; >511
+  bytes → `HashLookupDb`-backed `HASH_LOOKUP` tier** (a leading `VariableValType` tag byte selects the tier on
+  read).
+- **Files**:
+  - `GraphPropertyIndex.java` (modified) — adopt the same tiering for the `valueBytes` component of its key: add a
+    `UidLookupDb`/`HashLookupDb` pair (opened in `GraphStores`, passed in at construction, mirroring how
+    `VariableKeySerde` is constructed against an owning `PlanBEnv`), encode/decode via the same `VariableValType`
+    tag-byte discipline (reuse Plan B's tiering logic directly if it's exposed at a reusable granularity — check
+    during implementation whether `VariableKeySerde`'s tiering can be called directly or must be adapted/copied,
+    since it's currently coupled to a `TimeSerde` suffix the property index doesn't have). Wire a
+    `VariableUsedLookupsRecorder` for the new lookup pair (consumed by P1.2/P1.4's retention sweep).
+  - `GraphStores.java` (modified) — open the new `UidLookupDb`/`HashLookupDb` pair for the property index.
+  - Tests: extend `TestGraphPhysicalStores` with a property value long enough to force each tier (a short string
+    for DIRECT, a ~100-byte string for UID_LOOKUP, a >511-byte string for HASH_LOOKUP), proving `findAnchors`
+    still resolves correctly at every tier.
+- **Contract**: `findAnchors`'s external behaviour (candidates for a given `(labelUid, propKeyUid, valueBytes)`)
+  is unchanged by tiering — this is purely an internal encoding change; no caller (`GraphTraversalEngine`) needs
+  to change.
+- **Scope limit (documented, not deferred silently)**: this task does **not** address property-index *retention*
+  (stale anchors left behind after a node's property value is deleted/changed) — that's P1.4's concern, and P1.4
+  documents its own scope limit there. This task is encoding only.
+- **Done-when**: a property anchor lookup succeeds for values at all three tier boundaries (31/32/33 bytes,
+  510/511/512 bytes) with `findAnchors` returning the expected node UID in each case.
+- **Verify**: `./gradlew :stroom-graphdb:stroom-graphdb-impl:test`.
+
+#### Task P1.4 — Retention / condense / snapshot
+- **Depends on**: P1.1 (in-edge DAO must exist to be retained too), P1.2 (recorders must exist to be swept),
+  D8 (the `GraphDbDoc` configurable surface — this task is D8's "retention/temporal-precision policy" bullet,
+  made concrete), and a new decision **D9** (below).
+- **Decision D9 — does graph retention reuse Plan B's `Shard`/`ShardManager` machinery, or get its own?**
+  **Recommended and assumed by this task's design: no reuse.** `ShardManager` is Plan B's *distributed* shard
+  abstraction (cross-node snapshot transfer, `FileTransferClient`, per-node shard placement) — machinery that
+  exists because a Plan B state store can be sharded and replicated across the cluster. A `GraphDbDoc`'s
+  `GraphStores` is a single `PlanBEnv` per doc, and P0.1 already fixed v1 partitioning as "by graph id, zero
+  cross-shard hops" (the cross-node/P8 concern is explicitly deferred). Reusing `ShardManager` would mean
+  standing up node-distribution/snapshot-transfer machinery this project doesn't need yet for a benefit (shared
+  scheduling code) that a much smaller purpose-built job already gets. **Decide when implementing**: if this
+  project's needs change (e.g. multi-node query fan-out lands before P8 reprioritises it), revisit.
+- **Files**:
+  - `stroom-core-shared/.../GraphDbDoc.java` (modified) — add a `RetentionSettings retention` field (reuse
+    `stroom.planb.shared.RetentionSettings` directly rather than inventing a graph-specific type — same
+    `enabled`/`duration`/`useStateTime` shape; `useStateTime` is likely always `false` for a graph doc since
+    there's no separate "state time" axis here, but keeping the same wire type avoids a divergent, harder-to-
+    reuse config surface for a distinction that doesn't cost anything to carry unused). This is D8's
+    "retention... policy" field, made concrete.
+  - `GraphNodeDb.java`/`GraphAdjacencyDb.java`/`GraphInEdgeDb.java` (modified) — each gets `deleteOldData(Instant
+    deleteBefore)`: per-entity (node uid; or (src,edgeType,dst) / (dst,edgeType,src) triple) walk of that
+    entity's own `validFrom` version run, keeping the single latest version at-or-before `deleteBefore` (the
+    floor version still needed to answer `AS OF`/expand-as-of queries for any retained instant) and deleting
+    every strictly-older version of that same entity — mirrors `TemporalStateDb.deleteOldData`'s per-key-prefix
+    walk exactly. Each DAO calls its relevant `UidLookupRecorder.recordUsed(...)` (from P1.2) for every UID a
+    *surviving* version still references.
+  - `GraphStores.java` (modified) — `long deleteOldData(GraphDbDoc doc)`: if `doc.getRetention().isEnabled()`,
+    compute `deleteBefore`, call each DAO's `deleteOldData(deleteBefore)` under a single write transaction (or a
+    batched sequence, matching Plan B's `writer.shouldCommit()` batching for large stores), then — only after
+    *all* DAOs have run their pass — call `deleteUnused` on all four UID recorders plus the P1.3 property-value
+    lookup recorder (the record-then-sweep ordering P1.2 documents). Also `condense(GraphDbDoc doc)`, mirroring
+    Plan B's condense semantics (merge/drop redundant same-value consecutive versions) if the graph's temporal
+    model benefits from it in practice — **assess during implementation whether condense is worth building for
+    v1**: unlike Plan B state (which can churn the same value every ingest tick), a graph's node/edge properties
+    may change infrequently enough that condense's benefit is marginal; if so, ship `deleteOldData` only and
+    record that decision here rather than building unused machinery.
+  - **Property-index retention (documented scope limit, not a gap to silently leave)**: `GraphPropertyIndex`
+    anchor entries for a value only referenced by a now-retention-deleted node version become stale (the anchor
+    still points at a node whose *current* properties no longer match). This is **not a correctness bug** —
+    `GraphTraversalEngine.resolveAnchors` already re-validates every candidate against the node's live,
+    as-of-resolved properties (PoC.5), so a stale anchor is filtered out, never returned. It **is** an unbounded
+    bloat source (dead anchors accumulate). For v1: rely on the already-existing `GraphStores.rebuild()` (full
+    drop-and-reprovision-from-source-of-truth, built in PoC.0/PoC.4) as the compaction backstop, invoked
+    operator-side/out-of-band, not on a schedule. True incremental anchor sweeping (diffing a node's old vs new
+    property map on every version change and deleting only the now-orphaned anchors) is deferred — flag as a
+    candidate for P1's own follow-up if bloat proves material in practice, not built speculatively here.
+  - A scheduled job (mirroring Plan B's `ScheduledJobsBinder` pattern in `PlanBModule`, but new and
+    graph-specific in `GraphDbModule`): iterate every `GraphDbDoc` via `GraphDbDocStore.list()`, resolve its
+    `GraphStores` via `GraphStoreManager`, call `deleteOldData`(/`condense` if built). A single cron job is
+    sufficient for v1 (no separate merge/snapshot-creation/snapshot-cleanup jobs — those exist in Plan B because
+    of its distributed-shard model, explicitly not reused per D9). Suggest `EVERY_10_MINUTES` matching Plan B's
+    maintain cadence, `.advanced(true)`.
+  - Tests: `TestGraphStores`/DAO-level tests proving retention keeps the correct floor version and deletes
+    everything older, across all three temporal DAOs; an integration-style test proving a full
+    `deleteOldData(doc)` pass on `GraphStores` leaves `AS OF` queries for retained instants still correct while
+    reclaiming space for fully-superseded old versions.
+- **Contract**: retention never deletes the single version needed to answer a floor lookup for any instant `>=
+  deleteBefore`; a UID sweep never removes a UID referenced by a version that survived retention.
+- **Done-when**: seed a node/edge with 3+ versions spanning a retention boundary; after `deleteOldData`, `AS OF`
+  queries for instants at-or-after the boundary return unchanged results, `AS OF` queries for instants before the
+  boundary either return the floor version that survived (if one does) or nothing (if none did) — never a wrong
+  answer; a UID referenced only by fully-purged versions is gone from its `UidLookupDb`.
+- **Verify**: `./gradlew :stroom-graphdb:stroom-graphdb-impl:test`.
+
+**P1 exit gate**: `<-[:TYPE]-` and `-[:TYPE]-` Cypher patterns traverse correctly (not silently as `-[:TYPE]->`);
+long property values no longer fail at the `Db.MAX_KEY_LENGTH` boundary; a full retention pass (delete + UID
+sweep) across all four graph DAOs never corrupts a still-reachable floor lookup and actually reclaims space for
+fully-superseded data. Property-index anchor bloat from retention is a documented, accepted v1 limitation (backstopped
+by full rebuild), not a silent gap.
 
 ### P2 — Ingest `GraphFilter` (7–13 pw)
 - **Graph-mutation XML schema** (node/edge upserts carrying `validFrom`) — a small new schema, or a convention on
@@ -693,8 +877,15 @@ facts and the PoC as the worked template. The design doc's §9.1 WBS gives the e
 - **D8 — the `GraphDbDoc` user-configurable surface**: which fields the user *can* set (§2.1). Recommended minimum:
   name/description + a retention/temporal-precision policy + an optional node/edge schema mapping (zero-config when
   derived from the domain-type catalogue). Everything physical stays hidden. Keep this list as small as the genuine
-  choices demand — every field added is a new way to misconfigure. Finalised in PoC.0 (extended if P2/P4 surface a
-  genuine required choice).
+  choices demand — every field added is a new way to misconfigure. Finalised in PoC.0 (extended in P1 with the
+  `retention` field; extended further if P2/P4 surface a genuine required choice).
+- **D9 — graph retention/maintenance job model *(resolved in P1: no reuse of Plan B's `Shard`/`ShardManager`)*.**
+  A `GraphDbDoc`'s stores are a single per-doc `PlanBEnv`, not a distributed/sharded Plan B state store — v1
+  partitioning (P0.1) is already "by graph id, zero cross-shard hops," so `ShardManager`'s cross-node
+  snapshot-transfer/shard-placement machinery solves a problem the graph store doesn't have. P1 gives graph
+  retention its own small, single scheduled job (iterate `GraphDbDocStore.list()`, call each doc's
+  `GraphStores.deleteOldData(doc)`) rather than growing `ShardManager` to cover a second, structurally different
+  store type. Revisit only if multi-node graph query fan-out lands before P8 reprioritises partitioning.
 
 ---
 
