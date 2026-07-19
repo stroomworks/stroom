@@ -53,6 +53,8 @@ import stroom.query.language.functions.Val;
 import stroom.query.language.functions.ValLong;
 import stroom.query.language.functions.ValString;
 import stroom.security.api.SecurityContext;
+import stroom.util.shared.PermissionException;
+import stroom.util.shared.UserRef;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -136,6 +138,27 @@ class TestGraphSearchProvider {
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
+    @Test
+    void permissionException_fromDocResolution_propagatesOutOfCreateResultStore() {
+        // Task P7.1: GraphDbDocCacheImpl.get() already throws PermissionException when the caller lacks USE
+        // permission (TestGraphDbDocCacheImpl.get_throwsWhenCallerLacksUsePermission proves that directly). This
+        // proves what happens to it one layer up: doc resolution (getGraphDbDoc, called before the ResultStore
+        // is even constructed) is OUTSIDE createResultStore's own try/catch, so the exception propagates rather
+        // than being downgraded to a soft resultStore.addError() entry - exactly like
+        // JoinSearchProvider.createResultStore, whose own per-side doc/datasource resolution (realiseSide) is
+        // likewise called before its try block. There is no ResultStore yet for a pre-resolution failure to be
+        // attached to, so propagating here (for a caller further up the stack to turn into a hard search
+        // failure) is the consistent, existing contract - not a gap this task needs to close.
+        final GraphSearchProvider provider = providerWithThrowingDocCache(
+                new PermissionException(UserRef.builder().uuid("u1").subjectId("user").build(),
+                        "You are not authorised to read " + DOC_REF));
+        final SearchRequest request = requestFor("MATCH (d:Device {id: 'd-42'}) RETURN d.id");
+
+        assertThatThrownBy(() -> provider.createResultStore(request))
+                .isInstanceOf(PermissionException.class)
+                .hasMessageContaining("not authorised");
+    }
+
     // ------------------------------------------------------------------------------------------------------
     // Fixtures
     // ------------------------------------------------------------------------------------------------------
@@ -181,6 +204,51 @@ class TestGraphSearchProvider {
                 graphDbDocCache,
                 mock(GraphDbDocStore.class),
                 graphStoreManager,
+                coprocessorsFactory,
+                resultStoreFactory,
+                new ExpressionPredicateFactory(),
+                securityContext,
+                mock(FieldInfoResultPageFactory.class),
+                mock(DocFinder.class));
+    }
+
+    /**
+     * Task P7.1: same shape as {@link #provider}, except doc resolution (the point
+     * {@code GraphDbDocCacheImpl.get()} does its real, explicit {@code DocumentPermission.USE} check) throws
+     * {@code docResolutionError} instead of returning {@link #DOC} - proving what happens to that exception once
+     * it reaches {@code createResultStore}.
+     */
+    private static GraphSearchProvider providerWithThrowingDocCache(final RuntimeException docResolutionError) {
+        final CoprocessorsFactory coprocessorsFactory = new CoprocessorsFactory(
+                new MapDataStoreFactory(SearchResultStoreConfig::new),
+                new ExpressionContextFactory(),
+                SIZES_PROVIDER,
+                () -> DIRECT_EXECUTOR);
+
+        final ResultStoreFactory resultStoreFactory = mock(ResultStoreFactory.class);
+        when(resultStoreFactory.create(any(), any()))
+                .thenAnswer(inv -> new ResultStore(
+                        inv.getArgument(0),
+                        SIZES_PROVIDER,
+                        null,
+                        inv.getArgument(1),
+                        "node",
+                        new ResultStoreSettingsFactory().get(),
+                        new MapDataStoreFactory(SearchResultStoreConfig::new),
+                        new ExpressionPredicateFactory(),
+                        () -> DIRECT_EXECUTOR));
+
+        final GraphDbDocCache graphDbDocCache = mock(GraphDbDocCache.class);
+        when(graphDbDocCache.get(DOC.getName())).thenThrow(docResolutionError);
+
+        final SecurityContext securityContext = mock(SecurityContext.class);
+        when(securityContext.useAsReadResult(any()))
+                .thenAnswer(inv -> ((Supplier<?>) inv.getArgument(0)).get());
+
+        return new GraphSearchProvider(
+                graphDbDocCache,
+                mock(GraphDbDocStore.class),
+                mock(GraphStoreManager.class),
                 coprocessorsFactory,
                 resultStoreFactory,
                 new ExpressionPredicateFactory(),

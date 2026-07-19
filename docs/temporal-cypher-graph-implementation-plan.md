@@ -1613,8 +1613,107 @@ of reach in this environment and is explicitly not claimed. Cypher syntax highli
 and graph/network visualisation remain unbuilt, per the scoping note above.
 
 ### P7 — Security / permissions (3–6 pw)
-- **Document-level permissions** inherited via explorer/`SecurityContext` (largely free, as Plan B gets today).
-- **Query guardrails**: traversal cost caps / timeouts / row limits; optional label-level filtering.
+
+> **Scoping note (2026-07-19).** A dedicated research pass read `StoreImpl`/`DocumentResourceHelperImpl`
+> (`stroom-docstore-impl`), `GraphDbDocCacheImpl`/`GraphDbResourceImpl` alongside their exact `PlanBDocCacheImpl`/
+> `PlanBDocResourceImpl` counterparts, and `GraphTraversalEngine` in full, to separate what the outline's "largely
+> free" claim actually delivers today from what is a genuine gap:
+>
+> - **Document-level permissions: (a) already fully closed, zero gap.** `GraphDbModule`'s
+>   `DocumentStoreBinder.create(binder()).bind(GraphDbDoc.TYPE, ...)` call gets the identical
+>   `StoreImpl`/`SecurityContext`-backed `VIEW`/`EDIT`/`DELETE` enforcement every other doc type gets from
+>   `StoreFactoryImpl` - not a GraphDb-specific mechanism, so there is nothing to add at that layer. The REST layer
+>   (`GraphDbResourceImpl`, Task P5.2) delegates to the same `DocumentResourceHelper` Plan B's resource does -
+>   confirmed by reading both side by side; neither ever had inline permission logic to omit. The query path has
+>   its *own*, explicit defense-in-depth check: `GraphDbDocCacheImpl.get()` calls
+>   `securityContext.hasDocumentPermission(docRef, DocumentPermission.USE)` and throws `PermissionException` if it
+>   fails - mirroring `PlanBDocCacheImpl.get()` exactly - and this is **already covered by an existing test**,
+>   `TestGraphDbDocCacheImpl.get_throwsWhenCallerLacksUsePermission` (added incidentally during P5.3's work). Task
+>   P7.1 below closes this out with one additional regression test at the `GraphSearchProvider` level (the one
+>   thing not yet directly asserted) rather than any new production code.
+> - **Query guardrails: (c) entirely unbuilt - the substantive part of this phase.** `GraphTraversalEngine` has no
+>   awareness of a compiled Cypher `LIMIT` at all (`unwrap()` walks past the `Limit` node without ever reading
+>   `limit.values()`), no ceiling on `VarLengthExpand.maxHops()` (a legal `-[:T*1..100000]->` is attempted
+>   verbatim - `Cypher.g4` only forbids the *unbounded* `-[:T*]->` form, not a very large explicit bound), no cap
+>   on the total number of BFS path-states a variable-length hop can explore (a modest hop range against a
+>   high-fan-out hub node can still blow up exponentially), and no wall-clock budget at all - `GraphSearchProvider`
+>   runs a traversal synchronously on the calling thread by design (its own Javadoc explains why: a single LMDB
+>   read transaction, no shard fan-out to dispatch asynchronously), so a pathological query simply runs to
+>   completion with no way for anything to cancel it. Task P7.2 below closes this.
+> - **Label-level filtering: explicitly deferred, per the outline's own "optional."** A repo-wide check confirms
+>   zero precedent for sub-document permission granularity anywhere in this codebase - `DocumentPermission` only
+>   models `OWNER/DELETE/EDIT/VIEW/USE` at the whole-doc level. Building this from scratch (a new permission
+>   concept scoped to `GraphNodeTypeMapping` labels) is real, separate UI/security-model design work, not a small
+>   addition to this phase - deferred, exactly as the outline flagged it as optional.
+> - Async task-cancellation via `TaskContextFactory` (the pattern `StateSearchProvider` uses) was considered for
+>   the wall-clock guardrail and rejected: it would mean restructuring `GraphSearchProvider.createResultStore`
+>   from synchronous to asynchronous, directly reversing a documented, deliberate prior design decision (that
+>   class's own Javadoc) for a guardrail that a much smaller, purely-synchronous deadline check already solves.
+
+#### Task P7.1 — Document-permission regression test
+- **Depends on**: P5.2/P5.3 (the doc cache's `USE`-permission check and REST resource already exist).
+- **Gap this closes**: the query-path permission check (`GraphDbDocCacheImpl.get()`) already has direct test
+  coverage, but nothing exercises the boundary a real user actually crosses: what happens to a
+  `PermissionException` thrown while `GraphSearchProvider.createResultStore` resolves the target doc?
+- **Files**: `stroom-graphdb/stroom-graphdb-impl/src/test/java/stroom/graphdb/impl/TestGraphSearchProvider.java`
+  (modified) - a new `providerWithThrowingDocCache()` fixture variant (mirrors the existing `provider(...)`
+  fixture, swapping in a `GraphDbDocCache` mock whose `get(...)` throws) plus a test asserting
+  `createResultStore(...)` propagates the `PermissionException` rather than swallowing it - no other production
+  code changes.
+- **Contract**: no behaviour change - this only adds assertion coverage for the existing, correct behaviour.
+- **Done-when**: the new test passes; every pre-existing `stroom-graphdb-impl` test still passes.
+- **Verify**: `./gradlew :stroom-graphdb:stroom-graphdb-impl:test --tests "stroom.graphdb.impl.TestGraphSearchProvider"`.
+- **Status: done (2026-07-19)**. **Corrects an assumption from this task's own scoping note above**: writing the
+  test revealed `getGraphDbDoc(docRef)` in `GraphSearchProvider.createResultStore` runs *before* the method's own
+  `try { ... } catch (RuntimeException e) { resultStore.addError(e); }` block (and before the `ResultStore` is
+  even constructed) - so a `PermissionException` from doc resolution actually **propagates out of
+  `createResultStore` uncaught**, it is not downgraded to a soft result-store error. Checking
+  `JoinSearchProvider.createResultStore` confirms this is the established, consistent contract, not a GraphDb-
+  specific gap: its own per-side `realiseSide(...)` doc/datasource resolution likewise runs before its try block
+  - there is no `ResultStore` yet for a pre-resolution failure to attach itself to, so propagating to whatever
+  called `createResultStore` (which has its own handling further up the stack) is correct, matching precedent
+  exactly. The test (`permissionException_fromDocResolution_propagatesOutOfCreateResultStore`) was written to
+  assert the corrected, actual contract rather than the (wrong) original assumption. Full
+  `stroom-graphdb-impl:test` suite (39 tests) and `checkstyleTest` both pass.
+
+#### Task P7.2 — Traversal engine guardrails
+- **Depends on**: P3.2/P3.3 (the fixed-length chain loop and variable-length BFS this task adds ceilings to),
+  P4.2 (`TemporalAccess`, unaffected by this task but threaded through the same methods).
+- **Gap this closes**: see the scoping note above - `GraphTraversalEngine` has no row cap tied to a compiled
+  `LIMIT`, no ceiling on `VarLengthExpand.maxHops()`, no cap on total BFS states explored, and no wall-clock
+  budget.
+- **Files**: `stroom-graphdb/stroom-graphdb-impl/src/main/java/stroom/graphdb/impl/GraphTraversalEngine.java`
+  (modified):
+  - `PlanShape` gains a `@Nullable Long limit` field; `unwrap()` now reads `Limit.values().getFirst()` while
+    walking past the `Limit` node (previously discarded) instead of only walking past it.
+  - `execute()` computes a `rowCap` (`shape.limit()`, or unbounded if absent) and a wall-clock `deadline`
+    (`Instant.now().plus(MAX_TRAVERSAL_DURATION)`) once per call, threading both through `expandChainHop`/
+    `acceptChainNeighbour` (fixed-length chains) and `expandVarLength` (variable-length): every hop/BFS-depth
+    iteration now checks the deadline first, and every row-accumulation point stops once `rows.size() >= rowCap`
+    - not merely trimming the result afterwards (the pre-existing `DataStoreSettings` store-size cap, applied
+      after all traversal CPU/LMDB work is already done, is unaffected and unrelated).
+  - `expandVarLength` rejects a `maxHops() > MAX_VAR_LENGTH_HOPS` (50) request immediately, before doing any BFS
+    work, and now tracks a running total of path-states explored across every depth, aborting once
+    `MAX_VAR_LENGTH_PATH_STATES` (200,000) is exceeded.
+  - New `GraphTraversalLimitExceededException` (new file, in-package) - a plain `RuntimeException` subtype so it
+    flows through `GraphSearchProvider.createResultStore`'s existing `catch (RuntimeException e)` block exactly
+    like any other search error.
+  - Tests (`TestGraphTraversalEngine.java`, modified): a `LIMIT`-carrying compiled plan against a fixture with
+    more matching rows than the limit returns exactly the limited count; a `maxHops` above the ceiling throws
+    `GraphTraversalLimitExceededException` immediately (no traversal attempted); a synthetic high-fan-out fixture
+    exceeding `MAX_VAR_LENGTH_PATH_STATES` throws the same exception instead of exploring every path.
+- **Contract**: every existing query without a `LIMIT`, with a `maxHops` at or below the new ceiling, and whose
+  BFS never approaches the state ceiling is byte-for-byte unaffected - these are pure additional safety bounds,
+  not a change to which rows a query that stays within them returns.
+- **Done-when**: the new tests pass; every pre-existing `stroom-graphdb-impl` test still passes.
+- **Verify**: `./gradlew :stroom-graphdb:stroom-graphdb-impl:test`.
+
+**P7 exit gate**: document-level permission enforcement for `GraphDbDoc` is verified end-to-end (doc-cache
+`USE` check plus its surfacing as a clean result-store error, not an uncaught exception); `GraphTraversalEngine`
+rejects or bounds every traversal shape identified as unbounded (row count via `LIMIT`, hop-range, BFS
+path-state fan-out, wall-clock duration) rather than running an arbitrarily expensive query to completion or
+hanging the calling thread. Label-level filtering remains unbuilt, per the outline's own "optional" framing and
+the complete absence of any sub-document permission precedent in this codebase to build it from.
 
 ### P8 — Scale-out & hardening (10–20 pw)
 - **Cross-shard traversal as a distributed join / exchange** extending `FederatedSearchExecutor` (design §8 — the
