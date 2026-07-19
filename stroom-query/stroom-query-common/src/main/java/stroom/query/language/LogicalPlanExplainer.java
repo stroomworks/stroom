@@ -23,6 +23,7 @@ import stroom.query.planner.cost.CostModel;
 import stroom.query.planner.cost.CostedAccessPath;
 import stroom.query.planner.cost.JoinCostModel;
 import stroom.query.planner.cost.JoinPlan;
+import stroom.query.planner.cost.StateLookup;
 import stroom.query.planner.logical.Aggregate;
 import stroom.query.planner.logical.Expand;
 import stroom.query.planner.logical.Filter;
@@ -150,25 +151,45 @@ final class LogicalPlanExplainer {
 
         if (left.costedAccessPath() == null || right.costedAccessPath() == null) {
             // A nested join (a Join whose own side is itself a Join/Filter/...) - still a correct tree, just
-            // without a cardinality/algorithm note on this level. See class Javadoc.
-            return new Node(ExplainPlan.builder().description("Join").children(children).build(), null);
+            // without a cardinality/algorithm note on this level (Task 6.3 annotation of the nested case).
+            return new Node(ExplainPlan.builder()
+                    .description("Join")
+                    .children(children)
+                    .notes(List.of("nested join - at least one side is itself a Join/Filter/... rather than a "
+                                   + "direct Scan, so it has no compile-time cost estimate to combine; no "
+                                   + "cardinality/algorithm annotation on this level"))
+                    .build(), null);
         }
 
-        final JoinPlan joinPlan = JoinCostModel.chooseAlgorithm(left.costedAccessPath(), right.costedAccessPath());
+        final CostedAccessPath leftPath = left.costedAccessPath();
+        final CostedAccessPath rightPath = right.costedAccessPath();
+        final JoinPlan joinPlan = JoinCostModel.chooseAlgorithm(leftPath, rightPath);
+
+        // Task 6.3: a StateLookup side is a keyed point-lookup, so its join key is unique by construction - use
+        // its row count as its distinct-key count (an honest, structural signal, not an invented number). Any
+        // other access path has no distinct-key estimate available at compile time, so it stays 0 (the "unknown"
+        // that estimateCardinality degrades to the pessimistic cross-product upper bound). This makes the common
+        // enrichment join (index/searchable ⋈ keyed state lookup) estimate ~= the probe side's row count rather
+        // than the full cross-product. Real per-field distinct-key stats for two non-keyed sides would need a new
+        // cost port and are out of scope here.
+        final long leftDistinct = leftPath.accessPath() instanceof StateLookup ? leftPath.estimate().rows() : 0;
+        final long rightDistinct = rightPath.accessPath() instanceof StateLookup ? rightPath.estimate().rows() : 0;
         final long cardinality = JoinCostModel.estimateCardinality(
-                left.costedAccessPath().estimate().rows(), right.costedAccessPath().estimate().rows(), 0, 0);
+                leftPath.estimate().rows(), rightPath.estimate().rows(), leftDistinct, rightDistinct);
+        final String note = (leftDistinct > 0 || rightDistinct > 0)
+                ? "cardinality uses the keyed (State lookup) side's unique-key count; the other side's distinct "
+                  + "keys are unknown"
+                : "distinct-key counts unknown - cardinality is the pessimistic upper bound (full cross-product)";
         final ExplainPlan explainPlan = ExplainPlan.builder()
                 .description("Join (" + joinPlan.algorithm() + ", build side: " + joinPlan.buildSide() + ")")
                 .children(children)
                 .estimatedRows(cardinality)
-                .notes(List.of("distinct-key counts unknown - cardinality is the pessimistic upper bound "
-                               + "(full cross-product divided by 1)"))
+                .notes(List.of(note))
                 .build();
         return new Node(explainPlan, null);
         // Deliberately not propagating a CostedAccessPath upward for the join itself yet - no AccessPath
         // variant represents "the result of a join", and nothing needs a join-of-joins estimate in this pass
-        // (see class Javadoc's nested-join scope note). The build-side/algorithm choice is made entirely inside
-        // JoinCostModel.chooseAlgorithm above.
+        // (see class Javadoc's nested-join scope note).
     }
 
     private String describeField(final QualifiedField field) {
