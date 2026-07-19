@@ -1417,21 +1417,176 @@ full anchor-index retention remain explicitly out of scope, per the scoping note
 complete; P6 (UI) is next, pending explicit go-ahead.
 
 ### P6 — UI (7–16 pw)
-- **Graph doc editor** — a **tabbed** GWT presenter/view mirroring the Lucene Index editor
-  (`stroom.index.client.presenter.IndexPresenter`, whose tabs are `Settings / Fields / Shards / Data /
-  Documentation / Permissions`). A graph needs at least a **Settings** tab (the small config surface, D8) and a
-  **Data** tab.
-- **The Data tab** — mirrors the Index editor's `Data` tab: on open it runs a **default, editable** Cypher query
-  (e.g. `MATCH (n)-[r]->(m) RETURN labels(n), type(r), labels(m), n, m LIMIT 20`) so the user sees *that* the graph
-  is populated and *what shape* the data has (labels, edge types, sample rows), then can edit/re-run in place. Seed
-  the default query from the graph's schema-mapping / domain-type catalogue where available so it names the graph's
-  actual labels/edge types; an empty store shows zero rows (a clear "nothing ingested yet", not an error). It is a
-  pre-filled query pane scoped to this one graph, using the same execution path as a dashboard query (PoC.6). See
-  design HTML §6.5.
-- **Cypher query editor** pane (dashboard); **visualisation** (force-directed/temporal; table fallback is cheap).
-  Autocomplete can use domain-type relationship info (D5) once present.
-- *Gate*: author + run a Cypher query and see tabular results in a dashboard; the Data tab confirms a populated
-  graph's contents on open; visualisation is a stretch.
+
+> **Scoping note (recorded 2026-07-19):** this is the first client-side (GWT) phase in the whole initiative - a
+> real pivot from the Java backend work done through P5. A research pass against the current client code (not
+> just the design doc) found:
+> - **`GraphDbDoc` has zero client-side presence today** - no `DocumentPlugin`, no presenter, no
+>   `DocumentTypeRegistry` entry, no icon. It cannot be created, opened, or shown in the explorer's "New" menu at
+>   all. This is a total gap, but with an exact, proven, minimal template to mirror: `SqlTemporalStoreDoc`
+>   (`stroom-core-client/src/main/java/stroom/sqlstore/client/`), a single-kind doc added on this same branch
+>   with precisely the tab set this phase wants (Data/Settings/Documentation/Permissions, no Fields/Shards) - a
+>   much closer analogue than the Lucene Index editor the rough outline named, which genuinely has extra
+>   sub-resources (shards, fields) a graph doesn't.
+> - **The wire format and execution side are already real** (`Query.graphSpec`/`GraphSpec`, `GraphSearchProvider`,
+>   both live since PoC.6) - but **nothing today turns typed Cypher text into a request that reaches them**.
+>   `CypherCompiler` (`stroom-graphdb-impl/.../CypherCompiler.java`) is invoked only from
+>   `TestGraphSearchProvider`'s test setup - zero production call sites. The dashboard's generic search path
+>   (`QueryServiceImpl.mapRequest`, `stroom-query-impl`) unconditionally compiles every query through the single
+>   bound `QueryCompiler` (StroomQL), with no per-datasource-type branch at all. Wiring this dispatch seam is a
+>   genuine prerequisite for the Data tab's default query (or any dashboard Cypher query) to do anything but fail
+>   - so it is sequenced *before* the client editor task below, not after, so the editor's own Data tab is
+>     verifiably functional the moment it lands rather than merely present.
+> - **Cypher `AceEditorMode` (syntax highlighting), autocomplete, `explain`-for-Cypher, and any graph/network
+>   visualisation are all real gaps this phase does not attempt** - not an oversight, a structural finding:
+>   `QueryServiceImpl.getReferencedDataSource`/`getQueryHelpContext`/`explainQuery` (the autocomplete/explain call
+>   paths) are invoked with *only* the raw query string, no doc-ref context whatsoever - unlike the dispatch seam
+>   below (which piggybacks on a doc-ref the Data tab already carries), there is no equivalent hook these paths
+>   could use to recognise a Cypher query at all without a further, separate design effort. Visualisation was
+>   already flagged "a stretch" in the original outline, and no graph/network-visualisation library or code
+>   exists anywhere in the main repo to build on (a legacy D3-v3 force-directed example exists only in a
+>   separate, unbuilt content repo). None of these block the phase's own gate ("author + run a Cypher query and
+>   see tabular results") - StroomQL's Ace mode merely won't colour Cypher syntax specially yet.
+>
+> Two tasks: the dispatch seam first (server-side, independently testable without any client code), then the
+> client editor (which becomes end-to-end functional immediately because the seam already exists).
+
+#### Task P6.1 — Cypher query dispatch seam
+- **Depends on**: none beyond PoC.6 (`CypherCompiler`, `GraphSearchProvider`) and P5.2 (`GraphDbResource`, not
+  used directly here but confirms the doc is otherwise addressable).
+- **Gap this closes**: `QueryServiceImpl.mapRequest` (`stroom-query-impl/.../QueryServiceImpl.java`) always calls
+  the single bound `QueryCompiler` (StroomQL) - there is no branch, no per-datasource dispatch, and `CypherCompiler`
+  is never invoked outside its own test. A Cypher query submitted through the normal dashboard/Data-tab search
+  path today does not reach `GraphSearchProvider` at all; StroomQL parsing simply fails on it.
+- **Design decision (the datasource-identification problem):** Cypher has no `FROM`-equivalent clause (Decision
+  D4), so - unlike StroomQL, where the target datasource is *extracted from the query text itself*
+  (`QueryCompiler.extractDataSourceOnly`) - something else must tell the server which doc a Cypher query targets,
+  *before* any compiler is chosen. The Data tab (and every other `AbstractQueryDataPresenter` subclass) already
+  knows this doc-ref - it is a parameter to `onRead`/`getDefaultQuery` - but never threads it onto the wire
+  request: `QueryModel.init(DocRef)` (`stroom-core-client/.../query/client/presenter/QueryModel.java`), which
+  sets `SearchRequestSource.ownerDocRef` on every search this model runs, is **never called** by
+  `AbstractQueryDataPresenter` today (confirmed by reading the whole class - `queryModel` is constructed but
+  `.init(...)` has no call site there). `ownerDocRef` already exists precisely to mean "the doc this search was
+  run from" (used today only for audit/display, e.g. `DashboardServiceImpl`'s audit lookups, `ResultStorePresenter`'s
+  "Owner Doc" row) - for the Data-tab case the *owning* doc and the *target datasource* are the same doc, so
+  reusing this existing field is a natural fit, not a semantic clash, and needs no new wire field at all.
+- **Files**:
+  - `stroom-core-client/.../query/client/presenter/AbstractQueryDataPresenter.java` (modified) - call
+    `queryModel.init(docRef)` inside `onRead` (where `docRef` is already a parameter) - a one-line fix to a
+    previously-inert gap. Every existing subclass (`IndexDataPresenter`, `PlanBDataPresenter`,
+    `SqlTemporalStoreDataPresenter`) benefits identically (their own "Owner Doc" audit display starts being
+    populated too, a harmless side effect, not a behaviour change to their search results).
+  - `stroom-query/stroom-query-common/src/main/java/stroom/query/language/AlternativeQueryCompiler.java` (new) -
+    a small port interface alongside the existing `QueryCompiler`: `boolean supports(DocRef dataSourceRef)` +
+    `SearchRequest create(String query, SearchRequest in, ExpressionContext expressionContext)` (same `create`
+    shape as `QueryCompiler`, deliberately *not* reusing that interface itself, to avoid any risk of an
+    alternative implementation accidentally satisfying the "the one true StroomQL compiler" injection point
+    elsewhere). Bound as an empty-by-default `Set` (`Multibinder`/`GuiceUtil.buildMultiBinder`) so
+    `stroom-query-impl` needs no compile-time dependency on `stroom-graphdb-impl` at all - the same
+    port/multibinder-discovery pattern already used for `SearchProvider`/`DataSourceProvider`/cost ports
+    throughout this codebase (see Task P5.1).
+  - `QueryServiceImpl.java` (modified) - inject `Set<AlternativeQueryCompiler> alternativeQueryCompilers`; in
+    `mapRequest`, after resolving `ownerDocRef` from `searchRequest.getSearchRequestSource()`, look up the first
+    (if any) alternative compiler whose `supports(ownerDocRef)` returns true (extracted into a small, directly
+    unit-testable static helper - see Contract below, since `QueryServiceImpl` itself has 16 constructor
+    dependencies and no existing test harness, disproportionate to stand up just to cover a small `if`/`else`).
+    If one matches, pre-set `Query.dataSource(ownerDocRef)` on the sample request and call *that* compiler's
+    `create(...)` instead of `queryCompiler.create(...)`; otherwise (no `ownerDocRef`, or none supports it) the
+    existing call is completely unchanged - byte-for-byte identical to today for every existing caller, since
+    none of them populate `ownerDocRef` for this flow yet (before this task's `AbstractQueryDataPresenter` fix).
+  - `stroom-graphdb-impl/.../GraphCypherQueryCompiler.java` (new) - implements `AlternativeQueryCompiler`:
+    `supports` checks `GraphDbDoc.TYPE.equals(dataSourceRef.getType())`; `create` delegates to `CypherCompiler`
+    (finally giving it a real, live caller). Bound into the `Set<AlternativeQueryCompiler>` multibinder in
+    `GraphDbModule`.
+  - Tests: a pure-function unit test for the extracted "resolve which alternative compiler answers" helper
+    (empty set → empty; a `DocRef` of a different type → empty; a `GraphDbDoc`-typed `DocRef` → the matching
+    compiler) - no `QueryServiceImpl` construction needed. A new `TestGraphCypherQueryCompiler` proving `supports`
+    is true only for `GraphDbDoc.TYPE` and `create` produces a `SearchRequest` with `Query.graphSpec` populated
+    (mirroring `CypherCompiler`'s own existing test coverage, just through the new adapter). The
+    `QueryServiceImpl.mapRequest` wiring itself is not separately integration-tested, matching the precedent set
+    for `GraphDbResourceImpl`/`PlanBDocResourceImpl` (Task P5.2) - a thin, directly-reviewable dispatch line, not
+    graph-specific logic, in a class with no pre-existing test infrastructure to extend proportionately.
+- **Contract**: every existing StroomQL search (dashboard Query component, every non-graph Data tab, downloads,
+  column-value lookups) is unaffected - `ownerDocRef` was already threaded through those paths' own call sites
+  (`SearchModel.java` for the dashboard Query component) or remains unset (Data tabs, until this task's one-line
+  fix, which is itself inert for non-`GraphDbDoc` owner types). Autocomplete/explain/"referenced data source"
+  detection for Cypher remain unsupported (documented gap above, not attempted).
+- **Done-when**: the extracted dispatch-resolution helper's unit tests pass; `TestGraphCypherQueryCompiler` passes;
+  every pre-existing test across `stroom-query-common`/`stroom-query-impl`/`stroom-graphdb-impl` passes unmodified.
+- **Verify**: `./gradlew :stroom-query:stroom-query-common:test :stroom-query:stroom-query-impl:test
+  :stroom-graphdb:stroom-graphdb-impl:test`.
+
+#### Task P6.2 — `GraphDbDoc` client plugin + editor
+- **Depends on**: P6.1 (so the Data tab's default query is verifiably functional, not merely present).
+- **Gap this closes**: `GraphDbDoc` cannot be created, opened, edited, or previewed from the UI at all -
+  confirmed by an exhaustive grep of every `*-client*`/GWT module for `GraphDbDoc`/`stroom.graphdb`/`"GraphDb"`,
+  and by `DocumentTypeRegistry` (`stroom-core-shared/.../docstore/shared/DocumentTypeRegistry.java`) having no
+  entry for it at all (every other doc type - `PlanBDoc`, `SqlTemporalStoreDoc`, `LuceneIndexDoc`, etc. - does).
+- **Files** (mirrors `stroom.sqlstore.client.*`/`SqlTemporalStoreDoc`'s exact file set and shape, file-for-file,
+  since it is a single-kind doc with no sub-resource fan-out, exactly like `GraphDbDoc`):
+  - `stroom-core-shared/.../docstore/shared/DocumentTypeRegistry.java` (modified) - add a
+    `GRAPH_DB_DOCUMENT_TYPE` constant + its `put(...)` registration.
+  - `stroom-core-shared/.../svg/shared/SvgImage.java` (modified) - add a `DOCUMENT_GRAPH_DB` icon constant;
+    `stroom-app/src/main/resources/ui/images/document/GraphDb.svg` (new, + its `raw-images` mirror) - copy the
+    `PlanB.svg`/`SqlTemporalStore.svg` pattern (an actual icon asset, not a placeholder - without one the doc
+    would appear in "New" with a broken image).
+  - `stroom-core-client/src/main/java/stroom/graphdb/client/GraphDbPlugin.java` (new) - `DocumentPlugin<GraphDbDoc>`,
+    mirrors `SqlTemporalStorePlugin.java` exactly (`createEditor`/`load`/`save`/`getType`/`getDocRef` via
+    `GraphDbResource`, already built in Task P5.2).
+  - `stroom-core-client/.../graphdb/client/gin/GraphDbGinjector.java` + `GraphDbModule.java` (new, client-side
+    Gin module - distinct from and unrelated to the server-side `stroom.graphdb.impl.GraphDbModule` name reused
+    here only because `SqlTemporalStoreModule`/`PlanBModule` establish that as the client-side Gin module's
+    conventional name) - mirrors `SqlTemporalStoreGinjector`/`SqlTemporalStoreModule` exactly.
+  - `stroom-core-client/.../graphdb/client/presenter/GraphDbPresenter.java` (new) - `DocTabPresenter`, four tabs
+    (Data/Settings/Documentation/Permissions, `selectTab(DATA)` default), mirrors `SqlTemporalStorePresenter.java`
+    almost verbatim (`GraphDbDoc.getDescription()` already exists for the Documentation tab's markdown source).
+  - `stroom-core-client/.../graphdb/client/presenter/GraphDbSettingsPresenter.java` + `view/GraphDbSettingsViewImpl.java`
+    + `.ui.xml` (new) - **scoped down from `SqlTemporalStoreSettingsPresenter`'s own example**: a plain `description`
+    text field only (mirroring the "small config surface, D8" framing literally) - deliberately **not** attempting
+    a `temporalPrecision`/`retention`/`nodeTypeMappings` editing UI in this first pass (a real, separate UI-design
+    effort each - `nodeTypeMappings` in particular is a full schema-mapping list editor with no existing widget
+    to mirror; `retention`/`temporalPrecision` could reuse Plan B's existing `RetentionSettingsWidget`-family
+    widgets, but wiring that is left for a follow-up rather than bundled speculatively into this task). Every one
+    of these fields is already documented as nullable/optional on `GraphDbDoc` itself (null means "use the
+    internal default"), so a graph is fully functional with only a description ever set via this tab.
+  - `stroom-core-client/.../graphdb/client/presenter/GraphDbDataPresenter.java` + `view/GraphDbDataViewImpl.java`
+    (new) - extends `AbstractQueryDataPresenter<GraphDbDataView, GraphDbDoc>` exactly as
+    `SqlTemporalStoreDataPresenter`/`PlanBDataPresenter` do; `getDefaultQuery(DocRef, GraphDbDoc)` returns the
+    design doc's own worked example verbatim: `"MATCH (n)-[r]->(m) RETURN labels(n), type(r), labels(m), n, m
+    LIMIT 20"` (no `FROM`-equivalent clause needed - Task P6.1's dispatch seam resolves the target graph from the
+    tab's own doc-ref, not from this text). Seeding the default query from the graph's own schema-mapping/
+    domain-type catalogue (the original outline's stretch refinement) is not attempted - the fixed worked example
+    is what the design doc itself already committed to as the baseline query.
+  - `stroom-core-client/src/main/resources/stroom/graphdb/GraphDb.gwt.xml` (new) - copies
+    `stroom/sqlstore/SqlTemporalStore.gwt.xml`'s two `<inherits>`/two `<source>` lines verbatim.
+  - `stroom-app-gwt/src/main/resources/stroom/app/App.gwt.xml` (modified) - add
+    `<inherits name="stroom.graphdb.GraphDb" />` alongside the existing `stroom.planb.PlanB`/
+    `stroom.sqlstore.SqlTemporalStore` lines.
+  - `stroom-app-gwt/src/main/java/stroom/app/client/gin/AppGinjectorUser.java` (modified) - add
+    `GraphDbModule.class` to `@GinModules({...})` and `GraphDbGinjector` to the injector's `extends` list,
+    exactly mirroring the existing `PlanBModule`/`PlanBGinjector` and `SqlTemporalStoreModule`/
+    `SqlTemporalStoreGinjector` entries.
+  - Tests: none of the mirrored presenter/plugin/view classes have direct unit tests for their own doc-type
+    equivalents in this codebase (`SqlTemporalStorePresenter`/`SqlTemporalStorePlugin`/etc. are untested,
+    confirmed by their absence from any `*-client*` test source set) - GWT client presenters in this codebase are
+    exercised via manual/e2e testing, not unit tests, so none are added here either, consistent with precedent.
+    Verification for this task is **`javac`-level only**: `./gradlew :stroom-core-client:compileJava
+    :stroom-core-shared:compileJava :stroom-app-gwt:compileJava` (plain Java compilation of GWT client code,
+    which is ordinary Java - this does *not* run the GWT cross-compiler or exercise the UI in a browser; this
+    repo/environment has no way to launch the compiled GWT app for interactive verification, so feature-level UI
+    correctness is asserted by careful mirroring of a proven template, not demonstrated).
+- **Contract**: identical shape/behaviour to `SqlTemporalStoreDoc`'s own editor, scoped to `GraphDbDoc`'s fields;
+  no internal graph store ever gains its own `DocRef`/explorer node (the encapsulation invariant, unchanged).
+- **Done-when**: the three `compileJava` targets above succeed with the new files; `GraphDbDoc.TYPE` resolves to
+  a `DocumentType` with an icon via `DocumentTypeRegistry`.
+- **Verify**: `./gradlew :stroom-core-client:compileJava :stroom-core-shared:compileJava
+  :stroom-app-gwt:compileJava` (see the honesty note above - this is a compilation check, not a UI test).
+
+**P6 exit gate**: a `GraphDbDoc` can be created from the explorer's "New" menu, opened in a tabbed editor, given a
+description, and its Data tab's default Cypher query returns real tabular rows against a populated graph (via
+the P6.1 dispatch seam) - all confirmed at the `javac`/unit-test level; interactive browser verification is out
+of reach in this environment and is explicitly not claimed. Cypher syntax highlighting, autocomplete, explain,
+and graph/network visualisation remain unbuilt, per the scoping note above.
 
 ### P7 — Security / permissions (3–6 pw)
 - **Document-level permissions** inherited via explorer/`SecurityContext` (largely free, as Plan B gets today).
