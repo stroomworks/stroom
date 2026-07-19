@@ -36,6 +36,7 @@ import stroom.query.planner.logical.NodeScan;
 import stroom.query.planner.logical.Project;
 import stroom.query.planner.logical.ProjectField;
 import stroom.query.planner.logical.Sort;
+import stroom.query.planner.logical.SortKey;
 import stroom.query.planner.logical.VarLengthExpand;
 
 import org.jspecify.annotations.Nullable;
@@ -46,6 +47,8 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -163,11 +166,10 @@ public final class GraphTraversalEngine {
 
     /**
      * <b>Preconditions:</b> no parameter is null except {@code temporalContext}; {@code plan} must have the
-     * shape {@code [Limit ->] Project -> [Filter ->] [Expand ->]* NodeScan} (see this class's Javadoc for
-     * what happens otherwise). {@code CypherToLogicalPlan} rejects {@code ORDER BY} at compile time, so no
-     * {@link Sort} node ever reaches here.
+     * shape {@code [Limit ->] [Sort ->] Project -> [Filter ->] [Expand ->]* NodeScan} (see this class's Javadoc
+     * for what happens otherwise).
      * <b>Postconditions:</b> one {@code Val[]} per surviving row, in {@code Project}'s field order; never null
-     * (possibly empty).
+     * (possibly empty). This overload treats the {@code RETURN} as non-{@code DISTINCT}.
      *
      * @param readTxn          the read transaction to traverse under.
      * @param plan             the compiled plan.
@@ -178,6 +180,26 @@ public final class GraphTraversalEngine {
     public List<Val[]> execute(final Txn<ByteBuffer> readTxn, final LogicalPlan plan,
                                final @Nullable TemporalContext temporalContext,
                                final DateTimeSettings dateTimeSettings) {
+        return execute(readTxn, plan, temporalContext, dateTimeSettings, false);
+    }
+
+    /**
+     * As {@link #execute(Txn, LogicalPlan, TemporalContext, DateTimeSettings)}, but honouring {@code RETURN
+     * DISTINCT}: {@code distinct} de-duplicates the projected rows (by value, in first-appearance order after any
+     * {@code ORDER BY}). {@code DISTINCT} is carried on {@code CompiledCypherPlan}, not in the plan tree, because
+     * the sealed shared IR has no Distinct node.
+     *
+     * <p>Ordering of post-traversal steps mirrors Cypher: rows are sorted by any {@code ORDER BY} keys, projected
+     * to output tuples, de-duplicated when {@code distinct}, then capped by any {@code LIMIT}. When {@code ORDER
+     * BY} or {@code DISTINCT} is present the traversal-time row cap is disabled (every matching row must be seen
+     * before sort/de-dup can pick the correct {@code LIMIT} rows); a bare {@code LIMIT} with neither still
+     * early-exits the traversal as before.</p>
+     *
+     * @param distinct whether to de-duplicate the projected rows ({@code RETURN DISTINCT}).
+     */
+    public List<Val[]> execute(final Txn<ByteBuffer> readTxn, final LogicalPlan plan,
+                               final @Nullable TemporalContext temporalContext,
+                               final DateTimeSettings dateTimeSettings, final boolean distinct) {
         Objects.requireNonNull(readTxn, "readTxn");
         Objects.requireNonNull(plan, "plan");
         Objects.requireNonNull(dateTimeSettings, "dateTimeSettings");
@@ -196,7 +218,15 @@ public final class GraphTraversalEngine {
         // size cap, applied by GraphSearchProvider afterwards, ever did before this task). deadline is a fixed
         // wall-clock safety backstop, since GraphSearchProvider runs a traversal synchronously on the calling
         // thread with no task-cancellation hook (see that class's Javadoc for why).
-        final long rowCap = shape.limit() == null ? Long.MAX_VALUE : Math.max(0L, shape.limit());
+        //
+        // ORDER BY/DISTINCT (code-review follow-up): early-exit is only sound when the first N rows traversed are
+        // a valid answer. With ORDER BY the N smallest are not necessarily the first N traversed, and with
+        // DISTINCT the first N raw rows may collapse to fewer than N distinct ones - so in either case we must
+        // traverse everything and apply the LIMIT after sorting/de-duplicating (see finalizeRows).
+        final boolean postProcess = !shape.sortKeys().isEmpty() || distinct;
+        final long rowCap = postProcess || shape.limit() == null
+                ? Long.MAX_VALUE
+                : Math.max(0L, shape.limit());
         final Instant deadline = Instant.now().plus(maxTraversalDuration);
 
         final List<Map<String, Val>> rows = new ArrayList<>();
@@ -214,7 +244,7 @@ public final class GraphTraversalEngine {
                 expandVarLength(readTxn, anchorUid, access, shape.varLengthExpand, anchorRow, wherePredicate,
                         rows, rowCap, deadline);
             }
-            return project(rows, shape.project);
+            return finalizeRows(rows, shape, distinct);
         }
 
         List<Frontier> frontier = new ArrayList<>();
@@ -235,7 +265,7 @@ public final class GraphTraversalEngine {
                     rows.add(f.row());
                 }
             }
-            return project(rows, shape.project);
+            return finalizeRows(rows, shape, distinct);
         }
 
         for (int i = 0; i < shape.hops.size(); i++) {
@@ -256,7 +286,7 @@ public final class GraphTraversalEngine {
             frontier = next;
         }
 
-        return project(rows, shape.project);
+        return finalizeRows(rows, shape, distinct);
     }
 
     /**
@@ -616,15 +646,16 @@ public final class GraphTraversalEngine {
 
     private record PlanShape(NodeScan nodeScan, List<Expand> hops,
                              @Nullable VarLengthExpand varLengthExpand, @Nullable ExpressionOperator where,
-                             Project project, @Nullable Long limit) {
+                             Project project, List<SortKey> sortKeys, @Nullable Long limit) {
     }
 
     private static PlanShape unwrap(final LogicalPlan plan) {
         LogicalPlan current = plan;
-        // Task P7.2: previously this walked past the Limit node without ever reading its value - the traversal
-        // engine had zero awareness a query said LIMIT N and computed every matching row regardless.
-        // A Sort node cannot appear here: CypherToLogicalPlan rejects ORDER BY at compile time (there is no
-        // in-engine sort step), so the only wrapper above Project is an optional Limit.
+        // CypherToLogicalPlan compiles RETURN as Project, optionally wrapped in a Sort (ORDER BY), optionally
+        // wrapped in a Limit (LIMIT) - so the shape above Project is [Limit ->] [Sort ->] Project. Strip Limit
+        // FIRST (it is the outermost when both are present); stripping Sort first would leave the Limit sitting
+        // on top and fail the Project check below. Task P7.2: the Limit's value bounds row accumulation itself,
+        // not just a post-hoc trim.
         Long limit = null;
         while (current instanceof final Limit limitNode) {
             if (!limitNode.values().isEmpty()) {
@@ -632,10 +663,15 @@ public final class GraphTraversalEngine {
             }
             current = limitNode.input();
         }
+        List<SortKey> sortKeys = List.of();
+        while (current instanceof final Sort sortNode) {
+            sortKeys = sortNode.keys();
+            current = sortNode.input();
+        }
         if (!(current instanceof final Project project)) {
             throw new IllegalArgumentException(
                     "Unsupported compiled plan shape for graph traversal: expected a Project node (after "
-                    + "unwrapping Limit), found " + current.getClass().getSimpleName());
+                    + "unwrapping Limit/Sort), found " + current.getClass().getSimpleName());
         }
 
         LogicalPlan below = project.input();
@@ -666,20 +702,67 @@ public final class GraphTraversalEngine {
                     "Unsupported compiled plan shape for graph traversal: expected a NodeScan leaf, found "
                     + below.getClass().getSimpleName());
         }
-        return new PlanShape(nodeScan, hops, varLengthExpand, where, project, limit);
+        return new PlanShape(nodeScan, hops, varLengthExpand, where, project, sortKeys, limit);
     }
 
-    private static List<Val[]> project(final List<Map<String, Val>> rows, final Project project) {
-        final List<ProjectField> fields = project.fields();
-        final List<Val[]> out = new ArrayList<>(rows.size());
+    /**
+     * The post-traversal pipeline, in Cypher's order: sort the matched rows by any {@code ORDER BY} keys, project
+     * each to an output tuple, de-duplicate when {@code RETURN DISTINCT}, then cap by any {@code LIMIT}. The
+     * {@code LIMIT} is applied here (not during traversal) whenever ordering or de-duplication is in play, so it
+     * bounds the correct rows - the smallest by sort order, or the count of <em>distinct</em> tuples - rather than
+     * an arbitrary first-N of the raw traversal (see {@link #execute}'s rowCap note). When neither is present the
+     * traversal already stopped at {@code LIMIT} rows, so the cap here is a no-op.
+     */
+    private static List<Val[]> finalizeRows(final List<Map<String, Val>> rows, final PlanShape shape,
+                                            final boolean distinct) {
+        if (!shape.sortKeys().isEmpty()) {
+            rows.sort(rowComparator(shape.sortKeys()));
+        }
+
+        final List<ProjectField> fields = shape.project().fields();
+        final long limit = shape.limit() == null ? Long.MAX_VALUE : shape.limit();
+        final Set<List<Val>> seen = distinct ? new HashSet<>() : null;
+        final List<Val[]> out = new ArrayList<>();
         for (final Map<String, Val> row : rows) {
-            final Val[] values = new Val[fields.size()];
-            for (int i = 0; i < fields.size(); i++) {
-                values[i] = evaluate(fields.get(i), row);
+            if (out.size() >= limit) {
+                break;
             }
-            out.add(values);
+            final Val[] tuple = new Val[fields.size()];
+            for (int i = 0; i < fields.size(); i++) {
+                tuple[i] = evaluate(fields.get(i), row);
+            }
+            // DISTINCT de-duplicates by projected value (every Val type implements equals/hashCode), preserving
+            // the first appearance in the already-sorted order. A duplicate is skipped WITHOUT counting toward
+            // the LIMIT, so `RETURN DISTINCT ... LIMIT n` yields n distinct rows, not n raw rows deduped.
+            if (seen != null && !seen.add(Arrays.asList(tuple))) {
+                continue;
+            }
+            out.add(tuple);
         }
         return out;
+    }
+
+    /**
+     * A comparator over row maps built from the {@code ORDER BY} keys, applied in order (the first key is
+     * primary, later keys break ties). A key's value is looked up by the same {@code "alias.property"} row-map
+     * key {@link #rowFor} builds; a key referencing a value the row lacks (a bare pattern variable, or an absent
+     * property) sorts last (ascending) via {@link Comparator#nullsLast}. {@link Val} defines the natural ordering.
+     */
+    private static Comparator<Map<String, Val>> rowComparator(final List<SortKey> keys) {
+        Comparator<Map<String, Val>> comparator = null;
+        for (final SortKey key : keys) {
+            final String rowKey = key.field().alias() == null
+                    ? key.field().field()
+                    : key.field().alias() + "." + key.field().field();
+            Comparator<Map<String, Val>> next = Comparator.comparing(
+                    (Map<String, Val> row) -> row.get(rowKey),
+                    Comparator.nullsLast(Comparator.<Val>naturalOrder()));
+            if (key.descending()) {
+                next = next.reversed();
+            }
+            comparator = comparator == null ? next : comparator.thenComparing(next);
+        }
+        return comparator;
     }
 
     private static Val evaluate(final ProjectField field, final Map<String, Val> row) {

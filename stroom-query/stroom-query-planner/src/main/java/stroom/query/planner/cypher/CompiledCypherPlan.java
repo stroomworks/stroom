@@ -23,16 +23,19 @@ import org.jspecify.annotations.Nullable;
 import java.util.Objects;
 
 /**
- * The result of {@link CypherToLogicalPlan#compile}: the bound {@link LogicalPlan} plus the query's resolved
- * temporal context, if it had one. Kept as a pair rather than folding {@link TemporalContext} into a
- * {@link LogicalPlan} node because it is a per-query execution context (design doc &sect;5.4), not a stage of
- * the plan tree.
+ * The result of {@link CypherToLogicalPlan#compile}: the bound {@link LogicalPlan}, the query's resolved
+ * temporal context (if it had one), and whether the {@code RETURN} was {@code DISTINCT}. Kept alongside the plan
+ * rather than folded into a {@link LogicalPlan} node because both are per-query execution concerns (design doc
+ * &sect;5.4), not stages of the plan tree - and {@code DISTINCT} in particular is a Cypher-only concept the
+ * sealed shared IR (used by the relational core too) has no node for.
  *
  * @param plan            never null.
  * @param temporalContext {@code null} if the query had no {@code AS OF}/{@code AROUND}/{@code BETWEEN} clause
  *                        (execution then reads the graph's latest state).
+ * @param distinct        whether the {@code RETURN} clause was {@code RETURN DISTINCT} - the executor
+ *                        de-duplicates the projected rows when {@code true}.
  */
-public record CompiledCypherPlan(LogicalPlan plan, @Nullable TemporalContext temporalContext) {
+public record CompiledCypherPlan(LogicalPlan plan, @Nullable TemporalContext temporalContext, boolean distinct) {
 
     public CompiledCypherPlan {
         Objects.requireNonNull(plan, "plan");

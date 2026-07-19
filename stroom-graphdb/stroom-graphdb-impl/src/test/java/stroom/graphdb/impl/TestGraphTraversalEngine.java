@@ -401,6 +401,95 @@ class TestGraphTraversalEngine {
     }
 
     @Test
+    void orderBy_sortsRowsByTheKeyAscending(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph-orderby-asc"), DOC)) {
+            seedDeviceConnectedToAccounts(stores);
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory());
+            final CompiledCypherPlan compiled = compile(
+                    "MATCH (d:Device {id: 'd-42'})-[:CONNECTED_TO]->(a:Account) RETURN a.id ORDER BY a.balance");
+
+            final List<Val[]> rows = stores.read(readTxn ->
+                    engine.execute(readTxn, compiled.plan(), compiled.temporalContext(),
+                            DateTimeSettings.builder().build(), compiled.distinct()));
+            // account-a (balance 50) sorts before account-b (balance 200), regardless of traversal order.
+            assertThat(rows).extracting(row -> row[0].toString()).containsExactly("account-a", "account-b");
+        }
+    }
+
+    @Test
+    void orderByDesc_reversesTheOrder(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph-orderby-desc"), DOC)) {
+            seedDeviceConnectedToAccounts(stores);
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory());
+            final CompiledCypherPlan compiled = compile(
+                    "MATCH (d:Device {id: 'd-42'})-[:CONNECTED_TO]->(a:Account) "
+                    + "RETURN a.id ORDER BY a.balance DESC");
+
+            final List<Val[]> rows = stores.read(readTxn ->
+                    engine.execute(readTxn, compiled.plan(), compiled.temporalContext(),
+                            DateTimeSettings.builder().build(), compiled.distinct()));
+            assertThat(rows).extracting(row -> row[0].toString()).containsExactly("account-b", "account-a");
+        }
+    }
+
+    @Test
+    void orderByWithLimit_appliesLimitAfterSortingNotToTheRawTraversal(@TempDir final Path root) {
+        // Regression: ORDER BY + LIMIT together previously threw (the Sort-before-Limit plan-unwrap bug). It must
+        // now return the single highest-balance account - proving LIMIT is applied AFTER the sort, not to an
+        // arbitrary first-N of the raw traversal.
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph-orderby-limit"), DOC)) {
+            seedDeviceConnectedToAccounts(stores);
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory());
+            final CompiledCypherPlan compiled = compile(
+                    "MATCH (d:Device {id: 'd-42'})-[:CONNECTED_TO]->(a:Account) "
+                    + "RETURN a.id ORDER BY a.balance DESC LIMIT 1");
+
+            final List<Val[]> rows = stores.read(readTxn ->
+                    engine.execute(readTxn, compiled.plan(), compiled.temporalContext(),
+                            DateTimeSettings.builder().build(), compiled.distinct()));
+            assertThat(rows).extracting(row -> row[0].toString()).containsExactly("account-b");
+        }
+    }
+
+    @Test
+    void returnDistinct_deduplicatesProjectedRows(@TempDir final Path root) {
+        // seedConvergingPaths reaches x via two paths (a->x and a->y->x), so a non-DISTINCT RETURN yields x twice
+        // (see variableLengthPath_sameNodeReachedAtTwoDepths_yieldsTwoRows). DISTINCT collapses that to one x.
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph-distinct"), DOC)) {
+            seedConvergingPaths(stores);
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory());
+            final CompiledCypherPlan compiled = compile(
+                    "MATCH (a:Node {id: 'a'})-[:T*1..3]->(b:Node) RETURN DISTINCT b.id");
+            assertThat(compiled.distinct()).isTrue();
+
+            final List<Val[]> rows = stores.read(readTxn ->
+                    engine.execute(readTxn, compiled.plan(), compiled.temporalContext(),
+                            DateTimeSettings.builder().build(), compiled.distinct()));
+            assertThat(rows).extracting(row -> row[0].toString()).containsExactlyInAnyOrder("x", "y");
+        }
+    }
+
+    @Test
+    void returnDistinctWithLimit_capsTheDistinctRows(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph-distinct-limit"), DOC)) {
+            seedConvergingPaths(stores);
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory());
+            final CompiledCypherPlan compiled = compile(
+                    "MATCH (a:Node {id: 'a'})-[:T*1..3]->(b:Node) RETURN DISTINCT b.id LIMIT 1");
+
+            final List<Val[]> rows = stores.read(readTxn ->
+                    engine.execute(readTxn, compiled.plan(), compiled.temporalContext(),
+                            DateTimeSettings.builder().build(), compiled.distinct()));
+            assertThat(rows).hasSize(1);
+        }
+    }
+
+    @Test
     void variableLengthPath_minHopsGreaterThanOne_excludesCloserNeighbours(@TempDir final Path root) {
         try (GraphStores stores = GraphStores.provision(root.resolve("graph15"), DOC)) {
             seedConvergingPaths(stores);

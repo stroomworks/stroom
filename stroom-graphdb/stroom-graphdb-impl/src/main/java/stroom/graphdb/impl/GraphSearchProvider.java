@@ -178,7 +178,7 @@ public class GraphSearchProvider implements SearchProvider, IndexFieldProvider {
             final GraphTraversalEngine engine = new GraphTraversalEngine(stores, expressionPredicateFactory);
             final List<Val[]> rows = stores.read(readTxn ->
                     engine.execute(readTxn, compiled.plan(), compiled.temporalContext(),
-                            searchRequest.getDateTimeSettings()));
+                            searchRequest.getDateTimeSettings(), compiled.distinct()));
             for (final Val[] row : rows) {
                 coprocessors.accept(assembleRow(row, mapping, fieldIndex.size()));
             }
@@ -191,20 +191,24 @@ public class GraphSearchProvider implements SearchProvider, IndexFieldProvider {
     }
 
     /**
-     * Walks past any {@link Limit} wrapper to the plan's terminal {@link Project} node - mirrors
-     * {@code GraphTraversalEngine.unwrap}'s own first step (kept as a small separate copy rather than exposing
-     * that private method, since this is all the caller needs from the plan shape). A {@link Sort} node cannot
-     * appear: {@code CypherToLogicalPlan} rejects {@code ORDER BY} at compile time.
+     * Walks past any {@link Limit} then {@link Sort} wrapper to the plan's terminal {@link Project} node - mirrors
+     * {@code GraphTraversalEngine.unwrap}'s own first steps (kept as a small separate copy rather than exposing
+     * that private method, since this class needs only the Project's fields for field-index mapping). Strips
+     * {@link Limit} before {@link Sort} for the same reason {@code unwrap} does: {@code CypherToLogicalPlan} nests
+     * them {@code Limit(Sort(Project))}.
      */
     private static Project terminalProject(final LogicalPlan plan) {
         LogicalPlan current = plan;
         while (current instanceof final Limit limit) {
             current = limit.input();
         }
+        while (current instanceof final Sort sort) {
+            current = sort.input();
+        }
         if (!(current instanceof final Project project)) {
             throw new IllegalArgumentException(
                     "Unsupported compiled plan shape for graph traversal: expected a Project node (after "
-                    + "unwrapping Limit), found " + current.getClass().getSimpleName());
+                    + "unwrapping Limit/Sort), found " + current.getClass().getSimpleName());
         }
         return project;
     }
