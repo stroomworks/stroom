@@ -39,6 +39,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Task PoC.5's Done-when: a single-hop {@code MATCH...RETURN} query, parsed and compiled by the real
@@ -388,6 +389,68 @@ class TestGraphTraversalEngine {
                             DateTimeSettings.builder().build()));
             assertThat(rows).extracting(row -> row[0].toString())
                     .containsExactlyInAnyOrder("account-a", "account-b", "gw-1");
+        }
+    }
+
+    @Test
+    void limitClause_stopsAccumulatingRowsOnceSatisfied(@TempDir final Path root) {
+        // Task P7.2: before this, unwrap() walked past the compiled Limit node without ever reading its value -
+        // the traversal engine computed every matching row regardless of a query's own LIMIT.
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph16"), DOC)) {
+            seedDeviceConnectedToAccounts(stores);
+
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory());
+            final CompiledCypherPlan compiled = compile(
+                    "MATCH (d:Device {id: 'd-42'})-[:CONNECTED_TO]->(a:Account) RETURN a.id LIMIT 1");
+
+            final List<Val[]> rows = stores.read(readTxn ->
+                    engine.execute(readTxn, compiled.plan(), compiled.temporalContext(),
+                            DateTimeSettings.builder().build()));
+            // Two accounts match without the LIMIT (see singleHopMatchReturn_yieldsTheExpectedRows_bothLatestAndAsOf).
+            assertThat(rows).hasSize(1);
+            assertThat(rows.getFirst()[0].toString()).isIn("account-a", "account-b");
+        }
+    }
+
+    @Test
+    void variableLengthPath_hopRangeAboveTheCeiling_throwsImmediately(@TempDir final Path root) {
+        // Task P7.2: Cypher.g4 forbids the unbounded -[:T*]-> form, but placed no ceiling on an explicit range -
+        // -[:NEXT*1..51]-> (above MAX_VAR_LENGTH_HOPS = 50) was previously accepted and attempted verbatim.
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph17"), DOC)) {
+            seedCyclicChain(stores);
+
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory());
+            final CompiledCypherPlan compiled = compile(
+                    "MATCH (a:Node {id: 'n1'})-[:NEXT*1..51]->(b:Node) RETURN b.id");
+
+            assertThatThrownBy(() -> stores.read(readTxn ->
+                    engine.execute(readTxn, compiled.plan(), compiled.temporalContext(),
+                            DateTimeSettings.builder().build())))
+                    .isInstanceOf(GraphTraversalLimitExceededException.class);
+        }
+    }
+
+    @Test
+    void variableLengthPath_exceedingThePathStateBudget_throwsClearly(@TempDir final Path root) {
+        // Task P7.2: a modest hop range against a high-fan-out node can still explore an exponential number of
+        // paths - the total-path-state ceiling guards this independently of the hop-range ceiling above. Uses
+        // the (package-private, test-only) 3-arg constructor to make a tiny budget reachable over
+        // seedConvergingPaths' small fixture (node "a" has two outgoing edges) rather than needing hundreds of
+        // thousands of edges to reach the real production default.
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph18"), DOC)) {
+            seedConvergingPaths(stores);
+
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory(), 2);
+            final CompiledCypherPlan compiled = compile(
+                    "MATCH (a:Node {id: 'a'})-[:T*1..3]->(b:Node) RETURN b.id");
+
+            assertThatThrownBy(() -> stores.read(readTxn ->
+                    engine.execute(readTxn, compiled.plan(), compiled.temporalContext(),
+                            DateTimeSettings.builder().build())))
+                    .isInstanceOf(GraphTraversalLimitExceededException.class);
         }
     }
 

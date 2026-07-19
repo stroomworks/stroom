@@ -1700,20 +1700,33 @@ and graph/network visualisation remain unbuilt, per the scoping note above.
     like any other search error.
   - Tests (`TestGraphTraversalEngine.java`, modified): a `LIMIT`-carrying compiled plan against a fixture with
     more matching rows than the limit returns exactly the limited count; a `maxHops` above the ceiling throws
-    `GraphTraversalLimitExceededException` immediately (no traversal attempted); a synthetic high-fan-out fixture
-    exceeding `MAX_VAR_LENGTH_PATH_STATES` throws the same exception instead of exploring every path.
+    `GraphTraversalLimitExceededException` immediately (no traversal attempted); a package-private, test-only
+    3-arg `GraphTraversalEngine` constructor overload (taking an explicit path-state budget) lets a third test
+    reach the path-state ceiling deterministically over a small fixture (a couple of edges, budget of 2) rather
+    than needing to seed hundreds of thousands of edges to reach the real 200,000 production default.
 - **Contract**: every existing query without a `LIMIT`, with a `maxHops` at or below the new ceiling, and whose
   BFS never approaches the state ceiling is byte-for-byte unaffected - these are pure additional safety bounds,
   not a change to which rows a query that stays within them returns.
 - **Done-when**: the new tests pass; every pre-existing `stroom-graphdb-impl` test still passes.
 - **Verify**: `./gradlew :stroom-graphdb:stroom-graphdb-impl:test`.
+- **Status: done (2026-07-19)**. All four guardrails implemented in `GraphTraversalEngine.java`: `PlanShape`
+  gained a `limit` field read in `unwrap()`; `execute()` computes `rowCap`/`deadline` once and threads both
+  through `expandChainHop`/`acceptChainNeighbour` and `expandVarLength`; `expandVarLength` rejects
+  `maxHops() > MAX_VAR_LENGTH_HOPS` (50) up front and tracks a running path-state total against
+  `maxVarLengthPathStates` (200,000 in production, overridable via the new test-only constructor). New
+  `GraphTraversalLimitExceededException` added. Three new tests in `TestGraphTraversalEngine.java`
+  (`limitClause_stopsAccumulatingRowsOnceSatisfied`, `variableLengthPath_hopRangeAboveTheCeiling_throwsImmediately`,
+  `variableLengthPath_exceedingThePathStateBudget_throwsClearly`) all pass; full `stroom-graphdb-impl:test`
+  suite (42 tests) and both `checkstyleMain`/`checkstyleTest` pass clean.
 
-**P7 exit gate**: document-level permission enforcement for `GraphDbDoc` is verified end-to-end (doc-cache
-`USE` check plus its surfacing as a clean result-store error, not an uncaught exception); `GraphTraversalEngine`
-rejects or bounds every traversal shape identified as unbounded (row count via `LIMIT`, hop-range, BFS
-path-state fan-out, wall-clock duration) rather than running an arbitrarily expensive query to completion or
-hanging the calling thread. Label-level filtering remains unbuilt, per the outline's own "optional" framing and
-the complete absence of any sub-document permission precedent in this codebase to build it from.
+**P7 exit gate**: document-level permission enforcement for `GraphDbDoc` is verified end-to-end (the doc-cache's
+`USE` check, and confirmation that a `PermissionException` from doc resolution propagates out of
+`createResultStore` rather than being silently downgraded - consistent with `JoinSearchProvider`'s identical
+contract); `GraphTraversalEngine` rejects or bounds every traversal shape identified as unbounded (row count via
+`LIMIT`, hop-range, BFS path-state fan-out, wall-clock duration) rather than running an arbitrarily expensive
+query to completion or hanging the calling thread. Label-level filtering remains unbuilt, per the outline's own
+"optional" framing and the complete absence of any sub-document permission precedent in this codebase to build
+it from.
 
 ### P8 — Scale-out & hardening (10–20 pw)
 - **Cross-shard traversal as a distributed join / exchange** extending `FederatedSearchExecutor` (design §8 — the

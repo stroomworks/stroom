@@ -43,6 +43,7 @@ import org.lmdbjava.Txn;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -95,14 +96,51 @@ import java.util.function.Predicate;
  */
 public final class GraphTraversalEngine {
 
+    /**
+     * Task P7.2: a variable-length hop range wider than this is rejected up front, before any traversal work -
+     * {@code Cypher.g4} makes {@code maxHops} mandatory (so {@code -[:T*]->} is a parse-time error) but places no
+     * ceiling on the value itself, so {@code -[:T*1..100000]->} was previously accepted and attempted verbatim.
+     */
+    private static final int MAX_VAR_LENGTH_HOPS = 50;
+
+    /**
+     * Task P7.2: a hard ceiling on the total number of BFS path-states {@link #expandVarLength} will explore
+     * across every depth of a single variable-length hop. Guards the case the hop-range cap alone does not: a
+     * modest {@code maxHops} (e.g. 3-4) combined with a high-fan-out hub node can still explore an exponential
+     * number of paths, all materialised in memory at once (see this class's Javadoc note on
+     * {@link #expandVarLength}).
+     */
+    private static final int MAX_VAR_LENGTH_PATH_STATES = 200_000;
+
+    /**
+     * Task P7.2: a fixed wall-clock budget for one {@link #execute} call. {@code GraphSearchProvider} runs a
+     * traversal synchronously on the calling thread (by design - see that class's Javadoc); this is the backstop
+     * against a pathological query (e.g. a hub-heavy fixed-length chain) simply running for an unbounded time with
+     * no way for the caller to cancel it.
+     */
+    private static final Duration MAX_TRAVERSAL_DURATION = Duration.ofSeconds(30);
+
     private final GraphStores stores;
     private final ExpressionPredicateFactory expressionPredicateFactory;
+    private final long maxVarLengthPathStates;
 
     public GraphTraversalEngine(final GraphStores stores,
                                 final ExpressionPredicateFactory expressionPredicateFactory) {
+        this(stores, expressionPredicateFactory, MAX_VAR_LENGTH_PATH_STATES);
+    }
+
+    /**
+     * Task P7.2: test-only seam - lets a test exercise the {@link #MAX_VAR_LENGTH_PATH_STATES} ceiling
+     * deterministically over a small fixture (a handful of edges) rather than needing to seed hundreds of
+     * thousands of them to reach the real production default.
+     */
+    GraphTraversalEngine(final GraphStores stores,
+                        final ExpressionPredicateFactory expressionPredicateFactory,
+                        final long maxVarLengthPathStates) {
         this.stores = Objects.requireNonNull(stores, "stores");
         this.expressionPredicateFactory =
                 Objects.requireNonNull(expressionPredicateFactory, "expressionPredicateFactory");
+        this.maxVarLengthPathStates = maxVarLengthPathStates;
     }
 
     /**
@@ -134,17 +172,28 @@ public final class GraphTraversalEngine {
                         .createOptional(shape.where, rowAccessors(), dateTimeSettings)
                         .orElse(row -> true);
 
+        // Task P7.2: rowCap enforces a compiled Cypher LIMIT as an early-exit bound on row accumulation itself,
+        // not merely a post-hoc trim of an already-fully-computed result (which is all DataStoreSettings' store
+        // size cap, applied by GraphSearchProvider afterwards, ever did before this task). deadline is a fixed
+        // wall-clock safety backstop, since GraphSearchProvider runs a traversal synchronously on the calling
+        // thread with no task-cancellation hook (see that class's Javadoc for why).
+        final long rowCap = shape.limit() == null ? Long.MAX_VALUE : Math.max(0L, shape.limit());
+        final Instant deadline = Instant.now().plus(MAX_TRAVERSAL_DURATION);
+
         final List<Map<String, Val>> rows = new ArrayList<>();
 
         if (shape.varLengthExpand != null) {
             for (final long anchorUid : resolveAnchors(readTxn, shape.nodeScan, access)) {
+                if (rows.size() >= rowCap) {
+                    break;
+                }
                 final Optional<GraphNodeDb.NodeVersion> anchor = access.getNode(readTxn, anchorUid);
                 if (anchor.isEmpty()) {
                     continue;
                 }
                 final Map<String, Val> anchorRow = rowFor(shape.nodeScan.variable(), anchor.get().properties());
-                expandVarLength(
-                        readTxn, anchorUid, access, shape.varLengthExpand, anchorRow, wherePredicate, rows);
+                expandVarLength(readTxn, anchorUid, access, shape.varLengthExpand, anchorRow, wherePredicate,
+                        rows, rowCap, deadline);
             }
             return project(rows, shape.project);
         }
@@ -160,6 +209,9 @@ public final class GraphTraversalEngine {
 
         if (shape.hops.isEmpty()) {
             for (final Frontier f : frontier) {
+                if (rows.size() >= rowCap) {
+                    break;
+                }
                 if (wherePredicate.test(f.row())) {
                     rows.add(f.row());
                 }
@@ -168,16 +220,36 @@ public final class GraphTraversalEngine {
         }
 
         for (int i = 0; i < shape.hops.size(); i++) {
+            checkDeadline(deadline);
+            if (rows.size() >= rowCap) {
+                break;
+            }
             final Expand hop = shape.hops.get(i);
             final boolean isLastHop = i == shape.hops.size() - 1;
             final List<Frontier> next = new ArrayList<>();
             for (final Frontier f : frontier) {
-                expandChainHop(readTxn, f.nodeUid(), access, hop, f.row(), isLastHop, wherePredicate, next, rows);
+                if (rows.size() >= rowCap) {
+                    break;
+                }
+                expandChainHop(readTxn, f.nodeUid(), access, hop, f.row(), isLastHop, wherePredicate, next, rows,
+                        rowCap);
             }
             frontier = next;
         }
 
         return project(rows, shape.project);
+    }
+
+    /**
+     * Task P7.2: throws {@link GraphTraversalLimitExceededException} once {@code deadline} has passed - checked
+     * once per hop/BFS-depth iteration, the backstop against a pathological query running for an unbounded time
+     * on the calling thread (see {@link #MAX_TRAVERSAL_DURATION}'s Javadoc).
+     */
+    private static void checkDeadline(final Instant deadline) {
+        if (Instant.now().isAfter(deadline)) {
+            throw new GraphTraversalLimitExceededException(
+                    "graph traversal exceeded the maximum allowed duration of " + MAX_TRAVERSAL_DURATION);
+        }
     }
 
     /** A traversal frontier entry: the node reached so far, and the accumulated row of every variable bound. */
@@ -187,7 +259,7 @@ public final class GraphTraversalEngine {
     private void expandChainHop(final Txn<ByteBuffer> readTxn, final long fromUid, final TemporalAccess access,
                                 final Expand hop, final Map<String, Val> rowSoFar, final boolean isLastHop,
                                 final Predicate<Map<String, Val>> wherePredicate, final List<Frontier> nextFrontier,
-                                final List<Map<String, Val>> finalRows) {
+                                final List<Map<String, Val>> finalRows, final long rowCap) {
         // GraphAdjacencyDb/GraphInEdgeDb key every edge by a concrete edgeTypeUid; an untyped pattern
         // (edgeType == null, matching any type) has no single prefix to scan, and neither store exposes an
         // "any edge type" access path.
@@ -204,7 +276,8 @@ public final class GraphTraversalEngine {
         }
 
         final Consumer<Long> onNeighbourUid = neighbourUid -> acceptChainNeighbour(
-                readTxn, neighbourUid, access, hop, rowSoFar, isLastHop, wherePredicate, nextFrontier, finalRows);
+                readTxn, neighbourUid, access, hop, rowSoFar, isLastHop, wherePredicate, nextFrontier, finalRows,
+                rowCap);
 
         // Task P1.1: dispatch on Expand.direction() - previously this always read the out-edge store regardless
         // of direction, so a Cypher <-[:TYPE]- or -[:TYPE]- pattern silently executed as -[:TYPE]->.
@@ -222,7 +295,14 @@ public final class GraphTraversalEngine {
                                       final TemporalAccess access,
                                       final Expand hop, final Map<String, Val> rowSoFar, final boolean isLastHop,
                                       final Predicate<Map<String, Val>> wherePredicate,
-                                      final List<Frontier> nextFrontier, final List<Map<String, Val>> finalRows) {
+                                      final List<Frontier> nextFrontier, final List<Map<String, Val>> finalRows,
+                                      final long rowCap) {
+        // Task P7.2: once a compiled LIMIT is satisfied, stop accumulating further rows at this hop - does not
+        // abort a cursor scan already in flight (the DAO layer has no cancellation hook), but does stop this
+        // traversal from expanding to further frontier nodes/hops once the cap is reached.
+        if (isLastHop && finalRows.size() >= rowCap) {
+            return;
+        }
         final Optional<GraphNodeDb.NodeVersion> target = access.getNode(readTxn, neighbourUid);
         if (target.isEmpty()
             || !matchesTargetConstraint(
@@ -299,7 +379,16 @@ public final class GraphTraversalEngine {
     private void expandVarLength(final Txn<ByteBuffer> readTxn, final long anchorUid, final TemporalAccess access,
                                  final VarLengthExpand varLengthExpand, final Map<String, Val> anchorRow,
                                  final Predicate<Map<String, Val>> wherePredicate,
-                                 final List<Map<String, Val>> rows) {
+                                 final List<Map<String, Val>> rows, final long rowCap, final Instant deadline) {
+        // Task P7.2: reject a hop range wider than MAX_VAR_LENGTH_HOPS up front, before any BFS work at all -
+        // Cypher.g4 forbids the unbounded -[:T*]-> form but places no ceiling on an explicit range, so
+        // -[:T*1..100000]-> was previously accepted and attempted verbatim.
+        if (varLengthExpand.maxHops() > MAX_VAR_LENGTH_HOPS) {
+            throw new GraphTraversalLimitExceededException(
+                    "variable-length hop range [" + varLengthExpand.minHops() + ".." + varLengthExpand.maxHops()
+                    + "] exceeds the maximum allowed maxHops of " + MAX_VAR_LENGTH_HOPS);
+        }
+
         // GraphAdjacencyDb/GraphInEdgeDb key every edge by a concrete edgeTypeUid; an untyped pattern
         // (edgeType == null, matching any type) has no single prefix to scan, and neither store exposes an
         // "any edge type" access path.
@@ -315,25 +404,45 @@ public final class GraphTraversalEngine {
             return;
         }
 
-        if (varLengthExpand.minHops() == 0) {
+        if (varLengthExpand.minHops() == 0 && rows.size() < rowCap) {
             // A zero-length path binds the target variable to the anchor node itself.
             final Optional<GraphNodeDb.NodeVersion> anchorNode = access.getNode(readTxn, anchorUid);
             anchorNode.ifPresent(node -> acceptVarLengthRow(readTxn, varLengthExpand, anchorRow, node,
                     wherePredicate, rows));
         }
 
+        // Task P7.2: a running total of BFS path-states explored across every depth of THIS call - guards the
+        // case the hop-range ceiling alone does not: a modest maxHops against a high-fan-out hub node can still
+        // explore an exponential number of paths, all materialised in memory at once.
+        long pathStatesExplored = 1;
+
         List<PathState> frontier = List.of(new PathState(anchorUid, anchorRow, Set.of(anchorUid)));
-        for (int depth = 1; depth <= varLengthExpand.maxHops() && !frontier.isEmpty(); depth++) {
+        for (int depth = 1; depth <= varLengthExpand.maxHops() && !frontier.isEmpty() && rows.size() < rowCap;
+                depth++) {
+            checkDeadline(deadline);
             final List<PathState> next = new ArrayList<>();
             for (final PathState state : frontier) {
+                if (rows.size() >= rowCap) {
+                    break;
+                }
                 final List<Long> neighbourUids = new ArrayList<>();
                 collectNeighbours(
                         readTxn, state.nodeUid(), edgeTypeUid, access, varLengthExpand.direction(),
                         neighbourUids::add);
 
                 for (final long neighbourUid : neighbourUids) {
+                    if (rows.size() >= rowCap) {
+                        break;
+                    }
                     if (state.visited().contains(neighbourUid)) {
                         continue;
+                    }
+                    pathStatesExplored++;
+                    if (pathStatesExplored > maxVarLengthPathStates) {
+                        throw new GraphTraversalLimitExceededException(
+                                "variable-length traversal explored more than " + maxVarLengthPathStates
+                                + " path-states; narrow the pattern's label/property constraints or reduce the "
+                                + "hop range");
                     }
                     final Optional<GraphNodeDb.NodeVersion> target = access.getNode(readTxn, neighbourUid);
                     if (target.isEmpty()) {
@@ -477,7 +586,7 @@ public final class GraphTraversalEngine {
 
     private record PlanShape(NodeScan nodeScan, List<Expand> hops,
                              @Nullable VarLengthExpand varLengthExpand, @Nullable ExpressionOperator where,
-                             Project project) {
+                             Project project, @Nullable Long limit) {
     }
 
     private static PlanShape unwrap(final LogicalPlan plan) {
@@ -485,8 +594,14 @@ public final class GraphTraversalEngine {
         while (current instanceof final Sort sort) {
             current = sort.input();
         }
-        while (current instanceof final Limit limit) {
-            current = limit.input();
+        // Task P7.2: previously this walked past the Limit node without ever reading its value - the traversal
+        // engine had zero awareness a query said LIMIT N and computed every matching row regardless.
+        Long limit = null;
+        while (current instanceof final Limit limitNode) {
+            if (!limitNode.values().isEmpty()) {
+                limit = limitNode.values().getFirst();
+            }
+            current = limitNode.input();
         }
         if (!(current instanceof final Project project)) {
             throw new IllegalArgumentException(
@@ -522,7 +637,7 @@ public final class GraphTraversalEngine {
                     "Unsupported compiled plan shape for graph traversal: expected a NodeScan leaf, found "
                     + below.getClass().getSimpleName());
         }
-        return new PlanShape(nodeScan, hops, varLengthExpand, where, project);
+        return new PlanShape(nodeScan, hops, varLengthExpand, where, project, limit);
     }
 
     private static List<Val[]> project(final List<Map<String, Val>> rows, final Project project) {
