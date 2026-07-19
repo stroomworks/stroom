@@ -26,6 +26,11 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -148,6 +153,68 @@ class TestGraphStoreManagerImpl {
         final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(pathCreator);
 
         assertThatCode(() -> manager.delete("never-existed")).doesNotThrowAnyException();
+    }
+
+    @Test
+    void concurrentDeleteAndGetOrOpen_neverLeavesThePermanentlyCachedStoreBroken(
+            @TempDir final Path appPath) throws Exception {
+        // Code-review fix: delete() used to remove the map entry, close the old instance, and physically delete
+        // the directory as three separate, unlocked steps - a getOrOpen() racing in the gap between the map
+        // removal and the physical delete could open a BRAND NEW store on that same directory and cache it,
+        // only for the still-in-flight physical delete to then rip that new store's files out from under it.
+        // Because the new (now-broken) instance stayed cached, every future getOrOpen() for that UUID would
+        // keep returning it forever - a permanent, unrecoverable corruption, not just a transient race.
+        //
+        // Note what this test deliberately does NOT assert: that a getOrOpen() call which happens to race a
+        // concurrent delete() is guaranteed to return a handle that stays usable afterward - it isn't, and was
+        // never meant to be (a delete() landing moments after a racing getOrOpen() legitimately closes what it
+        // just returned, the same way any shared, deletable resource behaves under concurrency). The actual,
+        // fixed invariant is narrower and more important: after any such race settles, a *subsequent*, ordinary
+        // getOrOpen() call always yields a fresh, genuinely usable store - the cache can never get permanently
+        // stuck holding a broken reference the way it could before this fix (verified via
+        // ConcurrentMap.compute(), which makes delete()'s close-then-physically-delete sequence atomic with
+        // respect to a concurrent getOrOpen()'s computeIfAbsent() for the same key).
+        final PathCreator pathCreator = mock(PathCreator.class);
+        when(pathCreator.toAppPath("graphdb")).thenReturn(appPath.resolve("graphdb"));
+
+        final GraphDbDoc doc = GraphDbDoc.builder().uuid("doc-uuid-race").name("GraphRace").build();
+        final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(pathCreator);
+        manager.getOrOpen(doc); // Seed an initial store so the very first delete() has something to race against.
+
+        final int iterations = 50;
+        final ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            for (int i = 0; i < iterations; i++) {
+                final CyclicBarrier barrier = new CyclicBarrier(2);
+                final Future<?> deleteFuture = executor.submit(() -> {
+                    barrier.await();
+                    manager.delete(doc.getUuid());
+                    return null;
+                });
+                final Future<GraphStores> getOrOpenFuture = executor.submit(() -> {
+                    barrier.await();
+                    return manager.getOrOpen(doc);
+                });
+
+                // Neither call itself should ever throw, regardless of how they interleave.
+                deleteFuture.get(10, TimeUnit.SECONDS);
+                getOrOpenFuture.get(10, TimeUnit.SECONDS);
+
+                // The invariant that matters: an ordinary, non-racing getOrOpen() taken straight afterwards
+                // always returns a fresh, genuinely usable store - proving the cache was never left stuck with
+                // a permanently-broken reference by however the race above happened to resolve.
+                final GraphStores stores = manager.getOrOpen(doc);
+                final String nodeId = "n" + i;
+                final int uidWidth = stores.write(writer -> stores.getNodeUids().put(
+                        writer.getWriteTxn(), directBuffer(nodeId), ByteBuffer::remaining));
+                assertThat(uidWidth).isEqualTo(GraphStores.NODE_UID_WIDTH);
+
+                // Clean teardown before the next iteration's race, so open LMDB environments don't accumulate.
+                manager.delete(doc.getUuid());
+            }
+        } finally {
+            executor.shutdownNow();
+        }
     }
 
     private static ByteBuffer directBuffer(final String value) {

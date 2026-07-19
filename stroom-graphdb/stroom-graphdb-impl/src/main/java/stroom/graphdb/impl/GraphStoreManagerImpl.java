@@ -53,14 +53,27 @@ public class GraphStoreManagerImpl implements GraphStoreManager {
                 GraphStores.open(directoryFor(uuid), doc, false));
     }
 
+    /**
+     * Code-review fix: previously {@code remove(uuid)} then the physical {@link GraphStores#delete} ran as two
+     * separate steps with no lock between them - a concurrent {@link #getOrOpen} for the same UUID could
+     * repopulate {@code openStores} via {@code computeIfAbsent} in the gap, and the pending physical delete would
+     * then remove that directory's files out from under the freshly-opened, live instance. Using
+     * {@link ConcurrentMap#compute} instead makes "close the old instance, then physically delete" atomic with
+     * respect to this key: {@code computeIfAbsent}/{@code compute} on the same key in a {@link ConcurrentHashMap}
+     * never run concurrently with each other, so a racing {@code getOrOpen} either completes fully before this
+     * runs (and its instance is closed and deleted here) or blocks until this finishes (and then correctly opens
+     * a fresh store, since the map entry is null again by the time it proceeds).
+     */
     @Override
     public void delete(final String uuid) {
         Objects.requireNonNull(uuid, "uuid");
-        final GraphStores stores = openStores.remove(uuid);
-        if (stores != null) {
-            stores.close();
-        }
-        GraphStores.delete(directoryFor(uuid));
+        openStores.compute(uuid, (key, stores) -> {
+            if (stores != null) {
+                stores.close();
+            }
+            GraphStores.delete(directoryFor(uuid));
+            return null;
+        });
     }
 
     private Path directoryFor(final String uuid) {
