@@ -191,17 +191,29 @@ public class GraphFilter extends AbstractXMLFilter {
             case NODE_DELETE_ELEMENT -> {
                 currentId = atts.getValue(ID_ATTRIBUTE);
                 currentValidFrom = parseValidFrom(atts.getValue(VALID_FROM_ATTRIBUTE));
+                // Code-review fix: previously left over from whatever <node>/<edge> was processed last, so a
+                // <label>/<property> mis-nested under a <node-delete> (invalid per the XSD, but SAX still fires
+                // the events if nothing upstream validates) would silently mutate that stale state instead of
+                // being flagged - resetting to null makes endElement's LABEL_ELEMENT/PROPERTY_ELEMENT cases able
+                // to detect and reject it instead.
+                currentLabels = null;
+                currentProperties = null;
+                currentPropertyName = null;
             }
             case EDGE_ELEMENT -> {
                 currentType = atts.getValue(TYPE_ATTRIBUTE);
                 currentValidFrom = parseValidFrom(atts.getValue(VALID_FROM_ATTRIBUTE));
                 currentProperties = new LinkedHashMap<>();
+                currentLabels = null;
                 currentSrc = null;
                 currentDst = null;
             }
             case EDGE_DELETE_ELEMENT -> {
                 currentType = atts.getValue(TYPE_ATTRIBUTE);
                 currentValidFrom = parseValidFrom(atts.getValue(VALID_FROM_ATTRIBUTE));
+                currentLabels = null;
+                currentProperties = null;
+                currentPropertyName = null;
                 currentSrc = null;
                 currentDst = null;
             }
@@ -216,8 +228,25 @@ public class GraphFilter extends AbstractXMLFilter {
     @Override
     public void endElement(final String uri, final String localName, final String qName) throws SAXException {
         switch (localName.toLowerCase(Locale.ROOT)) {
-            case LABEL_ELEMENT -> currentLabels.add(contentBuffer.toString());
-            case PROPERTY_ELEMENT -> currentProperties.put(currentPropertyName, contentBuffer.toString());
+            case LABEL_ELEMENT -> {
+                // currentLabels is only initialised for <node> - null here means <label> is mis-nested under
+                // some other element (invalid per the XSD, but SAX still fires the events if nothing upstream
+                // validates it); report that clearly rather than NPE-ing.
+                if (currentLabels == null) {
+                    error("<label> is only valid inside a <node> element");
+                } else {
+                    currentLabels.add(contentBuffer.toString());
+                }
+            }
+            case PROPERTY_ELEMENT -> {
+                if (currentProperties == null) {
+                    error("<property> is only valid inside a <node> or <edge> element");
+                } else if (currentPropertyName == null) {
+                    error("<property> requires a name attribute");
+                } else {
+                    currentProperties.put(currentPropertyName, contentBuffer.toString());
+                }
+            }
             case SRC_ELEMENT -> currentSrc = contentBuffer.toString();
             case DST_ELEMENT -> currentDst = contentBuffer.toString();
             case NODE_ELEMENT -> addNode();

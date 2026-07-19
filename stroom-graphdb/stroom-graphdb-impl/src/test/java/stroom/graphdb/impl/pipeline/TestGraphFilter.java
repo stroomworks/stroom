@@ -25,6 +25,7 @@ import stroom.graphdb.impl.GraphTraversalEngine;
 import stroom.graphdb.shared.GraphDbDoc;
 import stroom.lmdb.serde.UnsignedBytesInstances;
 import stroom.pipeline.LocationFactoryProxy;
+import stroom.pipeline.errorhandler.ErrorReceiver;
 import stroom.pipeline.errorhandler.ErrorReceiverProxy;
 import stroom.pipeline.errorhandler.FatalErrorReceiver;
 import stroom.pipeline.util.ProcessorUtil;
@@ -201,6 +202,56 @@ class TestGraphFilter {
     }
 
     @Test
+    void propertyMissingNameAttribute_logsACleanErrorInsteadOfNpeing(@TempDir final Path root) {
+        // Code-review fix: previously a <property> with no name attribute silently stored a null map key,
+        // which later threw an unhandled NullPointerException deep inside intern()/directBuffer() rather than
+        // the class's own documented "logged and skipped" contract for a malformed record.
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph8"), DOC)) {
+            final List<String> capturedErrors = new ArrayList<>();
+            ingest(stores, """
+                    <graph xmlns="graph-mutation:1" version="1.0">
+                        <node id="n1" validFrom="2026-01-01T00:00:00.000Z">
+                            <label>Thing</label>
+                            <property>no name here</property>
+                        </node>
+                    </graph>
+                    """, new AtomicReference<>(stores), capturedErrors);
+
+            assertThat(capturedErrors).anyMatch(message -> message.contains("requires a name attribute"));
+        }
+    }
+
+    @Test
+    void labelMisNestedUnderNodeDelete_logsACleanErrorInsteadOfSilentlyMutatingStaleState(
+            @TempDir final Path root) {
+        // Code-review fix: currentLabels/currentProperties used to be left over from whatever <node>/<edge> was
+        // processed last for every element that doesn't itself use them (e.g. <node-delete>), so a <label>
+        // mis-nested under one (invalid per the XSD, but SAX still fires the events if nothing upstream
+        // validates it) would previously mutate that stale list with no error at all. Now explicitly nulled out
+        // for delete elements, so this is caught and logged instead.
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph9"), DOC)) {
+            ingest(stores, """
+                    <graph xmlns="graph-mutation:1" version="1.0">
+                        <node id="n1" validFrom="2026-01-01T00:00:00.000Z">
+                            <label>Thing</label>
+                        </node>
+                    </graph>
+                    """);
+
+            final List<String> capturedErrors = new ArrayList<>();
+            ingest(stores, """
+                    <graph xmlns="graph-mutation:1" version="1.0">
+                        <node-delete id="n1" validFrom="2026-06-01T00:00:00.000Z">
+                            <label>Widget</label>
+                        </node-delete>
+                    </graph>
+                    """, new AtomicReference<>(stores), capturedErrors);
+
+            assertThat(capturedErrors).anyMatch(message -> message.contains("<label> is only valid"));
+        }
+    }
+
+    @Test
     void nodeUpdate_unchangedPropertyAnchorStillResolves(@TempDir final Path root) {
         try (GraphStores stores = GraphStores.provision(root.resolve("graph6"), DOC)) {
             ingest(stores, """
@@ -304,6 +355,19 @@ class TestGraphFilter {
      */
     private static void ingest(final GraphStores stores, final String xml,
                                final AtomicReference<GraphStores> currentStores) {
+        ingest(stores, xml, currentStores, new ArrayList<>());
+    }
+
+    /**
+     * Code-review fix: {@code capturedErrors} collects every message {@link GraphFilter}'s own {@code error()}
+     * logs (a malformed/mis-nested record) - a plain {@code new ErrorReceiverProxy()} (as this harness used
+     * unconditionally before) has no delegate {@link ErrorReceiver} set, so any {@code error()} call would throw
+     * a {@link NullPointerException} from inside {@code ErrorReceiverProxy.log} itself, masking whatever the test
+     * actually meant to assert.
+     */
+    private static void ingest(final GraphStores stores, final String xml,
+                               final AtomicReference<GraphStores> currentStores,
+                               final List<String> capturedErrors) {
         final GraphDbDocCache graphDbDocCache = new GraphDbDocCache() {
             @Override
             public GraphDbDoc get(final String name) {
@@ -328,7 +392,8 @@ class TestGraphFilter {
         };
 
         final GraphFilter graphFilter = new GraphFilter(
-                new ErrorReceiverProxy(),
+                new ErrorReceiverProxy((severity, location, elementId, message, errorType, e) ->
+                        capturedErrors.add(message)),
                 new LocationFactoryProxy(),
                 graphDbDocCache,
                 graphStoreManager);
