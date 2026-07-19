@@ -160,6 +160,7 @@ class QueryResourceImpl implements QueryResource {
     @Override
     @AutoLogged(OperationType.UNLOGGED)
     public ExplainPlan explainQuery(final String query) {
+        RestUtil.requireNonNull(query, "query not supplied");
         return queryServiceProvider.get().explainQuery(query);
     }
 

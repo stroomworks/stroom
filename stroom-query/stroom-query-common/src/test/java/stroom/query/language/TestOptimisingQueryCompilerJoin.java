@@ -131,4 +131,16 @@ class TestOptimisingQueryCompilerJoin {
                 emptySeedRequest(), expressionContext()))
                 .isInstanceOf(TokenException.class);
     }
+
+    @Test
+    void multiJoinChain_isRejectedCleanly() {
+        // Only a single join is supported for now; a chain of more than one join must be rejected with a clear
+        // dedicated message rather than silently mis-compiled (createJoin/findJoin only handle one Join node).
+        assertThatThrownBy(() -> compiler().create(
+                "from \"Events\" as a join \"Users\" as b on a.UserId = b.Id "
+                + "join \"Events\" as c on b.Id = c.UserId select a.StreamId",
+                emptySeedRequest(), expressionContext()))
+                .isInstanceOf(TokenException.class)
+                .hasMessageContaining("single join");
+    }
 }

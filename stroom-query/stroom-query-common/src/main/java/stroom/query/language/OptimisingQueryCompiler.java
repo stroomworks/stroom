@@ -93,8 +93,9 @@ public class OptimisingQueryCompiler implements QueryCompiler {
      * @param dataSourceResolver         must not be null.
      * @param queryFieldProviderProvider must not be null.
      * @param securityContext            must not be null.
-     * @param fieldInfoSource            must not be null; used by {@link #explain} to bind/rewrite the query
-     *                                   (Phases 2-3's pipeline) - not used by {@link #create}.
+     * @param fieldInfoSource            must not be null; used by {@link #explain} and by {@link #create}'s
+     *                                   plan-enhancement step (time-range + where/filter-split parameterisation,
+     *                                   Phase 5) to bind/rewrite the query via Phases 2-3's pipeline.
      * @param metaStats                  must not be null; see {@link #explain}.
      * @param indexShardStats            must not be null; see {@link #explain}.
      * @param stateStoreStats            must not be null; see {@link #explain}.

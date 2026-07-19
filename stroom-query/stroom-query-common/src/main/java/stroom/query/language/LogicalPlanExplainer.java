@@ -23,7 +23,6 @@ import stroom.query.planner.cost.CostModel;
 import stroom.query.planner.cost.CostedAccessPath;
 import stroom.query.planner.cost.JoinCostModel;
 import stroom.query.planner.cost.JoinPlan;
-import stroom.query.planner.cost.StateLookup;
 import stroom.query.planner.logical.Aggregate;
 import stroom.query.planner.logical.Expand;
 import stroom.query.planner.logical.Filter;
@@ -158,8 +157,6 @@ final class LogicalPlanExplainer {
         final JoinPlan joinPlan = JoinCostModel.chooseAlgorithm(left.costedAccessPath(), right.costedAccessPath());
         final long cardinality = JoinCostModel.estimateCardinality(
                 left.costedAccessPath().estimate().rows(), right.costedAccessPath().estimate().rows(), 0, 0);
-        final boolean leftIsLookup = left.costedAccessPath().accessPath() instanceof StateLookup;
-        final boolean rightIsLookup = right.costedAccessPath().accessPath() instanceof StateLookup;
         final ExplainPlan explainPlan = ExplainPlan.builder()
                 .description("Join (" + joinPlan.algorithm() + ", build side: " + joinPlan.buildSide() + ")")
                 .children(children)
@@ -169,9 +166,9 @@ final class LogicalPlanExplainer {
                 .build();
         return new Node(explainPlan, null);
         // Deliberately not propagating a CostedAccessPath upward for the join itself yet - no AccessPath
-        // variant represents "the result of a join" (leftIsLookup/rightIsLookup above are only used to choose
-        // the algorithm, not to describe this node's own access path), and nothing needs a join-of-joins
-        // estimate in this pass (see class Javadoc's nested-join scope note).
+        // variant represents "the result of a join", and nothing needs a join-of-joins estimate in this pass
+        // (see class Javadoc's nested-join scope note). The build-side/algorithm choice is made entirely inside
+        // JoinCostModel.chooseAlgorithm above.
     }
 
     private String describeField(final QualifiedField field) {

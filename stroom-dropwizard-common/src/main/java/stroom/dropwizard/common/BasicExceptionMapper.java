@@ -36,6 +36,10 @@ public class BasicExceptionMapper implements ExceptionMapper<Throwable> {
             return wae.getResponse();
         } else if (exception.getClass().getName().contains("AuthenticationException") ||
                 exception.getClass().getName().contains("TokenException") ||
+                // SyntaxException is the ANTLR-driven query parser's equivalent of the legacy TokenException (a
+                // malformed StroomQL/Cypher query) - classify it the same way so a syntax error is a client
+                // error, not an opaque HTTP 500, whichever compiler produced it.
+                exception.getClass().getName().contains("SyntaxException") ||
                 exception.getClass().getName().contains("PermissionException")) {
             return createExceptionResponse(Status.FORBIDDEN, exception);
         } else {
