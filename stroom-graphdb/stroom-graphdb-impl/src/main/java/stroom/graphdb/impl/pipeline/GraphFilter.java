@@ -18,6 +18,7 @@ package stroom.graphdb.impl.pipeline;
 
 import stroom.docref.DocRef;
 import stroom.graphdb.impl.GraphDbDocCache;
+import stroom.graphdb.impl.GraphNodeDb;
 import stroom.graphdb.impl.GraphStoreManager;
 import stroom.graphdb.impl.GraphStores;
 import stroom.graphdb.shared.GraphDbDoc;
@@ -40,6 +41,7 @@ import stroom.util.CharBuffer;
 import stroom.util.shared.Severity;
 
 import jakarta.inject.Inject;
+import org.jspecify.annotations.Nullable;
 import org.xml.sax.Attributes;
 import org.xml.sax.Locator;
 import org.xml.sax.SAXException;
@@ -53,6 +55,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * Parses {@code graph-mutation:1} XML (Task P2.1) and writes node/edge mutations into one target
@@ -246,6 +249,15 @@ public class GraphFilter extends AbstractXMLFilter {
             labelUids.add(intern(stores.getLabelUids(), label));
         }
         final Map<String, Val> properties = toVals(currentProperties);
+
+        // Task P8.1: the node's immediately-preceding version, if any - looked up BEFORE insert() writes this
+        // version, so "at or before currentValidFrom" still resolves to the prior one. Used below to skip
+        // re-indexing an anchor whose (label, value) is unchanged from it - a real write-amplification source,
+        // since every version previously re-indexed every label x property pair regardless of whether the value
+        // had actually changed (the common case: one field updates, the rest don't).
+        final Optional<GraphNodeDb.NodeVersion> previousVersion =
+                stores.getNodes().getNode(writer.getWriteTxn(), nodeUid, currentValidFrom);
+
         stores.getNodes().insert(writer, nodeUid, currentValidFrom, labelUids, properties);
 
         // Anchor-index every property against every label - there is no per-label "which properties are
@@ -253,13 +265,51 @@ public class GraphFilter extends AbstractXMLFilter {
         // so indexing everything is the only sensible v1 default; a future schema-driven selection would
         // narrow this, not change the mechanism.
         for (final long labelUid : labelUids) {
+            // A label the previous version didn't already carry has no pre-existing anchors under it at all -
+            // every property must be (re-)indexed for it regardless of whether the value also appears,
+            // unchanged, under some other label.
+            final boolean labelCarriedBefore = previousVersion.isPresent()
+                    && previousVersion.get().labelUids().contains(labelUid);
             for (final Map.Entry<String, String> property : currentProperties.entrySet()) {
+                final Val previousValue = labelCarriedBefore
+                        ? previousVersion.get().properties().get(property.getKey())
+                        : null;
+                if (!anchorNeedsReindexing(labelCarriedBefore, previousValue, property.getValue())) {
+                    // Unchanged - the prior version's anchor for this (label, propKey, value) already points
+                    // at this same nodeUid and is never deleted out from under a surviving value (only a full
+                    // GraphStores.rebuild() re-derives anchors from scratch), so it still resolves correctly;
+                    // re-inserting it would be a pure duplicate write.
+                    continue;
+                }
                 final long propKeyUid = intern(stores.getPropertyKeyUids(), property.getKey());
                 stores.getPropertyIndex().insert(writer, labelUid, propKeyUid,
                         property.getValue().getBytes(StandardCharsets.UTF_8), nodeUid);
             }
         }
         writer.tryCommit();
+    }
+
+    /**
+     * Task P8.1: whether a (label, property) anchor genuinely needs (re-)indexing, or whether the prior
+     * version's still-valid anchor already covers it - extracted as a small, directly-testable pure function
+     * since {@link GraphFilter} itself (a SAX {@code ContentHandler} wired to a real {@link GraphStores}) is
+     * awkward to unit-test at this granularity in isolation.
+     *
+     * @param labelCarriedByPreviousVersion whether the label being indexed was already present on the node's
+     *                                      immediately-preceding version - if not, that label has no
+     *                                      pre-existing anchors under it at all, so re-indexing is always needed
+     *                                      regardless of the value.
+     * @param previousValue                 the property's value on the previous version under this same label,
+     *                                      or {@code null} if the label wasn't carried before (irrelevant then)
+     *                                      or the property didn't exist on it.
+     * @param newValue                      never null; the value being indexed now.
+     */
+    static boolean anchorNeedsReindexing(final boolean labelCarriedByPreviousVersion,
+                                        final @Nullable Val previousValue, final String newValue) {
+        if (!labelCarriedByPreviousVersion) {
+            return true;
+        }
+        return previousValue == null || !previousValue.toString().equals(newValue);
     }
 
     private void deleteNode() {

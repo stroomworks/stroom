@@ -1729,10 +1729,98 @@ query to completion or hanging the calling thread. Label-level filtering remains
 it from.
 
 ### P8 — Scale-out & hardening (10–20 pw)
-- **Cross-shard traversal as a distributed join / exchange** extending `FederatedSearchExecutor` (design §8 — the
-  largest scaling risk; the P0.1 partitioning decision drives it). Ship single-shard first.
-- **Write-amplification mitigation** (in-edge mirror + property index + versions multiply writes); **perf
-  benchmarking** (cursor/buffer reuse, caching).
+
+> **Scoping note (2026-07-19).** This phase's own outline splits into two very differently-sized pieces: cross-shard
+> distributed traversal (the "largest scaling risk", per the outline itself) versus write-amplification/perf
+> hardening of the existing single-shard architecture. The user explicitly chose to scope this pass to **hardening
+> only** - cross-shard distributed traversal is **not attempted here**. It would mean reworking the P0.1 frozen,
+> signed-off partitioning decision (currently "by graph id, fully co-located, zero cross-shard hops") into a
+> hash-by-`srcUid`/`dstUid` scheme, plus a new distributed join/exchange execution layer extending
+> `FederatedSearchExecutor` - a design effort of the same shape and weight as P0.1 itself (a dedicated spike,
+> reviewed and signed off, *before* any execution code), not a task-sized addition to this phase. The outline's own
+> "ship single-shard first" framing already anticipated this split. If/when cross-shard work is picked up, it
+> should get its own dedicated design phase, mirroring P0.1's process, rather than being bolted onto this one.
+>
+> A research pass (reading `GraphFilter.java`, every graph DAO's `insert`, the P1.4 retention/condense writeup, and
+> a repo-wide search for perf-benchmark precedent) found:
+> - **Write amplification is real and countable, but already partially bounded.** One edge write is *always* 2
+>   LMDB puts (the P1.1 in-edge mirror, a deliberate dual-write contract, not a bug). One node write is 1 put plus
+>   **one property-index put per (label × property) pair**, unconditionally, on every version - even when most
+>   fields are unchanged from the node's prior version (the realistic common case: one field updates, the rest
+>   don't). This is the one concrete, fixable-without-a-redesign source found - **Task P8.1** below.
+> - The already-documented, already-*accepted* limits (Task P1.4's own writeup: condense was considered and
+>   explicitly not built since graph properties change far less often than Plan B state typically does; stale
+>   property-index anchors for genuinely-*changed* values are never incrementally swept, only a full
+>   `GraphStores.rebuild()` re-derives them from scratch) are **not** reopened here - re-litigating an already-made,
+>   documented P1.4 decision is out of scope for a hardening pass, not a gap this phase failed to notice.
+> - **No automated perf-benchmark gate exists anywhere in this codebase** - JMH is a build dependency
+>   (`gradle/libs.versions.toml`) used by a handful of `@Benchmark` classes with no Gradle/CI wiring to run them at
+>   all (hand-invoked only); the one real, *used* precedent is Plan B's own `TestStateDb`/`TestTemporalStateDb`
+>   `@TestFactory` `...Performance()` methods - the same correctness test re-run at a larger data volume/iteration
+>   count, with no elapsed-time assertion (CI hardware variance makes a hard ceiling the wrong idiom, and nothing
+>   in this repo does that today). **Task P8.2** below mirrors this existing, used idiom rather than introducing an
+>   unprecedented JMH/CI wiring effort disproportionate to a hardening pass.
+
+#### Task P8.1 — Skip redundant property-index re-indexing on unchanged values
+- **Depends on**: none beyond PoC.4/P1.3 (`GraphPropertyIndex`) and P2.2 (`GraphFilter`, the only caller of
+  `GraphNodeDb.insert`/`GraphPropertyIndex.insert` for nodes).
+- **Gap this closes**: `GraphFilter.addNode()` unconditionally re-indexes every (label × property) pair on every
+  node version, even when the value is byte-for-byte unchanged from the node's immediately-preceding version -
+  `GraphPropertyIndex.insert`'s own Javadoc already documents the operation as "idempotent: inserting the same
+  (label, propKey, value, node) tuple twice is a no-op", i.e. this was always pure waste for the unchanged case,
+  never a correctness requirement.
+- **Files**: `stroom-graphdb/stroom-graphdb-impl/src/main/java/stroom/graphdb/impl/pipeline/GraphFilter.java`
+  (modified) - `addNode()` looks up the node's previous version via `stores.getNodes().getNode(writer.getWriteTxn(),
+  nodeUid, currentValidFrom)` *before* calling `insert(...)` (so the lookup still resolves to the prior version,
+  not the one about to be written); for each `(labelUid, property)` pair, skips the `GraphPropertyIndex.insert` call
+  only when **both** the label was already carried by the previous version **and** the property's value is
+  unchanged from it - a label newly added this version has no pre-existing anchors under it at all and must
+  always be (re-)indexed, regardless of whether the same value happens to already be anchored under some other
+  label.
+- **Contract**: no observable behaviour change - `findAnchors` still resolves every node it did before, since a
+  skipped re-insert's prior-version anchor (same key, same node UID) is never deleted out from under it (per
+  P1.4's own documented scope, only a full `rebuild()` re-derives anchors). This is purely fewer redundant LMDB
+  writes for the unchanged-value case, not a change to what any query returns.
+- **Done-when**: the skip/no-skip decision is proven directly (unit test) for all three cases (unchanged → skip;
+  changed → index; label newly carried → always index, regardless of value); an ingest-level test proves an
+  unchanged property's anchor still resolves via a real query after a second version; an ingest-level test proves
+  a newly-added label's property is indexed and resolves even when the same value is already anchored under a
+  different, pre-existing label.
+- **Verify**: `./gradlew :stroom-graphdb:stroom-graphdb-impl:test`.
+- **Status: done (2026-07-19)**. The skip/no-skip decision was extracted as a small, pure, package-private static
+  function (`GraphFilter.anchorNeedsReindexing`) specifically because row-count assertions can't actually prove a
+  redundant write was skipped: `GraphPropertyIndex.insert`'s own idempotence means re-inserting an unchanged
+  (label, propKey, value, node) tuple leaves the store's entry count byte-for-byte identical to skipping it -
+  the *decision logic* is what's testable, not the resulting row count. Four new tests in `TestGraphFilter.java`:
+  a direct unit test of `anchorNeedsReindexing` covering all three cases, plus two ingest-level tests (via the
+  real SAX/`GraphFilter` harness) proving an unchanged property still resolves after a second version, and a
+  newly-added label is still indexed even when its value duplicates one already anchored under another label.
+  Full `stroom-graphdb-impl:test` suite and both checkstyle tasks pass clean.
+
+#### Task P8.2 — Perf benchmarking for graph traversal
+- **Depends on**: PoC.5/P3.2/P3.3 (`GraphTraversalEngine`, the class being benchmarked).
+- **Gap this closes**: no automated way to observe `GraphTraversalEngine`'s cost at a realistic data volume, or to
+  give future cursor/buffer-reuse work (e.g. `GraphNodeDb.getNode` allocates a fresh direct `ByteBuffer` per
+  neighbour dereferenced during a traversal - a real, cited-but-unfixed cost, not this task's job to fix) a
+  baseline to measure against.
+- **Files**: `stroom-graphdb/stroom-graphdb-impl/src/test/java/stroom/graphdb/impl/TestGraphTraversalEnginePerformance.java`
+  (new) - mirrors `stroom.planb.impl.dao.TestStateDb`'s own `...Performance()` idiom (the one real, used
+  perf-test precedent in this codebase): builds a synthetic graph at a meaningfully larger scale than any existing
+  fixture (thousands of nodes, multiple labels, fan-out edges) and runs representative fixed-length and
+  variable-length traversal queries against it, logging elapsed time for a human to eyeball - **no hard timing
+  assertion** (CI hardware variance makes a ceiling assertion the wrong idiom, matching every existing perf test
+  in this repo, none of which assert on elapsed time either), but the correctness of the returned rows *is*
+  asserted (a perf test that silently stopped returning correct rows would be worse than no perf test at all).
+- **Contract**: purely additive (a new test file); no production code changes.
+- **Done-when**: the new test passes (both on row-count/content correctness and by actually running to
+  completion at the larger data volume without excessive real time or memory).
+- **Verify**: `./gradlew :stroom-graphdb:stroom-graphdb-impl:test --tests "stroom.graphdb.impl.TestGraphTraversalEnginePerformance"`.
+
+**P8 exit gate** (hardening-only scope, per the user's decision above): `GraphFilter`'s node-ingest path no longer
+re-indexes unchanged property values on every version, with tests proving both the reduction and that no anchor
+resolution regressed; a synthetic-data performance test exists for `GraphTraversalEngine`, giving future
+buffer/cursor-reuse work a measurable baseline. Cross-shard distributed traversal remains entirely unbuilt and
+undesigned - a future phase's own dedicated design spike, not a gap in this one.
 
 ### Cross-cutting
 - **E2E tests + synthetic graph generator**; **docs** (Cypher-subset reference, temporal syntax, ops guide) — a

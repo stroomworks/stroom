@@ -32,6 +32,7 @@ import stroom.query.api.DateTimeSettings;
 import stroom.query.common.v2.ExpressionPredicateFactory;
 import stroom.query.grammar.parse.CypherQueryParser;
 import stroom.query.language.functions.Val;
+import stroom.query.language.functions.ValString;
 import stroom.query.planner.cypher.CompiledCypherPlan;
 import stroom.query.planner.cypher.CypherToLogicalPlan;
 
@@ -184,6 +185,78 @@ class TestGraphFilter {
                     "MATCH (d:Device {id: 'd-42'})-[:CONNECTED_TO]->(a:Account) RETURN a.id");
             assertThat(rows).extracting(row -> row[0].toString())
                     .containsExactlyInAnyOrder("account-a", "account-b");
+        }
+    }
+
+    @Test
+    void anchorNeedsReindexing_falseOnlyWhenLabelCarriedBeforeAndValueUnchanged() {
+        // Task P8.1: the extracted decision function directly, since GraphFilter itself is awkward to unit-test
+        // at this granularity via the real SAX/ingest harness.
+        assertThat(GraphFilter.anchorNeedsReindexing(true, ValString.create("active"), "active")).isFalse();
+        assertThat(GraphFilter.anchorNeedsReindexing(true, ValString.create("active"), "inactive")).isTrue();
+        assertThat(GraphFilter.anchorNeedsReindexing(true, null, "active")).isTrue();
+        // A label the previous version didn't carry always needs (re-)indexing, even if the same value already
+        // happens to be anchored under some other, pre-existing label.
+        assertThat(GraphFilter.anchorNeedsReindexing(false, ValString.create("active"), "active")).isTrue();
+    }
+
+    @Test
+    void nodeUpdate_unchangedPropertyAnchorStillResolves(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph6"), DOC)) {
+            ingest(stores, """
+                    <graph xmlns="graph-mutation:1" version="1.0">
+                        <node id="n1" validFrom="2026-01-01T00:00:00.000Z">
+                            <label>Thing</label>
+                            <property name="id">n1</property>
+                            <property name="status">active</property>
+                        </node>
+                    </graph>
+                    """);
+            // Second version: only "status" changes - "id" is carried through unchanged, so Task P8.1's skip
+            // applies to it (its P8.1 does NOT re-insert the anchor); this proves that skip didn't break
+            // resolution - the surviving prior-version anchor still finds the node.
+            ingest(stores, """
+                    <graph xmlns="graph-mutation:1" version="1.0">
+                        <node id="n1" validFrom="2026-06-01T00:00:00.000Z">
+                            <label>Thing</label>
+                            <property name="id">n1</property>
+                            <property name="status">inactive</property>
+                        </node>
+                    </graph>
+                    """);
+
+            final List<Val[]> byUnchangedId = query(stores, "MATCH (n:Thing {id: 'n1'}) RETURN n.status");
+            assertThat(byUnchangedId).extracting(row -> row[0].toString()).containsExactly("inactive");
+        }
+    }
+
+    @Test
+    void nodeUpdate_newlyAddedLabelIsIndexedEvenWhenTheValueIsAlreadyAnchoredUnderAnotherLabel(
+            @TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph7"), DOC)) {
+            ingest(stores, """
+                    <graph xmlns="graph-mutation:1" version="1.0">
+                        <node id="n1" validFrom="2026-01-01T00:00:00.000Z">
+                            <label>Thing</label>
+                            <property name="code">shared-code</property>
+                        </node>
+                    </graph>
+                    """);
+            // Second version adds label "Widget" - "code"'s value is unchanged, but Widget was never carried
+            // before, so Task P8.1 must still index it under Widget (the skip only ever applies to a label
+            // already carried by the previous version).
+            ingest(stores, """
+                    <graph xmlns="graph-mutation:1" version="1.0">
+                        <node id="n1" validFrom="2026-06-01T00:00:00.000Z">
+                            <label>Thing</label>
+                            <label>Widget</label>
+                            <property name="code">shared-code</property>
+                        </node>
+                    </graph>
+                    """);
+
+            final List<Val[]> byNewLabel = query(stores, "MATCH (n:Widget {code: 'shared-code'}) RETURN n.code");
+            assertThat(byNewLabel).extracting(row -> row[0].toString()).containsExactly("shared-code");
         }
     }
 
