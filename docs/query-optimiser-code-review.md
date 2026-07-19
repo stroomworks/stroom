@@ -79,7 +79,7 @@ wired.** Phase 6 (joins) is the frontier. These are feature/deferral items, not 
 | Plan task | Status | What remains |
 |-----------|--------|--------------|
 | **6.2** Enrichment joins (State/PlanB `BROADCAST_LOOKUP`) + domain-type source discovery | not started | `JoinExecutor` throws `UnsupportedOperationException` for `BROADCAST_LOOKUP`; no `StateFetcher` wiring; no domain-type source discovery. The biggest remaining functional gap. |
-| **6.3** EXPLAIN join cardinality | placeholder | Join cardinality still estimated with hard-coded `0,0` distinct keys; nested-join case un-annotated. |
+| **6.3** EXPLAIN join cardinality | mostly done (2026-07-19) | A `StateLookup` side's unique-key count now feeds the cardinality (enrichment joins estimate ~= probe rows, not the full cross-product), and the nested-join case is annotated. **Still deferred**: real per-field distinct-key stats for two non-keyed sides (needs a new cost port). |
 | **6.4** Domain relationships (D7) | not started | No `RelationshipType` on `DomainTypeDoc`; no relationship-mediated join routing. Marked a fast-follow in the plan. |
 | **6.1** (deferred items) | partial | Execution hard-codes `HASH_JOIN` and always materialises the right side — `JoinCostModel.chooseAlgorithm` is never consulted at execution time (only in advisory EXPLAIN); no per-side filter push-down; synchronous (not async) side feed; **N-way join chains rejected** (single join only); live cross-provider `index ⋈ index` run unverified. |
 | **3.1** Real `IndexShardStats` / `StateStoreStats` adapters | partial | Still NoOp stubs, so every index/state-backed `Scan` estimates `confidence = 0.0`. Deferred to the module owners. |
@@ -101,8 +101,13 @@ wired.** Phase 6 (joins) is the frontier. These are feature/deferral items, not 
 
 ## 3. Deliberately deferred (low-ROI), pending a decision
 
-Low-severity **branch-coverage** nits on defensive or logging paths, judged not worth the churn/brittleness for
-this pass. Listed so the decision is explicit, not silent:
+**Update (2026-07-19): the coverage tail below was subsequently closed** (test-only) except the two brittle
+logging-assertion cases — see the "Close deferred query-optimiser test-coverage gaps" commit. `ScanTimeRangeExtractor`
+open-ended/malformed/unparseable branches, `MetaStatsAdapter` to-time-only, `LegacyQueryCompiler` "?" fallback,
+`AutoWhereFilterSplitRule.lookupField` branches, `PlanRewriteUtil` Having/filterPredicate, and `explainJoin` now
+all have tests. Still skipped as brittle: shadow-mode diff-outcome logging and `logEstimatedDuration`.
+
+The original list (now mostly closed):
 
 - **Shadow-mode diff-outcome logging** (`DispatchingQueryCompiler`) and **`logEstimatedDuration`** — both would
   assert log output, which is brittle; the surrounding behaviour (returns legacy, calls optimising, fail-open) is
