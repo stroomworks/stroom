@@ -17,6 +17,7 @@
 package stroom.explorer.impl;
 
 import stroom.explorer.shared.NodeFlag;
+import stroom.graphdb.shared.GraphDbDoc;
 import stroom.index.shared.LuceneIndexDoc;
 import stroom.planb.shared.PlanBDoc;
 import stroom.search.elastic.shared.ElasticIndexDoc;
@@ -37,6 +38,7 @@ public class ExplorerFlags {
         DOC_TYPE_TO_DEFAULT_FLAG_MAP.put(ElasticIndexDoc.TYPE, NodeFlag.DATA_SOURCE);
         DOC_TYPE_TO_DEFAULT_FLAG_MAP.put(SolrIndexDoc.TYPE, NodeFlag.DATA_SOURCE);
         DOC_TYPE_TO_DEFAULT_FLAG_MAP.put(PlanBDoc.TYPE, NodeFlag.DATA_SOURCE);
+        DOC_TYPE_TO_DEFAULT_FLAG_MAP.put(GraphDbDoc.TYPE, NodeFlag.DATA_SOURCE);
     }
 
     // Could return a set of flags really, but for not one is fine

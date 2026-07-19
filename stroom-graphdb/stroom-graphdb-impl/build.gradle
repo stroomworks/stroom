@@ -22,6 +22,7 @@ dependencies {
     implementation project(':stroom-core-shared')
     implementation project(':stroom-docref')
     implementation project(':stroom-docstore:stroom-docstore-api')
+    implementation project(':stroom-event-logging-rs:stroom-event-logging-rs-api')
     implementation project(':stroom-explorer:stroom-explorer-api')
     implementation project(':stroom-importexport:stroom-importexport-api')
     implementation project(':stroom-job:stroom-job-api')
@@ -40,6 +41,7 @@ dependencies {
     implementation libs.guice
     implementation libs.jspecify
     implementation libs.lmdbjava
+    implementation libs.restygwt
     implementation libs.saxon.he
     implementation libs.slf4j.api
 

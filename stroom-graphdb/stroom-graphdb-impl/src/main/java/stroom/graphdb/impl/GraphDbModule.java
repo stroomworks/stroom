@@ -28,6 +28,7 @@ import stroom.query.planner.port.GraphStoreStats;
 import stroom.util.RunnableWrapper;
 import stroom.util.entityevent.EntityEvent;
 import stroom.util.guice.GuiceUtil;
+import stroom.util.guice.RestResourcesBinder;
 import stroom.util.shared.Clearable;
 import stroom.util.shared.scheduler.CronExpressions;
 
@@ -35,10 +36,10 @@ import com.google.inject.AbstractModule;
 import jakarta.inject.Inject;
 
 /**
- * Registers {@link GraphDbDoc}'s document store/cache, {@link GraphSearchProvider} (Task PoC.6), and the
- * {@code GraphFilter} ingest pipeline element (Task P2.2, via {@link GraphElementModule}) - mirroring
- * {@code stroom.planb.impl.PlanBModule} - {@code PlanBModule} itself is not edited (Decision D1). No REST
- * resource / document-management API is bound yet (P5).
+ * Registers {@link GraphDbDoc}'s document store/cache, {@link GraphSearchProvider} (Task PoC.6), its REST
+ * resource (Task P5.2), and the {@code GraphFilter} ingest pipeline element (Task P2.2, via
+ * {@link GraphElementModule}) - mirroring {@code stroom.planb.impl.PlanBModule} - {@code PlanBModule} itself is
+ * not edited (Decision D1).
  *
  * <p>Also binds a single retention scheduled job (Task P1.4, Decision D9) - deliberately not a growth of Plan
  * B's {@code ShardManager} machinery, which solves distributed-shard snapshot/placement problems a single
@@ -61,6 +62,9 @@ public class GraphDbModule extends AbstractModule {
 
         DocumentStoreBinder.create(binder())
                 .bind(GraphDbDoc.TYPE, GraphDbDocStore.class, GraphDbDocStoreImpl.class);
+
+        RestResourcesBinder.create(binder())
+                .bind(GraphDbResourceImpl.class);
 
         bind(GraphStoreStats.class).to(GraphStoreStatsAdapter.class);
 

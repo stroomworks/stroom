@@ -1357,6 +1357,15 @@ explicit go-ahead.
   (GraphDbDoc.TYPE)` returns `NodeFlag.DATA_SOURCE`.
 - **Verify**: `./gradlew :stroom-core-shared:test :stroom-graphdb:stroom-graphdb-impl:test
   :stroom-explorer:stroom-explorer-impl:test`.
+- **Status: done (2026-07-19).** `GraphDbResource`/`GraphDbResourceImpl` added exactly mirroring
+  `PlanBDocResource`/`PlanBDocResourceImpl`; required adding `stroom-event-logging-rs-api` and `restygwt` to
+  `stroom-graphdb-impl`'s dependencies (both already used by the mirrored Plan B classes, just not previously
+  needed by this module). Bound via `RestResourcesBinder` in `GraphDbModule`. `ExplorerFlags` gained the
+  one-line `GraphDbDoc.TYPE -> NodeFlag.DATA_SOURCE` entry. Tests: none for the REST resource (matching the
+  `PlanBDocResourceImpl` precedent - confirmed no such test exists in this codebase); a new `TestExplorerFlags`
+  (this class had no test coverage at all before this task, for any doc type - added one covering the new entry,
+  an existing entry as a sanity check, and the unknown-type empty case). All pre-existing tests across the three
+  touched modules pass unchanged.
 
 #### Task P5.3 — Doc-delete cleans up its physical stores
 - **Depends on**: none beyond PoC.0/PoC.6.
