@@ -99,4 +99,19 @@ class TestGraphPropsCodec {
     void decode_rejectsNullBlob() {
         assertThatThrownBy(() -> GraphPropsCodec.decode(null)).isInstanceOf(NullPointerException.class);
     }
+
+    @Test
+    void decode_rejectsABlobWithTrailingBytesLeftUnconsumed() {
+        // Code-review fix: previously decode() never checked the whole blob was consumed - a corrupt or
+        // truncated blob whose length-prefixed entries happened to parse without a buffer-underflow would
+        // silently return a plausible-but-wrong properties map, discarding the unread remainder without
+        // complaint. Appending extra bytes onto an otherwise-valid encoded blob simulates that corruption.
+        final byte[] validBlob = GraphPropsCodec.encode(Map.of("key", ValString.create("value")));
+        final byte[] corrupted = new byte[validBlob.length + 3];
+        System.arraycopy(validBlob, 0, corrupted, 0, validBlob.length);
+
+        assertThatThrownBy(() -> GraphPropsCodec.decode(corrupted))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("corrupt properties blob");
+    }
 }

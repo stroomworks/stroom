@@ -63,6 +63,9 @@ public final class GraphNodeDb {
     private static final byte TOMBSTONE = 0;
     private static final byte PRESENT = 1;
 
+    /** The value format's label count is a single unsigned byte (see {@link #insert}'s Javadoc). */
+    private static final int MAX_LABEL_COUNT = 255;
+
     private final Dbi<ByteBuffer> dbi;
 
     GraphNodeDb(final PlanBEnv env) {
@@ -75,8 +78,11 @@ public final class GraphNodeDb {
      *
      * <p><b>Preconditions:</b> no parameter is null; {@code labelUids} elements must each fit in
      * {@link GraphStores#TYPE_UID_WIDTH} bytes (enforced by the underlying {@link UnsignedBytes}, which throws on
-     * an out-of-range value). <b>Postconditions:</b> a subsequent {@link #getNode} as-of any instant
-     * &ge; {@code validFrom} (and before the next version, if any) returns this version.
+     * an out-of-range value); {@code labelUids.size()} must not exceed {@link #MAX_LABEL_COUNT} (255) - the value
+     * format's label count is a single unsigned byte (code-review fix: previously unchecked, a node with 256+
+     * labels silently wrapped the count byte to a wrong, smaller value, corrupting the decode of every label UID
+     * and the properties blob that follows them). <b>Postconditions:</b> a subsequent {@link #getNode} as-of any
+     * instant &ge; {@code validFrom} (and before the next version, if any) returns this version.
      */
     public void insert(final LmdbWriter writer, final long nodeUid, final Instant validFrom,
                        final List<Long> labelUids, final Map<String, Val> properties) {
@@ -84,6 +90,11 @@ public final class GraphNodeDb {
         Objects.requireNonNull(validFrom, "validFrom");
         Objects.requireNonNull(labelUids, "labelUids");
         Objects.requireNonNull(properties, "properties");
+        if (labelUids.size() > MAX_LABEL_COUNT) {
+            throw new IllegalArgumentException(
+                    "labelUids.size() (" + labelUids.size() + ") exceeds the maximum of " + MAX_LABEL_COUNT
+                    + " labels this store's value format can represent");
+        }
 
         final byte[] propsBlob = GraphPropsCodec.encode(properties);
         final ByteBuffer key = buildKey(nodeUid, validFrom);

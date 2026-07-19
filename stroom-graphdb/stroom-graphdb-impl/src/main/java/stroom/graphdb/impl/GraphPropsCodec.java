@@ -80,6 +80,11 @@ final class GraphPropsCodec {
 
     /**
      * <b>Postconditions:</b> never null; empty if {@code blob} encoded an empty property map.
+     *
+     * @throws IllegalArgumentException if {@code blob} is not fully consumed by decoding exactly {@code count}
+     * entries (code-review fix: previously any truncated/corrupt blob whose length-prefixed entries happened to
+     * parse without a buffer-underflow would silently return a plausible-but-wrong properties map built from
+     * partial data, discarding the unread remainder without complaint).
      */
     static Map<String, Val> decode(final byte[] blob) {
         Objects.requireNonNull(blob, "blob");
@@ -96,6 +101,11 @@ final class GraphPropsCodec {
             in.get(valueBytes);
             final String name = new String(nameBytes, StandardCharsets.UTF_8);
             properties.put(name, ValSerdeUtil.read(ByteBuffer.wrap(valueBytes)));
+        }
+        if (in.hasRemaining()) {
+            throw new IllegalArgumentException(
+                    "corrupt properties blob: " + in.remaining() + " byte(s) remained unconsumed after decoding "
+                    + count + " entries");
         }
         return properties;
     }

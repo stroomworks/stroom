@@ -36,6 +36,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Task PoC.4: a round-trip test proving {@link GraphNodeDb}/{@link GraphAdjacencyDb}/{@link GraphPropertyIndex}
@@ -107,6 +108,27 @@ class TestGraphPhysicalStores {
             assertThat(device).isPresent();
             assertThat(device.get().labelUids()).containsExactly(deviceLabel);
             assertThat(device.get().properties()).containsEntry("id", ValString.create("d-42"));
+        }
+    }
+
+    @Test
+    void insert_rejectsMoreThan255Labels(@TempDir final Path root) {
+        // Code-review fix: the value format's label count is a single unsigned byte - previously unchecked, a
+        // node with 256+ labels would silently wrap the count byte to a smaller, wrong value, corrupting the
+        // decode of every label UID and the properties blob that follows them. Now rejected up front.
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph-toomanylabels"), DOC)) {
+            final long nodeUid = intern(stores, stores.getNodeUids(), "n1");
+            final List<Long> tooManyLabels = new ArrayList<>();
+            for (int i = 0; i < 256; i++) {
+                tooManyLabels.add(intern(stores, stores.getLabelUids(), "Label" + i));
+            }
+
+            assertThatThrownBy(() -> stores.write(writer -> {
+                stores.getNodes().insert(writer, nodeUid, T1, tooManyLabels, Map.of());
+                return null;
+            }))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("255");
         }
     }
 
