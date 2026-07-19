@@ -63,17 +63,43 @@ public class GraphStoreManagerImpl implements GraphStoreManager {
      * never run concurrently with each other, so a racing {@code getOrOpen} either completes fully before this
      * runs (and its instance is closed and deleted here) or blocks until this finishes (and then correctly opens
      * a fresh store, since the map entry is null again by the time it proceeds).
+     *
+     * <p>Second code-review fix: {@link ConcurrentMap#compute} leaves the mapping <em>unchanged</em> if the
+     * remapping function throws, so an earlier version that let {@link GraphStores#delete}'s
+     * {@code UncheckedIOException} (a file that cannot be removed) propagate straight out of the lambda would
+     * leave the now-<em>closed</em> {@link GraphStores} cached forever - every later {@code getOrOpen} would hand
+     * back a closed store, the exact permanent corruption the first fix set out to remove. So the lambda always
+     * returns {@code null} (evicts), capturing any physical-delete failure to rethrow once the entry is safely
+     * gone: a failed delete then just leaves files on disk that the next {@code getOrOpen} reopens cleanly.</p>
      */
     @Override
     public void delete(final String uuid) {
         Objects.requireNonNull(uuid, "uuid");
+        final RuntimeException[] deleteFailure = new RuntimeException[1];
         openStores.compute(uuid, (key, stores) -> {
             if (stores != null) {
                 stores.close();
             }
-            GraphStores.delete(directoryFor(uuid));
+            try {
+                deleteStoreDirectory(directoryFor(uuid));
+            } catch (final RuntimeException e) {
+                // Remember it but still evict below - never leave a closed store cached.
+                deleteFailure[0] = e;
+            }
             return null;
         });
+        if (deleteFailure[0] != null) {
+            throw deleteFailure[0];
+        }
+    }
+
+    /**
+     * Physically removes a store's on-disk directory. Package-private (not inlined) purely as a test seam so a
+     * test can simulate a filesystem delete that fails (an undeletable/locked file) without needing to actually
+     * lock a file; production always delegates to {@link GraphStores#delete}.
+     */
+    void deleteStoreDirectory(final Path directory) {
+        GraphStores.delete(directory);
     }
 
     private Path directoryFor(final String uuid) {

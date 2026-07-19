@@ -34,6 +34,7 @@ import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -143,6 +144,41 @@ class TestGraphStoreManagerImpl {
         secondManager.delete("doc-uuid-4");
 
         assertThat(Files.exists(appPath.resolve("graphdb").resolve("doc-uuid-4"))).isFalse();
+    }
+
+    @Test
+    void delete_whosePhysicalDeleteFails_stillEvictsTheClosedStoreAndRethrows(@TempDir final Path appPath) {
+        // Code-review fix: delete() runs close()-then-physically-delete inside ConcurrentHashMap.compute for
+        // atomicity vs a racing getOrOpen(). But compute() leaves the mapping UNCHANGED if its function throws,
+        // so letting GraphStores.delete's UncheckedIOException propagate out of the lambda would leave the
+        // now-CLOSED store cached forever - every later getOrOpen() would hand back a closed store, the exact
+        // permanent corruption the race fix set out to remove. delete() must always evict, then rethrow.
+        final PathCreator pathCreator = mock(PathCreator.class);
+        when(pathCreator.toAppPath("graphdb")).thenReturn(appPath.resolve("graphdb"));
+
+        final GraphDbDoc doc = GraphDbDoc.builder().uuid("doc-uuid-iofail").name("GraphIoFail").build();
+        final RuntimeException boom = new RuntimeException("simulated undeletable file");
+        final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(pathCreator) {
+            @Override
+            void deleteStoreDirectory(final Path directory) {
+                throw boom;
+            }
+        };
+
+        manager.getOrOpen(doc); // Cache an open store, then make its physical delete fail.
+
+        assertThatThrownBy(() -> manager.delete(doc.getUuid())).isSameAs(boom);
+
+        // Despite the failure, the closed store must NOT still be cached: a fresh getOrOpen() yields a genuinely
+        // usable store (the directory is still on disk since the delete threw before removing anything).
+        final GraphStores reopened = manager.getOrOpen(doc);
+        try {
+            final int uidWidth = reopened.write(writer -> reopened.getNodeUids().put(
+                    writer.getWriteTxn(), directBuffer("n1"), ByteBuffer::remaining));
+            assertThat(uidWidth).isEqualTo(GraphStores.NODE_UID_WIDTH);
+        } finally {
+            reopened.close();
+        }
     }
 
     @Test
