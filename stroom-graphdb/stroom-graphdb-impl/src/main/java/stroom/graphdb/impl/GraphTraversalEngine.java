@@ -25,6 +25,7 @@ import stroom.query.api.ExpressionTerm;
 import stroom.query.common.v2.ExpressionPredicateFactory;
 import stroom.query.common.v2.ExpressionPredicateFactory.ValueFunctionFactories;
 import stroom.query.language.functions.Val;
+import stroom.query.language.functions.ValNull;
 import stroom.query.planner.cypher.TemporalContext;
 import stroom.query.planner.logical.Direction;
 import stroom.query.planner.logical.Expand;
@@ -425,18 +426,23 @@ public final class GraphTraversalEngine {
                 if (rows.size() >= rowCap) {
                     break;
                 }
+                // Code-review fix: the deadline is checked as each neighbour is emitted from the adjacency
+                // cursor, not only afterward. Previously the collector was a bare list-add, so a single node's
+                // entire fan-out was drained into memory (unbounded scan time and allocation) before any guard
+                // could fire - this now genuinely matches the fixed-length chain path, whose collector
+                // (acceptChainNeighbour) also checks the deadline during the scan itself.
                 final List<Long> neighbourUids = new ArrayList<>();
                 collectNeighbours(
                         readTxn, state.nodeUid(), edgeTypeUid, access, varLengthExpand.direction(),
-                        neighbourUids::add);
+                        neighbourUid -> {
+                            checkDeadline(deadline);
+                            neighbourUids.add(neighbourUid);
+                        });
 
                 for (final long neighbourUid : neighbourUids) {
                     if (rows.size() >= rowCap) {
                         break;
                     }
-                    // Code-review fix: previously the deadline was only checked once per depth, so a single
-                    // depth's neighbour collection for one wide-fan-out state could run unbounded - checking
-                    // per-neighbour here matches the fix applied to the fixed-length chain path.
                     checkDeadline(deadline);
                     if (state.visited().contains(neighbourUid)) {
                         continue;
@@ -683,12 +689,17 @@ public final class GraphTraversalEngine {
             if (row.containsKey(reference)) {
                 return row.get(reference);
             }
-            // Code-review fix: rowFor() only ever populates "variable.property" keys, never a bare "variable"
-            // key, so this branch was always taken for a bare pattern-variable RETURN (e.g. "RETURN n") and
-            // silently returned the same fixed string for every single row - exactly the "silently wrong result"
-            // failure mode this class's own top-level Javadoc says it deliberately avoids elsewhere. A whole
-            // matched node/edge has no single Val representation yet, so this is a real, documented gap - throw
-            // rather than pretend to support it.
+            // Code-review fix: rowFor() only populates a "variable.property" key when the matched node actually
+            // has that property. A graph is schemaless, so a well-formed property reference to a property this
+            // node happens to lack (e.g. RETURN a.email where this account has no email) is absent from the row -
+            // Cypher's semantics for that is null, so return ValNull rather than crashing an otherwise-valid
+            // query. Only a bare pattern-variable reference (no '.', e.g. "RETURN n") is genuinely unsupported:
+            // rowFor() never produces a bare "variable" key and a whole matched node/edge has no single Val
+            // representation yet, so that case still throws (fail loud) rather than silently returning a fixed
+            // string for every row - the failure mode this class's top-level Javadoc says it avoids elsewhere.
+            if (reference.indexOf('.') >= 0) {
+                return ValNull.INSTANCE;
+            }
             throw new UnsupportedOperationException(
                     "not yet supported: RETURN item '" + expr + "' names a bare pattern variable - only a "
                     + "property/variable reference of the form 'variable.property' is wired to a graph traversal "

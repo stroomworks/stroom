@@ -24,6 +24,7 @@ import stroom.query.common.v2.ExpressionPredicateFactory;
 import stroom.query.grammar.parse.CypherQueryParser;
 import stroom.query.language.functions.Val;
 import stroom.query.language.functions.ValLong;
+import stroom.query.language.functions.ValNull;
 import stroom.query.language.functions.ValString;
 import stroom.query.planner.cypher.CompiledCypherPlan;
 import stroom.query.planner.cypher.CypherToLogicalPlan;
@@ -135,6 +136,27 @@ class TestGraphTraversalEngine {
                             DateTimeSettings.builder().build())))
                     .isInstanceOf(UnsupportedOperationException.class)
                     .hasMessageContaining("bare pattern variable");
+        }
+    }
+
+    @Test
+    void propertyReturnForAnAbsentProperty_yieldsNullRatherThanThrowing(@TempDir final Path root) {
+        // Code-review fix: a graph is schemaless, so a well-formed property reference to a property this node
+        // happens to lack (device d-42 is seeded with only 'id', no 'balance') is Cypher's null - it must not
+        // crash the whole query with the misleading "bare pattern variable" error the previous containsKey-only
+        // check produced. Only a truly bare pattern-variable RETURN (no '.') still throws (see the test above).
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph3c"), DOC)) {
+            seedDeviceConnectedToAccounts(stores);
+
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory());
+            final CompiledCypherPlan compiled = compile("MATCH (d:Device {id: 'd-42'}) RETURN d.balance");
+
+            final List<Val[]> rows = stores.read(readTxn ->
+                    engine.execute(readTxn, compiled.plan(), compiled.temporalContext(),
+                            DateTimeSettings.builder().build()));
+            assertThat(rows).hasSize(1);
+            assertThat(rows.getFirst()[0]).isEqualTo(ValNull.INSTANCE);
         }
     }
 
