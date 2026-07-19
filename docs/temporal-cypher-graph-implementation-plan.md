@@ -924,13 +924,17 @@ Contract/Done-when/Verify shape.
   re-ingest from the same XML yields the same query result too (rebuild-from-streams works).
 - **Verify**: `./gradlew :stroom-graphdb:stroom-graphdb-impl:test`.
 
-**P2 exit gate**: a feed of graph-mutation XML (produced by an XSLT from raw events, per design §5.2 - the XSLT
-step itself is out of scope here, this phase starts from already-transformed graph-mutation XML) reprocesses via
-`GraphFilter` into a queryable graph indistinguishable, from the query engine's perspective, from one seeded by
-direct test fixtures; `GraphStores.rebuild()` + re-ingest reproduces the same queryable state, proving the graph
-is genuinely the rebuildable materialized projection the design doc claims. The XSLT (events → graph-mutation
-XML) authoring itself, and any real production feed/pipeline configuration, are explicitly out of scope - this
-phase proves the `GraphFilter` half of the pipeline, not the XSLT half.
+**P2 exit gate — reached (2026-07-19):** a feed of graph-mutation XML (produced by an XSLT from raw events, per
+design §5.2 - the XSLT step itself is out of scope here, this phase starts from already-transformed graph-
+mutation XML) reprocesses via `GraphFilter` into a queryable graph indistinguishable, from the query engine's
+perspective, from one seeded by direct test fixtures (`TestGraphFilter`'s
+`ingestedGraph_answersTheSameMatchQuery_asDirectlySeededFixtures`, including the `AS OF` variant proving
+`validFrom` is genuinely carried through the XML, not defaulted); `GraphStores.rebuild()` + re-ingest reproduces
+the same queryable state (`rebuildFromStreams_reproducesTheSameQueryableState`), proving the graph is genuinely
+the rebuildable materialized projection the design doc claims. Node-delete/edge-delete tombstones and idempotent
+reprocessing are also covered. The XSLT (events → graph-mutation XML) authoring itself, and any real production
+feed/pipeline configuration, remain explicitly out of scope - this phase proves the `GraphFilter` half of the
+pipeline, not the XSLT half.
 
 ### P3 — Variable-length paths / fixpoint (part of the 9–18 pw graph-query line)
 - **The one operator the equi-join core does not provide** (design §5.5 item 4). Bounded transitive-closure BFS/DFS
