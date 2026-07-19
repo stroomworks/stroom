@@ -37,39 +37,42 @@ import java.util.Objects;
 import java.util.function.Consumer;
 
 /**
- * The out-edge adjacency store (design doc &sect;5.1; implementation plan Task PoC.4). Key layout frozen by
- * P0.1: {@code [srcUid:6][edgeTypeUid:4][dstUid:6][validFrom:6]} (22 bytes) - deliberately {@code dst} before
- * {@code validFrom} (refining the design doc's conceptual sketch) so each individual edge's version history is a
- * contiguous run, making an as-of expand a single forward pass per source (see {@link #expandOut}). The in-edge
- * mirror ({@link GraphInEdgeDb}, for {@code Direction.IN}/{@code Direction.BOTH} traversal) is a structurally
- * identical, separately-written companion store (Task P1.1) - callers writing an edge must write both.
+ * The in-edge adjacency store (design doc &sect;5.1; implementation plan Task P1.1) - the reverse mirror of
+ * {@link GraphAdjacencyDb}, structurally identical with {@code src}/{@code dst} swapped throughout. Key layout:
+ * {@code [dstUid:6][edgeTypeUid:4][srcUid:6][validFrom:6]} (22 bytes), so a single logical edge
+ * {@code (src, edgeType, dst, validFrom)} has one version written here (keyed by {@code dst}) and one written to
+ * {@link GraphAdjacencyDb} (keyed by {@code src}) - <b>callers are responsible for writing both</b>; there is no
+ * cross-DAO transactional enforcement, exactly as Plan B trusts its own DAO callers to keep companion structures
+ * consistent. {@code Direction.IN}/{@code Direction.BOTH} Cypher patterns read from this store (see
+ * {@link GraphTraversalEngine}).
  *
- * <p>Value encoding: a 1-byte tag ({@link #TOMBSTONE}/{@link #PRESENT}) then, if present, the edge's named
- * properties via {@link GraphPropsCodec} (as {@link GraphNodeDb} encodes its own).</p>
+ * <p>Value encoding: identical to {@link GraphAdjacencyDb} - a 1-byte tag ({@link #TOMBSTONE}/{@link #PRESENT})
+ * then, if present, the edge's named properties via {@link GraphPropsCodec}.</p>
  */
-public final class GraphAdjacencyDb {
+public final class GraphInEdgeDb {
 
     private static final UnsignedBytes NODE_UID_BYTES = UnsignedBytesInstances.ofLength(GraphStores.NODE_UID_WIDTH);
     private static final UnsignedBytes TYPE_UID_BYTES = UnsignedBytesInstances.ofLength(GraphStores.TYPE_UID_WIDTH);
     private static final MillisecondTimeSerde TIME_SERDE = new MillisecondTimeSerde();
-    private static final int SRC_PREFIX_WIDTH = GraphStores.NODE_UID_WIDTH + GraphStores.TYPE_UID_WIDTH;
-    private static final int KEY_WIDTH = SRC_PREFIX_WIDTH + GraphStores.NODE_UID_WIDTH + 6;
+    private static final int DST_PREFIX_WIDTH = GraphStores.NODE_UID_WIDTH + GraphStores.TYPE_UID_WIDTH;
+    private static final int KEY_WIDTH = DST_PREFIX_WIDTH + GraphStores.NODE_UID_WIDTH + 6;
 
     private static final byte TOMBSTONE = 0;
     private static final byte PRESENT = 1;
 
     private final Dbi<ByteBuffer> dbi;
 
-    GraphAdjacencyDb(final PlanBEnv env) {
+    GraphInEdgeDb(final PlanBEnv env) {
         Objects.requireNonNull(env, "env");
-        this.dbi = env.openDbi("graph-out-edge", DbiFlags.MDB_CREATE);
+        this.dbi = env.openDbi("graph-in-edge", DbiFlags.MDB_CREATE);
     }
 
     /**
-     * Writes a new version of the edge {@code (srcUid, edgeTypeUid, dstUid)}, valid from {@code validFrom}.
+     * Writes a new version of the edge {@code (srcUid, edgeTypeUid, dstUid)}, valid from {@code validFrom} - the
+     * in-edge companion to {@link GraphAdjacencyDb#insert}; callers must write both for one logical edge.
      *
-     * <p><b>Preconditions:</b> no parameter is null. <b>Postconditions:</b> a subsequent {@link #expandOut} as-of
-     * any instant &ge; {@code validFrom} (and before this edge's next version, if any) includes {@code dstUid}.
+     * <p><b>Preconditions:</b> no parameter is null. <b>Postconditions:</b> a subsequent {@link #expandIn} as-of
+     * any instant &ge; {@code validFrom} (and before this edge's next version, if any) includes {@code srcUid}.
      */
     public void insert(final LmdbWriter writer, final long srcUid, final long edgeTypeUid, final long dstUid,
                        final Instant validFrom, final Map<String, Val> properties) {
@@ -78,7 +81,7 @@ public final class GraphAdjacencyDb {
         Objects.requireNonNull(properties, "properties");
 
         final byte[] propsBlob = GraphPropsCodec.encode(properties);
-        final ByteBuffer key = buildKey(srcUid, edgeTypeUid, dstUid, validFrom);
+        final ByteBuffer key = buildKey(dstUid, edgeTypeUid, srcUid, validFrom);
         final ByteBuffer value = ByteBuffer.allocateDirect(1 + propsBlob.length);
         value.put(PRESENT);
         value.put(propsBlob);
@@ -88,14 +91,14 @@ public final class GraphAdjacencyDb {
 
     /**
      * Writes a tombstone version of the edge {@code (srcUid, edgeTypeUid, dstUid)} at {@code validFrom} - the
-     * edge is absent from {@code validFrom} onward, until (if ever) a later {@link #insert}.
+     * in-edge companion to {@link GraphAdjacencyDb#delete}.
      */
     public void delete(final LmdbWriter writer, final long srcUid, final long edgeTypeUid, final long dstUid,
                        final Instant validFrom) {
         Objects.requireNonNull(writer, "writer");
         Objects.requireNonNull(validFrom, "validFrom");
 
-        final ByteBuffer key = buildKey(srcUid, edgeTypeUid, dstUid, validFrom);
+        final ByteBuffer key = buildKey(dstUid, edgeTypeUid, srcUid, validFrom);
         final ByteBuffer value = ByteBuffer.allocateDirect(1);
         value.put(TOMBSTONE);
         value.flip();
@@ -103,46 +106,46 @@ public final class GraphAdjacencyDb {
     }
 
     /**
-     * The as-of 1-hop expand (design doc &sect;5.5 {@code expand} operator): a single forward pass over the
-     * {@code [srcUid][edgeTypeUid]} prefix, grouping by {@code dstUid} (each group is contiguous - see this
-     * class's Javadoc) and emitting, for each destination, its most recent version at or before {@code asOf} -
-     * unless that version is a tombstone, in which case the destination is skipped.
+     * The as-of 1-hop reverse expand: a single forward pass over the {@code [dstUid][edgeTypeUid]} prefix,
+     * grouping by {@code srcUid} (each group is contiguous, mirroring {@link GraphAdjacencyDb#expandOut}'s own
+     * layout rationale) and emitting, for each source, its most recent version at or before {@code asOf} - unless
+     * that version is a tombstone, in which case the source is skipped.
      *
-     * <p><b>Postconditions:</b> {@code consumer} is invoked at most once per distinct {@code dstUid} reachable
-     * via {@code edgeTypeUid} from {@code srcUid}, in ascending {@code dstUid} order.
+     * <p><b>Postconditions:</b> {@code consumer} is invoked at most once per distinct {@code srcUid} reaching
+     * {@code dstUid} via {@code edgeTypeUid}, in ascending {@code srcUid} order.
      */
-    public void expandOut(final Txn<ByteBuffer> readTxn, final long srcUid, final long edgeTypeUid,
-                          final Instant asOf, final Consumer<Neighbour> consumer) {
+    public void expandIn(final Txn<ByteBuffer> readTxn, final long dstUid, final long edgeTypeUid,
+                         final Instant asOf, final Consumer<Neighbour> consumer) {
         Objects.requireNonNull(readTxn, "readTxn");
         Objects.requireNonNull(asOf, "asOf");
         Objects.requireNonNull(consumer, "consumer");
 
-        final ByteBuffer prefix = ByteBuffer.allocateDirect(SRC_PREFIX_WIDTH);
-        NODE_UID_BYTES.put(prefix, srcUid);
+        final ByteBuffer prefix = ByteBuffer.allocateDirect(DST_PREFIX_WIDTH);
+        NODE_UID_BYTES.put(prefix, dstUid);
         TYPE_UID_BYTES.put(prefix, edgeTypeUid);
         prefix.flip();
 
         final LmdbKeyRange keyRange = LmdbKeyRange.builder().prefix(prefix).build();
-        Long currentDst = null;
-        Neighbour floorForCurrentDst = null;
+        Long currentSrc = null;
+        Neighbour floorForCurrentSrc = null;
         try (LmdbIterable iterable = LmdbIterable.create(readTxn, dbi, keyRange)) {
             for (final LmdbEntry entry : iterable) {
                 final ByteBuffer key = entry.getKey().duplicate();
-                key.position(key.position() + SRC_PREFIX_WIDTH);
-                final long dstUid = NODE_UID_BYTES.get(key);
+                key.position(key.position() + DST_PREFIX_WIDTH);
+                final long srcUid = NODE_UID_BYTES.get(key);
                 final Instant validFrom = TIME_SERDE.read(key);
 
-                if (!Objects.equals(currentDst, dstUid)) {
-                    emit(consumer, floorForCurrentDst);
-                    currentDst = dstUid;
-                    floorForCurrentDst = null;
+                if (!Objects.equals(currentSrc, srcUid)) {
+                    emit(consumer, floorForCurrentSrc);
+                    currentSrc = srcUid;
+                    floorForCurrentSrc = null;
                 }
                 if (!validFrom.isAfter(asOf)) {
-                    floorForCurrentDst = decodeNeighbour(dstUid, entry.getVal());
+                    floorForCurrentSrc = decodeNeighbour(srcUid, entry.getVal());
                 }
             }
         }
-        emit(consumer, floorForCurrentDst);
+        emit(consumer, floorForCurrentSrc);
     }
 
     private static void emit(final Consumer<Neighbour> consumer, final Neighbour neighbour) {
@@ -151,7 +154,7 @@ public final class GraphAdjacencyDb {
         }
     }
 
-    private static Neighbour decodeNeighbour(final long dstUid, final ByteBuffer value) {
+    private static Neighbour decodeNeighbour(final long srcUid, final ByteBuffer value) {
         final ByteBuffer v = value.duplicate();
         final byte tag = v.get();
         if (tag == TOMBSTONE) {
@@ -159,27 +162,27 @@ public final class GraphAdjacencyDb {
         }
         final byte[] propsBlob = new byte[v.remaining()];
         v.get(propsBlob);
-        return new Neighbour(dstUid, GraphPropsCodec.decode(propsBlob));
+        return new Neighbour(srcUid, GraphPropsCodec.decode(propsBlob));
     }
 
-    private static ByteBuffer buildKey(final long srcUid, final long edgeTypeUid, final long dstUid,
+    private static ByteBuffer buildKey(final long dstUid, final long edgeTypeUid, final long srcUid,
                                        final Instant validFrom) {
         final ByteBuffer key = ByteBuffer.allocateDirect(KEY_WIDTH);
-        NODE_UID_BYTES.put(key, srcUid);
-        TYPE_UID_BYTES.put(key, edgeTypeUid);
         NODE_UID_BYTES.put(key, dstUid);
+        TYPE_UID_BYTES.put(key, edgeTypeUid);
+        NODE_UID_BYTES.put(key, srcUid);
         TIME_SERDE.write(key, validFrom);
         key.flip();
         return key;
     }
 
     /**
-     * A neighbour reached by {@link #expandOut}, as of the requested instant.
+     * A neighbour reached by {@link #expandIn}, as of the requested instant.
      *
-     * @param dstUid          the neighbour node's UID.
+     * @param srcUid          the neighbour (source) node's UID.
      * @param edgeProperties never null; possibly empty; this edge version's named properties.
      */
-    public record Neighbour(long dstUid, Map<String, Val> edgeProperties) {
+    public record Neighbour(long srcUid, Map<String, Val> edgeProperties) {
 
         public Neighbour {
             Objects.requireNonNull(edgeProperties, "edgeProperties");

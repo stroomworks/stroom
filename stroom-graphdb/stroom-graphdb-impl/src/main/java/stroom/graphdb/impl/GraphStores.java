@@ -47,8 +47,8 @@ import java.util.stream.Stream;
  * (node-external-id, label, edge-type, property-key — each a {@link UidLookupDb} with a <b>fixed-width</b> UID
  * per the class constants, rather than {@code UidLookupDb}'s variable-width default, which would silently break
  * the composite-key prefix scans below) plus the node store ({@link GraphNodeDb}), out-edge adjacency
- * ({@link GraphAdjacencyDb}), and property-value index ({@link GraphPropertyIndex}) — all sharing one owned
- * {@link PlanBEnv}. The in-edge adjacency mirror (reverse/undirected traversal) is P1, not this class.
+ * ({@link GraphAdjacencyDb}), in-edge adjacency ({@link GraphInEdgeDb}, Task P1.1), and property-value index
+ * ({@link GraphPropertyIndex}) — all sharing one owned {@link PlanBEnv}.
  */
 public final class GraphStores implements AutoCloseable {
 
@@ -72,6 +72,7 @@ public final class GraphStores implements AutoCloseable {
     private final UidLookupDb propertyKeyUids;
     private final GraphNodeDb nodes;
     private final GraphAdjacencyDb outEdges;
+    private final GraphInEdgeDb inEdges;
     private final GraphPropertyIndex propertyIndex;
 
     private GraphStores(final PlanBEnv env,
@@ -81,6 +82,7 @@ public final class GraphStores implements AutoCloseable {
                         final UidLookupDb propertyKeyUids,
                         final GraphNodeDb nodes,
                         final GraphAdjacencyDb outEdges,
+                        final GraphInEdgeDb inEdges,
                         final GraphPropertyIndex propertyIndex) {
         this.env = env;
         this.nodeUids = nodeUids;
@@ -89,6 +91,7 @@ public final class GraphStores implements AutoCloseable {
         this.propertyKeyUids = propertyKeyUids;
         this.nodes = nodes;
         this.outEdges = outEdges;
+        this.inEdges = inEdges;
         this.propertyIndex = propertyIndex;
     }
 
@@ -157,9 +160,11 @@ public final class GraphStores implements AutoCloseable {
                     new StaticUnsignedBytesFactory(UnsignedBytesInstances.ofLength(TYPE_UID_WIDTH)));
             final GraphNodeDb nodes = new GraphNodeDb(env);
             final GraphAdjacencyDb outEdges = new GraphAdjacencyDb(env);
+            final GraphInEdgeDb inEdges = new GraphInEdgeDb(env);
             final GraphPropertyIndex propertyIndex = new GraphPropertyIndex(env);
             return new GraphStores(
-                    env, nodeUids, labelUids, edgeTypeUids, propertyKeyUids, nodes, outEdges, propertyIndex);
+                    env, nodeUids, labelUids, edgeTypeUids, propertyKeyUids, nodes, outEdges, inEdges,
+                    propertyIndex);
         } catch (final RuntimeException e) {
             env.close();
             throw e;
@@ -206,6 +211,14 @@ public final class GraphStores implements AutoCloseable {
      */
     public GraphAdjacencyDb getOutEdges() {
         return outEdges;
+    }
+
+    /**
+     * @return the in-edge adjacency store (Task P1.1) - the reverse mirror {@link #getOutEdges()} lacks; callers
+     * writing an edge must write both.
+     */
+    public GraphInEdgeDb getInEdges() {
+        return inEdges;
     }
 
     /**

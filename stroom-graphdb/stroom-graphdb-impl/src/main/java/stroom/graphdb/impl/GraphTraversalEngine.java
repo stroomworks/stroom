@@ -48,6 +48,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.function.Consumer;
 import java.util.function.Predicate;
 
 /**
@@ -143,25 +144,48 @@ public final class GraphTraversalEngine {
     private void expandOneHop(final Txn<ByteBuffer> readTxn, final long anchorUid, final @Nullable Long edgeTypeUid,
                               final Instant asOf, final Expand expand, final Map<String, Val> anchorRow,
                               final Predicate<Map<String, Val>> wherePredicate, final List<Map<String, Val>> rows) {
-        // GraphAdjacencyDb keys every edge by a concrete edgeTypeUid; an untyped pattern (edgeType == null,
-        // matching any type) has no single prefix to scan, and PoC.4 exposes no "any edge type" access path.
+        // GraphAdjacencyDb/GraphInEdgeDb key every edge by a concrete edgeTypeUid; an untyped pattern
+        // (edgeType == null, matching any type) has no single prefix to scan, and neither store exposes an
+        // "any edge type" access path.
         if (edgeTypeUid == null && expand.edgeType() == null) {
             throw new UnsupportedOperationException(
                     "not yet supported: an untyped edge pattern (matching any edge type) has no access path "
-                    + "over PoC.4's per-type-keyed adjacency store");
+                    + "over the per-type-keyed adjacency stores");
         }
-        stores.getOutEdges().expandOut(readTxn, anchorUid, edgeTypeUid, asOf, neighbour -> {
-            final Optional<GraphNodeDb.NodeVersion> target = stores.getNodes().getNode(
-                    readTxn, neighbour.dstUid(), asOf);
-            if (target.isEmpty()) {
-                return;
+
+        final Consumer<Long> onNeighbourUid = neighbourUid ->
+                acceptNeighbour(readTxn, neighbourUid, asOf, expand, anchorRow, wherePredicate, rows);
+
+        // Task P1.1: dispatch on Expand.direction() - previously this always read the out-edge store regardless
+        // of direction, so a Cypher <-[:TYPE]- or -[:TYPE]- pattern silently executed as -[:TYPE]->.
+        switch (expand.direction()) {
+            case OUT -> stores.getOutEdges().expandOut(
+                    readTxn, anchorUid, edgeTypeUid, asOf, neighbour -> onNeighbourUid.accept(neighbour.dstUid()));
+            case IN -> stores.getInEdges().expandIn(
+                    readTxn, anchorUid, edgeTypeUid, asOf, neighbour -> onNeighbourUid.accept(neighbour.srcUid()));
+            case BOTH -> {
+                stores.getOutEdges().expandOut(
+                        readTxn, anchorUid, edgeTypeUid, asOf,
+                        neighbour -> onNeighbourUid.accept(neighbour.dstUid()));
+                stores.getInEdges().expandIn(
+                        readTxn, anchorUid, edgeTypeUid, asOf,
+                        neighbour -> onNeighbourUid.accept(neighbour.srcUid()));
             }
-            final Map<String, Val> row = new HashMap<>(anchorRow);
-            row.putAll(rowFor(expand.targetVariable(), target.get().properties()));
-            if (wherePredicate.test(row)) {
-                rows.add(row);
-            }
-        });
+        }
+    }
+
+    private void acceptNeighbour(final Txn<ByteBuffer> readTxn, final long neighbourUid, final Instant asOf,
+                                 final Expand expand, final Map<String, Val> anchorRow,
+                                 final Predicate<Map<String, Val>> wherePredicate, final List<Map<String, Val>> rows) {
+        final Optional<GraphNodeDb.NodeVersion> target = stores.getNodes().getNode(readTxn, neighbourUid, asOf);
+        if (target.isEmpty()) {
+            return;
+        }
+        final Map<String, Val> row = new HashMap<>(anchorRow);
+        row.putAll(rowFor(expand.targetVariable(), target.get().properties()));
+        if (wherePredicate.test(row)) {
+            rows.add(row);
+        }
     }
 
     // ------------------------------------------------------------------------------------------------------

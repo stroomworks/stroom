@@ -134,6 +134,44 @@ class TestGraphTraversalEngine {
         }
     }
 
+    @Test
+    void reverseDirectionMatchReturn_yieldsTheExpectedRows(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph5"), DOC)) {
+            seedDeviceConnectedToAccounts(stores);
+
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory());
+            // account-a <- d-42: the same logical edge as the forward test, approached from the other end.
+            final CompiledCypherPlan compiled = compile(
+                    "MATCH (a:Account {id: 'account-a'})<-[:CONNECTED_TO]-(d:Device) RETURN d.id");
+
+            final List<Val[]> rows = stores.read(readTxn ->
+                    engine.execute(readTxn, compiled.plan(), compiled.temporalContext(),
+                            DateTimeSettings.builder().build()));
+            assertThat(rows).extracting(row -> row[0].toString()).containsExactly("d-42");
+        }
+    }
+
+    @Test
+    void undirectedMatchReturn_yieldsTheUnionOfBothDirections(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph6"), DOC)) {
+            seedDeviceConnectedToAccounts(stores);
+
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory());
+            // d-42 has an outgoing edge to each account and an incoming edge from gw-1 - an undirected pattern
+            // must union both, not just the outgoing edges a Direction.OUT-only engine would previously return.
+            final CompiledCypherPlan compiled = compile(
+                    "MATCH (d:Device {id: 'd-42'})-[:CONNECTED_TO]-(x) RETURN x.id");
+
+            final List<Val[]> rows = stores.read(readTxn ->
+                    engine.execute(readTxn, compiled.plan(), compiled.temporalContext(),
+                            DateTimeSettings.builder().build()));
+            assertThat(rows).extracting(row -> row[0].toString())
+                    .containsExactlyInAnyOrder("account-a", "account-b", "gw-1");
+        }
+    }
+
     private static CompiledCypherPlan compile(final String cypher) {
         return new CypherToLogicalPlan().compile(CypherQueryParser.parse(cypher));
     }
@@ -147,6 +185,7 @@ class TestGraphTraversalEngine {
         final long deviceUid = intern(stores, stores.getNodeUids(), "d-42");
         final long accountAUid = intern(stores, stores.getNodeUids(), "account-a");
         final long accountBUid = intern(stores, stores.getNodeUids(), "account-b");
+        final long gatewayUid = intern(stores, stores.getNodeUids(), "gw-1");
 
         stores.write(writer -> {
             stores.getNodes().insert(
@@ -155,12 +194,25 @@ class TestGraphTraversalEngine {
                     Map.of("id", ValString.create("account-a"), "balance", ValLong.create(50)));
             stores.getNodes().insert(writer, accountBUid, T1, List.of(accountLabel),
                     Map.of("id", ValString.create("account-b"), "balance", ValLong.create(200)));
+            stores.getNodes().insert(
+                    writer, gatewayUid, T1, List.of(deviceLabel), Map.of("id", ValString.create("gw-1")));
 
             stores.getPropertyIndex().insert(
                     writer, deviceLabel, idKey, "d-42".getBytes(StandardCharsets.UTF_8), deviceUid);
+            stores.getPropertyIndex().insert(
+                    writer, accountLabel, idKey, "account-a".getBytes(StandardCharsets.UTF_8), accountAUid);
 
+            // d-42 -> account-a/account-b: written to both directions (P1.1's dual-write contract - callers
+            // writing a logical edge must write both GraphAdjacencyDb and GraphInEdgeDb).
             stores.getOutEdges().insert(writer, deviceUid, connectedTo, accountAUid, T1, Map.of());
+            stores.getInEdges().insert(writer, deviceUid, connectedTo, accountAUid, T1, Map.of());
             stores.getOutEdges().insert(writer, deviceUid, connectedTo, accountBUid, T2, Map.of());
+            stores.getInEdges().insert(writer, deviceUid, connectedTo, accountBUid, T2, Map.of());
+
+            // gw-1 -> d-42: a separate edge INTO the device, so an undirected (BOTH) query from d-42 has both an
+            // outgoing (to the accounts) and an incoming (from the gateway) edge to union.
+            stores.getOutEdges().insert(writer, gatewayUid, connectedTo, deviceUid, T1, Map.of());
+            stores.getInEdges().insert(writer, gatewayUid, connectedTo, deviceUid, T1, Map.of());
             return null;
         });
     }
