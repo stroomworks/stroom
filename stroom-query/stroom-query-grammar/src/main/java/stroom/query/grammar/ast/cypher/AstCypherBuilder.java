@@ -61,6 +61,7 @@ import stroom.query.grammar.antlr.CypherParser.VarLengthContext;
 import stroom.query.grammar.antlr.CypherParser.WhereClauseContext;
 import stroom.query.grammar.antlr.CypherParser.WithClauseContext;
 import stroom.query.grammar.ast.AstPosition;
+import stroom.query.grammar.parse.SyntaxException;
 
 import org.antlr.v4.runtime.ParserRuleContext;
 import org.antlr.v4.runtime.Token;
@@ -220,8 +221,8 @@ public final class AstCypherBuilder {
 
     private AstVarLength buildVarLength(final VarLengthContext ctx) {
         return new AstVarLength(
-                ctx.min == null ? null : Integer.valueOf(ctx.min.getText()),
-                Integer.parseInt(ctx.max.getText()),
+                ctx.min == null ? null : parseBoundedInt(ctx.min, "variable-length path minimum hop count"),
+                parseBoundedInt(ctx.max, "variable-length path maximum hop count"),
                 position(ctx));
     }
 
@@ -420,11 +421,11 @@ public final class AstCypherBuilder {
     }
 
     private AstSkip buildSkip(final SkipClauseContext ctx) {
-        return new AstSkip(Long.parseLong(ctx.NUMBER().getText()), position(ctx));
+        return new AstSkip(parseBoundedLong(ctx.NUMBER().getSymbol(), "SKIP row count"), position(ctx));
     }
 
     private AstLimit buildLimit(final LimitClauseContext ctx) {
-        return new AstLimit(Long.parseLong(ctx.NUMBER().getText()), position(ctx));
+        return new AstLimit(parseBoundedLong(ctx.NUMBER().getSymbol(), "LIMIT row count"), position(ctx));
     }
 
     // ------------------------------------------------------------------------------------------------------
@@ -434,5 +435,44 @@ public final class AstCypherBuilder {
     private AstPosition position(final ParserRuleContext ctx) {
         final Token token = ctx.getStart();
         return new AstPosition(token.getLine(), token.getCharPositionInLine());
+    }
+
+    /**
+     * Code-review fix: the {@code NUMBER} lexer rule matches any run of digits regardless of length, so a literal
+     * with more digits than fit in a 32-bit int (e.g. a {@code SKIP}/{@code LIMIT}/variable-length bound of
+     * {@code 99999999999999999999}) used to reach {@code Integer.parseInt}/{@code Long.parseLong} directly and
+     * blow up with a raw, positionless {@link NumberFormatException} instead of the {@link SyntaxException}
+     * {@link stroom.query.grammar.parse.CypherQueryParser#parse} documents as its only thrown-error contract.
+     *
+     * @param token       the {@code NUMBER} token to parse; never null.
+     * @param description a short, human-readable name for what this number represents, used in the error message.
+     * @return the parsed value.
+     * @throws SyntaxException if {@code token}'s text does not fit in a 32-bit int.
+     */
+    private static int parseBoundedInt(final Token token, final String description) {
+        try {
+            return Integer.parseInt(token.getText());
+        } catch (final NumberFormatException e) {
+            throw tooLargeNumber(token, description);
+        }
+    }
+
+    /**
+     * As {@link #parseBoundedInt(Token, String)}, but for the 64-bit {@code SKIP}/{@code LIMIT} row counts.
+     */
+    private static long parseBoundedLong(final Token token, final String description) {
+        try {
+            return Long.parseLong(token.getText());
+        } catch (final NumberFormatException e) {
+            throw tooLargeNumber(token, description);
+        }
+    }
+
+    private static SyntaxException tooLargeNumber(final Token token, final String description) {
+        return new SyntaxException(
+                description + " '" + token.getText() + "' is too large a number to use here",
+                token.getLine(),
+                token.getCharPositionInLine(),
+                List.of());
     }
 }

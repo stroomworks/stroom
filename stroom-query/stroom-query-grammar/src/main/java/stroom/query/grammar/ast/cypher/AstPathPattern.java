@@ -23,7 +23,8 @@ import java.util.Objects;
 
 /**
  * A node/edge/node/... chain: an anchor node followed by zero or more hops. Zero hops is a bare node pattern
- * (e.g. {@code MATCH (n)}); {@code CypherToLogicalPlan} (Task PoC.3) only lowers the single-hop case for now.
+ * (e.g. {@code MATCH (n)}); {@code CypherToLogicalPlan} compiles a fixed-length chain of any number of hops, or a
+ * single bounded variable-length hop, within one reading clause (Tasks P3.2/P3.3).
  *
  * @param anchor   never null; the first node in the chain.
  * @param hops     never null; possibly empty; in left-to-right source order.

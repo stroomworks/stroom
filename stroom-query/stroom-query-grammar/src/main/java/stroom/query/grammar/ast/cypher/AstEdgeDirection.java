@@ -18,8 +18,8 @@ package stroom.query.grammar.ast.cypher;
 
 /**
  * The direction an edge pattern was written in - which arrowhead (if either) was present. Mirrors the planner's
- * {@code stroom.query.planner.logical.Expand.Direction} (Task PoC.2); kept as a separate AST-level enum since
- * this package must not depend on {@code stroom-query-planner}.
+ * {@code stroom.query.planner.logical.Direction} (Task PoC.2); kept as a separate AST-level enum since this
+ * package must not depend on {@code stroom-query-planner}.
  */
 public enum AstEdgeDirection {
     OUT,

@@ -148,8 +148,23 @@ class TestCypherToLogicalPlan {
         assertThat(limit.input()).isInstanceOf(Sort.class);
         final Sort sort = (Sort) limit.input();
         assertThat(sort.keys()).hasSize(1);
-        assertThat(sort.keys().getFirst().field().field()).isEqualTo("a.id");
+        // Code-review fix: previously the whole "a.id" was jammed into QualifiedField.field() with alias left
+        // null, discarding the alias/field split every other part of the planner relies on (Binder always
+        // resolves a qualified reference into a real (alias, field) pair) - now split correctly, the pattern
+        // variable "a" as the alias and "id" as the field, matching that convention.
+        assertThat(sort.keys().getFirst().field().alias()).isEqualTo("a");
+        assertThat(sort.keys().getFirst().field().field()).isEqualTo("id");
         assertThat(sort.input()).isInstanceOf(Project.class);
+    }
+
+    @Test
+    void orderByABareVariable_hasNoAliasSinceThereIsNoSeparateFieldComponent() {
+        final CompiledCypherPlan compiled = compile("MATCH (a:Account) RETURN a.id ORDER BY a");
+
+        final Sort sort = (Sort) compiled.plan();
+        assertThat(sort.keys()).hasSize(1);
+        assertThat(sort.keys().getFirst().field().alias()).isNull();
+        assertThat(sort.keys().getFirst().field().field()).isEqualTo("a");
     }
 
     @Test

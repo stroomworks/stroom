@@ -24,8 +24,9 @@ import java.util.Objects;
 /**
  * The root AST node for a whole Cypher query: one or more reading clauses ({@code MATCH}/{@code WITH}, in source
  * order) followed by exactly one {@code RETURN} clause. The grammar accepts the full locked v1 subset (multiple
- * stages, chains, variable-length paths); {@code CypherToLogicalPlan} (Task PoC.3) only lowers the single-hop PoC
- * shape for now and rejects the rest with a clear "not in PoC subset" error, tightened in P3.
+ * stages, chains, variable-length paths); {@code CypherToLogicalPlan} compiles fixed-length multi-hop chains and
+ * bounded variable-length paths within a single reading clause (Tasks P3.2/P3.3), but a query with more than one
+ * reading clause is still rejected with a clear "not yet supported" error at compile time.
  *
  * @param readingClauses never null; possibly empty in theory but never empty in practice - the grammar requires
  *                        at least one.

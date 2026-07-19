@@ -76,6 +76,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 
 /**
@@ -384,15 +385,32 @@ public final class CypherToLogicalPlan {
     private List<SortKey> compileOrderBy(final AstOrderBy orderBy) {
         final List<SortKey> keys = new ArrayList<>(orderBy.items().size());
         for (final AstOrderItem item : orderBy.items()) {
-            final String field = fieldNameOf(item.expression());
-            if (field == null) {
-                throw new CypherCompileException(
-                        "not in PoC subset: an ORDER BY item must be a property access or variable reference",
-                        item.position());
-            }
-            keys.add(new SortKey(new QualifiedField(null, field), item.descending()));
+            keys.add(new SortKey(toQualifiedField(item.expression(), item.position()), item.descending()));
         }
         return keys;
+    }
+
+    /**
+     * Code-review fix: splits directly into {@link QualifiedField}'s {@code (alias, field)} shape, rather than
+     * (as before) routing through {@link #fieldNameOf}'s merged {@code "variable.property"} string and stuffing
+     * the whole thing into {@code field} with {@code alias} left {@code null} - that discarded exactly the
+     * alias/field split every other part of the planner relies on ({@link stroom.query.planner.bind.Binder}
+     * always resolves a qualified reference into a real {@code (alias, field)} pair), so a consumer keying off
+     * {@link QualifiedField#alias()} to route a sort key back to its pattern-variable/source would never match a
+     * Cypher-compiled one. A property access's pattern variable IS the {@code Scan} alias {@link QualifiedField}
+     * expects; a bare variable reference has no separate field component of its own, so it is carried as an
+     * unqualified field name ({@code alias} null) - mirroring {@code Binder.resolveField}'s own fallback shape
+     * for an unqualified bareword token.
+     */
+    private static QualifiedField toQualifiedField(final AstExpression expression, final AstPosition position) {
+        if (expression instanceof final AstPropertyAccessExpr propertyAccess) {
+            return new QualifiedField(propertyAccess.variable(), propertyAccess.property());
+        }
+        if (expression instanceof final AstVariableExpr variable) {
+            return new QualifiedField(null, variable.name());
+        }
+        throw new CypherCompileException(
+                "not in PoC subset: an ORDER BY item must be a property access or variable reference", position);
     }
 
     // ------------------------------------------------------------------------------------------------------
@@ -407,7 +425,10 @@ public final class CypherToLogicalPlan {
         } else if (expression instanceof final AstLiteralExpr literal) {
             return renderValueAsExpression(literal.value());
         } else if (expression instanceof final AstAggregateExpr aggregate) {
-            final String fn = aggregate.function().name().toLowerCase();
+            // Code-review fix: toLowerCase() with no Locale uses the platform default, which corrupts fixed
+            // enum-name text like "MIN" under a Turkish-variant locale (dotless-i folding). These five function
+            // names are ASCII-only literals, not user-locale-sensitive text, so Locale.ROOT is the correct fold.
+            final String fn = aggregate.function().name().toLowerCase(Locale.ROOT);
             return aggregate.star() ? fn + "()" : fn + "(" + renderExpression(aggregate.argument()) + ")";
         }
         throw new CypherCompileException("Unrecognised expression", expression.position());

@@ -39,10 +39,15 @@
 //   "one temporal clause per query" decision. The instant/duration/bound values reuse the general `value` rule
 //   (typically a function-call literal like `datetime('...')`/`duration('PT1H')`, matching the design doc's
 //   worked example), not a bespoke date/duration literal syntax.
-// - Grammar accepts the FULL locked subset (multiple MATCH/WITH stages, chains, var-length) even though the
-//   PoC.3 compiler only lowers the single-hop PoC shape for now and rejects the rest with a clear "not in PoC
-//   subset" error at compile time - the same "parse now, compile progressively" discipline StroomQL.g4 uses for
-//   joins (see that grammar's file header).
+// - Grammar accepts the FULL locked subset (multiple MATCH/WITH stages, chains, var-length) even though
+//   CypherToLogicalPlan only lowers a SINGLE reading clause's pattern for now (fixed-length multi-hop chains and
+//   bounded variable-length paths within that one MATCH are fully compiled, as of Tasks P3.2/P3.3) - a query with
+//   more than one MATCH/WITH stage is rejected with a clear "not yet supported" error at compile time, not a
+//   parse-time restriction - the same "parse now, compile progressively" discipline StroomQL.g4 uses for joins
+//   (see that grammar's file header). [Updated 2026-07-19 during a code-quality review: this comment previously
+//   said the compiler "only lowers the single-hop PoC shape", which stopped being true once P3.2/P3.3 landed
+//   multi-hop and variable-length compilation - keep this note in sync if the multi-reading-clause restriction is
+//   ever lifted too.]
 grammar Cypher;
 
 // ============================================================================

@@ -209,4 +209,22 @@ class TestCypherQueryParser {
                     assertThat(e.getColumn()).isGreaterThan(0);
                 });
     }
+
+    // ------------------------------------------------------------------------------------------------------
+    // MUST error: numeric literals too large to fit the field they parse into (code-review fix - these used to
+    // reach Integer.parseInt/Long.parseLong directly and throw a raw, positionless NumberFormatException instead
+    // of the documented SyntaxException contract).
+    // ------------------------------------------------------------------------------------------------------
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "MATCH (a:Account) RETURN a.id SKIP 99999999999999999999",
+            "MATCH (a:Account) RETURN a.id LIMIT 99999999999999999999",
+            "MATCH (a:Account)-[:OWNS*99999999999999999999..3]->(b) RETURN b",
+            "MATCH (a:Account)-[:OWNS*1..99999999999999999999]->(b) RETURN b"
+    })
+    void oversizedNumericLiteral_throwsSyntaxExceptionNotNumberFormatException(final String cypher) {
+        assertThatThrownBy(() -> CypherQueryParser.parse(cypher))
+                .isInstanceOfSatisfying(SyntaxException.class, e -> assertThat(e.getLine()).isEqualTo(1));
+    }
 }
