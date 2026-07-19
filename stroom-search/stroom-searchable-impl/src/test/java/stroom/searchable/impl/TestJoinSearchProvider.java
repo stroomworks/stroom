@@ -68,6 +68,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -242,6 +243,85 @@ class TestJoinSearchProvider {
         assertThat(rows.getFirst()[1]).isEqualTo(ValString.create("Zoe"));
     }
 
+    @Test
+    void leftJoin_padsUnmatchedLeftRows_endToEnd() {
+        // Left UserId 1,2; right only has Id=2. A LEFT join must keep UserId=1 with a null b.Name, not drop it.
+        final SearchProvider leftProvider = fakeSideProvider(
+                LEFT_DATA_SOURCE, List.of("UserId"),
+                List.of(new Val[]{ValLong.create(1)}, new Val[]{ValLong.create(2)}));
+        final SearchProvider rightProvider = fakeSideProvider(
+                RIGHT_DATA_SOURCE, List.of("Id", "Name"),
+                List.<Val[]>of(new Val[]{ValLong.create(2), ValString.create("Bob")}));
+
+        final ResultStore resultStore = provider(registry(leftProvider, rightProvider))
+                .createResultStore(outerRequest(ExpressionOperator.builder().build(), JoinSpec.JoinType.LEFT));
+
+        final List<Val[]> rows = readTableRows(resultStore);
+        assertThat(rows).hasSize(2);
+        assertThat(rows).anySatisfy(row -> {
+            assertThat(row[0]).isEqualTo(ValLong.create(1));
+            assertThat(row[1]).isEqualTo(ValNull.INSTANCE);
+        });
+        assertThat(rows).anySatisfy(row -> {
+            assertThat(row[0]).isEqualTo(ValLong.create(2));
+            assertThat(row[1]).isEqualTo(ValString.create("Bob"));
+        });
+    }
+
+    // ------------------------------------------------------------------------------------------------------
+    // Error / resource-safety paths
+    // ------------------------------------------------------------------------------------------------------
+
+    @Test
+    void unregisteredSideDatasource_throwsClearly() {
+        // Left registered, right NOT -> realising the right side finds no SearchProvider and fails clearly.
+        final SearchProvider leftProvider = fakeSideProvider(
+                LEFT_DATA_SOURCE, List.of("UserId"), List.<Val[]>of(new Val[]{ValLong.create(1)}));
+
+        assertThatThrownBy(() -> providerWithMockDeps(registry(leftProvider))
+                .createResultStore(outerRequest(ExpressionOperator.builder().build())))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("No SearchProvider registered");
+    }
+
+    @Test
+    void equiKeyFieldNotFoundAmongCompiledColumns_throwsClearly() {
+        // The left side's columns don't contain the equi-key field ("UserId"), so positionOf fails clearly.
+        final SearchProvider leftProvider = fakeSideProvider(
+                LEFT_DATA_SOURCE, List.of("SomethingElse"), List.<Val[]>of(new Val[]{ValLong.create(1)}));
+        final SearchProvider rightProvider = fakeSideProvider(
+                RIGHT_DATA_SOURCE, List.of("Id", "Name"),
+                List.<Val[]>of(new Val[]{ValLong.create(2), ValString.create("Bob")}));
+
+        assertThatThrownBy(() -> provider(registry(leftProvider, rightProvider))
+                .createResultStore(outerRequest(ExpressionOperator.builder().build())))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Equi-key field 'UserId' not found");
+    }
+
+    @Test
+    void leftSideResultStore_isDestroyed_whenRightSideRealisationFails() {
+        // The left side realises fine (an open ResultStore); the right side's sub-search then throws. The left
+        // side's store must still be destroyed rather than leaked - it was created before the try/finally below.
+        final DataStore leftData = mock(DataStore.class);
+        when(leftData.getColumns()).thenReturn(List.of(column("UserId")));
+        final ResultStore leftStore = mock(ResultStore.class);
+        when(leftStore.getData(any())).thenReturn(leftData);
+        final SearchProvider leftProvider = mock(SearchProvider.class);
+        when(leftProvider.getDataSourceType()).thenReturn(LEFT_DATA_SOURCE.getType());
+        when(leftProvider.createResultStore(any())).thenReturn(leftStore);
+
+        final SearchProvider rightProvider = mock(SearchProvider.class);
+        when(rightProvider.getDataSourceType()).thenReturn(RIGHT_DATA_SOURCE.getType());
+        when(rightProvider.createResultStore(any())).thenThrow(new RuntimeException("right side boom"));
+
+        assertThatThrownBy(() -> providerWithMockDeps(registry(leftProvider, rightProvider))
+                .createResultStore(outerRequest(ExpressionOperator.builder().build())))
+                .isInstanceOf(RuntimeException.class);
+
+        verify(leftStore).destroy();
+    }
+
     // ------------------------------------------------------------------------------------------------------
     // Pure positional helpers
     // ------------------------------------------------------------------------------------------------------
@@ -295,6 +375,11 @@ class TestJoinSearchProvider {
 
     /** Outer join request: select a.UserId, b.Name; dataSource = sentinel; joinSpec = a.UserId = b.Id INNER. */
     private static SearchRequest outerRequest(final ExpressionOperator outerExpression) {
+        return outerRequest(outerExpression, JoinSpec.JoinType.INNER);
+    }
+
+    private static SearchRequest outerRequest(final ExpressionOperator outerExpression,
+                                              final JoinSpec.JoinType joinType) {
         final SearchRequest leftSide = SearchRequest.builder()
                 .query(Query.builder().dataSource(LEFT_DATA_SOURCE).build())
                 .build();
@@ -304,7 +389,7 @@ class TestJoinSearchProvider {
         final JoinSpec joinSpec = JoinSpec.builder()
                 .left(leftSide)
                 .right(rightSide)
-                .joinType(JoinSpec.JoinType.INNER)
+                .joinType(joinType)
                 .addEquiKey(new JoinEquiKey("a", "UserId", "b", "Id"))
                 .build();
 

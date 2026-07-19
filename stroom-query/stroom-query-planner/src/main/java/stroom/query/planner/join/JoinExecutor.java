@@ -21,6 +21,8 @@ import stroom.query.language.functions.ValNull;
 import stroom.query.planner.cost.JoinAlgorithm;
 import stroom.query.planner.logical.JoinType;
 
+import org.jspecify.annotations.Nullable;
+
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -37,6 +39,12 @@ import java.util.Objects;
  * semantic for both {@link JoinAlgorithm#HASH_JOIN} and {@link JoinAlgorithm#NESTED_LOOP} - so a different
  * algorithm choice never changes which rows match, only how fast the match is found (the design doc's
  * "algorithm choice never changes the result" invariant).</p>
+ *
+ * <p><b>SQL null semantics</b>: a row whose equi-key value is null ({@link ValNull}, or a {@code null} array
+ * slot) never joins - SQL {@code NULL != NULL} - so it is excluded from a hash bucket and never equals another
+ * null-keyed row. Without this, {@link ValNull#toString()} returning {@code null} would make every null-keyed
+ * left row collide with every null-keyed right row and fabricate a spurious cross-product. A null-keyed left row
+ * is still emitted (null-padded) for a {@link JoinType#LEFT} join, exactly like any other unmatched left row.</p>
  *
  * <p><b>Scope note</b>: {@link JoinAlgorithm#HASH_JOIN} here always materialises the <i>right</i> side, regardless
  * of which side {@code JoinCostModel.chooseAlgorithm} would prefer as the build side - correct for both {@code
@@ -96,13 +104,17 @@ public final class JoinExecutor {
     private static List<Val[]> hashJoin(final Side left, final Side right, final JoinType joinType) {
         final Map<List<String>, List<Val[]>> rightByKey = new HashMap<>();
         for (final Val[] rightRow : right.rows()) {
-            rightByKey.computeIfAbsent(keyOf(rightRow, right.keyPositions()), k -> new ArrayList<>())
-                    .add(rightRow);
+            final List<String> key = keyOf(rightRow, right.keyPositions());
+            if (key == null) {
+                continue; // SQL null key: never matches, so it is not a probe target.
+            }
+            rightByKey.computeIfAbsent(key, k -> new ArrayList<>()).add(rightRow);
         }
 
         final List<Val[]> result = new ArrayList<>();
         for (final Val[] leftRow : left.rows()) {
-            final List<Val[]> matches = rightByKey.get(keyOf(leftRow, left.keyPositions()));
+            final List<String> key = keyOf(leftRow, left.keyPositions());
+            final List<Val[]> matches = key == null ? null : rightByKey.get(key);
             appendMatchesOrPad(result, leftRow, matches, right.width(), joinType);
         }
         return result;
@@ -113,12 +125,15 @@ public final class JoinExecutor {
         for (final Val[] leftRow : left.rows()) {
             final List<String> leftKey = keyOf(leftRow, left.keyPositions());
             List<Val[]> matches = null;
-            for (final Val[] rightRow : right.rows()) {
-                if (leftKey.equals(keyOf(rightRow, right.keyPositions()))) {
-                    if (matches == null) {
-                        matches = new ArrayList<>();
+            if (leftKey != null) { // SQL null key: never matches, so skip the probe (still padded for LEFT).
+                for (final Val[] rightRow : right.rows()) {
+                    final List<String> rightKey = keyOf(rightRow, right.keyPositions());
+                    if (rightKey != null && leftKey.equals(rightKey)) {
+                        if (matches == null) {
+                            matches = new ArrayList<>();
+                        }
+                        matches.add(rightRow);
                     }
-                    matches.add(rightRow);
                 }
             }
             appendMatchesOrPad(result, leftRow, matches, right.width(), joinType);
@@ -141,10 +156,21 @@ public final class JoinExecutor {
         }
     }
 
-    private static List<String> keyOf(final Val[] row, final int[] positions) {
+    /**
+     * The equi-key for {@code row} as a canonical string tuple, or {@code null} when any key component is
+     * SQL-null ({@link ValNull} or a {@code null} slot). A null result signals "this row cannot join" - see the
+     * class Javadoc's SQL-null-semantics note. Using {@link Val#toString()} directly is safe here precisely
+     * because null components short-circuit to {@code null} rather than being stringified (which for
+     * {@link ValNull} would yield a Java {@code null} element and let null keys collide).
+     */
+    private static @Nullable List<String> keyOf(final Val[] row, final int[] positions) {
         final List<String> key = new ArrayList<>(positions.length);
         for (final int position : positions) {
-            key.add(String.valueOf(row[position]));
+            final Val value = row[position];
+            if (value == null || value instanceof ValNull) {
+                return null;
+            }
+            key.add(value.toString());
         }
         return key;
     }

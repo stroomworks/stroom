@@ -143,8 +143,16 @@ class JoinSearchProvider implements SearchProvider {
                     "SearchRequest routed to " + JoinDataSourceType.TYPE + " must carry a JoinSpec");
         }
 
+        // Realise the left side first; if realising the right side then fails, the left side's already-open
+        // ResultStore must still be destroyed (the try/finally below only covers both sides once both exist).
         final RealisedSide left = realiseSide(joinSpec.getLeft());
-        final RealisedSide right = realiseSide(joinSpec.getRight());
+        final RealisedSide right;
+        try {
+            right = realiseSide(joinSpec.getRight());
+        } catch (final RuntimeException e) {
+            left.resultStore.destroy();
+            throw e;
+        }
         final List<Val[]> joinedRows;
         try {
             final Side leftSide = new Side(left.rows, keyPositions(left.columns, joinSpec.getEquiKeys(), true),
@@ -253,27 +261,34 @@ class JoinSearchProvider implements SearchProvider {
                         + dataSourceRef.getType() + "'"));
 
         final ResultStore resultStore = searchProvider.createResultStore(sideRequest);
+        // Once the store is open, any failure completing it or reading it back must destroy it here - the store
+        // is only handed to the caller (and thus only becomes destroyable by the caller's finally) on the fully
+        // successful return, so a failure between here and that return would otherwise leak this side's store.
         try {
             resultStore.awaitCompletion();
+
+            final DataStore dataStore = resultStore.getData(SearchRequestFactory.TABLE_COMPONENT_ID);
+            final List<Column> columns = dataStore.getColumns();
+            final List<Val[]> rows = new ArrayList<>();
+            dataStore.fetch(
+                    columns,
+                    OffsetRange.UNBOUNDED,
+                    OpenGroups.ALL,
+                    new TimeFilter(0, Long.MAX_VALUE),
+                    IdentityItemMapper.INSTANCE,
+                    item -> rows.add(item.toArray()),
+                    count -> {
+                    });
+
+            return new RealisedSide(resultStore, columns, rows);
         } catch (final InterruptedException e) {
+            resultStore.destroy();
             Thread.currentThread().interrupt();
             throw new RuntimeException("Interrupted while realising a join side", e);
+        } catch (final RuntimeException e) {
+            resultStore.destroy();
+            throw e;
         }
-
-        final DataStore dataStore = resultStore.getData(SearchRequestFactory.TABLE_COMPONENT_ID);
-        final List<Column> columns = dataStore.getColumns();
-        final List<Val[]> rows = new ArrayList<>();
-        dataStore.fetch(
-                columns,
-                OffsetRange.UNBOUNDED,
-                OpenGroups.ALL,
-                new TimeFilter(0, Long.MAX_VALUE),
-                IdentityItemMapper.INSTANCE,
-                item -> rows.add(item.toArray()),
-                count -> {
-                });
-
-        return new RealisedSide(resultStore, columns, rows);
     }
 
     /** One equi-key's field name, resolved to its position among {@code columns} (composite keys supported). */

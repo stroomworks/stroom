@@ -119,4 +119,57 @@ class TestJoinExecutor {
         assertThatThrownBy(() -> new Side(List.of(), new int[0], 2))
                 .isInstanceOf(IllegalArgumentException.class);
     }
+
+    @ParameterizedTest
+    @EnumSource(value = JoinAlgorithm.class, names = {"HASH_JOIN", "NESTED_LOOP"})
+    void nullKeyRows_neverMatchEachOther_forInnerJoin(final JoinAlgorithm algorithm) {
+        // SQL NULL != NULL: two rows whose join key is null must NOT join, even though ValNull.toString() is null
+        // (which previously made every null-keyed row collide into one bucket and cross-product with each other).
+        final Val[] leftNull = new Val[]{ValNull.INSTANCE, ValString.create("a")};
+        final Val[] rightNull = new Val[]{ValNull.INSTANCE, ValLong.create(200)};
+        final Side left = new Side(List.of(leftNull, leftRow(1, "b")), new int[]{0}, 2);
+        final Side right = new Side(List.of(rightNull, rightRow(1, 100)), new int[]{0}, 2);
+
+        final List<Val[]> result = JoinExecutor.join(left, right, JoinType.INNER, algorithm);
+
+        // Only the non-null key (1) matches; the two null-keyed rows produce no joined row at all.
+        assertThat(result).hasSize(1);
+        assertThat(result.getFirst()).containsExactly(
+                ValLong.create(1), ValString.create("b"), ValLong.create(1), ValLong.create(100));
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = JoinAlgorithm.class, names = {"HASH_JOIN", "NESTED_LOOP"})
+    void nullKeyLeftRow_isStillPaddedForLeftJoin_butNeverMatchesANullKeyRightRow(final JoinAlgorithm algorithm) {
+        final Val[] leftNull = new Val[]{ValNull.INSTANCE, ValString.create("a")};
+        final Side left = new Side(List.<Val[]>of(leftNull), new int[]{0}, 2);
+        final Side right = new Side(List.<Val[]>of(new Val[]{ValNull.INSTANCE, ValLong.create(200)}), new int[]{0}, 2);
+
+        final List<Val[]> result = JoinExecutor.join(left, right, JoinType.LEFT, algorithm);
+
+        // The null-keyed left row is kept (LEFT join) but null-padded - it does NOT match the null-keyed right row.
+        assertThat(result).hasSize(1);
+        assertThat(result.getFirst()).containsExactly(
+                ValNull.INSTANCE, ValString.create("a"), ValNull.INSTANCE, ValNull.INSTANCE);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = JoinAlgorithm.class, names = {"HASH_JOIN", "NESTED_LOOP"})
+    void compositeEquiKey_matchesOnAllKeyPositionsAsAnOrderedTuple(final JoinAlgorithm algorithm) {
+        // Left rows [k1, k2, name]; right rows [k1, k2, amount]; joined on positions {0,1}.
+        final Val[] l1 = new Val[]{ValLong.create(1), ValString.create("x"), ValString.create("a")};
+        final Val[] l2 = new Val[]{ValLong.create(1), ValString.create("y"), ValString.create("b")};
+        final Val[] r1 = new Val[]{ValLong.create(1), ValString.create("x"), ValLong.create(10)};
+        final Val[] r2 = new Val[]{ValLong.create(1), ValString.create("z"), ValLong.create(20)};
+        final Side left = new Side(List.of(l1, l2), new int[]{0, 1}, 3);
+        final Side right = new Side(List.of(r1, r2), new int[]{0, 1}, 3);
+
+        final List<Val[]> result = JoinExecutor.join(left, right, JoinType.INNER, algorithm);
+
+        // Only (1,x) matches; (1,y) and (1,z) share k1 but differ on k2, so the composite key must not match them.
+        assertThat(result).hasSize(1);
+        assertThat(result.getFirst()).containsExactly(
+                ValLong.create(1), ValString.create("x"), ValString.create("a"),
+                ValLong.create(1), ValString.create("x"), ValLong.create(10));
+    }
 }
