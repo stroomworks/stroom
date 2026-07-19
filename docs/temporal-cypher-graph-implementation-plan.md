@@ -1815,6 +1815,13 @@ it from.
 - **Done-when**: the new test passes (both on row-count/content correctness and by actually running to
   completion at the larger data volume without excessive real time or memory).
 - **Verify**: `./gradlew :stroom-graphdb:stroom-graphdb-impl:test --tests "stroom.graphdb.impl.TestGraphTraversalEnginePerformance"`.
+- **Status: done (2026-07-19)**. New `TestGraphTraversalEnginePerformance.java` with two tests: a 2,000-way
+  fan-out hub (`fixedLengthHop_overAWideFanOutHub`, exercising `acceptChainNeighbour`/`GraphNodeDb.getNode` at a
+  volume ~40x any existing fixture) and a 50-node linear chain at the P7.2 `maxHops` ceiling
+  (`variableLengthPath_overALongChain`, isolating hop-count cost from fan-out cost). Both assert row-count
+  correctness and log elapsed time (no hard ceiling assertion, matching every existing perf test in this repo);
+  both complete in well under a second on this machine (278 ms and 6 ms respectively - logged for a human
+  baseline, not asserted). Full `stroom-graphdb-impl:test` suite and both checkstyle tasks pass clean.
 
 **P8 exit gate** (hardening-only scope, per the user's decision above): `GraphFilter`'s node-ingest path no longer
 re-indexes unchanged property values on every version, with tests proving both the reduction and that no anchor
