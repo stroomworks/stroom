@@ -30,7 +30,6 @@ import java.util.Map;
 import java.util.function.Function;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * {@link GraphRowValueFunctionFactory} in isolation - every other test in this module only exercises it
@@ -112,16 +111,13 @@ class TestGraphRowValueFunctionFactory {
     }
 
     @Test
-    void createDateExtractor_anUnparsableStringThrows_knownBugMirroredFromValuesFunctionFactory() {
-        // GraphRowValueFunctionFactory's Javadoc says it "mirrors ValuesFunctionFactory's extractor bodies
-        // exactly" - including this bug: DateUtil.parseNormalDateTimeString throws IllegalArgumentException for
-        // an unparsable string, but the catch clause here (and in the upstream class it mirrors) only catches
-        // NumberFormatException, a narrower subtype - so a non-date, non-numeric string throws instead of the
-        // predicate simply not matching. Documented here as a known, pre-existing, out-of-graphdb-module bug
-        // (present in stroom.query.common.v2.ValuesFunctionFactory too), not something to silently work around.
+    void createDateExtractor_anUnparsableStringYieldsNullNotAThrow() {
+        // Code-review fix: DateUtil.parseNormalDateTimeString throws IllegalArgumentException (not
+        // NumberFormatException) for an unparsable string. The catch clause used to catch only
+        // NumberFormatException, so a non-date string propagated the exception and aborted predicate evaluation
+        // for the whole query; it now catches IllegalArgumentException and yields null (no match) instead.
         final Function<Map<String, Val>, Long> extractor = factory().createDateExtractor();
-        assertThatThrownBy(() -> extractor.apply(Map.of(KEY, ValString.create("not-a-date"))))
-                .isInstanceOf(IllegalArgumentException.class);
+        assertThat(extractor.apply(Map.of(KEY, ValString.create("not-a-date")))).isNull();
     }
 
     @Test

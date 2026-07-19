@@ -70,7 +70,10 @@ final class GraphRowValueFunctionFactory implements ValueFunctionFactory<Map<Str
             if (string != null) {
                 try {
                     return DateUtil.parseNormalDateTimeString(string);
-                } catch (final NumberFormatException e) {
+                } catch (final IllegalArgumentException e) {
+                    // Code-review fix: DateUtil.parseNormalDateTimeString throws IllegalArgumentException (not
+                    // NumberFormatException) for a malformed ISO string, so catching only NumberFormatException
+                    // let a bad date propagate and abort predicate evaluation instead of yielding "no match".
                     return null;
                 }
             }

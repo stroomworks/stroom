@@ -223,8 +223,24 @@ class TestCypherQueryParser {
             "MATCH (a:Account)-[:OWNS*99999999999999999999..3]->(b) RETURN b",
             "MATCH (a:Account)-[:OWNS*1..99999999999999999999]->(b) RETURN b"
     })
-    void oversizedNumericLiteral_throwsSyntaxExceptionNotNumberFormatException(final String cypher) {
+    void oversizedNumericLiteral_throwsSyntaxExceptionSayingTooLarge(final String cypher) {
         assertThatThrownBy(() -> CypherQueryParser.parse(cypher))
-                .isInstanceOfSatisfying(SyntaxException.class, e -> assertThat(e.getLine()).isEqualTo(1));
+                .isInstanceOfSatisfying(SyntaxException.class, e -> {
+                    assertThat(e.getLine()).isEqualTo(1);
+                    assertThat(e.getMessage()).contains("too large");
+                });
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "MATCH (a:Account) RETURN a.id SKIP 3.5",
+            "MATCH (a:Account) RETURN a.id LIMIT 3.5"
+    })
+    void fractionalNumericLiteral_throwsSyntaxExceptionSayingWholeNumber(final String cypher) {
+        // The NUMBER lexer rule matches decimals, so a fractional SKIP/LIMIT must be reported as "must be a whole
+        // number", not misattributed to magnitude ("too large") as the first version of this fix did.
+        assertThatThrownBy(() -> CypherQueryParser.parse(cypher))
+                .isInstanceOfSatisfying(SyntaxException.class,
+                        e -> assertThat(e.getMessage()).contains("whole number"));
     }
 }

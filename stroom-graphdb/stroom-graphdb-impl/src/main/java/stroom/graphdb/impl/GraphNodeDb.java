@@ -98,7 +98,11 @@ public final class GraphNodeDb {
 
         final byte[] propsBlob = GraphPropsCodec.encode(properties);
         final ByteBuffer key = buildKey(nodeUid, validFrom);
-        final ByteBuffer value = ByteBuffer.allocateDirect(1 + 1 + labelUids.size() * 4 + propsBlob.length);
+        // 1 PRESENT flag byte + 1 label-count byte + one LABEL_UID_BYTES-width slot per label + the props blob.
+        // Uses the same GraphStores.TYPE_UID_WIDTH that LABEL_UID_BYTES writes with (not a bare literal 4), so the
+        // allocation stays in lockstep with the encoding if that frozen width ever changes.
+        final ByteBuffer value = ByteBuffer.allocateDirect(
+                1 + 1 + labelUids.size() * GraphStores.TYPE_UID_WIDTH + propsBlob.length);
         value.put(PRESENT);
         value.put((byte) labelUids.size());
         for (final long labelUid : labelUids) {

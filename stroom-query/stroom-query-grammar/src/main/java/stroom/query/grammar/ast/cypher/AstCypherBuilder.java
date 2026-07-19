@@ -438,39 +438,48 @@ public final class AstCypherBuilder {
     }
 
     /**
-     * Code-review fix: the {@code NUMBER} lexer rule matches any run of digits regardless of length, so a literal
-     * with more digits than fit in a 32-bit int (e.g. a {@code SKIP}/{@code LIMIT}/variable-length bound of
-     * {@code 99999999999999999999}) used to reach {@code Integer.parseInt}/{@code Long.parseLong} directly and
-     * blow up with a raw, positionless {@link NumberFormatException} instead of the {@link SyntaxException}
+     * Code-review fix: the {@code NUMBER} lexer rule ({@code DIGIT+ ('.' DIGIT+)?}) matches decimals and runs of
+     * digits of any length, but a {@code SKIP}/{@code LIMIT}/variable-length bound must be a whole number within
+     * the field it parses into. A fractional literal (e.g. {@code SKIP 3.5}) or one with more digits than fit
+     * (e.g. {@code 99999999999999999999}) used to reach {@code Integer.parseInt}/{@code Long.parseLong} directly
+     * and blow up with a raw, positionless {@link NumberFormatException} instead of the {@link SyntaxException}
      * {@link stroom.query.grammar.parse.CypherQueryParser#parse} documents as its only thrown-error contract.
      *
      * @param token       the {@code NUMBER} token to parse; never null.
      * @param description a short, human-readable name for what this number represents, used in the error message.
      * @return the parsed value.
-     * @throws SyntaxException if {@code token}'s text does not fit in a 32-bit int.
+     * @throws SyntaxException if {@code token}'s text is not a whole number that fits in a 32-bit int.
      */
     private static int parseBoundedInt(final Token token, final String description) {
         try {
             return Integer.parseInt(token.getText());
         } catch (final NumberFormatException e) {
-            throw tooLargeNumber(token, description);
+            throw invalidNumber(token, description);
         }
     }
 
     /**
      * As {@link #parseBoundedInt(Token, String)}, but for the 64-bit {@code SKIP}/{@code LIMIT} row counts.
+     *
+     * @throws SyntaxException if {@code token}'s text is not a whole number that fits in a 64-bit long.
      */
     private static long parseBoundedLong(final Token token, final String description) {
         try {
             return Long.parseLong(token.getText());
         } catch (final NumberFormatException e) {
-            throw tooLargeNumber(token, description);
+            throw invalidNumber(token, description);
         }
     }
 
-    private static SyntaxException tooLargeNumber(final Token token, final String description) {
+    private static SyntaxException invalidNumber(final Token token, final String description) {
+        final String text = token.getText();
+        // NUMBER also matches decimals, so parse failure means either "not a whole number" or "too many digits";
+        // report which, rather than blaming magnitude for a fractional literal like 3.5.
+        final String reason = text.indexOf('.') >= 0
+                ? "must be a whole number"
+                : "is too large a number to use here";
         return new SyntaxException(
-                description + " '" + token.getText() + "' is too large a number to use here",
+                description + " '" + text + "' " + reason,
                 token.getLine(),
                 token.getCharPositionInLine(),
                 List.of());

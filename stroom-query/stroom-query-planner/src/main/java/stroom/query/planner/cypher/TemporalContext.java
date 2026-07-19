@@ -36,8 +36,10 @@ import java.util.Objects;
  * {@code validFrom <= to AND nextValidFrom > from}.</p>
  *
  * @param mode     never null.
- * @param instant  the as-of snapshot instant ({@link Mode#AS_OF}) or the {@code AROUND} clause's window centre;
- *                 {@code null} for {@link Mode#BETWEEN} (which has no single instant).
+ * @param instant  the as-of snapshot instant; non-null only for {@link Mode#AS_OF}. {@code null} for both
+ *                 {@link Mode#AROUND} and {@link Mode#BETWEEN} - {@code AROUND}'s window centre is not stored
+ *                 here, it is expanded into {@code from}/{@code to} by {@link CypherToLogicalPlan} before this
+ *                 record is built (see {@link #window}).
  * @param from     the inclusive window start ({@link Mode#AROUND}/{@link Mode#BETWEEN}); {@code null} for
  *                 {@link Mode#AS_OF}.
  * @param to       the inclusive window end ({@link Mode#AROUND}/{@link Mode#BETWEEN}); {@code null} for

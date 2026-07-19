@@ -21,6 +21,7 @@ import stroom.docstore.api.DocumentStoreBinder;
 import stroom.graphdb.impl.pipeline.GraphElementModule;
 import stroom.graphdb.shared.GraphDbDoc;
 import stroom.job.api.ScheduledJobsBinder;
+import stroom.planb.shared.RetentionSettings;
 import stroom.query.api.datasource.DataSourceProvider;
 import stroom.query.common.v2.IndexFieldProvider;
 import stroom.query.common.v2.SearchProvider;
@@ -107,7 +108,12 @@ public class GraphDbModule extends AbstractModule {
                     // stroom.planb.impl.data.ShardManager's own maintenance loops use for the identical reason.
                     try {
                         final GraphDbDoc doc = graphDbDocStore.readDocument(docRef);
-                        if (doc != null) {
+                        // Code-review fix: only open the store when retention is actually enabled. getOrOpen()
+                        // eagerly opens (and permanently caches - there is no eviction) the doc's LMDB
+                        // environment, so calling it unconditionally would, every 10 minutes, open an env for
+                        // every graph doc even though retention is disabled by default and deleteOldData() would
+                        // immediately no-op - leaving every never-queried doc's env held open forever.
+                        if (doc != null && retentionEnabled(doc)) {
                             graphStoreManager.getOrOpen(doc).deleteOldData(doc);
                         }
                     } catch (final RuntimeException e) {
@@ -115,6 +121,11 @@ public class GraphDbModule extends AbstractModule {
                     }
                 }
             });
+        }
+
+        private static boolean retentionEnabled(final GraphDbDoc doc) {
+            final RetentionSettings retention = doc.getRetention();
+            return retention != null && retention.isEnabled();
         }
     }
 }

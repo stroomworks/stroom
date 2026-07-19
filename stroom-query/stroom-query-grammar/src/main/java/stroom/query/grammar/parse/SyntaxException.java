@@ -20,9 +20,10 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * A precise StroomQL syntax error: a 1-based line, a 0-based column, a human-readable message, and (where known)
+ * A precise query syntax error: a 1-based line, a 0-based column, a human-readable message, and (where known)
  * the set of token descriptions that would have been valid at that position - see
- * {@code docs/query-optimiser-implementation-plan.md}, Task 1.3.
+ * {@code docs/query-optimiser-implementation-plan.md}, Task 1.3. Shared by both ANTLR-driven grammars in this
+ * module: StroomQL (via {@code StroomQlParser}) and Cypher (via {@code CypherQueryParser}).
  *
  * <p>Unlike legacy's {@code stroom.query.api.token.TokenException} (which carries a legacy {@code AbstractToken}),
  * this exception is raised by the ANTLR-driven grammar and carries plain position data instead, since ANTLR has
