@@ -34,6 +34,7 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -112,6 +113,28 @@ class TestGraphTraversalEngine {
                             DateTimeSettings.builder().build()));
             assertThat(rows).hasSize(1);
             assertThat(rows.getFirst()[0].toString()).isEqualTo("d-42");
+        }
+    }
+
+    @Test
+    void bareVariableReturn_throwsRatherThanSilentlyReturningTheSameStringForEveryRow(@TempDir final Path root) {
+        // Code-review fix: rowFor() only ever populates "variable.property" keys, never a bare "variable" key,
+        // so RETURN of a bare pattern variable (no property access) previously fell through evaluate()'s
+        // row.containsKey check and silently returned the literal string "d" for every single row - not a
+        // per-row identifier, the same fixed value regardless of which node actually matched. Now throws
+        // instead, matching this class's own stated "throw rather than a wrong result" philosophy.
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph3b"), DOC)) {
+            seedDeviceConnectedToAccounts(stores);
+
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory());
+            final CompiledCypherPlan compiled = compile("MATCH (d:Device {id: 'd-42'}) RETURN d");
+
+            assertThatThrownBy(() -> stores.read(readTxn ->
+                    engine.execute(readTxn, compiled.plan(), compiled.temporalContext(),
+                            DateTimeSettings.builder().build())))
+                    .isInstanceOf(UnsupportedOperationException.class)
+                    .hasMessageContaining("bare pattern variable");
         }
     }
 
@@ -446,6 +469,29 @@ class TestGraphTraversalEngine {
                     stores, new ExpressionPredicateFactory(), 2);
             final CompiledCypherPlan compiled = compile(
                     "MATCH (a:Node {id: 'a'})-[:T*1..3]->(b:Node) RETURN b.id");
+
+            assertThatThrownBy(() -> stores.read(readTxn ->
+                    engine.execute(readTxn, compiled.plan(), compiled.temporalContext(),
+                            DateTimeSettings.builder().build())))
+                    .isInstanceOf(GraphTraversalLimitExceededException.class);
+        }
+    }
+
+    @Test
+    void wallClockDeadline_boundsASingleHopWithNoLimit_throwsClearly(@TempDir final Path root) {
+        // Code-review fix: the wall-clock deadline used to be checked only once per hop, so a single hop with a
+        // wide fan-out and no LIMIT - the exact scenario MAX_TRAVERSAL_DURATION's own Javadoc names as its reason
+        // for existing - was never actually bounded, since the whole neighbour scan for that one hop ran between
+        // deadline checks. Uses the (package-private, test-only) 4-arg constructor with a zero-duration budget so
+        // the deadline is already passed by the time the first neighbour is visited, deterministically, over
+        // seedDeviceConnectedToAccounts' small fixture rather than needing a genuinely slow query.
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph19"), DOC)) {
+            seedDeviceConnectedToAccounts(stores);
+
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory(), Long.MAX_VALUE, Duration.ZERO);
+            final CompiledCypherPlan compiled = compile(
+                    "MATCH (d:Device {id: 'd-42'})-[:CONNECTED_TO]->(a:Account) RETURN a.id");
 
             assertThatThrownBy(() -> stores.read(readTxn ->
                     engine.execute(readTxn, compiled.plan(), compiled.temporalContext(),

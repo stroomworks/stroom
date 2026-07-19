@@ -25,7 +25,6 @@ import stroom.query.api.ExpressionTerm;
 import stroom.query.common.v2.ExpressionPredicateFactory;
 import stroom.query.common.v2.ExpressionPredicateFactory.ValueFunctionFactories;
 import stroom.query.language.functions.Val;
-import stroom.query.language.functions.ValString;
 import stroom.query.planner.cypher.TemporalContext;
 import stroom.query.planner.logical.Direction;
 import stroom.query.planner.logical.Expand;
@@ -109,6 +108,10 @@ public final class GraphTraversalEngine {
      * modest {@code maxHops} (e.g. 3-4) combined with a high-fan-out hub node can still explore an exponential
      * number of paths, all materialised in memory at once (see this class's Javadoc note on
      * {@link #expandVarLength}).
+     *
+     * <p><b>This budget is per anchor, not per query:</b> {@link #execute} calls {@link #expandVarLength} once
+     * per matching anchor, and each call starts a fresh counter - a query matching N anchors therefore gets N
+     * independent budgets of this size, not one global ceiling shared across the whole query.</p>
      */
     private static final int MAX_VAR_LENGTH_PATH_STATES = 200_000;
 
@@ -123,10 +126,11 @@ public final class GraphTraversalEngine {
     private final GraphStores stores;
     private final ExpressionPredicateFactory expressionPredicateFactory;
     private final long maxVarLengthPathStates;
+    private final Duration maxTraversalDuration;
 
     public GraphTraversalEngine(final GraphStores stores,
                                 final ExpressionPredicateFactory expressionPredicateFactory) {
-        this(stores, expressionPredicateFactory, MAX_VAR_LENGTH_PATH_STATES);
+        this(stores, expressionPredicateFactory, MAX_VAR_LENGTH_PATH_STATES, MAX_TRAVERSAL_DURATION);
     }
 
     /**
@@ -137,10 +141,23 @@ public final class GraphTraversalEngine {
     GraphTraversalEngine(final GraphStores stores,
                         final ExpressionPredicateFactory expressionPredicateFactory,
                         final long maxVarLengthPathStates) {
+        this(stores, expressionPredicateFactory, maxVarLengthPathStates, MAX_TRAVERSAL_DURATION);
+    }
+
+    /**
+     * Code-review fix: test-only seam - lets a test exercise {@link #MAX_TRAVERSAL_DURATION}'s deadline
+     * deterministically (e.g. a duration of zero) rather than needing to wait out the real 30-second production
+     * default.
+     */
+    GraphTraversalEngine(final GraphStores stores,
+                        final ExpressionPredicateFactory expressionPredicateFactory,
+                        final long maxVarLengthPathStates,
+                        final Duration maxTraversalDuration) {
         this.stores = Objects.requireNonNull(stores, "stores");
         this.expressionPredicateFactory =
                 Objects.requireNonNull(expressionPredicateFactory, "expressionPredicateFactory");
         this.maxVarLengthPathStates = maxVarLengthPathStates;
+        this.maxTraversalDuration = Objects.requireNonNull(maxTraversalDuration, "maxTraversalDuration");
     }
 
     /**
@@ -178,7 +195,7 @@ public final class GraphTraversalEngine {
         // wall-clock safety backstop, since GraphSearchProvider runs a traversal synchronously on the calling
         // thread with no task-cancellation hook (see that class's Javadoc for why).
         final long rowCap = shape.limit() == null ? Long.MAX_VALUE : Math.max(0L, shape.limit());
-        final Instant deadline = Instant.now().plus(MAX_TRAVERSAL_DURATION);
+        final Instant deadline = Instant.now().plus(maxTraversalDuration);
 
         final List<Map<String, Val>> rows = new ArrayList<>();
 
@@ -232,7 +249,7 @@ public final class GraphTraversalEngine {
                     break;
                 }
                 expandChainHop(readTxn, f.nodeUid(), access, hop, f.row(), isLastHop, wherePredicate, next, rows,
-                        rowCap);
+                        rowCap, deadline);
             }
             frontier = next;
         }
@@ -242,13 +259,15 @@ public final class GraphTraversalEngine {
 
     /**
      * Task P7.2: throws {@link GraphTraversalLimitExceededException} once {@code deadline} has passed - checked
-     * once per hop/BFS-depth iteration, the backstop against a pathological query running for an unbounded time
-     * on the calling thread (see {@link #MAX_TRAVERSAL_DURATION}'s Javadoc).
+     * once per neighbour visited (Code-review fix: previously once per hop/BFS-depth iteration only, which did
+     * not actually bound a single hop/depth's own wide fan-out - see {@link #acceptChainNeighbour}), the backstop
+     * against a pathological query running for an unbounded time on the calling thread (see
+     * {@link #MAX_TRAVERSAL_DURATION}'s Javadoc).
      */
-    private static void checkDeadline(final Instant deadline) {
+    private void checkDeadline(final Instant deadline) {
         if (Instant.now().isAfter(deadline)) {
             throw new GraphTraversalLimitExceededException(
-                    "graph traversal exceeded the maximum allowed duration of " + MAX_TRAVERSAL_DURATION);
+                    "graph traversal exceeded the maximum allowed duration of " + maxTraversalDuration);
         }
     }
 
@@ -259,36 +278,18 @@ public final class GraphTraversalEngine {
     private void expandChainHop(final Txn<ByteBuffer> readTxn, final long fromUid, final TemporalAccess access,
                                 final Expand hop, final Map<String, Val> rowSoFar, final boolean isLastHop,
                                 final Predicate<Map<String, Val>> wherePredicate, final List<Frontier> nextFrontier,
-                                final List<Map<String, Val>> finalRows, final long rowCap) {
-        // GraphAdjacencyDb/GraphInEdgeDb key every edge by a concrete edgeTypeUid; an untyped pattern
-        // (edgeType == null, matching any type) has no single prefix to scan, and neither store exposes an
-        // "any edge type" access path.
-        final Long edgeTypeUid = hop.edgeType() == null
-                ? null
-                : lookupUid(readTxn, stores.getEdgeTypeUids(), hop.edgeType()).orElse(null);
-        if (edgeTypeUid == null && hop.edgeType() == null) {
-            throw new UnsupportedOperationException(
-                    "not yet supported: an untyped edge pattern (matching any edge type) has no access path "
-                    + "over the per-type-keyed adjacency stores");
-        }
-        if (hop.edgeType() != null && edgeTypeUid == null) {
+                                final List<Map<String, Val>> finalRows, final long rowCap,
+                                final Instant deadline) {
+        final Optional<Long> edgeTypeUid = resolveRequiredEdgeTypeUid(readTxn, hop.edgeType());
+        if (edgeTypeUid.isEmpty()) {
             return;
         }
 
         final Consumer<Long> onNeighbourUid = neighbourUid -> acceptChainNeighbour(
                 readTxn, neighbourUid, access, hop, rowSoFar, isLastHop, wherePredicate, nextFrontier, finalRows,
-                rowCap);
+                rowCap, deadline);
 
-        // Task P1.1: dispatch on Expand.direction() - previously this always read the out-edge store regardless
-        // of direction, so a Cypher <-[:TYPE]- or -[:TYPE]- pattern silently executed as -[:TYPE]->.
-        switch (hop.direction()) {
-            case OUT -> access.expandOut(readTxn, fromUid, edgeTypeUid, onNeighbourUid);
-            case IN -> access.expandIn(readTxn, fromUid, edgeTypeUid, onNeighbourUid);
-            case BOTH -> {
-                access.expandOut(readTxn, fromUid, edgeTypeUid, onNeighbourUid);
-                access.expandIn(readTxn, fromUid, edgeTypeUid, onNeighbourUid);
-            }
-        }
+        collectNeighbours(readTxn, fromUid, edgeTypeUid.get(), access, hop.direction(), onNeighbourUid);
     }
 
     private void acceptChainNeighbour(final Txn<ByteBuffer> readTxn, final long neighbourUid,
@@ -296,13 +297,20 @@ public final class GraphTraversalEngine {
                                       final Expand hop, final Map<String, Val> rowSoFar, final boolean isLastHop,
                                       final Predicate<Map<String, Val>> wherePredicate,
                                       final List<Frontier> nextFrontier, final List<Map<String, Val>> finalRows,
-                                      final long rowCap) {
+                                      final long rowCap, final Instant deadline) {
         // Task P7.2: once a compiled LIMIT is satisfied, stop accumulating further rows at this hop - does not
         // abort a cursor scan already in flight (the DAO layer has no cancellation hook), but does stop this
         // traversal from expanding to further frontier nodes/hops once the cap is reached.
         if (isLastHop && finalRows.size() >= rowCap) {
             return;
         }
+        // Code-review fix: previously the wall-clock deadline was only checked once per hop (execute()'s outer
+        // loop), so a single hop with a wide fan-out and no LIMIT - the exact scenario MAX_TRAVERSAL_DURATION's
+        // own Javadoc cites as its reason for existing - was never actually bounded, since this callback runs
+        // once per neighbour inside one uninterrupted cursor scan. Checking here, once per neighbour, closes
+        // that gap; throwing from inside this callback propagates up through the cursor's own try-with-resources
+        // (see GraphAdjacencyDb/GraphInEdgeDb), so the scan is aborted cleanly rather than merely detected late.
+        checkDeadline(deadline);
         final Optional<GraphNodeDb.NodeVersion> target = access.getNode(readTxn, neighbourUid);
         if (target.isEmpty()
             || !matchesTargetConstraint(
@@ -389,20 +397,11 @@ public final class GraphTraversalEngine {
                     + "] exceeds the maximum allowed maxHops of " + MAX_VAR_LENGTH_HOPS);
         }
 
-        // GraphAdjacencyDb/GraphInEdgeDb key every edge by a concrete edgeTypeUid; an untyped pattern
-        // (edgeType == null, matching any type) has no single prefix to scan, and neither store exposes an
-        // "any edge type" access path.
-        final Long edgeTypeUid = varLengthExpand.edgeType() == null
-                ? null
-                : lookupUid(readTxn, stores.getEdgeTypeUids(), varLengthExpand.edgeType()).orElse(null);
-        if (edgeTypeUid == null && varLengthExpand.edgeType() == null) {
-            throw new UnsupportedOperationException(
-                    "not yet supported: an untyped edge pattern (matching any edge type) has no access path "
-                    + "over the per-type-keyed adjacency stores");
-        }
-        if (varLengthExpand.edgeType() != null && edgeTypeUid == null) {
+        final Optional<Long> resolvedEdgeTypeUid = resolveRequiredEdgeTypeUid(readTxn, varLengthExpand.edgeType());
+        if (resolvedEdgeTypeUid.isEmpty()) {
             return;
         }
+        final long edgeTypeUid = resolvedEdgeTypeUid.get();
 
         if (varLengthExpand.minHops() == 0 && rows.size() < rowCap) {
             // A zero-length path binds the target variable to the anchor node itself.
@@ -434,6 +433,10 @@ public final class GraphTraversalEngine {
                     if (rows.size() >= rowCap) {
                         break;
                     }
+                    // Code-review fix: previously the deadline was only checked once per depth, so a single
+                    // depth's neighbour collection for one wide-fan-out state could run unbounded - checking
+                    // per-neighbour here matches the fix applied to the fixed-length chain path.
+                    checkDeadline(deadline);
                     if (state.visited().contains(neighbourUid)) {
                         continue;
                     }
@@ -491,6 +494,26 @@ public final class GraphTraversalEngine {
         }
     }
 
+    /**
+     * Resolves a hop's edge-type name to its interned UID - shared by {@link #expandChainHop} and
+     * {@link #expandVarLength}, whose "resolve or reject an untyped pattern" logic was previously duplicated
+     * verbatim in each. GraphAdjacencyDb/GraphInEdgeDb key every edge by a concrete edge-type UID; an untyped
+     * pattern ({@code edgeType == null}, matching any type) has no single prefix to scan, and neither store
+     * exposes an "any edge type" access path.
+     *
+     * @return empty if {@code edgeType} is a real type name that has never been interned (no edges of that type
+     * exist) - the caller should treat this as "no matches", not an error.
+     * @throws UnsupportedOperationException if {@code edgeType} is {@code null} (an untyped pattern).
+     */
+    private Optional<Long> resolveRequiredEdgeTypeUid(final Txn<ByteBuffer> readTxn, final @Nullable String edgeType) {
+        if (edgeType == null) {
+            throw new UnsupportedOperationException(
+                    "not yet supported: an untyped edge pattern (matching any edge type) has no access path "
+                    + "over the per-type-keyed adjacency stores");
+        }
+        return lookupUid(readTxn, stores.getEdgeTypeUids(), edgeType);
+    }
+
     // ------------------------------------------------------------------------------------------------------
     // anchor resolution
     // ------------------------------------------------------------------------------------------------------
@@ -500,7 +523,7 @@ public final class GraphTraversalEngine {
         if (nodeScan.labels().isEmpty()) {
             throw new UnsupportedOperationException(
                     "not yet supported: an anchor MATCH requires at least one label to seek the property index "
-                    + "(a full unlabelled scan is not indexed in PoC.5)");
+                    + "(a full unlabelled scan is not indexed)");
         }
         final List<ExpressionItem> terms = nodeScan.propertyAnchor() == null
                 ? List.of()
@@ -508,7 +531,7 @@ public final class GraphTraversalEngine {
         if (terms == null || terms.isEmpty()) {
             throw new UnsupportedOperationException(
                     "not yet supported: an anchor MATCH requires at least one property predicate (a "
-                    + "label-only \"scan every node with this label\" access path is not indexed in PoC.5)");
+                    + "label-only \"scan every node with this label\" access path is not indexed)");
         }
 
         final List<Long> requiredLabelUids = new ArrayList<>(nodeScan.labels().size());
@@ -660,15 +683,21 @@ public final class GraphTraversalEngine {
             if (row.containsKey(reference)) {
                 return row.get(reference);
             }
-            // A bare variable reference (e.g. "${a}", the whole matched node) has no single Val representation
-            // yet - a real gap, not silently wrong: report it as a string so a query naming a bare variable at
-            // least returns *something* identifying the row, rather than throwing mid-projection.
-            return ValString.create(reference);
+            // Code-review fix: rowFor() only ever populates "variable.property" keys, never a bare "variable"
+            // key, so this branch was always taken for a bare pattern-variable RETURN (e.g. "RETURN n") and
+            // silently returned the same fixed string for every single row - exactly the "silently wrong result"
+            // failure mode this class's own top-level Javadoc says it deliberately avoids elsewhere. A whole
+            // matched node/edge has no single Val representation yet, so this is a real, documented gap - throw
+            // rather than pretend to support it.
+            throw new UnsupportedOperationException(
+                    "not yet supported: RETURN item '" + expr + "' names a bare pattern variable - only a "
+                    + "property/variable reference of the form 'variable.property' is wired to a graph traversal "
+                    + "row; a whole matched node/edge has no single value representation yet");
         }
         throw new UnsupportedOperationException(
                 "not yet supported: RETURN item '" + expr + "' is not a bare property/variable reference - "
                 + "literals, aggregates and function calls need the full ExpressionParser, not wired to a "
-                + "graph traversal row in PoC.5");
+                + "graph traversal row");
     }
 
     // ------------------------------------------------------------------------------------------------------
