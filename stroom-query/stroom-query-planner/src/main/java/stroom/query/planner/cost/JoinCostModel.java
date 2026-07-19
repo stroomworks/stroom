@@ -40,7 +40,10 @@ public final class JoinCostModel {
      * @param rightDistinctKeys never negative; same treatment.
      * @return never negative. When both distinct-key counts are unknown (zero), this degrades to the full
      *         cross-product {@code leftRows * rightRows} - a deliberately pessimistic (over-, never under-)
-     *         estimate rather than risking a division by zero or an invented small number.
+     *         estimate rather than risking a division by zero or an invented small number. The
+     *         {@code leftRows * rightRows} product is computed with saturating arithmetic: if it would overflow
+     *         a 64-bit {@code long} it is clamped to {@link Long#MAX_VALUE} (an even more pessimistic estimate)
+     *         rather than wrapping to a negative number and violating this "never negative" postcondition.
      */
     public static long estimateCardinality(
             final long leftRows, final long rightRows, final long leftDistinctKeys,
@@ -49,7 +52,15 @@ public final class JoinCostModel {
             throw new IllegalArgumentException("rows/distinct-key counts must not be negative");
         }
         final long maxDistinct = Math.max(1, Math.max(leftDistinctKeys, rightDistinctKeys));
-        return (leftRows * rightRows) / maxDistinct;
+        long product;
+        try {
+            product = Math.multiplyExact(leftRows, rightRows);
+        } catch (final ArithmeticException overflow) {
+            // The cross-product exceeds Long.MAX_VALUE; clamp rather than wrap negative (the estimate is a
+            // pessimistic upper bound anyway, so a saturated value is still directionally correct).
+            product = Long.MAX_VALUE;
+        }
+        return product / maxDistinct;
     }
 
     /**

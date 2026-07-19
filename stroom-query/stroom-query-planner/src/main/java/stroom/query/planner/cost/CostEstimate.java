@@ -45,7 +45,10 @@ public record CostEstimate(long rows, long bytes, long durationMs, double confid
         if (durationMs < 0) {
             throw new IllegalArgumentException("durationMs must not be negative: " + durationMs);
         }
-        if (confidence < 0.0 || confidence > 1.0) {
+        if (Double.isNaN(confidence) || confidence < 0.0 || confidence > 1.0) {
+            // NaN must be rejected explicitly: NaN < 0.0 and NaN > 1.0 are both false, so a bare range check
+            // would let a NaN confidence through and later corrupt comparisons like chooseAlgorithm's
+            // confidence() == 0.0 (NaN equals nothing, including itself).
             throw new IllegalArgumentException("confidence must be in [0,1]: " + confidence);
         }
         Objects.requireNonNull(notes, "notes");

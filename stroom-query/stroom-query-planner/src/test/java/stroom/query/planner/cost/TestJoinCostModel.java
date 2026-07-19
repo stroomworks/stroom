@@ -54,6 +54,15 @@ class TestJoinCostModel {
     }
 
     @Test
+    void estimateCardinality_hugeCrossProduct_saturatesRatherThanOverflowingNegative() {
+        // leftRows * rightRows exceeds Long.MAX_VALUE; with the unknown-distinct-keys fallback (maxDistinct=1)
+        // the result must stay a pessimistic, non-negative upper bound, not wrap to a negative number.
+        final long result = JoinCostModel.estimateCardinality(5_000_000_000L, 5_000_000_000L, 0, 0);
+        assertThat(result).isEqualTo(Long.MAX_VALUE);
+        assertThat(result).isNotNegative();
+    }
+
+    @Test
     void chooseAlgorithm_lookupCapableRightSide_choosesBroadcastLookupOnRight() {
         final CostedAccessPath left = tiny(new IndexScan(), 1_000_000);
         final CostedAccessPath right = tiny(new StateLookup(), 10);

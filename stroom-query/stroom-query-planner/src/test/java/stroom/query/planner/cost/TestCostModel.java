@@ -20,6 +20,7 @@ import stroom.query.api.ExpressionTerm;
 import stroom.query.api.ExpressionTerm.Condition;
 import stroom.query.grammar.ast.AstPosition;
 import stroom.query.planner.logical.Scan;
+import stroom.query.planner.port.IndexCostSignal;
 import stroom.query.planner.port.MetaStats;
 import stroom.query.planner.port.RowCountSignal;
 import stroom.query.planner.port.StateStoreStats;
@@ -29,8 +30,10 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalDouble;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
@@ -82,7 +85,24 @@ class TestCostModel {
         assertThat(result.estimate().rows()).isEqualTo(10_000);
         // 10,000 rows / (500 docs/sec / 1000) = 10,000 / 0.5 rows-per-ms = 20,000 ms.
         assertThat(result.estimate().durationMs()).isEqualTo(20_000);
+        // No selectivity terms => selectivity 1.0 => bytes == the signal's byteSize, unscaled.
+        assertThat(result.estimate().bytes()).isEqualTo(1_000_000);
         assertThat(result.estimate().confidence()).isEqualTo(1.0);
+    }
+
+    @Test
+    void indexScan_scalesBytesDownBySelectivity() {
+        final CostModel costModel = new CostModel(
+                noMeta(), FakeIndexShardStats.withThroughput("MyIndex", 10_000, 1_000_000, 500.0), noState());
+
+        final long unfilteredBytes = costModel.estimate(new Scan("s", "MyIndex", POS), null, null, List.of())
+                .estimate().bytes();
+        final long equalityBytes = costModel.estimate(
+                        new Scan("s", "MyIndex", POS), null, null, List.of(term(Condition.EQUALS)))
+                .estimate().bytes();
+
+        // An equality term is more selective, so the estimated bytes read scale down with the row estimate.
+        assertThat(equalityBytes).isLessThan(unfilteredBytes);
     }
 
     @Test
@@ -107,6 +127,8 @@ class TestCostModel {
 
         assertThat(result.accessPath()).isInstanceOf(StateLookup.class);
         assertThat(result.estimate().rows()).isEqualTo(500);
+        // A state point-lookup uses the fixed placeholder duration (no per-lookup latency signal exists yet).
+        assertThat(result.estimate().durationMs()).isEqualTo(1);
         assertThat(result.estimate().confidence()).isEqualTo(1.0);
     }
 
@@ -174,5 +196,33 @@ class TestCostModel {
                 .isInstanceOf(NullPointerException.class);
         assertThatThrownBy(() -> new CostModel(noMeta(), noIndex(), null))
                 .isInstanceOf(NullPointerException.class);
+    }
+
+    // ------------------------------------------------------------------------------------------------------
+    // Record precondition guards (these records are public API constructed directly by the cost model and its
+    // callers, so their invariants must be enforced - and proven enforced).
+    // ------------------------------------------------------------------------------------------------------
+
+    @Test
+    void costEstimate_rejectsNegativeAndOutOfRangeAndNaN() {
+        assertThatIllegalArgumentException().isThrownBy(() -> new CostEstimate(-1, 0, 0, 1.0, List.of()));
+        assertThatIllegalArgumentException().isThrownBy(() -> new CostEstimate(0, -1, 0, 1.0, List.of()));
+        assertThatIllegalArgumentException().isThrownBy(() -> new CostEstimate(0, 0, -1, 1.0, List.of()));
+        assertThatIllegalArgumentException().isThrownBy(() -> new CostEstimate(0, 0, 0, -0.1, List.of()));
+        assertThatIllegalArgumentException().isThrownBy(() -> new CostEstimate(0, 0, 0, 1.1, List.of()));
+        // NaN must be rejected: NaN < 0 and NaN > 1 are both false, so a bare range check would let it through.
+        assertThatIllegalArgumentException().isThrownBy(() -> new CostEstimate(0, 0, 0, Double.NaN, List.of()));
+    }
+
+    @Test
+    void rowCountSignal_rejectsNegativeRows() {
+        assertThatIllegalArgumentException().isThrownBy(() -> new RowCountSignal(-1));
+    }
+
+    @Test
+    void indexCostSignal_rejectsNegativeCountsAndNullThroughput() {
+        assertThatIllegalArgumentException().isThrownBy(() -> new IndexCostSignal(-1, 0, OptionalDouble.empty()));
+        assertThatIllegalArgumentException().isThrownBy(() -> new IndexCostSignal(0, -1, OptionalDouble.empty()));
+        assertThatThrownBy(() -> new IndexCostSignal(0, 0, null)).isInstanceOf(NullPointerException.class);
     }
 }
