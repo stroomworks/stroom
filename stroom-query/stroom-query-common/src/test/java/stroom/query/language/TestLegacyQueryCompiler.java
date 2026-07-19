@@ -35,6 +35,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
 
 /**
  * Proves that {@link LegacyQueryCompiler} is behaviourally indistinguishable from calling the
@@ -116,6 +117,19 @@ class TestLegacyQueryCompiler {
         assertThat(plan.getEstimatedDurationMs()).isNull();
         assertThat(plan.getConfidence()).isNull();
         assertThat(plan.getChildren()).isEmpty();
+    }
+
+    @Test
+    void explain_whenNoDatasourceResolves_usesQuestionMarkPlaceholder() {
+        // If extractDataSourceOnly never yields a DocRef (here a no-op mock factory never calls the consumer),
+        // explain() must fall back to a "?" datasource name rather than NPE on a null DocRef.
+        final SearchRequestFactory factory = mock(SearchRequestFactory.class);
+        final ExpressionContext expressionContext =
+                newExpressionContext(DateTimeSettings.builder().referenceTime(0L).build());
+
+        final ExplainPlan plan = new LegacyQueryCompiler(factory).explain(SAMPLE_QUERY, expressionContext);
+
+        assertThat(plan.getDescription()).contains("Scan ?").contains("legacy engine");
     }
 
     @Test

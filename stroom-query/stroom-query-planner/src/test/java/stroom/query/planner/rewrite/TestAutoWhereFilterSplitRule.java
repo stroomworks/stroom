@@ -24,8 +24,12 @@ import stroom.query.api.datasource.ConditionSet;
 import stroom.query.api.datasource.FieldType;
 import stroom.query.api.datasource.QueryField;
 import stroom.query.grammar.ast.AstPosition;
+import stroom.query.planner.logical.EquiKey;
 import stroom.query.planner.logical.Filter;
+import stroom.query.planner.logical.Join;
+import stroom.query.planner.logical.JoinType;
 import stroom.query.planner.logical.LogicalPlan;
+import stroom.query.planner.logical.QualifiedField;
 import stroom.query.planner.logical.Scan;
 import stroom.query.planner.port.FieldInfoSource;
 
@@ -154,6 +158,49 @@ class TestAutoWhereFilterSplitRule {
         final Filter result = (Filter) rule.apply(filter(null, null));
 
         assertThat(result.wherePredicate()).isNull();
+        assertThat(result.filterPredicate()).isNull();
+    }
+
+    @Test
+    void qualifiedTermWithUnknownAlias_isIneligible() {
+        // A term qualified with an alias naming no scan (the Filter's only scan is "s") can't be resolved, so
+        // conservatively it is ineligible and moves to the filter predicate.
+        final ExpressionOperator where = ExpressionOperator.builder()
+                .op(Op.AND)
+                .children(List.of(term("x.StreamId", Condition.EQUALS, "1")))
+                .build();
+
+        final Filter result = (Filter) rule.apply(filter(where, null));
+
+        assertThat(result.wherePredicate()).isNull();
+        assertThat(result.filterPredicate()).isEqualTo(where);
+    }
+
+    @Test
+    void unqualifiedTermFoundOnASecondScan_isEligible() {
+        // An unqualified field absent on the first scan but present on the second must be found by lookupField's
+        // multi-scan search loop (and, being queryable with a supported condition, stays in where).
+        final QueryField otherField = QueryField.builder()
+                .fldName("OtherField").fldType(FieldType.LONG)
+                .queryable(true).conditionSet(ConditionSet.DEFAULT_NUMERIC)
+                .build();
+        final FieldInfoSource twoSources = new FakeFieldInfoSource(Map.of(
+                "Events", List.of(QUERYABLE_NUMERIC),
+                "Other", List.of(otherField)));
+        final AutoWhereFilterSplitRule twoScanRule = new AutoWhereFilterSplitRule(twoSources);
+
+        final LogicalPlan join = new Join(
+                new Scan("a", "Events", POS), new Scan("b", "Other", POS), JoinType.INNER,
+                List.of(new EquiKey(new QualifiedField("a", "StreamId"), new QualifiedField("b", "OtherField"))),
+                POS);
+        final ExpressionOperator where = ExpressionOperator.builder()
+                .op(Op.AND)
+                .children(List.of(term("OtherField", Condition.EQUALS, "1")))
+                .build();
+
+        final Filter result = (Filter) twoScanRule.apply(new Filter(join, where, null, POS));
+
+        assertThat(result.wherePredicate()).isEqualTo(where);
         assertThat(result.filterPredicate()).isNull();
     }
 

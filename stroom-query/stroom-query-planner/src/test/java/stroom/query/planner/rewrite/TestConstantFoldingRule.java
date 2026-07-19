@@ -22,6 +22,7 @@ import stroom.query.api.ExpressionTerm;
 import stroom.query.api.ExpressionTerm.Condition;
 import stroom.query.grammar.ast.AstPosition;
 import stroom.query.planner.logical.Filter;
+import stroom.query.planner.logical.Having;
 import stroom.query.planner.logical.LogicalPlan;
 import stroom.query.planner.logical.Scan;
 
@@ -107,6 +108,43 @@ class TestConstantFoldingRule {
 
         assertThat(((Filter) result).wherePredicate()).isNull();
         assertThat(((Filter) result).filterPredicate()).isNull();
+    }
+
+    private static ExpressionOperator foldableDoubleNegation() {
+        // AND(NOT(NOT(a)), b) - folds to AND(a, b); see doubleNegation_collapsesToInnerTerm.
+        return ExpressionOperator.builder()
+                .op(Op.AND)
+                .children(List.of(
+                        ExpressionOperator.builder().op(Op.NOT).children(List.of(
+                                ExpressionOperator.builder().op(Op.NOT).children(List.of(term("a", "1"))).build()
+                        )).build(),
+                        term("b", "2")))
+                .build();
+    }
+
+    private static ExpressionOperator foldedDoubleNegation() {
+        return ExpressionOperator.builder().op(Op.AND).children(List.of(term("a", "1"), term("b", "2"))).build();
+    }
+
+    @Test
+    void foldsTheFilterPredicateSlot_notJustWhere() {
+        // PlanRewriteUtil.mapPredicates must transform the Filter.filterPredicate slot too, not only wherePredicate.
+        final LogicalPlan plan = new Filter(new Scan("s", "Source", POS), null, foldableDoubleNegation(), POS);
+
+        final Filter result = (Filter) rule.apply(plan);
+
+        assertThat(result.wherePredicate()).isNull();
+        assertThat(result.filterPredicate()).isEqualTo(foldedDoubleNegation());
+    }
+
+    @Test
+    void foldsTheHavingPredicate() {
+        // PlanRewriteUtil.mapPredicates must transform a Having node's predicate.
+        final LogicalPlan plan = new Having(new Scan("s", "Source", POS), foldableDoubleNegation(), POS);
+
+        final Having result = (Having) rule.apply(plan);
+
+        assertThat(result.predicate()).isEqualTo(foldedDoubleNegation());
     }
 
     @Test

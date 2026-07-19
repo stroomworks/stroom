@@ -101,6 +101,21 @@ class TestMetaStatsAdapter {
     }
 
     @Test
+    void estimate_onlyToTime_usesLessThan() {
+        final MetaService metaService = mock(MetaService.class);
+        when(metaService.getFeeds()).thenReturn(Set.of("Events"));
+        when(metaService.getSelectionSummary(any())).thenReturn(summaryWithItemCount(0));
+        final MetaStatsAdapter adapter = new MetaStatsAdapter(metaService);
+
+        adapter.estimate("Events", null, 2_000L);
+
+        final ArgumentCaptor<FindMetaCriteria> captor = ArgumentCaptor.forClass(FindMetaCriteria.class);
+        verify(metaService).getSelectionSummary(captor.capture());
+        assertThat(captor.getValue().getExpression().toString())
+                .contains(ExpressionTerm.Condition.LESS_THAN.getDisplayValue());
+    }
+
+    @Test
     void constructorRejectsNullMetaService() {
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> new MetaStatsAdapter(null))
                 .isInstanceOf(NullPointerException.class);
