@@ -182,9 +182,8 @@ class TestGraphPhysicalStores {
     void propertyIndex_resolvesAnchorsAtEveryValueTierBoundary(@TempDir final Path root) {
         // Task P1.3: DIRECT (<=32 bytes), UID_LOOKUP (33-511 bytes), HASH_LOOKUP (>511 bytes) - prove findAnchors
         // resolves correctly right at and either side of both tier boundaries, not just for short values. Each
-        // length uses a distinct fill character (not just a distinct length) so no value is a byte-for-byte
-        // prefix of another - GraphPropertyIndex's DIRECT tier has no length delimiter (see its Javadoc's
-        // documented limitation), so same-character values of different lengths would otherwise cross-match.
+        // length uses a distinct fill character (not just a distinct length) - belt-and-braces alongside
+        // propertyIndex_directTier_prefixValueDoesNotMatchLongerValue, which covers the same-prefix case directly.
         try (GraphStores stores = GraphStores.provision(root.resolve("graph5"), DOC)) {
             final long label = intern(stores, stores.getLabelUids(), "Thing");
             final long key = intern(stores, stores.getPropertyKeyUids(), "value");
@@ -216,6 +215,37 @@ class TestGraphPhysicalStores {
             final List<Long> neverInserted = stores.read(readTxn -> stores.getPropertyIndex().findAnchors(
                     readTxn, label, key, "y".repeat(100).getBytes(StandardCharsets.UTF_8)));
             assertThat(neverInserted).isEmpty();
+        }
+    }
+
+    @Test
+    void propertyIndex_directTier_prefixValueDoesNotMatchLongerValue(@TempDir final Path root) {
+        // Regression test for a bug present since PoC.4 (found via the tier-boundary test above): the DIRECT
+        // tier used to inline valueBytes into the key with no length delimiter, so anchoring on a value that is
+        // a byte-for-byte prefix of a different, longer DIRECT-tier value on the same (label, propKey) would
+        // incorrectly also match the longer value's anchors. Both values here are well within DIRECT_MAX_LENGTH
+        // (32 bytes) and "abc" is a literal prefix of "abcdef" - the case the missing length delimiter mishandled.
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph5b"), DOC)) {
+            final long label = intern(stores, stores.getLabelUids(), "Thing");
+            final long key = intern(stores, stores.getPropertyKeyUids(), "value");
+            final long shortNodeUid = intern(stores, stores.getNodeUids(), "n-short");
+            final long longNodeUid = intern(stores, stores.getNodeUids(), "n-long");
+
+            stores.write(writer -> {
+                stores.getPropertyIndex().insert(
+                        writer, label, key, "abc".getBytes(StandardCharsets.UTF_8), shortNodeUid);
+                stores.getPropertyIndex().insert(
+                        writer, label, key, "abcdef".getBytes(StandardCharsets.UTF_8), longNodeUid);
+                return null;
+            });
+
+            final List<Long> shortAnchors = stores.read(readTxn -> stores.getPropertyIndex().findAnchors(
+                    readTxn, label, key, "abc".getBytes(StandardCharsets.UTF_8)));
+            assertThat(shortAnchors).containsExactly(shortNodeUid);
+
+            final List<Long> longAnchors = stores.read(readTxn -> stores.getPropertyIndex().findAnchors(
+                    readTxn, label, key, "abcdef".getBytes(StandardCharsets.UTF_8)));
+            assertThat(longAnchors).containsExactly(longNodeUid);
         }
     }
 

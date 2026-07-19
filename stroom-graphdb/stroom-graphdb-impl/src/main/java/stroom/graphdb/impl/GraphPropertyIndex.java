@@ -67,14 +67,22 @@ import java.util.Optional;
  * <p>{@code valueBytes} equality anchors only (P0.1: range anchors are a documented future extension, not v1)
  * - this class treats it as an opaque byte string it neither interprets nor orders.</p>
  *
- * <p><b>Known limitation (pre-existing, not introduced or fixed by Task P1.3):</b> at the {@code DIRECT} tier,
- * {@code valueBytes} is inlined into the key with no length delimiter, so {@link #findAnchors} for a value that
- * happens to be a byte-for-byte prefix of a different, longer {@code DIRECT}-tier value on the same
- * (label, propKey) will incorrectly also match the longer value's anchors (e.g. anchoring on {@code "ab"} would
- * also match nodes anchored on {@code "abc"}). The {@code UID_LOOKUP}/{@code HASH_LOOKUP} tiers do not have this
- * problem (they key by an interned id, not the raw value). Closing this for {@code DIRECT} too would need a
- * length prefix or terminator ahead of {@code valueBytes} - a key-format change affecting every existing caller,
- * out of scope for a tiering task; flagged here rather than silently left undocumented.</p>
+ * <p><b>DIRECT-tier length prefix (fixes a bug present since PoC.4, found via Task P1.3's tier-boundary test):</b>
+ * the {@code DIRECT} tier's segment is {@code [tag:1][length:1][valueBytes]}, not bare {@code [tag:1][valueBytes]}
+ * - without the length byte, {@link #findAnchors}'s prefix scan for a value that is a byte-for-byte prefix of a
+ * different, longer {@code DIRECT}-tier value on the same (label, propKey) would incorrectly also match the
+ * longer value's anchors (e.g. anchoring on {@code "ab"} would also match nodes anchored on {@code "abc"}), since
+ * the scan had nothing to stop it from reading past the shorter value's end into the longer key's remainder. The
+ * length byte closes this: two different-length values now always diverge at the length byte itself, before any
+ * of {@code valueBytes} is compared. {@code DIRECT_MAX_LENGTH} (32) fits in one unsigned byte with room to spare.
+ * The {@code UID_LOOKUP}/{@code HASH_LOOKUP} tiers never had this problem (they key by a fixed-width interned id,
+ * not the raw value) and are unchanged.</p>
+ *
+ * <p><b>On-disk compatibility:</b> this is a key-format change for the {@code DIRECT} tier only. This feature has
+ * not shipped in any release (not yet mentioned in {@code CHANGELOG.md}/{@code BREAKING_CHANGES.md}), so there is
+ * no back-compat obligation and no migration is provided - per {@link GraphStores#rebuild}'s existing
+ * "materialized projection, rebuildable from source" design, any store already provisioned with the pre-fix
+ * {@code DIRECT} format must be rebuilt (not merely reopened) before this fix takes effect for it.</p>
  */
 public final class GraphPropertyIndex {
 
@@ -165,7 +173,7 @@ public final class GraphPropertyIndex {
      */
     private ByteBuffer encodeForInsert(final LmdbWriter writer, final byte[] valueBytes) {
         if (valueBytes.length <= DIRECT_MAX_LENGTH) {
-            return taggedSegment(VariableValType.DIRECT, directBuffer(valueBytes));
+            return directSegment(valueBytes);
         } else if (valueBytes.length <= UID_LOOKUP_MAX_LENGTH) {
             return valueUidLookup.put(writer.getWriteTxn(), directBuffer(valueBytes),
                     idByteBuffer -> taggedSegment(VariableValType.UID_LOOKUP, idByteBuffer));
@@ -182,7 +190,7 @@ public final class GraphPropertyIndex {
      */
     private Optional<ByteBuffer> encodeForLookup(final Txn<ByteBuffer> readTxn, final byte[] valueBytes) {
         if (valueBytes.length <= DIRECT_MAX_LENGTH) {
-            return Optional.of(taggedSegment(VariableValType.DIRECT, directBuffer(valueBytes)));
+            return Optional.of(directSegment(valueBytes));
         } else if (valueBytes.length <= UID_LOOKUP_MAX_LENGTH) {
             return valueUidLookup.get(readTxn, directBuffer(valueBytes),
                     maybeId -> maybeId.map(id -> taggedSegment(VariableValType.UID_LOOKUP, id)));
@@ -190,6 +198,20 @@ public final class GraphPropertyIndex {
             return valueHashLookup.get(readTxn, valueBytes,
                     maybeId -> maybeId.map(id -> taggedSegment(VariableValType.HASH_LOOKUP, id)));
         }
+    }
+
+    /**
+     * The {@code DIRECT} tier's segment: {@code [tag:1][length:1][valueBytes]}. The length byte (safe as a single
+     * unsigned byte since {@code valueBytes.length <= DIRECT_MAX_LENGTH} (32) here) stops {@link #findAnchors}'s
+     * prefix scan from matching a longer value that merely starts with the same bytes - see this class's Javadoc.
+     */
+    private static ByteBuffer directSegment(final byte[] valueBytes) {
+        final ByteBuffer segment = ByteBuffer.allocateDirect(2 + valueBytes.length);
+        segment.put(VariableValType.DIRECT.getPrimitiveValue());
+        segment.put((byte) valueBytes.length);
+        segment.put(valueBytes);
+        segment.flip();
+        return segment;
     }
 
     private static ByteBuffer taggedSegment(final VariableValType tag, final ByteBuffer encodedValue) {
