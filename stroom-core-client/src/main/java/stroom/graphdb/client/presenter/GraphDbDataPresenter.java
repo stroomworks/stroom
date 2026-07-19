@@ -36,6 +36,14 @@ import java.util.List;
  * Task P6.2: {@code GraphDbDoc}'s Data tab. The default query needs no {@code FROM}-equivalent clause - Task
  * P6.1's dispatch seam resolves the target graph from this tab's own doc-ref (via
  * {@code SearchRequestSource.ownerDocRef}), not from the query text.
+ *
+ * <p>Code-review fix: the original default query ({@code "MATCH (n)-[r]->(m) RETURN labels(n), type(r),
+ * labels(m), n, m LIMIT 20"}) could never actually run - {@code GraphTraversalEngine.resolveAnchors} requires an
+ * anchor to carry at least one label and one property predicate to seek the property index, an untyped edge
+ * pattern has no access path over the per-type-keyed adjacency stores, and {@code labels()}/{@code type()}
+ * function calls aren't wired to a graph traversal row. The corrected default below satisfies all three
+ * constraints (a labelled, predicated anchor; a typed edge; bare property references in {@code RETURN}) so it
+ * genuinely executes - returning zero rows against a still-empty graph rather than throwing.</p>
  */
 public class GraphDbDataPresenter
         extends AbstractQueryDataPresenter<
@@ -43,7 +51,7 @@ public class GraphDbDataPresenter
                 GraphDbDoc> {
 
     private static final String DEFAULT_QUERY =
-            "MATCH (n)-[r]->(m) RETURN labels(n), type(r), labels(m), n, m LIMIT 20";
+            "MATCH (a:Node {id: 'example'})-[:RELATED_TO]->(b:Node) RETURN a.id, b.id LIMIT 20";
 
     public interface GraphDbDataView extends QueryDataView {
     }
