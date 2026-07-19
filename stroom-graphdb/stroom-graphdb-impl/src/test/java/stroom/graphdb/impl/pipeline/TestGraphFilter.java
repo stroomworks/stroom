@@ -252,6 +252,40 @@ class TestGraphFilter {
     }
 
     @Test
+    void recordFailingAtTheStoreLayer_isLoggedAndSkippedWithoutAbortingTheStream(@TempDir final Path root) {
+        // Code-review fix: a well-formed-XML record can still fail once it reaches the stores - here a node with
+        // more labels than the fixed-width encoding allows (GraphNodeDb.insert's >255 guard). Previously that
+        // RuntimeException propagated straight out and aborted the whole stream; now it is logged and the record
+        // skipped, so the valid node that follows it is still written - mirroring PlanBFilter's catchLmdbError.
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph10"), DOC)) {
+            final StringBuilder tooManyLabels = new StringBuilder();
+            for (int i = 0; i < 256; i++) {
+                tooManyLabels.append("            <label>L").append(i).append("</label>\n");
+            }
+            final List<String> capturedErrors = new ArrayList<>();
+            ingest(stores, """
+                    <graph xmlns="graph-mutation:1" version="1.0">
+                        <node id="bad" validFrom="2026-01-01T00:00:00.000Z">
+                    """
+                    + tooManyLabels
+                    + """
+                        </node>
+                        <node id="good" validFrom="2026-01-01T00:00:00.000Z">
+                            <label>Thing</label>
+                            <property name="id">good</property>
+                        </node>
+                    </graph>
+                    """, new AtomicReference<>(stores), capturedErrors);
+
+            // The poison record was logged and skipped...
+            assertThat(capturedErrors).anyMatch(message -> message.contains("Failed to write <node>"));
+            // ...but the stream continued: the following valid node is written and queryable.
+            final List<Val[]> rows = query(stores, "MATCH (g:Thing {id: 'good'}) RETURN g.id");
+            assertThat(rows).extracting(row -> row[0].toString()).containsExactly("good");
+        }
+    }
+
+    @Test
     void nodeUpdate_unchangedPropertyAnchorStillResolves(@TempDir final Path root) {
         try (GraphStores stores = GraphStores.provision(root.resolve("graph6"), DOC)) {
             ingest(stores, """

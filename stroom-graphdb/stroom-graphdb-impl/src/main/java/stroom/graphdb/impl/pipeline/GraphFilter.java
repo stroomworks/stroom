@@ -70,9 +70,13 @@ import java.util.Optional;
  * {@link #endProcessing()}), calling {@link LmdbWriter#tryCommit()} after every mutation - batching is handled
  * entirely by {@link LmdbWriter}'s own internal change-count threshold, no manual batching logic here.</p>
  *
- * <p>A malformed record (missing a required attribute/child, an unparsable {@code validFrom}) is logged via the
- * normal pipeline error-reporting path and skipped - it does not abort the whole stream, mirroring
- * {@code PlanBFilter}'s own resilience to isolated bad records.</p>
+ * <p>A bad record is logged via the normal pipeline error-reporting path and skipped - it does not abort the
+ * whole stream, mirroring {@code PlanBFilter}'s own resilience to isolated bad records. This covers both a
+ * malformed record (missing a required attribute/child, an unparsable {@code validFrom} - detected before any
+ * store write) and a record that reaches the store layer but fails there (e.g. a node with more labels than the
+ * store can encode, a property value too large for the LMDB buffer, or a pre-existing corrupt version blob) -
+ * every per-record store mutation runs under {@link #perRecord}, the analogue of
+ * {@code PlanBFilter.catchLmdbError}.</p>
  */
 @ConfigurableElement(
         type = "GraphFilter",
@@ -249,10 +253,10 @@ public class GraphFilter extends AbstractXMLFilter {
             }
             case SRC_ELEMENT -> currentSrc = contentBuffer.toString();
             case DST_ELEMENT -> currentDst = contentBuffer.toString();
-            case NODE_ELEMENT -> addNode();
-            case NODE_DELETE_ELEMENT -> deleteNode();
-            case EDGE_ELEMENT -> addEdge();
-            case EDGE_DELETE_ELEMENT -> deleteEdge();
+            case NODE_ELEMENT -> perRecord(NODE_ELEMENT, this::addNode);
+            case NODE_DELETE_ELEMENT -> perRecord(NODE_DELETE_ELEMENT, this::deleteNode);
+            case EDGE_ELEMENT -> perRecord(EDGE_ELEMENT, this::addEdge);
+            case EDGE_DELETE_ELEMENT -> perRecord(EDGE_DELETE_ELEMENT, this::deleteEdge);
             default -> {
                 // Not a record-shaping element - nothing to do.
             }
@@ -265,6 +269,26 @@ public class GraphFilter extends AbstractXMLFilter {
     public void characters(final char[] ch, final int start, final int length) throws SAXException {
         contentBuffer.append(ch, start, length);
         super.characters(ch, start, length);
+    }
+
+    /**
+     * Runs one record's handler, isolating a store-layer failure to that single record. A well-formed-XML
+     * record can still fail once it reaches the stores - a node with more labels than the fixed-width encoding
+     * allows ({@code IllegalArgumentException} from {@link GraphNodeDb#insert}), a property value too big for the
+     * LMDB buffer ({@code BufferOverflowException}), or a pre-existing corrupt version blob surfaced by the
+     * previous-version lookup. Such a record is logged and skipped rather than aborting the whole stream, exactly
+     * as {@code stroom.planb.impl.pipeline.PlanBFilter.catchLmdbError} does for its own store writes. The
+     * handlers' own up-front validation ({@code "<node> requires ..."}) returns normally and never reaches the
+     * catch.
+     */
+    private void perRecord(final String element, final Runnable handler) {
+        try {
+            handler.run();
+        } catch (final RuntimeException e) {
+            log(Severity.ERROR,
+                    "Failed to write <" + element + ">: " + e.getClass().getSimpleName() + " - " + e.getMessage(),
+                    e);
+        }
     }
 
     private void addNode() {
