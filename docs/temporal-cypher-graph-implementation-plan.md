@@ -784,13 +784,153 @@ separate, pre-existing property-index DIRECT-tier value-prefix-collision bug was
 P1.3's boundary testing and is tracked as its own follow-up, not folded into this phase.
 
 ### P2 — Ingest `GraphFilter` (7–13 pw)
-- **Graph-mutation XML schema** (node/edge upserts carrying `validFrom`) — a small new schema, or a convention on
-  `reference-data:2` (design §5.2). Decide **[D7]**.
-- **`GraphFilter extends AbstractXMLFilter`** modelled on `PlanBFilter` (§1.4): SAX-parse mutations, write
-  node/out-edge/in-edge/interning/property-index entries via a new `ShardWriter.addGraph…` path.
-- **Wiring**: `bindElement(GraphFilter.class)` in a `PipelineElementModule`; `ShardWriters` graph-DBI open path.
-- **Round-trip tests**: XML → graph → query fixtures.
-- *Gate*: a feed of events reprocesses into a queryable graph; rebuild-from-streams works.
+
+> **Scoping note (recorded 2026-07-19):** `PlanBFilter` is a *misleading* template in one important respect —
+> it resolves its target doc dynamically per-XML-record (from a `<map>` element's text, via `ShardWriter.getDoc`),
+> and writes into a **per-stream shard directory that gets zip-shipped and merged later** by `ShardManager`/
+> `MergeProcessor` — a distributed-shard architecture P1's Decision D9 already declined to build for graphs (a
+> `GraphDbDoc` is one long-lived, directly-opened `GraphStores`, not a shardable/mergeable store). `GraphFilter`
+> instead resolves its **one** target `GraphDbDoc` via a `@PipelineProperty` `DocRef` (like `DynamicIndexingFilter`
+> does for an index), exactly as design doc §2.1 already specifies: *"`GraphFilter` writes into the owning
+> `GraphDbDoc`'s stores"* — and writes directly into that doc's live `GraphStores` via a single held-open
+> `LmdbWriter`, no shard/merge/zip/transfer step at all.
+
+Three tasks, each independently verifiable and committable, following the established Depends-on/Files/
+Contract/Done-when/Verify shape.
+
+#### Task P2.1 — Graph-mutation XML schema (resolves D7)
+- **Depends on**: none (a schema-only task; P2.2 consumes it).
+- **Decision D7 — resolved: a small new schema, not a `reference-data:2` convention.** `reference-data:2`'s XSD
+  (`reference_data_v2_0_1...xsd`) is narrow — `referenceData` → `reference` → `map` + (`key`|`range`) + `value` —
+  with no concept of edges, labels, multiple properties, or a `validFrom`/effective-time per record at all.
+  Extending it to cover graph mutations would mean recreating most of what a purpose-built schema needs anyway
+  (exactly the amount of extension `plan-b:2` already needed over plain ref-data), so "reuse" would only be a
+  reuse of the root-element wrapper, not of any real vocabulary. Design doc §5.2's own wording ("a small new
+  schema of node/edge upserts") already leans this way; the `reference-data:2` convention was offered only as a
+  fallback, never elaborated. A new namespace is more honest than stretching an unrelated one.
+- **Files**: `stroom-graphdb-impl/src/main/resources/.../graph_mutation_v1_0.xsd` (or wherever this project's
+  convention places pipeline-element XSDs — check `plan_b_v2_0.xsd`'s location as the precedent) — the frozen v1
+  mutation vocabulary:
+  ```xml
+  <graph xmlns="graph-mutation:1" version="1.0">
+      <node id="d-42" validFrom="2026-01-01T00:00:00.000Z">
+          <label>Device</label>
+          <property name="serial">ABC123</property>
+      </node>
+      <edge type="CONNECTED_TO" validFrom="2026-01-01T00:00:00.000Z">
+          <src>d-42</src>
+          <dst>account-a</dst>
+          <property name="channel">wifi</property>
+      </edge>
+      <node-delete id="d-42" validFrom="2026-02-01T00:00:00.000Z"/>
+      <edge-delete type="CONNECTED_TO" validFrom="2026-02-01T00:00:00.000Z">
+          <src>d-42</src>
+          <dst>account-a</dst>
+      </edge-delete>
+  </graph>
+  ```
+  `node`/`edge` map 1:1 onto `GraphNodeDb.insert`/`GraphAdjacencyDb.insert`+`GraphInEdgeDb.insert`; `node-delete`/
+  `edge-delete` onto their `delete` counterparts (design §5.4: "a supersede/delete writes a new [tombstone]
+  version" - this schema has no in-place update, matching the frozen temporal model exactly).
+  - `id`/`type`/`src`/`dst` are the *external* string identifiers interned via `GraphStores`'s `UidLookupDb`
+    namespaces at ingest time - never raw UIDs in the XML.
+  - `validFrom` is a **required** attribute (ISO-8601 instant) - v1 does not default it from event/receipt time;
+    that would conflate two different "when did this happen" concepts (wall-clock ingest time vs the
+    domain-modelled effective time a graph mutation is about) that deserve a deliberate decision, not a silent
+    default. Document this as a documented v1 requirement, not gap.
+  - `<property>` values are **string-only in v1** (plain element text, matching `GraphPropsCodec`'s existing
+    `Val`-typed storage via `ValString.create(...)`) - a `type` attribute for numeric/boolean/date property values
+    is a documented future extension (mirrors this project's repeated "documented escalation, not v1" pattern -
+    e.g. P0.1's property-index hash-lookup tier, P1.3's tiering itself), not built speculatively here since
+    nothing in the PoC/P1 traversal engine yet needs typed ingested properties beyond what test fixtures already
+    construct directly in Java.
+- **Contract**: the XSD is descriptive/validating only - `GraphFilter` (P2.2) parses by SAX local-name dispatch
+  exactly as `PlanBFilter` does, not by generated JAXB bindings, so the XSD's job is schema validation in tests
+  (mirroring `TestPlanBFilter`'s `javax.xml.validation.Schema` pattern) and as documentation for XSLT authors
+  writing the "events → graph-mutation XML" transform (design §5.2 step 2) - it is not a runtime dependency of
+  `GraphFilter` itself.
+- **Done-when**: the XSD validates the example XML above (and rejects an `<edge>` missing `type`/`src`/`dst`, or
+  a `node`/`edge` missing `validFrom`).
+- **Verify**: a small XSD-only test using `javax.xml.validation.Schema`/`Validator` (no `GraphFilter` involved yet).
+
+#### Task P2.2 — `GraphFilter` + pipeline wiring
+- **Depends on**: P2.1 (the mutation vocabulary), all of P1 (writes through the hardened DAOs - interning
+  recorders, direction-aware adjacency, tiered property index - so ingested data gets the same correctness/
+  retention guarantees as test-fixture-seeded data).
+- **Files**:
+  - `stroom-graphdb-impl/.../pipeline/GraphFilter.java` (new) — `extends AbstractXMLFilter`, `@ConfigurableElement
+    (type = "GraphFilter", category = FILTER, roles = {ROLE_TARGET, ROLE_HAS_TARGETS}, ...)`. One
+    `@PipelineProperty` + `@PipelinePropertyDocRef(types = GraphDbDoc.TYPE)` setter (`setGraphDb(DocRef)`) -
+    **not** `PlanBFilter`'s dynamic per-record `<map>`-name resolution (see this section's scoping note above).
+    Constructor `@Inject`s `GraphDbDocCache`, `GraphStoreManager`. `startProcessing()`: resolve `doc =
+    graphDbDocCache.get(graphDbRef.getName())`, `stores = graphStoreManager.getOrOpen(doc)`, `writer =
+    stores.createWriter()` (new method - see below) - one writer held open for the whole stream, mirroring how
+    `ShardWriter`/`WriterInstance` hold a writer open across a stream in the Plan B precedent, just without the
+    shard/merge step. SAX dispatch on `endElement`, keyed on lower-cased local name (`node`/`edge`/`node-delete`/
+    `edge-delete`), accumulating child element text (`label`/`property`/`src`/`dst`) into instance fields between
+    `startElement`/`endElement` exactly as `PlanBFilter` does. Per record: intern `id`/`type`/label strings via
+    `stores.getNodeUids()`/`getEdgeTypeUids()`/`getLabelUids()` (`UidLookupDb.put`, get-or-create), intern each
+    `<property name="...">` name via `stores.getPropertyKeyUids()` **only if** the property is also meant to be
+    anchor-indexed (see `GraphNodeTypeMapping`/design §5.6 for which properties are indexable - if that mapping
+    doesn't exist yet for a given label, index every node property equality-style as a pragmatic v1 default and
+    document the choice), build the `Map<String, Val>` via `ValString.create(...)`, then call
+    `GraphNodeDb.insert`/`delete` or **both** `GraphAdjacencyDb.insert`/`delete` **and**
+    `GraphInEdgeDb.insert`/`delete` for one `<edge>`/`<edge-delete>` (P1.1's dual-write contract - a single
+    forgotten call here is exactly the bug class P1.1 fixed in the traversal engine, don't reintroduce it on the
+    write side). Call `writer.tryCommit()` after each record (batches automatically past `LmdbWriter`'s internal
+    10 000-change threshold - no manual batching logic needed). `endProcessing()`: `writer.close()` (commits any
+    remainder), call `super.endProcessing()`.
+  - `GraphStores.java` (modified) — add `public LmdbWriter createWriter()` delegating to `env.createWriter()` -
+    the manually-open/close counterpart to the existing callback-wrapped `write(Function<LmdbWriter,T>)`, needed
+    because `GraphFilter` holds one writer open across an entire SAX stream rather than one closed transaction
+    per call.
+  - `stroom-graphdb-impl/.../pipeline/GraphElementModule.java` (new) — `extends PipelineElementModule`;
+    `configureElements()` calls `bindElement(GraphFilter.class)`, mirroring `PlanBElementModule` exactly.
+  - `GraphDbModule.java` (modified) — `install(new GraphElementModule())` in `configure()` (mirrors
+    `PlanBModule`'s `install(new PlanBElementModule())` - this line does not exist yet, confirmed by reading the
+    current file).
+  - Property-anchor indexing note: `GraphFilter` also calls `GraphPropertyIndex.insert` for whichever properties
+    it decides to index (see above) - every `<node>` write must anchor-index at least the properties a later
+    `MATCH (n:Label {prop: value})` will search by, or PoC.5's `resolveAnchors` (which requires at least one
+    label + one property predicate, no full-label scan) will find nothing for that node.
+- **Contract**: a `<node-delete>`/`<edge-delete>` writes a tombstone (never deletes a key), matching every DAO's
+  existing `delete(...)` semantics; re-processing the same XML twice is idempotent for interning (`UidLookupDb.put`
+  is get-or-create) but **not** for node/edge versions themselves - inserting the same `(entity, validFrom)`
+  twice just overwrites that exact version in place (LMDB `put`), so reprocessing is safe, not merely tolerated.
+- **Done-when**: a real pipeline element instance (constructed directly in a test, not via the full pipeline
+  factory/XML-pipeline-config machinery - that integration is a different, heavier test altitude) processes the
+  example XML from P2.1 end-to-end via real SAX events and the resulting `GraphStores` answers a `MATCH` query
+  (via `GraphTraversalEngine`, reusing PoC.5/PoC.6) with the expected rows.
+- **Verify**: `./gradlew :stroom-graphdb:stroom-graphdb-impl:test`.
+
+#### Task P2.3 — Round-trip tests + rebuild-from-streams
+- **Depends on**: P2.2.
+- **Files**: `stroom-graphdb-impl/src/test/java/.../TestGraphFilter.java` (new) - drives `GraphFilter` with real
+  SAX events (`startDocument`/`startElement`/`characters`/`endElement`/... - either hand-driven or via a real SAX
+  parser over an XML string/fixture file, matching `TestPlanBFilter`'s own harness style) against a real
+  `GraphStores` (temp-dir, no mocks beyond a fake `GraphDbDocCache`/`GraphStoreManager` resolving to that
+  `GraphStores` - mirroring `TestGraphSearchProvider`'s existing fake-cache pattern). Covers: node upsert,
+  node-delete (tombstone), edge upsert (both directions written, `GraphInEdgeDb` too), edge-delete, re-processing
+  the same stream twice (idempotent), and a full "rebuild from streams" scenario: `GraphStores.rebuild(...)`
+  (already built in PoC.0/PoC.4) then re-run `GraphFilter` over the same XML - proving the graph is genuinely a
+  rebuildable materialized projection (design §5.2's closing claim), not silently dependent on incremental state
+  a rebuild would lose.
+- **Contract**: none beyond P2.2's - this task is test coverage, not new production code.
+- **Done-when**: `MATCH (d:Device {id:'d-42'})-[:CONNECTED_TO]->(a:Account) RETURN a.id` (the same worked example
+  used throughout PoC.5/PoC.6/P1's own tests) returns the expected rows when the graph was built entirely by
+  `GraphFilter` from XML, not by direct DAO calls in test setup code - closing the gap every prior phase's tests
+  left open (all of PoC.4-P1 seeded fixtures via direct `stores.getNodes().insert(...)` calls, never through a
+  real ingest path). Reprocessing the same XML twice yields the same query result (idempotent). `rebuild()` +
+  re-ingest from the same XML yields the same query result too (rebuild-from-streams works).
+- **Verify**: `./gradlew :stroom-graphdb:stroom-graphdb-impl:test`.
+
+**P2 exit gate**: a feed of graph-mutation XML (produced by an XSLT from raw events, per design §5.2 - the XSLT
+step itself is out of scope here, this phase starts from already-transformed graph-mutation XML) reprocesses via
+`GraphFilter` into a queryable graph indistinguishable, from the query engine's perspective, from one seeded by
+direct test fixtures; `GraphStores.rebuild()` + re-ingest reproduces the same queryable state, proving the graph
+is genuinely the rebuildable materialized projection the design doc claims. The XSLT (events → graph-mutation
+XML) authoring itself, and any real production feed/pipeline configuration, are explicitly out of scope - this
+phase proves the `GraphFilter` half of the pipeline, not the XSLT half.
 
 ### P3 — Variable-length paths / fixpoint (part of the 9–18 pw graph-query line)
 - **The one operator the equi-join core does not provide** (design §5.5 item 4). Bounded transitive-closure BFS/DFS
@@ -878,7 +1018,9 @@ P1.3's boundary testing and is tracked as its own follow-up, not folded into thi
 - **D6 — graph-plan wire payload**: a new additive `Query.graphSpec` field (recommended, mirrors how `Query.joinSpec`
   was added — additive, `@JsonInclude(NON_NULL)`, minor-version bump, update `ModelChangeDetector` portrait) vs
   overloading an existing field. Decided in PoC.6.
-- **D7 — graph-mutation XML**: a new schema vs a `reference-data:2` convention. Decided in P2.
+- **D7 — graph-mutation XML *(resolved in P2.1: a small new `graph-mutation:1` schema)*.** `reference-data:2` has
+  no vocabulary for edges/labels/multiple-properties/`validFrom` at all - extending it would mean recreating most
+  of what a purpose-built schema needs anyway. See Task P2.1 for the frozen v1 element shape.
 - **D8 — the `GraphDbDoc` user-configurable surface**: which fields the user *can* set (§2.1). Recommended minimum:
   name/description + a retention/temporal-precision policy + an optional node/edge schema mapping (zero-config when
   derived from the domain-type catalogue). Everything physical stays hidden. Keep this list as small as the genuine
