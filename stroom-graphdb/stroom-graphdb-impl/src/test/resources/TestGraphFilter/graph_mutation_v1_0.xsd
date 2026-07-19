@@ -1,0 +1,127 @@
+<?xml version="1.1" encoding="UTF-8"?>
+
+<!-- Crown Copyright 2026 -->
+<xs:schema xmlns:gm="graph-mutation:1" xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           targetNamespace="graph-mutation:1" elementFormDefault="qualified" version="1.0">
+    <xs:annotation>
+        <xs:documentation>
+            The v1 graph-mutation vocabulary (implementation plan Task P2.1): node/edge upserts and deletes,
+            each carrying an explicit validFrom effective time (never defaulted from event/receipt time - see
+            docs/temporal-cypher-graph-implementation-plan.md, Task P2.1). Property values are string-only in
+            v1; a typed value extension is a documented future escalation, not built here. Consumed by
+            stroom.graphdb.impl.pipeline.GraphFilter via SAX local-name dispatch, not generated JAXB bindings -
+            this schema is for validation and as documentation for XSLT authors, not a runtime dependency.
+        </xs:documentation>
+    </xs:annotation>
+
+    <xs:element name="graph">
+        <xs:complexType>
+            <xs:choice minOccurs="0" maxOccurs="unbounded">
+                <xs:element name="node" type="gm:NodeUpsert" />
+                <xs:element name="node-delete" type="gm:NodeDelete" />
+                <xs:element name="edge" type="gm:EdgeUpsert" />
+                <xs:element name="edge-delete" type="gm:EdgeDelete" />
+            </xs:choice>
+            <xs:attribute name="version" type="gm:VersionSimpleType" use="required" />
+        </xs:complexType>
+    </xs:element>
+
+    <xs:complexType name="NodeUpsert">
+        <xs:annotation>
+            <xs:documentation>A node version - a new labels/properties snapshot valid from validFrom.</xs:documentation>
+        </xs:annotation>
+        <xs:sequence>
+            <xs:element name="label" type="xs:string" minOccurs="0" maxOccurs="unbounded">
+                <xs:annotation>
+                    <xs:documentation>A label this node version carries.</xs:documentation>
+                </xs:annotation>
+            </xs:element>
+            <xs:element name="property" type="gm:Property" minOccurs="0" maxOccurs="unbounded" />
+        </xs:sequence>
+        <xs:attribute name="id" type="gm:NonEmptyString" use="required">
+            <xs:annotation>
+                <xs:documentation>The node's external identifier, interned to a nodeUid at ingest.</xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="validFrom" type="gm:DateTimeSimpleType" use="required" />
+    </xs:complexType>
+
+    <xs:complexType name="NodeDelete">
+        <xs:annotation>
+            <xs:documentation>A tombstone version - the node is absent from validFrom onward.</xs:documentation>
+        </xs:annotation>
+        <xs:attribute name="id" type="gm:NonEmptyString" use="required" />
+        <xs:attribute name="validFrom" type="gm:DateTimeSimpleType" use="required" />
+    </xs:complexType>
+
+    <xs:complexType name="EdgeUpsert">
+        <xs:annotation>
+            <xs:documentation>An edge version - written to both the out-edge and in-edge adjacency stores.</xs:documentation>
+        </xs:annotation>
+        <xs:sequence>
+            <xs:element name="src" type="gm:NonEmptyString">
+                <xs:annotation>
+                    <xs:documentation>The source node's external identifier.</xs:documentation>
+                </xs:annotation>
+            </xs:element>
+            <xs:element name="dst" type="gm:NonEmptyString">
+                <xs:annotation>
+                    <xs:documentation>The destination node's external identifier.</xs:documentation>
+                </xs:annotation>
+            </xs:element>
+            <xs:element name="property" type="gm:Property" minOccurs="0" maxOccurs="unbounded" />
+        </xs:sequence>
+        <xs:attribute name="type" type="gm:NonEmptyString" use="required">
+            <xs:annotation>
+                <xs:documentation>The edge (relationship) type.</xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="validFrom" type="gm:DateTimeSimpleType" use="required" />
+    </xs:complexType>
+
+    <xs:complexType name="EdgeDelete">
+        <xs:annotation>
+            <xs:documentation>A tombstone version - the edge is absent from validFrom onward.</xs:documentation>
+        </xs:annotation>
+        <xs:sequence>
+            <xs:element name="src" type="gm:NonEmptyString" />
+            <xs:element name="dst" type="gm:NonEmptyString" />
+        </xs:sequence>
+        <xs:attribute name="type" type="gm:NonEmptyString" use="required" />
+        <xs:attribute name="validFrom" type="gm:DateTimeSimpleType" use="required" />
+    </xs:complexType>
+
+    <xs:complexType name="Property">
+        <xs:annotation>
+            <xs:documentation>A named property value - string-only in v1 (see this schema's own top-level
+                documentation).</xs:documentation>
+        </xs:annotation>
+        <xs:simpleContent>
+            <xs:extension base="xs:string">
+                <xs:attribute name="name" type="gm:NonEmptyString" use="required" />
+            </xs:extension>
+        </xs:simpleContent>
+    </xs:complexType>
+
+    <xs:simpleType name="DateTimeSimpleType">
+        <xs:annotation>
+            <xs:documentation>Constrains the date time format to 'yyyy-MM-ddThh:mm:ss.sssZ'.</xs:documentation>
+        </xs:annotation>
+        <xs:restriction base="xs:dateTime">
+            <xs:pattern value="[\d]{4}-[\d]{2}-[\d]{2}T[\d]{2}:[\d]{2}:[\d]{2}.[\d]{3}Z" />
+        </xs:restriction>
+    </xs:simpleType>
+
+    <xs:simpleType name="NonEmptyString">
+        <xs:restriction base="xs:string">
+            <xs:pattern value=".+" />
+        </xs:restriction>
+    </xs:simpleType>
+
+    <xs:simpleType name="VersionSimpleType">
+        <xs:restriction base="xs:string">
+            <xs:pattern value="[0-9]+(\.[0-9]+)*" />
+            <xs:enumeration value="1.0" />
+        </xs:restriction>
+    </xs:simpleType>
+</xs:schema>
