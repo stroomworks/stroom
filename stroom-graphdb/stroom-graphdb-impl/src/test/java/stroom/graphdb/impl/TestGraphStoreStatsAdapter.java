@@ -16,6 +16,7 @@
 
 package stroom.graphdb.impl;
 
+import stroom.docstore.api.DocumentNotFoundException;
 import stroom.graphdb.shared.GraphDbDoc;
 import stroom.query.language.functions.ValString;
 import stroom.query.planner.port.RowCountSignal;
@@ -29,6 +30,7 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -70,8 +72,22 @@ class TestGraphStoreStatsAdapter {
 
     @Test
     void estimate_returnsEmptyForAnUnknownGraphName() {
+        // Code-review fix: GraphDbDocCacheImpl.create() now throws NoSuchElementException/DocumentNotFoundException
+        // for its two distinct "not found" cases, not a plain NullPointerException - this test (and the one
+        // below it) prove both are still translated to this adapter's "unknown store" empty-Optional contract.
         final GraphDbDocCache graphDbDocCache = mock(GraphDbDocCache.class);
-        when(graphDbDocCache.get("Missing")).thenThrow(new NullPointerException("no graph db doc"));
+        when(graphDbDocCache.get("Missing")).thenThrow(new NoSuchElementException("no graph db doc"));
+        final GraphStoreManager graphStoreManager = mock(GraphStoreManager.class);
+
+        final GraphStoreStatsAdapter adapter = new GraphStoreStatsAdapter(graphDbDocCache, graphStoreManager);
+
+        assertThat(adapter.estimate("Missing")).isEmpty();
+    }
+
+    @Test
+    void estimate_returnsEmptyWhenTheDocWasFoundByNameButTheStoreNoLongerHasIt() {
+        final GraphDbDocCache graphDbDocCache = mock(GraphDbDocCache.class);
+        when(graphDbDocCache.get("Missing")).thenThrow(new DocumentNotFoundException(DOC.asDocRef()));
         final GraphStoreManager graphStoreManager = mock(GraphStoreManager.class);
 
         final GraphStoreStatsAdapter adapter = new GraphStoreStatsAdapter(graphDbDocCache, graphStoreManager);

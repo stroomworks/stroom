@@ -20,6 +20,7 @@ import stroom.cache.api.CacheManager;
 import stroom.cache.api.LoadingStroomCache;
 import stroom.docref.DocRef;
 import stroom.docstore.api.DocFinder;
+import stroom.docstore.api.DocumentNotFoundException;
 import stroom.graphdb.shared.GraphDbDoc;
 import stroom.security.api.SecurityContext;
 import stroom.security.shared.DocumentPermission;
@@ -36,6 +37,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.Objects;
 
 /**
@@ -75,6 +77,16 @@ public class GraphDbDocCacheImpl implements GraphDbDocCache, Clearable, EntityEv
         cache = cacheManager.createLoadingCache(CACHE_NAME, CacheConfig::new, this::create);
     }
 
+    /**
+     * Code-review fix: previously threw a plain {@link NullPointerException} for both "not found" cases below,
+     * which a caller could only distinguish from a genuine NPE bug elsewhere in this same call chain by string-
+     * matching the message - and {@link GraphStoreStatsAdapter} did exactly that, catching
+     * {@code NullPointerException} broadly enough to also silently swallow an unrelated real defect. Now throws
+     * {@link NoSuchElementException} when no doc exists for {@code name} at all (no {@link DocRef} to attach to
+     * a more specific exception), or {@link DocumentNotFoundException} (an existing, precedented type also used
+     * by {@code stroom.planb.impl.data.ShardManager}) when a matching {@code DocRef} was found but the store no
+     * longer has a document for it.
+     */
     private GraphDbDoc create(final String name) {
         return securityContext.asProcessingUserResult(() -> {
             final List<DocRef> list = docFinder.findByName(GraphDbDoc.TYPE, name);
@@ -82,13 +94,13 @@ public class GraphDbDocCacheImpl implements GraphDbDocCache, Clearable, EntityEv
                 throw new RuntimeException("Unexpectedly found more than one graph db doc with name: " + name);
             }
             if (list.isEmpty()) {
-                throw new NullPointerException("No graph db doc can be found for name: " + name);
+                throw new NoSuchElementException("No graph db doc can be found for name: " + name);
             }
 
             final DocRef docRef = list.getFirst();
             final GraphDbDoc loaded = graphDbDocStore.readDocument(docRef);
             if (loaded == null) {
-                throw new NullPointerException("No graph db doc can be found for: " + docRef);
+                throw new DocumentNotFoundException(docRef);
             }
 
             return loaded;

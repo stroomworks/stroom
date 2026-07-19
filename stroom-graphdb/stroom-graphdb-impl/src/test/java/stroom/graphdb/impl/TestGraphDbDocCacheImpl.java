@@ -19,6 +19,7 @@ package stroom.graphdb.impl;
 import stroom.cache.impl.CacheManagerImpl;
 import stroom.docref.DocRef;
 import stroom.docstore.api.DocFinder;
+import stroom.docstore.api.DocumentNotFoundException;
 import stroom.graphdb.shared.GraphDbDoc;
 import stroom.security.api.SecurityContext;
 import stroom.security.shared.DocumentPermission;
@@ -30,6 +31,7 @@ import stroom.util.shared.UserRef;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -96,7 +98,26 @@ class TestGraphDbDocCacheImpl {
         final GraphDbDocCacheImpl cache = new GraphDbDocCacheImpl(
                 new CacheManagerImpl(), graphDbDocStore, securityContext, docFinder, mock(GraphStoreManager.class));
 
-        assertThatThrownBy(() -> cache.get("Missing")).isInstanceOf(NullPointerException.class);
+        assertThatThrownBy(() -> cache.get("Missing")).isInstanceOf(NoSuchElementException.class);
+    }
+
+    @Test
+    void get_throwsWhenDocFoundByNameButStoreNoLongerHasIt() {
+        // Code-review fix: distinct from get_throwsWhenNoDocFoundForName - here the name search DID find a
+        // DocRef, but the store no longer has a document for it. Previously both cases threw the same plain
+        // NullPointerException; now this one carries the DocRef via DocumentNotFoundException.
+        final DocFinder docFinder = mock(DocFinder.class);
+        when(docFinder.findByName(GraphDbDoc.TYPE, "TestGraph")).thenReturn(List.of(DOC_REF));
+        final GraphDbDocStore graphDbDocStore = mock(GraphDbDocStore.class);
+        when(graphDbDocStore.readDocument(DOC_REF)).thenReturn(null);
+        final SecurityContext securityContext = processingUserPassthrough(alwaysAllowed());
+
+        final GraphDbDocCacheImpl cache = new GraphDbDocCacheImpl(
+                new CacheManagerImpl(), graphDbDocStore, securityContext, docFinder, mock(GraphStoreManager.class));
+
+        assertThatThrownBy(() -> cache.get("TestGraph"))
+                .isInstanceOf(DocumentNotFoundException.class)
+                .satisfies(e -> assertThat(((DocumentNotFoundException) e).getDocRef()).isEqualTo(DOC_REF));
     }
 
     @Test

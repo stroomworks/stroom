@@ -16,12 +16,14 @@
 
 package stroom.graphdb.impl;
 
+import stroom.docstore.api.DocumentNotFoundException;
 import stroom.graphdb.shared.GraphDbDoc;
 import stroom.query.planner.port.GraphStoreStats;
 import stroom.query.planner.port.RowCountSignal;
 
 import jakarta.inject.Inject;
 
+import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -46,6 +48,11 @@ public class GraphStoreStatsAdapter implements GraphStoreStats {
      * "no doc found for name" failure, caught here and translated to this port's "unknown store" contract - see
      * {@link GraphStoreStats#estimate}). A {@link stroom.util.shared.PermissionException} from the cache's own
      * permission check is deliberately not caught - an access-control signal, not an "unknown store" one.
+     *
+     * <p>Code-review fix: previously caught the broad {@link NullPointerException} to mean "unknown graph",
+     * which would also have silently swallowed an unrelated genuine NPE bug anywhere in this call chain. Now
+     * catches the two specific, dedicated exception types {@link GraphDbDocCacheImpl#create} actually throws for
+     * this case.</p>
      */
     @Override
     public Optional<RowCountSignal> estimate(final String graphName) {
@@ -54,7 +61,7 @@ public class GraphStoreStatsAdapter implements GraphStoreStats {
         final GraphDbDoc doc;
         try {
             doc = graphDbDocCache.get(graphName);
-        } catch (final NullPointerException e) {
+        } catch (final NoSuchElementException | DocumentNotFoundException e) {
             return Optional.empty();
         }
 
