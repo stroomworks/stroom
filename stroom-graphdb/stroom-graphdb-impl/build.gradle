@@ -26,6 +26,7 @@ dependencies {
     implementation project(':stroom-importexport:stroom-importexport-api')
     implementation project(':stroom-job:stroom-job-api')
     implementation project(':stroom-lmdb')
+    implementation project(':stroom-pipeline')
     implementation project(':stroom-planb:stroom-planb-impl')
     implementation project(':stroom-query:stroom-query-api')
     implementation project(':stroom-query:stroom-query-common')
@@ -39,6 +40,7 @@ dependencies {
     implementation libs.guice
     implementation libs.jspecify
     implementation libs.lmdbjava
+    implementation libs.saxon.he
     implementation libs.slf4j.api
 
     testImplementation project(':stroom-security:stroom-security-mock')

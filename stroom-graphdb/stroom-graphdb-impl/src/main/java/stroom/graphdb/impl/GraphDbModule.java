@@ -18,6 +18,7 @@ package stroom.graphdb.impl;
 
 import stroom.docref.DocRef;
 import stroom.docstore.api.DocumentStoreBinder;
+import stroom.graphdb.impl.pipeline.GraphElementModule;
 import stroom.graphdb.shared.GraphDbDoc;
 import stroom.job.api.ScheduledJobsBinder;
 import stroom.query.api.datasource.DataSourceProvider;
@@ -33,10 +34,10 @@ import com.google.inject.AbstractModule;
 import jakarta.inject.Inject;
 
 /**
- * Registers {@link GraphDbDoc}'s document store/cache and {@link GraphSearchProvider} (Task PoC.6), mirroring
+ * Registers {@link GraphDbDoc}'s document store/cache, {@link GraphSearchProvider} (Task PoC.6), and the
+ * {@code GraphFilter} ingest pipeline element (Task P2.2, via {@link GraphElementModule}) - mirroring
  * {@code stroom.planb.impl.PlanBModule} - {@code PlanBModule} itself is not edited (Decision D1). No REST
- * resource or ingest pipeline element is bound yet: a document-management API and real {@code GraphFilter}
- * ingest are P2/P5 concerns, not this PoC.
+ * resource / document-management API is bound yet (P5).
  *
  * <p>Also binds a single retention scheduled job (Task P1.4, Decision D9) - deliberately not a growth of Plan
  * B's {@code ShardManager} machinery, which solves distributed-shard snapshot/placement problems a single
@@ -46,6 +47,8 @@ public class GraphDbModule extends AbstractModule {
 
     @Override
     protected void configure() {
+        install(new GraphElementModule());
+
         bind(GraphDbDocCache.class).to(GraphDbDocCacheImpl.class);
         bind(GraphStoreManager.class).to(GraphStoreManagerImpl.class);
 

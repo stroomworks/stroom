@@ -336,6 +336,24 @@ public final class GraphStores implements AutoCloseable {
     }
 
     /**
+     * Opens an {@link LmdbWriter} the caller holds open and commits/closes manually - the counterpart to
+     * {@link #write} for a caller that needs one writer spanning many separate calls rather than a single
+     * enclosed transaction (Task P2.2: {@code GraphFilter} holds one writer open across an entire SAX stream,
+     * calling {@link LmdbWriter#tryCommit()} after each mutation and {@link LmdbWriter#close()} once at the end,
+     * mirroring how Plan B's own {@code ShardWriter}/{@code WriterInstance} hold a writer open across a stream).
+     *
+     * <p><b>Preconditions:</b> none. <b>Postconditions:</b> the caller is responsible for calling
+     * {@link LmdbWriter#close()} exactly once (it commits any pending change) - never both this and {@link #write}
+     * concurrently, since only one write transaction is permitted at a time (enforced by {@link LmdbWriter}'s own
+     * internal lock).</p>
+     *
+     * @return a new, open {@link LmdbWriter}.
+     */
+    public LmdbWriter createWriter() {
+        return env.createWriter();
+    }
+
+    /**
      * Runs {@code function} inside a single read transaction against the owned LMDB environment.
      *
      * <p><b>Preconditions:</b> {@code function} is not null. <b>Null status:</b> {@code function} is not nullable.
