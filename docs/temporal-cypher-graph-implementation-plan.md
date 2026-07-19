@@ -1103,11 +1103,108 @@ selectivity/start-node re-ordering remains out of scope (no genuine choice to ma
 Task P3.2's note). P3 (Tasks P3.1-P3.3) is complete; P4 (Temporal ranges) is next, pending explicit go-ahead.
 
 ### P4 — Temporal ranges (5–10 pw) — *after 0.3*
-- **`AROUND ± d` / `BETWEEN`** window scans (interval intersection over the adjacency store's version runs, per P0.3's
-  frozen rule); **as-of join** reusing the core's State-lookup path + Plan B floor lookup for multi-hop temporal
-  (design §5.5 items 4–5).
-- **Temporal correctness tests**: as-of across multi-hop, interval intersection edges.
-- *Gate*: the §6 worked example (window + as-of in one query) returns the domain-owner-approved result.
+
+> **Scoping note (recorded 2026-07-19):** design doc &sect;5.5 lists five execution-engine pieces; items 4
+> (the fixpoint/bounded-transitive-closure operator) and 5 (the as-of point-in-time lookup) are **already built** -
+> item 4 by P3.3's BFS, item 5 by PoC.5's floor-lookup `GraphNodeDb.getNode`/`GraphAdjacencyDb.expandOut`/
+> `GraphInEdgeDb.expandIn`, which `GraphTraversalEngine` already uses for every `AS OF`/no-clause query. So P4's
+> real remaining scope is narrower than the phase heading suggests: **only `AROUND`/`BETWEEN` window-intersection
+> execution**, which `GraphTraversalEngine.resolveAsOf` currently rejects outright
+> (`UnsupportedOperationException`, "a P4 deliverable"). The &sect;6 worked example's prose ("expand `OWNS`
+> reverse, as-of 09:00Z") reads as if it mixes a window hop with an as-of hop in one query - but `AstMatch` carries
+> exactly one `AstTemporal` clause for the whole pattern, and P0.3's frozen rule is explicit that windows "apply
+> per-edge" uniformly ("each edge has a version intersecting the window; not required simultaneous") - so the
+> query's single `AROUND` clause resolves to one `[from, to]` window checked identically at *every* hop, not a
+> per-hop-differing mode. There is no mixed-mode case to build (and the grammar has no syntax for one), so this
+> phase needs no changes to `CypherToLogicalPlan`/the AST/`TemporalContext` - all of which already carry
+> `AROUND`/`BETWEEN` end-to-end (`TemporalContext.window(...)`, resolved by `CypherToLogicalPlan.resolveTemporal`)
+> - this phase is entirely `stroom-graphdb-impl` storage + execution work.
+>
+> **A window's canonical version, when more than one of an entity's versions intersects it (a decision P0.3 left
+> open - it only defines "intersects", not "which one to project"):** take the version with the greatest
+> `validFrom` among those intersecting (i.e. "the state as it stood by the end of the window, restricted to
+> versions that were live at some point within it") - if that version happens to be a tombstone, the entity/edge
+> counts as absent for the whole window, exactly as a tombstoned floor version already means "absent" for
+> `AS OF`. This mirrors the existing floor-lookup's own "last-applicable-version-wins" rule (`expandOut`/`expandIn`
+> already do this for `AS OF`; window mode is the same rule with an intersection test instead of a
+> less-than-or-equal test), so implementation and code shape stay close to the existing floor-lookup methods.
+
+Two tasks: storage-layer window access paths, then wiring them into the traversal engine (the same
+storage-then-execution split P3 used for its own two execution-facing tasks).
+
+#### Task P4.1 — Window-based physical store access paths
+- **Depends on**: none beyond PoC.4/P1.1 (extends the existing DAOs; no schema/key-layout change - a window scan
+  reads the exact same version runs the floor lookup already does).
+- **Gap this closes**: `GraphNodeDb`/`GraphAdjacencyDb`/`GraphInEdgeDb` only expose an as-of floor lookup; there is
+  no access path that can answer "does a version of this entity intersect `[from, to]`" at all.
+- **Files**:
+  - `GraphNodeDb.java` (modified) — add `Optional<NodeVersion> getNodeWindow(Txn<ByteBuffer> readTxn, long
+    nodeUid, Instant from, Instant to)`: forward-scan the `nodeUid`-prefixed run (buffering its (validFrom, value)
+    pairs first, since - unlike the reverse-bounded floor lookup - a window scan cannot early-exit and needs each
+    entry's *next* `validFrom` to compute its own half-open interval's end), tracking the latest entry whose
+    `[validFrom, nextValidFrom)` intersects `[from, to]` (`nextValidFrom` = the following entry's `validFrom`, or
+    `Instant.MAX` for the run's last entry) using the P0.3 rule `validFrom <= to && nextValidFrom > from`; decode
+    and return that entry if present, empty if none intersects or the latest intersecting entry is a tombstone.
+  - `GraphAdjacencyDb.java` (modified) — add `void expandOutWindow(Txn<ByteBuffer> readTxn, long srcUid, long
+    edgeTypeUid, Instant from, Instant to, Consumer<Neighbour> consumer)`: same `[srcUid][edgeTypeUid]` prefix
+    scan as `expandOut`, grouped by `dstUid` exactly as today, but each group is buffered (small - typically 1-3
+    versions per edge) and resolved with the same latest-intersecting-wins rule as `getNodeWindow`, instead of
+    the streaming `validFrom <= asOf` check `expandOut` uses.
+  - `GraphInEdgeDb.java` (modified) — add `void expandInWindow(Txn<ByteBuffer> readTxn, long dstUid, long
+    edgeTypeUid, Instant from, Instant to, Consumer<Neighbour> consumer)`, the in-edge mirror of
+    `expandOutWindow`, exactly as `expandIn` mirrors `expandOut` today.
+  - Tests in `TestGraphPhysicalStores.java` (node/adjacency) and `TestGraphInEdgeDb.java` (in-edge): a version
+    whose interval intersects a window is returned; a version entirely before or after the window is excluded;
+    the boundary cases from the frozen rule (`nextValidFrom == from` excludes, `validFrom == to` includes); two
+    versions both intersecting the window resolve to the later one; a tombstone that is the latest intersecting
+    version means "absent" (empty/no emission), even though an earlier, present version also intersects.
+- **Contract**: a window method's result depends only on the entity's own version run and `[from, to]` - it does
+  not consult or affect the floor-lookup methods, which are unchanged (verified by re-running the existing
+  floor-lookup tests unmodified).
+- **Done-when**: every case in the Files section's test list passes against a real temp-dir LMDB env (mirroring
+  `TestGraphPhysicalStores`'s existing style), and all pre-existing `GraphNodeDb`/`GraphAdjacencyDb`/
+  `GraphInEdgeDb` tests still pass unchanged.
+- **Verify**: `./gradlew :stroom-graphdb:stroom-graphdb-impl:test`.
+
+#### Task P4.2 — Wire `AROUND`/`BETWEEN` into `GraphTraversalEngine`
+- **Depends on**: P4.1 (needs the window DAO methods to call).
+- **Gap this closes**: `GraphTraversalEngine.resolveAsOf` throws `UnsupportedOperationException` for
+  `Mode.AROUND`/`Mode.BETWEEN`; every node-lookup and hop-expansion call site is hard-wired to the as-of floor
+  lookup (`stores.getNodes().getNode(readTxn, uid, asOf)`, `expandOut`/`expandIn` with a single `Instant`).
+- **Files**:
+  - `GraphTraversalEngine.java` (modified) — introduce a small private `TemporalAccess` abstraction (three
+    methods: `getNode`, `expandOut`, `expandIn`, each already-resolved to either the as-of or window DAO calls)
+    built once per `execute()` call from the plan's `TemporalContext` (`Mode.AS_OF` → the existing floor-lookup
+    calls at `resolveAsOf`'s resolved instant; `Mode.AROUND`/`Mode.BETWEEN` → the new `*Window` calls at
+    `temporalContext.from()`/`temporalContext.to()`; no clause → the existing `LATEST` floor lookup, unchanged).
+    Thread `TemporalAccess` through `resolveAnchors`, `expandChainHop`/`acceptChainNeighbour`,
+    `expandVarLength`/`collectNeighbours`/`acceptVarLengthRow` in place of the raw `Instant asOf` parameter each
+    currently takes - a mechanical substitution, not a behaviour change for `AS OF`/no-clause queries (same
+    contract, same test results, proven by every pre-P4 test passing unchanged). Remove the
+    `AROUND`/`BETWEEN` branch of `resolveAsOf`'s `switch` that throws; `resolveAsOf` (or its replacement) now
+    only needs to produce the as-of `Instant` for `Mode.AS_OF`/absent - windowed modes skip straight to building
+    the window `TemporalAccess` from `temporalContext.from()`/`to()` directly, never needing a single instant at
+    all.
+  - Tests in `TestGraphTraversalEngine.java`: a single-hop `AROUND t ± d` query returns only neighbours whose
+    edge intersects the window (an edge entirely outside the window is excluded, mirroring
+    `whereClause_filtersOutRowsThatDoNotMatch`'s style); the same for `BETWEEN t1 AND t2`; a query combining a
+    window-filtered hop with the anchor's own window-based label/property re-validation (`resolveAnchors` must
+    also switch to `TemporalAccess`, not just hop expansion); the `aroundClause_throwsNotYetSupported`/
+    `BETWEEN`-equivalent tests are removed/replaced by these positive tests (the "not yet supported" behaviour
+    they proved no longer exists after this task).
+- **Contract**: an `AS_OF` or no-clause query's behaviour is bit-for-bit unchanged (every existing
+  `TestGraphTraversalEngine` test - single-hop, chain, var-length, target-constraint - passes without
+  modification); `AROUND`/`BETWEEN` queries now execute instead of throwing, using window intersection at every
+  hop and at anchor re-validation.
+- **Done-when**: the two new positive `AROUND`/`BETWEEN` tests pass against a fixture with an edge inside the
+  window, one straddling a boundary, and one entirely outside it; every pre-existing test in the module still
+  passes unmodified.
+- **Verify**: `./gradlew :stroom-query:stroom-query-planner:test :stroom-graphdb:stroom-graphdb-impl:test`.
+
+**P4 exit gate**: an `AROUND ± d` query and a `BETWEEN` query both return the correct, hand-computed row set
+against a fixture with edges inside, straddling, and outside the window; every `AS OF`/no-clause test from PoC.5
+through P3.3 continues to pass unmodified, confirming window support is additive, not a behaviour change to
+existing temporal modes.
 
 ### P5 — Query integration hardening (5–10 pw)
 - **Graph datasource cost signals** (row/key counts, adjacency access-path costing) implementing a
