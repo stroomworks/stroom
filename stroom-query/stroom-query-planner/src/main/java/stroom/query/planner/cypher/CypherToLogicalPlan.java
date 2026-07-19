@@ -81,26 +81,30 @@ import java.util.Objects;
  * IR, not a forked engine (design doc &sect;5.3).
  *
  * <p><b>Compiled shape (the only shape this class lowers):</b> a single {@link AstMatch} whose pattern is an
- * anchor node with at most one hop, e.g. {@code MATCH (a:L {p:v})-[:T]->(b:L2) [WHERE ...] RETURN ...} lowers to
- * {@code Project(Filter?(Expand(NodeScan(a,[L],p=v), T, OUT, b)), returnItems)} (a bare anchor with no hop skips
- * the {@link Expand} entirely). {@code RETURN}'s {@code ORDER BY}/{@code SKIP}/{@code LIMIT} wrap the
- * {@link Project} with {@link Sort}/{@link Limit} exactly as the relational core's own binder does; aggregate
- * functions ({@code count}/{@code sum}/{@code avg}/{@code min}/{@code max}) compile to {@link ProjectField}
- * expressions only - GROUP-BY inference for a mixed aggregate/plain {@code RETURN} is not yet implemented (a
- * genuine gap tracked for a later phase, not silently wrong: such a query still compiles, but does not yet group
- * distinct combinations of the non-aggregate columns).</p>
+ * anchor node with zero or more fixed-length hops (Task P3.2), e.g.
+ * {@code MATCH (a:L {p:v})-[:T]->(b:L2)-[:U]->(c:L3) [WHERE ...] RETURN ...} lowers to
+ * {@code Project(Filter?(Expand(Expand(NodeScan(a,[L],p=v), T, OUT, b), U, OUT, c)), returnItems)} - each hop
+ * folds left-to-right, anchor-first, in exactly the pattern's source order (a bare anchor with no hop skips
+ * {@link Expand} entirely; never re-ordered by any selectivity heuristic, since only the anchor has a
+ * property-index-seekable access path in this v1 subset - see {@link Expand}'s Javadoc). {@code RETURN}'s
+ * {@code ORDER BY}/{@code SKIP}/{@code LIMIT} wrap the {@link Project} with {@link Sort}/{@link Limit} exactly as
+ * the relational core's own binder does; aggregate functions ({@code count}/{@code sum}/{@code avg}/{@code min}/
+ * {@code max}) compile to {@link ProjectField} expressions only - GROUP-BY inference for a mixed aggregate/plain
+ * {@code RETURN} is not yet implemented (a genuine gap tracked for a later phase, not silently wrong: such a
+ * query still compiles, but does not yet group distinct combinations of the non-aggregate columns).</p>
  *
  * <p>A hop's target (non-anchor) node pattern's own labels/inline properties (Task P3.1) compile onto
  * {@link Expand#targetLabels()}/{@link Expand#targetPropertyPredicate()} using the same property-term lowering
  * as an anchor's own {@link NodeScan#propertyAnchor()} - the executor enforces these as a post-expand filter
- * (see {@link Expand}'s Javadoc for why a target constraint is a filter, not an alternative access path).</p>
+ * (see {@link Expand}'s Javadoc for why a target constraint is a filter, not an alternative access path). This
+ * applies identically to every hop in a chain, not just the pattern's last one.</p>
  *
  * <p><b>What this class deliberately does NOT lower</b> (throws {@link CypherCompileException} instead of
- * guessing): more than one {@link AstMatch}/{@link AstWith} reading clause; a path pattern with more than one
- * hop (Task P3.2); a hop with a variable-length ({@code *min..max}) edge (Task P3.3); a {@code WHERE} comparison
- * between two field references (only field-vs-literal comparisons compile). All of the above are accepted by
- * {@code Cypher.g4} (per the P0.2-locked v1 subset) but are out of this class's compiled shape; they are
- * progressively tightened across P3's tasks.</p>
+ * guessing): more than one {@link AstMatch}/{@link AstWith} reading clause; a hop with a variable-length
+ * ({@code *min..max}) edge (Task P3.3); a {@code WHERE} comparison between two field references (only
+ * field-vs-literal comparisons compile). All of the above are accepted by {@code Cypher.g4} (per the
+ * P0.2-locked v1 subset) but are out of this class's compiled shape; they are progressively tightened across
+ * P3's tasks.</p>
  */
 public final class CypherToLogicalPlan {
 
@@ -151,45 +155,36 @@ public final class CypherToLogicalPlan {
     }
 
     // ------------------------------------------------------------------------------------------------------
-    // pattern: NodeScan [+ one Expand]
+    // pattern: NodeScan [+ Expand chain]
     // ------------------------------------------------------------------------------------------------------
 
     private record PatternResult(LogicalPlan plan) {
     }
 
     private PatternResult compilePattern(final AstPathPattern pattern) {
-        if (pattern.hops().size() > 1) {
-            throw new CypherCompileException(
-                    "not in PoC subset: multi-hop chains beyond one edge are not yet compiled (P3), found "
-                    + pattern.hops().size() + " hops",
-                    pattern.position());
+        LogicalPlan plan = compileNodeScan(pattern.anchor());
+
+        for (final var hop : pattern.hops()) {
+            final AstEdgePattern edge = hop.edge();
+            if (edge.varLength() != null) {
+                throw new CypherCompileException(
+                        "not in PoC subset: variable-length paths are not yet compiled (P3)", edge.position());
+            }
+
+            final String targetVariable = hop.node().variable() != null
+                    ? hop.node().variable()
+                    : nextAnonymousVariable();
+
+            plan = new Expand(
+                    plan,
+                    edge.type(),
+                    toDirection(edge.direction()),
+                    targetVariable,
+                    hop.node().labels(),
+                    compilePropertyPredicate(hop.node().properties()),
+                    hop.position());
         }
-
-        final NodeScan anchor = compileNodeScan(pattern.anchor());
-        if (pattern.hops().isEmpty()) {
-            return new PatternResult(anchor);
-        }
-
-        final var hop = pattern.hops().getFirst();
-        final AstEdgePattern edge = hop.edge();
-        if (edge.varLength() != null) {
-            throw new CypherCompileException(
-                    "not in PoC subset: variable-length paths are not yet compiled (P3)", edge.position());
-        }
-
-        final String targetVariable = hop.node().variable() != null
-                ? hop.node().variable()
-                : nextAnonymousVariable();
-
-        final Expand expand = new Expand(
-                anchor,
-                edge.type(),
-                toDirection(edge.direction()),
-                targetVariable,
-                hop.node().labels(),
-                compilePropertyPredicate(hop.node().properties()),
-                hop.position());
-        return new PatternResult(expand);
+        return new PatternResult(plan);
     }
 
     private NodeScan compileNodeScan(final AstNodePattern node) {

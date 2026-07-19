@@ -1024,6 +1024,21 @@ Contract/Done-when/Verify shape.
 - **Done-when**: a 2-hop and a 3-hop chain query against a hand-built fixture return exactly the hand-computed
   expected row set; a single-hop query's result is unchanged from before this task.
 - **Verify**: `./gradlew :stroom-query:stroom-query-planner:test :stroom-graphdb:stroom-graphdb-impl:test`.
+- **Status: done (2026-07-19).** `CypherToLogicalPlan.compilePattern` now folds `pattern.hops()` left-to-right
+  into nested `Expand`s (no size limit); `GraphTraversalEngine`'s `PlanShape.expand` became
+  `List<Expand> hops`, `unwrap` collects the chain (prepending, since hops are encountered target-to-anchor while
+  unwrapping), and `execute` replaced the single-hop `expandOneHop`/`acceptNeighbour` pair with a `Frontier`-based
+  iterative fold (`expandChainHop`/`acceptChainNeighbour`): each step expands the current frontier through the
+  next hop, discarding rows failing that hop's target constraint (P3.1), and only the pattern's LAST hop's
+  acceptance also tests the outer `WHERE` predicate (a 0-hop bare anchor tests `WHERE` directly against the
+  anchor frontier). No anchor-selectivity re-ordering was built, per the scoping note above. Tests: 2 new
+  `TestCypherToLogicalPlan` cases (2-hop and 3-hop chains compile to the expected nested-`Expand` shape, in
+  source order); 3 new `TestGraphTraversalEngine` cases against a dedicated 3-hop fixture (`Device
+  -CONNECTED_TO-> Account -OWNED_BY-> Owner -EMPLOYED_BY-> Company`) - a 2-hop query's full row set, a 2-hop
+  query where a middle hop's own label constraint (P3.1) prunes one of the two paths, and a 3-hop query's full
+  row set (including a legitimate duplicate row where two distinct paths converge on the same company). All
+  pre-existing single-hop/no-hop tests pass unchanged, confirming the contract that this is a strict
+  generalisation, not a rewrite.
 
 #### Task P3.3 — Bounded variable-length paths (BFS + cycle guard)
 - **Depends on**: P3.1 (the var-length target variable needs the same label/property constraint slot -

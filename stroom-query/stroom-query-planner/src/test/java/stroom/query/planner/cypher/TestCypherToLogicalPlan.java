@@ -205,13 +205,43 @@ class TestCypherToLogicalPlan {
     }
 
     @Test
-    void multiHopChain_throwsNotInPoCSubset() {
-        final AstCypherQuery ast = CypherQueryParser.parse(
-                "MATCH (d:Device)-[:CONNECTED_TO]->(a:Account)<-[:OWNS]-(o:Owner) RETURN a.id, o.name");
+    void twoHopChain_compilesToNestedExpandsInSourceOrder() {
+        // Task P3.2: before this, any pattern with more than one hop was rejected outright.
+        final CompiledCypherPlan compiled = compile(
+                "MATCH (d:Device {id: 'd-42'})-[:CONNECTED_TO]->(a:Account)<-[:OWNS]-(o:Owner) "
+                + "RETURN a.id, o.name");
 
-        assertThatThrownBy(() -> new CypherToLogicalPlan().compile(ast))
-                .isInstanceOf(CypherCompileException.class)
-                .hasMessageContaining("multi-hop");
+        final Project project = (Project) compiled.plan();
+        assertThat(project.input()).isInstanceOf(Expand.class);
+        final Expand secondHop = (Expand) project.input();
+        assertThat(secondHop.edgeType()).isEqualTo("OWNS");
+        assertThat(secondHop.direction()).isEqualTo(Direction.IN);
+        assertThat(secondHop.targetVariable()).isEqualTo("o");
+
+        assertThat(secondHop.input()).isInstanceOf(Expand.class);
+        final Expand firstHop = (Expand) secondHop.input();
+        assertThat(firstHop.edgeType()).isEqualTo("CONNECTED_TO");
+        assertThat(firstHop.direction()).isEqualTo(Direction.OUT);
+        assertThat(firstHop.targetVariable()).isEqualTo("a");
+
+        assertThat(firstHop.input()).isInstanceOf(NodeScan.class);
+        assertThat(((NodeScan) firstHop.input()).variable()).isEqualTo("d");
+    }
+
+    @Test
+    void threeHopChain_compilesToThreeNestedExpands() {
+        final CompiledCypherPlan compiled = compile(
+                "MATCH (d:Device)-[:CONNECTED_TO]->(a:Account)-[:OWNED_BY]->(p:Person)-[:WORKS_AT]->(c:Company) "
+                + "RETURN c.name");
+
+        final Project project = (Project) compiled.plan();
+        final Expand thirdHop = (Expand) project.input();
+        assertThat(thirdHop.edgeType()).isEqualTo("WORKS_AT");
+        final Expand secondHop = (Expand) thirdHop.input();
+        assertThat(secondHop.edgeType()).isEqualTo("OWNED_BY");
+        final Expand firstHop = (Expand) secondHop.input();
+        assertThat(firstHop.edgeType()).isEqualTo("CONNECTED_TO");
+        assertThat(firstHop.input()).isInstanceOf(NodeScan.class);
     }
 
     @Test

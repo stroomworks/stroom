@@ -54,15 +54,19 @@ import java.util.function.Predicate;
 /**
  * Executes a compiled Cypher {@link LogicalPlan} over a {@link GraphStores}' physical stores (design doc
  * &sect;5.5's {@code expand} operator; implementation plan Task PoC.5): anchor scan (via
- * {@link GraphPropertyIndex}) &rarr; single-hop {@code expand} (via {@link GraphAdjacencyDb}, dereferencing each
- * neighbour via {@link GraphNodeDb}) &rarr; the outer {@code WHERE} predicate &rarr; {@code RETURN} projection.
- * Reuses {@link ExpressionPredicateFactory} exactly as {@code stroom.searchable.impl.JoinSearchProvider
- * #whereRowPredicate} does, over a {@code "variable.property" -> Val} row map instead of a joined {@code Values}
- * row - the graph analogue of that class's combined-row predicate.
+ * {@link GraphPropertyIndex}) &rarr; a chain of zero or more {@code expand} hops (Task P3.2; via
+ * {@link GraphAdjacencyDb}/{@link GraphInEdgeDb}, dereferencing each neighbour via {@link GraphNodeDb}) &rarr; the
+ * outer {@code WHERE} predicate &rarr; {@code RETURN} projection. Reuses {@link ExpressionPredicateFactory}
+ * exactly as {@code stroom.searchable.impl.JoinSearchProvider#whereRowPredicate} does, over a
+ * {@code "variable.property" -> Val} row map instead of a joined {@code Values} row - the graph analogue of that
+ * class's combined-row predicate.
  *
- * <p><b>Contract (PoC.5's scope - see this class's Javadoc for what's deliberately not yet handled):</b>
- * single-hop only (an {@link Expand} node; {@code VarLengthExpand} is P3); single-shard only (cross-shard is
- * P8); streams {@code Val[]} rows - does not itself build coprocessors (PoC.6 does that from these rows).</p>
+ * <p><b>Contract (see this class's Javadoc for what's deliberately not yet handled):</b> a fixed-length chain of
+ * {@link Expand} hops, anchor-first, matching compiled source order exactly - not re-ordered by any selectivity
+ * heuristic, since only the anchor has a property-index-seekable access path in this v1 subset (a middle hop's
+ * own label/property constraint, Task P3.1, is a post-expand filter, never an alternative seek point);
+ * {@code VarLengthExpand} is P3.3; single-shard only (cross-shard is P8); streams {@code Val[]} rows - does not
+ * itself build coprocessors (PoC.6 does that from these rows).</p>
  *
  * <p><b>Deliberately unsupported here (throws {@link UnsupportedOperationException} rather than a wrong
  * result)</b>: an anchor {@link NodeScan} with no label or no property predicate (the property index has no
@@ -70,9 +74,12 @@ import java.util.function.Predicate;
  * resolved these as a window-intersection scan, a P4 deliverable - this engine only performs the as-of floor
  * lookup PoC.4's stores implement); a {@code RETURN} item other than a bare property/variable reference (a
  * literal, aggregate, or function call needs the full {@code ExpressionParser}, not wired to a graph row here).
- * A hop's non-anchor node's own labels/properties (Task P3.1) are enforced as a post-expand filter in
- * {@link #acceptNeighbour}, exactly mirroring how {@link #resolveAnchors} validates an anchor's property
- * predicate - not an alternative access path, since the neighbour is always reached via the edge.</p>
+ * Each hop's non-anchor node's own labels/properties (Task P3.1) are enforced as a post-expand filter in
+ * {@link #acceptChainNeighbour}, exactly mirroring how {@link #resolveAnchors} validates an anchor's property
+ * predicate - not an alternative access path, since a neighbour is always reached via the edge. The outer
+ * {@code WHERE} predicate is evaluated only once a row carries every hop's bound variable, i.e. only after the
+ * pattern's last hop (Task P3.2) - matching how a single-hop plan already evaluated it against the fully merged
+ * anchor+target row, not a per-hop partial evaluation.</p>
  */
 public final class GraphTraversalEngine {
 
@@ -88,7 +95,7 @@ public final class GraphTraversalEngine {
 
     /**
      * <b>Preconditions:</b> no parameter is null except {@code temporalContext}; {@code plan} must have the
-     * shape {@code [Sort/Limit ->] Project -> [Filter ->] [Expand ->] NodeScan} (see this class's Javadoc for
+     * shape {@code [Sort/Limit ->] Project -> [Filter ->] [Expand ->]* NodeScan} (see this class's Javadoc for
      * what happens otherwise).
      * <b>Postconditions:</b> one {@code Val[]} per surviving row, in {@code Project}'s field order; never null
      * (possibly empty).
@@ -115,77 +122,98 @@ public final class GraphTraversalEngine {
                         .createOptional(shape.where, rowAccessors(), dateTimeSettings)
                         .orElse(row -> true);
 
-        final List<Map<String, Val>> rows = new ArrayList<>();
+        List<Frontier> frontier = new ArrayList<>();
         for (final long anchorUid : resolveAnchors(readTxn, shape.nodeScan, asOf)) {
             final Optional<GraphNodeDb.NodeVersion> anchor = stores.getNodes().getNode(readTxn, anchorUid, asOf);
             if (anchor.isEmpty()) {
                 continue;
             }
-            final Map<String, Val> anchorRow = rowFor(shape.nodeScan.variable(), anchor.get().properties());
+            frontier.add(new Frontier(anchorUid, rowFor(shape.nodeScan.variable(), anchor.get().properties())));
+        }
 
-            if (shape.expand == null) {
-                if (wherePredicate.test(anchorRow)) {
-                    rows.add(anchorRow);
+        final List<Map<String, Val>> rows = new ArrayList<>();
+        if (shape.hops.isEmpty()) {
+            for (final Frontier f : frontier) {
+                if (wherePredicate.test(f.row())) {
+                    rows.add(f.row());
                 }
-                continue;
             }
+            return project(rows, shape.project);
+        }
 
-            final Long edgeTypeUid = shape.expand.edgeType() == null
-                    ? null
-                    : lookupUid(readTxn, stores.getEdgeTypeUids(), shape.expand.edgeType()).orElse(null);
-            if (shape.expand.edgeType() != null && edgeTypeUid == null) {
-                continue;
+        for (int i = 0; i < shape.hops.size(); i++) {
+            final Expand hop = shape.hops.get(i);
+            final boolean isLastHop = i == shape.hops.size() - 1;
+            final List<Frontier> next = new ArrayList<>();
+            for (final Frontier f : frontier) {
+                expandChainHop(readTxn, f.nodeUid(), asOf, hop, f.row(), isLastHop, wherePredicate, next, rows);
             }
-            expandOneHop(readTxn, anchorUid, edgeTypeUid, asOf, shape.expand, anchorRow, wherePredicate, rows);
+            frontier = next;
         }
 
         return project(rows, shape.project);
     }
 
-    private void expandOneHop(final Txn<ByteBuffer> readTxn, final long anchorUid, final @Nullable Long edgeTypeUid,
-                              final Instant asOf, final Expand expand, final Map<String, Val> anchorRow,
-                              final Predicate<Map<String, Val>> wherePredicate, final List<Map<String, Val>> rows) {
+    /** A traversal frontier entry: the node reached so far, and the accumulated row of every variable bound. */
+    private record Frontier(long nodeUid, Map<String, Val> row) {
+    }
+
+    private void expandChainHop(final Txn<ByteBuffer> readTxn, final long fromUid, final Instant asOf,
+                                final Expand hop, final Map<String, Val> rowSoFar, final boolean isLastHop,
+                                final Predicate<Map<String, Val>> wherePredicate, final List<Frontier> nextFrontier,
+                                final List<Map<String, Val>> finalRows) {
         // GraphAdjacencyDb/GraphInEdgeDb key every edge by a concrete edgeTypeUid; an untyped pattern
         // (edgeType == null, matching any type) has no single prefix to scan, and neither store exposes an
         // "any edge type" access path.
-        if (edgeTypeUid == null && expand.edgeType() == null) {
+        final Long edgeTypeUid = hop.edgeType() == null
+                ? null
+                : lookupUid(readTxn, stores.getEdgeTypeUids(), hop.edgeType()).orElse(null);
+        if (edgeTypeUid == null && hop.edgeType() == null) {
             throw new UnsupportedOperationException(
                     "not yet supported: an untyped edge pattern (matching any edge type) has no access path "
                     + "over the per-type-keyed adjacency stores");
         }
+        if (hop.edgeType() != null && edgeTypeUid == null) {
+            return;
+        }
 
-        final Consumer<Long> onNeighbourUid = neighbourUid ->
-                acceptNeighbour(readTxn, neighbourUid, asOf, expand, anchorRow, wherePredicate, rows);
+        final Consumer<Long> onNeighbourUid = neighbourUid -> acceptChainNeighbour(
+                readTxn, neighbourUid, asOf, hop, rowSoFar, isLastHop, wherePredicate, nextFrontier, finalRows);
 
         // Task P1.1: dispatch on Expand.direction() - previously this always read the out-edge store regardless
         // of direction, so a Cypher <-[:TYPE]- or -[:TYPE]- pattern silently executed as -[:TYPE]->.
-        switch (expand.direction()) {
+        switch (hop.direction()) {
             case OUT -> stores.getOutEdges().expandOut(
-                    readTxn, anchorUid, edgeTypeUid, asOf, neighbour -> onNeighbourUid.accept(neighbour.dstUid()));
+                    readTxn, fromUid, edgeTypeUid, asOf, neighbour -> onNeighbourUid.accept(neighbour.dstUid()));
             case IN -> stores.getInEdges().expandIn(
-                    readTxn, anchorUid, edgeTypeUid, asOf, neighbour -> onNeighbourUid.accept(neighbour.srcUid()));
+                    readTxn, fromUid, edgeTypeUid, asOf, neighbour -> onNeighbourUid.accept(neighbour.srcUid()));
             case BOTH -> {
                 stores.getOutEdges().expandOut(
-                        readTxn, anchorUid, edgeTypeUid, asOf,
+                        readTxn, fromUid, edgeTypeUid, asOf,
                         neighbour -> onNeighbourUid.accept(neighbour.dstUid()));
                 stores.getInEdges().expandIn(
-                        readTxn, anchorUid, edgeTypeUid, asOf,
+                        readTxn, fromUid, edgeTypeUid, asOf,
                         neighbour -> onNeighbourUid.accept(neighbour.srcUid()));
             }
         }
     }
 
-    private void acceptNeighbour(final Txn<ByteBuffer> readTxn, final long neighbourUid, final Instant asOf,
-                                 final Expand expand, final Map<String, Val> anchorRow,
-                                 final Predicate<Map<String, Val>> wherePredicate, final List<Map<String, Val>> rows) {
+    private void acceptChainNeighbour(final Txn<ByteBuffer> readTxn, final long neighbourUid, final Instant asOf,
+                                      final Expand hop, final Map<String, Val> rowSoFar, final boolean isLastHop,
+                                      final Predicate<Map<String, Val>> wherePredicate,
+                                      final List<Frontier> nextFrontier, final List<Map<String, Val>> finalRows) {
         final Optional<GraphNodeDb.NodeVersion> target = stores.getNodes().getNode(readTxn, neighbourUid, asOf);
-        if (target.isEmpty() || !matchesTargetConstraint(readTxn, expand, target.get())) {
+        if (target.isEmpty() || !matchesTargetConstraint(readTxn, hop, target.get())) {
             return;
         }
-        final Map<String, Val> row = new HashMap<>(anchorRow);
-        row.putAll(rowFor(expand.targetVariable(), target.get().properties()));
-        if (wherePredicate.test(row)) {
-            rows.add(row);
+        final Map<String, Val> row = new HashMap<>(rowSoFar);
+        row.putAll(rowFor(hop.targetVariable(), target.get().properties()));
+        if (isLastHop) {
+            if (wherePredicate.test(row)) {
+                finalRows.add(row);
+            }
+        } else {
+            nextFrontier.add(new Frontier(neighbourUid, row));
         }
     }
 
@@ -309,7 +337,7 @@ public final class GraphTraversalEngine {
     // plan shape / projection
     // ------------------------------------------------------------------------------------------------------
 
-    private record PlanShape(NodeScan nodeScan, @Nullable Expand expand, @Nullable ExpressionOperator where,
+    private record PlanShape(NodeScan nodeScan, List<Expand> hops, @Nullable ExpressionOperator where,
                              Project project) {
     }
 
@@ -334,9 +362,12 @@ public final class GraphTraversalEngine {
             below = filter.input();
         }
 
-        Expand expand = null;
-        if (below instanceof final Expand e) {
-            expand = e;
+        // Task P3.2: a chain of Expand nodes is encountered target-to-anchor while unwrapping (the outermost
+        // Expand is the LAST hop compiled), so each hop found is prepended to keep the list in anchor-to-target
+        // (compiled source) order.
+        final List<Expand> hops = new ArrayList<>();
+        while (below instanceof final Expand e) {
+            hops.add(0, e);
             below = e.input();
         }
 
@@ -345,7 +376,7 @@ public final class GraphTraversalEngine {
                     "Unsupported compiled plan shape for graph traversal: expected a NodeScan leaf, found "
                     + below.getClass().getSimpleName());
         }
-        return new PlanShape(nodeScan, expand, where, project);
+        return new PlanShape(nodeScan, hops, where, project);
     }
 
     private static List<Val[]> project(final List<Map<String, Val>> rows, final Project project) {

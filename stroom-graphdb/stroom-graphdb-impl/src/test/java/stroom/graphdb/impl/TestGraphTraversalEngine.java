@@ -207,6 +207,68 @@ class TestGraphTraversalEngine {
     }
 
     @Test
+    void twoHopChain_yieldsExpectedRowsAcrossBothHops(@TempDir final Path root) {
+        // Task P3.2: before this, CypherToLogicalPlan rejected any pattern with more than one hop outright.
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph10"), DOC)) {
+            seedDeviceAccountOwnerChain(stores);
+
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory());
+            final CompiledCypherPlan compiled = compile(
+                    "MATCH (d:Device {id: 'd-42'})-[:CONNECTED_TO]->(a:Account)-[:OWNED_BY]->(o:Owner) "
+                    + "RETURN o.id");
+
+            final List<Val[]> rows = stores.read(readTxn ->
+                    engine.execute(readTxn, compiled.plan(), compiled.temporalContext(),
+                            DateTimeSettings.builder().build()));
+            assertThat(rows).extracting(row -> row[0].toString())
+                    .containsExactlyInAnyOrder("owner-x", "owner-y");
+        }
+    }
+
+    @Test
+    void twoHopChain_middleHopTargetConstraintPrunesAPath(@TempDir final Path root) {
+        // A middle hop's own target constraint (P3.1) must be enforced too, not only the pattern's last hop -
+        // only account-b carries the Premium label, so the path through account-a must not survive.
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph11"), DOC)) {
+            seedDeviceAccountOwnerChain(stores);
+
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory());
+            final CompiledCypherPlan compiled = compile(
+                    "MATCH (d:Device {id: 'd-42'})-[:CONNECTED_TO]->(a:Account:Premium)-[:OWNED_BY]->(o:Owner) "
+                    + "RETURN o.id");
+
+            final List<Val[]> rows = stores.read(readTxn ->
+                    engine.execute(readTxn, compiled.plan(), compiled.temporalContext(),
+                            DateTimeSettings.builder().build()));
+            assertThat(rows).extracting(row -> row[0].toString()).containsExactly("owner-y");
+        }
+    }
+
+    @Test
+    void threeHopChain_yieldsExpectedRow(@TempDir final Path root) {
+        // Both owner-x and owner-y are employed by the same company, via two distinct 3-hop paths (through
+        // account-a and account-b respectively) - Cypher MATCH (with no DISTINCT) yields one row per path, so
+        // the same company legitimately appears twice here, not once.
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph12"), DOC)) {
+            seedDeviceAccountOwnerChain(stores);
+
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory());
+            final CompiledCypherPlan compiled = compile(
+                    "MATCH (d:Device {id: 'd-42'})-[:CONNECTED_TO]->(a:Account)-[:OWNED_BY]->(o:Owner)"
+                    + "-[:EMPLOYED_BY]->(c:Company) RETURN c.id");
+
+            final List<Val[]> rows = stores.read(readTxn ->
+                    engine.execute(readTxn, compiled.plan(), compiled.temporalContext(),
+                            DateTimeSettings.builder().build()));
+            assertThat(rows).hasSize(2);
+            assertThat(rows).allSatisfy(row -> assertThat(row[0].toString()).isEqualTo("company-1"));
+        }
+    }
+
+    @Test
     void undirectedMatchReturn_yieldsTheUnionOfBothDirections(@TempDir final Path root) {
         try (GraphStores stores = GraphStores.provision(root.resolve("graph6"), DOC)) {
             seedDeviceConnectedToAccounts(stores);
@@ -268,6 +330,65 @@ class TestGraphTraversalEngine {
             // outgoing (to the accounts) and an incoming (from the gateway) edge to union.
             stores.getOutEdges().insert(writer, gatewayUid, connectedTo, deviceUid, T1, Map.of());
             stores.getInEdges().insert(writer, gatewayUid, connectedTo, deviceUid, T1, Map.of());
+            return null;
+        });
+    }
+
+    /**
+     * A 3-hop-deep chain fixture, purpose-built for Task P3.2's chain tests: {@code d-42 -CONNECTED_TO->
+     * {account-a, account-b} -OWNED_BY-> {owner-x, owner-y} -EMPLOYED_BY-> company-1} - only account-b carries
+     * the {@code Premium} label, so a middle-hop label constraint prunes exactly the account-a path.
+     */
+    private static void seedDeviceAccountOwnerChain(final GraphStores stores) {
+        final long deviceLabel = intern(stores, stores.getLabelUids(), "Device");
+        final long accountLabel = intern(stores, stores.getLabelUids(), "Account");
+        final long premiumLabel = intern(stores, stores.getLabelUids(), "Premium");
+        final long ownerLabel = intern(stores, stores.getLabelUids(), "Owner");
+        final long companyLabel = intern(stores, stores.getLabelUids(), "Company");
+        final long idKey = intern(stores, stores.getPropertyKeyUids(), "id");
+        final long connectedTo = intern(stores, stores.getEdgeTypeUids(), "CONNECTED_TO");
+        final long ownedBy = intern(stores, stores.getEdgeTypeUids(), "OWNED_BY");
+        final long employedBy = intern(stores, stores.getEdgeTypeUids(), "EMPLOYED_BY");
+
+        final long deviceUid = intern(stores, stores.getNodeUids(), "chain-d-42");
+        final long accountAUid = intern(stores, stores.getNodeUids(), "chain-account-a");
+        final long accountBUid = intern(stores, stores.getNodeUids(), "chain-account-b");
+        final long ownerXUid = intern(stores, stores.getNodeUids(), "owner-x");
+        final long ownerYUid = intern(stores, stores.getNodeUids(), "owner-y");
+        final long companyUid = intern(stores, stores.getNodeUids(), "company-1");
+
+        stores.write(writer -> {
+            stores.getNodes().insert(
+                    writer, deviceUid, T1, List.of(deviceLabel), Map.of("id", ValString.create("d-42")));
+            stores.getNodes().insert(writer, accountAUid, T1, List.of(accountLabel),
+                    Map.of("id", ValString.create("account-a")));
+            stores.getNodes().insert(writer, accountBUid, T1, List.of(accountLabel, premiumLabel),
+                    Map.of("id", ValString.create("account-b")));
+            stores.getNodes().insert(
+                    writer, ownerXUid, T1, List.of(ownerLabel), Map.of("id", ValString.create("owner-x")));
+            stores.getNodes().insert(
+                    writer, ownerYUid, T1, List.of(ownerLabel), Map.of("id", ValString.create("owner-y")));
+            stores.getNodes().insert(
+                    writer, companyUid, T1, List.of(companyLabel), Map.of("id", ValString.create("company-1")));
+
+            stores.getPropertyIndex().insert(
+                    writer, deviceLabel, idKey, "d-42".getBytes(StandardCharsets.UTF_8), deviceUid);
+
+            // Every edge is written to both GraphAdjacencyDb and GraphInEdgeDb (P1.1's dual-write contract).
+            stores.getOutEdges().insert(writer, deviceUid, connectedTo, accountAUid, T1, Map.of());
+            stores.getInEdges().insert(writer, deviceUid, connectedTo, accountAUid, T1, Map.of());
+            stores.getOutEdges().insert(writer, deviceUid, connectedTo, accountBUid, T1, Map.of());
+            stores.getInEdges().insert(writer, deviceUid, connectedTo, accountBUid, T1, Map.of());
+
+            stores.getOutEdges().insert(writer, accountAUid, ownedBy, ownerXUid, T1, Map.of());
+            stores.getInEdges().insert(writer, accountAUid, ownedBy, ownerXUid, T1, Map.of());
+            stores.getOutEdges().insert(writer, accountBUid, ownedBy, ownerYUid, T1, Map.of());
+            stores.getInEdges().insert(writer, accountBUid, ownedBy, ownerYUid, T1, Map.of());
+
+            stores.getOutEdges().insert(writer, ownerXUid, employedBy, companyUid, T1, Map.of());
+            stores.getInEdges().insert(writer, ownerXUid, employedBy, companyUid, T1, Map.of());
+            stores.getOutEdges().insert(writer, ownerYUid, employedBy, companyUid, T1, Map.of());
+            stores.getInEdges().insert(writer, ownerYUid, employedBy, companyUid, T1, Map.of());
             return null;
         });
     }
