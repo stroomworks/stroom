@@ -28,6 +28,7 @@ import stroom.planb.impl.dao.UidLookupRecorder;
 import stroom.planb.impl.serde.time.MillisecondTimeSerde;
 import stroom.query.language.functions.Val;
 
+import org.jspecify.annotations.Nullable;
 import org.lmdbjava.Dbi;
 import org.lmdbjava.DbiFlags;
 import org.lmdbjava.Txn;
@@ -138,6 +139,61 @@ public final class GraphNodeDb {
             }
         }
         return Optional.empty();
+    }
+
+    /**
+     * The window-intersection lookup (Task P4.1; design doc &sect;5.4 / P0.3 outcome: {@code AROUND}/
+     * {@code BETWEEN} resolve to an inclusive window {@code [from, to]}, and a version
+     * {@code [validFrom, nextValidFrom)} intersects it iff {@code validFrom <= to && nextValidFrom > from}):
+     * among {@code nodeUid}'s versions whose interval intersects {@code [from, to]}, returns the one with the
+     * greatest {@code validFrom} (the state as it stood by the end of the window, restricted to versions live
+     * at some point within it) - mirroring {@link #getNode}'s own "last-applicable-version" rule, just with an
+     * intersection test instead of a less-than-or-equal test.
+     *
+     * <p>Unlike {@link #getNode}'s reverse-bounded floor scan, this cannot early-exit - every version in
+     * {@code nodeUid}'s run must be seen to know each entry's own {@code nextValidFrom} (the following entry's
+     * {@code validFrom}, or {@code Instant.MAX} for the run's last entry), so the whole run is buffered first.
+     *
+     * <p><b>Postconditions:</b> empty if no version intersects {@code [from, to]}, or if the latest intersecting
+     * version is a tombstone (the node was absent for the remainder of the window).
+     */
+    public Optional<NodeVersion> getNodeWindow(final Txn<ByteBuffer> readTxn, final long nodeUid,
+                                               final Instant from, final Instant to) {
+        Objects.requireNonNull(readTxn, "readTxn");
+        Objects.requireNonNull(from, "from");
+        Objects.requireNonNull(to, "to");
+
+        final ByteBuffer prefix = ByteBuffer.allocateDirect(GraphStores.NODE_UID_WIDTH);
+        NODE_UID_BYTES.put(prefix, nodeUid);
+        prefix.flip();
+
+        final List<VersionRunEntry> run = new ArrayList<>();
+        final LmdbKeyRange keyRange = LmdbKeyRange.builder().prefix(prefix).build();
+        try (LmdbIterable iterable = LmdbIterable.create(readTxn, dbi, keyRange)) {
+            for (final LmdbEntry entry : iterable) {
+                final ByteBuffer key = entry.getKey().duplicate();
+                key.position(key.position() + GraphStores.NODE_UID_WIDTH);
+                run.add(new VersionRunEntry(TIME_SERDE.read(key), copy(entry.getVal())));
+            }
+        }
+        return Optional.ofNullable(latestIntersecting(run, from, to));
+    }
+
+    private static @Nullable NodeVersion latestIntersecting(
+            final List<VersionRunEntry> run, final Instant from, final Instant to) {
+        NodeVersion candidate = null;
+        for (int i = 0; i < run.size(); i++) {
+            final VersionRunEntry entry = run.get(i);
+            final Instant nextValidFrom = i + 1 < run.size() ? run.get(i + 1).validFrom() : Instant.MAX;
+            if (!entry.validFrom().isAfter(to) && nextValidFrom.isAfter(from)) {
+                candidate = decodeValue(ByteBuffer.wrap(entry.valueBytes()));
+            }
+        }
+        return candidate;
+    }
+
+    /** One raw version in a node's run, buffered so its successor's {@code validFrom} can be inspected. */
+    private record VersionRunEntry(Instant validFrom, byte[] valueBytes) {
     }
 
     /**

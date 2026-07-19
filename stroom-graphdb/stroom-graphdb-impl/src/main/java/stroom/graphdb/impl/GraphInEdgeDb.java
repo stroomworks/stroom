@@ -27,6 +27,7 @@ import stroom.planb.impl.dao.UidLookupRecorder;
 import stroom.planb.impl.serde.time.MillisecondTimeSerde;
 import stroom.query.language.functions.Val;
 
+import org.jspecify.annotations.Nullable;
 import org.lmdbjava.Dbi;
 import org.lmdbjava.DbiFlags;
 import org.lmdbjava.Txn;
@@ -156,6 +157,76 @@ public final class GraphInEdgeDb {
         if (neighbour != null) {
             consumer.accept(neighbour);
         }
+    }
+
+    /**
+     * The window-intersection 1-hop reverse expand (Task P4.1) - the in-edge mirror of
+     * {@link GraphAdjacencyDb#expandOutWindow}, exactly as {@link #expandIn} mirrors
+     * {@link GraphAdjacencyDb#expandOut} (see {@link GraphNodeDb#getNodeWindow} for the full intersection-rule
+     * writeup both mirror).
+     *
+     * <p><b>Postconditions:</b> {@code consumer} is invoked at most once per distinct {@code srcUid} that has
+     * some version intersecting {@code [from, to]} and whose latest such version is present (not a tombstone),
+     * in ascending {@code srcUid} order.
+     */
+    public void expandInWindow(final Txn<ByteBuffer> readTxn, final long dstUid, final long edgeTypeUid,
+                               final Instant from, final Instant to, final Consumer<Neighbour> consumer) {
+        Objects.requireNonNull(readTxn, "readTxn");
+        Objects.requireNonNull(from, "from");
+        Objects.requireNonNull(to, "to");
+        Objects.requireNonNull(consumer, "consumer");
+
+        final ByteBuffer prefix = ByteBuffer.allocateDirect(DST_PREFIX_WIDTH);
+        NODE_UID_BYTES.put(prefix, dstUid);
+        TYPE_UID_BYTES.put(prefix, edgeTypeUid);
+        prefix.flip();
+
+        final LmdbKeyRange keyRange = LmdbKeyRange.builder().prefix(prefix).build();
+        Long currentSrc = null;
+        final List<VersionRunEntry> group = new ArrayList<>();
+        try (LmdbIterable iterable = LmdbIterable.create(readTxn, dbi, keyRange)) {
+            for (final LmdbEntry entry : iterable) {
+                final ByteBuffer key = entry.getKey().duplicate();
+                key.position(key.position() + DST_PREFIX_WIDTH);
+                final long srcUid = NODE_UID_BYTES.get(key);
+                final Instant validFrom = TIME_SERDE.read(key);
+
+                if (!Objects.equals(currentSrc, srcUid)) {
+                    emitWindowGroup(consumer, currentSrc, group, from, to);
+                    group.clear();
+                    currentSrc = srcUid;
+                }
+                group.add(new VersionRunEntry(validFrom, copy(entry.getVal())));
+            }
+        }
+        emitWindowGroup(consumer, currentSrc, group, from, to);
+    }
+
+    private void emitWindowGroup(final Consumer<Neighbour> consumer, final @Nullable Long srcUid,
+                                 final List<VersionRunEntry> group, final Instant from, final Instant to) {
+        if (srcUid == null) {
+            return;
+        }
+        emit(consumer, latestIntersectingNeighbour(srcUid, group, from, to));
+    }
+
+    private static @Nullable Neighbour latestIntersectingNeighbour(final long srcUid,
+                                                                   final List<VersionRunEntry> group,
+                                                                   final Instant from, final Instant to) {
+        Neighbour candidate = null;
+        for (int i = 0; i < group.size(); i++) {
+            final VersionRunEntry entry = group.get(i);
+            final Instant nextValidFrom = i + 1 < group.size() ? group.get(i + 1).validFrom() : Instant.MAX;
+            if (!entry.validFrom().isAfter(to) && nextValidFrom.isAfter(from)) {
+                candidate = decodeNeighbour(srcUid, ByteBuffer.wrap(entry.valueBytes()));
+            }
+        }
+        return candidate;
+    }
+
+    /** One raw version in a {@code srcUid} group's run, buffered so its successor's {@code validFrom} can be
+     * inspected. */
+    private record VersionRunEntry(Instant validFrom, byte[] valueBytes) {
     }
 
     private static Neighbour decodeNeighbour(final long srcUid, final ByteBuffer value) {

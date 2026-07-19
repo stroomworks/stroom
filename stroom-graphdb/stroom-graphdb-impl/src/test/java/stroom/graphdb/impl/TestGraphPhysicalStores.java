@@ -27,6 +27,7 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -153,6 +154,78 @@ class TestGraphPhysicalStores {
             final Optional<GraphNodeDb.NodeVersion> tooEarly = stores.read(
                     readTxn -> stores.getNodes().getNode(readTxn, nodeUid, T1));
             assertThat(tooEarly).isEmpty();
+        }
+    }
+
+    @Test
+    void getNodeWindow_returnsTheLatestVersionWhoseIntervalIntersectsTheWindow(@TempDir final Path root) {
+        // Task P4.1. Three versions: v1=[t1,t2), v2=[t2,t3), v3=[t3,+inf).
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph3b"), DOC)) {
+            final long nodeUid = intern(stores, stores.getNodeUids(), "n1");
+            final long labelV1 = intern(stores, stores.getLabelUids(), "V1");
+            final long labelV2 = intern(stores, stores.getLabelUids(), "V2");
+            final long labelV3 = intern(stores, stores.getLabelUids(), "V3");
+            final Instant t1 = Instant.parse("2020-01-01T00:00:00Z");
+            final Instant t2 = Instant.parse("2020-06-01T00:00:00Z");
+            final Instant t3 = Instant.parse("2021-01-01T00:00:00Z");
+
+            stores.write(writer -> {
+                stores.getNodes().insert(writer, nodeUid, t1, List.of(labelV1), Map.of());
+                stores.getNodes().insert(writer, nodeUid, t2, List.of(labelV2), Map.of());
+                stores.getNodes().insert(writer, nodeUid, t3, List.of(labelV3), Map.of());
+                return null;
+            });
+
+            // A window entirely inside v1's interval: only v1 intersects.
+            final Optional<GraphNodeDb.NodeVersion> withinV1 = stores.read(readTxn ->
+                    stores.getNodes().getNodeWindow(
+                            readTxn, nodeUid, t1.plus(Duration.ofDays(10)), t1.plus(Duration.ofDays(20))));
+            assertThat(withinV1).isPresent();
+            assertThat(withinV1.get().labelUids()).containsExactly(labelV1);
+
+            // A window whose upper bound lands exactly on v2's validFrom: "validFrom == to includes", so both
+            // v1 and v2 intersect - the later one (v2) wins.
+            final Optional<GraphNodeDb.NodeVersion> straddlingBoundary = stores.read(readTxn ->
+                    stores.getNodes().getNodeWindow(readTxn, nodeUid, t2.minus(Duration.ofDays(1)), t2));
+            assertThat(straddlingBoundary).isPresent();
+            assertThat(straddlingBoundary.get().labelUids()).containsExactly(labelV2);
+
+            // A window whose lower bound lands exactly on v2's validFrom (== v1's nextValidFrom): "nextValidFrom
+            // == from excludes", so v1 is excluded and only v2 intersects.
+            final Optional<GraphNodeDb.NodeVersion> atV1sEnd = stores.read(readTxn ->
+                    stores.getNodes().getNodeWindow(readTxn, nodeUid, t2, t2.plus(Duration.ofDays(5))));
+            assertThat(atV1sEnd).isPresent();
+            assertThat(atV1sEnd.get().labelUids()).containsExactly(labelV2);
+
+            // A window entirely before v1 or entirely after v3: nothing intersects.
+            final Optional<GraphNodeDb.NodeVersion> beforeEverything = stores.read(readTxn ->
+                    stores.getNodes().getNodeWindow(
+                            readTxn, nodeUid, t1.minus(Duration.ofDays(20)), t1.minus(Duration.ofDays(10))));
+            assertThat(beforeEverything).isEmpty();
+        }
+    }
+
+    @Test
+    void getNodeWindow_aTombstoneAsTheLatestIntersectingVersionMeansAbsent(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph3c"), DOC)) {
+            final long nodeUid = intern(stores, stores.getNodeUids(), "n1");
+            final long label = intern(stores, stores.getLabelUids(), "Thing");
+            final Instant t1 = Instant.parse("2020-01-01T00:00:00Z");
+            final Instant t2 = Instant.parse("2020-06-01T00:00:00Z");
+
+            stores.write(writer -> {
+                stores.getNodes().insert(writer, nodeUid, t1, List.of(label), Map.of());
+                stores.getNodes().delete(writer, nodeUid, t2);
+                return null;
+            });
+
+            // The window spans both the present version and the later tombstone - the tombstone is the latest
+            // intersecting version, so the node counts as absent for this window even though the present
+            // version also intersects.
+            final Optional<GraphNodeDb.NodeVersion> result = stores.read(readTxn ->
+                    stores.getNodes().getNodeWindow(
+                            readTxn, nodeUid, t1.plus(Duration.ofDays(5)), t2.plus(Duration.ofDays(20))));
+            assertThat(result).isEmpty();
         }
     }
 
@@ -363,6 +436,75 @@ class TestGraphPhysicalStores {
             assertThat(outAtT3)
                     .as("the @t3 tombstone still applies - the edge is absent from t3 onward")
                     .isEmpty();
+        }
+    }
+
+    @Test
+    void expandOutWindow_returnsTheLatestIntersectingVersionPerDestination(@TempDir final Path root) {
+        // Task P4.1: src -> dstA has two versions [t1,t2)/[t2,+inf); src -> dstB has one bounded version
+        // [t1-100d,t1-90d) (tombstoned so it doesn't extend to +inf), entirely outside the windows under test.
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph8"), DOC)) {
+            final long src = intern(stores, stores.getNodeUids(), "src");
+            final long dstA = intern(stores, stores.getNodeUids(), "dstA");
+            final long dstB = intern(stores, stores.getNodeUids(), "dstB");
+            final long edgeType = intern(stores, stores.getEdgeTypeUids(), "LINKS_TO");
+            final Instant t1 = Instant.parse("2020-01-01T00:00:00Z");
+            final Instant t2 = Instant.parse("2020-06-01T00:00:00Z");
+
+            stores.write(writer -> {
+                stores.getOutEdges().insert(writer, src, edgeType, dstA, t1, Map.of());
+                stores.getOutEdges().insert(writer, src, edgeType, dstA, t2, Map.of());
+                stores.getOutEdges().insert(writer, src, edgeType, dstB, t1.minus(Duration.ofDays(100)), Map.of());
+                stores.getOutEdges().delete(writer, src, edgeType, dstB, t1.minus(Duration.ofDays(90)));
+                return null;
+            });
+
+            // A window straddling the t1/t2 boundary exactly at t2: both of dstA's versions intersect
+            // ("validFrom == to includes"), the later one wins; dstB's single, much-earlier version does not
+            // intersect at all.
+            final List<Long> neighbours = new ArrayList<>();
+            stores.read(readTxn -> {
+                stores.getOutEdges().expandOutWindow(
+                        readTxn, src, edgeType, t2.minus(Duration.ofDays(1)), t2, n -> neighbours.add(n.dstUid()));
+                return null;
+            });
+            assertThat(neighbours).containsExactly(dstA);
+
+            // A window entirely before dstA's first version and after dstB's version: nothing intersects.
+            final List<Long> none = new ArrayList<>();
+            stores.read(readTxn -> {
+                stores.getOutEdges().expandOutWindow(
+                        readTxn, src, edgeType, t1.minus(Duration.ofDays(50)), t1.minus(Duration.ofDays(40)),
+                        n -> none.add(n.dstUid()));
+                return null;
+            });
+            assertThat(none).isEmpty();
+        }
+    }
+
+    @Test
+    void expandOutWindow_aTombstoneAsTheLatestIntersectingVersionExcludesTheDestination(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph9"), DOC)) {
+            final long src = intern(stores, stores.getNodeUids(), "src");
+            final long dst = intern(stores, stores.getNodeUids(), "dst");
+            final long edgeType = intern(stores, stores.getEdgeTypeUids(), "LINKS_TO");
+            final Instant t1 = Instant.parse("2020-01-01T00:00:00Z");
+            final Instant t2 = Instant.parse("2020-06-01T00:00:00Z");
+
+            stores.write(writer -> {
+                stores.getOutEdges().insert(writer, src, edgeType, dst, t1, Map.of());
+                stores.getOutEdges().delete(writer, src, edgeType, dst, t2);
+                return null;
+            });
+
+            final List<Long> neighbours = new ArrayList<>();
+            stores.read(readTxn -> {
+                stores.getOutEdges().expandOutWindow(
+                        readTxn, src, edgeType, t1.plus(Duration.ofDays(5)), t2.plus(Duration.ofDays(20)),
+                        n -> neighbours.add(n.dstUid()));
+                return null;
+            });
+            assertThat(neighbours).isEmpty();
         }
     }
 

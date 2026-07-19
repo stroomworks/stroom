@@ -27,6 +27,7 @@ import stroom.planb.impl.dao.UidLookupRecorder;
 import stroom.planb.impl.serde.time.MillisecondTimeSerde;
 import stroom.query.language.functions.Val;
 
+import org.jspecify.annotations.Nullable;
 import org.lmdbjava.Dbi;
 import org.lmdbjava.DbiFlags;
 import org.lmdbjava.Txn;
@@ -153,6 +154,79 @@ public final class GraphAdjacencyDb {
         if (neighbour != null) {
             consumer.accept(neighbour);
         }
+    }
+
+    /**
+     * The window-intersection 1-hop expand (Task P4.1; design doc &sect;5.4 / P0.3 outcome - see
+     * {@link GraphNodeDb#getNodeWindow} for the full intersection-rule writeup this mirrors): a single forward
+     * pass over the {@code [srcUid][edgeTypeUid]} prefix, grouped by {@code dstUid} exactly as {@link #expandOut}
+     * does, but each group is buffered first (a window scan cannot early-exit; it needs every entry's own
+     * successor to compute that entry's half-open interval) and resolved to the group's latest version whose
+     * interval intersects {@code [from, to]} - the window analogue of {@code expandOut}'s "most recent version
+     * at-or-before {@code asOf}" rule.
+     *
+     * <p><b>Postconditions:</b> {@code consumer} is invoked at most once per distinct {@code dstUid} that has
+     * some version intersecting {@code [from, to]} and whose latest such version is present (not a tombstone),
+     * in ascending {@code dstUid} order.
+     */
+    public void expandOutWindow(final Txn<ByteBuffer> readTxn, final long srcUid, final long edgeTypeUid,
+                                final Instant from, final Instant to, final Consumer<Neighbour> consumer) {
+        Objects.requireNonNull(readTxn, "readTxn");
+        Objects.requireNonNull(from, "from");
+        Objects.requireNonNull(to, "to");
+        Objects.requireNonNull(consumer, "consumer");
+
+        final ByteBuffer prefix = ByteBuffer.allocateDirect(SRC_PREFIX_WIDTH);
+        NODE_UID_BYTES.put(prefix, srcUid);
+        TYPE_UID_BYTES.put(prefix, edgeTypeUid);
+        prefix.flip();
+
+        final LmdbKeyRange keyRange = LmdbKeyRange.builder().prefix(prefix).build();
+        Long currentDst = null;
+        final List<VersionRunEntry> group = new ArrayList<>();
+        try (LmdbIterable iterable = LmdbIterable.create(readTxn, dbi, keyRange)) {
+            for (final LmdbEntry entry : iterable) {
+                final ByteBuffer key = entry.getKey().duplicate();
+                key.position(key.position() + SRC_PREFIX_WIDTH);
+                final long dstUid = NODE_UID_BYTES.get(key);
+                final Instant validFrom = TIME_SERDE.read(key);
+
+                if (!Objects.equals(currentDst, dstUid)) {
+                    emitWindowGroup(consumer, currentDst, group, from, to);
+                    group.clear();
+                    currentDst = dstUid;
+                }
+                group.add(new VersionRunEntry(validFrom, copy(entry.getVal())));
+            }
+        }
+        emitWindowGroup(consumer, currentDst, group, from, to);
+    }
+
+    private void emitWindowGroup(final Consumer<Neighbour> consumer, final @Nullable Long dstUid,
+                                 final List<VersionRunEntry> group, final Instant from, final Instant to) {
+        if (dstUid == null) {
+            return;
+        }
+        emit(consumer, latestIntersectingNeighbour(dstUid, group, from, to));
+    }
+
+    private static @Nullable Neighbour latestIntersectingNeighbour(final long dstUid,
+                                                                   final List<VersionRunEntry> group,
+                                                                   final Instant from, final Instant to) {
+        Neighbour candidate = null;
+        for (int i = 0; i < group.size(); i++) {
+            final VersionRunEntry entry = group.get(i);
+            final Instant nextValidFrom = i + 1 < group.size() ? group.get(i + 1).validFrom() : Instant.MAX;
+            if (!entry.validFrom().isAfter(to) && nextValidFrom.isAfter(from)) {
+                candidate = decodeNeighbour(dstUid, ByteBuffer.wrap(entry.valueBytes()));
+            }
+        }
+        return candidate;
+    }
+
+    /** One raw version in a {@code dstUid} group's run, buffered so its successor's {@code validFrom} can be
+     * inspected. */
+    private record VersionRunEntry(Instant validFrom, byte[] valueBytes) {
     }
 
     private static Neighbour decodeNeighbour(final long dstUid, final ByteBuffer value) {

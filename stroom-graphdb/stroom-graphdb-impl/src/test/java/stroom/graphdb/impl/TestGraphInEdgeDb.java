@@ -26,6 +26,7 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -105,6 +106,67 @@ class TestGraphInEdgeDb {
                 return null;
             });
             assertThat(afterDelete).isEmpty();
+        }
+    }
+
+    @Test
+    void expandInWindow_returnsTheLatestIntersectingVersionPerSource(@TempDir final Path root) {
+        // Task P4.1: the in-edge mirror of TestGraphPhysicalStores' expandOutWindow coverage.
+        try (GraphStores stores = GraphStores.provision(root, DOC)) {
+            final long dst = intern(stores, stores.getNodeUids(), "dst");
+            final long srcA = intern(stores, stores.getNodeUids(), "srcA");
+            final long edgeType = intern(stores, stores.getEdgeTypeUids(), "LINKS_TO");
+            final Instant t1 = Instant.parse("2020-01-01T00:00:00Z");
+            final Instant t2 = Instant.parse("2020-06-01T00:00:00Z");
+
+            stores.write(writer -> {
+                stores.getInEdges().insert(writer, srcA, edgeType, dst, t1, Map.of());
+                stores.getInEdges().insert(writer, srcA, edgeType, dst, t2, Map.of());
+                return null;
+            });
+
+            final List<Long> sources = new ArrayList<>();
+            stores.read(readTxn -> {
+                stores.getInEdges().expandInWindow(
+                        readTxn, dst, edgeType, t2.minus(Duration.ofDays(1)), t2, n -> sources.add(n.srcUid()));
+                return null;
+            });
+            assertThat(sources).containsExactly(srcA);
+
+            final List<Long> none = new ArrayList<>();
+            stores.read(readTxn -> {
+                stores.getInEdges().expandInWindow(
+                        readTxn, dst, edgeType, t1.minus(Duration.ofDays(50)), t1.minus(Duration.ofDays(40)),
+                        n -> none.add(n.srcUid()));
+                return null;
+            });
+            assertThat(none).isEmpty();
+        }
+    }
+
+    @Test
+    void expandInWindow_aTombstoneAsTheLatestIntersectingVersionExcludesTheSource(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root, DOC)) {
+            final long dst = intern(stores, stores.getNodeUids(), "dst");
+            final long src = intern(stores, stores.getNodeUids(), "src");
+            final long edgeType = intern(stores, stores.getEdgeTypeUids(), "LINKS_TO");
+            final Instant t1 = Instant.parse("2020-01-01T00:00:00Z");
+            final Instant t2 = Instant.parse("2020-06-01T00:00:00Z");
+
+            stores.write(writer -> {
+                stores.getInEdges().insert(writer, src, edgeType, dst, t1, Map.of());
+                stores.getInEdges().delete(writer, src, edgeType, dst, t2);
+                return null;
+            });
+
+            final List<Long> sources = new ArrayList<>();
+            stores.read(readTxn -> {
+                stores.getInEdges().expandInWindow(
+                        readTxn, dst, edgeType, t1.plus(Duration.ofDays(5)), t2.plus(Duration.ofDays(20)),
+                        n -> sources.add(n.srcUid()));
+                return null;
+            });
+            assertThat(sources).isEmpty();
         }
     }
 

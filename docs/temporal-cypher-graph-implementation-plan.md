@@ -1165,6 +1165,17 @@ storage-then-execution split P3 used for its own two execution-facing tasks).
   `TestGraphPhysicalStores`'s existing style), and all pre-existing `GraphNodeDb`/`GraphAdjacencyDb`/
   `GraphInEdgeDb` tests still pass unchanged.
 - **Verify**: `./gradlew :stroom-graphdb:stroom-graphdb-impl:test`.
+- **Status: done (2026-07-19).** `getNodeWindow`/`expandOutWindow`/`expandInWindow` added exactly as scoped -
+  each buffers its version run/group into a small in-memory list (a window scan cannot early-exit like the
+  reverse-bounded floor lookup, since it needs every entry's own successor to know that entry's half-open
+  interval) and resolves the latest entry whose interval intersects `[from, to]`, using the P0.3 rule verbatim.
+  One genuine test bug found and fixed during this task: an "entirely outside the window" fixture edge with no
+  tombstone has an unbounded `[validFrom, +inf)` interval by construction, so it actually intersects every window
+  at or after its `validFrom` - not a DAO bug, a test-design error (fixed by tombstoning that fixture edge so it
+  has a genuinely bounded interval, matching the intended "definitely gone by now" scenario). Tests: 2 new cases
+  in `TestGraphPhysicalStores` for `getNodeWindow` (basic intersect/exclude/boundary cases, and the
+  tombstone-wins case) + 2 more for `expandOutWindow`; 2 new cases in `TestGraphInEdgeDb` mirroring
+  `expandInWindow`. All pre-existing floor-lookup tests pass unchanged.
 
 #### Task P4.2 — Wire `AROUND`/`BETWEEN` into `GraphTraversalEngine`
 - **Depends on**: P4.1 (needs the window DAO methods to call).
