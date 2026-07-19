@@ -57,6 +57,7 @@ public class GraphDbDocCacheImpl implements GraphDbDocCache, Clearable, EntityEv
     private final LoadingStroomCache<String, GraphDbDoc> cache;
     private final SecurityContext securityContext;
     private final DocFinder docFinder;
+    private final GraphStoreManager graphStoreManager;
 
     /**
      * <b>Preconditions:</b> no parameter is null (enforced by the Guice binding graph supplying them).
@@ -65,10 +66,12 @@ public class GraphDbDocCacheImpl implements GraphDbDocCache, Clearable, EntityEv
     GraphDbDocCacheImpl(final CacheManager cacheManager,
                        final GraphDbDocStore graphDbDocStore,
                        final SecurityContext securityContext,
-                       final DocFinder docFinder) {
+                       final DocFinder docFinder,
+                       final GraphStoreManager graphStoreManager) {
         this.graphDbDocStore = graphDbDocStore;
         this.securityContext = securityContext;
         this.docFinder = docFinder;
+        this.graphStoreManager = graphStoreManager;
         cache = cacheManager.createLoadingCache(CACHE_NAME, CacheConfig::new, this::create);
     }
 
@@ -124,7 +127,12 @@ public class GraphDbDocCacheImpl implements GraphDbDocCache, Clearable, EntityEv
         final EntityAction eventAction = event.getAction();
 
         switch (eventAction) {
-            case UPDATE, DELETE, CLEAR_CACHE -> {
+            case DELETE -> {
+                LOGGER.debug("Clearing cache and deleting physical stores");
+                clear();
+                graphStoreManager.delete(event.getDocRef().getUuid());
+            }
+            case UPDATE, CLEAR_CACHE -> {
                 LOGGER.debug("Clearing cache");
                 clear();
             }

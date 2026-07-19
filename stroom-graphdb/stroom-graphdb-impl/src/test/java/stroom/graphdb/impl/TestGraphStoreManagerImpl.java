@@ -28,6 +28,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -96,6 +97,57 @@ class TestGraphStoreManagerImpl {
             storesA.close();
             storesB.close();
         }
+    }
+
+    @Test
+    void delete_closesTheOpenStoreAndRemovesItsDirectory(@TempDir final Path appPath) {
+        final PathCreator pathCreator = mock(PathCreator.class);
+        when(pathCreator.toAppPath("graphdb")).thenReturn(appPath.resolve("graphdb"));
+
+        final GraphDbDoc doc = GraphDbDoc.builder().uuid("doc-uuid-3").name("Graph3").build();
+        final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(pathCreator);
+
+        manager.getOrOpen(doc);
+        assertThat(Files.isDirectory(appPath.resolve("graphdb").resolve("doc-uuid-3"))).isTrue();
+
+        manager.delete("doc-uuid-3");
+        assertThat(Files.exists(appPath.resolve("graphdb").resolve("doc-uuid-3"))).isFalse();
+
+        // A subsequent getOrOpen for the same UUID provisions a fresh, empty store, not a re-open of stale data.
+        final GraphStores reopened = manager.getOrOpen(doc);
+        try {
+            assertThat(Files.isDirectory(appPath.resolve("graphdb").resolve("doc-uuid-3"))).isTrue();
+        } finally {
+            reopened.close();
+        }
+    }
+
+    @Test
+    void delete_ofAnUnopenedButExistingDirectory_stillRemovesIt(@TempDir final Path appPath) {
+        final PathCreator pathCreator = mock(PathCreator.class);
+        when(pathCreator.toAppPath("graphdb")).thenReturn(appPath.resolve("graphdb"));
+
+        final GraphDbDoc doc = GraphDbDoc.builder().uuid("doc-uuid-4").name("Graph4").build();
+        final GraphStoreManagerImpl firstManager = new GraphStoreManagerImpl(pathCreator);
+        firstManager.getOrOpen(doc).close();
+        assertThat(Files.isDirectory(appPath.resolve("graphdb").resolve("doc-uuid-4"))).isTrue();
+
+        // A fresh manager instance (mirroring a restart) never opened doc-uuid-4 itself, yet its on-disk
+        // directory from the previous manager still exists and must still be removable.
+        final GraphStoreManagerImpl secondManager = new GraphStoreManagerImpl(pathCreator);
+        secondManager.delete("doc-uuid-4");
+
+        assertThat(Files.exists(appPath.resolve("graphdb").resolve("doc-uuid-4"))).isFalse();
+    }
+
+    @Test
+    void delete_ofAUuidWithNoDirectoryAtAll_isANoOp(@TempDir final Path appPath) {
+        final PathCreator pathCreator = mock(PathCreator.class);
+        when(pathCreator.toAppPath("graphdb")).thenReturn(appPath.resolve("graphdb"));
+
+        final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(pathCreator);
+
+        assertThatCode(() -> manager.delete("never-existed")).doesNotThrowAnyException();
     }
 
     private static ByteBuffer directBuffer(final String value) {

@@ -40,4 +40,19 @@ public interface GraphStoreManager {
      * @return the (possibly newly opened) {@link GraphStores}.
      */
     GraphStores getOrOpen(GraphDbDoc doc);
+
+    /**
+     * Task P5.3: permanently removes the physical stores for the {@link GraphDbDoc} identified by {@code uuid} -
+     * closing the cached {@link GraphStores} first if one is currently open, then deleting its on-disk directory.
+     * The counterpart to {@link #getOrOpen} that a {@link GraphDbDoc} delete must call, or its physical data is
+     * orphaned on disk forever.
+     *
+     * <p><b>Preconditions:</b> {@code uuid} is not null. <b>Postconditions:</b> the store for {@code uuid} is no
+     * longer open or cached, and its directory no longer exists; a subsequent {@link #getOrOpen} for the same
+     * UUID provisions a fresh, empty store. A no-op (not an error) if {@code uuid} was never opened by this
+     * manager and has no on-disk directory.</p>
+     *
+     * @param uuid the {@link GraphDbDoc#getUuid()} of the doc whose stores should be removed.
+     */
+    void delete(String uuid);
 }

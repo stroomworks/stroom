@@ -53,6 +53,16 @@ public class GraphStoreManagerImpl implements GraphStoreManager {
                 GraphStores.open(directoryFor(uuid), doc, false));
     }
 
+    @Override
+    public void delete(final String uuid) {
+        Objects.requireNonNull(uuid, "uuid");
+        final GraphStores stores = openStores.remove(uuid);
+        if (stores != null) {
+            stores.close();
+        }
+        GraphStores.delete(directoryFor(uuid));
+    }
+
     private Path directoryFor(final String uuid) {
         return pathCreator.toAppPath(ROOT_DIR_NAME).resolve(uuid);
     }

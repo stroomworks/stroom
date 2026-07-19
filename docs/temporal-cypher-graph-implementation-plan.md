@@ -1397,12 +1397,24 @@ explicit go-ahead.
 - **Done-when**: the new `TestGraphStoreManagerImpl`/`TestGraphDbDocCacheImpl` cases pass; every pre-existing
   test in both files passes unmodified.
 - **Verify**: `./gradlew :stroom-graphdb:stroom-graphdb-impl:test`.
+- **Status: done (2026-07-19).** `GraphStoreManager.delete(String uuid)` added exactly as scoped; wiring
+  `GraphDbDocCacheImpl`'s `onChange` required injecting `GraphStoreManager` (a new constructor parameter, updated
+  at all 6 test call sites) and adding `DELETE` as its own `switch` arm alongside the existing `UPDATE,
+  CLEAR_CACHE` arm. A pre-existing test fixture (`TestGraphFilter`'s inline `GraphStoreManager` lambda) broke
+  since the interface is no longer a single-abstract-method type - converted to an anonymous class implementing
+  both methods. Tests: three new `TestGraphStoreManagerImpl` cases (closes + removes an open store's directory
+  and a subsequent `getOrOpen` provisions fresh; a never-opened-by-this-instance directory from a prior manager
+  is still removed, mirroring a restart; deleting a UUID with no directory at all is a no-op); a new
+  `TestGraphDbDocCacheImpl` case proving `DELETE` calls `graphStoreManager.delete` with the event's UUID, plus a
+  `never()` assertion added to the existing `UPDATE` test proving it does *not*. All pre-existing tests pass
+  unchanged.
 
-**P5 exit gate**: a `GraphDbDoc` can be fetched/updated over REST like any other document, appears as a data
+**P5 exit gate: met.** A `GraphDbDoc` can be fetched/updated over REST like any other document, appears as a data
 source in the explorer tree, exposes a real (if approximate) cost signal to the query-planner port interface,
 and no longer leaks on-disk data when deleted - all without a single internal store ever gaining its own
 `DocRef`, REST endpoint, or explorer node (the encapsulation invariant, unchanged). Reprocess-rebuild-from-UI and
-full anchor-index retention remain explicitly out of scope, per the scoping note above.
+full anchor-index retention remain explicitly out of scope, per the scoping note above. P5 (Tasks P5.1-P5.3) is
+complete; P6 (UI) is next, pending explicit go-ahead.
 
 ### P6 — UI (7–16 pw)
 - **Graph doc editor** — a **tabbed** GWT presenter/view mirroring the Lucene Index editor

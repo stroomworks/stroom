@@ -37,6 +37,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -61,7 +62,7 @@ class TestGraphDbDocCacheImpl {
         final SecurityContext securityContext = processingUserPassthrough(alwaysAllowed());
 
         final GraphDbDocCacheImpl cache = new GraphDbDocCacheImpl(
-                new CacheManagerImpl(), graphDbDocStore, securityContext, docFinder);
+                new CacheManagerImpl(), graphDbDocStore, securityContext, docFinder, mock(GraphStoreManager.class));
 
         assertThat(cache.get("TestGraph")).isEqualTo(DOC);
         assertThat(cache.get("TestGraph")).isEqualTo(DOC);
@@ -80,7 +81,7 @@ class TestGraphDbDocCacheImpl {
         final SecurityContext securityContext = processingUserPassthrough(never_());
 
         final GraphDbDocCacheImpl cache = new GraphDbDocCacheImpl(
-                new CacheManagerImpl(), graphDbDocStore, securityContext, docFinder);
+                new CacheManagerImpl(), graphDbDocStore, securityContext, docFinder, mock(GraphStoreManager.class));
 
         assertThatThrownBy(() -> cache.get("TestGraph")).isInstanceOf(PermissionException.class);
     }
@@ -93,7 +94,7 @@ class TestGraphDbDocCacheImpl {
         final SecurityContext securityContext = processingUserPassthrough(alwaysAllowed());
 
         final GraphDbDocCacheImpl cache = new GraphDbDocCacheImpl(
-                new CacheManagerImpl(), graphDbDocStore, securityContext, docFinder);
+                new CacheManagerImpl(), graphDbDocStore, securityContext, docFinder, mock(GraphStoreManager.class));
 
         assertThatThrownBy(() -> cache.get("Missing")).isInstanceOf(NullPointerException.class);
     }
@@ -107,7 +108,7 @@ class TestGraphDbDocCacheImpl {
         final SecurityContext securityContext = processingUserPassthrough(alwaysAllowed());
 
         final GraphDbDocCacheImpl cache = new GraphDbDocCacheImpl(
-                new CacheManagerImpl(), graphDbDocStore, securityContext, docFinder);
+                new CacheManagerImpl(), graphDbDocStore, securityContext, docFinder, mock(GraphStoreManager.class));
 
         assertThatThrownBy(() -> cache.get("TestGraph")).isInstanceOf(RuntimeException.class);
     }
@@ -121,7 +122,7 @@ class TestGraphDbDocCacheImpl {
         final SecurityContext securityContext = processingUserPassthrough(alwaysAllowed());
 
         final GraphDbDocCacheImpl cache = new GraphDbDocCacheImpl(
-                new CacheManagerImpl(), graphDbDocStore, securityContext, docFinder);
+                new CacheManagerImpl(), graphDbDocStore, securityContext, docFinder, mock(GraphStoreManager.class));
 
         cache.get("TestGraph");
         cache.remove("TestGraph");
@@ -137,15 +138,40 @@ class TestGraphDbDocCacheImpl {
         final GraphDbDocStore graphDbDocStore = mock(GraphDbDocStore.class);
         when(graphDbDocStore.readDocument(DOC_REF)).thenReturn(DOC);
         final SecurityContext securityContext = processingUserPassthrough(alwaysAllowed());
+        final GraphStoreManager graphStoreManager = mock(GraphStoreManager.class);
 
         final GraphDbDocCacheImpl cache = new GraphDbDocCacheImpl(
-                new CacheManagerImpl(), graphDbDocStore, securityContext, docFinder);
+                new CacheManagerImpl(), graphDbDocStore, securityContext, docFinder, graphStoreManager);
 
         cache.get("TestGraph");
         cache.onChange(new EntityEvent(DOC_REF, EntityAction.UPDATE));
         cache.get("TestGraph");
 
         verify(docFinder, times(2)).findByName(GraphDbDoc.TYPE, "TestGraph");
+        // Task P5.3: UPDATE clears the cache but must not tear down the physical store - only DELETE does that.
+        verify(graphStoreManager, never()).delete(any());
+    }
+
+    @Test
+    void onChange_forDelete_alsoDeletesThePhysicalStores() {
+        // Task P5.3: before this, deleting a GraphDbDoc only evicted the doc cache - the on-disk LMDB store was
+        // never removed, orphaning it forever.
+        final DocFinder docFinder = mock(DocFinder.class);
+        when(docFinder.findByName(GraphDbDoc.TYPE, "TestGraph")).thenReturn(List.of(DOC_REF));
+        final GraphDbDocStore graphDbDocStore = mock(GraphDbDocStore.class);
+        when(graphDbDocStore.readDocument(DOC_REF)).thenReturn(DOC);
+        final SecurityContext securityContext = processingUserPassthrough(alwaysAllowed());
+        final GraphStoreManager graphStoreManager = mock(GraphStoreManager.class);
+
+        final GraphDbDocCacheImpl cache = new GraphDbDocCacheImpl(
+                new CacheManagerImpl(), graphDbDocStore, securityContext, docFinder, graphStoreManager);
+
+        cache.get("TestGraph");
+        cache.onChange(new EntityEvent(DOC_REF, EntityAction.DELETE));
+        cache.get("TestGraph");
+
+        verify(docFinder, times(2)).findByName(GraphDbDoc.TYPE, "TestGraph");
+        verify(graphStoreManager, times(1)).delete(DOC_REF.getUuid());
     }
 
     @Test
@@ -157,7 +183,7 @@ class TestGraphDbDocCacheImpl {
         final SecurityContext securityContext = processingUserPassthrough(alwaysAllowed());
 
         final GraphDbDocCacheImpl cache = new GraphDbDocCacheImpl(
-                new CacheManagerImpl(), graphDbDocStore, securityContext, docFinder);
+                new CacheManagerImpl(), graphDbDocStore, securityContext, docFinder, mock(GraphStoreManager.class));
 
         cache.get("TestGraph");
         cache.onChange(new EntityEvent(DOC_REF, EntityAction.CREATE));

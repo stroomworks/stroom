@@ -242,7 +242,17 @@ class TestGraphFilter {
                 // Not needed by this test harness.
             }
         };
-        final GraphStoreManager graphStoreManager = doc -> currentStores.get();
+        final GraphStoreManager graphStoreManager = new GraphStoreManager() {
+            @Override
+            public GraphStores getOrOpen(final GraphDbDoc doc) {
+                return currentStores.get();
+            }
+
+            @Override
+            public void delete(final String uuid) {
+                // Not needed by this test harness.
+            }
+        };
 
         final GraphFilter graphFilter = new GraphFilter(
                 new ErrorReceiverProxy(),
