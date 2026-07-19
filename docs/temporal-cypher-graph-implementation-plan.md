@@ -772,11 +772,16 @@ Done-when/Verify shape.
   answer; a UID referenced only by fully-purged versions is gone from its `UidLookupDb`.
 - **Verify**: `./gradlew :stroom-graphdb:stroom-graphdb-impl:test`.
 
-**P1 exit gate**: `<-[:TYPE]-` and `-[:TYPE]-` Cypher patterns traverse correctly (not silently as `-[:TYPE]->`);
-long property values no longer fail at the `Db.MAX_KEY_LENGTH` boundary; a full retention pass (delete + UID
-sweep) across all four graph DAOs never corrupts a still-reachable floor lookup and actually reclaims space for
-fully-superseded data. Property-index anchor bloat from retention is a documented, accepted v1 limitation (backstopped
-by full rebuild), not a silent gap.
+**P1 exit gate — reached (2026-07-19):** `<-[:TYPE]-` and `-[:TYPE]-` Cypher patterns traverse correctly (not
+silently as `-[:TYPE]->`) via the new `GraphInEdgeDb` + direction-aware `GraphTraversalEngine.expandOneHop`
+(P1.1); long property values no longer fail at the `Db.MAX_KEY_LENGTH` boundary via the DIRECT/UID_LOOKUP/
+HASH_LOOKUP tiering (P1.3); a full retention pass (delete + UID sweep) across the three temporally-versioned
+graph DAOs never corrupts a still-reachable floor lookup and reclaims space for fully-superseded data, gated
+behind a new `GraphDbDoc.retention` field and its own scheduled job (P1.4, Decision D9). Interning hardening
+(P1.2) covers the node/label/edge-type namespaces; the property-key-uid namespace and property-index anchor
+bloat are a documented, accepted v1 limitation (backstopped by `GraphStores.rebuild()`), not a silent gap. A
+separate, pre-existing property-index DIRECT-tier value-prefix-collision bug was discovered (not introduced) by
+P1.3's boundary testing and is tracked as its own follow-up, not folded into this phase.
 
 ### P2 — Ingest `GraphFilter` (7–13 pw)
 - **Graph-mutation XML schema** (node/edge upserts carrying `validFrom`) — a small new schema, or a convention on
