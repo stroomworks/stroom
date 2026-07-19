@@ -21,11 +21,16 @@ import stroom.bytebuffer.impl6.ByteBuffers;
 import stroom.graphdb.shared.GraphDbDoc;
 import stroom.lmdb.serde.UnsignedBytesInstances;
 import stroom.planb.impl.dao.HashClashCommitRunnable;
+import stroom.planb.impl.dao.HashLookupDb;
 import stroom.planb.impl.dao.LmdbWriter;
 import stroom.planb.impl.dao.PlanBEnv;
 import stroom.planb.impl.dao.UidLookupDb;
 import stroom.planb.impl.dao.UidLookupDb.StaticUnsignedBytesFactory;
 import stroom.planb.impl.dao.UidLookupRecorder;
+import stroom.planb.impl.dao.VariableUsedLookupsRecorder;
+import stroom.planb.impl.serde.hash.HashFactory;
+import stroom.planb.impl.serde.hash.HashFactoryFactory;
+import stroom.planb.shared.HashLength;
 
 import org.lmdbjava.Txn;
 
@@ -82,6 +87,7 @@ public final class GraphStores implements AutoCloseable {
     private final UidLookupRecorder labelUidRecorder;
     private final UidLookupRecorder edgeTypeUidRecorder;
     private final UidLookupRecorder propertyKeyUidRecorder;
+    private final VariableUsedLookupsRecorder propertyValueRecorder;
     private final GraphNodeDb nodes;
     private final GraphAdjacencyDb outEdges;
     private final GraphInEdgeDb inEdges;
@@ -96,6 +102,7 @@ public final class GraphStores implements AutoCloseable {
                         final UidLookupRecorder labelUidRecorder,
                         final UidLookupRecorder edgeTypeUidRecorder,
                         final UidLookupRecorder propertyKeyUidRecorder,
+                        final VariableUsedLookupsRecorder propertyValueRecorder,
                         final GraphNodeDb nodes,
                         final GraphAdjacencyDb outEdges,
                         final GraphInEdgeDb inEdges,
@@ -109,6 +116,7 @@ public final class GraphStores implements AutoCloseable {
         this.labelUidRecorder = labelUidRecorder;
         this.edgeTypeUidRecorder = edgeTypeUidRecorder;
         this.propertyKeyUidRecorder = propertyKeyUidRecorder;
+        this.propertyValueRecorder = propertyValueRecorder;
         this.nodes = nodes;
         this.outEdges = outEdges;
         this.inEdges = inEdges;
@@ -159,12 +167,13 @@ public final class GraphStores implements AutoCloseable {
         }
 
         final ByteBuffers byteBuffers = new ByteBuffers(new ByteBufferFactoryImpl());
+        final HashClashCommitRunnable hashClashCommitRunnable = new HashClashCommitRunnable();
         final PlanBEnv env = new PlanBEnv(
                 directory,
                 null,
                 MAX_DBS,
                 readOnly,
-                new HashClashCommitRunnable());
+                hashClashCommitRunnable);
         try {
             final UidLookupDb nodeUids = new UidLookupDb(
                     env, byteBuffers, "node-uid",
@@ -182,13 +191,29 @@ public final class GraphStores implements AutoCloseable {
             final UidLookupRecorder labelUidRecorder = new UidLookupRecorder(env, labelUids);
             final UidLookupRecorder edgeTypeUidRecorder = new UidLookupRecorder(env, edgeTypeUids);
             final UidLookupRecorder propertyKeyUidRecorder = new UidLookupRecorder(env, propertyKeyUids);
+
+            // Task P1.3: the property index's own value-tiering lookups (UID_LOOKUP/HASH_LOOKUP tiers), separate
+            // from the four node/label/edge-type/property-key interning namespaces above. Fixed-width (like
+            // those four) for the same P0.1 reason: a variable-width UID here would silently break
+            // GraphPropertyIndex's composite-key prefix scan once the UID counter crosses a width boundary.
+            final UidLookupDb propertyValueUids = new UidLookupDb(
+                    env, byteBuffers, "property-value-uid",
+                    new StaticUnsignedBytesFactory(UnsignedBytesInstances.ofLength(TYPE_UID_WIDTH)));
+            final HashFactory propertyValueHashFactory = HashFactoryFactory.create(HashLength.LONG);
+            final HashLookupDb propertyValueHashes = new HashLookupDb(
+                    env, byteBuffers, propertyValueHashFactory, hashClashCommitRunnable, "property-value-hash");
+            final VariableUsedLookupsRecorder propertyValueRecorder = new VariableUsedLookupsRecorder(
+                    env, propertyValueUids, propertyValueHashes);
+
             final GraphNodeDb nodes = new GraphNodeDb(env);
             final GraphAdjacencyDb outEdges = new GraphAdjacencyDb(env);
             final GraphInEdgeDb inEdges = new GraphInEdgeDb(env);
-            final GraphPropertyIndex propertyIndex = new GraphPropertyIndex(env);
+            final GraphPropertyIndex propertyIndex = new GraphPropertyIndex(
+                    env, propertyValueUids, propertyValueHashes);
             return new GraphStores(
                     env, nodeUids, labelUids, edgeTypeUids, propertyKeyUids,
                     nodeUidRecorder, labelUidRecorder, edgeTypeUidRecorder, propertyKeyUidRecorder,
+                    propertyValueRecorder,
                     nodes, outEdges, inEdges, propertyIndex);
         } catch (final RuntimeException e) {
             env.close();
@@ -250,6 +275,14 @@ public final class GraphStores implements AutoCloseable {
      */
     public UidLookupRecorder getPropertyKeyUidRecorder() {
         return propertyKeyUidRecorder;
+    }
+
+    /**
+     * @return the property index's own value-tiering lookups' (Task P1.3) used-lookups recorder - dispatches on
+     * each stored value segment's leading tag byte to sweep the UID_LOOKUP or HASH_LOOKUP tier as appropriate.
+     */
+    public VariableUsedLookupsRecorder getPropertyValueRecorder() {
+        return propertyValueRecorder;
     }
 
     /**

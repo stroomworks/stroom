@@ -29,6 +29,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -175,6 +176,52 @@ class TestGraphPhysicalStores {
                     readTxn, label, statusKey, "active".getBytes(StandardCharsets.UTF_8)));
             assertThat(anchors).containsExactlyInAnyOrder(accountA, accountB);
         }
+    }
+
+    @Test
+    void propertyIndex_resolvesAnchorsAtEveryValueTierBoundary(@TempDir final Path root) {
+        // Task P1.3: DIRECT (<=32 bytes), UID_LOOKUP (33-511 bytes), HASH_LOOKUP (>511 bytes) - prove findAnchors
+        // resolves correctly right at and either side of both tier boundaries, not just for short values. Each
+        // length uses a distinct fill character (not just a distinct length) so no value is a byte-for-byte
+        // prefix of another - GraphPropertyIndex's DIRECT tier has no length delimiter (see its Javadoc's
+        // documented limitation), so same-character values of different lengths would otherwise cross-match.
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph5"), DOC)) {
+            final long label = intern(stores, stores.getLabelUids(), "Thing");
+            final long key = intern(stores, stores.getPropertyKeyUids(), "value");
+
+            final Map<Integer, Long> nodeUidByLength = new HashMap<>();
+            final int[] lengths = {31, 32, 33, 510, 511, 512};
+            for (int i = 0; i < lengths.length; i++) {
+                final int length = lengths[i];
+                final long nodeUid = intern(stores, stores.getNodeUids(), "n-" + length);
+                nodeUidByLength.put(length, nodeUid);
+                final byte[] valueBytes = valueOfLength(length, i);
+                stores.write(writer -> {
+                    stores.getPropertyIndex().insert(writer, label, key, valueBytes, nodeUid);
+                    return null;
+                });
+            }
+
+            for (int i = 0; i < lengths.length; i++) {
+                final int length = lengths[i];
+                final byte[] valueBytes = valueOfLength(length, i);
+                final List<Long> anchors = stores.read(readTxn -> stores.getPropertyIndex().findAnchors(
+                        readTxn, label, key, valueBytes));
+                assertThat(anchors)
+                        .as("anchors for a %d-byte value", length)
+                        .containsExactly(nodeUidByLength.get(length));
+            }
+
+            // A value that was never inserted at a lookup-backed tier resolves to no anchors, not an error.
+            final List<Long> neverInserted = stores.read(readTxn -> stores.getPropertyIndex().findAnchors(
+                    readTxn, label, key, "y".repeat(100).getBytes(StandardCharsets.UTF_8)));
+            assertThat(neverInserted).isEmpty();
+        }
+    }
+
+    private static byte[] valueOfLength(final int length, final int distinguisher) {
+        final char fillChar = (char) ('a' + distinguisher);
+        return String.valueOf(fillChar).repeat(length).getBytes(StandardCharsets.UTF_8);
     }
 
     private static long intern(final GraphStores stores, final UidLookupDb db,
