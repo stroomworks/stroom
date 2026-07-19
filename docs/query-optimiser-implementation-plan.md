@@ -1196,9 +1196,18 @@ reversible by config alone at any time.
 ## 9. Phase 6 — Joins (multi-source execution)
 
 Outcome: `create()` can compile and actually execute a query with `join`, producing correct INNER/LEFT-OUTER
-results over two (or, by recursion, more) datasources, driven by the cost-chosen algorithm; enrichment joins to a
+results over two (or, by recursion, more) datasources; enrichment joins to a
 State/PlanB store reuse the existing lookup functions rather than a new mechanism; EXPLAIN shows join
 order/algorithm for real (not just the direct-`Scan`-sides case Phase 4 already covers).
+
+> **Accuracy note (2026-07-19 code review):** the "driven by the cost-chosen algorithm" framing this outcome
+> originally used is *not* met at execution time. `JoinSearchProvider` hard-codes `JoinAlgorithm.HASH_JOIN` and
+> `JoinExecutor` always materialises the right side; `JoinCostModel.chooseAlgorithm` is consulted only by the
+> advisory `LogicalPlanExplainer` (EXPLAIN), never by real execution. Wiring the cost-chosen algorithm/build-side
+> into execution is a deferred Task 6.1 item (disclosed in the T6.1c status note as "a deferred optimisation, not
+> a correctness gap"). The remaining deferred/absent Phase 6 items (cost-driven execution, per-side push-down,
+> N-way joins, Task 6.2 enrichment joins, Task 6.3 real EXPLAIN cardinality, Task 6.4 domain relationships) are
+> catalogued in `docs/query-optimiser-code-review.md`.
 
 **This phase is materially bigger than Phases 0–5.** Every prior phase either built standalone, unwired machinery
 (Phases 2–3) or *parameterised* an existing, unchanged execution path (Phase 5's `create()` enhancements only ever
@@ -1334,8 +1343,11 @@ wrong answer.
     `ExpressionOperator`s, the same "assign, don't re-derive" pattern as Task 5.2/5.3) once it turned out a join
     side isn't always a bare `Scan` post-rewrite - see T6.1x's finding on `PushFiltersBelowJoinsRule`.
     `TestOptimisingQueryCompilerJoinSideCompilation` (3 tests, `Filter` always `null`) covers the bare-`Scan`
-    case; `TestOptimisingQueryCompilerJoin` (T6.1x's own tests) exercises the full path including a pushed-down
-    per-side filter.
+    case; `TestOptimisingQueryCompilerJoin` (T6.1x's own tests) exercises the full join-compilation path.
+    **Accuracy note (2026-07-19 code review):** `compileJoinSide`'s `@Nullable Filter` branch is *not* actually
+    exercised by any test and is dead from the join route - `createJoin` always passes `null` (each side compiles
+    as `select *`, filtered post-join), per the T6.1w decision that superseded per-side push-down. The branch is
+    retained for a future per-side-push-down optimisation but is currently unreachable in production.
 
 - **T6.1x — Alias-aware outer-expression compilation (resolved - far smaller than the T6.1b finding feared).**
   - **Research finding, in order of discovery:**
@@ -1385,10 +1397,12 @@ wrong answer.
     compiles correctly even after `PushFiltersBelowJoinsRule` pushes it down into that side; `select *` and an
     N-way chain both reject with a clear message.
   - **Verify**: `./gradlew :stroom-query:stroom-query-common:test`.
-  - **Status: done.** `TestOptimisingQueryCompilerJoin` (4 tests: populated `JoinSpec` end-to-end including the
-    pushed-down-filter case, `LEFT` join type mapping, `select *` rejection) plus the `Filter`-parameter addition
-    to T6.1b's own tests. Full module suite (parity tests included) green - zero regression to single-source
-    compilation.
+  - **Status: done.** `TestOptimisingQueryCompilerJoin` (4 tests: populated `JoinSpec` end-to-end, `LEFT` join
+    type mapping, `select *` rejection, and N-way-chain rejection) plus the `Filter`-parameter addition to T6.1b's
+    own tests. Full module suite (parity tests included) green - zero regression to single-source compilation.
+    **Accuracy note (2026-07-19 code review):** none of these exercise a per-side pushed-down filter (the earlier
+    wording claimed one) - that `compileJoinSide` branch is dead from the join route per T6.1w; see the T6.1b
+    status note above.
 
 - **T6.1c — In-memory join execution engine.**
   - **Files**: new `stroom-query-planner/src/main/java/stroom/query/planner/join/JoinExecutor.java` (or similar) -
