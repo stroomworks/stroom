@@ -158,18 +158,22 @@ public class GraphSearchProvider implements SearchProvider, IndexFieldProvider {
         final DocRef docRef = Objects.requireNonNull(query.getDataSource(), "query.getDataSource()");
         final GraphDbDoc doc = getGraphDbDoc(docRef);
 
-        final CompiledCypherPlan compiled = new CypherToLogicalPlan().compile(
-                CypherQueryParser.parse(graphSpec.getCypher()));
-        final List<ProjectField> projectFields = terminalProject(compiled.plan()).fields();
-
+        // Code-review fix: coprocessors/fieldIndex/resultStore creation is deliberately moved ahead of the
+        // execution-time compile below (previously the reverse order) so that compile's failures - like every
+        // other failure once a ResultStore exists to attach an error to - are caught by the try block instead of
+        // propagating raw out of this method. Building these needs only searchRequest, not the compiled plan, so
+        // reordering changes nothing about what they're built from.
         final CoprocessorsImpl coprocessors = coprocessorsFactory.create(
                 searchRequest, DataStoreSettings.createBasicSearchResultStoreSettings());
         final FieldIndex fieldIndex = coprocessors.getFieldIndex();
-        final int[] mapping = buildFieldMapping(fieldIndex, projectFields);
-
         final ResultStore resultStore = resultStoreFactory.create(
                 searchRequest.getSearchRequestSource(), coprocessors);
         try {
+            final CompiledCypherPlan compiled = new CypherToLogicalPlan().compile(
+                    CypherQueryParser.parse(graphSpec.getCypher()));
+            final List<ProjectField> projectFields = terminalProject(compiled.plan()).fields();
+            final int[] mapping = buildFieldMapping(fieldIndex, projectFields);
+
             final GraphStores stores = graphStoreManager.getOrOpen(doc);
             final GraphTraversalEngine engine = new GraphTraversalEngine(stores, expressionPredicateFactory);
             final List<Val[]> rows = stores.read(readTxn ->

@@ -159,6 +159,22 @@ class TestGraphSearchProvider {
                 .hasMessageContaining("not authorised");
     }
 
+    @Test
+    void malformedCypherAtExecutionTime_surfacesAsAResultStoreError_notAnUncaughtThrow() {
+        // Code-review fix: the execution-time compile (re-parsing/re-compiling GraphSpec.getCypher(), needed
+        // since the compiled plan itself is never carried on the wire - see this class's own Javadoc) used to
+        // run before the try block existed at all, so a malformed Cypher string reaching this method directly
+        // (bypassing QueryServiceImpl's own upfront compile, e.g. a stored/replayed SearchRequest) propagated
+        // raw out of createResultStore instead of being caught like every other execution failure. It's now
+        // inside the try, alongside coprocessors/resultStore construction moved ahead of it.
+        final GraphSearchProvider provider = provider(null);
+        final SearchRequest request = requestFor("not cypher at all");
+
+        final ResultStore resultStore = provider.createResultStore(request);
+
+        assertThat(resultStore.getErrors()).isNotEmpty();
+    }
+
     // ------------------------------------------------------------------------------------------------------
     // Fixtures
     // ------------------------------------------------------------------------------------------------------
