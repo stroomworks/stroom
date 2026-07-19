@@ -1316,6 +1316,14 @@ explicit go-ahead.
   `GraphStores` fixture with a mix of single- and multi-version nodes; `GraphDbModule`'s binding resolves via
   Guice without error.
 - **Verify**: `./gradlew :stroom-query:stroom-query-planner:test :stroom-graphdb:stroom-graphdb-impl:test`.
+- **Status: done (2026-07-19).** `GraphStoreStats` added exactly as scoped; `GraphNodeDb.count` wraps
+  `dbi.stat(readTxn).entries` (documented as a version-row count, not a distinct-node count);
+  `GraphStoreStatsAdapter` resolves by name via `GraphDbDocCache`/`GraphStoreManager` exactly as
+  `GraphSearchProvider` already does, bound in `GraphDbModule`. `CostModel` deliberately left unmodified, per the
+  task's own scoping rationale. Tests: two new `GraphNodeDb.count` cases in `TestGraphPhysicalStores` (empty
+  store, and a mix of single-/multi-version nodes proving the documented row-count approximation); a new
+  `TestGraphStoreStatsAdapter` (known graph resolves the real count against a real `GraphStores` fixture, unknown
+  name returns empty, a `PermissionException` from the cache propagates). All pre-existing tests pass unchanged.
 
 #### Task P5.2 — `GraphDbDoc` REST resource + explorer registration
 - **Depends on**: none beyond PoC.0.

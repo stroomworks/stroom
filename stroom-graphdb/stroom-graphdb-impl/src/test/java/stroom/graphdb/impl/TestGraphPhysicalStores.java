@@ -158,6 +158,35 @@ class TestGraphPhysicalStores {
     }
 
     @Test
+    void count_isZeroForAnEmptyStore(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph3d"), DOC)) {
+            final long count = stores.read(readTxn -> stores.getNodes().count(readTxn));
+            assertThat(count).isZero();
+        }
+    }
+
+    @Test
+    void count_countsEveryVersionRowNotDistinctNodes(@TempDir final Path root) {
+        // Task P5.1's documented approximation: count() is a row count, not a distinct-node count - a node with
+        // multiple historical versions is counted once per version.
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph3e"), DOC)) {
+            final long singleVersionNode = intern(stores, stores.getNodeUids(), "n1");
+            final long multiVersionNode = intern(stores, stores.getNodeUids(), "n2");
+            final long label = intern(stores, stores.getLabelUids(), "Thing");
+
+            stores.write(writer -> {
+                stores.getNodes().insert(writer, singleVersionNode, T1, List.of(label), Map.of());
+                stores.getNodes().insert(writer, multiVersionNode, T1, List.of(label), Map.of());
+                stores.getNodes().insert(writer, multiVersionNode, T2, List.of(label), Map.of());
+                return null;
+            });
+
+            final long count = stores.read(readTxn -> stores.getNodes().count(readTxn));
+            assertThat(count).isEqualTo(3);
+        }
+    }
+
+    @Test
     void getNodeWindow_returnsTheLatestVersionWhoseIntervalIntersectsTheWindow(@TempDir final Path root) {
         // Task P4.1. Three versions: v1=[t1,t2), v2=[t2,t3), v3=[t3,+inf).
         try (GraphStores stores = GraphStores.provision(root.resolve("graph3b"), DOC)) {

@@ -197,6 +197,22 @@ public final class GraphNodeDb {
     }
 
     /**
+     * Task P5.1: a row-count cost signal for {@code GraphStoreStats} - the number of node *version* rows in this
+     * store, wrapping the store's native {@code Dbi.stat(txn).entries} exactly as {@code stroom-planb-impl}'s
+     * {@code AbstractDb.count()} and {@code stroom-lmdb}'s {@code LmdbDb}/{@code AbstractLmdbDb} already do for
+     * the same purpose.
+     *
+     * <p><b>Documented approximation:</b> this counts every stored version of every node, not distinct nodes - a
+     * node with {@code N} historical versions inflates the count by {@code N}. Acceptable for a cost *signal* (an
+     * order-of-magnitude scan-cost proxy, exactly as every other {@code stroom.query.planner.port} adapter's own
+     * signal is an approximation, never an exact figure) - not a substitute for "how many distinct nodes exist".
+     */
+    public long count(final Txn<ByteBuffer> readTxn) {
+        Objects.requireNonNull(readTxn, "readTxn");
+        return dbi.stat(readTxn).entries;
+    }
+
+    /**
      * Retention (Task P1.4): within each node's own {@code validFrom} version run, keeps only the single latest
      * version at-or-before {@code deleteBefore} (the floor version still needed to answer an {@code AS OF}/
      * expand-as-of query for any retained instant) and deletes every strictly-older version of that node -

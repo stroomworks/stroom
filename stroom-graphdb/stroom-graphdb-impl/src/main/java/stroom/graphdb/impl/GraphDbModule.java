@@ -24,6 +24,7 @@ import stroom.job.api.ScheduledJobsBinder;
 import stroom.query.api.datasource.DataSourceProvider;
 import stroom.query.common.v2.IndexFieldProvider;
 import stroom.query.common.v2.SearchProvider;
+import stroom.query.planner.port.GraphStoreStats;
 import stroom.util.RunnableWrapper;
 import stroom.util.entityevent.EntityEvent;
 import stroom.util.guice.GuiceUtil;
@@ -60,6 +61,8 @@ public class GraphDbModule extends AbstractModule {
 
         DocumentStoreBinder.create(binder())
                 .bind(GraphDbDoc.TYPE, GraphDbDocStore.class, GraphDbDocStoreImpl.class);
+
+        bind(GraphStoreStats.class).to(GraphStoreStatsAdapter.class);
 
         GuiceUtil.buildMultiBinder(binder(), DataSourceProvider.class)
                 .addBinding(GraphSearchProvider.class);
