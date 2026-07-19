@@ -23,6 +23,7 @@ import stroom.lmdb.stream.LmdbIterable;
 import stroom.lmdb.stream.LmdbKeyRange;
 import stroom.planb.impl.dao.LmdbWriter;
 import stroom.planb.impl.dao.PlanBEnv;
+import stroom.planb.impl.dao.UidLookupRecorder;
 import stroom.planb.impl.serde.time.MillisecondTimeSerde;
 import stroom.query.language.functions.Val;
 
@@ -32,6 +33,9 @@ import org.lmdbjava.Txn;
 
 import java.nio.ByteBuffer;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.Consumer;
@@ -171,6 +175,98 @@ public final class GraphAdjacencyDb {
         TIME_SERDE.write(key, validFrom);
         key.flip();
         return key;
+    }
+
+    /**
+     * Retention (Task P1.4): within each individual edge's ({@code srcUid, edgeTypeUid, dstUid}) own
+     * {@code validFrom} version run, keeps only the single latest version at-or-before {@code deleteBefore} and
+     * deletes every strictly-older version - see {@link GraphNodeDb#deleteOldData} for the identical algorithm
+     * this mirrors. Records {@code srcUid}/{@code dstUid} (via {@code nodeUidRecorder}) and {@code edgeTypeUid}
+     * (via {@code edgeTypeUidRecorder}) as still-used for every surviving version.
+     *
+     * <p><b>Preconditions:</b> no parameter is null. <b>Postconditions:</b> returns the number of versions
+     * deleted (0 if nothing was eligible).</p>
+     */
+    public long deleteOldData(final LmdbWriter writer, final Instant deleteBefore,
+                              final UidLookupRecorder nodeUidRecorder, final UidLookupRecorder edgeTypeUidRecorder) {
+        Objects.requireNonNull(writer, "writer");
+        Objects.requireNonNull(deleteBefore, "deleteBefore");
+        Objects.requireNonNull(nodeUidRecorder, "nodeUidRecorder");
+        Objects.requireNonNull(edgeTypeUidRecorder, "edgeTypeUidRecorder");
+
+        final List<EdgeVersionEntry> group = new ArrayList<>();
+        final List<byte[]> toDelete = new ArrayList<>();
+        final List<EdgeVersionEntry> survivors = new ArrayList<>();
+        byte[] currentEntityPrefix = null;
+
+        try (LmdbIterable iterable = LmdbIterable.create(writer.getWriteTxn(), dbi, LmdbKeyRange.all())) {
+            for (final LmdbEntry entry : iterable) {
+                final byte[] keyBytes = copy(entry.getKey());
+                final byte[] valueBytes = copy(entry.getVal());
+                final byte[] entityPrefix = Arrays.copyOfRange(keyBytes, 0, KEY_WIDTH - 6);
+
+                if (!Arrays.equals(currentEntityPrefix, entityPrefix)) {
+                    planGroupDeletions(group, deleteBefore, toDelete, survivors);
+                    group.clear();
+                    currentEntityPrefix = entityPrefix;
+                }
+                group.add(new EdgeVersionEntry(keyBytes, valueBytes));
+            }
+        }
+        planGroupDeletions(group, deleteBefore, toDelete, survivors);
+
+        for (final EdgeVersionEntry survivor : survivors) {
+            final long srcUid = NODE_UID_BYTES.get(ByteBuffer.wrap(survivor.keyBytes, 0, GraphStores.NODE_UID_WIDTH));
+            final long edgeTypeUid = TYPE_UID_BYTES.get(
+                    ByteBuffer.wrap(survivor.keyBytes, GraphStores.NODE_UID_WIDTH, GraphStores.TYPE_UID_WIDTH));
+            final long dstUid = NODE_UID_BYTES.get(ByteBuffer.wrap(survivor.keyBytes, SRC_PREFIX_WIDTH,
+                    GraphStores.NODE_UID_WIDTH));
+            nodeUidRecorder.recordUsed(writer, srcUid);
+            nodeUidRecorder.recordUsed(writer, dstUid);
+            edgeTypeUidRecorder.recordUsed(writer, edgeTypeUid);
+        }
+        for (final byte[] keyBytes : toDelete) {
+            dbi.delete(writer.getWriteTxn(), directCopy(keyBytes));
+        }
+        return toDelete.size();
+    }
+
+    private static void planGroupDeletions(final List<EdgeVersionEntry> group, final Instant deleteBefore,
+                                           final List<byte[]> toDelete, final List<EdgeVersionEntry> survivors) {
+        EdgeVersionEntry pendingFloor = null;
+        for (final EdgeVersionEntry entry : group) {
+            final Instant validFrom = TIME_SERDE.read(ByteBuffer.wrap(entry.keyBytes, KEY_WIDTH - 6, 6));
+            if (!validFrom.isAfter(deleteBefore)) {
+                if (pendingFloor != null) {
+                    toDelete.add(pendingFloor.keyBytes);
+                }
+                pendingFloor = entry;
+            } else {
+                survivors.add(entry);
+            }
+        }
+        if (pendingFloor != null) {
+            survivors.add(pendingFloor);
+        }
+    }
+
+    private static byte[] copy(final ByteBuffer buffer) {
+        final ByteBuffer duplicate = buffer.duplicate();
+        final byte[] bytes = new byte[duplicate.remaining()];
+        duplicate.get(bytes);
+        return bytes;
+    }
+
+    private static ByteBuffer directCopy(final byte[] bytes) {
+        final ByteBuffer buffer = ByteBuffer.allocateDirect(bytes.length);
+        buffer.put(bytes);
+        buffer.flip();
+        return buffer;
+    }
+
+    /** One raw, in-memory copy of a stored edge version's key/value, retained past the read iterator's lifetime. */
+    private record EdgeVersionEntry(byte[] keyBytes, byte[] valueBytes) {
+
     }
 
     /**

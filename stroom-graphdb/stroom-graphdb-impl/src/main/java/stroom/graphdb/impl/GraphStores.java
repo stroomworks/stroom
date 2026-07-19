@@ -31,6 +31,8 @@ import stroom.planb.impl.dao.VariableUsedLookupsRecorder;
 import stroom.planb.impl.serde.hash.HashFactory;
 import stroom.planb.impl.serde.hash.HashFactoryFactory;
 import stroom.planb.shared.HashLength;
+import stroom.planb.shared.RetentionSettings;
+import stroom.util.time.SimpleDurationUtil;
 
 import org.lmdbjava.Txn;
 
@@ -39,6 +41,7 @@ import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.Comparator;
 import java.util.Objects;
 import java.util.function.Function;
@@ -409,5 +412,56 @@ public final class GraphStores implements AutoCloseable {
         close();
         delete(directory);
         return provision(directory, doc);
+    }
+
+    /**
+     * Retention (Task P1.4): if {@code doc.getRetention()} is enabled, deletes every node/edge version older
+     * than the configured retention window from all three temporally-versioned stores ({@link #getNodes()},
+     * {@link #getOutEdges()}, {@link #getInEdges()} - each keeping its own floor version per entity, see their
+     * {@code deleteOldData} Javadoc), then sweeps the node/label/edge-type interning namespaces of any UID no
+     * longer referenced by a surviving version (Task P1.2's recorders - always run after all three DAOs have
+     * finished recording, per that task's documented ordering contract). A no-op (returns 0) if retention is
+     * absent or disabled - the graph keeps every version forever by default.
+     *
+     * <p><b>Scope limit (documented, not a silent gap):</b> the property-value anchor index ({@link
+     * #getPropertyIndex()}) does not participate in this pass - it has no {@code validFrom} of its own to
+     * retain by, and a stale anchor left behind by a deleted node version is filtered out at query time (not a
+     * correctness issue - see {@link GraphPropertyIndex}'s Javadoc), so its own bloat and the
+     * {@code property-key-uid} namespace's sweep are deferred; {@link #rebuild} remains the operator-invoked
+     * compaction backstop for both. Condense (merging redundant same-value consecutive versions, as Plan B's own
+     * stores do) is likewise not built for v1 - a graph's properties change far less often than Plan B state
+     * typically does, so the benefit did not appear to justify the extra machinery; revisit if evidence from real
+     * usage says otherwise.</p>
+     *
+     * <p><b>Preconditions:</b> {@code doc} is not null. <b>Postconditions:</b> never corrupts a floor lookup for
+     * any instant at or after the retention cutoff.</p>
+     *
+     * @param doc the owning document, read for its retention policy.
+     * @return the total number of versions deleted across all three stores.
+     */
+    public long deleteOldData(final GraphDbDoc doc) {
+        Objects.requireNonNull(doc, "doc must not be null");
+        final RetentionSettings retention = doc.getRetention();
+        if (retention == null || !retention.isEnabled()) {
+            return 0;
+        }
+        final Instant deleteBefore = SimpleDurationUtil.minus(Instant.now(), retention.getDuration());
+
+        return env.write(writer -> {
+            long count = 0;
+            count += nodes.deleteOldData(writer, deleteBefore, nodeUidRecorder, labelUidRecorder);
+            count += outEdges.deleteOldData(writer, deleteBefore, nodeUidRecorder, edgeTypeUidRecorder);
+            count += inEdges.deleteOldData(writer, deleteBefore, nodeUidRecorder, edgeTypeUidRecorder);
+
+            if (!Thread.currentThread().isInterrupted()) {
+                env.read(readTxn -> {
+                    nodeUidRecorder.deleteUnused(readTxn, writer);
+                    labelUidRecorder.deleteUnused(readTxn, writer);
+                    edgeTypeUidRecorder.deleteUnused(readTxn, writer);
+                    return null;
+                });
+            }
+            return count;
+        });
     }
 }

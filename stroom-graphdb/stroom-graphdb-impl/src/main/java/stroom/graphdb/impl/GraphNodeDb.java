@@ -24,6 +24,7 @@ import stroom.lmdb.stream.LmdbIterable;
 import stroom.lmdb.stream.LmdbKeyRange;
 import stroom.planb.impl.dao.LmdbWriter;
 import stroom.planb.impl.dao.PlanBEnv;
+import stroom.planb.impl.dao.UidLookupRecorder;
 import stroom.planb.impl.serde.time.MillisecondTimeSerde;
 import stroom.query.language.functions.Val;
 
@@ -137,6 +138,106 @@ public final class GraphNodeDb {
             }
         }
         return Optional.empty();
+    }
+
+    /**
+     * Retention (Task P1.4): within each node's own {@code validFrom} version run, keeps only the single latest
+     * version at-or-before {@code deleteBefore} (the floor version still needed to answer an {@code AS OF}/
+     * expand-as-of query for any retained instant) and deletes every strictly-older version of that node -
+     * mirroring {@code TemporalStateDb.deleteOldData}'s per-key-prefix walk. For every surviving version (the
+     * retained floor, plus every version newer than {@code deleteBefore}), records {@code nodeUid} and its
+     * label UIDs as still-used via {@code nodeUidRecorder}/{@code labelUidRecorder} (Task P1.2's mark-and-sweep -
+     * the caller must not run either recorder's {@code deleteUnused} until every DAO referencing that namespace
+     * has finished its own {@code deleteOldData} pass).
+     *
+     * <p><b>Preconditions:</b> no parameter is null. <b>Postconditions:</b> returns the number of versions
+     * deleted (0 if nothing was eligible).</p>
+     */
+    public long deleteOldData(final LmdbWriter writer, final Instant deleteBefore,
+                              final UidLookupRecorder nodeUidRecorder, final UidLookupRecorder labelUidRecorder) {
+        Objects.requireNonNull(writer, "writer");
+        Objects.requireNonNull(deleteBefore, "deleteBefore");
+        Objects.requireNonNull(nodeUidRecorder, "nodeUidRecorder");
+        Objects.requireNonNull(labelUidRecorder, "labelUidRecorder");
+
+        final List<VersionEntry> group = new ArrayList<>();
+        final List<byte[]> toDelete = new ArrayList<>();
+        final List<VersionEntry> survivors = new ArrayList<>();
+        Long currentNodeUid = null;
+
+        try (LmdbIterable iterable = LmdbIterable.create(writer.getWriteTxn(), dbi, LmdbKeyRange.all())) {
+            for (final LmdbEntry entry : iterable) {
+                final byte[] keyBytes = copy(entry.getKey());
+                final byte[] valueBytes = copy(entry.getVal());
+                final long nodeUid = NODE_UID_BYTES.get(ByteBuffer.wrap(keyBytes, 0, GraphStores.NODE_UID_WIDTH));
+
+                if (!Objects.equals(currentNodeUid, nodeUid)) {
+                    planGroupDeletions(group, deleteBefore, toDelete, survivors);
+                    group.clear();
+                    currentNodeUid = nodeUid;
+                }
+                group.add(new VersionEntry(nodeUid, keyBytes, valueBytes));
+            }
+        }
+        planGroupDeletions(group, deleteBefore, toDelete, survivors);
+
+        for (final VersionEntry survivor : survivors) {
+            nodeUidRecorder.recordUsed(writer, survivor.nodeUid);
+            final NodeVersion decoded = decodeValue(ByteBuffer.wrap(survivor.valueBytes));
+            if (decoded != null) {
+                for (final long labelUid : decoded.labelUids()) {
+                    labelUidRecorder.recordUsed(writer, labelUid);
+                }
+            }
+        }
+        for (final byte[] keyBytes : toDelete) {
+            dbi.delete(writer.getWriteTxn(), directCopy(keyBytes));
+        }
+        return toDelete.size();
+    }
+
+    /**
+     * Within one node's ascending-{@code validFrom} version run, decides which versions are superseded (every
+     * {@code validFrom <= deleteBefore} version except the last one seen) and which survive (that last one, plus
+     * every version {@code > deleteBefore}).
+     */
+    private static void planGroupDeletions(final List<VersionEntry> group, final Instant deleteBefore,
+                                           final List<byte[]> toDelete, final List<VersionEntry> survivors) {
+        VersionEntry pendingFloor = null;
+        for (final VersionEntry entry : group) {
+            final Instant validFrom = TIME_SERDE.read(
+                    ByteBuffer.wrap(entry.keyBytes, GraphStores.NODE_UID_WIDTH, 6));
+            if (!validFrom.isAfter(deleteBefore)) {
+                if (pendingFloor != null) {
+                    toDelete.add(pendingFloor.keyBytes);
+                }
+                pendingFloor = entry;
+            } else {
+                survivors.add(entry);
+            }
+        }
+        if (pendingFloor != null) {
+            survivors.add(pendingFloor);
+        }
+    }
+
+    private static byte[] copy(final ByteBuffer buffer) {
+        final ByteBuffer duplicate = buffer.duplicate();
+        final byte[] bytes = new byte[duplicate.remaining()];
+        duplicate.get(bytes);
+        return bytes;
+    }
+
+    private static ByteBuffer directCopy(final byte[] bytes) {
+        final ByteBuffer buffer = ByteBuffer.allocateDirect(bytes.length);
+        buffer.put(bytes);
+        buffer.flip();
+        return buffer;
+    }
+
+    /** One raw, in-memory copy of a stored version's key/value, retained past the read iterator's lifetime. */
+    private record VersionEntry(long nodeUid, byte[] keyBytes, byte[] valueBytes) {
+
     }
 
     private static NodeVersion decodeValue(final ByteBuffer value) {

@@ -24,6 +24,7 @@ dependencies {
     implementation project(':stroom-docstore:stroom-docstore-api')
     implementation project(':stroom-explorer:stroom-explorer-api')
     implementation project(':stroom-importexport:stroom-importexport-api')
+    implementation project(':stroom-job:stroom-job-api')
     implementation project(':stroom-lmdb')
     implementation project(':stroom-planb:stroom-planb-impl')
     implementation project(':stroom-query:stroom-query-api')

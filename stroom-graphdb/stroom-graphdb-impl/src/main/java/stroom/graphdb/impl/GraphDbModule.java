@@ -16,22 +16,31 @@
 
 package stroom.graphdb.impl;
 
+import stroom.docref.DocRef;
 import stroom.docstore.api.DocumentStoreBinder;
 import stroom.graphdb.shared.GraphDbDoc;
+import stroom.job.api.ScheduledJobsBinder;
 import stroom.query.api.datasource.DataSourceProvider;
 import stroom.query.common.v2.IndexFieldProvider;
 import stroom.query.common.v2.SearchProvider;
+import stroom.util.RunnableWrapper;
 import stroom.util.entityevent.EntityEvent;
 import stroom.util.guice.GuiceUtil;
 import stroom.util.shared.Clearable;
+import stroom.util.shared.scheduler.CronExpressions;
 
 import com.google.inject.AbstractModule;
+import jakarta.inject.Inject;
 
 /**
  * Registers {@link GraphDbDoc}'s document store/cache and {@link GraphSearchProvider} (Task PoC.6), mirroring
  * {@code stroom.planb.impl.PlanBModule} - {@code PlanBModule} itself is not edited (Decision D1). No REST
  * resource or ingest pipeline element is bound yet: a document-management API and real {@code GraphFilter}
  * ingest are P2/P5 concerns, not this PoC.
+ *
+ * <p>Also binds a single retention scheduled job (Task P1.4, Decision D9) - deliberately not a growth of Plan
+ * B's {@code ShardManager} machinery, which solves distributed-shard snapshot/placement problems a single
+ * per-doc {@link GraphStores} environment doesn't have.</p>
  */
 public class GraphDbModule extends AbstractModule {
 
@@ -55,5 +64,29 @@ public class GraphDbModule extends AbstractModule {
                 .addBinding(GraphSearchProvider.class);
         GuiceUtil.buildMultiBinder(binder(), IndexFieldProvider.class)
                 .addBinding(GraphSearchProvider.class);
+
+        ScheduledJobsBinder.create(binder())
+                .bindJobTo(GraphRetentionRunnable.class, builder -> builder
+                        .name(GraphRetentionRunnable.TASK_NAME)
+                        .description("Graph DB retention")
+                        .cronSchedule(CronExpressions.EVERY_10_MINUTES.getExpression())
+                        .advanced(true));
+    }
+
+    private static class GraphRetentionRunnable extends RunnableWrapper {
+
+        static final String TASK_NAME = "Graph DB Retention";
+
+        @Inject
+        GraphRetentionRunnable(final GraphDbDocStore graphDbDocStore, final GraphStoreManager graphStoreManager) {
+            super(() -> {
+                for (final DocRef docRef : graphDbDocStore.list()) {
+                    final GraphDbDoc doc = graphDbDocStore.readDocument(docRef);
+                    if (doc != null) {
+                        graphStoreManager.getOrOpen(doc).deleteOldData(doc);
+                    }
+                }
+            });
+        }
     }
 }

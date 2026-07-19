@@ -219,6 +219,123 @@ class TestGraphPhysicalStores {
         }
     }
 
+    @Test
+    void nodeDb_deleteOldData_keepsFloorVersionAndDeletesOlderOnes(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph6"), DOC)) {
+            final long labelA = intern(stores, stores.getLabelUids(), "A");
+            final long labelB = intern(stores, stores.getLabelUids(), "B");
+            final long labelC = intern(stores, stores.getLabelUids(), "C");
+            final long nodeUid = intern(stores, stores.getNodeUids(), "n1");
+            final Instant t1 = Instant.parse("2020-01-01T00:00:00Z");
+            final Instant t2 = Instant.parse("2020-06-01T00:00:00Z");
+            final Instant t3 = Instant.parse("2021-01-01T00:00:00Z");
+            final Instant deleteBefore = t2.plusSeconds(1);
+
+            stores.write(writer -> {
+                stores.getNodes().insert(writer, nodeUid, t1, List.of(labelA), Map.of());
+                stores.getNodes().insert(writer, nodeUid, t2, List.of(labelB), Map.of());
+                stores.getNodes().insert(writer, nodeUid, t3, List.of(labelC), Map.of());
+                return null;
+            });
+
+            final long deletedCount = stores.write(writer -> stores.getNodes().deleteOldData(
+                    writer, deleteBefore, stores.getNodeUidRecorder(), stores.getLabelUidRecorder()));
+            assertThat(deletedCount).isEqualTo(1);
+
+            final Optional<GraphNodeDb.NodeVersion> deletedVersion = stores.read(
+                    readTxn -> stores.getNodes().getNode(readTxn, nodeUid, t1.plusSeconds(1)));
+            assertThat(deletedVersion)
+                    .as("the @t1 version was superseded within the retention window and is now gone")
+                    .isEmpty();
+
+            final Optional<GraphNodeDb.NodeVersion> floor = stores.read(
+                    readTxn -> stores.getNodes().getNode(readTxn, nodeUid, deleteBefore));
+            assertThat(floor).isPresent();
+            assertThat(floor.get().labelUids()).containsExactly(labelB);
+
+            final Optional<GraphNodeDb.NodeVersion> latest = stores.read(
+                    readTxn -> stores.getNodes().getNode(readTxn, nodeUid, t3));
+            assertThat(latest).isPresent();
+            assertThat(latest.get().labelUids()).containsExactly(labelC);
+
+            // deleteOldData recorded the survivors (B, C) as used but did not itself sweep - a separate,
+            // explicit deleteUnused pass (GraphStores.deleteOldData's job in production) is needed to remove A.
+            stores.write(writer -> {
+                stores.read(readTxn -> {
+                    stores.getLabelUidRecorder().deleteUnused(readTxn, writer);
+                    return null;
+                });
+                return null;
+            });
+            assertThat(lookup(stores, stores.getLabelUids(), "A")).isEmpty();
+            assertThat(lookup(stores, stores.getLabelUids(), "B")).contains(labelB);
+            assertThat(lookup(stores, stores.getLabelUids(), "C")).contains(labelC);
+        }
+    }
+
+    @Test
+    void adjacencyDbs_deleteOldData_keepsFloorVersionAndDeletesOlderOnes(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph7"), DOC)) {
+            final long src = intern(stores, stores.getNodeUids(), "src");
+            final long dst = intern(stores, stores.getNodeUids(), "dst");
+            final long edgeType = intern(stores, stores.getEdgeTypeUids(), "LINKS_TO");
+            final Instant t1 = Instant.parse("2020-01-01T00:00:00Z");
+            final Instant t2 = Instant.parse("2020-06-01T00:00:00Z");
+            final Instant t3 = Instant.parse("2021-01-01T00:00:00Z");
+            final Instant deleteBefore = t2.plusSeconds(1);
+
+            stores.write(writer -> {
+                stores.getOutEdges().insert(writer, src, edgeType, dst, t1, Map.of());
+                stores.getOutEdges().insert(writer, src, edgeType, dst, t2, Map.of());
+                stores.getOutEdges().delete(writer, src, edgeType, dst, t3);
+                stores.getInEdges().insert(writer, src, edgeType, dst, t1, Map.of());
+                stores.getInEdges().insert(writer, src, edgeType, dst, t2, Map.of());
+                stores.getInEdges().delete(writer, src, edgeType, dst, t3);
+                return null;
+            });
+
+            final long outDeleted = stores.write(writer -> stores.getOutEdges().deleteOldData(
+                    writer, deleteBefore, stores.getNodeUidRecorder(), stores.getEdgeTypeUidRecorder()));
+            final long inDeleted = stores.write(writer -> stores.getInEdges().deleteOldData(
+                    writer, deleteBefore, stores.getNodeUidRecorder(), stores.getEdgeTypeUidRecorder()));
+            assertThat(outDeleted).isEqualTo(1);
+            assertThat(inDeleted).isEqualTo(1);
+
+            final List<Long> outBeforeFloor = new ArrayList<>();
+            stores.read(readTxn -> {
+                stores.getOutEdges().expandOut(readTxn, src, edgeType, t1.plusSeconds(1),
+                        n -> outBeforeFloor.add(n.dstUid()));
+                return null;
+            });
+            assertThat(outBeforeFloor)
+                    .as("the @t1 out-edge version was superseded and is now gone")
+                    .isEmpty();
+
+            final List<Long> outAtFloor = new ArrayList<>();
+            stores.read(readTxn -> {
+                stores.getOutEdges().expandOut(readTxn, src, edgeType, deleteBefore, n -> outAtFloor.add(n.dstUid()));
+                return null;
+            });
+            assertThat(outAtFloor).containsExactly(dst);
+
+            final List<Long> inAtFloor = new ArrayList<>();
+            stores.read(readTxn -> {
+                stores.getInEdges().expandIn(readTxn, dst, edgeType, deleteBefore, n -> inAtFloor.add(n.srcUid()));
+                return null;
+            });
+            assertThat(inAtFloor).containsExactly(src);
+
+            final List<Long> outAtT3 = new ArrayList<>();
+            stores.read(readTxn -> {
+                stores.getOutEdges().expandOut(readTxn, src, edgeType, t3, n -> outAtT3.add(n.dstUid()));
+                return null;
+            });
+            assertThat(outAtT3)
+                    .as("the @t3 tombstone still applies - the edge is absent from t3 onward")
+                    .isEmpty();
+        }
+    }
+
     private static byte[] valueOfLength(final int length, final int distinguisher) {
         final char fillChar = (char) ('a' + distinguisher);
         return String.valueOf(fillChar).repeat(length).getBytes(StandardCharsets.UTF_8);
@@ -228,6 +345,14 @@ class TestGraphPhysicalStores {
                                final String key) {
         return stores.write(writer -> db.put(writer.getWriteTxn(), directBuffer(key), uidBuffer ->
                 UnsignedBytesInstances.ofLength(uidBuffer.remaining()).get(uidBuffer.duplicate())));
+    }
+
+    private static Optional<Long> lookup(final GraphStores stores, final UidLookupDb db, final String key) {
+        return stores.read(readTxn -> db.get(
+                readTxn,
+                directBuffer(key),
+                maybeUid -> maybeUid.map(uidBuffer ->
+                        UnsignedBytesInstances.ofLength(uidBuffer.remaining()).get(uidBuffer.duplicate()))));
     }
 
     private static ByteBuffer directBuffer(final String value) {

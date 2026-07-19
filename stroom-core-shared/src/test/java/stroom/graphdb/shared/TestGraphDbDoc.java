@@ -87,7 +87,7 @@ class TestGraphDbDoc {
     void constructor_rejectsNullUuid() {
         assertThatThrownBy(() -> new GraphDbDoc(
                 null, "name", null, null, null, null, null,
-                null, null, null))
+                null, null, null, null))
                 .isInstanceOf(NullPointerException.class);
     }
 }

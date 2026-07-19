@@ -19,6 +19,9 @@ package stroom.graphdb.impl;
 import stroom.graphdb.shared.GraphDbDoc;
 import stroom.lmdb.serde.UnsignedBytesInstances;
 import stroom.planb.impl.dao.UidLookupDb;
+import stroom.planb.shared.RetentionSettings;
+import stroom.util.shared.time.SimpleDuration;
+import stroom.util.shared.time.TimeUnit;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -27,6 +30,10 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -116,6 +123,82 @@ class TestGraphStores {
             assertThat(lookup(stores, stores.getNodeUids(), "used")).contains(usedUid);
             assertThat(lookup(stores, stores.getNodeUids(), "unused")).isEmpty();
             assertThat(unusedUid).isNotEqualTo(usedUid);
+        }
+    }
+
+    @Test
+    void deleteOldData_noOpWhenRetentionAbsentOrDisabled(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph-retention-noop"), DOC)) {
+            final long labelUid = intern(stores, stores.getLabelUids(), "Thing", GraphStores.TYPE_UID_WIDTH);
+            final long nodeUid = intern(stores, stores.getNodeUids(), "n1", GraphStores.NODE_UID_WIDTH);
+            stores.write(writer -> {
+                stores.getNodes().insert(
+                        writer, nodeUid, Instant.now().minus(Duration.ofDays(365)), List.of(labelUid), Map.of());
+                return null;
+            });
+
+            assertThat(stores.deleteOldData(DOC)).as("no retention field at all").isZero();
+
+            final GraphDbDoc disabledRetention = DOC.copy()
+                    .retention(new RetentionSettings.Builder().enabled(false).build())
+                    .build();
+            assertThat(stores.deleteOldData(disabledRetention)).as("retention present but disabled").isZero();
+
+            // Nothing was deleted either time - the old version is still there.
+            final Optional<GraphNodeDb.NodeVersion> stillThere = stores.read(
+                    readTxn -> stores.getNodes().getNode(readTxn, nodeUid, Instant.now()));
+            assertThat(stillThere).isPresent();
+        }
+    }
+
+    @Test
+    void deleteOldData_enabledRetentionDeletesOldVersionsAndSweepsUnusedLabels(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph-retention-active"), DOC)) {
+            final long veryOldLabel = intern(stores, stores.getLabelUids(), "VeryOld", GraphStores.TYPE_UID_WIDTH);
+            final long oldLabel = intern(stores, stores.getLabelUids(), "Old", GraphStores.TYPE_UID_WIDTH);
+            final long recentLabel = intern(stores, stores.getLabelUids(), "Recent", GraphStores.TYPE_UID_WIDTH);
+            final long nodeUid = intern(stores, stores.getNodeUids(), "n1", GraphStores.NODE_UID_WIDTH);
+
+            // veryOld/old are both outside the 1-hour retention window (so old supersedes veryOld and becomes
+            // the surviving floor); recent is within it (survives as newer-than-cutoff).
+            final Instant veryOld = Instant.now().minus(Duration.ofDays(730));
+            final Instant old = Instant.now().minus(Duration.ofDays(365));
+            final Instant recent = Instant.now().minus(Duration.ofSeconds(1));
+            stores.write(writer -> {
+                stores.getNodes().insert(writer, nodeUid, veryOld, List.of(veryOldLabel), Map.of());
+                stores.getNodes().insert(writer, nodeUid, old, List.of(oldLabel), Map.of());
+                stores.getNodes().insert(writer, nodeUid, recent, List.of(recentLabel), Map.of());
+                return null;
+            });
+
+            final GraphDbDoc retainOneHour = DOC.copy()
+                    .retention(new RetentionSettings.Builder()
+                            .enabled(true)
+                            .duration(SimpleDuration.builder().time(1).timeUnit(TimeUnit.HOURS).build())
+                            .build())
+                    .build();
+
+            final long deletedCount = stores.deleteOldData(retainOneHour);
+            assertThat(deletedCount).isEqualTo(1);
+
+            final Optional<GraphNodeDb.NodeVersion> deletedVersion = stores.read(
+                    readTxn -> stores.getNodes().getNode(readTxn, nodeUid, veryOld));
+            assertThat(deletedVersion)
+                    .as("veryOld was superseded (within the retention-eligible range) by old and is now gone")
+                    .isEmpty();
+            final Optional<GraphNodeDb.NodeVersion> floor = stores.read(
+                    readTxn -> stores.getNodes().getNode(readTxn, nodeUid, old));
+            assertThat(floor).isPresent();
+            assertThat(floor.get().labelUids()).containsExactly(oldLabel);
+            final Optional<GraphNodeDb.NodeVersion> current = stores.read(
+                    readTxn -> stores.getNodes().getNode(readTxn, nodeUid, Instant.now()));
+            assertThat(current).isPresent();
+            assertThat(current.get().labelUids()).containsExactly(recentLabel);
+
+            // "VeryOld" is no longer referenced by any surviving version - swept. "Old"/"Recent" survive.
+            assertThat(lookup(stores, stores.getLabelUids(), "VeryOld")).isEmpty();
+            assertThat(lookup(stores, stores.getLabelUids(), "Old")).contains(oldLabel);
+            assertThat(lookup(stores, stores.getLabelUids(), "Recent")).contains(recentLabel);
         }
     }
 

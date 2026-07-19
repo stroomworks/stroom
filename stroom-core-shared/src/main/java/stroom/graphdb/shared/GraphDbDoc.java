@@ -19,6 +19,7 @@ package stroom.graphdb.shared;
 import stroom.docref.DocRef;
 import stroom.docs.shared.Description;
 import stroom.docstore.shared.AbstractDoc;
+import stroom.planb.shared.RetentionSettings;
 import stroom.planb.shared.TemporalPrecision;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
@@ -54,7 +55,8 @@ import java.util.Objects;
         "updateUser",
         "description",
         "temporalPrecision",
-        "nodeTypeMappings"
+        "nodeTypeMappings",
+        "retention"
 })
 @JsonInclude(Include.NON_NULL)
 public class GraphDbDoc extends AbstractDoc {
@@ -67,14 +69,17 @@ public class GraphDbDoc extends AbstractDoc {
     private final @Nullable TemporalPrecision temporalPrecision;
     @JsonProperty
     private final @Nullable List<GraphNodeTypeMapping> nodeTypeMappings;
+    @JsonProperty
+    private final @Nullable RetentionSettings retention;
 
     /**
      * <b>Preconditions:</b> {@code uuid} must be non-null (enforced by the {@link AbstractDoc} superclass
      * constructor); every other parameter may be null.
      * <b>Postconditions:</b> the corresponding getter returns exactly the value supplied.
-     * <b>Null status:</b> {@code description}, {@code temporalPrecision} and {@code nodeTypeMappings} are all
-     * nullable — null means "use the internal default" (respectively: no description, the frozen model's default
-     * precision, and a schema derived at ingest time from the domain-type catalogue with no explicit mapping).
+     * <b>Null status:</b> {@code description}, {@code temporalPrecision}, {@code nodeTypeMappings} and
+     * {@code retention} are all nullable — null means "use the internal default" (respectively: no description,
+     * the frozen model's default precision, a schema derived at ingest time from the domain-type catalogue with
+     * no explicit mapping, and retention disabled - the graph keeps every version forever).
      */
     @JsonCreator
     public GraphDbDoc(
@@ -87,11 +92,13 @@ public class GraphDbDoc extends AbstractDoc {
             @JsonProperty("updateUser") final String updateUser,
             @JsonProperty("description") final @Nullable String description,
             @JsonProperty("temporalPrecision") final @Nullable TemporalPrecision temporalPrecision,
-            @JsonProperty("nodeTypeMappings") final @Nullable List<GraphNodeTypeMapping> nodeTypeMappings) {
+            @JsonProperty("nodeTypeMappings") final @Nullable List<GraphNodeTypeMapping> nodeTypeMappings,
+            @JsonProperty("retention") final @Nullable RetentionSettings retention) {
         super(TYPE, uuid, name, version, createTimeMs, updateTimeMs, createUser, updateUser);
         this.description = description;
         this.temporalPrecision = temporalPrecision;
         this.nodeTypeMappings = nodeTypeMappings;
+        this.retention = retention;
     }
 
     public @Nullable String getDescription() {
@@ -114,6 +121,14 @@ public class GraphDbDoc extends AbstractDoc {
         return nodeTypeMappings;
     }
 
+    /**
+     * @return the configured retention policy (Task P1.4), or {@code null} to keep every version forever
+     * (the internal default - no automatic deletion).
+     */
+    public @Nullable RetentionSettings getRetention() {
+        return retention;
+    }
+
     @Override
     public boolean equals(final Object o) {
         if (this == o) {
@@ -128,7 +143,8 @@ public class GraphDbDoc extends AbstractDoc {
         final GraphDbDoc doc = (GraphDbDoc) o;
         return Objects.equals(description, doc.description) &&
                temporalPrecision == doc.temporalPrecision &&
-               Objects.equals(nodeTypeMappings, doc.nodeTypeMappings);
+               Objects.equals(nodeTypeMappings, doc.nodeTypeMappings) &&
+               Objects.equals(retention, doc.retention);
     }
 
     @Override
@@ -136,7 +152,8 @@ public class GraphDbDoc extends AbstractDoc {
         return Objects.hash(super.hashCode(),
                 description,
                 temporalPrecision,
-                nodeTypeMappings);
+                nodeTypeMappings,
+                retention);
     }
 
     @Override
@@ -148,6 +165,7 @@ public class GraphDbDoc extends AbstractDoc {
                ", description='" + description + '\'' +
                ", temporalPrecision=" + temporalPrecision +
                ", nodeTypeMappings=" + nodeTypeMappings +
+               ", retention=" + retention +
                '}';
     }
 
@@ -171,6 +189,7 @@ public class GraphDbDoc extends AbstractDoc {
         private @Nullable String description;
         private @Nullable TemporalPrecision temporalPrecision;
         private @Nullable List<GraphNodeTypeMapping> nodeTypeMappings;
+        private @Nullable RetentionSettings retention;
 
         public Builder() {
         }
@@ -180,6 +199,7 @@ public class GraphDbDoc extends AbstractDoc {
             this.description = doc.description;
             this.temporalPrecision = doc.temporalPrecision;
             this.nodeTypeMappings = doc.nodeTypeMappings;
+            this.retention = doc.retention;
         }
 
         public Builder description(final @Nullable String description) {
@@ -194,6 +214,11 @@ public class GraphDbDoc extends AbstractDoc {
 
         public Builder nodeTypeMappings(final @Nullable List<GraphNodeTypeMapping> nodeTypeMappings) {
             this.nodeTypeMappings = nodeTypeMappings;
+            return self();
+        }
+
+        public Builder retention(final @Nullable RetentionSettings retention) {
+            this.retention = retention;
             return self();
         }
 
@@ -214,7 +239,8 @@ public class GraphDbDoc extends AbstractDoc {
                     updateUser,
                     description,
                     temporalPrecision,
-                    nodeTypeMappings);
+                    nodeTypeMappings,
+                    retention);
         }
     }
 }
