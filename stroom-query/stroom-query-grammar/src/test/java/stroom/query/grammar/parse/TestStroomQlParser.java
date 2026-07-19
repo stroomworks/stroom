@@ -97,6 +97,34 @@ class TestStroomQlParser {
     }
 
     @Test
+    void windowClause_withCorrectKeywords_parsesCleanly() {
+        final AstQuery query = StroomQlParser.parse("from X window EventTime by 1h advance 30m using max select a");
+        assertThat(query.clauses()).isNotEmpty();
+    }
+
+    @Test
+    void windowClause_withAMistypedKeyword_isRejectedWithAClearError() {
+        // 'WOBBLE' is a bareword where the grammar allows the 'using' keyword, so it parses but is not the
+        // literal keyword; AstBuilder must reject it (parity with legacy) rather than silently mis-mapping it.
+        final SyntaxException e = catchThrowableOfType(
+                SyntaxException.class, () -> StroomQlParser.parse("from X window EventTime by 1h WOBBLE max"));
+
+        assertThat(e.getMessage()).contains("window clause");
+        assertThat(e.getMessage()).contains("using");
+    }
+
+    @Test
+    void errorWhoseExpectedTokenSetCannotBeComputed_stillYieldsACleanSyntaxException() {
+        // An unterminated quoted string drives ANTLR into an error state whose getExpectedTokens() itself throws
+        // (IllegalArgumentException "Invalid state number"). The listener must still surface a clean
+        // SyntaxException (with an empty expected-token set), never propagate the raw ANTLR exception.
+        final SyntaxException e = catchThrowableOfType(
+                SyntaxException.class, () -> StroomQlParser.parse("from 'unterminated"));
+
+        assertThat(e.getExpectedTokens()).isEmpty();
+    }
+
+    @Test
     void parseRejectsNullQuery() {
         assertThatThrownBy(() -> StroomQlParser.parse(null)).isInstanceOf(NullPointerException.class);
     }

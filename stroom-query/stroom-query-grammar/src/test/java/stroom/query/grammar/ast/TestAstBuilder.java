@@ -290,6 +290,27 @@ class TestAstBuilder {
     }
 
     @Test
+    void limit_capturesAQuotedValue() {
+        // A quoted limit value exercises buildLimitValue's nameToken branch (legacy accepts quoted numeric
+        // strings here, not just NUMBER tokens - see the grammar's limitValue rule and processLimit).
+        final AstQuery query = build("from X select a limit '10'");
+
+        final AstLimitClause limit = (AstLimitClause) query.clauses().getLast();
+        assertThat(limit.values()).extracting(AstToken::unescapedText).containsExactly("10");
+        assertThat(limit.values().getFirst().kind()).isEqualTo(AstToken.Kind.SINGLE_QUOTED);
+    }
+
+    @Test
+    void filter_capturesExpr() {
+        // The `filter` clause (post-hoc, in-memory predicates) - distinct from `where` and previously exercised
+        // by no AstBuilder test.
+        final AstQuery query = build("from X filter StreamId = 1 select a");
+
+        final AstFilterClause filter = (AstFilterClause) query.clauses().getFirst();
+        assertThat(filter.expr()).isNotNull();
+    }
+
+    @Test
     void show_capturesName() {
         final AstQuery query = build("from X select a show as chart");
 

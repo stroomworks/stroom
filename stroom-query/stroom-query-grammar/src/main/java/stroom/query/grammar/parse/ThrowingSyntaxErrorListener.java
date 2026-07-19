@@ -66,7 +66,16 @@ public final class ThrowingSyntaxErrorListener extends BaseErrorListener {
         if (e == null) {
             return List.of();
         }
-        final IntervalSet expected = e.getExpectedTokens();
+        // e.getExpectedTokens() consults the ATN and can itself throw (e.g. IllegalArgumentException "Invalid
+        // state number" for certain error states, observed for an unterminated quoted string). The whole point
+        // of this listener is to always surface a clean SyntaxException, so a failure computing the *optional*
+        // expected-token set must degrade to an empty set, never propagate a raw ANTLR exception to the caller.
+        final IntervalSet expected;
+        try {
+            expected = e.getExpectedTokens();
+        } catch (final RuntimeException unableToDetermineExpectedTokens) {
+            return List.of();
+        }
         if (expected == null || expected.isNil()) {
             return List.of();
         }

@@ -129,6 +129,11 @@ public final class Binder {
         ExpressionOperator wherePredicate = null;
         ExpressionOperator filterPredicate = null;
         ExpressionOperator havingPredicate = null;
+        // Track the where and filter clause positions separately so the bound Filter node reports the clause it
+        // actually came from (a where-only query previously reported the `from` clause position, misdirecting
+        // any where-predicate error/EXPLAIN location - LogicalPlan.position() is documented as "the clause this
+        // node was bound from"). Both default to the from position only when neither clause is present.
+        AstPosition wherePosition = query.from().position();
         AstPosition filterPosition = query.from().position();
         AstPosition havingPosition = query.from().position();
         final List<ProjectField> projectFields = new ArrayList<>();
@@ -143,6 +148,9 @@ public final class Binder {
         for (final AstClause clause : query.clauses()) {
             if (clause instanceof final AstWhereClause c) {
                 final ExpressionOperator bound = bindExpression(c.expr(), scope, false);
+                if (wherePredicate == null) {
+                    wherePosition = c.position();
+                }
                 wherePredicate = wherePredicate == null ? bound : and(wherePredicate, bound);
             } else if (clause instanceof final AstFilterClause c) {
                 final ExpressionOperator bound = bindExpression(c.expr(), scope, true);
@@ -183,7 +191,10 @@ public final class Binder {
         }
 
         if (wherePredicate != null || filterPredicate != null) {
-            plan = new Filter(plan, wherePredicate, filterPredicate, filterPosition);
+            // Position the Filter at the where clause when a where contributed (the common case), else the
+            // filter clause - never the from clause unless neither predicate exists (impossible in this branch).
+            final AstPosition predicatePosition = wherePredicate != null ? wherePosition : filterPosition;
+            plan = new Filter(plan, wherePredicate, filterPredicate, predicatePosition);
         }
         if (pendingWindow != null) {
             plan = new Window(
@@ -475,7 +486,20 @@ public final class Binder {
         if (field.alias() == null && scope.evalFieldNames.contains(field.field())) {
             return;
         }
-        final Scan scan = field.alias() != null ? scope.scansByAlias.get(field.alias()) : scope.onlyScan();
+        final Scan scan;
+        if (field.alias() != null) {
+            scan = scope.scansByAlias.get(field.alias());
+        } else if (scope.scansByAlias.size() == 1) {
+            scan = scope.onlyScan();
+        } else {
+            // An unqualified reference with no alias in a multi-source query - the only way this is reached is a
+            // PARAM term field (e.g. `where ${p} = 1`): resolveField already qualifies every *real* field with
+            // its source alias, and eval fields short-circuit above. A param is a runtime value with no
+            // datasource field metadata, so there is nothing to condition-validate here - skip, exactly like the
+            // queryField.isEmpty() path below (and never fall through to onlyScan(), which would throw on 2+
+            // sources - the raw IllegalStateException this replaces).
+            return;
+        }
         final Optional<QueryField> queryField = findQueryField(scan, field.field());
         if (queryField.isEmpty()) {
             // A PARAM reference, or (single-source, unqualified) an eval field already handled above - nothing
@@ -545,10 +569,11 @@ public final class Binder {
 
         /**
          * @return the query's only {@link Scan}.
-         * @throws IllegalStateException if called when more than one source is in scope - callers must only
-         *                                call this after establishing (via {@link #resolveField}'s own logic)
-         *                                that the reference is unqualified, which only happens for a
-         *                                single-source query or an eval field (checked separately).
+         * @throws IllegalStateException if called when other than exactly one source is in scope. This is an
+         *                                internal invariant, not a user-facing error: every caller guards the
+         *                                call with its own {@code scansByAlias.size() == 1} check first (a
+         *                                multi-source unqualified/param reference is handled without calling
+         *                                this), so reaching the throw indicates a binder bug, not bad input.
          */
         private Scan onlyScan() {
             if (scansByAlias.size() != 1) {

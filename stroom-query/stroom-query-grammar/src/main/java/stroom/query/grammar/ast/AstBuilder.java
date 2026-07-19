@@ -54,6 +54,7 @@ import stroom.query.grammar.antlr.StroomQLParser.TermValueContext;
 import stroom.query.grammar.antlr.StroomQLParser.TopLevelClauseContext;
 import stroom.query.grammar.antlr.StroomQLParser.WhereClauseContext;
 import stroom.query.grammar.antlr.StroomQLParser.WindowClauseContext;
+import stroom.query.grammar.parse.SyntaxException;
 
 import org.antlr.v4.runtime.ParserRuleContext;
 import org.antlr.v4.runtime.Token;
@@ -98,6 +99,7 @@ public final class AstBuilder {
      * @return never null; a full, decoupled AST for the whole query.
      */
     public AstQuery build(final QueryContext ctx) {
+        Objects.requireNonNull(ctx, "ctx");
         final AstFrom from = buildFrom(ctx.fromClause());
         final List<AstClause> clauses = new ArrayList<>(ctx.topLevelClause().size());
         for (final TopLevelClauseContext clauseCtx : ctx.topLevelClause()) {
@@ -199,12 +201,31 @@ public final class AstBuilder {
     }
 
     private AstWindowClause buildWindow(final WindowClauseContext ctx) {
+        // The grammar accepts any bareword where the 'advance'/'using' keywords go (they are labelled
+        // advanceKw/usingKw but are ordinary nameTokens), so a mistyped keyword parses cleanly. Legacy
+        // (SearchRequestFactory.processWindow) rejects anything but the literal words; reject it here too rather
+        // than silently discarding the keyword and mis-mapping the clause (a real parity + error-reporting gap).
+        requireWindowKeyword(ctx.advanceKw, "advance");
+        requireWindowKeyword(ctx.usingKw, "using");
         return new AstWindowClause(
                 buildFieldRef(ctx.field),
                 buildTerminalToken(ctx.windowSize, AstToken.Kind.BAREWORD),
                 ctx.advanceSize == null ? null : buildTerminalToken(ctx.advanceSize, AstToken.Kind.BAREWORD),
                 ctx.usingFunction == null ? null : buildToken(ctx.usingFunction),
                 position(ctx));
+    }
+
+    private static void requireWindowKeyword(final NameTokenContext keyword, final String expected) {
+        if (keyword == null) {
+            return;
+        }
+        final String text = keyword.getText();
+        if (!expected.equalsIgnoreCase(text)) {
+            final Token start = keyword.getStart();
+            throw new SyntaxException(
+                    "Unexpected token '" + text + "' in window clause - expected '" + expected + "'",
+                    start.getLine(), start.getCharPositionInLine(), List.of("'" + expected + "'"));
+        }
     }
 
     private AstSortClause buildSort(final SortClauseContext ctx) {

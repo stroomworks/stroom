@@ -81,10 +81,62 @@ class TestBinder {
     }
 
     @Test
+    void whereOnlyQuery_filterNodeReportsTheWhereClausePosition_notTheFromClause() {
+        // `from "Events" where StreamId = 1 ...` - the `where` keyword is at 0-based column 14 on line 1. The
+        // Filter node must report that, not the `from` clause position (which would misdirect an EXPLAIN/error).
+        final LogicalPlan plan = bind("from \"Events\" where StreamId = 1 select StreamId");
+        final Filter filter = (Filter) ((Project) plan).input();
+
+        assertThat(filter.position().line()).isEqualTo(1);
+        assertThat(filter.position().column()).isEqualTo(14);
+        // ...and specifically NOT the Scan's (from-clause) position.
+        assertThat(filter.position()).isNotEqualTo(filter.input().position());
+    }
+
+    @Test
     void unknownField_throwsBindException() {
         assertThatThrownBy(() -> bind("from \"Events\" where Bogus = 1 select StreamId"))
                 .isInstanceOf(BindException.class)
                 .hasMessageContaining("Unknown field 'Bogus'");
+    }
+
+    @Test
+    void unknownFieldOnKnownAlias_throwsBindException() {
+        assertThatThrownBy(() -> bind(
+                "from \"Events\" as e join \"Users\" as u on e.UserId = u.Id select e.Bogus"))
+                .isInstanceOf(BindException.class)
+                .hasMessageContaining("Unknown field 'Bogus' on 'e'");
+    }
+
+    @Test
+    void unknownFieldOnKnownJoinAlias_throwsBindException() {
+        assertThatThrownBy(() -> bind(
+                "from \"Events\" as e join \"Users\" as u on e.Bogus = u.Id select e.StreamId"))
+                .isInstanceOf(BindException.class)
+                .hasMessageContaining("Unknown field 'Bogus' on 'e'");
+    }
+
+    @Test
+    void ambiguousUnqualifiedField_throwsBindException() {
+        // Both Events and Users expose a field usable unqualified only if unique; give them a shared name via a
+        // self-join of Events (alias e and f) so an unqualified StreamId is present on two sources.
+        assertThatThrownBy(() -> bind(
+                "from \"Events\" as e join \"Events\" as f on e.StreamId = f.StreamId where StreamId = 1 "
+                + "select e.StreamId"))
+                .isInstanceOf(BindException.class)
+                .hasMessageContaining("Ambiguous field 'StreamId'");
+    }
+
+    @Test
+    void paramTermFieldInMultiSourceQuery_bindsCleanly_notARawIllegalStateException() {
+        // A PARAM used as a where-term field resolves to an unqualified (alias == null) reference. In a
+        // multi-source query this used to reach Scope.onlyScan() and throw a raw IllegalStateException; a param
+        // is a runtime value with no datasource field metadata, so it must simply bind without validation.
+        final LogicalPlan plan = bind(
+                "from \"Events\" as e join \"Users\" as u on e.UserId = u.Id where ${p} = 1 select e.StreamId");
+
+        assertThat(plan).isInstanceOf(Project.class);
+        assertThat(((Project) plan).input()).isInstanceOf(Filter.class);
     }
 
     @Test
