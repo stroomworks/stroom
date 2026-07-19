@@ -937,11 +937,128 @@ feed/pipeline configuration, remain explicitly out of scope - this phase proves 
 pipeline, not the XSLT half.
 
 ### P3 — Variable-length paths / fixpoint (part of the 9–18 pw graph-query line)
-- **The one operator the equi-join core does not provide** (design §5.5 item 4). Bounded transitive-closure BFS/DFS
-  over adjacency with a visited-set cycle guard, executing `VarLengthExpand` (PoC.2). Predicate push-down into the
-  expansion; interaction with LMDB cursor lifetimes is the subtle risk (design §8).
-- **Multi-hop path patterns** beyond single-hop; anchor-selectivity / start-node planner rules.
-- *Gate*: `-[:T*1..k]->` returns correct paths with cycle safety; hand-computed expected sets match.
+
+> **Scoping note (recorded 2026-07-19):** `CypherToLogicalPlan`'s own Javadoc already lists exactly what it
+> deliberately does not lower, with "P3" against each: *"a path pattern with more than one hop; a hop with a
+> variable-length (`*min..max`) edge; ... a hop's non-anchor (target) node pattern's own labels or inline
+> properties, which ... are not yet represented in the compiled plan and are silently not enforced."* The last
+> one is a real, already-present correctness gap (not a missing *feature* - a query with a target-node label/
+> property constraint compiles today and silently ignores that constraint), so it is P3.1 below, ahead of
+> multi-hop/var-length, both of which depend on it (a chain's middle nodes need the same constraint-carrying
+> slot `Expand` currently lacks). The Cypher grammar/AST (PoC.1) already parses chains and bounded var-length
+> fully - `AstPathPattern.hops()` is already a `List`, `AstVarLength` already exists - so none of this phase
+> touches the grammar; it is entirely `CypherToLogicalPlan` (compile) and `GraphTraversalEngine` (execute) work.
+
+Three tasks, each independently verifiable and committable, following the established Depends-on/Files/
+Contract/Done-when/Verify shape.
+
+#### Task P3.1 — Target node label/property constraints
+- **Depends on**: none beyond PoC.3/PoC.5 (modifies both in place).
+- **Gap this closes**: `MATCH (d:Device {id:'d-42'})-[:CONNECTED_TO]->(a:Account {status:'active'})` compiles
+  and runs today, but `a`'s `{status:'active'}` constraint (and any label constraint on `a`) is silently never
+  checked - every reachable `Account`, active or not, is returned. This is the sharpest kind of bug to leave
+  open: a query that looks correct and returns a plausible-looking result set that is simply wrong.
+- **Files**:
+  - `stroom-query-planner/.../logical/Expand.java` (modified) — add `List<String> targetLabels` and
+    `@Nullable ExpressionOperator targetPropertyPredicate` fields (mirroring `NodeScan`'s own label/property-
+    predicate shape, minus the anchor-index-seek concern, since a hop's target is reached via the edge, never
+    seeked). Update the record's compact constructor/Javadoc; update every exhaustive `switch` over
+    `LogicalPlan`/`Expand` that pattern-matches its fields (check `LogicalPlanExplainer`,
+    `OptimisingQueryCompiler`'s plan-walk helpers, `PushFiltersBelowJoinsRule`, `AutoWhereFilterSplitRule`,
+    `PlanRewriteUtil` - the same call sites P1's research already catalogued as having exhaustive-switch cases
+    for `Expand`/`NodeScan` added in PoC.2, still unreached by Cypher plans in practice but must stay
+    compiling).
+  - `CypherToLogicalPlan.compilePattern` (modified) — populate `targetLabels`/`targetPropertyPredicate` from
+    `hop.node().labels()`/`hop.node().properties()` exactly as `compileNodeScan` already does for the anchor
+    (reuse the same term-building code, factored out if that keeps both call sites simple).
+  - `GraphTraversalEngine.acceptNeighbour` (modified) — after resolving the target node's version, reject it
+    (do not add its row) unless its `labelUids` contain every required target label UID and its properties
+    satisfy `targetPropertyPredicate` (reusing `ExpressionPredicateFactory`/`GraphRowValueFunctionFactory`
+    exactly as the anchor and `WHERE` predicates already do - the same "bare unqualified field name" caveat
+    from `resolveAnchors`'s own fix applies here too, since a target node's inline property map terms are also
+    unqualified).
+- **Contract**: a target node pattern with no labels/properties behaves exactly as before (an unconstrained
+  slot, not a stricter default); a labelled/property-constrained target node filters out non-matching neighbours
+  before they reach the `WHERE` predicate or `RETURN` projection.
+- **Done-when**: `MATCH (d:Device {id:'d-42'})-[:CONNECTED_TO]->(a:Account {status:'active'})RETURN a.id` against
+  a fixture with one active and one inactive reachable account returns only the active one.
+- **Verify**: `./gradlew :stroom-query:stroom-query-planner:test :stroom-graphdb:stroom-graphdb-impl:test`.
+
+#### Task P3.2 — Multi-hop fixed-length chains
+- **Depends on**: P3.1 (a chain's non-terminal `Expand` nodes need the same target-constraint slot).
+- **Gap this closes**: `CypherToLogicalPlan.compilePattern` throws `CypherCompileException` for any pattern with
+  more than one hop; `GraphTraversalEngine`'s `PlanShape`/`unwrap` only recognise exactly one optional `Expand`
+  between `Project`/`Filter` and the `NodeScan` leaf.
+- **Files**:
+  - `CypherToLogicalPlan.compilePattern` (modified) — remove the `hops().size() > 1` rejection; fold the hop
+    list left-to-right into a chain of `Expand` nodes (`Expand(Expand(NodeScan(...), T1, ...), T2, ...)`),
+    anchor-first, exactly matching source order - **not** re-ordered by any selectivity heuristic (see below).
+  - `GraphTraversalEngine.java` (modified) — `PlanShape` changes from a single `@Nullable Expand expand` to a
+    `List<Expand> hops` (possibly empty); `unwrap` walks a chain of nested `Expand`s (`while (below instanceof
+    Expand e) { hops.add(0, e); below = e.input(); }`, since hops must be collected anchor-to-target order but
+    are encountered target-to-anchor while unwrapping) down to the `NodeScan` leaf. `execute`'s per-anchor loop
+    becomes an iterative fold over `hops`: at each step, expand the CURRENT frontier of rows through the next
+    hop, discarding rows that fail that hop's target constraint (P3.1) or (if it's the pattern's last hop) the
+    outer `WHERE` predicate - matching the existing single-hop code's own "test as you go" structure, not a
+    build-then-filter two-pass (avoids materialising every intermediate hop's full unfiltered row set).
+  - **Anchor-selectivity / start-node planner rules (from the rough outline) — deliberately not built**: Cypher
+    chains in this v1 subset are always compiled anchor-first, left-to-right, and the anchor is always the one
+    node with a property-index-seekable predicate (P3.1's constraints on OTHER hops are post-expand filters, not
+    alternative seek points - only the true anchor has an index access path at all). There is no genuine "which
+    node should I start from" choice to make yet, so no cost-based re-ordering is needed for v1; a future phase
+    revisits this if/when non-anchor nodes gain their own seekable access paths.
+  - Tests: extend `TestCypherToLogicalPlan` with a 2/3-hop chain compiling into the expected nested `Expand`
+    shape; extend `TestGraphTraversalEngine`/fixtures with a 2-hop query (e.g. `Device -[:CONNECTED_TO]->
+    Account -[:OWNED_BY]-> Person`) proving the correct end-to-end row set, including a case where a middle
+    hop's target constraint (P3.1) prunes a path.
+- **Contract**: an existing single-hop (0 or 1 `Expand`) compiled plan and its execution are bit-for-bit
+  unchanged - the chain case is a strict generalisation, not a rewrite of the existing path.
+- **Done-when**: a 2-hop and a 3-hop chain query against a hand-built fixture return exactly the hand-computed
+  expected row set; a single-hop query's result is unchanged from before this task.
+- **Verify**: `./gradlew :stroom-query:stroom-query-planner:test :stroom-graphdb:stroom-graphdb-impl:test`.
+
+#### Task P3.3 — Bounded variable-length paths (BFS + cycle guard)
+- **Depends on**: P3.1 (the var-length target variable needs the same label/property constraint slot -
+  `VarLengthExpand` already has no such slot either; add it alongside `Expand`'s in P3.1, or here if P3.1 lands
+  first without it - decide during implementation which task actually adds it to avoid duplicated work).
+- **Gap this closes**: `CypherToLogicalPlan.compilePattern` throws for `edge.varLength() != null`;
+  `VarLengthExpand` (built in PoC.2) has never been produced or consumed by anything - confirmed dead IR since
+  its own Javadoc says so explicitly ("a compiled plan containing this node is rejected at compile time").
+- **Files**:
+  - `CypherToLogicalPlan.compilePattern` (modified) — when `edge.varLength() != null`, compile a
+    `VarLengthExpand` instead of throwing: `minHops` = `varLength.min()` or Cypher's own default of 1 if absent,
+    `maxHops` = `varLength.max()` (always present, per the grammar). A var-length hop is still rejected if it is
+    not the pattern's *only* hop (chaining a var-length hop with fixed hops on either side is a real further
+    generalisation of P3.2 - out of scope here, thrown with a clear message, not silently mishandled).
+  - `GraphTraversalEngine.java` (modified) — a new execution path for `VarLengthExpand` (parallel to `Expand`'s):
+    for each anchor, a **bounded BFS** over the adjacency store: maintain a frontier of `(nodeUid, pathVisited)`
+    pairs (a fresh `Set<Long>` per path branch, not one global per-anchor set - a node reachable via two
+    different, non-overlapping paths of different lengths within `[minHops, maxHops]` is two valid, distinct
+    results, only a node repeating *within one path* is a cycle to guard against); at each depth, fully
+    materialise that depth's neighbours via `GraphAdjacencyDb.expandOut`/`GraphInEdgeDb.expandIn`'s existing
+    `Consumer`-driven, fully-synchronous-per-call shape (design doc §8's flagged cursor-lifetime risk is
+    addressed by construction here: never open a nested cursor from inside another's callback - collect one
+    depth's full neighbour list, close that call's cursor, *then* recurse into the next depth using the plain
+    materialised list, exactly how `GraphAdjacencyDb.expandOut`'s own single-call contract is designed to be
+    used); emit a row for every `(nodeUid, depth)` with `depth` in `[minHops, maxHops]` that also passes the
+    target label/property constraint (P3.1) - matching literal Cypher path semantics (the same node reached at
+    two different depths within range is two separate results), not de-duplicated by node identity.
+  - Tests: a fixture with a genuine cycle (`a -> b -> c -> a`) proving `-[:T*1..5]->` terminates and returns the
+    correct finite reachable set, not an infinite loop or a `StackOverflowError`; a fixture proving `minHops > 1`
+    excludes closer neighbours; a fixture proving the same node reached at two different depths within range
+    yields two rows.
+- **Contract**: `VarLengthExpand`'s own documented precondition (`maxHops` always finite, enforced at
+  construction) is the only bound needed for termination - no separate step-count safety valve is layered on top
+  since the IR type itself cannot represent an unbounded request.
+- **Done-when**: `-[:T*1..k]->` over a cyclic fixture graph returns the correct, hand-computed finite reachable
+  set with no timeout/stack overflow; `-[:T*2..3]->` excludes 1-hop neighbours.
+- **Verify**: `./gradlew :stroom-query:stroom-query-planner:test :stroom-graphdb:stroom-graphdb-impl:test`.
+
+**P3 exit gate**: `-[:T*1..k]->` returns correct paths with cycle safety over a real cyclic fixture, matching a
+hand-computed expected set; a fixed-length multi-hop chain (`-[:T1]->()-[:T2]->`) returns the correct row set;
+a target (non-anchor) node's own label/property constraints are enforced, not silently ignored. Anchor-
+selectivity/start-node re-ordering remains out of scope (no genuine choice to make yet in this v1 subset - see
+Task P3.2's note).
 
 ### P4 — Temporal ranges (5–10 pw) — *after 0.3*
 - **`AROUND ± d` / `BETWEEN`** window scans (interval intersection over the adjacency store's version runs, per P0.3's
