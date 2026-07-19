@@ -35,6 +35,8 @@ import stroom.util.shared.scheduler.CronExpressions;
 
 import com.google.inject.AbstractModule;
 import jakarta.inject.Inject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Registers {@link GraphDbDoc}'s document store/cache, {@link GraphSearchProvider} (Task PoC.6), its REST
@@ -91,15 +93,25 @@ public class GraphDbModule extends AbstractModule {
 
     private static class GraphRetentionRunnable extends RunnableWrapper {
 
+        private static final Logger LOGGER = LoggerFactory.getLogger(GraphRetentionRunnable.class);
+
         static final String TASK_NAME = "Graph DB Retention";
 
         @Inject
         GraphRetentionRunnable(final GraphDbDocStore graphDbDocStore, final GraphStoreManager graphStoreManager) {
             super(() -> {
                 for (final DocRef docRef : graphDbDocStore.list()) {
-                    final GraphDbDoc doc = graphDbDocStore.readDocument(docRef);
-                    if (doc != null) {
-                        graphStoreManager.getOrOpen(doc).deleteOldData(doc);
+                    // Code-review fix: previously an exception retaining one doc (a corrupt store, a disk error,
+                    // ...) aborted this whole loop, silently skipping retention for every other doc due that
+                    // cycle until the next scheduled run 10 minutes later - mirrors the per-shard try/catch
+                    // stroom.planb.impl.data.ShardManager's own maintenance loops use for the identical reason.
+                    try {
+                        final GraphDbDoc doc = graphDbDocStore.readDocument(docRef);
+                        if (doc != null) {
+                            graphStoreManager.getOrOpen(doc).deleteOldData(doc);
+                        }
+                    } catch (final RuntimeException e) {
+                        LOGGER.error("Error running retention for {}", docRef, e);
                     }
                 }
             });
