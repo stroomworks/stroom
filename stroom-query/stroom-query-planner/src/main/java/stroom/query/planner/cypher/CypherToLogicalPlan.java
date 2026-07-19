@@ -41,8 +41,6 @@ import stroom.query.grammar.ast.cypher.AstNodePattern;
 import stroom.query.grammar.ast.cypher.AstNotExpr;
 import stroom.query.grammar.ast.cypher.AstNumberValue;
 import stroom.query.grammar.ast.cypher.AstOrExpr;
-import stroom.query.grammar.ast.cypher.AstOrderBy;
-import stroom.query.grammar.ast.cypher.AstOrderItem;
 import stroom.query.grammar.ast.cypher.AstParameterValue;
 import stroom.query.grammar.ast.cypher.AstPathPattern;
 import stroom.query.grammar.ast.cypher.AstPatternHop;
@@ -91,11 +89,12 @@ import java.util.Objects;
  * folds left-to-right, anchor-first, in exactly the pattern's source order (a bare anchor with no hop skips
  * {@link Expand} entirely; never re-ordered by any selectivity heuristic, since only the anchor has a
  * property-index-seekable access path in this v1 subset - see {@link Expand}'s Javadoc). {@code RETURN}'s
- * {@code ORDER BY}/{@code SKIP}/{@code LIMIT} wrap the {@link Project} with {@link Sort}/{@link Limit} exactly as
- * the relational core's own binder does; aggregate functions ({@code count}/{@code sum}/{@code avg}/{@code min}/
- * {@code max}) compile to {@link ProjectField} expressions only - GROUP-BY inference for a mixed aggregate/plain
- * {@code RETURN} is not yet implemented (a genuine gap tracked for a later phase, not silently wrong: such a
- * query still compiles, but does not yet group distinct combinations of the non-aggregate columns).</p>
+ * {@code LIMIT} wraps the {@link Project} with a {@link Limit} exactly as the relational core's own binder does;
+ * {@code ORDER BY}, {@code SKIP} and {@code DISTINCT} are not yet compiled (see below). Aggregate functions
+ * ({@code count}/{@code sum}/{@code avg}/{@code min}/{@code max}) compile to {@link ProjectField} expressions
+ * only - GROUP-BY inference for a mixed aggregate/plain {@code RETURN} is not yet implemented (a genuine gap
+ * tracked for a later phase, not silently wrong: such a query still compiles, but does not yet group distinct
+ * combinations of the non-aggregate columns).</p>
  *
  * <p>A hop's target (non-anchor) node pattern's own labels/inline properties (Task P3.1) compile onto
  * {@link Expand#targetLabels()}/{@link Expand#targetPropertyPredicate()} (or the {@link VarLengthExpand}
@@ -114,9 +113,11 @@ import java.util.Objects;
  * <p><b>What this class deliberately does NOT lower</b> (throws {@link CypherCompileException} instead of
  * guessing): more than one {@link AstMatch}/{@link AstWith} reading clause; a variable-length hop chained
  * alongside other hops in the same pattern; a {@code WHERE} comparison between two field references (only
- * field-vs-literal comparisons compile). All of the above are accepted by {@code Cypher.g4} (per the
- * P0.2-locked v1 subset) but are out of this class's compiled shape; they are progressively tightened across
- * P3's tasks.</p>
+ * field-vs-literal comparisons compile); {@code RETURN DISTINCT}, {@code ORDER BY} and {@code SKIP} (the graph
+ * traversal executor has no row de-duplication, sort or offset step yet, so compiling them would silently
+ * return wrong results - duplicate rows, unsorted rows - rather than the documented error). All of the above are
+ * accepted by {@code Cypher.g4} (per the P0.2-locked v1 subset) but are out of this class's compiled shape; they
+ * are progressively tightened across P3's tasks.</p>
  */
 public final class CypherToLogicalPlan {
 
@@ -344,15 +345,25 @@ public final class CypherToLogicalPlan {
     // ------------------------------------------------------------------------------------------------------
 
     private LogicalPlan compileReturn(final LogicalPlan input, final AstReturnClause returnClause) {
+        if (returnClause.distinct()) {
+            throw new CypherCompileException(
+                    "not in PoC subset: RETURN DISTINCT is not yet compiled (the graph traversal executor has no "
+                    + "row de-duplication step yet, so compiling it would silently return duplicate rows)",
+                    returnClause.position());
+        }
+        if (returnClause.orderBy() != null) {
+            throw new CypherCompileException(
+                    "not in PoC subset: ORDER BY is not yet compiled (the graph traversal executor has no sort "
+                    + "step yet, so compiling it would silently return rows in raw traversal order)",
+                    returnClause.orderBy().position());
+        }
+
         final List<ProjectField> fields = new ArrayList<>(returnClause.items().size());
         for (final AstReturnItem item : returnClause.items()) {
             fields.add(compileReturnItem(item));
         }
         LogicalPlan plan = new Project(input, fields, returnClause.position());
 
-        if (returnClause.orderBy() != null) {
-            plan = new Sort(plan, compileOrderBy(returnClause.orderBy()), returnClause.orderBy().position());
-        }
         if (returnClause.skip() != null || returnClause.limit() != null) {
             // The relational core's Limit models only a maximum row count (see Limit's Javadoc); Cypher's SKIP
             // has no equivalent slot here yet, so a query using SKIP is rejected rather than silently ignored.
@@ -382,36 +393,6 @@ public final class CypherToLogicalPlan {
         return renderExpression(expression);
     }
 
-    private List<SortKey> compileOrderBy(final AstOrderBy orderBy) {
-        final List<SortKey> keys = new ArrayList<>(orderBy.items().size());
-        for (final AstOrderItem item : orderBy.items()) {
-            keys.add(new SortKey(toQualifiedField(item.expression(), item.position()), item.descending()));
-        }
-        return keys;
-    }
-
-    /**
-     * Code-review fix: splits directly into {@link QualifiedField}'s {@code (alias, field)} shape, rather than
-     * (as before) routing through {@link #fieldNameOf}'s merged {@code "variable.property"} string and stuffing
-     * the whole thing into {@code field} with {@code alias} left {@code null} - that discarded exactly the
-     * alias/field split every other part of the planner relies on ({@link stroom.query.planner.bind.Binder}
-     * always resolves a qualified reference into a real {@code (alias, field)} pair), so a consumer keying off
-     * {@link QualifiedField#alias()} to route a sort key back to its pattern-variable/source would never match a
-     * Cypher-compiled one. A property access's pattern variable IS the {@code Scan} alias {@link QualifiedField}
-     * expects; a bare variable reference has no separate field component of its own, so it is carried as an
-     * unqualified field name ({@code alias} null) - mirroring {@code Binder.resolveField}'s own fallback shape
-     * for an unqualified bareword token.
-     */
-    private static QualifiedField toQualifiedField(final AstExpression expression, final AstPosition position) {
-        if (expression instanceof final AstPropertyAccessExpr propertyAccess) {
-            return new QualifiedField(propertyAccess.variable(), propertyAccess.property());
-        }
-        if (expression instanceof final AstVariableExpr variable) {
-            return new QualifiedField(null, variable.name());
-        }
-        throw new CypherCompileException(
-                "not in PoC subset: an ORDER BY item must be a property access or variable reference", position);
-    }
 
     // ------------------------------------------------------------------------------------------------------
     // expression / value rendering (StroomQL-style text for ProjectField.rawExpression)

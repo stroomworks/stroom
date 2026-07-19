@@ -28,7 +28,6 @@ import stroom.query.planner.logical.Limit;
 import stroom.query.planner.logical.LogicalPlan;
 import stroom.query.planner.logical.NodeScan;
 import stroom.query.planner.logical.Project;
-import stroom.query.planner.logical.Sort;
 import stroom.query.planner.logical.VarLengthExpand;
 
 import org.junit.jupiter.api.Test;
@@ -138,33 +137,47 @@ class TestCypherToLogicalPlan {
     }
 
     @Test
-    void orderByAndLimit_wrapTheProject() {
-        final CompiledCypherPlan compiled = compile(
-                "MATCH (a:Account) RETURN a.id ORDER BY a.id LIMIT 10");
+    void limitWithoutOrderBy_wrapsTheProject() {
+        final CompiledCypherPlan compiled = compile("MATCH (a:Account) RETURN a.id LIMIT 10");
 
         assertThat(compiled.plan()).isInstanceOf(Limit.class);
         final Limit limit = (Limit) compiled.plan();
         assertThat(limit.values()).containsExactly(10L);
-        assertThat(limit.input()).isInstanceOf(Sort.class);
-        final Sort sort = (Sort) limit.input();
-        assertThat(sort.keys()).hasSize(1);
-        // Code-review fix: previously the whole "a.id" was jammed into QualifiedField.field() with alias left
-        // null, discarding the alias/field split every other part of the planner relies on (Binder always
-        // resolves a qualified reference into a real (alias, field) pair) - now split correctly, the pattern
-        // variable "a" as the alias and "id" as the field, matching that convention.
-        assertThat(sort.keys().getFirst().field().alias()).isEqualTo("a");
-        assertThat(sort.keys().getFirst().field().field()).isEqualTo("id");
-        assertThat(sort.input()).isInstanceOf(Project.class);
+        assertThat(limit.input()).isInstanceOf(Project.class);
     }
 
     @Test
-    void orderByABareVariable_hasNoAliasSinceThereIsNoSeparateFieldComponent() {
-        final CompiledCypherPlan compiled = compile("MATCH (a:Account) RETURN a.id ORDER BY a");
+    void orderBy_throwsNotInPoCSubset() {
+        // Code-review fix: ORDER BY parses and is in the locked v1 subset, but the graph traversal executor has
+        // no sort step, so it is rejected at compile time (fail loud) rather than compiled into a Sort node the
+        // executor silently discards, which would return rows in raw traversal order with no signal.
+        final AstCypherQuery ast = CypherQueryParser.parse("MATCH (a:Account) RETURN a.id ORDER BY a.id");
 
-        final Sort sort = (Sort) compiled.plan();
-        assertThat(sort.keys()).hasSize(1);
-        assertThat(sort.keys().getFirst().field().alias()).isNull();
-        assertThat(sort.keys().getFirst().field().field()).isEqualTo("a");
+        assertThatThrownBy(() -> new CypherToLogicalPlan().compile(ast))
+                .isInstanceOf(CypherCompileException.class)
+                .hasMessageContaining("ORDER BY");
+    }
+
+    @Test
+    void orderByCombinedWithLimit_throwsNotInPoCSubset() {
+        // Regression guard: this combination previously compiled to Limit(Sort(Project)) and then blew up in the
+        // executor's plan-unwrap (Sort-before-Limit ordering bug); rejecting ORDER BY up front removes it.
+        final AstCypherQuery ast = CypherQueryParser.parse("MATCH (a:Account) RETURN a.id ORDER BY a.id LIMIT 10");
+
+        assertThatThrownBy(() -> new CypherToLogicalPlan().compile(ast))
+                .isInstanceOf(CypherCompileException.class)
+                .hasMessageContaining("ORDER BY");
+    }
+
+    @Test
+    void returnDistinct_throwsNotInPoCSubset() {
+        // Code-review fix: DISTINCT parses and is in the locked v1 subset, but the executor has no row
+        // de-duplication step, so it is rejected rather than silently dropped (which returned duplicate rows).
+        final AstCypherQuery ast = CypherQueryParser.parse("MATCH (a:Account) RETURN DISTINCT a.id");
+
+        assertThatThrownBy(() -> new CypherToLogicalPlan().compile(ast))
+                .isInstanceOf(CypherCompileException.class)
+                .hasMessageContaining("DISTINCT");
     }
 
     @Test

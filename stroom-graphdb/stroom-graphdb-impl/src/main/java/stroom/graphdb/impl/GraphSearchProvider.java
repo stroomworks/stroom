@@ -191,22 +191,20 @@ public class GraphSearchProvider implements SearchProvider, IndexFieldProvider {
     }
 
     /**
-     * Walks past any {@link Sort}/{@link Limit} wrapper to the plan's terminal {@link Project} node - mirrors
+     * Walks past any {@link Limit} wrapper to the plan's terminal {@link Project} node - mirrors
      * {@code GraphTraversalEngine.unwrap}'s own first step (kept as a small separate copy rather than exposing
-     * that private method, since this is all the caller needs from the plan shape).
+     * that private method, since this is all the caller needs from the plan shape). A {@link Sort} node cannot
+     * appear: {@code CypherToLogicalPlan} rejects {@code ORDER BY} at compile time.
      */
     private static Project terminalProject(final LogicalPlan plan) {
         LogicalPlan current = plan;
-        while (current instanceof final Sort sort) {
-            current = sort.input();
-        }
         while (current instanceof final Limit limit) {
             current = limit.input();
         }
         if (!(current instanceof final Project project)) {
             throw new IllegalArgumentException(
                     "Unsupported compiled plan shape for graph traversal: expected a Project node (after "
-                    + "unwrapping Sort/Limit), found " + current.getClass().getSimpleName());
+                    + "unwrapping Limit), found " + current.getClass().getSimpleName());
         }
         return project;
     }

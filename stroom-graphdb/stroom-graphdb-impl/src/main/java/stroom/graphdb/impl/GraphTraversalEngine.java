@@ -162,8 +162,9 @@ public final class GraphTraversalEngine {
 
     /**
      * <b>Preconditions:</b> no parameter is null except {@code temporalContext}; {@code plan} must have the
-     * shape {@code [Sort/Limit ->] Project -> [Filter ->] [Expand ->]* NodeScan} (see this class's Javadoc for
-     * what happens otherwise).
+     * shape {@code [Limit ->] Project -> [Filter ->] [Expand ->]* NodeScan} (see this class's Javadoc for
+     * what happens otherwise). {@code CypherToLogicalPlan} rejects {@code ORDER BY} at compile time, so no
+     * {@link Sort} node ever reaches here.
      * <b>Postconditions:</b> one {@code Val[]} per surviving row, in {@code Project}'s field order; never null
      * (possibly empty).
      *
@@ -614,11 +615,10 @@ public final class GraphTraversalEngine {
 
     private static PlanShape unwrap(final LogicalPlan plan) {
         LogicalPlan current = plan;
-        while (current instanceof final Sort sort) {
-            current = sort.input();
-        }
         // Task P7.2: previously this walked past the Limit node without ever reading its value - the traversal
         // engine had zero awareness a query said LIMIT N and computed every matching row regardless.
+        // A Sort node cannot appear here: CypherToLogicalPlan rejects ORDER BY at compile time (there is no
+        // in-engine sort step), so the only wrapper above Project is an optional Limit.
         Long limit = null;
         while (current instanceof final Limit limitNode) {
             if (!limitNode.values().isEmpty()) {
@@ -629,7 +629,7 @@ public final class GraphTraversalEngine {
         if (!(current instanceof final Project project)) {
             throw new IllegalArgumentException(
                     "Unsupported compiled plan shape for graph traversal: expected a Project node (after "
-                    + "unwrapping Sort/Limit), found " + current.getClass().getSimpleName());
+                    + "unwrapping Limit), found " + current.getClass().getSimpleName());
         }
 
         LogicalPlan below = project.input();
