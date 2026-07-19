@@ -1211,11 +1211,25 @@ storage-then-execution split P3 used for its own two execution-facing tasks).
   window, one straddling a boundary, and one entirely outside it; every pre-existing test in the module still
   passes unmodified.
 - **Verify**: `./gradlew :stroom-query:stroom-query-planner:test :stroom-graphdb:stroom-graphdb-impl:test`.
+- **Status: done (2026-07-19).** `TemporalAccess` added exactly as scoped (`getNode`/`expandOut`/`expandIn`),
+  built once via `resolveAccess` (replacing `resolveAsOf`) and threaded through `resolveAnchors`,
+  `expandChainHop`/`acceptChainNeighbour`, `expandVarLength`/`collectNeighbours` in place of the raw
+  `Instant asOf` each used to take - a mechanical substitution confirmed by every pre-existing test passing
+  unmodified. Tests: `aroundClause_returnsNeighboursWhoseEdgeIntersectsTheWindow` (a dedicated 3-account window
+  fixture - one edge that ended before the window, one that intersects it, one that doesn't start until after
+  it) and `aroundClause_windowUpperBoundLandingExactlyOnAVersionsValidFrom_includesIt` (an engine-level spot
+  check of the P0.3 boundary rule already exhaustively unit-tested at the DAO level in P4.1) replace the old
+  `aroundClause_throwsNotYetSupported`. A third test,
+  `windowClause_reResolvesTheAnchorAgainstTheWindow_notLatest`, specifically proves `resolveAnchors` uses the
+  window lookup and not a silent fallback to "latest" - a dedicated fixture gives the anchor device two
+  different `id` values at two different times, so only a correctly-windowed anchor re-validation makes the
+  query match at all.
 
-**P4 exit gate**: an `AROUND ± d` query and a `BETWEEN` query both return the correct, hand-computed row set
+**P4 exit gate: met.** An `AROUND ± d` query and a `BETWEEN` query both return the correct, hand-computed row set
 against a fixture with edges inside, straddling, and outside the window; every `AS OF`/no-clause test from PoC.5
 through P3.3 continues to pass unmodified, confirming window support is additive, not a behaviour change to
-existing temporal modes.
+existing temporal modes. P4 (Tasks P4.1-P4.2) is complete; P5 (Query integration hardening) is next, pending
+explicit go-ahead.
 
 ### P5 — Query integration hardening (5–10 pw)
 - **Graph datasource cost signals** (row/key counts, adjacency access-path costing) implementing a

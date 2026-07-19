@@ -39,7 +39,6 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Task PoC.5's Done-when: a single-hop {@code MATCH...RETURN} query, parsed and compiled by the real
@@ -116,21 +115,69 @@ class TestGraphTraversalEngine {
     }
 
     @Test
-    void aroundClause_throwsNotYetSupported(@TempDir final Path root) {
+    void aroundClause_returnsNeighboursWhoseEdgeIntersectsTheWindow(@TempDir final Path root) {
+        // Task P4.2: before this, any AROUND/BETWEEN clause threw UnsupportedOperationException.
         try (GraphStores stores = GraphStores.provision(root.resolve("graph4"), DOC)) {
-            seedDeviceConnectedToAccounts(stores);
+            seedDeviceWindowedAccounts(stores);
+
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory());
+            // Window [2025-06-01, 2026-06-01]: account-before's edge ended (2025-02-01) before the window
+            // starts; account-inside's edge (started 2026-01-01, never tombstoned) intersects it;
+            // account-after's edge doesn't start until 2027, after the window ends.
+            final CompiledCypherPlan compiled = compile(
+                    "MATCH (d:Device {id: 'd-42'})-[:CONNECTED_TO]->(a:Account) "
+                    + "BETWEEN datetime('2025-06-01T00:00:00Z') AND datetime('2026-06-01T00:00:00Z') "
+                    + "RETURN a.id");
+
+            final List<Val[]> rows = stores.read(readTxn ->
+                    engine.execute(readTxn, compiled.plan(), compiled.temporalContext(),
+                            DateTimeSettings.builder().build()));
+            assertThat(rows).extracting(row -> row[0].toString()).containsExactly("account-inside");
+        }
+    }
+
+    @Test
+    void aroundClause_windowUpperBoundLandingExactlyOnAVersionsValidFrom_includesIt(@TempDir final Path root) {
+        // Task P4.2: an engine-level spot-check of the P0.3 boundary rule already exhaustively unit-tested at
+        // the DAO level in Task P4.1 (validFrom == to includes).
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph4b"), DOC)) {
+            seedDeviceWindowedAccounts(stores);
 
             final GraphTraversalEngine engine = new GraphTraversalEngine(
                     stores, new ExpressionPredicateFactory());
             final CompiledCypherPlan compiled = compile(
                     "MATCH (d:Device {id: 'd-42'})-[:CONNECTED_TO]->(a:Account) "
-                    + "AROUND datetime('2026-07-01T09:00:00Z') +/- duration('PT1H') RETURN a.id");
+                    + "BETWEEN datetime('2025-06-01T00:00:00Z') AND datetime('2026-01-01T00:00:00Z') "
+                    + "RETURN a.id");
 
-            assertThatThrownBy(() -> stores.read(readTxn ->
+            final List<Val[]> rows = stores.read(readTxn ->
                     engine.execute(readTxn, compiled.plan(), compiled.temporalContext(),
-                            DateTimeSettings.builder().build())))
-                    .isInstanceOf(UnsupportedOperationException.class)
-                    .hasMessageContaining("P4");
+                            DateTimeSettings.builder().build()));
+            assertThat(rows).extracting(row -> row[0].toString()).containsExactly("account-inside");
+        }
+    }
+
+    @Test
+    void windowClause_reResolvesTheAnchorAgainstTheWindow_notLatest(@TempDir final Path root) {
+        // Task P4.2: resolveAnchors must switch to the window-based node lookup too, not just hop expansion.
+        // The device's id changes from 'd-42' to 'd-42-renamed' at 2022-01-01, long after the test window - if
+        // anchor re-validation incorrectly fell back to a "latest" floor lookup instead of the window lookup, it
+        // would see 'd-42-renamed' (not matching this MATCH's anchor property) and find no anchor at all.
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph4c"), DOC)) {
+            seedDeviceWithChangingIdentity(stores);
+
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory());
+            final CompiledCypherPlan compiled = compile(
+                    "MATCH (d:Device {id: 'd-42'})-[:CONNECTED_TO]->(a:Account) "
+                    + "BETWEEN datetime('2020-01-01T00:00:00Z') AND datetime('2020-06-01T00:00:00Z') "
+                    + "RETURN a.id");
+
+            final List<Val[]> rows = stores.read(readTxn ->
+                    engine.execute(readTxn, compiled.plan(), compiled.temporalContext(),
+                            DateTimeSettings.builder().build()));
+            assertThat(rows).extracting(row -> row[0].toString()).containsExactly("only-account");
         }
     }
 
@@ -503,6 +550,97 @@ class TestGraphTraversalEngine {
             stores.getInEdges().insert(writer, aUid, edgeType, yUid, T1, Map.of());
             stores.getOutEdges().insert(writer, yUid, edgeType, xUid, T1, Map.of());
             stores.getInEdges().insert(writer, yUid, edgeType, xUid, T1, Map.of());
+            return null;
+        });
+    }
+
+    /**
+     * Task P4.2's window fixture: {@code d-42}'s edges to three accounts, each with a distinct relationship to
+     * the test windows - {@code account-before}'s edge ended (2025-02-01) before any test window starts,
+     * {@code account-inside}'s edge (started 2026-01-01, never tombstoned) intersects every test window,
+     * {@code account-after}'s edge doesn't start until 2027, after every test window ends. The device itself has
+     * a single, unchanging identity throughout - {@link #seedDeviceWithChangingIdentity} covers the anchor's own
+     * window re-resolution separately, so this fixture isn't burdened with that concern too.
+     */
+    private static void seedDeviceWindowedAccounts(final GraphStores stores) {
+        final long deviceLabel = intern(stores, stores.getLabelUids(), "Device");
+        final long accountLabel = intern(stores, stores.getLabelUids(), "Account");
+        final long idKey = intern(stores, stores.getPropertyKeyUids(), "id");
+        final long connectedTo = intern(stores, stores.getEdgeTypeUids(), "CONNECTED_TO");
+
+        final long deviceUid = intern(stores, stores.getNodeUids(), "window-d-42");
+        final long beforeUid = intern(stores, stores.getNodeUids(), "account-before");
+        final long insideUid = intern(stores, stores.getNodeUids(), "account-inside");
+        final long afterUid = intern(stores, stores.getNodeUids(), "account-after");
+
+        final Instant deviceStart = Instant.parse("2019-01-01T00:00:00Z");
+        final Instant beforeStart = Instant.parse("2025-01-01T00:00:00Z");
+        final Instant beforeEnd = Instant.parse("2025-02-01T00:00:00Z");
+        final Instant insideStart = Instant.parse("2026-01-01T00:00:00Z");
+        final Instant afterStart = Instant.parse("2027-01-01T00:00:00Z");
+
+        stores.write(writer -> {
+            stores.getNodes().insert(
+                    writer, deviceUid, deviceStart, List.of(deviceLabel), Map.of("id", ValString.create("d-42")));
+            stores.getNodes().insert(writer, beforeUid, deviceStart, List.of(accountLabel),
+                    Map.of("id", ValString.create("account-before")));
+            stores.getNodes().insert(writer, insideUid, deviceStart, List.of(accountLabel),
+                    Map.of("id", ValString.create("account-inside")));
+            stores.getNodes().insert(writer, afterUid, deviceStart, List.of(accountLabel),
+                    Map.of("id", ValString.create("account-after")));
+
+            stores.getPropertyIndex().insert(
+                    writer, deviceLabel, idKey, "d-42".getBytes(StandardCharsets.UTF_8), deviceUid);
+
+            stores.getOutEdges().insert(writer, deviceUid, connectedTo, beforeUid, beforeStart, Map.of());
+            stores.getInEdges().insert(writer, deviceUid, connectedTo, beforeUid, beforeStart, Map.of());
+            stores.getOutEdges().delete(writer, deviceUid, connectedTo, beforeUid, beforeEnd);
+            stores.getInEdges().delete(writer, deviceUid, connectedTo, beforeUid, beforeEnd);
+
+            stores.getOutEdges().insert(writer, deviceUid, connectedTo, insideUid, insideStart, Map.of());
+            stores.getInEdges().insert(writer, deviceUid, connectedTo, insideUid, insideStart, Map.of());
+
+            stores.getOutEdges().insert(writer, deviceUid, connectedTo, afterUid, afterStart, Map.of());
+            stores.getInEdges().insert(writer, deviceUid, connectedTo, afterUid, afterStart, Map.of());
+            return null;
+        });
+    }
+
+    /**
+     * Task P4.2's anchor-re-resolution fixture: {@code d-42} carries {@code id: 'd-42'} from 2020-01-01, then
+     * {@code id: 'd-42-renamed'} from 2022-01-01 onward (its LATEST identity) - a query anchored on the OLD id,
+     * windowed entirely within the earlier period, must still resolve the anchor by consulting that period's
+     * version, not the node's current one.
+     */
+    private static void seedDeviceWithChangingIdentity(final GraphStores stores) {
+        final long deviceLabel = intern(stores, stores.getLabelUids(), "Device");
+        final long accountLabel = intern(stores, stores.getLabelUids(), "Account");
+        final long idKey = intern(stores, stores.getPropertyKeyUids(), "id");
+        final long connectedTo = intern(stores, stores.getEdgeTypeUids(), "CONNECTED_TO");
+
+        final long deviceUid = intern(stores, stores.getNodeUids(), "renaming-d-42");
+        final long accountUid = intern(stores, stores.getNodeUids(), "only-account");
+
+        final Instant oldIdentityStart = Instant.parse("2020-01-01T00:00:00Z");
+        final Instant newIdentityStart = Instant.parse("2022-01-01T00:00:00Z");
+
+        stores.write(writer -> {
+            stores.getNodes().insert(
+                    writer, deviceUid, oldIdentityStart, List.of(deviceLabel), Map.of("id", ValString.create("d-42")));
+            stores.getNodes().insert(writer, deviceUid, newIdentityStart, List.of(deviceLabel),
+                    Map.of("id", ValString.create("d-42-renamed")));
+            stores.getNodes().insert(
+                    writer, accountUid, oldIdentityStart, List.of(accountLabel),
+                    Map.of("id", ValString.create("only-account")));
+
+            // The property index has no time dimension (Task PoC.4) - it tracks every value the device's id
+            // property has ever held, so this seek still finds deviceUid even though 'd-42' isn't its current
+            // identity; the interesting behaviour under test is entirely in getNodeWindow's re-validation.
+            stores.getPropertyIndex().insert(
+                    writer, deviceLabel, idKey, "d-42".getBytes(StandardCharsets.UTF_8), deviceUid);
+
+            stores.getOutEdges().insert(writer, deviceUid, connectedTo, accountUid, oldIdentityStart, Map.of());
+            stores.getInEdges().insert(writer, deviceUid, connectedTo, accountUid, oldIdentityStart, Map.of());
             return null;
         });
     }

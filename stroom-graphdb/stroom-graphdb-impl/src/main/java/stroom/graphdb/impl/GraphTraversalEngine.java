@@ -74,19 +74,24 @@ import java.util.function.Predicate;
  * compiles as a pattern's sole hop. Single-shard only (cross-shard is P8); streams {@code Val[]} rows - does not
  * itself build coprocessors (PoC.6 does that from these rows).</p>
  *
+ * <p><b>Temporal dispatch (Task P4.2):</b> every node lookup and hop expansion goes through a {@link
+ * TemporalAccess} - built once per {@link #execute} call from the plan's {@code TemporalContext} - so the rest
+ * of this class need not know whether it is running an {@code AS OF}/no-clause floor lookup or an
+ * {@code AROUND}/{@code BETWEEN} window-intersection scan (Task P4.1's {@code *Window} DAO methods). Per the
+ * P0.3 frozen rule, a single query's temporal clause applies uniformly to the anchor and every hop - there is no
+ * per-hop-differing mode.</p>
+ *
  * <p><b>Deliberately unsupported here (throws {@link UnsupportedOperationException} rather than a wrong
  * result)</b>: an anchor {@link NodeScan} with no label or no property predicate (the property index has no
- * "all nodes of this label" scan - only equality lookups); {@code AROUND}/{@code BETWEEN} temporal clauses (P0.3
- * resolved these as a window-intersection scan, a P4 deliverable - this engine only performs the as-of floor
- * lookup PoC.4's stores implement); a {@code RETURN} item other than a bare property/variable reference (a
- * literal, aggregate, or function call needs the full {@code ExpressionParser}, not wired to a graph row here).
- * Each hop's non-anchor node's own labels/properties (Task P3.1) are enforced as a post-expand filter in
- * {@link #acceptChainNeighbour}/{@link #expandVarLength}, exactly mirroring how {@link #resolveAnchors} validates
- * an anchor's property predicate - not an alternative access path, since a neighbour is always reached via the
- * edge. The outer {@code WHERE} predicate is evaluated only once a row carries every hop's bound variable, i.e.
- * only after the pattern's last (fixed-length) hop (Task P3.2), or at every depth within
- * {@code [minHops, maxHops]} for a var-length hop (Task P3.3) - matching how a single-hop plan already evaluated
- * it against the fully merged anchor+target row, not a per-hop partial evaluation.</p>
+ * "all nodes of this label" scan - only equality lookups); a {@code RETURN} item other than a bare
+ * property/variable reference (a literal, aggregate, or function call needs the full {@code ExpressionParser},
+ * not wired to a graph row here). Each hop's non-anchor node's own labels/properties (Task P3.1) are enforced as
+ * a post-expand filter in {@link #acceptChainNeighbour}/{@link #expandVarLength}, exactly mirroring how
+ * {@link #resolveAnchors} validates an anchor's property predicate - not an alternative access path, since a
+ * neighbour is always reached via the edge. The outer {@code WHERE} predicate is evaluated only once a row
+ * carries every hop's bound variable, i.e. only after the pattern's last (fixed-length) hop (Task P3.2), or at
+ * every depth within {@code [minHops, maxHops]} for a var-length hop (Task P3.3) - matching how a single-hop
+ * plan already evaluated it against the fully merged anchor+target row, not a per-hop partial evaluation.</p>
  */
 public final class GraphTraversalEngine {
 
@@ -120,7 +125,7 @@ public final class GraphTraversalEngine {
         Objects.requireNonNull(plan, "plan");
         Objects.requireNonNull(dateTimeSettings, "dateTimeSettings");
 
-        final Instant asOf = resolveAsOf(temporalContext);
+        final TemporalAccess access = resolveAccess(temporalContext);
         final PlanShape shape = unwrap(plan);
 
         final Predicate<Map<String, Val>> wherePredicate = shape.where == null
@@ -132,21 +137,21 @@ public final class GraphTraversalEngine {
         final List<Map<String, Val>> rows = new ArrayList<>();
 
         if (shape.varLengthExpand != null) {
-            for (final long anchorUid : resolveAnchors(readTxn, shape.nodeScan, asOf)) {
-                final Optional<GraphNodeDb.NodeVersion> anchor = stores.getNodes().getNode(readTxn, anchorUid, asOf);
+            for (final long anchorUid : resolveAnchors(readTxn, shape.nodeScan, access)) {
+                final Optional<GraphNodeDb.NodeVersion> anchor = access.getNode(readTxn, anchorUid);
                 if (anchor.isEmpty()) {
                     continue;
                 }
                 final Map<String, Val> anchorRow = rowFor(shape.nodeScan.variable(), anchor.get().properties());
                 expandVarLength(
-                        readTxn, anchorUid, asOf, shape.varLengthExpand, anchorRow, wherePredicate, rows);
+                        readTxn, anchorUid, access, shape.varLengthExpand, anchorRow, wherePredicate, rows);
             }
             return project(rows, shape.project);
         }
 
         List<Frontier> frontier = new ArrayList<>();
-        for (final long anchorUid : resolveAnchors(readTxn, shape.nodeScan, asOf)) {
-            final Optional<GraphNodeDb.NodeVersion> anchor = stores.getNodes().getNode(readTxn, anchorUid, asOf);
+        for (final long anchorUid : resolveAnchors(readTxn, shape.nodeScan, access)) {
+            final Optional<GraphNodeDb.NodeVersion> anchor = access.getNode(readTxn, anchorUid);
             if (anchor.isEmpty()) {
                 continue;
             }
@@ -167,7 +172,7 @@ public final class GraphTraversalEngine {
             final boolean isLastHop = i == shape.hops.size() - 1;
             final List<Frontier> next = new ArrayList<>();
             for (final Frontier f : frontier) {
-                expandChainHop(readTxn, f.nodeUid(), asOf, hop, f.row(), isLastHop, wherePredicate, next, rows);
+                expandChainHop(readTxn, f.nodeUid(), access, hop, f.row(), isLastHop, wherePredicate, next, rows);
             }
             frontier = next;
         }
@@ -179,7 +184,7 @@ public final class GraphTraversalEngine {
     private record Frontier(long nodeUid, Map<String, Val> row) {
     }
 
-    private void expandChainHop(final Txn<ByteBuffer> readTxn, final long fromUid, final Instant asOf,
+    private void expandChainHop(final Txn<ByteBuffer> readTxn, final long fromUid, final TemporalAccess access,
                                 final Expand hop, final Map<String, Val> rowSoFar, final boolean isLastHop,
                                 final Predicate<Map<String, Val>> wherePredicate, final List<Frontier> nextFrontier,
                                 final List<Map<String, Val>> finalRows) {
@@ -199,31 +204,26 @@ public final class GraphTraversalEngine {
         }
 
         final Consumer<Long> onNeighbourUid = neighbourUid -> acceptChainNeighbour(
-                readTxn, neighbourUid, asOf, hop, rowSoFar, isLastHop, wherePredicate, nextFrontier, finalRows);
+                readTxn, neighbourUid, access, hop, rowSoFar, isLastHop, wherePredicate, nextFrontier, finalRows);
 
         // Task P1.1: dispatch on Expand.direction() - previously this always read the out-edge store regardless
         // of direction, so a Cypher <-[:TYPE]- or -[:TYPE]- pattern silently executed as -[:TYPE]->.
         switch (hop.direction()) {
-            case OUT -> stores.getOutEdges().expandOut(
-                    readTxn, fromUid, edgeTypeUid, asOf, neighbour -> onNeighbourUid.accept(neighbour.dstUid()));
-            case IN -> stores.getInEdges().expandIn(
-                    readTxn, fromUid, edgeTypeUid, asOf, neighbour -> onNeighbourUid.accept(neighbour.srcUid()));
+            case OUT -> access.expandOut(readTxn, fromUid, edgeTypeUid, onNeighbourUid);
+            case IN -> access.expandIn(readTxn, fromUid, edgeTypeUid, onNeighbourUid);
             case BOTH -> {
-                stores.getOutEdges().expandOut(
-                        readTxn, fromUid, edgeTypeUid, asOf,
-                        neighbour -> onNeighbourUid.accept(neighbour.dstUid()));
-                stores.getInEdges().expandIn(
-                        readTxn, fromUid, edgeTypeUid, asOf,
-                        neighbour -> onNeighbourUid.accept(neighbour.srcUid()));
+                access.expandOut(readTxn, fromUid, edgeTypeUid, onNeighbourUid);
+                access.expandIn(readTxn, fromUid, edgeTypeUid, onNeighbourUid);
             }
         }
     }
 
-    private void acceptChainNeighbour(final Txn<ByteBuffer> readTxn, final long neighbourUid, final Instant asOf,
+    private void acceptChainNeighbour(final Txn<ByteBuffer> readTxn, final long neighbourUid,
+                                      final TemporalAccess access,
                                       final Expand hop, final Map<String, Val> rowSoFar, final boolean isLastHop,
                                       final Predicate<Map<String, Val>> wherePredicate,
                                       final List<Frontier> nextFrontier, final List<Map<String, Val>> finalRows) {
-        final Optional<GraphNodeDb.NodeVersion> target = stores.getNodes().getNode(readTxn, neighbourUid, asOf);
+        final Optional<GraphNodeDb.NodeVersion> target = access.getNode(readTxn, neighbourUid);
         if (target.isEmpty()
             || !matchesTargetConstraint(
                     readTxn, hop.targetLabels(), hop.targetPropertyPredicate(), target.get())) {
@@ -296,7 +296,7 @@ public final class GraphTraversalEngine {
      * enforces a finite {@code maxHops} - see its Javadoc), not by the cycle guard, which exists purely for
      * result correctness.</p>
      */
-    private void expandVarLength(final Txn<ByteBuffer> readTxn, final long anchorUid, final Instant asOf,
+    private void expandVarLength(final Txn<ByteBuffer> readTxn, final long anchorUid, final TemporalAccess access,
                                  final VarLengthExpand varLengthExpand, final Map<String, Val> anchorRow,
                                  final Predicate<Map<String, Val>> wherePredicate,
                                  final List<Map<String, Val>> rows) {
@@ -317,7 +317,7 @@ public final class GraphTraversalEngine {
 
         if (varLengthExpand.minHops() == 0) {
             // A zero-length path binds the target variable to the anchor node itself.
-            final Optional<GraphNodeDb.NodeVersion> anchorNode = stores.getNodes().getNode(readTxn, anchorUid, asOf);
+            final Optional<GraphNodeDb.NodeVersion> anchorNode = access.getNode(readTxn, anchorUid);
             anchorNode.ifPresent(node -> acceptVarLengthRow(readTxn, varLengthExpand, anchorRow, node,
                     wherePredicate, rows));
         }
@@ -328,14 +328,14 @@ public final class GraphTraversalEngine {
             for (final PathState state : frontier) {
                 final List<Long> neighbourUids = new ArrayList<>();
                 collectNeighbours(
-                        readTxn, state.nodeUid(), edgeTypeUid, asOf, varLengthExpand.direction(), neighbourUids::add);
+                        readTxn, state.nodeUid(), edgeTypeUid, access, varLengthExpand.direction(),
+                        neighbourUids::add);
 
                 for (final long neighbourUid : neighbourUids) {
                     if (state.visited().contains(neighbourUid)) {
                         continue;
                     }
-                    final Optional<GraphNodeDb.NodeVersion> target =
-                            stores.getNodes().getNode(readTxn, neighbourUid, asOf);
+                    final Optional<GraphNodeDb.NodeVersion> target = access.getNode(readTxn, neighbourUid);
                     if (target.isEmpty()) {
                         continue;
                     }
@@ -369,18 +369,15 @@ public final class GraphTraversalEngine {
         }
     }
 
-    private void collectNeighbours(final Txn<ByteBuffer> readTxn, final long fromUid, final long edgeTypeUid,
-                                   final Instant asOf, final Direction direction, final Consumer<Long> collector) {
+    private static void collectNeighbours(final Txn<ByteBuffer> readTxn, final long fromUid, final long edgeTypeUid,
+                                          final TemporalAccess access, final Direction direction,
+                                          final Consumer<Long> collector) {
         switch (direction) {
-            case OUT -> stores.getOutEdges().expandOut(
-                    readTxn, fromUid, edgeTypeUid, asOf, neighbour -> collector.accept(neighbour.dstUid()));
-            case IN -> stores.getInEdges().expandIn(
-                    readTxn, fromUid, edgeTypeUid, asOf, neighbour -> collector.accept(neighbour.srcUid()));
+            case OUT -> access.expandOut(readTxn, fromUid, edgeTypeUid, collector);
+            case IN -> access.expandIn(readTxn, fromUid, edgeTypeUid, collector);
             case BOTH -> {
-                stores.getOutEdges().expandOut(
-                        readTxn, fromUid, edgeTypeUid, asOf, neighbour -> collector.accept(neighbour.dstUid()));
-                stores.getInEdges().expandIn(
-                        readTxn, fromUid, edgeTypeUid, asOf, neighbour -> collector.accept(neighbour.srcUid()));
+                access.expandOut(readTxn, fromUid, edgeTypeUid, collector);
+                access.expandIn(readTxn, fromUid, edgeTypeUid, collector);
             }
         }
     }
@@ -389,7 +386,8 @@ public final class GraphTraversalEngine {
     // anchor resolution
     // ------------------------------------------------------------------------------------------------------
 
-    private List<Long> resolveAnchors(final Txn<ByteBuffer> readTxn, final NodeScan nodeScan, final Instant asOf) {
+    private List<Long> resolveAnchors(final Txn<ByteBuffer> readTxn, final NodeScan nodeScan,
+                                      final TemporalAccess access) {
         if (nodeScan.labels().isEmpty()) {
             throw new UnsupportedOperationException(
                     "not yet supported: an anchor MATCH requires at least one label to seek the property index "
@@ -431,7 +429,7 @@ public final class GraphTraversalEngine {
 
         final List<Long> matched = new ArrayList<>();
         for (final long candidate : candidates) {
-            final Optional<GraphNodeDb.NodeVersion> node = stores.getNodes().getNode(readTxn, candidate, asOf);
+            final Optional<GraphNodeDb.NodeVersion> node = access.getNode(readTxn, candidate);
             if (node.isEmpty() || !node.get().labelUids().containsAll(requiredLabelUids)) {
                 continue;
             }
@@ -569,15 +567,81 @@ public final class GraphTraversalEngine {
      */
     private static final Instant LATEST = Instant.ofEpochMilli((1L << 48) - 1);
 
-    private static Instant resolveAsOf(final @Nullable TemporalContext temporalContext) {
+    /**
+     * Task P4.2: the resolved, ready-to-execute form of a plan's temporal clause - a node lookup and a
+     * direction-agnostic hop expansion, already bound to either the as-of floor-lookup DAO methods or the
+     * window-intersection ones (Task P4.1), so the rest of this class ({@link #resolveAnchors},
+     * {@link #expandChainHop}/{@link #acceptChainNeighbour}, {@link #expandVarLength}/{@link #collectNeighbours})
+     * is written once against this interface and never branches on {@link TemporalContext.Mode} itself.
+     */
+    private interface TemporalAccess {
+
+        Optional<GraphNodeDb.NodeVersion> getNode(Txn<ByteBuffer> readTxn, long nodeUid);
+
+        void expandOut(Txn<ByteBuffer> readTxn, long srcUid, long edgeTypeUid, Consumer<Long> dstUidConsumer);
+
+        void expandIn(Txn<ByteBuffer> readTxn, long dstUid, long edgeTypeUid, Consumer<Long> srcUidConsumer);
+    }
+
+    private TemporalAccess asOfAccess(final Instant asOf) {
+        return new TemporalAccess() {
+            @Override
+            public Optional<GraphNodeDb.NodeVersion> getNode(final Txn<ByteBuffer> readTxn, final long nodeUid) {
+                return stores.getNodes().getNode(readTxn, nodeUid, asOf);
+            }
+
+            @Override
+            public void expandOut(final Txn<ByteBuffer> readTxn, final long srcUid, final long edgeTypeUid,
+                                  final Consumer<Long> dstUidConsumer) {
+                stores.getOutEdges().expandOut(
+                        readTxn, srcUid, edgeTypeUid, asOf, neighbour -> dstUidConsumer.accept(neighbour.dstUid()));
+            }
+
+            @Override
+            public void expandIn(final Txn<ByteBuffer> readTxn, final long dstUid, final long edgeTypeUid,
+                                 final Consumer<Long> srcUidConsumer) {
+                stores.getInEdges().expandIn(
+                        readTxn, dstUid, edgeTypeUid, asOf, neighbour -> srcUidConsumer.accept(neighbour.srcUid()));
+            }
+        };
+    }
+
+    private TemporalAccess windowAccess(final Instant from, final Instant to) {
+        return new TemporalAccess() {
+            @Override
+            public Optional<GraphNodeDb.NodeVersion> getNode(final Txn<ByteBuffer> readTxn, final long nodeUid) {
+                return stores.getNodes().getNodeWindow(readTxn, nodeUid, from, to);
+            }
+
+            @Override
+            public void expandOut(final Txn<ByteBuffer> readTxn, final long srcUid, final long edgeTypeUid,
+                                  final Consumer<Long> dstUidConsumer) {
+                stores.getOutEdges().expandOutWindow(readTxn, srcUid, edgeTypeUid, from, to,
+                        neighbour -> dstUidConsumer.accept(neighbour.dstUid()));
+            }
+
+            @Override
+            public void expandIn(final Txn<ByteBuffer> readTxn, final long dstUid, final long edgeTypeUid,
+                                 final Consumer<Long> srcUidConsumer) {
+                stores.getInEdges().expandInWindow(readTxn, dstUid, edgeTypeUid, from, to,
+                        neighbour -> srcUidConsumer.accept(neighbour.srcUid()));
+            }
+        };
+    }
+
+    /**
+     * Task P4.2: resolves a plan's temporal clause to a {@link TemporalAccess} - {@code AS OF}/no-clause become
+     * the as-of floor lookup at the resolved instant (no clause resolves to {@link #LATEST}, unchanged from
+     * before this task); {@code AROUND}/{@code BETWEEN} become the window-intersection lookup over
+     * {@code [temporalContext.from(), temporalContext.to()]} (Task P4.1) - previously rejected outright.
+     */
+    private TemporalAccess resolveAccess(final @Nullable TemporalContext temporalContext) {
         if (temporalContext == null) {
-            return LATEST;
+            return asOfAccess(LATEST);
         }
         return switch (temporalContext.mode()) {
-            case AS_OF -> temporalContext.instant();
-            case AROUND, BETWEEN -> throw new UnsupportedOperationException(
-                    "not yet supported: AROUND/BETWEEN window-intersection scans are a P4 deliverable (P0.3) - "
-                    + "this PoC.5 engine only performs the as-of floor lookup PoC.4's stores implement");
+            case AS_OF -> asOfAccess(temporalContext.instant());
+            case AROUND, BETWEEN -> windowAccess(temporalContext.from(), temporalContext.to());
         };
     }
 }
