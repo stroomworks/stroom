@@ -70,8 +70,9 @@ import java.util.function.Predicate;
  * resolved these as a window-intersection scan, a P4 deliverable - this engine only performs the as-of floor
  * lookup PoC.4's stores implement); a {@code RETURN} item other than a bare property/variable reference (a
  * literal, aggregate, or function call needs the full {@code ExpressionParser}, not wired to a graph row here).
- * A hop's non-anchor node's own labels/properties are not enforced, matching {@code CypherToLogicalPlan}'s own
- * documented PoC limitation.</p>
+ * A hop's non-anchor node's own labels/properties (Task P3.1) are enforced as a post-expand filter in
+ * {@link #acceptNeighbour}, exactly mirroring how {@link #resolveAnchors} validates an anchor's property
+ * predicate - not an alternative access path, since the neighbour is always reached via the edge.</p>
  */
 public final class GraphTraversalEngine {
 
@@ -178,7 +179,7 @@ public final class GraphTraversalEngine {
                                  final Expand expand, final Map<String, Val> anchorRow,
                                  final Predicate<Map<String, Val>> wherePredicate, final List<Map<String, Val>> rows) {
         final Optional<GraphNodeDb.NodeVersion> target = stores.getNodes().getNode(readTxn, neighbourUid, asOf);
-        if (target.isEmpty()) {
+        if (target.isEmpty() || !matchesTargetConstraint(readTxn, expand, target.get())) {
             return;
         }
         final Map<String, Val> row = new HashMap<>(anchorRow);
@@ -186,6 +187,34 @@ public final class GraphTraversalEngine {
         if (wherePredicate.test(row)) {
             rows.add(row);
         }
+    }
+
+    /**
+     * Task P3.1: checks a reached neighbour node against its hop's own {@code targetLabels}/
+     * {@code targetPropertyPredicate} - before this, a pattern like {@code -[:T]->(b:Account {status:'active'})}
+     * silently never checked {@code b}'s constraint at all.
+     */
+    private boolean matchesTargetConstraint(final Txn<ByteBuffer> readTxn, final Expand expand,
+                                            final GraphNodeDb.NodeVersion target) {
+        for (final String label : expand.targetLabels()) {
+            final Optional<Long> labelUid = lookupUid(readTxn, stores.getLabelUids(), label);
+            if (labelUid.isEmpty() || !target.labelUids().contains(labelUid.get())) {
+                return false;
+            }
+        }
+        if (expand.targetPropertyPredicate() != null) {
+            // Mirrors resolveAnchors()'s own re-validation: targetPropertyPredicate's terms are unqualified
+            // (e.g. "status", not "b.status"), so test them directly against the node's bare-named properties,
+            // not the "variable.property"-keyed row rowFor() builds.
+            final Predicate<Map<String, Val>> propertyPredicate = expressionPredicateFactory
+                    .createOptional(
+                            expand.targetPropertyPredicate(), rowAccessors(), DateTimeSettings.builder().build())
+                    .orElse(row -> true);
+            if (!propertyPredicate.test(target.properties())) {
+                return false;
+            }
+        }
+        return true;
     }
 
     // ------------------------------------------------------------------------------------------------------

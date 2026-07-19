@@ -82,6 +82,35 @@ class TestCypherToLogicalPlan {
     }
 
     @Test
+    void hopTargetLabelAndProperty_compileOntoTheExpandNode() {
+        // Task P3.1: before this, the hop target's own label/property constraint had no slot in the compiled
+        // plan at all and was silently dropped - see Expand's Javadoc for why this belongs on Expand, not
+        // NodeScan.
+        final CompiledCypherPlan compiled = compile(
+                "MATCH (d:Device)-[:CONNECTED_TO]->(a:Account {status: 'active'}) RETURN a.id");
+
+        final Project project = (Project) compiled.plan();
+        final Expand expand = (Expand) project.input();
+        assertThat(expand.targetLabels()).containsExactly("Account");
+        assertThat(expand.targetPropertyPredicate()).isNotNull();
+        assertThat(expand.targetPropertyPredicate().getChildren()).hasSize(1);
+        final ExpressionTerm term = (ExpressionTerm) expand.targetPropertyPredicate().getChildren().getFirst();
+        assertThat(term.getField()).isEqualTo("status");
+        assertThat(term.getCondition()).isEqualTo(Condition.EQUALS);
+        assertThat(term.getValue()).isEqualTo("active");
+    }
+
+    @Test
+    void hopTargetWithNoLabelOrProperty_compilesToEmptyConstraint() {
+        final CompiledCypherPlan compiled = compile("MATCH (d:Device)-[:CONNECTED_TO]->(a) RETURN a.id");
+
+        final Project project = (Project) compiled.plan();
+        final Expand expand = (Expand) project.input();
+        assertThat(expand.targetLabels()).isEmpty();
+        assertThat(expand.targetPropertyPredicate()).isNull();
+    }
+
+    @Test
     void bareAnchorWithNoHop_compilesToProjectNodeScan() {
         final CompiledCypherPlan compiled = compile("MATCH (n:Account) RETURN n");
 

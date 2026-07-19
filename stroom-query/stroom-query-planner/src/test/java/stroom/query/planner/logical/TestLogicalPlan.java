@@ -173,8 +173,10 @@ class TestLogicalPlan {
                         .build()))
                 .build();
         final NodeScan device = new NodeScan("d", List.of("Device"), propertyAnchor, POS);
-        final Expand toAccount = new Expand(device, "CONNECTED_TO", Direction.OUT, "a", POS);
-        final VarLengthExpand toGroups = new VarLengthExpand(toAccount, "MEMBER_OF", Direction.OUT, 1, 3, "g", POS);
+        final Expand toAccount = new Expand(
+                device, "CONNECTED_TO", Direction.OUT, "a", List.of("Account"), propertyAnchor, POS);
+        final VarLengthExpand toGroups = new VarLengthExpand(
+                toAccount, "MEMBER_OF", Direction.OUT, 1, 3, "g", List.of("Group"), null, POS);
 
         assertThat(toAccount.input()).isSameAs(device);
         assertThat(toGroups.input()).isSameAs(toAccount);
@@ -184,8 +186,12 @@ class TestLogicalPlan {
         assertThat(toAccount.edgeType()).isEqualTo("CONNECTED_TO");
         assertThat(toAccount.direction()).isEqualTo(Direction.OUT);
         assertThat(toAccount.targetVariable()).isEqualTo("a");
+        assertThat(toAccount.targetLabels()).containsExactly("Account");
+        assertThat(toAccount.targetPropertyPredicate()).isSameAs(propertyAnchor);
         assertThat(toGroups.minHops()).isEqualTo(1);
         assertThat(toGroups.maxHops()).isEqualTo(3);
+        assertThat(toGroups.targetLabels()).containsExactly("Group");
+        assertThat(toGroups.targetPropertyPredicate()).isNull();
 
         final List<LogicalPlan> allNodes = List.of(device, toAccount, toGroups);
         assertThat(allNodes).allSatisfy(node -> assertThat(node.position()).isSameAs(POS));
@@ -198,13 +204,20 @@ class TestLogicalPlan {
         assertThatNullPointerException().isThrownBy(() -> new NodeScan(null, List.of(), null, POS));
         assertThatNullPointerException().isThrownBy(() -> new NodeScan("d", null, null, POS));
         assertThatNullPointerException().isThrownBy(() -> new NodeScan("d", List.of(), null, null));
-        assertThatNullPointerException().isThrownBy(() -> new Expand(null, "T", Direction.OUT, "a", POS));
-        assertThatNullPointerException().isThrownBy(() -> new Expand(device, "T", null, "a", POS));
-        assertThatNullPointerException().isThrownBy(() -> new Expand(device, "T", Direction.OUT, null, POS));
         assertThatNullPointerException().isThrownBy(
-                () -> new VarLengthExpand(null, "T", Direction.OUT, 1, 2, "a", POS));
+                () -> new Expand(null, "T", Direction.OUT, "a", List.of(), null, POS));
         assertThatNullPointerException().isThrownBy(
-                () -> new VarLengthExpand(device, "T", null, 1, 2, "a", POS));
+                () -> new Expand(device, "T", null, "a", List.of(), null, POS));
+        assertThatNullPointerException().isThrownBy(
+                () -> new Expand(device, "T", Direction.OUT, null, List.of(), null, POS));
+        assertThatNullPointerException().isThrownBy(
+                () -> new Expand(device, "T", Direction.OUT, "a", null, null, POS));
+        assertThatNullPointerException().isThrownBy(
+                () -> new VarLengthExpand(null, "T", Direction.OUT, 1, 2, "a", List.of(), null, POS));
+        assertThatNullPointerException().isThrownBy(
+                () -> new VarLengthExpand(device, "T", null, 1, 2, "a", List.of(), null, POS));
+        assertThatNullPointerException().isThrownBy(
+                () -> new VarLengthExpand(device, "T", Direction.OUT, 1, 2, "a", null, null, POS));
     }
 
     @Test
@@ -212,9 +225,22 @@ class TestLogicalPlan {
         final NodeScan device = new NodeScan("d", List.of("Device"), null, POS);
 
         assertThatIllegalArgumentException().isThrownBy(
-                () -> new VarLengthExpand(device, "T", Direction.OUT, -1, 2, "a", POS));
+                () -> new VarLengthExpand(device, "T", Direction.OUT, -1, 2, "a", List.of(), null, POS));
         assertThatIllegalArgumentException().isThrownBy(
-                () -> new VarLengthExpand(device, "T", Direction.OUT, 3, 2, "a", POS));
+                () -> new VarLengthExpand(device, "T", Direction.OUT, 3, 2, "a", List.of(), null, POS));
+    }
+
+    @Test
+    void expand_targetLabelsAreDefensivelyCopiedAndImmutable() {
+        final NodeScan device = new NodeScan("d", List.of("Device"), null, POS);
+        final List<String> mutableLabels = new ArrayList<>(List.of("Account"));
+
+        final Expand expand = new Expand(device, "T", Direction.OUT, "a", mutableLabels, null, POS);
+        mutableLabels.add("Other");
+
+        assertThat(expand.targetLabels()).containsExactly("Account");
+        assertThatThrownBy(() -> expand.targetLabels().add("Other"))
+                .isInstanceOf(UnsupportedOperationException.class);
     }
 
     @Test

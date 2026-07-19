@@ -86,9 +86,10 @@ public final class AutoWhereFilterSplitRule implements RewriteRule {
             // equivalent split to perform, so leave them unchanged, recursing through the wrappers.
             case final NodeScan ns -> ns;
             case final Expand e -> new Expand(apply(e.input()), e.edgeType(), e.direction(), e.targetVariable(),
-                    e.position());
+                    e.targetLabels(), e.targetPropertyPredicate(), e.position());
             case final VarLengthExpand vle -> new VarLengthExpand(apply(vle.input()), vle.edgeType(),
-                    vle.direction(), vle.minHops(), vle.maxHops(), vle.targetVariable(), vle.position());
+                    vle.direction(), vle.minHops(), vle.maxHops(), vle.targetVariable(), vle.targetLabels(),
+                    vle.targetPropertyPredicate(), vle.position());
         };
     }
 

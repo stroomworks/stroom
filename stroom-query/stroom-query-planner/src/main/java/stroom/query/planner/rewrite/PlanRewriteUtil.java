@@ -77,18 +77,23 @@ final class PlanRewriteUtil {
                     w.usingFunction(), w.position());
             case final Sort s -> new Sort(mapPredicates(s.input(), transform), s.keys(), s.position());
             case final Limit l -> new Limit(mapPredicates(l.input(), transform), l.values(), l.position());
-            // Graph nodes (Task PoC.2): a NodeScan's property anchor IS a predicate in this sense, so transform
-            // it like any other optional predicate slot; Expand/VarLengthExpand carry no predicate of their own.
+            // Graph nodes (Task PoC.2/P3.1): a NodeScan's property anchor, and an Expand/VarLengthExpand's
+            // target property predicate, ARE predicates in this sense, so transform them like any other
+            // optional predicate slot.
             case final NodeScan ns -> new NodeScan(
                     ns.variable(), ns.labels(),
                     ns.propertyAnchor() == null ? null : transform.apply(ns.propertyAnchor()),
                     ns.position());
             case final Expand e -> new Expand(
                     mapPredicates(e.input(), transform), e.edgeType(), e.direction(), e.targetVariable(),
+                    e.targetLabels(),
+                    e.targetPropertyPredicate() == null ? null : transform.apply(e.targetPropertyPredicate()),
                     e.position());
             case final VarLengthExpand vle -> new VarLengthExpand(
                     mapPredicates(vle.input(), transform), vle.edgeType(), vle.direction(),
-                    vle.minHops(), vle.maxHops(), vle.targetVariable(), vle.position());
+                    vle.minHops(), vle.maxHops(), vle.targetVariable(), vle.targetLabels(),
+                    vle.targetPropertyPredicate() == null ? null : transform.apply(vle.targetPropertyPredicate()),
+                    vle.position());
         };
     }
 

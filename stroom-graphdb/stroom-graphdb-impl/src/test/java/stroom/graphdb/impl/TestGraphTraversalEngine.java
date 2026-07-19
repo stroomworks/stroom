@@ -153,6 +153,60 @@ class TestGraphTraversalEngine {
     }
 
     @Test
+    void hopTargetLabelConstraint_filtersOutNeighboursMissingThatLabel(@TempDir final Path root) {
+        // Task P3.1: before this, a hop target's own label constraint was silently unenforced - a query like
+        // this one would previously have returned both accounts, not just the one carrying both labels.
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph7"), DOC)) {
+            seedDeviceConnectedToAccounts(stores);
+
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory());
+            final CompiledCypherPlan compiled = compile(
+                    "MATCH (d:Device {id: 'd-42'})-[:CONNECTED_TO]->(a:Account:Premium) RETURN a.id");
+
+            final List<Val[]> rows = stores.read(readTxn ->
+                    engine.execute(readTxn, compiled.plan(), compiled.temporalContext(),
+                            DateTimeSettings.builder().build()));
+            assertThat(rows).extracting(row -> row[0].toString()).containsExactly("account-b");
+        }
+    }
+
+    @Test
+    void hopTargetLabelConstraint_unknownLabelYieldsNoRows(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph8"), DOC)) {
+            seedDeviceConnectedToAccounts(stores);
+
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory());
+            final CompiledCypherPlan compiled = compile(
+                    "MATCH (d:Device {id: 'd-42'})-[:CONNECTED_TO]->(a:NoSuchLabel) RETURN a.id");
+
+            final List<Val[]> rows = stores.read(readTxn ->
+                    engine.execute(readTxn, compiled.plan(), compiled.temporalContext(),
+                            DateTimeSettings.builder().build()));
+            assertThat(rows).isEmpty();
+        }
+    }
+
+    @Test
+    void hopTargetPropertyConstraint_filtersOutNeighboursNotMatchingIt(@TempDir final Path root) {
+        // Task P3.1: before this, a hop target's own inline property map was silently unenforced.
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph9"), DOC)) {
+            seedDeviceConnectedToAccounts(stores);
+
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory());
+            final CompiledCypherPlan compiled = compile(
+                    "MATCH (d:Device {id: 'd-42'})-[:CONNECTED_TO]->(a:Account {balance: 200}) RETURN a.id");
+
+            final List<Val[]> rows = stores.read(readTxn ->
+                    engine.execute(readTxn, compiled.plan(), compiled.temporalContext(),
+                            DateTimeSettings.builder().build()));
+            assertThat(rows).extracting(row -> row[0].toString()).containsExactly("account-b");
+        }
+    }
+
+    @Test
     void undirectedMatchReturn_yieldsTheUnionOfBothDirections(@TempDir final Path root) {
         try (GraphStores stores = GraphStores.provision(root.resolve("graph6"), DOC)) {
             seedDeviceConnectedToAccounts(stores);
@@ -179,6 +233,7 @@ class TestGraphTraversalEngine {
     private static void seedDeviceConnectedToAccounts(final GraphStores stores) {
         final long deviceLabel = intern(stores, stores.getLabelUids(), "Device");
         final long accountLabel = intern(stores, stores.getLabelUids(), "Account");
+        final long premiumLabel = intern(stores, stores.getLabelUids(), "Premium");
         final long idKey = intern(stores, stores.getPropertyKeyUids(), "id");
         final long connectedTo = intern(stores, stores.getEdgeTypeUids(), "CONNECTED_TO");
 
@@ -192,7 +247,7 @@ class TestGraphTraversalEngine {
                     writer, deviceUid, T1, List.of(deviceLabel), Map.of("id", ValString.create("d-42")));
             stores.getNodes().insert(writer, accountAUid, T1, List.of(accountLabel),
                     Map.of("id", ValString.create("account-a"), "balance", ValLong.create(50)));
-            stores.getNodes().insert(writer, accountBUid, T1, List.of(accountLabel),
+            stores.getNodes().insert(writer, accountBUid, T1, List.of(accountLabel, premiumLabel),
                     Map.of("id", ValString.create("account-b"), "balance", ValLong.create(200)));
             stores.getNodes().insert(
                     writer, gatewayUid, T1, List.of(deviceLabel), Map.of("id", ValString.create("gw-1")));

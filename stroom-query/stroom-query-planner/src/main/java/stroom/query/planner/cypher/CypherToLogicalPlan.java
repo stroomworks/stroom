@@ -67,6 +67,8 @@ import stroom.query.planner.logical.QualifiedField;
 import stroom.query.planner.logical.Sort;
 import stroom.query.planner.logical.SortKey;
 
+import org.jspecify.annotations.Nullable;
+
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -88,15 +90,17 @@ import java.util.Objects;
  * genuine gap tracked for a later phase, not silently wrong: such a query still compiles, but does not yet group
  * distinct combinations of the non-aggregate columns).</p>
  *
+ * <p>A hop's target (non-anchor) node pattern's own labels/inline properties (Task P3.1) compile onto
+ * {@link Expand#targetLabels()}/{@link Expand#targetPropertyPredicate()} using the same property-term lowering
+ * as an anchor's own {@link NodeScan#propertyAnchor()} - the executor enforces these as a post-expand filter
+ * (see {@link Expand}'s Javadoc for why a target constraint is a filter, not an alternative access path).</p>
+ *
  * <p><b>What this class deliberately does NOT lower</b> (throws {@link CypherCompileException} instead of
  * guessing): more than one {@link AstMatch}/{@link AstWith} reading clause; a path pattern with more than one
- * hop; a hop with a variable-length ({@code *min..max}) edge; a {@code WHERE} comparison between two field
- * references (only field-vs-literal comparisons compile); a hop's non-anchor (target) node pattern's own labels
- * or inline properties, which - matching the design doc's own worked compilation example verbatim - are not yet
- * represented in the compiled plan and are silently not enforced (a known PoC limitation: the compiled
- * {@link Expand} node has no slot for a target node's label/property constraint until the traversal executor's
- * node representation is fixed in PoC.4/PoC.5). All of the above are accepted by {@code Cypher.g4} (per the
- * P0.2-locked v1 subset) but are out of this PoC's compiled shape; they are progressively tightened in P3.</p>
+ * hop (Task P3.2); a hop with a variable-length ({@code *min..max}) edge (Task P3.3); a {@code WHERE} comparison
+ * between two field references (only field-vs-literal comparisons compile). All of the above are accepted by
+ * {@code Cypher.g4} (per the P0.2-locked v1 subset) but are out of this class's compiled shape; they are
+ * progressively tightened across P3's tasks.</p>
  */
 public final class CypherToLogicalPlan {
 
@@ -173,8 +177,6 @@ public final class CypherToLogicalPlan {
                     "not in PoC subset: variable-length paths are not yet compiled (P3)", edge.position());
         }
 
-        // The hop's target node's own labels/properties are not yet represented in the compiled plan - see
-        // this class's Javadoc for why (matches the design doc's worked compilation example verbatim).
         final String targetVariable = hop.node().variable() != null
                 ? hop.node().variable()
                 : nextAnonymousVariable();
@@ -184,27 +186,39 @@ public final class CypherToLogicalPlan {
                 edge.type(),
                 toDirection(edge.direction()),
                 targetVariable,
+                hop.node().labels(),
+                compilePropertyPredicate(hop.node().properties()),
                 hop.position());
         return new PatternResult(expand);
     }
 
     private NodeScan compileNodeScan(final AstNodePattern node) {
         final String variable = node.variable() != null ? node.variable() : nextAnonymousVariable();
+        return new NodeScan(variable, node.labels(), compilePropertyPredicate(node.properties()), node.position());
+    }
 
-        ExpressionOperator propertyAnchor = null;
-        if (!node.properties().isEmpty()) {
-            final List<ExpressionTerm> terms = new ArrayList<>(node.properties().size());
-            for (final AstPropertyKeyValue property : node.properties()) {
-                terms.add(ExpressionTerm.builder()
-                        .field(property.key())
-                        .condition(Condition.EQUALS)
-                        .value(renderLiteralValue(property.value()))
-                        .build());
-            }
-            propertyAnchor = ExpressionOperator.builder().op(Op.AND).addTerms(terms).build();
+    /**
+     * Lowers a node pattern's inline {@code {key: value, ...}} property map to an equality predicate tree, shared
+     * between an anchor's {@link NodeScan#propertyAnchor()} and a hop target's
+     * {@link Expand#targetPropertyPredicate()} (Task P3.1) - both are the same AND-of-equalities shape, just
+     * consumed differently by the executor (an anchor seeks by it; a target filters by it post-expand).
+     *
+     * @param properties never null; possibly empty.
+     * @return {@code null} if {@code properties} is empty, otherwise never null.
+     */
+    private static @Nullable ExpressionOperator compilePropertyPredicate(final List<AstPropertyKeyValue> properties) {
+        if (properties.isEmpty()) {
+            return null;
         }
-
-        return new NodeScan(variable, node.labels(), propertyAnchor, node.position());
+        final List<ExpressionTerm> terms = new ArrayList<>(properties.size());
+        for (final AstPropertyKeyValue property : properties) {
+            terms.add(ExpressionTerm.builder()
+                    .field(property.key())
+                    .condition(Condition.EQUALS)
+                    .value(renderLiteralValue(property.value()))
+                    .build());
+        }
+        return ExpressionOperator.builder().op(Op.AND).addTerms(terms).build();
     }
 
     private String nextAnonymousVariable() {

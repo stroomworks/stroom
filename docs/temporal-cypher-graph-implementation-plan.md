@@ -983,6 +983,14 @@ Contract/Done-when/Verify shape.
 - **Done-when**: `MATCH (d:Device {id:'d-42'})-[:CONNECTED_TO]->(a:Account {status:'active'})RETURN a.id` against
   a fixture with one active and one inactive reachable account returns only the active one.
 - **Verify**: `./gradlew :stroom-query:stroom-query-planner:test :stroom-graphdb:stroom-graphdb-impl:test`.
+- **Status: done (2026-07-19).** `Expand`/`VarLengthExpand` both carry `targetLabels`/`targetPropertyPredicate`
+  (added to both together, to touch `PlanRewriteUtil`/`PushFiltersBelowJoinsRule`/`AutoWhereFilterSplitRule`'s
+  positional reconstructions only once). `CypherToLogicalPlan` populates them via a `compilePropertyPredicate`
+  helper extracted from `compileNodeScan`'s existing term-building logic. `GraphTraversalEngine.acceptNeighbour`
+  enforces them via a new `matchesTargetConstraint` method, mirroring `resolveAnchors`'s own bare-unqualified-
+  field-name handling. Tests: `TestCypherToLogicalPlan` (compiles labels/predicate onto `Expand`, and the empty
+  case), `TestLogicalPlan` (record contract - null-rejection, defensive copy), `TestGraphTraversalEngine` (three
+  new execution tests: a real label match, an unknown-label no-match, and a property-value match) - all green.
 
 #### Task P3.2 — Multi-hop fixed-length chains
 - **Depends on**: P3.1 (a chain's non-terminal `Expand` nodes need the same target-constraint slot).
