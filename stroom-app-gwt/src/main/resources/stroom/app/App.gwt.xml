@@ -104,6 +104,7 @@
     <inherits name="stroom.pathways.Pathways" />
     <inherits name="stroom.planb.PlanB" />
     <inherits name="stroom.sqlstore.SqlTemporalStore" />
+    <inherits name="stroom.graphdb.GraphDb" />
     <inherits name="stroom.contentstore.ContentStore" />
     <inherits name="stroom.gitrepo.GitRepo" />
     <inherits name="stroom.credentials.Credentials"/>

@@ -120,6 +120,11 @@ public class DocumentTypeRegistry {
             "SqlTemporalStore",
             "SQL Temporal Store",
             SvgImage.DOCUMENT_SQL_TEMPORAL_STORE);
+    public static final DocumentType GRAPH_DB_DOCUMENT_TYPE = new DocumentType(
+            DocumentTypeGroup.INDEXING,
+            "GraphDb",
+            "Graph DB",
+            SvgImage.DOCUMENT_GRAPH_DB);
     public static final DocumentType DOCUMENTATION_DOCUMENT_TYPE = new DocumentType(
             DocumentTypeGroup.CONFIGURATION,
             "Documentation",
@@ -302,6 +307,7 @@ public class DocumentTypeRegistry {
         put(XSLT_DOCUMENT_TYPE);
         put(PATHWAYS_DOCUMENT_TYPE);
         put(SQL_TEMPORAL_STORE_DOCUMENT_TYPE);
+        put(GRAPH_DB_DOCUMENT_TYPE);
 
         // Searchables
         put(DUAL_DOCUMENT_TYPE);

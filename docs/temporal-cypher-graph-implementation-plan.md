@@ -1590,6 +1590,21 @@ complete; P6 (UI) is next, pending explicit go-ahead.
   a `DocumentType` with an icon via `DocumentTypeRegistry`.
 - **Verify**: `./gradlew :stroom-core-client:compileJava :stroom-core-shared:compileJava
   :stroom-app-gwt:compileJava` (see the honesty note above - this is a compilation check, not a UI test).
+- **Status: done (2026-07-19)**. `GRAPH_DB_DOCUMENT_TYPE` added to `DocumentTypeRegistry` (group `INDEXING`,
+  matching `PlanB`/`SqlTemporalStore`); `SvgImage.DOCUMENT_GRAPH_DB` + `document/GraphDb.svg` (both the
+  `raw-images` source and the `images` runtime copy) added, reusing the `SqlTemporalStore` icon's shape with a
+  distinct accent colour so it's visually distinguishable in the explorer. Full client file set added under
+  `stroom.graphdb.client.*` (`GraphDbPlugin`, `gin/GraphDbGinjector`+`GraphDbModule`, `presenter/GraphDbPresenter`
+  with the four standard tabs, `presenter/GraphDbSettingsPresenter`+`view/GraphDbSettingsViewImpl`+`.ui.xml`
+  scoped to a plain `description` field per the task's own scoping note, `presenter/GraphDbDataPresenter`
+  extending `AbstractQueryDataPresenter` with the design doc's worked-example Cypher query as the default and no
+  preferred columns), `GraphDb.gwt.xml` (copied from `SqlTemporalStore.gwt.xml`), and registration in
+  `App.gwt.xml`/`AppGinjectorUser.java` alongside the existing `PlanB`/`SqlTemporalStore` entries. All three
+  `compileJava` targets pass; `stroom-core-shared`/`stroom-app-gwt` checkstyle pass clean;
+  `stroom-core-client` checkstyle reports only the pre-existing, unrelated `FloorMapEditorHelp.java` trailing-
+  whitespace violation (predates this session, confirmed via `git log`) - every new/edited file in this task was
+  manually verified free of line-length/trailing-whitespace issues. As per the honesty note above, this is
+  `javac`-level verification only - no browser-based interactive check was performed or is claimed.
 
 **P6 exit gate**: a `GraphDbDoc` can be created from the explorer's "New" menu, opened in a tabbed editor, given a
 description, and its Data tab's default Cypher query returns real tabular rows against a populated graph (via

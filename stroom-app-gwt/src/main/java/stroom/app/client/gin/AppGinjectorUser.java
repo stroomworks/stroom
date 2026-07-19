@@ -76,6 +76,8 @@ import stroom.folder.client.gin.FolderGinjector;
 import stroom.folder.client.gin.FolderModule;
 import stroom.gitrepo.client.gin.GitRepoGinjector;
 import stroom.gitrepo.client.gin.GitRepoModule;
+import stroom.graphdb.client.gin.GraphDbGinjector;
+import stroom.graphdb.client.gin.GraphDbModule;
 import stroom.http.client.gin.HttpGinjector;
 import stroom.http.client.gin.HttpModule;
 import stroom.importexport.client.gin.ImportExportConfigGinjector;
@@ -193,6 +195,7 @@ import com.gwtplatform.mvp.client.proxy.PlaceManager;
         S3ConfigModule.class,
         PlanBModule.class,
         SqlTemporalStoreModule.class,
+        GraphDbModule.class,
         GitRepoModule.class
 })
 public interface AppGinjectorUser extends
@@ -235,6 +238,7 @@ public interface AppGinjectorUser extends
         ReportGinjector,
         SolrIndexGinjector,
         SqlTemporalStoreGinjector,
+        GraphDbGinjector,
         StatisticsGinjector,
         StreamStoreGinjector,
         TaskGinjector,
