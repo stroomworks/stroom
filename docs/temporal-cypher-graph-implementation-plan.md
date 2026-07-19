@@ -1076,12 +1076,31 @@ Contract/Done-when/Verify shape.
 - **Done-when**: `-[:T*1..k]->` over a cyclic fixture graph returns the correct, hand-computed finite reachable
   set with no timeout/stack overflow; `-[:T*2..3]->` excludes 1-hop neighbours.
 - **Verify**: `./gradlew :stroom-query:stroom-query-planner:test :stroom-graphdb:stroom-graphdb-impl:test`.
+- **Status: done (2026-07-19).** `VarLengthExpand` got the identical `targetLabels`/`targetPropertyPredicate`
+  fields `Expand` got in P3.1 (decided during P3.1 to avoid a second pass over the same rewrite-rule call
+  sites). `CypherToLogicalPlan.compilePattern` now compiles a single var-length hop to `VarLengthExpand`
+  (`minHops` defaults to 1 per Cypher's own convention when `AstVarLength.min()` is absent); a var-length hop
+  chained with any other hop still throws, with a message naming the actual restriction ("must be the pattern's
+  only hop"). `GraphTraversalEngine`'s `PlanShape` gained a `@Nullable VarLengthExpand varLengthExpand` field
+  (mutually exclusive with the fixed-length `hops` list, matching the compiler's own mutual exclusion);
+  `expandVarLength` performs the bounded BFS exactly as designed - each depth's neighbours are fully
+  materialised via one `expandOut`/`expandIn` call before recursing (never a nested cursor), a fresh
+  per-path `Set<Long> visited` guards against cycles (only within-path repeats are excluded; the same node at
+  two different depths, or via two different paths, is not deduplicated), and termination is guaranteed by the
+  `depth <= maxHops` loop bound alone - the cycle guard exists purely for result correctness, not termination.
+  `minHops == 0` (a zero-length path binding the target to the anchor itself) is also handled, though not
+  required by the Done-when criteria. Tests: 3 new `TestCypherToLogicalPlan` cases (compiles to `VarLengthExpand`
+  with the right bounds/labels, `min` omitted defaults to 1, chaining with another hop still throws); 3 new
+  `TestGraphTraversalEngine` cases - a genuine 3-node cycle proving termination and the correct finite reachable
+  set (no spurious repeated-cycle rows), a converging-paths fixture proving the same node at two depths yields
+  two rows, and the same fixture with `minHops=2` proving closer neighbours are excluded. All pre-existing tests
+  pass unchanged.
 
-**P3 exit gate**: `-[:T*1..k]->` returns correct paths with cycle safety over a real cyclic fixture, matching a
-hand-computed expected set; a fixed-length multi-hop chain (`-[:T1]->()-[:T2]->`) returns the correct row set;
+**P3 exit gate: met.** `-[:T*1..k]->` returns correct paths with cycle safety over a real cyclic fixture, matching
+a hand-computed expected set; a fixed-length multi-hop chain (`-[:T1]->()-[:T2]->`) returns the correct row set;
 a target (non-anchor) node's own label/property constraints are enforced, not silently ignored. Anchor-
 selectivity/start-node re-ordering remains out of scope (no genuine choice to make yet in this v1 subset - see
-Task P3.2's note).
+Task P3.2's note). P3 (Tasks P3.1-P3.3) is complete; P4 (Temporal ranges) is next, pending explicit go-ahead.
 
 ### P4 — Temporal ranges (5–10 pw) — *after 0.3*
 - **`AROUND ± d` / `BETWEEN`** window scans (interval intersection over the adjacency store's version runs, per P0.3's

@@ -29,6 +29,7 @@ import stroom.query.planner.logical.LogicalPlan;
 import stroom.query.planner.logical.NodeScan;
 import stroom.query.planner.logical.Project;
 import stroom.query.planner.logical.Sort;
+import stroom.query.planner.logical.VarLengthExpand;
 
 import org.junit.jupiter.api.Test;
 
@@ -245,9 +246,37 @@ class TestCypherToLogicalPlan {
     }
 
     @Test
-    void variableLengthPath_throwsNotInPoCSubset() {
+    void variableLengthPath_compilesToVarLengthExpandOverTheAnchor() {
+        // Task P3.3: before this, any variable-length hop was rejected outright.
+        final CompiledCypherPlan compiled = compile(
+                "MATCH (u:User {id: 'u-1'})-[:MEMBER_OF*1..3]->(g:Group) RETURN g.id");
+
+        final Project project = (Project) compiled.plan();
+        assertThat(project.input()).isInstanceOf(VarLengthExpand.class);
+        final VarLengthExpand varLengthExpand = (VarLengthExpand) project.input();
+        assertThat(varLengthExpand.edgeType()).isEqualTo("MEMBER_OF");
+        assertThat(varLengthExpand.direction()).isEqualTo(Direction.OUT);
+        assertThat(varLengthExpand.minHops()).isEqualTo(1);
+        assertThat(varLengthExpand.maxHops()).isEqualTo(3);
+        assertThat(varLengthExpand.targetVariable()).isEqualTo("g");
+        assertThat(varLengthExpand.targetLabels()).containsExactly("Group");
+        assertThat(varLengthExpand.input()).isInstanceOf(NodeScan.class);
+    }
+
+    @Test
+    void variableLengthPathWithNoMinBound_defaultsMinHopsToOne() {
+        final CompiledCypherPlan compiled = compile(
+                "MATCH (u:User {id: 'u-1'})-[:MEMBER_OF*..3]->(g:Group) RETURN g.id");
+
+        final VarLengthExpand varLengthExpand = (VarLengthExpand) ((Project) compiled.plan()).input();
+        assertThat(varLengthExpand.minHops()).isEqualTo(1);
+        assertThat(varLengthExpand.maxHops()).isEqualTo(3);
+    }
+
+    @Test
+    void variableLengthHopChainedWithAnotherHop_throwsNotInPoCSubset() {
         final AstCypherQuery ast = CypherQueryParser.parse(
-                "MATCH (u:User)-[:MEMBER_OF*1..3]->(g:Group) RETURN g.id");
+                "MATCH (u:User)-[:MEMBER_OF*1..3]->(g:Group)-[:HAS_OWNER]->(o:Owner) RETURN o.id");
 
         assertThatThrownBy(() -> new CypherToLogicalPlan().compile(ast))
                 .isInstanceOf(CypherCompileException.class)

@@ -269,6 +269,62 @@ class TestGraphTraversalEngine {
     }
 
     @Test
+    void variableLengthPath_overACyclicGraphTerminatesWithTheCorrectReachableSet(@TempDir final Path root) {
+        // Task P3.3: a genuine cycle (n1 -> n2 -> n3 -> n1). The maxHops bound alone guarantees termination,
+        // but the per-path visited-set cycle guard is what keeps the RESULT correct - without it, this would
+        // keep re-walking the cycle and emit spurious rows all the way out to depth 5.
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph13"), DOC)) {
+            seedCyclicChain(stores);
+
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory());
+            final CompiledCypherPlan compiled = compile(
+                    "MATCH (a:Node {id: 'n1'})-[:NEXT*1..5]->(b:Node) RETURN b.id");
+
+            final List<Val[]> rows = stores.read(readTxn ->
+                    engine.execute(readTxn, compiled.plan(), compiled.temporalContext(),
+                            DateTimeSettings.builder().build()));
+            assertThat(rows).extracting(row -> row[0].toString()).containsExactlyInAnyOrder("n2", "n3");
+        }
+    }
+
+    @Test
+    void variableLengthPath_sameNodeReachedAtTwoDepths_yieldsTwoRows(@TempDir final Path root) {
+        // Task P3.3: a -> x (1 hop) and a -> y -> x (2 hops) both reach x - Cypher path semantics (not
+        // deduplicated by node identity) mean x must appear twice, once per depth.
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph14"), DOC)) {
+            seedConvergingPaths(stores);
+
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory());
+            final CompiledCypherPlan compiled = compile(
+                    "MATCH (a:Node {id: 'a'})-[:T*1..3]->(b:Node) RETURN b.id");
+
+            final List<Val[]> rows = stores.read(readTxn ->
+                    engine.execute(readTxn, compiled.plan(), compiled.temporalContext(),
+                            DateTimeSettings.builder().build()));
+            assertThat(rows).extracting(row -> row[0].toString()).containsExactlyInAnyOrder("x", "y", "x");
+        }
+    }
+
+    @Test
+    void variableLengthPath_minHopsGreaterThanOne_excludesCloserNeighbours(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph15"), DOC)) {
+            seedConvergingPaths(stores);
+
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory());
+            final CompiledCypherPlan compiled = compile(
+                    "MATCH (a:Node {id: 'a'})-[:T*2..3]->(b:Node) RETURN b.id");
+
+            final List<Val[]> rows = stores.read(readTxn ->
+                    engine.execute(readTxn, compiled.plan(), compiled.temporalContext(),
+                            DateTimeSettings.builder().build()));
+            assertThat(rows).extracting(row -> row[0].toString()).containsExactly("x");
+        }
+    }
+
+    @Test
     void undirectedMatchReturn_yieldsTheUnionOfBothDirections(@TempDir final Path root) {
         try (GraphStores stores = GraphStores.provision(root.resolve("graph6"), DOC)) {
             seedDeviceConnectedToAccounts(stores);
@@ -389,6 +445,64 @@ class TestGraphTraversalEngine {
             stores.getInEdges().insert(writer, ownerXUid, employedBy, companyUid, T1, Map.of());
             stores.getOutEdges().insert(writer, ownerYUid, employedBy, companyUid, T1, Map.of());
             stores.getInEdges().insert(writer, ownerYUid, employedBy, companyUid, T1, Map.of());
+            return null;
+        });
+    }
+
+    /** Task P3.3's cyclic fixture: {@code n1 -NEXT-> n2 -NEXT-> n3 -NEXT-> n1}. */
+    private static void seedCyclicChain(final GraphStores stores) {
+        final long nodeLabel = intern(stores, stores.getLabelUids(), "Node");
+        final long idKey = intern(stores, stores.getPropertyKeyUids(), "id");
+        final long next = intern(stores, stores.getEdgeTypeUids(), "NEXT");
+
+        final long n1Uid = intern(stores, stores.getNodeUids(), "cycle-n1");
+        final long n2Uid = intern(stores, stores.getNodeUids(), "cycle-n2");
+        final long n3Uid = intern(stores, stores.getNodeUids(), "cycle-n3");
+
+        stores.write(writer -> {
+            stores.getNodes().insert(writer, n1Uid, T1, List.of(nodeLabel), Map.of("id", ValString.create("n1")));
+            stores.getNodes().insert(writer, n2Uid, T1, List.of(nodeLabel), Map.of("id", ValString.create("n2")));
+            stores.getNodes().insert(writer, n3Uid, T1, List.of(nodeLabel), Map.of("id", ValString.create("n3")));
+
+            stores.getPropertyIndex().insert(
+                    writer, nodeLabel, idKey, "n1".getBytes(StandardCharsets.UTF_8), n1Uid);
+
+            stores.getOutEdges().insert(writer, n1Uid, next, n2Uid, T1, Map.of());
+            stores.getInEdges().insert(writer, n1Uid, next, n2Uid, T1, Map.of());
+            stores.getOutEdges().insert(writer, n2Uid, next, n3Uid, T1, Map.of());
+            stores.getInEdges().insert(writer, n2Uid, next, n3Uid, T1, Map.of());
+            stores.getOutEdges().insert(writer, n3Uid, next, n1Uid, T1, Map.of());
+            stores.getInEdges().insert(writer, n3Uid, next, n1Uid, T1, Map.of());
+            return null;
+        });
+    }
+
+    /**
+     * Task P3.3's converging-paths fixture: {@code a -T-> x} (1 hop) and {@code a -T-> y -T-> x} (2 hops) both
+     * reach {@code x}, at two different depths, via two distinct paths.
+     */
+    private static void seedConvergingPaths(final GraphStores stores) {
+        final long nodeLabel = intern(stores, stores.getLabelUids(), "Node");
+        final long idKey = intern(stores, stores.getPropertyKeyUids(), "id");
+        final long edgeType = intern(stores, stores.getEdgeTypeUids(), "T");
+
+        final long aUid = intern(stores, stores.getNodeUids(), "conv-a");
+        final long xUid = intern(stores, stores.getNodeUids(), "conv-x");
+        final long yUid = intern(stores, stores.getNodeUids(), "conv-y");
+
+        stores.write(writer -> {
+            stores.getNodes().insert(writer, aUid, T1, List.of(nodeLabel), Map.of("id", ValString.create("a")));
+            stores.getNodes().insert(writer, xUid, T1, List.of(nodeLabel), Map.of("id", ValString.create("x")));
+            stores.getNodes().insert(writer, yUid, T1, List.of(nodeLabel), Map.of("id", ValString.create("y")));
+
+            stores.getPropertyIndex().insert(writer, nodeLabel, idKey, "a".getBytes(StandardCharsets.UTF_8), aUid);
+
+            stores.getOutEdges().insert(writer, aUid, edgeType, xUid, T1, Map.of());
+            stores.getInEdges().insert(writer, aUid, edgeType, xUid, T1, Map.of());
+            stores.getOutEdges().insert(writer, aUid, edgeType, yUid, T1, Map.of());
+            stores.getInEdges().insert(writer, aUid, edgeType, yUid, T1, Map.of());
+            stores.getOutEdges().insert(writer, yUid, edgeType, xUid, T1, Map.of());
+            stores.getInEdges().insert(writer, yUid, edgeType, xUid, T1, Map.of());
             return null;
         });
     }

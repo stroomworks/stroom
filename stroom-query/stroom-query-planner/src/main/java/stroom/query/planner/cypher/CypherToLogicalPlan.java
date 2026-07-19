@@ -45,6 +45,7 @@ import stroom.query.grammar.ast.cypher.AstOrderBy;
 import stroom.query.grammar.ast.cypher.AstOrderItem;
 import stroom.query.grammar.ast.cypher.AstParameterValue;
 import stroom.query.grammar.ast.cypher.AstPathPattern;
+import stroom.query.grammar.ast.cypher.AstPatternHop;
 import stroom.query.grammar.ast.cypher.AstPropertyAccessExpr;
 import stroom.query.grammar.ast.cypher.AstPropertyKeyValue;
 import stroom.query.grammar.ast.cypher.AstReadingClause;
@@ -53,6 +54,7 @@ import stroom.query.grammar.ast.cypher.AstReturnItem;
 import stroom.query.grammar.ast.cypher.AstStringValue;
 import stroom.query.grammar.ast.cypher.AstTemporal;
 import stroom.query.grammar.ast.cypher.AstValue;
+import stroom.query.grammar.ast.cypher.AstVarLength;
 import stroom.query.grammar.ast.cypher.AstVariableExpr;
 import stroom.query.grammar.ast.cypher.AstWith;
 import stroom.query.planner.logical.Direction;
@@ -66,6 +68,7 @@ import stroom.query.planner.logical.ProjectField;
 import stroom.query.planner.logical.QualifiedField;
 import stroom.query.planner.logical.Sort;
 import stroom.query.planner.logical.SortKey;
+import stroom.query.planner.logical.VarLengthExpand;
 
 import org.jspecify.annotations.Nullable;
 
@@ -94,14 +97,22 @@ import java.util.Objects;
  * query still compiles, but does not yet group distinct combinations of the non-aggregate columns).</p>
  *
  * <p>A hop's target (non-anchor) node pattern's own labels/inline properties (Task P3.1) compile onto
- * {@link Expand#targetLabels()}/{@link Expand#targetPropertyPredicate()} using the same property-term lowering
- * as an anchor's own {@link NodeScan#propertyAnchor()} - the executor enforces these as a post-expand filter
- * (see {@link Expand}'s Javadoc for why a target constraint is a filter, not an alternative access path). This
- * applies identically to every hop in a chain, not just the pattern's last one.</p>
+ * {@link Expand#targetLabels()}/{@link Expand#targetPropertyPredicate()} (or the {@link VarLengthExpand}
+ * equivalents) using the same property-term lowering as an anchor's own {@link NodeScan#propertyAnchor()} - the
+ * executor enforces these as a post-expand filter (see {@link Expand}'s Javadoc for why a target constraint is a
+ * filter, not an alternative access path). This applies identically to every hop in a chain, not just the
+ * pattern's last one.</p>
+ *
+ * <p>A bounded variable-length hop (Task P3.3), e.g. {@code -[:T*1..3]->}, compiles to a single
+ * {@link VarLengthExpand} directly over the anchor {@link NodeScan} - {@code minHops} defaults to 1 when
+ * {@link AstVarLength#min()} is absent (Cypher's own default), {@code maxHops} is always present (the grammar
+ * makes an unbounded {@code *} a parse-time error). A var-length hop is only compiled when it is the pattern's
+ * <em>sole</em> hop; chaining one with fixed-length hops on either side is a further generalisation this class
+ * does not attempt (see below).</p>
  *
  * <p><b>What this class deliberately does NOT lower</b> (throws {@link CypherCompileException} instead of
- * guessing): more than one {@link AstMatch}/{@link AstWith} reading clause; a hop with a variable-length
- * ({@code *min..max}) edge (Task P3.3); a {@code WHERE} comparison between two field references (only
+ * guessing): more than one {@link AstMatch}/{@link AstWith} reading clause; a variable-length hop chained
+ * alongside other hops in the same pattern; a {@code WHERE} comparison between two field references (only
  * field-vs-literal comparisons compile). All of the above are accepted by {@code Cypher.g4} (per the
  * P0.2-locked v1 subset) but are out of this class's compiled shape; they are progressively tightened across
  * P3's tasks.</p>
@@ -162,13 +173,20 @@ public final class CypherToLogicalPlan {
     }
 
     private PatternResult compilePattern(final AstPathPattern pattern) {
-        LogicalPlan plan = compileNodeScan(pattern.anchor());
+        final NodeScan anchor = compileNodeScan(pattern.anchor());
 
+        if (pattern.hops().size() == 1 && pattern.hops().getFirst().edge().varLength() != null) {
+            return new PatternResult(compileVarLengthExpand(anchor, pattern.hops().getFirst()));
+        }
+
+        LogicalPlan plan = anchor;
         for (final var hop : pattern.hops()) {
             final AstEdgePattern edge = hop.edge();
             if (edge.varLength() != null) {
                 throw new CypherCompileException(
-                        "not in PoC subset: variable-length paths are not yet compiled (P3)", edge.position());
+                        "not in PoC subset: chaining a variable-length hop with other hops in the same pattern "
+                        + "is not yet compiled - a variable-length hop must be the pattern's only hop",
+                        edge.position());
             }
 
             final String targetVariable = hop.node().variable() != null
@@ -185,6 +203,26 @@ public final class CypherToLogicalPlan {
                     hop.position());
         }
         return new PatternResult(plan);
+    }
+
+    private VarLengthExpand compileVarLengthExpand(final NodeScan anchor, final AstPatternHop hop) {
+        final AstEdgePattern edge = hop.edge();
+        final AstVarLength varLength = edge.varLength();
+        final String targetVariable = hop.node().variable() != null
+                ? hop.node().variable()
+                : nextAnonymousVariable();
+        final int minHops = varLength.min() != null ? varLength.min() : 1;
+
+        return new VarLengthExpand(
+                anchor,
+                edge.type(),
+                toDirection(edge.direction()),
+                minHops,
+                varLength.max(),
+                targetVariable,
+                hop.node().labels(),
+                compilePropertyPredicate(hop.node().properties()),
+                hop.position());
     }
 
     private NodeScan compileNodeScan(final AstNodePattern node) {
