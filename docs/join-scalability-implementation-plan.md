@@ -350,6 +350,41 @@ JoinType joinType, Consumer<Val[]> out)`; per probe row: build the key string (s
   `stroom-query-planner`, and `stroom-search:stroom-searchable-impl` (including the differential parity suites
   `TestQueryCompilerParity`/`TestQueryCompilerGenerativeParity`) with no regressions.
 
+### B1 — DONE (2026-07-20)
+
+- New `JoinExecutor.broadcastLookupJoin`: streams a probe side, doing one `StateFetcher.getState(...)` point
+  lookup per row instead of materialising the lookup side. Combined row is always `[probe…, Key, Value]`
+  (decision D5); `INNER` drops a miss/null-key, `LEFT` null-pads it; guarded by the same `maxOutputRows` cap as
+  `join(...)`, checked per row.
+- `JoinSearchProvider.detectPlanBLookupSide`: **structural** detection (decision D8) - exactly one equi-key, that
+  side's `DocRef.getType() == "PlanB"`, and the equi-key field is exactly `"Key"` - both constants duplicated as
+  literals rather than adding a `stroom-planb-impl` module dependency (the `StateFetcher` *interface* is already
+  visible via `stroom-query-language`; Guice resolves the real binding from `stroom-planb-impl`'s module without
+  a compile-time dependency). `joinAndFeed` dispatches to `joinAndFeedViaBroadcastLookup` (realises only the
+  probe side) or falls back to the original `joinAndFeedViaHashJoin`.
+- Known v1 limitations, both explicitly documented in code: (a) the underlying store's actual `stateType` isn't
+  checked (decision D6) - a `RANGED_STATE`/`SESSION` store would still be "detected" and then fail with whatever
+  exception `StateFetcher` throws for a mismatched key, always safely captured, just a less specific message;
+  (b) effective time (decision D7) is always `System.currentTimeMillis()` - "the query's own effective time" is a
+  documented follow-up, not implemented.
+- Tests: `TestJoinExecutor` (+10, now 35), `TestJoinSearchProvider` (+9, now 25) covering matching/miss/INNER/
+  LEFT/lookup-on-either-`JoinSpec`-side/`where`-clause-on-the-looked-up-value/both guardrails/non-`"Key"`-field
+  fallback/composite-key fallback - all green.
+
+### Task #18 — differential/parity test harness — DONE (2026-07-20)
+
+New `TestJoinPushDownDifferential` (5 tests): every other join test proves correctness against a fake
+`SearchProvider` that *ignores* the sub-request it's handed, which can never catch a bug in *what gets pushed*.
+This harness instead uses a `realisticFakeProvider` that genuinely evaluates each side's compiled `where` clause
+and column selection against a fixed in-memory table, then compares an "unoptimised" baseline (`select *`, no
+push, full residual) against the "optimised" shape (pushed filter + pruned select) for the same logical query,
+asserting byte-identical joined rows. Covers left-push/right-push under `INNER`, left-push under `LEFT` (the
+correctness-critical case), projection pruning alone, and push+prune combined. **Sanity-checked live**:
+deliberately corrupted a pushed predicate's value, confirmed the harness failed (caught it), then reverted and
+confirmed green - proving it is a real check, not a vacuous one.
+
+**v1 scope (Phase 0 + Phase 1 + B1 + the test harness) is now complete.**
+
 ---
 
 ## 11. Coding standards for implementation (required)

@@ -16,6 +16,7 @@
 
 package stroom.query.planner.join;
 
+import stroom.query.language.functions.StateFetcher;
 import stroom.query.language.functions.Val;
 import stroom.query.language.functions.ValNull;
 import stroom.query.planner.cost.JoinAlgorithm;
@@ -26,9 +27,11 @@ import org.jspecify.annotations.Nullable;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.Consumer;
 
 /**
  * Combines two already-realised row sets into joined {@code Val[]} rows - pure JVM logic, no I/O, following the
@@ -51,8 +54,13 @@ import java.util.Objects;
  * INNER} and {@code LEFT} (materialising the side that must appear unconditionally, i.e. the left side, would
  * need extra bookkeeping to still emit its unmatched rows). Honouring the cost model's build-side choice for
  * performance, when it disagrees with this default, is deferred - never a correctness gap, only a possible
- * missed optimisation. {@link JoinAlgorithm#BROADCAST_LOOKUP} is Task 6.2's job specifically (it needs a {@code
- * StateFetcher}, not two materialised row sets).</p>
+ * missed optimisation.</p>
+ *
+ * <p>{@link JoinAlgorithm#BROADCAST_LOOKUP} - the enrichment-join fast path against a keyed Plan B/State store
+ * (see {@code docs/join-scalability-implementation-plan.md}, decision D8, item B1) - is <b>not</b> reachable
+ * through {@link #join(Side, Side, JoinType, JoinAlgorithm, long)}: that method's contract is "combine two
+ * already-materialised row sets", and the whole point of broadcast lookup is to <i>never</i> materialise the
+ * lookup side. It has its own entry point instead: {@link #broadcastLookupJoin}.</p>
  */
 public final class JoinExecutor {
 
@@ -131,6 +139,107 @@ public final class JoinExecutor {
             case BROADCAST_LOOKUP -> throw new UnsupportedOperationException(
                     "BROADCAST_LOOKUP needs a StateFetcher, not two materialised row sets - see Task 6.2.");
         };
+    }
+
+    /**
+     * The enrichment-join fast path: streams {@code probeRows}, doing one keyed point-lookup per row against a
+     * Plan B/State store via {@code stateFetcher} instead of materialising that store as a join side - see
+     * {@code docs/join-scalability-implementation-plan.md}, decisions D5/D7/D8 (item B1). Every combined row is
+     * handed to {@code out} as it is produced (never accumulated into a list here), so memory is bounded by the
+     * probe side alone, not by the lookup store's size.
+     *
+     * <p>Per decision D5, the lookup side contributes exactly two synthetic columns to each combined row,
+     * appended after the probe row's own columns: the probe's own key value (echoed back, named {@code Key}),
+     * then the looked-up value (named {@code Value}), {@link ValNull#INSTANCE} on a miss or for a null-keyed probe
+     * row. There is no multi-column enrichment in this version - {@link StateFetcher#getState} itself only ever
+     * returns one {@link Val}.</p>
+     *
+     * <p><b>SQL null semantics</b>: a probe row whose key is {@code null}/{@link ValNull} is never looked up
+     * (treated as an automatic miss), matching {@link #join}'s "{@code NULL != NULL}" rule - see this class's
+     * Javadoc. It is still emitted (both synthetic columns null) for a {@link JoinType#LEFT} join.</p>
+     *
+     * <p><b>Preconditions:</b> {@code probeRows}, {@code stateFetcher}, {@code mapName}, {@code joinType}, and
+     * {@code out} must not be null; {@code probeKeyPosition} must be a valid index into every row {@code
+     * probeRows} yields (i.e. {@code 0 <= probeKeyPosition < probeWidth}); {@code probeWidth} must be
+     * {@code >= 0}; {@code maxOutputRows} must be {@code >= 0} (as for {@link #join}).<br>
+     * <b>Postconditions:</b> {@code out.accept(...)} is called once per surviving row, each of length
+     * {@code probeWidth + 2}; never returns a value (streaming - the caller's {@code out} is where results go).
+     * {@code probeRows} is fully consumed on normal completion.</p>
+     *
+     * @param probeRows        the streaming side's realised rows; never re-iterated, consumed exactly once.
+     * @param probeKeyPosition which column of each probe row holds the join key to look up.
+     * @param probeWidth       the width (column count) of every row {@code probeRows} yields.
+     * @param stateFetcher     performs the point lookup; see {@link StateFetcher#getState}.
+     * @param mapName          the Plan B store's name, passed straight through to {@code stateFetcher}.
+     * @param effectiveTimeMs  the instant to evaluate state as of (only meaningful for a temporal store; see
+     *                         decision D7).
+     * @param joinType         {@link JoinType#INNER} drops an unmatched probe row; {@link JoinType#LEFT} keeps it,
+     *                         null-padded.
+     * @param maxOutputRows    see {@link #join(Side, Side, JoinType, JoinAlgorithm, long)}'s cap semantics.
+     * @param out              receives each surviving combined row as it is produced.
+     * @throws JoinLimitExceededException if the output would exceed {@code maxOutputRows}.
+     * @throws IllegalArgumentException   if {@code probeKeyPosition}, {@code probeWidth}, or {@code maxOutputRows}
+     *                                    is negative, or {@code probeKeyPosition >= probeWidth}.
+     */
+    public static void broadcastLookupJoin(
+            final Iterator<Val[]> probeRows,
+            final int probeKeyPosition,
+            final int probeWidth,
+            final StateFetcher stateFetcher,
+            final String mapName,
+            final long effectiveTimeMs,
+            final JoinType joinType,
+            final long maxOutputRows,
+            final Consumer<Val[]> out) {
+        Objects.requireNonNull(probeRows, "probeRows");
+        Objects.requireNonNull(stateFetcher, "stateFetcher");
+        Objects.requireNonNull(mapName, "mapName");
+        Objects.requireNonNull(joinType, "joinType");
+        Objects.requireNonNull(out, "out");
+        if (probeWidth < 0) {
+            throw new IllegalArgumentException("probeWidth must be >= 0, got " + probeWidth);
+        }
+        if (probeKeyPosition < 0 || probeKeyPosition >= probeWidth) {
+            throw new IllegalArgumentException(
+                    "probeKeyPosition must be in [0, probeWidth), got " + probeKeyPosition
+                    + " for probeWidth " + probeWidth);
+        }
+        if (maxOutputRows < 0) {
+            throw new IllegalArgumentException("maxOutputRows must be >= 0, got " + maxOutputRows);
+        }
+
+        long emitted = 0;
+        while (probeRows.hasNext()) {
+            final Val[] probeRow = probeRows.next();
+            final Val probeKey = probeRow[probeKeyPosition];
+            final boolean hasKey = probeKey != null && !(probeKey instanceof ValNull);
+            final Val lookedUp = hasKey ? stateFetcher.getState(mapName, probeKey.toString(), effectiveTimeMs) : null;
+            final boolean matched = lookedUp != null && !(lookedUp instanceof ValNull);
+            if (matched) {
+                emitted = emitOrThrow(out, combineWithLookup(probeRow, probeKey, lookedUp), maxOutputRows, emitted);
+            } else if (joinType == JoinType.LEFT) {
+                emitted = emitOrThrow(
+                        out, combineWithLookup(probeRow, ValNull.INSTANCE, ValNull.INSTANCE), maxOutputRows, emitted);
+            }
+        }
+    }
+
+    /** Appends the lookup side's two synthetic columns ({@code Key} then {@code Value}) onto {@code probeRow}. */
+    private static Val[] combineWithLookup(final Val[] probeRow, final Val key, final Val value) {
+        final Val[] combined = new Val[probeRow.length + 2];
+        System.arraycopy(probeRow, 0, combined, 0, probeRow.length);
+        combined[probeRow.length] = key;
+        combined[probeRow.length + 1] = value;
+        return combined;
+    }
+
+    private static long emitOrThrow(
+            final Consumer<Val[]> out, final Val[] row, final long maxOutputRows, final long emittedSoFar) {
+        if (emittedSoFar >= maxOutputRows) {
+            throw JoinLimitExceededException.forRowCount("join output row count", maxOutputRows, emittedSoFar + 1);
+        }
+        out.accept(row);
+        return emittedSoFar + 1;
     }
 
     private static List<Val[]> hashJoin(

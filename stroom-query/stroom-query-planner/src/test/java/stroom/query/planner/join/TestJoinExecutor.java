@@ -16,6 +16,7 @@
 
 package stroom.query.planner.join;
 
+import stroom.query.language.functions.StateFetcher;
 import stroom.query.language.functions.Val;
 import stroom.query.language.functions.ValLong;
 import stroom.query.language.functions.ValNull;
@@ -28,8 +29,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -237,5 +240,152 @@ class TestJoinExecutor {
         assertThat(result.getFirst()).containsExactly(
                 ValLong.create(1), ValString.create("x"), ValString.create("a"),
                 ValLong.create(1), ValString.create("x"), ValLong.create(10));
+    }
+
+    // ------------------------------------------------------------------------------------------------------
+    // broadcastLookupJoin (Task B1 - see docs/join-scalability-implementation-plan.md, decisions D5/D7/D8):
+    // the enrichment-join fast path, streaming a probe side against a keyed StateFetcher lookup instead of
+    // materialising the lookup side.
+    // ------------------------------------------------------------------------------------------------------
+
+    /** A fake {@link stroom.query.language.functions.StateFetcher} backed by a plain map - misses return
+     * {@link ValNull#INSTANCE}, matching {@code StateFetcherImpl}'s real "unknown key" behaviour. */
+    private static StateFetcher fakeStore(final Map<String, Val> values) {
+        return (map, key, effectiveTimeMs) -> values.getOrDefault(key, ValNull.INSTANCE);
+    }
+
+    private static Val[] probeRow(final long userId, final String name) {
+        return new Val[]{ValLong.create(userId), ValString.create(name)};
+    }
+
+    @Test
+    void matchingKey_emitsProbeRowPlusKeyAndValueColumns() {
+        final StateFetcher store =
+                fakeStore(Map.of("1", ValString.create("Alice")));
+        final List<Val[]> result = new ArrayList<>();
+
+        JoinExecutor.broadcastLookupJoin(
+                List.<Val[]>of(probeRow(1, "a")).iterator(), 0, 2, store, "users", 0L, JoinType.INNER, Long.MAX_VALUE,
+                result::add);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.getFirst()).containsExactly(
+                ValLong.create(1), ValString.create("a"), ValLong.create(1), ValString.create("Alice"));
+    }
+
+    @Test
+    void missingKey_innerJoin_dropsTheProbeRow() {
+        final StateFetcher store = fakeStore(Map.of());
+        final List<Val[]> result = new ArrayList<>();
+
+        JoinExecutor.broadcastLookupJoin(
+                List.<Val[]>of(probeRow(1, "a")).iterator(), 0, 2, store, "users", 0L, JoinType.INNER, Long.MAX_VALUE,
+                result::add);
+
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    void missingKey_leftJoin_keepsTheProbeRow_nullPadded() {
+        final StateFetcher store = fakeStore(Map.of());
+        final List<Val[]> result = new ArrayList<>();
+
+        JoinExecutor.broadcastLookupJoin(
+                List.<Val[]>of(probeRow(1, "a")).iterator(), 0, 2, store, "users", 0L, JoinType.LEFT, Long.MAX_VALUE,
+                result::add);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.getFirst()).containsExactly(
+                ValLong.create(1), ValString.create("a"), ValNull.INSTANCE, ValNull.INSTANCE);
+    }
+
+    @Test
+    void nullKeyedProbeRow_neverLookedUp_innerJoinDrops() {
+        final StateFetcher store =
+                fakeStore(Map.of("1", ValString.create("Alice")));
+        final List<Val[]> result = new ArrayList<>();
+        final Val[] nullKeyRow = new Val[]{ValNull.INSTANCE, ValString.create("a")};
+
+        JoinExecutor.broadcastLookupJoin(
+                List.<Val[]>of(nullKeyRow).iterator(), 0, 2, store, "users", 0L, JoinType.INNER, Long.MAX_VALUE,
+                result::add);
+
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    void nullKeyedProbeRow_leftJoin_keptNullPadded() {
+        final StateFetcher store =
+                fakeStore(Map.of("1", ValString.create("Alice")));
+        final List<Val[]> result = new ArrayList<>();
+        final Val[] nullKeyRow = new Val[]{ValNull.INSTANCE, ValString.create("a")};
+
+        JoinExecutor.broadcastLookupJoin(
+                List.<Val[]>of(nullKeyRow).iterator(), 0, 2, store, "users", 0L, JoinType.LEFT, Long.MAX_VALUE,
+                result::add);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.getFirst()).containsExactly(
+                ValNull.INSTANCE, ValString.create("a"), ValNull.INSTANCE, ValNull.INSTANCE);
+    }
+
+    @Test
+    void multipleProbeRows_mixedHitsAndMisses() {
+        final StateFetcher store =
+                fakeStore(Map.of("1", ValString.create("Alice"), "3", ValString.create("Carol")));
+        final List<Val[]> result = new ArrayList<>();
+
+        JoinExecutor.broadcastLookupJoin(
+                List.of(probeRow(1, "a"), probeRow(2, "b"), probeRow(3, "c")).iterator(),
+                0, 2, store, "users", 0L, JoinType.INNER, Long.MAX_VALUE, result::add);
+
+        assertThat(result).hasSize(2);
+        assertThat(result).anySatisfy(row -> assertThat(row).containsExactly(
+                ValLong.create(1), ValString.create("a"), ValLong.create(1), ValString.create("Alice")));
+        assertThat(result).anySatisfy(row -> assertThat(row).containsExactly(
+                ValLong.create(3), ValString.create("c"), ValLong.create(3), ValString.create("Carol")));
+    }
+
+    @Test
+    void maxOutputRowsExceeded_throwsJoinLimitExceededException() {
+        final StateFetcher store =
+                fakeStore(Map.of("1", ValString.create("Alice"), "2", ValString.create("Bob")));
+
+        assertThatThrownBy(() -> JoinExecutor.broadcastLookupJoin(
+                List.of(probeRow(1, "a"), probeRow(2, "b")).iterator(),
+                0, 2, store, "users", 0L, JoinType.INNER, 1, row -> {
+                }))
+                .isInstanceOf(JoinLimitExceededException.class)
+                .hasMessageContaining("join output row count");
+    }
+
+    @Test
+    void negativeProbeWidth_throwsIllegalArgumentException() {
+        final StateFetcher store = fakeStore(Map.of());
+
+        assertThatThrownBy(() -> JoinExecutor.broadcastLookupJoin(
+                List.<Val[]>of().iterator(), 0, -1, store, "users", 0L, JoinType.INNER, Long.MAX_VALUE, row -> {
+                }))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void probeKeyPositionOutOfRange_throwsIllegalArgumentException() {
+        final StateFetcher store = fakeStore(Map.of());
+
+        assertThatThrownBy(() -> JoinExecutor.broadcastLookupJoin(
+                List.<Val[]>of().iterator(), 2, 2, store, "users", 0L, JoinType.INNER, Long.MAX_VALUE, row -> {
+                }))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void broadcastLookupJoin_negativeMaxOutputRows_throwsIllegalArgumentException() {
+        final StateFetcher store = fakeStore(Map.of());
+
+        assertThatThrownBy(() -> JoinExecutor.broadcastLookupJoin(
+                List.<Val[]>of().iterator(), 0, 2, store, "users", 0L, JoinType.INNER, -1, row -> {
+                }))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 }

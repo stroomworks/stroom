@@ -43,6 +43,7 @@ import stroom.query.common.v2.SearchProviderRegistry;
 import stroom.query.common.v2.ValuesFunctionFactory;
 import stroom.query.language.SearchRequestFactory;
 import stroom.query.language.functions.FieldIndex;
+import stroom.query.language.functions.StateFetcher;
 import stroom.query.language.functions.Val;
 import stroom.query.language.functions.ValNull;
 import stroom.query.language.functions.Values;
@@ -55,6 +56,7 @@ import stroom.util.shared.ResultPage;
 
 import jakarta.inject.Inject;
 import jakarta.inject.Provider;
+import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -85,12 +87,17 @@ import java.util.function.Predicate;
  * {@link ResultStore} machinery applies {@code select}/{@code group}/{@code having}/{@code sort}/{@code limit}
  * exactly as for any other query.</p>
  *
- * <p><b>Simplifications (later optimisations, not correctness concerns)</b>: each side is realised in full and
- * the {@code where} clause applied post-join, rather than pushing single-side terms down into each side's
- * sub-query to pre-filter (which needs alias-stripping the pushed predicate). And {@link #createResultStore}
- * realises both sides and feeds all rows <i>synchronously</i> before returning an already-complete
- * {@link ResultStore} - unlike {@link SearchableSearchProvider}, which runs its feed asynchronously on an
- * {@code Executor}.</p>
+ * <p><b>Simplifications (later optimisations, not correctness concerns)</b>: {@link #createResultStore} realises
+ * sides and feeds all rows <i>synchronously</i> before returning an already-complete {@link ResultStore} - unlike
+ * {@link SearchableSearchProvider}, which runs its feed asynchronously on an {@code Executor}. Per-side predicate
+ * push-down (pre-filtering each side's own sub-query before it ever reaches this class) happens at compile time
+ * in {@code OptimisingQueryCompiler} (Task A1), not here.</p>
+ *
+ * <p><b>Two execution strategies (see {@link #joinAndFeed}, decision D8, item B1)</b>: by default, both sides are
+ * realised in full and combined with an in-memory hash join ({@link #joinAndFeedViaHashJoin}). When one side is
+ * detected as a keyed Plan B/State lookup ({@link #detectPlanBLookupSide}), that side is never realised at all -
+ * the other (probe) side is streamed against it via {@link JoinExecutor#broadcastLookupJoin} instead
+ * ({@link #joinAndFeedViaBroadcastLookup}), the enrichment-join fast path.</p>
  *
  * <p><b>Memory guardrails (see {@code docs/join-scalability-implementation-plan.md}, decision D1)</b>: because
  * both sides and the joined output are fully materialised in memory (the simplification above), each side is
@@ -102,11 +109,29 @@ import java.util.function.Predicate;
  */
 class JoinSearchProvider implements SearchProvider {
 
+    /**
+     * The Plan B/State datasource type name - mirrors {@code stroom.planb.shared.PlanBDoc.TYPE}. Duplicated as a
+     * literal, rather than depending on {@code stroom-planb-impl} from this module, purely to detect a
+     * {@link JoinAlgorithm#BROADCAST_LOOKUP}-eligible side (decision D8) - see this class's Javadoc.
+     */
+    private static final String PLAN_B_DATA_SOURCE_TYPE = "PlanB";
+
+    /**
+     * The Plan B key column's field name - mirrors {@code stroom.planb.impl.dao.state.StateFields.KEY}. Only an
+     * equi-key on exactly this field is point-lookup-addressable (decision D8).
+     */
+    private static final String PLAN_B_KEY_FIELD = "Key";
+
+    /** The lookup side's synthetic output column names (decision D5) - see {@link #lookupSideSyntheticColumns()}. */
+    private static final String LOOKUP_KEY_COLUMN = "Key";
+    private static final String LOOKUP_VALUE_COLUMN = "Value";
+
     private final Provider<SearchProviderRegistry> searchProviderRegistryProvider;
     private final CoprocessorsFactory coprocessorsFactory;
     private final ResultStoreFactory resultStoreFactory;
     private final ExpressionPredicateFactory expressionPredicateFactory;
     private final Provider<JoinConfig> joinConfigProvider;
+    private final StateFetcher stateFetcher;
 
     /**
      * @param searchProviderRegistryProvider must not be null.
@@ -120,13 +145,20 @@ class JoinSearchProvider implements SearchProvider {
      *                                        change is honoured by the next search rather than requiring a
      *                                        restart (the same convention {@code DispatchingQueryCompiler} uses
      *                                        for {@code QueryOptimiserConfig}).
+     * @param stateFetcher                    must not be null; performs the keyed point lookup for a
+     *                                        {@link JoinAlgorithm#BROADCAST_LOOKUP} join (decisions D5/D7/D8,
+     *                                        item B1) - its binding lives in {@code stroom-planb-impl}'s Guice
+     *                                        module, resolved by Guice without this module needing a compile-time
+     *                                        dependency on that one (the {@link StateFetcher} interface itself is
+     *                                        already visible via {@code stroom-query-language}).
      */
     @Inject
     JoinSearchProvider(final Provider<SearchProviderRegistry> searchProviderRegistryProvider,
                        final CoprocessorsFactory coprocessorsFactory,
                        final ResultStoreFactory resultStoreFactory,
                        final ExpressionPredicateFactory expressionPredicateFactory,
-                       final Provider<JoinConfig> joinConfigProvider) {
+                       final Provider<JoinConfig> joinConfigProvider,
+                       final StateFetcher stateFetcher) {
         this.searchProviderRegistryProvider =
                 Objects.requireNonNull(searchProviderRegistryProvider, "searchProviderRegistryProvider");
         this.coprocessorsFactory = Objects.requireNonNull(coprocessorsFactory, "coprocessorsFactory");
@@ -134,6 +166,14 @@ class JoinSearchProvider implements SearchProvider {
         this.expressionPredicateFactory =
                 Objects.requireNonNull(expressionPredicateFactory, "expressionPredicateFactory");
         this.joinConfigProvider = Objects.requireNonNull(joinConfigProvider, "joinConfigProvider");
+        this.stateFetcher = Objects.requireNonNull(stateFetcher, "stateFetcher");
+    }
+
+    /** Which side of a join is the {@link JoinAlgorithm#BROADCAST_LOOKUP}-eligible one - see
+     * {@link #detectPlanBLookupSide}. */
+    private enum LookupSide {
+        LEFT,
+        RIGHT
     }
 
     @Override
@@ -216,10 +256,40 @@ class JoinSearchProvider implements SearchProvider {
     }
 
     /**
-     * Realises both join sides, combines them, applies the outer {@code where} clause, and feeds every surviving
-     * row to {@code coprocessors} - the real join logic, factored out of {@link #createResultStore} so that
-     * method's try/catch/finally around it (the {@link ResultStore#addError(Throwable)} handling) stays a thin,
-     * readable wrapper.
+     * Executes the join and feeds every surviving row to {@code coprocessors} - the real join logic, factored out
+     * of {@link #createResultStore} so that method's try/catch/finally around it (the
+     * {@link ResultStore#addError(Throwable)} handling) stays a thin, readable wrapper. Dispatches to one of two
+     * strategies (decision D8, item B1):
+     * <ul>
+     *     <li>{@link #joinAndFeedViaBroadcastLookup} when {@link #detectPlanBLookupSide} finds one side is a
+     *     keyed Plan B/State lookup - streams the other (probe) side against it, never realising the lookup
+     *     side at all.</li>
+     *     <li>{@link #joinAndFeedViaHashJoin} otherwise - the original strategy: realise both sides in full,
+     *     combine with an in-memory hash join.</li>
+     * </ul>
+     *
+     * <p><b>Preconditions:</b> all four parameters must be non-null.<br>
+     * <b>Postconditions:</b> on normal return, every joined row surviving the outer {@code where} clause has been
+     * passed to {@code coprocessors.accept(...)}; returns nothing.</p>
+     *
+     * @throws JoinLimitExceededException if a side (or, for the hash-join strategy, the joined output) would
+     *                                    exceed its {@code joinConfig} cap.
+     */
+    private void joinAndFeed(
+            final SearchRequest searchRequest, final JoinSpec joinSpec, final JoinConfig joinConfig,
+            final CoprocessorsImpl coprocessors) {
+        final @Nullable LookupSide lookupSide = detectPlanBLookupSide(joinSpec);
+        if (lookupSide != null) {
+            joinAndFeedViaBroadcastLookup(searchRequest, joinSpec, joinConfig, coprocessors, lookupSide);
+        } else {
+            joinAndFeedViaHashJoin(searchRequest, joinSpec, joinConfig, coprocessors);
+        }
+    }
+
+    /**
+     * The original join strategy (Task 6.1d, Phase 0's guardrails): realises both sides in full, combines them
+     * with an in-memory hash join, applies the outer {@code where} clause, and feeds every surviving row to
+     * {@code coprocessors}.
      *
      * <p><b>Preconditions:</b> all four parameters must be non-null.<br>
      * <b>Postconditions:</b> on normal return, every joined row surviving the outer {@code where} clause has been
@@ -230,7 +300,7 @@ class JoinSearchProvider implements SearchProvider {
      *                                    realised, or the joined output would exceed
      *                                    {@code joinConfig.getMaxOutputRows()}.
      */
-    private void joinAndFeed(
+    private void joinAndFeedViaHashJoin(
             final SearchRequest searchRequest, final JoinSpec joinSpec, final JoinConfig joinConfig,
             final CoprocessorsImpl coprocessors) {
         // Realise the left side first; if realising the right side then fails, the left side's already-open
@@ -283,6 +353,132 @@ class JoinSearchProvider implements SearchProvider {
     }
 
     /**
+     * The enrichment-join fast path (decisions D5/D7/D8, item B1): realises only the probe side (the side that
+     * is <i>not</i> the Plan B lookup), then streams it through {@link JoinExecutor#broadcastLookupJoin} against
+     * {@link #stateFetcher} - the lookup side's own store is never realised or scanned.
+     *
+     * <p>{@code JoinExecutor.broadcastLookupJoin} always produces combined rows shaped
+     * {@code [probe columns..., Key, Value]} (probe-first). {@link #whereRowPredicate}/{@link #buildFieldMapping}
+     * are purely positional despite their "left"/"right" parameter names (see their own Javadoc) - so this method
+     * passes the probe side and lookup side as whichever slice is physically first/second in that combined row,
+     * not necessarily in {@code JoinSpec}'s left/right order (that depends on which side {@code lookupSide}
+     * names).</p>
+     *
+     * <p><b>Preconditions:</b> all five parameters must be non-null.<br>
+     * <b>Postconditions:</b> on normal return, every joined row surviving the outer {@code where} clause has been
+     * passed to {@code coprocessors.accept(...)}; returns nothing. The probe side's intermediate
+     * {@link ResultStore} (opened by {@link #realiseSide}) is always destroyed before this method returns or
+     * throws.</p>
+     *
+     * @throws JoinLimitExceededException if the probe side exceeds {@code joinConfig.getMaxSideRows()} while
+     *                                    being realised, or the joined output would exceed
+     *                                    {@code joinConfig.getMaxOutputRows()}.
+     */
+    private void joinAndFeedViaBroadcastLookup(
+            final SearchRequest searchRequest, final JoinSpec joinSpec, final JoinConfig joinConfig,
+            final CoprocessorsImpl coprocessors, final LookupSide lookupSide) {
+        final boolean lookupIsLeft = lookupSide == LookupSide.LEFT;
+        final SearchRequest probeRequest = lookupIsLeft ? joinSpec.getRight() : joinSpec.getLeft();
+        final SearchRequest lookupRequest = lookupIsLeft ? joinSpec.getLeft() : joinSpec.getRight();
+        final JoinEquiKey equiKey = joinSpec.getEquiKeys().getFirst();
+        final String probeKeyField = lookupIsLeft ? equiKey.getRightField() : equiKey.getLeftField();
+        final String probeAlias = lookupIsLeft ? equiKey.getRightAlias() : equiKey.getLeftAlias();
+        final String lookupAlias = lookupIsLeft ? equiKey.getLeftAlias() : equiKey.getRightAlias();
+        final String mapName = lookupRequest.getQuery().getDataSource().getName();
+
+        final RealisedSide probe = realiseSide(probeRequest, joinConfig.getMaxSideRows());
+        try {
+            final int probeKeyPosition = positionOf(probe.columns, probeKeyField);
+            final List<Column> lookupColumns = lookupSideSyntheticColumns();
+            final JoinType joinType = joinSpec.getJoinType() == JoinSpec.JoinType.LEFT
+                    ? JoinType.LEFT
+                    : JoinType.INNER;
+
+            // Combined row order is always [probe..., Key, Value] - see this method's Javadoc on why "probe"/
+            // "lookup" here play the role "left"/"right" normally would, regardless of which JoinSpec side the
+            // lookup actually is.
+            final Predicate<Values> whereRowPredicate = whereRowPredicate(
+                    searchRequest, probe.columns, lookupColumns, probeAlias, lookupAlias);
+            final int[] mapping = buildFieldMapping(
+                    coprocessors.getFieldIndex(), probe.columns, lookupColumns, probeAlias, lookupAlias);
+
+            JoinExecutor.broadcastLookupJoin(
+                    probe.rows.iterator(), probeKeyPosition, probe.columns.size(),
+                    stateFetcher, mapName, effectiveTimeMs(), joinType, joinConfig.getMaxOutputRows(),
+                    combinedRow -> {
+                        if (whereRowPredicate.test(Values.of(combinedRow))) {
+                            coprocessors.accept(assembleRow(combinedRow, mapping));
+                        }
+                    });
+        } finally {
+            probe.resultStore.destroy();
+        }
+    }
+
+    /**
+     * Decides whether either side of {@code joinSpec} is safely usable as a {@link JoinAlgorithm#BROADCAST_LOOKUP}
+     * lookup side (decision D8) - structurally, without resolving the actual {@code PlanBDoc} (which would need a
+     * new dependency on {@code stroom-planb-impl}; see this class's Javadoc and the {@code stateFetcher}
+     * constructor parameter's Javadoc for why that dependency isn't needed for the lookup itself).
+     *
+     * <p>A side qualifies when: (a) there is exactly one equi-key (a composite key isn't representable via
+     * {@link StateFetcher#getState}'s single-string key - decision D8), (b) that side's datasource type is
+     * {@link #PLAN_B_DATA_SOURCE_TYPE}, and (c) the equi-key field on that side is exactly
+     * {@link #PLAN_B_KEY_FIELD} (the only point-lookup-addressable column). If both sides somehow qualify (e.g. a
+     * Plan B store joined to another Plan B store on their key columns), the left side wins, deterministically -
+     * an edge case, not expected in practice.</p>
+     *
+     * <p><b>Known v1 limitation</b> (decision D6): this does not check the underlying store's actual
+     * {@code stateType}. A {@code RANGED_STATE}/{@code TEMPORAL_RANGED_STATE}/{@code SESSION} store (which use a
+     * different key shape internally) would still be detected as lookup-eligible here, and would then fail with
+     * whatever exception {@link StateFetcher#getState} itself throws for a mismatched key (e.g. a
+     * {@code NumberFormatException} for a range store) - always safely captured by {@link #createResultStore}'s
+     * error handling, never silently wrong or unhandled, just a less specific message than a purpose-built
+     * rejection would give. A future enhancement could inject a doc cache to check {@code stateType} up front.</p>
+     *
+     * @param joinSpec must not be null.
+     * @return null if neither side qualifies.
+     */
+    private static @Nullable LookupSide detectPlanBLookupSide(final JoinSpec joinSpec) {
+        if (joinSpec.getEquiKeys().size() != 1) {
+            return null;
+        }
+        final JoinEquiKey equiKey = joinSpec.getEquiKeys().getFirst();
+        if (isPlanBKeyedLookupSide(joinSpec.getLeft(), equiKey.getLeftField())) {
+            return LookupSide.LEFT;
+        }
+        if (isPlanBKeyedLookupSide(joinSpec.getRight(), equiKey.getRightField())) {
+            return LookupSide.RIGHT;
+        }
+        return null;
+    }
+
+    private static boolean isPlanBKeyedLookupSide(final SearchRequest sideRequest, final String equiKeyField) {
+        final DocRef dataSource = sideRequest.getQuery() == null ? null : sideRequest.getQuery().getDataSource();
+        return dataSource != null
+               && PLAN_B_DATA_SOURCE_TYPE.equals(dataSource.getType())
+               && PLAN_B_KEY_FIELD.equals(equiKeyField);
+    }
+
+    /** The lookup side's two synthetic output columns (decision D5) - {@code Key} (the probe row's own join-key
+     * value, echoed back) then {@code Value} (the looked-up {@link Val}, {@link ValNull#INSTANCE} on a miss). */
+    private static List<Column> lookupSideSyntheticColumns() {
+        return List.of(
+                Column.builder().id(LOOKUP_KEY_COLUMN).name(LOOKUP_KEY_COLUMN).expression(LOOKUP_KEY_COLUMN).build(),
+                Column.builder().id(LOOKUP_VALUE_COLUMN).name(LOOKUP_VALUE_COLUMN)
+                        .expression(LOOKUP_VALUE_COLUMN).build());
+    }
+
+    /**
+     * The instant to evaluate a {@link JoinAlgorithm#BROADCAST_LOOKUP} lookup as of (decision D7). <b>v1
+     * simplification</b>: always "now" - only meaningful for a temporal store in the first place, and a more
+     * precise "the query's own effective time" is a documented follow-up, not implemented here.
+     */
+    private static long effectiveTimeMs() {
+        return System.currentTimeMillis();
+    }
+
+    /**
      * Builds a predicate over the <i>combined</i> joined row (left columns then right columns) from the outer
      * query's {@code where} clause ({@code Query.expression}) - see
      * {@code docs/query-optimiser-implementation-plan.md}, Phase 6 "where across joins". The where clause
@@ -293,8 +489,9 @@ class JoinSearchProvider implements SearchProvider {
      *
      * <p>Evaluating the where clause here, on the combined row, is the correct physical position for a join: a
      * single side can't evaluate a predicate that references both aliases, and the combined row is where every
-     * referenced field resolves. Per-side push-down (pre-filtering each side before the join) is a later
-     * efficiency optimisation, not done here - so each side is realised in full and filtered post-join.</p>
+     * referenced field resolves. What's already resolved before the join runs - per-side predicate push-down at
+     * compile time ({@code OptimisingQueryCompiler}'s Task A1) - is simply absent from {@code where} by the time
+     * it gets here; this method only ever sees the residual.</p>
      */
     private Predicate<Values> whereRowPredicate(
             final SearchRequest searchRequest,

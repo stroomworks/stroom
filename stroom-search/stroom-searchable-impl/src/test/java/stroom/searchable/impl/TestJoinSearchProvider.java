@@ -96,6 +96,14 @@ class TestJoinSearchProvider {
         return provider(registry, DEFAULT_JOIN_CONFIG_PROVIDER);
     }
 
+    private JoinSearchProvider provider(final SearchProviderRegistry registry,
+                                        final Provider<JoinConfig> joinConfigProvider) {
+        // None of the fixtures using this overload involve a Plan B side, so detectPlanBLookupSide never fires
+        // and this mock is never actually invoked - see provider(registry, joinConfigProvider, stateFetcher) for
+        // the B1 (broadcast lookup) tests, which supply a real one.
+        return provider(registry, joinConfigProvider, mock(stroom.query.language.functions.StateFetcher.class));
+    }
+
     /**
      * A real {@link CoprocessorsFactory} backed by the lightweight {@link MapDataStoreFactory} (no LMDB/temp-dir),
      * plus a {@link ResultStoreFactory} mock that wraps whatever coprocessors it's handed in a genuine
@@ -103,7 +111,8 @@ class TestJoinSearchProvider {
      * is exercised without standing up NodeInfo/SecurityContext/etc.
      */
     private JoinSearchProvider provider(final SearchProviderRegistry registry,
-                                        final Provider<JoinConfig> joinConfigProvider) {
+                                        final Provider<JoinConfig> joinConfigProvider,
+                                        final stroom.query.language.functions.StateFetcher stateFetcher) {
         final CoprocessorsFactory coprocessorsFactory = new CoprocessorsFactory(
                 new MapDataStoreFactory(SearchResultStoreConfig::new),
                 new ExpressionContextFactory(),
@@ -124,13 +133,14 @@ class TestJoinSearchProvider {
 
         return new JoinSearchProvider(
                 () -> registry, coprocessorsFactory, resultStoreFactory, new ExpressionPredicateFactory(),
-                joinConfigProvider);
+                joinConfigProvider, stateFetcher);
     }
 
     private JoinSearchProvider providerWithMockDeps(final SearchProviderRegistry registry) {
         return new JoinSearchProvider(
                 () -> registry, mock(CoprocessorsFactory.class), mock(ResultStoreFactory.class),
-                new ExpressionPredicateFactory(), DEFAULT_JOIN_CONFIG_PROVIDER);
+                new ExpressionPredicateFactory(), DEFAULT_JOIN_CONFIG_PROVIDER,
+                mock(stroom.query.language.functions.StateFetcher.class));
     }
 
     private SearchProviderRegistry registry(final SearchProvider... providers) {
@@ -450,6 +460,313 @@ class TestJoinSearchProvider {
 
     private static Column column(final String name) {
         return Column.builder().id(name).name(name).expression(name).build();
+    }
+
+    // ------------------------------------------------------------------------------------------------------
+    // Task B1 (see docs/join-scalability-implementation-plan.md, decisions D5/D7/D8): the enrichment-join fast
+    // path against a keyed Plan B/State store. PLAN_B_DATA_SOURCE mirrors what detectPlanBLookupSide looks for
+    // (DocRef.getType() == "PlanB"); an equi-key field of "Key" makes a side lookup-eligible.
+    // ------------------------------------------------------------------------------------------------------
+
+    private static final DocRef PLAN_B_DATA_SOURCE = new DocRef("PlanB", "planb-uuid", "Users");
+
+    /** A SearchProvider that fails the test if it is ever asked to realise the Plan B side - proving
+     * broadcastLookupJoin genuinely never scans the lookup store, the whole point of B1. */
+    private static SearchProvider planBProviderThatMustNeverBeRealised() {
+        final SearchProvider provider = mock(SearchProvider.class);
+        when(provider.getDataSourceType()).thenReturn(PLAN_B_DATA_SOURCE.getType());
+        when(provider.createResultStore(any())).thenThrow(new AssertionError(
+                "The Plan B lookup side must never be realised via its own SearchProvider - "
+                + "broadcastLookupJoin should stream the probe side against StateFetcher instead"));
+        return provider;
+    }
+
+    /** Outer join request: select a.UserId, b.Value; lookup side's equi-key field is "Key" (lookup-eligible). */
+    private static SearchRequest lookupOuterRequest(
+            final ExpressionOperator outerExpression, final JoinSpec.JoinType joinType, final boolean lookupIsLeft) {
+        final SearchRequest probeSide = SearchRequest.builder()
+                .query(Query.builder().dataSource(LEFT_DATA_SOURCE).build())
+                .build();
+        final SearchRequest lookupSide = SearchRequest.builder()
+                .query(Query.builder().dataSource(PLAN_B_DATA_SOURCE).build())
+                .build();
+        final JoinSpec joinSpec = JoinSpec.builder()
+                .left(lookupIsLeft ? lookupSide : probeSide)
+                .right(lookupIsLeft ? probeSide : lookupSide)
+                .joinType(joinType)
+                .addEquiKey(lookupIsLeft
+                        ? new JoinEquiKey("b", "Key", "a", "UserId")
+                        : new JoinEquiKey("a", "UserId", "b", "Key"))
+                .build();
+
+        final TableSettings tableSettings = TableSettings.builder()
+                .addColumns(column("a.UserId"), column("b.Value"))
+                .extractValues(true)
+                .build();
+        final ResultRequest tableResultRequest = ResultRequest.builder()
+                .componentId(SearchRequestFactory.TABLE_COMPONENT_ID)
+                .mappings(List.of(tableSettings))
+                .resultStyle(ResultStyle.TABLE)
+                .fetch(Fetch.ALL)
+                .build();
+
+        return SearchRequest.builder()
+                .searchRequestSource(SearchRequestSource.createBasic())
+                .key(new QueryKey("test-join-lookup"))
+                .query(Query.builder()
+                        .dataSource(new DocRef(JoinDataSourceType.TYPE, "join-uuid", "A ⋈ B"))
+                        .expression(outerExpression)
+                        .joinSpec(joinSpec)
+                        .build())
+                .resultRequests(List.of(tableResultRequest))
+                .dateTimeSettings(DateTimeSettings.builder().referenceTime(0L).build())
+                .incremental(false)
+                .build();
+    }
+
+    @Test
+    void broadcastLookup_innerJoin_matchingKey_returnsLookedUpValue() {
+        final SearchProvider probeProvider = fakeSideProvider(
+                LEFT_DATA_SOURCE, List.of("UserId"),
+                List.of(new Val[]{ValLong.create(1)}, new Val[]{ValLong.create(2)}));
+        final stroom.query.language.functions.StateFetcher stateFetcher =
+                (map, key, effectiveTimeMs) -> "2".equals(key) ? ValString.create("Bob") : ValNull.INSTANCE;
+
+        final ResultStore resultStore = provider(
+                registry(probeProvider, planBProviderThatMustNeverBeRealised()),
+                DEFAULT_JOIN_CONFIG_PROVIDER, stateFetcher)
+                .createResultStore(lookupOuterRequest(
+                        ExpressionOperator.builder().build(), JoinSpec.JoinType.INNER, false));
+
+        assertThat(resultStore.getErrors()).isEmpty();
+        final List<Val[]> rows = readTableRows(resultStore);
+        assertThat(rows).hasSize(1);
+        assertThat(rows.getFirst()[0]).isEqualTo(ValLong.create(2));
+        assertThat(rows.getFirst()[1]).isEqualTo(ValString.create("Bob"));
+    }
+
+    @Test
+    void broadcastLookup_innerJoin_missingKey_dropsTheProbeRow() {
+        final SearchProvider probeProvider = fakeSideProvider(
+                LEFT_DATA_SOURCE, List.of("UserId"), List.<Val[]>of(new Val[]{ValLong.create(1)}));
+        final stroom.query.language.functions.StateFetcher stateFetcher =
+                (map, key, effectiveTimeMs) -> ValNull.INSTANCE;
+
+        final ResultStore resultStore = provider(
+                registry(probeProvider, planBProviderThatMustNeverBeRealised()),
+                DEFAULT_JOIN_CONFIG_PROVIDER, stateFetcher)
+                .createResultStore(lookupOuterRequest(
+                        ExpressionOperator.builder().build(), JoinSpec.JoinType.INNER, false));
+
+        assertThat(resultStore.getErrors()).isEmpty();
+        assertThat(readTableRows(resultStore)).isEmpty();
+    }
+
+    @Test
+    void broadcastLookup_leftJoin_missingKey_keepsTheProbeRow_nullPadded() {
+        final SearchProvider probeProvider = fakeSideProvider(
+                LEFT_DATA_SOURCE, List.of("UserId"), List.<Val[]>of(new Val[]{ValLong.create(1)}));
+        final stroom.query.language.functions.StateFetcher stateFetcher =
+                (map, key, effectiveTimeMs) -> ValNull.INSTANCE;
+
+        final ResultStore resultStore = provider(
+                registry(probeProvider, planBProviderThatMustNeverBeRealised()),
+                DEFAULT_JOIN_CONFIG_PROVIDER, stateFetcher)
+                .createResultStore(lookupOuterRequest(
+                        ExpressionOperator.builder().build(), JoinSpec.JoinType.LEFT, false));
+
+        assertThat(resultStore.getErrors()).isEmpty();
+        final List<Val[]> rows = readTableRows(resultStore);
+        assertThat(rows).hasSize(1);
+        assertThat(rows.getFirst()[0]).isEqualTo(ValLong.create(1));
+        assertThat(rows.getFirst()[1]).isEqualTo(ValNull.INSTANCE);
+    }
+
+    @Test
+    void broadcastLookup_lookupIsTheJoinSpecLeftSide_stillWorks() {
+        // The physical combined-row order inside JoinExecutor.broadcastLookupJoin is always [probe..., Key,
+        // Value] regardless of which JoinSpec slot (left/right) the lookup occupies - proves the reordering in
+        // joinAndFeedViaBroadcastLookup is correct when the lookup happens to be JoinSpec-left.
+        final SearchProvider probeProvider = fakeSideProvider(
+                LEFT_DATA_SOURCE, List.of("UserId"), List.<Val[]>of(new Val[]{ValLong.create(2)}));
+        final stroom.query.language.functions.StateFetcher stateFetcher =
+                (map, key, effectiveTimeMs) -> "2".equals(key) ? ValString.create("Bob") : ValNull.INSTANCE;
+
+        final ResultStore resultStore = provider(
+                registry(probeProvider, planBProviderThatMustNeverBeRealised()),
+                DEFAULT_JOIN_CONFIG_PROVIDER, stateFetcher)
+                .createResultStore(lookupOuterRequest(
+                        ExpressionOperator.builder().build(), JoinSpec.JoinType.INNER, true));
+
+        assertThat(resultStore.getErrors()).isEmpty();
+        final List<Val[]> rows = readTableRows(resultStore);
+        assertThat(rows).hasSize(1);
+        assertThat(rows.getFirst()[0]).isEqualTo(ValLong.create(2));
+        assertThat(rows.getFirst()[1]).isEqualTo(ValString.create("Bob"));
+    }
+
+    @Test
+    void broadcastLookup_whereClauseOnLookedUpValue_filtersTheCombinedRow() {
+        final SearchProvider probeProvider = fakeSideProvider(
+                LEFT_DATA_SOURCE, List.of("UserId"),
+                List.of(new Val[]{ValLong.create(1)}, new Val[]{ValLong.create(2)}));
+        final stroom.query.language.functions.StateFetcher stateFetcher = (map, key, effectiveTimeMs) ->
+                switch (key) {
+                    case "1" -> ValString.create("Alice");
+                    case "2" -> ValString.create("Bob");
+                    default -> ValNull.INSTANCE;
+                };
+        final ExpressionOperator where = ExpressionOperator.builder()
+                .addTerm("b.Value", Condition.EQUALS, "Bob")
+                .build();
+
+        final ResultStore resultStore = provider(
+                registry(probeProvider, planBProviderThatMustNeverBeRealised()),
+                DEFAULT_JOIN_CONFIG_PROVIDER, stateFetcher)
+                .createResultStore(lookupOuterRequest(where, JoinSpec.JoinType.INNER, false));
+
+        assertThat(resultStore.getErrors()).isEmpty();
+        final List<Val[]> rows = readTableRows(resultStore);
+        assertThat(rows).hasSize(1);
+        assertThat(rows.getFirst()[0]).isEqualTo(ValLong.create(2));
+        assertThat(rows.getFirst()[1]).isEqualTo(ValString.create("Bob"));
+    }
+
+    @Test
+    void broadcastLookup_probeSideExceedsMaxSideRows_reportsAClearError() {
+        final SearchProvider probeProvider = fakeSideProvider(
+                LEFT_DATA_SOURCE, List.of("UserId"),
+                List.of(new Val[]{ValLong.create(1)}, new Val[]{ValLong.create(2)}));
+        final stroom.query.language.functions.StateFetcher stateFetcher =
+                (map, key, effectiveTimeMs) -> ValString.create("x");
+
+        final ResultStore resultStore = provider(
+                registry(probeProvider, planBProviderThatMustNeverBeRealised()),
+                () -> new JoinConfig(1L, null), stateFetcher)
+                .createResultStore(lookupOuterRequest(
+                        ExpressionOperator.builder().build(), JoinSpec.JoinType.INNER, false));
+
+        assertThat(resultStore.getErrors())
+                .anySatisfy(error -> assertThat(error.getMessage()).contains("join side row count"));
+    }
+
+    @Test
+    void broadcastLookup_outputExceedsMaxOutputRows_reportsAClearError() {
+        final SearchProvider probeProvider = fakeSideProvider(
+                LEFT_DATA_SOURCE, List.of("UserId"),
+                List.of(new Val[]{ValLong.create(1)}, new Val[]{ValLong.create(2)}));
+        final stroom.query.language.functions.StateFetcher stateFetcher =
+                (map, key, effectiveTimeMs) -> ValString.create("x");
+
+        final ResultStore resultStore = provider(
+                registry(probeProvider, planBProviderThatMustNeverBeRealised()),
+                () -> new JoinConfig(null, 1L), stateFetcher)
+                .createResultStore(lookupOuterRequest(
+                        ExpressionOperator.builder().build(), JoinSpec.JoinType.INNER, false));
+
+        assertThat(resultStore.getErrors())
+                .anySatisfy(error -> assertThat(error.getMessage()).contains("join output row count"));
+    }
+
+    @Test
+    void nonKeyEquiKeyFieldOnAPlanBTypedSide_isNotLookupEligible_fallsBackToHashJoin() {
+        // Same DocRef type ("PlanB") but the equi-key field is "OtherField", not "Key" - not point-lookup
+        // addressable, so detectPlanBLookupSide must not treat it as a lookup side. Uses an ordinary
+        // fakeSideProvider (realised normally) to prove the fallback hash-join path still works.
+        final SearchProvider probeProvider = fakeSideProvider(
+                LEFT_DATA_SOURCE, List.of("UserId"), List.<Val[]>of(new Val[]{ValLong.create(1)}));
+        final SearchProvider planBTypedButNotKeyed = fakeSideProvider(
+                PLAN_B_DATA_SOURCE, List.of("OtherField"), List.<Val[]>of(new Val[]{ValLong.create(1)}));
+
+        final SearchRequest probeSide = SearchRequest.builder()
+                .query(Query.builder().dataSource(LEFT_DATA_SOURCE).build()).build();
+        final SearchRequest lookupLikeSide = SearchRequest.builder()
+                .query(Query.builder().dataSource(PLAN_B_DATA_SOURCE).build()).build();
+        final JoinSpec joinSpec = JoinSpec.builder()
+                .left(probeSide)
+                .right(lookupLikeSide)
+                .joinType(JoinSpec.JoinType.INNER)
+                .addEquiKey(new JoinEquiKey("a", "UserId", "b", "OtherField"))
+                .build();
+        final TableSettings tableSettings = TableSettings.builder()
+                .addColumns(column("a.UserId"), column("b.OtherField"))
+                .extractValues(true)
+                .build();
+        final SearchRequest request = SearchRequest.builder()
+                .searchRequestSource(SearchRequestSource.createBasic())
+                .key(new QueryKey("test-fallback"))
+                .query(Query.builder()
+                        .dataSource(new DocRef(JoinDataSourceType.TYPE, "join-uuid", "A ⋈ B"))
+                        .expression(ExpressionOperator.builder().build())
+                        .joinSpec(joinSpec)
+                        .build())
+                .resultRequests(List.of(ResultRequest.builder()
+                        .componentId(SearchRequestFactory.TABLE_COMPONENT_ID)
+                        .mappings(List.of(tableSettings))
+                        .resultStyle(ResultStyle.TABLE)
+                        .fetch(Fetch.ALL)
+                        .build()))
+                .dateTimeSettings(DateTimeSettings.builder().referenceTime(0L).build())
+                .incremental(false)
+                .build();
+
+        final ResultStore resultStore = provider(registry(probeProvider, planBTypedButNotKeyed))
+                .createResultStore(request);
+
+        assertThat(resultStore.getErrors()).isEmpty();
+        assertThat(readTableRows(resultStore)).hasSize(1);
+    }
+
+    @Test
+    void compositeEquiKeyOnAPlanBTypedSide_isNotLookupEligible_fallsBackToHashJoin() {
+        // A composite (>1) equi-key isn't representable via StateFetcher's single-string key (decision D8), so
+        // detectPlanBLookupSide must decline even though the side's type and first field ("Key") would otherwise
+        // qualify - falls back to the ordinary hash-join path, which realises the Plan B side normally.
+        final SearchProvider probeProvider = fakeSideProvider(
+                LEFT_DATA_SOURCE, List.of("UserId", "Region"),
+                List.<Val[]>of(new Val[]{ValLong.create(1), ValString.create("north")}));
+        final SearchProvider planBTypedButComposite = fakeSideProvider(
+                PLAN_B_DATA_SOURCE, List.of("Key", "Region"),
+                List.<Val[]>of(new Val[]{ValLong.create(1), ValString.create("north")}));
+
+        final SearchRequest probeSide = SearchRequest.builder()
+                .query(Query.builder().dataSource(LEFT_DATA_SOURCE).build()).build();
+        final SearchRequest lookupLikeSide = SearchRequest.builder()
+                .query(Query.builder().dataSource(PLAN_B_DATA_SOURCE).build()).build();
+        final JoinSpec joinSpec = JoinSpec.builder()
+                .left(probeSide)
+                .right(lookupLikeSide)
+                .joinType(JoinSpec.JoinType.INNER)
+                .addEquiKey(new JoinEquiKey("a", "UserId", "b", "Key"))
+                .addEquiKey(new JoinEquiKey("a", "Region", "b", "Region"))
+                .build();
+        final TableSettings tableSettings = TableSettings.builder()
+                .addColumns(column("a.UserId"), column("b.Key"))
+                .extractValues(true)
+                .build();
+        final SearchRequest request = SearchRequest.builder()
+                .searchRequestSource(SearchRequestSource.createBasic())
+                .key(new QueryKey("test-composite-fallback"))
+                .query(Query.builder()
+                        .dataSource(new DocRef(JoinDataSourceType.TYPE, "join-uuid", "A ⋈ B"))
+                        .expression(ExpressionOperator.builder().build())
+                        .joinSpec(joinSpec)
+                        .build())
+                .resultRequests(List.of(ResultRequest.builder()
+                        .componentId(SearchRequestFactory.TABLE_COMPONENT_ID)
+                        .mappings(List.of(tableSettings))
+                        .resultStyle(ResultStyle.TABLE)
+                        .fetch(Fetch.ALL)
+                        .build()))
+                .dateTimeSettings(DateTimeSettings.builder().referenceTime(0L).build())
+                .incremental(false)
+                .build();
+
+        final ResultStore resultStore = provider(registry(probeProvider, planBTypedButComposite))
+                .createResultStore(request);
+
+        assertThat(resultStore.getErrors()).isEmpty();
+        assertThat(readTableRows(resultStore)).hasSize(1);
     }
 
     /** Outer join request: select a.UserId, b.Name; dataSource = sentinel; joinSpec = a.UserId = b.Id INNER. */
