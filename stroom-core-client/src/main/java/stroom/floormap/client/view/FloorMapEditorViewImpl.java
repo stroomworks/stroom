@@ -85,8 +85,13 @@ public class FloorMapEditorViewImpl extends ViewImpl implements FloorMapEditorVi
     /** Initial width of each anchored (West) column in pixels. */
     private static final int BOTTOM_COLUMN_INITIAL_WIDTH = 300;
 
+    /** Initial width of the right-hand Layers panel in pixels. */
+    private static final int LAYERS_PANEL_INITIAL_WIDTH = 260;
+
     // -----------------------------------------------------------------------
 
+    /** Root split: Layers panel (East) beside the main editor area (centre). */
+    private final ThinSplitLayoutPanel rootSplitPanel;
     private final ThinSplitLayoutPanel outerSplitPanel;
 
     private final SimplePanel canvasPanel;
@@ -94,6 +99,8 @@ public class FloorMapEditorViewImpl extends ViewImpl implements FloorMapEditorVi
 
     private final SimplePanel factListPanel;
     private final SimplePanel timeListPanel;
+
+    private final SimplePanel layersPanel;
 
     @Inject
     public FloorMapEditorViewImpl() {
@@ -130,11 +137,20 @@ public class FloorMapEditorViewImpl extends ViewImpl implements FloorMapEditorVi
         outerSplitPanel.setVSplits(BOTTOM_STRIP_SPLIT);
         outerSplitPanel.addSouth(bottomPanel, BOTTOM_STRIP_INITIAL_HEIGHT); // bottom strip
         outerSplitPanel.add(canvasPanel);                                       // canvas + timeline (centre)
+
+        // ---- Root horizontal split: Layers panel anchored on the East -------
+        layersPanel = new SimplePanel();
+        layersPanel.addStyleName("dashboard-panel overflow-hidden");
+
+        rootSplitPanel = new ThinSplitLayoutPanel();
+        rootSplitPanel.setSize("100%", "100%");
+        rootSplitPanel.addEast(layersPanel, LAYERS_PANEL_INITIAL_WIDTH);   // Layers panel (RHS)
+        rootSplitPanel.add(outerSplitPanel);                                    // main editor area
     }
 
     @Override
     public Widget asWidget() {
-        return outerSplitPanel;
+        return rootSplitPanel;
     }
 
     /**
@@ -157,6 +173,8 @@ public class FloorMapEditorViewImpl extends ViewImpl implements FloorMapEditorVi
             factListPanel.setWidget(content);
         } else if (FloorMapEditorPresenter.TIME_LIST.equals(slot)) {
             timeListPanel.setWidget(content);
+        } else if (FloorMapEditorPresenter.LAYERS.equals(slot)) {
+            layersPanel.setWidget(content);
         }
     }
 }

@@ -16,7 +16,6 @@
 
 package stroom.floormap.client.presenter;
 
-import stroom.cell.colour.client.ColourInputCell;
 import stroom.data.grid.client.MyDataGrid;
 import stroom.dispatch.client.RestFactory;
 import stroom.docref.DocRef;
@@ -33,7 +32,6 @@ import stroom.floormap.shared.FloorMapEntryParser;
 import stroom.floormap.shared.FloorMapFieldMapping;
 import stroom.floormap.shared.FloorMapFieldMapping.Role;
 import stroom.floormap.shared.TypeStyle;
-import stroom.floormap.shared.TypeStyle.Shape;
 import stroom.floormap.shared.ValueFormat;
 import stroom.planb.shared.PlanBDoc;
 import stroom.query.api.ExpressionOperator;
@@ -116,28 +114,24 @@ public class FloorMapSettingsPresenter
     private final ButtonView removeButton;
     private boolean readOnly;
 
-    // Type Styles grid (per-type z-order + default graphic)
-    /** Dropdown label for "no configured shape" (falls back to the default rectangle). */
-    private static final String SHAPE_DEFAULT = "(default)";
+    // Type Styles — the shared Layers panel in editor mode (replaces the old grid).
+    /** Slot hosting the shared Layers panel (editor mode) on the Settings tab. */
+    public static final Object TYPE_STYLES_SLOT = new Object();
     private static final SqlTemporalStoreResource SQL_TEMPORAL_STORE_RESOURCE =
             GWT.create(SqlTemporalStoreResource.class);
     private final RestFactory restFactory;
-    private final MyDataGrid<TypeStyle> typeStylesGrid;
-    private final ListDataProvider<TypeStyle> typeStylesDataProvider;
-    private final SingleSelectionModel<TypeStyle> typeStylesSelectionModel;
-    private final ButtonView discoverButton;
-    private final ButtonView removeTypeButton;
-    private final ButtonView moveUpButton;
-    private final ButtonView moveDownButton;
+    private final FloorMapLayersPresenter typeStylesPanel;
 
     @Inject
     public FloorMapSettingsPresenter(final EventBus eventBus,
                                      final FloorMapSettingsView view,
                                      final Provider<DocSelectionBoxPresenter> docSelectionBoxPresenterProvider,
-                                     final RestFactory restFactory) {
+                                     final RestFactory restFactory,
+                                     final Provider<FloorMapLayersPresenter> layersProvider) {
         super(eventBus, view);
 
         this.restFactory = restFactory;
+        this.typeStylesPanel = layersProvider.get();
 
         view.setUiHandlers(this);
 
@@ -179,100 +173,20 @@ public class FloorMapSettingsPresenter
         view.setSchemaToolbar(buttonPanel);
         view.setSchemaGrid(schemaGrid);
 
-        // Type Styles grid
-        typeStylesGrid = new MyDataGrid<>(this);
-        typeStylesSelectionModel = new SingleSelectionModel<>();
-        typeStylesGrid.setSelectionModel(typeStylesSelectionModel);
-        typeStylesDataProvider = new ListDataProvider<>();
-        typeStylesDataProvider.addDataDisplay(typeStylesGrid);
-        initTypeStyleColumns();
-
-        final ButtonPanel typeStylesToolbar = new ButtonPanel();
-        discoverButton = typeStylesToolbar.addButton(SvgPresets.REFRESH_BLUE);
-        discoverButton.setTitle("Discover types from the facts store");
-        moveUpButton = typeStylesToolbar.addButton(SvgPresets.ARROW_UP);
-        moveUpButton.setTitle("Move up (paint behind)");
-        moveUpButton.setEnabled(false);
-        moveDownButton = typeStylesToolbar.addButton(SvgPresets.ARROW_DOWN);
-        moveDownButton.setTitle("Move down (paint in front)");
-        moveDownButton.setEnabled(false);
-        removeTypeButton = typeStylesToolbar.addButton(SvgPresets.DELETE);
-        removeTypeButton.setTitle("Remove type");
-        removeTypeButton.setEnabled(false);
-
-        view.setTypeStylesToolbar(typeStylesToolbar);
-        view.setTypeStylesGrid(typeStylesGrid);
-    }
-
-    /**
-     * Initialises the columns of the Type Styles grid: the type name, its
-     * default-graphic shape (dropdown), and default-graphic colour (hex). The
-     * list order is the paint/z-order (top of the list paints behind).
-     */
-    private void initTypeStyleColumns() {
-        // Type name — editable text.
-        final Column<TypeStyle, String> typeColumn = new Column<>(new EditTextCell()) {
+        // Type Styles — the shared Layers panel in editor mode (Discover / reorder /
+        // shape+colour). Persistence stays here: onWrite reads the panel's list.
+        typeStylesPanel.configureEditor(new FloorMapLayersPresenter.EditHandler() {
             @Override
-            public String getValue(final TypeStyle style) {
-                return style.getType() != null ? style.getType() : "";
+            public void onTypeStylesChanged() {
+                onChange();
             }
-        };
-        typeColumn.setFieldUpdater((index, style, val) -> {
-            if (!readOnly) {
-                replaceTypeStyle(index, new TypeStyle(val, style.getShape(), style.getColour()));
+
+            @Override
+            public void onDiscoverRequested() {
+                onDiscoverTypes();
             }
         });
-        typeStylesGrid.addColumn(typeColumn, "Type");
-
-        // Shape — dropdown of the enum plus a "(default)" (null) option.
-        final List<String> shapeOptions = new ArrayList<>();
-        shapeOptions.add(SHAPE_DEFAULT);
-        for (final Shape shape : Shape.values()) {
-            shapeOptions.add(shape.name());
-        }
-        final Column<TypeStyle, String> shapeColumn = new Column<>(new SelectionCell(shapeOptions)) {
-            @Override
-            public String getValue(final TypeStyle style) {
-                return style.getShape() != null ? style.getShape().name() : SHAPE_DEFAULT;
-            }
-        };
-        shapeColumn.setFieldUpdater((index, style, val) -> {
-            if (!readOnly) {
-                final Shape newShape = SHAPE_DEFAULT.equals(val) ? null : Shape.valueOf(val);
-                replaceTypeStyle(index, new TypeStyle(style.getType(), newShape, style.getColour()));
-            }
-        });
-        typeStylesGrid.addColumn(shapeColumn, "Shape");
-
-        // Colour — editable hex text.
-        /*
-        final Column<TypeStyle, String> colourColumn = new Column<>(new EditTextCell()) {
-            @Override
-            public String getValue(final TypeStyle style) {
-                return style.getColour() != null ? style.getColour() : "";
-            }
-        };
-        colourColumn.setFieldUpdater((index, style, val) -> {
-            if (!readOnly) {
-                final String colour = val != null && !val.isEmpty() ? val : null;
-                replaceTypeStyle(index, new TypeStyle(style.getType(), style.getShape(), colour));
-            }
-        });
-        */
-        final ColourInputCell colourInputCell = new ColourInputCell();
-        final Column<TypeStyle, String> colourColumn = new Column<>(colourInputCell) {
-            @Override
-            public String getValue(final TypeStyle style) {
-                return style.getColour();
-            }
-        };
-        colourColumn.setFieldUpdater((index, style, val) -> {
-            if (!readOnly) {
-                final String color = val != null && !val.isEmpty() ? val : null;
-                replaceTypeStyle(index, new TypeStyle(style.getType(), style.getShape(), color));
-            }
-        });
-        typeStylesGrid.addColumn(colourColumn, "Colour");
+        setInSlot(TYPE_STYLES_SLOT, typeStylesPanel);
     }
 
     /**
@@ -391,17 +305,8 @@ public class FloorMapSettingsPresenter
         registerHandler(addButton.addClickHandler(e -> onAddMapping()));
         //noinspection unused e
         registerHandler(removeButton.addClickHandler(e -> onRemoveMapping()));
-
-        //noinspection unused e
-        registerHandler(typeStylesSelectionModel.addSelectionChangeHandler(e -> updateTypeButtons()));
-        //noinspection unused e
-        registerHandler(discoverButton.addClickHandler(e -> onDiscoverTypes()));
-        //noinspection unused e
-        registerHandler(moveUpButton.addClickHandler(e -> moveSelectedType(-1)));
-        //noinspection unused e
-        registerHandler(moveDownButton.addClickHandler(e -> moveSelectedType(1)));
-        //noinspection unused e
-        registerHandler(removeTypeButton.addClickHandler(e -> onRemoveType()));
+        // Type-styles editing (Discover / reorder / shape+colour) is handled inside
+        // the embedded Layers panel; it reports edits via the EditHandler wired above.
     }
 
     /**
@@ -457,64 +362,11 @@ public class FloorMapSettingsPresenter
     // Type Styles
     // -----------------------------------------------------------------------
 
-    private void replaceTypeStyle(final int index, final TypeStyle updated) {
-        final List<TypeStyle> list = typeStylesDataProvider.getList();
-        if (index >= 0 && index < list.size()) {
-            list.set(index, updated);
-            refreshTypeStylesGrid();
-            onChange();
-        }
-    }
-
-    private void refreshTypeStylesGrid() {
-        final List<TypeStyle> list = typeStylesDataProvider.getList();
-        typeStylesGrid.setRowData(0, list);
-        typeStylesGrid.setRowCount(list.size(), true);
-    }
-
-    private void updateTypeButtons() {
-        final List<TypeStyle> list = typeStylesDataProvider.getList();
-        final TypeStyle selected = typeStylesSelectionModel.getSelectedObject();
-        final int index = selected != null ? list.indexOf(selected) : -1;
-        removeTypeButton.setEnabled(!readOnly && index >= 0);
-        moveUpButton.setEnabled(!readOnly && index > 0);
-        moveDownButton.setEnabled(!readOnly && index >= 0 && index < list.size() - 1);
-    }
-
-    private void onRemoveType() {
-        final TypeStyle selected = typeStylesSelectionModel.getSelectedObject();
-        if (selected != null && !readOnly) {
-            typeStylesDataProvider.getList().remove(selected);
-            typeStylesSelectionModel.clear();
-            refreshTypeStylesGrid();
-            updateTypeButtons();
-            onChange();
-        }
-    }
-
-    /** Moves the selected type by {@code delta} places in the paint (z) order. */
-    private void moveSelectedType(final int delta) {
-        final TypeStyle selected = typeStylesSelectionModel.getSelectedObject();
-        if (selected == null || readOnly) {
-            return;
-        }
-        final List<TypeStyle> list = typeStylesDataProvider.getList();
-        final int index = list.indexOf(selected);
-        final int target = index + delta;
-        if (index >= 0 && target >= 0 && target < list.size()) {
-            list.remove(index);
-            list.add(target, selected);
-            refreshTypeStylesGrid();
-            typeStylesSelectionModel.setSelected(selected, true);
-            updateTypeButtons();
-            onChange();
-        }
-    }
-
     /**
      * Discovers the distinct types present in the configured facts store and
-     * merges any new ones into the type list (alphabetically; existing entries
-     * keep their position and settings). Backs the "Discover" toolbar button.
+     * merges any new ones into the panel's type list (alphabetically; existing
+     * entries keep their position and settings). Invoked by the embedded Layers
+     * panel's Discover button via its {@link FloorMapLayersPresenter.EditHandler}.
      */
     private void onDiscoverTypes() {
         if (readOnly) {
@@ -544,10 +396,8 @@ public class FloorMapSettingsPresenter
                             discovered.add(fact.getType());
                         }
                     }
-                    typeStylesDataProvider.setList(TypeStyle.merge(
-                            new ArrayList<>(typeStylesDataProvider.getList()), discovered));
-                    refreshTypeStylesGrid();
-                    updateTypeButtons();
+                    typeStylesPanel.setEditList(
+                            TypeStyle.merge(typeStylesPanel.getEditList(), discovered));
                     onChange();
                 })
                 .exec();
@@ -607,14 +457,8 @@ public class FloorMapSettingsPresenter
         addButton.setEnabled(!readOnly);
         removeButton.setEnabled(!readOnly && schemaSelectionModel.getSelectedObject() != null);
 
-        // Type Styles
-        final List<TypeStyle> typeStyles = floorMapDoc.getTypeStyles() != null
-                ? new ArrayList<>(floorMapDoc.getTypeStyles())
-                : new ArrayList<>();
-        typeStylesDataProvider.setList(typeStyles);
-        refreshTypeStylesGrid();
-        discoverButton.setEnabled(!readOnly);
-        updateTypeButtons();
+        // Type Styles — load into the embedded Layers panel (editor mode).
+        typeStylesPanel.setEditList(floorMapDoc.getTypeStyles());
     }
 
     /**
@@ -645,7 +489,7 @@ public class FloorMapSettingsPresenter
                 .factsStoreRef(factsStoreRefPresenter.getSelectedEntityReference())
                 .valueFormat(vf)
                 .valueSchema(new ArrayList<>(schemaDataProvider.getList()))
-                .typeStyles(new ArrayList<>(typeStylesDataProvider.getList()))
+                .typeStyles(typeStylesPanel.getEditList())
                 .build();
     }
 

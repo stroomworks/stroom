@@ -18,6 +18,11 @@
 <ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
              xmlns:g="urn:import:com.google.gwt.user.client.ui">
     <g:DockLayoutPanel unit='PX' styleName="max" ui:field="mainDockPanel">
+        <!-- Layers panel docked on the right (read-only / viewer controls) -->
+        <g:east size="260">
+            <g:SimplePanel ui:field="layersPanel"
+                           addStyleNames="max dashboard-panel overflow-hidden"/>
+        </g:east>
         <!-- Split layout for map above and timeline below -->
         <g:center>
             <g:ThinSplitLayoutPanel vSplits="0.9" styleName="max">

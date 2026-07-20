@@ -28,6 +28,8 @@ import stroom.floormap.client.presenter.FloorMapFactListPresenter;
 import stroom.floormap.client.presenter.FloorMapFactListPresenter.FloorMapFactListView;
 import stroom.floormap.client.presenter.FloorMapInitPresenter;
 import stroom.floormap.client.presenter.FloorMapInitPresenter.FloorMapInitView;
+import stroom.floormap.client.presenter.FloorMapLayersPresenter;
+import stroom.floormap.client.presenter.FloorMapLayersPresenter.FloorMapLayersView;
 import stroom.floormap.client.presenter.FloorMapMapPresenter;
 import stroom.floormap.client.presenter.FloorMapMapPresenter.FloorMapMapView;
 import stroom.floormap.client.presenter.FloorMapObjectEditPresenter;
@@ -48,6 +50,7 @@ import stroom.floormap.client.view.FloorMapEditorViewImpl;
 import stroom.floormap.client.view.FloorMapEntityListViewImpl;
 import stroom.floormap.client.view.FloorMapFactListViewImpl;
 import stroom.floormap.client.view.FloorMapInitViewImpl;
+import stroom.floormap.client.view.FloorMapLayersViewImpl;
 import stroom.floormap.client.view.FloorMapMapViewImpl;
 import stroom.floormap.client.view.FloorMapObjectEditViewImpl;
 import stroom.floormap.client.view.FloorMapQueryViewImpl;
@@ -110,5 +113,9 @@ public class FloorMapModule extends PluginModule {
         bindPresenterWidget(FloorMapEntityListPresenter.class,
                 FloorMapEntityListView.class,
                 FloorMapEntityListViewImpl.class);
+
+        bindPresenterWidget(FloorMapLayersPresenter.class,
+                FloorMapLayersView.class,
+                FloorMapLayersViewImpl.class);
     }
 }

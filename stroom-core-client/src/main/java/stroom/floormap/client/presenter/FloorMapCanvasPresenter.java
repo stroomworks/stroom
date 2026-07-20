@@ -22,6 +22,7 @@ import stroom.floormap.client.presenter.FloorMapCanvasPresenter.FloorMapCanvasVi
 import stroom.floormap.client.view.FloorMapGrid;
 import stroom.floormap.shared.Fact;
 import stroom.floormap.shared.FloorMapJsonKeys;
+import stroom.floormap.shared.FloorMapLayers;
 import stroom.floormap.shared.FloorMapObject;
 import stroom.floormap.shared.FloorMapTransformationMatrix;
 import stroom.floormap.shared.FloorMapViewport;
@@ -216,6 +217,35 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
     /** The facts to render (backgrounds + static facts), from the parser. */
     private List<Fact> facts = new ArrayList<>();
+
+    /**
+     * The layer (type) currently being soloed — show only this type — or
+     * {@code null} for no solo. Transient isolate state driven by the Layers
+     * panel; never persisted (see the Layers plan, Phase 1). Per-type
+     * <em>visibility</em> comes from the {@link TypeStyle} flags in
+     * {@link #hiddenTypes}; solo overrides them.
+     */
+    private String soloType;
+
+    /**
+     * The set of layer types currently hidden — transient, supplied by the editor
+     * (never persisted). {@code null}/empty means nothing is hidden. Applied at
+     * draw time via {@link FloorMapLayers#visibleFacts}.
+     */
+    private Set<String> hiddenTypes;
+
+    /**
+     * The set of layer types currently locked — transient (never persisted).
+     * Locked facts are excluded from hit-testing and the selection set.
+     */
+    private Set<String> lockedTypes;
+
+    /**
+     * Per-type draw opacity ({@code 0..1}) — transient (never persisted).
+     * {@code null}/absent means fully opaque. Applied at draw time via
+     * {@link FloorMapLayers#resolveOpacity}.
+     */
+    private Map<String, Double> opacityByType;
 
     // -------------------------------------------------------------------------
     // Entity tracking (Map tab)
@@ -625,7 +655,11 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                         Math.min(marqueeStartY, marqueeCurY),
                         Math.max(marqueeStartX, marqueeCurX),
                         Math.max(marqueeStartY, marqueeCurY)};
-                selectedObjectIds.addAll(getView().hitTestScreenRect(rect));
+                for (final String key : getView().hitTestScreenRect(rect)) {
+                    if (!isKeyLocked(key)) {
+                        selectedObjectIds.add(key);
+                    }
+                }
                 fireSelectionChanged();
                 redraw();
             } else if (finished == Gesture.PANNING
@@ -772,8 +806,11 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         final List<FloorMapObject> overlay =
                 buildAnimatedDrawList(/* nowMs — irrelevant when no animations */ 0.0);
         getView().draw(scale, offsetX, offsetY,
-                FloorMapZOrder.sort(factsExcludingOverlay(overlay), typeStyles),
-                overlay, selectedObjectIds, typeStyles, showGrid,
+                FloorMapZOrder.sort(
+                        FloorMapLayers.visibleFacts(
+                                factsExcludingOverlay(overlay), hiddenTypes, soloType),
+                        typeStyles),
+                overlay, selectedObjectIds, typeStyles, opacityByType, showGrid,
                 gesture == Gesture.MARQUEE ? currentMarqueeRect() : null,
                 editMode && !selectedObjectIds.isEmpty() && gesture != Gesture.MARQUEE);
     }
@@ -802,11 +839,27 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
             final String id = Element.as(target).getId();
             if (id != null && !id.isEmpty()
                     && !id.startsWith(FloorMapJsonKeys.SVG_GROUP_PREFIX)
-                    && !id.startsWith(FloorMapJsonKeys.HANDLE_PREFIX)) {
+                    && !id.startsWith(FloorMapJsonKeys.HANDLE_PREFIX)
+                    && !isKeyLocked(id)) {
+                // A locked-layer fact reports no hit, so the click falls through
+                // (pan / deselect) and can never be selected or dragged.
                 return id;
             }
         }
         return null;
+    }
+
+    /** Whether the fact with this key is on a locked layer (transient lock state). */
+    private boolean isKeyLocked(final String key) {
+        if (lockedTypes == null || lockedTypes.isEmpty() || facts == null || key == null) {
+            return false;
+        }
+        for (final Fact fact : facts) {
+            if (key.equals(fact.getKey())) {
+                return FloorMapLayers.isLocked(fact.getType(), lockedTypes);
+            }
+        }
+        return false;
     }
 
     /**
@@ -1124,8 +1177,12 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                     // Draw the current frame. No marquee/handles during playback.
                     final List<FloorMapObject> overlay = buildAnimatedDrawList(timestamp);
                     getView().draw(scale, offsetX, offsetY,
-                            FloorMapZOrder.sort(factsExcludingOverlay(overlay), typeStyles),
-                            overlay, selectedObjectIds, typeStyles, showGrid, null, false);
+                            FloorMapZOrder.sort(
+                                    FloorMapLayers.visibleFacts(
+                                            factsExcludingOverlay(overlay), hiddenTypes, soloType),
+                                    typeStyles),
+                            overlay, selectedObjectIds, typeStyles, opacityByType,
+                            showGrid, null, false);
 
                     // Keep looping.
                     AnimationScheduler.get().requestAnimationFrame(this);
@@ -1249,7 +1306,13 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     public void setSelectedObjectIds(final Collection<String> objectIds) {
         selectedObjectIds.clear();
         if (objectIds != null) {
-            selectedObjectIds.addAll(objectIds);
+            for (final String key : objectIds) {
+                // Locked-layer facts can never enter the selection set (so no
+                // handles and no group transform apply to them).
+                if (!isKeyLocked(key)) {
+                    selectedObjectIds.add(key);
+                }
+            }
         }
         redraw();
     }
@@ -1478,6 +1541,53 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     }
 
     /**
+     * Isolates a single layer (show only facts of this {@code type}), or clears
+     * the isolate when {@code null}/blank. Transient, non-persisted UI state
+     * (Layers panel, Phase 1); solo overrides the per-type visibility flags.
+     *
+     * @param soloType the type to isolate, or {@code null} to show all visible layers
+     */
+    public void setSoloType(final String soloType) {
+        this.soloType = soloType != null && !soloType.isEmpty() ? soloType : null;
+        redraw();
+    }
+
+    /** The currently isolated layer type, or {@code null} if none. */
+    public String getSoloType() {
+        return soloType;
+    }
+
+    /**
+     * Sets the transient set of hidden layer types (never persisted). {@code null}
+     * or empty shows all layers. Applied at draw time via
+     * {@link FloorMapLayers#visibleFacts}.
+     *
+     * @param hiddenTypes the hidden layer types, or {@code null} to show all
+     */
+    public void setHiddenTypes(final Set<String> hiddenTypes) {
+        this.hiddenTypes = hiddenTypes;
+        redraw();
+    }
+
+    /**
+     * Sets the transient set of locked layer types (never persisted). Locked facts
+     * are excluded from click and rubber-band selection.
+     */
+    public void setLockedTypes(final Set<String> lockedTypes) {
+        this.lockedTypes = lockedTypes;
+        redraw();
+    }
+
+    /**
+     * Sets the transient per-type draw opacity (never persisted). {@code null} or an
+     * absent type means fully opaque.
+     */
+    public void setOpacityByType(final Map<String, Double> opacityByType) {
+        this.opacityByType = opacityByType;
+        redraw();
+    }
+
+    /**
      * Sets the facts to render (backgrounds + static facts) as produced by the
      * parser. Replaces the legacy background-image/matrix/objects inputs.
      *
@@ -1692,7 +1802,8 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
          */
         void draw(double scale, double x, double y, List<Fact> facts,
                 List<FloorMapObject> events, Set<String> selectedObjectIds,
-                List<TypeStyle> typeStyles, boolean showGrid, double[] marqueeRectPx,
+                List<TypeStyle> typeStyles, Map<String, Double> opacityByType,
+                boolean showGrid, double[] marqueeRectPx,
                 boolean drawSelectionHandles);
 
         /**

@@ -46,6 +46,8 @@ public class FloorMapMapViewImpl extends ViewImpl implements FloorMapMapView {
     SimplePanel entityListPanel;
     @UiField
     SimplePanel timelinePanel;
+    @UiField
+    SimplePanel layersPanel;
 
     @Inject
     public FloorMapMapViewImpl(final Binder binder) {
@@ -68,6 +70,8 @@ public class FloorMapMapViewImpl extends ViewImpl implements FloorMapMapView {
             entityListPanel.setWidget(content);
         } else if (FloorMapMapPresenter.TIMELINE.equals(slot)) {
             timelinePanel.setWidget(content);
+        } else if (FloorMapMapPresenter.LAYERS.equals(slot)) {
+            layersPanel.setWidget(content);
         }
     }
 

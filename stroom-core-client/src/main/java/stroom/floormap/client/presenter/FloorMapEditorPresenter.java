@@ -35,9 +35,11 @@ import stroom.floormap.shared.FloorMapEntryParser;
 import stroom.floormap.shared.FloorMapFieldMapping;
 import stroom.floormap.shared.FloorMapFieldMapping.Role;
 import stroom.floormap.shared.FloorMapJsonKeys;
+import stroom.floormap.shared.FloorMapLayerPreset;
 import stroom.floormap.shared.FloorMapPendingChanges;
 import stroom.floormap.shared.FloorMapTransformationMatrix;
 import stroom.floormap.shared.ParsedValue;
+import stroom.floormap.shared.TypeStyle;
 import stroom.floormap.shared.ValueAccessor;
 import stroom.floormap.shared.ValueFormat;
 import stroom.query.api.ExpressionOperator;
@@ -69,8 +71,10 @@ import com.gwtplatform.mvp.client.View;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Consumer;
@@ -145,6 +149,9 @@ public class FloorMapEditorPresenter
     /** Slot for the Time List panel (centre bottom column). */
     public static final Object TIME_LIST = new Object();
 
+    /** Slot for the Layers panel (right-hand side). */
+    public static final Object LAYERS = new Object();
+
     // -----------------------------------------------------------------------
     // Child presenters
     // -----------------------------------------------------------------------
@@ -155,6 +162,32 @@ public class FloorMapEditorPresenter
     private final FloorMapFactListPresenter floorMapFactListPresenter;
     private final FloorMapTimeListPresenter floorMapTimeListPresenter;
     private final FloorMapObjectEditPresenter floorMapObjectEditPresenter;
+    private final FloorMapLayersPresenter floorMapLayersPresenter;
+
+    /**
+     * Live (transient, non-persisted) layer state driven by the Layers panel:
+     * the set of hidden layer types and the soloed type. This is a session
+     * authoring aid — it is applied to the canvas but not written to the
+     * document (see the Layers plan, Phase 1, Editor-first / live-only).
+     */
+    private final Set<String> hiddenLayerTypes = new HashSet<>();
+    private final Set<String> lockedLayerTypes = new HashSet<>();
+    private final Map<String, Double> layerOpacity = new HashMap<>();
+    private String soloLayerType;
+
+    /** Saved layer views (presets) — the persisted layer state (written by onWrite). */
+    private List<FloorMapLayerPreset> layerPresets = new ArrayList<>();
+    private String selectedPresetName;
+    /** Apply the default preset only on the first read (initial open), so the live
+     * layer state stays sticky across a save→reload. */
+    private boolean firstLayersRead = true;
+
+    /** Dim level applied by the panel's "Dim" toggle (reference-tracing opacity). */
+    private static final double DIM_OPACITY = 0.3;
+
+    /** Last computed per-type fact counts, so a visibility toggle can refresh the
+     * Layers panel without re-querying. */
+    private Map<String, Integer> lastLayerCounts = new HashMap<>();
 
     /** The GWT-free model containing all shared state and pure logic. */
     private final FloorMapEditorModel model;
@@ -183,7 +216,8 @@ public class FloorMapEditorPresenter
                                    final Provider<FloorMapTimelinePresenter> timelineProvider,
                                    final Provider<FloorMapFactListPresenter> factListProvider,
                                    final Provider<FloorMapTimeListPresenter> timeListProvider,
-                                   final Provider<FloorMapObjectEditPresenter> propertiesProvider) {
+                                   final Provider<FloorMapObjectEditPresenter> propertiesProvider,
+                                   final Provider<FloorMapLayersPresenter> layersProvider) {
         super(eventBus, view);
         this.restFactory = restFactory;
         this.model = new FloorMapEditorModel(
@@ -196,6 +230,7 @@ public class FloorMapEditorPresenter
         this.floorMapFactListPresenter = factListProvider.get();
         this.floorMapTimeListPresenter = timeListProvider.get();
         this.floorMapObjectEditPresenter = propertiesProvider.get();
+        this.floorMapLayersPresenter = layersProvider.get();
 
         // Always in edit mode, with the grid overlay shown as an editing aid.
         floorMapCanvasPresenter.setEditMode(true);
@@ -221,10 +256,49 @@ public class FloorMapEditorPresenter
         helpToolbar = createHelpToolbar();
         floorMapTimelinePresenter.setHelpContent(FloorMapEditorHelp.timeline());
 
+        // Layers panel (RHS): live show/hide + solo + lock/dim + presets on the canvas.
+        floorMapLayersPresenter.configureViewer(new FloorMapLayersPresenter.LayersHandler() {
+            @Override
+            public void onToggleVisibility(final String type) {
+                toggleLayerVisibility(type);
+            }
+
+            @Override
+            public void onToggleSolo(final String type) {
+                toggleLayerSolo(type);
+            }
+
+            @Override
+            public void onToggleLock(final String type) {
+                toggleLayerLock(type);
+            }
+
+            @Override
+            public void onToggleDim(final String type) {
+                toggleLayerDim(type);
+            }
+
+            @Override
+            public void onShowAll() {
+                showAllLayers();
+            }
+
+            @Override
+            public void onApplyPreset(final String name) {
+                applyLayerPreset(name);
+            }
+
+            @Override
+            public void onSavePreset() {
+                saveCurrentViewAsPreset();
+            }
+        }, true);
+
         setInSlot(MAIN, floorMapCanvasPresenter);
         setInSlot(TIMELINE, floorMapTimelinePresenter);
         setInSlot(FACT_LIST, floorMapFactListPresenter);
         setInSlot(TIME_LIST, floorMapTimeListPresenter);
+        setInSlot(LAYERS, floorMapLayersPresenter);
         // Properties are shown as a modal dialog — no slot needed.
     }
 
@@ -315,6 +389,23 @@ public class FloorMapEditorPresenter
      */
     @Override
     protected void onRead(final DocRef docRef, final FloorMapDoc document, final boolean readOnly) {
+        // Load saved presets; apply the default view only on first open (so live
+        // layer state stays sticky across a save→reload).
+        layerPresets = document.getLayerPresets() != null
+                ? new ArrayList<>(document.getLayerPresets())
+                : new ArrayList<>();
+        if (firstLayersRead) {
+            firstLayersRead = false;
+            final FloorMapLayerPreset defaultPreset = FloorMapLayerPreset.findDefault(layerPresets);
+            if (defaultPreset != null) {
+                hiddenLayerTypes.clear();
+                layerOpacity.clear();
+                hiddenLayerTypes.addAll(defaultPreset.hiddenTypesAsSet());
+                layerOpacity.putAll(defaultPreset.opacityAsMap());
+                selectedPresetName = defaultPreset.getName();
+            }
+        }
+
         final String mapName = getMapName();
         if (mapName == null) {
             floorMapFactListPresenter.setData(new ArrayList<>());
@@ -345,7 +436,11 @@ public class FloorMapEditorPresenter
      */
     @Override
     protected FloorMapDoc onWrite(final FloorMapDoc document) {
-        return document;
+        // Layer presets ("views") are the one persisted piece of layer state (live
+        // visibility / lock / opacity stay transient). The Editor is their sole writer.
+        return document.copy()
+                .layerPresets(new ArrayList<>(layerPresets))
+                .build();
     }
 
     // -----------------------------------------------------------------------
@@ -627,10 +722,166 @@ public class FloorMapEditorPresenter
                 entries, getEntity().getValueSchema(),
                 ValueAccessorFactory.forFormat(getEntity().getValueFormat()));
         floorMapCanvasPresenter.setTypeStyles(getEntity().getTypeStyles());
+        // Apply the live (transient) layer visibility / solo / lock / opacity.
+        floorMapCanvasPresenter.setHiddenTypes(hiddenLayerTypes);
+        floorMapCanvasPresenter.setSoloType(soloLayerType);
+        floorMapCanvasPresenter.setLockedTypes(lockedLayerTypes);
+        floorMapCanvasPresenter.setOpacityByType(layerOpacity);
         floorMapCanvasPresenter.setFacts(facts);
         // Restore the full (multi-)selection highlight after re-rendering, so a
         // group stays selected across canvas refreshes (e.g. after a transform).
         floorMapCanvasPresenter.setSelectedObjectIds(model.getSelectedFactKeys());
+        // Keep the Layers panel in step (rows, time-aware counts, live state).
+        refreshLayersPanel(facts);
+    }
+
+    // -----------------------------------------------------------------------
+    // Layers panel (RHS) — live, transient show/hide + solo
+    // -----------------------------------------------------------------------
+
+    /** Recomputes per-type counts and repopulates the Layers panel. */
+    private void refreshLayersPanel(final List<Fact> facts) {
+        final List<TypeStyle> layers = getEntity().getTypeStyles();
+        pruneStaleLayerState(layers);
+        final Map<String, Integer> counts = new HashMap<>();
+        if (facts != null) {
+            for (final Fact fact : facts) {
+                counts.merge(fact.getType(), 1, Integer::sum);
+            }
+        }
+        lastLayerCounts = counts;
+        floorMapLayersPresenter.setData(
+                layers, counts, hiddenLayerTypes, lockedLayerTypes, layerOpacity, soloLayerType);
+        floorMapLayersPresenter.setPresets(presetNames(), selectedPresetName);
+    }
+
+    /** Repopulates the Layers panel using the last counts (after a state toggle). */
+    private void refreshLayersPanelState() {
+        floorMapLayersPresenter.setData(getEntity().getTypeStyles(), lastLayerCounts,
+                hiddenLayerTypes, lockedLayerTypes, layerOpacity, soloLayerType);
+        floorMapLayersPresenter.setPresets(presetNames(), selectedPresetName);
+    }
+
+    private List<String> presetNames() {
+        final List<String> names = new ArrayList<>();
+        for (final FloorMapLayerPreset preset : layerPresets) {
+            if (preset != null && preset.getName() != null) {
+                names.add(preset.getName());
+            }
+        }
+        return names;
+    }
+
+    /** Applies a saved view (or resets when {@code name} is {@code null}). */
+    private void applyLayerPreset(final String name) {
+        hiddenLayerTypes.clear();
+        layerOpacity.clear();
+        soloLayerType = null;
+        final FloorMapLayerPreset preset = FloorMapLayerPreset.findByName(layerPresets, name);
+        if (preset != null) {
+            hiddenLayerTypes.addAll(preset.hiddenTypesAsSet());
+            layerOpacity.putAll(preset.opacityAsMap());
+            selectedPresetName = preset.getName();
+        } else {
+            selectedPresetName = null;
+        }
+        applyLayerVisibility();
+        refreshLayersPanelState();
+    }
+
+    /** Captures the current live view (hidden + dimmed layers) as a new preset. */
+    private void saveCurrentViewAsPreset() {
+        final String name = nextPresetName();
+        layerPresets.add(FloorMapLayerPreset.capture(name, hiddenLayerTypes, layerOpacity, false));
+        selectedPresetName = name;
+        setDirty(true);
+        refreshLayersPanelState();
+    }
+
+    private String nextPresetName() {
+        int n = layerPresets.size() + 1;
+        while (FloorMapLayerPreset.findByName(layerPresets, "View " + n) != null) {
+            n++;
+        }
+        return "View " + n;
+    }
+
+    /** Drops any hidden/locked/dimmed/soloed type that is no longer a configured layer. */
+    private void pruneStaleLayerState(final List<TypeStyle> layers) {
+        final Set<String> known = new HashSet<>();
+        if (layers != null) {
+            for (final TypeStyle style : layers) {
+                if (style != null) {
+                    known.add(style.getType());
+                }
+            }
+        }
+        hiddenLayerTypes.retainAll(known);
+        lockedLayerTypes.retainAll(known);
+        layerOpacity.keySet().retainAll(known);
+        if (soloLayerType != null && !known.contains(soloLayerType)) {
+            soloLayerType = null;
+        }
+    }
+
+    private void applyLayerVisibility() {
+        floorMapCanvasPresenter.setHiddenTypes(hiddenLayerTypes);
+        floorMapCanvasPresenter.setSoloType(soloLayerType);
+        floorMapCanvasPresenter.setLockedTypes(lockedLayerTypes);
+        floorMapCanvasPresenter.setOpacityByType(layerOpacity);
+    }
+
+    private void toggleLayerVisibility(final String type) {
+        if (type == null) {
+            return;
+        }
+        if (!hiddenLayerTypes.remove(type)) {
+            hiddenLayerTypes.add(type);
+        }
+        applyLayerVisibility();
+        refreshLayersPanelState();
+    }
+
+    private void toggleLayerSolo(final String type) {
+        if (type == null) {
+            return;
+        }
+        soloLayerType = type.equals(soloLayerType)
+                ? null
+                : type;
+        applyLayerVisibility();
+        refreshLayersPanelState();
+    }
+
+    private void toggleLayerLock(final String type) {
+        if (type == null) {
+            return;
+        }
+        if (!lockedLayerTypes.remove(type)) {
+            lockedLayerTypes.add(type);
+        }
+        applyLayerVisibility();
+        refreshLayersPanelState();
+    }
+
+    private void toggleLayerDim(final String type) {
+        if (type == null) {
+            return;
+        }
+        if (layerOpacity.remove(type) == null) {
+            layerOpacity.put(type, DIM_OPACITY);
+        }
+        applyLayerVisibility();
+        refreshLayersPanelState();
+    }
+
+    private void showAllLayers() {
+        hiddenLayerTypes.clear();
+        lockedLayerTypes.clear();
+        layerOpacity.clear();
+        soloLayerType = null;
+        applyLayerVisibility();
+        refreshLayersPanelState();
     }
 
     /**

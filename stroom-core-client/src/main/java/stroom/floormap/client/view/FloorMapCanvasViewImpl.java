@@ -21,6 +21,7 @@ import stroom.entity.client.presenter.ReadOnlyChangeHandler;
 import stroom.floormap.client.presenter.FloorMapCanvasPresenter.FloorMapCanvasView;
 import stroom.floormap.shared.Fact;
 import stroom.floormap.shared.FloorMapJsonKeys;
+import stroom.floormap.shared.FloorMapLayers;
 import stroom.floormap.shared.FloorMapObject;
 import stroom.floormap.shared.FloorMapShapes;
 import stroom.floormap.shared.FloorMapTransformationMatrix;
@@ -212,6 +213,7 @@ public class FloorMapCanvasViewImpl
                      final List<FloorMapObject> events,
                      final Set<String> selectedObjectIds,
                      final List<TypeStyle> typeStyles,
+                     final Map<String, Double> opacityByType,
                      final boolean showGrid,
                      final double[] marqueeRectPx,
                      final boolean drawSelectionHandles) {
@@ -246,10 +248,17 @@ public class FloorMapCanvasViewImpl
                     if (facts != null) {
                         for (final Fact fact : facts) {
                             final boolean isSelected = selectedObjectIds.contains(fact.getKey());
-                            if (fact.hasImage()) {
-                                appendImageFact(flipGroup, fact, isSelected);
+                            final double opacity =
+                                    FloorMapLayers.resolveOpacity(fact.getType(), opacityByType);
+                            if (opacity < 1.0) {
+                                // Dim the whole fact group (transient per-layer opacity).
+                                flipGroup.elem(
+                                        dimGroup -> appendFact(
+                                                dimGroup, fact, isSelected, typeStyles, scale),
+                                        SafeHtmlUtil.from("g"),
+                                        new Attribute("opacity", String.valueOf(opacity)));
                             } else {
-                                appendDefaultGraphic(flipGroup, fact, isSelected, typeStyles, scale);
+                                appendFact(flipGroup, fact, isSelected, typeStyles, scale);
                             }
                         }
                     }
@@ -494,6 +503,19 @@ public class FloorMapCanvasViewImpl
                 new Attribute("stroke", HANDLE_STROKE),
                 new Attribute("stroke-width", "1"),
                 new Attribute("cursor", "grab"));
+    }
+
+    /** Dispatches a fact to the image or default-graphic renderer. */
+    private void appendFact(final HtmlBuilder parent,
+                            final Fact fact,
+                            final boolean isSelected,
+                            final List<TypeStyle> typeStyles,
+                            final double scale) {
+        if (fact.hasImage()) {
+            appendImageFact(parent, fact, isSelected);
+        } else {
+            appendDefaultGraphic(parent, fact, isSelected, typeStyles, scale);
+        }
     }
 
     /**

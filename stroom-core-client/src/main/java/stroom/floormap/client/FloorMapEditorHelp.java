@@ -183,7 +183,7 @@ public final class FloorMapEditorHelp {
                 + "<li><strong>Scrubber</strong> — drag the handle, or click the histogram, to "
                 + "jump to a time. A pill above the handle shows the exact time while "
                 + "dragging.</li>"
-// TODO Add histogram to UI then uncomment this                 
+// TODO Add histogram to UI then uncomment this
 //                + "<li><strong>Histogram</strong> — the bars show how many events fall in each "
 //                + "time bin; hover a bar for its count.</li>"
                 + "<li><strong>Speed badge</strong> (e.g. <code>x1</code>) — the current playback "

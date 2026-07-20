@@ -30,8 +30,10 @@ import stroom.floormap.shared.FloorMapEntityList;
 import stroom.floormap.shared.FloorMapEntryParser;
 import stroom.floormap.shared.FloorMapFieldMapping;
 import stroom.floormap.shared.FloorMapFieldMapping.Role;
+import stroom.floormap.shared.FloorMapLayerPreset;
 import stroom.floormap.shared.FloorMapObject;
 import stroom.floormap.shared.FloorMapTransformationMatrix;
+import stroom.floormap.shared.TypeStyle;
 import stroom.query.api.Column;
 import stroom.query.api.DestroyReason;
 import stroom.query.api.GroupSelection;
@@ -61,9 +63,12 @@ import com.gwtplatform.mvp.client.View;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 
 /**
@@ -91,12 +96,30 @@ public class FloorMapMapPresenter
     public static final Object MAP = new Object();
     public static final Object ENTITY_LIST = new Object();
     public static final Object TIMELINE = new Object();
+    public static final Object LAYERS = new Object();
     private static final int HISTOGRAM_BINS = 100;
 
     private final FloorMapCanvasPresenter floorMapCanvasPresenter;
     private final FloorMapTimelinePresenter floorMapTimelinePresenter;
     private final FloorMapObjectEditPresenter floorMapObjectEditPresenter;
     private final FloorMapEntityListPresenter floorMapEntityListPresenter;
+    private final FloorMapLayersPresenter floorMapLayersPresenter;
+
+    /**
+     * Live (transient, non-persisted) layer visibility for the read-only Map tab —
+     * the viewer's hidden types and soloed type. Applied to the canvas but never
+     * written to the document (see the Layers plan, Phase 1). Sticky for the life
+     * of the open tab.
+     */
+    private static final double DIM_OPACITY = 0.3;
+    private final Set<String> hiddenLayerTypes = new HashSet<>();
+    private final Set<String> lockedLayerTypes = new HashSet<>();
+    private final Map<String, Double> layerOpacity = new HashMap<>();
+    private String soloLayerType;
+    private Map<String, Integer> lastLayerCounts = new HashMap<>();
+    private List<FloorMapLayerPreset> layerPresets = new ArrayList<>();
+    private String selectedPresetName;
+    private boolean firstLayersRead = true;
 
     /** Roster of every entity seen on the map, feeding the tracking panel. */
     private final FloorMapEntityList entityList = new FloorMapEntityList();
@@ -156,20 +179,61 @@ public class FloorMapMapPresenter
                                 final Provider<FloorMapCanvasPresenter> floorMapCanvasPresenterProvider,
                                 final Provider<FloorMapTimelinePresenter> floorMapTimelinePresenterProvider,
                                 final Provider<FloorMapObjectEditPresenter> floorMapObjectEditPresenterProvider,
-                                final Provider<FloorMapEntityListPresenter> floorMapEntityListPresenterProvider) {
+                                final Provider<FloorMapEntityListPresenter> floorMapEntityListPresenterProvider,
+                                final Provider<FloorMapLayersPresenter> floorMapLayersPresenterProvider) {
         super(eventBus, view);
 
         this.floorMapCanvasPresenter = floorMapCanvasPresenterProvider.get();
         this.floorMapTimelinePresenter = floorMapTimelinePresenterProvider.get();
         this.floorMapObjectEditPresenter = floorMapObjectEditPresenterProvider.get();
         this.floorMapEntityListPresenter = floorMapEntityListPresenterProvider.get();
+        this.floorMapLayersPresenter = floorMapLayersPresenterProvider.get();
 
         // Default initial time
         this.selectedTime = System.currentTimeMillis();
 
+        // Layers panel (RHS, viewer mode): live show/hide + solo on the canvas.
+        floorMapLayersPresenter.configureViewer(new FloorMapLayersPresenter.LayersHandler() {
+            @Override
+            public void onToggleVisibility(final String type) {
+                toggleLayerVisibility(type);
+            }
+
+            @Override
+            public void onToggleSolo(final String type) {
+                toggleLayerSolo(type);
+            }
+
+            @Override
+            public void onToggleLock(final String type) {
+                toggleLayerLock(type);
+            }
+
+            @Override
+            public void onToggleDim(final String type) {
+                toggleLayerDim(type);
+            }
+
+            @Override
+            public void onShowAll() {
+                showAllLayers();
+            }
+
+            @Override
+            public void onApplyPreset(final String name) {
+                applyLayerPreset(name);
+            }
+
+            @Override
+            public void onSavePreset() {
+                // Read-only Map tab cannot save presets.
+            }
+        }, false);
+
         setInSlot(MAP, floorMapCanvasPresenter);
         setInSlot(ENTITY_LIST, floorMapEntityListPresenter);
         setInSlot(TIMELINE, floorMapTimelinePresenter);
+        setInSlot(LAYERS, floorMapLayersPresenter);
 
         // Grid on/off toggle, surfaced next to the save buttons (HasToolbar).
         // SvgImage has no dedicated grid glyph; TABLE renders as a grid of cells.
@@ -524,8 +588,163 @@ public class FloorMapMapPresenter
 
         // Facts paint in the configured type z-order (order backgrounds first on
         // the Settings tab so they sit behind); events draw on top.
+        // On first load, seed the viewer's live state from the default preset.
+        loadPresetsApplyDefaultOnce();
         floorMapCanvasPresenter.setTypeStyles(getEntity().getTypeStyles());
+        // Apply the viewer's live (transient) layer visibility + solo before drawing.
+        floorMapCanvasPresenter.setHiddenTypes(hiddenLayerTypes);
+        floorMapCanvasPresenter.setSoloType(soloLayerType);
+        floorMapCanvasPresenter.setLockedTypes(lockedLayerTypes);
+        floorMapCanvasPresenter.setOpacityByType(layerOpacity);
         floorMapCanvasPresenter.setFacts(facts);
+        refreshLayersPanel(facts);
+    }
+
+    // -----------------------------------------------------------------------
+    // Layers panel (RHS, viewer mode) — live, transient show/hide + solo
+    // -----------------------------------------------------------------------
+
+    /** Recomputes per-type counts and repopulates the Layers panel. */
+    private void refreshLayersPanel(final List<Fact> facts) {
+        final List<TypeStyle> layers = getEntity().getTypeStyles();
+        pruneStaleLayerState(layers);
+        final Map<String, Integer> counts = new HashMap<>();
+        if (facts != null) {
+            for (final Fact fact : facts) {
+                counts.merge(fact.getType(), 1, Integer::sum);
+            }
+        }
+        lastLayerCounts = counts;
+        floorMapLayersPresenter.setData(
+                layers, counts, hiddenLayerTypes, lockedLayerTypes, layerOpacity, soloLayerType);
+        floorMapLayersPresenter.setPresets(presetNames(), selectedPresetName);
+    }
+
+    private void refreshLayersPanelState() {
+        floorMapLayersPresenter.setData(getEntity().getTypeStyles(), lastLayerCounts,
+                hiddenLayerTypes, lockedLayerTypes, layerOpacity, soloLayerType);
+        floorMapLayersPresenter.setPresets(presetNames(), selectedPresetName);
+    }
+
+    private void loadPresetsApplyDefaultOnce() {
+        layerPresets = getEntity().getLayerPresets() != null
+                ? new ArrayList<>(getEntity().getLayerPresets())
+                : new ArrayList<>();
+        if (firstLayersRead) {
+            firstLayersRead = false;
+            final FloorMapLayerPreset defaultPreset = FloorMapLayerPreset.findDefault(layerPresets);
+            if (defaultPreset != null) {
+                hiddenLayerTypes.clear();
+                layerOpacity.clear();
+                hiddenLayerTypes.addAll(defaultPreset.hiddenTypesAsSet());
+                layerOpacity.putAll(defaultPreset.opacityAsMap());
+                selectedPresetName = defaultPreset.getName();
+            }
+        }
+    }
+
+    private List<String> presetNames() {
+        final List<String> names = new ArrayList<>();
+        for (final FloorMapLayerPreset preset : layerPresets) {
+            if (preset != null && preset.getName() != null) {
+                names.add(preset.getName());
+            }
+        }
+        return names;
+    }
+
+    /** Applies a saved view (or resets when {@code name} is {@code null}). */
+    private void applyLayerPreset(final String name) {
+        hiddenLayerTypes.clear();
+        layerOpacity.clear();
+        soloLayerType = null;
+        final FloorMapLayerPreset preset = FloorMapLayerPreset.findByName(layerPresets, name);
+        if (preset != null) {
+            hiddenLayerTypes.addAll(preset.hiddenTypesAsSet());
+            layerOpacity.putAll(preset.opacityAsMap());
+            selectedPresetName = preset.getName();
+        } else {
+            selectedPresetName = null;
+        }
+        applyLayerVisibility();
+        refreshLayersPanelState();
+    }
+
+    private void pruneStaleLayerState(final List<TypeStyle> layers) {
+        final Set<String> known = new HashSet<>();
+        if (layers != null) {
+            for (final TypeStyle style : layers) {
+                if (style != null) {
+                    known.add(style.getType());
+                }
+            }
+        }
+        hiddenLayerTypes.retainAll(known);
+        lockedLayerTypes.retainAll(known);
+        layerOpacity.keySet().retainAll(known);
+        if (soloLayerType != null && !known.contains(soloLayerType)) {
+            soloLayerType = null;
+        }
+    }
+
+    private void applyLayerVisibility() {
+        floorMapCanvasPresenter.setHiddenTypes(hiddenLayerTypes);
+        floorMapCanvasPresenter.setSoloType(soloLayerType);
+        floorMapCanvasPresenter.setLockedTypes(lockedLayerTypes);
+        floorMapCanvasPresenter.setOpacityByType(layerOpacity);
+    }
+
+    private void toggleLayerVisibility(final String type) {
+        if (type == null) {
+            return;
+        }
+        if (!hiddenLayerTypes.remove(type)) {
+            hiddenLayerTypes.add(type);
+        }
+        applyLayerVisibility();
+        refreshLayersPanelState();
+    }
+
+    private void toggleLayerSolo(final String type) {
+        if (type == null) {
+            return;
+        }
+        soloLayerType = type.equals(soloLayerType)
+                ? null
+                : type;
+        applyLayerVisibility();
+        refreshLayersPanelState();
+    }
+
+    private void toggleLayerLock(final String type) {
+        if (type == null) {
+            return;
+        }
+        if (!lockedLayerTypes.remove(type)) {
+            lockedLayerTypes.add(type);
+        }
+        applyLayerVisibility();
+        refreshLayersPanelState();
+    }
+
+    private void toggleLayerDim(final String type) {
+        if (type == null) {
+            return;
+        }
+        if (layerOpacity.remove(type) == null) {
+            layerOpacity.put(type, DIM_OPACITY);
+        }
+        applyLayerVisibility();
+        refreshLayersPanelState();
+    }
+
+    private void showAllLayers() {
+        hiddenLayerTypes.clear();
+        lockedLayerTypes.clear();
+        layerOpacity.clear();
+        soloLayerType = null;
+        applyLayerVisibility();
+        refreshLayersPanelState();
     }
 
     /**

@@ -18,6 +18,7 @@ package stroom.floormap.client.view;
 
 import stroom.document.client.event.DirtyUiHandlers;
 import stroom.entity.client.presenter.ReadOnlyChangeHandler;
+import stroom.floormap.client.presenter.FloorMapSettingsPresenter;
 import stroom.floormap.client.presenter.FloorMapSettingsPresenter.FloorMapSettingsView;
 
 import com.google.gwt.uibinder.client.UiBinder;
@@ -74,6 +75,14 @@ public class FloorMapSettingsViewImpl
     @Override
     public Widget asWidget() {
         return widget;
+    }
+
+    /** Routes the embedded Layers panel (editor mode) into the type-styles container. */
+    @Override
+    public void setInSlot(final Object slot, final Widget content) {
+        if (FloorMapSettingsPresenter.TYPE_STYLES_SLOT.equals(slot)) {
+            typeStylesGridContainer.setWidget(content);
+        }
     }
 
     /**

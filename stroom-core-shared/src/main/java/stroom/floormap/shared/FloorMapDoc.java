@@ -247,6 +247,15 @@ public class FloorMapDoc extends AbstractDoc {
     private final List<TypeStyle> typeStyles;
 
     /**
+     * Named saved layer <em>views</em> (see {@link FloorMapLayerPreset}) — the only
+     * persisted layer state (live visibility / lock / opacity are transient). May be
+     * {@code null}/empty for documents that define no presets. One entry may be
+     * marked default-on-open.
+     */
+    @JsonProperty
+    private final List<FloorMapLayerPreset> layerPresets;
+
+    /**
      * Constructs a {@code FloorMapDoc} from its constituent fields.
      *
      * <p>This constructor is invoked by Jackson during deserialisation and
@@ -321,7 +330,8 @@ public class FloorMapDoc extends AbstractDoc {
                            final QueryTablePreferences eventsQueryTablePreferences,
                        @JsonProperty("valueFormat") final ValueFormat valueFormat,
                        @JsonProperty("valueSchema") final List<FloorMapFieldMapping> valueSchema,
-                       @JsonProperty("typeStyles") final List<TypeStyle> typeStyles) {
+                       @JsonProperty("typeStyles") final List<TypeStyle> typeStyles,
+                       @JsonProperty("layerPresets") final List<FloorMapLayerPreset> layerPresets) {
         super(TYPE, uuid,
                 name,
                 version,
@@ -346,6 +356,7 @@ public class FloorMapDoc extends AbstractDoc {
         this.valueFormat = valueFormat;
         this.valueSchema = valueSchema;
         this.typeStyles = typeStyles;
+        this.layerPresets = layerPresets;
     }
 
     /**
@@ -509,6 +520,14 @@ public class FloorMapDoc extends AbstractDoc {
     }
 
     /**
+     * Returns the named saved layer views (presets), or {@code null} if none are
+     * configured.
+     */
+    public List<FloorMapLayerPreset> getLayerPresets() {
+        return layerPresets;
+    }
+
+    /**
      * Returns a new {@link DocRef.TypedBuilder} pre-configured with this
      * document's {@link #TYPE}.
      *
@@ -563,7 +582,8 @@ public class FloorMapDoc extends AbstractDoc {
                Objects.equals(eventsQueryTablePreferences, that.eventsQueryTablePreferences) &&
                Objects.equals(valueFormat, that.valueFormat) &&
                Objects.equals(valueSchema, that.valueSchema) &&
-               Objects.equals(typeStyles, that.typeStyles);
+               Objects.equals(typeStyles, that.typeStyles) &&
+               Objects.equals(layerPresets, that.layerPresets);
     }
 
     /** {@inheritDoc} */
@@ -583,7 +603,8 @@ public class FloorMapDoc extends AbstractDoc {
                 eventsQueryTablePreferences,
                 valueFormat,
                 valueSchema,
-                typeStyles);
+                typeStyles,
+                layerPresets);
     }
 
     /**
@@ -633,6 +654,7 @@ public class FloorMapDoc extends AbstractDoc {
         private ValueFormat valueFormat;
         private List<FloorMapFieldMapping> valueSchema;
         private List<TypeStyle> typeStyles;
+        private List<FloorMapLayerPreset> layerPresets;
 
         /**
          * Creates an empty builder. All fields default to {@code null}.
@@ -661,6 +683,7 @@ public class FloorMapDoc extends AbstractDoc {
             this.valueFormat = doc.valueFormat;
             this.valueSchema = doc.valueSchema;
             this.typeStyles = doc.typeStyles;
+            this.layerPresets = doc.layerPresets;
         }
 
         /**
@@ -824,6 +847,17 @@ public class FloorMapDoc extends AbstractDoc {
             return self();
         }
 
+        /**
+         * Sets the named saved layer views (presets).
+         *
+         * @param layerPresets the presets, or {@code null}
+         * @return this builder
+         */
+        public Builder layerPresets(final List<FloorMapLayerPreset> layerPresets) {
+            this.layerPresets = layerPresets;
+            return self();
+        }
+
         @Override
         protected Builder self() {
             return this;
@@ -857,7 +891,8 @@ public class FloorMapDoc extends AbstractDoc {
                     eventsQueryTablePreferences,
                     valueFormat,
                     valueSchema,
-                    typeStyles);
+                    typeStyles,
+                    layerPresets);
         }
     }
 }
