@@ -415,3 +415,64 @@ All new and modified code in this plan must meet these; they are acceptance crit
   (D4), and the B1 structural detection + streaming lookup (D5–D8). Follow the repo's existing test style
   (`TestOptimisingQueryCompiler*`, `TestJoinCostModel`, `Test…` dynamic-test factories).
 
+---
+
+## 12. Beyond v1 — recommended phasing (2026-07-20)
+
+**v1 (Phase 0 + Phase 1 + B1 + the test harness) is complete and committed** (see §9–§11's "DONE" notes). This
+section is the recommended order for everything deferred, re-sequenced now that v1 is built and its actual
+behaviour is known — not a re-statement of §1's original phasing, which predates implementation. See
+[query-optimiser-joins-future.md](query-optimiser-joins-future.md) for the human-facing write-up of the same
+material (read that one for the "why"; this section is the engineering sequencing).
+
+### Where v1 leaves the ceiling
+
+B1 (enrichment) and A1/A2 (push-down/pruning) each help their specific shape - a keyed-small side, or a query
+with a selective single-side predicate. Neither touches **big⋈big with no reducing predicate**: both sides still
+fully materialise in memory via `JoinSearchProvider.joinAndFeedViaHashJoin`, just behind the Phase-0 guardrails
+(a clean `JoinLimitExceededException` instead of an `OutOfMemoryError`, not a higher ceiling). That is the
+concrete gap the phases below close, roughly in priority order.
+
+### Recommended order
+
+1. **Streaming + spill (report items C2 + C1, do together)** — replaces `JoinSearchProvider`'s on-heap
+   `ArrayList`/`HashMap` build side with the same off-heap `LmdbDataStore` single-source search already uses, and
+   streams the probe side incrementally instead of realising it into a `List` first. **Raises the ceiling, not
+   the speed**: a join that already fits in heap today gains nothing (probably 3–10x slower per row via disk
+   I/O); a join that doesn't fit today goes from "fails immediately" to "succeeds". C2 (streaming) alone also
+   makes `LIMIT` actually stop the join early, which it cannot today.
+2. **Build-side selection (A6)** — once C2's streaming gives a cheap row-count signal, always build the hash
+   table over the *smaller* side (today it's hard-coded to the right side regardless). Cheap to add, real speed
+   win for skewed joins - roughly proportional to the size ratio (a 10:1 skew is roughly a 10x reduction in build
+   time/memory for that side).
+3. **Semi-join / bloom-filter reduction (A4)** — the lever for big⋈big queries that have no literal `WHERE`
+   predicate for A1 to push (e.g. "today's events ⋈ yesterday's active users" - correlated only via the join key
+   itself). Compute the small side's key set/bloom filter and push it into the big side's scan as an `IN`/bloom
+   predicate. Gains are workload-dependent (proportional to true key overlap selectivity), plausibly 2x–100x;
+   unlike A1 it needs no explicit query change to fire.
+4. **Broadcast join across the cluster (D1)** — the first genuinely distributed step, riding the existing
+   cluster fan-out (`FederatedSearchExecutor`/`NodeSearchTaskCreator`) that single-source search already uses but
+   the join path has never touched. Replicates a small-but-not-tiny side to every node, joins it locally against
+   each node's shards of the big side. This is the first phase with a **qualitative** speed change - close to
+   linear speedup with cluster size for the big-side scan/probe portion (coordination and result merge don't
+   parallelise as cleanly, so the whole-query speedup is sub-linear). Also the highest implementation risk of the
+   near-term phases: new wiring, not an extension of existing join code.
+5. **Cost-model wiring (report items E22/E23)** — deliberately sequenced *after* 1–4, not before: with only one
+   strategy per shape (as after v1 + steps 1–4), there's nothing yet for a cost model to *choose between*.
+   Implementing the real `IndexShardStats`/`StateStoreStats` adapters and consulting `JoinCostModel` at execution
+   time mostly prevents *bad* choices (e.g. broadcasting a side that turns out to be huge) rather than directly
+   speeding anything up - a robustness investment, not a performance one.
+6. **Sort-merge join (C3) and shuffle/partitioned hash join (D2)** — last, and only if 1–4 prove insufficient in
+   practice. These are for the residual case where *neither* side is small enough to build or broadcast - true
+   big⋈big at extreme scale on both sides. Highest engineering cost (a new merge/exchange operator); only
+   worth it once real workloads show phases 1–4 hitting a wall, since most real joins have *some* asymmetry or
+   selectivity those phases already exploit.
+
+### Honest summary
+
+Phases 1–2 above (streaming/spill, build-side selection) buy **robustness and a much higher ceiling**, with flat
+or slightly worse speed for joins that already fit today. Phase 3 (semi-join) buys **real speed** for the common
+"big but unfiltered" case. Phase 4 (broadcast) is the first phase that buys **actual parallel throughput** rather
+than "doesn't fall over." Recommend re-measuring real workloads after phase 4 before committing to phases 5–6 -
+they only pay off if genuinely unfiltered, unskewed big⋈big queries show up in practice.
+
