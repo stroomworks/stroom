@@ -177,8 +177,13 @@ gap list.
   key-based join cardinality is only refined for a keyed State-lookup side.
 - **`SKIP`, `ORDER BY`(graph only), dictionary-expansion and time-range-extraction rewrite rules** are not all
   implemented; `SKIP` in StroomQL and the two deferred rewrite rules are out of scope for this build.
-- **Live cross-provider join** (index ⋈ index against a real backend) has been proven in-module but not on a
-  live multi-provider deployment — that end-to-end run is exactly what this protocol's Test D validates.
+- **Live cross-provider join** (index ⋈ index against a real backend) has been proven in-module but not fully
+  confirmed on a live multi-provider deployment. Running this protocol's Test D live (2026-07-20, via the Stroom
+  MCP server) surfaced three bugs that no in-module test caught — a Guice startup circular-dependency, a null
+  `QueryKey` on a join side's synthetic sub-query, and a placeholder `TimeFilter` rejected by one row-key-factory
+  shape — all now fixed (see [query-optimiser-code-review.md](query-optimiser-code-review.md) §1a). A join no
+  longer fails outright, but a full correct-rows-end-to-end pass on a live deployment hasn't been re-recorded
+  here — re-run Test D to close this out.
 
 ---
 

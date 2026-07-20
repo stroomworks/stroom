@@ -1534,9 +1534,16 @@ this project; a join outside the direct-`Scan`/`Filter` shape still rejects clea
 mis-executing. **Substantially met, including `where` across joins**: `create()` compiles a two-source
 `INNER`/`LEFT` join to a `SearchRequest` with a `JoinSpec` (T6.1x), and `JoinSearchProvider.createResultStore`
 executes it end-to-end returning real rows, applying an outer `where` clause across the combined rows (T6.1d +
-T6.1w) - all proven against real coprocessors in-module. A real cross-provider `index ⋈ index` run against a
-live backend is the remaining manual verification. **Still open**: the efficiency items (per-side filter
-push-down through the join, async feed) and N-way join chains - all documented above.
+T6.1w) - all proven against real coprocessors in-module. **Update (2026-07-20)**: the remaining manual
+verification - a real cross-provider `index ⋈ index` run against a live backend, via the Stroom MCP server - was
+attempted and hit three bugs invisible to the in-module fake-backed tests above (a Guice circular-dependency
+failure building `DataSourceProviderRegistry` once a join-capable `SearchProvider` joined `Set<DataSourceProvider>`;
+a null `QueryKey` on the synthetic per-side seed request; a placeholder `TimeFilter` rejected by one
+`LmdbRowKeyFactory` shape) - all now fixed, see `docs/query-optimiser-code-review.md` §1a for detail. A join gets
+past compile/start/execute for the case tested; a full correct-rows confirmation on a live multi-provider
+deployment is still outstanding - re-run the testing protocol's Test D to close it out. **Still open**: the
+efficiency items (per-side filter push-down through the join, async feed) and N-way join chains - all documented
+above.
 
 ### Task 6.2 — Enrichment joins (State/PlanB broadcast-lookup) + domain-type source discovery
 - **Goal**: a join whose build side is a State/PlanB store uses the existing single-key lookup functions

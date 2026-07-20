@@ -71,6 +71,51 @@ Test: N-way join chain rejected cleanly (the single-join guard's error branch).
 
 ---
 
+## 1a. Further fixes — live functional testing (2026-07-20)
+
+The code-review pass above was static (reading + unit tests). Separately, joins were then exercised live against
+a running Stroom instance (via the Stroom MCP server) for the first time — exactly the manual verification Task
+6.1's gate and the testing protocol's Test D call for. That surfaced three defects that no unit test caught
+(each needs the *real* Guice graph and/or the *real* LMDB-backed `DataStore`, neither of which the fake-based
+`TestJoinSearchProvider`/`TestOptimisingQueryCompilerJoin` suites exercise) plus two smaller robustness gaps found
+while chasing them down.
+
+### Commit `9571063615` — fix bugs that prevent Stroom compiling, starting and running a join
+
+| Sev | Finding | Location |
+|-----|---------|----------|
+| high | **Guice circular-dependency failure at startup**, as soon as a `join`-capable build registers a second `DataSourceProvider`-implementing `SearchProvider`. `DataSourceProviderRegistry`'s constructor took `Set<DataSourceProvider>` directly, forcing Guice to eagerly construct every bound `DataSourceProvider` (including `SearchProvider`s, since `SearchProvider extends DataSourceProvider`) just to build that set — and at least one member's own construction chain needs a `DataSourceProviderRegistry` back, closing a cycle. Fixed the same way the existing `SearchProviderRegistry`/`JoinSearchProvider` cycle was already avoided (see the implementation plan's Task 6.1d note): the constructor now takes a lazy `Provider<Set<DataSourceProvider>>`, and the `Map<String, DataSourceProvider>` is built on first use behind double-checked locking, not at construction time. | `DataSourceProviderRegistry.java` |
+| med | `OptimisingQueryCompiler.compileJoinSide`'s synthetic per-side seed `SearchRequest` was built with a **null `QueryKey`** (`new SearchRequest(null, null, null, null, null, false, null)`). A join side's `SearchProvider` needs a real key to create/register its sub-`ResultStore` against — running a join therefore failed as soon as a side's provider tried to use it. Now seeds a fresh `new QueryKey(UUID.randomUUID().toString())`. | `OptimisingQueryCompiler.java` |
+| med | `JoinSearchProvider.createResultStore`'s final `dataStore.fetch(...)` call passed a non-null placeholder `new TimeFilter(0, Long.MAX_VALUE)` to mean "no time filtering". At least one `LmdbRowKeyFactory` implementation (the ungrouped/flat key shape) treats **any** non-null `TimeFilter` as an unsupported request and throws `RuntimeException("Time filtering is not supported by this key factory")` — it doesn't matter that the range covers all representable time. Real joins over that key shape crashed on read. Fixed by passing `null` (the actual "no filter" sentinel `fetch` already understands). | `JoinSearchProvider.java` |
+
+Also updated: `TestFieldInfoSourceAdapter` (test-only, follows the constructor signature change above).
+
+**Not exercised by any prior unit test** because `TestJoinSearchProvider`/`TestOptimisingQueryCompilerJoin` build
+their `JoinSearchProvider`/registries directly with test doubles — none goes through the real Guice injector or a
+real `LmdbDataStore`. Consider a smoke-style integration test that boots the real injector and runs one join
+against real `DataStore`s, specifically to catch this class of bug earlier next time.
+
+### Commit `f23e7a21cd` — AI bugfixes via MCP server testing of query optimiser
+
+| Sev | Finding | Location |
+|-----|---------|----------|
+| med | `TokenExceptionUtil.toTokenError` assumed every `TokenException` carries a source token and called `token.getChars()` unconditionally — but join-shape validation errors raised directly in `AstToSearchRequestMapper` (e.g. the N-way-join and `select *`-in-a-join rejections) throw a `TokenException` with a **null token**, so reporting one of those errors back to the caller threw a raw `NullPointerException` instead of the intended clean message. Now returns a `TokenError` with `null` line/column and just the message when the token is null. | `TokenExceptionUtil.java` |
+| low | `CoprocessorsFactory.create`/`SearchResponseCreator` (`getResults`/`makeDefaultResultCreators`) iterated `searchRequest.getResultRequests()` directly, which NPEs if it's null — a real state for a compiler path that doesn't set it. Now iterate `NullSafe.list(searchRequest.getResultRequests())`. | `CoprocessorsFactory.java`, `SearchResponseCreator.java` |
+| low | `QueryServiceImpl`'s dashboard-search future handler logged at `DEBUG` and returned `null` on `InterruptedException`/`ExecutionException`, silently swallowing the failure instead of surfacing it to the caller/UI. Now logs at `ERROR` and returns a `DashboardSearchResponse` carrying an `ErrorMessage(Severity.ERROR, ...)`. | `QueryServiceImpl.java` |
+
+(The same commit also touched `CypherCompiler` to derive a Cypher query's `ResultRequest`s from its `RETURN`
+clause — that's a temporal-Cypher-graph fix, out of scope for this query-optimiser doc; see
+`docs/temporal-cypher-graph.md`.)
+
+**Effect on the plan's remaining-verification item**: Task 6.1's gate (below) and the testing protocol's Test D
+both flagged "a real cross-provider `index ⋈ index` run against a live backend" as the one thing not yet done.
+This session did that run and found the three bugs above blocking it outright; with them fixed, a join now gets
+past compile/start/execute for at least the case tested. **Not yet re-confirmed here**: a full pass proving the
+*returned rows* are correct end-to-end on a live multi-provider deployment (as opposed to "it no longer throws") —
+re-run the testing protocol's Test D to close that out and update this note.
+
+---
+
 ## 2. What remains to be implemented (vs the plan)
 
 Cross-checked against `docs/query-optimiser-implementation-plan.md`. **Phases 0–5 are genuinely complete and
@@ -81,7 +126,7 @@ wired.** Phase 6 (joins) is the frontier. These are feature/deferral items, not 
 | **6.2** Enrichment joins (State/PlanB `BROADCAST_LOOKUP`) + domain-type source discovery | not started | `JoinExecutor` throws `UnsupportedOperationException` for `BROADCAST_LOOKUP`; no `StateFetcher` wiring; no domain-type source discovery. The biggest remaining functional gap. |
 | **6.3** EXPLAIN join cardinality | mostly done (2026-07-19) | A `StateLookup` side's unique-key count now feeds the cardinality (enrichment joins estimate ~= probe rows, not the full cross-product), and the nested-join case is annotated. **Still deferred**: real per-field distinct-key stats for two non-keyed sides (needs a new cost port). |
 | **6.4** Domain relationships (D7) | not started | No `RelationshipType` on `DomainTypeDoc`; no relationship-mediated join routing. Marked a fast-follow in the plan. |
-| **6.1** (deferred items) | partial | Execution hard-codes `HASH_JOIN` and always materialises the right side — `JoinCostModel.chooseAlgorithm` is never consulted at execution time (only in advisory EXPLAIN); no per-side filter push-down; synchronous (not async) side feed; **N-way join chains rejected** (single join only); live cross-provider `index ⋈ index` run unverified. |
+| **6.1** (deferred items) | partial | Execution hard-codes `HASH_JOIN` and always materialises the right side — `JoinCostModel.chooseAlgorithm` is never consulted at execution time (only in advisory EXPLAIN); no per-side filter push-down; synchronous (not async) side feed; **N-way join chains rejected** (single join only); live cross-provider `index ⋈ index` run attempted 2026-07-20 via MCP-based testing, hit and fixed three execution-blocking bugs (§1a) — full correct-rows-end-to-end confirmation still outstanding. |
 | **3.1** Real `IndexShardStats` / `StateStoreStats` adapters | partial | Still NoOp stubs, so every index/state-backed `Scan` estimates `confidence = 0.0`. Deferred to the module owners. |
 | **2.3** Dictionary-expansion & time-range-extraction rewrite rules | deferred | 4 of 6 designed rules implemented; these two need a dictionary-lookup port and a `Scan.timeRangePredicate` slot respectively. |
 | **3.2** Node-parallelism (cluster size) cost factor | not started | `durationMs` computed as if `nodeCount = 1`; no `ClusterSizeProvider` port. |
@@ -127,5 +172,6 @@ Two efficiency / dead-code smells documented rather than refactored (both carry 
 
 ---
 
-*Generated during a code-quality review pass; commit hashes are on branch `sw-query-optimiser`. Update this doc if
-the deferred coverage items above are subsequently closed or the remaining plan tasks are implemented.*
+*Generated during a code-quality review pass; commit hashes are on branch `sw-query-optimiser`. §1a added
+2026-07-20 after live functional testing found further bugs outside the original review's scope. Update this doc
+if the deferred coverage items above are subsequently closed or the remaining plan tasks are implemented.*
