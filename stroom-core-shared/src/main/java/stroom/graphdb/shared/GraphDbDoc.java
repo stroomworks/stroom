@@ -27,7 +27,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
-import org.jspecify.annotations.Nullable;
+//import org.jspecify.annotations.Nullable;
 
 import java.util.List;
 import java.util.Objects;
@@ -64,13 +64,13 @@ public class GraphDbDoc extends AbstractDoc {
     public static final String TYPE = "GraphDb";
 
     @JsonProperty
-    private final @Nullable String description;
+    private final String description;
     @JsonProperty
-    private final @Nullable TemporalPrecision temporalPrecision;
+    private final TemporalPrecision temporalPrecision;
     @JsonProperty
-    private final @Nullable List<GraphNodeTypeMapping> nodeTypeMappings;
+    private final List<GraphNodeTypeMapping> nodeTypeMappings;
     @JsonProperty
-    private final @Nullable RetentionSettings retention;
+    private final RetentionSettings retention;
 
     /**
      * <b>Preconditions:</b> {@code uuid} must be non-null (enforced by the {@link AbstractDoc} superclass
@@ -90,10 +90,10 @@ public class GraphDbDoc extends AbstractDoc {
             @JsonProperty("updateTimeMs") final Long updateTimeMs,
             @JsonProperty("createUser") final String createUser,
             @JsonProperty("updateUser") final String updateUser,
-            @JsonProperty("description") final @Nullable String description,
-            @JsonProperty("temporalPrecision") final @Nullable TemporalPrecision temporalPrecision,
-            @JsonProperty("nodeTypeMappings") final @Nullable List<GraphNodeTypeMapping> nodeTypeMappings,
-            @JsonProperty("retention") final @Nullable RetentionSettings retention) {
+            @JsonProperty("description") final String description,
+            @JsonProperty("temporalPrecision") final TemporalPrecision temporalPrecision,
+            @JsonProperty("nodeTypeMappings") final List<GraphNodeTypeMapping> nodeTypeMappings,
+            @JsonProperty("retention") final RetentionSettings retention) {
         super(TYPE, uuid, name, version, createTimeMs, updateTimeMs, createUser, updateUser);
         this.description = description;
         this.temporalPrecision = temporalPrecision;
@@ -101,7 +101,7 @@ public class GraphDbDoc extends AbstractDoc {
         this.retention = retention;
     }
 
-    public @Nullable String getDescription() {
+    public String getDescription() {
         return description;
     }
 
@@ -109,7 +109,7 @@ public class GraphDbDoc extends AbstractDoc {
      * @return the configured temporal precision, or {@code null} to use the internal default
      * (millisecond precision, per the P0.1 frozen model).
      */
-    public @Nullable TemporalPrecision getTemporalPrecision() {
+    public TemporalPrecision getTemporalPrecision() {
         return temporalPrecision;
     }
 
@@ -117,7 +117,7 @@ public class GraphDbDoc extends AbstractDoc {
      * @return the configured node-type mappings, or {@code null}/empty if the graph's node schema is derived
      * entirely from the domain-type catalogue at ingest time (design doc &sect;5.6).
      */
-    public @Nullable List<GraphNodeTypeMapping> getNodeTypeMappings() {
+    public List<GraphNodeTypeMapping> getNodeTypeMappings() {
         return nodeTypeMappings;
     }
 
@@ -125,7 +125,7 @@ public class GraphDbDoc extends AbstractDoc {
      * @return the configured retention policy (Task P1.4), or {@code null} to keep every version forever
      * (the internal default - no automatic deletion).
      */
-    public @Nullable RetentionSettings getRetention() {
+    public RetentionSettings getRetention() {
         return retention;
     }
 
@@ -186,10 +186,10 @@ public class GraphDbDoc extends AbstractDoc {
 
     public static class Builder extends AbstractBuilder<GraphDbDoc, Builder> {
 
-        private @Nullable String description;
-        private @Nullable TemporalPrecision temporalPrecision;
-        private @Nullable List<GraphNodeTypeMapping> nodeTypeMappings;
-        private @Nullable RetentionSettings retention;
+        private String description;
+        private TemporalPrecision temporalPrecision;
+        private List<GraphNodeTypeMapping> nodeTypeMappings;
+        private RetentionSettings retention;
 
         public Builder() {
         }
@@ -202,22 +202,22 @@ public class GraphDbDoc extends AbstractDoc {
             this.retention = doc.retention;
         }
 
-        public Builder description(final @Nullable String description) {
+        public Builder description(final String description) {
             this.description = description;
             return self();
         }
 
-        public Builder temporalPrecision(final @Nullable TemporalPrecision temporalPrecision) {
+        public Builder temporalPrecision(final TemporalPrecision temporalPrecision) {
             this.temporalPrecision = temporalPrecision;
             return self();
         }
 
-        public Builder nodeTypeMappings(final @Nullable List<GraphNodeTypeMapping> nodeTypeMappings) {
+        public Builder nodeTypeMappings(final List<GraphNodeTypeMapping> nodeTypeMappings) {
             this.nodeTypeMappings = nodeTypeMappings;
             return self();
         }
 
-        public Builder retention(final @Nullable RetentionSettings retention) {
+        public Builder retention(final RetentionSettings retention) {
             this.retention = retention;
             return self();
         }

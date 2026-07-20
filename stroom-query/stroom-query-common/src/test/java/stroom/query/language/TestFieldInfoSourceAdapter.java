@@ -58,7 +58,7 @@ class TestFieldInfoSourceAdapter {
     }
 
     private FieldInfoSourceAdapter adapter(final DataSourceProvider provider) {
-        final DataSourceProviderRegistry registry = new DataSourceProviderRegistry(Set.of(provider));
+        final DataSourceProviderRegistry registry = new DataSourceProviderRegistry(() -> Set.of(provider));
         final DataSourceResolver resolver = new DataSourceResolver(() -> mock(DocFinder.class), () -> registry);
         return new FieldInfoSourceAdapter(resolver, registry);
     }
@@ -96,7 +96,7 @@ class TestFieldInfoSourceAdapter {
 
     @Test
     void constructorRejectsNullArguments() {
-        final DataSourceProviderRegistry registry = new DataSourceProviderRegistry(Set.of(mockProvider()));
+        final DataSourceProviderRegistry registry = new DataSourceProviderRegistry(() -> Set.of(mockProvider()));
         final DataSourceResolver resolver = new DataSourceResolver(() -> mock(DocFinder.class), () -> registry);
 
         assertThatThrownBy(() -> new FieldInfoSourceAdapter(null, registry))

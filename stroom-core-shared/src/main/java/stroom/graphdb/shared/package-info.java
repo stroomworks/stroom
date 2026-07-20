@@ -19,7 +19,7 @@
  * PoC.0): the single document a user creates for a temporal Cypher graph, carrying only the genuine
  * user-configurable choices. Every physical store it owns is internal to {@code stroom-graphdb-impl}.
  */
-@NullMarked
+//@NullMarked
 package stroom.graphdb.shared;
 
-import org.jspecify.annotations.NullMarked;
+//import org.jspecify.annotations.NullMarked;

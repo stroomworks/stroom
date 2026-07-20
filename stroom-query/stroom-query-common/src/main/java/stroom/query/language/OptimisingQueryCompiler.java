@@ -20,6 +20,7 @@ import stroom.docref.DocRef;
 import stroom.query.api.ExplainPlan;
 import stroom.query.api.ExpressionOperator;
 import stroom.query.api.JoinSpec;
+import stroom.query.api.QueryKey;
 import stroom.query.api.ResultRequest;
 import stroom.query.api.SearchRequest;
 import stroom.query.api.TableSettings;
@@ -419,7 +420,8 @@ public class OptimisingQueryCompiler implements QueryCompiler {
         Objects.requireNonNull(scan, "scan");
         Objects.requireNonNull(expressionContext, "expressionContext");
         final String syntheticQuery = "from \"" + escapeForDoubleQuotedString(scan.dataSourceName()) + "\" select *";
-        final SearchRequest seed = new SearchRequest(null, null, null, null, null, false, null);
+        final SearchRequest seed = new SearchRequest(
+                null, new QueryKey(UUID.randomUUID().toString()), null, null, null, false, null);
         final SearchRequest base = newMapper().create(syntheticQuery, seed, expressionContext);
         if (filter == null) {
             return base;

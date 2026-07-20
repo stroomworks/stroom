@@ -23,7 +23,6 @@ import stroom.query.api.JoinSpec;
 import stroom.query.api.JoinSpec.JoinEquiKey;
 import stroom.query.api.OffsetRange;
 import stroom.query.api.SearchRequest;
-import stroom.query.api.TimeFilter;
 import stroom.query.api.datasource.FindFieldCriteria;
 import stroom.query.api.datasource.QueryField;
 import stroom.query.common.v2.CoprocessorsFactory;
@@ -274,7 +273,7 @@ class JoinSearchProvider implements SearchProvider {
                     columns,
                     OffsetRange.UNBOUNDED,
                     OpenGroups.ALL,
-                    new TimeFilter(0, Long.MAX_VALUE),
+                    null,
                     IdentityItemMapper.INSTANCE,
                     item -> rows.add(item.toArray()),
                     count -> {

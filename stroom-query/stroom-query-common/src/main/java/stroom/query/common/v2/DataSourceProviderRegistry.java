@@ -25,6 +25,7 @@ import stroom.util.logging.LambdaLoggerFactory;
 import stroom.util.shared.ResultPage;
 
 import jakarta.inject.Inject;
+import jakarta.inject.Provider;
 import jakarta.inject.Singleton;
 
 import java.util.ArrayList;
@@ -40,17 +41,33 @@ import java.util.concurrent.ConcurrentHashMap;
 public class DataSourceProviderRegistry {
 
     private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(DataSourceProviderRegistry.class);
-    private final Map<String, DataSourceProvider> dataSourceProviders = new ConcurrentHashMap<>();
+    private final Provider<Set<DataSourceProvider>> providersProvider;
+    private volatile Map<String, DataSourceProvider> dataSourceProviders;
 
     @Inject
-    public DataSourceProviderRegistry(final Set<DataSourceProvider> providers) {
-        for (final DataSourceProvider provider : providers) {
-            dataSourceProviders.put(provider.getDataSourceType(), provider);
+    public DataSourceProviderRegistry(final Provider<Set<DataSourceProvider>> providersProvider) {
+        this.providersProvider = providersProvider;
+    }
+
+    private Map<String, DataSourceProvider> getDataSourceProviders() {
+        Map<String, DataSourceProvider> map = dataSourceProviders;
+        if (map == null) {
+            synchronized (this) {
+                map = dataSourceProviders;
+                if (map == null) {
+                    map = new ConcurrentHashMap<>();
+                    for (final DataSourceProvider provider : providersProvider.get()) {
+                        map.put(provider.getDataSourceType(), provider);
+                    }
+                    dataSourceProviders = map;
+                }
+            }
         }
+        return map;
     }
 
     public Optional<DataSourceProvider> getDataSourceProvider(final String type) {
-        return Optional.ofNullable(dataSourceProviders.get(type));
+        return Optional.ofNullable(getDataSourceProviders().get(type));
     }
 
     public Optional<DocRef> fetchDefaultExtractionPipeline(final DocRef dataSourceRef) {
@@ -92,7 +109,7 @@ public class DataSourceProviderRegistry {
     }
 
     public List<DocRef> getDataSourceDocRefs() {
-        return dataSourceProviders.values()
+        return getDataSourceProviders().values()
                 .stream()
                 .map(DataSourceProvider::getDataSourceDocRefs)
                 .flatMap(List::stream)
@@ -100,7 +117,7 @@ public class DataSourceProviderRegistry {
     }
 
     public Optional<DocRef> findDataSourceByUuid(final String uuid) {
-        for (final DataSourceProvider provider : dataSourceProviders.values()) {
+        for (final DataSourceProvider provider : getDataSourceProviders().values()) {
             final Optional<DocRef> result = provider.findDataSourceByUuid(uuid);
             if (result.isPresent()) {
                 return result;
@@ -111,7 +128,7 @@ public class DataSourceProviderRegistry {
 
     public List<DocRef> findDataSourceByName(final String name) {
         final List<DocRef> results = new ArrayList<>();
-        for (final DataSourceProvider provider : dataSourceProviders.values()) {
+        for (final DataSourceProvider provider : getDataSourceProviders().values()) {
             results.addAll(provider.findDataSourceByName(name));
         }
         return results;
