@@ -49,6 +49,7 @@ import stroom.query.common.v2.SearchResultStoreConfig;
 import stroom.query.common.v2.Sizes;
 import stroom.query.common.v2.SizesProvider;
 import stroom.query.language.SearchRequestFactory;
+import stroom.query.language.functions.ExpressionContext;
 import stroom.query.language.functions.Val;
 import stroom.query.language.functions.ValLong;
 import stroom.query.language.functions.ValString;
@@ -101,6 +102,36 @@ class TestGraphSearchProvider {
             final GraphSearchProvider provider = provider(stores);
             final SearchRequest request = requestFor(
                     "MATCH (d:Device {id: 'd-42'})-[:CONNECTED_TO]->(a:Account) RETURN a.id");
+
+            final ResultStore resultStore = provider.createResultStore(request);
+
+            final List<Val[]> rows = readTableRows(resultStore);
+            assertThat(rows).extracting(row -> row[0].toString())
+                    .containsExactlyInAnyOrder("account-a", "account-b");
+        }
+    }
+
+    @Test
+    void singleHopCypherQuery_withCompilerDerivedResultRequests_returnsRealRows(@TempDir final Path root) {
+        // Proves CypherCompiler's own resultRequests (rather than this test class's hand-built one, see
+        // requestFor()) carry a real Cypher RETURN clause's columns all the way through to real rows - i.e. that
+        // a Cypher query submitted the way QueryServiceImpl.mapRequest() actually seeds one (with no
+        // resultRequests of its own) does not come back silently empty.
+        try (GraphStores stores = GraphStores.provision(root, DOC)) {
+            seedDeviceConnectedToAccounts(stores);
+
+            final GraphSearchProvider provider = provider(stores);
+            final SearchRequest seed = SearchRequest.builder()
+                    .searchRequestSource(SearchRequestSource.createBasic())
+                    .key(new QueryKey("test-graph"))
+                    .query(Query.builder().dataSource(DOC_REF).build())
+                    .dateTimeSettings(DateTimeSettings.builder().referenceTime(0L).build())
+                    .incremental(false)
+                    .build();
+            final SearchRequest request = new GraphCypherQueryCompiler().create(
+                    "MATCH (d:Device {id: 'd-42'})-[:CONNECTED_TO]->(a:Account) RETURN a.id",
+                    seed,
+                    new ExpressionContext());
 
             final ResultStore resultStore = provider.createResultStore(request);
 

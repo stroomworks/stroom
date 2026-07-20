@@ -28,6 +28,7 @@ import stroom.query.language.functions.ExpressionContext;
 import stroom.util.logging.LambdaLogger;
 import stroom.util.logging.LambdaLoggerFactory;
 import stroom.util.shared.ErrorMessage;
+import stroom.util.shared.NullSafe;
 import stroom.util.shared.Severity;
 import stroom.util.string.ExceptionStringUtil;
 
@@ -254,9 +255,9 @@ public class SearchResponseCreator {
                                     final Map<String, ResultCreator> resultCreatorMap) {
 
         // Provide results if this search is incremental or the search is complete.
-        final List<Result> results = new ArrayList<>(searchRequest.getResultRequests().size());
+        final List<Result> results = new ArrayList<>();
         // Copy the requested portion of the result cache into the result.
-        for (final ResultRequest resultRequest : searchRequest.getResultRequests()) {
+        for (final ResultRequest resultRequest : NullSafe.list(searchRequest.getResultRequests())) {
             final ResultCreator resultCreator = resultCreatorMap.get(resultRequest.getComponentId());
             if (resultCreator != null) {
                 final String componentId = resultRequest.getComponentId();
@@ -280,7 +281,7 @@ public class SearchResponseCreator {
 
     public Map<String, ResultCreator> makeDefaultResultCreators(final SearchRequest searchRequest) {
         final Map<String, ResultCreator> map = new HashMap<>();
-        for (final ResultRequest resultRequest : searchRequest.getResultRequests()) {
+        for (final ResultRequest resultRequest : NullSafe.list(searchRequest.getResultRequests())) {
             final String componentId = resultRequest.getComponentId();
             final DataStore dataStore = store.getData(componentId);
             if (dataStore != null) {

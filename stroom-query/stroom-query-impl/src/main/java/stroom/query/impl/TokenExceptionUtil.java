@@ -26,6 +26,11 @@ public class TokenExceptionUtil {
 
     public static TokenError toTokenError(final TokenException tokenException) {
         final AbstractToken token = tokenException.getToken();
+        if (token == null) {
+            // Some TokenExceptions (e.g. join-shape validation in AstToSearchRequestMapper) are thrown
+            // without a token, so there's no source location to report - just the message.
+            return new TokenError(null, null, tokenException.getMessage());
+        }
         final char[] chars = token.getChars();
         int lineNo = 1;
         int colNo = 0;

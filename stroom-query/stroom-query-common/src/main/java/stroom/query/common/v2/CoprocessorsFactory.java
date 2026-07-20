@@ -73,7 +73,7 @@ public class CoprocessorsFactory {
                                                     final DocRef defaultExtractionPipeline) {
         // Group common settings.
         final Map<TableSettings, Set<String>> groupMap = new HashMap<>();
-        for (final ResultRequest resultRequest : searchRequest.getResultRequests()) {
+        for (final ResultRequest resultRequest : NullSafe.list(searchRequest.getResultRequests())) {
             if (!NullSafe.isEmptyCollection(resultRequest.getMappings())) {
                 final String componentId = resultRequest.getComponentId();
                 TableSettings tableSettings = resultRequest.getMappings().get(0);

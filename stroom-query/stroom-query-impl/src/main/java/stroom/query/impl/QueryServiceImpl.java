@@ -569,8 +569,17 @@ class QueryServiceImpl implements QueryService, QueryFieldProvider {
                     return CompletableFuture.supplyAsync(supplier, executor).get();
 
                 } catch (final InterruptedException | ExecutionException e) {
-                    LOGGER.debug(e.getMessage(), e);
-                    return null;
+                    LOGGER.error(() -> "Error processing search " + request, e);
+                    return new DashboardSearchResponse(
+                            nodeInfo.getThisNodeName(),
+                            request.getQueryKey(),
+                            null,
+                            null,
+                            null,
+                            true,
+                            null,
+                            Collections.singletonList(
+                                    new ErrorMessage(Severity.ERROR, ExceptionStringUtil.getMessage(e))));
                 }
             });
         });

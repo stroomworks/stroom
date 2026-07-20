@@ -17,11 +17,16 @@
 package stroom.graphdb.impl;
 
 import stroom.docref.DocRef;
+import stroom.query.api.Column;
 import stroom.query.api.Query;
+import stroom.query.api.ResultRequest;
 import stroom.query.api.SearchRequest;
+import stroom.query.api.TableSettings;
 import stroom.query.language.functions.ExpressionContext;
 
 import org.junit.jupiter.api.Test;
+
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -61,6 +66,30 @@ class TestGraphCypherQueryCompiler {
         assertThat(result.getQuery().getDataSource()).isEqualTo(GRAPH_DB_REF);
         assertThat(result.getQuery().getGraphSpec()).isNotNull();
         assertThat(result.getQuery().getGraphSpec().getCypher()).isEqualTo("MATCH (n:Account) RETURN n.id");
+    }
+
+    @Test
+    void create_derivesResultRequestsFromTheReturnClauseColumns() {
+        final GraphCypherQueryCompiler compiler = new GraphCypherQueryCompiler();
+        final SearchRequest in = SearchRequest.builder()
+                .query(Query.builder().dataSource(GRAPH_DB_REF).build())
+                .build();
+
+        final SearchRequest result = compiler.create(
+                "MATCH (n:Account) RETURN n.id AS accountId, n.name", in, new ExpressionContext());
+
+        final List<ResultRequest> resultRequests = result.getResultRequests();
+        assertThat(resultRequests).hasSize(1);
+        final ResultRequest resultRequest = resultRequests.get(0);
+        assertThat(resultRequest.getMappings()).hasSize(1);
+
+        final TableSettings tableSettings = resultRequest.getMappings().get(0);
+        final List<Column> columns = tableSettings.getColumns();
+        assertThat(columns).hasSize(2);
+        assertThat(columns.get(0).getName()).isEqualTo("accountId");
+        assertThat(columns.get(0).getExpression()).isEqualTo("${accountId}");
+        assertThat(columns.get(1).getName()).isEqualTo("n.name");
+        assertThat(columns.get(1).getExpression()).isEqualTo("${n.name}");
     }
 
     @Test
