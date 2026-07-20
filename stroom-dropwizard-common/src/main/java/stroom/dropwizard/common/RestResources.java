@@ -29,11 +29,13 @@ import stroom.util.shared.Unauthenticated;
 import io.dropwizard.core.setup.Environment;
 import jakarta.inject.Inject;
 import jakarta.inject.Provider;
+import jakarta.ws.rs.HttpMethod;
 import jakarta.ws.rs.Path;
 import org.apache.commons.lang3.StringUtils;
 import org.glassfish.hk2.api.Factory;
 import org.glassfish.hk2.utilities.binding.AbstractBinder;
 
+import java.lang.annotation.Annotation;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -102,6 +104,56 @@ public class RestResources {
         // Now register all the resource classes
         resourceProviders.forEach(resourceProvider ->
                 environment.jersey().register(resourceProvider.resourceClass()));
+
+        // Log every individual endpoint (HTTP verb + full path) so that endpoint creation can be
+        // confirmed from the startup logs. The class-level listing above only records each
+        // resource's base path, not the method paths (e.g. it shows '/api/query/v1' but not
+        // '/api/query/v1/explainQuery'), which makes it impossible to tell from the logs whether a
+        // specific endpoint was actually registered.
+        logResourceEndpoints(resourceProviders);
+    }
+
+    private void logResourceEndpoints(final List<ResourceProvider> resourceProviders) {
+        LOGGER.info(() -> "Registered REST endpoints:");
+        resourceProviders.forEach(resourceProvider -> {
+            final Class<?> clazz = resourceProvider.resourceClass();
+            final String resourcePath = resourceProvider.resourcePath();
+            Arrays.stream(clazz.getMethods())
+                    .map(method -> describeEndpoint(clazz, method, resourcePath))
+                    .filter(Objects::nonNull)
+                    .sorted()
+                    .forEach(endpoint -> LOGGER.info(() -> "\t" + endpoint));
+        });
+    }
+
+    /**
+     * Builds a '<VERB> <full-path> => <Class>#<method>' description for a JAX-RS endpoint method, or
+     * returns null if the method is not an endpoint (i.e. carries no HTTP-method annotation). The
+     * HTTP verb and {@link Path} annotations may live on the resource interface rather than the impl,
+     * so they are resolved via {@link #getFromMethodOrSuper}.
+     */
+    private String describeEndpoint(final Class<?> clazz, final Method method, final String resourcePath) {
+        final String httpMethod = getFromMethodOrSuper(clazz, method, method2 -> {
+            for (final Annotation annotation : method2.getAnnotations()) {
+                final HttpMethod httpMethodAnno = annotation.annotationType().getAnnotation(HttpMethod.class);
+                if (httpMethodAnno != null) {
+                    return httpMethodAnno.value();
+                }
+            }
+            return null;
+        });
+        if (httpMethod == null) {
+            // Not an endpoint method (e.g. a default/helper method with no HTTP verb).
+            return null;
+        }
+        final Path pathAnno = getFromMethodOrSuper(clazz, method, method2 -> method2.getAnnotation(Path.class));
+        final String methodPath = pathAnno != null
+                ? pathAnno.value()
+                : "";
+        final String fullPath = ResourcePaths.buildPath(resourcePath, methodPath);
+        return StringUtils.rightPad(httpMethod, 6, " ")
+               + " " + fullPath
+               + "  => " + clazz.getSimpleName() + "#" + method.getName();
     }
 
     private void registerUnauthenticatedPaths(final List<ResourceProvider> resourceProviders) {

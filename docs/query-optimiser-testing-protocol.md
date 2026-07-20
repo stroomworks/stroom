@@ -48,15 +48,18 @@ effect immediately, cluster-wide, reversible at any time).
 
 The most self-contained test: it compiles a query and returns the plan, without executing it.
 
-**Request** (needs a valid session/API token; use the Swagger UI at `/s/swagger-ui` or `curl`):
+**Request** — needs a valid identity. Because this is a state-changing `POST`, a **session cookie alone is rejected with 403** by the CSRF filter (the Swagger UI "Try it out" button uses the session cookie, so it 403s). Authenticate with an **API key / Bearer token** instead (Swagger: click **Authorize** and paste the key; `curl`: `-H "Authorization: Bearer <token>"`), which is exempt from the CSRF check.
 
 ```
 POST /api/query/v1/explainQuery
 Content-Type: application/json
+Authorization: Bearer <api-key>
 
-"from \"MyIndex\" where EventTime > now() - 1d select StreamId, EventTime"
+from "MyIndex" where EventTime > now() - 1d select StreamId, EventTime
 ```
-(The body is a JSON string — the raw StroomQL text.)
+**The body is the raw StroomQL text**, sent verbatim — *not* a JSON-quoted string. Wrapping it in quotes
+(`"from \"MyIndex\" ..."`) makes the parser treat the quotes as part of the query and fail with
+`missing FROM`.
 
 **Expected result** — an `ExplainPlan` JSON tree, e.g.:
 
@@ -73,8 +76,8 @@ Content-Type: application/json
 - The scan node carries `estimatedRows`/`confidence` **only if** a cost signal was available (a real MetaService
   feed count). For index/state-backed sources the cost adapters are stubs, so `confidence` is commonly `0.0` and
   the estimate is a fallback — this is expected (see limitations).
-- A **malformed** query (e.g. `select foo`) returns an HTTP **4xx** with a clear message, **not** a 500. An empty
-  body also returns 4xx.
+- A **malformed** query (e.g. `select foo`) returns an HTTP **400 Bad Request** with a clear message (the syntax
+  error), **not** a 500. An empty body also returns 400. (The JSON error body's `code` matches the HTTP status.)
 
 This endpoint's behaviour does **not** depend on `stroom.query.optimiser.mode`.
 
@@ -153,9 +156,12 @@ select a.StreamId, b.Name
 ```
 "from \"Events\" as a join \"Users\" as b on a.UserId = b.Id select a.StreamId, b.Name"
 ```
-→ a `Join (…)` node over two `Scan` children. The algorithm shown is `HASH_JOIN` (or `BROADCAST_LOOKUP` when a
-side is a keyed State/PlanB lookup); estimated cardinality is the pessimistic cross-product unless a side is a
-keyed lookup.
+→ a `Join (…)` node over two `Scan` children. With placeholder cost signals (the common case — see limitations),
+the planner has no distinct-key counts to justify a hash build, so the node currently reads
+`Join (NESTED_LOOP, build side: LEFT)` and carries the note *"distinct-key counts unknown - cardinality is the
+pessimistic upper bound (full cross-product)"*. (A `BROADCAST_LOOKUP` is named instead when a side is a keyed
+State/PlanB lookup.) Note this is only the *named* plan — execution always runs an in-memory hash join regardless
+(see limitations).
 
 ---
 

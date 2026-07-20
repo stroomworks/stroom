@@ -34,12 +34,13 @@ public class BasicExceptionMapper implements ExceptionMapper<Throwable> {
         if (exception instanceof WebApplicationException) {
             final WebApplicationException wae = (WebApplicationException) exception;
             return wae.getResponse();
+        } else if (exception.getClass().getName().contains("SyntaxException")) {
+            // A SyntaxException is a malformed StroomQL/Cypher query (from either the ANTLR-driven parser
+            // or the legacy compiler). That is squarely a bad request from the caller, so return 400 rather
+            // than 403 (which implies an authorisation failure) or an opaque 500.
+            return createExceptionResponse(Status.BAD_REQUEST, exception);
         } else if (exception.getClass().getName().contains("AuthenticationException") ||
                 exception.getClass().getName().contains("TokenException") ||
-                // SyntaxException is the ANTLR-driven query parser's equivalent of the legacy TokenException (a
-                // malformed StroomQL/Cypher query) - classify it the same way so a syntax error is a client
-                // error, not an opaque HTTP 500, whichever compiler produced it.
-                exception.getClass().getName().contains("SyntaxException") ||
                 exception.getClass().getName().contains("PermissionException")) {
             return createExceptionResponse(Status.FORBIDDEN, exception);
         } else {
@@ -52,7 +53,7 @@ public class BasicExceptionMapper implements ExceptionMapper<Throwable> {
         LOGGER.debug(throwable.getMessage(), throwable);
         return Response.status(status)
                 .type(MediaType.APPLICATION_JSON_TYPE)
-                .entity(new ErrorMessage(Response.Status.INTERNAL_SERVER_ERROR.getStatusCode(),
+                .entity(new ErrorMessage(status.getStatusCode(),
                         throwable.getMessage(),
                         throwable.toString()))
                 .build();
