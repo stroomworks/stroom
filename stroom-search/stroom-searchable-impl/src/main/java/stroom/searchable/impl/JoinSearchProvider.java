@@ -33,6 +33,7 @@ import stroom.query.common.v2.ExpressionPredicateFactory;
 import stroom.query.common.v2.ExpressionPredicateFactory.ValueFunctionFactories;
 import stroom.query.common.v2.ExpressionPredicateFactory.ValueFunctionFactory;
 import stroom.query.common.v2.IdentityItemMapper;
+import stroom.query.common.v2.JoinConfig;
 import stroom.query.common.v2.JoinDataSourceType;
 import stroom.query.common.v2.OpenGroups;
 import stroom.query.common.v2.ResultStore;
@@ -48,6 +49,7 @@ import stroom.query.language.functions.Values;
 import stroom.query.planner.cost.JoinAlgorithm;
 import stroom.query.planner.join.JoinExecutor;
 import stroom.query.planner.join.JoinExecutor.Side;
+import stroom.query.planner.join.JoinLimitExceededException;
 import stroom.query.planner.logical.JoinType;
 import stroom.util.shared.ResultPage;
 
@@ -89,6 +91,14 @@ import java.util.function.Predicate;
  * realises both sides and feeds all rows <i>synchronously</i> before returning an already-complete
  * {@link ResultStore} - unlike {@link SearchableSearchProvider}, which runs its feed asynchronously on an
  * {@code Executor}.</p>
+ *
+ * <p><b>Memory guardrails (see {@code docs/join-scalability-implementation-plan.md}, decision D1)</b>: because
+ * both sides and the joined output are fully materialised in memory (the simplification above), each side is
+ * capped at {@link JoinConfig#getMaxSideRows()} rows and the joined output at
+ * {@link JoinConfig#getMaxOutputRows()} rows. A breach throws {@code JoinLimitExceededException}, which
+ * {@link #createResultStore} captures via {@link ResultStore#addError(Throwable)} - the same in-band error
+ * reporting {@link SearchableSearchProvider#buildStore} uses - so an oversized join fails with a clear message
+ * rather than exhausting heap or surfacing as an opaque 500.</p>
  */
 class JoinSearchProvider implements SearchProvider {
 
@@ -96,18 +106,34 @@ class JoinSearchProvider implements SearchProvider {
     private final CoprocessorsFactory coprocessorsFactory;
     private final ResultStoreFactory resultStoreFactory;
     private final ExpressionPredicateFactory expressionPredicateFactory;
+    private final Provider<JoinConfig> joinConfigProvider;
 
+    /**
+     * @param searchProviderRegistryProvider must not be null.
+     * @param coprocessorsFactory            must not be null.
+     * @param resultStoreFactory             must not be null.
+     * @param expressionPredicateFactory      must not be null.
+     * @param joinConfigProvider              must not be null; supplies the current {@code stroom.query.join}
+     *                                        memory guardrails (see
+     *                                        {@code docs/join-scalability-implementation-plan.md}, decision D1)
+     *                                        - a live {@link Provider}, not a captured value, so a runtime config
+     *                                        change is honoured by the next search rather than requiring a
+     *                                        restart (the same convention {@code DispatchingQueryCompiler} uses
+     *                                        for {@code QueryOptimiserConfig}).
+     */
     @Inject
     JoinSearchProvider(final Provider<SearchProviderRegistry> searchProviderRegistryProvider,
                        final CoprocessorsFactory coprocessorsFactory,
                        final ResultStoreFactory resultStoreFactory,
-                       final ExpressionPredicateFactory expressionPredicateFactory) {
+                       final ExpressionPredicateFactory expressionPredicateFactory,
+                       final Provider<JoinConfig> joinConfigProvider) {
         this.searchProviderRegistryProvider =
                 Objects.requireNonNull(searchProviderRegistryProvider, "searchProviderRegistryProvider");
         this.coprocessorsFactory = Objects.requireNonNull(coprocessorsFactory, "coprocessorsFactory");
         this.resultStoreFactory = Objects.requireNonNull(resultStoreFactory, "resultStoreFactory");
         this.expressionPredicateFactory =
                 Objects.requireNonNull(expressionPredicateFactory, "expressionPredicateFactory");
+        this.joinConfigProvider = Objects.requireNonNull(joinConfigProvider, "joinConfigProvider");
     }
 
     @Override
@@ -134,20 +160,85 @@ class JoinSearchProvider implements SearchProvider {
         return 0;
     }
 
+    /**
+     * Executes a {@code join}-clause search: realises both sides, combines them, applies the outer {@code where}
+     * clause, and feeds every surviving row to a coprocessor - see this class's Javadoc for the full shape.
+     *
+     * <p>Following {@code SearchableSearchProvider.buildStore}'s established pattern, the outer {@link ResultStore}
+     * is created <i>before</i> any of that work runs (it only depends on {@code searchRequest}, not on either side
+     * having been realised), and every step after that is wrapped in a single try/catch that reports a failure via
+     * {@link ResultStore#addError(Throwable)} rather than letting it propagate out of this method - including a
+     * breach of either {@code stroom.query.join} memory guardrail (see
+     * {@code docs/join-scalability-implementation-plan.md}, decision D1), which surfaces as a
+     * {@link JoinLimitExceededException} in-band, not an {@code OutOfMemoryError} or an opaque 500.</p>
+     *
+     * <p><b>Preconditions:</b> {@code searchRequest} must not be null and must carry a non-null
+     * {@code Query.joinSpec} (checked below).<br>
+     * <b>Postconditions:</b> always returns a completed (or completing) {@link ResultStore}, never null; never
+     * throws - any failure is captured on the returned store instead.</p>
+     *
+     * @throws IllegalArgumentException if {@code searchRequest} has no {@code JoinSpec} - this is a caller
+     *                                   programming error (the wrong request routed here), not a data-dependent
+     *                                   failure, so it is thrown immediately rather than captured on a store.
+     */
     @Override
     public ResultStore createResultStore(final SearchRequest searchRequest) {
+        Objects.requireNonNull(searchRequest, "searchRequest");
+        final JoinSpec joinSpec = requireJoinSpec(searchRequest);
+        final JoinConfig joinConfig = joinConfigProvider.get();
+
+        final CoprocessorsImpl coprocessors = coprocessorsFactory.create(
+                searchRequest, DataStoreSettings.createBasicSearchResultStoreSettings());
+        final ResultStore resultStore = resultStoreFactory.create(
+                searchRequest.getSearchRequestSource(), coprocessors);
+        try {
+            joinAndFeed(searchRequest, joinSpec, joinConfig, coprocessors);
+        } catch (final RuntimeException e) {
+            resultStore.addError(e);
+        } finally {
+            resultStore.signalComplete();
+        }
+        return resultStore;
+    }
+
+    /**
+     * @param searchRequest must not be null.
+     * @return {@code searchRequest.getQuery().getJoinSpec()}, never null.
+     * @throws IllegalArgumentException if {@code searchRequest.getQuery()} or its {@code JoinSpec} is null.
+     */
+    private static JoinSpec requireJoinSpec(final SearchRequest searchRequest) {
         final JoinSpec joinSpec = searchRequest.getQuery() == null ? null : searchRequest.getQuery().getJoinSpec();
         if (joinSpec == null) {
             throw new IllegalArgumentException(
                     "SearchRequest routed to " + JoinDataSourceType.TYPE + " must carry a JoinSpec");
         }
+        return joinSpec;
+    }
 
+    /**
+     * Realises both join sides, combines them, applies the outer {@code where} clause, and feeds every surviving
+     * row to {@code coprocessors} - the real join logic, factored out of {@link #createResultStore} so that
+     * method's try/catch/finally around it (the {@link ResultStore#addError(Throwable)} handling) stays a thin,
+     * readable wrapper.
+     *
+     * <p><b>Preconditions:</b> all four parameters must be non-null.<br>
+     * <b>Postconditions:</b> on normal return, every joined row surviving the outer {@code where} clause has been
+     * passed to {@code coprocessors.accept(...)}; returns nothing. Both sides' intermediate {@link ResultStore}s
+     * (opened by {@link #realiseSide}) are always destroyed before this method returns or throws.</p>
+     *
+     * @throws JoinLimitExceededException if either side exceeds {@code joinConfig.getMaxSideRows()} while being
+     *                                    realised, or the joined output would exceed
+     *                                    {@code joinConfig.getMaxOutputRows()}.
+     */
+    private void joinAndFeed(
+            final SearchRequest searchRequest, final JoinSpec joinSpec, final JoinConfig joinConfig,
+            final CoprocessorsImpl coprocessors) {
         // Realise the left side first; if realising the right side then fails, the left side's already-open
         // ResultStore must still be destroyed (the try/finally below only covers both sides once both exist).
-        final RealisedSide left = realiseSide(joinSpec.getLeft());
+        final RealisedSide left = realiseSide(joinSpec.getLeft(), joinConfig.getMaxSideRows());
         final RealisedSide right;
         try {
-            right = realiseSide(joinSpec.getRight());
+            right = realiseSide(joinSpec.getRight(), joinConfig.getMaxSideRows());
         } catch (final RuntimeException e) {
             left.resultStore.destroy();
             throw e;
@@ -161,7 +252,8 @@ class JoinSearchProvider implements SearchProvider {
             final JoinType joinType = joinSpec.getJoinType() == JoinSpec.JoinType.LEFT
                     ? JoinType.LEFT
                     : JoinType.INNER;
-            joinedRows = JoinExecutor.join(leftSide, rightSide, joinType, JoinAlgorithm.HASH_JOIN);
+            joinedRows = JoinExecutor.join(
+                    leftSide, rightSide, joinType, JoinAlgorithm.HASH_JOIN, joinConfig.getMaxOutputRows());
         } finally {
             left.resultStore.destroy();
             right.resultStore.destroy();
@@ -174,10 +266,8 @@ class JoinSearchProvider implements SearchProvider {
                 joinSpec.getEquiKeys().getFirst().getLeftAlias(),
                 joinSpec.getEquiKeys().getFirst().getRightAlias());
 
-        // Build the outer query's coprocessors and feed each surviving joined row at the FieldIndex positions its
-        // alias-qualified select-column expressions claimed.
-        final CoprocessorsImpl coprocessors = coprocessorsFactory.create(
-                searchRequest, DataStoreSettings.createBasicSearchResultStoreSettings());
+        // Feed each surviving joined row at the FieldIndex positions its alias-qualified select-column
+        // expressions claimed.
         final int[] mapping = buildFieldMapping(
                 coprocessors.getFieldIndex(),
                 left.columns,
@@ -185,20 +275,11 @@ class JoinSearchProvider implements SearchProvider {
                 joinSpec.getEquiKeys().getFirst().getLeftAlias(),
                 joinSpec.getEquiKeys().getFirst().getRightAlias());
 
-        final ResultStore resultStore = resultStoreFactory.create(
-                searchRequest.getSearchRequestSource(), coprocessors);
-        try {
-            for (final Val[] joinedRow : joinedRows) {
-                if (whereRowPredicate.test(Values.of(joinedRow))) {
-                    coprocessors.accept(assembleRow(joinedRow, mapping));
-                }
+        for (final Val[] joinedRow : joinedRows) {
+            if (whereRowPredicate.test(Values.of(joinedRow))) {
+                coprocessors.accept(assembleRow(joinedRow, mapping));
             }
-        } catch (final RuntimeException e) {
-            resultStore.addError(e);
-        } finally {
-            resultStore.signalComplete();
         }
-        return resultStore;
     }
 
     /**
@@ -249,9 +330,24 @@ class JoinSearchProvider implements SearchProvider {
      * Runs {@code sideRequest} (an ordinary, already-compiled single-source request - see {@code
      * OptimisingQueryCompiler#compileJoinSide}, Task 6.1b) to completion via its own {@link SearchProvider}, and
      * reads back every row - the same "run a sub-query, then read every row of the completed store" shape {@code
-     * QueryServiceImpl#getColumnValues} already uses, not new machinery.
+     * QueryServiceImpl#getColumnValues} already uses, not new machinery - aborting once more than
+     * {@code maxSideRows} rows have been read, per {@code docs/join-scalability-implementation-plan.md}, decision
+     * D1 (Phase 0, item C4).
+     *
+     * <p><b>Preconditions:</b> {@code sideRequest} must not be null and must carry a non-null
+     * {@code Query.dataSource} naming a datasource type with a registered {@link SearchProvider}; {@code
+     * maxSideRows} must be {@code >= 0} (a value of {@code 0} means "no rows allowed at all" - the first row read
+     * breaches it).<br>
+     * <b>Postconditions:</b> on normal return, {@code result.rows()} has {@code <= maxSideRows} rows; the returned
+     * {@link RealisedSide} is never null and its {@code resultStore} is left open (the caller,
+     * {@link #joinAndFeed}, owns destroying it). On any failure - including a breach of {@code maxSideRows} - the
+     * side's {@link ResultStore} opened by this method is destroyed before the exception propagates, so no store
+     * leaks regardless of where realisation fails.</p>
+     *
+     * @param maxSideRows the maximum number of rows this side may contribute; see {@link JoinConfig#getMaxSideRows()}.
+     * @throws JoinLimitExceededException if more than {@code maxSideRows} rows are read from this side.
      */
-    private RealisedSide realiseSide(final SearchRequest sideRequest) {
+    private RealisedSide realiseSide(final SearchRequest sideRequest, final long maxSideRows) {
         final DocRef dataSourceRef = sideRequest.getQuery().getDataSource();
         final SearchProvider searchProvider = searchProviderRegistryProvider.get()
                 .getSearchProvider(dataSourceRef)
@@ -275,7 +371,13 @@ class JoinSearchProvider implements SearchProvider {
                     OpenGroups.ALL,
                     null,
                     IdentityItemMapper.INSTANCE,
-                    item -> rows.add(item.toArray()),
+                    item -> {
+                        if (rows.size() >= maxSideRows) {
+                            throw JoinLimitExceededException.forRowCount(
+                                    "join side row count", maxSideRows, rows.size() + 1);
+                        }
+                        rows.add(item.toArray());
+                    },
                     count -> {
                     });
 

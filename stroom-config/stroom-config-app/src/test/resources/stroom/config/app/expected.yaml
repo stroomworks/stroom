@@ -898,8 +898,11 @@ appConfig:
     port: null
     scheme: "https"
   query:
+    join:
+      maxOutputRows: 1000000
+      maxSideRows: 1000000
     optimiser:
-      enabled: false
+      mode: "OFF"
   queryDataSource:
     db:
       connection:

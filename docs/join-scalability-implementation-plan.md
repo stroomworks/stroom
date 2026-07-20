@@ -324,6 +324,32 @@ streaming method on `JoinExecutor` (or a sibling operator) with signature roughl
 JoinType joinType, Consumer<Val[]> out)`; per probe row: build the key string (same stringification as
 `JoinExecutor.keyOf`), look up, emit `[probe…, Value]` on hit, drop (INNER) or null-pad (LEFT) on miss.
 
+### Phase 1 — DONE (2026-07-20)
+
+- **A1 (push-down)** — new `JoinPredicateSplitter` (per-conjunct, deliberately independent of the existing
+  `PushFiltersBelowJoinsRule`, which is whole-slot and not `JoinType`-aware). Only a bare, enabled top-level
+  `ExpressionTerm` conjunct is ever pushed; a nested operator, an unqualified field, or a non-index-eligible field
+  always stays in the residual (D2). **`JoinType.LEFT` never pushes to the right (null-supplying) side** - the
+  single most correctness-sensitive rule in this plan, proven both at the unit level (`TestJoinPredicateSplitter`)
+  and end-to-end (`TestOptimisingQueryCompilerJoin`). Wired into `OptimisingQueryCompiler.createJoin`: the outer
+  `where` is split once, each side's pushed predicate is alias-stripped and passed into `compileJoinSide`, and the
+  residual replaces the outer `Query.expression`.
+- **A2 (projection pruning)** — new `JoinProjectionAnalyzer.fieldsNeededFor`: each side now selects exactly its
+  equi-key field(s) plus every field the outer query references it by (select columns - scanned by a conservative
+  regex over the raw expression text, since a `Column.getExpression()` can be an arbitrary formula, not just a
+  bare field - plus the residual `where`, `valueFilter`, and `aggregateFilter`), instead of `select *`. Wired via a
+  new required `selectFields` parameter on `compileJoinSide`.
+- **A3 (time-partition pruning)** — turned out to need a real code change, not just verification:
+  `NodeSearchTaskCreator.getPartitionTimeRange` only ever reads `Query.timeRange`, never derives bounds from
+  `Query.expression` directly, so a pushed time predicate would filter rows but never prune shards without this.
+  `createJoin` now reuses the existing Task 5.2 `applyTimeRange` helper on each side (only when something was
+  actually pushed to it), promoting a pushed time-bound predicate into that side's `Query.timeRange`.
+- Tests: `TestJoinPredicateSplitter` (13, new), `TestJoinProjectionAnalyzer` (11, new),
+  `TestOptimisingQueryCompilerJoin` (10, +5 new), `TestOptimisingQueryCompilerJoinSideCompilation` (6, updated for
+  the new `selectFields` parameter) - all green, plus a full regression sweep of `stroom-query-common`,
+  `stroom-query-planner`, and `stroom-search:stroom-searchable-impl` (including the differential parity suites
+  `TestQueryCompilerParity`/`TestQueryCompilerGenerativeParity`) with no regressions.
+
 ---
 
 ## 11. Coding standards for implementation (required)

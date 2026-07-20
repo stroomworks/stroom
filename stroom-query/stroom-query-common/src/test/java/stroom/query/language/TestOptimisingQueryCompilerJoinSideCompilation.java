@@ -36,15 +36,20 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Task 6.1b: proves {@link OptimisingQueryCompiler#compileJoinSide} turns a join side's bare {@code Scan} (with
  * no {@code Filter} - the {@code null} second argument throughout this class) into a perfectly ordinary, valid
- * single-source {@link SearchRequest} - reusing {@link AstToSearchRequestMapper} via a synthesised "select every
- * field" sub-query rather than hand-building wire types. See {@link TestOptimisingQueryCompilerJoin} for the
- * full join-query compilation this feeds into (Task 6.1x), and {@code compileJoinSide}'s own Javadoc for the
- * {@code Filter}-present case this class doesn't exercise.
+ * single-source {@link SearchRequest} - reusing {@link AstToSearchRequestMapper} via a synthesised
+ * {@code select <fields>} sub-query rather than hand-building wire types. Task A2 (see
+ * {@code docs/join-scalability-implementation-plan.md}, decision D4) restricts that select list to exactly the
+ * {@code selectFields} passed in, rather than {@code select *} as it did before A2 - see {@link
+ * TestOptimisingQueryCompilerJoin} for the full join-query compilation this feeds into (Task 6.1x, and A1/A2's
+ * end-to-end tests), and {@code compileJoinSide}'s own Javadoc for the {@code Filter}-present case this class
+ * doesn't exercise.
  */
 class TestOptimisingQueryCompilerJoinSideCompilation {
 
     private static final QueryField STREAM_ID = QueryField.builder()
             .fldName("StreamId").fldType(FieldType.LONG).build();
+    private static final QueryField USER_ID = QueryField.builder()
+            .fldName("UserId").fldType(FieldType.LONG).build();
 
     private static final EmptyFieldInfoSource FIELD_INFO_SOURCE_STAND_IN = EmptyFieldInfoSource.INSTANCE;
 
@@ -52,7 +57,7 @@ class TestOptimisingQueryCompilerJoinSideCompilation {
         return new OptimisingQueryCompiler(
                 (keywordGroup, parentTableSettings) -> null,
                 MockDataSourceResolver.getInstance(),
-                () -> criteria -> ResultPage.createUnboundedList(List.of(STREAM_ID)),
+                () -> criteria -> ResultPage.createUnboundedList(List.of(STREAM_ID, USER_ID)),
                 MockSecurityContext.getInstance(),
                 FIELD_INFO_SOURCE_STAND_IN,
                 (feedName, from, to) -> Optional.empty(),
@@ -71,7 +76,7 @@ class TestOptimisingQueryCompilerJoinSideCompilation {
     void compilesTheScanAsAnOrdinarySingleSourceSearchRequest() {
         final Scan scan = new Scan("a", "Events", new AstPosition(1, 0));
 
-        final SearchRequest result = compiler().compileJoinSide(scan, null, expressionContext());
+        final SearchRequest result = compiler().compileJoinSide(scan, null, List.of("StreamId"), expressionContext());
 
         assertThat(result.getQuery()).isNotNull();
         assertThat(result.getQuery().getDataSource().getName()).isEqualTo("Events");
@@ -79,16 +84,46 @@ class TestOptimisingQueryCompilerJoinSideCompilation {
     }
 
     @Test
-    void selectsEveryFieldTheDataSourceExposes() {
+    void selectsExactlyTheRequestedFields_notEveryFieldTheDataSourceExposes() {
+        // Task A2: only StreamId is requested, even though the datasource also exposes UserId - proving the
+        // sub-query is restricted, not select * (the pre-A2 behaviour). The mapper auto-adds its own navigation
+        // columns (__stream_id__ etc.) regardless of what's requested - unrelated to A2, not asserted on here.
         final Scan scan = new Scan("a", "Events", new AstPosition(1, 0));
 
-        final SearchRequest result = compiler().compileJoinSide(scan, null, expressionContext());
+        final SearchRequest result = compiler().compileJoinSide(scan, null, List.of("StreamId"), expressionContext());
 
-        final boolean hasStreamIdColumn = result.getResultRequests().stream()
+        final List<String> columnNames = result.getResultRequests().stream()
                 .flatMap(rr -> rr.getMappings().stream())
                 .flatMap(ts -> ts.getFields().stream())
-                .anyMatch(column -> "StreamId".equals(column.getName()));
-        assertThat(hasStreamIdColumn).isTrue();
+                .map(stroom.query.api.Column::getName)
+                .toList();
+        assertThat(columnNames).contains("StreamId").doesNotContain("UserId");
+    }
+
+    @Test
+    void multipleRequestedFields_allSelected() {
+        final Scan scan = new Scan("a", "Events", new AstPosition(1, 0));
+
+        final SearchRequest result = compiler().compileJoinSide(
+                scan, null, List.of("StreamId", "UserId"), expressionContext());
+
+        final List<String> columnNames = result.getResultRequests().stream()
+                .flatMap(rr -> rr.getMappings().stream())
+                .flatMap(ts -> ts.getFields().stream())
+                .map(stroom.query.api.Column::getName)
+                .toList();
+        assertThat(columnNames).contains("StreamId", "UserId");
+    }
+
+    @Test
+    void emptySelectFields_rejectedClearly() {
+        // A join side always needs at least its own equi-key field - an empty select list is a caller
+        // programming error (JoinProjectionAnalyzer.fieldsNeededFor never returns empty), not a valid request.
+        final Scan scan = new Scan("a", "Events", new AstPosition(1, 0));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> compiler().compileJoinSide(scan, null, List.of(), expressionContext()))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
@@ -96,8 +131,10 @@ class TestOptimisingQueryCompilerJoinSideCompilation {
         final Scan scanA = new Scan("a", "Events", new AstPosition(1, 0));
         final Scan scanB = new Scan("b", "Events", new AstPosition(1, 0));
 
-        final SearchRequest resultA = compiler().compileJoinSide(scanA, null, expressionContext());
-        final SearchRequest resultB = compiler().compileJoinSide(scanB, null, expressionContext());
+        final SearchRequest resultA = compiler().compileJoinSide(
+                scanA, null, List.of("StreamId"), expressionContext());
+        final SearchRequest resultB = compiler().compileJoinSide(
+                scanB, null, List.of("StreamId"), expressionContext());
 
         assertThat(resultA.getQuery().getDataSource()).isEqualTo(resultB.getQuery().getDataSource());
     }

@@ -155,6 +155,72 @@ class TestJoinExecutor {
 
     @ParameterizedTest
     @EnumSource(value = JoinAlgorithm.class, names = {"HASH_JOIN", "NESTED_LOOP"})
+    void maxOutputRows_underTheCap_isUnaffected(final JoinAlgorithm algorithm) {
+        final Side left = new Side(List.of(leftRow(1, "a"), leftRow(2, "b")), new int[]{0}, 2);
+        final Side right = new Side(List.of(rightRow(1, 100), rightRow(2, 200)), new int[]{0}, 2);
+
+        final List<Val[]> result = JoinExecutor.join(left, right, JoinType.INNER, algorithm, 2);
+
+        assertThat(result).hasSize(2);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = JoinAlgorithm.class, names = {"HASH_JOIN", "NESTED_LOOP"})
+    void maxOutputRows_exceeded_throwsJoinLimitExceededException(final JoinAlgorithm algorithm) {
+        final Side left = new Side(List.of(leftRow(1, "a"), leftRow(2, "b")), new int[]{0}, 2);
+        final Side right = new Side(List.of(rightRow(1, 100), rightRow(2, 200)), new int[]{0}, 2);
+
+        assertThatThrownBy(() -> JoinExecutor.join(left, right, JoinType.INNER, algorithm, 1))
+                .isInstanceOf(JoinLimitExceededException.class)
+                .hasMessageContaining("1 rows");
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = JoinAlgorithm.class, names = {"HASH_JOIN", "NESTED_LOOP"})
+    void maxOutputRows_zero_rejectsAnyOutputAtAll(final JoinAlgorithm algorithm) {
+        final Side left = new Side(List.<Val[]>of(leftRow(1, "a")), new int[]{0}, 2);
+        final Side right = new Side(List.<Val[]>of(rightRow(1, 100)), new int[]{0}, 2);
+
+        assertThatThrownBy(() -> JoinExecutor.join(left, right, JoinType.INNER, algorithm, 0))
+                .isInstanceOf(JoinLimitExceededException.class);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = JoinAlgorithm.class, names = {"HASH_JOIN", "NESTED_LOOP"})
+    void maxOutputRows_onlyCountsEmittedRows_notMatchesConsidered(final JoinAlgorithm algorithm) {
+        // A single left row fanning out to many right matches must still be bounded mid-fan-out, not just
+        // checked once at the end - see appendMatchesOrPad's Javadoc.
+        final Side left = new Side(List.<Val[]>of(leftRow(1, "a")), new int[]{0}, 2);
+        final Side right = new Side(
+                List.of(rightRow(1, 100), rightRow(1, 101), rightRow(1, 102)), new int[]{0}, 2);
+
+        assertThatThrownBy(() -> JoinExecutor.join(left, right, JoinType.INNER, algorithm, 2))
+                .isInstanceOf(JoinLimitExceededException.class);
+    }
+
+    @Test
+    void unboundedOverload_isEquivalentToMaxLongCap() {
+        final Side left = new Side(List.of(leftRow(1, "a"), leftRow(2, "b")), new int[]{0}, 2);
+        final Side right = new Side(List.of(rightRow(2, 200), rightRow(3, 300)), new int[]{0}, 2);
+
+        final List<Val[]> unbounded = JoinExecutor.join(left, right, JoinType.INNER, JoinAlgorithm.HASH_JOIN);
+        final List<Val[]> explicitMax =
+                JoinExecutor.join(left, right, JoinType.INNER, JoinAlgorithm.HASH_JOIN, Long.MAX_VALUE);
+
+        assertThat(unbounded).hasSameSizeAs(explicitMax);
+    }
+
+    @Test
+    void negativeMaxOutputRows_throwsIllegalArgumentException() {
+        final Side left = new Side(List.<Val[]>of(leftRow(1, "a")), new int[]{0}, 2);
+        final Side right = new Side(List.<Val[]>of(rightRow(1, 100)), new int[]{0}, 2);
+
+        assertThatThrownBy(() -> JoinExecutor.join(left, right, JoinType.INNER, JoinAlgorithm.HASH_JOIN, -1))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = JoinAlgorithm.class, names = {"HASH_JOIN", "NESTED_LOOP"})
     void compositeEquiKey_matchesOnAllKeyPositionsAsAnOrderedTuple(final JoinAlgorithm algorithm) {
         // Left rows [k1, k2, name]; right rows [k1, k2, amount]; joined on positions {0,1}.
         final Val[] l1 = new Val[]{ValLong.create(1), ValString.create("x"), ValString.create("a")};

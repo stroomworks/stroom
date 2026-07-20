@@ -83,25 +83,58 @@ public final class JoinExecutor {
     }
 
     /**
-     * @return one combined {@code Val[]} per matching row pair (left columns then right columns), plus - for
-     *         {@link JoinType#LEFT} - one null-padded row per unmatched left row. Never a combined row for an
-     *         unmatched right row (not a {@code RIGHT} join - the grammar only has {@code INNER}/{@code LEFT}).
+     * Same contract as {@link #join(Side, Side, JoinType, JoinAlgorithm, long)}, with no output-row cap (equivalent
+     * to passing {@link Long#MAX_VALUE}). Kept as a separate overload, rather than a default parameter, purely so
+     * every pre-existing caller/test that doesn't care about the cap is unaffected by its addition (see
+     * {@code docs/join-scalability-implementation-plan.md}, decision D1).
+     *
+     * @return never null; never throws {@link JoinLimitExceededException} (there is no cap to breach).
      */
     public static List<Val[]> join(
             final Side left, final Side right, final JoinType joinType, final JoinAlgorithm algorithm) {
+        return join(left, right, joinType, algorithm, Long.MAX_VALUE);
+    }
+
+    /**
+     * Combines two already-realised row sets into joined rows, aborting once the joined output would exceed
+     * {@code maxOutputRows} - see {@code docs/join-scalability-implementation-plan.md}, decision D1 (Phase 0, item
+     * C4). The cap is checked as each output row is produced (not just once at the end), so a single left row
+     * with a very large fan-out of matches on the right is still bounded rather than fully accumulated before the
+     * check runs.
+     *
+     * <p><b>Preconditions:</b> {@code left}, {@code right}, {@code joinType}, {@code algorithm} must all be
+     * non-null (as for the unbounded overload); {@code maxOutputRows} must be {@code >= 0} (a value of {@code 0}
+     * means "no output rows allowed at all" - the first row produced breaches it).<br>
+     * <b>Postconditions:</b> on normal return, the result has {@code <= maxOutputRows} rows and has the same
+     * content as the unbounded overload would produce for the same inputs. The result is never null (an empty
+     * join returns an empty, not null, list).</p>
+     *
+     * @return one combined {@code Val[]} per matching row pair (left columns then right columns), plus - for
+     *         {@link JoinType#LEFT} - one null-padded row per unmatched left row. Never a combined row for an
+     *         unmatched right row (not a {@code RIGHT} join - the grammar only has {@code INNER}/{@code LEFT}).
+     * @throws JoinLimitExceededException if the joined output would exceed {@code maxOutputRows}.
+     * @throws IllegalArgumentException   if {@code maxOutputRows} is negative.
+     */
+    public static List<Val[]> join(
+            final Side left, final Side right, final JoinType joinType, final JoinAlgorithm algorithm,
+            final long maxOutputRows) {
         Objects.requireNonNull(left, "left");
         Objects.requireNonNull(right, "right");
         Objects.requireNonNull(joinType, "joinType");
         Objects.requireNonNull(algorithm, "algorithm");
+        if (maxOutputRows < 0) {
+            throw new IllegalArgumentException("maxOutputRows must be >= 0, got " + maxOutputRows);
+        }
         return switch (algorithm) {
-            case HASH_JOIN -> hashJoin(left, right, joinType);
-            case NESTED_LOOP -> nestedLoopJoin(left, right, joinType);
+            case HASH_JOIN -> hashJoin(left, right, joinType, maxOutputRows);
+            case NESTED_LOOP -> nestedLoopJoin(left, right, joinType, maxOutputRows);
             case BROADCAST_LOOKUP -> throw new UnsupportedOperationException(
                     "BROADCAST_LOOKUP needs a StateFetcher, not two materialised row sets - see Task 6.2.");
         };
     }
 
-    private static List<Val[]> hashJoin(final Side left, final Side right, final JoinType joinType) {
+    private static List<Val[]> hashJoin(
+            final Side left, final Side right, final JoinType joinType, final long maxOutputRows) {
         final Map<List<String>, List<Val[]>> rightByKey = new HashMap<>();
         for (final Val[] rightRow : right.rows()) {
             final List<String> key = keyOf(rightRow, right.keyPositions());
@@ -115,12 +148,13 @@ public final class JoinExecutor {
         for (final Val[] leftRow : left.rows()) {
             final List<String> key = keyOf(leftRow, left.keyPositions());
             final List<Val[]> matches = key == null ? null : rightByKey.get(key);
-            appendMatchesOrPad(result, leftRow, matches, right.width(), joinType);
+            appendMatchesOrPad(result, leftRow, matches, right.width(), joinType, maxOutputRows);
         }
         return result;
     }
 
-    private static List<Val[]> nestedLoopJoin(final Side left, final Side right, final JoinType joinType) {
+    private static List<Val[]> nestedLoopJoin(
+            final Side left, final Side right, final JoinType joinType, final long maxOutputRows) {
         final List<Val[]> result = new ArrayList<>();
         for (final Val[] leftRow : left.rows()) {
             final List<String> leftKey = keyOf(leftRow, left.keyPositions());
@@ -136,24 +170,47 @@ public final class JoinExecutor {
                     }
                 }
             }
-            appendMatchesOrPad(result, leftRow, matches, right.width(), joinType);
+            appendMatchesOrPad(result, leftRow, matches, right.width(), joinType, maxOutputRows);
         }
         return result;
     }
 
+    /**
+     * Appends {@code leftRow}'s joined output (one combined row per entry in {@code matches}, or one null-padded
+     * row if unmatched and {@code joinType} is {@code LEFT}) onto {@code result}, throwing
+     * {@link JoinLimitExceededException} the moment a row would take {@code result} over {@code maxOutputRows}
+     * rather than after the fact - this is what keeps a single left row's fan-out from overshooting the cap.
+     *
+     * <p><b>Preconditions:</b> {@code result} and {@code leftRow} must not be null; {@code matches} may be null
+     * (meaning "no matches found") or empty; {@code joinType} must not be null; {@code maxOutputRows} must be
+     * {@code >= 0} (checked by the caller, {@link #join(Side, Side, JoinType, JoinAlgorithm, long)}).<br>
+     * <b>Postconditions:</b> {@code result} has gained zero or more rows; if it would otherwise have exceeded
+     * {@code maxOutputRows}, an exception is thrown instead and {@code result} is left with exactly
+     * {@code maxOutputRows} rows (the breaching row is never added).</p>
+     *
+     * @throws JoinLimitExceededException if appending a row would make {@code result.size() > maxOutputRows}.
+     */
     private static void appendMatchesOrPad(
             final List<Val[]> result,
             final Val[] leftRow,
-            final List<Val[]> matches,
+            final @Nullable List<Val[]> matches,
             final int rightWidth,
-            final JoinType joinType) {
+            final JoinType joinType,
+            final long maxOutputRows) {
         if (matches != null && !matches.isEmpty()) {
             for (final Val[] rightRow : matches) {
-                result.add(combine(leftRow, rightRow));
+                addOrThrow(result, combine(leftRow, rightRow), maxOutputRows);
             }
         } else if (joinType == JoinType.LEFT) {
-            result.add(combine(leftRow, nulls(rightWidth)));
+            addOrThrow(result, combine(leftRow, nulls(rightWidth)), maxOutputRows);
         }
+    }
+
+    private static void addOrThrow(final List<Val[]> result, final Val[] row, final long maxOutputRows) {
+        if (result.size() >= maxOutputRows) {
+            throw JoinLimitExceededException.forRowCount("join output row count", maxOutputRows, result.size() + 1);
+        }
+        result.add(row);
     }
 
     /**

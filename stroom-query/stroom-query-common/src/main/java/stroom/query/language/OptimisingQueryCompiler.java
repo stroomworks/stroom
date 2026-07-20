@@ -63,8 +63,10 @@ import jakarta.inject.Provider;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Consumer;
 
@@ -174,34 +176,97 @@ public class OptimisingQueryCompiler implements QueryCompiler {
                     null, "This join shape is not yet supported - both sides must be plain datasource scans "
                           + "(optionally filtered).");
         }
+        final JoinSpec.JoinType wireJoinType = join.joinType() == JoinType.LEFT
+                ? JoinSpec.JoinType.LEFT
+                : JoinSpec.JoinType.INNER;
 
-        // Compile each side as a pure "select *" (no per-side predicate). The full where clause stays in the
-        // outer Query.expression and is applied across the joined rows by JoinSearchProvider (see the plan doc's
-        // Phase 6 "where across joins" note). Pushing single-side terms down into a side's own sub-query - which
-        // would let it pre-filter before the join - is a later efficiency optimisation; it needs the pushed
-        // predicate's alias stripped (a single-source side knows the field as "field", not "alias.field"), which
-        // is deliberately not done here.
-        final SearchRequest leftRequest = compileJoinSide(leftSide.scan(), null, expressionContext);
-        final SearchRequest rightRequest = compileJoinSide(rightSide.scan(), null, expressionContext);
+        // The outer request is compiled first (from the raw query text, exactly as before A1) purely to obtain
+        // its where clause: docs/join-scalability-implementation-plan.md, decision D3 (Phase 1, item A1) splits
+        // that clause into the part(s) safe to pre-filter each side with (via JoinPredicateSplitter) and a
+        // residual that - as before - is still evaluated across the joined rows by JoinSearchProvider (see the
+        // plan doc's Phase 6 "where across joins" note). A LEFT join never pre-filters its right (null-supplying)
+        // side - see JoinPredicateSplitter.split's Javadoc for why that would silently change results.
+        final SearchRequest outer = newMapper().create(query, in, expressionContext, true);
+        final ExpressionOperator outerWhere = outer.getQuery().getExpression();
+        final @Nullable ExpressionOperator leftPush;
+        final @Nullable ExpressionOperator rightPush;
+        final @Nullable ExpressionOperator residualWhere;
+        if (outerWhere == null) {
+            leftPush = null;
+            rightPush = null;
+            residualWhere = null;
+        } else {
+            final JoinPredicateSplitter.Split split = new JoinPredicateSplitter(fieldInfoSource).split(
+                    outerWhere,
+                    leftSide.scan().alias(), leftSide.scan().dataSourceName(),
+                    rightSide.scan().alias(), rightSide.scan().dataSourceName(),
+                    wireJoinType);
+            leftPush = split.leftPush();
+            rightPush = split.rightPush();
+            residualWhere = split.residual();
+        }
+
+        // Task A2 (decision D4): each side selects only its own equi-key field(s) plus whatever the outer query
+        // actually references it by, instead of select * - see JoinProjectionAnalyzer.fieldsNeededFor.
+        final List<String> leftEquiKeyFields = join.equiKeys().stream().map(equiKey -> equiKey.left().field()).toList();
+        final List<String> rightEquiKeyFields = join.equiKeys().stream().map(equiKey -> equiKey.right().field()).toList();
+        final Set<String> leftSelectFields = JoinProjectionAnalyzer.fieldsNeededFor(
+                outer, residualWhere, leftSide.scan().alias(), leftEquiKeyFields);
+        final Set<String> rightSelectFields = JoinProjectionAnalyzer.fieldsNeededFor(
+                outer, residualWhere, rightSide.scan().alias(), rightEquiKeyFields);
+
+        final @Nullable Filter leftFilter = toPushedFilter(leftSide.scan(), leftPush);
+        final @Nullable Filter rightFilter = toPushedFilter(rightSide.scan(), rightPush);
+        final SearchRequest leftRequestBase = compileJoinSide(
+                leftSide.scan(), leftFilter, leftSelectFields, expressionContext);
+        final SearchRequest rightRequestBase = compileJoinSide(
+                rightSide.scan(), rightFilter, rightSelectFields, expressionContext);
+
+        // Task A3 (see docs/join-scalability-implementation-plan.md, §3): a pushed time-bound predicate must
+        // prune shards on that side exactly as it would for an ordinary single-source query (Task 5.2's
+        // applyTimeRange), not just filter rows after they're read - NodeSearchTaskCreator.getPartitionTimeRange
+        // only ever reads Query.timeRange, never derives bounds from Query.expression directly, so without this
+        // a pushed time predicate would filter results correctly but scan every shard doing it. Only attempted
+        // when something was actually pushed (applyTimeRange/ScanTimeRangeExtractor require a non-null Filter).
+        final SearchRequest leftRequest = leftFilter == null
+                ? leftRequestBase
+                : applyTimeRange(leftRequestBase, new ScanAndFilter(leftSide.scan(), leftFilter), expressionContext);
+        final SearchRequest rightRequest = rightFilter == null
+                ? rightRequestBase
+                : applyTimeRange(rightRequestBase, new ScanAndFilter(rightSide.scan(), rightFilter), expressionContext);
+
         final List<JoinSpec.JoinEquiKey> equiKeys = join.equiKeys().stream()
                 .map(OptimisingQueryCompiler::toWireEquiKey)
                 .toList();
         final JoinSpec joinSpec = JoinSpec.builder()
                 .left(leftRequest)
                 .right(rightRequest)
-                .joinType(join.joinType() == JoinType.LEFT
-                        ? JoinSpec.JoinType.LEFT
-                        : JoinSpec.JoinType.INNER)
+                .joinType(wireJoinType)
                 .equiKeys(equiKeys)
                 .build();
 
-        final SearchRequest outer = newMapper().create(query, in, expressionContext, true);
         final DocRef sentinelDataSource = new DocRef(
                 JoinDataSourceType.TYPE, UUID.randomUUID().toString(),
                 leftSide.scan().dataSourceName() + " ⋈ " + rightSide.scan().dataSourceName());
         return outer.copy()
-                .query(outer.getQuery().copy().dataSource(sentinelDataSource).joinSpec(joinSpec).build())
+                .query(outer.getQuery().copy()
+                        .dataSource(sentinelDataSource)
+                        .joinSpec(joinSpec)
+                        .expression(residualWhere)
+                        .build())
                 .build();
+    }
+
+    /**
+     * Wraps a pushed predicate as the {@code Filter} shape {@link #compileJoinSide} expects, using {@code scan}
+     * itself as the (unused - {@link #compileJoinSide} only reads the predicate slots) placeholder {@code input}.
+     *
+     * @param scan      must not be null.
+     * @param wherePush nullable; when null, this method returns null (no filter to apply for this side).
+     * @return null iff {@code wherePush} is null.
+     */
+    private static @Nullable Filter toPushedFilter(final Scan scan, final @Nullable ExpressionOperator wherePush) {
+        return wherePush == null ? null : new Filter(scan, wherePush, null, scan.position());
     }
 
     private static JoinSpec.JoinEquiKey toWireEquiKey(final EquiKey equiKey) {
@@ -409,17 +474,31 @@ public class OptimisingQueryCompiler implements QueryCompiler {
      * Task 6.1b (see {@code docs/query-optimiser-implementation-plan.md}, Phase 6): compiles one join side's
      * {@code Scan} leaf (optionally with a {@code Filter} directly over it - see {@link #createJoin}'s Javadoc
      * on why a side isn't always a bare {@code Scan}) into its own ordinary, single-source {@link SearchRequest},
-     * by synthesising a trivial "select every field" sub-query and reusing {@link AstToSearchRequestMapper}
-     * rather than hand-building wire types for the field-selection part; {@code filter}'s predicate(s), when
-     * present, are applied directly onto the result as {@code ExpressionOperator}s (the same "already a wire
-     * type, just assign it" pattern Task 5.2/5.3 use) rather than re-derived through StroomQL text. Called from
+     * by synthesising a {@code select <fields>} sub-query and reusing {@link AstToSearchRequestMapper} rather
+     * than hand-building wire types for the field-selection part; {@code filter}'s predicate(s), when present,
+     * are applied directly onto the result as {@code ExpressionOperator}s (the same "already a wire type, just
+     * assign it" pattern Task 5.2/5.3 use) rather than re-derived through StroomQL text. Called from
      * {@link #createJoin} for each side of a join.
+     *
+     * <p>{@code selectFields} restricts the sub-query to exactly the fields this side needs (its own equi-key
+     * plus every field the outer query actually references it by - see
+     * {@link JoinProjectionAnalyzer#fieldsNeededFor}, decision D4) rather than {@code select *} - fewer columns
+     * means less work for the datasource's scan and a smaller {@code FieldIndex} downstream.</p>
+     *
+     * @param selectFields must not be null or empty (a join side always needs at least its own equi-key field).
      */
     SearchRequest compileJoinSide(
-            final Scan scan, final @Nullable Filter filter, final ExpressionContext expressionContext) {
+            final Scan scan, final @Nullable Filter filter, final Collection<String> selectFields,
+            final ExpressionContext expressionContext) {
         Objects.requireNonNull(scan, "scan");
+        Objects.requireNonNull(selectFields, "selectFields");
         Objects.requireNonNull(expressionContext, "expressionContext");
-        final String syntheticQuery = "from \"" + escapeForDoubleQuotedString(scan.dataSourceName()) + "\" select *";
+        if (selectFields.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "selectFields must not be empty - a join side always needs at least its own equi-key field");
+        }
+        final String syntheticQuery = "from \"" + escapeForDoubleQuotedString(scan.dataSourceName()) + "\" select "
+                                       + String.join(", ", selectFields);
         final SearchRequest seed = new SearchRequest(
                 null, new QueryKey(UUID.randomUUID().toString()), null, null, null, false, null);
         final SearchRequest base = newMapper().create(syntheticQuery, seed, expressionContext);

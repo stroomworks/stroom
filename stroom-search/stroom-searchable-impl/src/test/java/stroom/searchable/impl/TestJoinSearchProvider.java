@@ -39,6 +39,7 @@ import stroom.query.common.v2.ExpressionContextFactory;
 import stroom.query.common.v2.ExpressionPredicateFactory;
 import stroom.query.common.v2.IdentityItemMapper;
 import stroom.query.common.v2.Item;
+import stroom.query.common.v2.JoinConfig;
 import stroom.query.common.v2.JoinDataSourceType;
 import stroom.query.common.v2.MapDataStoreFactory;
 import stroom.query.common.v2.OpenGroups;
@@ -57,6 +58,7 @@ import stroom.query.language.functions.ValLong;
 import stroom.query.language.functions.ValNull;
 import stroom.query.language.functions.ValString;
 
+import jakarta.inject.Provider;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -85,12 +87,23 @@ class TestJoinSearchProvider {
     private static final SizesProvider SIZES_PROVIDER = Sizes::unlimited;
 
     /**
+     * The default guardrails (see {@link JoinConfig}'s own defaults) - large enough not to trip any existing
+     * small-fixture test.
+     */
+    private static final Provider<JoinConfig> DEFAULT_JOIN_CONFIG_PROVIDER = JoinConfig::new;
+
+    private JoinSearchProvider provider(final SearchProviderRegistry registry) {
+        return provider(registry, DEFAULT_JOIN_CONFIG_PROVIDER);
+    }
+
+    /**
      * A real {@link CoprocessorsFactory} backed by the lightweight {@link MapDataStoreFactory} (no LMDB/temp-dir),
      * plus a {@link ResultStoreFactory} mock that wraps whatever coprocessors it's handed in a genuine
      * {@link ResultStore} - so {@code createResultStore}'s full path (real FieldIndex, real accept, real readback)
      * is exercised without standing up NodeInfo/SecurityContext/etc.
      */
-    private JoinSearchProvider provider(final SearchProviderRegistry registry) {
+    private JoinSearchProvider provider(final SearchProviderRegistry registry,
+                                        final Provider<JoinConfig> joinConfigProvider) {
         final CoprocessorsFactory coprocessorsFactory = new CoprocessorsFactory(
                 new MapDataStoreFactory(SearchResultStoreConfig::new),
                 new ExpressionContextFactory(),
@@ -110,13 +123,14 @@ class TestJoinSearchProvider {
                 () -> DIRECT_EXECUTOR));
 
         return new JoinSearchProvider(
-                () -> registry, coprocessorsFactory, resultStoreFactory, new ExpressionPredicateFactory());
+                () -> registry, coprocessorsFactory, resultStoreFactory, new ExpressionPredicateFactory(),
+                joinConfigProvider);
     }
 
     private JoinSearchProvider providerWithMockDeps(final SearchProviderRegistry registry) {
         return new JoinSearchProvider(
                 () -> registry, mock(CoprocessorsFactory.class), mock(ResultStoreFactory.class),
-                new ExpressionPredicateFactory());
+                new ExpressionPredicateFactory(), DEFAULT_JOIN_CONFIG_PROVIDER);
     }
 
     private SearchProviderRegistry registry(final SearchProvider... providers) {
@@ -269,40 +283,104 @@ class TestJoinSearchProvider {
     }
 
     // ------------------------------------------------------------------------------------------------------
+    // Memory guardrails (see docs/join-scalability-implementation-plan.md, decision D1)
+    // ------------------------------------------------------------------------------------------------------
+
+    @Test
+    void maxSideRows_underTheCap_isUnaffected() {
+        final SearchProvider leftProvider = fakeSideProvider(
+                LEFT_DATA_SOURCE, List.of("UserId"),
+                List.of(new Val[]{ValLong.create(1)}, new Val[]{ValLong.create(2)}));
+        final SearchProvider rightProvider = fakeSideProvider(
+                RIGHT_DATA_SOURCE, List.of("Id", "Name"),
+                List.<Val[]>of(new Val[]{ValLong.create(2), ValString.create("Bob")}));
+
+        final ResultStore resultStore = provider(registry(leftProvider, rightProvider), () -> new JoinConfig(2L, null))
+                .createResultStore(outerRequest(ExpressionOperator.builder().build()));
+
+        assertThat(resultStore.getErrors()).isEmpty();
+        assertThat(readTableRows(resultStore)).hasSize(1);
+    }
+
+    @Test
+    void maxSideRows_exceeded_reportsAClearErrorOnTheResultStore_andRealisesNoOutput() {
+        // The left side has 2 rows but the configured cap only allows 1 - realising it must abort, and the whole
+        // search must report the error rather than silently truncating the join's input.
+        final SearchProvider leftProvider = fakeSideProvider(
+                LEFT_DATA_SOURCE, List.of("UserId"),
+                List.of(new Val[]{ValLong.create(1)}, new Val[]{ValLong.create(2)}));
+        final SearchProvider rightProvider = fakeSideProvider(
+                RIGHT_DATA_SOURCE, List.of("Id", "Name"),
+                List.<Val[]>of(new Val[]{ValLong.create(2), ValString.create("Bob")}));
+
+        final ResultStore resultStore = provider(registry(leftProvider, rightProvider), () -> new JoinConfig(1L, null))
+                .createResultStore(outerRequest(ExpressionOperator.builder().build()));
+
+        assertThat(resultStore.getErrors())
+                .anySatisfy(error -> assertThat(error.getMessage()).contains("join side row count"));
+        assertThat(readTableRows(resultStore)).isEmpty();
+    }
+
+    @Test
+    void maxOutputRows_exceeded_reportsAClearErrorOnTheResultStore() {
+        // Both sides are small enough individually, but the join's output (2 matching rows) exceeds a cap of 1.
+        final SearchProvider leftProvider = fakeSideProvider(
+                LEFT_DATA_SOURCE, List.of("UserId"),
+                List.of(new Val[]{ValLong.create(1)}, new Val[]{ValLong.create(2)}));
+        final SearchProvider rightProvider = fakeSideProvider(
+                RIGHT_DATA_SOURCE, List.of("Id", "Name"),
+                List.of(new Val[]{ValLong.create(1), ValString.create("Alice")},
+                        new Val[]{ValLong.create(2), ValString.create("Bob")}));
+
+        final ResultStore resultStore = provider(registry(leftProvider, rightProvider), () -> new JoinConfig(null, 1L))
+                .createResultStore(outerRequest(ExpressionOperator.builder().build()));
+
+        assertThat(resultStore.getErrors())
+                .anySatisfy(error -> assertThat(error.getMessage()).contains("join output row count"));
+    }
+
+    // ------------------------------------------------------------------------------------------------------
     // Error / resource-safety paths
     // ------------------------------------------------------------------------------------------------------
 
     @Test
-    void unregisteredSideDatasource_throwsClearly() {
-        // Left registered, right NOT -> realising the right side finds no SearchProvider and fails clearly.
+    void unregisteredSideDatasource_reportsAClearErrorOnTheResultStore() {
+        // Left registered, right NOT -> realising the right side finds no SearchProvider. createResultStore
+        // captures this on the returned ResultStore (see its Javadoc) rather than throwing, so the search fails
+        // with a clear in-band message instead of an opaque exception - the same convention
+        // SearchableSearchProvider uses for a failure mid-search.
         final SearchProvider leftProvider = fakeSideProvider(
                 LEFT_DATA_SOURCE, List.of("UserId"), List.<Val[]>of(new Val[]{ValLong.create(1)}));
 
-        assertThatThrownBy(() -> providerWithMockDeps(registry(leftProvider))
-                .createResultStore(outerRequest(ExpressionOperator.builder().build())))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("No SearchProvider registered");
+        final ResultStore resultStore = provider(registry(leftProvider))
+                .createResultStore(outerRequest(ExpressionOperator.builder().build()));
+
+        assertThat(resultStore.getErrors())
+                .anySatisfy(error -> assertThat(error.getMessage()).contains("No SearchProvider registered"));
     }
 
     @Test
-    void equiKeyFieldNotFoundAmongCompiledColumns_throwsClearly() {
-        // The left side's columns don't contain the equi-key field ("UserId"), so positionOf fails clearly.
+    void equiKeyFieldNotFoundAmongCompiledColumns_reportsAClearErrorOnTheResultStore() {
+        // The left side's columns don't contain the equi-key field ("UserId"), so positionOf fails clearly -
+        // captured on the ResultStore, same as the unregistered-datasource case above.
         final SearchProvider leftProvider = fakeSideProvider(
                 LEFT_DATA_SOURCE, List.of("SomethingElse"), List.<Val[]>of(new Val[]{ValLong.create(1)}));
         final SearchProvider rightProvider = fakeSideProvider(
                 RIGHT_DATA_SOURCE, List.of("Id", "Name"),
                 List.<Val[]>of(new Val[]{ValLong.create(2), ValString.create("Bob")}));
 
-        assertThatThrownBy(() -> provider(registry(leftProvider, rightProvider))
-                .createResultStore(outerRequest(ExpressionOperator.builder().build())))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("Equi-key field 'UserId' not found");
+        final ResultStore resultStore = provider(registry(leftProvider, rightProvider))
+                .createResultStore(outerRequest(ExpressionOperator.builder().build()));
+
+        assertThat(resultStore.getErrors())
+                .anySatisfy(error -> assertThat(error.getMessage()).contains("Equi-key field 'UserId' not found"));
     }
 
     @Test
     void leftSideResultStore_isDestroyed_whenRightSideRealisationFails() {
         // The left side realises fine (an open ResultStore); the right side's sub-search then throws. The left
         // side's store must still be destroyed rather than leaked - it was created before the try/finally below.
+        // The failure itself is captured on the outer ResultStore (see createResultStore's Javadoc), not thrown.
         final DataStore leftData = mock(DataStore.class);
         when(leftData.getColumns()).thenReturn(List.of(column("UserId")));
         final ResultStore leftStore = mock(ResultStore.class);
@@ -315,10 +393,11 @@ class TestJoinSearchProvider {
         when(rightProvider.getDataSourceType()).thenReturn(RIGHT_DATA_SOURCE.getType());
         when(rightProvider.createResultStore(any())).thenThrow(new RuntimeException("right side boom"));
 
-        assertThatThrownBy(() -> providerWithMockDeps(registry(leftProvider, rightProvider))
-                .createResultStore(outerRequest(ExpressionOperator.builder().build())))
-                .isInstanceOf(RuntimeException.class);
+        final ResultStore resultStore = provider(registry(leftProvider, rightProvider))
+                .createResultStore(outerRequest(ExpressionOperator.builder().build()));
 
+        assertThat(resultStore.getErrors())
+                .anySatisfy(error -> assertThat(error.getMessage()).contains("right side boom"));
         verify(leftStore).destroy();
     }
 
