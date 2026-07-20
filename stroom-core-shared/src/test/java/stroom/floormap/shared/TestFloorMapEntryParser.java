@@ -19,6 +19,7 @@ package stroom.floormap.shared;
 import stroom.floormap.shared.FloorMapFieldMapping.Role;
 import stroom.util.shared.TemporalEntry;
 
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -226,6 +227,7 @@ class TestFloorMapEntryParser {
         assertThat(facts).hasSize(1);
         final Fact fact = facts.getFirst();
         // Position is stored in world space.
+        Assertions.assertNotNull(fact.getPosition());
         assertThat(fact.getPosition()[0]).isCloseTo(10.0, within(0.001));
         assertThat(fact.getPosition()[1]).isCloseTo(20.0, within(0.001));
         // Composing world→map places the point at (70, 140) in map space.
@@ -268,6 +270,7 @@ class TestFloorMapEntryParser {
 
         final Fact fact = facts.getFirst();
         assertThat(fact.getWorldToMap()).isEqualTo(FloorMapTransformationMatrix.identity());
+        Assertions.assertNotNull(fact.getPosition());
         assertThat(fact.getPosition()[0]).isCloseTo(50.0, within(0.001));
         assertThat(fact.getPosition()[1]).isCloseTo(75.0, within(0.001));
     }
@@ -512,6 +515,135 @@ class TestFloorMapEntryParser {
         final List<Fact> facts =
                 FloorMapEntryParser.parse(null, SCHEMA, ACCESSOR, warnings::add);
         assertThat(facts).isEmpty();
+    }
+
+    // -----------------------------------------------------------------------
+    // parse — areas (GEOMETRY / FILL / OPACITY)
+    // -----------------------------------------------------------------------
+
+    /**
+     * An area entry parses to a fact with the flat geometry array folded into
+     * vertex pairs, plus its fill and opacity.
+     */
+    @Test
+    void testParse_areaEntry() {
+        final String json = "{\"type\":\"area\",\"name\":\"Loading Bay\","
+                + "\"geometry\":[0,0,100,0,100,50,0,50],"
+                + "\"fill\":\"#ff0000\",\"opacity\":0.5,"
+                + "\"tm-world-to-map\":[1,0,0,1,20,30]}";
+        final List<Fact> facts = FloorMapEntryParser.parse(
+                List.of(entry("area-1", 0L, json)), SCHEMA, ACCESSOR, warnings::add);
+
+        assertThat(facts).hasSize(1);
+        final Fact fact = facts.get(0);
+        assertThat(fact.hasVertices()).isTrue();
+        assertThat(fact.getVertices()).hasDimensions(4, 2);
+        assertThat(fact.getVertices()[0]).containsExactly(0, 0);
+        assertThat(fact.getVertices()[2]).containsExactly(100, 50);
+        assertThat(fact.getFill()).isEqualTo("#ff0000");
+        assertThat(fact.getOpacity()).isCloseTo(0.5, within(1e-9));
+        assertThat(fact.getWorldToMap().getE()).isCloseTo(20, within(1e-9));
+        assertThat(warnings).isEmpty();
+    }
+
+    /**
+     * A trailing odd value in the flat geometry array is ignored rather than
+     * corrupting the vertex pairs.
+     */
+    @Test
+    void testParse_areaEntry_oddGeometryLength() {
+        final String json = "{\"type\":\"area\",\"geometry\":[0,0,10,0,10,10,99]}";
+        final List<Fact> facts = FloorMapEntryParser.parse(
+                List.of(entry("area-1", 0L, json)), SCHEMA, ACCESSOR, warnings::add);
+
+        assertThat(facts.get(0).getVertices()).hasDimensions(3, 2);
+    }
+
+    /**
+     * A geometry with fewer than three vertices is not a renderable area —
+     * the fact still parses but reports no vertices.
+     */
+    @Test
+    void testParse_areaEntry_tooFewVertices() {
+        final String json = "{\"type\":\"area\",\"geometry\":[0,0,10,10]}";
+        final List<Fact> facts = FloorMapEntryParser.parse(
+                List.of(entry("area-1", 0L, json)), SCHEMA, ACCESSOR, warnings::add);
+
+        assertThat(facts).hasSize(1);
+        assertThat(facts.get(0).hasVertices()).isFalse();
+        assertThat(facts.get(0).getVertices()).isNull();
+    }
+
+    /**
+     * Non-area entries parse with no vertices/fill/opacity — and a schema
+     * without the area roles (a pre-area document) still parses entries that
+     * carry geometry JSON, simply ignoring it.
+     */
+    @Test
+    void testParse_areaFieldsAbsent_andLegacySchema() {
+        final String plainJson = "{\"type\":\"gate\",\"coords\":[1,2]}";
+        final List<Fact> plain = FloorMapEntryParser.parse(
+                List.of(entry("gate-1", 0L, plainJson)), SCHEMA, ACCESSOR, warnings::add);
+        assertThat(plain.get(0).hasVertices()).isFalse();
+        assertThat(plain.get(0).getFill()).isNull();
+        assertThat(plain.get(0).getOpacity()).isNull();
+
+        // Legacy schema: no GEOMETRY/FILL/OPACITY mappings at all.
+        final List<FloorMapFieldMapping> legacySchema = List.of(
+                new FloorMapFieldMapping(".type", Role.TYPE, "Type", null),
+                new FloorMapFieldMapping(".coords", Role.POSITION, "Coords", null));
+        final String areaJson = "{\"type\":\"area\",\"geometry\":[0,0,1,0,1,1]}";
+        final List<Fact> legacy = FloorMapEntryParser.parse(
+                List.of(entry("area-1", 0L, areaJson)), legacySchema, ACCESSOR, warnings::add);
+        assertThat(legacy).hasSize(1);
+        assertThat(legacy.get(0).hasVertices()).isFalse();
+        assertThat(warnings).isEmpty();
+    }
+
+    /**
+     * An area value written through the accessor (as the editor writes it)
+     * serialises and parses back to the same fact — the full round-trip the
+     * "Draw Area Here" flow depends on, including the scalar opacity written
+     * via {@code setNumber}.
+     */
+    @Test
+    void testParse_areaRoundTrip() {
+        final ParsedValue value = ACCESSOR.createEmpty("entry");
+        ACCESSOR.setString(value, ".type", "area");
+        ACCESSOR.setString(value, ".name", "zone-1");
+        ACCESSOR.setArray(value, ".coords", new double[]{0, 0});
+        ACCESSOR.setArray(value, ".tm-world-to-map", new double[]{1, 0, 0, 1, 5, 6});
+        ACCESSOR.setArray(value, ".geometry", new double[]{-10, -10, 10, -10, 0, 15});
+        ACCESSOR.setString(value, ".fill", "#1e88e5");
+        ACCESSOR.setNumber(value, ".opacity", 0.25);
+        final String serialised = ACCESSOR.serialize(value);
+
+        final List<Fact> facts = FloorMapEntryParser.parse(
+                List.of(entry("zone-1", 0L, serialised)), SCHEMA, ACCESSOR, warnings::add);
+
+        assertThat(facts).hasSize(1);
+        final Fact fact = facts.get(0);
+        assertThat(fact.hasVertices()).isTrue();
+        assertThat(fact.getVertices()).hasDimensions(3, 2);
+        assertThat(fact.getVertices()[2]).containsExactly(0, 15);
+        assertThat(fact.getFill()).isEqualTo("#1e88e5");
+        assertThat(fact.getOpacity()).isCloseTo(0.25, within(1e-9));
+        assertThat(warnings).isEmpty();
+    }
+
+    /**
+     * {@code getNumber} tolerates a numeric string and returns {@code null}
+     * for junk; {@code setNumber(null)} removes the field.
+     */
+    @Test
+    void testAccessor_numberLeniency() {
+        final ParsedValue value = ACCESSOR.parse("{\"opacity\":\"0.75\",\"bad\":\"x\"}");
+        assertThat(ACCESSOR.getNumber(value, ".opacity")).isCloseTo(0.75, within(1e-9));
+        assertThat(ACCESSOR.getNumber(value, ".bad")).isNull();
+        assertThat(ACCESSOR.getNumber(value, ".missing")).isNull();
+
+        ACCESSOR.setNumber(value, ".opacity", null);
+        assertThat(ACCESSOR.getNumber(value, ".opacity")).isNull();
     }
 
     // -----------------------------------------------------------------------

@@ -79,4 +79,41 @@ class TestTypeStyle {
         final List<TypeStyle> merged = TypeStyle.merge(existing, null);
         assertThat(types(merged)).containsExactly("gate");
     }
+
+    /**
+     * The "area" style is inserted directly after the last background entry —
+     * areas must paint above the floor plan but beneath everything else.
+     */
+    @Test
+    void testWithAreaStyle_insertsAfterBackground() {
+        final List<TypeStyle> existing = List.of(
+                new TypeStyle("background", null, null),
+                new TypeStyle("gate", null, null),
+                new TypeStyle("person", null, null));
+
+        assertThat(types(TypeStyle.withAreaStyle(existing)))
+                .containsExactly("background", "area", "gate", "person");
+    }
+
+    /** With no background style, the area style goes first. */
+    @Test
+    void testWithAreaStyle_noBackground_insertsFirst() {
+        final List<TypeStyle> existing = List.of(new TypeStyle("gate", null, null));
+        assertThat(types(TypeStyle.withAreaStyle(existing)))
+                .containsExactly("area", "gate");
+        assertThat(types(TypeStyle.withAreaStyle(null))).containsExactly("area");
+    }
+
+    /** An existing "area" style is kept untouched (idempotent). */
+    @Test
+    void testWithAreaStyle_existingAreaKept() {
+        final List<TypeStyle> existing = List.of(
+                new TypeStyle("area", Shape.SQUARE, "#123456"),
+                new TypeStyle("background", null, null));
+
+        final List<TypeStyle> result = TypeStyle.withAreaStyle(existing);
+
+        assertThat(result).isEqualTo(existing);
+        assertThat(result.get(0).getColour()).isEqualTo("#123456");
+    }
 }

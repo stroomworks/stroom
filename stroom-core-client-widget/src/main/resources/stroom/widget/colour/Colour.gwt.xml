@@ -3,9 +3,5 @@
 <module>
   <!-- Inherit the core Web Toolkit stuff. -->
   <inherits name='com.google.gwt.user.User' />
-  <!-- Form-field colour picker used by the object properties dialog. -->
-  <inherits name='stroom.widget.colour.Colour' />
-
   <source path="client" />
-  <source path="shared" />
 </module>

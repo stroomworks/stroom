@@ -536,3 +536,38 @@
     height: 26px;
     white-space: nowrap;
 }
+
+/* -----------------------------------------------------------------------
+   Area drawing mode
+   ----------------------------------------------------------------------- */
+
+/* Positioning context for the drawing-mode hint overlaid on the canvas */
+.stroom-floormap-canvas-container {
+    position: relative;
+}
+
+/* Instruction pill shown while the area-drawing mode is active — same
+   visual language as the timeline scrub tooltip (blue text/border pill on
+   the page background, theme-aware) */
+.stroom-floormap-area-draw-hint {
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: var(--page__background-color);
+    color: var(--blue-500);
+    font-size: 12px;
+    font-weight: 500;
+    white-space: nowrap;
+    padding: 4px 10px;
+    border: 1px solid var(--blue-500);
+    border-radius: 4px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+    pointer-events: none;
+    z-index: 20;
+    display: none;
+}
+
+.stroom-floormap-area-draw-hint--visible {
+    display: block;
+}

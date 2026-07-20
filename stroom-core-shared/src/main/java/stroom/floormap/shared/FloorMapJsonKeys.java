@@ -39,6 +39,24 @@ public final class FloorMapJsonKeys {
     public static final String PERSON = "person";
 
     /**
+     * Type identifier for user-drawn area polygons in the floor map canvas.
+     * Area facts carry a {@code geometry} vertex array and render as filled
+     * polygons beneath other objects.
+     */
+    public static final String AREA = "area";
+
+    /**
+     * JSON field name for an area's polygon vertices — a flat array
+     * {@code [x0, y0, x1, y1, ...]} in the fact's local frame.
+     */
+    public static final String GEOMETRY = "geometry";
+
+    /**
+     * JSON field name for an area's fill opacity (number in [0, 1]).
+     */
+    public static final String OPACITY = "opacity";
+
+    /**
      * Display name for the background object in the fact list UI.
      */
     public static final String BACKGROUND_DISPLAY_NAME = "Background";

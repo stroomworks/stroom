@@ -17,17 +17,23 @@
 package stroom.floormap.client.view;
 
 import stroom.floormap.client.presenter.FloorMapObjectEditPresenter.FloorMapObjectEditView;
+import stroom.widget.colour.client.ColourBox;
 import stroom.widget.datepicker.client.DateTimeBox;
 import stroom.widget.datepicker.client.DateTimePopup;
+import stroom.widget.form.client.FormGroup;
 
 import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
+import com.google.gwt.user.client.ui.CheckBox;
+import com.google.gwt.user.client.ui.Label;
 import com.google.gwt.user.client.ui.SimplePanel;
 import com.google.gwt.user.client.ui.TextBox;
 import com.google.gwt.user.client.ui.Widget;
 import com.google.inject.Inject;
 import com.google.inject.Provider;
 import com.gwtplatform.mvp.client.ViewImpl;
+
+import java.util.function.Consumer;
 
 /**
  * View implementation for the floor map object (fact) edit dialog.
@@ -65,11 +71,55 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
     @UiField
     TextBox w2mRot;
 
+    // Area-only fields (hidden for non-area objects).
+    @UiField
+    FormGroup fillGroup;
+    @UiField
+    CheckBox fillDefaultCheck;
+    @UiField
+    ColourBox fillBox;
+    @UiField
+    FormGroup opacityGroup;
+    @UiField
+    TextBox opacityBox;
+    @UiField
+    FormGroup verticesGroup;
+    @UiField
+    Label vertexCountLabel;
+
+    // Point-position fields, hidden for areas (an area is placed purely by its
+    // world-to-map matrix; its anchor is its centroid).
+    @UiField
+    FormGroup xGroup;
+    @UiField
+    FormGroup yGroup;
+
+    private boolean enabled = true;
+
+    /**
+     * Whether the user has touched the fill controls since the form was last
+     * populated. The presenter writes the fill only when this is set, so a
+     * stored fill value the picker cannot represent (e.g. {@code "red"} — SVG
+     * accepts it, an {@code <input type=color>} cannot) survives an edit of
+     * unrelated fields instead of being coerced to black.
+     */
+    private boolean fillDirty;
+
     @Inject
     public FloorMapObjectEditViewImpl(final Binder binder,
                                       final Provider<DateTimePopup> dateTimePopupProvider) {
         widget = binder.createAndBindUi(this);
         effectiveTimeBox.setPopupProvider(dateTimePopupProvider);
+        setAreaFieldsVisible(false);
+        fillDefaultCheck.setValue(true);
+        fillBox.setEnabled(false);
+        //noinspection unused e
+        fillDefaultCheck.addValueChangeHandler(e -> {
+            fillDirty = true;
+            fillBox.setEnabled(enabled && !Boolean.TRUE.equals(fillDefaultCheck.getValue()));
+        });
+        //noinspection unused e
+        fillBox.addValueChangeHandler(e -> fillDirty = true);
     }
 
     @Override
@@ -133,6 +183,85 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
     @Override
     public void setType(final String type) {
         typeBox.setText(type == null ? "" : type);
+    }
+
+    @Override
+    public void setTypeChangedHandler(final Consumer<String> handler) {
+        //noinspection unused e
+        typeBox.addKeyUpHandler(e -> handler.accept(typeBox.getText()));
+        //noinspection unused e
+        typeBox.addValueChangeHandler(e -> handler.accept(typeBox.getText()));
+    }
+
+    @Override
+    public String getFill() {
+        return Boolean.TRUE.equals(fillDefaultCheck.getValue())
+                ? ""
+                : fillBox.getValue();
+    }
+
+    @Override
+    public void setFill(final String hexColour) {
+        final boolean isDefault = hexColour == null || hexColour.isEmpty();
+        fillDefaultCheck.setValue(isDefault);
+        if (!isDefault) {
+            fillBox.setValue(hexColour);
+        }
+        fillBox.setEnabled(enabled && !isDefault);
+        fillDirty = false;
+    }
+
+    @Override
+    public boolean isFillDirty() {
+        return fillDirty;
+    }
+
+    @Override
+    public Double getOpacity() {
+        final String text = opacityBox.getText();
+        if (text == null || text.trim().isEmpty()) {
+            return null;
+        }
+        try {
+            return Double.parseDouble(text.trim());
+        } catch (final NumberFormatException e) {
+            return null;
+        }
+    }
+
+    @Override
+    public void setOpacity(final Double opacity) {
+        opacityBox.setText(opacity != null ? String.valueOf(opacity) : "");
+    }
+
+    @Override
+    public boolean isOpacityValid() {
+        final String text = opacityBox.getText();
+        if (text == null || text.trim().isEmpty()) {
+            return true;
+        }
+        try {
+            final double value = Double.parseDouble(text.trim());
+            return value >= 0.0 && value <= 1.0;
+        } catch (final NumberFormatException e) {
+            return false;
+        }
+    }
+
+    @Override
+    public void setVertexCount(final Integer count) {
+        vertexCountLabel.setText(count != null ? String.valueOf(count) : "");
+    }
+
+    @Override
+    public void setAreaFieldsVisible(final boolean visible) {
+        fillGroup.setVisible(visible);
+        opacityGroup.setVisible(visible);
+        verticesGroup.setVisible(visible);
+        // An area has no meaningful point position — its anchor is the local
+        // origin (the centroid), placed by the matrix.
+        xGroup.setVisible(!visible);
+        yGroup.setVisible(!visible);
     }
 
     @Override
@@ -222,10 +351,14 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
 
     @Override
     public void setEnabled(final boolean enabled) {
+        this.enabled = enabled;
         effectiveTimeBox.setEnabled(enabled);
         setTextBoxesEnabled(enabled,
                 xBox, yBox, nameBox, typeBox,
-                w2mTx, w2mTy, w2mSx, w2mSy, w2mRot);
+                w2mTx, w2mTy, w2mSx, w2mSy, w2mRot,
+                opacityBox);
+        fillDefaultCheck.setEnabled(enabled);
+        fillBox.setEnabled(enabled && !Boolean.TRUE.equals(fillDefaultCheck.getValue()));
     }
 
     private static void setTextBoxesEnabled(final boolean enabled, final TextBox... boxes) {

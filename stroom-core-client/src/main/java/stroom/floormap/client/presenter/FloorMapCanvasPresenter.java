@@ -31,6 +31,7 @@ import stroom.floormap.shared.TypeStyle;
 import com.google.gwt.animation.client.AnimationScheduler;
 import com.google.gwt.dom.client.Element;
 import com.google.gwt.dom.client.EventTarget;
+import com.google.gwt.dom.client.NativeEvent;
 import com.google.gwt.event.dom.client.ContextMenuEvent;
 import com.google.gwt.event.dom.client.HasMouseMoveHandlers;
 import com.google.gwt.event.dom.client.HasMouseUpHandlers;
@@ -140,7 +141,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
     /** The kind of pointer gesture currently in progress. */
     private enum Gesture {
-        NONE, PANNING, MOVING, MARQUEE, SCALING, ROTATING
+        NONE, PANNING, MOVING, MARQUEE, SCALING, ROTATING, DRAWING_AREA
     }
 
     private Gesture gesture = Gesture.NONE;
@@ -150,6 +151,25 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     private double marqueeStartY;
     private double marqueeCurX;
     private double marqueeCurY;
+
+    /** Minimum vertices needed to close an area polygon. */
+    private static final int AREA_MIN_VERTICES = 3;
+    /**
+     * Screen-pixel radius around vertex 0 within which a click closes the
+     * polygon. Keep in step with the close-target ring drawn by
+     * {@code FloorMapCanvasViewImpl.AREA_DRAFT_CLOSE_RADIUS_PX}.
+     */
+    private static final double AREA_CLOSE_RADIUS_PX = 10;
+
+    /**
+     * Committed draft vertices for the in-progress DRAWING_AREA gesture, in
+     * map space (so panning/zooming mid-draw doesn't shear the draft).
+     */
+    private final List<double[]> areaDraftMap = new ArrayList<>();
+    /** Live cursor position in element pixels (valid while DRAWING_AREA). */
+    private double areaCursorX;
+    private double areaCursorY;
+    private AreaHandler areaHandler;
 
     /**
      * On a plain press over the background fact or empty canvas, the fact key to
@@ -436,6 +456,21 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
             final String hitId = hitObjectId(event.getNativeEvent().getEventTarget());
 
             if (editMode) {
+                // Area drawing is modal: every LEFT press is either a vertex
+                // click or a pan, resolved on mouseup by the PANNING
+                // click-vs-pan logic (a press-drag pans, so large rooms can be
+                // traced). Other buttons (e.g. middle) are ignored so a
+                // habitual middle-click can't commit a spurious vertex.
+                if (gesture == Gesture.DRAWING_AREA) {
+                    if (event.getNativeEvent().getButton() == NativeEvent.BUTTON_LEFT) {
+                        isDragging = true;
+                        manualPanPx = 0;
+                        lastMouseX = event.getX();
+                        lastMouseY = event.getY();
+                    }
+                    return;
+                }
+
                 // (1) A transform handle takes priority over object/background
                 // hit-testing so a handle drag starts a scale/rotate gesture.
                 final String handle = handleRole(event.getNativeEvent().getEventTarget());
@@ -526,11 +561,32 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
             // The DOM 'buttons' property returns a bitmask of currently held
             // buttons (W3C spec); 0 means nothing is pressed.
             if (isDragging && nativeButtons(event.getNativeEvent()) == 0) {
-                isDragging = false;
-                hasMoved = false;
-                gesture = Gesture.NONE;
-                pendingTransform = null;
-                return;
+                if (gesture == Gesture.DRAWING_AREA) {
+                    // Only the mid-draw pan is stale — the modal drawing gesture
+                    // and its draft survive (no button is held between vertex
+                    // clicks by design).
+                    isDragging = false;
+                    manualPanPx = 0;
+                } else {
+                    isDragging = false;
+                    hasMoved = false;
+                    gesture = Gesture.NONE;
+                    pendingTransform = null;
+                    return;
+                }
+            }
+
+            // Track the live cursor for the area-draft rubber band (both while
+            // hovering between vertex clicks and during a mid-draw pan).
+            if (gesture == Gesture.DRAWING_AREA) {
+                areaCursorX = event.getX();
+                areaCursorY = event.getY();
+                if (!isDragging) {
+                    if (!areaDraftMap.isEmpty()) {
+                        redraw();
+                    }
+                    return;
+                }
             }
 
             if (isDragging) {
@@ -601,6 +657,25 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
         //noinspection unused event
         registerHandler(getView().getMouseUpHandlers().addMouseUpHandler(event -> {
+            // Area drawing is modal: resolve this press as vertex-click vs pan
+            // and keep the gesture alive (the generic reset below must not run).
+            if (gesture == Gesture.DRAWING_AREA) {
+                final boolean click = isDragging && manualPanPx <= PAN_INTENT_THRESHOLD_PX;
+                isDragging = false;
+                hasMoved = false;
+                manualPanPx = 0;
+                if (click) {
+                    if (areaDraftMap.size() >= AREA_MIN_VERTICES
+                            && isNearFirstDraftVertex(event.getX(), event.getY())) {
+                        finishAreaDrawing();
+                    } else {
+                        areaDraftMap.add(screenToMapCoords(event.getX(), event.getY()));
+                        redraw();
+                    }
+                }
+                return;
+            }
+
             final Gesture finished = gesture;
             final FloorMapTransformationMatrix transform = pendingTransform;
             final boolean moved = hasMoved;
@@ -687,6 +762,21 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
             event.preventDefault();
             event.stopPropagation();
 
+            // While drawing an area, right-click undoes the last vertex
+            // (misclicks are the dominant error when tracing) — or cancels an
+            // empty draft. The context menu never opens mid-draw.
+            if (gesture == Gesture.DRAWING_AREA) {
+                isDragging = false;
+                hasMoved = false;
+                if (areaDraftMap.isEmpty()) {
+                    cancelAreaDrawing();
+                } else {
+                    areaDraftMap.remove(areaDraftMap.size() - 1);
+                    redraw();
+                }
+                return;
+            }
+
             // Reset any drag state that may have leaked from a preceding
             // mousedown (e.g. if the mouseup landed on a dialog or toolbar
             // outside the canvas).
@@ -724,11 +814,52 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         // Escape clears the selection, so you can pan again after selecting the
         // full-canvas background (an unselected background press pans).
         registerHandler(getView().getFocusPanel().addKeyDownHandler(event -> {
+            // While drawing an area: Escape discards the draft, Enter closes
+            // the polygon. (No clash with Escape-clears-selection — starting a
+            // draw clears the selection.)
+            if (editMode && gesture == Gesture.DRAWING_AREA) {
+                if (event.getNativeKeyCode() == KeyCodes.KEY_ESCAPE) {
+                    cancelAreaDrawing();
+                    return;
+                }
+                if (event.getNativeKeyCode() == KeyCodes.KEY_ENTER
+                        && areaDraftMap.size() >= AREA_MIN_VERTICES) {
+                    finishAreaDrawing();
+                    return;
+                }
+            }
             if (editMode
                     && event.getNativeKeyCode() == KeyCodes.KEY_ESCAPE
                     && !selectedObjectIds.isEmpty()) {
                 selectedObjectIds.clear();
                 fireSelectionChanged();
+            }
+        }));
+
+        // Double-click closes the in-progress area polygon. The dblclick's two
+        // component clicks have already appended two near-coincident vertices,
+        // so drop the duplicate before closing.
+        registerHandler(getView().getFocusPanel().addDoubleClickHandler(event -> {
+            if (gesture != Gesture.DRAWING_AREA) {
+                return;
+            }
+            event.preventDefault();
+            if (areaDraftMap.size() >= 2) {
+                final double[] last = mapToScreen(
+                        areaDraftMap.get(areaDraftMap.size() - 1));
+                final double[] prev = mapToScreen(
+                        areaDraftMap.get(areaDraftMap.size() - 2));
+                final double dx = last[0] - prev[0];
+                final double dy = last[1] - prev[1];
+                if (dx * dx + dy * dy
+                        <= AREA_CLOSE_RADIUS_PX * AREA_CLOSE_RADIUS_PX) {
+                    areaDraftMap.remove(areaDraftMap.size() - 1);
+                }
+            }
+            if (areaDraftMap.size() >= AREA_MIN_VERTICES) {
+                finishAreaDrawing();
+            } else {
+                redraw();
             }
         }));
     }
@@ -782,7 +913,8 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                 FloorMapZOrder.sort(factsExcludingOverlay(overlay), typeStyles),
                 overlay, selectedObjectIds, typeStyles, showGrid,
                 gesture == Gesture.MARQUEE ? currentMarqueeRect() : null,
-                editMode && !selectedObjectIds.isEmpty() && gesture != Gesture.MARQUEE);
+                editMode && !selectedObjectIds.isEmpty() && gesture != Gesture.MARQUEE,
+                gesture == Gesture.DRAWING_AREA ? currentAreaDraftPx() : null);
     }
 
     /**
@@ -1147,11 +1279,11 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                         return;
                     }
 
-                    // Draw the current frame. No marquee/handles during playback.
+                    // Draw the current frame. No marquee/handles/draft during playback.
                     final List<FloorMapObject> overlay = buildAnimatedDrawList(timestamp);
                     getView().draw(scale, offsetX, offsetY,
                             FloorMapZOrder.sort(factsExcludingOverlay(overlay), typeStyles),
-                            overlay, selectedObjectIds, typeStyles, showGrid, null, false);
+                            overlay, selectedObjectIds, typeStyles, showGrid, null, false, null);
 
                     // Keep looping.
                     AnimationScheduler.get().requestAnimationFrame(this);
@@ -1391,9 +1523,8 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         final List<Fact> out = new ArrayList<>(facts.size());
         for (final Fact fact : facts) {
             if (selectedObjectIds.contains(fact.getKey())) {
-                out.add(new Fact(fact.getKey(), fact.getType(), fact.getImage(),
-                        pendingTransform.multiply(fact.getWorldToMap()),
-                        fact.getPosition()));
+                out.add(fact.withWorldToMap(
+                        pendingTransform.multiply(fact.getWorldToMap())));
             } else {
                 out.add(fact);
             }
@@ -1502,8 +1633,105 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         this.editMode = editMode;
         if (!editMode) {
             selectedObjectIds.clear();
+            if (gesture == Gesture.DRAWING_AREA) {
+                cancelAreaDrawing();
+            }
         }
         redraw();
+    }
+
+    /**
+     * Enters the modal area-drawing gesture: subsequent clicks append polygon
+     * vertices, a press-drag pans, right-click undoes the last vertex, Escape
+     * cancels, and the polygon closes on Enter, double-click, or a click near
+     * the first vertex (≥ 3 vertices). The finished polygon is delivered to
+     * the {@link AreaHandler}.
+     */
+    public void startAreaDrawing() {
+        selectedObjectIds.clear();
+        fireSelectionChanged();
+        areaDraftMap.clear();
+        gesture = Gesture.DRAWING_AREA;
+        // Make the modal mode visible immediately: crosshair cursor (the
+        // instruction banner is drawn by the view). Without this the mode is
+        // indistinguishable from nothing having happened.
+        getView().getFocusPanel().getElement().getStyle()
+                .setProperty("cursor", "crosshair");
+        // The triggering context-menu click leaves keyboard focus on the popup;
+        // without this, Enter/Escape are dead until the first canvas click.
+        getView().getFocusPanel().setFocus(true);
+        redraw();
+    }
+
+    /** Discards any in-progress area draft and leaves the drawing gesture. */
+    public void cancelAreaDrawing() {
+        areaDraftMap.clear();
+        gesture = Gesture.NONE;
+        getView().getFocusPanel().getElement().getStyle().clearProperty("cursor");
+        redraw();
+    }
+
+    /**
+     * Closes the in-progress polygon and delivers it to the
+     * {@link AreaHandler}. No-ops (keeps drawing) below the vertex minimum.
+     */
+    private void finishAreaDrawing() {
+        if (areaDraftMap.size() < AREA_MIN_VERTICES) {
+            return;
+        }
+        final List<double[]> mapVertices = new ArrayList<>(areaDraftMap.size());
+        for (final double[] v : areaDraftMap) {
+            mapVertices.add(new double[]{v[0], v[1]});
+        }
+        areaDraftMap.clear();
+        gesture = Gesture.NONE;
+        getView().getFocusPanel().getElement().getStyle().clearProperty("cursor");
+        redraw();
+        if (areaHandler != null) {
+            areaHandler.onAreaDrawn(mapVertices);
+        }
+    }
+
+    /**
+     * {@code true} if the given element-pixel position falls within the
+     * close radius of the draft's first vertex.
+     */
+    private boolean isNearFirstDraftVertex(final double screenX, final double screenY) {
+        if (areaDraftMap.isEmpty()) {
+            return false;
+        }
+        final double[] first = mapToScreen(areaDraftMap.get(0));
+        final double dx = screenX - first[0];
+        final double dy = screenY - first[1];
+        return dx * dx + dy * dy <= AREA_CLOSE_RADIUS_PX * AREA_CLOSE_RADIUS_PX;
+    }
+
+    /**
+     * Projects a map-space point to element-pixel coordinates — the inverse of
+     * {@link #screenToMapCoords} (pan/zoom plus the Y-up flip).
+     */
+    private double[] mapToScreen(final double[] mapPoint) {
+        return new double[]{
+                offsetX + scale * mapPoint[0],
+                offsetY - scale * mapPoint[1]};
+    }
+
+    /**
+     * The in-progress area draft as a flat element-pixel polyline
+     * {@code [x0, y0, ..., xn, yn]} whose last point is the live cursor. An
+     * empty draft yields just the cursor point — still non-null, so the view
+     * shows the drawing-mode banner from the moment the mode starts.
+     */
+    private double[] currentAreaDraftPx() {
+        final double[] draft = new double[(areaDraftMap.size() + 1) * 2];
+        for (int i = 0; i < areaDraftMap.size(); i++) {
+            final double[] px = mapToScreen(areaDraftMap.get(i));
+            draft[i * 2] = px[0];
+            draft[i * 2 + 1] = px[1];
+        }
+        draft[draft.length - 2] = areaCursorX;
+        draft[draft.length - 1] = areaCursorY;
+        return draft;
     }
 
     /**
@@ -1560,6 +1788,15 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     }
 
     /**
+     * Sets the handler that receives a finished area-drawing polygon.
+     *
+     * @param areaHandler the callback, or {@code null} to remove
+     */
+    public void setAreaHandler(final AreaHandler areaHandler) {
+        this.areaHandler = areaHandler;
+    }
+
+    /**
      * Sets the handler notified when the selection changes as a result of a
      * canvas interaction (click, Shift-click toggle, or rubber-band marquee).
      *
@@ -1599,6 +1836,19 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
          *                          onto each fact ({@code newWorldToMap = T · old})
          */
         void onTransform(Collection<String> keys, FloorMapTransformationMatrix mapSpaceTransform);
+    }
+
+    /**
+     * Callback invoked when the user finishes drawing an area polygon (see
+     * {@link #startAreaDrawing()}).
+     */
+    public interface AreaHandler {
+
+        /**
+         * @param mapVertices the polygon vertices in map space, in click order;
+         *                    always at least 3
+         */
+        void onAreaDrawn(List<double[]> mapVertices);
     }
 
     /**
@@ -1741,11 +1991,14 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
          * @param typeStyles      per-type presentation settings (default graphic
          *                        shape/colour for imageless facts); may be {@code null}
          * @param showGrid        {@code true} to draw the (non-interactive) grid overlay
+         * @param areaDraftPx     the in-progress area-drawing polyline in element
+         *                        pixels ({@code [x0, y0, x1, y1, ...]}, last point =
+         *                        live cursor), or {@code null} when not drawing
          */
         void draw(double scale, double x, double y, List<Fact> facts,
                 List<FloorMapObject> events, Set<String> selectedObjectIds,
                 List<TypeStyle> typeStyles, boolean showGrid, double[] marqueeRectPx,
-                boolean drawSelectionHandles);
+                boolean drawSelectionHandles, double[] areaDraftPx);
 
         /**
          * Returns the keys of facts whose on-screen bounds intersect the given

@@ -1459,6 +1459,81 @@ class TestFloorMapEditorModel {
     }
 
     // -----------------------------------------------------------------------
+    // buildAreaEntry
+    // -----------------------------------------------------------------------
+
+    /**
+     * Map-space vertices are stored in the local frame centred on their
+     * centroid, placed by {@code WORLD_TO_MAP = translate(centroid)}, so
+     * local + translation reproduces the original map coordinates and the
+     * scale/rotate handles pivot about the middle.
+     */
+    @Test
+    void testBuildAreaEntry_centroidLocalFrame() {
+        final List<double[]> mapVertices = List.of(
+                new double[]{0, 0},
+                new double[]{100, 0},
+                new double[]{100, 60},
+                new double[]{0, 60});
+
+        final TemporalEntry entry = FloorMapEditorModel.buildAreaEntry(
+                MAP, "area-1", mapVertices, 0L,
+                FloorMapFieldMapping.withAreaMappings(SCHEMA, ValueFormat.JSON),
+                ACCESSOR);
+
+        assertThat(entry.getKey()).isEqualTo("area-1");
+        assertThat(entry.getEffectiveTimeMs()).isZero();
+
+        final ParsedValue parsed = ACCESSOR.parse(entry.getValue());
+        assertThat(ACCESSOR.getString(parsed, ".type")).isEqualTo(FloorMapJsonKeys.AREA);
+        assertThat(ACCESSOR.getString(parsed, ".name")).isEqualTo("area-1");
+        assertThat(ACCESSOR.getArray(parsed, ".coords")).containsExactly(0, 0);
+
+        // Centroid of the rectangle is (50, 30).
+        final double[] m = ACCESSOR.getArray(parsed, ".tm-world-to-map");
+        assertThat(m).containsExactly(1, 0, 0, 1, 50, 30);
+
+        final double[] geometry = ACCESSOR.getArray(parsed, ".geometry");
+        assertThat(geometry).hasSize(8);
+        // Local vertices + translation == the original map vertices.
+        for (int i = 0; i < 4; i++) {
+            assertThat(geometry[i * 2] + m[4]).isCloseTo(mapVertices.get(i)[0], within(1e-9));
+            assertThat(geometry[i * 2 + 1] + m[5]).isCloseTo(mapVertices.get(i)[1], within(1e-9));
+        }
+    }
+
+    /** Fewer than three vertices is rejected. */
+    @Test
+    void testBuildAreaEntry_tooFewVertices() {
+        assertThatThrownBy(() -> FloorMapEditorModel.buildAreaEntry(
+                MAP, "area-1", List.of(new double[]{0, 0}, new double[]{1, 1}), 0L,
+                FloorMapFieldMapping.withAreaMappings(SCHEMA, ValueFormat.JSON),
+                ACCESSOR))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    /**
+     * A schema without the GEOMETRY role fails loudly instead of silently
+     * writing to a null path (which the accessors ignore).
+     */
+    @Test
+    void testBuildAreaEntry_missingRoleFailsLoudly() {
+        assertThatThrownBy(() -> FloorMapEditorModel.buildAreaEntry(
+                MAP, "area-1",
+                List.of(new double[]{0, 0}, new double[]{1, 0}, new double[]{1, 1}),
+                0L, SCHEMA_WITHOUT_AREA_ROLES, ACCESSOR))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("GEOMETRY");
+    }
+
+    private static final List<FloorMapFieldMapping> SCHEMA_WITHOUT_AREA_ROLES = List.of(
+            new FloorMapFieldMapping(".type", FloorMapFieldMapping.Role.TYPE, "Type", null),
+            new FloorMapFieldMapping(".name", FloorMapFieldMapping.Role.LABEL, "Name", null),
+            new FloorMapFieldMapping(".coords", FloorMapFieldMapping.Role.POSITION, "Coords", null),
+            new FloorMapFieldMapping(".tm-world-to-map",
+                    FloorMapFieldMapping.Role.WORLD_TO_MAP, null, null));
+
+    // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
 

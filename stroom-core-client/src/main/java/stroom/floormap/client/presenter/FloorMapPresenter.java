@@ -70,6 +70,13 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
      */
     private PresenterWidget<?> previousContent;
 
+    /**
+     * Set when the Editor tab enables area support on this document, so a
+     * Settings tab created <em>afterwards</em> still gets its grids patched
+     * (see {@link FloorMapSettingsPresenter#applyAreaPatch()}).
+     */
+    private boolean areaSupportEnabled;
+
     @Inject
     public FloorMapPresenter(final EventBus eventBus,
                              final LinkTabPanelView view,
@@ -90,6 +97,15 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
 
         addTab(EDITOR, new DocTabProvider<>(() -> {
             floorMapEditorPresenter = floorMapEditorPresenterProvider.get();
+            // When the Editor enables area support (schema/type-style upgrade),
+            // the Settings tab's grids must be re-patched or its wholesale
+            // onWrite would silently revert the upgrade on save.
+            floorMapEditorPresenter.setAreaSupportEnabledListener(() -> {
+                areaSupportEnabled = true;
+                if (floorMapSettingsPresenter != null) {
+                    floorMapSettingsPresenter.applyAreaPatch();
+                }
+            });
             return floorMapEditorPresenter;
         }));
 
@@ -133,6 +149,11 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
 
         addTab(SETTINGS, new DocTabProvider<>(() -> {
             floorMapSettingsPresenter = floorMapSettingsPresenterProvider.get();
+            if (areaSupportEnabled) {
+                // Area support was enabled before this tab was first opened —
+                // keep its grids patched (idempotent; also re-applied on read).
+                floorMapSettingsPresenter.applyAreaPatch();
+            }
             return floorMapSettingsPresenter;
         }));
         addTab(ASSETS, new DocTabProvider<>(() -> documentAssetPresenter));

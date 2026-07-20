@@ -42,6 +42,9 @@ public final class Fact {
     private final String image;
     private final FloorMapTransformationMatrix worldToMap;
     private final double[] position;
+    private final double[][] vertices;
+    private final String fill;
+    private final Double opacity;
 
     /**
      * @param key        the temporal-store key (fact identity within a map)
@@ -56,6 +59,32 @@ public final class Fact {
                 final String image,
                 final FloorMapTransformationMatrix worldToMap,
                 final double[] position) {
+        this(key, type, image, worldToMap, position, null, null, null);
+    }
+
+    /**
+     * @param key        the temporal-store key (fact identity within a map)
+     * @param type       the fact type ({@code ""} if unset); also drives z-order
+     * @param image      the Asset Store image URL, or {@code null} if none
+     * @param worldToMap the affine placing this fact into map space; never {@code null}
+     * @param position   world-space coordinates {@code [x, y]} for a point fact,
+     *                   or {@code null} (e.g. for a background)
+     * @param vertices   area polygon vertices {@code [[x,y], ...]} in the fact's
+     *                   local frame (placed by {@code worldToMap}), or {@code null}
+     *                   for a non-area fact
+     * @param fill       area fill colour (hex string), or {@code null} to use the
+     *                   type's default colour
+     * @param opacity    area fill opacity in {@code [0, 1]}, or {@code null} for
+     *                   the default
+     */
+    public Fact(final String key,
+                final String type,
+                final String image,
+                final FloorMapTransformationMatrix worldToMap,
+                final double[] position,
+                final double[][] vertices,
+                final String fill,
+                final Double opacity) {
         this.key = key;
         this.type = type != null ? type : "";
         this.image = image;
@@ -65,6 +94,9 @@ public final class Fact {
         this.position = position != null
                 ? new double[]{position[0], position[1]}
                 : null;
+        this.vertices = copyVertices(vertices);
+        this.fill = fill;
+        this.opacity = opacity;
     }
 
     public String getKey() {
@@ -95,5 +127,50 @@ public final class Fact {
         return position != null
                 ? new double[]{position[0], position[1]}
                 : null;
+    }
+
+    /**
+     * Area polygon vertices {@code [[x,y], ...]} in the fact's local frame,
+     * or {@code null} if this fact is not an area.
+     */
+    public double[][] getVertices() {
+        return copyVertices(vertices);
+    }
+
+    /** {@code true} if this fact is a renderable area polygon (≥ 3 vertices). */
+    public boolean hasVertices() {
+        return vertices != null && vertices.length >= 3;
+    }
+
+    /** The area fill colour (hex string), or {@code null} for the type default. */
+    public String getFill() {
+        return fill;
+    }
+
+    /** The area fill opacity in {@code [0, 1]}, or {@code null} for the default. */
+    public Double getOpacity() {
+        return opacity;
+    }
+
+    /**
+     * Returns a copy of this fact with a different placement matrix — used for
+     * live transform previews. All other fields (including area geometry) are
+     * carried over unchanged.
+     */
+    public Fact withWorldToMap(final FloorMapTransformationMatrix newWorldToMap) {
+        return new Fact(key, type, image, newWorldToMap, position, vertices, fill, opacity);
+    }
+
+    private static double[][] copyVertices(final double[][] source) {
+        if (source == null) {
+            return null;
+        }
+        final double[][] copy = new double[source.length][];
+        for (int i = 0; i < source.length; i++) {
+            copy[i] = source[i] != null
+                    ? new double[]{source[i][0], source[i][1]}
+                    : null;
+        }
+        return copy;
     }
 }

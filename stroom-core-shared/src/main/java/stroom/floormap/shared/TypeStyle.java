@@ -126,6 +126,40 @@ public class TypeStyle {
         return result;
     }
 
+    /**
+     * Returns a copy of {@code existing} guaranteed to contain a style for the
+     * {@link FloorMapJsonKeys#AREA} type.
+     *
+     * <p>If no {@code "area"} style is present, one is inserted immediately
+     * <em>after</em> the last {@code "background"} entry (or at index 0 when
+     * there is no background style), so areas paint above the floor plan but
+     * beneath every other object. Do not rely on {@link #merge} for this —
+     * discovery appends new types at the <em>end</em>, which would paint areas
+     * on top of everything.</p>
+     *
+     * @param existing the current ordered styles (may be {@code null}); never
+     *                 mutated
+     * @return a new ordered list containing an {@code "area"} style; never
+     *         {@code null}
+     */
+    public static List<TypeStyle> withAreaStyle(final List<TypeStyle> existing) {
+        final List<TypeStyle> result = new ArrayList<>();
+        int insertAt = 0;
+        if (existing != null) {
+            for (final TypeStyle style : existing) {
+                if (style != null && FloorMapJsonKeys.AREA.equals(style.getType())) {
+                    return new ArrayList<>(existing);
+                }
+                result.add(style);
+                if (style != null && FloorMapJsonKeys.BACKGROUND.equals(style.getType())) {
+                    insertAt = result.size();
+                }
+            }
+        }
+        result.add(insertAt, new TypeStyle(FloorMapJsonKeys.AREA, null, "#1e88e5"));
+        return result;
+    }
+
     @Override
     public boolean equals(final Object o) {
         if (this == o) {

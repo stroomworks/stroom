@@ -128,6 +128,47 @@ public final class JsonValueAccessor implements ValueAccessor {
     }
 
     @Override
+    public Double getNumber(final ParsedValue value, final String path) {
+        final JSONObject json = asJson(value);
+        if (json == null || path == null) {
+            return null;
+        }
+        final JSONValue val = json.get(toKey(path));
+        if (val == null) {
+            return null;
+        }
+        final JSONNumber num = val.isNumber();
+        if (num != null) {
+            return num.doubleValue();
+        }
+        // Lenient fallback: tolerate a numeric string.
+        final JSONString str = val.isString();
+        if (str != null) {
+            try {
+                return Double.parseDouble(str.stringValue().trim());
+            } catch (final NumberFormatException e) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    @Override
+    public void setNumber(final ParsedValue value, final String path,
+                          final Double number) {
+        final JSONObject json = asJson(value);
+        if (json == null || path == null) {
+            return;
+        }
+        final String key = toKey(path);
+        if (number != null) {
+            json.put(key, new JSONNumber(number));
+        } else if (json.containsKey(key)) {
+            json.put(key, null);
+        }
+    }
+
+    @Override
     public String serialize(final ParsedValue value) {
         final JSONObject json = asJson(value);
         return json != null ? json.toString() : null;

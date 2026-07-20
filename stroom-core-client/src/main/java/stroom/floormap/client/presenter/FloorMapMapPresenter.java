@@ -459,6 +459,9 @@ public class FloorMapMapPresenter
         int coordsIdx = -1;
         int imgIdx = -1;
         int worldToMapIdx = -1;
+        int geometryIdx = -1;
+        int fillIdx = -1;
+        int opacityIdx = -1;
 
         final List<Column> columns = tableResult.getColumns();
         if (columns == null) {
@@ -466,6 +469,11 @@ public class FloorMapMapPresenter
         }
 
         final stroom.floormap.shared.ValueFormat vf = getEntity().getValueFormat();
+        // Area roles are absent from pre-area schemas, so their aliases may be
+        // null — matched columns simply stay at -1.
+        final String geometryAlias = columnAliasForRole(Role.GEOMETRY, vf);
+        final String fillAlias = columnAliasForRole(Role.FILL, vf);
+        final String opacityAlias = columnAliasForRole(Role.OPACITY, vf);
         for (int i = 0; i < columns.size(); i++) {
             final String colName = columns.get(i).getName();
             if (colName.equalsIgnoreCase("Key")) {
@@ -482,6 +490,12 @@ public class FloorMapMapPresenter
             } else if (colName.equalsIgnoreCase(FloorMapQueryBuilder.buildColumnAlias(
                     pathForRole(Role.WORLD_TO_MAP), vf))) {
                 worldToMapIdx = i;
+            } else if (colName.equalsIgnoreCase(geometryAlias)) {
+                geometryIdx = i;
+            } else if (colName.equalsIgnoreCase(fillAlias)) {
+                fillIdx = i;
+            } else if (colName.equalsIgnoreCase(opacityAlias)) {
+                opacityIdx = i;
             }
         }
 
@@ -516,7 +530,18 @@ public class FloorMapMapPresenter
                     worldToMap = parseMatrix(values.get(worldToMapIdx));
                 }
 
-                factsByKey.put(key, new Fact(key, type, img, worldToMap, new double[]{worldX, worldY}));
+                final double[][] vertices = geometryIdx != -1 && values.size() > geometryIdx
+                        ? parseVertices(values.get(geometryIdx))
+                        : null;
+                final String fill = fillIdx != -1 && values.size() > fillIdx
+                        ? values.get(fillIdx)
+                        : null;
+                final Double opacity = opacityIdx != -1 && values.size() > opacityIdx
+                        ? parseNullableDouble(values.get(opacityIdx))
+                        : null;
+
+                factsByKey.put(key, new Fact(key, type, img, worldToMap,
+                        new double[]{worldX, worldY}, vertices, fill, opacity));
             }
         }
 
@@ -557,6 +582,60 @@ public class FloorMapMapPresenter
             Console.error("Failed to parse matrix string: " + str, e);
         }
         return FloorMapTransformationMatrix.identity();
+    }
+
+    /**
+     * The query column alias for a role, or {@code null} when the schema does
+     * not map the role (e.g. the area roles on a pre-area document).
+     */
+    private String columnAliasForRole(final Role role,
+                                      final stroom.floormap.shared.ValueFormat vf) {
+        final String path = pathForRole(role);
+        return path != null ? FloorMapQueryBuilder.buildColumnAlias(path, vf) : null;
+    }
+
+    /**
+     * Parses a flat comma-separated area geometry string
+     * {@code "[x0, y0, x1, y1, ...]"} into vertex pairs. Returns {@code null}
+     * for a missing/short array (fewer than 3 vertices); a trailing odd value
+     * is ignored — matching {@code FloorMapEntryParser}'s behaviour.
+     */
+    private double[][] parseVertices(final String str) {
+        if (str == null || str.trim().isEmpty()) {
+            return null;
+        }
+        try {
+            final String clean = str.replace("[", "").replace("]", "").replace("\"", "");
+            final String[] parts = clean.split(",");
+            final int count = parts.length / 2;
+            if (count < 3) {
+                return null;
+            }
+            final double[][] vertices = new double[count][];
+            for (int i = 0; i < count; i++) {
+                vertices[i] = new double[]{
+                        Double.parseDouble(parts[i * 2].trim()),
+                        Double.parseDouble(parts[i * 2 + 1].trim())};
+            }
+            return vertices;
+        } catch (final Exception e) {
+            Console.error("Failed to parse geometry string: " + str, e);
+            return null;
+        }
+    }
+
+    /**
+     * Parses a double, returning {@code null} for blank or unparseable input.
+     */
+    private Double parseNullableDouble(final String str) {
+        if (str == null || str.trim().isEmpty()) {
+            return null;
+        }
+        try {
+            return Double.parseDouble(str.trim());
+        } catch (final NumberFormatException e) {
+            return null;
+        }
     }
 
     /**

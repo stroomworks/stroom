@@ -77,6 +77,17 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
     private FloorMapDoc floorMapDoc;
 
     /**
+     * The entry the form was last populated from. {@link #buildValue()} starts
+     * from this entry's parsed value and overlays the form fields on top, so
+     * data the form does not manage — an area's geometry, any custom-mapped
+     * fields — survives a property edit instead of being silently rebuilt away.
+     */
+    private TemporalEntry loadedEntry;
+
+    /** Whether {@link #loadedEntry} carries area geometry. */
+    private boolean loadedHasGeometry;
+
+    /**
      * Resolves the JSON path for the given {@link Role} using the current
      * document's value schema.
      *
@@ -144,6 +155,23 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
     protected void onBind() {
         super.onBind();
         getView().setChooseImgView(documentAssetDropDownPresenter.getView().asWidget());
+        // Typing "area" into a fresh Add-Object dialog reveals the area fields.
+        getView().setTypeChangedHandler(this::updateAreaFieldsVisibility);
+    }
+
+    /**
+     * Shows or hides the area-only fields (fill colour, opacity, vertex count):
+     * visible when the object is typed {@code "area"} or already carries
+     * geometry.
+     */
+    private void updateAreaFieldsVisibility(final String type) {
+        final boolean isArea = isArea(type);
+        getView().setAreaFieldsVisible(isArea);
+    }
+
+    private boolean isArea(final String type) {
+        return (type != null && FloorMapJsonKeys.AREA.equals(type.trim()))
+                || loadedHasGeometry;
     }
 
     /**
@@ -211,6 +239,13 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
                                     null);
                             return;
                         }
+                        if (isArea(type) && !getView().isOpacityValid()) {
+                            AlertEvent.fireError(this,
+                                    "Area fill opacity must be a number between 0 and 1, "
+                                    + "or empty for the default.",
+                                    null);
+                            return;
+                        }
                         final long time = getView().getEffectiveTime();
                         if (askMoveOrClone && entry != null && entry.getEffectiveTimeMs() != time) {
                             // Effective time changed — ask whether to move or clone.
@@ -267,7 +302,16 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
      */
     private String buildValue() {
         final ValueAccessor accessor = ValueAccessorFactory.forFormat(floorMapDoc.getValueFormat());
-        final ParsedValue newValue = accessor.createEmpty("entry");
+
+        // Start from the loaded entry's value and overlay the form fields, so
+        // data the form does not manage (area geometry, custom-mapped fields)
+        // round-trips a property edit untouched.
+        ParsedValue newValue = loadedEntry != null
+                ? accessor.parse(loadedEntry.getValue())
+                : null;
+        if (newValue == null) {
+            newValue = accessor.createEmpty("entry");
+        }
 
         accessor.setString(newValue, pathForRole(Role.TYPE), getView().getType());
         accessor.setString(newValue, pathForRole(Role.LABEL), getView().getName());
@@ -282,6 +326,27 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
         // Every fact — background included — is placed by its WORLD_TO_MAP matrix.
         accessor.setArray(newValue, pathForRole(Role.WORLD_TO_MAP),
                 getView().getWorldToMapMatrix());
+
+        // Fill/opacity are written only for areas, so non-area objects never
+        // accumulate empty area fields even when the schema maps the roles.
+        // An empty fill / blank opacity means "use the default" and removes
+        // the field. The fill is written only when the user actually touched
+        // the fill controls — a stored value the picker cannot represent
+        // (e.g. "red") must survive an edit of unrelated fields. GEOMETRY is
+        // never written from the form — it is preserved purely by the overlay
+        // above.
+        if (isArea(getView().getType())) {
+            final String fillPath = pathForRole(Role.FILL);
+            if (fillPath != null && getView().isFillDirty()) {
+                final String fill = getView().getFill();
+                accessor.setString(newValue, fillPath,
+                        fill != null && !fill.isEmpty() ? fill : null);
+            }
+            final String opacityPath = pathForRole(Role.OPACITY);
+            if (opacityPath != null) {
+                accessor.setNumber(newValue, opacityPath, getView().getOpacity());
+            }
+        }
 
         return accessor.serialize(newValue);
     }
@@ -315,6 +380,8 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
      *                 to reset
      */
     private void resetInputs(final TemporalEntry selected) {
+        loadedEntry = selected;
+        loadedHasGeometry = false;
         if (selected != null) {
             getView().setEffectiveTime(selected.getEffectiveTimeMs());
             double x = 0.0;
@@ -322,6 +389,9 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
             String name = "";
             String type = "";
             String img = "";
+            String fill = "";
+            Double opacity = null;
+            Integer vertexCount = null;
             final double[] w2m = new double[]{1.0, 0.0, 0.0, 1.0, 0.0, 0.0};
 
             try {
@@ -351,6 +421,26 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
                     if (parsedW2m != null && parsedW2m.length >= 6) {
                         System.arraycopy(parsedW2m, 0, w2m, 0, 6);
                     }
+
+                    final String geometryPath = pathForRole(Role.GEOMETRY);
+                    if (geometryPath != null) {
+                        final double[] geometry = accessor.getArray(parsed, geometryPath);
+                        if (geometry != null && geometry.length >= 6) {
+                            loadedHasGeometry = true;
+                            vertexCount = geometry.length / 2;
+                        }
+                    }
+                    final String fillPath = pathForRole(Role.FILL);
+                    if (fillPath != null) {
+                        final String parsedFill = accessor.getString(parsed, fillPath);
+                        if (parsedFill != null) {
+                            fill = parsedFill;
+                        }
+                    }
+                    final String opacityPath = pathForRole(Role.OPACITY);
+                    if (opacityPath != null) {
+                        opacity = accessor.getNumber(parsed, opacityPath);
+                    }
                 }
             } catch (final Exception ex) {
                 // Ignore
@@ -361,6 +451,10 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
             getView().setType(type);
             documentAssetDropDownPresenter.setSelectedAssetPath(img);
             getView().setWorldToMapMatrix(w2m);
+            getView().setFill(fill);
+            getView().setOpacity(opacity);
+            getView().setVertexCount(vertexCount);
+            updateAreaFieldsVisibility(type);
         } else {
             getView().setEffectiveTime(0L);
             getView().setX(0.0);
@@ -374,6 +468,10 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
             }
             documentAssetDropDownPresenter.setSelectedAssetPath("");
             getView().setWorldToMapMatrix(new double[]{1.0, 0.0, 0.0, 1.0, 0.0, 0.0});
+            getView().setFill("");
+            getView().setOpacity(null);
+            getView().setVertexCount(null);
+            updateAreaFieldsVisibility(null);
         }
     }
 
@@ -417,6 +515,52 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
 
         /** Sets the object type field. */
         void setType(String type);
+
+        /**
+         * Registers a callback invoked (with the current type text) as the
+         * user edits the type field, so type-dependent fields can be shown or
+         * hidden live.
+         */
+        void setTypeChangedHandler(Consumer<String> handler);
+
+        /**
+         * Returns the explicit area fill colour (7-char hex), or {@code ""}
+         * when the type default should be used.
+         */
+        String getFill();
+
+        /** Sets the area fill colour; {@code null}/empty selects the type default. */
+        void setFill(String hexColour);
+
+        /**
+         * {@code true} once the user has touched the fill controls since the
+         * last {@link #setFill}; the fill is only written back when set, so a
+         * stored value the picker cannot represent survives unrelated edits.
+         */
+        boolean isFillDirty();
+
+        /** Returns the area fill opacity, or {@code null} when unset (default). */
+        Double getOpacity();
+
+        /** Sets the area fill opacity field; {@code null} clears it. */
+        void setOpacity(Double opacity);
+
+        /**
+         * {@code true} when the opacity field is blank or holds a number in
+         * {@code [0, 1]}; used to block saving a value that would otherwise
+         * be silently discarded or persisted out of range.
+         */
+        boolean isOpacityValid();
+
+        /** Shows the (read-only) polygon vertex count; {@code null} clears it. */
+        void setVertexCount(Integer count);
+
+        /**
+         * Shows or hides the area-only fields (fill, opacity, vertex count).
+         * The point-position X/Y fields are inversely visible — an area is
+         * placed purely by its world-to-map matrix.
+         */
+        void setAreaFieldsVisible(boolean visible);
 
         /**
          * Installs the image-chooser (asset dropdown) widget into the form.

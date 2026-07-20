@@ -39,6 +39,7 @@ import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
 import com.google.gwt.user.client.ui.FocusPanel;
 import com.google.gwt.user.client.ui.HTML;
+import com.google.gwt.user.client.ui.Label;
 import com.google.gwt.user.client.ui.Widget;
 import com.google.inject.Inject;
 import com.gwtplatform.mvp.client.ViewWithUiHandlers;
@@ -96,6 +97,16 @@ public class FloorMapCanvasViewImpl
     private static final String HANDLE_STROKE = "#1e88e5";
     private static final String HANDLE_FILL = "#ffffff";
 
+    /** Default translucency of an area fact's fill when no opacity is stored. */
+    private static final double DEFAULT_AREA_FILL_OPACITY = 0.3;
+    /**
+     * On-screen radius (px) of the vertex-0 close-target ring in the area
+     * drawing draft. Keep in step with
+     * {@code FloorMapCanvasPresenter.AREA_CLOSE_RADIUS_PX}, which decides when
+     * a click actually closes the polygon.
+     */
+    private static final double AREA_DRAFT_CLOSE_RADIUS_PX = 10;
+
     private final Widget widget;
 
     private final Map<String, Double> imageAspectRatioCache = new HashMap<>();
@@ -116,6 +127,18 @@ public class FloorMapCanvasViewImpl
 
     @UiField
     FocusPanel focusPanel;
+
+    /**
+     * Instruction pill overlaid on the canvas while the area-drawing mode is
+     * active — an HTML element (not SVG text) so it uses the theme variables
+     * and reads clearly over any floor plan, matching the timeline scrub
+     * tooltip's visual language.
+     */
+    @UiField
+    Label areaDrawHint;
+
+    private static final String AREA_DRAW_HINT_VISIBLE =
+            "stroom-floormap-area-draw-hint--visible";
 
     /**
      * Constructs the canvas view, inflating the UiBinder template.
@@ -214,7 +237,8 @@ public class FloorMapCanvasViewImpl
                      final List<TypeStyle> typeStyles,
                      final boolean showGrid,
                      final double[] marqueeRectPx,
-                     final boolean drawSelectionHandles) {
+                     final boolean drawSelectionHandles,
+                     final double[] areaDraftPx) {
         final HtmlBuilder htmlBuilder = new HtmlBuilder();
 
         // Cache this frame's geometry so hitTestScreenRect()/getSelectionFrame()
@@ -246,8 +270,13 @@ public class FloorMapCanvasViewImpl
                     if (facts != null) {
                         for (final Fact fact : facts) {
                             final boolean isSelected = selectedObjectIds.contains(fact.getKey());
+                            // Image first: a fact carrying an image always
+                            // renders that image (the long-standing invariant);
+                            // vertices only take effect on imageless facts.
                             if (fact.hasImage()) {
                                 appendImageFact(flipGroup, fact, isSelected);
+                            } else if (fact.hasVertices()) {
+                                appendAreaFact(flipGroup, fact, isSelected, typeStyles);
                             } else {
                                 appendDefaultGraphic(flipGroup, fact, isSelected, typeStyles, scale);
                             }
@@ -271,6 +300,11 @@ public class FloorMapCanvasViewImpl
                 appendMarquee(svg, marqueeRectPx);
             }
 
+            // In-progress area-drawing draft — screen space, on top.
+            if (areaDraftPx != null && areaDraftPx.length >= 2) {
+                appendAreaDraft(svg, areaDraftPx);
+            }
+
             // Selection frame + scale/rotate handles — screen space, on top.
             if (drawSelectionHandles) {
                 appendSelectionHandles(svg);
@@ -283,6 +317,30 @@ public class FloorMapCanvasViewImpl
         );
 
         svgContainer.setHTML(htmlBuilder.toSafeHtml());
+        updateAreaDrawHint(areaDraftPx);
+    }
+
+    /**
+     * Shows, hides and words the area-drawing instruction pill. It is an HTML
+     * overlay (see the ui.xml) rather than part of the rebuilt SVG, styled via
+     * {@code stroom-floormap-area-draw-hint} to match the timeline scrub
+     * tooltip.
+     *
+     * @param areaDraftPx the draft passed to this draw, or {@code null} when
+     *                    the drawing mode is not active
+     */
+    private void updateAreaDrawHint(final double[] areaDraftPx) {
+        if (areaDraftPx == null) {
+            areaDrawHint.removeStyleName(AREA_DRAW_HINT_VISIBLE);
+            return;
+        }
+        final int committed = areaDraftPx.length / 2 - 1;
+        areaDrawHint.setText(committed >= 3
+                ? "Drawing area — click the first point, double-click or press Enter"
+                + " to finish · Esc cancels · right-click undoes the last point"
+                : "Drawing area — click to add points (at least 3)"
+                + " · Esc cancels · right-click undoes the last point");
+        areaDrawHint.addStyleName(AREA_DRAW_HINT_VISIBLE);
     }
 
     /**
@@ -303,6 +361,145 @@ public class FloorMapCanvasViewImpl
                 new Attribute("stroke-width", "1"),
                 new Attribute("stroke-dasharray", "4,4"),
                 new Attribute("pointer-events", "none"));
+    }
+
+    /**
+     * Draws the in-progress area-drawing draft at the SVG root in screen space:
+     * a solid polyline through the committed vertices, a dashed rubber-band
+     * segment from the last committed vertex to the live cursor, a small dot on
+     * each committed vertex, and a close-target ring on vertex 0 that fills in
+     * when the polygon can be closed (≥ 3 committed vertices and the cursor
+     * within the close radius). Everything is non-interactive.
+     *
+     * @param draftPx flat polyline {@code [x0, y0, ..., xn, yn]} in element
+     *                pixels; the last point is the live cursor position
+     */
+    private void appendAreaDraft(final HtmlBuilder svg, final double[] draftPx) {
+        final int points = draftPx.length / 2;
+        final int committed = points - 1;
+
+        // Solid polyline through the committed vertices.
+        if (committed >= 2) {
+            final StringBuilder committedPoints = new StringBuilder();
+            for (int i = 0; i < committed; i++) {
+                if (i > 0) {
+                    committedPoints.append(" ");
+                }
+                committedPoints.append(draftPx[i * 2]).append(",").append(draftPx[i * 2 + 1]);
+            }
+            svg.elem(SafeHtmlUtil.from("polyline"),
+                    new Attribute("points", committedPoints.toString()),
+                    new Attribute("fill", "none"),
+                    new Attribute("stroke", "#1e88e5"),
+                    new Attribute("stroke-width", "2"),
+                    new Attribute("pointer-events", "none"));
+        }
+
+        // Dashed rubber-band edge from the last committed vertex to the cursor.
+        if (committed >= 1) {
+            svg.elem(SafeHtmlUtil.from("line"),
+                    new Attribute("x1", String.valueOf(draftPx[(committed - 1) * 2])),
+                    new Attribute("y1", String.valueOf(draftPx[(committed - 1) * 2 + 1])),
+                    new Attribute("x2", String.valueOf(draftPx[(points - 1) * 2])),
+                    new Attribute("y2", String.valueOf(draftPx[(points - 1) * 2 + 1])),
+                    new Attribute("stroke", "#1e88e5"),
+                    new Attribute("stroke-width", "1"),
+                    new Attribute("stroke-dasharray", "4,4"),
+                    new Attribute("pointer-events", "none"));
+        }
+
+        // Committed vertex dots.
+        for (int i = 0; i < committed; i++) {
+            svg.elem(SafeHtmlUtil.from("circle"),
+                    new Attribute("cx", String.valueOf(draftPx[i * 2])),
+                    new Attribute("cy", String.valueOf(draftPx[i * 2 + 1])),
+                    new Attribute("r", "3"),
+                    new Attribute("fill", "#1e88e5"),
+                    new Attribute("pointer-events", "none"));
+        }
+
+        // Close-target ring on vertex 0, highlighted when the polygon is
+        // closable (enough vertices and the cursor within the close radius).
+        if (committed >= 1) {
+            final double dx = draftPx[(points - 1) * 2] - draftPx[0];
+            final double dy = draftPx[(points - 1) * 2 + 1] - draftPx[1];
+            final boolean closable = committed >= 3
+                    && (dx * dx + dy * dy)
+                    <= AREA_DRAFT_CLOSE_RADIUS_PX * AREA_DRAFT_CLOSE_RADIUS_PX;
+            svg.elem(SafeHtmlUtil.from("circle"),
+                    new Attribute("cx", String.valueOf(draftPx[0])),
+                    new Attribute("cy", String.valueOf(draftPx[1])),
+                    new Attribute("r", String.valueOf(AREA_DRAFT_CLOSE_RADIUS_PX)),
+                    new Attribute("fill", closable ? "#1e88e5" : "none"),
+                    new Attribute("fill-opacity", closable ? "0.4" : "0"),
+                    new Attribute("stroke", "#1e88e5"),
+                    new Attribute("stroke-width", closable ? "2" : "1"),
+                    new Attribute("pointer-events", "none"));
+        }
+    }
+
+    /**
+     * Draws an area fact — a filled polygon whose vertices are in the fact's
+     * local frame, placed into map space by its world-to-map matrix inside the
+     * Y-up flip group (so it pans, zooms and rotates with the map, like an
+     * image fact).
+     *
+     * <p>The translucent fill is deliberately non-interactive so a large area
+     * cannot hijack panning, marquee selection or the empty-canvas context
+     * menu; selection is by clicking the border, via an invisible wide "hit"
+     * stroke that carries the fact key as its id (the same click-detection
+     * convention as every other object shape).</p>
+     */
+    private void appendAreaFact(final HtmlBuilder parent,
+                                final Fact fact,
+                                final boolean isSelected,
+                                final List<TypeStyle> typeStyles) {
+        final double[][] vertices = fact.getVertices();
+        final StringBuilder points = new StringBuilder();
+        for (int i = 0; i < vertices.length; i++) {
+            if (i > 0) {
+                points.append(" ");
+            }
+            points.append(vertices[i][0]).append(",").append(vertices[i][1]);
+        }
+
+        // Fall back to the colour configured for the fact's own type (which is
+        // "area" for areas created by the editor, but users may retype areas —
+        // e.g. "restricted" — and expect that type's Settings colour).
+        final String colour = fact.getFill() != null && !fact.getFill().isEmpty()
+                ? fact.getFill()
+                : colourForType(fact.getType(), typeStyles);
+        final double opacity = fact.getOpacity() != null
+                ? Math.max(0.0, Math.min(1.0, fact.getOpacity()))
+                : DEFAULT_AREA_FILL_OPACITY;
+        final String stroke = isSelected ? "#ff9800" : colour;
+        final String strokeWidth = isSelected ? "4" : "2";
+
+        parent.elem(areaGroup -> {
+            // Visible polygon — non-interactive.
+            areaGroup.elem(SafeHtmlUtil.from("polygon"),
+                    new Attribute("points", points.toString()),
+                    new Attribute("fill", colour),
+                    new Attribute("fill-opacity", String.valueOf(opacity)),
+                    new Attribute("fill-rule", "evenodd"),
+                    new Attribute("stroke", stroke),
+                    new Attribute("stroke-width", strokeWidth),
+                    new Attribute("vector-effect", "non-scaling-stroke"),
+                    new Attribute("pointer-events", "none"));
+            // Invisible wide border stroke — the clickable element (border
+            // select only; the fill must not capture pointer events).
+            areaGroup.elem(SafeHtmlUtil.from("polygon"),
+                    new Attribute("points", points.toString()),
+                    new Attribute("fill", "none"),
+                    new Attribute("stroke", "#000000"),
+                    new Attribute("stroke-opacity", "0"),
+                    new Attribute("stroke-width", "10"),
+                    new Attribute("vector-effect", "non-scaling-stroke"),
+                    new Attribute("pointer-events", "stroke"),
+                    new Attribute("id", fact.getKey()));
+        }, SafeHtmlUtil.from("g"),
+                new Attribute("transform", fact.getWorldToMap().toSvgMatrix()),
+                new Attribute("id", FloorMapJsonKeys.SVG_GROUP_PREFIX + fact.getKey()));
     }
 
     @Override
@@ -335,6 +532,26 @@ public class FloorMapCanvasViewImpl
         final FloorMapTransformationMatrix w2m = fact.getWorldToMap();
         if (w2m == null) {
             return null;
+        }
+        // Same dispatch order as draw(): image wins over vertices.
+        if (!fact.hasImage() && fact.hasVertices()) {
+            // Area polygon: the AABB of every vertex projected local → map →
+            // screen. (An AABB over-selects concave/rotated areas on marquee —
+            // acceptable for v1.)
+            double minX = Double.MAX_VALUE;
+            double minY = Double.MAX_VALUE;
+            double maxX = -Double.MAX_VALUE;
+            double maxY = -Double.MAX_VALUE;
+            for (final double[] v : fact.getVertices()) {
+                final double[] mapPt = w2m.transformPoint(v[0], v[1]);
+                final double px = lastOffsetX + lastScale * mapPt[0];
+                final double py = lastOffsetY - lastScale * mapPt[1];
+                minX = Math.min(minX, px);
+                minY = Math.min(minY, py);
+                maxX = Math.max(maxX, px);
+                maxY = Math.max(maxY, py);
+            }
+            return new double[]{minX, minY, maxX, maxY};
         }
         if (fact.hasImage()) {
             final Double ar = imageAspectRatioCache.get(fact.getImage());

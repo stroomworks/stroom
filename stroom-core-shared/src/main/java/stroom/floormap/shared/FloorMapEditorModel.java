@@ -759,6 +759,80 @@ public class FloorMapEditorModel {
         return new TemporalEntry(mapName, newKey, effectiveTimeMs, accessor.serialize(parsed));
     }
 
+    /**
+     * Builds a new area entry from a polygon drawn on the canvas.
+     *
+     * <p>The vertices arrive in <em>map space</em> (click order). They are
+     * stored in the fact's <em>local</em> frame, centred on their centroid,
+     * with {@code WORLD_TO_MAP = translate(centroid)} — so the existing
+     * move/scale/rotate handles pivot about the polygon's middle and areas
+     * inherit duplicate/time-versioning like every other fact. {@code POSITION}
+     * is set to the local origin (the centroid).</p>
+     *
+     * @param mapName         the temporal store map name
+     * @param key             the new fact key (also used as the label)
+     * @param mapVertices     the polygon vertices in map space; at least 3
+     * @param effectiveTimeMs the effective time for the new entry
+     * @param schema          the value schema (must map the area roles)
+     * @param accessor        the value accessor
+     * @return the new entry; never {@code null}
+     * @throws IllegalArgumentException if fewer than 3 vertices are supplied
+     * @throws IllegalStateException    if the schema lacks a required role
+     */
+    public static TemporalEntry buildAreaEntry(final String mapName,
+                                               final String key,
+                                               final List<double[]> mapVertices,
+                                               final long effectiveTimeMs,
+                                               final List<FloorMapFieldMapping> schema,
+                                               final ValueAccessor accessor) {
+        if (mapVertices == null || mapVertices.size() < 3) {
+            throw new IllegalArgumentException(
+                    "An area needs at least 3 vertices");
+        }
+
+        double cx = 0;
+        double cy = 0;
+        for (final double[] v : mapVertices) {
+            cx += v[0];
+            cy += v[1];
+        }
+        cx /= mapVertices.size();
+        cy /= mapVertices.size();
+
+        final double[] flatLocal = new double[mapVertices.size() * 2];
+        for (int i = 0; i < mapVertices.size(); i++) {
+            flatLocal[i * 2] = mapVertices.get(i)[0] - cx;
+            flatLocal[i * 2 + 1] = mapVertices.get(i)[1] - cy;
+        }
+
+        final ParsedValue value = accessor.createEmpty("entry");
+        accessor.setString(value, requirePath(schema, Role.TYPE), FloorMapJsonKeys.AREA);
+        accessor.setString(value, requirePath(schema, Role.LABEL), key);
+        accessor.setArray(value, requirePath(schema, Role.POSITION), new double[]{0, 0});
+        accessor.setArray(value, requirePath(schema, Role.WORLD_TO_MAP),
+                new double[]{1, 0, 0, 1, cx, cy});
+        accessor.setArray(value, requirePath(schema, Role.GEOMETRY), flatLocal);
+
+        return new TemporalEntry(mapName, key, effectiveTimeMs, accessor.serialize(value));
+    }
+
+    /**
+     * Resolves the path for {@code role}, failing loudly (rather than writing
+     * to a null path, which the accessors silently ignore) when the schema
+     * does not map it.
+     */
+    private static String requirePath(final List<FloorMapFieldMapping> schema,
+                                      final Role role) {
+        final String path = FloorMapEntryParser.findPath(schema, role);
+        if (path == null) {
+            throw new IllegalStateException(
+                    "The Value Schema for this Floor Map does not define a mapping "
+                    + "for the '" + role + "' role. Please add a '" + role
+                    + "' mapping in the Settings tab under Value Schema.");
+        }
+        return path;
+    }
+
 
     /**
      * Builds a copy of {@code original} with its {@code coords} field replaced

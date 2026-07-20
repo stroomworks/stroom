@@ -102,6 +102,31 @@ public interface ValueAccessor {
     void setArray(ParsedValue value, String path, double[] numbers);
 
     /**
+     * Reads a scalar numeric value at the given path.
+     *
+     * <p>For JSON, this expects a number (a numeric string is tolerated).
+     * For XML, this expects a number in the element text content.</p>
+     *
+     * @param value the parsed value to read from
+     * @param path  the format-specific path
+     * @return the number, or {@code null} if not found or malformed
+     */
+    Double getNumber(ParsedValue value, String path);
+
+    /**
+     * Writes a scalar numeric value at the given path.
+     *
+     * <p>For JSON, this writes a number. For XML, this writes the number
+     * as element text content.</p>
+     *
+     * @param value  the parsed value to write to
+     * @param path   the format-specific path
+     * @param number the number to write; if {@code null}, the field is
+     *               removed
+     */
+    void setNumber(ParsedValue value, String path, Double number);
+
+    /**
      * Serialises the parsed value back to a string.
      *
      * @param value the parsed value to serialise

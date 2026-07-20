@@ -170,6 +170,25 @@ public final class XmlValueAccessor implements ValueAccessor {
     }
 
     @Override
+    public Double getNumber(final ParsedValue value, final String path) {
+        final String text = getString(value, path);
+        if (text == null || text.isEmpty()) {
+            return null;
+        }
+        try {
+            return Double.parseDouble(text.trim());
+        } catch (final NumberFormatException e) {
+            return null;
+        }
+    }
+
+    @Override
+    public void setNumber(final ParsedValue value, final String path,
+                          final Double number) {
+        setString(value, path, number != null ? String.valueOf(number) : null);
+    }
+
+    @Override
     public String serialize(final ParsedValue value) {
         final Document doc = asDoc(value);
         if (doc == null) {

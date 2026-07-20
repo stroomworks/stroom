@@ -38,6 +38,7 @@ import stroom.floormap.shared.FloorMapJsonKeys;
 import stroom.floormap.shared.FloorMapPendingChanges;
 import stroom.floormap.shared.FloorMapTransformationMatrix;
 import stroom.floormap.shared.ParsedValue;
+import stroom.floormap.shared.TypeStyle;
 import stroom.floormap.shared.ValueAccessor;
 import stroom.floormap.shared.ValueFormat;
 import stroom.query.api.ExpressionOperator;
@@ -173,6 +174,24 @@ public class FloorMapEditorPresenter
      */
     private final ButtonPanel helpToolbar;
 
+    /**
+     * When the user enables area support on a document whose schema/type styles
+     * predate areas (see {@link #ensureAreaSupport}), the merged lists live
+     * here until the document is saved — the loaded entity itself is read-only.
+     * {@code null} when no upgrade is pending; {@link #valueSchema()} and
+     * {@link #typeStyles()} prefer these over the entity's persisted lists.
+     */
+    private List<FloorMapFieldMapping> pendingAreaSchema;
+    private List<TypeStyle> pendingAreaTypeStyles;
+
+    /**
+     * Notified when area support is enabled on this document, so the parent
+     * {@link FloorMapPresenter} can refresh the Settings tab's grids — the
+     * Settings tab writes {@code valueSchema}/{@code typeStyles} wholesale on
+     * save and would otherwise silently revert the upgrade.
+     */
+    private Runnable areaSupportEnabledListener;
+
     // -----------------------------------------------------------------------
 
     @Inject
@@ -210,6 +229,7 @@ public class FloorMapEditorPresenter
         // Persist a drag as a single translate of the whole selection.
         floorMapCanvasPresenter.setDragHandler(this::onFactsTransformed);
         floorMapCanvasPresenter.setSelectionHandler(this::onCanvasSelectionChanged);
+        floorMapCanvasPresenter.setAreaHandler(this::onAreaDrawn);
 
         // Contextual help. The map-interaction help sits on the document toolbar
         // (Save / Save As …) at the right-hand end, contributed via HasToolbar so
@@ -315,6 +335,18 @@ public class FloorMapEditorPresenter
      */
     @Override
     protected void onRead(final DocRef docRef, final FloorMapDoc document, final boolean readOnly) {
+        // Once a saved document carries the full area upgrade — schema roles
+        // AND the "area" type style (the post-save re-read) — the pending
+        // upgrade has been persisted and can be dropped. Both must be checked:
+        // a document whose schema already mapped the roles would otherwise
+        // discard a staged, never-persisted type-style upgrade.
+        if (pendingAreaSchema != null
+                && hasAreaSupport(document.getValueSchema())
+                && hasAreaStyle(document.getTypeStyles())) {
+            pendingAreaSchema = null;
+            pendingAreaTypeStyles = null;
+        }
+
         final String mapName = getMapName();
         if (mapName == null) {
             floorMapFactListPresenter.setData(new ArrayList<>());
@@ -324,7 +356,7 @@ public class FloorMapEditorPresenter
 
         // Pass mapName + doc to Properties panel so it can resolve asset paths.
         floorMapObjectEditPresenter.setMapName(mapName);
-        floorMapObjectEditPresenter.setFloorMapDoc(document);
+        floorMapObjectEditPresenter.setFloorMapDoc(sessionEntity());
 
         // Load time range → initialise slider → load canvas + Fact List
         restFactory.create(SQL_TEMPORAL_STORE_RESOURCE)
@@ -339,13 +371,94 @@ public class FloorMapEditorPresenter
     /**
      * Called by the framework when the document is saved.
      *
-     * <p>The Editor tab does not write state into the {@link FloorMapDoc} itself
-     * (temporal store edits are flushed separately via {@link #onSave}). This
-     * method returns the document unchanged.</p>
+     * <p>The Editor tab does not normally write state into the
+     * {@link FloorMapDoc} itself (temporal store edits are flushed separately
+     * via {@link #onSave}) — except when a pending area-support upgrade exists,
+     * which is merged into the document here. The merge is re-applied to the
+     * <em>incoming</em> document (rather than writing the stored lists
+     * verbatim) so it stays correct regardless of the order the tabs' onWrite
+     * methods run in.</p>
      */
     @Override
     protected FloorMapDoc onWrite(final FloorMapDoc document) {
-        return document;
+        if (pendingAreaSchema == null) {
+            return document;
+        }
+        return document.copy()
+                .valueSchema(FloorMapFieldMapping.withAreaMappings(
+                        document.getValueSchema(), document.getValueFormat()))
+                .typeStyles(TypeStyle.withAreaStyle(document.getTypeStyles()))
+                .build();
+    }
+
+    /**
+     * The value schema in effect for this editing session: the pending
+     * area-support upgrade when one exists, otherwise the entity's persisted
+     * schema.
+     */
+    private List<FloorMapFieldMapping> valueSchema() {
+        return pendingAreaSchema != null
+                ? pendingAreaSchema
+                : getEntity().getValueSchema();
+    }
+
+    /**
+     * The type styles in effect for this editing session (see
+     * {@link #valueSchema()}).
+     */
+    private List<TypeStyle> typeStyles() {
+        return pendingAreaTypeStyles != null
+                ? pendingAreaTypeStyles
+                : getEntity().getTypeStyles();
+    }
+
+    /**
+     * The document as this editing session sees it: the loaded entity with any
+     * pending area upgrade applied. Must be used wherever the document is
+     * handed to a child presenter that resolves schema roles itself (the
+     * object-edit dialog), or fill/opacity/geometry would silently resolve
+     * against the pre-upgrade schema until the document is saved.
+     */
+    private FloorMapDoc sessionEntity() {
+        if (pendingAreaSchema == null) {
+            return getEntity();
+        }
+        return getEntity().copy()
+                .valueSchema(pendingAreaSchema)
+                .typeStyles(pendingAreaTypeStyles)
+                .build();
+    }
+
+    /**
+     * {@code true} when the schema maps every role areas need.
+     */
+    private static boolean hasAreaSupport(final List<FloorMapFieldMapping> schema) {
+        return FloorMapEntryParser.findPath(schema, Role.GEOMETRY) != null
+                && FloorMapEntryParser.findPath(schema, Role.FILL) != null
+                && FloorMapEntryParser.findPath(schema, Role.OPACITY) != null;
+    }
+
+    /**
+     * {@code true} when the type styles contain an {@code "area"} entry (which
+     * seeds the just-above-background z-order for areas).
+     */
+    private static boolean hasAreaStyle(final List<TypeStyle> typeStyles) {
+        if (typeStyles != null) {
+            for (final TypeStyle style : typeStyles) {
+                if (style != null && FloorMapJsonKeys.AREA.equals(style.getType())) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Sets the callback notified when area support is enabled on this document
+     * (see {@link #ensureAreaSupport}).
+     */
+    public void setAreaSupportEnabledListener(final Runnable listener) {
+        this.areaSupportEnabledListener = listener;
     }
 
     // -----------------------------------------------------------------------
@@ -624,9 +737,9 @@ public class FloorMapEditorPresenter
     private void updateCanvas(final List<TemporalEntry> entries) {
         // Update canvas using shared parser (applies world-to-map transform)
         final List<Fact> facts = model.parseForCanvas(
-                entries, getEntity().getValueSchema(),
+                entries, valueSchema(),
                 ValueAccessorFactory.forFormat(getEntity().getValueFormat()));
-        floorMapCanvasPresenter.setTypeStyles(getEntity().getTypeStyles());
+        floorMapCanvasPresenter.setTypeStyles(typeStyles());
         floorMapCanvasPresenter.setFacts(facts);
         // Restore the full (multi-)selection highlight after re-rendering, so a
         // group stays selected across canvas refreshes (e.g. after a transform).
@@ -642,7 +755,7 @@ public class FloorMapEditorPresenter
      * @param entries merged entries (server data + pending changes)
      */
     private void updateFactList(final List<TemporalEntry> entries) {
-        final List<FloorMapFieldMapping> schema = getEntity().getValueSchema();
+        final List<FloorMapFieldMapping> schema = valueSchema();
         final List<FloorMapFactListPresenter.FactObject> factObjects = new ArrayList<>();
         final Set<String> seenKeys = new HashSet<>();
         for (final TemporalEntry entry : entries) {
@@ -724,7 +837,7 @@ public class FloorMapEditorPresenter
         }
         try {
             final int n = model.transformFacts(keys, transform,
-                    getEntity().getValueSchema(),
+                    valueSchema(),
                     ValueAccessorFactory.forFormat(getEntity().getValueFormat()));
             if (n > 0) {
                 setDirty(true);
@@ -979,6 +1092,13 @@ public class FloorMapEditorPresenter
                     .text("Add Object Here")
                     .command(() -> onAddObjectAtPosition(mapX, mapY))
                     .build());
+            menuItems.add(new IconMenuItem.Builder()
+                    .priority(2)
+                    .icon(SvgImage.PEN)
+                    .text("Draw Area Here")
+                    .command(() -> ensureAreaSupport(
+                            floorMapCanvasPresenter::startAreaDrawing))
+                    .build());
         } else if (model.getSelectedFactKeys().size() > 1
                 && model.getSelectedFactKeys().contains(objectId)) {
             // ---- Right-clicked within a multi-selection: group actions ----
@@ -1053,6 +1173,17 @@ public class FloorMapEditorPresenter
                     .text("Delete Object")
                     .command(() -> onDeleteFactFromFactList(objectId))
                     .build());
+
+            // Draw Area Here — a map is usually covered edge-to-edge by its
+            // background image, so area drawing must also be reachable from a
+            // right-click that lands on the background (or any object).
+            menuItems.add(new IconMenuItem.Builder()
+                    .priority(5)
+                    .icon(SvgImage.PEN)
+                    .text("Draw Area Here")
+                    .command(() -> ensureAreaSupport(
+                            floorMapCanvasPresenter::startAreaDrawing))
+                    .build());
         }
 
         final PopupPosition popupPosition = new PopupPosition(clientX, clientY);
@@ -1103,7 +1234,7 @@ public class FloorMapEditorPresenter
             // Open the properties editor so the user can customise before committing
             floorMapObjectEditPresenter.setMapName(mapName);
             floorMapObjectEditPresenter.setObject(newKey);
-            floorMapObjectEditPresenter.setFloorMapDoc(getEntity());
+            floorMapObjectEditPresenter.setFloorMapDoc(sessionEntity());
 
             floorMapObjectEditPresenter.show(
                     "Add Object",
@@ -1128,6 +1259,113 @@ public class FloorMapEditorPresenter
             AlertEvent.fireError(
                     this,
                     "Cannot add object: " + ex.getMessage(),
+                    null);
+        }
+    }
+
+    /**
+     * Runs {@code onReady} once this document supports areas, upgrading the
+     * document if needed.
+     *
+     * <p>Documents created before the area feature lack the
+     * {@code GEOMETRY}/{@code FILL}/{@code OPACITY} schema mappings (and the
+     * {@code "area"} type style that paints areas just above the background).
+     * Rather than failing in {@link #pathForRole}, this offers to add the
+     * missing defaults. The merge is role-based, so customised paths for those
+     * roles are left untouched; the upgrade is staged in
+     * {@link #pendingAreaSchema} and persisted by {@link #onWrite} on the next
+     * document save.</p>
+     *
+     * @param onReady the action to run once area support is available
+     */
+    private void ensureAreaSupport(final Runnable onReady) {
+        if (hasAreaSupport(valueSchema()) && hasAreaStyle(typeStyles())) {
+            onReady.run();
+            return;
+        }
+
+        ConfirmEvent.fire(this,
+                "This floor map is not yet configured for areas. Add the default "
+                        + "Geometry, Fill and Opacity mappings to the Value Schema and "
+                        + "an 'area' entry to the Type Styles? The document will be "
+                        + "marked as modified.",
+                ok -> {
+                    if (!ok) {
+                        return;
+                    }
+                    pendingAreaSchema = FloorMapFieldMapping.withAreaMappings(
+                            valueSchema(), getEntity().getValueFormat());
+                    pendingAreaTypeStyles = TypeStyle.withAreaStyle(typeStyles());
+                    // Apply the styles to the live canvas so the first drawn
+                    // area z-orders correctly before the document is saved, and
+                    // re-hand the upgraded document to the object-edit dialog
+                    // so it resolves the new roles immediately.
+                    floorMapCanvasPresenter.setTypeStyles(pendingAreaTypeStyles);
+                    floorMapObjectEditPresenter.setFloorMapDoc(sessionEntity());
+                    setDirty(true);
+                    if (areaSupportEnabledListener != null) {
+                        areaSupportEnabledListener.run();
+                    }
+                    onReady.run();
+                });
+    }
+
+    /**
+     * Creates a new area fact from a polygon the user has just drawn on the
+     * canvas (see {@link FloorMapCanvasPresenter.AreaHandler}).
+     *
+     * <p>The vertices are stored in the fact's <em>local</em> frame, centred on
+     * their centroid, with {@code WORLD_TO_MAP = translate(centroid)} — so the
+     * existing move/scale/rotate handles pivot about the polygon's middle and
+     * areas inherit duplicate/time-versioning like every other fact. The entry
+     * is created at effective time {@code 0} (areas are usually timeless floor
+     * features and should be visible at all past scrubber positions); a later
+     * reshape at a scrubber time adds a shard as normal.</p>
+     *
+     * @param mapVertices the polygon vertices in map space, in click order
+     */
+    private void onAreaDrawn(final List<double[]> mapVertices) {
+        final String mapName = getMapName();
+        if (mapName == null || mapVertices == null || mapVertices.size() < 3) {
+            return;
+        }
+
+        final String newKey = generateObjectKey(FloorMapJsonKeys.AREA);
+
+        try {
+            // Effective from epoch 0: the area exists across all past time.
+            final TemporalEntry entry = FloorMapEditorModel.buildAreaEntry(
+                    mapName, newKey, mapVertices, 0L, valueSchema(),
+                    ValueAccessorFactory.forFormat(getEntity().getValueFormat()));
+
+            // Open the properties editor so the user can name/colour the area
+            // before committing.
+            floorMapObjectEditPresenter.setMapName(mapName);
+            floorMapObjectEditPresenter.setObject(newKey);
+            floorMapObjectEditPresenter.setFloorMapDoc(sessionEntity());
+
+            floorMapObjectEditPresenter.show(
+                    "Add Area",
+                    entry,
+                    saved -> {
+                        model.getPendingChanges().recordCreation(saved);
+                        setDirty(true);
+                        model.setSelectedFactKey(saved.getKey());
+
+                        floorMapCanvasPresenter.setSelectedObjectId(model.getSelectedFactKey());
+                        floorMapFactListPresenter.setSelected(model.getSelectedFactKey());
+
+                        // Populate the Time List optimistically from pending
+                        // changes (the server doesn't know about this entry yet)
+                        model.setServerEntriesForSelectedFact(new ArrayList<>());
+                        refreshTimeListAtTime(model.getSelectedTime());
+
+                        loadAtTime(model.getSelectedTime());
+                    });
+        } catch (final RuntimeException ex) {
+            AlertEvent.fireError(
+                    this,
+                    "Cannot add area: " + ex.getMessage(),
                     null);
         }
     }
@@ -1173,7 +1411,7 @@ public class FloorMapEditorPresenter
             final TemporalEntry newEntry = FloorMapEditorModel.buildDuplicateEntry(
                     sourceEntry, mapName, newKey, model.getSelectedTime(),
                     offset, offset,
-                    getEntity().getValueSchema(),
+                    valueSchema(),
                     ValueAccessorFactory.forFormat(getEntity().getValueFormat()));
 
             model.getPendingChanges().recordCreation(newEntry);
@@ -1373,7 +1611,7 @@ public class FloorMapEditorPresenter
      * @throws IllegalStateException if the schema does not contain the requested role
      */
     private String pathForRole(final Role role) {
-        final String path = FloorMapEntryParser.findPath(getEntity().getValueSchema(), role);
+        final String path = FloorMapEntryParser.findPath(valueSchema(), role);
         if (path == null) {
             throw new IllegalStateException(
                     "The Value Schema for this Floor Map does not define a mapping "

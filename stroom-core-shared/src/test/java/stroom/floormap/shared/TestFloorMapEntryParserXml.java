@@ -19,6 +19,7 @@ package stroom.floormap.shared;
 import stroom.floormap.shared.FloorMapFieldMapping.Role;
 import stroom.util.shared.TemporalEntry;
 
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -182,6 +183,7 @@ class TestFloorMapEntryParserXml {
 
         assertThat(facts).hasSize(1);
         final Fact fact = facts.getFirst();
+        Assertions.assertNotNull(fact.getPosition());
         assertThat(fact.getPosition()[0]).isCloseTo(10.0, within(0.001));
         assertThat(fact.getPosition()[1]).isCloseTo(20.0, within(0.001));
         final FloorMapTransformationMatrix m = fact.getWorldToMap();
@@ -223,6 +225,7 @@ class TestFloorMapEntryParserXml {
 
         final Fact fact = facts.getFirst();
         assertThat(fact.getWorldToMap()).isEqualTo(FloorMapTransformationMatrix.identity());
+        Assertions.assertNotNull(fact.getPosition());
         assertThat(fact.getPosition()[0]).isCloseTo(50.0, within(0.001));
         assertThat(fact.getPosition()[1]).isCloseTo(75.0, within(0.001));
     }
@@ -423,6 +426,7 @@ class TestFloorMapEntryParserXml {
         assertThat(facts).hasSize(1);
         final Fact fact = facts.getFirst();
         assertThat(fact.getType()).isEqualTo("gate");
+        Assertions.assertNotNull(fact.getPosition());
         assertThat(fact.getPosition()[0]).isCloseTo(100.0, within(0.001));
         assertThat(fact.getPosition()[1]).isCloseTo(200.0, within(0.001));
         assertThat(warnings).as("a default namespace should not affect parsing").isEmpty();
@@ -458,6 +462,7 @@ class TestFloorMapEntryParserXml {
         // World coords (10, 20) → map coords (2*10 + 50, 2*20 + 100) = (70, 140)
         final FloorMapTransformationMatrix m = fact.getWorldToMap();
         final double[] p = fact.getPosition();
+        Assertions.assertNotNull(p);
         final double mapX = m.getA() * p[0] + m.getC() * p[1] + m.getE();
         final double mapY = m.getB() * p[0] + m.getD() * p[1] + m.getF();
         assertThat(mapX).isCloseTo(70.0, within(0.001));
@@ -465,6 +470,39 @@ class TestFloorMapEntryParserXml {
         assertThat(warnings)
                 .as("a namespace prefix on every element should not affect parsing")
                 .isEmpty();
+    }
+
+    // -----------------------------------------------------------------------
+    // Areas (GEOMETRY / FILL / OPACITY)
+    // -----------------------------------------------------------------------
+
+    /**
+     * An XML area entry parses to a fact with vertices, fill and opacity —
+     * geometry as comma-separated numbers, opacity via the scalar
+     * {@code getNumber} path.
+     */
+    @Test
+    void testParse_areaEntry() {
+        final List<FloorMapFieldMapping> schema = new ArrayList<>(SCHEMA);
+        schema.add(new FloorMapFieldMapping("/entry/geometry", Role.GEOMETRY, "Geometry", null));
+        schema.add(new FloorMapFieldMapping("/entry/fill", Role.FILL, "Fill", null));
+        schema.add(new FloorMapFieldMapping("/entry/opacity", Role.OPACITY, "Opacity", null));
+
+        final String xml = "<entry><type>area</type><name>Zone</name>"
+                + "<geometry>0,0,100,0,100,50,0,50</geometry>"
+                + "<fill>#ff0000</fill><opacity>0.5</opacity>"
+                + "<tm-world-to-map>1,0,0,1,20,30</tm-world-to-map></entry>";
+        final List<Fact> facts = FloorMapEntryParser.parse(
+                List.of(entry("area-1", 0L, xml)), schema, ACCESSOR, warnings::add);
+
+        assertThat(facts).hasSize(1);
+        final Fact fact = facts.getFirst();
+        assertThat(fact.hasVertices()).isTrue();
+        assertThat(fact.getVertices()).hasDimensions(4, 2);
+        assertThat(fact.getVertices()[2]).containsExactly(100, 50);
+        assertThat(fact.getFill()).isEqualTo("#ff0000");
+        assertThat(fact.getOpacity()).isCloseTo(0.5, within(1e-9));
+        assertThat(warnings).isEmpty();
     }
 
     // -----------------------------------------------------------------------

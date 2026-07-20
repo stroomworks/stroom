@@ -116,6 +116,13 @@ public class FloorMapSettingsPresenter
     private final ButtonView removeButton;
     private boolean readOnly;
 
+    /**
+     * Set once the Editor tab enables area support on this document; onRead
+     * then re-applies {@link #applyAreaPatch()} so the grids never revert the
+     * upgrade before it is persisted.
+     */
+    private boolean areaPatchActive;
+
     // Type Styles grid (per-type z-order + default graphic)
     /** Dropdown label for "no configured shape" (falls back to the default rectangle). */
     private static final String SHAPE_DEFAULT = "(default)";
@@ -615,6 +622,35 @@ public class FloorMapSettingsPresenter
         refreshTypeStylesGrid();
         discoverButton.setEnabled(!readOnly);
         updateTypeButtons();
+
+        // Keep an Editor-tab area-support upgrade visible in the grids: the
+        // document just read may predate the upgrade (it is only persisted on
+        // save), and this tab's onWrite replaces schema/type styles wholesale.
+        if (areaPatchActive) {
+            applyAreaPatch();
+        }
+    }
+
+    /**
+     * Merges the default area mappings ({@code GEOMETRY}/{@code FILL}/
+     * {@code OPACITY}) and the {@code "area"} type style into the grids, if
+     * absent. Called when the Editor tab enables area support on this document
+     * — this tab writes {@code valueSchema}/{@code typeStyles} wholesale from
+     * its grid state on save, so unpatched grids would silently revert the
+     * upgrade. Idempotent; stays active so subsequent reads re-apply it until
+     * the upgrade is persisted (after which the merge is a no-op).
+     */
+    public void applyAreaPatch() {
+        areaPatchActive = true;
+        final ValueFormat vf = getEntity() != null
+                ? getEntity().getValueFormat()
+                : ValueFormat.JSON;
+        schemaDataProvider.setList(new ArrayList<>(
+                FloorMapFieldMapping.withAreaMappings(schemaDataProvider.getList(), vf)));
+        refreshGrid();
+        typeStylesDataProvider.setList(new ArrayList<>(
+                TypeStyle.withAreaStyle(typeStylesDataProvider.getList())));
+        refreshTypeStylesGrid();
     }
 
     /**

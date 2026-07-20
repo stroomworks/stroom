@@ -195,5 +195,97 @@ class TestFloorMapFieldMapping {
         assertThat(schema.stream()
                 .anyMatch(m -> m.getRole() == Role.POSITION))
                 .isTrue();
+        // New documents support areas out of the box.
+        assertThat(schema.stream()
+                .anyMatch(m -> m.getRole() == Role.GEOMETRY))
+                .isTrue();
+        assertThat(schema.stream()
+                .anyMatch(m -> m.getRole() == Role.FILL))
+                .isTrue();
+        assertThat(schema.stream()
+                .anyMatch(m -> m.getRole() == Role.OPACITY))
+                .isTrue();
+    }
+
+    /** All three default area mappings are appended to a pre-area schema. */
+    @Test
+    void testWithAreaMappings_appendsMissing() {
+        final List<FloorMapFieldMapping> legacy = List.of(
+                new FloorMapFieldMapping(".type", Role.TYPE, "Type", null),
+                new FloorMapFieldMapping(".coords", Role.POSITION, "Coords", null));
+
+        final List<FloorMapFieldMapping> merged =
+                FloorMapFieldMapping.withAreaMappings(legacy, ValueFormat.JSON);
+
+        assertThat(merged).hasSize(5);
+        // Existing mappings keep their position and settings.
+        assertThat(merged.get(0)).isEqualTo(legacy.get(0));
+        assertThat(merged.get(1)).isEqualTo(legacy.get(1));
+        assertThat(merged.stream().map(FloorMapFieldMapping::getRole))
+                .contains(Role.GEOMETRY, Role.FILL, Role.OPACITY);
+        // The immutable input list is untouched.
+        assertThat(legacy).hasSize(2);
+    }
+
+    /**
+     * On an XML-format schema the derived paths are XPath-style siblings of
+     * the existing mappings — a JSON-style ".geometry" would be silently
+     * unwritable by the XML accessor.
+     */
+    @Test
+    void testWithAreaMappings_xmlPathsDerivedFromSiblings() {
+        final List<FloorMapFieldMapping> xmlSchema = List.of(
+                new FloorMapFieldMapping("/rec/type", Role.TYPE, "Type", null),
+                new FloorMapFieldMapping("/rec/coords", Role.POSITION, "Coords", null));
+
+        final List<FloorMapFieldMapping> merged =
+                FloorMapFieldMapping.withAreaMappings(xmlSchema, ValueFormat.XML);
+
+        assertThat(merged.stream()
+                .filter(m -> m.getRole() == Role.GEOMETRY)
+                .map(FloorMapFieldMapping::getPath))
+                .containsExactly("/rec/geometry");
+        assertThat(merged.stream()
+                .filter(m -> m.getRole() == Role.FILL)
+                .map(FloorMapFieldMapping::getPath))
+                .containsExactly("/rec/fill");
+
+        // With no existing path to derive from, the format decides the style.
+        assertThat(FloorMapFieldMapping.withAreaMappings(null, ValueFormat.XML)
+                .get(0).getPath())
+                .isEqualTo("/entry/geometry");
+    }
+
+    /**
+     * The check is role-based: a customised path for an area role is kept, and
+     * only the genuinely missing roles are appended.
+     */
+    @Test
+    void testWithAreaMappings_respectsCustomisedPaths() {
+        final List<FloorMapFieldMapping> schema = List.of(
+                new FloorMapFieldMapping(".poly", Role.GEOMETRY, "Polygon", null));
+
+        final List<FloorMapFieldMapping> merged =
+                FloorMapFieldMapping.withAreaMappings(schema, ValueFormat.JSON);
+
+        assertThat(merged).hasSize(3);
+        assertThat(merged.get(0).getPath()).isEqualTo(".poly");
+        assertThat(merged.stream()
+                .filter(m -> m.getRole() == Role.GEOMETRY))
+                .hasSize(1);
+    }
+
+    /** Merging an already-complete schema changes nothing; null is tolerated. */
+    @Test
+    void testWithAreaMappings_idempotent() {
+        final List<FloorMapFieldMapping> complete =
+                FloorMapFieldMapping.withAreaMappings(
+                        FloorMapFieldMapping.initialValueSchema(), ValueFormat.JSON);
+        assertThat(FloorMapFieldMapping.withAreaMappings(complete, ValueFormat.JSON))
+                .isEqualTo(complete);
+
+        assertThat(FloorMapFieldMapping.withAreaMappings(null, ValueFormat.JSON))
+                .extracting(FloorMapFieldMapping::getRole)
+                .containsExactly(Role.GEOMETRY, Role.FILL, Role.OPACITY);
     }
 }

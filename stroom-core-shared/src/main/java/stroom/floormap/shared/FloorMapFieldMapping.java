@@ -22,6 +22,7 @@ import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
@@ -92,6 +93,13 @@ public class FloorMapFieldMapping {
          * not added to new default schemas.
          */
         MAP_TO_SCREEN,
+        /** Area polygon vertices — flat array {@code [x0, y0, x1, y1, ...]} in
+         * the fact's local frame, placed by {@link #WORLD_TO_MAP}. */
+        GEOMETRY,
+        /** Area fill colour (hex string, e.g. {@code "#1e88e5"}). */
+        FILL,
+        /** Area fill opacity (number in [0, 1]). */
+        OPACITY,
         /** Extra user-defined field. */
         CUSTOM
     }
@@ -183,13 +191,16 @@ public class FloorMapFieldMapping {
      *   <tr><td>{@code .img}</td><td>{@link Role#IMAGE}</td><td>Image</td><td>{@code null}</td></tr>
      *   <tr><td>{@code .tm-world-to-map}</td><td>{@link Role#WORLD_TO_MAP}</td>
      *       <td>{@code null}</td><td>{@code null}</td></tr>
+     *   <tr><td>{@code .geometry}</td><td>{@link Role#GEOMETRY}</td><td>Geometry</td><td>{@code null}</td></tr>
+     *   <tr><td>{@code .fill}</td><td>{@link Role#FILL}</td><td>Fill</td><td>{@code null}</td></tr>
+     *   <tr><td>{@code .opacity}</td><td>{@link Role#OPACITY}</td><td>Opacity</td><td>{@code null}</td></tr>
      * </table>
      *
      * <p>The returned list is created via {@link List#of(Object...)} and is
      * therefore <em>unmodifiable</em>; any attempt to mutate it will throw
      * {@link UnsupportedOperationException}.</p>
      *
-     * @return a non-null, unmodifiable list of the six initial field mappings
+     * @return a non-null, unmodifiable list of the initial field mappings
      */
     public static List<FloorMapFieldMapping> initialValueSchema() {
         return List.of(
@@ -197,8 +208,87 @@ public class FloorMapFieldMapping {
                 new FloorMapFieldMapping(".name", Role.LABEL, "Name", null),
                 new FloorMapFieldMapping(".coords", Role.POSITION, "Coords", null),
                 new FloorMapFieldMapping(".img", Role.IMAGE, "Image", null),
-                new FloorMapFieldMapping(".tm-world-to-map", Role.WORLD_TO_MAP, null, null)
+                new FloorMapFieldMapping(".tm-world-to-map", Role.WORLD_TO_MAP, null, null),
+                new FloorMapFieldMapping(".geometry", Role.GEOMETRY, "Geometry", null),
+                new FloorMapFieldMapping(".fill", Role.FILL, "Fill", null),
+                new FloorMapFieldMapping(".opacity", Role.OPACITY, "Opacity", null)
         );
+    }
+
+    /**
+     * Returns a copy of {@code schema} guaranteed to contain mappings for the
+     * area roles ({@link Role#GEOMETRY}, {@link Role#FILL},
+     * {@link Role#OPACITY}), appending a default mapping for each role that is
+     * absent.
+     *
+     * <p>The check is role-based, not path-based, so a schema that maps
+     * {@link Role#GEOMETRY} to a customised path is returned with that mapping
+     * untouched. Default paths are derived as <em>siblings</em> of the
+     * schema's existing paths — {@code ".type"} yields {@code ".geometry"},
+     * {@code "/entry/type"} yields {@code "/entry/geometry"} — so the merge is
+     * correct for both value formats and custom XML root elements;
+     * {@code format} decides the style only when the schema has no usable
+     * path to derive from. The input list is never mutated (it may be the
+     * unmodifiable {@link #initialValueSchema()} seed); a new list is always
+     * returned.</p>
+     *
+     * @param schema the existing schema, or {@code null} (treated as empty)
+     * @param format the document's value format, used only as the fallback
+     *               path style; {@code null} is treated as JSON
+     * @return a new list containing all existing mappings plus defaults for
+     *         any missing area roles; never {@code null}
+     */
+    public static List<FloorMapFieldMapping> withAreaMappings(final List<FloorMapFieldMapping> schema,
+                                                              final ValueFormat format) {
+        final List<FloorMapFieldMapping> result = new ArrayList<>();
+        if (schema != null) {
+            result.addAll(schema);
+        }
+        if (hasRole(result, Role.GEOMETRY)) {
+            result.add(new FloorMapFieldMapping(
+                    siblingPath(result, format, "geometry"), Role.GEOMETRY, "Geometry", null));
+        }
+        if (hasRole(result, Role.FILL)) {
+            result.add(new FloorMapFieldMapping(
+                    siblingPath(result, format, "fill"), Role.FILL, "Fill", null));
+        }
+        if (hasRole(result, Role.OPACITY)) {
+            result.add(new FloorMapFieldMapping(
+                    siblingPath(result, format, "opacity"), Role.OPACITY, "Opacity", null));
+        }
+        return result;
+    }
+
+    /**
+     * Derives a path for {@code name} alongside the schema's existing paths:
+     * an XPath-style path keeps its parent ({@code "/entry/type"} →
+     * {@code "/entry/geometry"}); a dot-style path yields {@code "." + name}.
+     * Falls back to the given format's convention when no path is available.
+     */
+    private static String siblingPath(final List<FloorMapFieldMapping> schema,
+                                      final ValueFormat format,
+                                      final String name) {
+        for (final FloorMapFieldMapping mapping : schema) {
+            final String path = mapping != null ? mapping.getPath() : null;
+            if (path != null && path.startsWith("/")) {
+                final int lastSlash = path.lastIndexOf('/');
+                if (lastSlash > 0) {
+                    return path.substring(0, lastSlash + 1) + name;
+                }
+            } else if (path != null && path.startsWith(".")) {
+                return "." + name;
+            }
+        }
+        return format == ValueFormat.XML ? "/entry/" + name : "." + name;
+    }
+
+    private static boolean hasRole(final List<FloorMapFieldMapping> schema, final Role role) {
+        for (final FloorMapFieldMapping mapping : schema) {
+            if (mapping != null && mapping.getRole() == role) {
+                return false;
+            }
+        }
+        return true;
     }
 
     @Override

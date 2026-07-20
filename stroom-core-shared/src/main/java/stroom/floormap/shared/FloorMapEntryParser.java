@@ -79,6 +79,9 @@ public final class FloorMapEntryParser {
         final String positionPath = findPath(schema, Role.POSITION);
         final String imagePath = findPath(schema, Role.IMAGE);
         final String worldToMapPath = findPath(schema, Role.WORLD_TO_MAP);
+        final String geometryPath = findPath(schema, Role.GEOMETRY);
+        final String fillPath = findPath(schema, Role.FILL);
+        final String opacityPath = findPath(schema, Role.OPACITY);
 
         for (final TemporalEntry entry : entries) {
             try {
@@ -119,7 +122,18 @@ public final class FloorMapEntryParser {
                     }
                 }
 
-                facts.add(new Fact(entry.getKey(), type, image, worldToMap, position));
+                final double[][] vertices = geometryPath != null
+                        ? parseVertices(accessor.getArray(parsed, geometryPath))
+                        : null;
+                final String fill = fillPath != null
+                        ? accessor.getString(parsed, fillPath)
+                        : null;
+                final Double opacity = opacityPath != null
+                        ? accessor.getNumber(parsed, opacityPath)
+                        : null;
+
+                facts.add(new Fact(entry.getKey(), type, image, worldToMap, position,
+                        vertices, fill, opacity));
             } catch (final Exception ex) {
                 warn(warningConsumer, "Skipping malformed temporal entry (key='"
                         + entry.getKey() + "'): " + ex.getMessage());
@@ -165,6 +179,23 @@ public final class FloorMapEntryParser {
                     arr[0], arr[1], arr[2], arr[3], arr[4], arr[5]);
         }
         return FloorMapTransformationMatrix.identity();
+    }
+
+    /**
+     * Folds a flat {@code [x0, y0, x1, y1, ...]} geometry array into vertex
+     * pairs. Returns {@code null} for a missing or too-short array (fewer
+     * than 3 vertices). A trailing odd value is ignored.
+     */
+    private static double[][] parseVertices(final double[] flat) {
+        if (flat == null || flat.length < 6) {
+            return null;
+        }
+        final int count = flat.length / 2;
+        final double[][] vertices = new double[count][];
+        for (int i = 0; i < count; i++) {
+            vertices[i] = new double[]{flat[i * 2], flat[i * 2 + 1]};
+        }
+        return vertices;
     }
 
     /**

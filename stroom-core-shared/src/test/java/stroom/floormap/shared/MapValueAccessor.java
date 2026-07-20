@@ -18,16 +18,15 @@ package stroom.floormap.shared;
 
 import stroom.util.json.JsonUtil;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
  * A test-only {@link ValueAccessor} implementation backed by
- * {@code Map<String, Object>}. Uses Jackson for JSON parsing/serialisation,
- * which is available on the server classpath but NOT in GWT.
+ * {@code Map<String, Object>}. Uses {@link JsonUtil} (Jackson) for JSON
+ * parsing/serialisation, which is available on the server classpath but NOT
+ * in GWT.
  *
  * <p>This enables testing of {@link FloorMapEntryParser},
  * {@link FloorMapEditorModel}, and other shared logic without any GWT
@@ -46,9 +45,8 @@ public class MapValueAccessor implements ValueAccessor {
             return null;
         }
         try {
-            final ObjectMapper mapper = new ObjectMapper();
             @SuppressWarnings("unchecked")
-            final Map<String, Object> map = mapper.readValue(raw, Map.class);
+            final Map<String, Object> map = JsonUtil.readValue(raw, Map.class);
             return new ParsedValue(map);
         } catch (final Exception e) {
             return null;
@@ -119,6 +117,40 @@ public class MapValueAccessor implements ValueAccessor {
                 list.add(d);
             }
             map.put(toKey(path), list);
+        } else {
+            map.remove(toKey(path));
+        }
+    }
+
+    @Override
+    public Double getNumber(final ParsedValue value, final String path) {
+        if (value == null || path == null) {
+            return null;
+        }
+        final Map<String, Object> map = asMap(value);
+        final Object val = map.get(toKey(path));
+        if (val instanceof Number) {
+            return ((Number) val).doubleValue();
+        }
+        if (val instanceof String) {
+            try {
+                return Double.parseDouble(((String) val).trim());
+            } catch (final NumberFormatException e) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    @Override
+    public void setNumber(final ParsedValue value, final String path,
+                          final Double number) {
+        if (value == null || path == null) {
+            return;
+        }
+        final Map<String, Object> map = asMap(value);
+        if (number != null) {
+            map.put(toKey(path), number);
         } else {
             map.remove(toKey(path));
         }

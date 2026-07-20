@@ -18,13 +18,18 @@
 <ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
              xmlns:g="urn:import:com.google.gwt.user.client.ui"
              xmlns:form="urn:import:stroom.widget.form.client"
-             xmlns:datetimebox="urn:import:stroom.widget.datepicker.client">
+             xmlns:datetimebox="urn:import:stroom.widget.datepicker.client"
+             xmlns:colour="urn:import:stroom.widget.colour.client">
 
     <ui:style>
         .matrixBox {
             width: 80px !important;
             min-width: 80px !important;
             margin-right: 8px;
+        }
+
+        .fillDefault {
+            margin-right: 12px;
         }
     </ui:style>
 
@@ -61,6 +66,39 @@
                     <g:SimplePanel ui:field="chooseImgContainer" addStyleNames="wide-control" />
                 </form:FormGroup>
 
+                <form:FormGroup ui:field="fillGroup" label="Area Fill Colour">
+                    <form:HelpHTML>
+                        <p>The colour used to fill this area on the map. Leave
+                            <em>Default</em> ticked to use the colour configured for the
+                            <code>area</code> type on the Settings tab (see <em>Type
+                            Styles</em>); untick it to give this area its own colour.</p>
+                    </form:HelpHTML>
+                    <g:FlowPanel addStyleNames="dock-container-horizontal align-center">
+                        <g:CheckBox ui:field="fillDefaultCheck" text="Default" addStyleNames="{style.fillDefault}" />
+                        <colour:ColourBox ui:field="fillBox" />
+                    </g:FlowPanel>
+                </form:FormGroup>
+
+                <form:FormGroup ui:field="opacityGroup" label="Area Fill Opacity">
+                    <form:HelpHTML>
+                        <p>How translucent the area's fill is, from <code>0</code>
+                            (invisible) to <code>1</code> (opaque). Leave empty for the
+                            default (<code>0.3</code>).</p>
+                    </form:HelpHTML>
+                    <g:TextBox ui:field="opacityBox" addStyleNames="stroom-control wide-control" />
+                </form:FormGroup>
+
+                <form:FormGroup ui:field="verticesGroup" label="Vertices">
+                    <form:HelpHTML>
+                        <p>The number of corners in this area's polygon. The shape is
+                            drawn on the canvas ("Draw Area Here") and is not edited
+                            numerically here — move, scale and rotate it with the
+                            normal selection handles, or delete the area and draw it
+                            again to change its outline.</p>
+                    </form:HelpHTML>
+                    <g:Label ui:field="vertexCountLabel" />
+                </form:FormGroup>
+
                 <form:FormGroup label="Effective From Time">
                     <form:HelpHTML>
                         <p>The time from which this version of the object takes effect. The map
@@ -72,7 +110,7 @@
                     <datetimebox:DateTimeBox ui:field="effectiveTimeBox" addStyleNames="timeline-date-box wide-control" />
                 </form:FormGroup>
 
-                <form:FormGroup label="World X Coordinate">
+                <form:FormGroup ui:field="xGroup" label="World X Coordinate">
                     <form:HelpHTML>
                         <p>The object's X position in world coordinates, before the
                             World&#8209;to&#8209;Map transform below is applied.</p>
@@ -80,7 +118,7 @@
                     <g:TextBox ui:field="xBox" addStyleNames="stroom-control wide-control" />
                 </form:FormGroup>
 
-                <form:FormGroup label="World Y Coordinate">
+                <form:FormGroup ui:field="yGroup" label="World Y Coordinate">
                     <form:HelpHTML>
                         <p>The object's Y position in world coordinates, before the
                             World&#8209;to&#8209;Map transform below is applied.</p>
