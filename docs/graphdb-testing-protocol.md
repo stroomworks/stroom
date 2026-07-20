@@ -139,8 +139,10 @@ clear error, not a wrong result:
   rejected — there is no "all nodes" scan; the anchor is resolved via the property index.
 - **`RETURN` must be `variable.property`** (or an aggregate/function that compiles). `RETURN d` (a bare pattern
   variable — a whole node) is rejected with a clear "bare pattern variable" message.
-- **`ORDER BY`, `DISTINCT`, `SKIP` are rejected** at compile time (the executor has no sort/de-dup/offset step
-  yet) — a clear "not yet supported" error, deliberately, rather than silently-wrong results.
+- **`ORDER BY` and `RETURN DISTINCT` are now supported** — the graph executor sorts and de-duplicates the
+  projected rows (`ORDER BY` lowers to a `Sort` node; `DISTINCT` is carried on the compiled plan). **`SKIP` is
+  still rejected** at compile time with a clear "not yet supported" error (the core's `Limit` node has no offset
+  slot), deliberately, rather than silently-wrong results.
 - **One `MATCH` clause only**; **one variable-length hop** (`-[:T*1..n]->`, bounded — unbounded `*` is a
   parse error) and it must be the pattern's sole hop; fixed-length multi-hop chains are supported.
 - **`WHERE`** supports field-vs-literal comparisons (a comparison between two fields is rejected).
