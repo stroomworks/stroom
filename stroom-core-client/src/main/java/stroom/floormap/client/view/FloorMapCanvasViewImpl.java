@@ -486,16 +486,21 @@ public class FloorMapCanvasViewImpl
                     new Attribute("stroke-width", strokeWidth),
                     new Attribute("vector-effect", "non-scaling-stroke"),
                     new Attribute("pointer-events", "none"));
-            // Invisible wide border stroke — the clickable element (border
-            // select only; the fill must not capture pointer events).
+            // Invisible hit polygon — the clickable element. pointer-events
+            // "all" makes both the interior and a generous 10px border band
+            // clickable regardless of paint, so an area is selected by
+            // clicking anywhere inside it. The presenter treats a press on an
+            // UNSELECTED area like a background press (drag pans, click
+            // selects), so a large area cannot hijack map panning.
             areaGroup.elem(SafeHtmlUtil.from("polygon"),
                     new Attribute("points", points.toString()),
-                    new Attribute("fill", "none"),
+                    new Attribute("fill", "#000000"),
+                    new Attribute("fill-opacity", "0"),
                     new Attribute("stroke", "#000000"),
                     new Attribute("stroke-opacity", "0"),
                     new Attribute("stroke-width", "10"),
                     new Attribute("vector-effect", "non-scaling-stroke"),
-                    new Attribute("pointer-events", "stroke"),
+                    new Attribute("pointer-events", "all"),
                     new Attribute("id", fact.getKey()));
         }, SafeHtmlUtil.from("g"),
                 new Attribute("transform", fact.getWorldToMap().toSvgMatrix()),

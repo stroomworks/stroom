@@ -208,6 +208,15 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     private final Set<String> backgroundKeys = new HashSet<>();
 
     /**
+     * Keys of area (polygon) facts. Their whole interior is clickable, so a
+     * press on an <em>unselected</em> area gets the background treatment —
+     * drag pans, plain click selects — otherwise a large area would make the
+     * map impossible to pan. Once selected, a drag moves it like any object.
+     * Recomputed on each {@link #setFacts(List)}.
+     */
+    private final Set<String> areaKeys = new HashSet<>();
+
+    /**
      * Event entities that are not currently animated. When playing, moving
      * entities are built dynamically in {@link #buildAnimatedDrawList}.
      */
@@ -479,13 +488,15 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                     return;
                 }
 
-                // A real (draggable) object is any non-background fact, OR a
-                // background fact that is already selected — so an unselected
-                // background press still pans, but once you have selected the
-                // background (by clicking it) you can drag it to move it.
-                final boolean isBackground = hitId != null && backgroundKeys.contains(hitId);
+                // A real (draggable) object is any non-background, non-area
+                // fact, OR a background/area fact that is already selected —
+                // so an unselected background or area press still pans (their
+                // clickable surface can cover most of the map), but once you
+                // have selected one (by clicking it) you can drag it to move it.
+                final boolean pansWhenUnselected = hitId != null
+                        && (backgroundKeys.contains(hitId) || areaKeys.contains(hitId));
                 final boolean onObject = hitId != null
-                        && (!isBackground || selectedObjectIds.contains(hitId));
+                        && (!pansWhenUnselected || selectedObjectIds.contains(hitId));
 
                 if (onObject) {
                     if (modifier) {
@@ -1766,12 +1777,16 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     public void setFacts(final List<Fact> facts) {
         this.facts = facts != null ? facts : new ArrayList<>();
         // Recompute which facts act as the background (plain drag over them
-        // pans rather than moving them), keyed by the BACKGROUND key or type.
+        // pans rather than moving them), keyed by the BACKGROUND key or type,
+        // and which are areas (same pan-when-unselected press handling).
         backgroundKeys.clear();
+        areaKeys.clear();
         for (final Fact fact : this.facts) {
             if (FloorMapJsonKeys.BACKGROUND.equals(fact.getKey())
                     || FloorMapJsonKeys.BACKGROUND.equals(fact.getType())) {
                 backgroundKeys.add(fact.getKey());
+            } else if (!fact.hasImage() && fact.hasVertices()) {
+                areaKeys.add(fact.getKey());
             }
         }
         redraw();
