@@ -146,7 +146,12 @@ clear error, not a wrong result:
 - **One `MATCH` clause only**; **one variable-length hop** (`-[:T*1..n]->`, bounded — unbounded `*` is a
   parse error) and it must be the pattern's sole hop; fixed-length multi-hop chains are supported.
 - **`WHERE`** supports field-vs-literal comparisons (a comparison between two fields is rejected).
-- Aggregates (`count`/`sum`/…) compile but **GROUP-BY inference is not implemented** (documented gap).
+- **Aggregates (`count`/`sum`/`avg`/`min`/`max`) now execute**, with implicit `GROUP BY` over every
+  non-aggregate `RETURN` item (Cypher's own rule) — see
+  [graphdb-analytic-functions-implementation-plan.md](graphdb-analytic-functions-implementation-plan.md).
+  `collect()` is not yet in the grammar (a later phase); a group key or aggregate argument that is a bare
+  pattern variable (not a property access) is rejected, as is `ORDER BY` on a column the aggregated `RETURN`
+  does not actually produce.
 - Traversal guardrails: a variable-length hop range wider than 50, more than ~200k explored path-states per
   anchor, or a traversal exceeding ~30s is rejected/aborted with a clear limit-exceeded error.
 

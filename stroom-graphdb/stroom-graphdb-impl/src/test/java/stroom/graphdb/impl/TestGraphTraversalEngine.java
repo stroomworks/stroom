@@ -23,12 +23,14 @@ import stroom.query.api.DateTimeSettings;
 import stroom.query.common.v2.ExpressionPredicateFactory;
 import stroom.query.grammar.parse.CypherQueryParser;
 import stroom.query.language.functions.Val;
+import stroom.query.language.functions.ValDouble;
 import stroom.query.language.functions.ValLong;
 import stroom.query.language.functions.ValNull;
 import stroom.query.language.functions.ValString;
 import stroom.query.planner.cypher.CompiledCypherPlan;
 import stroom.query.planner.cypher.CypherToLogicalPlan;
 
+import org.assertj.core.groups.Tuple;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -611,6 +613,212 @@ class TestGraphTraversalEngine {
         }
     }
 
+    // ------------------------------------------------------------------------------------------------------
+    // aggregation (Task 1.5 of docs/graphdb-analytic-functions-implementation-plan.md)
+    // ------------------------------------------------------------------------------------------------------
+
+    @Test
+    void countStarWithGroupKey_countsRowsPerGroup(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("agg-count-grouped"), DOC)) {
+            seedOfficerInvestigatingCrimes(stores);
+            final GraphTraversalEngine engine = new GraphTraversalEngine(stores, new ExpressionPredicateFactory());
+            final CompiledCypherPlan compiled = compile(
+                    "MATCH (o:Officer {id: 'o-larive'})<-[:INVESTIGATED_BY]-(c:Crime) "
+                    + "RETURN c.type, count(*) AS n");
+
+            final List<Val[]> rows = execute(stores, engine, compiled);
+            assertThat(rows).extracting(row -> row[0].toString(), row -> row[1].toLong())
+                    .containsExactlyInAnyOrder(
+                            Tuple.tuple("Drugs", 2L),
+                            Tuple.tuple("Burglary", 1L),
+                            Tuple.tuple("Fraud", 1L));
+        }
+    }
+
+    @Test
+    void countStarWithNoGroupKey_countsAllMatchedRowsAsASingleRow(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("agg-count-global"), DOC)) {
+            seedOfficerInvestigatingCrimes(stores);
+            final GraphTraversalEngine engine = new GraphTraversalEngine(stores, new ExpressionPredicateFactory());
+            final CompiledCypherPlan compiled = compile(
+                    "MATCH (o:Officer {id: 'o-larive'})<-[:INVESTIGATED_BY]-(c:Crime) RETURN count(*) AS n");
+
+            final List<Val[]> rows = execute(stores, engine, compiled);
+            assertThat(rows).hasSize(1);
+            assertThat(rows.getFirst()[0].toLong()).isEqualTo(4L);
+        }
+    }
+
+    @Test
+    void countOfProperty_countsOnlyRowsWherePropertyIsPresent(@TempDir final Path root) {
+        // c4 ("Fraud") has no "severity" property (see seedOfficerInvestigatingCrimes) - count(*) still counts
+        // it, count(c.severity) must not.
+        try (GraphStores stores = GraphStores.provision(root.resolve("agg-count-property"), DOC)) {
+            seedOfficerInvestigatingCrimes(stores);
+            final GraphTraversalEngine engine = new GraphTraversalEngine(stores, new ExpressionPredicateFactory());
+            final CompiledCypherPlan compiled = compile(
+                    "MATCH (o:Officer {id: 'o-larive'})<-[:INVESTIGATED_BY]-(c:Crime) "
+                    + "RETURN count(*) AS all, count(c.severity) AS withSeverity");
+
+            final List<Val[]> rows = execute(stores, engine, compiled);
+            assertThat(rows).hasSize(1);
+            assertThat(rows.getFirst()[0].toLong()).isEqualTo(4L);
+            assertThat(rows.getFirst()[1].toLong()).isEqualTo(3L);
+        }
+    }
+
+    @Test
+    void sumOfProperty_sumsAcrossTheWholeMatch(@TempDir final Path root) {
+        // c1=3, c2=5, c3=2, c4 has no severity (skipped, not treated as 0) - sum is 3+5+2=10.
+        try (GraphStores stores = GraphStores.provision(root.resolve("agg-sum-global"), DOC)) {
+            seedOfficerInvestigatingCrimes(stores);
+            final GraphTraversalEngine engine = new GraphTraversalEngine(stores, new ExpressionPredicateFactory());
+            final CompiledCypherPlan compiled = compile(
+                    "MATCH (o:Officer {id: 'o-larive'})<-[:INVESTIGATED_BY]-(c:Crime) "
+                    + "RETURN sum(c.severity) AS total");
+
+            final List<Val[]> rows = execute(stores, engine, compiled);
+            assertThat(rows.getFirst()[0].toDouble()).isEqualTo(10.0);
+        }
+    }
+
+    @Test
+    void sumOfProperty_groupedByType_splitsCorrectlyAndIsZeroForAGroupWithNoNumericValues(
+            @TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("agg-sum-grouped"), DOC)) {
+            seedOfficerInvestigatingCrimes(stores);
+            final GraphTraversalEngine engine = new GraphTraversalEngine(stores, new ExpressionPredicateFactory());
+            final CompiledCypherPlan compiled = compile(
+                    "MATCH (o:Officer {id: 'o-larive'})<-[:INVESTIGATED_BY]-(c:Crime) "
+                    + "RETURN c.type, sum(c.severity) AS total");
+
+            final List<Val[]> rows = execute(stores, engine, compiled);
+            assertThat(rows).extracting(row -> row[0].toString(), row -> row[1].toDouble())
+                    .containsExactlyInAnyOrder(
+                            Tuple.tuple("Drugs", 8.0),
+                            Tuple.tuple("Burglary", 2.0),
+                            Tuple.tuple("Fraud", 0.0));
+        }
+    }
+
+    @Test
+    void avgOfProperty_averagesTheNonNullValues(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("agg-avg-global"), DOC)) {
+            seedOfficerInvestigatingCrimes(stores);
+            final GraphTraversalEngine engine = new GraphTraversalEngine(stores, new ExpressionPredicateFactory());
+            final CompiledCypherPlan compiled = compile(
+                    "MATCH (o:Officer {id: 'o-larive'})<-[:INVESTIGATED_BY]-(c:Crime) "
+                    + "RETURN avg(c.severity) AS average");
+
+            final List<Val[]> rows = execute(stores, engine, compiled);
+            assertThat(rows.getFirst()[0].toDouble()).isEqualTo((3.0 + 5.0 + 2.0) / 3.0);
+        }
+    }
+
+    @Test
+    void avgOverAGroupWithNoNumericValues_isNullNotZero(@TempDir final Path root) {
+        // Unlike sum's 0, Cypher's avg() of an empty/non-numeric set is null - the "Fraud" group has no crime
+        // with a severity property at all.
+        try (GraphStores stores = GraphStores.provision(root.resolve("agg-avg-grouped"), DOC)) {
+            seedOfficerInvestigatingCrimes(stores);
+            final GraphTraversalEngine engine = new GraphTraversalEngine(stores, new ExpressionPredicateFactory());
+            final CompiledCypherPlan compiled = compile(
+                    "MATCH (o:Officer {id: 'o-larive'})<-[:INVESTIGATED_BY]-(c:Crime) "
+                    + "RETURN c.type, avg(c.severity) AS average");
+
+            final List<Val[]> rows = execute(stores, engine, compiled);
+            final Val[] fraudRow = rows.stream().filter(row -> "Fraud".equals(row[0].toString())).findFirst()
+                    .orElseThrow();
+            assertThat(fraudRow[1]).isEqualTo(ValNull.INSTANCE);
+        }
+    }
+
+    @Test
+    void minAndMaxOfProperty_preserveTheOriginalValType(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("agg-minmax-global"), DOC)) {
+            seedOfficerInvestigatingCrimes(stores);
+            final GraphTraversalEngine engine = new GraphTraversalEngine(stores, new ExpressionPredicateFactory());
+            final CompiledCypherPlan compiled = compile(
+                    "MATCH (o:Officer {id: 'o-larive'})<-[:INVESTIGATED_BY]-(c:Crime) "
+                    + "RETURN min(c.severity) AS lowest, max(c.severity) AS highest");
+
+            final List<Val[]> rows = execute(stores, engine, compiled);
+            assertThat(rows.getFirst()[0]).isInstanceOf(ValLong.class);
+            assertThat(rows.getFirst()[0].toLong()).isEqualTo(2L);
+            assertThat(rows.getFirst()[1]).isInstanceOf(ValLong.class);
+            assertThat(rows.getFirst()[1].toLong()).isEqualTo(5L);
+        }
+    }
+
+    @Test
+    void minOrMaxOverAGroupWithNoNumericValues_isNull(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("agg-minmax-grouped"), DOC)) {
+            seedOfficerInvestigatingCrimes(stores);
+            final GraphTraversalEngine engine = new GraphTraversalEngine(stores, new ExpressionPredicateFactory());
+            final CompiledCypherPlan compiled = compile(
+                    "MATCH (o:Officer {id: 'o-larive'})<-[:INVESTIGATED_BY]-(c:Crime) "
+                    + "RETURN c.type, min(c.severity) AS lowest");
+
+            final List<Val[]> rows = execute(stores, engine, compiled);
+            final Val[] fraudRow = rows.stream().filter(row -> "Fraud".equals(row[0].toString())).findFirst()
+                    .orElseThrow();
+            assertThat(fraudRow[1]).isEqualTo(ValNull.INSTANCE);
+        }
+    }
+
+    @Test
+    void emptyMatch_withNoGroupKey_yieldsOneRowWithZeroCount(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("agg-empty-nogroup"), DOC)) {
+            seedOfficerInvestigatingCrimes(stores);
+            final GraphTraversalEngine engine = new GraphTraversalEngine(stores, new ExpressionPredicateFactory());
+            final CompiledCypherPlan compiled = compile(
+                    "MATCH (o:Officer {id: 'no-such-officer'})<-[:INVESTIGATED_BY]-(c:Crime) "
+                    + "RETURN count(*) AS n");
+
+            final List<Val[]> rows = execute(stores, engine, compiled);
+            assertThat(rows).hasSize(1);
+            assertThat(rows.getFirst()[0].toLong()).isEqualTo(0L);
+        }
+    }
+
+    @Test
+    void emptyMatch_withAGroupKey_yieldsZeroRows(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("agg-empty-group"), DOC)) {
+            seedOfficerInvestigatingCrimes(stores);
+            final GraphTraversalEngine engine = new GraphTraversalEngine(stores, new ExpressionPredicateFactory());
+            final CompiledCypherPlan compiled = compile(
+                    "MATCH (o:Officer {id: 'no-such-officer'})<-[:INVESTIGATED_BY]-(c:Crime) "
+                    + "RETURN c.type, count(*) AS n");
+
+            final List<Val[]> rows = execute(stores, engine, compiled);
+            assertThat(rows).isEmpty();
+        }
+    }
+
+    @Test
+    void orderByAggregateAliasDescWithLimit_ordersAndCapsTheAggregatedOutput(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("agg-orderby-limit"), DOC)) {
+            seedOfficerInvestigatingCrimes(stores);
+            final GraphTraversalEngine engine = new GraphTraversalEngine(stores, new ExpressionPredicateFactory());
+            final CompiledCypherPlan compiled = compile(
+                    "MATCH (o:Officer {id: 'o-larive'})<-[:INVESTIGATED_BY]-(c:Crime) "
+                    + "RETURN c.type, count(*) AS n ORDER BY n DESC LIMIT 1");
+
+            final List<Val[]> rows = execute(stores, engine, compiled);
+            assertThat(rows).hasSize(1);
+            assertThat(rows.getFirst()[0].toString()).isEqualTo("Drugs");
+            assertThat(rows.getFirst()[1].toLong()).isEqualTo(2L);
+        }
+    }
+
+    /** Runs {@code compiled} with its own {@code distinct()}/{@code aggregation()} against {@code stores}. */
+    private static List<Val[]> execute(final GraphStores stores, final GraphTraversalEngine engine,
+                                       final CompiledCypherPlan compiled) {
+        return stores.read(readTxn ->
+                engine.execute(readTxn, compiled.plan(), compiled.temporalContext(),
+                        DateTimeSettings.builder().build(), compiled.distinct(), compiled.aggregation()));
+    }
+
     private static CompiledCypherPlan compile(final String cypher) {
         return new CypherToLogicalPlan().compile(CypherQueryParser.parse(cypher));
     }
@@ -861,6 +1069,57 @@ class TestGraphTraversalEngine {
 
             stores.getOutEdges().insert(writer, deviceUid, connectedTo, accountUid, oldIdentityStart, Map.of());
             stores.getInEdges().insert(writer, deviceUid, connectedTo, accountUid, oldIdentityStart, Map.of());
+            return null;
+        });
+    }
+
+    /**
+     * Task 1.5 (docs/graphdb-analytic-functions-implementation-plan.md): a single officer investigating four
+     * crimes - two "Drugs" (severity 3, 5), one "Burglary" (severity 2), and one "Fraud" with NO {@code severity}
+     * property at all, so {@code count(c.severity)} can differ from {@code count(*)}, and {@code sum}/
+     * {@code avg}/{@code min}/{@code max} can be tested against a group with no numeric values. The anchor is
+     * the (indexed) officer, reached backward from each crime, so grouping/aggregating over multiple crimes needs
+     * no anchor-property-index workaround (an anchor MATCH still requires a label + property predicate - see
+     * {@code GraphTraversalEngine.resolveAnchors} - but the group-by/aggregate columns here are all on the hop
+     * target {@code c}, not the anchor).
+     */
+    private static void seedOfficerInvestigatingCrimes(final GraphStores stores) {
+        final long officerLabel = intern(stores, stores.getLabelUids(), "Officer");
+        final long crimeLabel = intern(stores, stores.getLabelUids(), "Crime");
+        final long idKey = intern(stores, stores.getPropertyKeyUids(), "id");
+        final long investigatedBy = intern(stores, stores.getEdgeTypeUids(), "INVESTIGATED_BY");
+
+        final long officerUid = intern(stores, stores.getNodeUids(), "o-larive");
+        final long c1Uid = intern(stores, stores.getNodeUids(), "c1");
+        final long c2Uid = intern(stores, stores.getNodeUids(), "c2");
+        final long c3Uid = intern(stores, stores.getNodeUids(), "c3");
+        final long c4Uid = intern(stores, stores.getNodeUids(), "c4");
+
+        stores.write(writer -> {
+            stores.getNodes().insert(
+                    writer, officerUid, T1, List.of(officerLabel), Map.of("id", ValString.create("o-larive")));
+            stores.getNodes().insert(writer, c1Uid, T1, List.of(crimeLabel),
+                    Map.of("id", ValString.create("c1"), "type", ValString.create("Drugs"),
+                            "severity", ValLong.create(3)));
+            stores.getNodes().insert(writer, c2Uid, T1, List.of(crimeLabel),
+                    Map.of("id", ValString.create("c2"), "type", ValString.create("Drugs"),
+                            "severity", ValLong.create(5)));
+            stores.getNodes().insert(writer, c3Uid, T1, List.of(crimeLabel),
+                    Map.of("id", ValString.create("c3"), "type", ValString.create("Burglary"),
+                            "severity", ValLong.create(2)));
+            stores.getNodes().insert(writer, c4Uid, T1, List.of(crimeLabel),
+                    Map.of("id", ValString.create("c4"), "type", ValString.create("Fraud")));
+
+            stores.getPropertyIndex().insert(
+                    writer, officerLabel, idKey, "o-larive".getBytes(StandardCharsets.UTF_8), officerUid);
+
+            // Every edge is written to both GraphAdjacencyDb and GraphInEdgeDb (P1.1's dual-write contract).
+            // Written crime -> officer (matching the POLE report's own (c:Crime)-[:INVESTIGATED_BY]->(o:Officer)
+            // direction); tests anchor on the officer and traverse backward ("<-") to reach every crime.
+            for (final long crimeUid : List.of(c1Uid, c2Uid, c3Uid, c4Uid)) {
+                stores.getOutEdges().insert(writer, crimeUid, investigatedBy, officerUid, T1, Map.of());
+                stores.getInEdges().insert(writer, crimeUid, investigatedBy, officerUid, T1, Map.of());
+            }
             return null;
         });
     }

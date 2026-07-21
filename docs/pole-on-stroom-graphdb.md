@@ -3,7 +3,9 @@
 *What this is: an attempt to reproduce Neo4j's **POLE** (Person–Object–Location–Event) crime-graph tutorial
 ([neo4j-graph-examples/pole](https://github.com/neo4j-graph-examples/pole/blob/main/documentation/pole-workspace-guide.adoc))
 on Stroom's temporal-Cypher Graph DB, with an honest record of what worked, what didn't, and step-by-step
-instructions so a human can replicate it. Run 2026-07-20 against a live single-node Stroom via the REST API.*
+instructions so a human can replicate it. Run 2026-07-20 against a live single-node Stroom via the REST API;
+re-run and extended 2026-07-21 against the same instance (existing `GraphDb Test` folder, data reprocessed
+after a stale duplicate-name error was cleared) to verify the newly-added aggregation functions live.*
 
 ---
 
@@ -15,16 +17,23 @@ instructions so a human can replicate it. Run 2026-07-20 against a live single-n
 - **The graph *traversals* at the heart of POLE work** — anchored one-hop and fixed-length multi-hop patterns,
   both `->` and `<-` directions, undirected `-`, variable-length single hops (`*1..2`), `WHERE` on a hopped
   node, and `ORDER BY` / `DISTINCT` / `LIMIT`.
-- **But most POLE *queries as written* do not run**, because the guide is built on three capabilities Stroom's
-  PoC Cypher deliberately omits: **aggregation** (`count`, `collect`, group-by), **spatial** (`point`,
-  `point.distance`), and **path-finding** (`allShortestPaths`, multi-type variable-length paths, `RETURN path`),
-  plus **pattern-predicates** (`WHERE NOT (a)-[:X]->(b)`) and **writes** (`SET`).
+- **Update (verified live 2026-07-21):** `count`/`sum`/`avg`/`min`/`max` aggregation, with implicit `GROUP BY`,
+  now works — see [§5's "Aggregation" note](#aggregation-added--see-graphdb-analytic-functions-implementation-planmd).
+  The anchor-property-predicate rule still applies, and **`ORDER BY` must reference the aggregate's alias, not
+  the aggregate expression itself** (`ORDER BY total DESC` works; `ORDER BY count(c) DESC`, exactly as POLE's
+  queries are written, is rejected) — so q3–q5/q7/q14 need a one-word rewrite to run. `collect()`, spatial,
+  path-finding, pattern-predicates, and writes remain out of scope (below, as originally reported).
+- **But most POLE *queries as written* still do not run**, because the guide is built on capabilities Stroom's
+  PoC Cypher otherwise omits: **`collect()`**, **spatial** (`point`, `point.distance`), and **path-finding**
+  (`allShortestPaths`, multi-type variable-length paths, `RETURN path`), plus **pattern-predicates**
+  (`WHERE NOT (a)-[:X]->(b)`) and **writes** (`SET`).
 - **Every unsupported query fails with a clear compile error, never a 500 or a wrong answer** — which is exactly
   the PoC's stated contract.
 - **Stroom adds something POLE can't do: time.** Every node/edge has a `validFrom`, so the same traversal can be
   run `AS OF` a past instant and returns the graph as it was then.
 
-Net: you can reproduce POLE's **structure and traversals**, not its **analytics** (aggregation/spatial/paths).
+Net: you can reproduce POLE's **structure, traversals, and counting** (aggregation), not its **spatial/path-finding**
+analytics or `collect()`.
 
 ---
 
@@ -141,15 +150,17 @@ Every edge carries `validFrom`; the later-dated crime `c4` (2026-06-01) is invis
 | `… RETURN c.type` **`AS OF datetime('2021-01-01T00:00:00Z')`** | `Drugs` (only `c1`) |
 
 `BETWEEN` and `AROUND` windowed forms are also supported. This temporal dimension has no equivalent in the POLE
-Neo4j guide.
+Neo4j guide. It composes with aggregation too (verified live): the same query with
+`RETURN p.surname AS surname, count(c) AS total` returns `total: 2` now and `total: 1`
+`AS OF datetime('2021-01-01T00:00:00Z')`.
 
 ## 5. What didn't work — and why (all fail with a clear compile error, not a 500)
 
 | POLE query | Stroom outcome | Missing capability |
 |---|---|---|
 | Schema visualization (q1) | n/a | No `db.schema.visualization()` procedure |
-| Count / frequency (q2, q3) | rejected | (a) anchor needs a **property predicate** (`MATCH (c:Crime)` alone is rejected: *"a label-only scan… is not indexed"*), and (b) **aggregation not supported**: *"aggregates… not wired to a graph traversal row"* |
-| Aggregated variants of q4, q5, q7, q14 | traversal works; `count`/`collect` rejected | **Aggregation / group-by** not implemented for graph traversals |
+| Count / frequency (q2, q3) | **partially supported** — `count`/`sum`/`avg`/`min`/`max` now execute, but q2/q3 as written still fail | (a) anchor needs a property predicate — `MATCH (c:Crime)` alone is still rejected (see §6); (b) q3's `ORDER BY count(c) DESC` is rejected — must `ORDER BY` the aggregate's alias instead (see below) |
+| Aggregated variants of q4, q5, q7, q14 | **the aggregation itself now works**; each query still needs a 1-word rewrite (`ORDER BY <alias>` instead of `ORDER BY count(...)`) to run as-is | `collect()` still rejected (not yet in the grammar) |
 | Create point property (q6) | rejected | No **writes** (`SET`) and no spatial types in the read-only PoC subset |
 | Spatial distance / radius / nearest (q8–q12) | rejected: *mismatched input '('* | No **`point` / `point.distance`** functions |
 | `RETURN *` / `RETURN path` (q13, q15, q16, q17, q18, q21) | rejected | `RETURN` must be `variable.property`; **whole-node / path returns** not supported |
@@ -158,13 +169,45 @@ Neo4j guide.
 | Pattern-predicate `WHERE NOT (a)-[:X]->(b)` (q19, q20, q22, q23) | parse error | `WHERE` supports **field-vs-literal only**, not pattern existence |
 | Multi-pattern `MATCH a, b` (q23) | rejected | **One `MATCH` clause / one pattern** only |
 
+### Aggregation (added — see [graphdb-analytic-functions-implementation-plan.md](graphdb-analytic-functions-implementation-plan.md))
+
+`count`, `sum`, `avg`, `min`, and `max` now execute for real, verified live against the running instance: every
+non-aggregate `RETURN` item becomes an implicit `GROUP BY` key (Cypher's own rule), and the graph traversal
+engine groups and reduces the matched rows accordingly. For example, over the POLE dataset in
+[§2](#2-the-pole-dataset-used) — grouping by outcome to get a real multi-group result (all three of Larive's own
+cases happen to be `Drugs`, so grouping by his crimes alone only ever yields one group):
+
+```cypher
+MATCH (c:Crime {last_outcome:'Under investigation'})
+RETURN c.type AS crime_type, count(c) AS total
+```
+
+returns two real groups — `Drugs: 2, Burglary: 1` (`c1`, `c2`, `c4` match; `c1`/`c4` are `Drugs`, `c2` is
+`Burglary`) — confirming rows are genuinely grouped by `crime_type`, not just counted overall. Aggregation also
+composes with `AS OF`: the same query anchored on `MATCH (p:Person {surname:'Powell'})-[:PARTY_TO]->(c:Crime)`
+returns `total: 2` now and `total: 1` `AS OF datetime('2021-01-01T00:00:00Z')` (before `c4` existed) — time-travel
+and aggregation stack cleanly.
+
+**One live-verified gap:** `ORDER BY` cannot reference the aggregate expression directly.
+`RETURN c.type AS crime_type, count(c) AS total ORDER BY count(c) DESC` — exactly how POLE's q3–q5/q7/q14 are
+written — is rejected: *"not in PoC subset: an ORDER BY item must be a property access or variable reference"*.
+`ORDER BY total DESC` (the alias) works fine. So every one of those queries needs a one-word find/replace
+(order by the alias, not the aggregate call) before it will run — a small, mechanical rewrite, not a missing
+capability, but worth calling out since it means those queries don't run completely unmodified.
+
+`collect()` (gathering a group's values into a list) is not yet implemented — it needs a grammar change and a
+new list-valued cell type, neither of which exist yet — so it remains a rejected, later-phase addition:
+`MATCH (p:Person {surname:'Powell'})-[:PARTY_TO]->(c:Crime) RETURN p.surname, collect(c.type)` fails to parse
+(*"mismatched input '.' expecting '('"* — `collect` isn't in the locked aggregate-function grammar at all, unlike
+`count`/`sum`/`avg`/`min`/`max`).
+
 ### The pattern behind the gaps
 POLE is, at its core, an **analytics** tutorial: it ranks by `count`, measures `point.distance`, and finds
-`allShortestPaths`. Stroom's Cypher today is a **traversal** engine — it retrieves connected nodes by anchored
-pattern, with time-travel, and leaves aggregation/scoring/spatial to (a) a later Cypher phase or (b) feeding the
-traversal output into StroomQL/dashboards for the counting and ranking. So POLE's *questions* are reproducible in
-spirit, but the *single-query* Neo4j formulations that fold traversal + aggregation + spatial into one statement
-are not.
+`allShortestPaths`. Stroom's Cypher has closed the `count`/`sum`/`avg`/`min`/`max` slice of that gap (see above); it
+remains a **traversal** engine for spatial/path-finding, which still need a later Cypher phase or feeding the
+traversal output into StroomQL/dashboards for scoring and shortest-path. So POLE's *questions* are reproducible in
+spirit, and its counting questions now in a single query too — but the spatial and path-finding formulations that
+fold traversal + geometry + shortest-path into one statement are not.
 
 ---
 
@@ -177,8 +220,11 @@ are not.
 - **`RETURN variable.property`**, not whole nodes or paths. To see a related entity, return its properties.
 - **One `MATCH`, one pattern, single relationship type per hop.** Fixed-length multi-hop chains are fine; one
   variable-length hop (`*a..b`, bounded) is fine as the sole hop.
-- **Aggregation, spatial, shortest-path, pattern-predicates, and writes are out of scope** in the current PoC —
-  expect a clear "not yet supported"/parse error.
+- **`count`/`sum`/`avg`/`min`/`max` aggregation now works** (implicit `GROUP BY` over every non-aggregate
+  `RETURN` item — see §5), and composes with `AS OF`. **`ORDER BY` an aggregate's alias, not the aggregate call
+  itself** — `ORDER BY total DESC` works, `ORDER BY count(c) DESC` does not. `collect()`, spatial, shortest-path,
+  pattern-predicates, and writes remain out of scope in the current PoC — expect a clear "not yet
+  supported"/parse error.
 - **Route via `ownerDocRef`** (REST) or the GraphDb **Data tab** (UI); a plain StroomQL surface won't parse
   Cypher. *(A proposed `from "GraphDb"` prefix would let Cypher run from any surface — see
   [cypher-from-clause-implementation-plan.md](cypher-from-clause-implementation-plan.md).)*
@@ -188,8 +234,11 @@ are not.
 
 ## 7. Verdict
 
-You can stand up the POLE graph on Stroom and answer POLE's underlying **relationship questions** through anchored
-traversals — with the bonus of **temporal** "as of" analysis that the Neo4j guide has no equivalent for. You
-cannot, today, reproduce POLE's **aggregation, spatial, and path-finding** queries as written; those are the
-concrete, clearly-signposted boundaries of the current Cypher subset and the natural candidates for the next phase
-of graph-query work.
+You can stand up the POLE graph on Stroom and answer POLE's underlying **relationship and counting questions**
+through anchored traversals with `count`/`sum`/`avg`/`min`/`max` aggregation, verified live against a running
+instance — with the bonus of **temporal** "as of" analysis (which now composes with aggregation too) that the
+Neo4j guide has no equivalent for. POLE's own aggregated queries (q3–q5, q7, q14) need a small, mechanical
+rewrite — `ORDER BY` the aggregate's alias rather than the aggregate call — to run at all. You cannot, today,
+reproduce POLE's **`collect()`, spatial, and path-finding** queries as written; those are the concrete,
+clearly-signposted boundaries of the current Cypher subset and the natural candidates for the next phase of
+graph-query work.

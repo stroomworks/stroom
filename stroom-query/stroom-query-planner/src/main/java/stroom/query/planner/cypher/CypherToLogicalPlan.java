@@ -23,6 +23,7 @@ import stroom.query.api.ExpressionTerm;
 import stroom.query.api.ExpressionTerm.Condition;
 import stroom.query.grammar.ast.AstPosition;
 import stroom.query.grammar.ast.cypher.AstAggregateExpr;
+import stroom.query.grammar.ast.cypher.AstAggregateFunction;
 import stroom.query.grammar.ast.cypher.AstAndExpr;
 import stroom.query.grammar.ast.cypher.AstAround;
 import stroom.query.grammar.ast.cypher.AstAsOf;
@@ -75,9 +76,11 @@ import org.jspecify.annotations.Nullable;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * Compiles a Cypher AST (see {@code docs/temporal-cypher-graph-implementation-plan.md}, Task PoC.3) into the
@@ -96,9 +99,12 @@ import java.util.Objects;
  * {@code CompiledCypherPlan} (the sealed shared IR has no Distinct node) - the graph executor honours all three
  * (sort, de-duplicate, cap). {@code SKIP} is still rejected (the core's {@link Limit} node has no offset slot).
  * Aggregate functions ({@code count}/{@code sum}/{@code avg}/{@code min}/{@code max}) compile to
- * {@link ProjectField} expressions only - GROUP-BY inference for a mixed aggregate/plain {@code RETURN} is not
- * yet implemented (a genuine gap tracked for a later phase, not silently wrong: such a query still compiles, but
- * does not yet group distinct combinations of the non-aggregate columns).</p>
+ * {@link ProjectField} expressions <em>and</em> to a {@link CypherAggregation} description (see
+ * {@link #buildAggregation}): every non-aggregate {@code RETURN} item becomes an implicit {@code GROUP BY} key
+ * (Cypher's rule), carried on {@link CompiledCypherPlan#aggregation()} for the graph executor to group and reduce
+ * by - {@code null} when the {@code RETURN} has no aggregate item, so the executor's ordinary per-row projection
+ * is unaffected. {@code collect()} is not yet in the grammar (a separate, later phase - see
+ * {@code docs/graphdb-analytic-functions-implementation-plan.md}, Phase 2).</p>
  *
  * <p>A hop's target (non-anchor) node pattern's own labels/inline properties (Task P3.1) compile onto
  * {@link Expand#targetLabels()}/{@link Expand#targetPropertyPredicate()} (or the {@link VarLengthExpand}
@@ -164,9 +170,20 @@ public final class CypherToLogicalPlan {
             plan = new Filter(plan, predicate, null, match.where().position());
         }
 
-        plan = compileReturn(plan, query.returnClause());
+        final List<ProjectField> fields = buildProjectFields(query.returnClause());
+        final CypherAggregation aggregation = buildAggregation(query.returnClause());
+        if (aggregation != null && query.returnClause().orderBy() != null) {
+            // Compile-time check (not deferred to the executor): once RETURN aggregates rows, there is no
+            // per-row traversal map left at execution time to sort by - the executor only ever sees the final,
+            // one-row-per-group output tuple. Checked here, not in GraphTraversalEngine, so the rejection carries
+            // the precise AST position of the offending ORDER BY item, matching this class's "fail fast with a
+            // clear position" contract used throughout (see e.g. the SKIP rejection below).
+            validateOrderByAgainstAggregation(query.returnClause().orderBy(), fields);
+        }
 
-        return new CompiledCypherPlan(plan, temporalContext, query.returnClause().distinct());
+        plan = compileReturn(plan, query.returnClause(), fields);
+
+        return new CompiledCypherPlan(plan, temporalContext, query.returnClause().distinct(), aggregation);
     }
 
     // ------------------------------------------------------------------------------------------------------
@@ -346,11 +363,15 @@ public final class CypherToLogicalPlan {
     // RETURN / ORDER BY / SKIP / LIMIT
     // ------------------------------------------------------------------------------------------------------
 
-    private LogicalPlan compileReturn(final LogicalPlan input, final AstReturnClause returnClause) {
-        final List<ProjectField> fields = new ArrayList<>(returnClause.items().size());
-        for (final AstReturnItem item : returnClause.items()) {
-            fields.add(compileReturnItem(item));
-        }
+    /**
+     * <b>Preconditions:</b> {@code fields} is {@code buildProjectFields(returnClause)}'s result for the same
+     * {@code returnClause} - callers that also need the raw field list (e.g. {@link #compile} for aggregation
+     * validation) build it once and pass it here rather than this method recomputing it, since
+     * {@link #buildProjectFields} is otherwise a pure function of {@code returnClause} alone.
+     * <b>Null status:</b> no parameter is nullable; never returns null.
+     */
+    private LogicalPlan compileReturn(final LogicalPlan input, final AstReturnClause returnClause,
+                                      final List<ProjectField> fields) {
         LogicalPlan plan = new Project(input, fields, returnClause.position());
 
         // RETURN DISTINCT is carried on the CompiledCypherPlan (see compile()), not lowered to a plan node, since
@@ -371,6 +392,21 @@ public final class CypherToLogicalPlan {
         return plan;
     }
 
+    /**
+     * Builds one {@link ProjectField} per {@code RETURN} item, in source order - shared between
+     * {@link #compileReturn} (which wraps them in a {@link Project}) and {@link #compile} (which needs the same
+     * list, before it is wrapped, to validate an aggregated query's {@code ORDER BY} - see
+     * {@link #validateOrderByAgainstAggregation}).
+     * <b>Null status:</b> {@code returnClause} is never null; the returned list and its elements are never null.
+     */
+    private List<ProjectField> buildProjectFields(final AstReturnClause returnClause) {
+        final List<ProjectField> fields = new ArrayList<>(returnClause.items().size());
+        for (final AstReturnItem item : returnClause.items()) {
+            fields.add(compileReturnItem(item));
+        }
+        return fields;
+    }
+
     private ProjectField compileReturnItem(final AstReturnItem item) {
         final String rawExpression = renderExpression(item.expression());
         final String name = item.alias() != null ? item.alias() : defaultColumnName(item.expression());
@@ -382,9 +418,159 @@ public final class CypherToLogicalPlan {
             return propertyAccess.variable() + "." + propertyAccess.property();
         } else if (expression instanceof final AstVariableExpr variable) {
             return variable.name();
+        } else if (expression instanceof final AstAggregateExpr aggregate) {
+            // Code-review fix: the fallback below (renderExpression) would otherwise produce a nested "${...}"
+            // reference (e.g. "count(${a.balance})") as the column NAME - unusable as a FieldIndex/column
+            // identifier once CypherCompiler wraps it as "${" + name + "}" (see that class's buildResultRequests).
+            // An aggregate's default name is instead the plain, ${}-free "function(argument)" text.
+            return defaultAggregateName(aggregate);
         }
-        // A literal or aggregate with no alias - the raw expression text is as good a default name as any.
+        // A literal with no alias - the raw expression text is as good a default name as any.
         return renderExpression(expression);
+    }
+
+    /**
+     * Renders an unaliased aggregate's default output column name, e.g. {@code "count(*)"},
+     * {@code "count(a.balance)"}, {@code "sum(a.balance)"} - deliberately {@code ${...}}-free (unlike
+     * {@link #renderExpression}'s aggregate rendering, kept for explain/debug text only), since this becomes a
+     * real {@link ProjectField#name()} / {@code FieldIndex} key (see {@link #defaultColumnName}).
+     */
+    private static String defaultAggregateName(final AstAggregateExpr aggregate) {
+        final String fn = aggregate.function().name().toLowerCase(Locale.ROOT);
+        return aggregate.star() ? fn + "(*)" : fn + "(" + defaultColumnName(aggregate.argument()) + ")";
+    }
+
+    // ------------------------------------------------------------------------------------------------------
+    // aggregation: implicit GROUP BY inference over a RETURN mixing an aggregate with other items
+    // ------------------------------------------------------------------------------------------------------
+
+    /**
+     * <b>Preconditions:</b> {@code returnClause} is not null.
+     * <b>Postconditions:</b> returns {@code null} if no item in {@code returnClause} is an aggregate call
+     * (the ordinary, non-aggregated execution path applies); otherwise returns a {@link CypherAggregation} with
+     * exactly one {@link OutputColumn} per {@code returnClause} item, in the same order as
+     * {@link #buildProjectFields} builds its {@link ProjectField}s for the same clause (see
+     * {@link CypherAggregation}'s Javadoc for why this alignment matters).
+     * <b>Null status:</b> the parameter is never null; the return value is nullable.
+     *
+     * @throws CypherCompileException if a non-aggregate item is not a property access (see
+     *                                 {@link #compileOutputColumn}), or if an aggregate call uses an argument
+     *                                 shape this PoC subset does not support (see
+     *                                 {@link #compileAggregateColumn}).
+     */
+    private @Nullable CypherAggregation buildAggregation(final AstReturnClause returnClause) {
+        Objects.requireNonNull(returnClause, "returnClause");
+        boolean anyAggregate = false;
+        for (final AstReturnItem item : returnClause.items()) {
+            if (item.expression() instanceof AstAggregateExpr) {
+                anyAggregate = true;
+                break;
+            }
+        }
+        if (!anyAggregate) {
+            return null;
+        }
+        final List<OutputColumn> columns = new ArrayList<>(returnClause.items().size());
+        for (final AstReturnItem item : returnClause.items()) {
+            columns.add(compileOutputColumn(item));
+        }
+        return new CypherAggregation(columns);
+    }
+
+    /**
+     * Lowers one {@code RETURN} item to an {@link OutputColumn} once the clause is known to mix an aggregate with
+     * other items - an {@link AstAggregateExpr} becomes an {@link AggregateColumn} (see
+     * {@link #compileAggregateColumn}); anything else must be a property access (an implicit {@code GROUP BY}
+     * key, Cypher's rule for every non-aggregate item in this shape), since a bare pattern variable has no single
+     * value to group by (the same "whole matched node/edge has no single value" rule
+     * {@code GraphTraversalEngine.evaluate}'s bare-variable rejection already enforces for the non-aggregated
+     * path).
+     */
+    private OutputColumn compileOutputColumn(final AstReturnItem item) {
+        final AstExpression expression = item.expression();
+        if (expression instanceof final AstAggregateExpr aggregate) {
+            return compileAggregateColumn(aggregate);
+        }
+        if (expression instanceof final AstPropertyAccessExpr propertyAccess) {
+            return new GroupKeyColumn(propertyAccess.variable() + "." + propertyAccess.property());
+        }
+        throw new CypherCompileException(
+                "not in PoC subset: when RETURN mixes an aggregate with other items, each non-aggregate item must "
+                + "be a property access (e.g. 'a.id') to serve as an implicit GROUP BY key - a bare pattern "
+                + "variable or literal has no single value to group by", item.position());
+    }
+
+    /**
+     * Lowers one {@link AstAggregateExpr} to an {@link AggregateColumn}, accepting exactly the argument shapes
+     * {@link AggregateColumn}'s Javadoc documents: {@code count(*)} (star; rejected for every other function -
+     * {@code sum(*)}/{@code avg(*)}/{@code min(*)}/{@code max(*)} are not meaningful), a property access (any
+     * function), or a bare pattern variable (count only - equivalent to {@code count(*)} since this subset has no
+     * {@code OPTIONAL MATCH} to make the variable ever unbound; {@code sum}/{@code avg}/{@code min}/{@code max}
+     * over a bare variable are rejected, since a whole node/edge has no single value to reduce).
+     */
+    private OutputColumn compileAggregateColumn(final AstAggregateExpr aggregate) {
+        final AstAggregateFunction function = aggregate.function();
+        final String functionName = function.name().toLowerCase(Locale.ROOT);
+        if (aggregate.star()) {
+            if (function != AstAggregateFunction.COUNT) {
+                throw new CypherCompileException(
+                        "not in PoC subset: " + functionName + "(*) is not supported - only count(*) is "
+                        + "meaningful over a whole row; " + functionName + " needs a property to aggregate, e.g. "
+                        + functionName + "(a.balance)", aggregate.position());
+            }
+            return new AggregateColumn(function, null, true, false);
+        }
+
+        final AstExpression argument = aggregate.argument();
+        if (argument instanceof final AstPropertyAccessExpr propertyAccess) {
+            return new AggregateColumn(
+                    function, propertyAccess.variable() + "." + propertyAccess.property(), false, false);
+        }
+        if (argument instanceof final AstVariableExpr variable) {
+            if (function != AstAggregateFunction.COUNT) {
+                throw new CypherCompileException(
+                        "not in PoC subset: " + functionName + "(" + variable.name() + ") would aggregate a "
+                        + "whole matched node/edge, which has no single value - aggregate one of its properties "
+                        + "instead, e.g. " + functionName + "(" + variable.name() + ".someProperty)",
+                        aggregate.position());
+            }
+            return new AggregateColumn(function, null, false, true);
+        }
+        throw new CypherCompileException(
+                "not in PoC subset: an aggregate argument must be a property access (e.g. 'a.balance') or, for "
+                + "count only, a bare pattern variable", argument.position());
+    }
+
+    /**
+     * Rejects an {@code ORDER BY} item that does not reference any column the (aggregated) {@code RETURN}
+     * actually produces - once rows are grouped/reduced there is no traversal row map left at execution time
+     * (only the final, one-row-per-group output tuple), so, unlike the non-aggregated path, an {@code ORDER BY}
+     * item here must name a returned column by its property access or {@code AS} alias, not an arbitrary bound
+     * variable/property. Reuses {@link #toQualifiedField}'s {@code (alias, field)} split and the same
+     * {@code alias == null ? field : alias + "." + field} reconstruction the graph executor's row lookups use, so
+     * a match here is exactly a match against a {@link ProjectField#name()}.
+     *
+     * @param fields {@link #buildProjectFields}'s result for the same {@code RETURN} clause {@code orderBy}
+     *               belongs to.
+     * @throws CypherCompileException if any {@code orderBy} item does not name a column in {@code fields}.
+     */
+    private void validateOrderByAgainstAggregation(final AstOrderBy orderBy, final List<ProjectField> fields) {
+        final Set<String> outputNames = new HashSet<>();
+        for (final ProjectField field : fields) {
+            outputNames.add(field.name());
+        }
+        for (final AstOrderItem item : orderBy.items()) {
+            final QualifiedField qualified = toQualifiedField(item.expression(), item.position());
+            final String reconstructed = qualified.alias() == null
+                    ? qualified.field()
+                    : qualified.alias() + "." + qualified.field();
+            if (!outputNames.contains(reconstructed)) {
+                throw new CypherCompileException(
+                        "not in PoC subset: ORDER BY '" + reconstructed + "' is not a returned column - once "
+                        + "RETURN aggregates rows, ORDER BY may only reference a RETURN column by its property "
+                        + "access or AS alias, not an arbitrary bound variable/property", item.position());
+            }
+        }
     }
 
     private List<SortKey> compileOrderBy(final AstOrderBy orderBy) {

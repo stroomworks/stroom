@@ -178,7 +178,7 @@ public class GraphSearchProvider implements SearchProvider, IndexFieldProvider {
             final GraphTraversalEngine engine = new GraphTraversalEngine(stores, expressionPredicateFactory);
             final List<Val[]> rows = stores.read(readTxn ->
                     engine.execute(readTxn, compiled.plan(), compiled.temporalContext(),
-                            searchRequest.getDateTimeSettings(), compiled.distinct()));
+                            searchRequest.getDateTimeSettings(), compiled.distinct(), compiled.aggregation()));
             for (final Val[] row : rows) {
                 coprocessors.accept(assembleRow(row, mapping, fieldIndex.size()));
             }

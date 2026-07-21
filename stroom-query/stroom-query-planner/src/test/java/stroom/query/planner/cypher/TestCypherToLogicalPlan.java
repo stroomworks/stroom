@@ -19,6 +19,7 @@ package stroom.query.planner.cypher;
 import stroom.query.api.ExpressionOperator;
 import stroom.query.api.ExpressionTerm;
 import stroom.query.api.ExpressionTerm.Condition;
+import stroom.query.grammar.ast.cypher.AstAggregateFunction;
 import stroom.query.grammar.ast.cypher.AstCypherQuery;
 import stroom.query.grammar.parse.CypherQueryParser;
 import stroom.query.planner.logical.Direction;
@@ -204,6 +205,122 @@ class TestCypherToLogicalPlan {
 
         final Project project = (Project) compiled.plan();
         assertThat(project.fields().getFirst().rawExpression()).isEqualTo("sum(${a.balance})");
+    }
+
+    // ------------------------------------------------------------------------------------------------------
+    // aggregation (Task 1.1 of docs/graphdb-analytic-functions-implementation-plan.md)
+    // ------------------------------------------------------------------------------------------------------
+
+    @Test
+    void nonAggregatedReturn_leavesAggregationNull() {
+        assertThat(compile("MATCH (a:Account) RETURN a.id").aggregation()).isNull();
+    }
+
+    @Test
+    void countStarAlone_compilesToASingleAggregateColumnWithNoGroupKeys() {
+        final CompiledCypherPlan compiled = compile("MATCH (a:Account) RETURN count(*) AS total");
+
+        assertThat(compiled.aggregation()).isNotNull();
+        assertThat(compiled.aggregation().columns()).containsExactly(
+                new AggregateColumn(AstAggregateFunction.COUNT, null, true, false));
+    }
+
+    @Test
+    void groupKeyPlusCount_compilesToGroupKeyColumnThenAggregateColumn() {
+        final CompiledCypherPlan compiled = compile(
+                "MATCH (c:Crime)-[:INVESTIGATED_BY]->(o:Officer) RETURN o.surname, count(c) AS caseload");
+
+        assertThat(compiled.aggregation()).isNotNull();
+        assertThat(compiled.aggregation().columns()).containsExactly(
+                new GroupKeyColumn("o.surname"),
+                new AggregateColumn(AstAggregateFunction.COUNT, null, false, true));
+
+        // The aggregation columns align 1:1, in order, with the compiled Project's fields.
+        final Project project = (Project) compiled.plan();
+        assertThat(project.fields()).hasSize(2);
+        assertThat(project.fields().get(0).name()).isEqualTo("o.surname");
+        assertThat(project.fields().get(1).name()).isEqualTo("caseload");
+    }
+
+    @Test
+    void sumOverProperty_compilesToAggregateColumnWithArgRowKey() {
+        final CompiledCypherPlan compiled = compile("MATCH (a:Account) RETURN sum(a.balance) AS total");
+
+        assertThat(compiled.aggregation().columns()).containsExactly(
+                new AggregateColumn(AstAggregateFunction.SUM, "a.balance", false, false));
+    }
+
+    @Test
+    void unaliasedCountStar_defaultsToACleanFunctionStarName() {
+        // Code-review fix: previously an unaliased aggregate's default name was renderExpression's "${...}"-laden
+        // text (e.g. "count()"), unusable as a FieldIndex/column identifier - see defaultAggregateName's Javadoc.
+        final CompiledCypherPlan compiled = compile("MATCH (a:Account) RETURN count(*)");
+
+        assertThat(((Project) compiled.plan()).fields().getFirst().name()).isEqualTo("count(*)");
+    }
+
+    @Test
+    void unaliasedSumOverProperty_defaultsToACleanFunctionArgumentName() {
+        final CompiledCypherPlan compiled = compile("MATCH (a:Account) RETURN sum(a.balance)");
+
+        assertThat(((Project) compiled.plan()).fields().getFirst().name()).isEqualTo("sum(a.balance)");
+    }
+
+    @Test
+    void sumOfStar_throwsNotInPoCSubset() {
+        final AstCypherQuery ast = CypherQueryParser.parse("MATCH (a:Account) RETURN sum(*) AS total");
+
+        assertThatThrownBy(() -> new CypherToLogicalPlan().compile(ast))
+                .isInstanceOf(CypherCompileException.class)
+                .hasMessageContaining("sum(*)");
+    }
+
+    @Test
+    void sumOfBareVariable_throwsNotInPoCSubset() {
+        final AstCypherQuery ast = CypherQueryParser.parse("MATCH (a:Account) RETURN sum(a) AS total");
+
+        assertThatThrownBy(() -> new CypherToLogicalPlan().compile(ast))
+                .isInstanceOf(CypherCompileException.class)
+                .hasMessageContaining("whole matched node/edge");
+    }
+
+    @Test
+    void countOfBareVariable_isAcceptedAsEquivalentToCountStar() {
+        final CompiledCypherPlan compiled = compile("MATCH (a:Account) RETURN count(a) AS total");
+
+        assertThat(compiled.aggregation().columns()).containsExactly(
+                new AggregateColumn(AstAggregateFunction.COUNT, null, false, true));
+    }
+
+    @Test
+    void bareVariableGroupKey_throwsNotInPoCSubset() {
+        final AstCypherQuery ast = CypherQueryParser.parse(
+                "MATCH (a:Account) RETURN a, count(*) AS total");
+
+        assertThatThrownBy(() -> new CypherToLogicalPlan().compile(ast))
+                .isInstanceOf(CypherCompileException.class)
+                .hasMessageContaining("GROUP BY key");
+    }
+
+    @Test
+    void orderByAggregateAlias_isAcceptedWhenReturned() {
+        final CompiledCypherPlan compiled = compile(
+                "MATCH (c:Crime)-[:INVESTIGATED_BY]->(o:Officer) "
+                + "RETURN o.surname, count(c) AS caseload ORDER BY caseload DESC LIMIT 5");
+
+        assertThat(compiled.aggregation()).isNotNull();
+        assertThat(compiled.plan()).isInstanceOf(Limit.class);
+    }
+
+    @Test
+    void orderByNonReturnedColumn_throwsNotInPoCSubsetOnceAggregated() {
+        final AstCypherQuery ast = CypherQueryParser.parse(
+                "MATCH (c:Crime)-[:INVESTIGATED_BY]->(o:Officer) "
+                + "RETURN o.surname, count(c) AS caseload ORDER BY c.type");
+
+        assertThatThrownBy(() -> new CypherToLogicalPlan().compile(ast))
+                .isInstanceOf(CypherCompileException.class)
+                .hasMessageContaining("not a returned column");
     }
 
     @Test

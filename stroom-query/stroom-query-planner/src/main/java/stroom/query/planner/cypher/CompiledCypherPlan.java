@@ -24,18 +24,26 @@ import java.util.Objects;
 
 /**
  * The result of {@link CypherToLogicalPlan#compile}: the bound {@link LogicalPlan}, the query's resolved
- * temporal context (if it had one), and whether the {@code RETURN} was {@code DISTINCT}. Kept alongside the plan
- * rather than folded into a {@link LogicalPlan} node because both are per-query execution concerns (design doc
- * &sect;5.4), not stages of the plan tree - and {@code DISTINCT} in particular is a Cypher-only concept the
- * sealed shared IR (used by the relational core too) has no node for.
+ * temporal context (if it had one), whether the {@code RETURN} was {@code DISTINCT}, and its aggregation
+ * description (if the {@code RETURN} mixed an aggregate with other items). Kept alongside the plan rather than
+ * folded into a {@link LogicalPlan} node because all three are per-query execution concerns (design doc
+ * &sect;5.4), not stages of the plan tree - and {@code DISTINCT}/aggregation in particular are Cypher-only
+ * concepts the sealed shared IR (used by the relational core too) has no node for.
  *
  * @param plan            never null.
  * @param temporalContext {@code null} if the query had no {@code AS OF}/{@code AROUND}/{@code BETWEEN} clause
  *                        (execution then reads the graph's latest state).
  * @param distinct        whether the {@code RETURN} clause was {@code RETURN DISTINCT} - the executor
  *                        de-duplicates the projected rows when {@code true}.
+ * @param aggregation     {@code null} if the {@code RETURN} clause has no aggregate item (the executor's ordinary,
+ *                        per-row projection applies unchanged); otherwise describes how to group the traversal's
+ *                        rows and reduce each group to one output row - see {@link CypherAggregation}'s Javadoc.
  */
-public record CompiledCypherPlan(LogicalPlan plan, @Nullable TemporalContext temporalContext, boolean distinct) {
+public record CompiledCypherPlan(
+        LogicalPlan plan,
+        @Nullable TemporalContext temporalContext,
+        boolean distinct,
+        @Nullable CypherAggregation aggregation) {
 
     public CompiledCypherPlan {
         Objects.requireNonNull(plan, "plan");

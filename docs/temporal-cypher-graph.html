@@ -127,7 +127,7 @@
 
 <header class="doc">
   <h1>A Temporal Cypher Graph on Stroom</h1>
-  <div class="sub">Design proposal &amp; effort estimate — a property-graph database, queried with Cypher, with native point-in-time querying, built on Stroom's existing data stores.</div>
+  <div class="sub">Design proposal — a property-graph database, queried with Cypher, with native point-in-time querying, built on Stroom's existing data stores.</div>
   <div class="badges">
     <span class="badge">Status: Feasibility / Proposal</span>
     <span class="badge">Audience: Stroom Engineering</span>
@@ -148,7 +148,6 @@
     <li><a href="#example">Worked example</a></li>
     <li><a href="#reused-new">Reused vs. built new</a></li>
     <li><a href="#risks">Risks &amp; hard problems</a></li>
-    <li><a href="#effort">Effort estimate</a></li>
     <li><a href="#roadmap">Phased roadmap</a></li>
     <li><a href="#open">Open questions</a></li>
     <li><a href="#glossary">Glossary</a></li>
@@ -174,14 +173,6 @@
     <tr><td>Ingest</td><td>Reuse <strong>pipelines + XSLT + a new <code>GraphFilter</code></strong> modelled on the existing <code>PlanBFilter</code>. Raw events remain the rebuildable source of truth.</td></tr>
   </tbody>
 </table></div>
-
-<p><strong>Effort</strong> (independently estimated and cross-checked against the codebase):</p>
-<ul>
-  <li><strong>Stage 1 is the reusable query core</strong> — grammar + ANTLR parser + relational logical plan + planner + joins — delivered by the companion <a href="query-optimiser-plan.html">query-optimiser-plan</a>. It is a <em>separately-scoped project with its own estimate</em>; the graph inherits it, and StroomQL benefits too. The figures below are the <strong>incremental graph work on top of that core</strong>.</li>
-  <li><strong>Graph PoC on the core</strong> (single shard, Cypher &rarr; shared IR, <code>expand</code> over Plan B adjacency, <code>MATCH/WHERE/RETURN</code> single-hop + <code>AS OF</code>, Graph datasource, tabular output): <strong>&asymp; 15–30 person-weeks (~2–3 months)</strong>.</li>
-  <li><strong>Graph feature v1</strong> (ingest, both traversal directions, variable-length paths, temporal ranges, permissions, basic UI): loaded incremental figure <strong>&asymp; 75–170 person-weeks</strong>, <strong>&asymp; 8–14 months calendar</strong> with a <strong>3-engineer</strong> team.</li>
-  <li>With the relational core in place, the biggest remaining risks are the <strong>variable-length-path / fixpoint operator</strong> and <strong>cross-shard traversal</strong> — the latter now modelled as a <strong>distributed join / exchange</strong> rather than bespoke scatter/gather. Storage still enjoys a large reuse discount.</li>
-</ul>
 
 <h2 id="goals">2. Problem &amp; goals</h2>
 <h3>Goals</h3>
@@ -501,80 +492,7 @@ ORDER BY c.startTime</code></pre>
   </tbody>
 </table></div>
 
-<h2 id="effort">10. Effort estimate</h2>
-<p>Independently estimated and cross-checked against the codebase. Effort in <strong>person-weeks (pw)</strong>, low–high, assuming experienced Java engineers <em>new to</em> LMDB/Plan B internals, ANTLR/Cypher, and GWT.</p>
-<div class="callout"><strong>Baseline:</strong> these figures assume the <strong>query core</strong> (grammar + ANTLR parser + relational logical plan + planner + joins) is delivered by the companion <a href="query-optimiser-plan.html">query-optimiser-plan</a>. That project is estimated separately; the WBS below is the <strong>incremental graph work on top of it</strong>. Where the core already provides a capability (parser framework, planner, join executor, expression eval, aggregation, result projection) the graph inherits it, and the line is reduced or removed versus a from-scratch graph engine.</div>
-
-<h3>9.1 Work-breakdown structure</h3>
-<div class="table-wrap"><table>
-  <thead><tr><th>Phase / workstream</th><th>Scope</th><th>pw</th><th>Key skills</th></tr></thead>
-  <tbody>
-    <tr class="phase-row"><td colspan="2">P0 — Design &amp; de-risking spikes</td><td>6–13</td><td></td></tr>
-    <tr><td>0.1 Physical model + partitioning spike</td><td>Freeze key/serde layout; confirm sharding scheme</td><td>3–6</td><td>LMDB/serde, Plan B</td></tr>
-    <tr><td>0.2 Cypher scope + grammar spike</td><td>Import openCypher grammar, generate parser, lock subset</td><td>2–4</td><td>ANTLR/parsers</td></tr>
-    <tr><td>0.3 Temporal semantics spike</td><td>Map AS OF / AROUND / BETWEEN onto floor lookups + window scans</td><td>1–3</td><td>Temporal modelling</td></tr>
-    <tr class="phase-row"><td colspan="2">P1 — Physical graph model on Plan B</td><td>11–23</td><td></td></tr>
-    <tr><td>1.1 Node store</td><td>nodeUid&rarr;{labels,props} on temporal-state pattern + serde</td><td>2–4</td><td>LMDB/serde</td></tr>
-    <tr><td>1.2 Out-edge adjacency</td><td>Composite key serde; prefix + reverse cursor ops</td><td>3–5</td><td>LMDB/serde</td></tr>
-    <tr><td>1.3 In-edge mirror</td><td>Reverse-direction mirror of 1.2</td><td>1–2</td><td>LMDB/serde</td></tr>
-    <tr><td>1.4 Interning integration</td><td>4 UID namespaces via UidLookupDb + recorders</td><td>2–4</td><td>Plan B internals</td></tr>
-    <tr><td>1.5 Property-value index</td><td>Anchor lookups (Plan B State or Lucene)</td><td>2–5</td><td>LMDB or Lucene</td></tr>
-    <tr><td>1.6 Retention / condense / snapshot</td><td>Extend deleteOldData/condense to graph DBs</td><td>1–3</td><td>Plan B internals</td></tr>
-    <tr class="phase-row"><td colspan="2">P2 — Ingest (GraphFilter)</td><td>7–13</td><td></td></tr>
-    <tr><td>2.1 Mutation XML schema + example XSLT</td><td>Node/edge upserts with valid-time</td><td>1–2</td><td>Stroom XSLT/schemas</td></tr>
-    <tr><td>2.2 GraphFilter pipeline element</td><td>SAX filter modelled on PlanBFilter</td><td>3–6</td><td>Stroom pipeline</td></tr>
-    <tr><td>2.3 Ingest wiring</td><td>Element module, ShardWriters, doc type</td><td>1–2</td><td>Pipeline/Guice</td></tr>
-    <tr><td>2.4 Ingest round-trip tests</td><td>XML&rarr;graph&rarr;read fixtures</td><td>2–3</td><td>Test harness</td></tr>
-    <tr class="phase-row"><td colspan="2">P3 — Graph query extensions (on the query core)</td><td>9–18</td><td></td></tr>
-    <tr><td>3.1 <code>Cypher.g4</code> grammar + AST&rarr;IR</td><td>Cypher grammar alongside <code>StroomQL.g4</code>; visitor to the shared logical IR</td><td>2–4</td><td>ANTLR/parsers</td></tr>
-    <tr><td>3.2 Graph operators + planner rules</td><td><code>expand</code> (adjacency access path for the core's join); anchor-selectivity / start-node rules</td><td>2–4</td><td>Query compilers + LMDB</td></tr>
-    <tr><td>3.3 Variable-length path / fixpoint operator</td><td>Bounded transitive-closure BFS/DFS + cycle guards (net-new; not in the equi-join core)</td><td>3–6</td><td>Query execution</td></tr>
-    <tr><td>3.4 Plan B graph datasource</td><td>Field metadata + cost signals (row/key counts) + adjacency access-path costing</td><td>2–4</td><td>Stroom query API + LMDB</td></tr>
-    <tr><td colspan="2"><em>(inherited from core: parser framework, logical/physical planner, join executor, expression eval, aggregation, result projection)</em></td><td><em>0</em></td><td>—</td></tr>
-    <tr class="phase-row"><td colspan="2">P4 — Temporal Cypher extension</td><td>5–10</td><td></td></tr>
-    <tr><td>4.1 Temporal syntax</td><td>AS OF / AROUND / BETWEEN grammar + AST</td><td>1–2</td><td>ANTLR/parsers</td></tr>
-    <tr><td>4.2 As-of / window execution</td><td>As-of join reusing the core's State-lookup path + Plan B floor lookup; window scans (interval intersection over adjacency version runs, per P0.3)</td><td>2–4</td><td>LMDB/serde + engine</td></tr>
-    <tr><td>4.3 Temporal correctness tests</td><td>As-of across multi-hop, interval edge cases</td><td>2–4</td><td>Test design</td></tr>
-    <tr class="phase-row"><td colspan="2">P5 — Query integration</td><td>5–10</td><td></td></tr>
-    <tr><td>5.1 GraphSearchProvider</td><td>Copy StateSearchProvider; drive engine &rarr; coprocessors</td><td>2–4</td><td>Stroom search stack</td></tr>
-    <tr><td>5.2 Registration + datasource fields</td><td>Multibinder; field/schema surfacing</td><td>1–3</td><td>Guice, query API</td></tr>
-    <tr><td>5.3 "Graph" document type</td><td>Docstore/cache/resource + explorer handler</td><td>2–3</td><td>Docstore/explorer</td></tr>
-    <tr class="phase-row"><td colspan="2">P6 — UI</td><td>7–16</td><td></td></tr>
-    <tr><td>6.1 Graph doc editor</td><td>GWT Presenter/View mirroring planb/client</td><td>2–4</td><td>GWT/GIN</td></tr>
-    <tr><td>6.2 Cypher query editor</td><td>Dashboard pane accepting Cypher</td><td>2–4</td><td>GWT/UI</td></tr>
-    <tr><td>6.3 Graph visualisation</td><td>Force-directed/temporal render (new JS vis); table fallback cheap</td><td>3–8</td><td>JS/D3 + GWT bridge</td></tr>
-    <tr class="phase-row"><td colspan="2">P7 — Security / permissions</td><td>3–6</td><td></td></tr>
-    <tr><td>7.1 Document-level permissions</td><td>Inherit via explorer/SecurityContext (largely free)</td><td>1–2</td><td>Stroom security</td></tr>
-    <tr><td>7.2 Query guardrails + label security</td><td>Traversal cost caps/timeouts/row limits; optional label filtering</td><td>2–4</td><td>Security + engine</td></tr>
-    <tr class="phase-row"><td colspan="2">P8 — Scale-out &amp; hardening</td><td>10–20</td><td></td></tr>
-    <tr><td>8.1 Cross-shard scatter/gather</td><td>Distributed multi-hop traversal across shards</td><td>5–10</td><td>Distributed systems</td></tr>
-    <tr><td>8.2 Write-amplification / growth mitigation</td><td>Batch writes, tune in-edge/prop-index cost</td><td>2–4</td><td>LMDB/serde</td></tr>
-    <tr><td>8.3 Perf benchmarking + tuning</td><td>Cursor/buffer reuse, caching, benchmarking</td><td>3–6</td><td>Perf engineering</td></tr>
-    <tr class="phase-row"><td colspan="2">Cross-cutting</td><td>5–9</td><td></td></tr>
-    <tr><td>X.1 E2E tests + dataset generation</td><td>Ingest&rarr;query&rarr;temporal E2E; synthetic graph generator</td><td>3–5</td><td>Test engineering</td></tr>
-    <tr><td>X.2 Documentation</td><td>Cypher-subset reference, temporal syntax, ops guide</td><td>2–4</td><td>Tech writing</td></tr>
-  </tbody>
-</table></div>
-
-<h3>9.2 Totals</h3>
-<ul>
-  <li><strong>Stage 1 — query core:</strong> a separately-scoped project (see <a href="query-optimiser-plan.html">query-optimiser-plan</a>); <strong>not re-estimated here</strong>. The graph inherits it (as does StroomQL).</li>
-  <li><strong>Graph increment — raw sum of WBS:</strong> &asymp; <strong>65–140 person-weeks</strong> (down from ~80–160 for a from-scratch graph engine, reflecting the parser/planner/join reuse).</li>
-  <li><strong>Graph increment — loaded</strong> (+15–25% for integration friction, review, rework): &asymp; <strong>75–170 person-weeks</strong>.</li>
-  <li><strong>Calendar (3 engineers):</strong> &asymp; <strong>8–14 months</strong> for the full graph feature <em>on top of</em> the core.</li>
-  <li><strong>Graph PoC on the core</strong> (single shard, minimal storage + ingest, <code>MATCH/WHERE/RETURN</code> single-hop, <code>AS OF</code>, provider, table output): &asymp; <strong>15–30 pw / ~2–3 months</strong>.</li>
-</ul>
-<div class="callout"><strong>Assumptions:</strong> the query core (grammar + parser + planner + joins) is delivered first or in parallel and the figures above are <em>incremental</em> on it; 3 experienced Java engineers new to Plan B/LMDB, ANTLR/Cypher and GWT; single-axis valid time (bitemporal deferred); Cypher scoped to the subset above; single-shard for PoC with cross-shard (distributed join) as a later phase; property-index technology chosen in the P0 spike.</div>
-
-<h3>9.3 Team &amp; critical path</h3>
-<ul>
-  <li><strong>Roles:</strong> a storage/LMDB-serde engineer (heaviest P0–P1); a query-engine/compiler engineer (shared with — or handing off from — the query-core project; owns the graph operators + temporal execution); a Stroom platform generalist (GraphFilter, provider, doc type, wiring — parallelisable); a 0.5 GWT/JS-viz engineer (P5); a fractional tech-lead/architect (owns P0 spikes, reviews operators + temporal semantics).</li>
-  <li><strong>Dependency:</strong> the query core (Stage 1) is a prerequisite for graph execution — build it first, or run it in parallel and integrate against its logical IR once the <code>Join</code> operator and single-source execution land.</li>
-  <li><strong>Parallelisable:</strong> ingest (once the model is frozen), UI (against a stub provider), docs and test tooling, and scale-out (a follow-on after the single-shard PoC).</li>
-  <li><strong>Critical path:</strong> P0 model + partitioning spike &rarr; storage DBs &rarr; <strong>graph operators (<code>expand</code> + variable-length) on the core</strong> &rarr; temporal execution. Everything hinges on <strong>freezing the physical model and partitioning scheme early</strong>, and on the query core's logical IR being available.</li>
-</ul>
-
-<h2 id="roadmap">11. Phased roadmap</h2>
+<h2 id="roadmap">10. Phased roadmap</h2>
 <ol>
   <li><strong>Design spikes (P0):</strong> freeze the physical model + partitioning; align Cypher with the query-core grammar; define temporal semantics. <em>Gate: no storage code until the model is frozen.</em></li>
   <li><strong>Reusable query core</strong> <em>(companion <a href="query-optimiser-plan.html">query-optimiser-plan</a>)</em>: grammar + ANTLR parser + logical IR (incl. <code>Join</code>) + rule/cost planner + equi-joins + EXPLAIN/estimate. The graph consumes this and StroomQL benefits too. <em>The recommended first engineering stage — graph-agnostic, independently valuable, and it turns the graph work into a set of extensions.</em></li>
@@ -584,7 +502,7 @@ ORDER BY c.startTime</code></pre>
   <li><strong>UI + scale-out:</strong> Graph document type UX, visualisation, cross-shard traversal as a <strong>distributed join / exchange</strong>; optional bitemporal.</li>
 </ol>
 
-<h2 id="open">12. Open questions / de-risking spikes</h2>
+<h2 id="open">11. Open questions / de-risking spikes</h2>
 <ul>
   <li><strong>Plan B shard partitioning</strong> — <em><strong>resolved in P0.1:</strong></em> v1 partitions <strong>by graph id</strong> (a <code>GraphDbDoc</code>'s stores fully co-located &rarr; zero cross-shard hops); scale-out hash-partitions the out-edge store by <code>srcUid</code> (in-edge by <code>dstUid</code>) so a node's out-adjacency is local to the expanding cursor. <em>The cross-shard-hop benchmark number is a scale-out (P8) input, measured then — not a v1 gate (v1 is single-shard).</em></li>
   <li><strong>Property-index technology</strong> — <em><strong>resolved in P0.1 (D3):</strong></em> a Plan B <code>STATE</code> sub-store (kept under the <code>GraphDbDoc</code>'s single LMDB env / lifecycle; equality/prefix anchors cover the v1 subset). A wrapped Lucene index is the documented escalation path for free-text / range anchors.</li>
@@ -617,7 +535,7 @@ ORDER BY c.startTime</code></pre>
   </li>
 </ul>
 
-<h2 id="glossary">13. Glossary</h2>
+<h2 id="glossary">12. Glossary</h2>
 <ul>
   <li><strong>Node / edge</strong> — a graph vertex / a directed relationship; both carry labels/types and properties.</li>
   <li><strong>Adjacency (list)</strong> — a node's edges, stored so neighbours are a contiguous key range (prefix scan).</li>
@@ -629,7 +547,7 @@ ORDER BY c.startTime</code></pre>
 </ul>
 
 <hr>
-<p class="foot">This document is a design proposal. The effort figures are estimates for planning, not commitments; the P0 spikes exist specifically to tighten them before the main build.</p>
+<p class="foot">This document is a design proposal, not a commitment; the P0 spikes exist specifically to de-risk the approach before the main build.</p>
 
 </div>
 </body>

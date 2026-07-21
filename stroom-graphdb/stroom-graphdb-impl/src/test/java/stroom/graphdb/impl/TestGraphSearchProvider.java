@@ -57,6 +57,7 @@ import stroom.security.api.SecurityContext;
 import stroom.util.shared.PermissionException;
 import stroom.util.shared.UserRef;
 
+import org.assertj.core.groups.Tuple;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -155,6 +156,52 @@ class TestGraphSearchProvider {
 
             final List<Val[]> rows = readTableRows(resultStore);
             assertThat(rows).extracting(row -> row[0].toString()).containsExactly("account-a");
+        }
+    }
+
+    // ------------------------------------------------------------------------------------------------------
+    // aggregation (Task 1.4 of docs/graphdb-analytic-functions-implementation-plan.md)
+    // ------------------------------------------------------------------------------------------------------
+
+    @Test
+    void unaliasedCountStarAggregate_resolvesThroughTheRealColumnPipeline(@TempDir final Path root) {
+        // The guard task 1.4 exists to run: CypherCompiler.buildResultRequests builds every column's expression
+        // as "${" + field.name() + "}" - for an unaliased aggregate that name is now the "${}"-free "count(*)"
+        // (see CypherToLogicalPlan.defaultAggregateName). Uses the real GraphCypherQueryCompiler (like
+        // singleHopCypherQuery_withCompilerDerivedResultRequests_returnsRealRows above), so this proves
+        // "${count(*)}" resolves end-to-end through the real column pipeline, not just at compile time.
+        try (GraphStores stores = GraphStores.provision(root, DOC)) {
+            seedDeviceConnectedToAccounts(stores);
+
+            final GraphSearchProvider provider = provider(stores);
+            final SearchRequest request = compilerDerivedRequest(
+                    "MATCH (d:Device {id: 'd-42'})-[:CONNECTED_TO]->(a:Account) RETURN count(*)");
+
+            final ResultStore resultStore = provider.createResultStore(request);
+
+            final List<Val[]> rows = readTableRows(resultStore);
+            assertThat(rows).hasSize(1);
+            assertThat(rows.getFirst()[0].toLong()).isEqualTo(2L);
+        }
+    }
+
+    @Test
+    void aliasedGroupedAggregate_returnsRealRows_throughRealCoprocessors(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root, DOC)) {
+            seedDeviceConnectedToAccounts(stores);
+
+            final GraphSearchProvider provider = provider(stores);
+            final SearchRequest request = compilerDerivedRequest(
+                    "MATCH (d:Device {id: 'd-42'})-[:CONNECTED_TO]->(a:Account) "
+                    + "RETURN a.id, sum(a.balance) AS total");
+
+            final ResultStore resultStore = provider.createResultStore(request);
+
+            final List<Val[]> rows = readTableRows(resultStore);
+            assertThat(rows).extracting(row -> row[0].toString(), row -> row[1].toDouble())
+                    .containsExactlyInAnyOrder(
+                            Tuple.tuple("account-a", 50.0),
+                            Tuple.tuple("account-b", 200.0));
         }
     }
 
@@ -331,6 +378,24 @@ class TestGraphSearchProvider {
                 .dateTimeSettings(DateTimeSettings.builder().referenceTime(0L).build())
                 .incremental(false)
                 .build();
+    }
+
+    /**
+     * Builds a {@link SearchRequest} the way {@code QueryServiceImpl.mapRequest} actually seeds one for a
+     * submitted Cypher query - via the real {@link GraphCypherQueryCompiler}, which derives {@code resultRequests}
+     * from the compiled {@code RETURN} clause's columns (see {@code CypherCompiler.buildResultRequests}) - rather
+     * than {@link #requestFor}'s single hand-built {@code "a.id"} column, so a multi-column or aggregate
+     * {@code RETURN} gets real, compiler-derived columns.
+     */
+    private static SearchRequest compilerDerivedRequest(final String cypher) {
+        final SearchRequest seed = SearchRequest.builder()
+                .searchRequestSource(SearchRequestSource.createBasic())
+                .key(new QueryKey("test-graph"))
+                .query(Query.builder().dataSource(DOC_REF).build())
+                .dateTimeSettings(DateTimeSettings.builder().referenceTime(0L).build())
+                .incremental(false)
+                .build();
+        return new GraphCypherQueryCompiler().create(cypher, seed, new ExpressionContext());
     }
 
     private static List<Val[]> readTableRows(final ResultStore resultStore) {

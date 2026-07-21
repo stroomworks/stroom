@@ -24,8 +24,15 @@ import stroom.query.api.ExpressionOperator;
 import stroom.query.api.ExpressionTerm;
 import stroom.query.common.v2.ExpressionPredicateFactory;
 import stroom.query.common.v2.ExpressionPredicateFactory.ValueFunctionFactories;
+import stroom.query.language.functions.Type;
 import stroom.query.language.functions.Val;
+import stroom.query.language.functions.ValDouble;
+import stroom.query.language.functions.ValLong;
 import stroom.query.language.functions.ValNull;
+import stroom.query.planner.cypher.AggregateColumn;
+import stroom.query.planner.cypher.CypherAggregation;
+import stroom.query.planner.cypher.GroupKeyColumn;
+import stroom.query.planner.cypher.OutputColumn;
 import stroom.query.planner.cypher.TemporalContext;
 import stroom.query.planner.logical.Direction;
 import stroom.query.planner.logical.Expand;
@@ -35,6 +42,7 @@ import stroom.query.planner.logical.LogicalPlan;
 import stroom.query.planner.logical.NodeScan;
 import stroom.query.planner.logical.Project;
 import stroom.query.planner.logical.ProjectField;
+import stroom.query.planner.logical.QualifiedField;
 import stroom.query.planner.logical.Sort;
 import stroom.query.planner.logical.SortKey;
 import stroom.query.planner.logical.VarLengthExpand;
@@ -51,6 +59,7 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -180,7 +189,7 @@ public final class GraphTraversalEngine {
     public List<Val[]> execute(final Txn<ByteBuffer> readTxn, final LogicalPlan plan,
                                final @Nullable TemporalContext temporalContext,
                                final DateTimeSettings dateTimeSettings) {
-        return execute(readTxn, plan, temporalContext, dateTimeSettings, false);
+        return execute(readTxn, plan, temporalContext, dateTimeSettings, false, null);
     }
 
     /**
@@ -200,6 +209,27 @@ public final class GraphTraversalEngine {
     public List<Val[]> execute(final Txn<ByteBuffer> readTxn, final LogicalPlan plan,
                                final @Nullable TemporalContext temporalContext,
                                final DateTimeSettings dateTimeSettings, final boolean distinct) {
+        return execute(readTxn, plan, temporalContext, dateTimeSettings, distinct, null);
+    }
+
+    /**
+     * As {@link #execute(Txn, LogicalPlan, TemporalContext, DateTimeSettings, boolean)}, but additionally
+     * honouring a compiled aggregation description (see
+     * {@code docs/graphdb-analytic-functions-implementation-plan.md}, Task 1.2/1.3): when {@code aggregation} is
+     * non-null, the traversal's matched rows are grouped by its {@link GroupKeyColumn}s and reduced by its
+     * {@link AggregateColumn}s into one output row per group (see {@link #finalizeAggregatedRows}), instead of
+     * the ordinary one-output-row-per-surviving-row projection {@link #finalizeRows} performs.
+     *
+     * @param aggregation {@code null} for the ordinary (non-aggregated) execution path, unchanged from every
+     *                    other overload; otherwise the compiled {@code RETURN}'s aggregation description,
+     *                    aligned 1:1, in order, with {@code plan}'s terminal {@code Project}'s fields (see
+     *                    {@link CypherAggregation}'s Javadoc for why that alignment is a precondition here, not
+     *                    re-checked).
+     */
+    public List<Val[]> execute(final Txn<ByteBuffer> readTxn, final LogicalPlan plan,
+                               final @Nullable TemporalContext temporalContext,
+                               final DateTimeSettings dateTimeSettings, final boolean distinct,
+                               final @Nullable CypherAggregation aggregation) {
         Objects.requireNonNull(readTxn, "readTxn");
         Objects.requireNonNull(plan, "plan");
         Objects.requireNonNull(dateTimeSettings, "dateTimeSettings");
@@ -219,11 +249,12 @@ public final class GraphTraversalEngine {
         // wall-clock safety backstop, since GraphSearchProvider runs a traversal synchronously on the calling
         // thread with no task-cancellation hook (see that class's Javadoc for why).
         //
-        // ORDER BY/DISTINCT (code-review follow-up): early-exit is only sound when the first N rows traversed are
-        // a valid answer. With ORDER BY the N smallest are not necessarily the first N traversed, and with
-        // DISTINCT the first N raw rows may collapse to fewer than N distinct ones - so in either case we must
-        // traverse everything and apply the LIMIT after sorting/de-duplicating (see finalizeRows).
-        final boolean postProcess = !shape.sortKeys().isEmpty() || distinct;
+        // ORDER BY/DISTINCT/aggregation (code-review follow-up): early-exit is only sound when the first N rows
+        // traversed are a valid answer. With ORDER BY the N smallest are not necessarily the first N traversed,
+        // with DISTINCT the first N raw rows may collapse to fewer than N distinct ones, and with aggregation
+        // every matching row must be seen before rows can be grouped/reduced correctly - so in every case we must
+        // traverse everything and apply the LIMIT afterwards (see finalizeRows/finalizeAggregatedRows).
+        final boolean postProcess = !shape.sortKeys().isEmpty() || distinct || aggregation != null;
         final long rowCap = postProcess || shape.limit() == null
                 ? Long.MAX_VALUE
                 : Math.max(0L, shape.limit());
@@ -244,7 +275,7 @@ public final class GraphTraversalEngine {
                 expandVarLength(readTxn, anchorUid, access, shape.varLengthExpand, anchorRow, wherePredicate,
                         rows, rowCap, deadline);
             }
-            return finalizeRows(rows, shape, distinct);
+            return finalize(rows, shape, distinct, aggregation);
         }
 
         List<Frontier> frontier = new ArrayList<>();
@@ -265,7 +296,7 @@ public final class GraphTraversalEngine {
                     rows.add(f.row());
                 }
             }
-            return finalizeRows(rows, shape, distinct);
+            return finalize(rows, shape, distinct, aggregation);
         }
 
         for (int i = 0; i < shape.hops.size(); i++) {
@@ -286,7 +317,20 @@ public final class GraphTraversalEngine {
             frontier = next;
         }
 
-        return finalizeRows(rows, shape, distinct);
+        return finalize(rows, shape, distinct, aggregation);
+    }
+
+    /**
+     * Dispatches to {@link #finalizeRows} (the ordinary path) or {@link #finalizeAggregatedRows} (Task 1.3)
+     * depending on whether the compiled {@code RETURN} had an aggregate item.
+     * <b>Null status:</b> {@code rows}/{@code shape} are never null; {@code aggregation} is nullable; never
+     * returns null.
+     */
+    private static List<Val[]> finalize(final List<Map<String, Val>> rows, final PlanShape shape,
+                                        final boolean distinct, final @Nullable CypherAggregation aggregation) {
+        return aggregation == null
+                ? finalizeRows(rows, shape, distinct)
+                : finalizeAggregatedRows(rows, shape, aggregation, distinct);
     }
 
     /**
@@ -763,6 +807,274 @@ public final class GraphTraversalEngine {
             comparator = comparator == null ? next : comparator.thenComparing(next);
         }
         return comparator;
+    }
+
+    // ------------------------------------------------------------------------------------------------------
+    // aggregation (Task 1.3 of docs/graphdb-analytic-functions-implementation-plan.md)
+    // ------------------------------------------------------------------------------------------------------
+
+    /**
+     * The aggregated analogue of {@link #finalizeRows}: groups {@code rows} by {@code aggregation}'s
+     * {@link GroupKeyColumn}s, reduces each group by its {@link AggregateColumn}s into one output {@code Val[]}
+     * (see {@link #reduceGroup}), then applies {@code ORDER BY}/{@code DISTINCT}/{@code LIMIT} over the
+     * <em>aggregated</em> output rows - there is no traversal row map left at this point for {@link #rowComparator}
+     * to sort by, only the final one-row-per-group tuples.
+     *
+     * <p><b>Empty-input semantics</b> (Cypher's own rules, not a PoC simplification): a {@code RETURN} with at
+     * least one {@link GroupKeyColumn} produces zero output rows over zero matched rows (there are no groups to
+     * report); a pure aggregate {@code RETURN} (no group keys at all, e.g. {@code RETURN count(*)}) always
+     * produces exactly one output row, reducing over the empty set if {@code rows} is empty.</p>
+     *
+     * <b>Preconditions:</b> {@code aggregation.columns()} has the same size as, and aligns 1:1 in order with,
+     * {@code shape.project().fields()} (a {@code CypherToLogicalPlan.compile} invariant - see
+     * {@link CypherAggregation}'s Javadoc); every {@code ORDER BY} key in {@code shape.sortKeys()} names a column
+     * {@code aggregation} actually produces (a {@code CypherToLogicalPlan.validateOrderByAgainstAggregation}
+     * invariant, checked at compile time, not re-checked here - see {@link #outputColumnIndex}).
+     * <b>Null status:</b> no parameter is nullable; never returns null.
+     */
+    private static List<Val[]> finalizeAggregatedRows(final List<Map<String, Val>> rows, final PlanShape shape,
+                                                      final CypherAggregation aggregation, final boolean distinct) {
+        final List<OutputColumn> columns = aggregation.columns();
+
+        // Group by the ordered tuple of GroupKeyColumn values, in first-appearance order. A RETURN with no
+        // GroupKeyColumn at all (a pure aggregate) is always exactly one group, reducing over `rows` as-is - even
+        // when `rows` is empty (Cypher: aggregates over zero rows still produce one row; see this method's
+        // Javadoc). A RETURN with at least one GroupKeyColumn and zero input rows correctly produces zero groups.
+        final Map<List<Val>, List<Map<String, Val>>> groups = new LinkedHashMap<>();
+        if (hasGroupKey(columns)) {
+            for (final Map<String, Val> row : rows) {
+                groups.computeIfAbsent(groupKeyOf(columns, row), key -> new ArrayList<>()).add(row);
+            }
+        } else {
+            groups.put(List.of(), rows);
+        }
+
+        final List<Val[]> reduced = new ArrayList<>(groups.size());
+        for (final List<Map<String, Val>> group : groups.values()) {
+            reduced.add(reduceGroup(columns, group));
+        }
+
+        if (!shape.sortKeys().isEmpty()) {
+            reduced.sort(outputRowComparator(shape.sortKeys(), shape.project().fields()));
+        }
+
+        final List<Val[]> deduped;
+        if (distinct) {
+            // Mirrors finalizeRows' own DISTINCT handling: de-duplicate by value, first appearance wins, in the
+            // already-sorted order.
+            deduped = new ArrayList<>();
+            final Set<List<Val>> seen = new HashSet<>();
+            for (final Val[] row : reduced) {
+                if (seen.add(Arrays.asList(row))) {
+                    deduped.add(row);
+                }
+            }
+        } else {
+            deduped = reduced;
+        }
+
+        final long limit = shape.limit() == null ? Long.MAX_VALUE : shape.limit();
+        if (deduped.size() <= limit) {
+            return deduped;
+        }
+        return new ArrayList<>(deduped.subList(0, (int) Math.min(limit, deduped.size())));
+    }
+
+    private static boolean hasGroupKey(final List<OutputColumn> columns) {
+        for (final OutputColumn column : columns) {
+            if (column instanceof GroupKeyColumn) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Builds one group's key: the ordered tuple of every {@link GroupKeyColumn}'s value in this row, in
+     * {@code columns} order - a property this row happens to lack (a schemaless graph) becomes
+     * {@link ValNull#INSTANCE}, so rows lacking vs. explicitly null at a group key still group together (matching
+     * Cypher's own null-grouping rule).
+     */
+    private static List<Val> groupKeyOf(final List<OutputColumn> columns, final Map<String, Val> row) {
+        final List<Val> key = new ArrayList<>();
+        for (final OutputColumn column : columns) {
+            if (column instanceof final GroupKeyColumn groupKeyColumn) {
+                final Val value = row.get(groupKeyColumn.rowKey());
+                key.add(value == null ? ValNull.INSTANCE : value);
+            }
+        }
+        return key;
+    }
+
+    /**
+     * Reduces one group to a single output {@code Val[]}, one entry per {@code columns} position - a
+     * {@link GroupKeyColumn} position takes the group's (uniform, by construction of {@link #groupKeyOf}) value;
+     * an {@link AggregateColumn} position is reduced by {@link #reduceAggregate}.
+     * <b>Preconditions:</b> if {@code columns} contains a {@link GroupKeyColumn}, {@code group} is non-empty (a
+     * group is only ever created from at least one row - see {@link #finalizeAggregatedRows}); a pure-aggregate
+     * {@code columns} (no {@link GroupKeyColumn}) may reduce an empty {@code group}.
+     */
+    private static Val[] reduceGroup(final List<OutputColumn> columns, final List<Map<String, Val>> group) {
+        final Val[] out = new Val[columns.size()];
+        for (int i = 0; i < columns.size(); i++) {
+            final OutputColumn column = columns.get(i);
+            if (column instanceof final GroupKeyColumn groupKeyColumn) {
+                final Val value = group.getFirst().get(groupKeyColumn.rowKey());
+                out[i] = value == null ? ValNull.INSTANCE : value;
+            } else if (column instanceof final AggregateColumn aggregateColumn) {
+                out[i] = reduceAggregate(aggregateColumn, group);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Reduces one {@link AggregateColumn} over one group - dispatches to the five PoC-subset functions. Every
+     * branch is null-safe/lenient (a row missing or holding a non-numeric value at the argument is skipped, never
+     * thrown), matching {@code GraphRowValueFunctionFactory}'s own lenient extraction semantics for the same
+     * traversal rows.
+     */
+    private static Val reduceAggregate(final AggregateColumn aggregateColumn, final List<Map<String, Val>> group) {
+        return switch (aggregateColumn.function()) {
+            case COUNT -> reduceCount(aggregateColumn, group);
+            case SUM -> reduceSum(aggregateColumn, group);
+            case AVG -> reduceAvg(aggregateColumn, group);
+            case MIN -> reduceMinOrMax(aggregateColumn, group, true);
+            case MAX -> reduceMinOrMax(aggregateColumn, group, false);
+        };
+    }
+
+    /**
+     * {@code count(*)} and {@code count(v)} (a bare pattern variable) both count every row in the group - every
+     * matched row binds every pattern variable in this PoC subset (there is no {@code OPTIONAL MATCH} to leave one
+     * unbound), so the two forms are semantically identical (see {@link AggregateColumn}'s Javadoc).
+     * {@code count(a.property)} instead counts only the rows where that property is present and non-null.
+     */
+    private static Val reduceCount(final AggregateColumn aggregateColumn, final List<Map<String, Val>> group) {
+        if (aggregateColumn.star() || aggregateColumn.argIsVariable()) {
+            return ValLong.create(group.size());
+        }
+        long count = 0;
+        for (final Map<String, Val> row : group) {
+            if (isPresent(row.get(aggregateColumn.argRowKey()))) {
+                count++;
+            }
+        }
+        return ValLong.create(count);
+    }
+
+    /** {@code sum} of an empty set of numeric values is {@code 0} (Cypher's rule, unlike {@code avg}/{@code min}/{@code max}). */
+    private static Val reduceSum(final AggregateColumn aggregateColumn, final List<Map<String, Val>> group) {
+        double sum = 0.0;
+        for (final Map<String, Val> row : group) {
+            final Double numeric = numericValue(row.get(aggregateColumn.argRowKey()));
+            if (numeric != null) {
+                sum += numeric;
+            }
+        }
+        // PoC simplification (see docs/graphdb-analytic-functions-implementation-plan.md, Risks table): sum
+        // always renders as a double, even over integral properties - integral-type preservation is a deferred
+        // display-fidelity refinement, not a correctness gap (the numeric value itself is exact).
+        return ValDouble.create(sum);
+    }
+
+    /** {@code avg} of an empty (or entirely non-numeric) set is {@code null} - unlike {@code sum}'s {@code 0}. */
+    private static Val reduceAvg(final AggregateColumn aggregateColumn, final List<Map<String, Val>> group) {
+        double sum = 0.0;
+        long count = 0;
+        for (final Map<String, Val> row : group) {
+            final Double numeric = numericValue(row.get(aggregateColumn.argRowKey()));
+            if (numeric != null) {
+                sum += numeric;
+                count++;
+            }
+        }
+        return count == 0 ? ValNull.INSTANCE : ValDouble.create(sum / count);
+    }
+
+    /**
+     * {@code min}/{@code max} over the group's non-null values at the aggregate's property, using {@link Val}'s
+     * natural ordering ({@link Val#compareTo}) - unlike {@link #reduceSum}/{@link #reduceAvg}, the winning
+     * {@link Val}'s original type is preserved (a {@code min} of {@code ValLong}s stays a {@code ValLong}, not a
+     * double). An empty (or entirely-null) set yields {@code null} - matching {@code avg}, not {@code sum}.
+     */
+    private static Val reduceMinOrMax(final AggregateColumn aggregateColumn, final List<Map<String, Val>> group,
+                                      final boolean min) {
+        Val best = null;
+        for (final Map<String, Val> row : group) {
+            final Val value = row.get(aggregateColumn.argRowKey());
+            if (!isPresent(value)) {
+                continue;
+            }
+            if (best == null || (min ? value.compareTo(best) < 0 : value.compareTo(best) > 0)) {
+                best = value;
+            }
+        }
+        return best == null ? ValNull.INSTANCE : best;
+    }
+
+    private static boolean isPresent(final @Nullable Val value) {
+        return value != null && !Type.NULL.equals(value.type());
+    }
+
+    /**
+     * Resolves a row value to a numeric double for {@code sum}/{@code avg}, or {@code null} if absent or not
+     * numeric - mirrors {@code GraphRowValueFunctionFactory.createNumberExtractor}'s lenient "no match" semantics
+     * (never throws) rather than rejecting a non-numeric property under an aggregate.
+     */
+    private static @Nullable Double numericValue(final @Nullable Val value) {
+        if (!isPresent(value)) {
+            return null;
+        }
+        try {
+            return value.toDouble();
+        } catch (final RuntimeException e) {
+            return null;
+        }
+    }
+
+    /**
+     * A comparator over aggregated output rows ({@code Val[]}, in {@code fields} order) built from the
+     * {@code ORDER BY} keys - the aggregated analogue of {@link #rowComparator}, which sorts traversal row maps
+     * instead (not applicable once rows are reduced to output tuples with no row map left).
+     */
+    private static Comparator<Val[]> outputRowComparator(final List<SortKey> keys, final List<ProjectField> fields) {
+        Comparator<Val[]> comparator = null;
+        for (final SortKey key : keys) {
+            final int index = outputColumnIndex(key.field(), fields);
+            Comparator<Val[]> next = Comparator.comparing(
+                    (Val[] row) -> row[index], Comparator.nullsLast(Comparator.<Val>naturalOrder()));
+            if (key.descending()) {
+                next = next.reversed();
+            }
+            comparator = comparator == null ? next : comparator.thenComparing(next);
+        }
+        return comparator;
+    }
+
+    /**
+     * Resolves an {@code ORDER BY} key to its position in the aggregated output tuple, by matching its
+     * reconstructed {@code alias == null ? field : alias + "." + field} name against each {@link ProjectField}'s
+     * {@link ProjectField#name()} - the same reconstruction {@link #rowComparator} uses for the non-aggregated
+     * path, but matched against output column names rather than looked up in a row map, since no such map exists
+     * once rows are aggregated.
+     *
+     * @throws IllegalStateException if no field matches - this should be unreachable, since
+     *                                {@code CypherToLogicalPlan.validateOrderByAgainstAggregation} already
+     *                                rejects, at compile time, any {@code ORDER BY} item that does not name a
+     *                                returned column; reaching this exception marks a genuine invariant
+     *                                violation between that check and this lookup, not a query error.
+     */
+    private static int outputColumnIndex(final QualifiedField field, final List<ProjectField> fields) {
+        final String name = field.alias() == null ? field.field() : field.alias() + "." + field.field();
+        for (int i = 0; i < fields.size(); i++) {
+            if (fields.get(i).name().equals(name)) {
+                return i;
+            }
+        }
+        throw new IllegalStateException(
+                "ORDER BY key '" + name + "' did not resolve to an output column - this should have been "
+                + "rejected at compile time by CypherToLogicalPlan.validateOrderByAgainstAggregation");
     }
 
     private static Val evaluate(final ProjectField field, final Map<String, Val> row) {

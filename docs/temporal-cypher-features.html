@@ -1,0 +1,411 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Temporal Features of the Stroom Graph DB</title>
+<style>
+  :root {
+    --bg: #f7f8fa;
+    --surface: #ffffff;
+    --text: #1c2530;
+    --muted: #5a6675;
+    --border: #dfe3e9;
+    --accent: #2f6fb0;
+    --accent-soft: #e8f1fb;
+    --new-fill: #fff4e6;
+    --new-stroke: #e08a1e;
+    --box-fill: #eef2f7;
+    --box-stroke: #9fb3c8;
+    --arrow: #6b7787;
+    --code-bg: #f0f2f5;
+    --code-text: #23303d;
+    --th-bg: #eef2f7;
+    --add-fill: #e6f6ec; --add-stroke: #2e9e5b;
+    --rem-fill: #fbe9ec; --rem-stroke: #d1495b;
+    --shadow: 0 1px 3px rgba(20,30,45,.08), 0 6px 20px rgba(20,30,45,.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #10151b;
+      --surface: #171e26;
+      --text: #dbe3ec;
+      --muted: #93a1b1;
+      --border: #2a333e;
+      --accent: #6aa9e0;
+      --accent-soft: #1b2836;
+      --new-fill: #2e2413;
+      --new-stroke: #d8942f;
+      --box-fill: #202a35;
+      --box-stroke: #46586b;
+      --arrow: #8895a5;
+      --code-bg: #0f151b;
+      --code-text: #cdd7e2;
+      --th-bg: #202a35;
+      --add-fill: #12331f; --add-stroke: #4bbd7a;
+      --rem-fill: #331519; --rem-stroke: #e0687b;
+      --shadow: 0 1px 3px rgba(0,0,0,.4), 0 6px 20px rgba(0,0,0,.3);
+    }
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.62 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    padding: 0 20px;
+  }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 40px 0 80px; }
+  header.doc {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 28px 30px;
+    box-shadow: var(--shadow);
+    margin-bottom: 34px;
+  }
+  header.doc h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.2; letter-spacing: -.01em; }
+  .sub { color: var(--muted); font-size: 15px; }
+  .badges { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 8px; }
+  .badge {
+    font-size: 12.5px; padding: 3px 10px; border-radius: 999px;
+    background: var(--accent-soft); color: var(--accent); border: 1px solid var(--border);
+    font-weight: 600;
+  }
+  .badge.impl { background: var(--add-fill); color: var(--add-stroke); }
+  .badge.prop { background: var(--new-fill); color: var(--new-stroke); }
+  h2 {
+    font-size: 22px; margin: 46px 0 12px; padding-bottom: 7px;
+    border-bottom: 2px solid var(--border); letter-spacing: -.01em;
+  }
+  h3 { font-size: 17.5px; margin: 28px 0 8px; }
+  p { margin: 12px 0; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 13.5px; background: var(--code-bg); color: var(--code-text);
+    padding: 1.5px 5px; border-radius: 5px;
+  }
+  pre {
+    background: var(--code-bg); color: var(--code-text);
+    padding: 15px 17px; border-radius: 10px; overflow-x: auto;
+    border: 1px solid var(--border); font-size: 13.5px; line-height: 1.5;
+  }
+  pre code { background: none; padding: 0; }
+  .table-wrap { overflow-x: auto; margin: 16px 0; border-radius: 10px; border: 1px solid var(--border); }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; background: var(--surface); }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { background: var(--th-bg); font-weight: 650; }
+  tbody tr:last-child td { border-bottom: none; }
+  td code, th code { font-size: 12.5px; }
+  .yes { color: var(--add-stroke); font-weight: 650; }
+  .no  { color: var(--rem-stroke); font-weight: 650; }
+  .callout {
+    background: var(--accent-soft); border: 1px solid var(--border);
+    border-left: 4px solid var(--accent); border-radius: 8px;
+    padding: 12px 16px; margin: 18px 0;
+  }
+  .callout strong { color: var(--accent); }
+  .callout.warn { border-left-color: var(--new-stroke); }
+  .callout.warn strong { color: var(--new-stroke); }
+  ul, ol { padding-left: 22px; }
+  li { margin: 5px 0; }
+  .toc { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px 22px; box-shadow: var(--shadow); }
+  .toc ol { columns: 2; column-gap: 34px; margin: 6px 0 0; }
+  @media (max-width: 640px) { .toc ol { columns: 1; } header.doc h1 { font-size: 24px; } }
+  figure { margin: 22px 0; text-align: center; }
+  figure svg { max-width: 100%; height: auto; }
+  figcaption { color: var(--muted); font-size: 13px; margin-top: 8px; }
+  /* diagram element theming */
+  .d-box { fill: var(--box-fill); stroke: var(--box-stroke); stroke-width: 1.5; }
+  .d-hub { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.8; }
+  .d-absent { fill: none; stroke: var(--box-stroke); stroke-width: 1.4; stroke-dasharray: 5 4; opacity: .8; }
+  .d-lbl { fill: var(--text); font-family: -apple-system, "Segoe UI", Roboto, sans-serif; font-size: 12.5px; }
+  .d-lbl.sm { font-size: 10.5px; fill: var(--muted); }
+  .d-lbl.b { font-weight: 700; }
+  .d-flow { stroke: var(--arrow); stroke-width: 1.6; fill: none; }
+  .d-axis { stroke: var(--box-stroke); stroke-width: 1.6; }
+  .d-guide { stroke: var(--accent); stroke-width: 1.4; stroke-dasharray: 4 3; }
+  .d-title { fill: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .06em; }
+  /* diff node/edge theming */
+  .n-unch { fill: var(--box-fill); stroke: var(--box-stroke); stroke-width: 1.6; }
+  .n-add  { fill: var(--add-fill); stroke: var(--add-stroke); stroke-width: 1.8; }
+  .n-rem  { fill: var(--rem-fill); stroke: var(--rem-stroke); stroke-width: 1.8; }
+  .n-mod  { fill: var(--new-fill); stroke: var(--new-stroke); stroke-width: 1.8; }
+  .e-unch { stroke: var(--box-stroke); stroke-width: 1.8; fill: none; }
+  .e-add  { stroke: var(--add-stroke); stroke-width: 2; fill: none; }
+  .e-rem  { stroke: var(--rem-stroke); stroke-width: 2; fill: none; stroke-dasharray: 5 4; }
+  hr { border: none; border-top: 1px solid var(--border); margin: 40px 0; }
+  .foot { color: var(--muted); font-size: 13.5px; font-style: italic; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="doc">
+  <h1>Temporal Features of the Stroom Graph DB</h1>
+  <div class="sub">The full point-in-time query surface — <code>AS OF</code>, <code>AROUND</code>, <code>BETWEEN</code> and the proposed <code>DIFF</code> — how each one reads the graph's version history, and how this approach compares to other graph databases.</div>
+  <div class="badges">
+    <span class="badge">Audience: Stroom Engineering &amp; Analysts</span>
+    <span class="badge">Front end: Cypher</span>
+    <span class="badge impl">AS OF / AROUND / BETWEEN: implemented (PoC)</span>
+    <span class="badge prop">DIFF: proposed</span>
+  </div>
+</header>
+
+<nav class="toc">
+  <strong>Contents</strong>
+  <ol>
+    <li><a href="#why">Why a temporal graph</a></li>
+    <li><a href="#model">The temporal model</a></li>
+    <li><a href="#clauses">The temporal clauses</a></li>
+    <li><a href="#asof">AS OF — a snapshot</a></li>
+    <li><a href="#window">AROUND / BETWEEN — a window</a></li>
+    <li><a href="#diff">DIFF — what changed</a></li>
+    <li><a href="#others">How this differs from other graph databases</a></li>
+    <li><a href="#axis">Valid time vs transaction time</a></li>
+    <li><a href="#status">Status &amp; caveats</a></li>
+    <li><a href="#reading">Further reading</a></li>
+  </ol>
+</nav>
+
+<h2 id="why">1. Why a temporal graph</h2>
+<p>Most graph databases store <em>the present</em>. Ask them what a relationship looked like last Tuesday and the honest answer is "you should have modelled that yourself." Stroom's graph is different by construction: it is a <strong>materialized, rebuildable projection of event data</strong> that already lives in the stream store, and the store underneath it — <strong>Plan B</strong>, an LMDB-backed temporal state store — keeps <em>every version</em> of every fact, addressable by time. History is therefore not a feature bolted on top; it is the substrate.</p>
+<p>That makes a family of questions first-class rather than DIY:</p>
+<ul>
+  <li><em>"What did this network of accounts and devices look like at 09:00 on the day of the incident?"</em> — a <strong>snapshot</strong>.</li>
+  <li><em>"Which connections were live at any point in the hour around that alert?"</em> — a <strong>window</strong>.</li>
+  <li><em>"What changed in this subgraph between Monday and today — what appeared, what vanished, what was altered?"</em> — a <strong>diff</strong>.</li>
+</ul>
+<p>Cypher has no standard syntax for any of these, so Stroom adds a small, resolved-before-execution temporal extension: one temporal clause attached to a <code>MATCH</code>. This document walks through each clause, what it returns, and — since "temporal graph" means different things in different products — how the approach compares to the rest of the field.</p>
+
+<h2 id="model">2. The temporal model</h2>
+<p>Every node and edge is stored as a series of <strong>versions</strong>, each stamped with the instant it became effective (<code>validFrom</code>). A version is valid over the half-open interval <code>[validFrom, nextValidFrom)</code> — i.e. until the next version of the same element supersedes it. A delete writes a <strong>tombstone</strong> version, which means "absent from here on" until (if ever) the element is recreated.</p>
+<p>Every temporal read reduces to one primitive: the <strong>floor lookup</strong> — <em>for a given element, the latest version at or before instant&nbsp;T</em>. In an order-preserving key/value store that is a single reverse-cursor seek, which is exactly what Plan B's temporal state already does. Windows are the same idea widened to an interval; a diff is two floor lookups compared. Understanding this one picture explains all four clauses.</p>
+
+<figure>
+<svg viewBox="0 0 820 250" role="img" aria-label="Timeline of an element's versions, with AS OF resolving to one version and BETWEEN selecting a set.">
+  <text class="d-title" x="70" y="24">ONE ELEMENT'S VERSION HISTORY</text>
+  <!-- AS OF guide line + label (drawn first, behind segments' text) -->
+  <line class="d-guide" x1="330" y1="34" x2="330" y2="170"/>
+  <text class="d-lbl b" x="330" y="48" text-anchor="middle" fill="var(--accent)">AS OF t</text>
+  <!-- version segments -->
+  <rect class="d-box"    x="90"  y="130" width="160" height="34" rx="5"/>
+  <rect class="d-hub"    x="250" y="130" width="160" height="34" rx="5"/>
+  <rect class="d-absent" x="410" y="130" width="130" height="34" rx="5"/>
+  <rect class="d-box"    x="540" y="130" width="220" height="34" rx="5"/>
+  <text class="d-lbl b" x="170" y="151" text-anchor="middle">v1</text>
+  <text class="d-lbl b" x="330" y="151" text-anchor="middle">v2</text>
+  <text class="d-lbl sm" x="475" y="151" text-anchor="middle">tombstone (absent)</text>
+  <text class="d-lbl b" x="650" y="151" text-anchor="middle">v4</text>
+  <!-- axis -->
+  <line class="d-axis" x1="70" y1="170" x2="770" y2="170"/>
+  <path class="d-axis" d="M770,170 l-8,-4 l0,8 z" fill="var(--box-stroke)" stroke="none"/>
+  <text class="d-lbl sm" x="90"  y="184">validFrom</text>
+  <text class="d-lbl sm" x="762" y="184" text-anchor="end">time &#8594;</text>
+  <!-- AS OF result note -->
+  <text class="d-lbl sm" x="330" y="64" text-anchor="middle" fill="var(--accent)">&#8594; returns v2 (latest &#8804; t)</text>
+  <!-- BETWEEN bracket -->
+  <path class="d-flow" d="M300,200 l0,8 M300,208 l320,0 M620,200 l0,8" stroke="var(--accent)"/>
+  <text class="d-lbl b" x="460" y="226" text-anchor="middle" fill="var(--accent)">BETWEEN t1 AND t2</text>
+  <text class="d-lbl sm" x="460" y="242" text-anchor="middle">&#8594; { v2, v4 } — versions intersecting the window; tombstone excluded</text>
+</svg>
+<figcaption>The floor lookup underlies every temporal clause: <code>AS OF</code> resolves each element to a single version; <code>AROUND</code>/<code>BETWEEN</code> widen that to the versions intersecting an interval.</figcaption>
+</figure>
+
+<div class="callout"><strong>One temporal clause per query.</strong> The grammar allows exactly one temporal clause on a query, attached after a <code>MATCH</code> pattern and before its <code>WHERE</code>. No clause at all means "latest". This keeps semantics unambiguous — and is why <code>DIFF</code> is a single clause that internally names <em>two</em> instants rather than two clauses you combine.</div>
+
+<h2 id="clauses">3. The temporal clauses at a glance</h2>
+<div class="table-wrap"><table>
+  <thead><tr><th>Clause</th><th>Question</th><th>Reads the history as&hellip;</th><th>Returns</th></tr></thead>
+  <tbody>
+    <tr><td><em>(none)</em></td><td>What is there now?</td><td>Floor lookup at "now"</td><td>Latest state</td></tr>
+    <tr><td><code>AS OF t</code></td><td>What was there <strong>at</strong> t?</td><td>Per-element floor lookup at t</td><td>A single snapshot</td></tr>
+    <tr><td><code>AROUND t &plusmn; d</code></td><td>What was live <strong>near</strong> t?</td><td>Window <code>[t&minus;d, t+d]</code> intersection</td><td>Union of surviving elements</td></tr>
+    <tr><td><code>BETWEEN t1 AND t2</code></td><td>What was live <strong>across</strong> [t1,t2]?</td><td>Window <code>[t1, t2]</code> intersection</td><td>Union of surviving elements</td></tr>
+    <tr><td><code>DIFF FROM t1 TO t2</code> <span class="badge prop">proposed</span></td><td>What <strong>changed</strong> between t1 and t2?</td><td>Two floor lookups (t1, t2), compared</td><td>Elements tagged ADDED / REMOVED / MODIFIED / UNCHANGED</td></tr>
+  </tbody>
+</table></div>
+
+<h2 id="asof">4. <code>AS OF</code> — a snapshot at an instant</h2>
+<p>The workhorse. <code>AS OF t</code> applies a floor lookup <strong>per element</strong> at the same instant <em>t</em>, so a path is returned only if every node and edge on it was valid at <em>t</em>. The result is "the graph as it existed at <em>t</em>" — same shape as any ordinary query, just resolved against history.</p>
+<pre><code>MATCH (d:Device {id:'d-42'})-[c:CONNECTED_TO]-&gt;(a:Account)
+AS OF datetime('2026-07-01T09:00:00Z')
+RETURN a.id, c.startTime</code></pre>
+<p>Because the lookup is per element at one instant, an edge whose latest version at <em>t</em> is a tombstone is treated as absent, and the path drops out — there is no "half-deleted" state.</p>
+
+<h2 id="window">5. <code>AROUND</code> / <code>BETWEEN</code> — a window</h2>
+<p>Both resolve to an inclusive interval — <code>AROUND t &plusmn; d</code> expands to <code>[t&minus;d, t+d]</code>; <code>BETWEEN t1 AND t2</code> is <code>[t1, t2]</code> directly — and return every element whose validity interval <em>intersects</em> that window, collapsed to one row per surviving element. A version intersects <code>[w1, w2]</code> iff <code>validFrom &le; w2 AND nextValidFrom &gt; w1</code>; if an element's latest intersecting version is a tombstone, it is absent for the rest of the window and omitted.</p>
+<pre><code>MATCH (d:Device {id:'d-42'})-[c:CONNECTED_TO]-&gt;(a:Account)
+AROUND datetime('2026-07-01T09:00:00Z') +/- duration('PT1H')
+RETURN a.id, c.startTime</code></pre>
+<div class="callout warn"><strong>A window is a union, not a change set.</strong> <code>BETWEEN t1 AND t2</code> reads like "what changed between t1 and t2", but it returns everything that <em>existed at any point</em> in the window — one row per surviving element, with no indication of what was added or removed. If you want the <em>delta</em>, that is <code>DIFF</code>, below — this distinction is the single most common misreading of the temporal syntax.</div>
+
+<h2 id="diff">6. <code>DIFF</code> — what changed between two points <span class="badge prop">proposed</span></h2>
+<p><code>DIFF FROM t1 TO t2</code> compares the graph as of <em>t1</em> (the <strong>baseline</strong>) against the graph as of <em>t2</em> (the <strong>comparison</strong>) and classifies each element. The four kinds fall straight out of "present or absent at each instant":</p>
+<div class="table-wrap"><table>
+  <thead><tr><th>At t1 (baseline)</th><th>At t2 (comparison)</th><th><code>changeKind</code></th></tr></thead>
+  <tbody>
+    <tr><td>absent</td><td>present</td><td class="yes">ADDED</td></tr>
+    <tr><td>present</td><td>absent</td><td class="no">REMOVED</td></tr>
+    <tr><td>present</td><td>present, properties differ</td><td style="color:var(--new-stroke);font-weight:650">MODIFIED</td></tr>
+    <tr><td>present</td><td>present, identical</td><td class="d-lbl">UNCHANGED</td></tr>
+  </tbody>
+</table></div>
+
+<h3>Two output modes, chosen by how you write <code>RETURN</code></h3>
+<p><code>DIFF</code> feeds two very different consumers, so it has two output shapes from the same clause:</p>
+<ul>
+  <li><strong>Delta table</strong> — <code>RETURN changeKind, a.id, &hellip;</code>. One row per matching path; <code>UNCHANGED</code> suppressed by default. For analysis and reporting: <em>list me what changed.</em></li>
+  <li><strong>Annotated subgraph</strong> — <code>RETURN GRAPH</code>. The deduplicated <em>union</em> of every node and edge across <em>both</em> instants — <strong>including UNCHANGED</strong> — each row an element carrying a <code>changeKind</code> column (plus before/after values). For the graph UI to draw the whole subgraph and style each element by its change kind.</li>
+</ul>
+
+<figure>
+<svg viewBox="0 0 820 330" role="img" aria-label="A diff compares the graph as of t1 and as of t2, producing an annotated union subgraph.">
+  <defs>
+    <marker id="ah-u" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 z" fill="var(--box-stroke)"/></marker>
+    <marker id="ah-a" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 z" fill="var(--add-stroke)"/></marker>
+    <marker id="ah-r" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 z" fill="var(--rem-stroke)"/></marker>
+  </defs>
+
+  <!-- Panel 1: as of t1 -->
+  <text class="d-title" x="120" y="40" text-anchor="middle">AS OF t1</text>
+  <line class="e-unch" x1="120" y1="94"  x2="120" y2="150" marker-end="url(#ah-u)"/>
+  <line class="e-unch" x1="120" y1="266" x2="120" y2="194" marker-end="url(#ah-u)"/>
+  <circle class="n-unch" cx="120" cy="72"  r="22"/><text class="d-lbl b" x="120" y="76" text-anchor="middle">D</text>
+  <circle class="n-unch" cx="120" cy="172" r="22"/><text class="d-lbl b" x="120" y="176" text-anchor="middle">A17</text>
+  <circle class="n-unch" cx="120" cy="288" r="22"/><text class="d-lbl b" x="120" y="292" text-anchor="middle">O</text>
+
+  <text class="d-lbl b" x="230" y="182" text-anchor="middle" fill="var(--muted)">vs</text>
+
+  <!-- Panel 2: as of t2 -->
+  <text class="d-title" x="340" y="40" text-anchor="middle">AS OF t2</text>
+  <line class="e-unch" x1="340" y1="94"  x2="340" y2="150" marker-end="url(#ah-u)"/>
+  <line class="e-unch" x1="340" y1="266" x2="340" y2="194" marker-end="url(#ah-u)"/>
+  <circle class="n-unch" cx="340" cy="72"  r="22"/><text class="d-lbl b" x="340" y="76" text-anchor="middle">D</text>
+  <circle class="n-unch" cx="340" cy="172" r="22"/><text class="d-lbl b" x="340" y="176" text-anchor="middle">A91</text>
+  <circle class="n-unch" cx="340" cy="288" r="22"/><text class="d-lbl b" x="340" y="292" text-anchor="middle">O</text>
+
+  <!-- arrow into result -->
+  <line class="d-flow" x1="440" y1="180" x2="500" y2="180" marker-end="url(#ah-u)"/>
+  <text class="d-lbl b" x="470" y="170" text-anchor="middle" fill="var(--accent)">DIFF</text>
+
+  <!-- Panel 3: annotated union -->
+  <text class="d-title" x="655" y="40" text-anchor="middle">RETURN GRAPH  (annotated union)</text>
+  <line class="e-rem" x1="652.2" y1="90.6"  x2="627.8" y2="154.4" marker-end="url(#ah-r)"/>
+  <line class="e-add" x1="667.8" y1="90.6"  x2="692.2" y2="154.4" marker-end="url(#ah-a)"/>
+  <line class="e-rem" x1="652.5" y1="264.3" x2="627.5" y2="195.7" marker-end="url(#ah-r)"/>
+  <line class="e-add" x1="667.5" y1="264.3" x2="692.5" y2="195.7" marker-end="url(#ah-a)"/>
+  <circle class="n-unch" cx="660" cy="72"  r="22"/><text class="d-lbl b" x="660" y="76" text-anchor="middle">D</text>
+  <circle class="n-rem"  cx="620" cy="175" r="22"/><text class="d-lbl b" x="620" y="179" text-anchor="middle">A17</text>
+  <circle class="n-add"  cx="700" cy="175" r="22"/><text class="d-lbl b" x="700" y="179" text-anchor="middle">A91</text>
+  <circle class="n-unch" cx="660" cy="288" r="22"/><text class="d-lbl b" x="660" y="292" text-anchor="middle">O</text>
+
+  <!-- legend -->
+  <g transform="translate(70,318)">
+    <rect class="n-unch" x="0"   y="-9" width="14" height="12" rx="3"/><text class="d-lbl sm" x="20"  y="1">unchanged</text>
+    <rect class="n-add"  x="120" y="-9" width="14" height="12" rx="3"/><text class="d-lbl sm" x="140" y="1">added</text>
+    <rect class="n-rem"  x="220" y="-9" width="14" height="12" rx="3"/><text class="d-lbl sm" x="240" y="1">removed</text>
+    <rect class="n-mod"  x="340" y="-9" width="14" height="12" rx="3"/><text class="d-lbl sm" x="360" y="1">modified</text>
+  </g>
+</svg>
+<figcaption>The device's connection moved from <code>A17</code> to <code>A91</code>. In <code>RETURN GRAPH</code> mode the unchanged <code>D</code> and <code>O</code> nodes are kept as context, so the removed and added edges have endpoints to attach to — the graph stays connected instead of scattering into fragments.</figcaption>
+</figure>
+
+<p>The <code>RETURN GRAPH</code> result is <strong>one element-row table</strong> — nodes and edges in a single table, distinguished by an <code>elementType</code> column, with <code>changeKind</code>, endpoint ids, labels, properties, and before/after values. A single table (rather than separate node and edge result sets) is the deliberate v1 choice: it matches how current Stroom visualisations consume tabular results. The graph component reads <code>changeKind</code> and styles accordingly — unchanged as neutral context, added/removed/modified highlighted.</p>
+
+<div class="callout"><strong>Why keep <code>UNCHANGED</code>?</strong> Suppressing unchanged elements is right for a delta <em>report</em>, but it would leave a change <em>visualization</em> disjointed — added and removed fragments floating with nothing to anchor them. So the annotated-subgraph mode returns the full union and guarantees that the endpoints of any returned edge are themselves returned, within the matched subgraph. See the companion <a href="temporal-cypher-diff-operator.md">diff-operator design doc</a> for the full semantics, the two build strategies, and the risk profile.</div>
+
+<h2 id="others">7. How this differs from other graph databases</h2>
+<p>"Temporal graph" is claimed by several products, but they mean quite different things. The axes that actually distinguish them are: <strong>(a)</strong> is point-in-time state a native storage capability or something you model in the schema? <strong>(b)</strong> is there a first-class way to <em>diff</em> two states? and <strong>(c)</strong> which time axis — the <em>valid time</em> a fact was true in the world, or the <em>transaction/revision time</em> the system recorded it?</p>
+
+<div class="table-wrap"><table>
+  <thead><tr>
+    <th>System</th><th>Query language</th><th>Native point-in-time state</th><th>Diff of two states</th><th>Time axis</th><th>The graph is&hellip;</th>
+  </tr></thead>
+  <tbody>
+    <tr>
+      <td><strong>Stroom Graph DB</strong></td><td>Cypher + temporal extension</td>
+      <td class="yes">Yes — storage-level floor lookup</td>
+      <td class="yes">Yes — proposed <code>DIFF</code> clause returning an annotated subgraph</td>
+      <td>Valid time</td>
+      <td>a rebuildable projection of event streams</td>
+    </tr>
+    <tr>
+      <td>Neo4j</td><td>Cypher</td>
+      <td class="no">No — modelled by the user (valid-from/to properties, "state node" / time-tree patterns); temporal <em>data types</em> only</td>
+      <td class="no">No — do it yourself</td>
+      <td>whatever you model</td>
+      <td>the source of truth</td>
+    </tr>
+    <tr>
+      <td>TigerGraph, Memgraph, JanusGraph, ArangoDB, Dgraph</td><td>GSQL / Cypher / Gremlin / AQL / DQL</td>
+      <td class="no">No native as-of state — modelled by the user</td>
+      <td class="no">No</td>
+      <td>whatever you model</td>
+      <td>the source of truth</td>
+    </tr>
+    <tr>
+      <td>TerminusDB</td><td>WOQL</td>
+      <td class="yes">Yes — time-travel to any commit</td>
+      <td class="yes">Yes — commit diff / patch</td>
+      <td><strong>Transaction time</strong> (git-like revisions)</td>
+      <td>a version-controlled source of truth</td>
+    </tr>
+    <tr>
+      <td>Datomic</td><td>Datalog</td>
+      <td class="yes">Yes — <code>asOf</code> / <code>since</code> / <code>history</code></td>
+      <td>partial — <code>history</code> gives the raw changes; diffing is DIY</td>
+      <td><strong>Transaction time</strong> (+ user-supplied valid time)</td>
+      <td>an immutable fact log (not a property graph)</td>
+    </tr>
+    <tr>
+      <td>XTDB</td><td>Datalog / SQL</td>
+      <td class="yes">Yes — as-of queries</td>
+      <td>partial — entity history; diffing is DIY</td>
+      <td><strong>Bitemporal</strong> (valid + transaction)</td>
+      <td>an immutable document/fact store (not a property graph)</td>
+    </tr>
+  </tbody>
+</table></div>
+<p class="foot">Characterisations reflect native, out-of-the-box behaviour as generally documented; every one of these systems can <em>model</em> time with enough schema and application effort. The point is what the engine gives you for free.</p>
+
+<p>Three things set Stroom's approach apart — not any one feature in isolation, but the combination:</p>
+<ul>
+  <li><strong>Point-in-time state is a storage primitive, not a schema pattern.</strong> Among mainstream <em>property-graph</em> databases (Neo4j and friends), historical state is something you engineer into your model with dated relationships or state nodes, and every query has to thread the time logic by hand. Here, <code>AS OF</code> is a reverse-cursor seek the store already performs; the model stays clean and the time logic lives in one clause.</li>
+  <li><strong>A diff is a query clause, not a post-processing chore.</strong> The systems that <em>do</em> offer time-travel (TerminusDB, Datomic, XTDB) generally hand you two snapshots — or a low-level stream of changed facts/triples — and leave assembling a human-meaningful, connected, colour-coded delta to you. The proposed <code>DIFF &hellip; RETURN GRAPH</code> is designed to emit exactly the annotated subgraph a UI needs, in one query.</li>
+  <li><strong>It diffs <em>valid time</em>, and the graph is event-sourced.</strong> The revision-based systems diff <em>commits</em> — "what did version A of the database contain vs version B". Stroom's <code>AS OF</code>/<code>DIFF</code> ask about the modelled world — "what was true at t1 vs t2" — because each element's <code>validFrom</code> is the effective time carried from the source event. And because the graph is a rebuildable projection of the stream store, that history is intrinsic: reprocessing the raw events reconstructs it.</li>
+</ul>
+
+<h2 id="axis">8. Valid time vs transaction time</h2>
+<p>This is the distinction that most often causes confusion when comparing temporal databases, and it is worth stating plainly.</p>
+<ul>
+  <li><strong>Valid time</strong> — <em>when a fact is true in the modelled world.</em> "This device was connected to that account from 09:00 to 10:00." This is the axis Stroom's temporal graph uses.</li>
+  <li><strong>Transaction time</strong> — <em>when the system recorded (or corrected) the fact.</em> "We wrote that connection into the database at 09:03, and revised it at 11:00." This is the axis git-like stores (TerminusDB) and immutable logs (Datomic) key on.</li>
+</ul>
+<div class="callout warn"><strong>The consequence for <code>DIFF</code>:</strong> because Stroom uses a single valid-time axis (bitemporal is deferred), a diff reports changes <em>in the world</em>, and cannot distinguish a genuine real-world change from a later data correction — both appear as a change. It also compares two <em>instants</em>, so churn that happened and reverted <em>between</em> t1 and t2 is invisible. Where an audit trail of "when did we learn / record this" is required, that is a transaction-time (bitemporal) question — a documented future extension, not a v1 capability.</div>
+
+<h2 id="status">9. Status &amp; caveats</h2>
+<ul>
+  <li><strong>Implemented (PoC):</strong> the temporal model (versioned nodes/edges, tombstones, floor lookup) and the <code>AS OF</code>, <code>AROUND</code> and <code>BETWEEN</code> clauses, with window-intersection execution, are built and tested.</li>
+  <li><strong>Proposed:</strong> the <code>DIFF FROM &hellip; TO &hellip;</code> clause and its two output modes are a design proposal (see the <a href="temporal-cypher-diff-operator.md">companion doc</a>); not yet implemented. Its recommended build reuses the <code>AS OF</code> path (evaluate twice, classify, join), so the engineering risk is moderate — the real work is freezing the semantics.</li>
+  <li><strong>Single valid-time axis.</strong> Bitemporal (separate transaction time) is deliberately deferred.</li>
+  <li><strong>Subset Cypher.</strong> The temporal clauses attach to a defined Cypher subset; a query currently lowers a single reading clause. Anything outside the subset is a parse-time error by design.</li>
+  <li><strong>Query-side, not rendering.</strong> <code>RETURN GRAPH</code> defines the element-row contract the UI consumes; the actual force-directed / time-scrubbed rendering is separate UI work.</li>
+</ul>
+
+<h2 id="reading">10. Further reading</h2>
+<ul>
+  <li><a href="temporal-cypher-graph.html">A Temporal Cypher Graph on Stroom</a> — the parent design: the property-graph model, storage on Plan B, ingest, query integration, and the effort estimate for the whole graph feature.</li>
+  <li><a href="temporal-cypher-diff-operator.md">A Native Diff Operator for the Temporal Cypher Graph</a> — the full <code>DIFF</code> design: semantics, both output modes, build strategies, risk profile and effort estimate.</li>
+  <li><a href="temporal-cypher-graph-implementation-plan.md">Temporal Cypher Graph — implementation plan</a> — the task-by-task build plan (P0.3 temporal spike, P4 window execution) the current PoC follows.</li>
+</ul>
+
+<hr>
+<p class="foot">This document describes a mix of implemented (PoC) and proposed capabilities, as marked. Comparisons to other databases are for orientation and reflect native behaviour as generally documented, not benchmarks.</p>
+
+</div>
+</body>
+</html>
