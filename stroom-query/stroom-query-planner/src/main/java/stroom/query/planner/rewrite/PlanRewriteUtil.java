@@ -85,7 +85,8 @@ final class PlanRewriteUtil {
                     ns.propertyAnchor() == null ? null : transform.apply(ns.propertyAnchor()),
                     ns.position());
             case final Expand e -> new Expand(
-                    mapPredicates(e.input(), transform), e.edgeType(), e.direction(), e.targetVariable(),
+                    mapPredicates(e.input(), transform), e.edgeType(), e.direction(), e.edgeVariable(),
+                    e.targetVariable(),
                     e.targetLabels(),
                     e.targetPropertyPredicate() == null ? null : transform.apply(e.targetPropertyPredicate()),
                     e.position());

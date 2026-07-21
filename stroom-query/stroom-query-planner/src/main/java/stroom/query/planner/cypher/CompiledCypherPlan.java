@@ -38,12 +38,17 @@ import java.util.Objects;
  * @param aggregation     {@code null} if the {@code RETURN} clause has no aggregate item (the executor's ordinary,
  *                        per-row projection applies unchanged); otherwise describes how to group the traversal's
  *                        rows and reduce each group to one output row - see {@link CypherAggregation}'s Javadoc.
+ * @param diffContext     {@code null} unless the query had a {@code DIFF FROM ... TO ...} clause; when non-null the
+ *                        executor runs the diff (two {@code AS OF} evaluations + classification) rather than an
+ *                        ordinary traversal, and {@code temporalContext} is {@code null} (a query is a state query
+ *                        or a diff, never both).
  */
 public record CompiledCypherPlan(
         LogicalPlan plan,
         @Nullable TemporalContext temporalContext,
         boolean distinct,
-        @Nullable CypherAggregation aggregation) {
+        @Nullable CypherAggregation aggregation,
+        @Nullable DiffContext diffContext) {
 
     public CompiledCypherPlan {
         Objects.requireNonNull(plan, "plan");

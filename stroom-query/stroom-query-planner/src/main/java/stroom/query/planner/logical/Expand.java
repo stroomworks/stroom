@@ -47,6 +47,11 @@ import java.util.Objects;
  * @param edgeType       the relationship type to follow, or {@code null} to match any edge type (an untyped
  *                       pattern, e.g. bare {@code -->}).
  * @param direction      never null.
+ * @param edgeVariable   the Cypher pattern variable bound to the relationship traversed by this hop (the {@code c}
+ *                       in {@code -[c:TYPE]->}), or {@code null} if the edge pattern named no variable. When
+ *                       non-null the executor binds the traversed edge's stored properties to it (so
+ *                       {@code RETURN c.startTime} resolves), and its identity {@code (src, type, dst)} joins the
+ *                       row's bound-element set.
  * @param targetVariable never null; the Cypher pattern variable bound to the neighbour node reached by this hop.
  * @param targetLabels   never null; possibly empty (no label constraint on the target node); in source order.
  * @param targetPropertyPredicate the target node pattern's inline property map, lowered to an equality
@@ -58,6 +63,7 @@ public record Expand(
         LogicalPlan input,
         @Nullable String edgeType,
         Direction direction,
+        @Nullable String edgeVariable,
         String targetVariable,
         List<String> targetLabels,
         @Nullable ExpressionOperator targetPropertyPredicate,

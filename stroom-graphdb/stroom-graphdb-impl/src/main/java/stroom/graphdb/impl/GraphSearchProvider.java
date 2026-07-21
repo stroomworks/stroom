@@ -176,8 +176,12 @@ public class GraphSearchProvider implements SearchProvider, IndexFieldProvider {
 
             final GraphStores stores = graphStoreManager.getOrOpen(doc);
             final GraphTraversalEngine engine = new GraphTraversalEngine(stores, expressionPredicateFactory);
-            final List<Val[]> rows = stores.read(readTxn ->
-                    engine.execute(readTxn, compiled.plan(), compiled.temporalContext(),
+            // A DIFF query runs the compiled pattern at both instants and classifies the change (delta-table
+            // mode); every other query is a single traversal. Both yield Val[] rows fed identically downstream.
+            final List<Val[]> rows = stores.read(readTxn -> compiled.diffContext() != null
+                    ? DiffExecutor.execute(readTxn, engine, compiled.plan(), compiled.diffContext(),
+                            searchRequest.getDateTimeSettings(), compiled.distinct())
+                    : engine.execute(readTxn, compiled.plan(), compiled.temporalContext(),
                             searchRequest.getDateTimeSettings(), compiled.distinct(), compiled.aggregation()));
             for (final Val[] row : rows) {
                 coprocessors.accept(assembleRow(row, mapping, fieldIndex.size()));

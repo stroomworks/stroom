@@ -254,6 +254,73 @@ class TestGraphSearchProvider {
     }
 
     // ------------------------------------------------------------------------------------------------------
+    // DIFF (docs/temporal-cypher-diff-operator.md)
+    // ------------------------------------------------------------------------------------------------------
+
+    @Test
+    void diffCypherQuery_returnsDeltaTable_throughRealCoprocessors(@TempDir final Path root) {
+        // End-to-end oracle: a DIFF query's changeKind + before/after columns resolve through the real
+        // compiler-derived column pipeline and coprocessor/result-store path, with UNCHANGED suppressed.
+        final Instant tMid = Instant.parse("2026-03-01T00:00:00.000Z");
+        try (GraphStores stores = GraphStores.provision(root, DOC)) {
+            final long deviceLabel = intern(stores, stores.getLabelUids(), "Device");
+            final long accountLabel = intern(stores, stores.getLabelUids(), "Account");
+            final long idKey = intern(stores, stores.getPropertyKeyUids(), "id");
+            final long connectedTo = intern(stores, stores.getEdgeTypeUids(), "CONNECTED_TO");
+            final long deviceUid = intern(stores, stores.getNodeUids(), "d-42");
+            final long aUid = intern(stores, stores.getNodeUids(), "account-a");
+            final long bUid = intern(stores, stores.getNodeUids(), "account-b");
+            final long cUid = intern(stores, stores.getNodeUids(), "account-c");
+            final long dUid = intern(stores, stores.getNodeUids(), "account-d");
+
+            stores.write(writer -> {
+                stores.getNodes().insert(writer, deviceUid, T1, List.of(deviceLabel),
+                        Map.of("id", ValString.create("d-42")));
+                stores.getPropertyIndex().insert(
+                        writer, deviceLabel, idKey, "d-42".getBytes(StandardCharsets.UTF_8), deviceUid);
+                stores.getNodes().insert(writer, aUid, T1, List.of(accountLabel),
+                        Map.of("id", ValString.create("account-a"), "balance", ValLong.create(50)));
+                stores.getNodes().insert(writer, aUid, T2, List.of(accountLabel),
+                        Map.of("id", ValString.create("account-a"), "balance", ValLong.create(999)));
+                stores.getNodes().insert(writer, bUid, T1, List.of(accountLabel),
+                        Map.of("id", ValString.create("account-b"), "balance", ValLong.create(10)));
+                stores.getNodes().insert(writer, cUid, T1, List.of(accountLabel),
+                        Map.of("id", ValString.create("account-c"), "balance", ValLong.create(20)));
+                stores.getNodes().insert(writer, dUid, T1, List.of(accountLabel),
+                        Map.of("id", ValString.create("account-d"), "balance", ValLong.create(30)));
+
+                stores.getOutEdges().insert(writer, deviceUid, connectedTo, aUid, T1, Map.of());
+                stores.getOutEdges().insert(writer, deviceUid, connectedTo, bUid, T2, Map.of());
+                stores.getOutEdges().insert(writer, deviceUid, connectedTo, dUid, T1, Map.of());
+                stores.getOutEdges().insert(writer, deviceUid, connectedTo, cUid, T1, Map.of());
+                stores.getOutEdges().delete(writer, deviceUid, connectedTo, cUid, tMid);
+                return null;
+            });
+
+            final GraphSearchProvider provider = provider(stores);
+            final SearchRequest request = compilerDerivedRequest(
+                    "MATCH (d:Device {id: 'd-42'})-[c:CONNECTED_TO]->(a:Account) "
+                    + "DIFF FROM datetime('2026-01-01T00:00:00Z') TO datetime('2026-06-01T00:00:00Z') "
+                    + "RETURN changeKind, a.id, before(a.balance), after(a.balance)");
+
+            final ResultStore resultStore = provider.createResultStore(request);
+
+            final List<Val[]> rows = readTableRows(resultStore);
+            assertThat(rows)
+                    .extracting(r -> r[0].toString(), r -> r[1].toString(), r -> diffText(r[2]), r -> diffText(r[3]))
+                    .containsExactlyInAnyOrder(
+                            org.assertj.core.groups.Tuple.tuple("MODIFIED", "account-a", "50", "999"),
+                            org.assertj.core.groups.Tuple.tuple("ADDED", "account-b", null, "10"),
+                            org.assertj.core.groups.Tuple.tuple("REMOVED", "account-c", "20", null));
+        }
+    }
+
+    /** Null-safe rendering of an absent before/after value (a null String rather than a "null" String). */
+    private static String diffText(final Val value) {
+        return value == null ? null : value.toString();
+    }
+
+    // ------------------------------------------------------------------------------------------------------
     // Fixtures
     // ------------------------------------------------------------------------------------------------------
 

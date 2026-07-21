@@ -320,6 +320,207 @@ public final class GraphTraversalEngine {
         return finalize(rows, shape, distinct, aggregation);
     }
 
+    // ------------------------------------------------------------------------------------------------------
+    // DIFF bindings (temporal-cypher-diff-operator.md §5)
+    // ------------------------------------------------------------------------------------------------------
+
+    /**
+     * Traverses {@code plan} at a single instant for a {@code DIFF} query, returning each matched path as a
+     * {@link DiffMatch} - its bound-value row plus the ordered tuple of bound element identities that
+     * {@link DiffOperator} keys on (see {@code docs/temporal-cypher-diff-operator.md} &sect;5.2). This is the
+     * per-snapshot half of {@code DIFF}: the executor calls it twice (once with {@code baseline}, once with
+     * {@code comparison}) and merges the two results.
+     *
+     * <p>It reuses the ordinary fixed-length traversal machinery unchanged ({@link #resolveAnchors},
+     * {@link #collectNeighbours}, {@link #matchesTargetConstraint}, {@link #rowFor}, the {@code AS OF}
+     * {@link TemporalAccess}) but threads a growing identity tuple alongside each frontier row: the anchor
+     * contributes an {@link ElementId.Node}, and each hop appends the traversed edge's {@link ElementId.Edge}
+     * triple then the target {@link ElementId.Node}. The pattern's own {@code WHERE} predicate (which the compiler
+     * has already restricted to pattern-only terms - {@code changeKind}/{@code before}/{@code after} are applied
+     * post-classification) is evaluated per snapshot, exactly as {@link #execute} does.</p>
+     *
+     * <p><b>Preconditions:</b> {@code plan} is a fixed-length pattern (variable-length is rejected under
+     * {@code DIFF} at compile time; a {@link VarLengthExpand} here throws). No {@code LIMIT}/{@code ORDER BY}/
+     * aggregation is applied here - those act on the merged delta table, not a single snapshot.</p>
+     *
+     * @param readTxn          the read transaction; never null.
+     * @param plan             the compiled fixed-length plan; never null.
+     * @param asOf             the instant to resolve the graph at; never null.
+     * @param dateTimeSettings never null; used to evaluate any {@code WHERE} date comparisons.
+     * @return one {@link DiffMatch} per matched path at {@code asOf}; never null (may be empty). Identity tuples
+     *         are unique per path, so the result is directly usable as a {@link DiffOperator} side.
+     */
+    public List<DiffMatch> executeDiffBindings(final Txn<ByteBuffer> readTxn, final LogicalPlan plan,
+                                               final Instant asOf, final DateTimeSettings dateTimeSettings) {
+        Objects.requireNonNull(readTxn, "readTxn");
+        Objects.requireNonNull(plan, "plan");
+        Objects.requireNonNull(asOf, "asOf");
+        Objects.requireNonNull(dateTimeSettings, "dateTimeSettings");
+
+        final TemporalAccess access = asOfAccess(asOf);
+        final PlanShape shape = unwrap(plan);
+        if (shape.varLengthExpand() != null) {
+            throw new UnsupportedOperationException(
+                    "variable-length patterns are not supported under DIFF (rejected at compile time)");
+        }
+
+        final Predicate<Map<String, Val>> wherePredicate = shape.where() == null
+                ? row -> true
+                : expressionPredicateFactory
+                        .createOptional(shape.where(), rowAccessors(), dateTimeSettings)
+                        .orElse(row -> true);
+
+        final Instant deadline = Instant.now().plus(maxTraversalDuration);
+
+        List<DiffFrontier> frontier = new ArrayList<>();
+        for (final long anchorUid : resolveAnchors(readTxn, shape.nodeScan(), access)) {
+            final Optional<GraphNodeDb.NodeVersion> anchor = access.getNode(readTxn, anchorUid);
+            if (anchor.isEmpty()) {
+                continue;
+            }
+            frontier.add(new DiffFrontier(
+                    anchorUid,
+                    rowFor(shape.nodeScan().variable(), anchor.get().properties()),
+                    List.of(new ElementId.Node(anchorUid))));
+        }
+
+        final List<DiffMatch> matches = new ArrayList<>();
+        if (shape.hops().isEmpty()) {
+            for (final DiffFrontier f : frontier) {
+                if (wherePredicate.test(f.row())) {
+                    matches.add(new DiffMatch(f.identity(), f.row()));
+                }
+            }
+            return matches;
+        }
+
+        for (int i = 0; i < shape.hops().size(); i++) {
+            checkDeadline(deadline);
+            final Expand hop = shape.hops().get(i);
+            final boolean isLastHop = i == shape.hops().size() - 1;
+            final List<DiffFrontier> next = new ArrayList<>();
+            for (final DiffFrontier f : frontier) {
+                expandDiffHop(readTxn, f, access, hop, isLastHop, wherePredicate, next, matches, deadline);
+            }
+            frontier = next;
+        }
+
+        return matches;
+    }
+
+    /**
+     * Applies the compiled {@code RETURN} projection (plus any {@code ORDER BY} / {@code DISTINCT} / {@code LIMIT})
+     * to a {@code DIFF} query's pre-built delta-table rows, reusing the ordinary {@link #finalizeRows} pipeline. A
+     * delta-table row is a plain {@code "key" -> Val} map that {@code DiffExecutor} has already populated with the
+     * projected present-snapshot values, the {@code changeKind} pseudo-column, and the {@code before.<var>.<prop>}
+     * / {@code after.<var>.<prop>} accessor values (see {@code CypherToLogicalPlan.diffAccessorRowKey}), so each
+     * {@link ProjectField}'s {@code ${...}} expression resolves against it exactly as a traversal row would.
+     *
+     * <p>The {@code plan}'s traversal shape (its {@code NodeScan}/{@code Expand}s) is irrelevant here - only its
+     * terminal {@code Project}/{@code Sort}/{@code Limit} wrappers are read. Aggregation is not a valid DIFF shape
+     * (rejected at compile time), so this always takes the non-aggregated path.</p>
+     *
+     * @param plan     the compiled DIFF plan; never null.
+     * @param diffRows the classified, projected delta-table rows in {@code DiffExecutor}'s emission order; never
+     *                 null (may be empty). Mutated in place by any {@code ORDER BY} sort.
+     * @param distinct whether {@code RETURN DISTINCT} was requested.
+     * @return one output tuple per surviving delta-table row, aligned to the plan's {@code Project} fields; never
+     *         null.
+     */
+    public List<Val[]> projectDiffRows(final LogicalPlan plan, final List<Map<String, Val>> diffRows,
+                                       final boolean distinct) {
+        Objects.requireNonNull(plan, "plan");
+        Objects.requireNonNull(diffRows, "diffRows");
+        return finalizeRows(diffRows, unwrap(plan), distinct);
+    }
+
+    /**
+     * A {@code DIFF} traversal frontier entry: as {@link Frontier}, plus the ordered identity tuple built so far
+     * (anchor node, then each hop's edge + target node). {@code identity} is never null and never empty.
+     */
+    private record DiffFrontier(long nodeUid, Map<String, Val> row, List<ElementId> identity) {
+    }
+
+    /**
+     * The {@code DIFF} counterpart of {@link #expandChainHop}/{@link #acceptChainNeighbour}: expands one hop from
+     * {@code from}, and for each surviving neighbour extends the row (target-node props, and the edge's props if
+     * the hop named a relationship variable) and the identity tuple (edge triple + target node). Because the edge
+     * triple's {@code (src, dst)} orientation depends on which direction produced the neighbour, {@code OUT} and
+     * {@code IN} are expanded separately here (rather than via {@link #collectNeighbours}'s direction-erasing
+     * {@code BOTH}) so each neighbour's edge identity is oriented correctly.
+     */
+    private void expandDiffHop(final Txn<ByteBuffer> readTxn, final DiffFrontier from, final TemporalAccess access,
+                               final Expand hop, final boolean isLastHop,
+                               final Predicate<Map<String, Val>> wherePredicate,
+                               final List<DiffFrontier> nextFrontier, final List<DiffMatch> matches,
+                               final Instant deadline) {
+        final Optional<Long> edgeTypeUid = resolveRequiredEdgeTypeUid(readTxn, hop.edgeType());
+        if (edgeTypeUid.isEmpty()) {
+            return;
+        }
+        final long typeUid = edgeTypeUid.get();
+
+        switch (hop.direction()) {
+            case OUT -> access.expandOut(readTxn, from.nodeUid(), typeUid, edgeStep -> acceptDiffNeighbour(
+                    readTxn, from, access, hop, edgeStep,
+                    new ElementId.Edge(from.nodeUid(), typeUid, edgeStep.neighbourUid()),
+                    isLastHop, wherePredicate, nextFrontier, matches, deadline));
+            case IN -> access.expandIn(readTxn, from.nodeUid(), typeUid, edgeStep -> acceptDiffNeighbour(
+                    readTxn, from, access, hop, edgeStep,
+                    new ElementId.Edge(edgeStep.neighbourUid(), typeUid, from.nodeUid()),
+                    isLastHop, wherePredicate, nextFrontier, matches, deadline));
+            case BOTH -> {
+                access.expandOut(readTxn, from.nodeUid(), typeUid, edgeStep -> acceptDiffNeighbour(
+                        readTxn, from, access, hop, edgeStep,
+                        new ElementId.Edge(from.nodeUid(), typeUid, edgeStep.neighbourUid()),
+                        isLastHop, wherePredicate, nextFrontier, matches, deadline));
+                access.expandIn(readTxn, from.nodeUid(), typeUid, edgeStep -> acceptDiffNeighbour(
+                        readTxn, from, access, hop, edgeStep,
+                        new ElementId.Edge(edgeStep.neighbourUid(), typeUid, from.nodeUid()),
+                        isLastHop, wherePredicate, nextFrontier, matches, deadline));
+            }
+        }
+    }
+
+    /**
+     * Accepts one neighbour of a {@code DIFF} hop: validates the target-node constraint, extends {@code from}'s
+     * row (target props + optional edge props) and identity tuple ({@code edgeId} + target {@link ElementId.Node}),
+     * then either records a {@link DiffMatch} (last hop, if it passes {@code WHERE}) or pushes a new frontier entry.
+     * Mirrors {@link #acceptChainNeighbour}; {@code edgeId} is the direction-oriented identity of the traversed
+     * edge (built by {@link #expandDiffHop}).
+     */
+    private void acceptDiffNeighbour(final Txn<ByteBuffer> readTxn, final DiffFrontier from,
+                                     final TemporalAccess access, final Expand hop, final EdgeStep edgeStep,
+                                     final ElementId.Edge edgeId, final boolean isLastHop,
+                                     final Predicate<Map<String, Val>> wherePredicate,
+                                     final List<DiffFrontier> nextFrontier, final List<DiffMatch> matches,
+                                     final Instant deadline) {
+        checkDeadline(deadline);
+        final long neighbourUid = edgeStep.neighbourUid();
+        final Optional<GraphNodeDb.NodeVersion> target = access.getNode(readTxn, neighbourUid);
+        if (target.isEmpty()
+            || !matchesTargetConstraint(readTxn, hop.targetLabels(), hop.targetPropertyPredicate(), target.get())) {
+            return;
+        }
+        final Map<String, Val> row = new HashMap<>(from.row());
+        row.putAll(rowFor(hop.targetVariable(), target.get().properties()));
+        if (hop.edgeVariable() != null) {
+            row.putAll(rowFor(hop.edgeVariable(), edgeStep.edgeProperties()));
+        }
+        final List<ElementId> identity = new ArrayList<>(from.identity().size() + 2);
+        identity.addAll(from.identity());
+        identity.add(edgeId);
+        identity.add(new ElementId.Node(neighbourUid));
+
+        if (isLastHop) {
+            if (wherePredicate.test(row)) {
+                matches.add(new DiffMatch(identity, row));
+            }
+        } else {
+            nextFrontier.add(new DiffFrontier(neighbourUid, row, identity));
+        }
+    }
+
     /**
      * Dispatches to {@link #finalizeRows} (the ordinary path) or {@link #finalizeAggregatedRows} (Task 1.3)
      * depending on whether the compiled {@code RETURN} had an aggregate item.
@@ -361,19 +562,20 @@ public final class GraphTraversalEngine {
             return;
         }
 
-        final Consumer<Long> onNeighbourUid = neighbourUid -> acceptChainNeighbour(
-                readTxn, neighbourUid, access, hop, rowSoFar, isLastHop, wherePredicate, nextFrontier, finalRows,
+        final Consumer<EdgeStep> onNeighbour = edgeStep -> acceptChainNeighbour(
+                readTxn, edgeStep, access, hop, rowSoFar, isLastHop, wherePredicate, nextFrontier, finalRows,
                 rowCap, deadline);
 
-        collectNeighbours(readTxn, fromUid, edgeTypeUid.get(), access, hop.direction(), onNeighbourUid);
+        collectNeighbours(readTxn, fromUid, edgeTypeUid.get(), access, hop.direction(), onNeighbour);
     }
 
-    private void acceptChainNeighbour(final Txn<ByteBuffer> readTxn, final long neighbourUid,
+    private void acceptChainNeighbour(final Txn<ByteBuffer> readTxn, final EdgeStep edgeStep,
                                       final TemporalAccess access,
                                       final Expand hop, final Map<String, Val> rowSoFar, final boolean isLastHop,
                                       final Predicate<Map<String, Val>> wherePredicate,
                                       final List<Frontier> nextFrontier, final List<Map<String, Val>> finalRows,
                                       final long rowCap, final Instant deadline) {
+        final long neighbourUid = edgeStep.neighbourUid();
         // Task P7.2: once a compiled LIMIT is satisfied, stop accumulating further rows at this hop - does not
         // abort a cursor scan already in flight (the DAO layer has no cancellation hook), but does stop this
         // traversal from expanding to further frontier nodes/hops once the cap is reached.
@@ -395,6 +597,11 @@ public final class GraphTraversalEngine {
         }
         final Map<String, Val> row = new HashMap<>(rowSoFar);
         row.putAll(rowFor(hop.targetVariable(), target.get().properties()));
+        // Bind the traversed edge's own properties to the hop's relationship variable, if it named one, so a
+        // projection/filter over e.g. c.startTime resolves (before this, edge data was discarded mid-traversal).
+        if (hop.edgeVariable() != null) {
+            row.putAll(rowFor(hop.edgeVariable(), edgeStep.edgeProperties()));
+        }
         if (isLastHop) {
             if (wherePredicate.test(row)) {
                 finalRows.add(row);
@@ -508,9 +715,11 @@ public final class GraphTraversalEngine {
                 final List<Long> neighbourUids = new ArrayList<>();
                 collectNeighbours(
                         readTxn, state.nodeUid(), edgeTypeUid, access, varLengthExpand.direction(),
-                        neighbourUid -> {
+                        edgeStep -> {
+                            // Var-length hops don't bind a per-hop edge variable, so only the neighbour UID is
+                            // needed here; the edge's properties are ignored.
                             checkDeadline(deadline);
-                            neighbourUids.add(neighbourUid);
+                            neighbourUids.add(edgeStep.neighbourUid());
                         });
 
                 for (final long neighbourUid : neighbourUids) {
@@ -564,7 +773,7 @@ public final class GraphTraversalEngine {
 
     private static void collectNeighbours(final Txn<ByteBuffer> readTxn, final long fromUid, final long edgeTypeUid,
                                           final TemporalAccess access, final Direction direction,
-                                          final Consumer<Long> collector) {
+                                          final Consumer<EdgeStep> collector) {
         switch (direction) {
             case OUT -> access.expandOut(readTxn, fromUid, edgeTypeUid, collector);
             case IN -> access.expandIn(readTxn, fromUid, edgeTypeUid, collector);
@@ -963,7 +1172,8 @@ public final class GraphTraversalEngine {
         return ValLong.create(count);
     }
 
-    /** {@code sum} of an empty set of numeric values is {@code 0} (Cypher's rule, unlike {@code avg}/{@code min}/{@code max}). */
+    /** {@code sum} of an empty set of numeric values is {@code 0} (Cypher's rule, unlike
+     * {@code avg}/{@code min}/{@code max}). */
     private static Val reduceSum(final AggregateColumn aggregateColumn, final List<Map<String, Val>> group) {
         double sum = 0.0;
         for (final Map<String, Val> row : group) {
@@ -1128,9 +1338,22 @@ public final class GraphTraversalEngine {
 
         Optional<GraphNodeDb.NodeVersion> getNode(Txn<ByteBuffer> readTxn, long nodeUid);
 
-        void expandOut(Txn<ByteBuffer> readTxn, long srcUid, long edgeTypeUid, Consumer<Long> dstUidConsumer);
+        void expandOut(Txn<ByteBuffer> readTxn, long srcUid, long edgeTypeUid, Consumer<EdgeStep> consumer);
 
-        void expandIn(Txn<ByteBuffer> readTxn, long dstUid, long edgeTypeUid, Consumer<Long> srcUidConsumer);
+        void expandIn(Txn<ByteBuffer> readTxn, long dstUid, long edgeTypeUid, Consumer<EdgeStep> consumer);
+    }
+
+    /**
+     * One traversed edge as the engine sees it: the UID of the neighbour node reached (the {@code dst} for an
+     * {@code OUT} hop, the {@code src} for an {@code IN} hop) plus that edge's own stored property map. Surfacing
+     * the edge properties (previously the DAO's {@code Neighbour} was flattened to just its neighbour UID) is what
+     * lets a hop bind them to its relationship variable so {@code RETURN c.startTime} resolves - see
+     * {@link Expand#edgeVariable()} and {@link #acceptChainNeighbour}.
+     *
+     * @param neighbourUid   the node reached by following the edge.
+     * @param edgeProperties never null; the edge version's property map (may be empty).
+     */
+    private record EdgeStep(long neighbourUid, Map<String, Val> edgeProperties) {
     }
 
     private TemporalAccess asOfAccess(final Instant asOf) {
@@ -1142,16 +1365,16 @@ public final class GraphTraversalEngine {
 
             @Override
             public void expandOut(final Txn<ByteBuffer> readTxn, final long srcUid, final long edgeTypeUid,
-                                  final Consumer<Long> dstUidConsumer) {
-                stores.getOutEdges().expandOut(
-                        readTxn, srcUid, edgeTypeUid, asOf, neighbour -> dstUidConsumer.accept(neighbour.dstUid()));
+                                  final Consumer<EdgeStep> consumer) {
+                stores.getOutEdges().expandOut(readTxn, srcUid, edgeTypeUid, asOf,
+                        neighbour -> consumer.accept(new EdgeStep(neighbour.dstUid(), neighbour.edgeProperties())));
             }
 
             @Override
             public void expandIn(final Txn<ByteBuffer> readTxn, final long dstUid, final long edgeTypeUid,
-                                 final Consumer<Long> srcUidConsumer) {
-                stores.getInEdges().expandIn(
-                        readTxn, dstUid, edgeTypeUid, asOf, neighbour -> srcUidConsumer.accept(neighbour.srcUid()));
+                                 final Consumer<EdgeStep> consumer) {
+                stores.getInEdges().expandIn(readTxn, dstUid, edgeTypeUid, asOf,
+                        neighbour -> consumer.accept(new EdgeStep(neighbour.srcUid(), neighbour.edgeProperties())));
             }
         };
     }
@@ -1165,16 +1388,16 @@ public final class GraphTraversalEngine {
 
             @Override
             public void expandOut(final Txn<ByteBuffer> readTxn, final long srcUid, final long edgeTypeUid,
-                                  final Consumer<Long> dstUidConsumer) {
+                                  final Consumer<EdgeStep> consumer) {
                 stores.getOutEdges().expandOutWindow(readTxn, srcUid, edgeTypeUid, from, to,
-                        neighbour -> dstUidConsumer.accept(neighbour.dstUid()));
+                        neighbour -> consumer.accept(new EdgeStep(neighbour.dstUid(), neighbour.edgeProperties())));
             }
 
             @Override
             public void expandIn(final Txn<ByteBuffer> readTxn, final long dstUid, final long edgeTypeUid,
-                                 final Consumer<Long> srcUidConsumer) {
+                                 final Consumer<EdgeStep> consumer) {
                 stores.getInEdges().expandInWindow(readTxn, dstUid, edgeTypeUid, from, to,
-                        neighbour -> srcUidConsumer.accept(neighbour.srcUid()));
+                        neighbour -> consumer.accept(new EdgeStep(neighbour.srcUid(), neighbour.edgeProperties())));
             }
         };
     }

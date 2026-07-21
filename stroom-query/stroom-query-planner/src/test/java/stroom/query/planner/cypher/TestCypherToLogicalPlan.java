@@ -29,6 +29,7 @@ import stroom.query.planner.logical.Limit;
 import stroom.query.planner.logical.LogicalPlan;
 import stroom.query.planner.logical.NodeScan;
 import stroom.query.planner.logical.Project;
+import stroom.query.planner.logical.ProjectField;
 import stroom.query.planner.logical.Sort;
 import stroom.query.planner.logical.VarLengthExpand;
 
@@ -38,6 +39,7 @@ import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 
 /**
  * Task PoC.3: proves the compiled shapes {@link CypherToLogicalPlan}'s Javadoc promises - a single-hop query
@@ -357,6 +359,100 @@ class TestCypherToLogicalPlan {
         assertThat(temporal.mode()).isEqualTo(TemporalContext.Mode.BETWEEN);
         assertThat(temporal.from()).isEqualTo(Instant.parse("2026-01-01T00:00:00Z"));
         assertThat(temporal.to()).isEqualTo(Instant.parse("2026-02-01T00:00:00Z"));
+    }
+
+    @Test
+    void diffClause_resolvesToDiffContext_notATemporalContext() {
+        final CompiledCypherPlan compiled = compile(
+                "MATCH (a:Account) DIFF FROM datetime('2026-07-01T00:00:00Z') "
+                + "TO datetime('2026-07-08T00:00:00Z') RETURN changeKind, a.id");
+
+        assertThat(compiled.temporalContext()).isNull();
+        assertThat(compiled.diffContext()).isNotNull();
+        assertThat(compiled.diffContext().baseline()).isEqualTo(Instant.parse("2026-07-01T00:00:00Z"));
+        assertThat(compiled.diffContext().comparison()).isEqualTo(Instant.parse("2026-07-08T00:00:00Z"));
+    }
+
+    @Test
+    void diffClause_rejectsEqualOrReversedInstants() {
+        final AstCypherQuery equal = CypherQueryParser.parse(
+                "MATCH (a:Account) DIFF FROM datetime('2026-07-01T00:00:00Z') "
+                + "TO datetime('2026-07-01T00:00:00Z') RETURN changeKind, a.id");
+        assertThatThrownBy(() -> new CypherToLogicalPlan().compile(equal))
+                .isInstanceOf(CypherCompileException.class)
+                .hasMessageContaining("baseline < comparison");
+
+        final AstCypherQuery reversed = CypherQueryParser.parse(
+                "MATCH (a:Account) DIFF FROM datetime('2026-07-08T00:00:00Z') "
+                + "TO datetime('2026-07-01T00:00:00Z') RETURN changeKind, a.id");
+        assertThatThrownBy(() -> new CypherToLogicalPlan().compile(reversed))
+                .isInstanceOf(CypherCompileException.class)
+                .hasMessageContaining("baseline < comparison");
+    }
+
+    @Test
+    void diffClause_rejectsVariableLengthPattern() {
+        final AstCypherQuery ast = CypherQueryParser.parse(
+                "MATCH (d:Device {id: 'd-42'})-[:CONNECTED_TO*1..3]->(a:Account) "
+                + "DIFF FROM datetime('2026-07-01T00:00:00Z') TO datetime('2026-07-08T00:00:00Z') "
+                + "RETURN changeKind, a.id");
+        assertThatThrownBy(() -> new CypherToLogicalPlan().compile(ast))
+                .isInstanceOf(CypherCompileException.class)
+                .hasMessageContaining("variable-length");
+    }
+
+    @Test
+    void beforeAccessorOutsideDiff_isRejected() {
+        final AstCypherQuery ast = CypherQueryParser.parse(
+                "MATCH (u:User) AS OF datetime('2026-07-01T00:00:00Z') RETURN before(u.department)");
+        assertThatThrownBy(() -> new CypherToLogicalPlan().compile(ast))
+                .isInstanceOf(CypherCompileException.class)
+                .hasMessageContaining("DIFF");
+    }
+
+    @Test
+    void changeKindOutsideDiff_isRejected() {
+        final AstCypherQuery ast = CypherQueryParser.parse("MATCH (a:Account) RETURN changeKind");
+        assertThatThrownBy(() -> new CypherToLogicalPlan().compile(ast))
+                .isInstanceOf(CypherCompileException.class)
+                .hasMessageContaining("DIFF");
+    }
+
+    @Test
+    void diffProjection_rendersChangeKindAndBeforeAfterAccessors() {
+        final CompiledCypherPlan compiled = compile(
+                "MATCH (a:Account {id: 'x'}) DIFF FROM datetime('2026-07-01T00:00:00Z') "
+                + "TO datetime('2026-07-08T00:00:00Z') "
+                + "RETURN changeKind, a.id, before(a.balance), after(a.balance)");
+
+        final Project project = (Project) compiled.plan();
+        assertThat(project.fields())
+                .extracting(ProjectField::name, ProjectField::rawExpression)
+                .containsExactly(
+                        tuple("changeKind", "${changeKind}"),
+                        tuple("a.id", "${a.id}"),
+                        tuple("before(a.balance)", "${before.a.balance}"),
+                        tuple("after(a.balance)", "${after.a.balance}"));
+    }
+
+    @Test
+    void diffClause_rejectsDiffConstructInWhere() {
+        final AstCypherQuery ast = CypherQueryParser.parse(
+                "MATCH (a:Account {id: 'x'}) DIFF FROM datetime('2026-07-01T00:00:00Z') "
+                + "TO datetime('2026-07-08T00:00:00Z') WHERE changeKind = 'ADDED' RETURN a.id");
+        assertThatThrownBy(() -> new CypherToLogicalPlan().compile(ast))
+                .isInstanceOf(CypherCompileException.class)
+                .hasMessageContaining("not supported in this version");
+    }
+
+    @Test
+    void diffClause_rejectsAggregateInReturn() {
+        final AstCypherQuery ast = CypherQueryParser.parse(
+                "MATCH (a:Account {id: 'x'}) DIFF FROM datetime('2026-07-01T00:00:00Z') "
+                + "TO datetime('2026-07-08T00:00:00Z') RETURN count(*)");
+        assertThatThrownBy(() -> new CypherToLogicalPlan().compile(ast))
+                .isInstanceOf(CypherCompileException.class)
+                .hasMessageContaining("diff-aggregation");
     }
 
     @Test

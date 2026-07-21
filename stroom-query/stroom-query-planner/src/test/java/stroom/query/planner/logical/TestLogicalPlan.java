@@ -174,7 +174,7 @@ class TestLogicalPlan {
                 .build();
         final NodeScan device = new NodeScan("d", List.of("Device"), propertyAnchor, POS);
         final Expand toAccount = new Expand(
-                device, "CONNECTED_TO", Direction.OUT, "a", List.of("Account"), propertyAnchor, POS);
+                device, "CONNECTED_TO", Direction.OUT, null, "a", List.of("Account"), propertyAnchor, POS);
         final VarLengthExpand toGroups = new VarLengthExpand(
                 toAccount, "MEMBER_OF", Direction.OUT, 1, 3, "g", List.of("Group"), null, POS);
 
@@ -205,13 +205,13 @@ class TestLogicalPlan {
         assertThatNullPointerException().isThrownBy(() -> new NodeScan("d", null, null, POS));
         assertThatNullPointerException().isThrownBy(() -> new NodeScan("d", List.of(), null, null));
         assertThatNullPointerException().isThrownBy(
-                () -> new Expand(null, "T", Direction.OUT, "a", List.of(), null, POS));
+                () -> new Expand(null, "T", Direction.OUT, null, "a", List.of(), null, POS));
         assertThatNullPointerException().isThrownBy(
-                () -> new Expand(device, "T", null, "a", List.of(), null, POS));
+                () -> new Expand(device, "T", null, null, "a", List.of(), null, POS));
         assertThatNullPointerException().isThrownBy(
-                () -> new Expand(device, "T", Direction.OUT, null, List.of(), null, POS));
+                () -> new Expand(device, "T", Direction.OUT, null, null, List.of(), null, POS));
         assertThatNullPointerException().isThrownBy(
-                () -> new Expand(device, "T", Direction.OUT, "a", null, null, POS));
+                () -> new Expand(device, "T", Direction.OUT, null, "a", null, null, POS));
         assertThatNullPointerException().isThrownBy(
                 () -> new VarLengthExpand(null, "T", Direction.OUT, 1, 2, "a", List.of(), null, POS));
         assertThatNullPointerException().isThrownBy(
@@ -235,7 +235,7 @@ class TestLogicalPlan {
         final NodeScan device = new NodeScan("d", List.of("Device"), null, POS);
         final List<String> mutableLabels = new ArrayList<>(List.of("Account"));
 
-        final Expand expand = new Expand(device, "T", Direction.OUT, "a", mutableLabels, null, POS);
+        final Expand expand = new Expand(device, "T", Direction.OUT, null, "a", mutableLabels, null, POS);
         mutableLabels.add("Other");
 
         assertThat(expand.targetLabels()).containsExactly("Account");

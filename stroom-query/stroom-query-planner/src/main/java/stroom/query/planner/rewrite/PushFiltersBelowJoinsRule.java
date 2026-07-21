@@ -72,8 +72,8 @@ public final class PushFiltersBelowJoinsRule implements RewriteRule {
             // Graph nodes (Task PoC.2): this rule only ever pushes a Filter directly above a Join; a graph plan
             // has no Join to push onto, so leave these unchanged, recursing through the wrappers.
             case final NodeScan ns -> ns;
-            case final Expand e -> new Expand(apply(e.input()), e.edgeType(), e.direction(), e.targetVariable(),
-                    e.targetLabels(), e.targetPropertyPredicate(), e.position());
+            case final Expand e -> new Expand(apply(e.input()), e.edgeType(), e.direction(), e.edgeVariable(),
+                    e.targetVariable(), e.targetLabels(), e.targetPropertyPredicate(), e.position());
             case final VarLengthExpand vle -> new VarLengthExpand(apply(vle.input()), vle.edgeType(),
                     vle.direction(), vle.minHops(), vle.maxHops(), vle.targetVariable(), vle.targetLabels(),
                     vle.targetPropertyPredicate(), vle.position());

@@ -125,6 +125,7 @@ temporalClause
     : AS OF instant=value                                   # asOfClause
     | AROUND instant=value PLUSMINUS duration=value          # aroundClause
     | BETWEEN from=value AND to=value                        # betweenClause
+    | DIFF FROM baseline=value TO comparison=value           # diffClause
     ;
 
 // ----- WHERE: boolean expression over matched variables' properties -----
@@ -153,6 +154,7 @@ comparisonOp
 
 expression
     : aggregateCall
+    | diffAccessor
     | propertyAccess
     | variableRef=NAME
     | value
@@ -160,6 +162,12 @@ expression
 
 aggregateCall
     : fn=(COUNT | SUM | AVG | MIN | MAX) OPEN_PAREN (STAR | expression) CLOSE_PAREN
+    ;
+
+// Stroom DIFF extension: before(a.prop)/after(a.prop) name a property value in the baseline (t1) / comparison
+// (t2) snapshot of a diff query - only valid inside a DIFF query (enforced by CypherToLogicalPlan, not here).
+diffAccessor
+    : side=(BEFORE | AFTER) OPEN_PAREN propertyAccess CLOSE_PAREN
     ;
 
 propertyAccess
@@ -235,6 +243,11 @@ MIN      : M I N ;
 MAX      : M A X ;
 AROUND   : A R O U N D ;
 BETWEEN  : B E T W E E N ;
+DIFF     : D I F F ;
+FROM     : F R O M ;
+TO       : T O ;
+BEFORE   : B E F O R E ;
+AFTER    : A F T E R ;
 
 // ----- structural / operator tokens -----
 OPEN_PAREN    : '(' ;

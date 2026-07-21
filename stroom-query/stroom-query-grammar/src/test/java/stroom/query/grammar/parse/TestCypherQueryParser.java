@@ -22,6 +22,9 @@ import stroom.query.grammar.ast.cypher.AstAround;
 import stroom.query.grammar.ast.cypher.AstAsOf;
 import stroom.query.grammar.ast.cypher.AstBetween;
 import stroom.query.grammar.ast.cypher.AstCypherQuery;
+import stroom.query.grammar.ast.cypher.AstDiff;
+import stroom.query.grammar.ast.cypher.AstDiffAccessorExpr;
+import stroom.query.grammar.ast.cypher.AstDiffSide;
 import stroom.query.grammar.ast.cypher.AstEdgeDirection;
 import stroom.query.grammar.ast.cypher.AstMatch;
 import stroom.query.grammar.ast.cypher.AstNodePattern;
@@ -169,6 +172,37 @@ class TestCypherQueryParser {
 
         final AstMatch match = (AstMatch) query.readingClauses().getFirst();
         assertThat(match.temporal()).isInstanceOf(AstBetween.class);
+    }
+
+    @Test
+    void diffClause_parses() {
+        final AstCypherQuery query = CypherQueryParser.parse(
+                "MATCH (a:Account) DIFF FROM datetime('2026-07-01T00:00:00Z') "
+                + "TO datetime('2026-07-08T00:00:00Z') RETURN changeKind, a.id");
+
+        final AstMatch match = (AstMatch) query.readingClauses().getFirst();
+        assertThat(match.temporal()).isInstanceOf(AstDiff.class);
+        final AstDiff diff = (AstDiff) match.temporal();
+        assertThat(diff.baseline()).isNotNull();
+        assertThat(diff.comparison()).isNotNull();
+    }
+
+    @Test
+    void beforeAndAfterAccessors_parse() {
+        final AstCypherQuery query = CypherQueryParser.parse(
+                "MATCH (u:User) DIFF FROM datetime('2026-07-01T00:00:00Z') "
+                + "TO datetime('2026-07-08T00:00:00Z') "
+                + "RETURN before(u.department) AS wasDept, after(u.department) AS nowDept");
+
+        final AstDiffAccessorExpr was =
+                (AstDiffAccessorExpr) query.returnClause().items().get(0).expression();
+        assertThat(was.side()).isEqualTo(AstDiffSide.BEFORE);
+        assertThat(was.target().variable()).isEqualTo("u");
+        assertThat(was.target().property()).isEqualTo("department");
+
+        final AstDiffAccessorExpr now =
+                (AstDiffAccessorExpr) query.returnClause().items().get(1).expression();
+        assertThat(now.side()).isEqualTo(AstDiffSide.AFTER);
     }
 
     @Test

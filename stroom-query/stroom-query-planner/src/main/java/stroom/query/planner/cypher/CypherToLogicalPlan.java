@@ -32,6 +32,9 @@ import stroom.query.grammar.ast.cypher.AstBooleanExpr;
 import stroom.query.grammar.ast.cypher.AstBooleanValue;
 import stroom.query.grammar.ast.cypher.AstComparisonPredicate;
 import stroom.query.grammar.ast.cypher.AstCypherQuery;
+import stroom.query.grammar.ast.cypher.AstDiff;
+import stroom.query.grammar.ast.cypher.AstDiffAccessorExpr;
+import stroom.query.grammar.ast.cypher.AstDiffSide;
 import stroom.query.grammar.ast.cypher.AstEdgeDirection;
 import stroom.query.grammar.ast.cypher.AstEdgePattern;
 import stroom.query.grammar.ast.cypher.AstExpression;
@@ -57,6 +60,7 @@ import stroom.query.grammar.ast.cypher.AstTemporal;
 import stroom.query.grammar.ast.cypher.AstValue;
 import stroom.query.grammar.ast.cypher.AstVarLength;
 import stroom.query.grammar.ast.cypher.AstVariableExpr;
+import stroom.query.grammar.ast.cypher.AstWhere;
 import stroom.query.grammar.ast.cypher.AstWith;
 import stroom.query.planner.logical.Direction;
 import stroom.query.planner.logical.Expand;
@@ -129,6 +133,9 @@ import java.util.Set;
  */
 public final class CypherToLogicalPlan {
 
+    /** The reserved DIFF pseudo-column naming an element's change classification; only valid in a DIFF query. */
+    public static final String CHANGE_KIND_COLUMN = "changeKind";
+
     private int anonymousVariableCounter;
 
     /**
@@ -161,8 +168,24 @@ public final class CypherToLogicalPlan {
         LogicalPlan plan = patternResult.plan();
 
         TemporalContext temporalContext = null;
-        if (match.temporal() != null) {
+        DiffContext diffContext = null;
+        if (match.temporal() instanceof final AstDiff diff) {
+            diffContext = resolveDiff(diff);
+            rejectVarLengthUnderDiff(match.pattern());
+        } else if (match.temporal() != null) {
             temporalContext = resolveTemporal(match.temporal());
+        }
+
+        // changeKind / before(...) / after(...) are DIFF-only accessors; reject them in a non-diff query at
+        // compile time (with a positioned error) rather than letting them fail obscurely at execution.
+        if (diffContext == null) {
+            rejectDiffConstructsOutsideDiff(query.returnClause(), match.where());
+        } else if (match.where() != null) {
+            // v1 delta-table: the WHERE clause is evaluated per snapshot (pattern predicates only). Filtering on
+            // changeKind / before(...) / after(...) is a post-classification (HAVING-like) step deferred to a
+            // later phase - reject it here rather than silently evaluating it against a single snapshot's row
+            // where those keys are absent (docs/temporal-cypher-diff-operator.md §12.1).
+            rejectDiffConstructsInDiffWhere(match.where().expr());
         }
 
         if (match.where() != null) {
@@ -172,6 +195,13 @@ public final class CypherToLogicalPlan {
 
         final List<ProjectField> fields = buildProjectFields(query.returnClause());
         final CypherAggregation aggregation = buildAggregation(query.returnClause());
+        if (diffContext != null && aggregation != null) {
+            // v1 delta-table diffs one path at a time; grouping/reducing the classified delta table
+            // (diff-aggregation) is deferred (docs/temporal-cypher-diff-operator.md §12.1).
+            throw new CypherCompileException(
+                    "not supported in this version: an aggregate in a DIFF query's RETURN (diff-aggregation is a "
+                    + "later phase)", query.returnClause().position());
+        }
         if (aggregation != null && query.returnClause().orderBy() != null) {
             // Compile-time check (not deferred to the executor): once RETURN aggregates rows, there is no
             // per-row traversal map left at execution time to sort by - the executor only ever sees the final,
@@ -183,7 +213,8 @@ public final class CypherToLogicalPlan {
 
         plan = compileReturn(plan, query.returnClause(), fields);
 
-        return new CompiledCypherPlan(plan, temporalContext, query.returnClause().distinct(), aggregation);
+        return new CompiledCypherPlan(
+                plan, temporalContext, query.returnClause().distinct(), aggregation, diffContext);
     }
 
     // ------------------------------------------------------------------------------------------------------
@@ -218,6 +249,7 @@ public final class CypherToLogicalPlan {
                     plan,
                     edge.type(),
                     toDirection(edge.direction()),
+                    edge.variable(),
                     targetVariable,
                     hop.node().labels(),
                     compilePropertyPredicate(hop.node().properties()),
@@ -418,6 +450,11 @@ public final class CypherToLogicalPlan {
             return propertyAccess.variable() + "." + propertyAccess.property();
         } else if (expression instanceof final AstVariableExpr variable) {
             return variable.name();
+        } else if (expression instanceof final AstDiffAccessorExpr accessor) {
+            // A ${}-free, human-readable default name that also serves as the FieldIndex/column key, e.g.
+            // "before(a.balance)" / "after(a.balance)" (mirrors defaultAggregateName's rationale).
+            final String side = accessor.side() == AstDiffSide.BEFORE ? "before" : "after";
+            return side + "(" + accessor.target().variable() + "." + accessor.target().property() + ")";
         } else if (expression instanceof final AstAggregateExpr aggregate) {
             // Code-review fix: the fallback below (renderExpression) would otherwise produce a nested "${...}"
             // reference (e.g. "count(${a.balance})") as the column NAME - unusable as a FieldIndex/column
@@ -619,8 +656,25 @@ public final class CypherToLogicalPlan {
             // names are ASCII-only literals, not user-locale-sensitive text, so Locale.ROOT is the correct fold.
             final String fn = aggregate.function().name().toLowerCase(Locale.ROOT);
             return aggregate.star() ? fn + "()" : fn + "(" + renderExpression(aggregate.argument()) + ")";
+        } else if (expression instanceof final AstDiffAccessorExpr accessor) {
+            // before(a.p)/after(a.p) project the property's value from the baseline (t1) / comparison (t2)
+            // snapshot. DiffExecutor populates the delta-table row with a "before.<var>.<prop>" /
+            // "after.<var>.<prop>" key per accessor, so this ${...} reference resolves against that side's value
+            // (docs/temporal-cypher-diff-operator.md §4.3).
+            return "${" + diffAccessorRowKey(accessor) + "}";
         }
         throw new CypherCompileException("Unrecognised expression", expression.position());
+    }
+
+    /**
+     * The delta-table row key a {@code before(var.prop)} / {@code after(var.prop)} accessor resolves against:
+     * {@code "before." + var + "." + prop} or {@code "after." + var + "." + prop}. {@code DiffExecutor} populates
+     * exactly these keys from the baseline / comparison snapshot rows (kept in one place so both sides agree).
+     * Package-private so {@code DiffExecutor} shares the identical convention. Never returns null.
+     */
+    public static String diffAccessorRowKey(final AstDiffAccessorExpr accessor) {
+        final String side = accessor.side() == AstDiffSide.BEFORE ? "before" : "after";
+        return side + "." + accessor.target().variable() + "." + accessor.target().property();
     }
 
     private static String renderValueAsExpression(final AstValue value) {
@@ -673,6 +727,127 @@ public final class CypherToLogicalPlan {
                     TemporalContext.Mode.BETWEEN, resolveInstant(between.from()), resolveInstant(between.to()));
         }
         throw new CypherCompileException("Unrecognised temporal clause", temporal.position());
+    }
+
+    /**
+     * Resolves a {@code DIFF FROM <baseline> TO <comparison>} clause to a {@link DiffContext}, enforcing the
+     * {@code baseline < comparison} (t1 &lt; t2) precondition with a positioned error (equal or reversed instants
+     * are a compile-time mistake, per {@code docs/temporal-cypher-diff-operator.md} &sect;5.5).
+     */
+    private DiffContext resolveDiff(final AstDiff diff) {
+        final Instant baseline = resolveInstant(diff.baseline());
+        final Instant comparison = resolveInstant(diff.comparison());
+        if (!baseline.isBefore(comparison)) {
+            throw new CypherCompileException(
+                    "DIFF requires baseline < comparison (FROM t1 TO t2 with t1 before t2); got baseline="
+                    + baseline + ", comparison=" + comparison, diff.position());
+        }
+        return new DiffContext(baseline, comparison);
+    }
+
+    /**
+     * Rejects a variable-length pattern under a {@code DIFF} clause. v1 diffs fixed-length patterns only
+     * (a var-length traversal run twice is deferred - {@code docs/temporal-cypher-diff-operator.md} &sect;12.1).
+     */
+    private void rejectVarLengthUnderDiff(final AstPathPattern pattern) {
+        for (final AstPatternHop hop : pattern.hops()) {
+            if (hop.edge().varLength() != null) {
+                throw new CypherCompileException(
+                        "not supported in this version: DIFF over a variable-length pattern - use a fixed-length "
+                        + "pattern", hop.edge().position());
+            }
+        }
+    }
+
+    /**
+     * Rejects {@code changeKind} / {@code before(...)} / {@code after(...)} in a query that has no {@code DIFF}
+     * clause - they are only meaningful inside a diff. Scans the {@code RETURN} items, any {@code ORDER BY} items,
+     * and the {@code WHERE} clause.
+     */
+    private void rejectDiffConstructsOutsideDiff(final AstReturnClause returnClause, final @Nullable AstWhere where) {
+        for (final AstReturnItem item : returnClause.items()) {
+            rejectIfDiffConstruct(item.expression());
+        }
+        if (returnClause.orderBy() != null) {
+            for (final AstOrderItem item : returnClause.orderBy().items()) {
+                rejectIfDiffConstruct(item.expression());
+            }
+        }
+        if (where != null) {
+            rejectIfDiffConstruct(where.expr());
+        }
+    }
+
+    private void rejectIfDiffConstruct(final AstExpression expression) {
+        switch (expression) {
+            case final AstDiffAccessorExpr accessor -> throw new CypherCompileException(
+                    accessor.side().name().toLowerCase(java.util.Locale.ROOT)
+                    + "(...) is only valid inside a DIFF query", accessor.position());
+            case final AstVariableExpr variable -> {
+                if (CHANGE_KIND_COLUMN.equals(variable.name())) {
+                    throw new CypherCompileException(
+                            "'" + CHANGE_KIND_COLUMN + "' is only valid inside a DIFF query", variable.position());
+                }
+            }
+            case final AstAggregateExpr aggregate -> {
+                if (aggregate.argument() != null) {
+                    rejectIfDiffConstruct(aggregate.argument());
+                }
+            }
+            default -> {
+                // AstPropertyAccessExpr / AstLiteralExpr carry no diff construct.
+            }
+        }
+    }
+
+    private void rejectIfDiffConstruct(final AstBooleanExpr booleanExpr) {
+        switch (booleanExpr) {
+            case final AstOrExpr or -> or.operands().forEach(this::rejectIfDiffConstruct);
+            case final AstAndExpr and -> and.operands().forEach(this::rejectIfDiffConstruct);
+            case final AstNotExpr not -> rejectIfDiffConstruct(not.operand());
+            case final AstComparisonPredicate cmp -> {
+                rejectIfDiffConstruct(cmp.left());
+                rejectIfDiffConstruct(cmp.right());
+            }
+        }
+    }
+
+    /**
+     * Rejects {@code changeKind} / {@code before(...)} / {@code after(...)} anywhere in a {@code DIFF} query's
+     * {@code WHERE} clause (v1 delta-table limitation - see {@link #compile}). Walks the boolean tree exactly like
+     * {@link #rejectIfDiffConstruct(AstBooleanExpr)} but raises a v1-specific message directing the author to use
+     * these constructs in {@code RETURN} instead.
+     */
+    private void rejectDiffConstructsInDiffWhere(final AstBooleanExpr booleanExpr) {
+        switch (booleanExpr) {
+            case final AstOrExpr or -> or.operands().forEach(this::rejectDiffConstructsInDiffWhere);
+            case final AstAndExpr and -> and.operands().forEach(this::rejectDiffConstructsInDiffWhere);
+            case final AstNotExpr not -> rejectDiffConstructsInDiffWhere(not.operand());
+            case final AstComparisonPredicate cmp -> {
+                rejectDiffConstructInDiffWhere(cmp.left());
+                rejectDiffConstructInDiffWhere(cmp.right());
+            }
+        }
+    }
+
+    private void rejectDiffConstructInDiffWhere(final AstExpression expression) {
+        switch (expression) {
+            case final AstDiffAccessorExpr accessor -> throw new CypherCompileException(
+                    "not supported in this version: "
+                    + accessor.side().name().toLowerCase(Locale.ROOT)
+                    + "(...) in a DIFF WHERE clause (filtering on it is a later phase); it is supported in RETURN",
+                    accessor.position());
+            case final AstVariableExpr variable -> {
+                if (CHANGE_KIND_COLUMN.equals(variable.name())) {
+                    throw new CypherCompileException(
+                            "not supported in this version: '" + CHANGE_KIND_COLUMN + "' in a DIFF WHERE clause "
+                            + "(filtering on it is a later phase); it is supported in RETURN", variable.position());
+                }
+            }
+            default -> {
+                // AstPropertyAccessExpr / AstLiteralExpr / AstAggregateExpr carry no diff construct we reject here.
+            }
+        }
     }
 
     private static Instant resolveInstant(final AstValue value) {

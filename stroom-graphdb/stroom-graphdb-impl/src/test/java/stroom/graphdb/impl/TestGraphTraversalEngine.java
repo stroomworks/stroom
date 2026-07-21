@@ -18,6 +18,7 @@ package stroom.graphdb.impl;
 
 import stroom.graphdb.shared.GraphDbDoc;
 import stroom.lmdb.serde.UnsignedBytesInstances;
+import stroom.planb.impl.dao.LmdbWriter;
 import stroom.planb.impl.dao.UidLookupDb;
 import stroom.query.api.DateTimeSettings;
 import stroom.query.common.v2.ExpressionPredicateFactory;
@@ -244,6 +245,46 @@ class TestGraphTraversalEngine {
                     engine.execute(readTxn, compiled.plan(), compiled.temporalContext(),
                             DateTimeSettings.builder().build()));
             assertThat(rows).extracting(row -> row[0].toString()).containsExactly("d-42");
+        }
+    }
+
+    @Test
+    void edgeVariable_bindsTheTraversedEdgesProperties_soAnEdgePropertyResolves(@TempDir final Path root) {
+        // Before edge-variable binding the engine discarded edge data mid-traversal, so c.startTime resolved to
+        // ValNull even though the edge carried it. Binding the edge to `c` makes its properties projectable.
+        try (GraphStores stores = GraphStores.provision(root.resolve("edgeprops"), DOC)) {
+            final long deviceLabel = intern(stores, stores.getLabelUids(), "Device");
+            final long accountLabel = intern(stores, stores.getLabelUids(), "Account");
+            final long idKey = intern(stores, stores.getPropertyKeyUids(), "id");
+            final long connectedTo = intern(stores, stores.getEdgeTypeUids(), "CONNECTED_TO");
+            final long deviceUid = intern(stores, stores.getNodeUids(), "d-42");
+            final long accountUid = intern(stores, stores.getNodeUids(), "account-a");
+
+            stores.write(writer -> {
+                stores.getNodes().insert(writer, deviceUid, T1, List.of(deviceLabel),
+                        Map.of("id", ValString.create("d-42")));
+                stores.getNodes().insert(writer, accountUid, T1, List.of(accountLabel),
+                        Map.of("id", ValString.create("account-a")));
+                stores.getPropertyIndex().insert(
+                        writer, deviceLabel, idKey, "d-42".getBytes(StandardCharsets.UTF_8), deviceUid);
+                stores.getOutEdges().insert(writer, deviceUid, connectedTo, accountUid, T1,
+                        Map.of("startTime", ValString.create("2026-07-05T14:02:11Z")));
+                stores.getInEdges().insert(writer, deviceUid, connectedTo, accountUid, T1,
+                        Map.of("startTime", ValString.create("2026-07-05T14:02:11Z")));
+                return null;
+            });
+
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory());
+            final CompiledCypherPlan compiled = compile(
+                    "MATCH (d:Device {id: 'd-42'})-[c:CONNECTED_TO]->(a:Account) RETURN a.id, c.startTime");
+
+            final List<Val[]> rows = stores.read(readTxn ->
+                    engine.execute(readTxn, compiled.plan(), compiled.temporalContext(),
+                            DateTimeSettings.builder().build()));
+            assertThat(rows).hasSize(1);
+            assertThat(rows.getFirst()[0].toString()).isEqualTo("account-a");
+            assertThat(rows.getFirst()[1].toString()).isEqualTo("2026-07-05T14:02:11Z");
         }
     }
 
@@ -812,6 +853,159 @@ class TestGraphTraversalEngine {
     }
 
     /** Runs {@code compiled} with its own {@code distinct()}/{@code aggregation()} against {@code stores}. */
+    @Test
+    void executeDiffBindings_classifiesAddedRemovedModifiedUnchanged_acrossTwoInstants(
+            @TempDir final Path root) {
+        // A device connected to four accounts, evolving between T1 (baseline) and T2 (comparison):
+        //   account-a: edge present at both, but a's balance changes 50 -> 999  => MODIFIED
+        //   account-b: edge added at T2                                          => ADDED
+        //   account-c: edge present at T1, tombstoned before T2                  => REMOVED
+        //   account-d: edge present at both, nothing changes                     => UNCHANGED
+        // Run the fixed-length pattern's bindings at each instant, then classify with the pure DiffOperator.
+        final Instant tMid = Instant.parse("2026-03-01T00:00:00.000Z");
+        try (GraphStores stores = GraphStores.provision(root.resolve("diff"), DOC)) {
+            final long deviceLabel = intern(stores, stores.getLabelUids(), "Device");
+            final long accountLabel = intern(stores, stores.getLabelUids(), "Account");
+            final long idKey = intern(stores, stores.getPropertyKeyUids(), "id");
+            final long connectedTo = intern(stores, stores.getEdgeTypeUids(), "CONNECTED_TO");
+            final long deviceUid = intern(stores, stores.getNodeUids(), "d-42");
+            final long aUid = intern(stores, stores.getNodeUids(), "account-a");
+            final long bUid = intern(stores, stores.getNodeUids(), "account-b");
+            final long cUid = intern(stores, stores.getNodeUids(), "account-c");
+            final long dUid = intern(stores, stores.getNodeUids(), "account-d");
+
+            stores.write(writer -> {
+                stores.getNodes().insert(writer, deviceUid, T1, List.of(deviceLabel),
+                        Map.of("id", ValString.create("d-42")));
+                stores.getPropertyIndex().insert(
+                        writer, deviceLabel, idKey, "d-42".getBytes(StandardCharsets.UTF_8), deviceUid);
+
+                // account-a: balance changes between the two instants (MODIFIED via full property-set inequality).
+                stores.getNodes().insert(writer, aUid, T1, List.of(accountLabel),
+                        Map.of("id", ValString.create("account-a"), "balance", ValLong.create(50)));
+                stores.getNodes().insert(writer, aUid, T2, List.of(accountLabel),
+                        Map.of("id", ValString.create("account-a"), "balance", ValLong.create(999)));
+                stores.getNodes().insert(writer, bUid, T1, List.of(accountLabel),
+                        Map.of("id", ValString.create("account-b")));
+                stores.getNodes().insert(writer, cUid, T1, List.of(accountLabel),
+                        Map.of("id", ValString.create("account-c")));
+                stores.getNodes().insert(writer, dUid, T1, List.of(accountLabel),
+                        Map.of("id", ValString.create("account-d")));
+
+                insertEdge(stores, writer, deviceUid, connectedTo, aUid, T1);   // a: both instants
+                insertEdge(stores, writer, deviceUid, connectedTo, bUid, T2);   // b: added at T2
+                insertEdge(stores, writer, deviceUid, connectedTo, dUid, T1);   // d: both instants, unchanged
+                // c: present at T1, tombstoned before T2.
+                insertEdge(stores, writer, deviceUid, connectedTo, cUid, T1);
+                stores.getOutEdges().delete(writer, deviceUid, connectedTo, cUid, tMid);
+                stores.getInEdges().delete(writer, deviceUid, connectedTo, cUid, tMid);
+                return null;
+            });
+
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory());
+            final CompiledCypherPlan compiled = compile(
+                    "MATCH (d:Device {id: 'd-42'})-[c:CONNECTED_TO]->(a:Account) RETURN a.id");
+
+            final List<ClassifiedMatch> classified = stores.read(readTxn -> {
+                final List<DiffMatch> baseline = engine.executeDiffBindings(
+                        readTxn, compiled.plan(), T1, DateTimeSettings.builder().build());
+                final List<DiffMatch> comparison = engine.executeDiffBindings(
+                        readTxn, compiled.plan(), T2, DateTimeSettings.builder().build());
+                return DiffOperator.classify(baseline, comparison);
+            });
+
+            // One classified path per account, keyed by the projected a.id (present in whichever snapshot it exists).
+            assertThat(classified)
+                    .extracting(m -> m.presentRow().get("a.id").toString(), ClassifiedMatch::changeKind)
+                    .containsExactlyInAnyOrder(
+                            Tuple.tuple("account-a", ChangeKind.MODIFIED),
+                            Tuple.tuple("account-b", ChangeKind.ADDED),
+                            Tuple.tuple("account-c", ChangeKind.REMOVED),
+                            Tuple.tuple("account-d", ChangeKind.UNCHANGED));
+        }
+    }
+
+    @Test
+    void diffExecutor_projectsChangeKindAndBeforeAfter_suppressingUnchanged(@TempDir final Path root) {
+        // Same four-account evolution as the bindings test, but exercised end-to-end through DiffExecutor:
+        // the projected delta table carries changeKind + before/after values, and UNCHANGED is suppressed.
+        final Instant tMid = Instant.parse("2026-03-01T00:00:00.000Z");
+        try (GraphStores stores = GraphStores.provision(root.resolve("diffexec"), DOC)) {
+            final long deviceLabel = intern(stores, stores.getLabelUids(), "Device");
+            final long accountLabel = intern(stores, stores.getLabelUids(), "Account");
+            final long idKey = intern(stores, stores.getPropertyKeyUids(), "id");
+            final long connectedTo = intern(stores, stores.getEdgeTypeUids(), "CONNECTED_TO");
+            final long deviceUid = intern(stores, stores.getNodeUids(), "d-42");
+            final long aUid = intern(stores, stores.getNodeUids(), "account-a");
+            final long bUid = intern(stores, stores.getNodeUids(), "account-b");
+            final long cUid = intern(stores, stores.getNodeUids(), "account-c");
+            final long dUid = intern(stores, stores.getNodeUids(), "account-d");
+
+            stores.write(writer -> {
+                stores.getNodes().insert(writer, deviceUid, T1, List.of(deviceLabel),
+                        Map.of("id", ValString.create("d-42")));
+                stores.getPropertyIndex().insert(
+                        writer, deviceLabel, idKey, "d-42".getBytes(StandardCharsets.UTF_8), deviceUid);
+                stores.getNodes().insert(writer, aUid, T1, List.of(accountLabel),
+                        Map.of("id", ValString.create("account-a"), "balance", ValLong.create(50)));
+                stores.getNodes().insert(writer, aUid, T2, List.of(accountLabel),
+                        Map.of("id", ValString.create("account-a"), "balance", ValLong.create(999)));
+                stores.getNodes().insert(writer, bUid, T1, List.of(accountLabel),
+                        Map.of("id", ValString.create("account-b"), "balance", ValLong.create(10)));
+                stores.getNodes().insert(writer, cUid, T1, List.of(accountLabel),
+                        Map.of("id", ValString.create("account-c"), "balance", ValLong.create(20)));
+                stores.getNodes().insert(writer, dUid, T1, List.of(accountLabel),
+                        Map.of("id", ValString.create("account-d"), "balance", ValLong.create(30)));
+
+                insertEdge(stores, writer, deviceUid, connectedTo, aUid, T1);
+                insertEdge(stores, writer, deviceUid, connectedTo, bUid, T2);
+                insertEdge(stores, writer, deviceUid, connectedTo, dUid, T1);
+                insertEdge(stores, writer, deviceUid, connectedTo, cUid, T1);
+                stores.getOutEdges().delete(writer, deviceUid, connectedTo, cUid, tMid);
+                stores.getInEdges().delete(writer, deviceUid, connectedTo, cUid, tMid);
+                return null;
+            });
+
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory());
+            final CompiledCypherPlan compiled = compile(
+                    "MATCH (d:Device {id: 'd-42'})-[c:CONNECTED_TO]->(a:Account) "
+                    + "DIFF FROM datetime('2026-01-01T00:00:00Z') TO datetime('2026-06-01T00:00:00Z') "
+                    + "RETURN changeKind, a.id, before(a.balance), after(a.balance)");
+
+            final List<Val[]> rows = stores.read(readTxn ->
+                    DiffExecutor.execute(readTxn, engine, compiled.plan(), compiled.diffContext(),
+                            DateTimeSettings.builder().build(), compiled.distinct()));
+
+            // account-d (UNCHANGED) is suppressed; the other three appear with their before/after balances.
+            // (col 0 changeKind, 1 a.id, 2 before(a.balance), 3 after(a.balance); a null side => ValNull.)
+            assertThat(rows)
+                    .extracting(
+                            r -> r[0].toString(),
+                            r -> r[1].toString(),
+                            r -> text(r[2]),
+                            r -> text(r[3]))
+                    .containsExactlyInAnyOrder(
+                            Tuple.tuple("MODIFIED", "account-a", "50", "999"),
+                            Tuple.tuple("ADDED", "account-b", null, "10"),
+                            Tuple.tuple("REMOVED", "account-c", "20", null));
+        }
+    }
+
+    /** A null-safe rendering of a projected value: {@code ValNull} (an absent before/after side) renders as a
+     * Java {@code null} rather than {@link ValNull#toString()}'s own {@code null} String. */
+    private static String text(final Val value) {
+        return value == null || value == ValNull.INSTANCE ? null : value.toString();
+    }
+
+    private static void insertEdge(final GraphStores stores, final LmdbWriter writer, final long src,
+                                   final long type, final long dst, final Instant validFrom) {
+        // Dual-write contract (P1.1): a logical edge is written to both adjacency directions.
+        stores.getOutEdges().insert(writer, src, type, dst, validFrom, Map.of());
+        stores.getInEdges().insert(writer, src, type, dst, validFrom, Map.of());
+    }
+
     private static List<Val[]> execute(final GraphStores stores, final GraphTraversalEngine engine,
                                        final CompiledCypherPlan compiled) {
         return stores.read(readTxn ->

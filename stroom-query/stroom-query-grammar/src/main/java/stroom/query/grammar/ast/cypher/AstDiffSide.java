@@ -16,14 +16,12 @@
 
 package stroom.query.grammar.ast.cypher;
 
-import stroom.query.grammar.ast.AstPosition;
-
 /**
- * Stroom's temporal extension attached to a {@link AstMatch} (not standard Cypher; see {@code Cypher.g4}'s file
- * header). Resolved into a {@code TemporalContext} at compile time (Task PoC.3); the P0.3 spike fixes the
- * execution semantics (per-edge {@code AS OF}, inclusive window intersection) that consume these values.
+ * Which snapshot of a {@code DIFF} query a {@code before(...)}/{@code after(...)} accessor reads from -
+ * {@code BEFORE} = the baseline ({@code t1}), {@code AFTER} = the comparison ({@code t2}). See
+ * {@link AstDiffAccessorExpr}.
  */
-public sealed interface AstTemporal permits AstAsOf, AstAround, AstBetween, AstDiff {
-
-    AstPosition position();
+public enum AstDiffSide {
+    BEFORE,
+    AFTER
 }

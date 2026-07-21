@@ -25,6 +25,8 @@ import stroom.query.grammar.antlr.CypherParser.BetweenClauseContext;
 import stroom.query.grammar.antlr.CypherParser.BooleanValueContext;
 import stroom.query.grammar.antlr.CypherParser.ComparisonOpContext;
 import stroom.query.grammar.antlr.CypherParser.ComparisonPredicateContext;
+import stroom.query.grammar.antlr.CypherParser.DiffAccessorContext;
+import stroom.query.grammar.antlr.CypherParser.DiffClauseContext;
 import stroom.query.grammar.antlr.CypherParser.EdgeBothContext;
 import stroom.query.grammar.antlr.CypherParser.EdgeDetailContext;
 import stroom.query.grammar.antlr.CypherParser.EdgeInContext;
@@ -249,6 +251,8 @@ public final class AstCypherBuilder {
             return new AstAround(buildValue(aroundCtx.instant), buildValue(aroundCtx.duration), position(ctx));
         } else if (ctx instanceof final BetweenClauseContext betweenCtx) {
             return new AstBetween(buildValue(betweenCtx.from), buildValue(betweenCtx.to), position(ctx));
+        } else if (ctx instanceof final DiffClauseContext diffCtx) {
+            return new AstDiff(buildValue(diffCtx.baseline), buildValue(diffCtx.comparison), position(ctx));
         }
         throw new IllegalStateException("Unrecognised temporal clause: " + ctx.getText());
     }
@@ -324,6 +328,8 @@ public final class AstCypherBuilder {
     private AstExpression buildExpression(final ExpressionContext ctx) {
         if (ctx.aggregateCall() != null) {
             return buildAggregateCall(ctx.aggregateCall());
+        } else if (ctx.diffAccessor() != null) {
+            return buildDiffAccessor(ctx.diffAccessor());
         } else if (ctx.propertyAccess() != null) {
             return buildPropertyAccess(ctx.propertyAccess());
         } else if (ctx.variableRef != null) {
@@ -351,6 +357,13 @@ public final class AstCypherBuilder {
 
     private AstPropertyAccessExpr buildPropertyAccess(final PropertyAccessContext ctx) {
         return new AstPropertyAccessExpr(ctx.variable.getText(), ctx.property.getText(), position(ctx));
+    }
+
+    private AstDiffAccessorExpr buildDiffAccessor(final DiffAccessorContext ctx) {
+        final AstDiffSide side = ctx.side.getType() == CypherParser.BEFORE
+                ? AstDiffSide.BEFORE
+                : AstDiffSide.AFTER;
+        return new AstDiffAccessorExpr(side, buildPropertyAccess(ctx.propertyAccess()), position(ctx));
     }
 
     private AstFunctionValue buildFunctionCall(final FunctionCallContext ctx) {
