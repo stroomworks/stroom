@@ -1,6 +1,6 @@
 # A Native Diff Operator for the Temporal Cypher Graph
 
-**Status:** Design proposal / feasibility study
+**Status:** v1 (delta-table) implemented — see §13. Remainder (annotated subgraph, var-length, diff-aggregation) is design proposal.
 **Audience:** Stroom engineering team, and analysts who will write the queries
 **Scope:** A first-class Cypher clause that reports **what changed** in the graph between two points in time — additions, removals and property modifications — rather than the state *at* or *over* a time window. Two output modes (a delta table for analysis, an annotated subgraph for visualization), syntax, semantics, worked examples, build strategy and risk profile.
 **Companion documents:**
@@ -362,4 +362,111 @@ The engineering is moderate; the **semantics and the new output shape carry the 
 
 ---
 
-*This document is a design proposal, not a commitment; the semantics spike exists specifically to freeze the meaning of "changed" and the annotated-subgraph rules before the main build.*
+## 12. v1 (delta-table) — frozen decisions & scope (2026-07-21)
+
+The semantics spike this document called for is resolved here for the **delta-table** build. These decisions are
+**firm for v1**; the annotated-subgraph rules (§4.4, §5.6) are *not* frozen and are deferred with the mode.
+
+### 12.1 v1 scope
+**Delta-table mode only.** `RETURN GRAPH` (annotated subgraph), variable-length `DIFF` patterns, and aggregation
+over a diff (§6.5) are **deferred to v1.1**. v1 supports **fixed-length** `MATCH` patterns only; a var-length
+pattern under `DIFF` is a compile-time error.
+
+### 12.2 Frozen semantics (confirming §3–§5)
+- **Per-element classification** is the 2×2 of §3. **Path identity** for the delta table is the **ordered tuple
+  of every bound element UID the pattern binds, including edges** (§5.1–§5.2); a topology change is
+  `REMOVED`+`ADDED`, never `MODIFIED` (§5.2).
+- **`MODIFIED` = the element's full property set differs** between the two snapshots (§5.3), not just projected
+  fields.
+- **Single `REMOVED` kind (resolves the §11 "REMOVED disambiguation" open question).** With a `WHERE` filter,
+  both a true deletion and a filter drop-out (properties changed so the element no longer matches) classify as
+  `REMOVED`; symmetrically for `ADDED`. Documented sharp edge: *with a filter present, `REMOVED` means "no longer
+  a match", not always "deleted from the graph"* (§5.4). No `LEFT_MATCH` kind in v1. Users needing "deleted
+  specifically" diff the unfiltered population.
+- **Bare property references** resolve to the present snapshot — `t2` for `ADDED`/`MODIFIED`/`UNCHANGED`, `t1` for
+  `REMOVED` (§4.3); `before(...)`/`after(...)` pin a side. `UNCHANGED` suppressed by default.
+- **`t1 < t2`** required (compile-time error otherwise); `changeKind`/`before`/`after` outside a `DIFF` query are
+  a compile-time error.
+
+### 12.3 Canonical property equality (for `MODIFIED`)
+Each element's properties are a `Map<String, Val>` decoded by the shared `ValSerdeUtil` codec
+([`GraphPropsCodec`](../stroom-graphdb/stroom-graphdb-impl/src/main/java/stroom/graphdb/impl/GraphPropsCodec.java)).
+Two elements are **equal** iff their property maps have the **same key set** and, for every key, **value-equal**
+`Val`s. Value equality is by the type-tagged canonical value (same codec both sides — a reordered map or
+insertion-order difference does not matter, keys are compared as a set; a type change, e.g. `"12"` vs `12`, is a
+difference). A missing key on one side ≠ a present key on the other. This is stricter than "the fields you
+projected", by design (§5.3) — `before()`/`after()` then surface which values moved.
+
+### 12.4 Codebase corrections folded into the build plan
+Verification against the code refined three points this document under-states:
+1. **Edge-variable binding is a prerequisite even for the delta table.** The engine today binds only target-node
+   properties and discards edge data ([`GraphTraversalEngine.acceptChainNeighbour`](../stroom-graphdb/stroom-graphdb-impl/src/main/java/stroom/graphdb/impl/GraphTraversalEngine.java)),
+   and the logical `Expand` has no relationship-variable field — so example 6.1's `c.startTime` and an edge's
+   participation in the path tuple are net-new. Built first.
+2. **Two-instant context via a separate `DiffContext` on `CompiledCypherPlan`, not by extending
+   `TemporalContext`.** The diff runs the **unchanged** `asOf` engine path twice (`TemporalContext.asOf(t1)` and
+   `asOf(t2)`) and merges — no new `TemporalContext` mode, no churn to its exhaustive switches.
+3. Minor: "one temporal clause per query" is the compiler's single-`MATCH` rule, not the grammar; `DIFF`/`FROM`/
+   `TO` are **hard** keywords; the engine already does aggregation (§6.5's rationale is stale — diff-aggregation
+   still deferred for scoping).
+
+### 12.5 Frozen output oracles
+Worked examples **6.1** (edge add/remove delta) and **6.2** (node `MODIFIED` with `before`/`after`) are the
+**expected-row oracles** for the v1 end-to-end tests: their result tables are the exact rows those queries must
+produce over an equivalent fixture.
+
+---
+
+## 13. v1 (delta-table) — as built (2026-07-21)
+
+The delta-table mode of §12 is implemented, tested and green. What shipped:
+
+### 13.1 Grammar & AST
+- A 4th temporal clause `DIFF FROM <baseline> TO <comparison>` (`diffClause` in
+  [`Cypher.g4`](../stroom-query/stroom-query-grammar/src/main/antlr/stroom/query/grammar/antlr/Cypher.g4)),
+  and `before(prop)` / `after(prop)` expression accessors (`diffAccessor`). `DIFF`/`FROM`/`TO`/`BEFORE`/`AFTER`
+  are hard keywords.
+- AST: `AstDiff` (a 4th `AstTemporal`), `AstDiffAccessorExpr` + `AstDiffSide` (an `AstExpression`), built by
+  `AstCypherBuilder`.
+
+### 13.2 Edge binding (the §12.4.1 prerequisite)
+- Logical [`Expand`](../stroom-query/stroom-query-planner/src/main/java/stroom/query/planner/logical/Expand.java)
+  carries a relationship-variable field; `GraphTraversalEngine` binds the traversed edge's properties to it (so
+  `c.startTime`-style projections resolve for **all** Cypher, not just diff) and tracks each edge's
+  `(src, edgeType, dst)` identity.
+
+### 13.3 Planner
+- `DiffContext{baseline, comparison}` on `CompiledCypherPlan` (separate from `TemporalContext`, per §12.4.2),
+  with `baseline < comparison` enforced at compile time.
+- `changeKind` renders to `${changeKind}`; `before(a.p)`/`after(a.p)` render to `${before.a.p}`/`${after.a.p}`
+  (`CypherToLogicalPlan.diffAccessorRowKey` owns the key convention).
+- Compile-time rejections: var-length under `DIFF`; `changeKind`/`before`/`after` outside `DIFF`; **v1 also
+  rejects them in a `DIFF` `WHERE`** (post-classification filtering is deferred — §12.1) and rejects an aggregate
+  in a `DIFF` `RETURN` (diff-aggregation deferred).
+
+### 13.4 Execution (Strategy A, §7.1)
+- `GraphTraversalEngine.executeDiffBindings` runs the fixed-length pattern at one instant, returning each path as
+  a `DiffMatch{identity, flatRow}` (identity = ordered `ElementId` tuple of anchor node + per-hop edge + target
+  node; edge orientation resolved per direction).
+- `DiffOperator.classify` full-outer-merges the two instants' matches by identity into `ClassifiedMatch`es
+  (`ADDED`/`REMOVED`/`MODIFIED`/`UNCHANGED`); `MODIFIED` is `Map<String,Val>.equals` over the flat rows, which is
+  exactly §12.3's canonical equality (`Val` compares by concrete type + value).
+- `DiffExecutor` suppresses `UNCHANGED`, builds one delta-table row per change (present-snapshot values +
+  `changeKind` + `before.`/`after.` values), and projects it through the ordinary `RETURN`/`ORDER BY`/`DISTINCT`/
+  `LIMIT` pipeline (`GraphTraversalEngine.projectDiffRows`). `GraphSearchProvider` branches to it when the
+  compiled plan carries a `DiffContext`; output flows to coprocessors identically to a normal query.
+
+### 13.5 Tests
+`TestDiffOperator` (full 2×2 + topology-move + edge `MODIFIED` + present-snapshot resolution),
+`TestGraphTraversalEngine` (edge binding; `executeDiffBindings` classification; `DiffExecutor` projection with
+before/after and `UNCHANGED` suppression), `TestCypherToLogicalPlan` (projection rendering + the rejections), and
+`TestGraphSearchProvider` (a `DIFF` query end-to-end through the real compiler-derived columns and
+coprocessor/result-store path).
+
+### 13.6 Deferred (unchanged from §12.1 / §10)
+`RETURN GRAPH` annotated subgraph, variable-length `DIFF`, diff-aggregation, `WHERE`-filtering on
+`changeKind`/`before`/`after`, Strategy B single-pass scan.
+
+---
+
+*§1–§11 are the original design proposal; §12 froze the v1 decisions; §13 records what was built.*

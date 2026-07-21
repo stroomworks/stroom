@@ -15,6 +15,7 @@ names are contracts.
 ## 0. How to use this document
 
 - **Reader**: an autonomous coding agent (e.g. Sonnet). Each task is written to be picked up cold.
+- **Coding standards**: follow the shared [`coding-standards.md`](coding-standards.md) — the repo's build-enforced conventions (Checkstyle at `severity=error`, licence header, tests, CHANGELOG). A clean `./gradlew clean build` is part of every task's *Done-when*.
 - **Task shape**: every task has *Goal · Depends on · Files · Contract · Done-when · Verify*. Do them in order within
   a phase; phases are gated.
 - **Depth, and why it varies (read this).** This project has a hard structural constraint the optimiser did not:

@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rendering the Graph DB with Cytoscape.js — Design Note</title>
+<style>
+  :root {
+    --bg: #f7f8fa;
+    --surface: #ffffff;
+    --text: #1c2530;
+    --muted: #5a6675;
+    --border: #dfe3e9;
+    --accent: #2f6fb0;
+    --accent-soft: #e8f1fb;
+    --new-fill: #fff4e6;
+    --new-stroke: #e08a1e;
+    --box-fill: #eef2f7;
+    --box-stroke: #9fb3c8;
+    --arrow: #6b7787;
+    --code-bg: #f0f2f5;
+    --code-text: #23303d;
+    --th-bg: #eef2f7;
+    --ok: #2e7d46;
+    --warn: #b4690e;
+    --stop: #b23b3b;
+    --shadow: 0 1px 3px rgba(20,30,45,.08), 0 6px 20px rgba(20,30,45,.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #10151b;
+      --surface: #171e26;
+      --text: #dbe3ec;
+      --muted: #93a1b1;
+      --border: #2a333e;
+      --accent: #6aa9e0;
+      --accent-soft: #1b2836;
+      --new-fill: #2e2413;
+      --new-stroke: #d8942f;
+      --box-fill: #202a35;
+      --box-stroke: #46586b;
+      --arrow: #8895a5;
+      --code-bg: #0f151b;
+      --code-text: #cdd7e2;
+      --th-bg: #202a35;
+      --ok: #6cc487;
+      --warn: #e0a24a;
+      --stop: #e08585;
+      --shadow: 0 1px 3px rgba(0,0,0,.4), 0 6px 20px rgba(0,0,0,.3);
+    }
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.62 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    padding: 0 20px;
+  }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 40px 0 80px; }
+  header.doc {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 28px 30px;
+    box-shadow: var(--shadow);
+    margin-bottom: 34px;
+  }
+  header.doc h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.2; letter-spacing: -.01em; }
+  .sub { color: var(--muted); font-size: 15px; }
+  .meta { margin-top: 14px; font-size: 14px; color: var(--muted); }
+  .meta div { margin: 3px 0; }
+  .badges { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 8px; }
+  .badge {
+    font-size: 12.5px; padding: 3px 10px; border-radius: 999px;
+    background: var(--accent-soft); color: var(--accent); border: 1px solid var(--border);
+    font-weight: 600;
+  }
+  h2 {
+    font-size: 22px; margin: 46px 0 12px; padding-bottom: 7px;
+    border-bottom: 2px solid var(--border); letter-spacing: -.01em;
+  }
+  h3 { font-size: 17.5px; margin: 28px 0 8px; }
+  p { margin: 12px 0; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 13.5px; background: var(--code-bg); color: var(--code-text);
+    padding: 1.5px 5px; border-radius: 5px;
+  }
+  pre {
+    background: var(--code-bg); color: var(--code-text);
+    padding: 15px 17px; border-radius: 10px; overflow-x: auto;
+    border: 1px solid var(--border); font-size: 13.5px; line-height: 1.5;
+  }
+  pre code { background: none; padding: 0; }
+  pre .cm { color: var(--muted); }
+  pre .kw { color: var(--accent); font-weight: 600; }
+  pre .new { color: var(--new-stroke); font-weight: 700; }
+  .table-wrap { overflow-x: auto; margin: 16px 0; border-radius: 10px; border: 1px solid var(--border); }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; background: var(--surface); }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { background: var(--th-bg); font-weight: 650; }
+  tbody tr:last-child td { border-bottom: none; }
+  td code, th code { font-size: 12.5px; }
+  .sev { font-weight: 700; white-space: nowrap; }
+  .sev.hi { color: var(--stop); }
+  .sev.med { color: var(--warn); }
+  .sev.lo { color: var(--ok); }
+  .callout {
+    background: var(--accent-soft); border: 1px solid var(--border);
+    border-left: 4px solid var(--accent); border-radius: 8px;
+    padding: 12px 16px; margin: 18px 0;
+  }
+  .callout strong { color: var(--accent); }
+  .callout.verdict { border-left-color: var(--new-stroke); }
+  .callout.verdict strong { color: var(--new-stroke); }
+  ul, ol { padding-left: 22px; }
+  li { margin: 5px 0; }
+  .toc { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px 22px; box-shadow: var(--shadow); }
+  .toc ol { columns: 2; column-gap: 34px; margin: 6px 0 0; }
+  @media (max-width: 640px) { .toc ol { columns: 1; } header.doc h1 { font-size: 24px; } }
+  figure { margin: 22px 0; text-align: center; }
+  figure svg { max-width: 100%; height: auto; }
+  figcaption { color: var(--muted); font-size: 13px; margin-top: 8px; }
+  .d-box { fill: var(--box-fill); stroke: var(--box-stroke); stroke-width: 1.5; }
+  .d-new { fill: var(--new-fill); stroke: var(--new-stroke); stroke-width: 1.8; }
+  .d-hub { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.8; }
+  .d-lbl { fill: var(--text); font-family: -apple-system, "Segoe UI", Roboto, sans-serif; font-size: 12.5px; }
+  .d-lbl.sm { font-size: 10.5px; fill: var(--muted); }
+  .d-lbl.b { font-weight: 700; }
+  .d-flow { stroke: var(--arrow); stroke-width: 1.8; fill: none; }
+  .d-title { fill: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .06em; }
+  hr { border: none; border-top: 1px solid var(--border); margin: 40px 0; }
+  .foot { color: var(--muted); font-size: 13.5px; font-style: italic; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="doc">
+  <h1>Rendering the Graph DB with Cytoscape.js</h1>
+  <div class="sub">One element-row contract, two surfaces: a built-in graph view on the Graph DB <em>Data</em> tab, and a reusable graph <em>visualisation</em> in a dashboard.</div>
+  <div class="meta">
+    <div><strong>Status:</strong> Design note</div>
+    <div><strong>Audience:</strong> Stroom engineering (graph DB, query UI, dashboard visualisations)</div>
+    <div><strong>Scope:</strong> The data shape Cytoscape.js needs, whether the Graph DB can produce it, and how to surface a Cytoscape renderer in two places — the Graph DB document's Data tab and a dashboard visualisation component — from a single shared output contract.</div>
+  </div>
+  <div class="badges">
+    <span class="badge">Enabler: the element-row (RETURN GRAPH) output</span>
+    <span class="badge">One adapter, two surfaces</span>
+    <span class="badge">Bundled, air-gap friendly</span>
+  </div>
+</header>
+
+<div class="callout verdict"><strong>The through-line.</strong> Cytoscape.js wants a de-duplicated list of node and edge <em>elements</em> (each with an <code>id</code>; edges with <code>source</code>/<code>target</code>). That is exactly the <strong>single element-row table</strong> the diff/subgraph work defines as its <code>RETURN GRAPH</code> output. Land that one output shape and it feeds <em>both</em> the built-in Data-tab view and a dashboard visualisation through the <em>same</em> row&rarr;elements adapter — the two surfaces differ only in how the rows are delivered to it.</div>
+
+<nav class="toc">
+  <strong>Contents</strong>
+  <ol>
+    <li><a href="#summary">Executive summary</a></li>
+    <li><a href="#needs">What Cytoscape.js needs</a></li>
+    <li><a href="#contract">The enabling contract: one element-row table</a></li>
+    <li><a href="#today">Current state &amp; prerequisite</a></li>
+    <li><a href="#datatab">Surface A — built-in on the Data tab</a></li>
+    <li><a href="#dashboard">Surface B — a dashboard visualisation</a></li>
+    <li><a href="#oneadapter">One adapter, two surfaces</a></li>
+    <li><a href="#reused-new">Reused vs. built new</a></li>
+    <li><a href="#risks">Risk profile</a></li>
+    <li><a href="#open">Non-goals &amp; open questions</a></li>
+  </ol>
+</nav>
+
+<h2 id="summary">1. Executive summary</h2>
+<p>Cytoscape.js is a good fit for rendering Graph DB results — but it needs <em>graph elements</em> (nodes + edges), and the engine today emits <em>scalar tabular rows</em>. The bridge is the <strong>element-row output</strong> already designed for the diff operator's <code>RETURN GRAPH</code> mode: a single table in which each row <em>is</em> a node or an edge, carrying identity, labels/properties and (for edges) endpoints. That shape maps almost 1:1 to Cytoscape's element list.</p>
+<p>Given that one output, a Cytoscape renderer can appear in two places:</p>
+<ul>
+  <li><strong>Built into the Graph DB <em>Data</em> tab</strong> — a "Graph" view mode next to the existing results table, fed directly by the tab's own query result store. Zero-configuration; the natural place to <em>look at</em> a graph you're building.</li>
+  <li><strong>As a dashboard visualisation</strong> — a reusable <code>Visualisation</code> document (Cytoscape bundled as an asset) driven by a Table&rarr;Query component, so a graph view can sit alongside other dashboard panes and participate in selection/linking.</li>
+</ul>
+<p>Both consume the same element-row rows through the same adapter. The prerequisite for either is the <code>RETURN GRAPH</code> output; the dashboard surface additionally needs Cypher to run from a generic dashboard query (the <code>from&nbsp;"GraphDb"</code> routing).</p>
+
+<h2 id="needs">2. What Cytoscape.js needs</h2>
+<p>Cytoscape consumes a collection of <strong>elements</strong> — nodes and edges — as JSON:</p>
+<pre><code>elements: {
+  nodes: [
+    { data: { id: 'acct-118', label: 'Account', owner: 'Alice' } },  <span class="cm">// id mandatory; rest for styling</span>
+    { data: { id: 'd-42',     label: 'Device' } }
+  ],
+  edges: [
+    { data: { id: 'e1', source: 'd-42', target: 'acct-118', type: 'CONNECTED_TO' } }
+  ]
+}</code></pre>
+<p>The firm requirements:</p>
+<ul>
+  <li>every <strong>node</strong> carries a unique <code>data.id</code>;</li>
+  <li>every <strong>edge</strong> carries <code>data.source</code> and <code>data.target</code> referencing node ids (and, for stable updates, its own <code>data.id</code>);</li>
+  <li>nodes are <strong>de-duplicated</strong> — one entry each, even when on many edges;</li>
+  <li>all other fields (<code>label</code>, properties, <code>type</code>, a <code>changeKind</code>) are optional <em>data</em> used for <strong>style mapping</strong>;</li>
+  <li><strong>positions are optional</strong> — a client-side <strong>layout</strong> (fcose / cola / dagre) computes them, so the database supplies no coordinates.</li>
+</ul>
+<p>A flat array of elements each tagged <code>group: 'nodes' | 'edges'</code> is equally acceptable — which is what lets a single flat table feed Cytoscape directly.</p>
+
+<h2 id="contract">3. The enabling contract: one element-row table</h2>
+<p>The output mode that produces this is <code>RETURN GRAPH</code> — the "annotated subgraph" described in the <a href="temporal-cypher-diff-operator.md">diff-operator design</a>: <em>the de-duplicated union of every node and edge in the matched subgraph, each row an element</em> carrying its identity and properties (and, in a diff, a <code>changeKind</code>). Kept as a <strong>single table</strong> (one row = one element, nodes and edges together), it maps directly onto Cytoscape:</p>
+<div class="table-wrap"><table>
+  <thead><tr><th>Element-row column</th><th>Cytoscape field</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td><code>kind</code> (<code>NODE</code> / <code>EDGE</code>)</td><td><code>group</code> (<code>nodes</code>/<code>edges</code>)</td><td>Or inferred from the presence of <code>source</code>/<code>target</code>.</td></tr>
+    <tr><td><code>id</code></td><td><code>data.id</code></td><td>The element UID (or a chosen identity property).</td></tr>
+    <tr><td><code>labels</code> / <code>type</code></td><td><code>data.label</code> / <code>data.type</code></td><td>Drives node/edge styling.</td></tr>
+    <tr><td><code>source</code> / <code>target</code></td><td><code>data.source</code> / <code>data.target</code></td><td>Edge rows only; reference node ids.</td></tr>
+    <tr><td>property columns</td><td><code>data.&lt;prop&gt;</code></td><td>Available for style mapping / tooltips.</td></tr>
+    <tr><td><code>changeKind</code> (diff mode)</td><td><code>data.changeKind</code></td><td><code>ADDED</code>/<code>REMOVED</code>/<code>MODIFIED</code>/<code>UNCHANGED</code> &rarr; per-element style.</td></tr>
+    <tr><td><em>(none)</em></td><td><code>position</code></td><td>Not supplied — Cytoscape's layout computes it.</td></tr>
+  </tbody>
+</table></div>
+<div class="callout"><strong>Why the single table matters here.</strong> A single element-row table serves three things at once: Stroom's existing single-result-set visualisations, the diff operator's annotated-subgraph mode, and Cytoscape's flat <code>group</code>-tagged element array. The adapter is a trivial row&rarr;element map: split by <code>kind</code>, dedupe node rows by <code>id</code>, build edges from <code>source</code>/<code>target</code>.</div>
+
+<h2 id="today">4. Current state &amp; prerequisite</h2>
+<p>Today the engine returns scalar rows: <code>RETURN</code> items must be <code>variable.property</code> references, and whole-element / <code>RETURN *</code> / <code>RETURN path</code> are rejected (there is no <code>id()</code>/<code>labels()</code>/<code>type()</code> in the shipped subset). The Graph DB Data tab's own code even documents this: its original default query used <code>labels(n)</code>, <code>type(r)</code> and bare <code>n, m</code> returns and <em>"could never actually run"</em>, so it was rewritten to <code>RETURN a.id, b.id</code> (<a href="../stroom-core-client/src/main/java/stroom/graphdb/client/presenter/GraphDbDataPresenter.java"><code>GraphDbDataPresenter</code></a>).</p>
+<p>So a Cytoscape renderer on either surface has a hard prerequisite: <strong>the <code>RETURN GRAPH</code> element-row output must land first</strong> (the "whole-element return" the engine lacks). The good news is that the underlying data already exists — nodes are interned UIDs, edges are <code>(srcUid, type, dstUid)</code> with properties — so this is a <em>serialisation</em> step, not new storage or traversal. Until it ships, the only way to draw a graph is the brittle client-side reshape of <code>a.id / b.id</code> columns (no stable edge identity, isolated nodes drop out) — usable for a demo, not the design target.</p>
+
+<h2 id="datatab">5. Surface A — built-in on the Data tab</h2>
+<p>The Graph DB document already has a <strong>Data</strong> tab that runs an editable Cypher query and shows results. It is built on the shared query UI: <a href="../stroom-core-client/src/main/java/stroom/graphdb/client/presenter/GraphDbDataPresenter.java"><code>GraphDbDataPresenter</code></a> extends <code>AbstractQueryDataPresenter</code> and renders through a <code>QueryResultTablePresenter</code> — i.e. today it is a <strong>table</strong>.</p>
+<p>The built-in graph view is an additive <em>view mode</em> on that tab:</p>
+<ul>
+  <li><strong>A Table / Graph toggle</strong> (or auto-select the Graph view when the query is a <code>RETURN GRAPH</code>). The Table view is unchanged; the Graph view is a new presenter that renders the same result store with Cytoscape.</li>
+  <li><strong>Fed by the tab's existing result store.</strong> No new query path — the element-row rows the tab already fetches are handed to the row&rarr;elements adapter and into a Cytoscape instance mounted on a client-side element. The tab resolves its target graph from its own doc-ref (<code>ownerDocRef</code>), so no <code>FROM</code>-equivalent is needed here.</li>
+  <li><strong>Cytoscape bundled with the client</strong> (a local asset, no external CDN) — Stroom deployments are frequently air-gapped, so the library must be self-hosted.</li>
+  <li><strong>Interaction hooks</strong> — node/edge tap can select a row / open the element's properties; a layout picker and a node cap keep large results manageable.</li>
+</ul>
+<p>This is the "look at the graph I'm building" surface described as the visualisation stretch in the parent design (<a href="temporal-cypher-graph.html">temporal-cypher-graph</a> §6.5 / P6.3). It is the lower-effort of the two surfaces because it reuses the tab's own query plumbing and needs no dashboard wiring.</p>
+
+<h2 id="dashboard">6. Surface B — a dashboard visualisation</h2>
+<p>Stroom already has a general visualisation framework; a Cytoscape graph is a new instance of it rather than new infrastructure. The moving parts:</p>
+<ul>
+  <li><strong>A <code>Visualisation</code> document</strong> (<a href="../stroom-core-shared/src/main/java/stroom/visualisation/shared/VisualisationDoc.java"><code>VisualisationDoc</code></a>) carrying a <code>functionName</code>, a <code>scriptRef</code>, and a <strong><code>settings</code> JSON</strong> that declares the config controls and how table columns feed the vis.</li>
+  <li><strong>The code</strong> — either a <code>ScriptDoc</code> (with a library like Cytoscape as a dependency <code>ScriptDoc</code>), <strong>or</strong> — the modern path — an <strong>asset bundle</strong>: if the Visualisation doc has an <code>index.html</code> asset, the runtime loads <code>/assets/{uuid}/index.html</code> directly (served by <a href="../stroom-document-asset/stroom-document-asset-impl/src/main/java/stroom/document/asset/impl/DocumentAssetServlet.java"><code>DocumentAssetServlet</code></a>). <strong>This is the natural home for a bundled <code>cytoscape.min.js</code> + a small <code>index.html</code> adapter.</strong></li>
+  <li><strong>The runtime</strong> — a same-origin iframe (<code>ui/vis.html</code> + <code>vis.js</code>) that talks to the dashboard over <code>postMessage</code>. The vis object must expose <code>element</code>, <code>setData(context, settings, data)</code>, and <code>start</code>/<code>end</code>/<code>resize</code>.</li>
+  <li><strong>The data</strong> — always <em>table-shaped</em>. The vis is linked to a <strong>Table</strong> component (itself fed by a <strong>Query</strong>); the server transforms that table into a nested <code>Store</code> tree (<a href="../stroom-query/stroom-query-common/src/main/java/stroom/query/common/v2/VisJson.java"><code>VisJson</code></a> &rarr; <a href="../stroom-query/stroom-query-api/src/main/java/stroom/query/api/VisResult.java"><code>VisResult</code></a>) per the Visualisation's <code>data.structure</code>. Controls bind <strong>by column name</strong>.</li>
+</ul>
+<p>So the Cytoscape dashboard vis is:</p>
+<ol>
+  <li>A <code>Visualisation</code> doc whose <code>settings</code> exposes <strong>field controls</strong> mapping element-row columns to graph roles — <code>id</code>, <code>source</code>, <code>target</code>, <code>label</code>, plus style/limit controls — and a <code>data.structure</code> that projects the table as a mostly-flat <strong>element list</strong> (little nesting; one row per element).</li>
+  <li>An <strong>asset bundle</strong> (<code>index.html</code> + <code>cytoscape.min.js</code> + layout extension) that implements the <code>setData</code> contract: walk the <code>Store</code> leaf rows, map columns &rarr; Cytoscape elements, <code>cy.add(...)</code>, run a layout, and call <code>cy.resize()</code>/<code>cy.fit()</code> on <code>resize()</code>.</li>
+  <li><strong>Selection wiring</strong> — a node tap calls the framework's <code>stroom.select(...)</code> to drive dashboard selection/linking, so the graph pane cooperates with tables and other panes.</li>
+</ol>
+<div class="callout"><strong>Dashboard-specific prerequisite.</strong> A dashboard Query component is a <em>generic</em> surface, so running Cypher there needs the portable <a href="cypher-from-clause-implementation-plan.md"><code>from&nbsp;"GraphDb"</code> routing</a> (today Cypher routes only via <code>ownerDocRef</code>). The Data-tab surface does not need this — it already has the graph's doc-ref.</div>
+<p><strong>Fit with the framework's grain, and where it fights it:</strong> the vis framework is built for <em>aggregated, nested tabular</em> data; a graph is a flat element list, which is the framework's simplest case (a single <code>values</code> level, no <code>nest</code>). The friction points are (a) per-level <code>limit</code> truncation — a graph needs node/edge caps exposed as controls so a big subgraph degrades predictably; (b) the ~2s refresh throttle and <code>resize</code> lifecycle — Cytoscape must re-layout/fit on those callbacks; and (c) the same-origin, <code>eval</code>-dispatch iframe — the library must be bundled locally, not pulled from a CDN.</p>
+
+<h2 id="oneadapter">7. One adapter, two surfaces</h2>
+<p>The valuable design point: the <strong>row&rarr;elements mapping is identical</strong> on both surfaces. The only difference is delivery.</p>
+<figure>
+<svg viewBox="0 0 900 380" role="img" aria-label="One element-row output feeds two delivery paths that converge on one shared Cytoscape adapter and renderer">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="var(--arrow)"/>
+    </marker>
+  </defs>
+
+  <text x="10" y="18" class="d-title">SOURCE</text>
+  <rect class="d-hub" x="270" y="28" width="360" height="56" rx="12"/>
+  <text class="d-lbl b" x="450" y="52" text-anchor="middle">Graph DB &mdash; RETURN GRAPH</text>
+  <text class="d-lbl sm" x="450" y="70" text-anchor="middle">single element-row table (nodes + edges)</text>
+
+  <line class="d-flow" x1="360" y1="84" x2="200" y2="128" marker-end="url(#arrow)"/>
+  <line class="d-flow" x1="540" y1="84" x2="700" y2="128" marker-end="url(#arrow)"/>
+
+  <text x="10" y="118" class="d-title">DELIVERY</text>
+  <rect class="d-box" x="60" y="128" width="280" height="66" rx="10"/>
+  <text class="d-lbl b" x="200" y="151" text-anchor="middle">Data tab</text>
+  <text class="d-lbl sm" x="200" y="169" text-anchor="middle">tab result store &rarr; client widget</text>
+  <text class="d-lbl sm" x="200" y="184" text-anchor="middle">(reuses the tab's own query)</text>
+
+  <rect class="d-box" x="560" y="128" width="280" height="66" rx="10"/>
+  <text class="d-lbl b" x="700" y="151" text-anchor="middle">Dashboard vis</text>
+  <text class="d-lbl sm" x="700" y="169" text-anchor="middle">Query &rarr; Table &rarr; Store tree</text>
+  <text class="d-lbl sm" x="700" y="184" text-anchor="middle">&rarr; vis.html iframe (postMessage)</text>
+
+  <line class="d-flow" x1="200" y1="194" x2="380" y2="238" marker-end="url(#arrow)"/>
+  <line class="d-flow" x1="700" y1="194" x2="520" y2="238" marker-end="url(#arrow)"/>
+
+  <text x="10" y="228" class="d-title">SHARED</text>
+  <rect class="d-new" x="300" y="238" width="300" height="52" rx="10"/>
+  <text class="d-lbl b" x="450" y="260" text-anchor="middle">row &rarr; elements adapter</text>
+  <text class="d-lbl sm" x="450" y="277" text-anchor="middle">dedupe nodes &middot; build edges &middot; style by changeKind</text>
+
+  <line class="d-flow" x1="450" y1="290" x2="450" y2="316" marker-end="url(#arrow)"/>
+  <rect class="d-box" x="300" y="316" width="300" height="46" rx="10"/>
+  <text class="d-lbl b" x="450" y="338" text-anchor="middle">Cytoscape.js canvas</text>
+  <text class="d-lbl sm" x="450" y="354" text-anchor="middle">client-side layout (fcose / cola / dagre)</text>
+</svg>
+<figcaption>One <code>RETURN GRAPH</code> output; two delivery paths (the Data tab's own result store, or a dashboard Query&rarr;Table&rarr;iframe); one shared row&rarr;elements adapter and Cytoscape renderer. Building the adapter once and hosting it in both places keeps styling, layout and selection behaviour identical.</figcaption>
+</figure>
+<p>Practically, the adapter and a thin Cytoscape wrapper can be authored once and hosted twice: as the client widget behind the Data tab's Graph view, and inside the dashboard vis's <code>index.html</code> bundle. Both receive the same columns; both emit the same elements.</p>
+
+<h2 id="reused-new">8. What's reused vs. built new</h2>
+<div class="table-wrap"><table>
+  <thead><tr><th>Reused (already shipped)</th><th>Built new</th></tr></thead>
+  <tbody>
+    <tr><td>The Data tab's query + result-store plumbing (<code>AbstractQueryDataPresenter</code>, <code>QueryResultTablePresenter</code>).</td><td>The <code>RETURN GRAPH</code> element-row output (shared prerequisite; the diff-operator D3b deliverable).</td></tr>
+    <tr><td>The dashboard visualisation framework — <code>Visualisation</code>/<code>Script</code> docs, <code>vis.html</code>/<code>vis.js</code>, <code>VisJson</code>/<code>VisResult</code>, asset serving.</td><td>The <strong>row&rarr;elements adapter</strong> + a thin Cytoscape wrapper (layout, styling by <code>changeKind</code>, selection) — authored once, hosted on both surfaces.</td></tr>
+    <tr><td>The <code>stroom.select(...)</code> selection/linking callback and the <code>setData</code>/<code>resize</code> lifecycle.</td><td>A Graph/Table <strong>view toggle</strong> on the Data tab, and a Cytoscape <strong>Visualisation doc</strong> (settings schema + bundled <code>cytoscape.min.js</code> asset).</td></tr>
+    <tr><td>Cypher execution + the graph datasource.</td><td>For the dashboard surface only: the <code>from&nbsp;"GraphDb"</code> routing so Cypher runs from a generic dashboard query.</td></tr>
+  </tbody>
+</table></div>
+
+<h2 id="risks">9. Risk profile</h2>
+<p>Ranked most-significant first; no effort figures.</p>
+<div class="table-wrap"><table>
+  <thead><tr><th>Risk</th><th>Severity</th><th>Why it matters</th><th>Mitigation</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><strong>Depends on <code>RETURN GRAPH</code></strong></td>
+      <td class="sev hi">High</td>
+      <td>Neither surface can render a real graph until the element-row output exists; scalar <code>variable.property</code> rows aren't elements.</td>
+      <td>Sequence this after (or with) the element-row deliverable; treat the row&rarr;elements adapter as consuming a stable element-row schema, and freeze that schema first.</td>
+    </tr>
+    <tr>
+      <td><strong>Large-graph render / result size</strong></td>
+      <td class="sev med">Medium</td>
+      <td>A busy subgraph can be too large for a force-directed layout to render smoothly, and the payload can be heavy.</td>
+      <td>Expose node/edge caps as controls; surface truncation rather than silently capping; pick performant layouts and consider incremental/level-of-detail rendering; anchor diffs on a bounded pattern.</td>
+    </tr>
+    <tr>
+      <td><strong>Table-shaped delivery (dashboard)</strong></td>
+      <td class="sev med">Medium</td>
+      <td>The vis framework feeds nested aggregated tables, not element JSON; a graph must be modelled as a flat element list and reshaped client-side.</td>
+      <td>Use a single <code>values</code> level (no <code>nest</code>); map columns by name via field controls; keep the reshape in the shared adapter so it matches the Data-tab path exactly.</td>
+    </tr>
+    <tr>
+      <td><strong>Layout stability across updates</strong></td>
+      <td class="sev lo">Low-Med</td>
+      <td>The dashboard refreshes on a throttle and calls <code>resize()</code>; naive re-layout makes nodes jump.</td>
+      <td>Preserve positions across incremental updates; re-run layout only on structural change; <code>cy.fit()</code> on resize.</td>
+    </tr>
+    <tr>
+      <td><strong>Bundling &amp; same-origin runtime</strong></td>
+      <td class="sev lo">Low</td>
+      <td>The vis iframe is same-origin with <code>eval</code>-based dispatch; libraries can't be pulled from a CDN (air-gapped installs).</td>
+      <td>Bundle <code>cytoscape.min.js</code> as a document asset (or Script doc); pin the version; no external network calls.</td>
+    </tr>
+  </tbody>
+</table></div>
+<div class="callout"><strong>Overall:</strong> low-to-moderate <em>once the element-row output exists</em> — this is mostly UI/adapter work over shipped frameworks, with the single real dependency being <code>RETURN GRAPH</code>. Building the adapter once for both surfaces is the main lever for keeping it cheap and consistent.</div>
+
+<h2 id="open">10. Non-goals &amp; open questions</h2>
+<ul>
+  <li><strong>Non-goal: a bespoke graph renderer.</strong> Cytoscape.js is the renderer; this note is about feeding and hosting it, not reimplementing layout.</li>
+  <li><strong>Non-goal: time-scrubbed animation.</strong> A temporal "scrubber" over <code>AS OF</code> instants is a later enhancement; v1 renders one result (including a diff's annotated snapshot).</li>
+  <li><strong>Open: node identity source.</strong> Is the Cytoscape <code>id</code> the internal element UID, or a chosen identity property? (Affects stable edge ids and cross-refresh position retention.)</li>
+  <li><strong>Open: Data-tab default view.</strong> Should the Graph view auto-activate for a <code>RETURN GRAPH</code> query and the Table view for scalar returns, or always offer a manual toggle?</li>
+  <li><strong>Open: shared code packaging.</strong> How is the one adapter shared between an in-app client widget and a sandboxed iframe bundle without divergence — a common JS module built into both?</li>
+  <li><strong>Open: selection semantics.</strong> What should tapping a node/edge do on each surface (open properties, filter the table, drive a linked dashboard pane)?</li>
+</ul>
+
+<hr>
+<p class="foot">This document is a design note, not a commitment. The one hard dependency is the <code>RETURN GRAPH</code> element-row output; given that, a single row&rarr;elements adapter can render the Graph DB with Cytoscape.js both as a built-in Data-tab view and as a reusable dashboard visualisation.</p>
+
+</div>
+</body>
+</html>
