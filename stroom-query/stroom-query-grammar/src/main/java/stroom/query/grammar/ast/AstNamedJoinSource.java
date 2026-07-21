@@ -16,25 +16,23 @@
 
 package stroom.query.grammar.ast;
 
-import org.jspecify.annotations.Nullable;
-
-import java.util.List;
 import java.util.Objects;
 
 /**
- * A {@code from <source> [as <alias>] [join ...]*} clause.
+ * An ordinary {@code join <name>} source - a bare datasource name/UUID, exactly as every join source was before
+ * Workstream C (docs/graphdb-stroomql-join-implementation-plan.md, Phase P1) introduced
+ * {@link AstSubQueryJoinSource}.
  *
- * @param source   never null; the datasource name.
- * @param alias    nullable; set iff an {@code as <alias>} was present.
- * @param joins    never null; possibly empty - see {@link AstJoin}.
- * @param position never null.
+ * @param token never null.
  */
-public record AstFrom(AstToken source, @Nullable AstToken alias, List<AstJoin> joins, AstPosition position) {
+public record AstNamedJoinSource(AstToken token) implements AstJoinSource {
 
-    public AstFrom {
-        Objects.requireNonNull(source, "source");
-        Objects.requireNonNull(joins, "joins");
-        Objects.requireNonNull(position, "position");
-        joins = List.copyOf(joins);
+    public AstNamedJoinSource {
+        Objects.requireNonNull(token, "token");
+    }
+
+    @Override
+    public AstPosition position() {
+        return token.position();
     }
 }

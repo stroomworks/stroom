@@ -25,6 +25,7 @@ import stroom.query.grammar.ast.AstQuery;
 import stroom.query.grammar.parse.StroomQlParser;
 import stroom.query.planner.logical.Aggregate;
 import stroom.query.planner.logical.Filter;
+import stroom.query.planner.logical.GraphJoinSource;
 import stroom.query.planner.logical.Join;
 import stroom.query.planner.logical.JoinType;
 import stroom.query.planner.logical.LogicalPlan;
@@ -252,6 +253,108 @@ class TestBinder {
         assertThatThrownBy(() -> bind("from \"Events\" select StreamId limit notANumber"))
                 .isInstanceOf(BindException.class)
                 .hasMessageContaining("not a number");
+    }
+
+    // ------------------------------------------------------------------------------------------------------
+    // Workstream C - a Cypher sub-query as a join source (docs/graphdb-stroomql-join-implementation-plan.md,
+    // Phase P2). The graph side's schema is derived from its own RETURN ... AS list (CypherJoinSchema's C0
+    // contract) - Events/Users' FieldInfoSource metadata plays no part in resolving it.
+    // ------------------------------------------------------------------------------------------------------
+
+    @Test
+    void graphJoinSource_derivesSchemaFromReturnAsAliases_bindsAliasFieldOnBothSides() {
+        final LogicalPlan plan = bind(
+                "from \"Events\" as e inner join ( from \"CorpGraph\" match (u:User)-[:MEMBER_OF]->(g:Group) "
+                + "return u.id as userId, g.name as groupName ) as ident on e.UserId = ident.userId "
+                + "select e.StreamId, ident.groupName");
+
+        assertThat(plan).isInstanceOf(Project.class);
+        final Join join = (Join) ((Project) plan).input();
+        assertThat(join.joinType()).isEqualTo(JoinType.INNER);
+        assertThat(join.left()).isEqualTo(new Scan("e", "Events", join.left().position()));
+        assertThat(join.right()).isInstanceOf(GraphJoinSource.class);
+        final GraphJoinSource graphSource = (GraphJoinSource) join.right();
+        assertThat(graphSource.alias()).isEqualTo("ident");
+        assertThat(graphSource.cypherText()).contains("match (u:User)-[:MEMBER_OF]->(g:Group)");
+
+        assertThat(join.equiKeys()).hasSize(1);
+        assertThat(join.equiKeys().getFirst().left().alias()).isEqualTo("e");
+        assertThat(join.equiKeys().getFirst().left().field()).isEqualTo("UserId");
+        assertThat(join.equiKeys().getFirst().right().alias()).isEqualTo("ident");
+        assertThat(join.equiKeys().getFirst().right().field()).isEqualTo("userId");
+    }
+
+    @Test
+    void graphJoinSource_leftJoin_bindsToLeftJoinType() {
+        final LogicalPlan plan = bind(
+                "from \"Events\" as e left join ( from \"FraudGraph\" match (a:Account)-[:FLAGGED_BY]->(r:Rule) "
+                + "return a.number as acct, r.name as rule ) as flag on e.UserId = flag.acct "
+                + "select e.StreamId, flag.rule");
+
+        final Join join = (Join) ((Project) plan).input();
+        assertThat(join.joinType()).isEqualTo(JoinType.LEFT);
+        assertThat(join.right()).isInstanceOf(GraphJoinSource.class);
+    }
+
+    @Test
+    void graphJoinSource_temporalAsOfInsideTheSubQuery_bindsCleanly() {
+        // Mirrors the design doc's §5.1 reachability example - a variable-length, temporal traversal inside the
+        // graph side must not disturb schema derivation (a single projected column, "hostId").
+        final LogicalPlan plan = bind(
+                "from \"Events\" as e inner join ( "
+                + "from \"HostGraph\" match (seed:Host {id: 'compromised-1'})-[:CONNECTED_TO*1..3]->(h:Host) "
+                + "as of datetime('2026-07-01T09:00:00Z') return distinct h.id as hostId "
+                + ") as reach on e.UserId = reach.hostId select e.StreamId");
+
+        final Join join = (Join) ((Project) plan).input();
+        assertThat(join.equiKeys().getFirst().right().field()).isEqualTo("hostId");
+    }
+
+    @Test
+    void graphJoinSource_missingAsAlias_throwsBindException() {
+        assertThatThrownBy(() -> bind(
+                "from \"Events\" as e inner join ( from \"G\" match (u:User) return u.id ) as ident "
+                + "on e.UserId = ident.userId select e.StreamId"))
+                .isInstanceOf(BindException.class)
+                .hasMessageContaining("Join side 'ident'")
+                .hasMessageContaining("AS alias");
+    }
+
+    @Test
+    void graphJoinSource_bareVariableReturn_throwsBindException() {
+        assertThatThrownBy(() -> bind(
+                "from \"Events\" as e inner join ( from \"G\" match (n:Foo) return n as node ) as ident "
+                + "on e.UserId = ident.node select e.StreamId"))
+                .isInstanceOf(BindException.class)
+                .hasMessageContaining("Join side 'ident'")
+                .hasMessageContaining("whole matched node/edge");
+    }
+
+    @Test
+    void graphJoinSource_joinKeyNamesAColumnTheReturnDoesNotProject_throwsPositionedBindException() {
+        assertThatThrownBy(() -> bind(
+                "from \"Events\" as e inner join ( from \"G\" match (u:User) return u.id as userId ) as ident "
+                + "on e.UserId = ident.bogus select e.StreamId"))
+                .isInstanceOf(BindException.class)
+                .hasMessageContaining("Unknown field 'bogus' on 'ident'");
+    }
+
+    @Test
+    void graphJoinSource_invalidCypherBody_throwsClearBindException() {
+        assertThatThrownBy(() -> bind(
+                "from \"Events\" as e inner join ( this is not cypher at all ) as ident "
+                + "on e.UserId = ident.userId select e.StreamId"))
+                .isInstanceOf(BindException.class)
+                .hasMessageContaining("not a valid Cypher sub-query");
+    }
+
+    @Test
+    void graphJoinSource_selectingAnUnprojectedColumn_throwsBindException() {
+        assertThatThrownBy(() -> bind(
+                "from \"Events\" as e inner join ( from \"G\" match (u:User) return u.id as userId ) as ident "
+                + "on e.UserId = ident.userId select ident.bogus"))
+                .isInstanceOf(BindException.class)
+                .hasMessageContaining("Unknown field 'bogus' on 'ident'");
     }
 
     @Test

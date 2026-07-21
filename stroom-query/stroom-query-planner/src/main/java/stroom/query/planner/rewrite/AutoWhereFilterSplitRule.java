@@ -24,6 +24,7 @@ import stroom.query.api.datasource.QueryField;
 import stroom.query.planner.logical.Aggregate;
 import stroom.query.planner.logical.Expand;
 import stroom.query.planner.logical.Filter;
+import stroom.query.planner.logical.GraphJoinSource;
 import stroom.query.planner.logical.Having;
 import stroom.query.planner.logical.Join;
 import stroom.query.planner.logical.Limit;
@@ -90,6 +91,9 @@ public final class AutoWhereFilterSplitRule implements RewriteRule {
             case final VarLengthExpand vle -> new VarLengthExpand(apply(vle.input()), vle.edgeType(),
                     vle.direction(), vle.minHops(), vle.maxHops(), vle.targetVariable(), vle.targetLabels(),
                     vle.targetPropertyPredicate(), vle.position());
+            // A graph join side (Phase P1/P2): a leaf with no where/filter split to perform - see
+            // GraphJoinSource's Javadoc.
+            case final GraphJoinSource g -> g;
         };
     }
 

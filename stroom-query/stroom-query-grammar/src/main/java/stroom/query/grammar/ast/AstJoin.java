@@ -23,20 +23,21 @@ import java.util.Objects;
 
 /**
  * A {@code [left|inner]? join <source> [as <alias>] on <cond> [and <cond>]*} clause, attached to the
- * {@code from} it follows.
- *
- * <p><b>Reserved for Phase 6</b>: parsed here (see the design plan's Phase 1 scope) but rejected by the binder
- * with a clear "joins not yet enabled" message until Phase 6 lands.</p>
+ * {@code from} it follows. {@code source} is either a plain datasource name ({@link AstNamedJoinSource}) or, since
+ * Workstream C ({@code docs/graphdb-stroomql-join-implementation-plan.md}, Phase P1), a bracketed sub-query
+ * ({@link AstSubQueryJoinSource}).
  *
  * @param joinType nullable; {@code null} means no explicit {@code left}/{@code inner} keyword was written
- *                 (defaults to inner, matching ordinary SQL convention - not yet meaningful before Phase 6).
+ *                 (defaults to inner, matching ordinary SQL convention).
  * @param source   never null.
- * @param alias    nullable.
+ * @param alias    nullable for a named source (defaults to the datasource name); always present for a
+ *                 sub-query source - enforced by {@code AstBuilder} as a positioned parse error, not here, since
+ *                 there is no datasource name to default one from.
  * @param conditions never null; never empty (the grammar requires at least one {@code on} condition).
  * @param position never null.
  */
 public record AstJoin(@Nullable JoinType joinType,
-                      AstToken source,
+                      AstJoinSource source,
                       @Nullable AstToken alias,
                       List<AstJoinCondition> conditions,
                       AstPosition position) {
@@ -48,7 +49,7 @@ public record AstJoin(@Nullable JoinType joinType,
         conditions = List.copyOf(conditions);
     }
 
-    /** Which side's rows are preserved when a join condition doesn't match - see the design plan's Phase 6. */
+    /** Which side's rows are preserved when a join condition doesn't match. */
     public enum JoinType {
         LEFT,
         INNER

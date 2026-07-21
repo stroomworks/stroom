@@ -27,6 +27,7 @@ import stroom.query.planner.cost.StateLookup;
 import stroom.query.planner.logical.Aggregate;
 import stroom.query.planner.logical.Expand;
 import stroom.query.planner.logical.Filter;
+import stroom.query.planner.logical.GraphJoinSource;
 import stroom.query.planner.logical.Having;
 import stroom.query.planner.logical.Join;
 import stroom.query.planner.logical.Limit;
@@ -110,6 +111,15 @@ final class LogicalPlanExplainer {
                     "VarLengthExpand " + vle.direction() + " " + vle.edgeType()
                             + "*" + vle.minHops() + ".." + vle.maxHops() + " as " + vle.targetVariable(),
                     toNode(vle.input()));
+            // A graph join side (Phase P1/P2, docs/graphdb-stroomql-join-implementation-plan.md): no compile-time
+            // cost estimate yet (Phase P5, deferrable - the graph engine's stats port isn't wired into CostModel
+            // for a join side) - explainJoin's null-costedAccessPath "nested join" branch already handles that
+            // gracefully.
+            case final GraphJoinSource g -> new Node(
+                    ExplainPlan.builder()
+                            .description("GraphJoinSource " + g.alias() + " (Cypher sub-query)")
+                            .build(),
+                    null);
         };
     }
 

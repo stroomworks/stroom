@@ -87,6 +87,7 @@ class TestJoinSearchProvider {
 
     private static final DocRef LEFT_DATA_SOURCE = new DocRef("LeftType", "left-uuid", "Left");
     private static final DocRef RIGHT_DATA_SOURCE = new DocRef("RightType", "right-uuid", "Right");
+    private static final DocRef GRAPH_DATA_SOURCE = new DocRef("GraphDb", "graph-uuid", "CorpGraph");
     private static final Executor DIRECT_EXECUTOR = Runnable::run;
     private static final SizesProvider SIZES_PROVIDER = Sizes::unlimited;
 
@@ -521,6 +522,124 @@ class TestJoinSearchProvider {
     }
 
     // ------------------------------------------------------------------------------------------------------
+    // Workstream C, Phase P4 (docs/graphdb-stroomql-join-implementation-plan.md): a graph-typed side ("GraphDb")
+    // needs no special-casing in JoinSearchProvider at all - openSide already routes purely by DocRef.getType(),
+    // so a fake provider registered under that type is joined exactly like any other. Plus the graph-side row
+    // cap guardrail (Task C4).
+    // ------------------------------------------------------------------------------------------------------
+
+    @Test
+    void innerJoin_graphTypedSide_isRoutedAndJoinedLikeAnyOtherProvider_noSpecialCasingNeeded() {
+        // Same shape as innerJoin_returnsRealJoinedRows_throughRealCoprocessors, but the right side's DocRef type
+        // is "GraphDb" (what GraphSearchProvider is registered under) rather than an arbitrary "RightType" -
+        // proves the reachability/enrichment-join story (design doc §5) needs no new join algorithm.
+        final SearchProvider leftProvider = fakeSideProvider(
+                LEFT_DATA_SOURCE, List.of("UserId"),
+                List.of(new Val[]{ValLong.create(1)}, new Val[]{ValLong.create(2)}));
+        final SearchProvider graphProvider = fakeSideProvider(
+                GRAPH_DATA_SOURCE, List.of("Id", "Name"),
+                List.<Val[]>of(new Val[]{ValLong.create(2), ValString.create("Bob")}));
+
+        final ResultStore resultStore = provider(registry(leftProvider, graphProvider))
+                .createResultStore(outerRequestWithRightDataSource(
+                        GRAPH_DATA_SOURCE, ExpressionOperator.builder().build(), JoinSpec.JoinType.INNER));
+
+        final List<Val[]> rows = readTableRows(resultStore);
+        assertThat(rows).hasSize(1);
+        assertThat(rows.getFirst()[0]).isEqualTo(ValLong.create(2));
+        assertThat(rows.getFirst()[1]).isEqualTo(ValString.create("Bob"));
+    }
+
+    @Test
+    void leftJoin_graphTypedSide_enrichment_padsUnmatchedLeftRows_endToEnd() {
+        // The enrichment-join shape (design doc §5.2): every left (event) row is kept; a left row with no match
+        // in the graph side is null-padded, not dropped.
+        final SearchProvider leftProvider = fakeSideProvider(
+                LEFT_DATA_SOURCE, List.of("UserId"),
+                List.of(new Val[]{ValLong.create(1)}, new Val[]{ValLong.create(2)}));
+        final SearchProvider graphProvider = fakeSideProvider(
+                GRAPH_DATA_SOURCE, List.of("Id", "Name"),
+                List.<Val[]>of(new Val[]{ValLong.create(2), ValString.create("Bob")}));
+
+        final ResultStore resultStore = provider(registry(leftProvider, graphProvider))
+                .createResultStore(outerRequestWithRightDataSource(
+                        GRAPH_DATA_SOURCE, ExpressionOperator.builder().build(), JoinSpec.JoinType.LEFT));
+
+        final List<Val[]> rows = readTableRows(resultStore);
+        assertThat(rows).hasSize(2);
+        assertThat(rows).anySatisfy(row -> {
+            assertThat(row[0]).isEqualTo(ValLong.create(1));
+            assertThat(row[1]).isEqualTo(ValNull.INSTANCE);
+        });
+        assertThat(rows).anySatisfy(row -> {
+            assertThat(row[0]).isEqualTo(ValLong.create(2));
+            assertThat(row[1]).isEqualTo(ValString.create("Bob"));
+        });
+    }
+
+    @Test
+    void graphSideRowCap_exceeded_reportsAClearErrorOnTheResultStore() {
+        // Task C4: unlike maxSideRows' usual build-side-only reach, a graph-typed side is capped regardless of
+        // which role (build or probe) A6/the LEFT-join rule assigns it - here the graph side is small enough it
+        // would be the (otherwise uncapped, since it's an INNER join and the left side is bigger) probe side by
+        // A6's own build-side-selection rule were it not graph-typed; the guardrail still catches it.
+        final SearchProvider leftProvider = fakeSideProvider(
+                LEFT_DATA_SOURCE, List.of("UserId"),
+                List.of(new Val[]{ValLong.create(1)}, new Val[]{ValLong.create(2)}, new Val[]{ValLong.create(3)}));
+        final SearchProvider graphProvider = fakeSideProvider(
+                GRAPH_DATA_SOURCE, List.of("Id", "Name"),
+                List.of(new Val[]{ValLong.create(1), ValString.create("Alice")},
+                        new Val[]{ValLong.create(2), ValString.create("Bob")}));
+
+        final ResultStore resultStore =
+                provider(registry(leftProvider, graphProvider), () -> new JoinConfig(1L, null, null, null))
+                        .createResultStore(outerRequestWithRightDataSource(
+                                GRAPH_DATA_SOURCE, ExpressionOperator.builder().build(), JoinSpec.JoinType.INNER));
+
+        assertThat(resultStore.getErrors())
+                .anySatisfy(error -> assertThat(error.getMessage()).contains("graph join side row count"));
+    }
+
+    @Test
+    void graphSideRowCap_underTheCap_isUnaffected() {
+        final SearchProvider leftProvider = fakeSideProvider(
+                LEFT_DATA_SOURCE, List.of("UserId"),
+                List.of(new Val[]{ValLong.create(1)}, new Val[]{ValLong.create(2)}));
+        final SearchProvider graphProvider = fakeSideProvider(
+                GRAPH_DATA_SOURCE, List.of("Id", "Name"),
+                List.<Val[]>of(new Val[]{ValLong.create(2), ValString.create("Bob")}));
+
+        final ResultStore resultStore =
+                provider(registry(leftProvider, graphProvider), () -> new JoinConfig(10L, null, null, null))
+                        .createResultStore(outerRequestWithRightDataSource(
+                                GRAPH_DATA_SOURCE, ExpressionOperator.builder().build(), JoinSpec.JoinType.INNER));
+
+        assertThat(resultStore.getErrors()).isEmpty();
+        assertThat(readTableRows(resultStore)).hasSize(1);
+    }
+
+    @Test
+    void nonGraphProbeSide_exceedingMaxSideRows_isNotCapped_theGuardrailIsGraphSpecific() {
+        // Regression guard: the new graph-side check must not widen maxSideRows into capping an ordinary
+        // (non-graph) probe side too - a LEFT join's probe (left) side is deliberately uncapped so a large event
+        // stream keeps working. Left has 3 rows (probe, non-graph, "LeftType"), cap is 1 - would breach if the
+        // check applied to it, but it must not.
+        final SearchProvider leftProvider = fakeSideProvider(
+                LEFT_DATA_SOURCE, List.of("UserId"),
+                List.of(new Val[]{ValLong.create(1)}, new Val[]{ValLong.create(2)}, new Val[]{ValLong.create(3)}));
+        final SearchProvider rightProvider = fakeSideProvider(
+                RIGHT_DATA_SOURCE, List.of("Id", "Name"),
+                List.<Val[]>of(new Val[]{ValLong.create(2), ValString.create("Bob")}));
+
+        final ResultStore resultStore =
+                provider(registry(leftProvider, rightProvider), () -> new JoinConfig(1L, null, null, null))
+                        .createResultStore(outerRequest(ExpressionOperator.builder().build(), JoinSpec.JoinType.LEFT));
+
+        assertThat(resultStore.getErrors()).isEmpty();
+        assertThat(readTableRows(resultStore)).hasSize(3);
+    }
+
+    // ------------------------------------------------------------------------------------------------------
     // Error / resource-safety paths
     // ------------------------------------------------------------------------------------------------------
 
@@ -948,11 +1067,19 @@ class TestJoinSearchProvider {
 
     private static SearchRequest outerRequest(final ExpressionOperator outerExpression,
                                               final JoinSpec.JoinType joinType) {
+        return outerRequestWithRightDataSource(RIGHT_DATA_SOURCE, outerExpression, joinType);
+    }
+
+    /** Same shape as {@link #outerRequest(ExpressionOperator, JoinSpec.JoinType)}, but with the right side's
+     *  {@code DocRef} overridable - used by the Workstream C graph-typed-side tests above, which need the right
+     *  side registered under type {@code "GraphDb"} rather than the plain {@link #RIGHT_DATA_SOURCE}. */
+    private static SearchRequest outerRequestWithRightDataSource(
+            final DocRef rightDataSource, final ExpressionOperator outerExpression, final JoinSpec.JoinType joinType) {
         final SearchRequest leftSide = SearchRequest.builder()
                 .query(Query.builder().dataSource(LEFT_DATA_SOURCE).build())
                 .build();
         final SearchRequest rightSide = SearchRequest.builder()
-                .query(Query.builder().dataSource(RIGHT_DATA_SOURCE).build())
+                .query(Query.builder().dataSource(rightDataSource).build())
                 .build();
         final JoinSpec joinSpec = JoinSpec.builder()
                 .left(leftSide)

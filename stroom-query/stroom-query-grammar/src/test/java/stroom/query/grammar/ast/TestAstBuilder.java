@@ -18,6 +18,7 @@ package stroom.query.grammar.ast;
 
 import stroom.query.grammar.antlr.StroomQLLexer;
 import stroom.query.grammar.antlr.StroomQLParser;
+import stroom.query.grammar.parse.SyntaxException;
 
 import org.antlr.v4.runtime.CharStreams;
 import org.antlr.v4.runtime.CommonTokenStream;
@@ -319,7 +320,7 @@ class TestAstBuilder {
     }
 
     @Test
-    void join_reserved_capturesTypeSourceAliasAndConditions() {
+    void join_namedSource_capturesTypeSourceAliasAndConditions() {
         final AstQuery query = build(
                 "from Events as e left join UserState as u on e.userId = u.userId select e.userId");
 
@@ -327,7 +328,8 @@ class TestAstBuilder {
         assertThat(query.from().joins()).hasSize(1);
         final AstJoin join = query.from().joins().getFirst();
         assertThat(join.joinType()).isEqualTo(AstJoin.JoinType.LEFT);
-        assertThat(join.source().unescapedText()).isEqualTo("UserState");
+        assertThat(join.source()).isInstanceOf(AstNamedJoinSource.class);
+        assertThat(((AstNamedJoinSource) join.source()).token().unescapedText()).isEqualTo("UserState");
         assertThat(join.alias().unescapedText()).isEqualTo("u");
         assertThat(join.conditions()).hasSize(1);
         assertThat(join.conditions().getFirst().left().unescapedText()).isEqualTo("e.userId");
@@ -339,6 +341,54 @@ class TestAstBuilder {
         final AstQuery query = build("from Events join UserState on userId = userId select a");
 
         assertThat(query.from().joins().getFirst().joinType()).isNull();
+    }
+
+    // ------------------------------------------------------------------------------------------------------
+    // sub-query join source (docs/graphdb-stroomql-join-implementation-plan.md, Phase P1)
+    // ------------------------------------------------------------------------------------------------------
+
+    @Test
+    void join_subQuerySource_capturesRawTextAndAlias() {
+        final AstQuery query = build(
+                "from AuthEvents as e inner join ( from \"CorpGraph\" match (u:User)-[:MEMBER_OF]->(g:Group) "
+                + "return u.id as userId, g.name as groupName ) as ident on e.user = ident.userId "
+                + "select e.time, ident.groupName");
+
+        assertThat(query.from().joins()).hasSize(1);
+        final AstJoin join = query.from().joins().getFirst();
+        assertThat(join.joinType()).isEqualTo(AstJoin.JoinType.INNER);
+        assertThat(join.source()).isInstanceOf(AstSubQueryJoinSource.class);
+        final AstSubQueryJoinSource subQuery = (AstSubQueryJoinSource) join.source();
+        assertThat(subQuery.rawText()).contains("from \"CorpGraph\"", "match (u:User)-[:MEMBER_OF]->(g:Group)",
+                "return u.id as userId, g.name as groupName");
+        assertThat(join.alias().unescapedText()).isEqualTo("ident");
+        assertThat(join.conditions()).hasSize(1);
+        assertThat(join.conditions().getFirst().left().unescapedText()).isEqualTo("e.user");
+        assertThat(join.conditions().getFirst().right().unescapedText()).isEqualTo("ident.userId");
+    }
+
+    @Test
+    void join_subQuerySource_nestedParenthesesInsideBodyAreBalancedCorrectly() {
+        // The graph pattern's own brackets `(u:User)`/`(g:Group)` must not be mistaken for the join source's
+        // closing bracket - proves subQueryBody's nested-bracket balancing finds the REAL closing bracket.
+        final AstQuery query = build(
+                "from AuthEvents inner join ( from \"G\" match (a)-[:R]->(b) return a.id as x ) as g "
+                + "on user = g.x select x");
+
+        // Leading/trailing whitespace immediately touching the brackets is not part of the captured span (the
+        // rule's own start/stop tokens are its first/last CONTENT tokens, not the surrounding hidden-channel
+        // whitespace) - only interior whitespace between content tokens survives.
+        final AstSubQueryJoinSource subQuery = (AstSubQueryJoinSource) query.from().joins().getFirst().source();
+        assertThat(subQuery.rawText()).isEqualTo(
+                "from \"G\" match (a)-[:R]->(b) return a.id as x");
+    }
+
+    @Test
+    void join_subQuerySource_withoutAlias_isAPositionedSyntaxError() {
+        assertThatThrownBy(() -> build(
+                "from AuthEvents inner join ( from \"G\" match (a) return a.id as x ) on user = x select x"))
+                .isInstanceOf(SyntaxException.class)
+                .hasMessageContaining("alias");
     }
 
     @Test

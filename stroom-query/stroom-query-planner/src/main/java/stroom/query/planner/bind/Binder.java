@@ -40,6 +40,7 @@ import stroom.query.grammar.ast.AstIsNullTerm;
 import stroom.query.grammar.ast.AstJoin;
 import stroom.query.grammar.ast.AstJoinCondition;
 import stroom.query.grammar.ast.AstLimitClause;
+import stroom.query.grammar.ast.AstNamedJoinSource;
 import stroom.query.grammar.ast.AstNotExpr;
 import stroom.query.grammar.ast.AstOrExpr;
 import stroom.query.grammar.ast.AstPosition;
@@ -54,14 +55,21 @@ import stroom.query.grammar.ast.AstSelectStar;
 import stroom.query.grammar.ast.AstShowClause;
 import stroom.query.grammar.ast.AstSortClause;
 import stroom.query.grammar.ast.AstSortItem;
+import stroom.query.grammar.ast.AstSubQueryJoinSource;
 import stroom.query.grammar.ast.AstTerm;
 import stroom.query.grammar.ast.AstToken;
 import stroom.query.grammar.ast.AstValue;
 import stroom.query.grammar.ast.AstWhereClause;
 import stroom.query.grammar.ast.AstWindowClause;
+import stroom.query.grammar.ast.cypher.AstCypherQuery;
+import stroom.query.grammar.parse.CypherQueryParser;
+import stroom.query.planner.cypher.CypherCompileException;
+import stroom.query.planner.cypher.CypherJoinSchema;
+import stroom.query.planner.cypher.CypherToLogicalPlan;
 import stroom.query.planner.logical.Aggregate;
 import stroom.query.planner.logical.EquiKey;
 import stroom.query.planner.logical.Filter;
+import stroom.query.planner.logical.GraphJoinSource;
 import stroom.query.planner.logical.Having;
 import stroom.query.planner.logical.Join;
 import stroom.query.planner.logical.JoinType;
@@ -235,16 +243,15 @@ public final class Binder {
     private LogicalPlan bindFromAndJoins(final AstFrom from, final Scope scope) {
         final String primaryAlias = aliasOrSourceName(from.alias(), from.source());
         final Scan primaryScan = new Scan(primaryAlias, from.source().unescapedText(), from.position());
-        scope.scansByAlias.put(primaryAlias, primaryScan);
+        scope.sourcesByAlias.put(primaryAlias, new ScanSource(primaryScan));
 
         LogicalPlan plan = primaryScan;
         for (final AstJoin join : from.joins()) {
-            final String joinAlias = aliasOrSourceName(join.alias(), join.source());
-            if (scope.scansByAlias.containsKey(joinAlias)) {
+            final String joinAlias = joinAlias(join);
+            if (scope.sourcesByAlias.containsKey(joinAlias)) {
                 throw new BindException("Duplicate source alias '" + joinAlias + "'", join.position());
             }
-            final Scan joinScan = new Scan(joinAlias, join.source().unescapedText(), join.position());
-            scope.scansByAlias.put(joinAlias, joinScan);
+            final LogicalPlan joinOperand = bindJoinSource(join, joinAlias, scope);
 
             final List<EquiKey> equiKeys = new ArrayList<>(join.conditions().size());
             for (final AstJoinCondition condition : join.conditions()) {
@@ -254,13 +261,105 @@ public final class Binder {
                 equiKeys.add(new EquiKey(left, right));
             }
             final JoinType joinType = join.joinType() == AstJoin.JoinType.LEFT ? JoinType.LEFT : JoinType.INNER;
-            plan = new Join(plan, joinScan, joinType, equiKeys, join.position());
+            plan = new Join(plan, joinOperand, joinType, equiKeys, join.position());
         }
         return plan;
     }
 
     private static String aliasOrSourceName(final @Nullable AstToken alias, final AstToken source) {
         return alias != null ? alias.unescapedText() : source.unescapedText();
+    }
+
+    /**
+     * @return {@code join}'s alias - explicit if given, else (a named source only - {@code AstBuilder} enforces a
+     *         sub-query source always carries one, see {@link AstSubQueryJoinSource}'s Javadoc) the source name.
+     */
+    private static String joinAlias(final AstJoin join) {
+        if (join.alias() != null) {
+            return join.alias().unescapedText();
+        }
+        if (join.source() instanceof final AstNamedJoinSource named) {
+            return named.token().unescapedText();
+        }
+        throw new IllegalStateException(
+                "A sub-query join source must carry an alias - AstBuilder should have rejected this already");
+    }
+
+    /**
+     * Binds one join's source into the {@link LogicalPlan} operand {@link Join} embeds, registering its alias in
+     * {@code scope} so later {@code on}/{@code where}/{@code select} references resolve against it - a plain
+     * {@link Scan} for a named source, or (Phase P1/P2, docs/graphdb-stroomql-join-implementation-plan.md) a
+     * {@link GraphJoinSource} for a Cypher sub-query source, whose schema is derived from its own
+     * {@code RETURN ... AS} list via {@link CypherJoinSchema}.
+     */
+    private LogicalPlan bindJoinSource(final AstJoin join, final String joinAlias, final Scope scope) {
+        return switch (join.source()) {
+            case final AstNamedJoinSource named -> {
+                final Scan joinScan = new Scan(joinAlias, named.token().unescapedText(), join.position());
+                scope.sourcesByAlias.put(joinAlias, new ScanSource(joinScan));
+                yield joinScan;
+            }
+            case final AstSubQueryJoinSource subQuery -> bindGraphJoinSource(subQuery, joinAlias, scope);
+        };
+    }
+
+    /**
+     * Parses and compiles {@code subQuery}'s raw Cypher text far enough to derive its join-side schema (Phase
+     * P2), registers that schema in {@code scope} under {@code alias}, and returns the {@link GraphJoinSource}
+     * leaf {@link #bindFromAndJoins} embeds as the {@link Join} operand. The compiled plan itself is discarded
+     * immediately afterwards - only the raw text survives, to be re-parsed/re-compiled again at Phase P3 (see
+     * {@link GraphJoinSource}'s Javadoc for why).
+     *
+     * <p>Today the only sub-query body this method knows how to interpret is Cypher - there is no StroomQL-
+     * specific parsing of the graph body attempted (a nested StroomQL join side is a separate, larger feature,
+     * out of scope for Workstream C). A parse/compile failure - including a sub-query that simply isn't valid
+     * Cypher at all - is reported as a {@link BindException} positioned at the sub-query's opening bracket, since
+     * the inner grammar's own line/column are relative to the extracted text, not the outer query.</p>
+     *
+     * @throws BindException if {@code subQuery}'s text fails to parse/compile as Cypher, or violates
+     *                        {@link CypherJoinSchema}'s C0 contract (a missing {@code AS} alias, or a
+     *                        no-scalar-shape {@code RETURN} item).
+     */
+    private GraphJoinSource bindGraphJoinSource(
+            final AstSubQueryJoinSource subQuery, final String alias, final Scope scope) {
+        final String cypherText = subQuery.rawText();
+        final LogicalPlan compiledPlan;
+        try {
+            final AstCypherQuery ast = CypherQueryParser.parse(cypherText);
+            compiledPlan = new CypherToLogicalPlan().compile(ast).plan();
+        } catch (final RuntimeException e) {
+            throw new BindException(
+                    "Join side '" + alias + "' is not a valid Cypher sub-query (a StroomQL/other sub-query join "
+                    + "source is not supported): " + e.getMessage(), subQuery.position());
+        }
+
+        final List<ProjectField> columns;
+        try {
+            columns = CypherJoinSchema.deriveJoinColumns(compiledPlan);
+        } catch (final CypherCompileException e) {
+            throw new BindException("Join side '" + alias + "': " + e.getMessage(), subQuery.position());
+        }
+
+        final List<QueryField> queryFields = columns.stream()
+                .map(field -> toGraphQueryField(field.name()))
+                .collect(Collectors.toList());
+        scope.sourcesByAlias.put(alias, new GraphSource(alias, queryFields));
+        return new GraphJoinSource(alias, cypherText, subQuery.position());
+    }
+
+    /**
+     * Synthesises the {@link QueryField} a graph join side's derived column is exposed as - per
+     * {@link CypherJoinSchema}'s C0 contract, a conservative "unknown" type: no {@code domainType} (so
+     * {@link #validateDomainTypeCompatibility} degrades gracefully rather than rejecting a legitimate join) and
+     * no {@code ConditionSet} (left {@code null} by never setting {@code fldType} on the builder - see
+     * {@code QueryField.Builder#build}, which only defaults a {@code ConditionSet} when a {@code fldType} was
+     * actually set) - so an outer clause referencing it is never rejected for "using an unsupported condition".
+     * {@code queryable(false)}: not pushable to any real datasource - belt-and-braces, since
+     * {@code PlanRewriteUtil.collectScans} already excludes a {@link GraphJoinSource}'s alias from the push-down
+     * candidate set entirely.
+     */
+    private static QueryField toGraphQueryField(final String name) {
+        return QueryField.builder().fldName(name).queryable(false).build();
     }
 
     // ------------------------------------------------------------------------------------------------------
@@ -420,9 +519,9 @@ public final class Binder {
             final int dot = text.indexOf('.');
             if (dot >= 0) {
                 final String possibleAlias = text.substring(0, dot);
-                if (scope.scansByAlias.containsKey(possibleAlias)) {
+                if (scope.sourcesByAlias.containsKey(possibleAlias)) {
                     final String fieldName = text.substring(dot + 1);
-                    if (findQueryField(scope.scansByAlias.get(possibleAlias), fieldName).isEmpty()) {
+                    if (findQueryField(scope.sourcesByAlias.get(possibleAlias), fieldName).isEmpty()) {
                         throw new BindException(
                                 "Unknown field '" + fieldName + "' on '" + possibleAlias + "'", token.position());
                     }
@@ -436,7 +535,7 @@ public final class Binder {
         }
 
         final List<String> matches = new ArrayList<>();
-        for (final Map.Entry<String, Scan> entry : scope.scansByAlias.entrySet()) {
+        for (final Map.Entry<String, BoundSource> entry : scope.sourcesByAlias.entrySet()) {
             if (findQueryField(entry.getValue(), text).isPresent()) {
                 matches.add(entry.getKey());
             }
@@ -449,7 +548,7 @@ public final class Binder {
                     "Ambiguous field '" + text + "' - present on multiple sources (" + String.join(", ", matches)
                     + "); qualify with a source alias", token.position());
         }
-        return new QualifiedField(scope.scansByAlias.size() > 1 ? matches.getFirst() : null, text);
+        return new QualifiedField(scope.sourcesByAlias.size() > 1 ? matches.getFirst() : null, text);
     }
 
     /**
@@ -471,11 +570,11 @@ public final class Binder {
         }
         final String alias = text.substring(0, dot);
         final String fieldName = text.substring(dot + 1);
-        final Scan scan = scope.scansByAlias.get(alias);
-        if (scan == null) {
+        final BoundSource source = scope.sourcesByAlias.get(alias);
+        if (source == null) {
             throw new BindException("Unknown alias '" + alias + "'", token.position());
         }
-        if (findQueryField(scan, fieldName).isEmpty()) {
+        if (findQueryField(source, fieldName).isEmpty()) {
             throw new BindException("Unknown field '" + fieldName + "' on '" + alias + "'", token.position());
         }
         return new QualifiedField(alias, fieldName);
@@ -486,21 +585,21 @@ public final class Binder {
         if (field.alias() == null && scope.evalFieldNames.contains(field.field())) {
             return;
         }
-        final Scan scan;
+        final BoundSource source;
         if (field.alias() != null) {
-            scan = scope.scansByAlias.get(field.alias());
-        } else if (scope.scansByAlias.size() == 1) {
-            scan = scope.onlyScan();
+            source = scope.sourcesByAlias.get(field.alias());
+        } else if (scope.sourcesByAlias.size() == 1) {
+            source = scope.onlySource();
         } else {
             // An unqualified reference with no alias in a multi-source query - the only way this is reached is a
             // PARAM term field (e.g. `where ${p} = 1`): resolveField already qualifies every *real* field with
             // its source alias, and eval fields short-circuit above. A param is a runtime value with no
             // datasource field metadata, so there is nothing to condition-validate here - skip, exactly like the
-            // queryField.isEmpty() path below (and never fall through to onlyScan(), which would throw on 2+
+            // queryField.isEmpty() path below (and never fall through to onlySource(), which would throw on 2+
             // sources - the raw IllegalStateException this replaces).
             return;
         }
-        final Optional<QueryField> queryField = findQueryField(scan, field.field());
+        final Optional<QueryField> queryField = findQueryField(source, field.field());
         if (queryField.isEmpty()) {
             // A PARAM reference, or (single-source, unqualified) an eval field already handled above - nothing
             // further to validate at bind time.
@@ -515,15 +614,18 @@ public final class Binder {
 
     private void validateDomainTypeCompatibility(
             final QualifiedField left, final QualifiedField right, final Scope scope, final AstPosition position) {
-        final Optional<QueryField> leftField = findQueryField(scope.scansByAlias.get(left.alias()), left.field());
-        final Optional<QueryField> rightField = findQueryField(scope.scansByAlias.get(right.alias()), right.field());
+        final Optional<QueryField> leftField =
+                findQueryField(scope.sourcesByAlias.get(left.alias()), left.field());
+        final Optional<QueryField> rightField =
+                findQueryField(scope.sourcesByAlias.get(right.alias()), right.field());
         if (leftField.isEmpty() || rightField.isEmpty()) {
             return;
         }
         final String leftDomainType = leftField.get().getDomainType();
         final String rightDomainType = rightField.get().getDomainType();
         if (leftDomainType == null || rightDomainType == null) {
-            // Advisory only - degrade gracefully when either side lacks a domain type, per the design doc.
+            // Advisory only - degrade gracefully when either side lacks a domain type, per the design doc (also
+            // how every graph join side's synthetic QueryField behaves - see toGraphQueryField).
             return;
         }
         final DomainType leftType = new DomainType(leftDomainType);
@@ -535,8 +637,18 @@ public final class Binder {
         }
     }
 
-    private Optional<QueryField> findQueryField(final Scan scan, final String fieldName) {
-        return fieldInfoSource.getFields(scan.dataSourceName()).stream()
+    /**
+     * @param source the bound source to look the field up on - either a plain named datasource ({@link
+     *               ScanSource}, resolved via {@link #fieldInfoSource}) or a graph join side's derived schema
+     *               ({@link GraphSource}, resolved against its own {@code RETURN ... AS} columns) - see
+     *               {@link BoundSource}'s Javadoc.
+     */
+    private Optional<QueryField> findQueryField(final BoundSource source, final String fieldName) {
+        final List<QueryField> fields = switch (source) {
+            case final ScanSource s -> fieldInfoSource.getFields(s.scan().dataSourceName());
+            case final GraphSource g -> g.columns();
+        };
+        return fields.stream()
                 .filter(f -> f.getFldName().equals(fieldName))
                 .findFirst();
     }
@@ -558,29 +670,59 @@ public final class Binder {
     }
 
     /**
+     * One bound {@code from}/{@code join} source's field-lookup contract - either a plain named datasource
+     * ({@link ScanSource}, resolved via {@link #fieldInfoSource}) or a Cypher sub-query's derived schema
+     * ({@link GraphSource}, docs/graphdb-stroomql-join-implementation-plan.md, Phase P2). {@code Scope} was
+     * previously keyed directly by {@link Scan}; generalised to this sealed choice so a graph join side's alias
+     * resolves {@code alias.field} references the same way as any other source, without asking
+     * {@link #fieldInfoSource} about a datasource name it has never heard of (a Cypher sub-query is not a
+     * registered datasource in that sense - its own {@code RETURN ... AS} list is the only schema it has).
+     */
+    private sealed interface BoundSource {
+
+        String alias();
+    }
+
+    private record ScanSource(Scan scan) implements BoundSource {
+
+        @Override
+        public String alias() {
+            return scan.alias();
+        }
+    }
+
+    /**
+     * A graph join side's derived schema (Phase P2) - {@code columns} is exactly what {@link CypherJoinSchema}
+     * derived from the sub-query's {@code RETURN ... AS} list, converted to synthetic {@link QueryField}s (see
+     * {@link #toGraphQueryField}).
+     */
+    private record GraphSource(String alias, List<QueryField> columns) implements BoundSource {
+    }
+
+    /**
      * Mutable per-query binding state: the sources bound so far (in {@code from}/{@code join} order, keyed by
      * alias) and the {@code eval}-defined names introduced so far (order doesn't matter for lookup, but a
      * {@link LinkedHashSet} keeps error messages/iteration deterministic).
      */
     private static final class Scope {
 
-        private final Map<String, Scan> scansByAlias = new LinkedHashMap<>();
+        private final Map<String, BoundSource> sourcesByAlias = new LinkedHashMap<>();
         private final Set<String> evalFieldNames = new LinkedHashSet<>();
 
         /**
-         * @return the query's only {@link Scan}.
+         * @return the query's only {@link BoundSource}.
          * @throws IllegalStateException if called when other than exactly one source is in scope. This is an
          *                                internal invariant, not a user-facing error: every caller guards the
-         *                                call with its own {@code scansByAlias.size() == 1} check first (a
+         *                                call with its own {@code sourcesByAlias.size() == 1} check first (a
          *                                multi-source unqualified/param reference is handled without calling
          *                                this), so reaching the throw indicates a binder bug, not bad input.
          */
-        private Scan onlyScan() {
-            if (scansByAlias.size() != 1) {
+        private BoundSource onlySource() {
+            if (sourcesByAlias.size() != 1) {
                 throw new IllegalStateException(
-                        "onlyScan() called with " + scansByAlias.size() + " sources in scope");
+                        "onlySource() called with " + sourcesByAlias.size() + " sources in scope");
             }
-            return scansByAlias.values().iterator().next();
+            return sourcesByAlias.values().iterator().next();
         }
     }
 }

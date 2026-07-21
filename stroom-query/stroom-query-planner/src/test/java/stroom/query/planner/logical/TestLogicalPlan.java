@@ -254,4 +254,32 @@ class TestLogicalPlan {
         assertThatThrownBy(() -> device.labels().add("Other"))
                 .isInstanceOf(UnsupportedOperationException.class);
     }
+
+    /**
+     * Workstream C (docs/graphdb-stroomql-join-implementation-plan.md, Phase P1/P2): {@link GraphJoinSource} is a
+     * further, narrower leaf - a Cypher sub-query used as one side of a {@link Join} - builds a usable tree and
+     * enforces the same null contracts as every other leaf above.
+     */
+    @Test
+    void graphJoinSource_buildsAUsableJoinOperand() {
+        final Scan events = new Scan("e", "Events", POS);
+        final GraphJoinSource graphSide = new GraphJoinSource(
+                "ident", "from \"CorpGraph\" match (u:User) return u.id as userId", POS);
+        final Join joined = new Join(
+                events, graphSide, JoinType.INNER,
+                List.of(new EquiKey(new QualifiedField("e", "UserId"), new QualifiedField("ident", "userId"))),
+                POS);
+
+        assertThat(joined.right()).isSameAs(graphSide);
+        assertThat(graphSide.alias()).isEqualTo("ident");
+        assertThat(graphSide.cypherText()).contains("return u.id as userId");
+        assertThat(graphSide.position()).isSameAs(POS);
+    }
+
+    @Test
+    void graphJoinSource_requiredFieldsRejectNull() {
+        assertThatNullPointerException().isThrownBy(() -> new GraphJoinSource(null, "match (n) return n", POS));
+        assertThatNullPointerException().isThrownBy(() -> new GraphJoinSource("ident", null, POS));
+        assertThatNullPointerException().isThrownBy(() -> new GraphJoinSource("ident", "match (n) return n", null));
+    }
 }

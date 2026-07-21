@@ -20,6 +20,7 @@ import stroom.query.api.ExpressionOperator;
 import stroom.query.planner.logical.Aggregate;
 import stroom.query.planner.logical.Expand;
 import stroom.query.planner.logical.Filter;
+import stroom.query.planner.logical.GraphJoinSource;
 import stroom.query.planner.logical.Having;
 import stroom.query.planner.logical.Join;
 import stroom.query.planner.logical.Limit;
@@ -95,6 +96,10 @@ final class PlanRewriteUtil {
                     vle.minHops(), vle.maxHops(), vle.targetVariable(), vle.targetLabels(),
                     vle.targetPropertyPredicate() == null ? null : transform.apply(vle.targetPropertyPredicate()),
                     vle.position());
+            // A graph join side (Phase P1/P2): a leaf with no predicate slot of its own - its Cypher text carries
+            // its own WHERE, opaque to this relational rewrite (see GraphJoinSource's Javadoc on why it is never
+            // wrapped in a Filter in the first place).
+            case final GraphJoinSource g -> g;
         };
     }
 
@@ -128,6 +133,12 @@ final class PlanRewriteUtil {
             case final NodeScan ns -> Map.of();
             case final Expand e -> collectScans(e.input());
             case final VarLengthExpand vle -> collectScans(vle.input());
+            // A graph join side (Phase P1/P2) is not a relational Scan either, and deliberately contributes no
+            // entry here: this map is what PushFiltersBelowJoinsRule/AutoWhereFilterSplitRule use to decide which
+            // predicates are safe to push onto a side, and pushing a StroomQL predicate into the Cypher body is
+            // out of scope for v1 (see GraphJoinSource's Javadoc) - so a predicate naming this alias always stays
+            // in the residual where clause, evaluated post-join, exactly as intended.
+            case final GraphJoinSource g -> Map.of();
         };
     }
 

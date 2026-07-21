@@ -17,9 +17,14 @@
 package stroom.query.language;
 
 import stroom.docref.DocRef;
+import stroom.graphdb.shared.GraphDbDoc;
+import stroom.query.api.Column;
 import stroom.query.api.ExplainPlan;
 import stroom.query.api.ExpressionOperator;
+import stroom.query.api.GraphSpec;
+import stroom.query.api.GroupSelection;
 import stroom.query.api.JoinSpec;
+import stroom.query.api.Query;
 import stroom.query.api.QueryKey;
 import stroom.query.api.ResultRequest;
 import stroom.query.api.SearchRequest;
@@ -29,14 +34,19 @@ import stroom.query.api.datasource.QueryFieldProvider;
 import stroom.query.api.token.TokenException;
 import stroom.query.common.v2.JoinDataSourceType;
 import stroom.query.grammar.ast.AstQuery;
+import stroom.query.grammar.ast.cypher.AstCypherQuery;
+import stroom.query.grammar.parse.CypherQueryParser;
 import stroom.query.grammar.parse.StroomQlParser;
 import stroom.query.language.functions.ExpressionContext;
 import stroom.query.planner.bind.Binder;
 import stroom.query.planner.cost.CostModel;
+import stroom.query.planner.cypher.CypherJoinSchema;
+import stroom.query.planner.cypher.CypherToLogicalPlan;
 import stroom.query.planner.logical.Aggregate;
 import stroom.query.planner.logical.EquiKey;
 import stroom.query.planner.logical.Expand;
 import stroom.query.planner.logical.Filter;
+import stroom.query.planner.logical.GraphJoinSource;
 import stroom.query.planner.logical.Having;
 import stroom.query.planner.logical.Join;
 import stroom.query.planner.logical.JoinType;
@@ -44,6 +54,7 @@ import stroom.query.planner.logical.Limit;
 import stroom.query.planner.logical.LogicalPlan;
 import stroom.query.planner.logical.NodeScan;
 import stroom.query.planner.logical.Project;
+import stroom.query.planner.logical.ProjectField;
 import stroom.query.planner.logical.Scan;
 import stroom.query.planner.logical.Sort;
 import stroom.query.planner.logical.VarLengthExpand;
@@ -64,6 +75,7 @@ import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 
 import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -138,16 +150,27 @@ public class OptimisingQueryCompiler implements QueryCompiler {
     }
 
     /**
+     * The join binder/{@code fieldInfoSource} "data source name" a side never really has - used purely to make
+     * {@link JoinPredicateSplitter#split} treat every predicate on a graph join side's alias as non-push-eligible
+     * (decision D2's existing "unknown field -&gt; never eligible" default already does this; this sentinel just
+     * ensures {@link FieldInfoSource#getFields} is asked about a name that provably resolves to nothing real, per
+     * that port's own contract). Pushing a StroomQL predicate into a Cypher body is out of scope for v1 - see
+     * {@link GraphJoinSource}'s Javadoc.
+     */
+    private static final String GRAPH_SIDE_PUSH_DOWN_SENTINEL = "\u0000graph-join-side-sentinel";
+
+    /**
      * Task 6.1x (see {@code docs/query-optimiser-implementation-plan.md}, Phase 6): the outer {@link
      * SearchRequest} for a join query. Scoped, like Task 6.1, to the common shape: exactly one {@code join}
-     * (two sources), both sides either a bare {@code Scan} or a {@code Filter} directly over one (see {@link
-     * #findScanAndFilter} - {@code PushFiltersBelowJoinsRule} can push a where-clause term down into exactly this
-     * shape when it references only one side's alias, so a bare-{@code Scan}-only check would wrongly reject a
-     * query this project's own rewrite pipeline already knows how to optimise). An N-way chain or a
-     * nested/nested-source join rejects cleanly (see {@link #findJoin}) rather than silently mis-binding. Unlike
-     * {@link #applyPlanEnhancements}, there's no established "prior behaviour" to protect here - every join query
-     * used to just throw - so this method is <b>not</b> fail-open; a genuine failure (an unsupported shape, a
-     * domain-type-incompatible equi-key, ...) propagates normally.
+     * (two sources), each side either a bare {@code Scan}/{@code Filter} (see {@link #findScanAndFilter} -
+     * {@code PushFiltersBelowJoinsRule} can push a where-clause term down into exactly this shape when it
+     * references only one side's alias, so a bare-{@code Scan}-only check would wrongly reject a query this
+     * project's own rewrite pipeline already knows how to optimise) or (Workstream C, docs/graphdb-stroomql-join-
+     * implementation-plan.md, Phase P3) a {@link GraphJoinSource} - a Cypher sub-query join side. An N-way chain
+     * or a nested/nested-source join rejects cleanly (see {@link #findJoin}) rather than silently mis-binding.
+     * Unlike {@link #applyPlanEnhancements}, there's no established "prior behaviour" to protect here - every
+     * join query used to just throw - so this method is <b>not</b> fail-open; a genuine failure (an unsupported
+     * shape, a domain-type-incompatible equi-key, an invalid graph sub-query, ...) propagates normally.
      *
      * <p>Reuses {@link AstToSearchRequestMapper#create(String, SearchRequest, ExpressionContext, boolean)} (Task
      * 6.1x's `allowJoins` overload) to build the *outer* request's {@code where}/{@code select}/{@code group}/
@@ -169,12 +192,12 @@ public class OptimisingQueryCompiler implements QueryCompiler {
         final LogicalPlan bound = new Binder(fieldInfoSource).bind(ast);
         final LogicalPlan rewritten = RewritePipeline.standard(fieldInfoSource).run(bound);
         final Join join = findJoin(rewritten);
-        final ScanAndFilter leftSide = join == null ? null : findScanAndFilter(join.left());
-        final ScanAndFilter rightSide = join == null ? null : findScanAndFilter(join.right());
+        final JoinSideBinding leftSide = join == null ? null : classifyJoinSide(join.left());
+        final JoinSideBinding rightSide = join == null ? null : classifyJoinSide(join.right());
         if (leftSide == null || rightSide == null) {
             throw new TokenException(
                     null, "This join shape is not yet supported - both sides must be plain datasource scans "
-                          + "(optionally filtered).");
+                          + "(optionally filtered) or a Cypher graph sub-query.");
         }
         final JoinSpec.JoinType wireJoinType = join.joinType() == JoinType.LEFT
                 ? JoinSpec.JoinType.LEFT
@@ -185,7 +208,9 @@ public class OptimisingQueryCompiler implements QueryCompiler {
         // that clause into the part(s) safe to pre-filter each side with (via JoinPredicateSplitter) and a
         // residual that - as before - is still evaluated across the joined rows by JoinSearchProvider (see the
         // plan doc's Phase 6 "where across joins" note). A LEFT join never pre-filters its right (null-supplying)
-        // side - see JoinPredicateSplitter.split's Javadoc for why that would silently change results.
+        // side - see JoinPredicateSplitter.split's Javadoc for why that would silently change results. A graph
+        // side is never pushed to either (see GRAPH_SIDE_PUSH_DOWN_SENTINEL) - a predicate on its alias always
+        // ends up in the residual.
         final SearchRequest outer = newMapper().create(query, in, expressionContext, true);
         final ExpressionOperator outerWhere = outer.getQuery().getExpression();
         final @Nullable ExpressionOperator leftPush;
@@ -198,8 +223,8 @@ public class OptimisingQueryCompiler implements QueryCompiler {
         } else {
             final JoinPredicateSplitter.Split split = new JoinPredicateSplitter(fieldInfoSource).split(
                     outerWhere,
-                    leftSide.scan().alias(), leftSide.scan().dataSourceName(),
-                    rightSide.scan().alias(), rightSide.scan().dataSourceName(),
+                    leftSide.alias(), pushDownDataSourceName(leftSide),
+                    rightSide.alias(), pushDownDataSourceName(rightSide),
                     wireJoinType);
             leftPush = split.leftPush();
             rightPush = split.rightPush();
@@ -207,34 +232,16 @@ public class OptimisingQueryCompiler implements QueryCompiler {
         }
 
         // Task A2 (decision D4): each side selects only its own equi-key field(s) plus whatever the outer query
-        // actually references it by, instead of select * - see JoinProjectionAnalyzer.fieldsNeededFor.
+        // actually references it by, instead of select * - see JoinProjectionAnalyzer.fieldsNeededFor. Not
+        // attempted for a graph side - see compileSide's Javadoc on why its RETURN list is used as-is.
         final List<String> leftEquiKeyFields = join.equiKeys().stream().map(equiKey -> equiKey.left().field()).toList();
         final List<String> rightEquiKeyFields =
                 join.equiKeys().stream().map(equiKey -> equiKey.right().field()).toList();
-        final Set<String> leftSelectFields = JoinProjectionAnalyzer.fieldsNeededFor(
-                outer, residualWhere, leftSide.scan().alias(), leftEquiKeyFields);
-        final Set<String> rightSelectFields = JoinProjectionAnalyzer.fieldsNeededFor(
-                outer, residualWhere, rightSide.scan().alias(), rightEquiKeyFields);
 
-        final @Nullable Filter leftFilter = toPushedFilter(leftSide.scan(), leftPush);
-        final @Nullable Filter rightFilter = toPushedFilter(rightSide.scan(), rightPush);
-        final SearchRequest leftRequestBase = compileJoinSide(
-                leftSide.scan(), leftFilter, leftSelectFields, expressionContext);
-        final SearchRequest rightRequestBase = compileJoinSide(
-                rightSide.scan(), rightFilter, rightSelectFields, expressionContext);
-
-        // Task A3 (see docs/join-scalability-implementation-plan.md, §3): a pushed time-bound predicate must
-        // prune shards on that side exactly as it would for an ordinary single-source query (Task 5.2's
-        // applyTimeRange), not just filter rows after they're read - NodeSearchTaskCreator.getPartitionTimeRange
-        // only ever reads Query.timeRange, never derives bounds from Query.expression directly, so without this
-        // a pushed time predicate would filter results correctly but scan every shard doing it. Only attempted
-        // when something was actually pushed (applyTimeRange/ScanTimeRangeExtractor require a non-null Filter).
-        final SearchRequest leftRequest = leftFilter == null
-                ? leftRequestBase
-                : applyTimeRange(leftRequestBase, new ScanAndFilter(leftSide.scan(), leftFilter), expressionContext);
-        final SearchRequest rightRequest = rightFilter == null
-                ? rightRequestBase
-                : applyTimeRange(rightRequestBase, new ScanAndFilter(rightSide.scan(), rightFilter), expressionContext);
+        final SearchRequest leftRequest = compileSide(
+                leftSide, leftPush, leftEquiKeyFields, outer, residualWhere, expressionContext);
+        final SearchRequest rightRequest = compileSide(
+                rightSide, rightPush, rightEquiKeyFields, outer, residualWhere, expressionContext);
 
         final List<JoinSpec.JoinEquiKey> equiKeys = join.equiKeys().stream()
                 .map(OptimisingQueryCompiler::toWireEquiKey)
@@ -248,7 +255,7 @@ public class OptimisingQueryCompiler implements QueryCompiler {
 
         final DocRef sentinelDataSource = new DocRef(
                 JoinDataSourceType.TYPE, UUID.randomUUID().toString(),
-                leftSide.scan().dataSourceName() + " ⋈ " + rightSide.scan().dataSourceName());
+                describeSideForSentinelName(leftSide) + " ⋈ " + describeSideForSentinelName(rightSide));
         return outer.copy()
                 .query(outer.getQuery().copy()
                         .dataSource(sentinelDataSource)
@@ -256,6 +263,188 @@ public class OptimisingQueryCompiler implements QueryCompiler {
                         .expression(residualWhere)
                         .build())
                 .build();
+    }
+
+    /**
+     * @return {@code side}'s "data source name" for {@link JoinPredicateSplitter#split} - the real name for a
+     *         plain scan side, or {@link #GRAPH_SIDE_PUSH_DOWN_SENTINEL} for a graph side (see that constant's
+     *         Javadoc).
+     */
+    private static String pushDownDataSourceName(final JoinSideBinding side) {
+        return side.isGraph() ? GRAPH_SIDE_PUSH_DOWN_SENTINEL : side.scanAndFilter().scan().dataSourceName();
+    }
+
+    private static String describeSideForSentinelName(final JoinSideBinding side) {
+        return side.isGraph() ? side.graphSource().alias() + " (Cypher)" : side.scanAndFilter().scan().dataSourceName();
+    }
+
+    /**
+     * Compiles one join side into its own single-source {@link SearchRequest} - a plain scan side via the
+     * existing {@link #compileJoinSide} (Task 6.1b), or (Workstream C, Phase P3) a graph side via
+     * {@link #compileGraphJoinSide}. A graph side's {@code push}/{@code equiKeyFields} are accepted only for a
+     * uniform call shape with the scan-side path - {@code push} is always null by construction (see
+     * {@link #GRAPH_SIDE_PUSH_DOWN_SENTINEL}), and its projection is never narrowed to just the equi-key/outer-
+     * referenced fields the way a scan side's is (decision D4): the graph side's own {@code RETURN} list already
+     * declares exactly the columns it projects, and there is no StroomQL-side mechanism to rewrite a Cypher
+     * {@code RETURN} clause down to a subset - narrowing it is squarely the analyst's own job, in the Cypher text
+     * itself (see the design doc's non-goals on predicate/projection push-down into the traversal).
+     */
+    private SearchRequest compileSide(
+            final JoinSideBinding side, final @Nullable ExpressionOperator push, final List<String> equiKeyFields,
+            final SearchRequest outer, final @Nullable ExpressionOperator residualWhere,
+            final ExpressionContext expressionContext) {
+        if (side.isGraph()) {
+            return compileGraphJoinSide(side.graphSource());
+        }
+        final Set<String> selectFields = JoinProjectionAnalyzer.fieldsNeededFor(
+                outer, residualWhere, side.alias(), equiKeyFields);
+        final Scan scan = side.scanAndFilter().scan();
+        final @Nullable Filter filter = toPushedFilter(scan, push);
+        final SearchRequest base = compileJoinSide(scan, filter, selectFields, expressionContext);
+        // Task A3 (see docs/join-scalability-implementation-plan.md, §3): a pushed time-bound predicate must
+        // prune shards on that side exactly as it would for an ordinary single-source query (Task 5.2's
+        // applyTimeRange), not just filter rows after they're read - NodeSearchTaskCreator.getPartitionTimeRange
+        // only ever reads Query.timeRange, never derives bounds from Query.expression directly, so without this
+        // a pushed time predicate would filter results correctly but scan every shard doing it. Only attempted
+        // when something was actually pushed (applyTimeRange/ScanTimeRangeExtractor require a non-null Filter).
+        return filter == null
+                ? base
+                : applyTimeRange(base, new ScanAndFilter(scan, filter), expressionContext);
+    }
+
+    /**
+     * Task C3 (docs/graphdb-stroomql-join-implementation-plan.md, Phase P3): compiles a graph sub-query join side
+     * into its own single-source {@link SearchRequest} carrying a {@link GraphSpec} - instead of synthesising a
+     * {@code from "<name>" select *} the way {@link #compileJoinSide} does for a plain scan side, this builds the
+     * side's {@code Query} directly with {@code graphSource}'s raw Cypher text on a {@link GraphSpec} and its
+     * resolved target {@code GraphDb} doc as {@code Query.dataSource} - exactly what {@code GraphSearchProvider}
+     * (a registered {@code SearchProvider} for type {@code GraphDb}) already expects, so dispatch through
+     * {@code JoinSearchProvider#openSide} works unchanged (it resolves purely by {@code DocRef.getType()}).
+     *
+     * <p>This is the analogue of {@code stroom.graphdb.impl.CypherCompiler#create} for a standalone Cypher
+     * query, reimplemented here rather than called directly - this module cannot depend on
+     * {@code stroom-graphdb-impl} (that dependency already runs the other way: graphdb-impl depends on this
+     * module). The one piece that really would be pure duplication - deriving the {@code RETURN} column list -
+     * is not duplicated: both this method and {@code CypherCompiler.buildResultRequests} ultimately go through
+     * {@link CypherJoinSchema}/{@link CypherToLogicalPlan} in {@code stroom-query-planner}, a module both already
+     * depend on.</p>
+     *
+     * @throws TokenException if {@code graphSource}'s Cypher text fails to parse or compile, violates
+     *                        {@link CypherJoinSchema}'s C0 contract, has no target datasource (no leading
+     *                        {@code from "X"} clause), or that datasource does not resolve to a {@code GraphDb}.
+     */
+    private SearchRequest compileGraphJoinSide(final GraphJoinSource graphSource) {
+        final AstCypherQuery ast;
+        final LogicalPlan plan;
+        try {
+            ast = CypherQueryParser.parse(graphSource.cypherText());
+            plan = new CypherToLogicalPlan().compile(ast).plan();
+        } catch (final RuntimeException e) {
+            throw new TokenException(
+                    null, "Join side '" + graphSource.alias() + "' is not a valid Cypher sub-query: "
+                          + e.getMessage());
+        }
+        final DocRef dataSource = resolveGraphDataSource(graphSource, ast);
+        final List<ProjectField> fields;
+        try {
+            fields = CypherJoinSchema.deriveJoinColumns(plan);
+        } catch (final RuntimeException e) {
+            throw new TokenException(null, "Join side '" + graphSource.alias() + "': " + e.getMessage());
+        }
+
+        final TableSettings.Builder tableSettingsBuilder = TableSettings.builder().extractValues(false);
+        for (final ProjectField field : fields) {
+            tableSettingsBuilder.addColumns(Column.builder()
+                    .id(field.name())
+                    .name(field.name())
+                    .expression("${" + field.name() + "}")
+                    .visible(true)
+                    .build());
+        }
+        final ResultRequest tableResultRequest = ResultRequest.builder()
+                .componentId(SearchRequestFactory.TABLE_COMPONENT_ID)
+                .mappings(Collections.singletonList(tableSettingsBuilder.build()))
+                .resultStyle(ResultRequest.ResultStyle.TABLE)
+                .fetch(ResultRequest.Fetch.ALL)
+                .groupSelection(new GroupSelection())
+                .build();
+
+        final Query sideQuery = Query.builder()
+                .dataSource(dataSource)
+                .graphSpec(GraphSpec.builder().cypher(graphSource.cypherText()).build())
+                .build();
+        return new SearchRequest(
+                null, new QueryKey(UUID.randomUUID().toString()), sideQuery,
+                Collections.singletonList(tableResultRequest), null, false, null);
+    }
+
+    /**
+     * Resolves a graph join side's target {@code GraphDb} doc from its own leading {@code from "X"} clause (a
+     * join side has no {@code SearchRequestSource.ownerDocRef} of its own to fall back on - unlike a standalone
+     * Cypher query, see {@code stroom.graphdb.impl.CypherCompiler#resolveDataSource}, the join side is always
+     * named explicitly inside the brackets).
+     *
+     * @throws TokenException if {@code ast} has no leading {@code from "X"} clause, or {@code name} does not
+     *                         resolve to a {@code GraphDb}-typed doc.
+     */
+    private DocRef resolveGraphDataSource(final GraphJoinSource graphSource, final AstCypherQuery ast) {
+        final String name = ast.dataSourceName();
+        if (name == null) {
+            throw new TokenException(
+                    null, "Join side '" + graphSource.alias() + "' has no target Graph DB - add a leading "
+                          + "from \"...\" clause inside the brackets");
+        }
+        final DocRef dataSource = dataSourceResolver.resolveDataSourceRef(name);
+        if (!GraphDbDoc.TYPE.equals(dataSource.getType())) {
+            throw new TokenException(
+                    null, "Join side '" + graphSource.alias() + "' must be a Graph DB - \"" + name + "\" is a "
+                          + dataSource.getType());
+        }
+        return dataSource;
+    }
+
+    /**
+     * One join side's bound shape - either a plain scan (optionally filtered, see {@link #findScanAndFilter}) or
+     * a Cypher graph sub-query (see {@link #findGraphJoinSource}). Exactly one of the two fields is non-null -
+     * see {@link #classifyJoinSide}, the only place this is constructed.
+     */
+    private record JoinSideBinding(@Nullable ScanAndFilter scanAndFilter, @Nullable GraphJoinSource graphSource) {
+
+        private boolean isGraph() {
+            return graphSource != null;
+        }
+
+        private String alias() {
+            return isGraph() ? graphSource.alias() : scanAndFilter.scan().alias();
+        }
+    }
+
+    /**
+     * @return null if {@code sidePlan} is neither a plain scan shape ({@link #findScanAndFilter}) nor a bare
+     *         {@link GraphJoinSource} ({@link #findGraphJoinSource}) - an unsupported join operand shape.
+     */
+    private static @Nullable JoinSideBinding classifyJoinSide(final LogicalPlan sidePlan) {
+        final ScanAndFilter scanAndFilter = findScanAndFilter(sidePlan);
+        if (scanAndFilter != null) {
+            return new JoinSideBinding(scanAndFilter, null);
+        }
+        final GraphJoinSource graphSource = findGraphJoinSource(sidePlan);
+        if (graphSource != null) {
+            return new JoinSideBinding(null, graphSource);
+        }
+        return null;
+    }
+
+    /**
+     * @return {@code sidePlan} itself if it is a bare {@link GraphJoinSource}, else null. Unlike
+     *         {@link #findScanAndFilter}, no wrapper-descent is attempted: {@code Binder} always embeds a graph
+     *         join side directly as a {@link Join} operand (never wrapped in a {@link Filter}) - a graph side's
+     *         alias is excluded from {@code PlanRewriteUtil.collectScans} entirely (see {@link GraphJoinSource}'s
+     *         Javadoc), so the rewrite pipeline's own filter-pushing rules never wrap one in a {@code Filter}
+     *         either.
+     */
+    private static @Nullable GraphJoinSource findGraphJoinSource(final LogicalPlan sidePlan) {
+        return sidePlan instanceof final GraphJoinSource graphJoinSource ? graphJoinSource : null;
     }
 
     /**
@@ -297,6 +486,9 @@ public class OptimisingQueryCompiler implements QueryCompiler {
             case final NodeScan ns -> null;
             case final Expand e -> findJoin(e.input());
             case final VarLengthExpand vle -> findJoin(vle.input());
+            // A graph join side (Workstream C, Phase P1/P2) is itself always a leaf operand of a Join, never a
+            // Join of its own - see GraphJoinSource's Javadoc.
+            case final GraphJoinSource g -> null;
         };
     }
 
@@ -433,6 +625,9 @@ public class OptimisingQueryCompiler implements QueryCompiler {
             case final NodeScan ns -> null;
             case final Expand e -> findScanAndFilter(e.input());
             case final VarLengthExpand vle -> findScanAndFilter(vle.input());
+            // A graph join side (Workstream C, Phase P1/P2) is not a plain relational Scan either - handled
+            // separately by findGraphJoinSource/classifyJoinSide.
+            case final GraphJoinSource g -> null;
         };
     }
 

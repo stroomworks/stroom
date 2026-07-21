@@ -135,16 +135,32 @@ public final class AstBuilder {
                 default -> throw new IllegalStateException("Unexpected join type token: " + ctx.joinType);
             };
         }
+        final AstJoinSource source = buildJoinSource(ctx);
+        if (source instanceof AstSubQueryJoinSource && ctx.alias == null) {
+            // No datasource name to default an alias from - see AstJoin's Javadoc. A positioned parse error,
+            // the same mechanism requireWindowKeyword uses below for a different malformed-clause case.
+            final Token start = ctx.getStart();
+            throw new SyntaxException(
+                    "A sub-query join source must be given an alias, e.g. '( ... ) as ident'",
+                    start.getLine(), start.getCharPositionInLine(), List.of("AS"));
+        }
         final List<AstJoinCondition> conditions = new ArrayList<>(ctx.joinCondition().size());
         for (final JoinConditionContext conditionCtx : ctx.joinCondition()) {
             conditions.add(buildJoinCondition(conditionCtx));
         }
         return new AstJoin(
                 joinType,
-                buildToken(ctx.source),
+                source,
                 ctx.alias == null ? null : buildToken(ctx.alias),
                 conditions,
                 position(ctx));
+    }
+
+    private AstJoinSource buildJoinSource(final JoinClauseContext ctx) {
+        if (ctx.source != null) {
+            return new AstNamedJoinSource(buildToken(ctx.source));
+        }
+        return new AstSubQueryJoinSource(tokenStream.getText(ctx.subQuery), position(ctx.subQuery));
     }
 
     private AstJoinCondition buildJoinCondition(final JoinConditionContext ctx) {

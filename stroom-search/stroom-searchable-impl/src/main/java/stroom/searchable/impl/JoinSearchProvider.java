@@ -127,6 +127,15 @@ class JoinSearchProvider implements SearchProvider {
      */
     private static final String PLAN_B_KEY_FIELD = "Key";
 
+    /**
+     * The Graph DB datasource type name - mirrors {@code stroom.graphdb.shared.GraphDbDoc.TYPE}. Duplicated as a
+     * literal, rather than depending on {@code stroom-graphdb-impl} from this module, purely to apply the graph-
+     * side row-count guardrail (Task C4, docs/graphdb-stroomql-join-implementation-plan.md, Phase P4) - the same
+     * "detect a side's type structurally, without a new module dependency" convention {@link
+     * #PLAN_B_DATA_SOURCE_TYPE} already uses above.
+     */
+    private static final String GRAPH_DATA_SOURCE_TYPE = "GraphDb";
+
     /** The lookup side's synthetic output column names (decision D5) - see {@link #lookupSideSyntheticColumns()}. */
     private static final String LOOKUP_KEY_COLUMN = "Key";
     private static final String LOOKUP_VALUE_COLUMN = "Value";
@@ -346,9 +355,9 @@ class JoinSearchProvider implements SearchProvider {
         // Open the left side first; if opening the right side then fails, the left side's already-open
         // ResultStore must still be destroyed (the try/finally below only covers both once both exist). Neither
         // call reads any rows yet.
-        final OpenedSide left = openSide(joinSpec.getLeft());
+        final OpenedSide left = openSide(joinSpec.getLeft(), joinConfig);
         try {
-            final OpenedSide right = openSide(joinSpec.getRight());
+            final OpenedSide right = openSide(joinSpec.getRight(), joinConfig);
             // A6 build-side selection: for an INNER join build the smaller side; a LEFT join must keep probe=left
             // (its unmatched rows emit inline) so it never swaps. Both sides' sub-searches have completed, so
             // DataStore.getSize() is a final, O(1) size signal. "build" is realised into the lookup; "probe" is
@@ -466,7 +475,7 @@ class JoinSearchProvider implements SearchProvider {
         final String lookupAlias = lookupIsLeft ? equiKey.getLeftAlias() : equiKey.getRightAlias();
         final String mapName = lookupRequest.getQuery().getDataSource().getName();
 
-        final OpenedSide probe = openSide(probeRequest);
+        final OpenedSide probe = openSide(probeRequest, joinConfig);
         try {
             final int probeKeyPosition = positionOf(probe.columns, probeKeyField);
             final List<Column> lookupColumns = lookupSideSyntheticColumns();
@@ -615,12 +624,19 @@ class JoinSearchProvider implements SearchProvider {
      * materialised into a list.
      *
      * <p><b>Preconditions:</b> {@code sideRequest} must be non-null and carry a non-null {@code Query.dataSource}
-     * naming a datasource type with a registered {@link SearchProvider}.<br>
+     * naming a datasource type with a registered {@link SearchProvider}; {@code joinConfig} must be non-null.<br>
      * <b>Postconditions:</b> never null; the returned side's {@code resultStore} is left <b>open</b> - the caller
      * owns destroying it. On any failure opening or awaiting the store, it is destroyed before the exception
      * propagates, so no store leaks.</p>
+     *
+     * @throws stroom.query.planner.join.JoinLimitExceededException if {@code sideRequest} is a graph (Task C4,
+     *                                                                docs/graphdb-stroomql-join-implementation-
+     *                                                                plan.md, Phase P4) side whose realised row
+     *                                                                count exceeds {@link
+     *                                                                JoinConfig#getMaxSideRows()} - see
+     *                                                                {@link #checkGraphSideRowCap}.
      */
-    private OpenedSide openSide(final SearchRequest sideRequest) {
+    private OpenedSide openSide(final SearchRequest sideRequest, final JoinConfig joinConfig) {
         final DocRef dataSourceRef = sideRequest.getQuery().getDataSource();
         final SearchProvider searchProvider = searchProviderRegistryProvider.get()
                 .getSearchProvider(dataSourceRef)
@@ -632,6 +648,7 @@ class JoinSearchProvider implements SearchProvider {
         try {
             resultStore.awaitCompletion();
             final DataStore dataStore = resultStore.getData(SearchRequestFactory.TABLE_COMPONENT_ID);
+            checkGraphSideRowCap(dataSourceRef, dataStore, joinConfig);
             return new OpenedSide(resultStore, dataStore, dataStore.getColumns());
         } catch (final InterruptedException e) {
             resultStore.destroy();
@@ -640,6 +657,39 @@ class JoinSearchProvider implements SearchProvider {
         } catch (final RuntimeException e) {
             resultStore.destroy();
             throw e;
+        }
+    }
+
+    /**
+     * Task C4 (docs/graphdb-stroomql-join-implementation-plan.md, Phase P4): surfaces a clear, in-band error - via
+     * the same {@link JoinLimitExceededException} the build-side/output guardrails already throw, captured by
+     * {@link #createResultStore}'s {@code ResultStore.addError} handling - when a graph join side's realised row
+     * count exceeds {@link JoinConfig#getMaxSideRows()}.
+     *
+     * <p>Reuses that existing cap rather than introducing a new configuration property (per the design doc's
+     * risk-mitigation note: "reuse the existing join guardrails"), but applies it differently: {@code
+     * maxSideRows} otherwise only ever bounds whichever side {@link #joinAndFeedViaStreamingHashJoin} chooses as
+     * the <i>build</i> side - an ordinary Scan-typed <i>probe</i> side is deliberately left uncapped (an
+     * arbitrarily large event stream must keep streaming). A graph side gets no such exemption regardless of
+     * which role it ends up playing: {@code GraphSearchProvider.createResultStore} already realised its entire
+     * traversal result in memory - as a plain {@code List<Val[]>}, with no row cap of its own, unlike an Index/
+     * Searchable side whose own result-store settings already bound its ingest - by the time this method runs, so
+     * the memory cost has already been paid regardless of whether the row is ever streamed onward.</p>
+     *
+     * @param dataSourceRef the side's resolved datasource - only its {@code type} is inspected.
+     * @param dataStore     the side's just-realised {@link DataStore}; {@link DataStore#getSize()} is an O(1)
+     *                      signal at this point (the sub-search has already completed).
+     * @param joinConfig    supplies the current {@code stroom.query.join.maxSideRows} guardrail.
+     */
+    private static void checkGraphSideRowCap(
+            final DocRef dataSourceRef, final DataStore dataStore, final JoinConfig joinConfig) {
+        if (!GRAPH_DATA_SOURCE_TYPE.equals(dataSourceRef.getType())) {
+            return;
+        }
+        final long size = dataStore.getSize();
+        final long maxSideRows = joinConfig.getMaxSideRows();
+        if (size > maxSideRows) {
+            throw JoinLimitExceededException.forRowCount("graph join side row count", maxSideRows, size);
         }
     }
 

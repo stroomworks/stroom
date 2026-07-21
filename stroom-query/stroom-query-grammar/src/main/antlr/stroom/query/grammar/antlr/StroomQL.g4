@@ -43,12 +43,23 @@
 //   `functionCall` rule explicitly allows AND/OR/NOT in the function-name position to cover that
 //   real, corpus-exercised case; a field/variable literally NAMED "and"/"or"/"not" (not a
 //   function call) is an accepted, documented deviation - not exercised by the parity corpus.
-// - Join syntax (JOIN/ON/LEFT/INNER, qualified `alias.field` references) is reserved here per
-//   Phase 1 scope: parsed, but rejected by the AST builder/binder with a clear "not yet enabled"
-//   message until Phase 6. `alias.field` is deliberately NOT a `NAME DOT NAME` token sequence -
-//   legacy's bareword character class already includes `.` (so unquoted dotted names, and
-//   decimal numbers, tokenize as ONE token) - splitting on `.` is a semantic concern for the
-//   Phase 6 binder, not a lexer concern, to avoid changing bareword tokenization at all.
+// - Join syntax (JOIN/ON/LEFT/INNER, qualified `alias.field` references) is bound by
+//   stroom.query.planner.bind.Binder (docs/query-optimiser-implementation-plan.md, Phase 6).
+//   `alias.field` is deliberately NOT a `NAME DOT NAME` token sequence - legacy's bareword
+//   character class already includes `.` (so unquoted dotted names, and decimal numbers,
+//   tokenize as ONE token) - splitting on `.` is a binder concern, not a lexer concern, to avoid
+//   changing bareword tokenization at all.
+// - A join source may also be a bracketed sub-query (docs/graphdb-stroomql-join-implementation-
+//   plan.md, Phase P1), e.g. `join ( from "Graph" match ... return ... ) as g`. `subQueryBody`
+//   captures that bracketed body as opaque, paren-balanced source text - it does not, and cannot,
+//   parse the body's own grammar (Cypher today) at this level; it only needs to find the matching
+//   close bracket. This is the same "delineate a span, interpret it elsewhere" approach `fexpr`
+//   already uses for eval/select expressions (see above), just balancing brackets instead of
+//   assuming a StroomQL-shaped expression grammar inside. Note that the underlying character set
+//   this grammar's lexer accepts (BAREWORD's catch-all class in particular) is permissive enough
+//   that a Cypher pattern like `(u:User)-[:MEMBER_OF]->(g:Group)` still tokenises cleanly - `:`,
+//   `[`, `]` are ordinary bareword characters here, and `-`/`>`/`(`/`)` are already their own
+//   single-character tokens - so no lexer changes were needed to carry an embedded Cypher body.
 grammar StroomQL;
 
 // ============================================================================
@@ -63,11 +74,20 @@ fromClause
     : FROM source=nameToken (AS alias=nameToken)? joinClause*
     ;
 
-// Reserved for Phase 6: parsed now, rejected by the binder with a clear
-// "joins not yet enabled" message until Phase 6 lands (see design plan Phase 1).
 joinClause
-    : joinType=(LEFT | INNER)? JOIN source=nameToken (AS alias=nameToken)?
+    : joinType=(LEFT | INNER)? JOIN
+      ( source=nameToken | OPEN_BRACKET subQuery=subQueryBody CLOSE_BRACKET )
+      (AS alias=nameToken)?
       ON joinCondition (AND joinCondition)*
+    ;
+
+// See file header note on "join source may be a bracketed sub-query" - an opaque, paren-balanced
+// span of arbitrary tokens: any token that isn't itself a bracket, or a further balanced bracket
+// pair (so a nested pattern like `(u:User)` inside the join's own brackets doesn't terminate the
+// span early). Never structurally interpreted here - stroom.query.planner.bind.Binder re-parses
+// the captured raw text with the Cypher grammar.
+subQueryBody
+    : ( ~(OPEN_BRACKET | CLOSE_BRACKET) | OPEN_BRACKET subQueryBody CLOSE_BRACKET )*
     ;
 
 joinCondition

@@ -30,10 +30,14 @@ import stroom.query.grammar.ast.AstPosition;
  * {@code docs/temporal-cypher-graph-implementation-plan.md}, Task PoC.2) - Cypher's analogue of {@link Scan} and
  * the graph's traversal operators, added to this same IR (rather than a forked one) so the graph reuses the
  * shared planner, rewrite rules, and cost model unchanged.</p>
+ *
+ * <p>{@link GraphJoinSource} is a further, narrower leaf (docs/graphdb-stroomql-join-implementation-plan.md,
+ * Phase P1/P2): a Cypher sub-query used as one side of a {@link Join}, carried as opaque raw text rather than a
+ * compiled {@link NodeScan}/{@link Expand} chain - see its own Javadoc for why.</p>
  */
 public sealed interface LogicalPlan
         permits Scan, Filter, Project, Join, Aggregate, Having, Window, Sort, Limit,
-        NodeScan, Expand, VarLengthExpand {
+        NodeScan, Expand, VarLengthExpand, GraphJoinSource {
 
     /**
      * @return never null; the position of the StroomQL clause this node was bound from, for error/EXPLAIN
