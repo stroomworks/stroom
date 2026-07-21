@@ -209,7 +209,8 @@ public class OptimisingQueryCompiler implements QueryCompiler {
         // Task A2 (decision D4): each side selects only its own equi-key field(s) plus whatever the outer query
         // actually references it by, instead of select * - see JoinProjectionAnalyzer.fieldsNeededFor.
         final List<String> leftEquiKeyFields = join.equiKeys().stream().map(equiKey -> equiKey.left().field()).toList();
-        final List<String> rightEquiKeyFields = join.equiKeys().stream().map(equiKey -> equiKey.right().field()).toList();
+        final List<String> rightEquiKeyFields =
+                join.equiKeys().stream().map(equiKey -> equiKey.right().field()).toList();
         final Set<String> leftSelectFields = JoinProjectionAnalyzer.fieldsNeededFor(
                 outer, residualWhere, leftSide.scan().alias(), leftEquiKeyFields);
         final Set<String> rightSelectFields = JoinProjectionAnalyzer.fieldsNeededFor(

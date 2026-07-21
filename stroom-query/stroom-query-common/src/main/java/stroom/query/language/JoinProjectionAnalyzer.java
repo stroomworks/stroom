@@ -55,7 +55,8 @@ import java.util.regex.Pattern;
 final class JoinProjectionAnalyzer {
 
     /** Matches an {@code alias.field}-shaped token: a bareword, a dot, then another bareword. */
-    private static final Pattern ALIAS_FIELD_TOKEN = Pattern.compile("([A-Za-z_][A-Za-z0-9_]*)\\.([A-Za-z_][A-Za-z0-9_]*)");
+    private static final Pattern ALIAS_FIELD_TOKEN =
+            Pattern.compile("([A-Za-z_][A-Za-z0-9_]*)\\.([A-Za-z_][A-Za-z0-9_]*)");
 
     private JoinProjectionAnalyzer() {
         // Static utility - not instantiable.

@@ -41,6 +41,7 @@ import stroom.query.common.v2.ExpressionPredicateFactory.ValueFunctionFactories;
 import stroom.query.common.v2.ExpressionPredicateFactory.ValueFunctionFactory;
 import stroom.query.common.v2.IdentityItemMapper;
 import stroom.query.common.v2.Item;
+import stroom.query.common.v2.JoinBuildSideLookupFactory;
 import stroom.query.common.v2.JoinConfig;
 import stroom.query.common.v2.JoinDataSourceType;
 import stroom.query.common.v2.MapDataStoreFactory;
@@ -53,6 +54,7 @@ import stroom.query.common.v2.SearchProviderRegistry;
 import stroom.query.common.v2.SearchResultStoreConfig;
 import stroom.query.common.v2.Sizes;
 import stroom.query.common.v2.SizesProvider;
+import stroom.query.common.v2.SpillingBuildSideLookup;
 import stroom.query.common.v2.ValuesFunctionFactory;
 import stroom.query.language.SearchRequestFactory;
 import stroom.query.language.functions.StateFetcher;
@@ -60,7 +62,9 @@ import stroom.query.language.functions.Val;
 import stroom.query.language.functions.ValLong;
 import stroom.query.language.functions.ValString;
 import stroom.query.language.functions.Values;
+import stroom.query.planner.join.HeapBuildSideLookup;
 
+import jakarta.inject.Provider;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -103,6 +107,19 @@ class TestJoinPushDownDifferential {
     private static final DocRef RIGHT_DATA_SOURCE = new DocRef("RightType", "right-uuid", "Users");
     private static final java.util.concurrent.Executor DIRECT_EXECUTOR = Runnable::run;
     private static final SizesProvider SIZES_PROVIDER = Sizes::unlimited;
+
+    /** A build-side lookup factory whose "spill" store is an in-memory {@link HeapBuildSideLookup} stand-in - see
+     * the same helper in {@code TestJoinSearchProvider} for why (LMDB native-lib config is awkward across test
+     * classes; the real disk store is covered in {@code stroom-query-common}). The byte-identical parity this
+     * class asserts holds for the stand-in exactly as it does for the real store, since {@link SpillingBuildSideLookup}
+     * routes to whichever spill target it is given. */
+    private JoinBuildSideLookupFactory buildSideLookupFactory() {
+        final JoinBuildSideLookupFactory factory = mock(JoinBuildSideLookupFactory.class);
+        when(factory.create(org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.anyLong()))
+                .thenAnswer(inv -> new SpillingBuildSideLookup(
+                        inv.getArgument(0), inv.getArgument(1), HeapBuildSideLookup::new));
+        return factory;
+    }
 
     private static Column column(final String name) {
         return Column.builder().id(name).name(name).expression(name).build();
@@ -150,7 +167,8 @@ class TestJoinPushDownDifferential {
     /** Builds a predicate over bare (unqualified) field names - a compiled side sub-query's {@code where} clause
      * never carries an alias prefix, unlike the outer join's (see {@code JoinSearchProvider#whereRowPredicate}).
      * A trivial/absent where clause yields an always-true predicate. */
-    private static Predicate<Values> bareFieldPredicate(final SearchRequest sideRequest, final List<Column> allColumns) {
+    private static Predicate<Values> bareFieldPredicate(final SearchRequest sideRequest,
+                                                        final List<Column> allColumns) {
         final ExpressionOperator where = sideRequest.getQuery() == null ? null : sideRequest.getQuery().getExpression();
         if (where == null || where.getChildren() == null || where.getChildren().isEmpty()) {
             return values -> true;
@@ -215,7 +233,12 @@ class TestJoinPushDownDifferential {
         return registry;
     }
 
-    private static JoinSearchProvider provider(final SearchProviderRegistry registry) {
+    private JoinSearchProvider provider(final SearchProviderRegistry registry) {
+        return provider(registry, JoinConfig::new);
+    }
+
+    private JoinSearchProvider provider(final SearchProviderRegistry registry,
+                                        final Provider<JoinConfig> joinConfigProvider) {
         final CoprocessorsFactory coprocessorsFactory = new CoprocessorsFactory(
                 new MapDataStoreFactory(SearchResultStoreConfig::new),
                 new ExpressionContextFactory(),
@@ -234,7 +257,7 @@ class TestJoinPushDownDifferential {
                 () -> DIRECT_EXECUTOR));
         return new JoinSearchProvider(
                 () -> registry, coprocessorsFactory, resultStoreFactory, new ExpressionPredicateFactory(),
-                JoinConfig::new, mock(StateFetcher.class));
+                joinConfigProvider, mock(StateFetcher.class), buildSideLookupFactory());
     }
 
     /** Builds one side's compiled sub-request exactly as {@code OptimisingQueryCompiler#compileJoinSide} would:
@@ -490,6 +513,30 @@ class TestJoinPushDownDifferential {
 
         assertThat(optimisedRows).hasSameSizeAs(unoptimisedRows).hasSize(1);
         assertRowSetsMatch(unoptimisedRows, optimisedRows);
+    }
+
+    @Test
+    void spilledBuildSide_producesByteIdenticalRowsToTheOnHeapBaseline() {
+        // The C1/C2 gate: the streaming/spilling build side must be a true no-op on the final rows. Run the same
+        // logical INNER join twice through the real JoinSearchProvider - once on-heap (default maxHeapBuildRows),
+        // once with maxHeapBuildRows=1 so the 3-row build (right) side spills to a real disk-backed store - and
+        // assert byte-identical joined rows.
+        final SearchProviderRegistry registry = registry(
+                realisticFakeProvider(LEFT_DATA_SOURCE, leftAllColumns(), leftAllRows()),
+                realisticFakeProvider(RIGHT_DATA_SOURCE, rightAllColumns(), rightAllRows()));
+        final List<Column> outerSelect = List.of(column("a.UserId"), column("b.Name"));
+        final SearchRequest join = outerJoin(
+                side(LEFT_DATA_SOURCE, null, leftAllColumns()),
+                side(RIGHT_DATA_SOURCE, null, rightAllColumns()),
+                JoinSpec.JoinType.INNER, ExpressionOperator.builder().build(), outerSelect);
+
+        final List<Val[]> onHeapRows = readTableRows(
+                provider(registry, JoinConfig::new).createResultStore(join));
+        final List<Val[]> spilledRows = readTableRows(
+                provider(registry, () -> new JoinConfig(null, null, 1L, null)).createResultStore(join));
+
+        assertThat(spilledRows).hasSameSizeAs(onHeapRows).isNotEmpty();
+        assertRowSetsMatch(onHeapRows, spilledRows);
     }
 
     /** Asserts the two row sets are identical, ignoring order (a join makes no ordering guarantee). */

@@ -33,6 +33,7 @@ import stroom.query.common.v2.ExpressionPredicateFactory;
 import stroom.query.common.v2.ExpressionPredicateFactory.ValueFunctionFactories;
 import stroom.query.common.v2.ExpressionPredicateFactory.ValueFunctionFactory;
 import stroom.query.common.v2.IdentityItemMapper;
+import stroom.query.common.v2.JoinBuildSideLookupFactory;
 import stroom.query.common.v2.JoinConfig;
 import stroom.query.common.v2.JoinDataSourceType;
 import stroom.query.common.v2.OpenGroups;
@@ -48,8 +49,8 @@ import stroom.query.language.functions.Val;
 import stroom.query.language.functions.ValNull;
 import stroom.query.language.functions.Values;
 import stroom.query.planner.cost.JoinAlgorithm;
+import stroom.query.planner.join.BuildSideLookup;
 import stroom.query.planner.join.JoinExecutor;
-import stroom.query.planner.join.JoinExecutor.Side;
 import stroom.query.planner.join.JoinLimitExceededException;
 import stroom.query.planner.logical.JoinType;
 import stroom.util.shared.ResultPage;
@@ -58,11 +59,11 @@ import jakarta.inject.Inject;
 import jakarta.inject.Provider;
 import org.jspecify.annotations.Nullable;
 
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.Consumer;
 import java.util.function.Predicate;
 
 /**
@@ -132,6 +133,7 @@ class JoinSearchProvider implements SearchProvider {
     private final ExpressionPredicateFactory expressionPredicateFactory;
     private final Provider<JoinConfig> joinConfigProvider;
     private final StateFetcher stateFetcher;
+    private final JoinBuildSideLookupFactory buildSideLookupFactory;
 
     /**
      * @param searchProviderRegistryProvider must not be null.
@@ -151,6 +153,11 @@ class JoinSearchProvider implements SearchProvider {
      *                                        module, resolved by Guice without this module needing a compile-time
      *                                        dependency on that one (the {@link StateFetcher} interface itself is
      *                                        already visible via {@code stroom-query-language}).
+     * @param buildSideLookupFactory          must not be null; creates the {@code BuildSideLookup} the hash-join
+     *                                        path realises its build (right) side into - on-heap while small,
+     *                                        spilling to disk past {@link JoinConfig#getMaxHeapBuildRows()} (see
+     *                                        {@code docs/join-scalability-implementation-plan.md}, items C1/C2).
+     *                                        It owns the LMDB wiring so this module needs no LMDB dependency.
      */
     @Inject
     JoinSearchProvider(final Provider<SearchProviderRegistry> searchProviderRegistryProvider,
@@ -158,7 +165,8 @@ class JoinSearchProvider implements SearchProvider {
                        final ResultStoreFactory resultStoreFactory,
                        final ExpressionPredicateFactory expressionPredicateFactory,
                        final Provider<JoinConfig> joinConfigProvider,
-                       final StateFetcher stateFetcher) {
+                       final StateFetcher stateFetcher,
+                       final JoinBuildSideLookupFactory buildSideLookupFactory) {
         this.searchProviderRegistryProvider =
                 Objects.requireNonNull(searchProviderRegistryProvider, "searchProviderRegistryProvider");
         this.coprocessorsFactory = Objects.requireNonNull(coprocessorsFactory, "coprocessorsFactory");
@@ -167,6 +175,7 @@ class JoinSearchProvider implements SearchProvider {
                 Objects.requireNonNull(expressionPredicateFactory, "expressionPredicateFactory");
         this.joinConfigProvider = Objects.requireNonNull(joinConfigProvider, "joinConfigProvider");
         this.stateFetcher = Objects.requireNonNull(stateFetcher, "stateFetcher");
+        this.buildSideLookupFactory = Objects.requireNonNull(buildSideLookupFactory, "buildSideLookupFactory");
     }
 
     /** Which side of a join is the {@link JoinAlgorithm#BROADCAST_LOOKUP}-eligible one - see
@@ -264,16 +273,17 @@ class JoinSearchProvider implements SearchProvider {
      *     <li>{@link #joinAndFeedViaBroadcastLookup} when {@link #detectPlanBLookupSide} finds one side is a
      *     keyed Plan B/State lookup - streams the other (probe) side against it, never realising the lookup
      *     side at all.</li>
-     *     <li>{@link #joinAndFeedViaHashJoin} otherwise - the original strategy: realise both sides in full,
-     *     combine with an in-memory hash join.</li>
+     *     <li>{@link #joinAndFeedViaStreamingHashJoin} otherwise - realise the build (right) side into a
+     *     {@code BuildSideLookup} (spilling to disk past a threshold) and stream the probe (left) side against
+     *     it, feeding joined rows out as they are produced.</li>
      * </ul>
      *
      * <p><b>Preconditions:</b> all four parameters must be non-null.<br>
      * <b>Postconditions:</b> on normal return, every joined row surviving the outer {@code where} clause has been
      * passed to {@code coprocessors.accept(...)}; returns nothing.</p>
      *
-     * @throws JoinLimitExceededException if a side (or, for the hash-join strategy, the joined output) would
-     *                                    exceed its {@code joinConfig} cap.
+     * @throws JoinLimitExceededException if the build side exceeds {@code joinConfig.getMaxSideRows()} or the
+     *                                    joined output exceeds {@code joinConfig.getMaxOutputRows()}.
      */
     private void joinAndFeed(
             final SearchRequest searchRequest, final JoinSpec joinSpec, final JoinConfig joinConfig,
@@ -282,74 +292,118 @@ class JoinSearchProvider implements SearchProvider {
         if (lookupSide != null) {
             joinAndFeedViaBroadcastLookup(searchRequest, joinSpec, joinConfig, coprocessors, lookupSide);
         } else {
-            joinAndFeedViaHashJoin(searchRequest, joinSpec, joinConfig, coprocessors);
+            joinAndFeedViaStreamingHashJoin(searchRequest, joinSpec, joinConfig, coprocessors);
         }
     }
 
     /**
-     * The original join strategy (Task 6.1d, Phase 0's guardrails): realises both sides in full, combines them
-     * with an in-memory hash join, applies the outer {@code where} clause, and feeds every surviving row to
-     * {@code coprocessors}.
+     * The streaming/spilling hash-join strategy (see {@code docs/join-scalability-implementation-plan.md}, items
+     * C1/C2). Rather than realising both sides fully in memory, it:
+     * <ol>
+     *     <li>realises the <b>build (right)</b> side into a {@link BuildSideLookup} from
+     *     {@link #buildSideLookupFactory} - an on-heap hash map while small, transparently spilling to a
+     *     disk-backed store once it grows past {@link JoinConfig#getMaxHeapBuildRows()}, so a large build side no
+     *     longer exhausts heap;</li>
+     *     <li>streams the <b>probe (left)</b> side out of its {@code DataStore} one row at a time, joining each
+     *     against the build side and feeding survivors of the outer {@code where} clause straight to
+     *     {@code coprocessors} - the probe side is never collected into a list.</li>
+     * </ol>
+     *
+     * <p>Build = right / probe = left preserves the orientation the original in-memory hash join used, so
+     * unmatched left rows of a {@code LEFT} join are emitted inline (null-padded) with no outer-join bookkeeping.
+     * The output-row cap ({@link JoinConfig#getMaxOutputRows()}) is enforced by {@link JoinExecutor#streamingProbe}
+     * as rows are produced; the build-side cap ({@link JoinConfig#getMaxSideRows()}) is enforced as it is
+     * realised. The streaming probe side is deliberately not row-capped - it never accumulates.</p>
      *
      * <p><b>Preconditions:</b> all four parameters must be non-null.<br>
      * <b>Postconditions:</b> on normal return, every joined row surviving the outer {@code where} clause has been
-     * passed to {@code coprocessors.accept(...)}; returns nothing. Both sides' intermediate {@link ResultStore}s
-     * (opened by {@link #realiseSide}) are always destroyed before this method returns or throws.</p>
+     * passed to {@code coprocessors.accept(...)}; returns nothing. The {@link BuildSideLookup} (deleting any spill
+     * directory) and both sides' intermediate {@link ResultStore}s are always released before this method returns
+     * or throws.</p>
      *
-     * @throws JoinLimitExceededException if either side exceeds {@code joinConfig.getMaxSideRows()} while being
+     * @throws JoinLimitExceededException if the build side exceeds {@code joinConfig.getMaxSideRows()} while being
      *                                    realised, or the joined output would exceed
      *                                    {@code joinConfig.getMaxOutputRows()}.
      */
-    private void joinAndFeedViaHashJoin(
+    private void joinAndFeedViaStreamingHashJoin(
             final SearchRequest searchRequest, final JoinSpec joinSpec, final JoinConfig joinConfig,
             final CoprocessorsImpl coprocessors) {
-        // Realise the left side first; if realising the right side then fails, the left side's already-open
-        // ResultStore must still be destroyed (the try/finally below only covers both sides once both exist).
-        final RealisedSide left = realiseSide(joinSpec.getLeft(), joinConfig.getMaxSideRows());
-        final RealisedSide right;
+        final JoinEquiKey firstEquiKey = joinSpec.getEquiKeys().getFirst();
+        final JoinType joinType = joinSpec.getJoinType() == JoinSpec.JoinType.LEFT
+                ? JoinType.LEFT
+                : JoinType.INNER;
+
+        // Open the probe (left) side first; if opening the build (right) side then fails, the probe side's
+        // already-open ResultStore must still be destroyed (the try/finally below only covers both once both
+        // exist). Neither call reads any rows yet.
+        final OpenedSide left = openSide(joinSpec.getLeft());
         try {
-            right = realiseSide(joinSpec.getRight(), joinConfig.getMaxSideRows());
-        } catch (final RuntimeException e) {
-            left.resultStore.destroy();
-            throw e;
-        }
-        final List<Val[]> joinedRows;
-        try {
-            final Side leftSide = new Side(left.rows, keyPositions(left.columns, joinSpec.getEquiKeys(), true),
-                    left.columns.size());
-            final Side rightSide = new Side(right.rows, keyPositions(right.columns, joinSpec.getEquiKeys(), false),
-                    right.columns.size());
-            final JoinType joinType = joinSpec.getJoinType() == JoinSpec.JoinType.LEFT
-                    ? JoinType.LEFT
-                    : JoinType.INNER;
-            joinedRows = JoinExecutor.join(
-                    leftSide, rightSide, joinType, JoinAlgorithm.HASH_JOIN, joinConfig.getMaxOutputRows());
+            final OpenedSide right = openSide(joinSpec.getRight());
+            // The build lookup owns a spill store that must be closed even if realising/probing fails.
+            try (final BuildSideLookup buildSide = buildSideLookupFactory.create(
+                    joinConfig.getMaxHeapBuildRows(), joinConfig.getMaxHeapBuildBytes())) {
+                // Build phase: stream every right row into the lookup (null-keyed rows can never match, so they
+                // are not stored as probe targets), capped by maxSideRows.
+                final int[] rightKeyPositions = keyPositions(right.columns, joinSpec.getEquiKeys(), false);
+                realiseIntoBuildSide(right.dataStore, right.columns, rightKeyPositions, buildSide,
+                        joinConfig.getMaxSideRows());
+
+                // The outer where clause references both aliases, so it can only be evaluated on the combined
+                // [left..., right...] row; likewise the fieldIndex mapping. Both are positional over left-then-right.
+                final Predicate<Values> whereRowPredicate = whereRowPredicate(
+                        searchRequest, left.columns, right.columns,
+                        firstEquiKey.getLeftAlias(), firstEquiKey.getRightAlias());
+                final int[] mapping = buildFieldMapping(
+                        coprocessors.getFieldIndex(), left.columns, right.columns,
+                        firstEquiKey.getLeftAlias(), firstEquiKey.getRightAlias());
+
+                // Probe phase: stream the left side, join each row against the build side, feed survivors out.
+                final Consumer<Val[]> probe = JoinExecutor.streamingProbe(
+                        keyPositions(left.columns, joinSpec.getEquiKeys(), true),
+                        buildSide,
+                        right.columns.size(),
+                        joinType,
+                        joinConfig.getMaxOutputRows(),
+                        combinedRow -> {
+                            if (whereRowPredicate.test(Values.of(combinedRow))) {
+                                coprocessors.accept(assembleRow(combinedRow, mapping));
+                            }
+                        });
+                fetchRows(left.dataStore, left.columns, probe);
+            } finally {
+                right.resultStore.destroy();
+            }
         } finally {
             left.resultStore.destroy();
-            right.resultStore.destroy();
         }
+    }
 
-        // Apply the outer where clause across the joined rows (see whereRowPredicate) - the join's "where" can't
-        // be applied by either single-source side (it references both aliases), so it's evaluated here on the
-        // combined row, then only matching rows are fed to the coprocessor.
-        final Predicate<Values> whereRowPredicate = whereRowPredicate(searchRequest, left.columns, right.columns,
-                joinSpec.getEquiKeys().getFirst().getLeftAlias(),
-                joinSpec.getEquiKeys().getFirst().getRightAlias());
-
-        // Feed each surviving joined row at the FieldIndex positions its alias-qualified select-column
-        // expressions claimed.
-        final int[] mapping = buildFieldMapping(
-                coprocessors.getFieldIndex(),
-                left.columns,
-                right.columns,
-                joinSpec.getEquiKeys().getFirst().getLeftAlias(),
-                joinSpec.getEquiKeys().getFirst().getRightAlias());
-
-        for (final Val[] joinedRow : joinedRows) {
-            if (whereRowPredicate.test(Values.of(joinedRow))) {
-                coprocessors.accept(assembleRow(joinedRow, mapping));
+    /**
+     * Streams every row of an already-realised build side's {@code dataStore} into {@code buildSide}, deriving
+     * each row's equi-key with {@link JoinExecutor#keyOf} (the identical derivation {@link JoinExecutor#streamingProbe}
+     * uses for the probe side) and skipping SQL-null-keyed rows - they can never match, so they are not probe
+     * targets, exactly as the original in-memory hash join did.
+     *
+     * <p><b>Preconditions:</b> all parameters non-null; {@code maxSideRows >= 0}.<br>
+     * <b>Postconditions:</b> every non-null-keyed row has been {@code put} into {@code buildSide}.</p>
+     *
+     * @throws JoinLimitExceededException if more than {@code maxSideRows} rows are read from the build side.
+     */
+    private void realiseIntoBuildSide(final DataStore dataStore, final List<Column> columns,
+                                      final int[] keyPositions, final BuildSideLookup buildSide,
+                                      final long maxSideRows) {
+        final long[] realised = {0L};
+        fetchRows(dataStore, columns, row -> {
+            if (realised[0] >= maxSideRows) {
+                throw JoinLimitExceededException.forRowCount(
+                        "join build side row count", maxSideRows, realised[0] + 1);
             }
-        }
+            realised[0]++;
+            final List<String> key = JoinExecutor.keyOf(row, keyPositions);
+            if (key != null) {
+                buildSide.put(key, row);
+            }
+        });
     }
 
     /**
@@ -367,12 +421,15 @@ class JoinSearchProvider implements SearchProvider {
      * <p><b>Preconditions:</b> all five parameters must be non-null.<br>
      * <b>Postconditions:</b> on normal return, every joined row surviving the outer {@code where} clause has been
      * passed to {@code coprocessors.accept(...)}; returns nothing. The probe side's intermediate
-     * {@link ResultStore} (opened by {@link #realiseSide}) is always destroyed before this method returns or
+     * {@link ResultStore} (opened by {@link #openSide}) is always destroyed before this method returns or
      * throws.</p>
      *
-     * @throws JoinLimitExceededException if the probe side exceeds {@code joinConfig.getMaxSideRows()} while
-     *                                    being realised, or the joined output would exceed
-     *                                    {@code joinConfig.getMaxOutputRows()}.
+     * <p>The probe side is <b>streamed</b> out of its {@code DataStore} one row at a time (like the hash-join
+     * path) rather than realised into a list, so an enrichment join over an arbitrarily large event stream runs
+     * in bounded memory; it is therefore not row-capped by {@code maxSideRows}. Only the joined output is bounded
+     * (by {@code maxOutputRows}).</p>
+     *
+     * @throws JoinLimitExceededException if the joined output would exceed {@code joinConfig.getMaxOutputRows()}.
      */
     private void joinAndFeedViaBroadcastLookup(
             final SearchRequest searchRequest, final JoinSpec joinSpec, final JoinConfig joinConfig,
@@ -386,7 +443,7 @@ class JoinSearchProvider implements SearchProvider {
         final String lookupAlias = lookupIsLeft ? equiKey.getLeftAlias() : equiKey.getRightAlias();
         final String mapName = lookupRequest.getQuery().getDataSource().getName();
 
-        final RealisedSide probe = realiseSide(probeRequest, joinConfig.getMaxSideRows());
+        final OpenedSide probe = openSide(probeRequest);
         try {
             final int probeKeyPosition = positionOf(probe.columns, probeKeyField);
             final List<Column> lookupColumns = lookupSideSyntheticColumns();
@@ -402,14 +459,17 @@ class JoinSearchProvider implements SearchProvider {
             final int[] mapping = buildFieldMapping(
                     coprocessors.getFieldIndex(), probe.columns, lookupColumns, probeAlias, lookupAlias);
 
-            JoinExecutor.broadcastLookupJoin(
-                    probe.rows.iterator(), probeKeyPosition, probe.columns.size(),
+            // Stream the probe side one row at a time through a per-row lookup consumer (never realising the probe
+            // side into a list), each looked up against the Plan B/State store; the lookup side is never scanned.
+            final Consumer<Val[]> probeConsumer = JoinExecutor.broadcastLookupProbe(
+                    probeKeyPosition, probe.columns.size(),
                     stateFetcher, mapName, effectiveTimeMs(), joinType, joinConfig.getMaxOutputRows(),
                     combinedRow -> {
                         if (whereRowPredicate.test(Values.of(combinedRow))) {
                             coprocessors.accept(assembleRow(combinedRow, mapping));
                         }
                     });
+            fetchRows(probe.dataStore, probe.columns, probeConsumer);
         } finally {
             probe.resultStore.destroy();
         }
@@ -525,26 +585,19 @@ class JoinSearchProvider implements SearchProvider {
 
     /**
      * Runs {@code sideRequest} (an ordinary, already-compiled single-source request - see {@code
-     * OptimisingQueryCompiler#compileJoinSide}, Task 6.1b) to completion via its own {@link SearchProvider}, and
-     * reads back every row - the same "run a sub-query, then read every row of the completed store" shape {@code
-     * QueryServiceImpl#getColumnValues} already uses, not new machinery - aborting once more than
-     * {@code maxSideRows} rows have been read, per {@code docs/join-scalability-implementation-plan.md}, decision
-     * D1 (Phase 0, item C4).
+     * OptimisingQueryCompiler#compileJoinSide}) to completion via its own {@link SearchProvider} and returns its
+     * completed {@link DataStore} and columns, <b>without</b> reading any rows - the caller streams rows via
+     * {@link #fetchRows} on demand (the build side into a {@link BuildSideLookup}, the probe side straight through
+     * the join). Splitting "open the side" from "read the side" is what lets the probe side stream rather than be
+     * materialised into a list.
      *
-     * <p><b>Preconditions:</b> {@code sideRequest} must not be null and must carry a non-null
-     * {@code Query.dataSource} naming a datasource type with a registered {@link SearchProvider}; {@code
-     * maxSideRows} must be {@code >= 0} (a value of {@code 0} means "no rows allowed at all" - the first row read
-     * breaches it).<br>
-     * <b>Postconditions:</b> on normal return, {@code result.rows()} has {@code <= maxSideRows} rows; the returned
-     * {@link RealisedSide} is never null and its {@code resultStore} is left open (the caller,
-     * {@link #joinAndFeed}, owns destroying it). On any failure - including a breach of {@code maxSideRows} - the
-     * side's {@link ResultStore} opened by this method is destroyed before the exception propagates, so no store
-     * leaks regardless of where realisation fails.</p>
-     *
-     * @param maxSideRows the maximum number of rows this side may contribute; see {@link JoinConfig#getMaxSideRows()}.
-     * @throws JoinLimitExceededException if more than {@code maxSideRows} rows are read from this side.
+     * <p><b>Preconditions:</b> {@code sideRequest} must be non-null and carry a non-null {@code Query.dataSource}
+     * naming a datasource type with a registered {@link SearchProvider}.<br>
+     * <b>Postconditions:</b> never null; the returned side's {@code resultStore} is left <b>open</b> - the caller
+     * owns destroying it. On any failure opening or awaiting the store, it is destroyed before the exception
+     * propagates, so no store leaks.</p>
      */
-    private RealisedSide realiseSide(final SearchRequest sideRequest, final long maxSideRows) {
+    private OpenedSide openSide(final SearchRequest sideRequest) {
         final DocRef dataSourceRef = sideRequest.getQuery().getDataSource();
         final SearchProvider searchProvider = searchProviderRegistryProvider.get()
                 .getSearchProvider(dataSourceRef)
@@ -553,40 +606,40 @@ class JoinSearchProvider implements SearchProvider {
                         + dataSourceRef.getType() + "'"));
 
         final ResultStore resultStore = searchProvider.createResultStore(sideRequest);
-        // Once the store is open, any failure completing it or reading it back must destroy it here - the store
-        // is only handed to the caller (and thus only becomes destroyable by the caller's finally) on the fully
-        // successful return, so a failure between here and that return would otherwise leak this side's store.
         try {
             resultStore.awaitCompletion();
-
             final DataStore dataStore = resultStore.getData(SearchRequestFactory.TABLE_COMPONENT_ID);
-            final List<Column> columns = dataStore.getColumns();
-            final List<Val[]> rows = new ArrayList<>();
-            dataStore.fetch(
-                    columns,
-                    OffsetRange.UNBOUNDED,
-                    OpenGroups.ALL,
-                    null,
-                    IdentityItemMapper.INSTANCE,
-                    item -> {
-                        if (rows.size() >= maxSideRows) {
-                            throw JoinLimitExceededException.forRowCount(
-                                    "join side row count", maxSideRows, rows.size() + 1);
-                        }
-                        rows.add(item.toArray());
-                    },
-                    count -> {
-                    });
-
-            return new RealisedSide(resultStore, columns, rows);
+            return new OpenedSide(resultStore, dataStore, dataStore.getColumns());
         } catch (final InterruptedException e) {
             resultStore.destroy();
             Thread.currentThread().interrupt();
-            throw new RuntimeException("Interrupted while realising a join side", e);
+            throw new RuntimeException("Interrupted while opening a join side", e);
         } catch (final RuntimeException e) {
             resultStore.destroy();
             throw e;
         }
+    }
+
+    /**
+     * Reads every row of {@code dataStore} (all groups, unbounded, no time filter), handing each row's
+     * {@code Val[]} to {@code rowConsumer} as it is read - the single "stream a completed side's rows" primitive
+     * both {@link #realiseIntoBuildSide} and the probe loops share. Because it never
+     * accumulates internally, a caller that also does not accumulate (the probe side) streams in bounded memory.
+     *
+     * <p><b>Preconditions:</b> all parameters non-null.<br>
+     * <b>Postconditions:</b> {@code rowConsumer} has been called once per row in {@code dataStore}.</p>
+     */
+    private static void fetchRows(final DataStore dataStore, final List<Column> columns,
+                                  final Consumer<Val[]> rowConsumer) {
+        dataStore.fetch(
+                columns,
+                OffsetRange.UNBOUNDED,
+                OpenGroups.ALL,
+                null,
+                IdentityItemMapper.INSTANCE,
+                item -> rowConsumer.accept(item.toArray()),
+                count -> {
+                });
     }
 
     /** One equi-key's field name, resolved to its position among {@code columns} (composite keys supported). */
@@ -675,6 +728,9 @@ class JoinSearchProvider implements SearchProvider {
         return out;
     }
 
-    private record RealisedSide(ResultStore resultStore, List<Column> columns, List<Val[]> rows) {
+    /** A join side whose sub-search has completed - its {@link DataStore} and columns, with rows not yet read
+     * (streamed on demand via {@link #fetchRows}). The {@code resultStore} is owned by the caller of
+     * {@link #openSide} and must be destroyed by it. */
+    private record OpenedSide(ResultStore resultStore, DataStore dataStore, List<Column> columns) {
     }
 }

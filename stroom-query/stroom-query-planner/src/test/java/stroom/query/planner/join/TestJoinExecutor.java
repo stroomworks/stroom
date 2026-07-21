@@ -33,6 +33,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -387,5 +388,190 @@ class TestJoinExecutor {
                 List.<Val[]>of().iterator(), 0, 2, store, "users", 0L, JoinType.INNER, -1, row -> {
                 }))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    // ------------------------------------------------------------------------------------------------------
+    // streamingHashJoin + HeapBuildSideLookup (Task C1/C2 - see docs/join-scalability-implementation-plan.md):
+    // the streaming hash join with the build side behind a BuildSideLookup and the probe side consumed as an
+    // Iterator with results pushed to a Consumer. Build side = right, probe side = left.
+    // ------------------------------------------------------------------------------------------------------
+
+    /** Builds an on-heap lookup over {@code rightRows} keyed on position(s) {@code keyPositions}. */
+    private static BuildSideLookup heapLookup(final List<Val[]> rightRows, final int[] keyPositions,
+                                              final int width) {
+        return HeapBuildSideLookup.of(new Side(rightRows, keyPositions, width));
+    }
+
+    /** Drains a key's matches via the streaming {@code forEachMatch} primitive (tests assert on a list). */
+    private static List<Val[]> collect(final BuildSideLookup lookup, final List<String> key) {
+        final List<Val[]> out = new ArrayList<>();
+        lookup.forEachMatch(key, out::add);
+        return out;
+    }
+
+    @Test
+    void streamingHashJoin_innerJoin_onlyEmitsMatchingRows() {
+        final BuildSideLookup build = heapLookup(List.of(rightRow(2, 200), rightRow(3, 300)), new int[]{0}, 2);
+        final List<Val[]> result = new ArrayList<>();
+
+        JoinExecutor.streamingHashJoin(
+                List.of(leftRow(1, "a"), leftRow(2, "b")).iterator(), new int[]{0}, build, 2,
+                JoinType.INNER, Long.MAX_VALUE, result::add);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.getFirst()).containsExactly(
+                ValLong.create(2), ValString.create("b"), ValLong.create(2), ValLong.create(200));
+    }
+
+    @Test
+    void streamingHashJoin_leftJoin_padsUnmatchedProbeRowsInline() {
+        final BuildSideLookup build = heapLookup(List.<Val[]>of(rightRow(2, 200)), new int[]{0}, 2);
+        final List<Val[]> result = new ArrayList<>();
+
+        JoinExecutor.streamingHashJoin(
+                List.of(leftRow(1, "a"), leftRow(2, "b")).iterator(), new int[]{0}, build, 2,
+                JoinType.LEFT, Long.MAX_VALUE, result::add);
+
+        assertThat(result).hasSize(2);
+        assertThat(result).anySatisfy(row -> assertThat(row).containsExactly(
+                ValLong.create(1), ValString.create("a"), ValNull.INSTANCE, ValNull.INSTANCE));
+        assertThat(result).anySatisfy(row -> assertThat(row).containsExactly(
+                ValLong.create(2), ValString.create("b"), ValLong.create(2), ValLong.create(200)));
+    }
+
+    @Test
+    void streamingHashJoin_emptyBuildSide_innerDropsAll_leftPadsAll() {
+        final BuildSideLookup emptyBuild = heapLookup(List.of(), new int[]{0}, 2);
+        final List<Val[]> inner = new ArrayList<>();
+        JoinExecutor.streamingHashJoin(
+                List.of(leftRow(1, "a"), leftRow(2, "b")).iterator(), new int[]{0}, emptyBuild, 2,
+                JoinType.INNER, Long.MAX_VALUE, inner::add);
+        assertThat(inner).isEmpty();
+
+        final BuildSideLookup emptyBuild2 = heapLookup(List.of(), new int[]{0}, 2);
+        final List<Val[]> left = new ArrayList<>();
+        JoinExecutor.streamingHashJoin(
+                List.of(leftRow(1, "a"), leftRow(2, "b")).iterator(), new int[]{0}, emptyBuild2, 2,
+                JoinType.LEFT, Long.MAX_VALUE, left::add);
+        assertThat(left).hasSize(2);
+        assertThat(left).allSatisfy(row -> assertThat(row).endsWith(ValNull.INSTANCE, ValNull.INSTANCE));
+    }
+
+    @Test
+    void streamingHashJoin_compositeKey_matchesOnAllPositions() {
+        final Val[] r1 = new Val[]{ValLong.create(1), ValString.create("x"), ValLong.create(10)};
+        final Val[] r2 = new Val[]{ValLong.create(1), ValString.create("z"), ValLong.create(20)};
+        final BuildSideLookup build = heapLookup(List.of(r1, r2), new int[]{0, 1}, 3);
+        final Val[] l1 = new Val[]{ValLong.create(1), ValString.create("x"), ValString.create("a")};
+        final Val[] l2 = new Val[]{ValLong.create(1), ValString.create("y"), ValString.create("b")};
+        final List<Val[]> result = new ArrayList<>();
+
+        JoinExecutor.streamingHashJoin(
+                List.of(l1, l2).iterator(), new int[]{0, 1}, build, 3, JoinType.INNER, Long.MAX_VALUE, result::add);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.getFirst()).containsExactly(
+                ValLong.create(1), ValString.create("x"), ValString.create("a"),
+                ValLong.create(1), ValString.create("x"), ValLong.create(10));
+    }
+
+    @Test
+    void streamingHashJoin_maxOutputRows_boundsMidFanOut() {
+        // One probe row fanning out to three build matches must throw once the cap is hit, not after accumulating.
+        final BuildSideLookup build = heapLookup(
+                List.of(rightRow(1, 100), rightRow(1, 101), rightRow(1, 102)), new int[]{0}, 2);
+
+        assertThatThrownBy(() -> JoinExecutor.streamingHashJoin(
+                List.<Val[]>of(leftRow(1, "a")).iterator(), new int[]{0}, build, 2, JoinType.INNER, 2, row -> {
+                }))
+                .isInstanceOf(JoinLimitExceededException.class)
+                .hasMessageContaining("join output row count");
+    }
+
+    @Test
+    void streamingHashJoin_nullKeyedProbeRow_isMiss_butPaddedForLeft() {
+        final BuildSideLookup build = heapLookup(List.<Val[]>of(rightRow(1, 100)), new int[]{0}, 2);
+        final Val[] nullKeyLeft = new Val[]{ValNull.INSTANCE, ValString.create("a")};
+        final List<Val[]> result = new ArrayList<>();
+
+        JoinExecutor.streamingHashJoin(
+                List.<Val[]>of(nullKeyLeft).iterator(), new int[]{0}, build, 2, JoinType.LEFT, Long.MAX_VALUE,
+                result::add);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.getFirst()).containsExactly(
+                ValNull.INSTANCE, ValString.create("a"), ValNull.INSTANCE, ValNull.INSTANCE);
+    }
+
+    @Test
+    void streamingHashJoin_rejectsEmptyProbeKeyPositions() {
+        final BuildSideLookup build = heapLookup(List.of(), new int[]{0}, 2);
+        assertThatThrownBy(() -> JoinExecutor.streamingHashJoin(
+                List.<Val[]>of().iterator(), new int[0], build, 2, JoinType.INNER, Long.MAX_VALUE, row -> {
+                }))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void streamingHashJoin_rejectsNegativeBuildWidth() {
+        final BuildSideLookup build = heapLookup(List.of(), new int[]{0}, 2);
+        assertThatThrownBy(() -> JoinExecutor.streamingHashJoin(
+                List.<Val[]>of().iterator(), new int[]{0}, build, -1, JoinType.INNER, Long.MAX_VALUE, row -> {
+                }))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void streamingHashJoin_hotBuildKey_abortsAtOutputCap_withoutConsumingTheWholeGroup() {
+        // OOM-safety guarantee: a single probe row matching a huge build-side key group must abort at the output
+        // cap DURING the fan-out - it must not first stream the whole (potentially enormous) group. A counting
+        // BuildSideLookup proves streamingProbe stopped calling forEachMatch's consumer at the cap, not after the
+        // full group was handed over.
+        final int hotKeyRows = 1_000;
+        final int[] handedOver = {0};
+        final BuildSideLookup countingBuild = new BuildSideLookup() {
+            @Override
+            public void put(final List<String> key, final Val[] row) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public boolean forEachMatch(final List<String> key, final Consumer<Val[]> matchConsumer) {
+                for (int i = 0; i < hotKeyRows; i++) {
+                    handedOver[0]++;
+                    matchConsumer.accept(rightRow(1, i)); // throws out of here once the cap is hit
+                }
+                return true;
+            }
+
+            @Override
+            public long rowCount() {
+                return hotKeyRows;
+            }
+
+            @Override
+            public void close() {
+            }
+        };
+
+        assertThatThrownBy(() -> JoinExecutor.streamingHashJoin(
+                List.<Val[]>of(leftRow(1, "a")).iterator(), new int[]{0}, countingBuild, 2,
+                JoinType.INNER, 3, row -> {
+                }))
+                .isInstanceOf(JoinLimitExceededException.class);
+        // Stopped at the cap (a handful of rows), NOT after materialising all 1,000.
+        assertThat(handedOver[0]).isLessThan(hotKeyRows);
+    }
+
+    @Test
+    void heapBuildSideLookup_skipsNullKeyedRows_andCountsTheRest() {
+        final Val[] nullKeyRight = new Val[]{ValNull.INSTANCE, ValLong.create(200)};
+        final BuildSideLookup build = heapLookup(List.of(nullKeyRight, rightRow(1, 100), rightRow(1, 101)),
+                new int[]{0}, 2);
+
+        // Null-keyed row skipped: only the two id=1 rows are retained and counted.
+        assertThat(build.rowCount()).isEqualTo(2);
+        assertThat(collect(build, List.of("1"))).hasSize(2);
+        assertThat(collect(build, List.of("999"))).isEmpty();
     }
 }

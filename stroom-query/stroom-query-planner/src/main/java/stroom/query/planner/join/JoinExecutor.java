@@ -26,10 +26,8 @@ import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.function.Consumer;
 
@@ -55,6 +53,12 @@ import java.util.function.Consumer;
  * need extra bookkeeping to still emit its unmatched rows). Honouring the cost model's build-side choice for
  * performance, when it disagrees with this default, is deferred - never a correctness gap, only a possible
  * missed optimisation.</p>
+ *
+ * <p><b>Streaming variant</b>: {@link #streamingHashJoin} is the same hash join with the build side hidden behind
+ * a {@link BuildSideLookup} (so it can spill to disk) and the probe side consumed as an {@link Iterator} with
+ * results pushed to a {@link Consumer} instead of accumulated - see {@code docs/join-scalability-implementation-
+ * plan.md}, items C1/C2. The list-returning {@link #join}/{@code hashJoin} path delegates to it over an on-heap
+ * {@link HeapBuildSideLookup}, so both share one join loop.</p>
  *
  * <p>{@link JoinAlgorithm#BROADCAST_LOOKUP} - the enrichment-join fast path against a keyed Plan B/State store
  * (see {@code docs/join-scalability-implementation-plan.md}, decision D8, item B1) - is <b>not</b> reachable
@@ -192,6 +196,38 @@ public final class JoinExecutor {
             final long maxOutputRows,
             final Consumer<Val[]> out) {
         Objects.requireNonNull(probeRows, "probeRows");
+        final Consumer<Val[]> probe = broadcastLookupProbe(
+                probeKeyPosition, probeWidth, stateFetcher, mapName, effectiveTimeMs, joinType, maxOutputRows, out);
+        probeRows.forEachRemaining(probe);
+    }
+
+    /**
+     * The push-based counterpart to {@link #broadcastLookupJoin}: returns a stateful {@link Consumer} that does
+     * one keyed point-lookup per {@code accept(...)} call, so a caller reading its probe side incrementally
+     * (e.g. {@code JoinSearchProvider} streaming rows out of a {@code DataStore.fetch} callback) never has to
+     * materialise that side into a list first - the whole point being that neither side of an enrichment join is
+     * ever fully resident. Feeding every probe row to the returned consumer is exactly equivalent to a single
+     * {@link #broadcastLookupJoin} over the same rows (see its Javadoc for the lookup/null/output-cap semantics).
+     *
+     * <p><b>Preconditions:</b> {@code stateFetcher}, {@code mapName}, {@code joinType}, {@code out} must be
+     * non-null; {@code probeWidth} {@code >= 0}; {@code 0 <= probeKeyPosition < probeWidth};
+     * {@code maxOutputRows} {@code >= 0}.<br>
+     * <b>Postconditions:</b> never null. The returned consumer is <b>stateful and single-use</b> - it tracks the
+     * running output-row count to enforce {@code maxOutputRows}, so it must not be shared across threads or reused
+     * for a second probe stream.</p>
+     *
+     * @throws IllegalArgumentException if {@code probeWidth}, {@code probeKeyPosition}, or {@code maxOutputRows}
+     *                                  is out of range.
+     */
+    public static Consumer<Val[]> broadcastLookupProbe(
+            final int probeKeyPosition,
+            final int probeWidth,
+            final StateFetcher stateFetcher,
+            final String mapName,
+            final long effectiveTimeMs,
+            final JoinType joinType,
+            final long maxOutputRows,
+            final Consumer<Val[]> out) {
         Objects.requireNonNull(stateFetcher, "stateFetcher");
         Objects.requireNonNull(mapName, "mapName");
         Objects.requireNonNull(joinType, "joinType");
@@ -208,20 +244,26 @@ public final class JoinExecutor {
             throw new IllegalArgumentException("maxOutputRows must be >= 0, got " + maxOutputRows);
         }
 
-        long emitted = 0;
-        while (probeRows.hasNext()) {
-            final Val[] probeRow = probeRows.next();
-            final Val probeKey = probeRow[probeKeyPosition];
-            final boolean hasKey = probeKey != null && !(probeKey instanceof ValNull);
-            final Val lookedUp = hasKey ? stateFetcher.getState(mapName, probeKey.toString(), effectiveTimeMs) : null;
-            final boolean matched = lookedUp != null && !(lookedUp instanceof ValNull);
-            if (matched) {
-                emitted = emitOrThrow(out, combineWithLookup(probeRow, probeKey, lookedUp), maxOutputRows, emitted);
-            } else if (joinType == JoinType.LEFT) {
-                emitted = emitOrThrow(
-                        out, combineWithLookup(probeRow, ValNull.INSTANCE, ValNull.INSTANCE), maxOutputRows, emitted);
+        return new Consumer<>() {
+            private long emitted;
+
+            @Override
+            public void accept(final Val[] probeRow) {
+                final Val probeKey = probeRow[probeKeyPosition];
+                final boolean hasKey = probeKey != null && !(probeKey instanceof ValNull);
+                final Val lookedUp =
+                        hasKey ? stateFetcher.getState(mapName, probeKey.toString(), effectiveTimeMs) : null;
+                final boolean matched = lookedUp != null && !(lookedUp instanceof ValNull);
+                if (matched) {
+                    emitted = emitOrThrow(
+                            out, combineWithLookup(probeRow, probeKey, lookedUp), maxOutputRows, emitted);
+                } else if (joinType == JoinType.LEFT) {
+                    emitted = emitOrThrow(
+                            out, combineWithLookup(probeRow, ValNull.INSTANCE, ValNull.INSTANCE),
+                            maxOutputRows, emitted);
+                }
             }
-        }
+        };
     }
 
     /** Appends the lookup side's two synthetic columns ({@code Key} then {@code Value}) onto {@code probeRow}. */
@@ -242,24 +284,121 @@ public final class JoinExecutor {
         return emittedSoFar + 1;
     }
 
+    /**
+     * The list-returning hash join, now a thin adapter over {@link #streamingHashJoin}: it builds an on-heap
+     * {@link HeapBuildSideLookup} over the {@code right} side (the same map the old inline implementation built)
+     * and streams the {@code left} side through it, collecting the output into a list. Keeping a single join loop
+     * (in {@link #streamingHashJoin}) means the list and streaming paths can never drift in their match/pad/cap
+     * semantics.
+     */
     private static List<Val[]> hashJoin(
             final Side left, final Side right, final JoinType joinType, final long maxOutputRows) {
-        final Map<List<String>, List<Val[]>> rightByKey = new HashMap<>();
-        for (final Val[] rightRow : right.rows()) {
-            final List<String> key = keyOf(rightRow, right.keyPositions());
-            if (key == null) {
-                continue; // SQL null key: never matches, so it is not a probe target.
-            }
-            rightByKey.computeIfAbsent(key, k -> new ArrayList<>()).add(rightRow);
+        try (final BuildSideLookup buildSide = HeapBuildSideLookup.of(right)) {
+            final List<Val[]> result = new ArrayList<>();
+            streamingHashJoin(left.rows().iterator(), left.keyPositions(), buildSide, right.width(),
+                    joinType, maxOutputRows, result::add);
+            return result;
         }
+    }
 
-        final List<Val[]> result = new ArrayList<>();
-        for (final Val[] leftRow : left.rows()) {
-            final List<String> key = keyOf(leftRow, left.keyPositions());
-            final List<Val[]> matches = key == null ? null : rightByKey.get(key);
-            appendMatchesOrPad(result, leftRow, matches, right.width(), joinType, maxOutputRows);
+    /**
+     * Streams a probe side through an already-built {@link BuildSideLookup}, emitting each joined row to
+     * {@code out} as it is produced rather than accumulating a list - the streaming/spilling hash join (see
+     * {@code docs/join-scalability-implementation-plan.md}, items C1/C2). Only the build side need be resident
+     * (and it may itself spill to disk behind {@link BuildSideLookup}); the probe side is consumed one row at a
+     * time and never materialised, so join memory is bounded by the build side alone.
+     *
+     * <p><b>Orientation:</b> in production the build side is the join's <i>right</i> side and the probe side its
+     * <i>left</i> side (the reverse of a naive read order), so unmatched left rows of a {@link JoinType#LEFT} join
+     * are emitted inline here - null-padded on the right - exactly as the old {@link #hashJoin} did, with no
+     * outer-join bookkeeping. Output row shape is always {@code [probe columns..., build columns...]}
+     * (i.e. left then right), matching what {@code JoinSearchProvider} expects. Unmatched build (right) rows are
+     * never emitted (the grammar has no {@code RIGHT} join).</p>
+     *
+     * <p><b>SQL null semantics</b>: a probe row whose key is SQL-null ({@link #keyOf} returns {@code null}) is an
+     * automatic miss - never looked up - and is still emitted (null-padded) for a {@link JoinType#LEFT} join, the
+     * same rule {@link #hashJoin} and {@link #broadcastLookupJoin} follow.</p>
+     *
+     * <p><b>Preconditions:</b> {@code probeRows}, {@code probeKeyPositions}, {@code buildSide}, {@code joinType},
+     * and {@code out} must be non-null; {@code probeKeyPositions} must be non-empty and each entry a valid index
+     * into every probe row; {@code buildWidth} (the build/right side's column count, used to null-pad an unmatched
+     * left row) must be {@code >= 0}; {@code maxOutputRows} must be {@code >= 0} (as for {@link #join}).<br>
+     * <b>Postconditions:</b> {@code out.accept(...)} is called once per surviving joined row, each of length
+     * {@code probeWidth + buildWidth}; never returns a value (results go to {@code out}); {@code probeRows} is
+     * fully consumed on normal completion.</p>
+     *
+     * @throws JoinLimitExceededException if the joined output would exceed {@code maxOutputRows} (checked per
+     *                                    emitted row, so a single probe row's large fan-out is still bounded).
+     * @throws IllegalArgumentException   if {@code probeKeyPositions} is empty, or {@code buildWidth}/
+     *                                    {@code maxOutputRows} is negative.
+     */
+    public static void streamingHashJoin(
+            final Iterator<Val[]> probeRows,
+            final int[] probeKeyPositions,
+            final BuildSideLookup buildSide,
+            final int buildWidth,
+            final JoinType joinType,
+            final long maxOutputRows,
+            final Consumer<Val[]> out) {
+        Objects.requireNonNull(probeRows, "probeRows");
+        final Consumer<Val[]> probe =
+                streamingProbe(probeKeyPositions, buildSide, buildWidth, joinType, maxOutputRows, out);
+        probeRows.forEachRemaining(probe);
+    }
+
+    /**
+     * The push-based counterpart to {@link #streamingHashJoin}: returns a stateful {@link Consumer} that joins one
+     * probe row per {@code accept(...)} call, so a caller reading its probe side incrementally (e.g.
+     * {@code JoinSearchProvider} streaming rows out of a {@code DataStore.fetch} callback) never has to materialise
+     * that side into a list first. Feeding every probe row to the returned consumer is exactly equivalent to a
+     * single {@link #streamingHashJoin} over the same rows - the match/pad/null-key/output-cap semantics are
+     * single-sourced here (see {@link #streamingHashJoin}'s Javadoc for those semantics).
+     *
+     * <p><b>Preconditions:</b> {@code probeKeyPositions}, {@code buildSide}, {@code joinType}, {@code out} must be
+     * non-null; {@code probeKeyPositions} non-empty; {@code buildWidth} and {@code maxOutputRows} {@code >= 0}.<br>
+     * <b>Postconditions:</b> never null. The returned consumer is <b>stateful and single-use</b> - it tracks the
+     * running output-row count across calls to enforce {@code maxOutputRows}, so it must not be shared across
+     * threads or reused for a second probe stream.</p>
+     *
+     * @throws IllegalArgumentException if {@code probeKeyPositions} is empty, or {@code buildWidth}/
+     *                                  {@code maxOutputRows} is negative.
+     */
+    public static Consumer<Val[]> streamingProbe(
+            final int[] probeKeyPositions,
+            final BuildSideLookup buildSide,
+            final int buildWidth,
+            final JoinType joinType,
+            final long maxOutputRows,
+            final Consumer<Val[]> out) {
+        Objects.requireNonNull(probeKeyPositions, "probeKeyPositions");
+        if (probeKeyPositions.length == 0) {
+            throw new IllegalArgumentException("probeKeyPositions must not be empty");
         }
-        return result;
+        Objects.requireNonNull(buildSide, "buildSide");
+        if (buildWidth < 0) {
+            throw new IllegalArgumentException("buildWidth must be >= 0, got " + buildWidth);
+        }
+        Objects.requireNonNull(joinType, "joinType");
+        if (maxOutputRows < 0) {
+            throw new IllegalArgumentException("maxOutputRows must be >= 0, got " + maxOutputRows);
+        }
+        Objects.requireNonNull(out, "out");
+
+        return new Consumer<>() {
+            private long emitted;
+
+            @Override
+            public void accept(final Val[] probeRow) {
+                final List<String> key = keyOf(probeRow, probeKeyPositions);
+                // Stream the build side's matches one at a time (never materialising a hot key's whole group) and
+                // apply the output cap per emitted row - so a skewed key aborts at the cap rather than OOMing.
+                final boolean matched = key != null && buildSide.forEachMatch(key, buildRow ->
+                        emitted = emitOrThrow(out, combine(probeRow, buildRow), maxOutputRows, emitted));
+                if (!matched && joinType == JoinType.LEFT) {
+                    emitted = emitOrThrow(out, combine(probeRow, nulls(buildWidth)), maxOutputRows, emitted);
+                }
+            }
+        };
     }
 
     private static List<Val[]> nestedLoopJoin(
@@ -328,8 +467,18 @@ public final class JoinExecutor {
      * class Javadoc's SQL-null-semantics note. Using {@link Val#toString()} directly is safe here precisely
      * because null components short-circuit to {@code null} rather than being stringified (which for
      * {@link ValNull} would yield a Java {@code null} element and let null keys collide).
+     *
+     * <p>Public so every producer of a {@link BuildSideLookup} key derives it identically to how
+     * {@link #streamingProbe} derives the probe key - e.g. {@code JoinSearchProvider} populating the build side
+     * from a streamed scan. Keeping key derivation single-sourced here is what guarantees the build and probe
+     * sides agree on what "the same key" means.</p>
+     *
+     * <p><b>Preconditions:</b> {@code row} and {@code positions} non-null; every entry of {@code positions} a
+     * valid index into {@code row}.<br>
+     * <b>Postconditions:</b> null iff any key component is SQL-null; otherwise a non-null, {@code positions.length}
+     * -element list.</p>
      */
-    private static @Nullable List<String> keyOf(final Val[] row, final int[] positions) {
+    public static @Nullable List<String> keyOf(final Val[] row, final int[] positions) {
         final List<String> key = new ArrayList<>(positions.length);
         for (final int position : positions) {
             final Val value = row[position];

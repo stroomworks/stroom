@@ -899,8 +899,10 @@ appConfig:
     scheme: "https"
   query:
     join:
+      maxHeapBuildBytes: 268435456
+      maxHeapBuildRows: 500000
       maxOutputRows: 1000000
-      maxSideRows: 1000000
+      maxSideRows: 10000000
     optimiser:
       mode: "OFF"
   queryDataSource:

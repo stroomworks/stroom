@@ -39,6 +39,7 @@ import stroom.query.common.v2.ExpressionContextFactory;
 import stroom.query.common.v2.ExpressionPredicateFactory;
 import stroom.query.common.v2.IdentityItemMapper;
 import stroom.query.common.v2.Item;
+import stroom.query.common.v2.JoinBuildSideLookupFactory;
 import stroom.query.common.v2.JoinConfig;
 import stroom.query.common.v2.JoinDataSourceType;
 import stroom.query.common.v2.MapDataStoreFactory;
@@ -51,12 +52,14 @@ import stroom.query.common.v2.SearchProviderRegistry;
 import stroom.query.common.v2.SearchResultStoreConfig;
 import stroom.query.common.v2.Sizes;
 import stroom.query.common.v2.SizesProvider;
+import stroom.query.common.v2.SpillingBuildSideLookup;
 import stroom.query.language.SearchRequestFactory;
 import stroom.query.language.functions.FieldIndex;
 import stroom.query.language.functions.Val;
 import stroom.query.language.functions.ValLong;
 import stroom.query.language.functions.ValNull;
 import stroom.query.language.functions.ValString;
+import stroom.query.planner.join.HeapBuildSideLookup;
 
 import jakarta.inject.Provider;
 import org.junit.jupiter.api.Test;
@@ -85,6 +88,22 @@ class TestJoinSearchProvider {
     private static final DocRef RIGHT_DATA_SOURCE = new DocRef("RightType", "right-uuid", "Right");
     private static final Executor DIRECT_EXECUTOR = Runnable::run;
     private static final SizesProvider SIZES_PROVIDER = Sizes::unlimited;
+
+    /**
+     * A build-side lookup factory whose "spill" store is an in-memory {@link HeapBuildSideLookup} stand-in rather
+     * than the real disk-backed one. This keeps {@code stroom-searchable-impl} tests free of the LMDB native
+     * library (whose one-per-JVM configuration is awkward across test classes) while still exercising the real
+     * {@link SpillingBuildSideLookup} threshold/drain/routing that {@link JoinSearchProvider} relies on. The real
+     * disk-backed spill store ({@code LmdbJoinBuildStore}) is covered end-to-end in {@code stroom-query-common}'s
+     * {@code TestLmdbJoinBuildStore}/{@code TestSpillingBuildSideLookup}.
+     */
+    private JoinBuildSideLookupFactory buildSideLookupFactory() {
+        final JoinBuildSideLookupFactory factory = mock(JoinBuildSideLookupFactory.class);
+        when(factory.create(org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.anyLong()))
+                .thenAnswer(inv -> new SpillingBuildSideLookup(
+                        inv.getArgument(0), inv.getArgument(1), HeapBuildSideLookup::new));
+        return factory;
+    }
 
     /**
      * The default guardrails (see {@link JoinConfig}'s own defaults) - large enough not to trip any existing
@@ -133,14 +152,15 @@ class TestJoinSearchProvider {
 
         return new JoinSearchProvider(
                 () -> registry, coprocessorsFactory, resultStoreFactory, new ExpressionPredicateFactory(),
-                joinConfigProvider, stateFetcher);
+                joinConfigProvider, stateFetcher, buildSideLookupFactory());
     }
 
     private JoinSearchProvider providerWithMockDeps(final SearchProviderRegistry registry) {
         return new JoinSearchProvider(
                 () -> registry, mock(CoprocessorsFactory.class), mock(ResultStoreFactory.class),
                 new ExpressionPredicateFactory(), DEFAULT_JOIN_CONFIG_PROVIDER,
-                mock(stroom.query.language.functions.StateFetcher.class));
+                mock(stroom.query.language.functions.StateFetcher.class),
+                mock(JoinBuildSideLookupFactory.class));
     }
 
     private SearchProviderRegistry registry(final SearchProvider... providers) {
@@ -305,8 +325,9 @@ class TestJoinSearchProvider {
                 RIGHT_DATA_SOURCE, List.of("Id", "Name"),
                 List.<Val[]>of(new Val[]{ValLong.create(2), ValString.create("Bob")}));
 
-        final ResultStore resultStore = provider(registry(leftProvider, rightProvider), () -> new JoinConfig(2L, null))
-                .createResultStore(outerRequest(ExpressionOperator.builder().build()));
+        final ResultStore resultStore =
+                provider(registry(leftProvider, rightProvider), () -> new JoinConfig(2L, null, null, null))
+                        .createResultStore(outerRequest(ExpressionOperator.builder().build()));
 
         assertThat(resultStore.getErrors()).isEmpty();
         assertThat(readTableRows(resultStore)).hasSize(1);
@@ -314,20 +335,23 @@ class TestJoinSearchProvider {
 
     @Test
     void maxSideRows_exceeded_reportsAClearErrorOnTheResultStore_andRealisesNoOutput() {
-        // The left side has 2 rows but the configured cap only allows 1 - realising it must abort, and the whole
-        // search must report the error rather than silently truncating the join's input.
+        // maxSideRows caps the build (right) side. The right side has 2 rows but the configured cap only allows 1
+        // - realising it must abort, and the whole search must report the error rather than silently truncating
+        // the join's input. (The streaming probe/left side is deliberately not row-capped.)
         final SearchProvider leftProvider = fakeSideProvider(
                 LEFT_DATA_SOURCE, List.of("UserId"),
-                List.of(new Val[]{ValLong.create(1)}, new Val[]{ValLong.create(2)}));
+                List.<Val[]>of(new Val[]{ValLong.create(2)}));
         final SearchProvider rightProvider = fakeSideProvider(
                 RIGHT_DATA_SOURCE, List.of("Id", "Name"),
-                List.<Val[]>of(new Val[]{ValLong.create(2), ValString.create("Bob")}));
+                List.of(new Val[]{ValLong.create(1), ValString.create("Alice")},
+                        new Val[]{ValLong.create(2), ValString.create("Bob")}));
 
-        final ResultStore resultStore = provider(registry(leftProvider, rightProvider), () -> new JoinConfig(1L, null))
-                .createResultStore(outerRequest(ExpressionOperator.builder().build()));
+        final ResultStore resultStore =
+                provider(registry(leftProvider, rightProvider), () -> new JoinConfig(1L, null, null, null))
+                        .createResultStore(outerRequest(ExpressionOperator.builder().build()));
 
         assertThat(resultStore.getErrors())
-                .anySatisfy(error -> assertThat(error.getMessage()).contains("join side row count"));
+                .anySatisfy(error -> assertThat(error.getMessage()).contains("join build side row count"));
         assertThat(readTableRows(resultStore)).isEmpty();
     }
 
@@ -342,11 +366,43 @@ class TestJoinSearchProvider {
                 List.of(new Val[]{ValLong.create(1), ValString.create("Alice")},
                         new Val[]{ValLong.create(2), ValString.create("Bob")}));
 
-        final ResultStore resultStore = provider(registry(leftProvider, rightProvider), () -> new JoinConfig(null, 1L))
-                .createResultStore(outerRequest(ExpressionOperator.builder().build()));
+        final ResultStore resultStore =
+                provider(registry(leftProvider, rightProvider), () -> new JoinConfig(null, 1L, null, null))
+                        .createResultStore(outerRequest(ExpressionOperator.builder().build()));
 
         assertThat(resultStore.getErrors())
                 .anySatisfy(error -> assertThat(error.getMessage()).contains("join output row count"));
+    }
+
+    @Test
+    void buildSideCrossingMaxHeapBuildRows_spillsToDisk_andStillReturnsCorrectRows() {
+        // maxHeapBuildRows = 1 forces the 3-row build (right) side to spill to a real disk-backed store after the
+        // first row - proving the streaming/spilling path (C1/C2) produces the same joined output as the on-heap
+        // path. The left (probe) side streams against the spilled build side.
+        final SearchProvider leftProvider = fakeSideProvider(
+                LEFT_DATA_SOURCE, List.of("UserId"),
+                List.of(new Val[]{ValLong.create(1)},
+                        new Val[]{ValLong.create(2)},
+                        new Val[]{ValLong.create(3)}));
+        final SearchProvider rightProvider = fakeSideProvider(
+                RIGHT_DATA_SOURCE, List.of("Id", "Name"),
+                List.of(new Val[]{ValLong.create(1), ValString.create("Alice")},
+                        new Val[]{ValLong.create(2), ValString.create("Bob")},
+                        new Val[]{ValLong.create(3), ValString.create("Carol")}));
+
+        // maxSideRows/maxOutputRows left at defaults (large); only maxHeapBuildRows is lowered to force a spill.
+        final ResultStore resultStore =
+                provider(registry(leftProvider, rightProvider), () -> new JoinConfig(null, null, 1L, null))
+                        .createResultStore(outerRequest(ExpressionOperator.builder().build()));
+
+        assertThat(resultStore.getErrors()).isEmpty();
+        final List<Val[]> rows = readTableRows(resultStore);
+        // Outer select is [a.UserId, b.Name]; all three users match, so all three enriched rows come back.
+        assertThat(rows).hasSize(3);
+        assertThat(rows).anySatisfy(row -> assertThat(row).containsExactly(
+                ValLong.create(1), ValString.create("Alice")));
+        assertThat(rows).anySatisfy(row -> assertThat(row).containsExactly(
+                ValLong.create(3), ValString.create("Carol")));
     }
 
     // ------------------------------------------------------------------------------------------------------
@@ -610,12 +666,10 @@ class TestJoinSearchProvider {
         final SearchProvider probeProvider = fakeSideProvider(
                 LEFT_DATA_SOURCE, List.of("UserId"),
                 List.of(new Val[]{ValLong.create(1)}, new Val[]{ValLong.create(2)}));
-        final stroom.query.language.functions.StateFetcher stateFetcher = (map, key, effectiveTimeMs) ->
-                switch (key) {
-                    case "1" -> ValString.create("Alice");
-                    case "2" -> ValString.create("Bob");
-                    default -> ValNull.INSTANCE;
-                };
+        final java.util.Map<String, Val> lookup =
+                java.util.Map.of("1", ValString.create("Alice"), "2", ValString.create("Bob"));
+        final stroom.query.language.functions.StateFetcher stateFetcher =
+                (map, key, effectiveTimeMs) -> lookup.getOrDefault(key, ValNull.INSTANCE);
         final ExpressionOperator where = ExpressionOperator.builder()
                 .addTerm("b.Value", Condition.EQUALS, "Bob")
                 .build();
@@ -633,7 +687,10 @@ class TestJoinSearchProvider {
     }
 
     @Test
-    void broadcastLookup_probeSideExceedsMaxSideRows_reportsAClearError() {
+    void broadcastLookup_largeProbeSide_streamsAndSucceeds_notCappedByMaxSideRows() {
+        // The B1 probe side is now streamed (never realised into a list), so a probe side far larger than
+        // maxSideRows must NOT abort - only the joined output is capped. Here maxSideRows=1 but the probe has 2
+        // rows: previously this reported "join side row count"; now it succeeds and returns both enriched rows.
         final SearchProvider probeProvider = fakeSideProvider(
                 LEFT_DATA_SOURCE, List.of("UserId"),
                 List.of(new Val[]{ValLong.create(1)}, new Val[]{ValLong.create(2)}));
@@ -642,12 +699,12 @@ class TestJoinSearchProvider {
 
         final ResultStore resultStore = provider(
                 registry(probeProvider, planBProviderThatMustNeverBeRealised()),
-                () -> new JoinConfig(1L, null), stateFetcher)
+                () -> new JoinConfig(1L, null, null, null), stateFetcher)
                 .createResultStore(lookupOuterRequest(
                         ExpressionOperator.builder().build(), JoinSpec.JoinType.INNER, false));
 
-        assertThat(resultStore.getErrors())
-                .anySatisfy(error -> assertThat(error.getMessage()).contains("join side row count"));
+        assertThat(resultStore.getErrors()).isEmpty();
+        assertThat(readTableRows(resultStore)).hasSize(2);
     }
 
     @Test
@@ -660,7 +717,7 @@ class TestJoinSearchProvider {
 
         final ResultStore resultStore = provider(
                 registry(probeProvider, planBProviderThatMustNeverBeRealised()),
-                () -> new JoinConfig(null, 1L), stateFetcher)
+                () -> new JoinConfig(null, 1L, null, null), stateFetcher)
                 .createResultStore(lookupOuterRequest(
                         ExpressionOperator.builder().build(), JoinSpec.JoinType.INNER, false));
 

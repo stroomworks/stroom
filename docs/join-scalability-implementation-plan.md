@@ -476,3 +476,84 @@ or slightly worse speed for joins that already fit today. Phase 3 (semi-join) bu
 than "doesn't fall over." Recommend re-measuring real workloads after phase 4 before committing to phases 5–6 -
 they only pay off if genuinely unfiltered, unskewed big⋈big queries show up in practice.
 
+### Steps 1–2 (streaming + spill, C2+C1, and A6) — DONE (2026-07-21)
+
+Implemented as one epic; A4 (step 3) is **deferred** with a recorded rationale (below).
+
+- **Orientation kept as build = RIGHT / probe = LEFT** (today's proven shape), not the earlier "left-first"
+  sketch. This means unmatched `LEFT`-join rows are emitted inline (null-padded) as the probe streams, with
+  **zero** outer-join bookkeeping - decisive for keeping the executor simple. (Investigated and rejected building
+  the LEFT side, which would have forced a matched-key set + a final build-side scan for `LEFT` joins.)
+- **C2/C1 executor:** new pure `BuildSideLookup` interface + `HeapBuildSideLookup` (planner), and
+  `JoinExecutor.streamingHashJoin`/`streamingProbe` - the list-returning `hashJoin` now delegates to the same
+  streaming loop, so there is one join implementation. `JoinSearchProvider` realises only the **build (right)**
+  side (into a `BuildSideLookup`) and **streams the probe (left)** side out of its `DataStore.fetch` callback
+  straight through the join to `coprocessors.accept(...)` - the left side is never listed.
+- **Spill store:** `LmdbJoinBuildStore` (query-common) - a bespoke keyed multimap on the low-level `stroom.lmdb2`
+  primitives (not `LmdbDataStore`, which collapses grouped rows via `Generator.merge` and so cannot preserve join
+  rows). One non-DUPSORT DB, key = length-prefixed `encode(joinKey)` ++ 8-byte sequence (globally unique, so
+  duplicate rows are preserved and long keys fail with a clear error rather than an opaque LMDB one), value =
+  `ValSerialiser` bytes; retrieval by prefix scan. `SpillingBuildSideLookup` (query-common) is on-heap until
+  `JoinConfig.maxHeapBuildRows`, then drains once into the LMDB store and delegates. `JoinBuildSideLookupFactory`
+  owns the LMDB env-dir/config wiring so `stroom-searchable-impl` keeps no LMDB dependency.
+- **A6 (runtime size signal):** delivered as the heap→spill decision driven by the build side's live row count -
+  not a left/right side swap. A cheap pre-scan size oracle was confirmed **not** to exist
+  (`MapDataStore.getByteSize()` serialises the whole dataset; no store exposes an O(1) row count), so full
+  cost-based side selection stays deferred (report items E22/E23, step 5 above).
+- **Config (`JoinConfig`):** new `maxHeapBuildRows` (default 500,000 - the spill threshold); `maxSideRows` default
+  **raised 1,000,000 → 10,000,000** (now the absolute build-side ceiling incl. spilled rows - a disk/time guard,
+  no longer the heap-OOM guard, so a larger default is safe and lets spilling actually raise the ceiling); the
+  streaming probe side is no longer row-capped. `maxOutputRows` unchanged.
+- **Not done in this step (honest scope):** true cross-side pipelining (each side's sub-search still completes
+  before the next runs - "streaming" here means no probe-side `List` and a spillable build side, not overlapping
+  sub-searches) and `LIMIT` early-termination wiring, both noted as follow-ups.
+- **Tests:** `TestJoinExecutor` (+`streamingHashJoin`/`HeapBuildSideLookup` cases), new `TestLmdbJoinBuildStore`
+  and `TestSpillingBuildSideLookup` (query-common), `TestJoinConfig` (new/raised properties + `expected.yaml`),
+  `TestJoinSearchProvider` (a build side crossing the spill threshold still returns correct rows; guardrail tests
+  updated for the build-side/probe-side cap split), and a byte-identical **spill-vs-on-heap parity** case added to
+  `TestJoinPushDownDifferential`.
+
+### A4 (semi-join / bloom, step 3) — DEFERRED, with rationale (2026-07-21)
+
+A correct semi-join *push* is more involved than step 3's sketch implies, and depends on machinery Stroom's
+expression model does not currently offer safely:
+
+- The only value-set conditions are `IN` - a **space-delimited string with no escaping** (the generic
+  `ExpressionPredicateFactory` splits a string `IN` on `" "`; the Lucene path additionally requires quoting *and*
+  a non-analysed/keyword field) - and `IN_DICTIONARY`, which needs a **persisted `DictionaryDoc`** (no inline word
+  set). So an arbitrary computed key set cannot be pushed as a plain `IN` without silently corrupting keys that
+  contain a space, and the dictionary route needs transient-doc lifecycle/permission handling.
+- The pushed predicate is evaluated by the **other side's own provider** (Lucene / Searchable / Plan B), each with
+  different `IN` semantics and analysed-vs-keyword-field behaviour - so a generic, provider-agnostic correct push
+  is substantial, correctness-sensitive work, not a small add.
+- Applying the key set only as a post-scan filter (instead of pushing it into the scan) would save no scan I/O and
+  therefore defeat A4's entire purpose.
+
+A4 should get its own design pass (likely a keyword-field guard, or a small expression-model extension for a
+structured value list) rather than being bolted on here.
+
+### OOM-risk reduction — DONE (2026-07-21)
+
+A safety pass after the streaming/spill executor landed, closing the residual heap-OOM paths a review found (see
+the OOM-reduction plan). No scalability work; goal was purely "cannot exhaust heap on any input shape under the
+default guardrails, and stays safe when the row caps are raised".
+
+- **Build-side key skew.** `BuildSideLookup.get(key):List` was replaced by a streaming
+  `boolean forEachMatch(key, Consumer)`: `HeapBuildSideLookup` iterates its resident list, `LmdbJoinBuildStore`
+  hands over one prefix-scanned row at a time (never building a list). `JoinExecutor.streamingProbe` emits per
+  match, so the output cap now fires **during** a hot key's fan-out rather than after the whole group is
+  materialised. `get()` removed from the interface (no re-materialise foot-gun).
+- **B1 probe side now streams.** New `JoinExecutor.broadcastLookupProbe(...):Consumer` (the per-row body of
+  `broadcastLookupJoin`); `JoinSearchProvider.joinAndFeedViaBroadcastLookup` now uses `openSide` + `fetchRows` +
+  that consumer instead of `realiseSide`, so an enrichment join over an arbitrarily large event stream runs in
+  bounded memory and is no longer row-capped (only output is). `realiseSide`/`RealisedSide` deleted (dead).
+- **Width-aware spill.** New `JoinConfig.maxHeapBuildBytes` (default 256 MiB); `SpillingBuildSideLookup` spills on
+  rows **or** estimated heap bytes, whichever first, via a coarse over-estimating `estimateHeapBytes` (a spill
+  trigger only, never a correctness input) - so a few very wide rows spill instead of OOMing under the row count.
+- **Clearer failure.** `LmdbJoinBuildStore` translates LMDB `MapFullException` into an actionable "join build side
+  too large to spill - increase the map size or add a filter" error. The one documented residual (operator both
+  disables `offHeapResults` and raises `maxOutputRows`) is a global-config choice, noted in `JoinConfig`.
+- **Tests:** skew-safety (a hot key aborts at the cap without consuming the whole group), B1 large-probe now
+  succeeds, byte-threshold spill, `forEachMatch` streamed/ordered delivery, `maxHeapBuildBytes` config; all three
+  modules' `test` + `checkstyle` + config-tree green.
+
