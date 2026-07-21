@@ -26,6 +26,8 @@ import com.google.gwt.dom.client.Element;
 import com.google.gwt.dom.client.NativeEvent;
 import com.google.gwt.dom.client.Style.Unit;
 import com.google.gwt.event.dom.client.ClickEvent;
+import com.google.gwt.event.dom.client.KeyCodes;
+import com.google.gwt.event.dom.client.KeyDownEvent;
 import com.google.gwt.event.dom.client.MouseDownEvent;
 import com.google.gwt.event.dom.client.MouseMoveEvent;
 import com.google.gwt.event.dom.client.MouseUpEvent;
@@ -44,7 +46,8 @@ import java.util.function.Consumer;
 /**
  * View implementation for the floor map timeline control.
  * Includes step-back, play/pause and step-forward buttons, a progress scrubber with date labels,
- * a settings button with a speed badge, and a histogram above the scrubber.
+ * a clickable speed badge that opens the playback-speed menu, a settings button, and a histogram
+ * above the scrubber.
  * Features:
  * <ul>
  *   <li>Scrub tooltip — datetime pill above the handle while dragging.</li>
@@ -65,6 +68,8 @@ public class FloorMapTimelineViewImpl extends ViewImpl implements FloorMapTimeli
     private Runnable stepBackHandler;
     /** Called when the step-forward button is clicked. */
     private Runnable stepForwardHandler;
+    /** Called when the speed badge is clicked (or activated from the keyboard). */
+    private Runnable speedBadgeHandler;
     private boolean dragging;
     private final HistogramWidget histogramWidget;
 
@@ -121,6 +126,26 @@ public class FloorMapTimelineViewImpl extends ViewImpl implements FloorMapTimeli
                 stepForwardHandler.run();
             }
         }, ClickEvent.getType());
+
+        // Speed badge behaves as a button: click or keyboard activation opens the speed menu.
+        speedBadge.setTitle("Playback Speed");
+        final Element badgeEl = speedBadge.getElement();
+        badgeEl.setAttribute("role", "button");
+        badgeEl.setAttribute("tabindex", "0");
+        //noinspection unused e
+        speedBadge.addClickHandler(e -> {
+            if (speedBadgeHandler != null) {
+                speedBadgeHandler.run();
+            }
+        });
+        speedBadge.addDomHandler(e -> {
+            if (e.getNativeKeyCode() == KeyCodes.KEY_ENTER || e.getNativeKeyCode() == KeyCodes.KEY_SPACE) {
+                e.preventDefault();
+                if (speedBadgeHandler != null) {
+                    speedBadgeHandler.run();
+                }
+            }
+        }, KeyDownEvent.getType());
 
         // ARIA: mark the outer bar as a slider.
         final Element barEl = outerBar.getElement();
@@ -278,6 +303,16 @@ public class FloorMapTimelineViewImpl extends ViewImpl implements FloorMapTimeli
     @Override
     public void setSpeedBadge(final String text) {
         speedBadge.setText(text);
+    }
+
+    @Override
+    public void setSpeedBadgeHandler(final Runnable handler) {
+        this.speedBadgeHandler = handler;
+    }
+
+    @Override
+    public Widget getSpeedBadgeWidget() {
+        return speedBadge;
     }
 
     @Override

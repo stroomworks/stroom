@@ -29,9 +29,10 @@ import com.gwtplatform.mvp.client.ViewImpl;
 /**
  * View implementation for the floor map canvas area.
  *
- * <p>Uses a UiBinder split layout to host the map canvas in the main area,
+ * <p>Uses a UiBinder layout to host the map canvas in the main area,
  * the entity-tracking panel in a resizable east column beside it, and the
- * timeline control strip beneath both. Slot routing directs content from
+ * timeline control strip docked beneath both at a fixed, non-resizable
+ * height. Slot routing directs content from
  * {@link FloorMapMapPresenter#MAP} into the map panel,
  * {@link FloorMapMapPresenter#ENTITY_LIST} into the entity list panel, and
  * {@link FloorMapMapPresenter#TIMELINE} into the timeline panel.</p>

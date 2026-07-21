@@ -3,38 +3,36 @@
              xmlns:g="urn:import:com.google.gwt.user.client.ui"
              xmlns:b="urn:import:stroom.widget.button.client">
 
+    <!-- Grid layout: columns are [left controls | bar | right controls]; the histogram and
+         date-label rows live in the middle column so they always stay in line with the bar,
+         however wide the flanking control groups are (e.g. when the help button is added). -->
     <g:FlowPanel addStyleNames="stroom-floormap-timeline-container max">
 
-        <!-- Histogram canvas spanning full width above the bar row -->
+        <!-- Histogram canvas sits above the bar, in the same grid column -->
         <g:SimplePanel ui:field="histogramContainer" addStyleNames="stroom-floormap-timeline-histogram-container" />
 
-        <!-- Bar row: [left controls] | scrubber bar | [right controls] — all vertically centred on the bar -->
-        <g:FlowPanel addStyleNames="stroom-floormap-timeline-playback-row">
+        <!-- Left controls: step-back, play/pause, step-forward -->
+        <g:FlowPanel addStyleNames="stroom-floormap-timeline-left-controls">
+            <b:SvgButton ui:field="stepBackButton" addStyleNames="stroom-floormap-timeline-step-button" />
+            <b:SvgButton ui:field="playPauseButton" addStyleNames="stroom-floormap-timeline-play-button" />
+            <b:SvgButton ui:field="stepForwardButton" addStyleNames="stroom-floormap-timeline-step-button" />
+        </g:FlowPanel>
 
-            <!-- Left controls: step-back, play/pause, step-forward -->
-            <g:FlowPanel addStyleNames="stroom-floormap-timeline-left-controls">
-                <b:SvgButton ui:field="stepBackButton" addStyleNames="stroom-floormap-timeline-step-button" />
-                <b:SvgButton ui:field="playPauseButton" addStyleNames="stroom-floormap-timeline-play-button" />
-                <b:SvgButton ui:field="stepForwardButton" addStyleNames="stroom-floormap-timeline-step-button" />
+        <!-- Center section: the timeline scrubber bar -->
+        <g:FlowPanel addStyleNames="stroom-floormap-timeline-center">
+            <g:FlowPanel ui:field="outerBar" addStyleNames="stroom-floormap-timeline-outer-bar">
+                <g:FlowPanel ui:field="innerBar" addStyleNames="stroom-floormap-timeline-inner-bar" />
+                <g:FlowPanel ui:field="handle" addStyleNames="stroom-floormap-timeline-handle" />
+                <g:Label ui:field="scrubTooltip" addStyleNames="stroom-floormap-timeline-scrub-tooltip" />
+                <g:FlowPanel ui:field="markerLayer" addStyleNames="max" />
             </g:FlowPanel>
+        </g:FlowPanel>
 
-            <!-- Center section: bar only -->
-            <g:FlowPanel addStyleNames="stroom-floormap-timeline-center">
-
-                <!-- The timeline scrubber bar -->
-                <g:FlowPanel ui:field="outerBar" addStyleNames="stroom-floormap-timeline-outer-bar">
-                    <g:FlowPanel ui:field="innerBar" addStyleNames="stroom-floormap-timeline-inner-bar" />
-                    <g:FlowPanel ui:field="handle" addStyleNames="stroom-floormap-timeline-handle" />
-                    <g:Label ui:field="scrubTooltip" addStyleNames="stroom-floormap-timeline-scrub-tooltip" />
-                    <g:FlowPanel ui:field="markerLayer" addStyleNames="max" />
-                </g:FlowPanel>
-            </g:FlowPanel>
-
-            <!-- Right controls: speed badge, settings gear icon, optional help button -->
-            <g:FlowPanel ui:field="rightControls" addStyleNames="stroom-floormap-timeline-right-controls">
-                <g:Label ui:field="speedBadge" addStyleNames="stroom-floormap-timeline-speed-badge" />
-                <b:SvgButton ui:field="settingsButton" addStyleNames="stroom-floormap-timeline-settings-button" />
-            </g:FlowPanel>
+        <!-- Right controls: speed badge (clickable — opens the speed menu), settings gear icon,
+             optional help button -->
+        <g:FlowPanel ui:field="rightControls" addStyleNames="stroom-floormap-timeline-right-controls">
+            <g:Label ui:field="speedBadge" addStyleNames="stroom-floormap-timeline-speed-badge" />
+            <b:SvgButton ui:field="settingsButton" addStyleNames="stroom-floormap-timeline-settings-button" />
         </g:FlowPanel>
 
         <!-- Date labels sit below the playback row, inset to align with the bar ends -->

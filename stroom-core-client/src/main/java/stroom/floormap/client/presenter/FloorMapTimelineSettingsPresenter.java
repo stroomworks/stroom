@@ -32,12 +32,10 @@ import com.google.web.bindery.event.shared.HandlerRegistration;
 import com.gwtplatform.mvp.client.MyPresenterWidget;
 import com.gwtplatform.mvp.client.View;
 
-import java.util.List;
-import java.util.function.Consumer;
-
 /**
  * Presenter for the timeline settings popup.
- * Shows playback speed and date range controls when the settings button is clicked.
+ * Shows loop-playback and date range controls when the settings button is clicked.
+ * Playback speed has its own menu opened from the speed badge on the timeline.
  */
 public class FloorMapTimelineSettingsPresenter
         extends MyPresenterWidget<FloorMapTimelineSettingsView> {
@@ -67,33 +65,6 @@ public class FloorMapTimelineSettingsPresenter
     /** Hides the settings popup. */
     public void hide() {
         HidePopupRequestEvent.builder(this).fire();
-    }
-
-    /**
-     * Sets the available playback speed options in the dropdown.
-     *
-     * @param speeds the list of speed multipliers to offer
-     */
-    public void setSpeedOptions(final List<Double> speeds) {
-        getView().setSpeedOptions(speeds);
-    }
-
-    /**
-     * Selects a speed in the dropdown.
-     *
-     * @param speed the speed multiplier to select
-     */
-    public void setSelectedSpeed(final Double speed) {
-        getView().setSelectedSpeed(speed);
-    }
-
-    /**
-     * Registers the callback fired when the user selects a new playback speed.
-     *
-     * @param handler called with the newly selected speed multiplier
-     */
-    public void setSpeedChangeHandler(final Consumer<Double> handler) {
-        getView().setSpeedChangeHandler(handler);
     }
 
     /** Returns {@code true} if loop playback is enabled. */
@@ -176,12 +147,6 @@ public class FloorMapTimelineSettingsPresenter
     }
 
     public interface FloorMapTimelineSettingsView extends View {
-
-        void setSpeedOptions(List<Double> speeds);
-
-        void setSelectedSpeed(Double speed);
-
-        void setSpeedChangeHandler(Consumer<Double> handler);
 
         boolean isLoopPlayback();
 
