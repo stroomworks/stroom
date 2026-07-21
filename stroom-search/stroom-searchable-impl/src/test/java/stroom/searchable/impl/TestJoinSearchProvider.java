@@ -59,6 +59,7 @@ import stroom.query.language.functions.Val;
 import stroom.query.language.functions.ValLong;
 import stroom.query.language.functions.ValNull;
 import stroom.query.language.functions.ValString;
+import stroom.query.planner.join.BuildSideLookup;
 import stroom.query.planner.join.HeapBuildSideLookup;
 
 import jakarta.inject.Provider;
@@ -89,6 +90,11 @@ class TestJoinSearchProvider {
     private static final Executor DIRECT_EXECUTOR = Runnable::run;
     private static final SizesProvider SIZES_PROVIDER = Sizes::unlimited;
 
+    /** Column count of the first row put into the build side - lets a test observe <i>which</i> side A6 built
+     * (the two sides in these fixtures are given different widths). {@code -1} until a build side is populated.
+     * Reset per test (JUnit creates a fresh instance per method). */
+    private int builtRowWidth = -1;
+
     /**
      * A build-side lookup factory whose "spill" store is an in-memory {@link HeapBuildSideLookup} stand-in rather
      * than the real disk-backed one. This keeps {@code stroom-searchable-impl} tests free of the LMDB native
@@ -100,9 +106,49 @@ class TestJoinSearchProvider {
     private JoinBuildSideLookupFactory buildSideLookupFactory() {
         final JoinBuildSideLookupFactory factory = mock(JoinBuildSideLookupFactory.class);
         when(factory.create(org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.anyLong()))
-                .thenAnswer(inv -> new SpillingBuildSideLookup(
-                        inv.getArgument(0), inv.getArgument(1), HeapBuildSideLookup::new));
+                .thenAnswer(inv -> new RecordingBuildSideLookup(
+                        new SpillingBuildSideLookup(inv.getArgument(0), inv.getArgument(1), HeapBuildSideLookup::new),
+                        width -> builtRowWidth = width));
         return factory;
+    }
+
+    /** Wraps a {@link BuildSideLookup}, recording the width of the first row put into it (so a test can tell which
+     * side became the build side), then delegating unchanged. */
+    private static final class RecordingBuildSideLookup implements BuildSideLookup {
+
+        private final BuildSideLookup delegate;
+        private final java.util.function.IntConsumer firstPutWidth;
+        private boolean recorded;
+
+        private RecordingBuildSideLookup(final BuildSideLookup delegate,
+                                         final java.util.function.IntConsumer firstPutWidth) {
+            this.delegate = delegate;
+            this.firstPutWidth = firstPutWidth;
+        }
+
+        @Override
+        public void put(final List<String> key, final Val[] row) {
+            if (!recorded) {
+                firstPutWidth.accept(row.length);
+                recorded = true;
+            }
+            delegate.put(key, row);
+        }
+
+        @Override
+        public boolean forEachMatch(final List<String> key, final Consumer<Val[]> matchConsumer) {
+            return delegate.forEachMatch(key, matchConsumer);
+        }
+
+        @Override
+        public long rowCount() {
+            return delegate.rowCount();
+        }
+
+        @Override
+        public void close() {
+            delegate.close();
+        }
     }
 
     /**
@@ -313,6 +359,74 @@ class TestJoinSearchProvider {
     }
 
     // ------------------------------------------------------------------------------------------------------
+    // Build-side selection (A6): INNER builds the smaller side; LEFT never swaps. The two sides are given
+    // different widths (left = 1 col, right = 2 cols) so builtRowWidth reveals which side became the build side.
+    // ------------------------------------------------------------------------------------------------------
+
+    @Test
+    void innerJoin_leftSideSmaller_buildsLeftSide() {
+        // left = 1 row (small), right = 3 rows (large). INNER => build the smaller (left, width 1), stream right.
+        final SearchProvider leftProvider = fakeSideProvider(
+                LEFT_DATA_SOURCE, List.of("UserId"),
+                List.<Val[]>of(new Val[]{ValLong.create(2)}));
+        final SearchProvider rightProvider = fakeSideProvider(
+                RIGHT_DATA_SOURCE, List.of("Id", "Name"),
+                List.of(new Val[]{ValLong.create(1), ValString.create("Alice")},
+                        new Val[]{ValLong.create(2), ValString.create("Bob")},
+                        new Val[]{ValLong.create(3), ValString.create("Carol")}));
+
+        final ResultStore resultStore = provider(registry(leftProvider, rightProvider))
+                .createResultStore(outerRequest(ExpressionOperator.builder().build()));
+
+        assertThat(builtRowWidth).as("built the left side (width 1)").isEqualTo(1);
+        final List<Val[]> rows = readTableRows(resultStore);
+        assertThat(rows).hasSize(1);
+        assertThat(rows.getFirst()).containsExactly(ValLong.create(2), ValString.create("Bob"));
+    }
+
+    @Test
+    void innerJoin_rightSideSmaller_buildsRightSide() {
+        // left = 3 rows (large), right = 1 row (small). INNER => build the smaller (right, width 2), stream left.
+        final SearchProvider leftProvider = fakeSideProvider(
+                LEFT_DATA_SOURCE, List.of("UserId"),
+                List.of(new Val[]{ValLong.create(1)}, new Val[]{ValLong.create(2)}, new Val[]{ValLong.create(3)}));
+        final SearchProvider rightProvider = fakeSideProvider(
+                RIGHT_DATA_SOURCE, List.of("Id", "Name"),
+                List.<Val[]>of(new Val[]{ValLong.create(2), ValString.create("Bob")}));
+
+        final ResultStore resultStore = provider(registry(leftProvider, rightProvider))
+                .createResultStore(outerRequest(ExpressionOperator.builder().build()));
+
+        assertThat(builtRowWidth).as("built the right side (width 2)").isEqualTo(2);
+        final List<Val[]> rows = readTableRows(resultStore);
+        assertThat(rows).hasSize(1);
+        assertThat(rows.getFirst()).containsExactly(ValLong.create(2), ValString.create("Bob"));
+    }
+
+    @Test
+    void leftJoin_neverSwaps_evenWhenLeftIsSmaller_andKeepsUnmatchedLeftRows() {
+        // left = 2 rows (smaller), right = 3 rows. A LEFT join must NOT swap (else unmatched left rows would be
+        // dropped): it still builds the right side (width 2) and streams the left, so UserId=99 survives null-padded.
+        final SearchProvider leftProvider = fakeSideProvider(
+                LEFT_DATA_SOURCE, List.of("UserId"),
+                List.of(new Val[]{ValLong.create(2)}, new Val[]{ValLong.create(99)}));
+        final SearchProvider rightProvider = fakeSideProvider(
+                RIGHT_DATA_SOURCE, List.of("Id", "Name"),
+                List.of(new Val[]{ValLong.create(1), ValString.create("Alice")},
+                        new Val[]{ValLong.create(2), ValString.create("Bob")},
+                        new Val[]{ValLong.create(3), ValString.create("Carol")}));
+
+        final ResultStore resultStore = provider(registry(leftProvider, rightProvider))
+                .createResultStore(outerRequest(ExpressionOperator.builder().build(), JoinSpec.JoinType.LEFT));
+
+        assertThat(builtRowWidth).as("LEFT join still builds the right side (width 2), never swaps").isEqualTo(2);
+        final List<Val[]> rows = readTableRows(resultStore);
+        assertThat(rows).hasSize(2);
+        assertThat(rows).anySatisfy(row -> assertThat(row).containsExactly(ValLong.create(2), ValString.create("Bob")));
+        assertThat(rows).anySatisfy(row -> assertThat(row).containsExactly(ValLong.create(99), ValNull.INSTANCE));
+    }
+
+    // ------------------------------------------------------------------------------------------------------
     // Memory guardrails (see docs/join-scalability-implementation-plan.md, decision D1)
     // ------------------------------------------------------------------------------------------------------
 
@@ -335,12 +449,13 @@ class TestJoinSearchProvider {
 
     @Test
     void maxSideRows_exceeded_reportsAClearErrorOnTheResultStore_andRealisesNoOutput() {
-        // maxSideRows caps the build (right) side. The right side has 2 rows but the configured cap only allows 1
-        // - realising it must abort, and the whole search must report the error rather than silently truncating
-        // the join's input. (The streaming probe/left side is deliberately not row-capped.)
+        // maxSideRows caps whichever side A6 builds (the smaller one). Both sides have 2 rows but the cap allows
+        // only 1, so the built side breaches regardless of the A6 choice; realising it must abort and the whole
+        // search must report the error rather than silently truncating the join's input. (The streaming probe
+        // side is deliberately not row-capped.)
         final SearchProvider leftProvider = fakeSideProvider(
                 LEFT_DATA_SOURCE, List.of("UserId"),
-                List.<Val[]>of(new Val[]{ValLong.create(2)}));
+                List.of(new Val[]{ValLong.create(1)}, new Val[]{ValLong.create(2)}));
         final SearchProvider rightProvider = fakeSideProvider(
                 RIGHT_DATA_SOURCE, List.of("Id", "Name"),
                 List.of(new Val[]{ValLong.create(1), ValString.create("Alice")},
@@ -893,6 +1008,7 @@ class TestJoinSearchProvider {
 
         final DataStore dataStore = mock(DataStore.class);
         when(dataStore.getColumns()).thenReturn(columns);
+        when(dataStore.getSize()).thenReturn((long) rows.size());
         org.mockito.Mockito.doAnswer(invocation -> {
             final Consumer<Item> resultConsumer = invocation.getArgument(5);
             for (final Val[] row : rows) {

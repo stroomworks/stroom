@@ -53,6 +53,8 @@ import stroom.query.planner.join.BuildSideLookup;
 import stroom.query.planner.join.JoinExecutor;
 import stroom.query.planner.join.JoinLimitExceededException;
 import stroom.query.planner.logical.JoinType;
+import stroom.util.logging.LambdaLogger;
+import stroom.util.logging.LambdaLoggerFactory;
 import stroom.util.shared.ResultPage;
 
 import jakarta.inject.Inject;
@@ -109,6 +111,8 @@ import java.util.function.Predicate;
  * rather than exhausting heap or surfacing as an opaque 500.</p>
  */
 class JoinSearchProvider implements SearchProvider {
+
+    private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(JoinSearchProvider.class);
 
     /**
      * The Plan B/State datasource type name - mirrors {@code stroom.planb.shared.PlanBDoc.TYPE}. Duplicated as a
@@ -309,11 +313,17 @@ class JoinSearchProvider implements SearchProvider {
      *     {@code coprocessors} - the probe side is never collected into a list.</li>
      * </ol>
      *
-     * <p>Build = right / probe = left preserves the orientation the original in-memory hash join used, so
-     * unmatched left rows of a {@code LEFT} join are emitted inline (null-padded) with no outer-join bookkeeping.
-     * The output-row cap ({@link JoinConfig#getMaxOutputRows()}) is enforced by {@link JoinExecutor#streamingProbe}
-     * as rows are produced; the build-side cap ({@link JoinConfig#getMaxSideRows()}) is enforced as it is
-     * realised. The streaming probe side is deliberately not row-capped - it never accumulates.</p>
+     * <p><b>Build-side selection (A6).</b> For an {@code INNER} join the result is independent of which side is
+     * built, so the <b>smaller</b> side (by {@link DataStore#getSize()}) is chosen as the build side and the
+     * larger is streamed - cheaper, and never a larger build side than the old always-build-right behaviour. A
+     * {@code LEFT} join <b>always</b> keeps build = right / probe = left: its preserved (left) side must be the
+     * probe side so unmatched left rows are emitted inline (null-padded) by {@link JoinExecutor#streamingProbe}
+     * with no outer-join bookkeeping. Ties keep the default (build = right).</p>
+     *
+     * <p>The output-row cap ({@link JoinConfig#getMaxOutputRows()}) is enforced by
+     * {@link JoinExecutor#streamingProbe} as rows are produced; the build-side cap
+     * ({@link JoinConfig#getMaxSideRows()}) is enforced as the build side is realised. The streaming probe side is
+     * deliberately not row-capped - it never accumulates.</p>
      *
      * <p><b>Preconditions:</b> all four parameters must be non-null.<br>
      * <b>Postconditions:</b> on normal return, every joined row surviving the outer {@code where} clause has been
@@ -333,35 +343,48 @@ class JoinSearchProvider implements SearchProvider {
                 ? JoinType.LEFT
                 : JoinType.INNER;
 
-        // Open the probe (left) side first; if opening the build (right) side then fails, the probe side's
-        // already-open ResultStore must still be destroyed (the try/finally below only covers both once both
-        // exist). Neither call reads any rows yet.
+        // Open the left side first; if opening the right side then fails, the left side's already-open
+        // ResultStore must still be destroyed (the try/finally below only covers both once both exist). Neither
+        // call reads any rows yet.
         final OpenedSide left = openSide(joinSpec.getLeft());
         try {
             final OpenedSide right = openSide(joinSpec.getRight());
+            // A6 build-side selection: for an INNER join build the smaller side; a LEFT join must keep probe=left
+            // (its unmatched rows emit inline) so it never swaps. Both sides' sub-searches have completed, so
+            // DataStore.getSize() is a final, O(1) size signal. "build" is realised into the lookup; "probe" is
+            // streamed. The combined row emitted downstream is always [probe columns..., build columns...].
+            final boolean buildIsLeft = joinType == JoinType.INNER
+                                        && left.dataStore.getSize() < right.dataStore.getSize();
+            final OpenedSide build = buildIsLeft ? left : right;
+            final OpenedSide probe = buildIsLeft ? right : left;
+            final String buildAlias = buildIsLeft ? firstEquiKey.getLeftAlias() : firstEquiKey.getRightAlias();
+            final String probeAlias = buildIsLeft ? firstEquiKey.getRightAlias() : firstEquiKey.getLeftAlias();
+            LOGGER.debug(() -> "Join build-side selection: building " + (buildIsLeft ? "LEFT" : "RIGHT")
+                               + " side (leftSize=" + left.dataStore.getSize()
+                               + ", rightSize=" + right.dataStore.getSize() + ", joinType=" + joinType + ")");
+
             // The build lookup owns a spill store that must be closed even if realising/probing fails.
             try (final BuildSideLookup buildSide = buildSideLookupFactory.create(
                     joinConfig.getMaxHeapBuildRows(), joinConfig.getMaxHeapBuildBytes())) {
-                // Build phase: stream every right row into the lookup (null-keyed rows can never match, so they
-                // are not stored as probe targets), capped by maxSideRows.
-                final int[] rightKeyPositions = keyPositions(right.columns, joinSpec.getEquiKeys(), false);
-                realiseIntoBuildSide(right.dataStore, right.columns, rightKeyPositions, buildSide,
+                // Build phase: stream every build-side row into the lookup (null-keyed rows can never match, so
+                // they are not stored as probe targets), capped by maxSideRows.
+                final int[] buildKeyPositions = keyPositions(build.columns, joinSpec.getEquiKeys(), buildIsLeft);
+                realiseIntoBuildSide(build.dataStore, build.columns, buildKeyPositions, buildSide,
                         joinConfig.getMaxSideRows());
 
-                // The outer where clause references both aliases, so it can only be evaluated on the combined
-                // [left..., right...] row; likewise the fieldIndex mapping. Both are positional over left-then-right.
+                // whereRowPredicate/buildFieldMapping are positional (probe slice first, build slice second) - the
+                // alias args map the outer query's a./b. fields onto whichever physical slice holds them, so this
+                // is correct in either orientation (the broadcast-lookup path relies on the same property).
                 final Predicate<Values> whereRowPredicate = whereRowPredicate(
-                        searchRequest, left.columns, right.columns,
-                        firstEquiKey.getLeftAlias(), firstEquiKey.getRightAlias());
+                        searchRequest, probe.columns, build.columns, probeAlias, buildAlias);
                 final int[] mapping = buildFieldMapping(
-                        coprocessors.getFieldIndex(), left.columns, right.columns,
-                        firstEquiKey.getLeftAlias(), firstEquiKey.getRightAlias());
+                        coprocessors.getFieldIndex(), probe.columns, build.columns, probeAlias, buildAlias);
 
-                // Probe phase: stream the left side, join each row against the build side, feed survivors out.
-                final Consumer<Val[]> probe = JoinExecutor.streamingProbe(
-                        keyPositions(left.columns, joinSpec.getEquiKeys(), true),
+                // Probe phase: stream the probe side, join each row against the build side, feed survivors out.
+                final Consumer<Val[]> probeConsumer = JoinExecutor.streamingProbe(
+                        keyPositions(probe.columns, joinSpec.getEquiKeys(), !buildIsLeft),
                         buildSide,
-                        right.columns.size(),
+                        build.columns.size(),
                         joinType,
                         joinConfig.getMaxOutputRows(),
                         combinedRow -> {
@@ -369,7 +392,7 @@ class JoinSearchProvider implements SearchProvider {
                                 coprocessors.accept(assembleRow(combinedRow, mapping));
                             }
                         });
-                fetchRows(left.dataStore, left.columns, probe);
+                fetchRows(probe.dataStore, probe.columns, probeConsumer);
             } finally {
                 right.resultStore.destroy();
             }

@@ -129,6 +129,11 @@ class TestLmdbDataStore extends AbstractDataStoreTest {
     }
 
     @Test
+    void getSizeReflectsStoredRowCount() {
+        super.getSizeReflectsStoredRowCount();
+    }
+
+    @Test
     void testBigValues() {
         final TableSettings tableSettings = TableSettings.builder()
                 .addColumns(Column.builder()

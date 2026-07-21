@@ -58,6 +58,11 @@ class TestMapDataStore extends AbstractDataStoreTest {
     }
 
     @Test
+    void getSizeReflectsStoredRowCount() {
+        super.getSizeReflectsStoredRowCount();
+    }
+
+    @Test
     void nestedTest() {
         super.nestedTest();
     }

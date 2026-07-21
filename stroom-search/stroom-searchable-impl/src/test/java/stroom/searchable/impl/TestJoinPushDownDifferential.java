@@ -208,6 +208,8 @@ class TestJoinPushDownDifferential {
     private static ResultStore fakeResultStore(final List<Column> columns, final List<Val[]> rows) {
         final DataStore dataStore = mock(DataStore.class);
         when(dataStore.getColumns()).thenReturn(columns);
+        // A6 build-side selection reads getSize() to pick the smaller side; report the fixture's row count.
+        when(dataStore.getSize()).thenReturn((long) rows.size());
         org.mockito.Mockito.doAnswer(invocation -> {
             final Consumer<Item> resultConsumer = invocation.getArgument(5);
             for (final Val[] row : rows) {
@@ -537,6 +539,37 @@ class TestJoinPushDownDifferential {
 
         assertThat(spilledRows).hasSameSizeAs(onHeapRows).isNotEmpty();
         assertRowSetsMatch(onHeapRows, spilledRows);
+    }
+
+    @Test
+    void buildSideSelection_swapProducesByteIdenticalRowsToNoSwap() {
+        // A6 gate: for an INNER join the result must be independent of which side is built. Run the same logical
+        // join with data arranged so the smaller side (hence the built side, via getSize()) differs between the
+        // two runs - run A builds LEFT (left smaller), run B builds RIGHT (right smaller) - and assert the joined
+        // rows are byte-identical. The only matching key in both is UserId=2 => [2, "Bob"].
+        final List<Column> outerSelect = List.of(column("a.UserId"), column("b.Name"));
+        final SearchRequest join = outerJoin(
+                side(LEFT_DATA_SOURCE, null, leftAllColumns()),
+                side(RIGHT_DATA_SOURCE, null, rightAllColumns()),
+                JoinSpec.JoinType.INNER, ExpressionOperator.builder().build(), outerSelect);
+
+        // Run A: left = 1 row, right = 3 rows -> left is smaller -> builds LEFT.
+        final SearchProviderRegistry registryA = registry(
+                realisticFakeProvider(LEFT_DATA_SOURCE, leftAllColumns(),
+                        List.<Val[]>of(new Val[]{ValLong.create(2), ValLong.create(100)})),
+                realisticFakeProvider(RIGHT_DATA_SOURCE, rightAllColumns(), rightAllRows()));
+        // Run B: left = 3 rows, right = 1 row -> right is smaller -> builds RIGHT (no swap).
+        final SearchProviderRegistry registryB = registry(
+                realisticFakeProvider(LEFT_DATA_SOURCE, leftAllColumns(), leftAllRows()),
+                realisticFakeProvider(RIGHT_DATA_SOURCE, rightAllColumns(),
+                        List.<Val[]>of(new Val[]{ValLong.create(2), ValString.create("Bob")})));
+
+        final List<Val[]> builtLeftRows = readTableRows(provider(registryA).createResultStore(join));
+        final List<Val[]> builtRightRows = readTableRows(provider(registryB).createResultStore(join));
+
+        assertThat(builtLeftRows).hasSize(1);
+        assertThat(builtLeftRows.getFirst()).containsExactly(ValLong.create(2), ValString.create("Bob"));
+        assertRowSetsMatch(builtRightRows, builtLeftRows);
     }
 
     /** Asserts the two row sets are identical, ignoring order (a join makes no ordering guarantee). */

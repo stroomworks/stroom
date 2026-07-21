@@ -361,6 +361,11 @@ class TestSearchResponseCreator {
             }
 
             @Override
+            public long getSize() {
+                return 0L;
+            }
+
+            @Override
             public CompletionState getCompletionState() {
                 return completionState;
             }

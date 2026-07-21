@@ -683,6 +683,17 @@ public class LmdbDataStore implements DataStore {
         return FileUtil.getByteSize(env.getDir().getEnvDir());
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Returns {@code totalResultCount} - the cumulative number of rows this store has received. O(1). See
+     * {@link DataStore#getSize()} for the full contract and the flat-vs-grouped/trimmed caveats.</p>
+     */
+    @Override
+    public long getSize() {
+        return totalResultCount.get();
+    }
+
     @Override
     public KeyFactory getKeyFactory() {
         return keyFactory;

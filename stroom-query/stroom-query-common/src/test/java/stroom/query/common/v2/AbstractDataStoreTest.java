@@ -90,6 +90,34 @@ abstract class AbstractDataStoreTest {
         assertThat(searchResult.getResultRange().getLength()).isEqualTo(50);
     }
 
+    void getSizeReflectsStoredRowCount() {
+        final TableSettings tableSettings = TableSettings.builder()
+                .addColumns(Column.builder()
+                        .id("Text")
+                        .name("Text")
+                        .expression(ParamUtil.create("Text"))
+                        .format(Format.TEXT)
+                        .build())
+                .build();
+
+        final DataStore dataStore = create(tableSettings);
+        assertThat(dataStore.getSize()).as("empty store").isZero();
+
+        for (int i = 0; i < 5; i++) {
+            dataStore.accept(Val.of(ValString.create("Text " + i)));
+        }
+
+        try {
+            dataStore.getCompletionState().signalComplete();
+            dataStore.getCompletionState().awaitCompletion();
+        } catch (final InterruptedException e) {
+            throw new RuntimeException(e.getMessage(), e);
+        }
+
+        // getSize() is the cumulative received-row count; for this flat store that equals the 5 rows added.
+        assertThat(dataStore.getSize()).isEqualTo(5L);
+    }
+
     void nestedTest() {
         final TableSettings tableSettings = TableSettings.builder()
                 .addColumns(Column.builder()

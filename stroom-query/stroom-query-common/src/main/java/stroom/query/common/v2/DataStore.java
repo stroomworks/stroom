@@ -81,6 +81,40 @@ public interface DataStore extends ValuesConsumer {
 
     long getByteSize();
 
+    /**
+     * The total number of result rows this store has <b>received</b> (been given via {@link #accept}). Intended as
+     * a cheap, relative size signal for choosing an execution strategy (e.g. which side of a join to build) rather
+     * than as an authoritative count of currently-retrievable items.
+     *
+     * <p><b>Cost:</b> O(1) - a single in-memory counter read. Unlike {@link #getByteSize()} (which for an on-heap
+     * store serialises the whole dataset), this neither scans, fetches, nor serialises anything, so it is always
+     * safe to call.</p>
+     *
+     * <p><b>When it is valid:</b> the value reflects everything received <i>up to the moment of the call</i>. It
+     * equals the store's final received total only once its search has completed (see {@link CompletionState} /
+     * {@code ResultStore.awaitCompletion()}); called mid-population it returns a partial, monotonically
+     * non-decreasing count.</p>
+     *
+     * <p><b>Relationship to what {@link #fetch} yields:</b> it counts rows <i>received</i>, so:
+     * <ul>
+     *   <li>for a <b>flat</b> store (no grouping, no result trimming) - which is exactly what a compiled join side
+     *   is - it equals the number of rows an unbounded {@link #fetch} yields;</li>
+     *   <li>for a store <b>with grouping</b> it counts the input rows received, <i>not</i> the (smaller) number of
+     *   grouped rows fetch would return;</li>
+     *   <li>it is <b>not</b> reduced by result <b>trimming</b>/{@code maxResults} - a trimmed store may fetch fewer
+     *   rows than it received.</li>
+     * </ul>
+     * Treat it as an exact fetch-row count only for the flat, un-trimmed case.</p>
+     *
+     * <p><b>Comparability &amp; intended use:</b> only compare values from stores of the <b>same implementation
+     * and configuration</b> (a single query's join sides always are). Because it is a relative sizing hint for
+     * strategy selection only, a wrong value can at worst pick a slower plan - it must <b>never</b> feed a
+     * correctness decision.</p>
+     *
+     * <p><b>Postconditions:</b> the returned value is always {@code >= 0}. No parameters; nothing nullable.</p>
+     */
+    long getSize();
+
     KeyFactory getKeyFactory();
 
     DateTimeSettings getDateTimeSettings();

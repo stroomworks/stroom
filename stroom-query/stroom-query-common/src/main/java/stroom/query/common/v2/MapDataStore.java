@@ -457,6 +457,18 @@ public class MapDataStore implements DataStore {
         return size;
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Returns {@code totalResultCount} - the cumulative number of rows this store has received (incremented
+     * once per accepted row, never decremented by trimming). O(1). See {@link DataStore#getSize()} for the full
+     * contract and caveats.</p>
+     */
+    @Override
+    public long getSize() {
+        return totalResultCount.get();
+    }
+
     @Override
     public KeyFactory getKeyFactory() {
         return keyFactory;
