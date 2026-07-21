@@ -51,6 +51,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Consumer;
 
 /**
  * The <strong>Layers</strong> panel — one row per configured fact type
@@ -158,6 +159,36 @@ public class FloorMapLayersPresenter extends MyPresenterWidget<FloorMapLayersVie
             savePresetButton = buttonPanel.addButton(SvgPresets.SAVE_AS);
             savePresetButton.setTitle("Save current view as a preset");
         }
+
+        // Wire handlers here (not in onBind) so they attach to the just-created
+        // buttons regardless of when the panel is bound/revealed.
+        registerHandler(selectionModel.addSelectionChangeHandler(e -> updateButtonStates()));
+        registerHandler(toggleVisibilityButton.addClickHandler(e -> fireForSelected(
+                FloorMapLayersPresenter.this::fireToggleVisibility)));
+        registerHandler(soloButton.addClickHandler(e -> fireForSelected(
+                FloorMapLayersPresenter.this::fireToggleSolo)));
+        registerHandler(lockButton.addClickHandler(e -> fireForSelected(
+                FloorMapLayersPresenter.this::fireToggleLock)));
+        registerHandler(dimButton.addClickHandler(e -> fireForSelected(
+                FloorMapLayersPresenter.this::fireToggleDim)));
+        registerHandler(showAllButton.addClickHandler(e -> {
+            if (viewerHandler != null) {
+                viewerHandler.onShowAll();
+            }
+        }));
+        registerHandler(presetBox.addValueChangeHandler(e -> {
+            if (viewerHandler != null) {
+                viewerHandler.onApplyPreset(e.getValue());
+            }
+        }));
+        if (savePresetButton != null) {
+            registerHandler(savePresetButton.addClickHandler(e -> {
+                if (viewerHandler != null) {
+                    viewerHandler.onSavePreset();
+                }
+            }));
+        }
+        updateButtonStates();
     }
 
     /** Configures the panel as an <em>editor</em> of the type styles (Settings tab). */
@@ -170,66 +201,41 @@ public class FloorMapLayersPresenter extends MyPresenterWidget<FloorMapLayersVie
         moveUpButton = buttonPanel.addButton(SvgPresets.ARROW_UP);
         moveDownButton = buttonPanel.addButton(SvgPresets.ARROW_DOWN);
         removeButton = buttonPanel.addButton(SvgPresets.DELETE);
+
+        // Wire handlers here (not in onBind) — see configureViewer.
+        registerHandler(selectionModel.addSelectionChangeHandler(e -> updateButtonStates()));
+        registerHandler(discoverButton.addClickHandler(e -> {
+            if (editHandler != null) {
+                editHandler.onDiscoverRequested();
+            }
+        }));
+        registerHandler(moveUpButton.addClickHandler(e -> moveSelected(-1)));
+        registerHandler(moveDownButton.addClickHandler(e -> moveSelected(1)));
+        registerHandler(removeButton.addClickHandler(e -> removeSelected()));
+        updateButtonStates();
     }
 
-    @Override
-    protected void onBind() {
-        super.onBind();
-        registerHandler(selectionModel.addSelectionChangeHandler(e -> updateButtonStates()));
-
-        if (editor) {
-            registerHandler(discoverButton.addClickHandler(e -> {
-                if (editHandler != null) {
-                    editHandler.onDiscoverRequested();
-                }
-            }));
-            registerHandler(moveUpButton.addClickHandler(e -> moveSelected(-1)));
-            registerHandler(moveDownButton.addClickHandler(e -> moveSelected(1)));
-            registerHandler(removeButton.addClickHandler(e -> removeSelected()));
-        } else {
-            registerHandler(toggleVisibilityButton.addClickHandler(e -> {
-                final TypeStyle s = selectionModel.getSelectedObject();
-                if (s != null && viewerHandler != null) {
-                    viewerHandler.onToggleVisibility(s.getType());
-                }
-            }));
-            registerHandler(soloButton.addClickHandler(e -> {
-                final TypeStyle s = selectionModel.getSelectedObject();
-                if (s != null && viewerHandler != null) {
-                    viewerHandler.onToggleSolo(s.getType());
-                }
-            }));
-            registerHandler(lockButton.addClickHandler(e -> {
-                final TypeStyle s = selectionModel.getSelectedObject();
-                if (s != null && viewerHandler != null) {
-                    viewerHandler.onToggleLock(s.getType());
-                }
-            }));
-            registerHandler(dimButton.addClickHandler(e -> {
-                final TypeStyle s = selectionModel.getSelectedObject();
-                if (s != null && viewerHandler != null) {
-                    viewerHandler.onToggleDim(s.getType());
-                }
-            }));
-            registerHandler(showAllButton.addClickHandler(e -> {
-                if (viewerHandler != null) {
-                    viewerHandler.onShowAll();
-                }
-            }));
-            registerHandler(presetBox.addValueChangeHandler(e -> {
-                if (viewerHandler != null) {
-                    viewerHandler.onApplyPreset(e.getValue());
-                }
-            }));
-            if (savePresetButton != null) {
-                registerHandler(savePresetButton.addClickHandler(e -> {
-                    if (viewerHandler != null) {
-                        viewerHandler.onSavePreset();
-                    }
-                }));
-            }
+    private void fireForSelected(final Consumer<String> action) {
+        final TypeStyle s = selectionModel.getSelectedObject();
+        if (s != null && viewerHandler != null) {
+            action.accept(s.getType());
         }
-        updateButtonStates();
+    }
+
+    private void fireToggleVisibility(final String type) {
+        viewerHandler.onToggleVisibility(type);
+    }
+
+    private void fireToggleSolo(final String type) {
+        viewerHandler.onToggleSolo(type);
+    }
+
+    private void fireToggleLock(final String type) {
+        viewerHandler.onToggleLock(type);
+    }
+
+    private void fireToggleDim(final String type) {
+        viewerHandler.onToggleDim(type);
     }
 
     /**
