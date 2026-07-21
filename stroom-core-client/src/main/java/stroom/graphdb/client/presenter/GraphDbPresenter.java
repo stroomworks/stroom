@@ -40,13 +40,18 @@ import javax.inject.Provider;
  * the Documentation tab below already binds that exact same field (as its Markdown source) - since
  * {@link stroom.entity.client.presenter.TabContentProvider#write} folds every visited tab's {@code onWrite} over
  * the document with no per-field conflict detection, having two tabs both bind {@code description} meant whichever
- * tab a user happened to open last silently discarded the other tab's edit. {@code GraphDbDoc}'s other fields
- * ({@code temporalPrecision}/{@code retention}/{@code nodeTypeMappings}) are deliberately not yet editable from any
- * tab (see the design doc's own scoping note), so there is nothing left for a Settings tab to show - removed
+ * tab a user happened to open last silently discarded the other tab's edit. That Settings tab was removed
  * entirely rather than left as a field-less placeholder.</p>
+ *
+ * <p>Task B2 (docs/graphdb-features-implementation-plan.md, Workstream B) reinstates a Settings tab - as the
+ * first tab, ahead of Data - but this time it owns exactly the three fields the removed tab did not:
+ * {@link GraphDbSettingsPresenter} binds {@code temporalPrecision}, {@code retention} and
+ * {@code nodeTypeMappings} only, and deliberately never touches {@code description}, so the failure mode above
+ * cannot recur.</p>
  */
 public class GraphDbPresenter extends DocTabPresenter<LinkTabPanelView, GraphDbDoc> {
 
+    private static final TabData SETTINGS = new TabDataImpl("Settings");
     private static final TabData DATA = new TabDataImpl("Data");
     private static final TabData DOCUMENTATION = new TabDataImpl("Documentation");
     private static final TabData PERMISSIONS = new TabDataImpl("Permissions");
@@ -55,11 +60,13 @@ public class GraphDbPresenter extends DocTabPresenter<LinkTabPanelView, GraphDbD
     public GraphDbPresenter(
             final EventBus eventBus,
             final LinkTabPanelView view,
+            final Provider<GraphDbSettingsPresenter> graphDbSettingsPresenterProvider,
             final Provider<GraphDbDataPresenter> graphDbDataPresenterProvider,
             final Provider<MarkdownEditPresenter> markdownEditPresenterProvider,
             final DocumentUserPermissionsTabProvider<GraphDbDoc> documentUserPermissionsTabProvider) {
         super(eventBus, view);
 
+        addTab(SETTINGS, new DocTabProvider<>(graphDbSettingsPresenterProvider::get));
         addTab(DATA, new DocTabProvider<>(graphDbDataPresenterProvider::get));
         addTab(DOCUMENTATION, new MarkdownTabProvider<>(eventBus, markdownEditPresenterProvider) {
             @Override

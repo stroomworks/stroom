@@ -20,7 +20,10 @@ import stroom.core.client.gin.PluginModule;
 import stroom.graphdb.client.GraphDbPlugin;
 import stroom.graphdb.client.presenter.GraphDbDataPresenter;
 import stroom.graphdb.client.presenter.GraphDbPresenter;
+import stroom.graphdb.client.presenter.GraphDbSettingsPresenter;
+import stroom.graphdb.client.presenter.GraphDbSettingsPresenter.GraphDbSettingsView;
 import stroom.graphdb.client.view.GraphDbDataViewImpl;
+import stroom.graphdb.client.view.GraphDbSettingsViewImpl;
 
 /**
  * Task P6.2: client-side Gin module for {@code GraphDbDoc} - named {@code GraphDbModule} only because
@@ -37,5 +40,9 @@ public class GraphDbModule extends PluginModule {
                 GraphDbDataPresenter.class,
                 GraphDbDataPresenter.GraphDbDataView.class,
                 GraphDbDataViewImpl.class);
+        bindPresenterWidget(
+                GraphDbSettingsPresenter.class,
+                GraphDbSettingsView.class,
+                GraphDbSettingsViewImpl.class);
     }
 }

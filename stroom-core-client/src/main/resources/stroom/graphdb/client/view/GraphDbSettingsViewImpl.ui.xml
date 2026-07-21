@@ -1,0 +1,18 @@
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
+             xmlns:g="urn:import:com.google.gwt.user.client.ui"
+             xmlns:sg="urn:import:stroom.planb.client.view"
+             xmlns:form="urn:import:stroom.widget.form.client"
+             xmlns:i="urn:import:stroom.item.client">
+    <g:FlowPanel styleName="max form">
+        <form:FormGroup label="Temporal Precision"
+                        helpText="Choose the granularity of this graph's time axis (day .. nanosecond). A
+                                  populated graph must be rebuilt for a changed precision to take full effect.">
+            <i:SelectionBox ui:field="temporalPrecision" addStyleNames="allow-focus"/>
+        </form:FormGroup>
+        <sg:SettingsGroup label="Data Retention"
+                          ui:field="retentionPanel"/>
+        <sg:SettingsGroup label="Node Type Mappings"
+                          ui:field="nodeTypeMappingsPanel"/>
+    </g:FlowPanel>
+</ui:UiBinder>
