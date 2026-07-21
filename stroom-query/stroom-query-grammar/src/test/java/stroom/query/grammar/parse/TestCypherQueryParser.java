@@ -215,6 +215,50 @@ class TestCypherQueryParser {
     }
 
     // ------------------------------------------------------------------------------------------------------
+    // Workstream D (docs/graphdb-cytoscape-visualisation.html §3 / docs/temporal-cypher-diff-operator.md §4.4):
+    // the RETURN GRAPH element-row terminal form, plain and combined with DIFF.
+    // ------------------------------------------------------------------------------------------------------
+
+    @Test
+    void returnGraph_parses() {
+        final AstCypherQuery query = CypherQueryParser.parse(
+                "MATCH (d:Device)-[:CONNECTED_TO]->(a:Account) RETURN GRAPH");
+
+        assertThat(query.returnClause().graph()).isTrue();
+        assertThat(query.returnClause().items()).isEmpty();
+        assertThat(query.returnClause().distinct()).isFalse();
+        assertThat(query.returnClause().orderBy()).isNull();
+        assertThat(query.returnClause().skip()).isNull();
+        assertThat(query.returnClause().limit()).isNull();
+    }
+
+    @Test
+    void returnGraphIsCaseInsensitiveLikeOtherKeywords() {
+        final AstCypherQuery query = CypherQueryParser.parse("MATCH (a:Account) return graph");
+
+        assertThat(query.returnClause().graph()).isTrue();
+    }
+
+    @Test
+    void diffWithReturnGraph_parses() {
+        final AstCypherQuery query = CypherQueryParser.parse(
+                "MATCH (d:Device {id: 'd-42'})-[:CONNECTED_TO]->(a:Account) "
+                + "DIFF FROM datetime('2026-07-01T00:00:00Z') TO datetime('2026-07-08T00:00:00Z') "
+                + "RETURN GRAPH");
+
+        final AstMatch match = (AstMatch) query.readingClauses().getFirst();
+        assertThat(match.temporal()).isInstanceOf(AstDiff.class);
+        assertThat(query.returnClause().graph()).isTrue();
+    }
+
+    @Test
+    void plainReturnItems_stillLeaveTheGraphFlagFalse() {
+        final AstCypherQuery query = CypherQueryParser.parse("MATCH (a:Account) RETURN a.id");
+
+        assertThat(query.returnClause().graph()).isFalse();
+    }
+
+    // ------------------------------------------------------------------------------------------------------
     // Workstream A (docs/cypher-from-clause-implementation-plan.md, Phase 3): the optional leading `from "X"`
     // portability clause.
     // ------------------------------------------------------------------------------------------------------
@@ -265,7 +309,14 @@ class TestCypherQueryParser {
             "CALL db.labels() RETURN *",
             "MATCH (a:Account) DELETE a",
             "MATCH (a:Account) REMOVE a.x RETURN a",
-            "MATCH (a:Account) MERGE (b:Owner) RETURN a, b"
+            "MATCH (a:Account) MERGE (b:Owner) RETURN a, b",
+            // RETURN GRAPH is a bare terminal form - none of the scalar RETURN's modifiers apply to it (see
+            // Cypher.g4's returnClause rule comment).
+            "MATCH (a:Account) RETURN GRAPH, a.id",
+            "MATCH (a:Account) RETURN DISTINCT GRAPH",
+            "MATCH (a:Account) RETURN GRAPH ORDER BY a.id",
+            "MATCH (a:Account) RETURN GRAPH LIMIT 5",
+            "MATCH (a:Account) RETURN GRAPH SKIP 5"
     })
     void outOfSubsetConstructs_throwSyntaxException(final String cypher) {
         assertThatThrownBy(() -> CypherQueryParser.parse(cypher)).isInstanceOf(SyntaxException.class);

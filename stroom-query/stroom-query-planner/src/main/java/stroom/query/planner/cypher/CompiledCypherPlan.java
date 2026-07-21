@@ -42,13 +42,22 @@ import java.util.Objects;
  *                        executor runs the diff (two {@code AS OF} evaluations + classification) rather than an
  *                        ordinary traversal, and {@code temporalContext} is {@code null} (a query is a state query
  *                        or a diff, never both).
+ * @param returnGraph     whether the query was {@code RETURN GRAPH} (see {@code docs/temporal-cypher-diff-operator
+ *                        .md} &sect;4.4 / {@code docs/graphdb-cytoscape-visualisation.html} &sect;3) - the
+ *                        element-row output mode. When {@code true}, {@code plan}'s terminal {@link
+ *                        stroom.query.planner.logical.Project} carries the fixed element-row column schema
+ *                        (synthesised by {@code CypherToLogicalPlan}, not user {@code RETURN} items), and the
+ *                        executor emits one row per distinct matched node/edge (see {@code GraphElementExecutor})
+ *                        instead of one row per scalar-projected match. Orthogonal to {@code diffContext}: either
+ *                        can be set independently of the other, and both together is the annotated-subgraph mode.
  */
 public record CompiledCypherPlan(
         LogicalPlan plan,
         @Nullable TemporalContext temporalContext,
         boolean distinct,
         @Nullable CypherAggregation aggregation,
-        @Nullable DiffContext diffContext) {
+        @Nullable DiffContext diffContext,
+        boolean returnGraph) {
 
     public CompiledCypherPlan {
         Objects.requireNonNull(plan, "plan");

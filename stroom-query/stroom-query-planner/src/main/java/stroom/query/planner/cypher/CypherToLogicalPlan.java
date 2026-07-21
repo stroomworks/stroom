@@ -136,6 +136,23 @@ public final class CypherToLogicalPlan {
     /** The reserved DIFF pseudo-column naming an element's change classification; only valid in a DIFF query. */
     public static final String CHANGE_KIND_COLUMN = "changeKind";
 
+    /**
+     * The frozen {@code RETURN GRAPH} element-row column schema (see {@code docs/temporal-cypher-diff-operator.md}
+     * &sect;4.4 and {@code docs/graphdb-cytoscape-visualisation.html} &sect;3, whose simpler column-mapping table
+     * is the authoritative target shape this constant follows): {@code kind} ({@code NODE}/{@code EDGE}),
+     * {@code id} (the element's stable external identity - a node's interned external id, or an edge's
+     * {@code src|type|dst}), {@code labels} (a node's label set, comma-joined; an edge's single type name),
+     * {@code source}/{@code target} (an edge row's endpoint external ids; {@code null} for a node row), and
+     * {@code properties} (the element's own property map, rendered as one JSON-object-valued column - a schemaless
+     * graph mixing arbitrary node/edge types in one table cannot offer a per-property-key column and still be a
+     * <em>fixed</em> schema, which {@code CypherCompiler.buildResultRequests} must advertise before any row is
+     * seen). {@link #CHANGE_KIND_COLUMN} is appended as a 7th column only under {@code DIFF ... RETURN GRAPH} (the
+     * annotated-subgraph mode) - see {@link #compile}. Public so {@code GraphElementExecutor}
+     * (stroom-graphdb-impl) builds its {@code Val[]} rows in exactly this order from the one frozen definition.
+     */
+    public static final List<String> ELEMENT_ROW_COLUMNS =
+            List.of("kind", "id", "labels", "source", "target", "properties");
+
     private int anonymousVariableCounter;
 
     /**
@@ -176,6 +193,10 @@ public final class CypherToLogicalPlan {
             temporalContext = resolveTemporal(match.temporal());
         }
 
+        if (query.returnClause().graph()) {
+            return compileReturnGraph(query, match, plan, temporalContext, diffContext);
+        }
+
         // changeKind / before(...) / after(...) are DIFF-only accessors; reject them in a non-diff query at
         // compile time (with a positioned error) rather than letting them fail obscurely at execution.
         if (diffContext == null) {
@@ -214,7 +235,81 @@ public final class CypherToLogicalPlan {
         plan = compileReturn(plan, query.returnClause(), fields);
 
         return new CompiledCypherPlan(
-                plan, temporalContext, query.returnClause().distinct(), aggregation, diffContext);
+                plan, temporalContext, query.returnClause().distinct(), aggregation, diffContext, false);
+    }
+
+    // ------------------------------------------------------------------------------------------------------
+    // RETURN GRAPH: the element-row output mode (docs/temporal-cypher-diff-operator.md §4.4,
+    // docs/graphdb-cytoscape-visualisation.html §3)
+    // ------------------------------------------------------------------------------------------------------
+
+    /**
+     * Compiles the {@code RETURN GRAPH} form: the pattern/{@code WHERE} lower exactly as for the scalar form
+     * above, but the terminal {@code Project} carries the frozen {@link #ELEMENT_ROW_COLUMNS} schema (plus
+     * {@link #CHANGE_KIND_COLUMN} under {@code DIFF}) instead of user {@code RETURN} items - synthesising a
+     * {@code Project} (rather than a new plan-tree shape) is what lets {@code CypherCompiler.buildResultRequests}
+     * advertise these columns with no changes of its own (it already turns any {@code Project}'s visible fields
+     * into result columns). {@code GraphTraversalEngine}/{@code GraphElementExecutor} recognise this shape via
+     * {@link CompiledCypherPlan#returnGraph()}, not by inspecting the field names.
+     *
+     * <p>Var-length patterns are rejected here exactly as {@link #rejectVarLengthUnderDiff} rejects them for the
+     * scalar {@code DIFF} form (v1 scope decision, mirroring that restriction): the per-element identity/label
+     * tracking {@code GraphTraversalEngine}'s element collector needs is only wired for the fixed-length chain
+     * shape. A {@code DIFF ... RETURN GRAPH} query is already covered by {@link #rejectVarLengthUnderDiff} above
+     * (it ran before this method was reached); this call is what extends the same restriction to a <em>plain</em>
+     * {@code RETURN GRAPH} (no {@code DIFF}).</p>
+     */
+    private CompiledCypherPlan compileReturnGraph(final AstCypherQuery query, final AstMatch match,
+                                                  final LogicalPlan input,
+                                                  final @Nullable TemporalContext temporalContext,
+                                                  final @Nullable DiffContext diffContext) {
+        LogicalPlan plan = input;
+        if (diffContext == null) {
+            rejectVarLengthUnderReturnGraph(match.pattern());
+        }
+        if (match.where() != null) {
+            if (diffContext != null) {
+                // Mirrors the scalar DIFF form's v1 restriction (§12.1): changeKind/before/after filtering is a
+                // post-classification step, deferred - a RETURN GRAPH's WHERE is still pattern-only.
+                rejectDiffConstructsInDiffWhere(match.where().expr());
+            }
+            final ExpressionOperator predicate = compileBooleanExpr(match.where().expr());
+            plan = new Filter(plan, predicate, null, match.where().position());
+        }
+
+        plan = new Project(plan, elementRowFields(query.returnClause().position(), diffContext != null),
+                query.returnClause().position());
+
+        return new CompiledCypherPlan(plan, temporalContext, false, null, diffContext, true);
+    }
+
+    private void rejectVarLengthUnderReturnGraph(final AstPathPattern pattern) {
+        for (final AstPatternHop hop : pattern.hops()) {
+            if (hop.edge().varLength() != null) {
+                throw new CypherCompileException(
+                        "not supported in this version: RETURN GRAPH over a variable-length pattern - use a "
+                        + "fixed-length pattern", hop.edge().position());
+            }
+        }
+    }
+
+    /**
+     * Builds the fixed {@code RETURN GRAPH} element-row {@link ProjectField}s in {@link #ELEMENT_ROW_COLUMNS}
+     * order (plus {@link #CHANGE_KIND_COLUMN} under {@code DIFF}). Each field's {@code rawExpression} is a
+     * placeholder {@code ${name}} text purely so it renders sensibly in debug/explain output - {@code
+     * GraphElementExecutor} builds these rows directly from the matched elements, never through {@code
+     * GraphTraversalEngine}'s ordinary {@code ${...}} row-map evaluation.
+     */
+    private static List<ProjectField> elementRowFields(final AstPosition position, final boolean underDiff) {
+        final List<String> names = new ArrayList<>(ELEMENT_ROW_COLUMNS);
+        if (underDiff) {
+            names.add(CHANGE_KIND_COLUMN);
+        }
+        final List<ProjectField> fields = new ArrayList<>(names.size());
+        for (final String name : names) {
+            fields.add(new ProjectField(name, "${" + name + "}", true, null, position));
+        }
+        return fields;
     }
 
     // ------------------------------------------------------------------------------------------------------

@@ -54,7 +54,9 @@ import stroom.query.grammar.antlr.CypherParser.PropertyMapContext;
 import stroom.query.grammar.antlr.CypherParser.QueryContext;
 import stroom.query.grammar.antlr.CypherParser.ReadingClauseContext;
 import stroom.query.grammar.antlr.CypherParser.ReturnClauseContext;
+import stroom.query.grammar.antlr.CypherParser.ReturnGraphClauseContext;
 import stroom.query.grammar.antlr.CypherParser.ReturnItemContext;
+import stroom.query.grammar.antlr.CypherParser.ReturnItemsClauseContext;
 import stroom.query.grammar.antlr.CypherParser.SkipClauseContext;
 import stroom.query.grammar.antlr.CypherParser.StringValueContext;
 import stroom.query.grammar.antlr.CypherParser.TemporalClauseContext;
@@ -136,17 +138,22 @@ public final class AstCypherBuilder {
     }
 
     private AstReturnClause buildReturn(final ReturnClauseContext ctx) {
-        final List<AstReturnItem> items = new ArrayList<>(ctx.returnItem().size());
-        for (final ReturnItemContext itemCtx : ctx.returnItem()) {
+        if (ctx instanceof final ReturnGraphClauseContext graphCtx) {
+            return new AstReturnClause(true, false, List.of(), null, null, null, position(graphCtx));
+        }
+        final ReturnItemsClauseContext itemsCtx = (ReturnItemsClauseContext) ctx;
+        final List<AstReturnItem> items = new ArrayList<>(itemsCtx.returnItem().size());
+        for (final ReturnItemContext itemCtx : itemsCtx.returnItem()) {
             items.add(buildReturnItem(itemCtx));
         }
         return new AstReturnClause(
-                ctx.DISTINCT() != null,
+                false,
+                itemsCtx.DISTINCT() != null,
                 items,
-                ctx.orderByClause() == null ? null : buildOrderBy(ctx.orderByClause()),
-                ctx.skipClause() == null ? null : buildSkip(ctx.skipClause()),
-                ctx.limitClause() == null ? null : buildLimit(ctx.limitClause()),
-                position(ctx));
+                itemsCtx.orderByClause() == null ? null : buildOrderBy(itemsCtx.orderByClause()),
+                itemsCtx.skipClause() == null ? null : buildSkip(itemsCtx.skipClause()),
+                itemsCtx.limitClause() == null ? null : buildLimit(itemsCtx.limitClause()),
+                position(itemsCtx));
     }
 
     // ------------------------------------------------------------------------------------------------------

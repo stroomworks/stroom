@@ -993,6 +993,175 @@ class TestGraphTraversalEngine {
         }
     }
 
+    // ------------------------------------------------------------------------------------------------------
+    // RETURN GRAPH (Workstream D): the element-row output mode (docs/temporal-cypher-diff-operator.md §4.4,
+    // docs/graphdb-cytoscape-visualisation.html §3).
+    // ------------------------------------------------------------------------------------------------------
+
+    @Test
+    void returnGraph_yieldsOneRowPerDistinctNodeAndEdge_convergingPathsCollapseToOneNodeRow(
+            @TempDir final Path root) {
+        // seedDeviceAccountOwnerChain: chain-d-42 -CONNECTED_TO-> {account-a, account-b} -OWNED_BY->
+        // {owner-x, owner-y} -EMPLOYED_BY-> company-1 (BOTH owners employed by the SAME company). Two distinct
+        // 3-hop paths both terminate at company-1 - the acceptance this test proves (N-4): company-1 is emitted
+        // as exactly ONE node row (deduplicated by ElementId, not once per path), while its two distinct EMPLOYED_BY
+        // edges (from owner-x and from owner-y) are NOT deduplicated - they are genuinely distinct edges.
+        try (GraphStores stores = GraphStores.provision(root.resolve("returngraph"), DOC)) {
+            seedDeviceAccountOwnerChain(stores);
+
+            final GraphTraversalEngine engine = new GraphTraversalEngine(stores, new ExpressionPredicateFactory());
+            final CompiledCypherPlan compiled = compile(
+                    "MATCH (d:Device {id: 'd-42'})-[:CONNECTED_TO]->(a:Account)-[:OWNED_BY]->(o:Owner)"
+                    + "-[:EMPLOYED_BY]->(c:Company) RETURN GRAPH");
+            assertThat(compiled.returnGraph()).isTrue();
+
+            final List<Val[]> rows = stores.read(readTxn ->
+                    GraphElementExecutor.execute(readTxn, engine, stores, compiled.plan(),
+                            compiled.temporalContext(), compiled.diffContext(), DateTimeSettings.builder().build()));
+
+            assertThat(rows).hasSize(12); // 6 distinct nodes + 6 distinct edges.
+            assertThat(rows).extracting(r -> text(r[0])).filteredOn("NODE"::equals).hasSize(6);
+            assertThat(rows).extracting(r -> text(r[0])).filteredOn("EDGE"::equals).hasSize(6);
+
+            assertThat(rows)
+                    .extracting(
+                            r -> text(r[0]), r -> text(r[1]), r -> text(r[2]), r -> text(r[3]), r -> text(r[4]),
+                            r -> text(r[5]))
+                    .containsExactlyInAnyOrder(
+                            Tuple.tuple("NODE", "chain-d-42", "Device", null, null, "{\"id\":\"d-42\"}"),
+                            Tuple.tuple("NODE", "chain-account-a", "Account", null, null,
+                                    "{\"id\":\"account-a\"}"),
+                            Tuple.tuple("NODE", "chain-account-b", "Account,Premium", null, null,
+                                    "{\"id\":\"account-b\"}"),
+                            Tuple.tuple("NODE", "owner-x", "Owner", null, null, "{\"id\":\"owner-x\"}"),
+                            Tuple.tuple("NODE", "owner-y", "Owner", null, null, "{\"id\":\"owner-y\"}"),
+                            // Deduplicated: reached via BOTH owner-x and owner-y, still exactly one row.
+                            Tuple.tuple("NODE", "company-1", "Company", null, null, "{\"id\":\"company-1\"}"),
+                            Tuple.tuple("EDGE", "chain-d-42|CONNECTED_TO|chain-account-a", "CONNECTED_TO",
+                                    "chain-d-42", "chain-account-a", "{}"),
+                            Tuple.tuple("EDGE", "chain-d-42|CONNECTED_TO|chain-account-b", "CONNECTED_TO",
+                                    "chain-d-42", "chain-account-b", "{}"),
+                            Tuple.tuple("EDGE", "chain-account-a|OWNED_BY|owner-x", "OWNED_BY",
+                                    "chain-account-a", "owner-x", "{}"),
+                            Tuple.tuple("EDGE", "chain-account-b|OWNED_BY|owner-y", "OWNED_BY",
+                                    "chain-account-b", "owner-y", "{}"),
+                            Tuple.tuple("EDGE", "owner-x|EMPLOYED_BY|company-1", "EMPLOYED_BY",
+                                    "owner-x", "company-1", "{}"),
+                            Tuple.tuple("EDGE", "owner-y|EMPLOYED_BY|company-1", "EMPLOYED_BY",
+                                    "owner-y", "company-1", "{}"));
+        }
+    }
+
+    @Test
+    void returnGraph_whereClause_onlyIncludesElementsFromFullyMatchingPaths(@TempDir final Path root) {
+        // Connectivity guarantee (§5.6): an element only appears if it is on a path that fully matches the
+        // pattern AND its WHERE - account-a's path fails "balance > 100", so neither account-a nor its edge
+        // appear, but the device (shared by both paths) still appears via the surviving account-b path. Also
+        // proves the "properties" column's JSON rendering: numeric values unquoted, keys sorted.
+        try (GraphStores stores = GraphStores.provision(root.resolve("returngraphwhere"), DOC)) {
+            seedDeviceConnectedToAccounts(stores);
+
+            final GraphTraversalEngine engine = new GraphTraversalEngine(stores, new ExpressionPredicateFactory());
+            final CompiledCypherPlan compiled = compile(
+                    "MATCH (d:Device {id: 'd-42'})-[:CONNECTED_TO]->(a:Account) "
+                    + "WHERE a.balance > 100 RETURN GRAPH");
+
+            final List<Val[]> rows = stores.read(readTxn ->
+                    GraphElementExecutor.execute(readTxn, engine, stores, compiled.plan(),
+                            compiled.temporalContext(), compiled.diffContext(), DateTimeSettings.builder().build()));
+
+            assertThat(rows).hasSize(3); // device + account-b nodes, plus their connecting edge.
+            assertThat(rows)
+                    .extracting(r -> text(r[0]), r -> text(r[1]))
+                    .containsExactlyInAnyOrder(
+                            Tuple.tuple("NODE", "d-42"),
+                            Tuple.tuple("NODE", "account-b"),
+                            Tuple.tuple("EDGE", "d-42|CONNECTED_TO|account-b"));
+            assertThat(rows).extracting(r -> text(r[1])).doesNotContain("account-a");
+
+            final Val[] accountBRow = rows.stream()
+                    .filter(r -> "account-b".equals(text(r[1])))
+                    .findFirst().orElseThrow();
+            assertThat(text(accountBRow[5])).isEqualTo("{\"balance\":200,\"id\":\"account-b\"}");
+        }
+    }
+
+    @Test
+    void diffReturnGraph_classifiesEachElementIndependently_includingUnchangedContext(
+            @TempDir final Path root) {
+        // Same four-account evolution as executeDiffBindings_classifies... above, but through the annotated-
+        // subgraph mode: per-element (not per-path) classification, and UNCHANGED is INCLUDED (unlike the
+        // delta table) as the connectivity context §5.6 requires. Notably account-a's NODE is MODIFIED while
+        // its connecting EDGE is UNCHANGED (the edge itself never changed - only the node's balance did) -
+        // proving classification is genuinely per-element, not rolled up to the path.
+        final Instant tMid = Instant.parse("2026-03-01T00:00:00.000Z");
+        try (GraphStores stores = GraphStores.provision(root.resolve("diffreturngraph"), DOC)) {
+            final long deviceLabel = intern(stores, stores.getLabelUids(), "Device");
+            final long accountLabel = intern(stores, stores.getLabelUids(), "Account");
+            final long idKey = intern(stores, stores.getPropertyKeyUids(), "id");
+            final long connectedTo = intern(stores, stores.getEdgeTypeUids(), "CONNECTED_TO");
+            final long deviceUid = intern(stores, stores.getNodeUids(), "d-42");
+            final long aUid = intern(stores, stores.getNodeUids(), "account-a");
+            final long bUid = intern(stores, stores.getNodeUids(), "account-b");
+            final long cUid = intern(stores, stores.getNodeUids(), "account-c");
+            final long dUid = intern(stores, stores.getNodeUids(), "account-d");
+
+            stores.write(writer -> {
+                stores.getNodes().insert(writer, deviceUid, T1, List.of(deviceLabel),
+                        Map.of("id", ValString.create("d-42")));
+                stores.getPropertyIndex().insert(
+                        writer, deviceLabel, idKey, "d-42".getBytes(StandardCharsets.UTF_8), deviceUid);
+
+                stores.getNodes().insert(writer, aUid, T1, List.of(accountLabel),
+                        Map.of("id", ValString.create("account-a"), "balance", ValLong.create(50)));
+                stores.getNodes().insert(writer, aUid, T2, List.of(accountLabel),
+                        Map.of("id", ValString.create("account-a"), "balance", ValLong.create(999)));
+                stores.getNodes().insert(writer, bUid, T1, List.of(accountLabel),
+                        Map.of("id", ValString.create("account-b")));
+                stores.getNodes().insert(writer, cUid, T1, List.of(accountLabel),
+                        Map.of("id", ValString.create("account-c")));
+                stores.getNodes().insert(writer, dUid, T1, List.of(accountLabel),
+                        Map.of("id", ValString.create("account-d")));
+
+                insertEdge(stores, writer, deviceUid, connectedTo, aUid, T1);   // a: both instants, MODIFIED node
+                insertEdge(stores, writer, deviceUid, connectedTo, bUid, T2);   // b: added at T2
+                insertEdge(stores, writer, deviceUid, connectedTo, dUid, T1);   // d: both instants, unchanged
+                insertEdge(stores, writer, deviceUid, connectedTo, cUid, T1);   // c: present at T1, gone by T2
+                stores.getOutEdges().delete(writer, deviceUid, connectedTo, cUid, tMid);
+                stores.getInEdges().delete(writer, deviceUid, connectedTo, cUid, tMid);
+                return null;
+            });
+
+            final GraphTraversalEngine engine = new GraphTraversalEngine(stores, new ExpressionPredicateFactory());
+            final CompiledCypherPlan compiled = compile(
+                    "MATCH (d:Device {id: 'd-42'})-[c:CONNECTED_TO]->(a:Account) "
+                    + "DIFF FROM datetime('2026-01-01T00:00:00Z') TO datetime('2026-06-01T00:00:00Z') "
+                    + "RETURN GRAPH");
+            assertThat(compiled.returnGraph()).isTrue();
+            assertThat(compiled.diffContext()).isNotNull();
+
+            final List<Val[]> rows = stores.read(readTxn ->
+                    GraphElementExecutor.execute(readTxn, engine, stores, compiled.plan(),
+                            compiled.temporalContext(), compiled.diffContext(), DateTimeSettings.builder().build()));
+
+            // 5 nodes (device, a, b, c, d) + 4 edges (device->{a,b,c,d}) = 9 rows; UNCHANGED is kept, not
+            // suppressed (unlike the delta table). The 7th column (changeKind) is present on every row.
+            assertThat(rows).hasSize(9);
+            assertThat(rows)
+                    .extracting(r -> text(r[0]), r -> text(r[1]), r -> text(r[6]))
+                    .containsExactlyInAnyOrder(
+                            Tuple.tuple("NODE", "d-42", "UNCHANGED"),
+                            Tuple.tuple("NODE", "account-a", "MODIFIED"),
+                            Tuple.tuple("NODE", "account-b", "ADDED"),
+                            Tuple.tuple("NODE", "account-c", "REMOVED"),
+                            Tuple.tuple("NODE", "account-d", "UNCHANGED"),
+                            Tuple.tuple("EDGE", "d-42|CONNECTED_TO|account-a", "UNCHANGED"),
+                            Tuple.tuple("EDGE", "d-42|CONNECTED_TO|account-b", "ADDED"),
+                            Tuple.tuple("EDGE", "d-42|CONNECTED_TO|account-c", "REMOVED"),
+                            Tuple.tuple("EDGE", "d-42|CONNECTED_TO|account-d", "UNCHANGED"));
+        }
+    }
+
     /** A null-safe rendering of a projected value: {@code ValNull} (an absent before/after side) renders as a
      * Java {@code null} rather than {@link ValNull#toString()}'s own {@code null} String. */
     private static String text(final Val value) {

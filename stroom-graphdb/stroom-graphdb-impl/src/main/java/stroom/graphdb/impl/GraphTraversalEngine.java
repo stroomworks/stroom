@@ -521,6 +521,218 @@ public final class GraphTraversalEngine {
         }
     }
 
+    // ------------------------------------------------------------------------------------------------------
+    // RETURN GRAPH element collection (docs/temporal-cypher-diff-operator.md §4.4/§5.6,
+    // docs/graphdb-cytoscape-visualisation.html §3)
+    // ------------------------------------------------------------------------------------------------------
+
+    /**
+     * Collects the {@code RETURN GRAPH} element-row union for a plain (non-{@code DIFF}) query: every distinct
+     * node and edge on a path that fully matches {@code plan}'s pattern (and its {@code WHERE}, if any), keyed by
+     * {@link ElementId} - the dedup key ({@link ElementId} equality is by interned UID(s), never a projected
+     * value), honouring whichever temporal clause the query carries (or "latest" if none - see {@link
+     * #resolveAccess}).
+     *
+     * <p><b>Preconditions:</b> {@code plan} is a fixed-length pattern (a {@link VarLengthExpand} throws - rejected
+     * earlier at compile time for {@code RETURN GRAPH}, see {@code CypherToLogicalPlan.compileReturnGraph}).</p>
+     *
+     * @return never null (may be empty); insertion order is deterministic (first-encountered-on-a-surviving-path),
+     *         but callers should not rely on any particular order beyond that.
+     */
+    public Map<ElementId, ElementDetail> executeGraphBindings(final Txn<ByteBuffer> readTxn, final LogicalPlan plan,
+                                                              final @Nullable TemporalContext temporalContext,
+                                                              final DateTimeSettings dateTimeSettings) {
+        Objects.requireNonNull(readTxn, "readTxn");
+        Objects.requireNonNull(plan, "plan");
+        Objects.requireNonNull(dateTimeSettings, "dateTimeSettings");
+        return collectGraphElements(readTxn, plan, resolveAccess(temporalContext), dateTimeSettings);
+    }
+
+    /**
+     * As {@link #executeGraphBindings}, but at a single fixed instant - the per-snapshot half of a {@code DIFF
+     * ... RETURN GRAPH} query, called once for the baseline and once for the comparison instant (mirrors {@link
+     * #executeDiffBindings}'s own {@code Instant asOf} overload). The caller ({@code GraphElementExecutor}) turns
+     * each instant's result into singleton-identity {@link DiffMatch}es and feeds both to the existing, unchanged
+     * {@link DiffOperator#classify} - the per-element classification the annotated-subgraph mode needs falls out
+     * of that generic path-identity machinery for free once identity is a one-element list.
+     */
+    public Map<ElementId, ElementDetail> executeGraphBindingsAsOf(final Txn<ByteBuffer> readTxn,
+                                                                  final LogicalPlan plan, final Instant asOf,
+                                                                  final DateTimeSettings dateTimeSettings) {
+        Objects.requireNonNull(readTxn, "readTxn");
+        Objects.requireNonNull(plan, "plan");
+        Objects.requireNonNull(asOf, "asOf");
+        Objects.requireNonNull(dateTimeSettings, "dateTimeSettings");
+        return collectGraphElements(readTxn, plan, asOfAccess(asOf), dateTimeSettings);
+    }
+
+    private Map<ElementId, ElementDetail> collectGraphElements(final Txn<ByteBuffer> readTxn, final LogicalPlan plan,
+                                                               final TemporalAccess access,
+                                                               final DateTimeSettings dateTimeSettings) {
+        final PlanShape shape = unwrap(plan);
+        if (shape.varLengthExpand() != null) {
+            throw new UnsupportedOperationException(
+                    "not yet supported: RETURN GRAPH over a variable-length pattern (rejected at compile time)");
+        }
+
+        final Predicate<Map<String, Val>> wherePredicate = shape.where() == null
+                ? row -> true
+                : expressionPredicateFactory
+                        .createOptional(shape.where(), rowAccessors(), dateTimeSettings)
+                        .orElse(row -> true);
+
+        final Instant deadline = Instant.now().plus(maxTraversalDuration);
+        final Map<ElementId, ElementDetail> allElements = new LinkedHashMap<>();
+
+        List<GraphFrontier> frontier = new ArrayList<>();
+        for (final long anchorUid : resolveAnchors(readTxn, shape.nodeScan(), access)) {
+            final Optional<GraphNodeDb.NodeVersion> anchor = access.getNode(readTxn, anchorUid);
+            if (anchor.isEmpty()) {
+                continue;
+            }
+            final Map<ElementId, ElementDetail> elements = new LinkedHashMap<>();
+            elements.put(new ElementId.Node(anchorUid), nodeDetail(readTxn, anchor.get()));
+            frontier.add(new GraphFrontier(
+                    anchorUid, rowFor(shape.nodeScan().variable(), anchor.get().properties()), elements));
+        }
+
+        if (shape.hops().isEmpty()) {
+            for (final GraphFrontier f : frontier) {
+                if (wherePredicate.test(f.row())) {
+                    allElements.putAll(f.elements());
+                }
+            }
+            return allElements;
+        }
+
+        for (int i = 0; i < shape.hops().size(); i++) {
+            checkDeadline(deadline);
+            final Expand hop = shape.hops().get(i);
+            final boolean isLastHop = i == shape.hops().size() - 1;
+            final List<GraphFrontier> next = new ArrayList<>();
+            for (final GraphFrontier f : frontier) {
+                expandGraphHop(readTxn, f, access, hop, isLastHop, wherePredicate, next, allElements, deadline);
+            }
+            frontier = next;
+        }
+        return allElements;
+    }
+
+    /** A {@code RETURN GRAPH} traversal frontier entry: as {@link Frontier}, plus every element (node/edge)
+     * touched by the path so far, keyed by {@link ElementId} - merged into the caller's shared accumulator only
+     * once a path reaches the pattern's end and passes {@code WHERE} (mirrors {@link DiffFrontier}'s identity
+     * tuple, but as a detail map rather than an ordered list, since a {@code RETURN GRAPH} row is per-element, not
+     * per-path). */
+    private record GraphFrontier(long nodeUid, Map<String, Val> row, Map<ElementId, ElementDetail> elements) {
+    }
+
+    /** The {@code RETURN GRAPH} counterpart of {@link #expandDiffHop}: expands one hop from {@code from},
+     * dispatching to {@link #acceptGraphNeighbour} with the traversed edge's oriented identity and endpoints. */
+    private void expandGraphHop(final Txn<ByteBuffer> readTxn, final GraphFrontier from, final TemporalAccess access,
+                                final Expand hop, final boolean isLastHop,
+                                final Predicate<Map<String, Val>> wherePredicate,
+                                final List<GraphFrontier> nextFrontier,
+                                final Map<ElementId, ElementDetail> allElements, final Instant deadline) {
+        final Optional<Long> edgeTypeUid = resolveRequiredEdgeTypeUid(readTxn, hop.edgeType());
+        if (edgeTypeUid.isEmpty()) {
+            return;
+        }
+        final long typeUid = edgeTypeUid.get();
+        final ElementId.Node fromNode = new ElementId.Node(from.nodeUid());
+
+        switch (hop.direction()) {
+            case OUT -> access.expandOut(readTxn, from.nodeUid(), typeUid, edgeStep -> acceptGraphNeighbour(
+                    readTxn, from, access, hop, edgeStep,
+                    new ElementId.Edge(from.nodeUid(), typeUid, edgeStep.neighbourUid()),
+                    fromNode, new ElementId.Node(edgeStep.neighbourUid()),
+                    isLastHop, wherePredicate, nextFrontier, allElements, deadline));
+            case IN -> access.expandIn(readTxn, from.nodeUid(), typeUid, edgeStep -> acceptGraphNeighbour(
+                    readTxn, from, access, hop, edgeStep,
+                    new ElementId.Edge(edgeStep.neighbourUid(), typeUid, from.nodeUid()),
+                    new ElementId.Node(edgeStep.neighbourUid()), fromNode,
+                    isLastHop, wherePredicate, nextFrontier, allElements, deadline));
+            case BOTH -> {
+                access.expandOut(readTxn, from.nodeUid(), typeUid, edgeStep -> acceptGraphNeighbour(
+                        readTxn, from, access, hop, edgeStep,
+                        new ElementId.Edge(from.nodeUid(), typeUid, edgeStep.neighbourUid()),
+                        fromNode, new ElementId.Node(edgeStep.neighbourUid()),
+                        isLastHop, wherePredicate, nextFrontier, allElements, deadline));
+                access.expandIn(readTxn, from.nodeUid(), typeUid, edgeStep -> acceptGraphNeighbour(
+                        readTxn, from, access, hop, edgeStep,
+                        new ElementId.Edge(edgeStep.neighbourUid(), typeUid, from.nodeUid()),
+                        new ElementId.Node(edgeStep.neighbourUid()), fromNode,
+                        isLastHop, wherePredicate, nextFrontier, allElements, deadline));
+            }
+        }
+    }
+
+    /** Accepts one neighbour of a {@code RETURN GRAPH} hop: validates the target-node constraint (as {@link
+     * #acceptChainNeighbour}), extends the row (for {@code WHERE}) and the element-detail map (the traversed edge
+     * plus the target node), then either merges into {@code allElements} (last hop, if {@code WHERE} passes) or
+     * pushes a new frontier entry. {@code sourceId}/{@code targetId} are the edge's oriented endpoints, built by
+     * {@link #expandGraphHop} exactly as {@link #expandDiffHop} builds {@code edgeId}'s orientation. */
+    private void acceptGraphNeighbour(final Txn<ByteBuffer> readTxn, final GraphFrontier from,
+                                      final TemporalAccess access, final Expand hop, final EdgeStep edgeStep,
+                                      final ElementId.Edge edgeId, final ElementId.Node sourceId,
+                                      final ElementId.Node targetId, final boolean isLastHop,
+                                      final Predicate<Map<String, Val>> wherePredicate,
+                                      final List<GraphFrontier> nextFrontier,
+                                      final Map<ElementId, ElementDetail> allElements, final Instant deadline) {
+        checkDeadline(deadline);
+        final long neighbourUid = edgeStep.neighbourUid();
+        final Optional<GraphNodeDb.NodeVersion> target = access.getNode(readTxn, neighbourUid);
+        if (target.isEmpty()
+            || !matchesTargetConstraint(readTxn, hop.targetLabels(), hop.targetPropertyPredicate(), target.get())) {
+            return;
+        }
+        final Map<String, Val> row = new HashMap<>(from.row());
+        row.putAll(rowFor(hop.targetVariable(), target.get().properties()));
+        if (hop.edgeVariable() != null) {
+            row.putAll(rowFor(hop.edgeVariable(), edgeStep.edgeProperties()));
+        }
+
+        final Map<ElementId, ElementDetail> elements = new LinkedHashMap<>(from.elements());
+        // hop.edgeType() is guaranteed non-null here: resolveRequiredEdgeTypeUid (called by expandGraphHop before
+        // any neighbour is visited) throws for a null/untyped edge pattern, so this callback is only ever reached
+        // for a hop that named a concrete edge type.
+        elements.put(edgeId, new ElementDetail(
+                List.of(hop.edgeType()), edgeStep.edgeProperties(), sourceId, targetId));
+        elements.put(new ElementId.Node(neighbourUid), nodeDetail(readTxn, target.get()));
+
+        if (isLastHop) {
+            if (wherePredicate.test(row)) {
+                allElements.putAll(elements);
+            }
+        } else {
+            nextFrontier.add(new GraphFrontier(neighbourUid, row, elements));
+        }
+    }
+
+    /** Builds a node's {@link ElementDetail}: its actual stored label set (reverse-resolved to names via {@link
+     * #decodeUidName}) and its own property map - never the pattern's declared label constraint, which may be a
+     * strict subset of the node's real labels. */
+    private ElementDetail nodeDetail(final Txn<ByteBuffer> readTxn, final GraphNodeDb.NodeVersion node) {
+        final List<String> labels = new ArrayList<>(node.labelUids().size());
+        for (final long labelUid : node.labelUids()) {
+            labels.add(decodeUidName(readTxn, stores.getLabelUids(), labelUid));
+        }
+        return new ElementDetail(labels, node.properties(), null, null);
+    }
+
+    /**
+     * Reverse-resolves an interned UID back to the original external name it was interned from (see {@code
+     * UidLookupDb.getValue(Txn, long)}) - used for a node's label names during traversal ({@link #nodeDetail}) and,
+     * package-visible, by {@link GraphElementExecutor} to render a node's external id / an edge's endpoint ids at
+     * render time.
+     *
+     * @throws IllegalStateException if {@code uid} was never interned in {@code db} - should be unreachable, since
+     *                                every UID this class hands to this method came from that same interning
+     *                                namespace moments earlier.
+     */
+    static String decodeUidName(final Txn<ByteBuffer> readTxn, final UidLookupDb db, final long uid) {
+        return StandardCharsets.UTF_8.decode(db.getValue(readTxn, uid).duplicate()).toString();
+    }
+
     /**
      * Dispatches to {@link #finalizeRows} (the ordinary path) or {@link #finalizeAggregatedRows} (Task 1.3)
      * depending on whether the compiled {@code RETURN} had an aggregate item.

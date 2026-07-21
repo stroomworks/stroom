@@ -44,6 +44,11 @@
 //   itself, purely as a datasource selector, so the identical Cypher text can run from any text-driven surface
 //   (Query doc, /csv/search, MCP, embedded dashboard) instead of only where a caller has already set
 //   SearchRequestSource.ownerDocRef. CypherToLogicalPlan is unaware of it entirely.
+// - `RETURN GRAPH` (Stroom-specific; see docs/temporal-cypher-diff-operator.md §4.4 and
+//   docs/graphdb-cytoscape-visualisation.html §3, Workstream D) is a second, element-row terminal form for RETURN,
+//   alongside the scalar item-list form - see the `returnClause` rule's own comment for why it carries none of the
+//   scalar form's modifiers. Valid both on a plain MATCH and combined with DIFF (an annotated-subgraph mode); the
+//   grammar admits both combinations uniformly and CypherToLogicalPlan decides what each means.
 // - Grammar accepts the FULL locked subset (multiple MATCH/WITH stages, chains, var-length) even though
 //   CypherToLogicalPlan only lowers a SINGLE reading clause's pattern for now (fixed-length multi-hop chains and
 //   bounded variable-length paths within that one MATCH are fully compiled, as of Tasks P3.2/P3.3) - a query with
@@ -86,8 +91,15 @@ withClause
     : WITH returnItem (COMMA returnItem)* orderByClause? skipClause? limitClause?
     ;
 
+// `RETURN GRAPH` (Stroom-specific; see docs/temporal-cypher-diff-operator.md §4.4 and
+// docs/graphdb-cytoscape-visualisation.html §3) is the element-row terminal form: instead of a scalar item list it
+// emits the de-duplicated union of every matched node/edge as one row per element. It is deliberately a bare
+// keyword pair with none of RETURN's other modifiers (no DISTINCT/items/ORDER BY/SKIP/LIMIT) - there is no
+// per-item projection to apply DISTINCT/ORDER BY to, and a result-size cap is a v1.1 refinement (see that design
+// doc's open questions), not required for this form to be useful.
 returnClause
-    : RETURN DISTINCT? returnItem (COMMA returnItem)* orderByClause? skipClause? limitClause?
+    : RETURN DISTINCT? returnItem (COMMA returnItem)* orderByClause? skipClause? limitClause?  # returnItemsClause
+    | RETURN GRAPH                                                                             # returnGraphClause
     ;
 
 // ----- graph patterns -----
@@ -263,6 +275,7 @@ FROM     : F R O M ;
 TO       : T O ;
 BEFORE   : B E F O R E ;
 AFTER    : A F T E R ;
+GRAPH    : G R A P H ;
 
 // ----- structural / operator tokens -----
 OPEN_PAREN    : '(' ;

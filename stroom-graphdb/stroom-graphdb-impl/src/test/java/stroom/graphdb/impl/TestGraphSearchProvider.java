@@ -321,6 +321,88 @@ class TestGraphSearchProvider {
     }
 
     // ------------------------------------------------------------------------------------------------------
+    // RETURN GRAPH (Workstream D): D3's acceptance - CypherCompiler.buildResultRequests advertises the frozen
+    // element-row columns, verified end-to-end through the real compiled columns and coprocessor/result-store
+    // path (mirrors diffCypherQuery_returnsDeltaTable_throughRealCoprocessors above).
+    // ------------------------------------------------------------------------------------------------------
+
+    @Test
+    void returnGraphCypherQuery_advertisesTheFrozenElementRowColumns_andReturnsRealRows(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root, DOC)) {
+            seedDeviceConnectedToAccounts(stores);
+
+            final GraphSearchProvider provider = provider(stores);
+            final SearchRequest request = compilerDerivedRequest(
+                    "MATCH (d:Device {id: 'd-42'})-[:CONNECTED_TO]->(a:Account) RETURN GRAPH");
+
+            final ResultStore resultStore = provider.createResultStore(request);
+
+            final DataStore dataStore = resultStore.getData(SearchRequestFactory.TABLE_COMPONENT_ID);
+            assertThat(dataStore.getColumns()).extracting(Column::getName)
+                    .containsExactly("kind", "id", "labels", "source", "target", "properties");
+
+            final List<Val[]> rows = readTableRows(resultStore);
+            // d-42 + account-a + account-b nodes, plus their 2 connecting edges = 5 rows.
+            assertThat(rows).hasSize(5);
+            assertThat(rows).extracting(r -> r[1].toString())
+                    .contains("d-42", "account-a", "account-b",
+                            "d-42|CONNECTED_TO|account-a", "d-42|CONNECTED_TO|account-b");
+        }
+    }
+
+    @Test
+    void diffReturnGraphCypherQuery_advertisesChangeKindAsA7thColumn_andReturnsRealRows(
+            @TempDir final Path root) {
+        final Instant tMid = Instant.parse("2026-03-01T00:00:00.000Z");
+        try (GraphStores stores = GraphStores.provision(root, DOC)) {
+            final long deviceLabel = intern(stores, stores.getLabelUids(), "Device");
+            final long accountLabel = intern(stores, stores.getLabelUids(), "Account");
+            final long idKey = intern(stores, stores.getPropertyKeyUids(), "id");
+            final long connectedTo = intern(stores, stores.getEdgeTypeUids(), "CONNECTED_TO");
+            final long deviceUid = intern(stores, stores.getNodeUids(), "d-42");
+            final long aUid = intern(stores, stores.getNodeUids(), "account-a");
+            final long bUid = intern(stores, stores.getNodeUids(), "account-b");
+
+            stores.write(writer -> {
+                stores.getNodes().insert(writer, deviceUid, T1, List.of(deviceLabel),
+                        Map.of("id", ValString.create("d-42")));
+                stores.getPropertyIndex().insert(
+                        writer, deviceLabel, idKey, "d-42".getBytes(StandardCharsets.UTF_8), deviceUid);
+                stores.getNodes().insert(writer, aUid, T1, List.of(accountLabel),
+                        Map.of("id", ValString.create("account-a")));
+                stores.getNodes().insert(writer, bUid, T1, List.of(accountLabel),
+                        Map.of("id", ValString.create("account-b")));
+
+                stores.getOutEdges().insert(writer, deviceUid, connectedTo, aUid, T1, Map.of());
+                stores.getOutEdges().insert(writer, deviceUid, connectedTo, bUid, T2, Map.of());
+                return null;
+            });
+
+            final GraphSearchProvider provider = provider(stores);
+            final SearchRequest request = compilerDerivedRequest(
+                    "MATCH (d:Device {id: 'd-42'})-[:CONNECTED_TO]->(a:Account) "
+                    + "DIFF FROM datetime('2026-01-01T00:00:00Z') TO datetime('2026-06-01T00:00:00Z') "
+                    + "RETURN GRAPH");
+
+            final ResultStore resultStore = provider.createResultStore(request);
+
+            final DataStore dataStore = resultStore.getData(SearchRequestFactory.TABLE_COMPONENT_ID);
+            assertThat(dataStore.getColumns()).extracting(Column::getName)
+                    .containsExactly("kind", "id", "labels", "source", "target", "properties", "changeKind");
+
+            final List<Val[]> rows = readTableRows(resultStore);
+            // device + account-a (UNCHANGED) + account-b (ADDED) nodes, + their 2 edges (UNCHANGED, ADDED) = 5.
+            assertThat(rows).hasSize(5);
+            assertThat(rows)
+                    .extracting(r -> r[1].toString(), r -> r[6].toString())
+                    .contains(
+                            Tuple.tuple("account-b", "ADDED"),
+                            Tuple.tuple("d-42|CONNECTED_TO|account-b", "ADDED"),
+                            Tuple.tuple("account-a", "UNCHANGED"));
+        }
+    }
+
+    // ------------------------------------------------------------------------------------------------------
     // Fixtures
     // ------------------------------------------------------------------------------------------------------
 

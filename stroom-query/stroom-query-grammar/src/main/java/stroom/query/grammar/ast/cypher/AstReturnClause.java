@@ -24,17 +24,26 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * {@code RETURN [DISTINCT] <items> [ORDER BY ...] [SKIP n] [LIMIT n]} - a query's final, mandatory clause.
+ * {@code RETURN [DISTINCT] <items> [ORDER BY ...] [SKIP n] [LIMIT n]} - a query's final, mandatory clause - or,
+ * in its element-row form, bare {@code RETURN GRAPH} (see {@code Cypher.g4}'s {@code returnClause} rule and
+ * {@code docs/temporal-cypher-diff-operator.md} &sect;4.4 / {@code docs/graphdb-cytoscape-visualisation.html}
+ * &sect;3). Kept as one record with a {@link #graph()} flag, rather than a sealed hierarchy, since every other
+ * field is simply absent (grammar-enforced empty/null) in the {@code RETURN GRAPH} form - callers that only care
+ * about the scalar form are unaffected as long as they check {@link #graph()} first.
  *
- * @param distinct true if {@code DISTINCT} was specified.
- * @param items    never null; possibly empty in theory but never empty in practice - the grammar requires at
- *                 least one item.
- * @param orderBy  nullable.
- * @param skip     nullable.
- * @param limit    nullable.
+ * @param graph    true for the element-row form ({@code RETURN GRAPH}); when true every other field below is
+ *                 empty/false/null (enforced by the compact constructor) - the grammar's {@code returnGraphClause}
+ *                 alternative produces exactly that shape.
+ * @param distinct true if {@code DISTINCT} was specified (always false when {@link #graph()}).
+ * @param items    never null; possibly empty in theory but never empty in practice for the scalar form - the
+ *                 grammar requires at least one item there; always empty when {@link #graph()}.
+ * @param orderBy  nullable; always null when {@link #graph()}.
+ * @param skip     nullable; always null when {@link #graph()}.
+ * @param limit    nullable; always null when {@link #graph()}.
  * @param position never null.
  */
 public record AstReturnClause(
+        boolean graph,
         boolean distinct,
         List<AstReturnItem> items,
         @Nullable AstOrderBy orderBy,
@@ -46,5 +55,9 @@ public record AstReturnClause(
         Objects.requireNonNull(items, "items");
         Objects.requireNonNull(position, "position");
         items = List.copyOf(items);
+        if (graph && (distinct || !items.isEmpty() || orderBy != null || skip != null || limit != null)) {
+            throw new IllegalArgumentException(
+                    "RETURN GRAPH does not accept DISTINCT, an item list, ORDER BY, SKIP or LIMIT");
+        }
     }
 }

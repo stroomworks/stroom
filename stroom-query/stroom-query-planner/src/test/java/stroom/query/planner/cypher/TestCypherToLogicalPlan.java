@@ -560,4 +560,99 @@ class TestCypherToLogicalPlan {
                 .isInstanceOf(CypherCompileException.class)
                 .hasMessageContaining("comparing two field references");
     }
+
+    // ------------------------------------------------------------------------------------------------------
+    // RETURN GRAPH (Workstream D): the element-row output mode.
+    // ------------------------------------------------------------------------------------------------------
+
+    @Test
+    void returnGraph_compilesToProjectWithTheFrozenElementRowSchema() {
+        final CompiledCypherPlan compiled = compile(
+                "MATCH (d:Device {id: 'd-42'})-[:CONNECTED_TO]->(a:Account) RETURN GRAPH");
+
+        assertThat(compiled.returnGraph()).isTrue();
+        assertThat(compiled.diffContext()).isNull();
+        assertThat(compiled.aggregation()).isNull();
+        assertThat(compiled.distinct()).isFalse();
+
+        assertThat(compiled.plan()).isInstanceOf(Project.class);
+        final Project project = (Project) compiled.plan();
+        assertThat(project.fields())
+                .extracting(ProjectField::name)
+                .containsExactly("kind", "id", "labels", "source", "target", "properties");
+        assertThat(project.fields()).allMatch(ProjectField::visible);
+
+        // The pattern still compiles underneath, unaffected by the terminal RETURN form.
+        assertThat(project.input()).isInstanceOf(Expand.class);
+        final Expand expand = (Expand) project.input();
+        assertThat(expand.input()).isInstanceOf(NodeScan.class);
+    }
+
+    @Test
+    void diffWithReturnGraph_appendsChangeKindAsA7thColumnAndSetsDiffContext() {
+        final CompiledCypherPlan compiled = compile(
+                "MATCH (d:Device {id: 'd-42'})-[:CONNECTED_TO]->(a:Account) "
+                + "DIFF FROM datetime('2026-07-01T00:00:00Z') TO datetime('2026-07-08T00:00:00Z') "
+                + "RETURN GRAPH");
+
+        assertThat(compiled.returnGraph()).isTrue();
+        assertThat(compiled.diffContext()).isNotNull();
+        assertThat(compiled.diffContext().baseline()).isEqualTo(Instant.parse("2026-07-01T00:00:00Z"));
+        assertThat(compiled.temporalContext()).isNull();
+
+        final Project project = (Project) compiled.plan();
+        assertThat(project.fields())
+                .extracting(ProjectField::name)
+                .containsExactly("kind", "id", "labels", "source", "target", "properties", "changeKind");
+    }
+
+    @Test
+    void returnGraphWithWhere_compilesToFilterBetweenNodeScanAndProject() {
+        final CompiledCypherPlan compiled = compile(
+                "MATCH (a:Account) WHERE a.balance > 100 RETURN GRAPH");
+
+        final Project project = (Project) compiled.plan();
+        assertThat(project.input()).isInstanceOf(Filter.class);
+        final Filter filter = (Filter) project.input();
+        final ExpressionTerm term = (ExpressionTerm) filter.wherePredicate().getChildren().getFirst();
+        assertThat(term.getField()).isEqualTo("a.balance");
+    }
+
+    @Test
+    void returnGraph_rejectsVariableLengthPattern() {
+        final AstCypherQuery ast = CypherQueryParser.parse(
+                "MATCH (u:User {id: 'u-1'})-[:MEMBER_OF*1..3]->(g:Group) RETURN GRAPH");
+
+        assertThatThrownBy(() -> new CypherToLogicalPlan().compile(ast))
+                .isInstanceOf(CypherCompileException.class)
+                .hasMessageContaining("variable-length");
+    }
+
+    @Test
+    void diffWithReturnGraph_rejectsVariableLengthPattern() {
+        final AstCypherQuery ast = CypherQueryParser.parse(
+                "MATCH (d:Device {id: 'd-42'})-[:CONNECTED_TO*1..3]->(a:Account) "
+                + "DIFF FROM datetime('2026-07-01T00:00:00Z') TO datetime('2026-07-08T00:00:00Z') "
+                + "RETURN GRAPH");
+
+        assertThatThrownBy(() -> new CypherToLogicalPlan().compile(ast))
+                .isInstanceOf(CypherCompileException.class)
+                .hasMessageContaining("variable-length");
+    }
+
+    @Test
+    void diffWithReturnGraph_rejectsDiffConstructInWhere() {
+        final AstCypherQuery ast = CypherQueryParser.parse(
+                "MATCH (a:Account {id: 'x'}) DIFF FROM datetime('2026-07-01T00:00:00Z') "
+                + "TO datetime('2026-07-08T00:00:00Z') WHERE changeKind = 'ADDED' RETURN GRAPH");
+
+        assertThatThrownBy(() -> new CypherToLogicalPlan().compile(ast))
+                .isInstanceOf(CypherCompileException.class)
+                .hasMessageContaining("not supported in this version");
+    }
+
+    @Test
+    void plainReturnItems_leaveTheReturnGraphFlagFalse() {
+        assertThat(compile("MATCH (a:Account) RETURN a.id").returnGraph()).isFalse();
+    }
 }
