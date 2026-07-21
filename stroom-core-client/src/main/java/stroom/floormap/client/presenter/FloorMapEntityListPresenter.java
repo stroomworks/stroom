@@ -39,8 +39,9 @@ import java.util.function.Consumer;
 
 /**
  * Presenter for the Tracking panel on the Map tab — a grid listing every
- * entity (person, asset, vehicle, or any other typed event object) seen on
- * the floor map's events stream during playback.
+ * entity seen on the floor map: moving entities from the events stream
+ * (people, assets, vehicles, or any other typed event object) plus the
+ * static facts from the facts query (objects, backgrounds and areas).
  *
  * <p>Selecting a row tracks that entity: the parent presenter highlights it on
  * the canvas, centres the camera on it, and follows it as it moves. Because a

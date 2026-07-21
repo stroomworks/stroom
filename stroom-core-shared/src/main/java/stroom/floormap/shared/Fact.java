@@ -153,6 +153,55 @@ public final class Fact {
     }
 
     /**
+     * Returns this fact's anchor point in map space — the point a camera
+     * should centre on when the fact is tracked. Dispatch matches the
+     * renderer's (an image wins over vertices):
+     * <ul>
+     *   <li>Image fact: the centre of the placed image rectangle. Images render
+     *       at a fixed width with height derived from the aspect ratio; the
+     *       render wrapper transform is
+     *       {@code worldToMap · translate(0,h) · scale(1,-1)}, and applying it
+     *       to the image centre {@code (w/2, h/2)} reduces to
+     *       {@code worldToMap · (w/2, h/2)}.</li>
+     *   <li>Area fact: the local-frame vertex centroid pushed through
+     *       {@code worldToMap}.</li>
+     *   <li>Point fact: its position pushed through {@code worldToMap}.</li>
+     * </ul>
+     *
+     * @param imageDisplayWidth the fixed map-space width images render at
+     * @param aspectRatio       the image's width/height ratio, or {@code null}
+     *                          when not yet known (treated as square, matching
+     *                          the renderer's pre-load fallback)
+     * @return the anchor {@code [mapX, mapY]}; never {@code null}
+     */
+    public double[] mapAnchor(final double imageDisplayWidth, final Double aspectRatio) {
+        if (hasImage()) {
+            final double aspect = aspectRatio != null ? aspectRatio : 1.0;
+            return worldToMap.transformPoint(
+                    imageDisplayWidth / 2,
+                    imageDisplayWidth / aspect / 2);
+        }
+        if (hasVertices()) {
+            double cx = 0;
+            double cy = 0;
+            int count = 0;
+            for (final double[] v : vertices) {
+                if (v != null) {
+                    cx += v[0];
+                    cy += v[1];
+                    count++;
+                }
+            }
+            if (count > 0) {
+                return worldToMap.transformPoint(cx / count, cy / count);
+            }
+        }
+        return worldToMap.transformPoint(
+                position != null ? position[0] : 0,
+                position != null ? position[1] : 0);
+    }
+
+    /**
      * Returns a copy of this fact with a different placement matrix — used for
      * live transform previews. All other fields (including area geometry) are
      * carried over unchanged.
