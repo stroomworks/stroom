@@ -129,7 +129,7 @@ class TestGraphSearchProvider {
                     .dateTimeSettings(DateTimeSettings.builder().referenceTime(0L).build())
                     .incremental(false)
                     .build();
-            final SearchRequest request = new GraphCypherQueryCompiler().create(
+            final SearchRequest request = new GraphCypherQueryCompiler(mock(DocFinder.class)).create(
                     "MATCH (d:Device {id: 'd-42'})-[:CONNECTED_TO]->(a:Account) RETURN a.id",
                     seed,
                     new ExpressionContext());
@@ -462,7 +462,7 @@ class TestGraphSearchProvider {
                 .dateTimeSettings(DateTimeSettings.builder().referenceTime(0L).build())
                 .incremental(false)
                 .build();
-        return new GraphCypherQueryCompiler().create(cypher, seed, new ExpressionContext());
+        return new GraphCypherQueryCompiler(mock(DocFinder.class)).create(cypher, seed, new ExpressionContext());
     }
 
     private static List<Val[]> readTableRows(final ResultStore resultStore) {

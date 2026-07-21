@@ -77,6 +77,8 @@ import stroom.query.common.v2.ValPredicateFactory;
 import stroom.query.common.v2.format.FormatterFactory;
 import stroom.query.language.AlternativeQueryCompiler;
 import stroom.query.language.AlternativeQueryCompilerResolver;
+import stroom.query.language.DataSourceResolver;
+import stroom.query.language.LeadingDataSourceExtractor;
 import stroom.query.language.QueryCompiler;
 import stroom.query.language.functions.ExpressionContext;
 import stroom.query.language.functions.Val;
@@ -112,6 +114,7 @@ import stroom.util.string.StringUtil;
 
 import jakarta.inject.Inject;
 import jakarta.servlet.http.HttpServletRequest;
+import org.jspecify.annotations.Nullable;
 
 import java.io.BufferedOutputStream;
 import java.io.IOException;
@@ -168,6 +171,7 @@ class QueryServiceImpl implements QueryService, QueryFieldProvider {
     private final ValPredicateFactory valPredicateFactory;
     private final QueryNodeResolver queryNodeResolver;
     private final Set<AlternativeQueryCompiler> alternativeQueryCompilers;
+    private final DataSourceResolver dataSourceResolver;
 
     @Inject
     QueryServiceImpl(final QueryStore queryStore,
@@ -186,7 +190,8 @@ class QueryServiceImpl implements QueryService, QueryFieldProvider {
                      final ExpressionPredicateFactory expressionPredicateFactory,
                      final ValPredicateFactory valPredicateFactory,
                      final QueryNodeResolver queryNodeResolver,
-                     final Set<AlternativeQueryCompiler> alternativeQueryCompilers) {
+                     final Set<AlternativeQueryCompiler> alternativeQueryCompilers,
+                     final DataSourceResolver dataSourceResolver) {
         this.queryStore = queryStore;
         this.documentResourceHelper = documentResourceHelper;
         this.searchEventLog = searchEventLog;
@@ -204,6 +209,7 @@ class QueryServiceImpl implements QueryService, QueryFieldProvider {
         this.valPredicateFactory = valPredicateFactory;
         this.queryNodeResolver = queryNodeResolver;
         this.alternativeQueryCompilers = alternativeQueryCompilers;
+        this.dataSourceResolver = dataSourceResolver;
     }
 
     @Override
@@ -623,16 +629,27 @@ class QueryServiceImpl implements QueryService, QueryFieldProvider {
         // sample request rather than extracted from the query text, since e.g. Cypher has no FROM-equivalent
         // clause of its own. Every existing caller (which never populates ownerDocRef for this flow) is routed
         // through the unchanged queryCompiler.create(...) call below, exactly as before this task.
+        //
+        // Workstream A (docs/cypher-from-clause-implementation-plan.md): when there is no ownerDocRef (a generic
+        // /csv/search, MCP, or embedded-dashboard caller), fall back to resolving the query text's own leading
+        // `from "X"` name to a typed DocRef, so the dispatch below can still route by type without relying on
+        // ownerDocRef at all. A name that cannot be resolved (unknown/ambiguous) - or no leading from at all - is
+        // treated exactly like "no owner": dataSourceRef stays null, and the request falls through to the
+        // unchanged queryCompiler.create(...) call below, which re-resolves the same name itself and raises any
+        // real error at the point it always has.
         final DocRef ownerDocRef = NullSafe.get(
                 searchRequest.getSearchRequestSource(), SearchRequestSource::getOwnerDocRef);
+        final DocRef dataSourceRef = ownerDocRef != null
+                ? ownerDocRef
+                : securityContext.useAsReadResult(() -> resolveLeadingDataSourceRef(query));
         final Optional<AlternativeQueryCompiler> alternativeQueryCompiler =
-                AlternativeQueryCompilerResolver.resolve(ownerDocRef, alternativeQueryCompilers);
+                AlternativeQueryCompilerResolver.resolve(dataSourceRef, alternativeQueryCompilers);
 
         SearchRequest mappedRequest;
         if (alternativeQueryCompiler.isPresent()) {
             final SearchRequest sampleRequestWithDataSource = sampleRequest
                     .copy()
-                    .query(sampleQuery.copy().dataSource(ownerDocRef).build())
+                    .query(sampleQuery.copy().dataSource(dataSourceRef).build())
                     .build();
             mappedRequest = alternativeQueryCompiler.get()
                     .create(query, sampleRequestWithDataSource, expressionContext);
@@ -684,6 +701,36 @@ class QueryServiceImpl implements QueryService, QueryFieldProvider {
         }
 
         return mappedRequest;
+    }
+
+    /**
+     * Workstream A (docs/cypher-from-clause-implementation-plan.md, Phase 2): resolves the query text's own
+     * leading {@code from "X"} name (via {@link LeadingDataSourceExtractor}) to a typed {@link DocRef}, so
+     * {@link #mapRequest} can dispatch to an {@link AlternativeQueryCompiler} by type even when there is no
+     * {@code ownerDocRef} at all.
+     *
+     * <b>Preconditions:</b> none.
+     * <b>Postconditions:</b> returns {@code null} - never throws - when there is no leading {@code from}, or its
+     * name cannot be resolved to exactly one data source (unknown or ambiguous); either case is treated
+     * identically, so the caller falls through to the unchanged {@code queryCompiler.create(...)} path, which
+     * performs its own resolution and raises any real error itself, at the point it always has.
+     * <b>Null status:</b> the return value is nullable.
+     *
+     * @param query never null; the raw query text, in either StroomQL or Cypher syntax.
+     * @return the resolved data source {@link DocRef}, or {@code null}.
+     */
+    private @Nullable DocRef resolveLeadingDataSourceRef(final String query) {
+        return LeadingDataSourceExtractor.extractLeadingDataSourceName(query)
+                .flatMap(name -> {
+                    try {
+                        return Optional.of(dataSourceResolver.resolveDataSourceRef(name));
+                    } catch (final RuntimeException e) {
+                        LOGGER.debug(() -> "Could not resolve leading data source \""
+                                          + name + "\": " + e.getMessage());
+                        return Optional.<DocRef>empty();
+                    }
+                })
+                .orElse(null);
     }
 
     private ResultRequest addTablePreferences(final ResultRequest resultRequest,

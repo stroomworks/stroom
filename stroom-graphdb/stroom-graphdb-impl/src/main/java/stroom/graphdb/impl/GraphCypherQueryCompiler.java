@@ -17,10 +17,13 @@
 package stroom.graphdb.impl;
 
 import stroom.docref.DocRef;
+import stroom.docstore.api.DocFinder;
 import stroom.graphdb.shared.GraphDbDoc;
 import stroom.query.api.SearchRequest;
 import stroom.query.language.AlternativeQueryCompiler;
 import stroom.query.language.functions.ExpressionContext;
+
+import jakarta.inject.Inject;
 
 import java.util.Objects;
 
@@ -30,7 +33,16 @@ import java.util.Objects;
  */
 public class GraphCypherQueryCompiler implements AlternativeQueryCompiler {
 
-    private final CypherCompiler cypherCompiler = new CypherCompiler();
+    private final CypherCompiler cypherCompiler;
+
+    /**
+     * @param docFinder never null; passed straight through to {@link CypherCompiler} - see its Javadoc for why
+     *                  (Workstream A, docs/cypher-from-clause-implementation-plan.md).
+     */
+    @Inject
+    public GraphCypherQueryCompiler(final DocFinder docFinder) {
+        this.cypherCompiler = new CypherCompiler(docFinder);
+    }
 
     @Override
     public boolean supports(final DocRef dataSourceRef) {

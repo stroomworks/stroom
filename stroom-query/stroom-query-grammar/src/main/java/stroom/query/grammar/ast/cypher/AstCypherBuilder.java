@@ -91,11 +91,14 @@ public final class AstCypherBuilder {
      */
     public AstCypherQuery build(final QueryContext ctx) {
         Objects.requireNonNull(ctx, "ctx");
+        final String dataSourceName = ctx.fromClause() == null
+                ? null
+                : unescapeString(ctx.fromClause().STRING().getText());
         final List<AstReadingClause> readingClauses = new ArrayList<>(ctx.readingClause().size());
         for (final ReadingClauseContext readingClauseCtx : ctx.readingClause()) {
             readingClauses.add(buildReadingClause(readingClauseCtx));
         }
-        return new AstCypherQuery(readingClauses, buildReturn(ctx.returnClause()), position(ctx));
+        return new AstCypherQuery(dataSourceName, readingClauses, buildReturn(ctx.returnClause()), position(ctx));
     }
 
     // ------------------------------------------------------------------------------------------------------

@@ -39,6 +39,11 @@
 //   "one temporal clause per query" decision. The instant/duration/bound values reuse the general `value` rule
 //   (typically a function-call literal like `datetime('...')`/`duration('PT1H')`, matching the design doc's
 //   worked example), not a bespoke date/duration literal syntax.
+// - An optional leading `from "X"` clause is a Stroom-specific portability addition (not standard Cypher; see
+//   docs/cypher-from-clause-implementation-plan.md, Workstream A): it names the target GraphDb in the query text
+//   itself, purely as a datasource selector, so the identical Cypher text can run from any text-driven surface
+//   (Query doc, /csv/search, MCP, embedded dashboard) instead of only where a caller has already set
+//   SearchRequestSource.ownerDocRef. CypherToLogicalPlan is unaware of it entirely.
 // - Grammar accepts the FULL locked subset (multiple MATCH/WITH stages, chains, var-length) even though
 //   CypherToLogicalPlan only lowers a SINGLE reading clause's pattern for now (fixed-length multi-hop chains and
 //   bounded variable-length paths within that one MATCH are fully compiled, as of Tasks P3.2/P3.3) - a query with
@@ -54,8 +59,18 @@ grammar Cypher;
 // Parser rules
 // ============================================================================
 
+// `fromClause` is a Stroom-specific portability extension (not standard Cypher; see
+// docs/cypher-from-clause-implementation-plan.md): naming the target GraphDb in the query text itself lets the
+// same Cypher text run from any text-driven surface, rather than depending on the caller having already set
+// SearchRequestSource.ownerDocRef. It is purely a datasource selector - CypherToLogicalPlan needs no change - and
+// is optional so a query submitted where ownerDocRef already names the graph (e.g. the GraphDb doc's Data tab)
+// need not repeat it.
 query
-    : readingClause+ returnClause EOF
+    : fromClause? readingClause+ returnClause EOF
+    ;
+
+fromClause
+    : FROM STRING
     ;
 
 readingClause

@@ -17,6 +17,7 @@
 package stroom.graphdb.impl;
 
 import stroom.docref.DocRef;
+import stroom.docstore.api.DocFinder;
 import stroom.query.api.Column;
 import stroom.query.api.Query;
 import stroom.query.api.ResultRequest;
@@ -30,6 +31,9 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 /**
  * Task P6.1: {@link GraphCypherQueryCompiler} - the {@code AlternativeQueryCompiler} adapter giving
@@ -42,20 +46,20 @@ class TestGraphCypherQueryCompiler {
 
     @Test
     void supports_isTrueOnlyForGraphDbTypedRefs() {
-        final GraphCypherQueryCompiler compiler = new GraphCypherQueryCompiler();
+        final GraphCypherQueryCompiler compiler = new GraphCypherQueryCompiler(mock(DocFinder.class));
         assertThat(compiler.supports(GRAPH_DB_REF)).isTrue();
         assertThat(compiler.supports(OTHER_REF)).isFalse();
     }
 
     @Test
     void supports_rejectsNullDataSourceRef() {
-        final GraphCypherQueryCompiler compiler = new GraphCypherQueryCompiler();
+        final GraphCypherQueryCompiler compiler = new GraphCypherQueryCompiler(mock(DocFinder.class));
         assertThatThrownBy(() -> compiler.supports(null)).isInstanceOf(NullPointerException.class);
     }
 
     @Test
     void create_compilesCypherIntoASearchRequestCarryingTheGraphSpec() {
-        final GraphCypherQueryCompiler compiler = new GraphCypherQueryCompiler();
+        final GraphCypherQueryCompiler compiler = new GraphCypherQueryCompiler(mock(DocFinder.class));
         final SearchRequest in = SearchRequest.builder()
                 .query(Query.builder().dataSource(GRAPH_DB_REF).build())
                 .build();
@@ -70,7 +74,7 @@ class TestGraphCypherQueryCompiler {
 
     @Test
     void create_derivesResultRequestsFromTheReturnClauseColumns() {
-        final GraphCypherQueryCompiler compiler = new GraphCypherQueryCompiler();
+        final GraphCypherQueryCompiler compiler = new GraphCypherQueryCompiler(mock(DocFinder.class));
         final SearchRequest in = SearchRequest.builder()
                 .query(Query.builder().dataSource(GRAPH_DB_REF).build())
                 .build();
@@ -94,12 +98,76 @@ class TestGraphCypherQueryCompiler {
 
     @Test
     void create_throwsForAQueryOutsideTheSubset() {
-        final GraphCypherQueryCompiler compiler = new GraphCypherQueryCompiler();
+        final GraphCypherQueryCompiler compiler = new GraphCypherQueryCompiler(mock(DocFinder.class));
         final SearchRequest in = SearchRequest.builder()
                 .query(Query.builder().dataSource(GRAPH_DB_REF).build())
                 .build();
 
         assertThatThrownBy(() -> compiler.create("not cypher at all", in, new ExpressionContext()))
                 .isInstanceOf(RuntimeException.class);
+    }
+
+    // ------------------------------------------------------------------------------------------------------
+    // Workstream A (docs/cypher-from-clause-implementation-plan.md, Phase 4): resolving the target graph from
+    // the Cypher text's own leading `from "X"` clause when no data source is pre-set on the incoming request.
+    // ------------------------------------------------------------------------------------------------------
+
+    @Test
+    void create_resolvesTheGraphFromTheCyphersOwnFromClauseWhenNoDataSourceIsPreSet() {
+        final DocFinder docFinder = mock(DocFinder.class);
+        when(docFinder.findByName("GraphDb", "MyGraph", false)).thenReturn(List.of(GRAPH_DB_REF));
+        final GraphCypherQueryCompiler compiler = new GraphCypherQueryCompiler(docFinder);
+        final SearchRequest in = SearchRequest.builder()
+                .query(Query.builder().build())
+                .build();
+
+        final SearchRequest result = compiler.create(
+                "from \"MyGraph\" MATCH (n:Account) RETURN n.id", in, new ExpressionContext());
+
+        assertThat(result.getQuery().getDataSource()).isEqualTo(GRAPH_DB_REF);
+        assertThat(result.getQuery().getGraphSpec().getCypher())
+                .isEqualTo("from \"MyGraph\" MATCH (n:Account) RETURN n.id");
+    }
+
+    @Test
+    void create_prefersAPreSetDataSourceOverTheCyphersOwnFromClause() {
+        final DocFinder docFinder = mock(DocFinder.class);
+        final GraphCypherQueryCompiler compiler = new GraphCypherQueryCompiler(docFinder);
+        final SearchRequest in = SearchRequest.builder()
+                .query(Query.builder().dataSource(GRAPH_DB_REF).build())
+                .build();
+
+        final SearchRequest result = compiler.create(
+                "from \"SomeOtherGraph\" MATCH (n:Account) RETURN n.id", in, new ExpressionContext());
+
+        assertThat(result.getQuery().getDataSource()).isEqualTo(GRAPH_DB_REF);
+        verifyNoInteractions(docFinder);
+    }
+
+    @Test
+    void create_throwsWhenNeitherADataSourceNorAFromClauseIsPresent() {
+        final GraphCypherQueryCompiler compiler = new GraphCypherQueryCompiler(mock(DocFinder.class));
+        final SearchRequest in = SearchRequest.builder()
+                .query(Query.builder().build())
+                .build();
+
+        assertThatThrownBy(() -> compiler.create("MATCH (n:Account) RETURN n.id", in, new ExpressionContext()))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("No target GraphDb");
+    }
+
+    @Test
+    void create_throwsAClearErrorWhenTheFromClauseNameIsUnknown() {
+        final DocFinder docFinder = mock(DocFinder.class);
+        when(docFinder.findByName("GraphDb", "NoSuchGraph", false)).thenReturn(List.of());
+        final GraphCypherQueryCompiler compiler = new GraphCypherQueryCompiler(docFinder);
+        final SearchRequest in = SearchRequest.builder()
+                .query(Query.builder().build())
+                .build();
+
+        assertThatThrownBy(() -> compiler.create(
+                "from \"NoSuchGraph\" MATCH (n:Account) RETURN n.id", in, new ExpressionContext()))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("not found");
     }
 }

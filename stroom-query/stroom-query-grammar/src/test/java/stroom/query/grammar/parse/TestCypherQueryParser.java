@@ -215,6 +215,42 @@ class TestCypherQueryParser {
     }
 
     // ------------------------------------------------------------------------------------------------------
+    // Workstream A (docs/cypher-from-clause-implementation-plan.md, Phase 3): the optional leading `from "X"`
+    // portability clause.
+    // ------------------------------------------------------------------------------------------------------
+
+    @Test
+    void leadingFromClause_parsesAndReachesTheAstUnescaped() {
+        final AstCypherQuery query = CypherQueryParser.parse(
+                "from \"Test Graph\" MATCH (a:Account) RETURN a.id");
+
+        assertThat(query.dataSourceName()).isEqualTo("Test Graph");
+    }
+
+    @Test
+    void leadingFromClauseWithSingleQuotes_unescapesTheName() {
+        final AstCypherQuery query = CypherQueryParser.parse(
+                "from 'My \\'Graph\\'' MATCH (a:Account) RETURN a.id");
+
+        assertThat(query.dataSourceName()).isEqualTo("My 'Graph'");
+    }
+
+    @Test
+    void noFromClause_leavesDataSourceNameNull() {
+        final AstCypherQuery query = CypherQueryParser.parse("MATCH (a:Account) RETURN a.id");
+
+        assertThat(query.dataSourceName()).isNull();
+    }
+
+    @Test
+    void fromClauseIsCaseInsensitiveLikeOtherKeywords() {
+        final AstCypherQuery query = CypherQueryParser.parse(
+                "FROM \"Test Graph\" MATCH (a:Account) RETURN a.id");
+
+        assertThat(query.dataSourceName()).isEqualTo("Test Graph");
+    }
+
+    // ------------------------------------------------------------------------------------------------------
     // MUST error: out-of-subset (rejected simply because the construct has no grammar rule at all)
     // ------------------------------------------------------------------------------------------------------
 
