@@ -16,18 +16,25 @@
 
 package stroom.planb.impl.pipeline;
 
+import stroom.cache.api.CacheManager;
+import stroom.cache.api.LoadingStroomCache;
+import stroom.planb.impl.PlanBConfig;
 import stroom.planb.impl.PlanBDocCache;
+import stroom.planb.impl.data.GetRequest;
 import stroom.planb.impl.data.PlanBQueryService;
 import stroom.planb.shared.PlanBDoc;
 import stroom.query.language.functions.Val;
 import stroom.query.language.functions.ValLong;
 import stroom.query.language.functions.ValNull;
 import stroom.security.api.SecurityContext;
+import stroom.util.cache.CacheConfig;
 import stroom.util.shared.PermissionException;
 
+import jakarta.inject.Provider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -36,6 +43,8 @@ import java.util.function.Supplier;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -47,6 +56,10 @@ import static org.mockito.Mockito.when;
  * {@link ValNull#INSTANCE}; every real exception (in particular {@link PermissionException} from the
  * {@code USE}-permission check, and a {@link NumberFormatException} from a key shape mismatched to the store's
  * type) must propagate so the search fails cleanly instead.
+ *
+ * <p>Also covers F16's config wiring: the lookup cache's size/expiry come from {@link PlanBConfig#
+ * getStateValueCache()} (via an injected {@link CacheManager}/{@code Provider<PlanBConfig>}) rather than a
+ * hardcoded Caffeine {@code maximumSize(1000)}.</p>
  */
 @ExtendWith(MockitoExtension.class)
 class TestStateProviderImpl {
@@ -57,16 +70,57 @@ class TestStateProviderImpl {
     private PlanBQueryService planBQueryService;
     @Mock
     private SecurityContext securityContext;
+    @Mock
+    private CacheManager cacheManager;
+    @Mock
+    private Provider<PlanBConfig> planBConfigProvider;
 
     private StateProviderImpl stateProvider;
 
     @BeforeEach
     void setUp() {
-        stateProvider = new StateProviderImpl(stateDocCache, planBQueryService, securityContext);
+        // The behavioural tests below don't care about real caching/eviction, only that a lookup reaches
+        // planBQueryService - so the faked cache just delegates every get() straight through, matching what the
+        // real cache would do on a miss (every key here is looked up exactly once per test).
+        final LoadingStroomCache<GetRequest, Val> cache = mock(LoadingStroomCache.class);
+        lenient().when(cache.get(any()))
+                .thenAnswer(invocation -> planBQueryService.getVal(invocation.getArgument(0)));
+        when(cacheManager.<GetRequest, Val>createLoadingCache(anyString(), any(), any())).thenReturn(cache);
+
+        stateProvider = new StateProviderImpl(
+                stateDocCache, planBQueryService, securityContext, cacheManager, planBConfigProvider);
         // useAsReadResult just runs the supplied block - it elevates scope, not identity (see
-        // GraphDbDocCacheImpl/PlanBDocCacheImpl's real behaviour), so the fake simply invokes it.
-        when(securityContext.useAsReadResult(any())).thenAnswer(invocation ->
+        // GraphDbDocCacheImpl/PlanBDocCacheImpl's real behaviour), so the fake simply invokes it. Not every
+        // test below calls getState (the F16 config-wiring/default-value tests don't touch securityContext at
+        // all), so this is lenient.
+        lenient().when(securityContext.useAsReadResult(any())).thenAnswer(invocation ->
                 ((Supplier<?>) invocation.getArgument(0)).get());
+    }
+
+    @Test
+    void construction_sourcesTheLookupCachesConfigFromPlanBConfig() {
+        // F16: the CacheManager's config supplier must resolve to PlanBConfig#getStateValueCache (via the
+        // injected Provider), not a hardcoded size - so re-configuring PlanBConfig changes the cache without a
+        // code change.
+        final CacheManager freshCacheManager = mock(CacheManager.class);
+        final Provider<PlanBConfig> freshConfigProvider = mock(Provider.class);
+        final CacheConfig configuredCache = CacheConfig.builder().maximumSize(42L).build();
+        when(freshConfigProvider.get()).thenReturn(PlanBConfig.builder().stateValueCache(configuredCache).build());
+        final ArgumentCaptor<Supplier<CacheConfig>> supplierCaptor = ArgumentCaptor.forClass(Supplier.class);
+        when(freshCacheManager.<GetRequest, Val>createLoadingCache(anyString(), supplierCaptor.capture(), any()))
+                .thenReturn(mock(LoadingStroomCache.class));
+
+        new StateProviderImpl(
+                stateDocCache, planBQueryService, securityContext, freshCacheManager, freshConfigProvider);
+
+        assertThat(supplierCaptor.getValue().get().getMaximumSize()).isEqualTo(42L);
+    }
+
+    @Test
+    void planBConfig_defaultStateValueCacheMaximumSize_matchesThePreviousHardcodedSize() {
+        // F16: the new config property's default preserves the cache's previous hardcoded size, so an
+        // un-configured deployment sees no behaviour change.
+        assertThat(new PlanBConfig().getStateValueCache().getMaximumSize()).isEqualTo(1000L);
     }
 
     @Test

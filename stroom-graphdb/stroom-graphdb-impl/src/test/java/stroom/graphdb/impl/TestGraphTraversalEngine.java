@@ -673,6 +673,29 @@ class TestGraphTraversalEngine {
     }
 
     @Test
+    void undirectedMatchOverASelfLoop_nonDistinct_yieldsEachNeighbourExactlyOnce(@TempDir final Path root) {
+        // F11: collectNeighbours' BOTH branch previously called expandOut then expandIn unconditionally, so a
+        // self-loop edge (src == dst) was discovered by both passes - a non-DISTINCT undirected -[:T]- query
+        // returned it twice. The fix skips the self-loop on the expandIn pass only; a normal bidirectional
+        // neighbour ("other") must still be returned (once), unaffected.
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph-selfloop"), DOC)) {
+            seedSelfLoopNode(stores);
+
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory());
+            final CompiledCypherPlan compiled = compile(
+                    "MATCH (a:Node {id: 'self-loop'})-[:T]-(x) RETURN x.id");
+
+            final List<Val[]> rows = stores.read(readTxn ->
+                    engine.execute(readTxn, compiled.plan(), compiled.temporalContext(),
+                            DateTimeSettings.builder().build()));
+
+            assertThat(rows).extracting(row -> row[0].toString())
+                    .containsExactlyInAnyOrder("self-loop", "other");
+        }
+    }
+
+    @Test
     void limitClause_stopsAccumulatingRowsOnceSatisfied(@TempDir final Path root) {
         // Task P7.2: before this, unwrap() walked past the compiled Limit node without ever reading its value -
         // the traversal engine computed every matching row regardless of a query's own LIMIT.
@@ -1444,6 +1467,39 @@ class TestGraphTraversalEngine {
             stores.getInEdges().insert(writer, aUid, edgeType, yUid, T1, Map.of());
             stores.getOutEdges().insert(writer, yUid, edgeType, xUid, T1, Map.of());
             stores.getInEdges().insert(writer, yUid, edgeType, xUid, T1, Map.of());
+            return null;
+        });
+    }
+
+    /**
+     * F11's self-loop fixture: {@code self-loop} has a self-loop {@code T} edge (src == dst) plus a normal
+     * bidirectional edge to {@code other}, so an undirected {@code -[:T]-} query from {@code self-loop} exercises
+     * both the self-loop de-dup and an unaffected normal neighbour in the same traversal.
+     */
+    private static void seedSelfLoopNode(final GraphStores stores) {
+        final long nodeLabel = intern(stores, stores.getLabelUids(), "Node");
+        final long idKey = intern(stores, stores.getPropertyKeyUids(), "id");
+        final long edgeType = intern(stores, stores.getEdgeTypeUids(), "T");
+
+        final long selfUid = intern(stores, stores.getNodeUids(), "self-loop");
+        final long otherUid = intern(stores, stores.getNodeUids(), "other");
+
+        stores.write(writer -> {
+            stores.getNodes().insert(
+                    writer, selfUid, T1, List.of(nodeLabel), Map.of("id", ValString.create("self-loop")));
+            stores.getNodes().insert(
+                    writer, otherUid, T1, List.of(nodeLabel), Map.of("id", ValString.create("other")));
+
+            stores.getPropertyIndex().insert(
+                    writer, nodeLabel, idKey, "self-loop".getBytes(StandardCharsets.UTF_8), selfUid);
+
+            // The self-loop edge: src == dst == selfUid.
+            stores.getOutEdges().insert(writer, selfUid, edgeType, selfUid, T1, Map.of());
+            stores.getInEdges().insert(writer, selfUid, edgeType, selfUid, T1, Map.of());
+
+            // A normal bidirectional pair, which the self-loop fix must not affect.
+            stores.getOutEdges().insert(writer, selfUid, edgeType, otherUid, T1, Map.of());
+            stores.getInEdges().insert(writer, selfUid, edgeType, otherUid, T1, Map.of());
             return null;
         });
     }

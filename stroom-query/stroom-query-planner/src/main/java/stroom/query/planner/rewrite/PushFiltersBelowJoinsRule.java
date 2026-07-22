@@ -27,6 +27,7 @@ import stroom.query.planner.logical.Filter;
 import stroom.query.planner.logical.GraphJoinSource;
 import stroom.query.planner.logical.Having;
 import stroom.query.planner.logical.Join;
+import stroom.query.planner.logical.JoinType;
 import stroom.query.planner.logical.Limit;
 import stroom.query.planner.logical.LogicalPlan;
 import stroom.query.planner.logical.NodeScan;
@@ -54,6 +55,15 @@ import java.util.Set;
  * side; an unqualified field reference, or references spanning both sides, leaves that predicate exactly where
  * it was (conservative - see {@code AutoWhereFilterSplitRule}'s Javadoc for the same reasoning applied here).
  * If both slots end up pushed, the enclosing {@code Filter} node itself is removed.</p>
+ *
+ * <p><b>Join-type aware (mirrors {@code JoinPredicateSplitter}'s {@code split}):</b> for a {@link JoinType#LEFT}
+ * join, a predicate that only references the right (null-supplying) side is never pushed below the join - it
+ * would remove candidate right rows from consideration before the join runs, changing which left rows survive
+ * as unmatched. Such a predicate is left in the residual {@link Filter} instead, exactly as
+ * {@code JoinPredicateSplitter} evaluates it at execution time. {@link JoinType#INNER} is unaffected: a right-side
+ * predicate still pushes onto the right side as before. This only changes what {@code EXPLAIN} reports (this
+ * rule's output feeds {@code LogicalPlanExplainer}, not real execution, which always uses
+ * {@code JoinPredicateSplitter}).</p>
  */
 public final class PushFiltersBelowJoinsRule implements RewriteRule {
 
@@ -93,8 +103,9 @@ public final class PushFiltersBelowJoinsRule implements RewriteRule {
         final Set<String> leftAliases = PlanRewriteUtil.collectScans(join.left()).keySet();
         final Set<String> rightAliases = PlanRewriteUtil.collectScans(join.right()).keySet();
 
-        final Placement wherePlacement = classify(filter.wherePredicate(), leftAliases, rightAliases);
-        final Placement filterPlacement = classify(filter.filterPredicate(), leftAliases, rightAliases);
+        final Placement wherePlacement = classify(filter.wherePredicate(), leftAliases, rightAliases, join.joinType());
+        final Placement filterPlacement = classify(
+                filter.filterPredicate(), leftAliases, rightAliases, join.joinType());
 
         final LogicalPlan newLeft = pushOnto(
                 join.left(),
@@ -120,7 +131,7 @@ public final class PushFiltersBelowJoinsRule implements RewriteRule {
 
     private static Placement classify(
             final @Nullable ExpressionOperator predicate, final Set<String> leftAliases,
-            final Set<String> rightAliases) {
+            final Set<String> rightAliases, final JoinType joinType) {
         if (predicate == null) {
             return new Placement(Side.NONE, null);
         }
@@ -132,7 +143,7 @@ public final class PushFiltersBelowJoinsRule implements RewriteRule {
         if (leftAliases.containsAll(aliases.aliases)) {
             return new Placement(Side.LEFT, predicate);
         }
-        if (rightAliases.containsAll(aliases.aliases)) {
+        if (rightAliases.containsAll(aliases.aliases) && joinType != JoinType.LEFT) {
             return new Placement(Side.RIGHT, predicate);
         }
         return new Placement(Side.NONE, predicate);

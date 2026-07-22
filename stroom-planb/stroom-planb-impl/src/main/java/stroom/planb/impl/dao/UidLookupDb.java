@@ -145,9 +145,25 @@ public class UidLookupDb {
 
         } else {
             final long uid = ++maxId;
-            final UnsignedBytes unsignedBytes = unsignedBytesFactory.forValue(uid);
+            // F15: forValue/put encode the new id at this namespace's (possibly fixed) width and can throw
+            // (e.g. a fixed-width namespace whose value now exceeds the configured width). maxId was already
+            // advanced above but never persisted (writeMaxId only runs after a successful encode below), so an
+            // encode failure must roll it back here - otherwise every subsequent put in this namespace would
+            // permanently intern against an id one past where it should be, until process restart.
+            final UnsignedBytes unsignedBytes;
+            try {
+                unsignedBytes = unsignedBytesFactory.forValue(uid);
+            } catch (final RuntimeException e) {
+                maxId--;
+                throw e;
+            }
             return byteBuffers.use(unsignedBytes.length(), uidByteBuffer -> {
-                unsignedBytes.put(uidByteBuffer, uid);
+                try {
+                    unsignedBytes.put(uidByteBuffer, uid);
+                } catch (final RuntimeException e) {
+                    maxId--;
+                    throw e;
+                }
                 uidByteBuffer.flip();
 
                 keyToUidDbi.put(writeTxn, keyByteBuffer, uidByteBuffer);

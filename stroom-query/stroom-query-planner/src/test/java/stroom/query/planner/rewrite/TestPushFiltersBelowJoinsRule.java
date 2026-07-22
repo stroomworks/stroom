@@ -149,6 +149,45 @@ class TestPushFiltersBelowJoinsRule {
     }
 
     @Test
+    void rightOnlyPredicate_isNotPushedForALeftJoin() {
+        // F10: a predicate referencing only the right (null-supplying) side of a LEFT join must stay in the
+        // residual Filter - pushing it below the join would remove candidate right rows before the unmatched-
+        // left-row-survives semantics apply, matching JoinPredicateSplitter's execution-time rule.
+        final Scan left = new Scan("e", "Events", POS);
+        final Scan right = new Scan("u", "Users", POS);
+        final Join leftJoin = new Join(left, right, JoinType.LEFT,
+                List.of(new EquiKey(new QualifiedField("e", "UserId"), new QualifiedField("u", "Id"))), POS);
+        final ExpressionOperator where = wrap(term("u.Name", "bob"));
+        final Filter input = new Filter(leftJoin, where, null, POS);
+
+        final LogicalPlan result = rule.apply(input);
+
+        assertThat(result).isInstanceOf(Filter.class);
+        final Filter resultFilter = (Filter) result;
+        assertThat(resultFilter.wherePredicate()).isEqualTo(where);
+        assertThat(resultFilter.input()).isEqualTo(leftJoin);
+    }
+
+    @Test
+    void leftOnlyPredicate_isStillPushedForALeftJoin() {
+        // The LEFT-join restriction only applies to the right (null-supplying) side; a left-only predicate is
+        // unaffected and still pushes, same as for INNER.
+        final Scan left = new Scan("e", "Events", POS);
+        final Scan right = new Scan("u", "Users", POS);
+        final Join leftJoin = new Join(left, right, JoinType.LEFT,
+                List.of(new EquiKey(new QualifiedField("e", "UserId"), new QualifiedField("u", "Id"))), POS);
+        final ExpressionOperator where = wrap(term("e.StreamId", "1"));
+        final Filter input = new Filter(leftJoin, where, null, POS);
+
+        final LogicalPlan result = rule.apply(input);
+
+        assertThat(result).isInstanceOf(Join.class);
+        final Join resultJoin = (Join) result;
+        assertThat(resultJoin.left()).isEqualTo(new Filter(left, where, null, POS));
+        assertThat(resultJoin.right()).isEqualTo(right);
+    }
+
+    @Test
     void filterNotAboveAJoin_isUnchanged() {
         final Scan scan = new Scan("s", "Events", POS);
         final ExpressionOperator where = wrap(term("StreamId", "1"));

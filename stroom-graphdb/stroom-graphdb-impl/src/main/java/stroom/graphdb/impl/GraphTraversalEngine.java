@@ -1173,7 +1173,14 @@ public final class GraphTraversalEngine {
             case IN -> access.expandIn(readTxn, fromUid, edgeTypeUid, collector);
             case BOTH -> {
                 access.expandOut(readTxn, fromUid, edgeTypeUid, collector);
-                access.expandIn(readTxn, fromUid, edgeTypeUid, collector);
+                // F11: a self-loop edge (neighbourUid == fromUid) was already emitted by expandOut above; an
+                // undirected (BOTH) hop must still visit every *distinct* in-edge, so only the self-loop is
+                // skipped here to avoid double-counting it, not the whole expandIn pass.
+                access.expandIn(readTxn, fromUid, edgeTypeUid, edgeStep -> {
+                    if (edgeStep.neighbourUid() != fromUid) {
+                        collector.accept(edgeStep);
+                    }
+                });
             }
         }
     }

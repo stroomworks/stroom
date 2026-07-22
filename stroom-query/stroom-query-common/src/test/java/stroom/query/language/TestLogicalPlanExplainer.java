@@ -18,11 +18,16 @@ package stroom.query.language;
 
 import stroom.query.api.DateTimeSettings;
 import stroom.query.api.ExplainPlan;
+import stroom.query.api.ExpressionOperator;
+import stroom.query.api.ExpressionOperator.Op;
+import stroom.query.api.ExpressionTerm;
+import stroom.query.api.ExpressionTerm.Condition;
 import stroom.query.api.datasource.QueryField;
 import stroom.query.grammar.ast.AstPosition;
 import stroom.query.language.functions.ExpressionContext;
 import stroom.query.planner.cost.CostModel;
 import stroom.query.planner.logical.EquiKey;
+import stroom.query.planner.logical.Filter;
 import stroom.query.planner.logical.Join;
 import stroom.query.planner.logical.JoinType;
 import stroom.query.planner.logical.Limit;
@@ -114,6 +119,29 @@ class TestLogicalPlanExplainer {
         // probe (left) side's row count - not the 1000 the old hard-coded 0,0 cross-product would have given.
         assertThat(plan.getEstimatedRows()).isEqualTo(100L);
         assertThat(plan.getNotes()).anySatisfy(note -> assertThat(note).contains("keyed"));
+    }
+
+    @Test
+    void filteredJoin_stillGetsAJoinLevelCostAnnotation() {
+        // F10: Join(Filter(Scan), Scan) is the shape produced for essentially every filtered join - the Filter's
+        // inner Scan cost must still propagate up so this isn't mistaken for an un-annotated "nested join".
+        final ExpressionOperator where = ExpressionOperator.builder()
+                .op(Op.AND)
+                .addTerm(ExpressionTerm.builder().field("Id").condition(Condition.EQUALS).value("1").build())
+                .build();
+        final LogicalPlan join = new Join(
+                new Filter(new Scan("a", "Events", POS), where, null, POS),
+                new Scan("b", "Other", POS),
+                JoinType.INNER, List.of(equiKey()), POS);
+
+        final ExplainPlan plan = explain(join);
+
+        // Before the fix, wrap() hardcoded costedAccessPath=null for the Filter-over-Scan branch, so this shape
+        // always fell into the "nested join" branch below with no cardinality/algorithm annotation at all.
+        assertThat(plan.getDescription()).contains("HASH_JOIN");
+        assertThat(plan.getEstimatedRows()).isNotNull();
+        assertThat(plan.getNotes()).noneMatch(note -> note.contains("nested join"));
+        assertThat(plan.getChildren()).hasSize(2);
     }
 
     @Test

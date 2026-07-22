@@ -34,6 +34,7 @@ import java.util.Objects;
 public class PlanBConfig extends AbstractConfig implements IsStroomConfig {
 
     private final CacheConfig stateDocCache;
+    private final CacheConfig stateValueCache;
     private final List<String> nodeList;
     private final String path;
     private final StroomDuration minTimeToKeepSnapshots;
@@ -50,6 +51,11 @@ public class PlanBConfig extends AbstractConfig implements IsStroomConfig {
                         .maximumSize(1000L)
                         .expireAfterWrite(StroomDuration.ofMinutes(10))
                         .build(),
+                CacheConfig
+                        .builder()
+                        .maximumSize(1000L)
+                        .expireAfterWrite(StroomDuration.ofMinutes(10))
+                        .build(),
                 Collections.emptyList(),
                 path,
                 StroomDuration.ofMinutes(10),
@@ -60,12 +66,14 @@ public class PlanBConfig extends AbstractConfig implements IsStroomConfig {
     @SuppressWarnings("unused")
     @JsonCreator
     public PlanBConfig(@JsonProperty("stateDocCache") final CacheConfig stateDocCache,
+                       @JsonProperty("stateValueCache") final CacheConfig stateValueCache,
                        @JsonProperty("nodeList") final List<String> nodeList,
                        @JsonProperty("path") final String path,
                        @JsonProperty("minTimeToKeepSnapshots") final StroomDuration minTimeToKeepSnapshots,
                        @JsonProperty("minTimeToKeepSnapshotEnv") final StroomDuration minTimeToKeepSnapshotEnv,
                        @JsonProperty("snapshotRetryFetchInterval") final StroomDuration snapshotRetryFetchInterval) {
         this.stateDocCache = stateDocCache;
+        this.stateValueCache = stateValueCache;
         this.nodeList = nodeList;
         this.path = path;
         this.minTimeToKeepSnapshots = minTimeToKeepSnapshots;
@@ -77,6 +85,16 @@ public class PlanBConfig extends AbstractConfig implements IsStroomConfig {
     @JsonPropertyDescription("Cache for Plan B state docs.")
     public CacheConfig getStateDocCache() {
         return stateDocCache;
+    }
+
+    @JsonProperty
+    @JsonPropertyDescription("Cache of looked-up state/enrichment values keyed by (map, key, effective time) - " +
+                             "see stroom.planb.impl.pipeline.StateProviderImpl. Default maximumSize matches this " +
+                             "cache's previous hardcoded size (see docs/query-graphdb-review-report.md finding " +
+                             "F16); raise it for a broadcast-lookup join whose probe side has a high-cardinality " +
+                             "key set, to reduce cache thrash and repeated point-lookups.")
+    public CacheConfig getStateValueCache() {
+        return stateValueCache;
     }
 
     @JsonProperty
@@ -116,6 +134,7 @@ public class PlanBConfig extends AbstractConfig implements IsStroomConfig {
     public String toString() {
         return "PlanBConfig{" +
                "stateDocCache=" + stateDocCache +
+               ", stateValueCache=" + stateValueCache +
                ", nodeList=" + nodeList +
                ", path='" + path + '\'' +
                ", minTimeToKeepSnapshots=" + minTimeToKeepSnapshots +
@@ -134,6 +153,7 @@ public class PlanBConfig extends AbstractConfig implements IsStroomConfig {
         }
         final PlanBConfig that = (PlanBConfig) o;
         return Objects.equals(stateDocCache, that.stateDocCache) &&
+               Objects.equals(stateValueCache, that.stateValueCache) &&
                Objects.equals(nodeList, that.nodeList) &&
                Objects.equals(path, that.path) &&
                Objects.equals(minTimeToKeepSnapshots, that.minTimeToKeepSnapshots) &&
@@ -145,6 +165,7 @@ public class PlanBConfig extends AbstractConfig implements IsStroomConfig {
     public int hashCode() {
         return Objects.hash(
                 stateDocCache,
+                stateValueCache,
                 nodeList,
                 path,
                 minTimeToKeepSnapshots,
@@ -163,6 +184,7 @@ public class PlanBConfig extends AbstractConfig implements IsStroomConfig {
     public static class Builder {
 
         private CacheConfig stateDocCache;
+        private CacheConfig stateValueCache;
         private List<String> nodeList;
         private String path;
         private StroomDuration minTimeToKeepSnapshots;
@@ -176,6 +198,11 @@ public class PlanBConfig extends AbstractConfig implements IsStroomConfig {
                     .maximumSize(1000L)
                     .expireAfterWrite(StroomDuration.ofMinutes(10))
                     .build();
+            this.stateValueCache = CacheConfig
+                    .builder()
+                    .maximumSize(1000L)
+                    .expireAfterWrite(StroomDuration.ofMinutes(10))
+                    .build();
             this.nodeList = Collections.emptyList();
             this.path = "${stroom.home}/planb";
             this.minTimeToKeepSnapshots = StroomDuration.ofMinutes(10);
@@ -185,6 +212,7 @@ public class PlanBConfig extends AbstractConfig implements IsStroomConfig {
 
         public Builder(final PlanBConfig config) {
             this.stateDocCache = config.stateDocCache;
+            this.stateValueCache = config.stateValueCache;
             this.nodeList = config.nodeList;
             this.path = config.path;
             this.minTimeToKeepSnapshots = config.minTimeToKeepSnapshots;
@@ -194,6 +222,11 @@ public class PlanBConfig extends AbstractConfig implements IsStroomConfig {
 
         public Builder stateDocCache(final CacheConfig stateDocCache) {
             this.stateDocCache = stateDocCache;
+            return this;
+        }
+
+        public Builder stateValueCache(final CacheConfig stateValueCache) {
+            this.stateValueCache = stateValueCache;
             return this;
         }
 
@@ -225,6 +258,7 @@ public class PlanBConfig extends AbstractConfig implements IsStroomConfig {
         public PlanBConfig build() {
             return new PlanBConfig(
                     stateDocCache,
+                    stateValueCache,
                     nodeList,
                     path,
                     minTimeToKeepSnapshots,

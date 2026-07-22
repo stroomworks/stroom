@@ -362,6 +362,28 @@ class TestCypherToLogicalPlan {
     }
 
     @Test
+    void betweenClause_rejectsAReversedWindow() {
+        final AstCypherQuery reversed = CypherQueryParser.parse(
+                "MATCH (a:Account) BETWEEN datetime('2026-02-01T00:00:00Z') "
+                + "AND datetime('2026-01-01T00:00:00Z') RETURN a.id");
+
+        assertThatThrownBy(() -> new CypherToLogicalPlan().compile(reversed))
+                .isInstanceOf(CypherCompileException.class)
+                .hasMessageContaining("from <= to");
+    }
+
+    @Test
+    void aroundClause_rejectsANegativeDuration() {
+        final AstCypherQuery negativeDuration = CypherQueryParser.parse(
+                "MATCH (a:Account) AROUND datetime('2026-07-01T09:00:00Z') "
+                + "+/- duration('-PT1H') RETURN a.id");
+
+        assertThatThrownBy(() -> new CypherToLogicalPlan().compile(negativeDuration))
+                .isInstanceOf(CypherCompileException.class)
+                .hasMessageContaining("from <= to");
+    }
+
+    @Test
     void diffClause_resolvesToDiffContext_notATemporalContext() {
         final CompiledCypherPlan compiled = compile(
                 "MATCH (a:Account) DIFF FROM datetime('2026-07-01T00:00:00Z') "

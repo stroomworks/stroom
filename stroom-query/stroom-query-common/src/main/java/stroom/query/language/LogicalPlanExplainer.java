@@ -149,7 +149,13 @@ final class LogicalPlanExplainer {
             final ScanTimeBounds bounds = ScanTimeRangeExtractor.extract(
                     scan, filter, fieldInfoSource, expressionContext);
             final Node scanNode = costScan(scan, bounds.fromTimeMs(), bounds.toTimeMs(), bounds.selectivityTerms());
-            return wrap("Filter", scanNode);
+            // Propagate the inner Scan's costedAccessPath through this Filter-over-Scan wrapper (unlike the
+            // general wrap() below) so a parent Join sees a costed side rather than treating Join(Filter(Scan),
+            // ...) - the shape produced for essentially every filtered join - as an un-annotated "nested join"
+            // (see the class Javadoc's scope note and docs/query-graphdb-review-report.md finding F10).
+            return new Node(
+                    ExplainPlan.builder().description("Filter").children(List.of(scanNode.explainPlan())).build(),
+                    scanNode.costedAccessPath());
         }
         return wrap("Filter", toNode(filter.input()));
     }

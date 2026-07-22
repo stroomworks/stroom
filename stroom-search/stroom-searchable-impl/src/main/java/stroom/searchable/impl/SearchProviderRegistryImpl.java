@@ -54,7 +54,7 @@ public class SearchProviderRegistryImpl implements SearchProviderRegistry {
                                final Set<SearchProvider> providers,
                                final Map<String, Searchable> searchables) {
         for (final SearchProvider provider : providers) {
-            searchProviderMap.put(provider.getDataSourceType(), provider);
+            putOrFail(provider.getDataSourceType(), provider);
         }
 
         for (final Searchable searchable : searchables.values()) {
@@ -67,7 +67,28 @@ public class SearchProviderRegistryImpl implements SearchProviderRegistry {
                             resultStoreFactory,
                             securityContext,
                             searchable);
-            searchProviderMap.put(searchable.getDataSourceType(), searchableSearchProvider);
+            putOrFail(searchable.getDataSourceType(), searchableSearchProvider);
+        }
+    }
+
+    /**
+     * Registers {@code searchProvider} under {@code dataSourceType}, failing fast rather than silently
+     * overwriting a clash - see {@code docs/query-graphdb-review-report.md} finding F12. Two
+     * {@link SearchProvider}s (or a {@link SearchProvider} and a {@link Searchable}-backed
+     * {@link SearchableSearchProvider}) declaring the same {@link SearchProvider#getDataSourceType()} is a
+     * wiring bug: whichever was put second would previously win silently, and queries against the loser's
+     * datasource type would be routed to the wrong provider with no indication anything was wrong.
+     *
+     * @throws IllegalStateException if {@code dataSourceType} is already registered, naming the colliding type
+     *                               and both providers' classes.
+     */
+    private void putOrFail(final String dataSourceType, final SearchProvider searchProvider) {
+        final SearchProvider existing = searchProviderMap.putIfAbsent(dataSourceType, searchProvider);
+        if (existing != null) {
+            throw new IllegalStateException(
+                    "Duplicate search provider datasource type '" + dataSourceType + "': both "
+                    + existing.getClass().getName() + " and " + searchProvider.getClass().getName()
+                    + " declare it - each datasource type must be registered by exactly one provider");
         }
     }
 

@@ -815,13 +815,32 @@ public final class CypherToLogicalPlan {
         } else if (temporal instanceof final AstAround around) {
             final Instant instant = resolveInstant(around.instant());
             final Duration duration = resolveDuration(around.duration());
-            return TemporalContext.window(
-                    TemporalContext.Mode.AROUND, instant.minus(duration), instant.plus(duration));
+            final Instant from = instant.minus(duration);
+            final Instant to = instant.plus(duration);
+            requireOrderedWindow(from, to, around.position());
+            return TemporalContext.window(TemporalContext.Mode.AROUND, from, to);
         } else if (temporal instanceof final AstBetween between) {
-            return TemporalContext.window(
-                    TemporalContext.Mode.BETWEEN, resolveInstant(between.from()), resolveInstant(between.to()));
+            final Instant from = resolveInstant(between.from());
+            final Instant to = resolveInstant(between.to());
+            requireOrderedWindow(from, to, between.position());
+            return TemporalContext.window(TemporalContext.Mode.BETWEEN, from, to);
         }
         throw new CypherCompileException("Unrecognised temporal clause", temporal.position());
+    }
+
+    /**
+     * Rejects a reversed {@code AROUND}/{@code BETWEEN} window ({@code from > to}), mirroring
+     * {@link #resolveDiff}'s {@code baseline < comparison} guard. Unlike {@code DIFF}, a zero-width window
+     * ({@code from == to}) is valid here (e.g. an {@code AROUND} with a zero duration), so the check is
+     * {@code from <= to} rather than strictly-before. Without this guard, a swapped {@code BETWEEN} or a
+     * negative-duration {@code AROUND} would silently intersect an unrelated version instead of failing to
+     * compile - see {@code docs/query-graphdb-review-report.md} finding F7.
+     */
+    private static void requireOrderedWindow(final Instant from, final Instant to, final AstPosition position) {
+        if (from.isAfter(to)) {
+            throw new CypherCompileException(
+                    "Temporal window requires from <= to; got from=" + from + ", to=" + to, position);
+        }
     }
 
     /**

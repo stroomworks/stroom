@@ -16,6 +16,9 @@
 
 package stroom.planb.impl.pipeline;
 
+import stroom.cache.api.CacheManager;
+import stroom.cache.api.LoadingStroomCache;
+import stroom.planb.impl.PlanBConfig;
 import stroom.planb.impl.PlanBDocCache;
 import stroom.planb.impl.data.GetRequest;
 import stroom.planb.impl.data.PlanBQueryService;
@@ -25,31 +28,40 @@ import stroom.query.language.functions.Val;
 import stroom.query.language.functions.ValNull;
 import stroom.security.api.SecurityContext;
 
-import com.github.benmanes.caffeine.cache.Cache;
-import com.github.benmanes.caffeine.cache.Caffeine;
 import jakarta.inject.Inject;
+import jakarta.inject.Provider;
 import jakarta.inject.Singleton;
 
 import java.util.Locale;
 import java.util.Optional;
-import java.util.concurrent.TimeUnit;
 
 @Singleton
 public class StateProviderImpl implements StateProvider {
 
+    private static final String CACHE_NAME = "Plan B State Value Cache";
+
     private final PlanBDocCache stateDocCache;
-    private final Cache<GetRequest, Val> cache;
+    private final LoadingStroomCache<GetRequest, Val> cache;
     private final PlanBQueryService planBQueryService;
     private final SecurityContext securityContext;
 
     @Inject
     public StateProviderImpl(final PlanBDocCache stateDocCache,
                              final PlanBQueryService planBQueryService,
-                             final SecurityContext securityContext) {
+                             final SecurityContext securityContext,
+                             final CacheManager cacheManager,
+                             final Provider<PlanBConfig> planBConfigProvider) {
         this.stateDocCache = stateDocCache;
         this.planBQueryService = planBQueryService;
         this.securityContext = securityContext;
-        cache = Caffeine.newBuilder().maximumSize(1000).expireAfterWrite(10, TimeUnit.MINUTES).build();
+        // F16: the cache's maximumSize/expireAfterWrite were previously hardcoded (1000 entries, 10 minutes) -
+        // now sourced from PlanBConfig#getStateValueCache (same 1000-entry default), so a broadcast-lookup join
+        // whose probe side has a high-cardinality key set can be tuned without a code change - see
+        // docs/query-graphdb-review-report.md finding F16.
+        cache = cacheManager.createLoadingCache(
+                CACHE_NAME,
+                () -> planBConfigProvider.get().getStateValueCache(),
+                planBQueryService::getVal);
     }
 
     /**
@@ -81,7 +93,7 @@ public class StateProviderImpl implements StateProvider {
         return stateOptional
                 .map(stateDoc -> {
                     final GetRequest request = new GetRequest(docName, keyName, effectiveTimeMs);
-                    return cache.get(request, planBQueryService::getVal);
+                    return cache.get(request);
                 })
                 .orElse(ValNull.INSTANCE);
     }
