@@ -149,13 +149,13 @@
     <div><strong>Scope:</strong> The data shape Cytoscape.js needs, whether the Graph DB can produce it, and how to surface a Cytoscape renderer in two places — the Graph DB document's Data tab and a dashboard visualisation component — from a single shared output contract.</div>
   </div>
   <div class="badges">
-    <span class="badge">Enabler: the element-row (RETURN GRAPH) output</span>
+    <span class="badge">Two outputs: value table &amp; element table</span>
     <span class="badge">One adapter, two surfaces</span>
     <span class="badge">Bundled, air-gap friendly</span>
   </div>
 </header>
 
-<div class="callout verdict"><strong>The through-line.</strong> Cytoscape.js wants a de-duplicated list of node and edge <em>elements</em> (each with an <code>id</code>; edges with <code>source</code>/<code>target</code>). That is exactly the <strong>single element-row table</strong> the diff/subgraph work defines as its <code>RETURN GRAPH</code> output. Land that one output shape and it feeds <em>both</em> the built-in Data-tab view and a dashboard visualisation through the <em>same</em> row&rarr;elements adapter — the two surfaces differ only in how the rows are delivered to it.</div>
+<div class="callout verdict"><strong>The through-line.</strong> A graph query has <em>two</em> output modes, both now implemented: a <strong>scalar <code>RETURN</code></strong> yields an ordinary <strong>value table</strong> (for tables, other visualisations, and joins to other datasources), and <strong><code>RETURN GRAPH</code></strong> yields an <strong>element table</strong> (one row per node/edge) that Cytoscape.js renders as a graph. Both travel the same single-<code>Val[]</code> result pipeline; the graph "format" is a client-side reshape of the element table, not a separate transport — so it feeds both the Data-tab view and a dashboard visualisation through one row&rarr;elements adapter.</div>
 
 <nav class="toc">
   <strong>Contents</strong>
@@ -163,7 +163,7 @@
     <li><a href="#summary">Executive summary</a></li>
     <li><a href="#needs">What Cytoscape.js needs</a></li>
     <li><a href="#contract">The enabling contract: one element-row table</a></li>
-    <li><a href="#today">Current state &amp; prerequisite</a></li>
+    <li><a href="#today">Two output modes &amp; how other clients compare</a></li>
     <li><a href="#datatab">Surface A — built-in on the Data tab</a></li>
     <li><a href="#dashboard">Surface B — a dashboard visualisation</a></li>
     <li><a href="#oneadapter">One adapter, two surfaces</a></li>
@@ -174,13 +174,13 @@
 </nav>
 
 <h2 id="summary">1. Executive summary</h2>
-<p>Cytoscape.js is a good fit for rendering Graph DB results — but it needs <em>graph elements</em> (nodes + edges), and the engine today emits <em>scalar tabular rows</em>. The bridge is the <strong>element-row output</strong> already designed for the diff operator's <code>RETURN GRAPH</code> mode: a single table in which each row <em>is</em> a node or an edge, carrying identity, labels/properties and (for edges) endpoints. That shape maps almost 1:1 to Cytoscape's element list.</p>
-<p>Given that one output, a Cytoscape renderer can appear in two places:</p>
+<p>The Graph DB emits results the same way every Stroom query does — a single <code>Val[]</code> table into coprocessors — so a scalar <code>RETURN</code> is already a normal table you can feed to any visualisation or join to other datasources. To <em>draw</em> the graph, the <code>RETURN GRAPH</code> mode returns an <strong>element table</strong> (one row per node/edge) that maps almost 1:1 to Cytoscape.js's element list. Both modes are implemented (§4).</p>
+<p>Given the element table, a Cytoscape renderer can appear in two places:</p>
 <ul>
   <li><strong>Built into the Graph DB <em>Data</em> tab</strong> — a "Graph" view mode next to the existing results table, fed directly by the tab's own query result store. Zero-configuration; the natural place to <em>look at</em> a graph you're building.</li>
   <li><strong>As a dashboard visualisation</strong> — a reusable <code>Visualisation</code> document (Cytoscape bundled as an asset) driven by a Table&rarr;Query component, so a graph view can sit alongside other dashboard panes and participate in selection/linking.</li>
 </ul>
-<p>Both consume the same element-row rows through the same adapter. The prerequisite for either is the <code>RETURN GRAPH</code> output; the dashboard surface additionally needs Cypher to run from a generic dashboard query (the <code>from&nbsp;"GraphDb"</code> routing).</p>
+<p>Both consume the element table through the same adapter. The dashboard surface additionally needs Cypher to run from a generic dashboard query — the <code>from&nbsp;"GraphDb"</code> routing, also now implemented.</p>
 
 <h2 id="needs">2. What Cytoscape.js needs</h2>
 <p>Cytoscape consumes a collection of <strong>elements</strong> — nodes and edges — as JSON:</p>
@@ -219,9 +219,44 @@
 </table></div>
 <div class="callout"><strong>Why the single table matters here.</strong> A single element-row table serves three things at once: Stroom's existing single-result-set visualisations, the diff operator's annotated-subgraph mode, and Cytoscape's flat <code>group</code>-tagged element array. The adapter is a trivial row&rarr;element map: split by <code>kind</code>, dedupe node rows by <code>id</code>, build edges from <code>source</code>/<code>target</code>.</div>
 
-<h2 id="today">4. Current state &amp; prerequisite</h2>
-<p>Today the engine returns scalar rows: <code>RETURN</code> items must be <code>variable.property</code> references, and whole-element / <code>RETURN *</code> / <code>RETURN path</code> are rejected (there is no <code>id()</code>/<code>labels()</code>/<code>type()</code> in the shipped subset). The Graph DB Data tab's own code even documents this: its original default query used <code>labels(n)</code>, <code>type(r)</code> and bare <code>n, m</code> returns and <em>"could never actually run"</em>, so it was rewritten to <code>RETURN a.id, b.id</code> (<a href="../stroom-core-client/src/main/java/stroom/graphdb/client/presenter/GraphDbDataPresenter.java"><code>GraphDbDataPresenter</code></a>).</p>
-<p>So a Cytoscape renderer on either surface has a hard prerequisite: <strong>the <code>RETURN GRAPH</code> element-row output must land first</strong> (the "whole-element return" the engine lacks). The good news is that the underlying data already exists — nodes are interned UIDs, edges are <code>(srcUid, type, dstUid)</code> with properties — so this is a <em>serialisation</em> step, not new storage or traversal. Until it ships, the only way to draw a graph is the brittle client-side reshape of <code>a.id / b.id</code> columns (no stable edge identity, isolated nodes drop out) — usable for a demo, not the design target.</p>
+<h2 id="today">4. Two output modes — and how other graph clients compare</h2>
+<p>This is the crux of the "we need a table, but the graph is a different format" question. A graph query can produce two result shapes. Both travel the <em>same</em> pipeline — a single <code>Val[]</code> table into coprocessors / a <code>ResultStore</code> — and differ only in <strong>schema</strong>:</p>
+<div class="table-wrap"><table>
+  <thead><tr><th>Mode</th><th>Result schema</th><th>Feeds</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Scalar</strong> <code>RETURN a.id, b.name, …</code></td><td>a <strong>value table</strong> — columns are the projected properties</td><td>a Table component; any Stroom visualisation; <strong>joins</strong> to other datasources (StroomQL join / Cypher-as-a-join-side)</td></tr>
+    <tr><td><code>RETURN GRAPH</code></td><td>an <strong>element table</strong> — one row per node/edge (<code>kind, id, labels, source, target, props[, changeKind]</code>)</td><td>the Cytoscape graph view (via the row&rarr;elements adapter, §3)</td></tr>
+  </tbody>
+</table></div>
+<p>Both are <strong>implemented</strong>. The "table for other visualisations and joins" is the scalar path — a Cypher query is just another source of ordinary rows. The "graph format" is <code>RETURN GRAPH</code>, which is <em>still a single flat table on the wire</em>; the nodes-and-edges structure is a <strong>client-side reshape</strong>, not a separate transport. So there is no second data path to build — only a second RETURN mode (which exists) and one client adapter for the graph case.</p>
+
+<h3>How other graph clients handle this</h3>
+<p>Your instinct is right that mature graph clients give you both a table and a graph view — but the mechanism matters, because it drives our options. Neo4j Browser / Bloom (and Bolt clients generally) do <strong>not</strong> have two separate return values. They have <strong>one result set whose column values can be whole graph <em>entities</em></strong> — a cell can hold a <code>Node</code>, <code>Relationship</code> or <code>Path</code> object carrying identity + labels/type + properties. The client renders that <em>one</em> result <strong>either</strong> as a <strong>Table</strong> (show the cell values) <strong>or</strong> as a <strong>Graph</strong> (pull the node/relationship entities out of the rows and draw them). Return only scalars and the graph view is empty; return <code>n</code>, <code>r</code>, <code>m</code> and both views work off the same rows.</p>
+<p>Stroom's row model is different by design: a <code>Val[]</code> cell is a <em>flat scalar</em> — there is no "node value" type carrying identity + properties <em>inside a result cell</em>, and bare <code>RETURN n</code> / <code>RETURN path</code> is rejected. That flat model is exactly what lets Stroom tables, joins and every other visualisation consume graph results uniformly. So rather than Neo4j's "return an entity, render either way", Stroom makes the graph shape an <strong>explicit, dedicated result</strong> (<code>RETURN GRAPH</code> → element table). Same destination — a table or a graph from one engine — reached by a different means.</p>
+
+<h3>All the options</h3>
+<div class="table-wrap"><table>
+  <thead><tr><th>Option</th><th>How</th><th>Trade-off</th></tr></thead>
+  <tbody>
+    <tr><td><strong>A. Two explicit RETURN modes</strong> — <em>shipped</em></td><td>Scalar → value table; <code>RETURN GRAPH</code> → element table. The analyst picks the mode per intent.</td><td><strong>+</strong> Clean; fits the flat-<code>Val[]</code> model and the single-table vis framework; each result is semantically pure. <strong>&minus;</strong> Two queries to get both a table and a graph; the graph view only applies to a <code>RETURN GRAPH</code> query.</td></tr>
+    <tr><td><strong>B. One rich result, two renderings</strong> — <em>the Neo4j model</em></td><td>Result cells carry node/edge <em>objects</em>; the client renders the same rows as a table or a graph.</td><td><strong>+</strong> Familiar UX; one query flips views. <strong>&minus;</strong> Needs a graph-entity <code>Val</code> type, whole-node <code>RETURN n</code>, and client entity-extraction — a deep change that breaks the flat-<code>Val[]</code> table the rest of Stroom (tables, joins, other vis) relies on; a node-valued column shows as a JSON blob in a plain table.</td></tr>
+    <tr><td><strong>C. Auto-derive a graph from a value table</strong></td><td>Offer a graph view whenever a scalar result carries id / source / target-shaped columns — driven by the vis's field-mapping (which already binds those roles, §6), not a guess.</td><td><strong>+</strong> No new engine mode; renders <em>any</em> suitable table — including a <strong>joined</strong> result — as a graph. <strong>&minus;</strong> The analyst must map the columns (or accept heuristics); no automatic node de-dup / edge identity unless the columns provide them. Best as a convenience <em>layered on A</em>.</td></tr>
+    <tr><td><strong>D. Two result sets from one query</strong></td><td>One query emits <em>both</em> a value table and an element table (two coprocessor result sets); a dashboard drives a Table pane and a Graph pane from the one query.</td><td><strong>+</strong> One query feeds both panes, always in sync. <strong>&minus;</strong> Touches the single-<code>ResultRequest</code> / single-result-set shape the Cypher compiler builds today; more machinery for a modest convenience.</td></tr>
+    <tr><td><strong>E. Entities native + a flatten function</strong> — <em>the mirror of C</em></td><td>The graph always returns entity-valued <strong>path rows</strong> (Neo4j-style: cells hold node/edge objects with id + labels + properties); a <code>flatten</code>/<code>properties()</code> function turns them into a value table, while the graph view reads the entities directly.</td><td><strong>+</strong> One native shape; a single entity query can feed the graph view, a flattened table, <em>and</em> — once join-key properties are extracted — joins: the full "one result, table or graph, and joinable" experience. <strong>&minus;</strong> Needs a graph-entity <code>Val</code> type threaded through the stack (the flat-<code>Val[]</code> invariant, as in B), and inverts today's ergonomics — a table now always needs the flatten. Must be entity <strong>path rows</strong>, not the element-union: the union (today's <code>RETURN GRAPH</code>) discards which elements were on which path, so it can't be un-flattened back to a value table losslessly.</td></tr>
+  </tbody>
+</table></div>
+<div class="callout"><strong>Recommendation.</strong> <strong>A</strong> is the right base and is what shipped — it respects the flat row model and the existing visualisation framework. <strong>C</strong> is the most attractive <em>addition</em>: because the dashboard vis already binds element roles by column name (§6), the same field-mapping could let the Cytoscape view render any id/source/target-shaped table — including a joined result — with no new engine mode, and it is the natural route to "style the graph by joined data" (§10). <strong>B</strong> is the full Neo4j experience but costs the flat-<code>Val[]</code> invariant — pursue only if that UX becomes a priority. <strong>E</strong> is B done right for Stroom (an explicit, honest flatten rather than pretending a Table can render an entity cell) and the principled path to the full "one result → table or graph, and joinable" experience — but it is the biggest change (an entity <code>Val</code> type across the whole stack). <strong>D</strong> only if a strong "one query, both panes, always in sync" need emerges.</div>
+
+<h3>Table and graph together, today</h3>
+<p>Because a query returns one shape, to <em>analyse tabularly</em> and <em>visualise the graph</em> you use <strong>two components over the same <code>MATCH</code></strong>: a scalar <code>RETURN</code> feeding a Table (and joins / other vis), plus a <code>RETURN GRAPH</code> feeding the Cytoscape pane. Each stays semantically clean — you never join on, or bar-chart, an interleaved node/edge list. Option C would later collapse this to one query, where the field-mapping decides whether a given table is <em>also</em> renderable as a graph.</p>
+
+<h3 id="reshape-where">Where the reshape runs: server or client (JS)</h3>
+<p>Both directions — entities&rarr;table (Option E's flatten) and table&rarr;graph (Option C's element reshape) — are <em>reshapes</em>, and either can run on the server <strong>or</strong> in the browser. Which home is right depends on who consumes the result:</p>
+<ul>
+  <li><strong>Server-side</strong> (a StroomQL function / the query pipeline) is <em>required</em> whenever the reshaped result must be used server-side — a <strong>join</strong> to another datasource, further query processing, or a dashboard <strong>Table component that feeds other components</strong>. Joins and processing run before results leave the server, so a client-side reshape can't feed them.</li>
+  <li><strong>Client-side (JavaScript in the UI)</strong> is feasible and cheap for <em>display only</em> — a table view rendered next to the graph view from the same result, with no second query. This is exactly symmetric to the Cytoscape row&rarr;elements adapter, which is <em>already</em> client-side JS: the UI receives the result (entities serialised as JSON), and flattens property columns for a grid just as it splits element rows into nodes/edges for the canvas.</li>
+</ul>
+<p><strong>So yes — the flatten can live in JavaScript in the UI as well as on the server; they serve different consumers.</strong> The server flatten is the canonical one (it alone unlocks joins and downstream processing, and it can equally produce the UI table); a client flatten is a UI convenience for the display-only case. The one caution is <strong>duplication</strong>: an entities&rarr;columns reshape written in both Java and JavaScript can drift apart — the same class of risk as the duplicated <code>assembleRow</code> the <a href="query-graphdb-review-report.md">review</a> flagged. Mitigate by keeping the client version strictly display-only, or by driving both from one shared column-mapping spec (the vis field-mapping is a natural home).</p>
 
 <h2 id="datatab">5. Surface A — built-in on the Data tab</h2>
 <p>The Graph DB document already has a <strong>Data</strong> tab that runs an editable Cypher query and shows results. It is built on the shared query UI: <a href="../stroom-core-client/src/main/java/stroom/graphdb/client/presenter/GraphDbDataPresenter.java"><code>GraphDbDataPresenter</code></a> extends <code>AbstractQueryDataPresenter</code> and renders through a <code>QueryResultTablePresenter</code> — i.e. today it is a <strong>table</strong>.</p>
@@ -301,7 +336,7 @@
 <div class="table-wrap"><table>
   <thead><tr><th>Reused (already shipped)</th><th>Built new</th></tr></thead>
   <tbody>
-    <tr><td>The Data tab's query + result-store plumbing (<code>AbstractQueryDataPresenter</code>, <code>QueryResultTablePresenter</code>).</td><td>The <code>RETURN GRAPH</code> element-row output (shared prerequisite; the diff-operator D3b deliverable).</td></tr>
+    <tr><td>The Data tab's query + result-store plumbing (<code>AbstractQueryDataPresenter</code>, <code>QueryResultTablePresenter</code>) <strong>and the <code>RETURN GRAPH</code> element-row output</strong> — both implemented.</td><td>The Cytoscape renderer wiring only (the rows below); no new query-side output is needed.</td></tr>
     <tr><td>The dashboard visualisation framework — <code>Visualisation</code>/<code>Script</code> docs, <code>vis.html</code>/<code>vis.js</code>, <code>VisJson</code>/<code>VisResult</code>, asset serving.</td><td>The <strong>row&rarr;elements adapter</strong> + a thin Cytoscape wrapper (layout, styling by <code>changeKind</code>, selection) — authored once, hosted on both surfaces.</td></tr>
     <tr><td>The <code>stroom.select(...)</code> selection/linking callback and the <code>setData</code>/<code>resize</code> lifecycle.</td><td>A Graph/Table <strong>view toggle</strong> on the Data tab, and a Cytoscape <strong>Visualisation doc</strong> (settings schema + bundled <code>cytoscape.min.js</code> asset).</td></tr>
     <tr><td>Cypher execution + the graph datasource.</td><td>For the dashboard surface only: the <code>from&nbsp;"GraphDb"</code> routing so Cypher runs from a generic dashboard query.</td></tr>
@@ -314,10 +349,10 @@
   <thead><tr><th>Risk</th><th>Severity</th><th>Why it matters</th><th>Mitigation</th></tr></thead>
   <tbody>
     <tr>
-      <td><strong>Depends on <code>RETURN GRAPH</code></strong></td>
-      <td class="sev hi">High</td>
-      <td>Neither surface can render a real graph until the element-row output exists; scalar <code>variable.property</code> rows aren't elements.</td>
-      <td>Sequence this after (or with) the element-row deliverable; treat the row&rarr;elements adapter as consuming a stable element-row schema, and freeze that schema first.</td>
+      <td><strong>UI is the remaining work</strong></td>
+      <td class="sev med">Medium</td>
+      <td>Both output modes are implemented; the Cytoscape widget (Data tab) and the <code>Visualisation</code> doc (dashboard) are not yet built.</td>
+      <td>Bundle the library and author the shared row&rarr;elements adapter once; both surfaces reuse it. No engine/query-side work remains for the base graph view.</td>
     </tr>
     <tr>
       <td><strong>Large-graph render / result size</strong></td>
@@ -345,7 +380,7 @@
     </tr>
   </tbody>
 </table></div>
-<div class="callout"><strong>Overall:</strong> low-to-moderate <em>once the element-row output exists</em> — this is mostly UI/adapter work over shipped frameworks, with the single real dependency being <code>RETURN GRAPH</code>. Building the adapter once for both surfaces is the main lever for keeping it cheap and consistent.</div>
+<div class="callout"><strong>Overall:</strong> low-to-moderate — the query-side output modes are implemented, so what remains is UI/adapter work over already-shipped frameworks (Cytoscape bundle + the row&rarr;elements adapter + the two hosting surfaces). Building the adapter once for both surfaces is the main lever for keeping it cheap and consistent.</div>
 
 <h2 id="open">10. Non-goals &amp; open questions</h2>
 <ul>
@@ -355,10 +390,11 @@
   <li><strong>Open: Data-tab default view.</strong> Should the Graph view auto-activate for a <code>RETURN GRAPH</code> query and the Table view for scalar returns, or always offer a manual toggle?</li>
   <li><strong>Open: shared code packaging.</strong> How is the one adapter shared between an in-app client widget and a sandboxed iframe bundle without divergence — a common JS module built into both?</li>
   <li><strong>Open: selection semantics.</strong> What should tapping a node/edge do on each surface (open properties, filter the table, drive a linked dashboard pane)?</li>
+  <li><strong>Open: graph styled by joined data.</strong> A join produces a <em>value table</em> and <code>RETURN GRAPH</code> an <em>element table</em> — today they don't meet, so "colour/size nodes by an attribute joined from another dataset" isn't possible. Option C (§4 — render any id/source/target-shaped table as a graph via the vis field-mapping) is the natural path to it, and is the one place the table and graph outputs would need to converge.</li>
 </ul>
 
 <hr>
-<p class="foot">This document is a design note, not a commitment. The one hard dependency is the <code>RETURN GRAPH</code> element-row output; given that, a single row&rarr;elements adapter can render the Graph DB with Cytoscape.js both as a built-in Data-tab view and as a reusable dashboard visualisation.</p>
+<p class="foot">This document is a design note. The query-side output modes — the scalar value table and the <code>RETURN GRAPH</code> element table — are implemented; the remaining work is the Cytoscape renderer, a single row&rarr;elements adapter hosted both as a built-in Data-tab view and as a reusable dashboard visualisation.</p>
 
 </div>
 </body>
