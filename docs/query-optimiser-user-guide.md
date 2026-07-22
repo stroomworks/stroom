@@ -81,7 +81,8 @@ plan** → **rewrite rules** → a **cost model** → a `SearchRequest` for the 
   count, duration, confidence) where one is available; the query editor uses it to warn before you run a query
   that looks expensive.
 - **Joins.** StroomQL `join` is parsed, bound, cost-modelled, and — for the common case — executed
-  ([§5.6](#56-joins)).
+  ([§5.6](#56-joins)), including an **enrichment fast path**: a join to a keyed Plan B / State store (type
+  `PlanB`, on its `Key` field) is probed once per row of the streaming side rather than being materialised.
 
 ### What it doesn't do yet
 
@@ -94,7 +95,6 @@ Be aware of the current boundaries:
 - **Joins realise each side in full before filtering.** A join's `where` clause is evaluated *after* the two
   sides are combined, not pushed down to pre-filter each side — correct, but each side scans everything first
   (an efficiency optimisation, not a correctness gap; see [§8](#8-where-the-system-goes-next)).
-- **No enrichment / broadcast-lookup joins yet** against State/Plan B stores.
 - **Index and State cost signals are placeholders.** The cost model has a real adapter for stream/meta counts,
   but the per-index-shard and per-state-store cost adapters are stubs today, so `EXPLAIN` for index/state scans
   returns a low-confidence fallback estimate rather than a measured one.
