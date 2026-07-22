@@ -14,6 +14,11 @@
  * limitations under the License.
  */
 
+// Attribution: this is an independent, hand-written subset grammar modelled on the openCypher reference grammar
+// (https://opencypher.org - (c) openCypher contributors, Apache License 2.0). It is NOT derived from Neo4j's own
+// (GPL) grammar, and Stroom uses no Neo4j code. "Cypher" is a trademark of Neo4j; this implements a subset of the
+// openCypher-defined language, not full Cypher. See NOTICE.md.
+//
 // Cypher grammar (see docs/temporal-cypher-graph-implementation-plan.md, Task 0.2 / PoC.1).
 //
 // This is a HAND-TRIMMED subset grammar modelled on the openCypher reference grammar's structure and covering

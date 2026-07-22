@@ -103,6 +103,8 @@ The table below includes licences for all Maven dependencies.
 | net.java.dev.jets3t              | jets3t                                       | 0.9.0            | APL 2.0       |           |               |
 | net.sf.saxon                     | Saxon-HE                                     | 9.7.0-18         | MPL 1.0       |           |               |
 | net.sourceforge.nekohtml         | nekohtml                                     | 1.9.12           | APL 2.0       |           |               |
+| openCypher                       | Cypher grammar                               | n/a              | Apache 2.0    |           |               |
+| org.antlr                        | antlr4-runtime                               | 4.13.2           | BSD-3-Clause  |           |               |
 | org.apache.avro                  | avro                                         | 1.7.4            | APL 2.0       |           |               |
 | org.apache.commons               | commons-compress                             | 1.12             | APL 2.0       |           |               |
 | org.apache.commons               | commons-math                                 | 2.2              | APL 2.0       |           |               |
