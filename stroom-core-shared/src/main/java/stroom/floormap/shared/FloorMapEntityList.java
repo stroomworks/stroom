@@ -23,8 +23,10 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * Accumulating roster of every entity seen on a floor map's events stream —
- * people, assets, vehicles, or any other typed event object.
+ * Accumulating roster of every entity seen on a floor map — moving entities
+ * from the events stream (people, assets, vehicles, or any other typed event
+ * object) plus the static facts from the facts query (objects, backgrounds
+ * and areas).
  *
  * <p>The events query at a given playback instant only returns entities with
  * events near that time, so this roster is a union of everything seen since
@@ -69,17 +71,48 @@ public class FloorMapEntityList {
         boolean changed = false;
         for (final FloorMapObject object : objects) {
             if (object != null) {
-                final String id = object.getId();
-                if (id != null && !id.isEmpty() && !byId.containsKey(id)) {
-                    final String type = object.getType() != null
-                            ? object.getType()
-                            : "";
-                    byId.put(id, new EntityEntry(id, displayName(id), type));
-                    changed = true;
-                }
+                changed |= admit(object.getId(), object.getType());
             }
         }
         return changed;
+    }
+
+    /**
+     * Merges the static facts from a facts query refresh into the roster —
+     * objects, backgrounds and areas alike. Admission rules match
+     * {@link #update(List)}: null/empty keys are ignored and repeated keys are
+     * deduplicated (first-seen type wins, including against an event entity
+     * already holding the same id).
+     *
+     * @param facts the facts from the latest facts query; may be {@code null}
+     * @return {@code true} only if the roster membership changed, so callers
+     *         can skip re-pushing unchanged data to the grid
+     */
+    public boolean updateFacts(final List<Fact> facts) {
+        if (facts == null) {
+            return false;
+        }
+        boolean changed = false;
+        for (final Fact fact : facts) {
+            if (fact != null) {
+                changed |= admit(fact.getKey(), fact.getType());
+            }
+        }
+        return changed;
+    }
+
+    /**
+     * Admits one entity into the roster if its id is usable and not already
+     * present.
+     *
+     * @return {@code true} if the roster membership changed
+     */
+    private boolean admit(final String id, final String type) {
+        if (id == null || id.isEmpty() || byId.containsKey(id)) {
+            return false;
+        }
+        byId.put(id, new EntityEntry(id, displayName(id), type != null ? type : ""));
+        return true;
     }
 
     /**

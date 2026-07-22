@@ -17,14 +17,11 @@
 package stroom.floormap.client.view;
 
 import stroom.floormap.client.presenter.FloorMapTimelineSettingsPresenter.FloorMapTimelineSettingsView;
-import stroom.item.client.SelectionBox;
-import stroom.item.client.SimpleSelectionListModel;
 import stroom.widget.datepicker.client.DateTimeBox;
 import stroom.widget.datepicker.client.DateTimePopup;
 import stroom.widget.tickbox.client.view.CustomCheckBox;
 
 import com.google.gwt.event.logical.shared.ValueChangeHandler;
-import com.google.gwt.safehtml.shared.SafeHtmlUtils;
 import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
 import com.google.gwt.user.client.ui.Button;
@@ -34,27 +31,22 @@ import com.google.inject.Provider;
 import com.google.web.bindery.event.shared.HandlerRegistration;
 import com.gwtplatform.mvp.client.ViewImpl;
 
-import java.util.List;
-import java.util.function.Consumer;
-
 /**
  * View implementation for the timeline settings popup dialog.
  *
  * <p>Contains start/end date-time pickers to constrain the visible time range,
- * a playback speed selector, a loop-playback checkbox, and a "Show All" button
- * that resets the range to cover all available data.</p>
+ * a loop-playback checkbox, and a "Show All" button that resets the range to
+ * cover all available data. Playback speed is not set here — it has its own
+ * menu opened from the speed badge on the timeline.</p>
  */
 public class FloorMapTimelineSettingsViewImpl extends ViewImpl implements FloorMapTimelineSettingsView {
 
     private final Widget widget;
-    private final SimpleSelectionListModel<Double> speedModel = new SimpleSelectionListModel<>();
 
     @UiField
     DateTimeBox startDateTimeBox;
     @UiField
     DateTimeBox endDateTimeBox;
-    @UiField
-    SelectionBox<Double> speedSelectionBox;
     @UiField
     CustomCheckBox loopCheckBox;
     @UiField
@@ -67,36 +59,11 @@ public class FloorMapTimelineSettingsViewImpl extends ViewImpl implements FloorM
 
         startDateTimeBox.setPopupProvider(dateTimePopupProvider);
         endDateTimeBox.setPopupProvider(dateTimePopupProvider);
-
-        speedSelectionBox.setModel(speedModel);
-        speedModel.setDisplayValueFunction(FloorMapTimelineSettingsViewImpl::formatSpeedLabel);
-        speedModel.setRenderFunction(v -> SafeHtmlUtils.fromString(formatSpeedLabel(v)));
     }
 
     @Override
     public Widget asWidget() {
         return widget;
-    }
-
-    /**
-     * Replaces the available playback speed options in the dropdown.
-     *
-     * @param speeds the list of speed multipliers (e.g. 0.5, 1, 2, 10)
-     */
-    @Override
-    public void setSpeedOptions(final List<Double> speeds) {
-        speedModel.clear();
-        speedModel.addItems(speeds);
-    }
-
-    @Override
-    public void setSelectedSpeed(final Double speed) {
-        speedSelectionBox.setValue(speed);
-    }
-
-    @Override
-    public void setSpeedChangeHandler(final Consumer<Double> handler) {
-        speedSelectionBox.addValueChangeHandler(e -> handler.accept(e.getValue()));
     }
 
     @Override
@@ -153,29 +120,6 @@ public class FloorMapTimelineSettingsViewImpl extends ViewImpl implements FloorM
     @Override
     public HandlerRegistration addEndTimeChangeHandler(final ValueChangeHandler<String> handler) {
         return endDateTimeBox.addValueChangeHandler(handler);
-    }
-
-    /**
-     * Formats a speed value for display in the dropdown, e.g. {@code "×1"}, {@code "×0.5"},
-     * {@code "×1,000"}. Mirrors the badge format used by the timeline view.
-     */
-    private static String formatSpeedLabel(final Double speed) {
-        if (speed == null) {
-            return "";
-        }
-        if (speed >= 1000) {
-            final long rounded = Math.round(speed);
-            final String raw = String.valueOf(rounded);
-            final int len = raw.length();
-            if (len > 3) {
-                return "x" + raw.substring(0, len - 3) + "," + raw.substring(len - 3);
-            }
-            return "x" + raw;
-        }
-        if (speed == Math.floor(speed)) {
-            return "x" + (int) Math.round(speed);
-        }
-        return "x" + speed;
     }
 
     public interface Binder extends UiBinder<Widget, FloorMapTimelineSettingsViewImpl> {

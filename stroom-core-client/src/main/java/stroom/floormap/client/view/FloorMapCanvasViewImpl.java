@@ -596,6 +596,12 @@ public class FloorMapCanvasViewImpl
     }
 
     @Override
+    public double[] getFactMapAnchor(final Fact fact) {
+        return fact.mapAnchor(IMAGE_DISPLAY_WIDTH,
+                imageAspectRatioCache.get(fact.getImage()));
+    }
+
+    @Override
     public double[] getSelectionFrame() {
         return computeSelectionFrame();
     }

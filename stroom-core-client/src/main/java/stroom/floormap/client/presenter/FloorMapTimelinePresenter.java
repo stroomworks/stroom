@@ -22,6 +22,12 @@ import stroom.svg.client.Preset;
 import stroom.svg.shared.SvgImage;
 import stroom.widget.datepicker.client.UTCDate;
 import stroom.widget.help.client.HelpButton;
+import stroom.widget.menu.client.presenter.IconMenuItem;
+import stroom.widget.menu.client.presenter.Item;
+import stroom.widget.menu.client.presenter.ShowMenuEvent;
+import stroom.widget.popup.client.presenter.PopupPosition;
+import stroom.widget.popup.client.presenter.PopupPosition.PopupLocation;
+import stroom.widget.util.client.Rect;
 
 import com.google.gwt.animation.client.AnimationScheduler;
 import com.google.gwt.safehtml.shared.SafeHtml;
@@ -31,13 +37,16 @@ import com.google.web.bindery.event.shared.EventBus;
 import com.gwtplatform.mvp.client.MyPresenterWidget;
 import com.gwtplatform.mvp.client.View;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.function.Consumer;
 
 /**
  * Presenter for the floor map timeline control. Handles time range selection and fires events when the time changes.
  * Provides a timeline bar with step-back/play-pause/step-forward buttons, a progress scrubber, date labels,
- * a speed badge, and a settings icon that opens a popup for date range, speed and loop options.
+ * a speed badge that opens a playback-speed menu when clicked, and a settings icon that opens a popup
+ * for date range and loop options.
  */
 public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelineView> {
 
@@ -61,6 +70,9 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
     private static final Preset STEP_BACK_PRESET = new Preset(SvgImage.STEP_BACKWARD, "Step Back", true);
     private static final Preset STEP_FORWARD_PRESET = new Preset(SvgImage.STEP_FORWARD, "Step Forward", true);
     private static final double SPEED_MULTIPLIER = 1000.0;
+    /** Playback speed multipliers offered in the speed badge menu. */
+    private static final List<Double> SPEED_OPTIONS =
+            Arrays.asList(0.5, 1.0, 10.0, 100.0, 1_000.0, 10_000.0);
     /**
      * Minimum wall-clock interval (ms) between data query fires during playback.
      * The visual position updates every animation frame; queries are throttled to this rate
@@ -193,10 +205,8 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
         // Settings button opens the popup anchored above the settings icon.
         getView().setSettingsHandler(() -> settingsPresenter.show(getView().getSettingsButtonWidget()));
 
-        settingsPresenter.setSpeedChangeHandler(speed -> {
-            this.playbackSpeed = speed;
-            getView().setSpeedBadge(formatSpeed(speed));
-        });
+        // Speed badge opens a menu of playback speeds anchored above the badge.
+        getView().setSpeedBadgeHandler(this::showSpeedMenu);
 
         // Loop/stop-at-end toggle: default to looping.
         settingsPresenter.setLoopPlayback(true);
@@ -222,10 +232,39 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
         getView().setStepForwardPreset(STEP_FORWARD_PRESET);
         getView().setSettingsPreset(SETTINGS_PRESET);
 
-        settingsPresenter.setSpeedOptions(Arrays.asList(0.5, 1.0, 10.0, 100.0, 1_000.0, 10_000.0));
-        settingsPresenter.setSelectedSpeed(1.0);
-        this.playbackSpeed = 1.0;
-        getView().setSpeedBadge(formatSpeed(1.0));
+        setPlaybackSpeed(1.0);
+    }
+
+    /**
+     * Shows the playback-speed menu anchored above the speed badge. The currently
+     * selected speed is marked with a tick.
+     */
+    private void showSpeedMenu() {
+        final List<Item> items = new ArrayList<>();
+        int priority = 0;
+        for (final Double speed : SPEED_OPTIONS) {
+            final boolean selected = speed == playbackSpeed;
+            final IconMenuItem.Builder builder = new IconMenuItem.Builder()
+                    .priority(priority++)
+                    .text(formatSpeed(speed))
+                    .command(() -> setPlaybackSpeed(speed));
+            if (selected) {
+                builder.icon(SvgImage.TICK).highlight(true);
+            }
+            items.add(builder.build());
+        }
+        final Rect relativeRect = new Rect(getView().getSpeedBadgeWidget().getElement()).grow(3);
+        final PopupPosition popupPosition = new PopupPosition(relativeRect, PopupLocation.ABOVE);
+        ShowMenuEvent.builder()
+                .items(items)
+                .popupPosition(popupPosition)
+                .fire(this);
+    }
+
+    /** Applies a new playback speed and updates the badge label to match. */
+    private void setPlaybackSpeed(final double speed) {
+        this.playbackSpeed = speed;
+        getView().setSpeedBadge(formatSpeed(speed));
     }
 
     /**
@@ -626,6 +665,17 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
          * Updates the speed badge label shown beside the settings button (e.g. "1×").
          */
         void setSpeedBadge(String text);
+
+        /**
+         * Set the handler called when the speed badge is clicked (or activated from
+         * the keyboard). Opens the playback-speed menu.
+         */
+        void setSpeedBadgeHandler(Runnable handler);
+
+        /**
+         * Returns the speed badge widget so the speed menu can be anchored to it.
+         */
+        Widget getSpeedBadgeWidget();
 
         /**
          * Provides histogram data (event counts per bin) for display above the scrubber.

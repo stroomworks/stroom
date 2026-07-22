@@ -551,10 +551,15 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                 return;
             }
 
-            // Read-only (Map tab) mode: clicking an object shape announces it so
-            // the parent presenter can select/track it (people only — the parent
-            // filters). Empty/background clicks start a pan.
-            if (hitId != null && !FloorMapJsonKeys.BACKGROUND.equals(hitId)) {
+            // Read-only (Map tab) mode: pressing an object shape announces it so
+            // the parent presenter can select/track it (the parent filters to
+            // its roster). Backgrounds and areas are excluded — their clickable
+            // surface can cover most of the map, and this fires on mousedown,
+            // so a press over them must stay a plain pan; they remain trackable
+            // from the tracking panel. Empty-canvas presses also just pan.
+            if (hitId != null
+                    && !backgroundKeys.contains(hitId)
+                    && !areaKeys.contains(hitId)) {
                 MapObjectSelectedEvent.fire(this, hitId);
             }
             gesture = Gesture.PANNING;
@@ -782,6 +787,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                 if (areaDraftMap.isEmpty()) {
                     cancelAreaDrawing();
                 } else {
+                    //noinspection SequencedCollectionMethodCanBeUsed
                     areaDraftMap.remove(areaDraftMap.size() - 1);
                     redraw();
                 }
@@ -856,6 +862,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
             }
             event.preventDefault();
             if (areaDraftMap.size() >= 2) {
+                //noinspection SequencedCollectionMethodCanBeUsed
                 final double[] last = mapToScreen(
                         areaDraftMap.get(areaDraftMap.size() - 1));
                 final double[] prev = mapToScreen(
@@ -864,6 +871,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                 final double dy = last[1] - prev[1];
                 if (dx * dx + dy * dy
                         <= AREA_CLOSE_RADIUS_PX * AREA_CLOSE_RADIUS_PX) {
+                    //noinspection SequencedCollectionMethodCanBeUsed
                     areaDraftMap.remove(areaDraftMap.size() - 1);
                 }
             }
@@ -1500,7 +1508,8 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     /**
      * Resolves the tracked entity's current map-space position, preferring the
      * live interpolated animation position, then the last known rendered
-     * position, then the event draw list.
+     * position, then the event draw list, then — for static facts (objects,
+     * backgrounds, areas), which never move — the fact's placement anchor.
      *
      * @return {@code {mapX, mapY}}, or {@code null} if the entity is unknown
      */
@@ -1516,6 +1525,12 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         for (final FloorMapObject obj : eventObjects) {
             if (trackedObjectId.equals(obj.getId())) {
                 return new double[]{obj.getX(), obj.getY()};
+            }
+        }
+        for (final Fact fact : facts) {
+            if (trackedObjectId.equals(fact.getKey())) {
+                // Image anchors need the aspect ratio, known only to the view.
+                return getView().getFactMapAnchor(fact);
             }
         }
         return null;
@@ -1711,6 +1726,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         if (areaDraftMap.isEmpty()) {
             return false;
         }
+        //noinspection SequencedCollectionMethodCanBeUsed
         final double[] first = mapToScreen(areaDraftMap.get(0));
         final double dx = screenX - first[0];
         final double dy = screenY - first[1];
@@ -2025,6 +2041,17 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
          * @return the intersecting fact keys; never {@code null}
          */
         Set<String> hitTestScreenRect(double[] rectPx);
+
+        /**
+         * Returns the fact's map-space anchor point (the point the camera
+         * centres on when the fact is tracked). Delegates to
+         * {@link Fact#mapAnchor} with the view's image display width and the
+         * fact's aspect ratio — which is known only to the view.
+         *
+         * @param fact the fact to anchor; must not be {@code null}
+         * @return the anchor {@code {mapX, mapY}}; never {@code null}
+         */
+        double[] getFactMapAnchor(Fact fact);
 
         /**
          * Returns the screen-space bounding box {@code {minX, minY, maxX, maxY}}

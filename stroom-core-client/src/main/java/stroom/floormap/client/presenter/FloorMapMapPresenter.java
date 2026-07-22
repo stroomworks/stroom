@@ -276,13 +276,9 @@ public class FloorMapMapPresenter
             floorMapCanvasPresenter.setEventObjects(e.getObjects());
             // Keep the tracking panel's roster up to date. Only re-push grid
             // data when membership actually changed so playback refreshes
-            // (~300ms apart) don't churn the grid. Restoring the selected id
-            // does not re-fire the selection consumer because EntityEntry
-            // equality is id-based.
+            // (~300ms apart) don't churn the grid.
             if (entityList.update(e.getObjects())) {
-                final String selectedId = floorMapEntityListPresenter.getSelectedId();
-                floorMapEntityListPresenter.setData(entityList.getEntities());
-                floorMapEntityListPresenter.setSelected(selectedId);
+                refreshEntityGrid();
             }
         }));
 
@@ -298,8 +294,11 @@ public class FloorMapMapPresenter
         // on the Editor tab's canvas would change this tab's tracking state.
         //
         // Clicking an entity on this tab's canvas selects it in the tracking
-        // panel and starts (or resumes) following it. Ids not in the roster
-        // (static facts such as gates) are ignored.
+        // panel and starts (or resumes) following it. The roster holds both
+        // event entities and static facts; ids not (yet) in it are ignored.
+        // The canvas never fires this for backgrounds or areas — their
+        // clickable surface can cover most of the map, so a press over them
+        // must stay a pan — but they can still be tracked from the panel.
         registerHandler(getEventBus().addHandler(MapObjectSelectedEvent.getType(), e -> {
             if (e.getSource() == floorMapCanvasPresenter
                     && e.getObjectId() != null
@@ -574,6 +573,23 @@ public class FloorMapMapPresenter
         // the Settings tab so they sit behind); events draw on top.
         floorMapCanvasPresenter.setTypeStyles(getEntity().getTypeStyles());
         floorMapCanvasPresenter.setFacts(facts);
+
+        // Static facts (objects, backgrounds, areas) belong in the tracking
+        // panel alongside the event entities, so merge them into the roster.
+        if (entityList.updateFacts(facts)) {
+            refreshEntityGrid();
+        }
+    }
+
+    /**
+     * Re-pushes the roster into the tracking panel's grid, preserving the
+     * current selection. Restoring the selected id does not re-fire the
+     * selection consumer because {@code EntityEntry} equality is id-based.
+     */
+    private void refreshEntityGrid() {
+        final String selectedId = floorMapEntityListPresenter.getSelectedId();
+        floorMapEntityListPresenter.setData(entityList.getEntities());
+        floorMapEntityListPresenter.setSelected(selectedId);
     }
 
     /**

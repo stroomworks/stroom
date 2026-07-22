@@ -133,6 +133,66 @@ class TestFloorMapEntityList {
     }
 
     // -----------------------------------------------------------------------
+    // Facts admission — the tracking panel covers static facts too
+    // -----------------------------------------------------------------------
+
+    /**
+     * Static facts of every kind — point objects, backgrounds and areas — are
+     * admitted alongside event entities, keyed by their fact key.
+     */
+    @Test
+    void testUpdateFactsAdmitsAllKinds() {
+        final boolean changed = entityList.updateFacts(Arrays.asList(
+                fact("gate-1", "gate"),
+                fact("background", "background"),
+                fact("zone-a", "area")));
+
+        assertThat(changed).isTrue();
+        assertThat(entityList.getEntities())
+                .extracting(EntityEntry::getId)
+                .containsExactly("background", "gate-1", "zone-a");
+        assertThat(entityList.getEntities())
+                .extracting(EntityEntry::getType)
+                .containsExactly("background", "gate", "area");
+    }
+
+    /**
+     * Facts with null or empty keys cannot be listed or tracked and are
+     * skipped, as are null list elements and a null list.
+     */
+    @Test
+    void testUpdateFactsSkipsNullAndEmptyKeys() {
+        assertThat(entityList.updateFacts(Arrays.asList(
+                fact(null, "gate"),
+                fact("", "gate"),
+                null))).isFalse();
+        assertThat(entityList.updateFacts(null)).isFalse();
+        assertThat(entityList.getEntities()).isEmpty();
+    }
+
+    /**
+     * Facts deduplicate against entries already admitted from the events
+     * stream (and vice versa) — first-seen type wins, and a repeat merge
+     * reports no change so the grid is not refreshed.
+     */
+    @Test
+    void testUpdateFactsDedupesAgainstEvents() {
+        entityList.update(Collections.singletonList(entity("gate-1", "vehicle")));
+
+        assertThat(entityList.updateFacts(
+                Collections.singletonList(fact("gate-1", "gate")))).isFalse();
+
+        final List<EntityEntry> entities = entityList.getEntities();
+        assertThat(entities).hasSize(1);
+        //noinspection SequencedCollectionMethodCanBeUsed
+        assertThat(entities.get(0).getType()).isEqualTo("vehicle");
+    }
+
+    private static Fact fact(final String key, final String type) {
+        return new Fact(key, type, null, null, null);
+    }
+
+    // -----------------------------------------------------------------------
     // Deduplication and accumulation
     // -----------------------------------------------------------------------
 
@@ -148,6 +208,7 @@ class TestFloorMapEntityList {
 
         final List<EntityEntry> entities = entityList.getEntities();
         assertThat(entities).hasSize(1);
+        //noinspection SequencedCollectionMethodCanBeUsed
         assertThat(entities.get(0).getType()).isEqualTo("vehicle");
     }
 
