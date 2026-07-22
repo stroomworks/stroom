@@ -17,7 +17,9 @@
 package stroom.query.planner.join;
 
 import stroom.query.language.functions.StateFetcher;
+import stroom.query.language.functions.Type;
 import stroom.query.language.functions.Val;
+import stroom.query.language.functions.ValErr;
 import stroom.query.language.functions.ValNull;
 import stroom.query.planner.cost.JoinAlgorithm;
 import stroom.query.planner.logical.JoinType;
@@ -36,10 +38,14 @@ import java.util.function.Consumer;
  * same "standalone, thoroughly unit-tested, not wired into anything yet" posture Phase 3's {@code
  * CostModel}/{@code JoinCostModel} used - see {@code docs/query-optimiser-implementation-plan.md}, Task 6.1c.
  *
- * <p>Equi-key matching uses each key {@link Val}'s {@code toString()} as a canonical form, the <b>same</b>
- * semantic for both {@link JoinAlgorithm#HASH_JOIN} and {@link JoinAlgorithm#NESTED_LOOP} - so a different
- * algorithm choice never changes which rows match, only how fast the match is found (the design doc's
- * "algorithm choice never changes the result" invariant).</p>
+ * <p>Equi-key matching canonicalises each key {@link Val} via {@link #keyOf} - the <b>same</b> semantic for both
+ * {@link JoinAlgorithm#HASH_JOIN} and {@link JoinAlgorithm#NESTED_LOOP} - so a different algorithm choice never
+ * changes which rows match, only how fast the match is found (the design doc's "algorithm choice never changes
+ * the result" invariant). A numeric-typed component (integer/long/short/byte, float/double) keys on its numeric
+ * value, so e.g. {@code ValLong 5} and {@code ValDouble 5.0} match; every other type - in particular string and
+ * date/duration - keys on its existing {@code toString()} unchanged (see {@link #keyOf}'s Javadoc for the exact
+ * rule, and {@code docs/query-graphdb-review-report.md} finding F5 for the divergent-date residual this leaves).
+ * </p>
  *
  * <p><b>SQL null semantics</b>: a row whose equi-key value is null ({@link ValNull}, or a {@code null} array
  * slot) never joins - SQL {@code NULL != NULL} - so it is excluded from a hash bucket and never equals another
@@ -67,6 +73,14 @@ import java.util.function.Consumer;
  * lookup side. It has its own entry point instead: {@link #broadcastLookupJoin}.</p>
  */
 public final class JoinExecutor {
+
+    /**
+     * {@code 2^63}, i.e. one past {@link Long#MAX_VALUE} - the exclusive upper bound (and, negated, the
+     * exclusive lower bound) a {@code double} must fall within for {@code (long) d} to be a safe, non-saturating
+     * narrowing conversion. Used by {@link #canonicalFloatingPoint(Val)} to decide whether an integral
+     * {@code FLOAT}/{@code DOUBLE} value can be canonicalised through {@code long} at all.
+     */
+    private static final double MAX_LONG_AS_DOUBLE_EXCLUSIVE = 9_223_372_036_854_775_808.0;
 
     private JoinExecutor() {
     }
@@ -162,13 +176,20 @@ public final class JoinExecutor {
      * (treated as an automatic miss), matching {@link #join}'s "{@code NULL != NULL}" rule - see this class's
      * Javadoc. It is still emitted (both synthetic columns null) for a {@link JoinType#LEFT} join.</p>
      *
+     * <p><b>Lookup failure vs. miss</b>: {@link StateFetcher#getState} returning {@code ValErr} (a failed
+     * lookup - e.g. a permission deny, or a key shape mismatched to the store's type) is a real error, never a
+     * miss - it is <b>not</b> null-padded/dropped like a genuine {@code ValNull} miss, and is never embedded as
+     * the {@code Value} column. It aborts the whole probe by throwing {@link BroadcastLookupFailedException},
+     * exactly like {@link JoinLimitExceededException} aborts on a breached cap (see
+     * {@code docs/query-graphdb-review-report.md}, findings F1/SEC-1).</p>
+     *
      * <p><b>Preconditions:</b> {@code probeRows}, {@code stateFetcher}, {@code mapName}, {@code joinType}, and
      * {@code out} must not be null; {@code probeKeyPosition} must be a valid index into every row {@code
      * probeRows} yields (i.e. {@code 0 <= probeKeyPosition < probeWidth}); {@code probeWidth} must be
      * {@code >= 0}; {@code maxOutputRows} must be {@code >= 0} (as for {@link #join}).<br>
      * <b>Postconditions:</b> {@code out.accept(...)} is called once per surviving row, each of length
      * {@code probeWidth + 2}; never returns a value (streaming - the caller's {@code out} is where results go).
-     * {@code probeRows} is fully consumed on normal completion.</p>
+     * {@code probeRows} is fully consumed on normal completion, unless a lookup fails (see above).</p>
      *
      * @param probeRows        the streaming side's realised rows; never re-iterated, consumed exactly once.
      * @param probeKeyPosition which column of each probe row holds the join key to look up.
@@ -181,9 +202,11 @@ public final class JoinExecutor {
      *                         null-padded.
      * @param maxOutputRows    see {@link #join(Side, Side, JoinType, JoinAlgorithm, long)}'s cap semantics.
      * @param out              receives each surviving combined row as it is produced.
-     * @throws JoinLimitExceededException if the output would exceed {@code maxOutputRows}.
-     * @throws IllegalArgumentException   if {@code probeKeyPosition}, {@code probeWidth}, or {@code maxOutputRows}
-     *                                    is negative, or {@code probeKeyPosition >= probeWidth}.
+     * @throws JoinLimitExceededException     if the output would exceed {@code maxOutputRows}.
+     * @throws BroadcastLookupFailedException if a lookup returns {@code ValErr} (see above).
+     * @throws IllegalArgumentException        if {@code probeKeyPosition}, {@code probeWidth}, or
+     *                                          {@code maxOutputRows} is negative, or
+     *                                          {@code probeKeyPosition >= probeWidth}.
      */
     public static void broadcastLookupJoin(
             final Iterator<Val[]> probeRows,
@@ -253,6 +276,15 @@ public final class JoinExecutor {
                 final boolean hasKey = probeKey != null && !(probeKey instanceof ValNull);
                 final Val lookedUp =
                         hasKey ? stateFetcher.getState(mapName, probeKey.toString(), effectiveTimeMs) : null;
+                if (lookedUp instanceof ValErr) {
+                    // A failed lookup (e.g. a permission deny, or a key shape mismatched to the store's
+                    // type) is a real error, never "no match" - it must not be embedded as the joined
+                    // Value column, nor counted as a matched row. Fail the whole search the same way a
+                    // breached output cap does, rather than silently downgrading the failure to junk data
+                    // (see docs/query-graphdb-review-report.md, findings F1/SEC-1). A genuine miss is
+                    // ValNull, handled unchanged below.
+                    throw BroadcastLookupFailedException.forLookupError(mapName, probeKey.toString(), lookedUp);
+                }
                 final boolean matched = lookedUp != null && !(lookedUp instanceof ValNull);
                 if (matched) {
                     emitted = emitOrThrow(
@@ -464,14 +496,24 @@ public final class JoinExecutor {
     /**
      * The equi-key for {@code row} as a canonical string tuple, or {@code null} when any key component is
      * SQL-null ({@link ValNull} or a {@code null} slot). A null result signals "this row cannot join" - see the
-     * class Javadoc's SQL-null-semantics note. Using {@link Val#toString()} directly is safe here precisely
-     * because null components short-circuit to {@code null} rather than being stringified (which for
-     * {@link ValNull} would yield a Java {@code null} element and let null keys collide).
+     * class Javadoc's SQL-null-semantics note. Null components short-circuit to {@code null} rather than being
+     * stringified (which for {@link ValNull} would yield a Java {@code null} element and let null keys collide).
+     *
+     * <p>Each non-null component is rendered by {@link #canonicalKeyComponent(Val)}: a <b>numeric-typed</b>
+     * {@link Val} (integer/long/short/byte, float/double) is canonicalised so numerically-equal values of
+     * different numeric types key identically - e.g. {@code ValLong 5} and {@code ValDouble 5.0} both render
+     * {@code "5"} - while every other type keeps its existing {@link Val#toString()} exactly, unchanged from
+     * before this canonicalisation existed. In particular a {@code ValString "5"} still keys as {@code "5"} (so
+     * the already-working string-vs-integer match is preserved) and a {@code ValString "5.0"} keys as the
+     * literal {@code "5.0"} - a string is never reinterpreted as a number. Dates and durations are also left
+     * un-canonicalised - a divergent date format across two sides is a documented residual, not fixed here (see
+     * {@code docs/query-graphdb-review-report.md}, finding F5).</p>
      *
      * <p>Public so every producer of a {@link BuildSideLookup} key derives it identically to how
      * {@link #streamingProbe} derives the probe key - e.g. {@code JoinSearchProvider} populating the build side
      * from a streamed scan. Keeping key derivation single-sourced here is what guarantees the build and probe
-     * sides agree on what "the same key" means.</p>
+     * sides agree on what "the same key" means - including this canonicalisation, applied symmetrically to
+     * both sides.</p>
      *
      * <p><b>Preconditions:</b> {@code row} and {@code positions} non-null; every entry of {@code positions} a
      * valid index into {@code row}.<br>
@@ -485,9 +527,61 @@ public final class JoinExecutor {
             if (value == null || value instanceof ValNull) {
                 return null;
             }
-            key.add(value.toString());
+            key.add(canonicalKeyComponent(value));
         }
         return key;
+    }
+
+    /**
+     * Renders one equi-key component: {@link #canonicalNumeric(Val)}'s result for a numeric-typed {@code value},
+     * or {@code value.toString()} unchanged for every other type - see {@link #keyOf}'s Javadoc for why
+     * non-numeric types (in particular strings and dates) are deliberately left as-is.
+     */
+    private static String canonicalKeyComponent(final Val value) {
+        final String numeric = canonicalNumeric(value);
+        return numeric != null
+                ? numeric
+                : value.toString();
+    }
+
+    /**
+     * A canonical numeric rendering of {@code value}, or {@code null} if its {@link Type} is not one of the
+     * fixed-point/floating-point numeric types this method canonicalises: {@code BYTE}/{@code SHORT}/
+     * {@code INTEGER}/{@code LONG} (fixed-point) and {@code FLOAT}/{@code DOUBLE} (floating-point). Every other
+     * type - including {@code DATE} and {@code DURATION}, deliberately excluded even though {@link Type#isNumber()}
+     * is {@code true} for them - returns {@code null} here and falls back to {@code toString()} in
+     * {@link #canonicalKeyComponent(Val)}.
+     *
+     * <p>A fixed-point type renders via {@link Val#toLong()} directly - <b>never</b> round-tripped through a
+     * {@code double} - so a {@code long} outside {@code double}'s exact-integer range still keys on its precise
+     * value rather than a lossy approximation. A floating-point type renders in that same long form when the
+     * value is integral and within {@code long} range (so {@code ValDouble 5.0} keys identically to
+     * {@code ValLong 5}); a genuinely fractional value (or one too large for a {@code long}) falls back to
+     * {@link Val#toString()} unchanged (so {@code ValDouble 5.5} keys as {@code "5.5"}, exactly as before).</p>
+     */
+    private static @Nullable String canonicalNumeric(final Val value) {
+        return switch (value.type()) {
+            case BYTE, SHORT, INTEGER, LONG -> Long.toString(value.toLong());
+            case FLOAT, DOUBLE -> canonicalFloatingPoint(value);
+            default -> null;
+        };
+    }
+
+    /**
+     * Canonicalises a {@code FLOAT}/{@code DOUBLE} {@link Val}: the exact {@code long} form if the value is
+     * integral (per {@link Val#hasFractionalPart()}) and within {@code long} range, otherwise
+     * {@link Val#toString()} unchanged.
+     */
+    private static String canonicalFloatingPoint(final Val value) {
+        final double d = value.toDouble();
+        if (!value.hasFractionalPart()
+                && !Double.isNaN(d)
+                && !Double.isInfinite(d)
+                && d > -MAX_LONG_AS_DOUBLE_EXCLUSIVE
+                && d < MAX_LONG_AS_DOUBLE_EXCLUSIVE) {
+            return Long.toString((long) d);
+        }
+        return value.toString();
     }
 
     private static Val[] combine(final Val[] left, final Val[] right) {

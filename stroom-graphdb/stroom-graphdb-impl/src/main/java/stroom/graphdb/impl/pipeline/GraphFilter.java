@@ -67,8 +67,16 @@ import java.util.Optional;
  * scoping note explains why {@code PlanBFilter}'s own resolution strategy does not fit here).
  *
  * <p>Holds one {@link LmdbWriter} open across the whole stream (opened in {@link #startProcessing()}, closed in
- * {@link #endProcessing()}), calling {@link LmdbWriter#tryCommit()} after every mutation - batching is handled
- * entirely by {@link LmdbWriter}'s own internal change-count threshold, no manual batching logic here.</p>
+ * {@link #endProcessing()}), but - unlike {@link LmdbWriter}'s other callers - does <b>not</b> rely on its
+ * batched auto-commit threshold ({@link LmdbWriter#tryCommit()}). A node/edge write is not one write but several
+ * (a node write plus N property-index anchors; an edge write is a dual out-edge/in-edge insert), so batching
+ * writes across many records inside one long-lived transaction would let a mid-handler failure on record N leave
+ * record N's *partial* writes staged alongside every already-succeeded record before it, to be silently committed
+ * together at the next threshold flush - a one-sided edge or partially-indexed node with no record of the
+ * inconsistency. Instead, {@link #perRecord} makes each record its own all-or-nothing unit: it
+ * {@link LmdbWriter#commit() commits} on the handler's success and {@link LmdbWriter#abort() aborts} (rolling back
+ * only that record's writes) on failure, trading {@link LmdbWriter}'s write-batching throughput for a hard
+ * per-record durability guarantee.</p>
  *
  * <p>A bad record is logged via the normal pipeline error-reporting path and skipped - it does not abort the
  * whole stream, mirroring {@code PlanBFilter}'s own resilience to isolated bad records. This covers both a
@@ -272,19 +280,27 @@ public class GraphFilter extends AbstractXMLFilter {
     }
 
     /**
-     * Runs one record's handler, isolating a store-layer failure to that single record. A well-formed-XML
-     * record can still fail once it reaches the stores - a node with more labels than the fixed-width encoding
-     * allows ({@code IllegalArgumentException} from {@link GraphNodeDb#insert}), a property value too big for the
-     * LMDB buffer ({@code BufferOverflowException}), or a pre-existing corrupt version blob surfaced by the
-     * previous-version lookup. Such a record is logged and skipped rather than aborting the whole stream, exactly
-     * as {@code stroom.planb.impl.pipeline.PlanBFilter.catchLmdbError} does for its own store writes. The
-     * handlers' own up-front validation ({@code "<node> requires ..."}) returns normally and never reaches the
-     * catch.
+     * Runs one record's handler as a single atomic unit against {@link #writer}, isolating a store-layer failure
+     * to that single record. A well-formed-XML record can still fail once it reaches the stores - a node with
+     * more labels than the fixed-width encoding allows ({@code IllegalArgumentException} from
+     * {@link GraphNodeDb#insert}), a property value too big for the LMDB buffer
+     * ({@code BufferOverflowException}), or a pre-existing corrupt version blob surfaced by the previous-version
+     * lookup. A handler such as {@link #addNode} or {@link #addEdge} performs multiple writes (a node plus its
+     * property-index anchors; a dual out-edge/in-edge insert) - if a later write throws after an earlier one in
+     * the same record already succeeded, {@link LmdbWriter#abort()} rolls back <i>only</i> this record's writes
+     * (already-committed prior records are unaffected) rather than leaving the partial write staged to be
+     * committed later. On success the record's writes are {@link LmdbWriter#commit() committed} immediately. A
+     * failed record is logged and skipped rather than aborting the whole stream, exactly as
+     * {@code stroom.planb.impl.pipeline.PlanBFilter.catchLmdbError} does for its own store writes. The handlers'
+     * own up-front validation ({@code "<node> requires ..."}) returns normally without writing anything and never
+     * reaches the catch; the subsequent no-op {@link LmdbWriter#commit()} is harmless in that case.
      */
     private void perRecord(final String element, final Runnable handler) {
         try {
             handler.run();
+            writer.commit();
         } catch (final RuntimeException e) {
+            writer.abort();
             log(Severity.ERROR,
                     "Failed to write <" + element + ">: " + e.getClass().getSimpleName() + " - " + e.getMessage(),
                     e);
@@ -339,7 +355,6 @@ public class GraphFilter extends AbstractXMLFilter {
                         property.getValue().getBytes(StandardCharsets.UTF_8), nodeUid);
             }
         }
-        writer.tryCommit();
     }
 
     /**
@@ -372,7 +387,6 @@ public class GraphFilter extends AbstractXMLFilter {
         }
         final long nodeUid = intern(stores.getNodeUids(), currentId);
         stores.getNodes().delete(writer, nodeUid, currentValidFrom);
-        writer.tryCommit();
     }
 
     private void addEdge() {
@@ -388,7 +402,6 @@ public class GraphFilter extends AbstractXMLFilter {
         // Dual-write contract (Task P1.1): both adjacency stores must be written for one logical edge.
         stores.getOutEdges().insert(writer, srcUid, edgeTypeUid, dstUid, currentValidFrom, properties);
         stores.getInEdges().insert(writer, srcUid, edgeTypeUid, dstUid, currentValidFrom, properties);
-        writer.tryCommit();
     }
 
     private void deleteEdge() {
@@ -402,7 +415,6 @@ public class GraphFilter extends AbstractXMLFilter {
 
         stores.getOutEdges().delete(writer, srcUid, edgeTypeUid, dstUid, currentValidFrom);
         stores.getInEdges().delete(writer, srcUid, edgeTypeUid, dstUid, currentValidFrom);
-        writer.tryCommit();
     }
 
     private static Map<String, Val> toVals(final Map<String, String> properties) {

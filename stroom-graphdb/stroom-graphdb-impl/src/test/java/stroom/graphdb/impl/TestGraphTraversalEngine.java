@@ -497,6 +497,109 @@ class TestGraphTraversalEngine {
         }
     }
 
+    // ------------------------------------------------------------------------------------------------------
+    // review finding F3: accumulation ceiling / bounded top-N (docs/query-graphdb-review-findings.md, Batch 4)
+    // ------------------------------------------------------------------------------------------------------
+
+    @Test
+    void accumulationCeiling_exceededWithNoOrderByOrLimit_throwsAndDoesNotSilentlyTruncate(
+            @TempDir final Path root) {
+        // Review finding F3: before this fix, a query with no LIMIT had rowCap = Long.MAX_VALUE and nothing else
+        // bounded row accumulation - a broad MATCH could grow the in-memory row list without limit until the
+        // node OOM'd. Uses the (package-private, test-only) 5-arg constructor to make a tiny ceiling (3 rows)
+        // reachable over a handful of seeded leaves (5) rather than needing a million-plus real rows. The
+        // traversal must fail loud (throw), not return a silently-truncated 3-row result.
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph-ceiling-nolimit"), DOC)) {
+            seedHubWithRankedLeaves(stores, 5);
+
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory(), Long.MAX_VALUE, Duration.ofSeconds(30), 3);
+            final CompiledCypherPlan compiled = compile(
+                    "MATCH (h:Hub {id: 'hub'})-[:LINKS]->(l:Leaf) RETURN l.id");
+
+            assertThatThrownBy(() -> execute(stores, engine, compiled))
+                    .isInstanceOf(GraphTraversalLimitExceededException.class)
+                    .hasMessageContaining("3")
+                    .hasMessageContaining("LIMIT");
+        }
+    }
+
+    @Test
+    void accumulationCeiling_exceededWithOrderByButNoLimit_stillThrows(@TempDir final Path root) {
+        // Review finding F3: ORDER BY alone (no LIMIT) also disables rowCap (postProcess - every row must be seen
+        // to sort correctly), so this is a second, independent shape that must still be protected by the same
+        // ceiling as the plain no-LIMIT case above.
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph-ceiling-orderby-nolimit"), DOC)) {
+            seedHubWithRankedLeaves(stores, 5);
+
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory(), Long.MAX_VALUE, Duration.ofSeconds(30), 3);
+            final CompiledCypherPlan compiled = compile(
+                    "MATCH (h:Hub {id: 'hub'})-[:LINKS]->(l:Leaf) RETURN l.id ORDER BY l.rank");
+
+            assertThatThrownBy(() -> execute(stores, engine, compiled))
+                    .isInstanceOf(GraphTraversalLimitExceededException.class)
+                    .hasMessageContaining("3");
+        }
+    }
+
+    @Test
+    void orderByWithLimit_boundedTopNHeap_matchesUnboundedResultAndStaysWithinATinyCeiling(
+            @TempDir final Path root) {
+        // Review finding F3 part (b): ORDER BY ... LIMIT n now keeps at most n rows in memory via a bounded
+        // top-N heap, instead of materialising every matching row before sorting and truncating. Seeds far more
+        // leaves (20) than the LIMIT (5) and sets the accumulation ceiling (via the 5-arg test seam) equal to
+        // the LIMIT - an unbounded accumulation of all 20 leaves would blow straight through that ceiling and
+        // throw (see the two tests above), so a clean, correct result here proves the bounded heap never
+        // actually materialised more than `limit` rows at once. Comparing against a default (effectively
+        // unbounded) engine over the same fixture/query proves the bounded path returns byte-for-byte the same
+        // rows in the same order as the pre-existing materialise-then-sort-then-truncate path.
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph-topn-bounded"), DOC)) {
+            seedHubWithRankedLeaves(stores, 20);
+
+            final GraphTraversalEngine unboundedEngine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory());
+            final GraphTraversalEngine tinyCeilingEngine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory(), Long.MAX_VALUE, Duration.ofSeconds(30), 5);
+            final CompiledCypherPlan compiled = compile(
+                    "MATCH (h:Hub {id: 'hub'})-[:LINKS]->(l:Leaf) RETURN l.id ORDER BY l.rank LIMIT 5");
+
+            final List<Val[]> baseline = execute(stores, unboundedEngine, compiled);
+            final List<Val[]> bounded = execute(stores, tinyCeilingEngine, compiled);
+
+            final List<String> expectedTop5ByRank = List.of(
+                    "leaf-00", "leaf-01", "leaf-02", "leaf-03", "leaf-04");
+            assertThat(baseline).extracting(row -> row[0].toString()).containsExactlyElementsOf(expectedTop5ByRank);
+            assertThat(bounded).extracting(row -> row[0].toString()).containsExactlyElementsOf(expectedTop5ByRank);
+        }
+    }
+
+    @Test
+    void orderByDescWithLimit_boundedTopNHeap_matchesUnboundedResult(@TempDir final Path root) {
+        // As above, but DESC - proves the bounded heap's ordering (via the same rowComparator, just reversed)
+        // matches the unbounded path for a descending sort too, not only ascending.
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph-topn-bounded-desc"), DOC)) {
+            seedHubWithRankedLeaves(stores, 20);
+
+            final GraphTraversalEngine unboundedEngine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory());
+            final GraphTraversalEngine tinyCeilingEngine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory(), Long.MAX_VALUE, Duration.ofSeconds(30), 5);
+            final CompiledCypherPlan compiled = compile(
+                    "MATCH (h:Hub {id: 'hub'})-[:LINKS]->(l:Leaf) RETURN l.id ORDER BY l.rank DESC LIMIT 5");
+
+            final List<Val[]> baseline = execute(stores, unboundedEngine, compiled);
+            final List<Val[]> bounded = execute(stores, tinyCeilingEngine, compiled);
+
+            final List<String> expectedTop5ByRankDesc = List.of(
+                    "leaf-19", "leaf-18", "leaf-17", "leaf-16", "leaf-15");
+            assertThat(baseline).extracting(row -> row[0].toString())
+                    .containsExactlyElementsOf(expectedTop5ByRankDesc);
+            assertThat(bounded).extracting(row -> row[0].toString())
+                    .containsExactlyElementsOf(expectedTop5ByRankDesc);
+        }
+    }
+
     @Test
     void returnDistinct_deduplicatesProjectedRows(@TempDir final Path root) {
         // seedConvergingPaths reaches x via two paths (a->x and a->y->x), so a non-DISTINCT RETURN yields x twice
@@ -1482,6 +1585,40 @@ class TestGraphTraversalEngine {
             for (final long crimeUid : List.of(c1Uid, c2Uid, c3Uid, c4Uid)) {
                 stores.getOutEdges().insert(writer, crimeUid, investigatedBy, officerUid, T1, Map.of());
                 stores.getInEdges().insert(writer, crimeUid, investigatedBy, officerUid, T1, Map.of());
+            }
+            return null;
+        });
+    }
+
+    /**
+     * A hub node with {@code count} outgoing {@code LINKS} edges to distinct leaf nodes, each carrying a distinct
+     * numeric {@code rank} property ({@code 0..count-1}) - built for the F3 accumulation-ceiling/bounded-top-N
+     * regression tests below, which need "many more matching rows than a LIMIT" without a genuinely million-row
+     * fixture.
+     */
+    private static void seedHubWithRankedLeaves(final GraphStores stores, final int count) {
+        final long hubLabel = intern(stores, stores.getLabelUids(), "Hub");
+        final long leafLabel = intern(stores, stores.getLabelUids(), "Leaf");
+        final long idKey = intern(stores, stores.getPropertyKeyUids(), "id");
+        final long links = intern(stores, stores.getEdgeTypeUids(), "LINKS");
+        final long hubUid = intern(stores, stores.getNodeUids(), "hub");
+
+        final long[] leafUids = new long[count];
+        for (int i = 0; i < count; i++) {
+            leafUids[i] = intern(stores, stores.getNodeUids(), "leaf-" + String.format("%02d", i));
+        }
+
+        stores.write(writer -> {
+            stores.getNodes().insert(
+                    writer, hubUid, T1, List.of(hubLabel), Map.of("id", ValString.create("hub")));
+            stores.getPropertyIndex().insert(
+                    writer, hubLabel, idKey, "hub".getBytes(StandardCharsets.UTF_8), hubUid);
+
+            for (int i = 0; i < count; i++) {
+                stores.getNodes().insert(writer, leafUids[i], T1, List.of(leafLabel),
+                        Map.of("id", ValString.create("leaf-" + String.format("%02d", i)),
+                                "rank", ValLong.create(i)));
+                insertEdge(stores, writer, hubUid, links, leafUids[i], T1);
             }
             return null;
         });

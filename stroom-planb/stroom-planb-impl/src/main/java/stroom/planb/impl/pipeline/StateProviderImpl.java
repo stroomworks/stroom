@@ -22,11 +22,8 @@ import stroom.planb.impl.data.PlanBQueryService;
 import stroom.planb.shared.PlanBDoc;
 import stroom.query.language.functions.StateProvider;
 import stroom.query.language.functions.Val;
-import stroom.query.language.functions.ValErr;
 import stroom.query.language.functions.ValNull;
 import stroom.security.api.SecurityContext;
-import stroom.util.logging.LambdaLogger;
-import stroom.util.logging.LambdaLoggerFactory;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
@@ -39,8 +36,6 @@ import java.util.concurrent.TimeUnit;
 
 @Singleton
 public class StateProviderImpl implements StateProvider {
-
-    private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(StateProviderImpl.class);
 
     private final PlanBDocCache stateDocCache;
     private final Cache<GetRequest, Val> cache;
@@ -57,21 +52,37 @@ public class StateProviderImpl implements StateProvider {
         cache = Caffeine.newBuilder().maximumSize(1000).expireAfterWrite(10, TimeUnit.MINUTES).build();
     }
 
+    /**
+     * Looks up a single enrichment/state value.
+     *
+     * <p><b>Not-found vs. error</b>: every exception that can reach this method is a real failure - e.g. a
+     * {@link stroom.util.shared.PermissionException} from the {@code USE}-permission check in
+     * {@link PlanBDocCache#get}, or a {@link NumberFormatException} from a key shape mismatched to the store's
+     * type (e.g. a non-numeric key against a {@code RANGED_STATE}/{@code TEMPORAL_RANGED_STATE} store) - and is
+     * deliberately left to propagate rather than being caught and converted to a {@code ValErr}. A genuine
+     * "no value for this key" is already represented without throwing at all: {@link ValNull#INSTANCE}, either
+     * from the {@code orElse} below (no Plan B doc/store known by this name) or from
+     * {@link PlanBQueryService#getVal}'s own not-found handling (a store that exists but holds nothing for the
+     * key). This split matters because the caller ({@code JoinExecutor.broadcastLookupProbe}) treats a
+     * {@code ValErr} as a failed join it must abort, and a {@code ValNull} as an ordinary miss - silently
+     * downgrading a real error (in particular a permission deny) to a {@code ValErr} would let it be embedded
+     * as a matched row's value instead of failing the search (see
+     * {@code docs/query-graphdb-review-report.md}, findings F1/SEC-1).</p>
+     *
+     * <p><b>Preconditions:</b> {@code mapName} and {@code keyName} must not be null.<br>
+     * <b>Postconditions:</b> returns {@link ValNull#INSTANCE} for a confirmed absence; returns a real
+     * {@link Val} for a hit; otherwise throws (never returns a {@code ValErr}).</p>
+     */
     @Override
     public Val getState(final String mapName, final String keyName, final long effectiveTimeMs) {
-        try {
-            final String docName = mapName.toLowerCase(Locale.ROOT);
-            final Optional<PlanBDoc> stateOptional = securityContext.useAsReadResult(() ->
-                    Optional.ofNullable(stateDocCache.get(docName)));
-            return stateOptional
-                    .map(stateDoc -> {
-                        final GetRequest request = new GetRequest(docName, keyName, effectiveTimeMs);
-                        return cache.get(request, planBQueryService::getVal);
-                    })
-                    .orElse(ValNull.INSTANCE);
-        } catch (final Exception e) {
-            LOGGER.debug(e::getMessage, e);
-            return ValErr.create(e.getMessage());
-        }
+        final String docName = mapName.toLowerCase(Locale.ROOT);
+        final Optional<PlanBDoc> stateOptional = securityContext.useAsReadResult(() ->
+                Optional.ofNullable(stateDocCache.get(docName)));
+        return stateOptional
+                .map(stateDoc -> {
+                    final GetRequest request = new GetRequest(docName, keyName, effectiveTimeMs);
+                    return cache.get(request, planBQueryService::getVal);
+                })
+                .orElse(ValNull.INSTANCE);
     }
 }

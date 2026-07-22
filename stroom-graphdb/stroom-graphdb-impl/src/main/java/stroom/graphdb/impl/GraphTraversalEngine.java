@@ -64,6 +64,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.PriorityQueue;
 import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
@@ -136,10 +137,30 @@ public final class GraphTraversalEngine {
      */
     private static final Duration MAX_TRAVERSAL_DURATION = Duration.ofSeconds(30);
 
+    /**
+     * Review finding F3 fix: a hard ceiling on the total number of rows a single {@link #execute} call will
+     * accumulate in memory, independent of any compiled {@code LIMIT} - the essential OOM safety net. {@code
+     * rowCap} (see {@link #execute}'s own Javadoc) is {@link Long#MAX_VALUE} whenever {@code ORDER BY}/
+     * {@code DISTINCT}/aggregation is present or no {@code LIMIT} was compiled, so before this fix a broad
+     * {@code MATCH} or any of those clauses could accumulate an unbounded number of rows before the wall-clock
+     * {@link #MAX_TRAVERSAL_DURATION} deadline even fired. Once accumulation would exceed this ceiling, {@link
+     * #execute} fails loud with a {@link GraphTraversalLimitExceededException} instead of silently truncating or
+     * risking an {@code OutOfMemoryError} - see {@link UnboundedRowSink}.
+     *
+     * <p><b>This default (1,000,000 rows) is a tunable, not an architectural limit:</b> it is picked high enough
+     * that a legitimate, reasonably-scoped interactive query should never trip it, and low enough that hitting it
+     * still leaves real heap headroom on a typical node. A deployment with a larger heap and a genuine need for
+     * bigger single-query result sets can raise it (via the test/production seam constructor below); the better
+     * fix for a query that trips this is almost always a tighter pattern, an added/reduced {@code LIMIT}, or a
+     * narrower {@code WHERE}.</p>
+     */
+    private static final long MAX_ACCUMULATED_ROWS = 1_000_000L;
+
     private final GraphStores stores;
     private final ExpressionPredicateFactory expressionPredicateFactory;
     private final long maxVarLengthPathStates;
     private final Duration maxTraversalDuration;
+    private final long maxAccumulatedRows;
 
     public GraphTraversalEngine(final GraphStores stores,
                                 final ExpressionPredicateFactory expressionPredicateFactory) {
@@ -166,11 +187,26 @@ public final class GraphTraversalEngine {
                         final ExpressionPredicateFactory expressionPredicateFactory,
                         final long maxVarLengthPathStates,
                         final Duration maxTraversalDuration) {
+        this(stores, expressionPredicateFactory, maxVarLengthPathStates, maxTraversalDuration,
+                MAX_ACCUMULATED_ROWS);
+    }
+
+    /**
+     * Review finding F3 fix: test-only seam - lets a test exercise the {@link #MAX_ACCUMULATED_ROWS} ceiling
+     * deterministically over a small fixture (a handful of rows) rather than needing to seed a million-plus rows
+     * to reach the real production default.
+     */
+    GraphTraversalEngine(final GraphStores stores,
+                        final ExpressionPredicateFactory expressionPredicateFactory,
+                        final long maxVarLengthPathStates,
+                        final Duration maxTraversalDuration,
+                        final long maxAccumulatedRows) {
         this.stores = Objects.requireNonNull(stores, "stores");
         this.expressionPredicateFactory =
                 Objects.requireNonNull(expressionPredicateFactory, "expressionPredicateFactory");
         this.maxVarLengthPathStates = maxVarLengthPathStates;
         this.maxTraversalDuration = Objects.requireNonNull(maxTraversalDuration, "maxTraversalDuration");
+        this.maxAccumulatedRows = maxAccumulatedRows;
     }
 
     /**
@@ -202,7 +238,10 @@ public final class GraphTraversalEngine {
      * to output tuples, de-duplicated when {@code distinct}, then capped by any {@code LIMIT}. When {@code ORDER
      * BY} or {@code DISTINCT} is present the traversal-time row cap is disabled (every matching row must be seen
      * before sort/de-dup can pick the correct {@code LIMIT} rows); a bare {@code LIMIT} with neither still
-     * early-exits the traversal as before.</p>
+     * early-exits the traversal as before. Review finding F3 fix: when {@code LIMIT} is disabled this way,
+     * {@link #MAX_ACCUMULATED_ROWS} still bounds how many rows may be held in memory (see {@link
+     * UnboundedRowSink}) - and when {@code ORDER BY}+{@code LIMIT} is present without {@code DISTINCT}/
+     * aggregation, accumulation itself never exceeds the {@code LIMIT} (see {@link TopNRowSink}).</p>
      *
      * @param distinct whether to de-duplicate the projected rows ({@code RETURN DISTINCT}).
      */
@@ -260,11 +299,25 @@ public final class GraphTraversalEngine {
                 : Math.max(0L, shape.limit());
         final Instant deadline = Instant.now().plus(maxTraversalDuration);
 
-        final List<Map<String, Val>> rows = new ArrayList<>();
+        // Review finding F3 fix: rowCap alone is not a memory guardrail - it is Long.MAX_VALUE for exactly the
+        // shapes (no LIMIT, or ORDER BY/DISTINCT/aggregation) where accumulation would otherwise be unbounded.
+        // TopNRowSink closes the common "ORDER BY ... LIMIT n" case at the source (never accumulates more than
+        // n rows); every other shape falls back to UnboundedRowSink, which still enforces the hard
+        // MAX_ACCUMULATED_ROWS ceiling so a broad/sorted/deduped/aggregated query fails loud instead of
+        // exhausting the heap. DISTINCT and aggregation are excluded from the top-N sink because de-duplication
+        // and grouping both need every matching row to decide correctly which survive - a size-n heap keyed only
+        // on the ORDER BY comparator cannot answer that. A LIMIT larger than the ceiling itself is also excluded
+        // (a heap that size would defeat the point), so that case degrades to the ceiling-guarded unbounded sink
+        // rather than allocating an equally unbounded heap.
+        final boolean topNEligible = !shape.sortKeys().isEmpty() && !distinct && aggregation == null
+                && shape.limit() != null && shape.limit() > 0 && shape.limit() <= maxAccumulatedRows;
+        final RowSink rowSink = topNEligible
+                ? new TopNRowSink((int) (long) shape.limit(), rowComparator(shape.sortKeys()))
+                : new UnboundedRowSink(maxAccumulatedRows);
 
         if (shape.varLengthExpand != null) {
             for (final long anchorUid : resolveAnchors(readTxn, shape.nodeScan, access)) {
-                if (rows.size() >= rowCap) {
+                if (rowSink.size() >= rowCap) {
                     break;
                 }
                 final Optional<GraphNodeDb.NodeVersion> anchor = access.getNode(readTxn, anchorUid);
@@ -273,9 +326,9 @@ public final class GraphTraversalEngine {
                 }
                 final Map<String, Val> anchorRow = rowFor(shape.nodeScan.variable(), anchor.get().properties());
                 expandVarLength(readTxn, anchorUid, access, shape.varLengthExpand, anchorRow, wherePredicate,
-                        rows, rowCap, deadline);
+                        rowSink, rowCap, deadline);
             }
-            return finalize(rows, shape, distinct, aggregation);
+            return finalize(rowSink.drain(), shape, distinct, aggregation);
         }
 
         List<Frontier> frontier = new ArrayList<>();
@@ -289,35 +342,35 @@ public final class GraphTraversalEngine {
 
         if (shape.hops.isEmpty()) {
             for (final Frontier f : frontier) {
-                if (rows.size() >= rowCap) {
+                if (rowSink.size() >= rowCap) {
                     break;
                 }
                 if (wherePredicate.test(f.row())) {
-                    rows.add(f.row());
+                    rowSink.add(f.row());
                 }
             }
-            return finalize(rows, shape, distinct, aggregation);
+            return finalize(rowSink.drain(), shape, distinct, aggregation);
         }
 
         for (int i = 0; i < shape.hops.size(); i++) {
             checkDeadline(deadline);
-            if (rows.size() >= rowCap) {
+            if (rowSink.size() >= rowCap) {
                 break;
             }
             final Expand hop = shape.hops.get(i);
             final boolean isLastHop = i == shape.hops.size() - 1;
             final List<Frontier> next = new ArrayList<>();
             for (final Frontier f : frontier) {
-                if (rows.size() >= rowCap) {
+                if (rowSink.size() >= rowCap) {
                     break;
                 }
-                expandChainHop(readTxn, f.nodeUid(), access, hop, f.row(), isLastHop, wherePredicate, next, rows,
+                expandChainHop(readTxn, f.nodeUid(), access, hop, f.row(), isLastHop, wherePredicate, next, rowSink,
                         rowCap, deadline);
             }
             frontier = next;
         }
 
-        return finalize(rows, shape, distinct, aggregation);
+        return finalize(rowSink.drain(), shape, distinct, aggregation);
     }
 
     // ------------------------------------------------------------------------------------------------------
@@ -760,6 +813,135 @@ public final class GraphTraversalEngine {
         }
     }
 
+    // ------------------------------------------------------------------------------------------------------
+    // review finding F3 fix: bounded row accumulation
+    // ------------------------------------------------------------------------------------------------------
+
+    /**
+     * The accumulation sink every traversal shape (the zero-hop anchor loop, the fixed-length chain via {@link
+     * #acceptChainNeighbour}, the var-length BFS via {@link #acceptVarLengthRow}) adds its matched rows into,
+     * instead of a bare {@code List<Map<String, Val>>} - so {@link #execute} can swap in either an unbounded,
+     * ceiling-guarded sink ({@link UnboundedRowSink}) or a size-bounded top-N heap ({@link TopNRowSink}) without
+     * any accumulation call site needing to know which is in play. {@code size()} is read by the existing
+     * {@code rowCap} early-exit checks (unchanged by this fix); each implementation enforces its own bound inside
+     * {@code add}.
+     */
+    private interface RowSink {
+
+        /** Offers one matched row for accumulation; may throw {@link GraphTraversalLimitExceededException} (see
+         * {@link UnboundedRowSink}), or silently discard the row if it does not qualify for a bounded top-N (see
+         * {@link TopNRowSink}) - never silently drops a row that a bound does not require it to. */
+        void add(Map<String, Val> row);
+
+        /** The number of rows currently held - read by the existing {@code rowCap} checks, not affected by this
+         * fix's own ceiling/bound (those are enforced inside {@link #add}, not surfaced here). */
+        int size();
+
+        /** Extracts the accumulated rows for {@link #finalizeRows}/{@link #finalizeAggregatedRows}. Order is not
+         * guaranteed to be traversal order (see {@link TopNRowSink#drain}); {@code finalizeRows}' own {@code
+         * ORDER BY} sort (unconditional whenever sort keys are present, regardless of how {@code rows} got here)
+         * is what fixes the final order in every case. */
+        List<Map<String, Val>> drain();
+    }
+
+    /**
+     * The ordinary accumulation sink: an unbounded {@link ArrayList}, guarded only by the F3 hard ceiling ({@link
+     * #MAX_ACCUMULATED_ROWS} in production; a tiny test-seam value in a test - see the test-only constructor).
+     * Used whenever a bounded top-N is not sound - no {@code LIMIT}, {@code DISTINCT}, aggregation, or a {@code
+     * LIMIT} itself larger than the ceiling (see {@link #execute}'s dispatch) - i.e. whenever every matching row
+     * genuinely must be seen before the correct answer can be produced. Once accumulation would exceed the
+     * ceiling, {@code add} throws {@link GraphTraversalLimitExceededException} rather than silently continuing
+     * (which would eventually {@code OutOfMemoryError}) or silently truncating (which would return a wrong,
+     * unflagged partial answer) - the rows already accumulated are discarded with the exception, not returned.
+     */
+    private static final class UnboundedRowSink implements RowSink {
+
+        private final List<Map<String, Val>> rows = new ArrayList<>();
+        private final long maxAccumulatedRows;
+
+        UnboundedRowSink(final long maxAccumulatedRows) {
+            this.maxAccumulatedRows = maxAccumulatedRows;
+        }
+
+        @Override
+        public void add(final Map<String, Val> row) {
+            if (rows.size() >= maxAccumulatedRows) {
+                throw new GraphTraversalLimitExceededException(
+                        "graph traversal accumulated more than the maximum allowed " + maxAccumulatedRows
+                        + " rows in memory; narrow the pattern's label/property constraints, add or tighten a "
+                        + "LIMIT, or add a WHERE filter to reduce the result set");
+            }
+            rows.add(row);
+        }
+
+        @Override
+        public int size() {
+            return rows.size();
+        }
+
+        @Override
+        public List<Map<String, Val>> drain() {
+            return rows;
+        }
+    }
+
+    /**
+     * A bounded top-N accumulation sink for the common {@code ORDER BY ... LIMIT n} shape (without {@code
+     * DISTINCT} or aggregation - see {@link #execute}'s dispatch): keeps at most {@code limit} rows in memory at
+     * any time via a size-{@code limit} max-heap keyed on the compiled {@code ORDER BY} comparator, evicting the
+     * current worst-ranked row once full, instead of materialising every matching row before sorting and
+     * truncating. This is what closes review finding F3's "sharp edge" - {@code ORDER BY ... LIMIT n} is the
+     * common interactive case, and was previously exactly the unbounded one (the {@code LIMIT} disabled the
+     * traversal-time {@code rowCap} early-exit so every row could be seen for sorting).
+     *
+     * <p><b>Correctness:</b> {@link #drain} returns the &le;{@code limit} survivors in heap order, not sorted
+     * order - relying on {@code finalizeRows}' own unconditional {@code rows.sort(rowComparator(...))} (run
+     * whenever {@code ORDER BY} is present, regardless of how {@code rows} got here) to produce the final,
+     * byte-for-byte identical comparator/tie-break/{@code nullsLast} ordering the previous
+     * materialise-then-sort-then-truncate path produced - just computed over &le;{@code limit} rows instead of
+     * every matching row. Since {@code DISTINCT}/aggregation are excluded from this sink entirely (see {@link
+     * #execute}), every row offered here counts toward the limit as itself; there is no de-duplication to
+     * reconcile against the bound.</p>
+     */
+    private static final class TopNRowSink implements RowSink {
+
+        private final int limit;
+        private final Comparator<Map<String, Val>> comparator;
+        // A max-heap on `comparator`: worstFirst.peek() is always the current worst-ranked survivor (comparator's
+        // reversed ordering makes the heap's "least" element the comparator's "greatest"), so a new candidate is
+        // only kept once the heap is at capacity if it beats that worst survivor.
+        private final PriorityQueue<Map<String, Val>> worstFirst;
+
+        TopNRowSink(final int limit, final Comparator<Map<String, Val>> comparator) {
+            this.limit = limit;
+            this.comparator = comparator;
+            this.worstFirst = new PriorityQueue<>(Math.max(1, limit), comparator.reversed());
+        }
+
+        @Override
+        public void add(final Map<String, Val> row) {
+            if (limit <= 0) {
+                return;
+            }
+            if (worstFirst.size() < limit) {
+                worstFirst.add(row);
+            } else if (comparator.compare(row, worstFirst.peek()) < 0) {
+                worstFirst.poll();
+                worstFirst.add(row);
+            }
+        }
+
+        @Override
+        public int size() {
+            return worstFirst.size();
+        }
+
+        @Override
+        public List<Map<String, Val>> drain() {
+            return new ArrayList<>(worstFirst);
+        }
+    }
+
     /** A traversal frontier entry: the node reached so far, and the accumulated row of every variable bound. */
     private record Frontier(long nodeUid, Map<String, Val> row) {
     }
@@ -767,7 +949,7 @@ public final class GraphTraversalEngine {
     private void expandChainHop(final Txn<ByteBuffer> readTxn, final long fromUid, final TemporalAccess access,
                                 final Expand hop, final Map<String, Val> rowSoFar, final boolean isLastHop,
                                 final Predicate<Map<String, Val>> wherePredicate, final List<Frontier> nextFrontier,
-                                final List<Map<String, Val>> finalRows, final long rowCap,
+                                final RowSink rowSink, final long rowCap,
                                 final Instant deadline) {
         final Optional<Long> edgeTypeUid = resolveRequiredEdgeTypeUid(readTxn, hop.edgeType());
         if (edgeTypeUid.isEmpty()) {
@@ -775,7 +957,7 @@ public final class GraphTraversalEngine {
         }
 
         final Consumer<EdgeStep> onNeighbour = edgeStep -> acceptChainNeighbour(
-                readTxn, edgeStep, access, hop, rowSoFar, isLastHop, wherePredicate, nextFrontier, finalRows,
+                readTxn, edgeStep, access, hop, rowSoFar, isLastHop, wherePredicate, nextFrontier, rowSink,
                 rowCap, deadline);
 
         collectNeighbours(readTxn, fromUid, edgeTypeUid.get(), access, hop.direction(), onNeighbour);
@@ -785,13 +967,13 @@ public final class GraphTraversalEngine {
                                       final TemporalAccess access,
                                       final Expand hop, final Map<String, Val> rowSoFar, final boolean isLastHop,
                                       final Predicate<Map<String, Val>> wherePredicate,
-                                      final List<Frontier> nextFrontier, final List<Map<String, Val>> finalRows,
+                                      final List<Frontier> nextFrontier, final RowSink rowSink,
                                       final long rowCap, final Instant deadline) {
         final long neighbourUid = edgeStep.neighbourUid();
         // Task P7.2: once a compiled LIMIT is satisfied, stop accumulating further rows at this hop - does not
         // abort a cursor scan already in flight (the DAO layer has no cancellation hook), but does stop this
         // traversal from expanding to further frontier nodes/hops once the cap is reached.
-        if (isLastHop && finalRows.size() >= rowCap) {
+        if (isLastHop && rowSink.size() >= rowCap) {
             return;
         }
         // Code-review fix: previously the wall-clock deadline was only checked once per hop (execute()'s outer
@@ -816,7 +998,7 @@ public final class GraphTraversalEngine {
         }
         if (isLastHop) {
             if (wherePredicate.test(row)) {
-                finalRows.add(row);
+                rowSink.add(row);
             }
         } else {
             nextFrontier.add(new Frontier(neighbourUid, row));
@@ -882,7 +1064,7 @@ public final class GraphTraversalEngine {
     private void expandVarLength(final Txn<ByteBuffer> readTxn, final long anchorUid, final TemporalAccess access,
                                  final VarLengthExpand varLengthExpand, final Map<String, Val> anchorRow,
                                  final Predicate<Map<String, Val>> wherePredicate,
-                                 final List<Map<String, Val>> rows, final long rowCap, final Instant deadline) {
+                                 final RowSink rowSink, final long rowCap, final Instant deadline) {
         // Task P7.2: reject a hop range wider than MAX_VAR_LENGTH_HOPS up front, before any BFS work at all -
         // Cypher.g4 forbids the unbounded -[:T*]-> form but places no ceiling on an explicit range, so
         // -[:T*1..100000]-> was previously accepted and attempted verbatim.
@@ -898,11 +1080,11 @@ public final class GraphTraversalEngine {
         }
         final long edgeTypeUid = resolvedEdgeTypeUid.get();
 
-        if (varLengthExpand.minHops() == 0 && rows.size() < rowCap) {
+        if (varLengthExpand.minHops() == 0 && rowSink.size() < rowCap) {
             // A zero-length path binds the target variable to the anchor node itself.
             final Optional<GraphNodeDb.NodeVersion> anchorNode = access.getNode(readTxn, anchorUid);
             anchorNode.ifPresent(node -> acceptVarLengthRow(readTxn, varLengthExpand, anchorRow, node,
-                    wherePredicate, rows));
+                    wherePredicate, rowSink));
         }
 
         // Task P7.2: a running total of BFS path-states explored across every depth of THIS call - guards the
@@ -911,12 +1093,12 @@ public final class GraphTraversalEngine {
         long pathStatesExplored = 1;
 
         List<PathState> frontier = List.of(new PathState(anchorUid, anchorRow, Set.of(anchorUid)));
-        for (int depth = 1; depth <= varLengthExpand.maxHops() && !frontier.isEmpty() && rows.size() < rowCap;
+        for (int depth = 1; depth <= varLengthExpand.maxHops() && !frontier.isEmpty() && rowSink.size() < rowCap;
                 depth++) {
             checkDeadline(deadline);
             final List<PathState> next = new ArrayList<>();
             for (final PathState state : frontier) {
-                if (rows.size() >= rowCap) {
+                if (rowSink.size() >= rowCap) {
                     break;
                 }
                 // Code-review fix: the deadline is checked as each neighbour is emitted from the adjacency
@@ -935,7 +1117,7 @@ public final class GraphTraversalEngine {
                         });
 
                 for (final long neighbourUid : neighbourUids) {
-                    if (rows.size() >= rowCap) {
+                    if (rowSink.size() >= rowCap) {
                         break;
                     }
                     checkDeadline(deadline);
@@ -957,7 +1139,7 @@ public final class GraphTraversalEngine {
                     row.putAll(rowFor(varLengthExpand.targetVariable(), target.get().properties()));
 
                     if (depth >= varLengthExpand.minHops()) {
-                        acceptVarLengthRow(readTxn, varLengthExpand, row, target.get(), wherePredicate, rows);
+                        acceptVarLengthRow(readTxn, varLengthExpand, row, target.get(), wherePredicate, rowSink);
                     }
                     if (depth < varLengthExpand.maxHops()) {
                         final Set<Long> visited = new HashSet<>(state.visited());
@@ -973,13 +1155,13 @@ public final class GraphTraversalEngine {
     private void acceptVarLengthRow(final Txn<ByteBuffer> readTxn, final VarLengthExpand varLengthExpand,
                                     final Map<String, Val> row, final GraphNodeDb.NodeVersion target,
                                     final Predicate<Map<String, Val>> wherePredicate,
-                                    final List<Map<String, Val>> rows) {
+                                    final RowSink rowSink) {
         if (!matchesTargetConstraint(
                 readTxn, varLengthExpand.targetLabels(), varLengthExpand.targetPropertyPredicate(), target)) {
             return;
         }
         if (wherePredicate.test(row)) {
-            rows.add(row);
+            rowSink.add(row);
         }
     }
 

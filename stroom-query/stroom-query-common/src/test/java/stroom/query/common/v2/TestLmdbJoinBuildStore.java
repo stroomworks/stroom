@@ -206,6 +206,23 @@ class TestLmdbJoinBuildStore {
     }
 
     @Test
+    void overLongProbeKey_returnsNoMatchCleanly() {
+        // A probe-side equi-key whose encoded form is too large to ever have been stored (see
+        // overLongKey_failsWithAClearError - put rejects a key this size) must be treated as a guaranteed miss,
+        // not overflow the fixed-size keyBuffer with a BufferOverflowException.
+        try (final LmdbJoinBuildStore store = newStore()) {
+            store.put(List.of("1"), row(1L, "Alice"));
+
+            final String hugeKey = "x".repeat(1_000);
+
+            assertThat(collect(store, List.of(hugeKey))).isEmpty();
+            assertThat(store.forEachMatch(List.of(hugeKey), r -> {
+                throw new AssertionError("should not be called for a miss");
+            })).isFalse();
+        }
+    }
+
+    @Test
     void close_deletesTheTemporaryDirectory() {
         final LmdbEnvDir envDir = newEnvDir();
         final LmdbJoinBuildStore store = new LmdbJoinBuildStore(envDir, testConfig());

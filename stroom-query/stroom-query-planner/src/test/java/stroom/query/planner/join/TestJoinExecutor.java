@@ -18,6 +18,8 @@ package stroom.query.planner.join;
 
 import stroom.query.language.functions.StateFetcher;
 import stroom.query.language.functions.Val;
+import stroom.query.language.functions.ValDouble;
+import stroom.query.language.functions.ValErr;
 import stroom.query.language.functions.ValLong;
 import stroom.query.language.functions.ValNull;
 import stroom.query.language.functions.ValString;
@@ -244,6 +246,85 @@ class TestJoinExecutor {
     }
 
     // ------------------------------------------------------------------------------------------------------
+    // keyOf numeric canonicalisation (F5 - see docs/query-graphdb-review-report.md): a numeric-typed equi-key
+    // component keys on its numeric value, so numerically-equal values of different numeric Val types now match,
+    // while non-numeric types (string in particular) keep their pre-existing toString() behaviour unchanged and
+    // a large long is never lossily round-tripped through double.
+    // ------------------------------------------------------------------------------------------------------
+
+    @ParameterizedTest
+    @EnumSource(value = JoinAlgorithm.class, names = {"HASH_JOIN", "NESTED_LOOP"})
+    void crossTypeNumericKeys_valLongAndValDouble_nowMatch(final JoinAlgorithm algorithm) {
+        // Before the F5 fix, keyOf's per-component Val.toString() could diverge between numeric Val types that
+        // hold the same numeric value; keyOf now canonicalises both ValLong(5) and ValDouble(5.0) to "5".
+        final Val[] left = new Val[]{ValLong.create(5), ValString.create("a")};
+        final Val[] right = new Val[]{ValDouble.create(5.0), ValLong.create(100)};
+        final Side leftSide = new Side(List.<Val[]>of(left), new int[]{0}, 2);
+        final Side rightSide = new Side(List.<Val[]>of(right), new int[]{0}, 2);
+
+        final List<Val[]> result = JoinExecutor.join(leftSide, rightSide, JoinType.INNER, algorithm);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.getFirst()).containsExactly(
+                ValLong.create(5), ValString.create("a"), ValDouble.create(5.0), ValLong.create(100));
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = JoinAlgorithm.class, names = {"HASH_JOIN", "NESTED_LOOP"})
+    void stringVsIntegerKey_stillMatches_unaffectedByNumericCanonicalisation(final JoinAlgorithm algorithm) {
+        // A string key is never reinterpreted as a number - this pre-existing match (ValString "5" alongside
+        // ValLong(5)'s "5" toString()) must survive the fix exactly as before.
+        final Val[] left = new Val[]{ValString.create("5"), ValString.create("a")};
+        final Val[] right = new Val[]{ValLong.create(5), ValLong.create(100)};
+        final Side leftSide = new Side(List.<Val[]>of(left), new int[]{0}, 2);
+        final Side rightSide = new Side(List.<Val[]>of(right), new int[]{0}, 2);
+
+        final List<Val[]> result = JoinExecutor.join(leftSide, rightSide, JoinType.INNER, algorithm);
+
+        assertThat(result).hasSize(1);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = JoinAlgorithm.class, names = {"HASH_JOIN", "NESTED_LOOP"})
+    void fractionalDoubleKeys_matchOnlyTheirExactCounterpart(final JoinAlgorithm algorithm) {
+        final Val[] leftFractional = new Val[]{ValDouble.create(5.5), ValString.create("a")};
+        final Val[] leftInteger = new Val[]{ValLong.create(5), ValString.create("b")};
+        final Side leftSide = new Side(List.of(leftFractional, leftInteger), new int[]{0}, 2);
+        final Side rightSide = new Side(
+                List.<Val[]>of(new Val[]{ValDouble.create(5.5), ValLong.create(100)}), new int[]{0}, 2);
+
+        final List<Val[]> result = JoinExecutor.join(leftSide, rightSide, JoinType.INNER, algorithm);
+
+        // 5.5 matches its exact double counterpart; the integer 5 must not fuzzily match the fractional 5.5.
+        assertThat(result).hasSize(1);
+        assertThat(result.getFirst()).containsExactly(
+                ValDouble.create(5.5), ValString.create("a"), ValDouble.create(5.5), ValLong.create(100));
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = JoinAlgorithm.class, names = {"HASH_JOIN", "NESTED_LOOP"})
+    void largeLongKey_precisionPreserved_neverRoundTrippedThroughDouble(final JoinAlgorithm algorithm) {
+        // 2^53 + 1 is the smallest positive long that cannot be represented exactly as a double - naively
+        // casting it to double and back collapses it to 2^53 (9_007_199_254_740_992), a different value. keyOf
+        // must key a LONG-typed Val on its exact long value (never round-tripped through double), so this large
+        // long must NOT collide with the double that a lossy round-trip would produce.
+        final long exact = 9_007_199_254_740_993L;
+        final long lossyRoundTrip = (long) (double) exact;
+        assertThat(lossyRoundTrip).isNotEqualTo(exact);
+
+        final Val[] left = new Val[]{ValLong.create(exact), ValString.create("a")};
+        final Side leftSide = new Side(List.<Val[]>of(left), new int[]{0}, 2);
+        final Side collidingRight = new Side(
+                List.<Val[]>of(new Val[]{ValDouble.create((double) lossyRoundTrip), ValLong.create(1)}),
+                new int[]{0}, 2);
+        final Side matchingRight = new Side(
+                List.<Val[]>of(new Val[]{ValLong.create(exact), ValLong.create(2)}), new int[]{0}, 2);
+
+        assertThat(JoinExecutor.join(leftSide, collidingRight, JoinType.INNER, algorithm)).isEmpty();
+        assertThat(JoinExecutor.join(leftSide, matchingRight, JoinType.INNER, algorithm)).hasSize(1);
+    }
+
+    // ------------------------------------------------------------------------------------------------------
     // broadcastLookupJoin (Task B1 - see docs/join-scalability-implementation-plan.md, decisions D5/D7/D8):
     // the enrichment-join fast path, streaming a probe side against a keyed StateFetcher lookup instead of
     // materialising the lookup side.
@@ -298,6 +379,64 @@ class TestJoinExecutor {
         assertThat(result).hasSize(1);
         assertThat(result.getFirst()).containsExactly(
                 ValLong.create(1), ValString.create("a"), ValNull.INSTANCE, ValNull.INSTANCE);
+    }
+
+    /** A fake {@link StateFetcher} that returns a {@link ValErr} for a specific key - simulating a failed
+     * lookup (e.g. a permission deny, or a key shape mismatched to the store's type) rather than a genuine
+     * miss. */
+    private static StateFetcher erroringStore(final String errorKey, final String message) {
+        return (map, key, effectiveTimeMs) -> errorKey.equals(key)
+                ? ValErr.create(message)
+                : ValNull.INSTANCE;
+    }
+
+    // F1/SEC-1 regression (docs/query-graphdb-review-report.md): a ValErr lookup result must never be treated
+    // as a match (and embedded as the joined Value) nor as a plain miss - it must abort the whole search.
+
+    @Test
+    void lookupReturnsValErr_innerJoin_throwsInsteadOfEmbeddingTheErrorAsAMatch() {
+        final StateFetcher store = erroringStore("1", "You are not authorised to read StateDoc");
+        final List<Val[]> result = new ArrayList<>();
+
+        assertThatThrownBy(() -> JoinExecutor.broadcastLookupJoin(
+                List.<Val[]>of(probeRow(1, "a")).iterator(), 0, 2, store, "users", 0L, JoinType.INNER,
+                Long.MAX_VALUE, result::add))
+                .isInstanceOf(BroadcastLookupFailedException.class)
+                .hasMessageContaining("users")
+                .hasMessageContaining("1")
+                .hasMessageContaining("You are not authorised to read StateDoc");
+
+        // No row - matched or otherwise - was ever emitted; the error never reaches the output as data.
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    void lookupReturnsValErr_leftJoin_alsoThrows_notNullPaddedLikeAGenuineMiss() {
+        final StateFetcher store = erroringStore("1", "boom");
+        final List<Val[]> result = new ArrayList<>();
+
+        assertThatThrownBy(() -> JoinExecutor.broadcastLookupJoin(
+                List.<Val[]>of(probeRow(1, "a")).iterator(), 0, 2, store, "users", 0L, JoinType.LEFT,
+                Long.MAX_VALUE, result::add))
+                .isInstanceOf(BroadcastLookupFailedException.class);
+
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    void lookupReturnsValNull_stillMissesCleanly_unaffectedByValErrHandling() {
+        // Same erroringStore, but probed with a key that misses (ValNull) rather than the one that errors -
+        // proves the ValNull miss path is completely unchanged by the new ValErr check.
+        final StateFetcher store = erroringStore("1", "boom");
+        final List<Val[]> result = new ArrayList<>();
+
+        JoinExecutor.broadcastLookupJoin(
+                List.<Val[]>of(probeRow(2, "b")).iterator(), 0, 2, store, "users", 0L, JoinType.LEFT,
+                Long.MAX_VALUE, result::add);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.getFirst()).containsExactly(
+                ValLong.create(2), ValString.create("b"), ValNull.INSTANCE, ValNull.INSTANCE);
     }
 
     @Test

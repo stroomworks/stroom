@@ -56,6 +56,7 @@ import stroom.query.common.v2.SpillingBuildSideLookup;
 import stroom.query.language.SearchRequestFactory;
 import stroom.query.language.functions.FieldIndex;
 import stroom.query.language.functions.Val;
+import stroom.query.language.functions.ValErr;
 import stroom.query.language.functions.ValLong;
 import stroom.query.language.functions.ValNull;
 import stroom.query.language.functions.ValString;
@@ -957,6 +958,46 @@ class TestJoinSearchProvider {
 
         assertThat(resultStore.getErrors())
                 .anySatisfy(error -> assertThat(error.getMessage()).contains("join output row count"));
+    }
+
+    @Test
+    void broadcastLookup_lookupReturnsValErr_reportsAClearError_insteadOfEmbeddingItAsAMatchedRow() {
+        // F1/SEC-1 regression (docs/query-graphdb-review-report.md): a failed lookup (e.g. a permission deny,
+        // surfaced here as a ValErr, exactly as StateProviderImpl.getState used to swallow one into) must fail
+        // the search via the normal ResultStore.addError path - never be embedded as the joined Value column.
+        final SearchProvider probeProvider = fakeSideProvider(
+                LEFT_DATA_SOURCE, List.of("UserId"), List.<Val[]>of(new Val[]{ValLong.create(1)}));
+        final stroom.query.language.functions.StateFetcher stateFetcher =
+                (map, key, effectiveTimeMs) -> ValErr.create("You are not authorised to read StateDoc");
+
+        final ResultStore resultStore = provider(
+                registry(probeProvider, planBProviderThatMustNeverBeRealised()),
+                DEFAULT_JOIN_CONFIG_PROVIDER, stateFetcher)
+                .createResultStore(lookupOuterRequest(
+                        ExpressionOperator.builder().build(), JoinSpec.JoinType.INNER, false));
+
+        assertThat(resultStore.getErrors())
+                .anySatisfy(error -> assertThat(error.getMessage())
+                        .contains("You are not authorised to read StateDoc"));
+        // No row - matched or otherwise - was produced; the error never reaches the output as row data.
+        assertThat(readTableRows(resultStore)).isEmpty();
+    }
+
+    @Test
+    void broadcastLookup_lookupReturnsValErr_leftJoin_alsoReportsAnError_notNullPaddedLikeAMiss() {
+        final SearchProvider probeProvider = fakeSideProvider(
+                LEFT_DATA_SOURCE, List.of("UserId"), List.<Val[]>of(new Val[]{ValLong.create(1)}));
+        final stroom.query.language.functions.StateFetcher stateFetcher =
+                (map, key, effectiveTimeMs) -> ValErr.create("boom");
+
+        final ResultStore resultStore = provider(
+                registry(probeProvider, planBProviderThatMustNeverBeRealised()),
+                DEFAULT_JOIN_CONFIG_PROVIDER, stateFetcher)
+                .createResultStore(lookupOuterRequest(
+                        ExpressionOperator.builder().build(), JoinSpec.JoinType.LEFT, false));
+
+        assertThat(resultStore.getErrors()).isNotEmpty();
+        assertThat(readTableRows(resultStore)).isEmpty();
     }
 
     @Test

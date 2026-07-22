@@ -29,6 +29,7 @@ import stroom.pipeline.errorhandler.ErrorReceiver;
 import stroom.pipeline.errorhandler.ErrorReceiverProxy;
 import stroom.pipeline.errorhandler.FatalErrorReceiver;
 import stroom.pipeline.util.ProcessorUtil;
+import stroom.planb.impl.dao.LmdbWriter;
 import stroom.query.api.DateTimeSettings;
 import stroom.query.common.v2.ExpressionPredicateFactory;
 import stroom.query.grammar.parse.CypherQueryParser;
@@ -46,11 +47,14 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Task P2.3's Done-when: {@code MATCH (d:Device {id:'d-42'})-[:CONNECTED_TO]->(a:Account) RETURN a.id} - the
@@ -286,6 +290,72 @@ class TestGraphFilter {
     }
 
     @Test
+    void partialEdgeWrite_isAbortedAtomically_precedingAndFollowingRecordsUnaffected(@TempDir final Path root) {
+        // Regression test for finding F4 (docs/query-graphdb-review-report.md; "Batch 1" write-up in
+        // docs/query-graphdb-review-findings.md): addEdge's dual out-edge/in-edge insert used to share one
+        // long-lived, batch-committed LmdbWriter with every other record - if the second of the two writes
+        // threw after the first had already succeeded, the one-sided partial write was only logged, never
+        // rolled back, so it rode along staged until the writer's next batch-commit threshold silently
+        // persisted it as a one-sided edge. GraphFilter.perRecord now owns a commit-on-success/abort-on-failure
+        // boundary per record instead.
+        //
+        // This drives the same GraphStores/LmdbWriter/DAOs GraphFilter itself uses, replicating perRecord's
+        // exact protocol by hand, rather than through XML/SAX ingest: a well-formed graph-mutation:1 document
+        // can never supply the one input - a null property Val - needed to fail only the *second* of the two
+        // dual writes while the first succeeds. GraphFilter.toVals always wraps XML property text as a
+        // non-null ValString, and every real store-layer bound (e.g. GraphNodeDb's label-count guard) is
+        // otherwise enforced identically for both the out-edge and in-edge call given the same properties, so
+        // it always fails both writes or neither. A null Val reliably fails only the in-edge call (the second
+        // write) with a NullPointerException deep inside ValSerdeUtil - the same "later write throws after an
+        // earlier one already succeeded" shape as any other store-layer failure.
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph-f4"), DOC)) {
+            final long srcUid = internNode(stores, "src");
+            final long dstUid = internNode(stores, "dst");
+            final long goodType = internEdgeType(stores, "GOOD");
+            final long poisonType = internEdgeType(stores, "POISON");
+            final long laterType = internEdgeType(stores, "LATER");
+            final Instant validFrom = Instant.parse("2026-01-01T00:00:00.000Z");
+
+            try (LmdbWriter writer = stores.createWriter()) {
+                // Preceding record: both writes succeed, then committed - mirrors perRecord's success path.
+                stores.getOutEdges().insert(writer, srcUid, goodType, dstUid, validFrom, Map.of());
+                stores.getInEdges().insert(writer, srcUid, goodType, dstUid, validFrom, Map.of());
+                writer.commit();
+
+                // The failing record: the out-edge insert (first write) succeeds; the in-edge insert (second
+                // write, same record) throws. perRecord's catch block aborts instead of committing.
+                final Map<String, Val> poisonProperties = new LinkedHashMap<>();
+                poisonProperties.put("bad", null);
+                stores.getOutEdges().insert(writer, srcUid, poisonType, dstUid, validFrom, Map.of());
+                assertThatThrownBy(() -> stores.getInEdges()
+                        .insert(writer, srcUid, poisonType, dstUid, validFrom, poisonProperties))
+                        .isInstanceOf(RuntimeException.class);
+                writer.abort();
+
+                // Following record: a fresh write on the same writer, after the abort, must still succeed.
+                stores.getOutEdges().insert(writer, srcUid, laterType, dstUid, validFrom, Map.of());
+                stores.getInEdges().insert(writer, srcUid, laterType, dstUid, validFrom, Map.of());
+                writer.commit();
+            }
+
+            assertThat(outNeighbours(stores, srcUid, goodType, validFrom))
+                    .as("preceding record's out-edge").containsExactly(dstUid);
+            assertThat(inNeighbours(stores, dstUid, goodType, validFrom))
+                    .as("preceding record's in-edge").containsExactly(srcUid);
+
+            assertThat(outNeighbours(stores, srcUid, poisonType, validFrom))
+                    .as("failing record's out-edge must be rolled back, not left one-sided").isEmpty();
+            assertThat(inNeighbours(stores, dstUid, poisonType, validFrom))
+                    .as("failing record's in-edge was never written").isEmpty();
+
+            assertThat(outNeighbours(stores, srcUid, laterType, validFrom))
+                    .as("following record's out-edge").containsExactly(dstUid);
+            assertThat(inNeighbours(stores, dstUid, laterType, validFrom))
+                    .as("following record's in-edge").containsExactly(srcUid);
+        }
+    }
+
+    @Test
     void nodeUpdate_unchangedPropertyAnchorStillResolves(@TempDir final Path root) {
         try (GraphStores stores = GraphStores.provision(root.resolve("graph6"), DOC)) {
             ingest(stores, """
@@ -443,6 +513,34 @@ class TestGraphFilter {
         final GraphTraversalEngine engine = new GraphTraversalEngine(stores, new ExpressionPredicateFactory());
         return stores.read(readTxn -> engine.execute(readTxn, compiled.plan(), compiled.temporalContext(),
                 DateTimeSettings.builder().build()));
+    }
+
+    private static long internNode(final GraphStores stores, final String id) {
+        return stores.write(writer -> stores.getNodeUids().put(
+                writer.getWriteTxn(), directBuffer(id), buf -> readUid(buf)));
+    }
+
+    private static long internEdgeType(final GraphStores stores, final String type) {
+        return stores.write(writer -> stores.getEdgeTypeUids().put(
+                writer.getWriteTxn(), directBuffer(type), buf -> readUid(buf)));
+    }
+
+    private static List<Long> outNeighbours(final GraphStores stores, final long srcUid, final long edgeTypeUid,
+                                            final Instant asOf) {
+        return stores.read(readTxn -> {
+            final List<Long> out = new ArrayList<>();
+            stores.getOutEdges().expandOut(readTxn, srcUid, edgeTypeUid, asOf, n -> out.add(n.dstUid()));
+            return out;
+        });
+    }
+
+    private static List<Long> inNeighbours(final GraphStores stores, final long dstUid, final long edgeTypeUid,
+                                           final Instant asOf) {
+        return stores.read(readTxn -> {
+            final List<Long> in = new ArrayList<>();
+            stores.getInEdges().expandIn(readTxn, dstUid, edgeTypeUid, asOf, n -> in.add(n.srcUid()));
+            return in;
+        });
     }
 
     private static long readUid(final ByteBuffer uidBuffer) {

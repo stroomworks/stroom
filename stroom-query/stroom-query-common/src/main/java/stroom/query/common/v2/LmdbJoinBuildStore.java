@@ -87,6 +87,13 @@ public final class LmdbJoinBuildStore implements BuildSideLookup {
      */
     private static final int MAX_KEY_SIZE = 511;
 
+    /**
+     * The largest an {@link #encodeKey} result can be and still be storable (i.e. still fit
+     * {@link #MAX_KEY_SIZE} once the 8-byte sequence suffix {@link #dbKey} appends is added). A probe key whose
+     * encoded form exceeds this can never equal a stored key - see {@link #prefixKey}.
+     */
+    private static final int MAX_STORABLE_KEY_SIZE = MAX_KEY_SIZE - Long.BYTES;
+
     /** How many rows to buffer in the write txn before committing, to bound uncommitted dirty-page memory. */
     private static final int COMMIT_INTERVAL_ROWS = 50_000;
 
@@ -173,6 +180,11 @@ public final class LmdbJoinBuildStore implements BuildSideLookup {
         finishBuilding();
 
         final ByteBuffer prefix = prefixKey(key);
+        if (prefix == null) {
+            // The probe key's encoded form is too large to ever have been stored (see prefixKey) - a guaranteed
+            // miss, so skip the scan entirely rather than overflowing the fixed keyBuffer.
+            return false;
+        }
         final boolean[] matched = {false};
         // Prefix scan over encode(key) yields this key's rows in insertion order (dbKey = encode(key) ++ monotonic
         // sequence). Each row is deserialised and handed to the consumer as it is read - never accumulated - so a
@@ -243,10 +255,22 @@ public final class LmdbJoinBuildStore implements BuildSideLookup {
         return keyBuffer;
     }
 
-    /** Fills {@link #keyBuffer} with just {@code encode(key)} - the prefix scanned by {@link #get}. */
+    /**
+     * Fills {@link #keyBuffer} with just {@code encode(key)} - the prefix scanned by {@link #forEachMatch}.
+     *
+     * <p>Returns {@code null} if {@code encode(key)} is too large to ever have been stored (exceeds
+     * {@link #MAX_STORABLE_KEY_SIZE}, the largest encoded key {@link #dbKey} accepts). Every stored key is
+     * {@code encode(storedKey) ++ 8-byte sequence} and {@link #dbKey} rejects anything larger, so an over-length
+     * probe key can never match a stored one - callers must treat a {@code null} return as a guaranteed miss rather
+     * than putting it in the fixed-size {@link #keyBuffer}, which would overflow.</p>
+     */
     private ByteBuffer prefixKey(final List<String> key) {
+        final byte[] encoded = encodeKey(key);
+        if (encoded.length > MAX_STORABLE_KEY_SIZE) {
+            return null;
+        }
         keyBuffer.clear();
-        keyBuffer.put(encodeKey(key));
+        keyBuffer.put(encoded);
         keyBuffer.flip();
         return keyBuffer;
     }
