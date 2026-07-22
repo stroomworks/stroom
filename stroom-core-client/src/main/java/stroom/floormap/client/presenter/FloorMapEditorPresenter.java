@@ -134,6 +134,9 @@ public class FloorMapEditorPresenter
     /** Slot for the interactive map canvas. */
     public static final Object MAIN = new Object();
 
+    /** Slot for the right-hand dock (empty until the Layers panel lands). */
+    public static final Object DOCK = new Object();
+
     /**
      * Slot for the timeline scrubber.
      * Fixed-height — stored in {@code FloorMapEditorViewImpl.TIMELINE_HEIGHT}.
@@ -156,6 +159,7 @@ public class FloorMapEditorPresenter
     private final FloorMapFactListPresenter floorMapFactListPresenter;
     private final FloorMapTimeListPresenter floorMapTimeListPresenter;
     private final FloorMapObjectEditPresenter floorMapObjectEditPresenter;
+    private final FloorMapDockPresenter floorMapDockPresenter;
 
     /** The GWT-free model containing all shared state and pure logic. */
     private final FloorMapEditorModel model;
@@ -173,6 +177,12 @@ public class FloorMapEditorPresenter
      * active (via {@link HasToolbar#getToolbars()}).
      */
     private final ButtonPanel helpToolbar;
+
+    /**
+     * Toolbar toggle that shows/hides the right-hand dock. Off by default on the
+     * Editor tab, whose dock is empty until the Layers panel lands.
+     */
+    private final InlineSvgToggleButton dockToggleButton;
 
     /**
      * When the user enables area support on a document whose schema/type styles
@@ -202,7 +212,8 @@ public class FloorMapEditorPresenter
                                    final Provider<FloorMapTimelinePresenter> timelineProvider,
                                    final Provider<FloorMapFactListPresenter> factListProvider,
                                    final Provider<FloorMapTimeListPresenter> timeListProvider,
-                                   final Provider<FloorMapObjectEditPresenter> propertiesProvider) {
+                                   final Provider<FloorMapObjectEditPresenter> propertiesProvider,
+                                   final Provider<FloorMapDockPresenter> dockProvider) {
         super(eventBus, view);
         this.restFactory = restFactory;
         this.model = new FloorMapEditorModel(
@@ -215,6 +226,7 @@ public class FloorMapEditorPresenter
         this.floorMapFactListPresenter = factListProvider.get();
         this.floorMapTimeListPresenter = timeListProvider.get();
         this.floorMapObjectEditPresenter = propertiesProvider.get();
+        this.floorMapDockPresenter = dockProvider.get();
 
         // Always in edit mode, with the grid overlay shown as an editing aid.
         floorMapCanvasPresenter.setEditMode(true);
@@ -226,6 +238,13 @@ public class FloorMapEditorPresenter
         showGridButton.setSvg(SvgImage.TABLE);
         showGridButton.setTitle("Show Grid");
         showGridButton.setState(true);
+
+        // Show/hide the right-hand dock; off by default (the Editor dock is
+        // empty until the Layers panel lands). The view also starts it hidden.
+        dockToggleButton = new InlineSvgToggleButton();
+        dockToggleButton.setSvg(SvgImage.SHOW_MENU);
+        dockToggleButton.setTitle("Show Controls");
+        dockToggleButton.setState(false);
         // Persist a drag as a single translate of the whole selection.
         floorMapCanvasPresenter.setDragHandler(this::onFactsTransformed);
         floorMapCanvasPresenter.setSelectionHandler(this::onCanvasSelectionChanged);
@@ -242,6 +261,7 @@ public class FloorMapEditorPresenter
         floorMapTimelinePresenter.setHelpContent(FloorMapEditorHelp.timeline());
 
         setInSlot(MAIN, floorMapCanvasPresenter);
+        setInSlot(DOCK, floorMapDockPresenter);
         setInSlot(TIMELINE, floorMapTimelinePresenter);
         setInSlot(FACT_LIST, floorMapFactListPresenter);
         setInSlot(TIME_LIST, floorMapTimeListPresenter);
@@ -256,6 +276,9 @@ public class FloorMapEditorPresenter
         //noinspection unused e
         registerHandler(showGridButton.addClickHandler(e ->
                 floorMapCanvasPresenter.setShowGrid(showGridButton.getState())));
+        //noinspection unused e
+        registerHandler(dockToggleButton.addClickHandler(e ->
+                getView().setDockVisible(dockToggleButton.getState())));
 
         // ---- Timeline events ------------------------------------------------
         registerHandler(getEventBus().addHandler(TimeChangeEvent.getType(), event -> {
@@ -320,6 +343,7 @@ public class FloorMapEditorPresenter
     public List<Widget> getToolbars() {
         final ButtonPanel gridToolbar = new ButtonPanel();
         gridToolbar.addButton(showGridButton);
+        gridToolbar.addButton(dockToggleButton);
         return Arrays.asList(gridToolbar, helpToolbar);
     }
 
@@ -1628,11 +1652,17 @@ public class FloorMapEditorPresenter
     /**
      * View interface for the Editor tab.
      *
-     * <p>No custom methods are needed here — all child content is routed
-     * through GWTP's standard {@link com.gwtplatform.mvp.client.View#setInSlot}
-     * mechanism, overridden in {@link stroom.floormap.client.view.FloorMapEditorViewImpl}.</p>
+     * <p>Child content is routed through GWTP's standard
+     * {@link com.gwtplatform.mvp.client.View#setInSlot} mechanism, overridden in
+     * {@link stroom.floormap.client.view.FloorMapEditorViewImpl}.</p>
      */
     public interface FloorMapEditorView extends View {
 
+        /**
+         * Shows or hides the right-hand dock, preserving its dragged width.
+         *
+         * @param visible {@code true} to show the dock, {@code false} to hide it
+         */
+        void setDockVisible(boolean visible);
     }
 }

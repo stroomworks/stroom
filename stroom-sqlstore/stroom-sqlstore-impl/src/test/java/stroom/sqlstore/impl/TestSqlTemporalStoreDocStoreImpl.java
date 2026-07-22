@@ -137,7 +137,7 @@ class TestSqlTemporalStoreDocStoreImpl {
 
     private SqlTemporalStoreDocStoreImpl getStore() {
         when(mockStoreFactory.<SqlTemporalStoreDoc, SqlTemporalStoreDoc.Builder>createStore(
-                any(), eq(SqlTemporalStoreDoc.TYPE), any(), any()))
+                any(), eq(SqlTemporalStoreDoc.TYPE), any(), any(), null))
                 .thenReturn(mockStore);
         return new SqlTemporalStoreDocStoreImpl(mockStoreFactory, mockSerialiser);
     }

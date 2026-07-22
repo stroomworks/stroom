@@ -76,7 +76,8 @@ import java.util.Map;
  * <h3>Layout slots</h3>
  * <ul>
  *     <li>{@link #MAP} – the {@link FloorMapCanvasPresenter} (canvas / visualisation)</li>
- *     <li>{@link #ENTITY_LIST} – the {@link FloorMapEntityListPresenter} (entity tracking panel)</li>
+ *     <li>{@link #DOCK} – the {@link FloorMapDockPresenter} (right-hand dock; hosts the
+ *     {@link FloorMapEntityListPresenter} tracking panel as its first tab)</li>
  *     <li>{@link #TIMELINE} – the {@link FloorMapTimelinePresenter} (timeline scrubber)</li>
  * </ul>
  *
@@ -89,7 +90,7 @@ public class FloorMapMapPresenter
         implements HasToolbar {
 
     public static final Object MAP = new Object();
-    public static final Object ENTITY_LIST = new Object();
+    public static final Object DOCK = new Object();
     public static final Object TIMELINE = new Object();
     private static final int HISTOGRAM_BINS = 100;
 
@@ -97,6 +98,7 @@ public class FloorMapMapPresenter
     private final FloorMapTimelinePresenter floorMapTimelinePresenter;
     private final FloorMapObjectEditPresenter floorMapObjectEditPresenter;
     private final FloorMapEntityListPresenter floorMapEntityListPresenter;
+    private final FloorMapDockPresenter floorMapDockPresenter;
 
     /** Roster of every entity seen on the map, feeding the tracking panel. */
     private final FloorMapEntityList entityList = new FloorMapEntityList();
@@ -113,6 +115,12 @@ public class FloorMapMapPresenter
      * opt-in (unlike the Editor tab, where it defaults on).
      */
     private final InlineSvgToggleButton showGridButton;
+
+    /**
+     * Toolbar toggle that shows/hides the right-hand dock. On by default on the
+     * Map tab, which always has the Tracking panel to show.
+     */
+    private final InlineSvgToggleButton dockToggleButton;
 
     private long selectedTime;
 
@@ -156,27 +164,38 @@ public class FloorMapMapPresenter
                                 final Provider<FloorMapCanvasPresenter> floorMapCanvasPresenterProvider,
                                 final Provider<FloorMapTimelinePresenter> floorMapTimelinePresenterProvider,
                                 final Provider<FloorMapObjectEditPresenter> floorMapObjectEditPresenterProvider,
-                                final Provider<FloorMapEntityListPresenter> floorMapEntityListPresenterProvider) {
+                                final Provider<FloorMapEntityListPresenter> floorMapEntityListPresenterProvider,
+                                final Provider<FloorMapDockPresenter> floorMapDockPresenterProvider) {
         super(eventBus, view);
 
         this.floorMapCanvasPresenter = floorMapCanvasPresenterProvider.get();
         this.floorMapTimelinePresenter = floorMapTimelinePresenterProvider.get();
         this.floorMapObjectEditPresenter = floorMapObjectEditPresenterProvider.get();
         this.floorMapEntityListPresenter = floorMapEntityListPresenterProvider.get();
+        this.floorMapDockPresenter = floorMapDockPresenterProvider.get();
 
         // Default initial time
         this.selectedTime = System.currentTimeMillis();
 
+        // The Tracking panel now lives as the first tab of the right-hand dock.
+        floorMapDockPresenter.addTab("Tracking", floorMapEntityListPresenter);
+
         setInSlot(MAP, floorMapCanvasPresenter);
-        setInSlot(ENTITY_LIST, floorMapEntityListPresenter);
+        setInSlot(DOCK, floorMapDockPresenter);
         setInSlot(TIMELINE, floorMapTimelinePresenter);
 
         // Grid on/off toggle, surfaced next to the save buttons (HasToolbar).
         // SvgImage has no dedicated grid glyph; TABLE renders as a grid of cells.
         showGridButton = new InlineSvgToggleButton();
         showGridButton.setSvg(SvgImage.TABLE);
-        showGridButton.setTitle("Show Grid");
+        showGridButton.setTitle("Toggle Grid");
         showGridButton.setState(false);
+
+        // Show/hide the right-hand dock
+        dockToggleButton = new InlineSvgToggleButton();
+        dockToggleButton.setSvg(SvgImage.SHOW_MENU);
+        dockToggleButton.setTitle("Toggle Controls");
+        dockToggleButton.setState(true);
 
         // Result component to parse and handle Facts query results
         final ResultComponent resultConsumer = new ResultComponent() {
@@ -242,6 +261,9 @@ public class FloorMapMapPresenter
         //noinspection unused e
         registerHandler(showGridButton.addClickHandler(e ->
                 floorMapCanvasPresenter.setShowGrid(showGridButton.getState())));
+        //noinspection unused e
+        registerHandler(dockToggleButton.addClickHandler(e ->
+                getView().setDockVisible(dockToggleButton.getState())));
 
         // Only react to this tab's own timeline — the Editor tab has its own
         // timeline firing the same event type, and the tabs must not time-sync.
@@ -321,6 +343,7 @@ public class FloorMapMapPresenter
     public List<Widget> getToolbars() {
         final ButtonPanel toolbar = new ButtonPanel();
         toolbar.addButton(showGridButton);
+        toolbar.addButton(dockToggleButton);
         return Collections.singletonList(toolbar);
     }
 
@@ -803,5 +826,11 @@ public class FloorMapMapPresenter
 
     public interface FloorMapMapView extends View {
 
+        /**
+         * Shows or hides the right-hand dock, preserving its dragged width.
+         *
+         * @param visible {@code true} to show the dock, {@code false} to hide it
+         */
+        void setDockVisible(boolean visible);
     }
 }
