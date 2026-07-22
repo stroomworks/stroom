@@ -394,6 +394,7 @@ RETURN a.id, c.startTime</code></pre>
   <li><strong>Single valid-time axis.</strong> Bitemporal (separate transaction time) is deliberately deferred.</li>
   <li><strong>Subset Cypher.</strong> The temporal clauses attach to a defined Cypher subset; a query currently lowers a single reading clause. Anything outside the subset is a parse-time error by design.</li>
   <li><strong>Query-side, not rendering.</strong> <code>RETURN GRAPH</code> defines the element-row contract the UI consumes; the actual force-directed / time-scrubbed rendering is separate UI work.</li>
+  <li><strong>Properties are string-typed (v1).</strong> Graph properties are currently stored and compared as strings (a deferred typing decision), so type-sensitive operations use best-effort string coercion: <code>ORDER BY</code> on a numeric property sorts <em>lexically</em> (<code>"10"</code> before <code>"9"</code>), numeric aggregates and <code>WHERE</code> comparisons coerce from the string form, and <code>RETURN GRAPH</code> renders numbers as quoted JSON strings. Model numeric/date values with this in mind (e.g. zero-pad, or normalise on ingest) until typed properties land.</li>
 </ul>
 
 <h2 id="reading">10. Further reading</h2>

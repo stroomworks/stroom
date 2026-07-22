@@ -10,6 +10,8 @@ No permission bypass, no data loss on valid happy-path queries, and the core eng
 
 17 confirmed findings (2 HIGH, 4 MED-HIGH, 4 MED, 3 LOW-MED, 4 LOW); 0 rejected. 3 strong positives.
 
+> **Remediation update:** the must-fix set is now addressed in the working tree — **F1, F3, F4, F5, F6 fixed** (each with the regression test it lacked); **F2 deferred by decision** (documented known-limitation). F7–F17 remain open. See **Remediation status** below.
+
 ## Ranked findings
 
 | ID | Sev | Area | Finding | Key location | Fix |
@@ -42,6 +44,21 @@ No permission bypass, no data loss on valid happy-path queries, and the core eng
 - **F6** — a routine "no match" can crash a spilling join.
 
 Each also needs the **regression test it currently lacks** (see below) — every one of these lives in an untested corner (Batch 5).
+
+## Remediation status (F1–F6)
+
+All six must-fix findings addressed in the working tree (pending commit), each with the regression test it previously lacked; per-module Checkstyle + tests pass, and a combined build across all affected modules confirms they integrate.
+
+| Finding | Status | What changed |
+|---|---|---|
+| **F1** (+SEC-1) | ✅ Fixed | `JoinExecutor.broadcastLookupProbe` throws `BroadcastLookupFailedException` on a `ValErr` (surfaced via `ResultStore.addError`) instead of treating it as a match; `StateProviderImpl` no longer swallows exceptions — real errors (incl. permission-deny) propagate, confirmed absence → `ValNull`. |
+| **F2** | ⏸ Deferred (by decision) | Graph properties stay `ValString`; the string-coercion limitation (lexical `ORDER BY`, coerced aggregates, string-rendered `RETURN GRAPH` numerics) is a documented v1 known-limitation. F5's residual is coupled to this. |
+| **F3** | ✅ Fixed | `GraphTraversalEngine` hard `MAX_ACCUMULATED_ROWS` ceiling (1,000,000, tunable) fails loud across every query shape; bounded top-N heap for `ORDER BY … LIMIT`. `ORDER BY+LIMIT+DISTINCT` stays ceiling-guarded (documented follow-up). |
+| **F4** | ✅ Fixed | New additive `LmdbWriter.abort()` (other Plan B users unaffected); `GraphFilter.perRecord` commits-on-success / aborts-on-failure per record → each record atomic. Trades the 10k-change batching for correctness (accepted). *Reachability note: the edge dual-write can't partially fail via XML (identical bounds), but `addNode`'s node + property-index writes can — the fix covers both.* |
+| **F5** | ✅ Fixed | `JoinExecutor.keyOf` canonicalises numeric-typed keys so `5`/`5.0`/`"5"` match; integer values kept exact (no `double` round-trip); string/date/null unchanged; purely additive. Divergent-date residual documented. |
+| **F6** | ✅ Fixed | `LmdbJoinBuildStore.prefixKey` returns a guaranteed miss for an over-length probe key instead of throwing `BufferOverflowException`. |
+
+**F7–F17 remain open** (EXPLAIN-only, design limitations, low-likelihood edges) — see the ranked table.
 
 ## Coverage matrix
 
