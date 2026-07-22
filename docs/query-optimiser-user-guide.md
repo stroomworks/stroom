@@ -88,6 +88,9 @@ plan** → **rewrite rules** → a **cost model** → a `SearchRequest` for the 
 Be aware of the current boundaries:
 
 - **Only a single join** (two sources). N-way join chains are rejected with a clear message.
+- **`alias.field` needs a distinct alias.** A field written `a.b` is read as *alias `a`, field `b`* whenever `a`
+  is a join alias in scope — there is no escape for a field whose literal name contains a dot that collides with
+  an alias (rare, but it would mis-bind). Avoid dotted field names in a query that also aliases a source `a`.
 - **Joins realise each side in full before filtering.** A join's `where` clause is evaluated *after* the two
   sides are combined, not pushed down to pre-filter each side — correct, but each side scans everything first
   (an efficiency optimisation, not a correctness gap; see [§8](#8-where-the-system-goes-next)).
@@ -95,8 +98,9 @@ Be aware of the current boundaries:
 - **Index and State cost signals are placeholders.** The cost model has a real adapter for stream/meta counts,
   but the per-index-shard and per-state-store cost adapters are stubs today, so `EXPLAIN` for index/state scans
   returns a low-confidence fallback estimate rather than a measured one.
-- **No domain-relationship (multi-entity) joins**, no automatic value canonicalisation across sources, no
-  statistics-calibrated selectivity — all explicitly future work.
+- **No domain-relationship (multi-entity) joins**, no statistics-calibrated selectivity — future work. Equi-keys
+  *are* canonicalised for numeric types (so `5`, `5.0` and `"5"` match across sources); divergent **date** formats
+  across sources are not canonicalised.
 - **Cost duration ignores cluster parallelism** — it's modelled as if on a single node.
 
 None of these produce *wrong* results — they either reject cleanly (with a message) or degrade to a

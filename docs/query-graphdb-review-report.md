@@ -10,7 +10,7 @@ No permission bypass, no data loss on valid happy-path queries, and the core eng
 
 17 confirmed findings (2 HIGH, 4 MED-HIGH, 4 MED, 3 LOW-MED, 4 LOW); 0 rejected. 3 strong positives.
 
-> **Remediation update:** the must-fix set is now addressed in the working tree — **F1, F3, F4, F5, F6 fixed** (each with the regression test it lacked); **F2 deferred by decision** (documented known-limitation). F7–F17 remain open. See **Remediation status** below.
+> **Remediation update:** all findings are now addressed. **F1, F3, F4, F5, F6 fixed** (each with a regression test); **F2 deferred by decision** (documented); **F7, F10, F11, F12, F15, F16 fixed**; **F8, F9, F13, F14 documented**; **F17 accepted** as consistent with Stroom's convention. Combined builds green. See **Remediation status** below.
 
 ## Ranked findings
 
@@ -58,7 +58,23 @@ All six must-fix findings addressed in the working tree (pending commit), each w
 | **F5** | ✅ Fixed | `JoinExecutor.keyOf` canonicalises numeric-typed keys so `5`/`5.0`/`"5"` match; integer values kept exact (no `double` round-trip); string/date/null unchanged; purely additive. Divergent-date residual documented. |
 | **F6** | ✅ Fixed | `LmdbJoinBuildStore.prefixKey` returns a guaranteed miss for an over-length probe key instead of throwing `BufferOverflowException`. |
 
-**F7–F17 remain open** (EXPLAIN-only, design limitations, low-likelihood edges) — see the ranked table.
+### F7–F17
+
+| Finding | Status | Resolution |
+|---|---|---|
+| **F7** | ✅ Fixed | `resolveTemporal` rejects a reversed `AROUND`/`BETWEEN` window (`from > to`) with a positioned `CypherCompileException`, mirroring `DiffContext`. |
+| **F8** | 📄 Documented | Variable-length is node-simple, not relationship-unique — noted as a known divergence in temporal-features §9. |
+| **F9** | 📄 Documented | No multigraph (edges keyed by source/type/target) — noted in temporal-features §9. |
+| **F10** | ✅ Fixed | `PushFiltersBelowJoinsRule` is now join-type-aware (no right-side push for `LEFT`); `LogicalPlanExplainer` propagates `Filter(Scan)` cost so filtered joins get a real annotation. EXPLAIN-only — execution was already correct. |
+| **F11** | ✅ Fixed | `collectNeighbours` BOTH branch skips a self-loop on the in-pass, emitting it once. |
+| **F12** | ✅ Fixed | `SearchProviderRegistryImpl.putOrFail` fails fast on a duplicate datasource type (verified no current collision). |
+| **F13** | 📄 Documented | Scalar-vs-`RETURN GRAPH` `MODIFIED` basis — noted in temporal-features §9. |
+| **F14** | 📄 Documented | `alias.field` needs a distinct alias — noted in the optimiser user-guide limitations. |
+| **F15** | ✅ Fixed | `UidLookupDb.put` rolls back `maxId` on an encode failure. |
+| **F16** | ✅ Fixed | Enrichment cache size configurable via `PlanBConfig.getStateValueCache()` (default 1000). |
+| **F17** | ✅ Accepted | Disclosing the docref in a permission error is consistent with Stroom's convention elsewhere; no change (genericising it would cost diagnostics). |
+
+**Review fully remediated.** Fixed: F1, F3, F4, F5, F6, F7, F10, F11, F12, F15, F16 (all with regression tests). Documented: F2 (deferred), F8, F9, F13, F14. Accepted: F17. Combined builds across all affected modules pass.
 
 ## Coverage matrix
 
