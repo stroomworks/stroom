@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stroom Query Engine — Developer Guide</title>
+<style>
+  :root {
+    --bg: #f7f8fa; --surface: #ffffff; --text: #1c2530; --muted: #5a6675; --border: #dfe3e9;
+    --accent: #2f6fb0; --accent-soft: #e8f1fb; --new-fill: #fff4e6; --new-stroke: #e08a1e;
+    --box-fill: #eef2f7; --box-stroke: #9fb3c8; --graph-fill: #eaf6ee; --graph-stroke: #3f9d63;
+    --arrow: #6b7787; --code-bg: #f0f2f5; --code-text: #23303d; --th-bg: #eef2f7;
+    --shadow: 0 1px 3px rgba(20,30,45,.08), 0 6px 20px rgba(20,30,45,.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #10151b; --surface: #171e26; --text: #dbe3ec; --muted: #93a1b1; --border: #2a333e;
+      --accent: #6aa9e0; --accent-soft: #1b2836; --new-fill: #2e2413; --new-stroke: #d8942f;
+      --box-fill: #202a35; --box-stroke: #46586b; --graph-fill: #16281d; --graph-stroke: #4f9e6b;
+      --arrow: #8895a5; --code-bg: #0f151b; --code-text: #cdd7e2; --th-bg: #202a35;
+      --shadow: 0 1px 3px rgba(0,0,0,.4), 0 6px 20px rgba(0,0,0,.3);
+    }
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.62 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; padding: 0 20px; }
+  .wrap { max-width: 940px; margin: 0 auto; padding: 40px 0 80px; }
+  header.doc { background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+    padding: 28px 30px; box-shadow: var(--shadow); margin-bottom: 30px; }
+  header.doc h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.2; letter-spacing: -.01em; }
+  .sub { color: var(--muted); font-size: 15px; }
+  .meta { margin-top: 12px; font-size: 14px; color: var(--muted); }
+  h2 { font-size: 22px; margin: 46px 0 12px; padding-bottom: 7px; border-bottom: 2px solid var(--border); letter-spacing: -.01em; }
+  h3 { font-size: 17.5px; margin: 26px 0 8px; }
+  p { margin: 12px 0; }
+  a { color: var(--accent); text-decoration: none; } a:hover { text-decoration: underline; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13.5px;
+    background: var(--code-bg); color: var(--code-text); padding: 1.5px 5px; border-radius: 5px; }
+  pre { background: var(--code-bg); color: var(--code-text); padding: 14px 16px; border-radius: 10px;
+    overflow-x: auto; border: 1px solid var(--border); font-size: 13px; line-height: 1.5; }
+  pre code { background: none; padding: 0; }
+  pre .cm { color: var(--muted); } pre .kw { color: var(--accent); font-weight: 600; }
+  .table-wrap { overflow-x: auto; margin: 16px 0; border-radius: 10px; border: 1px solid var(--border); }
+  table { border-collapse: collapse; width: 100%; font-size: 13.5px; background: var(--surface); }
+  th, td { text-align: left; padding: 8px 11px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { background: var(--th-bg); font-weight: 650; } tbody tr:last-child td { border-bottom: none; }
+  td code, th code { font-size: 12.5px; }
+  .callout { background: var(--accent-soft); border: 1px solid var(--border); border-left: 4px solid var(--accent);
+    border-radius: 8px; padding: 12px 16px; margin: 18px 0; }
+  .callout strong { color: var(--accent); }
+  .callout.graph { border-left-color: var(--graph-stroke); } .callout.graph strong { color: var(--graph-stroke); }
+  ul, ol { padding-left: 22px; } li { margin: 5px 0; }
+  .toc { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px 22px; box-shadow: var(--shadow); }
+  .toc ol { columns: 2; column-gap: 34px; margin: 6px 0 0; }
+  @media (max-width: 660px) { .toc ol { columns: 1; } header.doc h1 { font-size: 24px; } }
+  figure { margin: 22px 0; text-align: center; } figure svg { max-width: 100%; height: auto; }
+  figcaption { color: var(--muted); font-size: 13px; margin-top: 8px; }
+  .d-box { fill: var(--box-fill); stroke: var(--box-stroke); stroke-width: 1.4; }
+  .d-graph { fill: var(--graph-fill); stroke: var(--graph-stroke); stroke-width: 1.6; }
+  .d-hub { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.6; }
+  .d-new { fill: var(--new-fill); stroke: var(--new-stroke); stroke-width: 1.6; }
+  .d-lbl { fill: var(--text); font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11px; }
+  .d-lbl.s { font-size: 12px; font-family: -apple-system, "Segoe UI", sans-serif; font-weight: 700; }
+  .d-lbl.sm { font-size: 9.5px; fill: var(--muted); font-family: -apple-system, "Segoe UI", sans-serif; }
+  .d-flow { stroke: var(--arrow); stroke-width: 1.6; fill: none; }
+  .d-title { fill: var(--muted); font-size: 10.5px; font-weight: 700; letter-spacing: .06em; }
+  hr { border: none; border-top: 1px solid var(--border); margin: 40px 0; }
+  .foot { color: var(--muted); font-size: 13.5px; font-style: italic; }
+  .tag { font-size: 10.5px; font-weight: 700; padding: 1px 6px; border-radius: 4px; vertical-align: middle;
+    background: var(--box-fill); color: var(--muted); border: 1px solid var(--border); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="doc">
+  <h1>Stroom Query Engine — Developer Guide</h1>
+  <div class="sub">How StroomQL and Cypher share one query core: the key classes, a query traced end-to-end through each language, how joins work, and where to extend it.</div>
+  <div class="meta">
+    <div><strong>Audience:</strong> engineers reading, reviewing, or extending the query optimiser, joins, and the Graph DB.</div>
+    <div><strong>Scope:</strong> the <code>sw-query-optimiser</code> query stack: <code>stroom-query-grammar</code>, <code>stroom-query-planner</code>, <code>stroom-query-common</code>, <code>stroom-query-impl</code>, <code>stroom-graphdb-impl</code>, <code>stroom-searchable-impl</code>.</div>
+  </div>
+</header>
+
+<div class="callout"><strong>The one idea to hold onto.</strong> There are <em>two query languages</em> (StroomQL and Cypher) but <em>one core</em>. Both parse to an AST, bind to a single shared <strong><code>LogicalPlan</code> IR</strong>, and produce a <code>SearchRequest</code> that is dispatched to a <strong><code>SearchProvider</code> chosen purely by the datasource's <code>DocRef</code> type</strong>. Every result row, from either language, is a <code>Val[]</code> fed into the same coprocessor / <code>ResultStore</code> pipeline. Learn that spine once and both languages read the same.</div>
+
+<nav class="toc">
+  <strong>Contents</strong>
+  <ol>
+    <li><a href="#bigpicture">The big picture</a></li>
+    <li><a href="#modules">Module map</a></li>
+    <li><a href="#foundations">Shared foundations</a></li>
+    <li><a href="#stroomql">Trace: a StroomQL query</a></li>
+    <li><a href="#cypher">Trace: a Cypher query</a></li>
+    <li><a href="#joins">Joins, end to end</a></li>
+    <li><a href="#ir">The shared LogicalPlan IR</a></li>
+    <li><a href="#extend">How to extend it</a></li>
+    <li><a href="#reference">Key-class reference</a></li>
+    <li><a href="#invariants">Invariants &amp; gotchas</a></li>
+    <li><a href="#testing">Where the tests are</a></li>
+  </ol>
+</nav>
+
+<h2 id="bigpicture">1. The big picture</h2>
+<p>A search enters through <code>QueryServiceImpl</code> as a <code>SearchRequest</code> carrying query <em>text</em> and a target datasource <code>DocRef</code>. Compilation turns that text into a <em>mapped</em> <code>SearchRequest</code> the execution layer understands; execution dispatches it to a <code>SearchProvider</code> and streams <code>Val[]</code> rows back through coprocessors into a <code>ResultStore</code>. The two languages diverge only in the <em>compile</em> step.</p>
+<figure>
+<svg viewBox="0 0 900 300" role="img" aria-label="Two front-ends compile to one shared plan and execute through provider dispatch">
+  <text x="6" y="16" class="d-title">FRONT-ENDS (compile)</text>
+  <rect class="d-box" x="20" y="26" width="250" height="54" rx="9"/>
+  <text class="d-lbl s" x="145" y="47" text-anchor="middle">StroomQL</text>
+  <text class="d-lbl sm" x="145" y="64" text-anchor="middle">StroomQlParser → AstBuilder → Binder</text>
+  <rect class="d-graph" x="20" y="92" width="250" height="54" rx="9"/>
+  <text class="d-lbl s" x="145" y="113" text-anchor="middle">Cypher</text>
+  <text class="d-lbl sm" x="145" y="130" text-anchor="middle">CypherQueryParser → CypherToLogicalPlan</text>
+
+  <line class="d-flow" x1="270" y1="53" x2="330" y2="80" marker-end="url(#a)"/>
+  <line class="d-flow" x1="270" y1="119" x2="330" y2="92" marker-end="url(#a)"/>
+
+  <rect class="d-hub" x="330" y="60" width="180" height="52" rx="9"/>
+  <text class="d-lbl s" x="420" y="80" text-anchor="middle">LogicalPlan IR</text>
+  <text class="d-lbl sm" x="420" y="97" text-anchor="middle">one sealed tree; rewrite + cost</text>
+
+  <line class="d-flow" x1="510" y1="86" x2="570" y2="86" marker-end="url(#a)"/>
+  <rect class="d-box" x="570" y="60" width="150" height="52" rx="9"/>
+  <text class="d-lbl s" x="645" y="80" text-anchor="middle">SearchRequest</text>
+  <text class="d-lbl sm" x="645" y="97" text-anchor="middle">mapped; datasource DocRef</text>
+
+  <text x="6" y="182" class="d-title">EXECUTE (dispatch by DocRef type)</text>
+  <line class="d-flow" x1="645" y1="112" x2="645" y2="150" marker-end="url(#a)"/>
+  <rect class="d-hub" x="545" y="150" width="200" height="46" rx="9"/>
+  <text class="d-lbl s" x="645" y="170" text-anchor="middle">SearchProviderRegistry</text>
+  <text class="d-lbl sm" x="645" y="186" text-anchor="middle">getSearchProvider(DocRef)</text>
+
+  <rect class="d-box" x="330" y="220" width="150" height="46" rx="9"/>
+  <text class="d-lbl" x="405" y="240" text-anchor="middle">Index / Searchable</text>
+  <text class="d-lbl sm" x="405" y="256" text-anchor="middle">relational sources</text>
+  <rect class="d-new" x="490" y="220" width="130" height="46" rx="9"/>
+  <text class="d-lbl" x="555" y="240" text-anchor="middle">JoinSearchProvider</text>
+  <text class="d-lbl sm" x="555" y="256" text-anchor="middle">"StroomQLJoin"</text>
+  <rect class="d-graph" x="630" y="220" width="130" height="46" rx="9"/>
+  <text class="d-lbl" x="695" y="240" text-anchor="middle">GraphSearchProvider</text>
+  <text class="d-lbl sm" x="695" y="256" text-anchor="middle">"GraphDb"</text>
+  <line class="d-flow" x1="600" y1="196" x2="430" y2="220" marker-end="url(#a)"/>
+  <line class="d-flow" x1="632" y1="196" x2="560" y2="220" marker-end="url(#a)"/>
+  <line class="d-flow" x1="670" y1="196" x2="695" y2="220" marker-end="url(#a)"/>
+
+  <rect class="d-box" x="790" y="150" width="100" height="46" rx="9"/>
+  <text class="d-lbl s" x="840" y="170" text-anchor="middle">Val[] rows</text>
+  <text class="d-lbl sm" x="840" y="186" text-anchor="middle">→ Coprocessors</text>
+  <line class="d-flow" x1="745" y1="173" x2="790" y2="173" marker-end="url(#a)"/>
+  <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--arrow)"/></marker></defs>
+</svg>
+<figcaption>Two front-ends, one IR, dispatch by <code>DocRef</code> type, one row model. Blue = relational, green = graph, orange = the join bridge.</figcaption>
+</figure>
+
+<h2 id="modules">2. Module map</h2>
+<p>The stack is a strict dependency chain — read it bottom-up. Grammar knows nothing of execution; execution knows nothing of grammar.</p>
+<div class="table-wrap"><table>
+  <thead><tr><th>Module</th><th>Owns</th><th>Key packages / classes</th></tr></thead>
+  <tbody>
+    <tr><td><code>stroom-query-grammar</code></td><td>ANTLR grammars, AST, parse entry points</td><td><code>antlr/StroomQL.g4</code>, <code>antlr/Cypher.g4</code>; <code>parse/StroomQlParser</code>, <code>parse/CypherQueryParser</code>; <code>ast/AstBuilder</code>, <code>ast/…</code>, <code>ast/cypher/…</code></td></tr>
+    <tr><td><code>stroom-query-planner</code></td><td>the shared IR, binding, rewrite rules, cost model, join &amp; graph operators, Cypher lowering</td><td><code>logical/LogicalPlan</code> (+ nodes), <code>bind/Binder</code>, <code>rewrite/*</code>, <code>cost/*</code>, <code>join/JoinExecutor</code>, <code>cypher/CypherToLogicalPlan</code>, <code>port/*</code></td></tr>
+    <tr><td><code>stroom-query-common</code></td><td>the compiler front door, join spill store, EXPLAIN, provider interfaces</td><td><code>language/QueryCompiler</code> (+ <code>Legacy</code>/<code>Optimising</code>/<code>Dispatching</code>), <code>language/AlternativeQueryCompiler(Resolver)</code>, <code>language/JoinPredicateSplitter</code>, <code>language/LogicalPlanExplainer</code>, <code>common/v2/SearchProvider</code>, <code>common/v2/LmdbJoinBuildStore</code>, <code>common/v2/QueryOptimiserConfig</code>/<code>JoinConfig</code></td></tr>
+    <tr><td><code>stroom-query-impl</code></td><td>the service entry point &amp; language dispatch</td><td><code>QueryServiceImpl</code></td></tr>
+    <tr><td><code>stroom-searchable-impl</code></td><td>provider registry + the join executor's provider</td><td><code>SearchProviderRegistryImpl</code>, <code>JoinSearchProvider</code></td></tr>
+    <tr><td><code>stroom-graphdb-impl</code></td><td>the Cypher engine, graph storage, temporal/diff/element execution</td><td><code>GraphCypherQueryCompiler</code>, <code>CypherCompiler</code>, <code>GraphSearchProvider</code>, <code>GraphTraversalEngine</code>, <code>DiffExecutor</code>, <code>GraphElementExecutor</code>, <code>GraphStores</code> (+ <code>Graph*Db</code>)</td></tr>
+  </tbody>
+</table></div>
+
+<h2 id="foundations">3. Shared foundations</h2>
+<p>Four things every path shares. Understand these and the rest is detail.</p>
+<ul>
+  <li><strong>The compiler interfaces.</strong> <code>QueryCompiler.create(query, request, ctx)</code> turns text into a mapped <code>SearchRequest</code>. <code>DispatchingQueryCompiler</code> picks the implementation by the <code>stroom.query.optimiser.mode</code> flag (<code>QueryOptimiserMode</code>): <span class="tag">OFF</span> → <code>LegacyQueryCompiler</code> (default), <span class="tag">ON</span> → <code>OptimisingQueryCompiler</code>, <span class="tag">SHADOW</span> → runs the optimiser alongside legacy to compare, serving legacy's result. A different language is handled by an <code>AlternativeQueryCompiler</code> (Cypher's is <code>GraphCypherQueryCompiler</code>), chosen <em>first</em> by <code>AlternativeQueryCompilerResolver</code> on the datasource type.</li>
+  <li><strong>The <code>LogicalPlan</code> IR.</strong> A single sealed interface (<code>stroom.query.planner.logical.LogicalPlan</code>) whose nodes cover both worlds: relational (<code>Scan</code>, <code>Filter</code>, <code>Project</code>, <code>Join</code>, <code>Aggregate</code>, <code>Sort</code>, <code>Limit</code>, …) and graph (<code>NodeScan</code>, <code>Expand</code>, <code>VarLengthExpand</code>). See §7.</li>
+  <li><strong>Dispatch by type.</strong> <code>SearchProviderRegistryImpl</code> maps <code>DocRef.getType()</code> → <code>SearchProvider</code>. Everything routes here — an index, a Plan B/State store, the join sentinel (<code>"StroomQLJoin"</code>), and the graph (<code>"GraphDb"</code>). To add a datasource kind, register a provider under its type.</li>
+  <li><strong>The row model.</strong> Results are <code>stroom.query.language.functions.Val[]</code>, handed to <code>Coprocessors.accept(...)</code> and materialised in a <code>ResultStore</code>. Both engines emit the identical shape, which is what lets joins combine them positionally.</li>
+</ul>
+
+<h2 id="stroomql">4. Trace: a StroomQL query</h2>
+<pre><code><span class="kw">from</span> "AuthEvents" <span class="kw">where</span> action = 'LOGIN' <span class="kw">select</span> time, user</code></pre>
+<figure>
+<svg viewBox="0 0 900 118" role="img" aria-label="StroomQL compile pipeline">
+  <defs><marker id="b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--arrow)"/></marker></defs>
+  <g>
+    <rect class="d-box" x="8"   y="40" width="96" height="40" rx="7"/><text class="d-lbl" x="56"  y="56" text-anchor="middle">QueryService</text><text class="d-lbl" x="56" y="69" text-anchor="middle">Impl</text>
+    <rect class="d-hub" x="122" y="40" width="104" height="40" rx="7"/><text class="d-lbl" x="174" y="56" text-anchor="middle">Dispatching</text><text class="d-lbl" x="174" y="69" text-anchor="middle">QueryCompiler</text>
+    <rect class="d-box" x="244" y="40" width="104" height="40" rx="7"/><text class="d-lbl" x="296" y="56" text-anchor="middle">Optimising</text><text class="d-lbl" x="296" y="69" text-anchor="middle">QueryCompiler</text>
+    <rect class="d-box" x="366" y="40" width="92" height="40" rx="7"/><text class="d-lbl" x="412" y="56" text-anchor="middle">StroomQlParser</text><text class="d-lbl sm" x="412" y="69" text-anchor="middle">+ AstBuilder</text>
+    <rect class="d-box" x="476" y="40" width="86" height="40" rx="7"/><text class="d-lbl" x="519" y="56" text-anchor="middle">Binder</text><text class="d-lbl sm" x="519" y="69" text-anchor="middle">LogicalPlan</text>
+    <rect class="d-box" x="580" y="40" width="92" height="40" rx="7"/><text class="d-lbl" x="626" y="56" text-anchor="middle">Rewrite +</text><text class="d-lbl" x="626" y="69" text-anchor="middle">CostModel</text>
+    <rect class="d-box" x="690" y="40" width="96" height="40" rx="7"/><text class="d-lbl" x="738" y="56" text-anchor="middle">SearchRequest'</text><text class="d-lbl sm" x="738" y="69" text-anchor="middle">mapped</text>
+    <rect class="d-hub" x="804" y="40" width="88" height="40" rx="7"/><text class="d-lbl" x="848" y="56" text-anchor="middle">Search</text><text class="d-lbl" x="848" y="69" text-anchor="middle">Provider</text>
+  </g>
+  <g class="d-flow">
+    <line x1="104" y1="60" x2="122" y2="60" marker-end="url(#b)"/><line x1="226" y1="60" x2="244" y2="60" marker-end="url(#b)"/>
+    <line x1="348" y1="60" x2="366" y2="60" marker-end="url(#b)"/><line x1="458" y1="60" x2="476" y2="60" marker-end="url(#b)"/>
+    <line x1="562" y1="60" x2="580" y2="60" marker-end="url(#b)"/><line x1="672" y1="60" x2="690" y2="60" marker-end="url(#b)"/>
+    <line x1="786" y1="60" x2="804" y2="60" marker-end="url(#b)"/>
+  </g>
+  <text class="d-lbl sm" x="174" y="24" text-anchor="middle">mode: OFF/SHADOW/ON</text>
+</svg>
+</figure>
+<ol>
+  <li><strong>Entry.</strong> <code>QueryServiceImpl.mapRequest(...)</code> resolves the datasource <code>DocRef</code> (from <code>ownerDocRef</code>, or the leading <code>from "X"</code> via <code>LeadingDataSourceExtractor</code>), then asks <code>AlternativeQueryCompilerResolver</code> if a non-StroomQL compiler claims the type. For an index/searchable type, none does → falls through to <code>queryCompiler</code> (the <code>DispatchingQueryCompiler</code>).</li>
+  <li><strong>Dispatch.</strong> <code>DispatchingQueryCompiler</code> reads <code>QueryOptimiserMode</code>. <span class="tag">OFF</span> hands to <code>LegacyQueryCompiler</code> and you skip straight to step 6. <span class="tag">ON</span> uses <code>OptimisingQueryCompiler</code>.</li>
+  <li><strong>Parse.</strong> <code>StroomQlParser.parse(text)</code> runs the ANTLR <code>StroomQL.g4</code> grammar; <code>AstBuilder</code> walks the parse tree into a typed <code>AstQuery</code>.</li>
+  <li><strong>Bind.</strong> <code>Binder.bind(ast)</code> resolves field names against the datasource (via the <code>FieldInfoSource</code> port), validates them, and produces a <code>LogicalPlan</code> — for this query, <code>Project(Filter(Scan "AuthEvents"))</code>.</li>
+  <li><strong>Rewrite &amp; cost.</strong> <code>RewritePipeline.standard(...)</code> applies result-preserving rules (e.g. <code>AutoWhereFilterSplitRule</code> splits the <code>where</code> into index-eligible terms pushed to the datasource vs value terms kept as a post-read <code>filter</code>; <code>PushFiltersBelowJoinsRule</code> for joins). The <code>CostModel</code> annotates scans for <code>EXPLAIN</code>. <strong>Key nuance:</strong> for a single relational source this IR is a <em>planning</em> artefact — it shapes the emitted <code>SearchRequest</code> (pushed predicates, pruned projection, time-range) but does <em>not</em> replace the datasource's own execution engine. Everything runs fail-open: any exception in <code>OptimisingQueryCompiler.applyPlanEnhancements</code> is caught and the plain legacy-mapped request is returned unchanged.</li>
+  <li><strong>Execute.</strong> The mapped <code>SearchRequest</code> goes to <code>SearchProviderRegistryImpl.getSearchProvider(dataSource).createResultStore(request)</code>. The provider runs the search (async), producing <code>Val[]</code> rows into <code>Coprocessors</code>; the <code>ResultStore</code> collects them for the caller to page through.</li>
+</ol>
+
+<h2 id="cypher">5. Trace: a Cypher query</h2>
+<pre><code><span class="kw">from</span> "HostGraph" <span class="kw">match</span> (h:Host {ip:'10.0.0.1'})-[:CONNECTED_TO*1..3]->(t:Host) <span class="kw">return</span> t.ip</code></pre>
+<figure>
+<svg viewBox="0 0 900 118" role="img" aria-label="Cypher compile and execute pipeline">
+  <defs><marker id="c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--arrow)"/></marker></defs>
+  <rect class="d-box" x="8"   y="40" width="92" height="40" rx="7"/><text class="d-lbl" x="54"  y="56" text-anchor="middle">QueryService</text><text class="d-lbl" x="54" y="69" text-anchor="middle">Impl</text>
+  <rect class="d-hub" x="116" y="40" width="104" height="40" rx="7"/><text class="d-lbl" x="168" y="56" text-anchor="middle">AlternativeQC</text><text class="d-lbl" x="168" y="69" text-anchor="middle">Resolver</text>
+  <rect class="d-graph" x="236" y="40" width="104" height="40" rx="7"/><text class="d-lbl" x="288" y="56" text-anchor="middle">CypherCompiler</text><text class="d-lbl sm" x="288" y="69" text-anchor="middle">(+ parser)</text>
+  <rect class="d-graph" x="356" y="40" width="112" height="40" rx="7"/><text class="d-lbl" x="412" y="55" text-anchor="middle">CypherTo</text><text class="d-lbl" x="412" y="68" text-anchor="middle">LogicalPlan</text>
+  <rect class="d-box" x="484" y="40" width="96" height="40" rx="7"/><text class="d-lbl" x="532" y="56" text-anchor="middle">GraphSpec</text><text class="d-lbl sm" x="532" y="69" text-anchor="middle">raw cypher</text>
+  <rect class="d-hub" x="596" y="40" width="96" height="40" rx="7"/><text class="d-lbl" x="644" y="56" text-anchor="middle">GraphSearch</text><text class="d-lbl" x="644" y="69" text-anchor="middle">Provider</text>
+  <rect class="d-graph" x="708" y="40" width="104" height="40" rx="7"/><text class="d-lbl" x="760" y="56" text-anchor="middle">GraphTraversal</text><text class="d-lbl" x="760" y="69" text-anchor="middle">Engine</text>
+  <rect class="d-box" x="828" y="40" width="64" height="40" rx="7"/><text class="d-lbl" x="860" y="56" text-anchor="middle">Val[]</text><text class="d-lbl sm" x="860" y="69" text-anchor="middle">→copro</text>
+  <g class="d-flow">
+    <line x1="100" y1="60" x2="116" y2="60" marker-end="url(#c)"/><line x1="220" y1="60" x2="236" y2="60" marker-end="url(#c)"/>
+    <line x1="340" y1="60" x2="356" y2="60" marker-end="url(#c)"/><line x1="468" y1="60" x2="484" y2="60" marker-end="url(#c)"/>
+    <line x1="580" y1="60" x2="596" y2="60" marker-end="url(#c)"/><line x1="692" y1="60" x2="708" y2="60" marker-end="url(#c)"/>
+    <line x1="812" y1="60" x2="828" y2="60" marker-end="url(#c)"/>
+  </g>
+</svg>
+</figure>
+<ol>
+  <li><strong>Dispatch by type.</strong> <code>QueryServiceImpl</code> resolves <code>"HostGraph"</code> to a <code>GraphDb</code>-typed <code>DocRef</code> (via <code>ownerDocRef</code>, or the portable leading <code>from "X"</code>). <code>AlternativeQueryCompilerResolver</code> finds <code>GraphCypherQueryCompiler</code> claims <code>GraphDbDoc.TYPE</code> and routes there — the StroomQL compiler is never involved.</li>
+  <li><strong>Compile.</strong> <code>GraphCypherQueryCompiler</code> delegates to <code>CypherCompiler.create(...)</code>, which parses with <code>CypherQueryParser</code> (the <code>Cypher.g4</code> grammar) and lowers via <code>CypherToLogicalPlan</code> into the <em>same</em> <code>LogicalPlan</code> — here <code>Project(VarLengthExpand(NodeScan(h)))</code>. Cypher-only concerns that the sealed IR has no node for (temporal window, <code>DIFF</code>, <code>RETURN GRAPH</code>, aggregation) ride alongside on <code>CompiledCypherPlan</code>.</li>
+  <li><strong>On the wire.</strong> The compiled request carries a <code>GraphSpec</code> holding the <em>raw Cypher text</em> (not the plan — that would create a module cycle), and its <code>Query.dataSource</code> points at the <code>GraphDbDoc</code>.</li>
+  <li><strong>Execute.</strong> Dispatch lands on <code>GraphSearchProvider.createResultStore</code>, which re-parses/re-compiles the Cypher, opens the graph's LMDB stores (<code>GraphStores</code>, permission-checked via <code>GraphDbDocCache</code>), and runs one of three executors over the plan: the ordinary <code>GraphTraversalEngine</code>; <code>DiffExecutor</code> for a scalar <code>DIFF</code>; or <code>GraphElementExecutor</code> for <code>RETURN GRAPH</code>. All three emit <code>Val[]</code> rows into the same coprocessors as StroomQL.</li>
+</ol>
+<div class="callout graph"><strong>"A hop is a join."</strong> A <code>MATCH (a)-[:T]-&gt;(b)</code> lowers to graph operators (<code>NodeScan</code> → <code>Expand</code>) on the shared IR, conceptually an index-nested-loop join of an adjacency relation to a node relation. The graph reuses the IR and cost <em>ports</em>; it does not fork the planner. Where it differs from the relational side: <code>GraphTraversalEngine</code> executes the IR <em>directly</em> against LMDB, whereas a relational single-source plan is executed by that datasource's existing provider.</div>
+
+<h2 id="joins">6. Joins, end to end</h2>
+<p>A join is the one place the compiler emits a <em>composite</em> request and a bespoke provider runs it. Two phases:</p>
+<h3>Compile (<code>OptimisingQueryCompiler.createJoin</code>)</h3>
+<ul>
+  <li>The <code>Binder</code> binds <code>from A join B on a.k = b.k</code> to a left-deep <code>Join</code> node (each equi-key an <code>EquiKey</code>; join-key domain-type compatibility validated). Today: single join, two sides.</li>
+  <li>Each side is compiled to its own single-source <code>SearchRequest</code> (an index/state side via a synthesised <code>from "…" select …</code>; a graph side as a <code>GraphSpec</code> — the <code>GraphJoinSource</code> leaf, with its columns derived from the Cypher <code>RETURN … AS</code> via <code>CypherJoinSchema</code>).</li>
+  <li><code>JoinPredicateSplitter</code> decides, <em>join-type-aware</em>, which parts of the outer <code>where</code> may pre-filter each side (never the null-supplying side of a <code>LEFT</code> join) vs. stay as a residual on the combined row.</li>
+  <li>The output is a <code>SearchRequest</code> whose datasource is the sentinel type <code>JoinDataSourceType.TYPE = "StroomQLJoin"</code>, carrying a <code>JoinSpec</code> (both side requests + the equi-keys).</li>
+</ul>
+<h3>Execute (<code>JoinSearchProvider</code>)</h3>
+<figure>
+<svg viewBox="0 0 860 210" role="img" aria-label="Join execution: open sides, build smaller, stream probe">
+  <defs><marker id="d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--arrow)"/></marker></defs>
+  <rect class="d-new" x="330" y="8" width="200" height="40" rx="8"/><text class="d-lbl s" x="430" y="26" text-anchor="middle">JoinSearchProvider</text><text class="d-lbl sm" x="430" y="40" text-anchor="middle">openSide() — dispatch each side by DocRef type</text>
+  <line class="d-flow" x1="380" y1="48" x2="200" y2="78" marker-end="url(#d)"/>
+  <line class="d-flow" x1="480" y1="48" x2="660" y2="78" marker-end="url(#d)"/>
+  <rect class="d-box" x="70" y="78" width="260" height="40" rx="8"/><text class="d-lbl s" x="200" y="96" text-anchor="middle">build side (the smaller, for INNER)</text><text class="d-lbl sm" x="200" y="110" text-anchor="middle">realise into BuildSideLookup</text>
+  <rect class="d-box" x="540" y="78" width="250" height="40" rx="8"/><text class="d-lbl s" x="665" y="96" text-anchor="middle">probe side (streamed)</text><text class="d-lbl sm" x="665" y="110" text-anchor="middle">one Val[] at a time</text>
+  <rect class="d-box" x="70" y="132" width="260" height="38" rx="8"/><text class="d-lbl" x="200" y="149" text-anchor="middle">Heap → Spilling → LmdbJoinBuildStore</text><text class="d-lbl sm" x="200" y="163" text-anchor="middle">spills past maxHeapBuild* to disk</text>
+  <line class="d-flow" x1="200" y1="118" x2="200" y2="132" marker-end="url(#d)"/>
+  <rect class="d-hub" x="330" y="150" width="200" height="44" rx="8"/><text class="d-lbl s" x="430" y="169" text-anchor="middle">JoinExecutor</text><text class="d-lbl sm" x="430" y="184" text-anchor="middle">keyOf() → hash / nested-loop / broadcast-lookup</text>
+  <line class="d-flow" x1="250" y1="170" x2="330" y2="172" marker-end="url(#d)"/>
+  <line class="d-flow" x1="620" y1="118" x2="500" y2="150" marker-end="url(#d)"/>
+  <text class="d-lbl sm" x="430" y="206" text-anchor="middle">combined [probe…, build…] row → residual where → Coprocessors</text>
+</svg>
+</figure>
+<ul>
+  <li><code>openSide</code> runs each side as its own sub-search, dispatched by <code>DocRef.getType()</code> — so a graph side "just" routes to <code>GraphSearchProvider</code>, an index side to its provider. Rows come back as <code>Val[]</code>.</li>
+  <li><strong>Build-side selection:</strong> for <code>INNER</code>, build the <em>smaller</em> side (by <code>DataStore.getSize()</code>) and stream the larger; a <code>LEFT</code> join never swaps (probe = left, so unmatched left rows emit null-padded inline).</li>
+  <li>The build side is realised into a <code>BuildSideLookup</code> that starts on-heap and <strong>spills to an LMDB store</strong> (<code>SpillingBuildSideLookup</code> → <code>LmdbJoinBuildStore</code>) once <code>maxHeapBuildRows</code>/<code>maxHeapBuildBytes</code> are exceeded. The probe side is streamed, never fully materialised.</li>
+  <li><code>JoinExecutor</code> derives every key through the single <code>keyOf(...)</code> (so both sides agree on equality — numeric keys are canonicalised; SQL-null never matches), then runs <code>HASH_JOIN</code>, <code>NESTED_LOOP</code>, or the <code>BROADCAST_LOOKUP</code> <em>enrichment fast path</em> (a per-row point lookup against a keyed Plan B / State store via <code>StateFetcher</code>). Output is capped by <code>maxOutputRows</code>; caps throw <code>JoinLimitExceededException</code>.</li>
+  <li>The combined row is always <code>[probe columns…, build/lookup columns…]</code>; the residual <code>where</code> is evaluated on it before it reaches the coprocessors.</li>
+</ul>
+<p><strong>Cost &amp; EXPLAIN:</strong> <code>JoinCostModel.chooseAlgorithm</code> picks the algorithm from each side's <code>AccessPath</code> (a <code>StateLookup</code> side → broadcast lookup; else hash join, smaller side built); <code>LogicalPlanExplainer</code> renders the plan + estimates for the <code>EXPLAIN</code> endpoint.</p>
+
+<h2 id="ir">7. The shared <code>LogicalPlan</code> IR</h2>
+<p><code>stroom.query.planner.logical.LogicalPlan</code> is one sealed interface. Relational and graph nodes coexist deliberately so both front-ends reuse the same rewrite rules, cost model, and planner ports:</p>
+<pre><code><span class="kw">sealed interface</span> LogicalPlan <span class="kw">permits</span>
+    Scan, Filter, Project, Join, Aggregate, Having, Window, Sort, Limit,   <span class="cm">// relational</span>
+    NodeScan, Expand, VarLengthExpand;                                     <span class="cm">// graph (Cypher)</span></code></pre>
+<ul>
+  <li>Rewrite rules and tree-walkers (<code>PlanRewriteUtil</code>) <code>switch</code> over every node; a graph node in a relational walker is inert (returns no scans, is never a push-down target) and vice-versa — a relational <code>Join</code> never appears in a graph plan.</li>
+  <li>Anything the sealed IR can't represent for Cypher (temporal context, diff, <code>RETURN GRAPH</code>, aggregation/<code>DISTINCT</code>) is carried as side-channels on <code>CompiledCypherPlan</code>, kept out of the IR so the relational core stays untouched.</li>
+  <li><strong>Three copies of the "unwrap the compiled plan shape" logic</strong> (<code>GraphTraversalEngine.unwrap</code>, <code>GraphSearchProvider.terminalProject</code>, <code>CypherJoinSchema.terminalProjectFields</code>) assume the emitted shape <code>[Limit?][Sort?]Project[Filter?][Expand*|VarLengthExpand]NodeScan</code> — keep them in lockstep if you change what <code>CypherToLogicalPlan</code> emits.</li>
+</ul>
+
+<h2 id="extend">8. How to extend it</h2>
+<div class="table-wrap"><table>
+  <thead><tr><th>You want to…</th><th>Touch</th><th>Contract to honour</th></tr></thead>
+  <tbody>
+    <tr><td>Add a <strong>rewrite rule</strong></td><td>new <code>RewriteRule</code> in <code>planner/rewrite/</code>; register in <code>RewritePipeline.standard</code></td><td>Result-preserving (same rows, only relocated/simplified); handle every <code>LogicalPlan</code> node in your <code>switch</code>; stay conservative when unsure (leave the plan alone).</td></tr>
+    <tr><td>Add a <strong>join algorithm</strong></td><td><code>cost/JoinAlgorithm</code> + <code>JoinCostModel.chooseAlgorithm</code>; <code>join/JoinExecutor</code></td><td>Derive keys only through <code>JoinExecutor.keyOf</code>; respect the <code>[probe…, build…]</code> row shape and the per-row caps; never pre-filter a <code>LEFT</code> join's right side.</td></tr>
+    <tr><td>Add a <strong>datasource kind</strong></td><td>implement <code>SearchProvider</code>; multibind it (see <code>GraphDbModule</code>); it registers under <code>getDataSourceType()</code></td><td>Emit <code>Val[]</code> rows into the supplied coprocessors; enforce the user's <code>USE</code> permission on the doc; unique datasource type (the registry now fails fast on a clash).</td></tr>
+    <tr><td>Add a <strong>Cypher clause</strong></td><td><code>Cypher.g4</code> + <code>ast/cypher/</code>; <code>CypherToLogicalPlan</code>; the executor(s) in <code>stroom-graphdb-impl</code></td><td>Reuse an existing IR node if the shape fits; otherwise carry it on <code>CompiledCypherPlan</code>, not a new IR node. Reject what you don't lower with a positioned <code>CypherCompileException</code> (never a wrong answer).</td></tr>
+    <tr><td>Add a <strong>front-end language</strong></td><td>new grammar + parser + an <code>AlternativeQueryCompiler</code> that lowers to <code>LogicalPlan</code></td><td>Compile to the shared IR; route by datasource type via <code>AlternativeQueryCompilerResolver</code>; produce a normal <code>SearchRequest</code>.</td></tr>
+    <tr><td>Add a <strong>cost signal</strong></td><td>a <code>planner/port/*Stats</code> port + its adapter; wire into <code>CostModel</code></td><td>Never negative, never throws; an unknown estimate degrades to a safe fallback.</td></tr>
+  </tbody>
+</table></div>
+
+<h2 id="reference">9. Key-class reference</h2>
+<div class="table-wrap"><table>
+  <thead><tr><th>Class</th><th>Module</th><th>Role</th></tr></thead>
+  <tbody>
+    <tr><td><code>QueryServiceImpl</code></td><td>query-impl</td><td>Service entry; resolves the datasource, dispatches to the right compiler, runs the search.</td></tr>
+    <tr><td><code>DispatchingQueryCompiler</code> / <code>Legacy</code> / <code>Optimising</code></td><td>query-common</td><td>StroomQL compiler; mode flag picks legacy vs optimiser (vs shadow).</td></tr>
+    <tr><td><code>AlternativeQueryCompilerResolver</code></td><td>query-common</td><td>Routes a non-StroomQL language by datasource type (Cypher → graph).</td></tr>
+    <tr><td><code>StroomQlParser</code> / <code>CypherQueryParser</code> / <code>AstBuilder</code></td><td>query-grammar</td><td>ANTLR parse + AST construction for each language.</td></tr>
+    <tr><td><code>Binder</code> → <code>LogicalPlan</code></td><td>query-planner</td><td>Name resolution + validation; builds the shared IR (incl. <code>Join</code>).</td></tr>
+    <tr><td><code>RewritePipeline</code>, <code>PushFiltersBelowJoinsRule</code>, <code>AutoWhereFilterSplitRule</code></td><td>query-planner</td><td>Result-preserving plan rewrites (push-down, where-split).</td></tr>
+    <tr><td><code>CostModel</code>, <code>JoinCostModel</code>, <code>LogicalPlanExplainer</code></td><td>query-planner / -common</td><td>Cost estimates + the <code>EXPLAIN</code> plan tree.</td></tr>
+    <tr><td><code>JoinExecutor</code>, <code>BuildSideLookup</code>, <code>LmdbJoinBuildStore</code></td><td>query-planner / -common</td><td>Physical join: keying, hash/nested/broadcast, heap→disk spill.</td></tr>
+    <tr><td><code>SearchProviderRegistryImpl</code>, <code>JoinSearchProvider</code></td><td>searchable-impl</td><td>Type→provider dispatch; the join's own provider.</td></tr>
+    <tr><td><code>CypherToLogicalPlan</code>, <code>CompiledCypherPlan</code></td><td>query-planner</td><td>Cypher → shared IR; carrier for Cypher-only concerns.</td></tr>
+    <tr><td><code>CypherCompiler</code>, <code>GraphCypherQueryCompiler</code>, <code>GraphSpec</code></td><td>graphdb-impl / query-api</td><td>Cypher front door; raw-Cypher wire payload.</td></tr>
+    <tr><td><code>GraphSearchProvider</code>, <code>GraphTraversalEngine</code>, <code>DiffExecutor</code>, <code>GraphElementExecutor</code></td><td>graphdb-impl</td><td>Graph execution: traversal, diff delta-table, <code>RETURN GRAPH</code> element rows.</td></tr>
+    <tr><td><code>GraphStores</code> + <code>Graph*Db</code></td><td>graphdb-impl</td><td>Versioned node/edge/adjacency LMDB stores + UID interning.</td></tr>
+  </tbody>
+</table></div>
+
+<h2 id="invariants">10. Invariants &amp; gotchas</h2>
+<p>The rules a change must not break (a pre-production review confirmed these — see the <a href="query-graphdb-review-report.md">review report</a> and its <a href="query-graphdb-review-findings.md">findings</a>):</p>
+<ul>
+  <li><strong>Keys are single-sourced.</strong> Every equi-key (build and probe) is derived through <code>JoinExecutor.keyOf</code>; a SQL-null component never matches. Don't compute keys anywhere else.</li>
+  <li><strong>A <code>LEFT</code> join never pre-filters its right side.</strong> <code>JoinPredicateSplitter</code> is the one place that decides push-down for execution — the rewrite rule's output is for <code>EXPLAIN</code> only.</li>
+  <li><strong>The optimiser is fail-open.</strong> Any error in plan enhancement returns the legacy request unchanged — a query must never be made <em>worse</em> by the optimiser being on.</li>
+  <li><strong>Row shape is positional.</strong> Combined rows are always <code>[probe…, build…]</code>; <code>assembleRow</code>/<code>whereRowPredicate</code>/<code>buildFieldMapping</code> depend on it regardless of which side is physically probe vs build.</li>
+  <li><strong>Provider dispatch is by <code>DocRef.getType()</code> only.</strong> Registering a duplicate type now fails fast rather than silently overwriting.</li>
+  <li><strong>Unsupported Cypher fails loud.</strong> Anything outside the compiled subset is a positioned compile error, never a silent wrong answer.</li>
+  <li><strong>Graph properties are string-typed (v1)</strong> — type-sensitive <code>ORDER BY</code>/aggregates use string coercion; and edges are identified by <code>(source, type, target)</code> (no multigraph). See the review's F2/F9 and the <a href="temporal-cypher-features.html">temporal-features caveats</a>.</li>
+</ul>
+
+<h2 id="testing">11. Where the tests are</h2>
+<ul>
+  <li><strong>Grammar/AST:</strong> <code>TestStroomQlParser</code>-style + <code>TestCypherQueryParser</code> (query-grammar).</li>
+  <li><strong>Planner:</strong> <code>TestBinder</code>, <code>TestLogicalPlan</code>, <code>Test*Rule</code>, <code>TestJoinExecutor</code>, <code>TestCypherToLogicalPlan</code> (query-planner).</li>
+  <li><strong>Compiler parity:</strong> <code>TestQueryCompilerParity</code> (hand corpus) and <code>TestQueryCompilerGenerativeParity</code> (fuzz) assert the optimiser matches legacy; deliberate divergences are documented in <a href="query-optimiser-known-differences.md">known-differences</a>.</li>
+  <li><strong>Joins:</strong> <code>TestJoinSearchProvider</code>, <code>TestSpillingBuildSideLookup</code>, <code>TestLmdbJoinBuildStore</code> (common / searchable-impl).</li>
+  <li><strong>Graph:</strong> <code>TestGraphTraversalEngine</code>, <code>TestDiffOperator</code>, <code>TestGraphSearchProvider</code> (graphdb-impl).</li>
+  <li><strong>Turning the optimiser on for a test:</strong> the <code>stroom.query.optimiser.mode</code> flag (<code>QueryOptimiserMode</code>, default <span class="tag">OFF</span>). Run in <span class="tag">SHADOW</span> to diff against legacy without changing results; <span class="tag">ON</span> to execute the optimiser's plan.</li>
+</ul>
+
+<hr>
+<p class="foot">A map, not a spec — class names and shapes were accurate at the time of writing on <code>sw-query-optimiser</code>; when in doubt, the code wins. Companion docs: the <a href="graphdb-index.html">Graph DB index</a>, the <a href="query-optimiser-user-guide.md">optimiser user guide</a>, and the design docs it links.</p>
+
+</div>
+</body>
+</html>
