@@ -16,7 +16,7 @@
 
 package stroom.floormap.client.view;
 
-import stroom.floormap.client.presenter.FloorMapEntityListPresenter.FloorMapEntityListView;
+import stroom.floormap.client.presenter.FloorMapTrackingPresenter.FloorMapTrackingView;
 
 import com.google.gwt.dom.client.Style.Unit;
 import com.google.gwt.user.client.ui.DockLayoutPanel;
@@ -31,7 +31,7 @@ import com.gwtplatform.mvp.client.ViewImpl;
  * <p>Layout: toolbar pinned above the data grid using a {@link DockLayoutPanel}
  * so the toolbar remains visible when data is loaded.</p>
  */
-public class FloorMapEntityListViewImpl extends ViewImpl implements FloorMapEntityListView {
+public class FloorMapTrackingViewImpl extends ViewImpl implements FloorMapTrackingView {
 
     /** Height of the button toolbar in pixels. */
     private static final int TOOLBAR_HEIGHT_PX = 26;
@@ -41,7 +41,7 @@ public class FloorMapEntityListViewImpl extends ViewImpl implements FloorMapEnti
     private final SimplePanel gridContainer;
 
     @Inject
-    public FloorMapEntityListViewImpl() {
+    public FloorMapTrackingViewImpl() {
         toolbarContainer = new SimplePanel();
 
         gridContainer = new SimplePanel();

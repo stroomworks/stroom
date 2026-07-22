@@ -90,7 +90,7 @@ public class FloorMapEditorViewImpl extends ViewImpl implements FloorMapEditorVi
     // -----------------------------------------------------------------------
 
     /** Initial width of the right-hand dock in pixels. */
-    private static final int DOCK_INITIAL_WIDTH = 300;
+    private static final int DOCK_INITIAL_WIDTH = 200;
 
     // -----------------------------------------------------------------------
 
@@ -116,11 +116,10 @@ public class FloorMapEditorViewImpl extends ViewImpl implements FloorMapEditorVi
 
         topSplitPanel = new ThinSplitLayoutPanel();
         topSplitPanel.setSize("100%", "100%");
-        topSplitPanel.setHSplits(0.75);
         topSplitPanel.addEast(dockPanel, DOCK_INITIAL_WIDTH);   // right-hand dock
         topSplitPanel.add(canvasPanel);                          // canvas (fills rest)
         // The Editor dock is empty until the Layers panel lands, so start hidden.
-        topSplitPanel.setWidgetHidden(dockPanel, true);
+        topSplitPanel.setWidgetHidden(dockPanel, false);
 
         timelinePanel = new SimplePanel();
         timelinePanel.addStyleName("dashboard-panel overflow-hidden stroom-border-bottom");

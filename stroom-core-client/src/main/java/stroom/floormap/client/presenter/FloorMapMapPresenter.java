@@ -77,7 +77,7 @@ import java.util.Map;
  * <ul>
  *     <li>{@link #MAP} – the {@link FloorMapCanvasPresenter} (canvas / visualisation)</li>
  *     <li>{@link #DOCK} – the {@link FloorMapDockPresenter} (right-hand dock; hosts the
- *     {@link FloorMapEntityListPresenter} tracking panel as its first tab)</li>
+ *     {@link FloorMapTrackingPresenter} tracking panel as its first tab)</li>
  *     <li>{@link #TIMELINE} – the {@link FloorMapTimelinePresenter} (timeline scrubber)</li>
  * </ul>
  *
@@ -97,7 +97,7 @@ public class FloorMapMapPresenter
     private final FloorMapCanvasPresenter floorMapCanvasPresenter;
     private final FloorMapTimelinePresenter floorMapTimelinePresenter;
     private final FloorMapObjectEditPresenter floorMapObjectEditPresenter;
-    private final FloorMapEntityListPresenter floorMapEntityListPresenter;
+    private final FloorMapTrackingPresenter floorMapTrackingPresenter;
     private final FloorMapDockPresenter floorMapDockPresenter;
 
     /** Roster of every entity seen on the map, feeding the tracking panel. */
@@ -164,21 +164,21 @@ public class FloorMapMapPresenter
                                 final Provider<FloorMapCanvasPresenter> floorMapCanvasPresenterProvider,
                                 final Provider<FloorMapTimelinePresenter> floorMapTimelinePresenterProvider,
                                 final Provider<FloorMapObjectEditPresenter> floorMapObjectEditPresenterProvider,
-                                final Provider<FloorMapEntityListPresenter> floorMapEntityListPresenterProvider,
+                                final Provider<FloorMapTrackingPresenter> floorMapEntityListPresenterProvider,
                                 final Provider<FloorMapDockPresenter> floorMapDockPresenterProvider) {
         super(eventBus, view);
 
         this.floorMapCanvasPresenter = floorMapCanvasPresenterProvider.get();
         this.floorMapTimelinePresenter = floorMapTimelinePresenterProvider.get();
         this.floorMapObjectEditPresenter = floorMapObjectEditPresenterProvider.get();
-        this.floorMapEntityListPresenter = floorMapEntityListPresenterProvider.get();
+        this.floorMapTrackingPresenter = floorMapEntityListPresenterProvider.get();
         this.floorMapDockPresenter = floorMapDockPresenterProvider.get();
 
         // Default initial time
         this.selectedTime = System.currentTimeMillis();
 
         // The Tracking panel now lives as the first tab of the right-hand dock.
-        floorMapDockPresenter.addTab("Tracking", floorMapEntityListPresenter);
+        floorMapDockPresenter.addTab("Tracking", floorMapTrackingPresenter);
 
         setInSlot(MAP, floorMapCanvasPresenter);
         setInSlot(DOCK, floorMapDockPresenter);
@@ -303,7 +303,7 @@ public class FloorMapMapPresenter
             if (e.getSource() == floorMapCanvasPresenter
                     && e.getObjectId() != null
                     && entityList.contains(e.getObjectId())) {
-                floorMapEntityListPresenter.setSelected(e.getObjectId());
+                floorMapTrackingPresenter.setSelected(e.getObjectId());
                 floorMapCanvasPresenter.setTrackedObjectId(e.getObjectId());
             }
         }));
@@ -317,7 +317,7 @@ public class FloorMapMapPresenter
         // selecting nothing stops tracking. Re-clicking the selected row
         // re-invokes this consumer, which re-centres and resumes following
         // after a manual pan paused it.
-        this.floorMapEntityListPresenter.setSelectionConsumer(entry ->
+        this.floorMapTrackingPresenter.setSelectionConsumer(entry ->
                 floorMapCanvasPresenter.setTrackedObjectId(entry != null
                         ? entry.getId()
                         : null));
@@ -372,7 +372,7 @@ public class FloorMapMapPresenter
 
         // A (re-)opened document starts with a fresh entity roster.
         entityList.clear();
-        floorMapEntityListPresenter.setData(Collections.emptyList());
+        floorMapTrackingPresenter.setData(Collections.emptyList());
 
         // Start timeline (and histogram query) only after models are ready.
         // Initialise the range on the first read only; on a save-triggered
@@ -587,9 +587,9 @@ public class FloorMapMapPresenter
      * selection consumer because {@code EntityEntry} equality is id-based.
      */
     private void refreshEntityGrid() {
-        final String selectedId = floorMapEntityListPresenter.getSelectedId();
-        floorMapEntityListPresenter.setData(entityList.getEntities());
-        floorMapEntityListPresenter.setSelected(selectedId);
+        final String selectedId = floorMapTrackingPresenter.getSelectedId();
+        floorMapTrackingPresenter.setData(entityList.getEntities());
+        floorMapTrackingPresenter.setSelected(selectedId);
     }
 
     /**
