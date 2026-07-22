@@ -170,11 +170,12 @@ State/PlanB lookup.) Note this is only the *named* plan — execution always run
 These are deferred/partial — see [query-optimiser-code-review.md](query-optimiser-code-review.md) for the full
 gap list.
 
-- **Cost-chosen algorithm is not wired into execution.** Real joins always run as an in-memory `HASH_JOIN`
-  materialising the right side; `EXPLAIN` may *name* a different algorithm/build side, but execution ignores it.
-  (Correctness is unaffected — only performance.)
-- **Enrichment joins to a State/PlanB store are not implemented.** A `join` whose side resolves to a
-  `BROADCAST_LOOKUP` will fail at execution — only index/searchable ⋈ index/searchable joins execute.
+- **The cost model's chosen algorithm doesn't drive execution.** Execution decides structurally: for `INNER`
+  it builds the smaller side and streams the larger, spilling the build side to an LMDB store past a heap
+  threshold; a `LEFT` join keeps probe = left. `EXPLAIN` may *name* an algorithm/build side; that is advisory,
+  not what runs. (Correctness is unaffected — only performance.)
+- **Enrichment (broadcast-lookup) joins are implemented.** A `join` to a keyed Plan B / State store (type
+  `PlanB`, joined on its `Key` field) is executed as a per-row point lookup rather than materialising that side.
 - **Single join only.** Any chain of more than one `join` is rejected up front.
 - **No per-side filter push-down.** Each join side is fetched in full and filtered after the join (fine for
   correctness; can be slow on large sides).

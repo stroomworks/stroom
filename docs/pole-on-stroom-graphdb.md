@@ -61,7 +61,7 @@ for the feed (the Graph Filter writes into the store, so there is no `Events` ou
 Two options:
 - **UI:** open the `POLE Graph` doc's **Data** tab and type Cypher.
 - **REST:** `POST /api/query/v1/search` with a Bearer token. The body must set `searchRequestSource.ownerDocRef`
-  to the GraphDb doc (this is how Stroom routes the text to the Cypher compiler — Cypher has no `FROM` clause):
+  to the GraphDb doc (this routes the text to the Cypher compiler when the query has no leading `from "GraphDb"` clause of its own — see below):
 
 ```bash
 curl -s -H "Authorization: Bearer <API_KEY>" -H "Content-Type: application/json" \
@@ -225,9 +225,10 @@ fold traversal + geometry + shortest-path into one statement are not.
   itself** — `ORDER BY total DESC` works, `ORDER BY count(c) DESC` does not. `collect()`, spatial, shortest-path,
   pattern-predicates, and writes remain out of scope in the current PoC — expect a clear "not yet
   supported"/parse error.
-- **Route via `ownerDocRef`** (REST) or the GraphDb **Data tab** (UI); a plain StroomQL surface won't parse
-  Cypher. *(A proposed `from "GraphDb"` prefix would let Cypher run from any surface — see
-  [cypher-from-clause-implementation-plan.md](cypher-from-clause-implementation-plan.md).)*
+- **Route via `ownerDocRef`** (REST), the GraphDb **Data tab** (UI), or a leading **`from "GraphDb"`** clause
+  in the query itself — the last is implemented (see
+  [cypher-from-clause-implementation-plan.md](cypher-from-clause-implementation-plan.md)) and lets the same
+  Cypher text run from any text surface (Query doc, `/csv/search`, MCP) without relying on `ownerDocRef`.
 - **Use a Bearer API key**, not a session cookie, for REST `POST`s (CSRF).
 
 ---

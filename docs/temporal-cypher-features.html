@@ -146,12 +146,12 @@
 
 <header class="doc">
   <h1>Temporal Features of the Stroom Graph DB</h1>
-  <div class="sub">The full point-in-time query surface — <code>AS OF</code>, <code>AROUND</code>, <code>BETWEEN</code> and the proposed <code>DIFF</code> — how each one reads the graph's version history, and how this approach compares to other graph databases.</div>
+  <div class="sub">The full point-in-time query surface — <code>AS OF</code>, <code>AROUND</code>, <code>BETWEEN</code> and <code>DIFF</code> — how each one reads the graph's version history, and how this approach compares to other graph databases.</div>
   <div class="badges">
     <span class="badge">Audience: Stroom Engineering &amp; Analysts</span>
     <span class="badge">Front end: Cypher</span>
     <span class="badge impl">AS OF / AROUND / BETWEEN: implemented (PoC)</span>
-    <span class="badge prop">DIFF: proposed</span>
+    <span class="badge impl">DIFF: implemented</span>
   </div>
 </header>
 
@@ -225,7 +225,7 @@
     <tr><td><code>AS OF t</code></td><td>What was there <strong>at</strong> t?</td><td>Per-element floor lookup at t</td><td>A single snapshot</td></tr>
     <tr><td><code>AROUND t &plusmn; d</code></td><td>What was live <strong>near</strong> t?</td><td>Window <code>[t&minus;d, t+d]</code> intersection</td><td>Union of surviving elements</td></tr>
     <tr><td><code>BETWEEN t1 AND t2</code></td><td>What was live <strong>across</strong> [t1,t2]?</td><td>Window <code>[t1, t2]</code> intersection</td><td>Union of surviving elements</td></tr>
-    <tr><td><code>DIFF FROM t1 TO t2</code> <span class="badge prop">proposed</span></td><td>What <strong>changed</strong> between t1 and t2?</td><td>Two floor lookups (t1, t2), compared</td><td>Elements tagged ADDED / REMOVED / MODIFIED / UNCHANGED</td></tr>
+    <tr><td><code>DIFF FROM t1 TO t2</code></td><td>What <strong>changed</strong> between t1 and t2?</td><td>Two floor lookups (t1, t2), compared</td><td>Elements tagged ADDED / REMOVED / MODIFIED / UNCHANGED</td></tr>
   </tbody>
 </table></div>
 
@@ -243,7 +243,7 @@ AROUND datetime('2026-07-01T09:00:00Z') +/- duration('PT1H')
 RETURN a.id, c.startTime</code></pre>
 <div class="callout warn"><strong>A window is a union, not a change set.</strong> <code>BETWEEN t1 AND t2</code> reads like "what changed between t1 and t2", but it returns everything that <em>existed at any point</em> in the window — one row per surviving element, with no indication of what was added or removed. If you want the <em>delta</em>, that is <code>DIFF</code>, below — this distinction is the single most common misreading of the temporal syntax.</div>
 
-<h2 id="diff">6. <code>DIFF</code> — what changed between two points <span class="badge prop">proposed</span></h2>
+<h2 id="diff">6. <code>DIFF</code> — what changed between two points</h2>
 <p><code>DIFF FROM t1 TO t2</code> compares the graph as of <em>t1</em> (the <strong>baseline</strong>) against the graph as of <em>t2</em> (the <strong>comparison</strong>) and classifies each element. The four kinds fall straight out of "present or absent at each instant":</p>
 <div class="table-wrap"><table>
   <thead><tr><th>At t1 (baseline)</th><th>At t2 (comparison)</th><th><code>changeKind</code></th></tr></thead>
@@ -329,7 +329,7 @@ RETURN a.id, c.startTime</code></pre>
     <tr>
       <td><strong>Stroom Graph DB</strong></td><td>Cypher + temporal extension</td>
       <td class="yes">Yes — storage-level floor lookup</td>
-      <td class="yes">Yes — proposed <code>DIFF</code> clause returning an annotated subgraph</td>
+      <td class="yes">Yes — a <code>DIFF</code> clause returning an annotated subgraph</td>
       <td>Valid time</td>
       <td>a rebuildable projection of event streams</td>
     </tr>
@@ -375,7 +375,7 @@ RETURN a.id, c.startTime</code></pre>
 <p>Three things set Stroom's approach apart — not any one feature in isolation, but the combination:</p>
 <ul>
   <li><strong>Point-in-time state is a storage primitive, not a schema pattern.</strong> Among mainstream <em>property-graph</em> databases (Neo4j and friends), historical state is something you engineer into your model with dated relationships or state nodes, and every query has to thread the time logic by hand. Here, <code>AS OF</code> is a reverse-cursor seek the store already performs; the model stays clean and the time logic lives in one clause.</li>
-  <li><strong>A diff is a query clause, not a post-processing chore.</strong> The systems that <em>do</em> offer time-travel (TerminusDB, Datomic, XTDB) generally hand you two snapshots — or a low-level stream of changed facts/triples — and leave assembling a human-meaningful, connected, colour-coded delta to you. The proposed <code>DIFF &hellip; RETURN GRAPH</code> is designed to emit exactly the annotated subgraph a UI needs, in one query.</li>
+  <li><strong>A diff is a query clause, not a post-processing chore.</strong> The systems that <em>do</em> offer time-travel (TerminusDB, Datomic, XTDB) generally hand you two snapshots — or a low-level stream of changed facts/triples — and leave assembling a human-meaningful, connected, colour-coded delta to you. Stroom's <code>DIFF &hellip; RETURN GRAPH</code> emits exactly the annotated subgraph a UI needs, in one query.</li>
   <li><strong>It diffs <em>valid time</em>, and the graph is event-sourced.</strong> The revision-based systems diff <em>commits</em> — "what did version A of the database contain vs version B". Stroom's <code>AS OF</code>/<code>DIFF</code> ask about the modelled world — "what was true at t1 vs t2" — because each element's <code>validFrom</code> is the effective time carried from the source event. And because the graph is a rebuildable projection of the stream store, that history is intrinsic: reprocessing the raw events reconstructs it.</li>
 </ul>
 
@@ -390,7 +390,7 @@ RETURN a.id, c.startTime</code></pre>
 <h2 id="status">9. Status &amp; caveats</h2>
 <ul>
   <li><strong>Implemented (PoC):</strong> the temporal model (versioned nodes/edges, tombstones, floor lookup) and the <code>AS OF</code>, <code>AROUND</code> and <code>BETWEEN</code> clauses, with window-intersection execution, are built and tested.</li>
-  <li><strong>Proposed:</strong> the <code>DIFF FROM &hellip; TO &hellip;</code> clause and its two output modes are a design proposal (see the <a href="temporal-cypher-diff-operator.md">companion doc</a>); not yet implemented. Its recommended build reuses the <code>AS OF</code> path (evaluate twice, classify, join), so the engineering risk is moderate — the real work is freezing the semantics.</li>
+  <li><strong>Implemented:</strong> the <code>DIFF FROM &hellip; TO &hellip;</code> clause with both output modes — the scalar delta table and the <code>RETURN GRAPH</code> annotated subgraph — is built and tested. It reuses the <code>AS OF</code> path (evaluate at each instant, classify, merge). See the <a href="temporal-cypher-diff-operator.md">companion design doc</a> for the semantics.</li>
   <li><strong>Single valid-time axis.</strong> Bitemporal (separate transaction time) is deliberately deferred.</li>
   <li><strong>Subset Cypher.</strong> The temporal clauses attach to a defined Cypher subset; a query currently lowers a single reading clause. Anything outside the subset is a parse-time error by design.</li>
   <li><strong>Query-side, not rendering.</strong> <code>RETURN GRAPH</code> defines the element-row contract the UI consumes; the actual force-directed / time-scrubbed rendering is separate UI work.</li>
@@ -408,7 +408,7 @@ RETURN a.id, c.startTime</code></pre>
 </ul>
 
 <hr>
-<p class="foot">This document describes a mix of implemented (PoC) and proposed capabilities, as marked. Comparisons to other databases are for orientation and reflect native behaviour as generally documented, not benchmarks.</p>
+<p class="foot">The capabilities described here are implemented; bitemporal (transaction time) and typed graph properties are noted inline as documented future extensions. Comparisons to other databases are for orientation and reflect native behaviour as generally documented, not benchmarks.</p>
 
 </div>
 </body>

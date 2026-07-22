@@ -111,6 +111,8 @@
   </ol>
 </div>
 
+<div class="callout"><strong>Implementation status.</strong> The temporal Cypher graph, the <code>DIFF</code> operator (delta table + <code>RETURN GRAPH</code>), the portable <code>from "GraphDb"</code> routing, StroomQL joins (incl. the enrichment fast path and a Cypher sub-query as a join side), and the Graph DB settings tab are all <strong>implemented</strong>. The <em>design</em>, <em>feasibility</em> and <em>implementation-plan</em> docs below are retained as records of the design and rationale, not as descriptions of pending work — for the current state see the <a href="query-graphdb-review-report.md">review report</a>, and for how it all fits together the <a href="query-engine-developer-guide.html">developer guide</a>. Still future: the Cytoscape UI, typed graph properties, <code>collect()</code>/spatial/path-finding, N-way joins.</div>
+
 <h2>Design &amp; feasibility <span class="h2note">— human-facing design docs</span></h2>
 <div class="table-wrap"><table>
   <thead><tr><th>Document</th><th>What it covers</th></tr></thead>
@@ -201,6 +203,10 @@
 <div class="table-wrap"><table>
   <thead><tr><th>Document</th><th>What it covers</th></tr></thead>
   <tbody>
+    <tr>
+      <td class="doc"><a href="query-engine-developer-guide.html">Query Engine — developer guide</a><span class="fmt">HTML</span></td>
+      <td>How StroomQL and Cypher share one core: key classes, a query traced end-to-end through each language, joins, the shared IR, and where to extend it. <strong>Start here to read/review/extend the code.</strong></td>
+    </tr>
     <tr>
       <td class="doc"><a href="query-optimiser-plan.html">Stroom Query Optimiser — design</a><span class="fmt">HTML</span></td>
       <td>The reusable query core: a grammar-driven parser, a logical IR with a <code>Join</code> operator, a cost-based planner, and cross-datasource joins — the layer Cypher compiles into.</td>
