@@ -80,8 +80,16 @@ class GetState extends AbstractManyChildFunction {
 
         // If we have values for all params then do a lookup now.
         if (map != null && key != null && effectiveTimeMs != null) {
-            // Create static value.
-            final Val val = stateFetcher.getState(map, key, effectiveTimeMs);
+            // Create static value. Mirror Gen.eval's error handling: a lookup failure must surface as a ValErr
+            // cell, not an exception escaping query setup. StateFetcher.getState can now throw (e.g. a permission
+            // deny, or a NumberFormatException from a key shape mismatched to the store type) rather than
+            // returning a ValErr itself, so this all-literal-args path must catch it too.
+            Val val;
+            try {
+                val = stateFetcher.getState(map, key, effectiveTimeMs);
+            } catch (final RuntimeException e) {
+                val = ValErr.create(e.getMessage());
+            }
             gen = new StaticValueGen(val);
         }
     }
