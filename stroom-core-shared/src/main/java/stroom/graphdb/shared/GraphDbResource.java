@@ -29,6 +29,7 @@ import jakarta.ws.rs.PUT;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 import org.fusesource.restygwt.client.DirectRestService;
 
@@ -65,4 +66,15 @@ public interface GraphDbResource extends RestResource, DirectRestService, FetchW
                       + "help build a query",
             operationId = "fetchGraphDbSchema")
     GraphDbSchema fetchSchema(@PathParam("uuid") String uuid);
+
+    @GET
+    @Path("/{uuid}/expand")
+    @Operation(
+            summary = "Expand a node's neighbours (all edge types, both directions) as RETURN GRAPH element rows, "
+                      + "for additive rendering in the graph view",
+            operationId = "expandGraphDbNode")
+    GraphElementTable expandNode(
+            @PathParam("uuid") String uuid,
+            @QueryParam("nodeId") String nodeId,
+            @QueryParam("query") String query);
 }

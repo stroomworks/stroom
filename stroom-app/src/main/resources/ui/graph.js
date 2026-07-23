@@ -369,12 +369,51 @@ function GraphManager() {
         }
     };
 
+    // Ask the parent to expand this node's neighbours (all edge types, both directions) and merge them in.
+    var sendExpand = function (nodeId) {
+        if (nodeId) {
+            stroom.select([{__stroomExpand: nodeId}]);
+        }
+    };
+
+    // Merge additional elements into the current graph (the result of an "Expand neighbours" request), skipping
+    // any element already present, then re-layout.
+    var addElements = function (payload) {
+        if (typeof cytoscape === 'undefined') {
+            return;
+        }
+        if (!cy) {
+            render(payload);
+            return;
+        }
+        var elements = toElements(payload);
+        var fresh = [];
+        for (var i = 0; i < elements.length; i++) {
+            var el = elements[i];
+            if (el.data && el.data.id && cy.getElementById(el.data.id).length === 0) {
+                fresh.push(el);
+            }
+        }
+        if (fresh.length > 0) {
+            cy.add(fresh);
+            runLayout();
+        }
+    };
+
     var setupContextMenu = function () {
         if (typeof cy.contextMenus !== 'function') {
             return; // extension not vendored - skip gracefully
         }
         cy.contextMenus({
             menuItems: [
+                {
+                    id: 'expand-node',
+                    content: 'Expand neighbours',
+                    selector: 'node',
+                    onClickFunction: function (evt) {
+                        sendExpand(evt.target.data('id'));
+                    }
+                },
                 {
                     id: 'query-node',
                     content: 'Query this node',
@@ -460,6 +499,11 @@ function GraphManager() {
     this.setElements = function (payload, callback) {
         render(payload);
         // Fire-and-forget: do not call the callback.
+    };
+
+    this.addElements = function (payload, callback) {
+        addElements(payload);
+        // Fire-and-forget.
     };
 
     this.resize = function (callback) {

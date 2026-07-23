@@ -18,6 +18,7 @@ package stroom.graphdb.client.presenter;
 
 import stroom.dashboard.client.table.ComponentSelection;
 import stroom.dashboard.client.vis.SelectionUiHandlers;
+import stroom.graphdb.shared.GraphElementTable;
 import stroom.query.api.Column;
 import stroom.query.api.Row;
 import stroom.query.api.TableResult;
@@ -51,16 +52,21 @@ import java.util.function.Consumer;
  */
 public class GraphResultWidget extends Composite implements SelectionUiHandlers {
 
-    /** The param key a context-menu action uses to ask the parent to run a query (see {@code ui/graph.js}). */
+    /** Param keys a context-menu action uses to ask the parent to act (see {@code ui/graph.js}). */
     private static final String RUN_QUERY_PARAM = "__stroomQuery";
+    private static final String EXPAND_NODE_PARAM = "__stroomExpand";
 
     private final GraphFrame frame;
     private final SimplePanel graphHolder;
     private final Label messageLabel;
     private final Consumer<String> onRunQuery;
+    private final Consumer<String> onExpandNode;
 
-    public GraphResultWidget(final EventBus eventBus, final Consumer<String> onRunQuery) {
+    public GraphResultWidget(final EventBus eventBus,
+                             final Consumer<String> onRunQuery,
+                             final Consumer<String> onExpandNode) {
         this.onRunQuery = onRunQuery;
+        this.onExpandNode = onExpandNode;
         frame = new GraphFrame(eventBus);
         frame.setUiHandlers(this);
 
@@ -175,8 +181,14 @@ public class GraphResultWidget extends Composite implements SelectionUiHandlers 
     @Override
     public void onSelection(final List<ComponentSelection> values) {
         if (values != null && !values.isEmpty()) {
-            // A context-menu action ("Query this node") carries a query to run; a plain tap does not.
-            final String query = values.get(0).getParamValue(RUN_QUERY_PARAM);
+            final ComponentSelection selection = values.get(0);
+            // Context-menu actions carry a command param; a plain tap carries neither.
+            final String expandNodeId = selection.getParamValue(EXPAND_NODE_PARAM);
+            if (expandNodeId != null && onExpandNode != null) {
+                onExpandNode.accept(expandNodeId);
+                return;
+            }
+            final String query = selection.getParamValue(RUN_QUERY_PARAM);
             if (query != null && onRunQuery != null) {
                 onRunQuery.accept(query);
                 return;
@@ -184,5 +196,38 @@ public class GraphResultWidget extends Composite implements SelectionUiHandlers 
         }
         // TODO(P5): open the tapped element's properties and drive dashboard-style selection linking.
         GWT.log("GraphResultWidget: element selected (" + NullSafe.size(values) + ")");
+    }
+
+    /**
+     * Merge an "Expand neighbours" result into the already-rendered graph (additive - does not replace the view).
+     */
+    public void addElements(final GraphElementTable table) {
+        if (table == null || table.rows().isEmpty()) {
+            return;
+        }
+        final JSONArray columnArray = new JSONArray();
+        final List<String> columns = NullSafe.list(table.columns());
+        for (int i = 0; i < columns.size(); i++) {
+            columnArray.set(i, new JSONString(columns.get(i)));
+        }
+
+        final JSONArray rowArray = new JSONArray();
+        final List<List<String>> rows = NullSafe.list(table.rows());
+        for (int r = 0; r < rows.size(); r++) {
+            final List<String> values = NullSafe.list(rows.get(r));
+            final JSONArray valueArray = new JSONArray();
+            for (int k = 0; k < values.size(); k++) {
+                final String value = values.get(k);
+                valueArray.set(k, value == null
+                        ? JSONNull.getInstance()
+                        : new JSONString(value));
+            }
+            rowArray.set(r, valueArray);
+        }
+
+        final JSONObject payload = new JSONObject();
+        payload.put("columns", columnArray);
+        payload.put("rows", rowArray);
+        frame.addElements(payload);
     }
 }

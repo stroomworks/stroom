@@ -30,6 +30,7 @@ import stroom.query.language.functions.ValNull;
 import stroom.query.language.functions.ValString;
 import stroom.query.planner.cypher.CompiledCypherPlan;
 import stroom.query.planner.cypher.CypherToLogicalPlan;
+import stroom.query.planner.cypher.TemporalContext;
 
 import org.assertj.core.groups.Tuple;
 import org.junit.jupiter.api.Test;
@@ -1333,6 +1334,70 @@ class TestGraphTraversalEngine {
             final List<Val[]> rows = stores.read(readTxn ->
                     GraphElementExecutor.execute(readTxn, engine, stores, compiled.plan(),
                             compiled.temporalContext(), compiled.diffContext(), DateTimeSettings.builder().build()));
+
+            assertThat(rows).isEmpty();
+        }
+    }
+
+    @Test
+    void expandNode_returnsTheNodePlusAllNeighboursBothDirections(@TempDir final Path root) {
+        // "Expand neighbours" from d-42: it has outgoing CONNECTED_TO edges to account-a and account-b and an
+        // incoming CONNECTED_TO edge from gw-1 - so the expand yields d-42 + those 3 neighbours + 3 edges, found by
+        // node identity (external id) across all edge types and both directions, with no anchor property needed.
+        try (GraphStores stores = GraphStores.provision(root.resolve("expand"), DOC)) {
+            seedDeviceConnectedToAccounts(stores);
+
+            final GraphTraversalEngine engine = new GraphTraversalEngine(stores, new ExpressionPredicateFactory());
+            final List<Val[]> rows = stores.read(readTxn ->
+                    GraphElementExecutor.executeExpand(readTxn, engine, stores, "d-42", 50, null));
+
+            assertThat(rows).extracting(r -> text(r[0])).filteredOn("NODE"::equals).hasSize(4);
+            assertThat(rows).extracting(r -> text(r[0])).filteredOn("EDGE"::equals).hasSize(3);
+            assertThat(rows)
+                    .extracting(r -> text(r[0]), r -> text(r[1]), r -> text(r[3]), r -> text(r[4]))
+                    .containsExactlyInAnyOrder(
+                            Tuple.tuple("NODE", "d-42", null, null),
+                            Tuple.tuple("NODE", "account-a", null, null),
+                            Tuple.tuple("NODE", "account-b", null, null),
+                            Tuple.tuple("NODE", "gw-1", null, null),
+                            Tuple.tuple("EDGE", "d-42|CONNECTED_TO|account-a", "d-42", "account-a"),
+                            Tuple.tuple("EDGE", "d-42|CONNECTED_TO|account-b", "d-42", "account-b"),
+                            Tuple.tuple("EDGE", "gw-1|CONNECTED_TO|d-42", "gw-1", "d-42"));
+        }
+    }
+
+    @Test
+    void expandNode_honoursTemporalInstant(@TempDir final Path root) {
+        // The d-42 -> account-b edge is written at T2; d-42 -> account-a and gw-1 -> d-42 at T1. Expanding d-42
+        // AS OF T1 must therefore see only account-a and gw-1 as neighbours - account-b's edge does not yet exist,
+        // so the expansion matches the historical snapshot rather than leaking the present-day edge.
+        try (GraphStores stores = GraphStores.provision(root.resolve("expandtemporal"), DOC)) {
+            seedDeviceConnectedToAccounts(stores);
+
+            final GraphTraversalEngine engine = new GraphTraversalEngine(stores, new ExpressionPredicateFactory());
+            final TemporalContext asOfT1 = new TemporalContext(TemporalContext.Mode.AS_OF, T1, null, null);
+            final List<Val[]> rows = stores.read(readTxn ->
+                    GraphElementExecutor.executeExpand(readTxn, engine, stores, "d-42", 50, asOfT1));
+
+            assertThat(rows)
+                    .filteredOn(r -> "NODE".equals(text(r[0])))
+                    .extracting(r -> text(r[1]))
+                    .containsExactlyInAnyOrder("d-42", "account-a", "gw-1");
+            assertThat(rows)
+                    .filteredOn(r -> "EDGE".equals(text(r[0])))
+                    .extracting(r -> text(r[1]))
+                    .containsExactlyInAnyOrder("d-42|CONNECTED_TO|account-a", "gw-1|CONNECTED_TO|d-42");
+        }
+    }
+
+    @Test
+    void expandNode_unknownId_returnsEmpty(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("expandunknown"), DOC)) {
+            seedDeviceConnectedToAccounts(stores);
+
+            final GraphTraversalEngine engine = new GraphTraversalEngine(stores, new ExpressionPredicateFactory());
+            final List<Val[]> rows = stores.read(readTxn ->
+                    GraphElementExecutor.executeExpand(readTxn, engine, stores, "no-such-node", 50, null));
 
             assertThat(rows).isEmpty();
         }

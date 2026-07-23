@@ -22,6 +22,7 @@ import stroom.event.logging.rs.api.AutoLogged;
 import stroom.graphdb.shared.GraphDbDoc;
 import stroom.graphdb.shared.GraphDbResource;
 import stroom.graphdb.shared.GraphDbSchema;
+import stroom.graphdb.shared.GraphElementTable;
 import stroom.util.shared.EntityServiceException;
 import stroom.util.shared.FetchWithUuid;
 
@@ -41,14 +42,17 @@ class GraphDbResourceImpl implements GraphDbResource, FetchWithUuid<GraphDbDoc> 
     private final Provider<GraphDbDocStore> graphDbDocStoreProvider;
     private final Provider<DocumentResourceHelper> documentResourceHelperProvider;
     private final Provider<GraphSchemaService> graphSchemaServiceProvider;
+    private final Provider<GraphExpandService> graphExpandServiceProvider;
 
     @Inject
     GraphDbResourceImpl(final Provider<GraphDbDocStore> graphDbDocStoreProvider,
                        final Provider<DocumentResourceHelper> documentResourceHelperProvider,
-                       final Provider<GraphSchemaService> graphSchemaServiceProvider) {
+                       final Provider<GraphSchemaService> graphSchemaServiceProvider,
+                       final Provider<GraphExpandService> graphExpandServiceProvider) {
         this.graphDbDocStoreProvider = graphDbDocStoreProvider;
         this.documentResourceHelperProvider = documentResourceHelperProvider;
         this.graphSchemaServiceProvider = graphSchemaServiceProvider;
+        this.graphExpandServiceProvider = graphExpandServiceProvider;
     }
 
     @Override
@@ -68,6 +72,12 @@ class GraphDbResourceImpl implements GraphDbResource, FetchWithUuid<GraphDbDoc> 
     public GraphDbSchema fetchSchema(final String uuid) {
         final GraphDbDoc doc = fetch(uuid);
         return graphSchemaServiceProvider.get().discover(doc, SAMPLE_NODE_LIMIT);
+    }
+
+    @Override
+    public GraphElementTable expandNode(final String uuid, final String nodeId, final String query) {
+        final GraphDbDoc doc = fetch(uuid);
+        return graphExpandServiceProvider.get().expand(doc, nodeId, query);
     }
 
     private DocRef getDocRef(final String uuid) {

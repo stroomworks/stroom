@@ -103,6 +103,29 @@ public final class GraphElementExecutor {
         return rows;
     }
 
+    /**
+     * Renders the expand-on-demand element union (the graph view's "Expand neighbours") as {@code RETURN GRAPH}
+     * element rows - the node with external id {@code nodeId}, its neighbours across all edge types (both
+     * directions), and the connecting edges - reusing {@link #renderRow} so the rows are identical in shape to a
+     * {@code RETURN GRAPH} result. See {@link GraphTraversalEngine#expandNodeNeighbours}.
+     */
+    public static List<Val[]> executeExpand(final Txn<ByteBuffer> readTxn, final GraphTraversalEngine engine,
+                                            final GraphStores stores, final String nodeId, final int maxNeighbours,
+                                            final @Nullable TemporalContext temporalContext) {
+        Objects.requireNonNull(readTxn, "readTxn");
+        Objects.requireNonNull(engine, "engine");
+        Objects.requireNonNull(stores, "stores");
+        Objects.requireNonNull(nodeId, "nodeId");
+
+        final Map<ElementId, ElementDetail> elements =
+                engine.expandNodeNeighbours(readTxn, nodeId, maxNeighbours, temporalContext);
+        final List<Val[]> rows = new ArrayList<>(elements.size());
+        for (final Map.Entry<ElementId, ElementDetail> entry : elements.entrySet()) {
+            rows.add(renderRow(readTxn, stores, entry.getKey(), entry.getValue(), null));
+        }
+        return rows;
+    }
+
     private static List<Val[]> executeDiff(final Txn<ByteBuffer> readTxn, final GraphTraversalEngine engine,
                                            final GraphStores stores, final LogicalPlan plan,
                                            final DiffContext diffContext, final DateTimeSettings dateTimeSettings) {

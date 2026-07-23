@@ -60,6 +60,7 @@ public class GraphDbDataPresenter
     private final GraphDiscoveryWidget discoveryWidget;
     private boolean graphVisible;
     private boolean discoveryVisible;
+    private String lastRunQuery;
 
     public interface GraphDbDataView extends QueryDataView {
     }
@@ -75,7 +76,7 @@ public class GraphDbDataPresenter
 
         // The Graph DB Data tab adds a Graph view alongside the table, driven by the same result store
         // (Cytoscape implementation plan P3). The toggle stays hidden for every other query data tab.
-        graphResultWidget = new GraphResultWidget(eventBus, this::runQuery);
+        graphResultWidget = new GraphResultWidget(eventBus, this::runQuery, this::expandNode);
         view.setGraphView(graphResultWidget, this::onViewModeChange);
 
         // ...and a discovery panel that turns the graph's schema into clickable starter queries, for analysts who
@@ -120,6 +121,30 @@ public class GraphDbDataPresenter
     private void runQuery(final String query) {
         getView().setQuery(query);
         onRun();
+    }
+
+    /** Expand a node's neighbours (all edge types, both directions) and merge them into the current graph -
+     * the graph context-menu "Expand neighbours" action. Graph-view only; the table is left unchanged. */
+    private void expandNode(final String nodeId) {
+        final DocRef docRef = getCurrentDocRef();
+        if (docRef == null || nodeId == null) {
+            return;
+        }
+        final String query = lastRunQuery != null ? lastRunQuery : getView().getQuery();
+        getRestFactory()
+                .create(GRAPH_DB_RESOURCE)
+                .method(res -> res.expandNode(docRef.getUuid(), nodeId, query))
+                .onSuccess(graphResultWidget::addElements)
+                .taskMonitorFactory(this)
+                .exec();
+    }
+
+    @Override
+    public void onRun() {
+        // Remember the query that produced the current graph, so an "Expand neighbours" runs at the same
+        // temporal instant/window (the box may be edited afterwards without re-running).
+        lastRunQuery = getView().getQuery();
+        super.onRun();
     }
 
     @Override

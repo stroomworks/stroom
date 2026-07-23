@@ -776,6 +776,84 @@ public final class GraphTraversalEngine {
     }
 
     /**
+     * Expand-on-demand: the element union of the node with external id {@code externalId} plus its neighbours
+     * across <em>all</em> edge types, both directions, at the latest instant - the graph view's right-click
+     * "Expand neighbours". Unlike a Cypher anchor, the centre node is sought by its <em>identity</em>
+     * ({@link GraphStores#getNodeUids} maps external id &harr; UID), so it works for any node regardless of which
+     * property (if any) is indexed. There is no untyped adjacency index, so all edge types are enumerated and the
+     * hardened as-of/window {@link TemporalAccess#expandOut}/{@link TemporalAccess#expandIn} are reused per type.
+     * Bounded by {@code maxNeighbours} distinct neighbour nodes (a hub is not fully materialised). The
+     * {@code temporalContext} is honoured (via {@link #resolveAccess}) so an expand matches the instant/window of
+     * the query that produced the displayed graph - {@code null} means the latest snapshot.
+     *
+     * @return the centre node, its included neighbours, and the edges connecting them; empty if the id is unknown
+     *         or the node is absent at the resolved instant.
+     */
+    public Map<ElementId, ElementDetail> expandNodeNeighbours(final Txn<ByteBuffer> readTxn, final String externalId,
+                                                              final int maxNeighbours,
+                                                              final @Nullable TemporalContext temporalContext) {
+        Objects.requireNonNull(readTxn, "readTxn");
+        Objects.requireNonNull(externalId, "externalId");
+
+        final Map<ElementId, ElementDetail> elements = new LinkedHashMap<>();
+        final Optional<Long> centreUid = lookupUid(readTxn, stores.getNodeUids(), externalId);
+        if (centreUid.isEmpty()) {
+            return elements;
+        }
+        final long uid = centreUid.get();
+        final TemporalAccess access = resolveAccess(temporalContext);
+        final Optional<GraphNodeDb.NodeVersion> centre = access.getNode(readTxn, uid);
+        if (centre.isEmpty()) {
+            return elements;
+        }
+        elements.put(new ElementId.Node(uid), nodeDetail(readTxn, centre.get()));
+
+        final Instant deadline = Instant.now().plus(maxTraversalDuration);
+        final int[] neighbourCount = {0};
+
+        for (final long edgeTypeUid : enumerateEdgeTypeUids(readTxn)) {
+            if (neighbourCount[0] >= maxNeighbours) {
+                break;
+            }
+            final String typeName = decodeUidName(readTxn, stores.getEdgeTypeUids(), edgeTypeUid);
+            // Outgoing: centre -> neighbour.
+            access.expandOut(readTxn, uid, edgeTypeUid, step ->
+                    addNeighbour(readTxn, access, elements, neighbourCount, maxNeighbours, deadline,
+                            uid, edgeTypeUid, typeName, step.neighbourUid(), step.edgeProperties(), true));
+            // Incoming: neighbour -> centre.
+            access.expandIn(readTxn, uid, edgeTypeUid, step ->
+                    addNeighbour(readTxn, access, elements, neighbourCount, maxNeighbours, deadline,
+                            uid, edgeTypeUid, typeName, step.neighbourUid(), step.edgeProperties(), false));
+        }
+        return elements;
+    }
+
+    private void addNeighbour(final Txn<ByteBuffer> readTxn, final TemporalAccess access,
+                              final Map<ElementId, ElementDetail> elements, final int[] neighbourCount,
+                              final int maxNeighbours, final Instant deadline, final long centreUid,
+                              final long edgeTypeUid, final String typeName, final long neighbourUid,
+                              final Map<String, Val> edgeProperties, final boolean outgoing) {
+        if (neighbourCount[0] >= maxNeighbours) {
+            return;
+        }
+        checkDeadline(deadline);
+        final Optional<GraphNodeDb.NodeVersion> neighbour = access.getNode(readTxn, neighbourUid);
+        if (neighbour.isEmpty()) {
+            return;
+        }
+        final ElementId.Node neighbourNode = new ElementId.Node(neighbourUid);
+        if (elements.putIfAbsent(neighbourNode, nodeDetail(readTxn, neighbour.get())) == null) {
+            neighbourCount[0]++;
+        }
+        final long srcUid = outgoing ? centreUid : neighbourUid;
+        final long dstUid = outgoing ? neighbourUid : centreUid;
+        elements.put(
+                new ElementId.Edge(srcUid, edgeTypeUid, dstUid),
+                new ElementDetail(List.of(typeName), edgeProperties,
+                        new ElementId.Node(srcUid), new ElementId.Node(dstUid)));
+    }
+
+    /**
      * As {@link #executeGraphBindings}, but at a single fixed instant - the per-snapshot half of a {@code DIFF
      * ... RETURN GRAPH} query, called once for the baseline and once for the comparison instant (mirrors {@link
      * #executeDiffBindings}'s own {@code Instant asOf} overload). The caller ({@code GraphElementExecutor}) turns

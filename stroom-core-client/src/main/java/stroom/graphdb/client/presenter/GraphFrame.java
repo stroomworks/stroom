@@ -86,6 +86,21 @@ public class GraphFrame extends Composite {
         flush();
     }
 
+    /**
+     * Merge additional element rows into the already-loaded graph (an "Expand neighbours" result), without
+     * replacing what is shown. Only meaningful after {@link #setElements} has rendered a graph.
+     */
+    public void addElements(final JSONValue payload) {
+        final JSONArray params = new JSONArray();
+        params.set(0, payload);
+
+        final JSONObject message = new JSONObject();
+        message.put("functionName", new JSONString("graphManager.addElements"));
+        message.put("params", params);
+
+        messageSupport.postMessage(message);
+    }
+
     public void clear() {
         pendingElements = null;
         final JSONObject message = new JSONObject();
