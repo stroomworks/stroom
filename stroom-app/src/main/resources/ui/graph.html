@@ -19,17 +19,22 @@
   Sandboxed host page for the Graph DB Data tab's Cytoscape graph view. Loaded in an iframe by
   GraphFrame and driven over the same postMessage protocol as vis.html (see graph.js).
 
-  The graph library is self-hosted (no CDN, for air-gapped deployments) and vendored under
-  script/cytoscape/:
-    - cytoscape.min.js         (required; MIT; v3.34.0)
-    - cytoscape-fcose.js       (optional layout extension; MIT - not currently vendored, so graph.js
-                                falls back to the built-in 'cose' layout). To enable fcose, drop the
-                                file in and add its <script> tag below.
-  If cytoscape.min.js is absent graph.js shows an installation hint instead of rendering.
+  The graph library and its extensions are self-hosted (no CDN, for air-gapped deployments) and vendored under
+  script/cytoscape/ (all MIT). Load order matters: a layout extension's algorithm deps must precede it, and every
+  extension must follow cytoscape.min.js (they auto-register against the global `cytoscape`).
+    - cytoscape.min.js               (required; v3.34.0)
+    - layout-base.js, cose-base.js   (deps of fcose)
+    - cytoscape-fcose.js             (force layout)
+    - dagre.min.js                   (dep of cytoscape-dagre)
+    - cytoscape-dagre.js             (hierarchical layout)
+    - cytoscape-context-menus.js/.css (right-click menu)
+  graph.js degrades gracefully if any extension is absent (falls back to the built-in 'cose' layout, hides the
+  context menu). If cytoscape.min.js itself is absent it shows an installation hint instead of rendering.
 -->
 <html>
 <head>
     <meta charset="UTF-8"/>
+    <link rel="stylesheet" href="script/cytoscape/cytoscape-context-menus.css" type="text/css"/>
     <style>
         html, body {
             margin: 0;
@@ -53,8 +58,54 @@
             color: #666666;
             line-height: 1.5;
         }
+
+        #graph-toolbar {
+            position: absolute;
+            top: 6px;
+            left: 6px;
+            z-index: 10;
+            display: flex;
+            gap: 6px;
+            align-items: center;
+            font-size: 12px;
+        }
+
+        #graph-toolbar select,
+        #graph-toolbar button {
+            font-size: 12px;
+            padding: 2px 6px;
+            border: 1px solid #b0b0b0;
+            border-radius: 3px;
+            background: #ffffff;
+            cursor: pointer;
+        }
+
+        #graph-tooltip {
+            position: absolute;
+            z-index: 20;
+            display: none;
+            max-width: 320px;
+            padding: 6px 8px;
+            border-radius: 4px;
+            background: rgba(20, 20, 20, 0.9);
+            color: #ffffff;
+            font-size: 11px;
+            line-height: 1.45;
+            pointer-events: none;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+        }
+
+        #graph-tooltip .k {
+            opacity: 0.7;
+        }
     </style>
     <script type="text/javascript" src="script/cytoscape/cytoscape.min.js"></script>
+    <script type="text/javascript" src="script/cytoscape/layout-base.js"></script>
+    <script type="text/javascript" src="script/cytoscape/cose-base.js"></script>
+    <script type="text/javascript" src="script/cytoscape/cytoscape-fcose.js"></script>
+    <script type="text/javascript" src="script/cytoscape/dagre.min.js"></script>
+    <script type="text/javascript" src="script/cytoscape/cytoscape-dagre.js"></script>
+    <script type="text/javascript" src="script/cytoscape/cytoscape-context-menus.js"></script>
     <script type="text/javascript" src="graph.js"></script>
 </head>
 <body>

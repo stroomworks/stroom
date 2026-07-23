@@ -37,6 +37,7 @@ import com.google.web.bindery.event.shared.EventBus;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Consumer;
 
 /**
  * The Graph DB Data tab's graph view: a {@link GraphFrame} (the Cytoscape sandbox) plus a message overlay.
@@ -50,11 +51,16 @@ import java.util.Set;
  */
 public class GraphResultWidget extends Composite implements SelectionUiHandlers {
 
+    /** The param key a context-menu action uses to ask the parent to run a query (see {@code ui/graph.js}). */
+    private static final String RUN_QUERY_PARAM = "__stroomQuery";
+
     private final GraphFrame frame;
     private final SimplePanel graphHolder;
     private final Label messageLabel;
+    private final Consumer<String> onRunQuery;
 
-    public GraphResultWidget(final EventBus eventBus) {
+    public GraphResultWidget(final EventBus eventBus, final Consumer<String> onRunQuery) {
+        this.onRunQuery = onRunQuery;
         frame = new GraphFrame(eventBus);
         frame.setUiHandlers(this);
 
@@ -168,6 +174,14 @@ public class GraphResultWidget extends Composite implements SelectionUiHandlers 
 
     @Override
     public void onSelection(final List<ComponentSelection> values) {
+        if (values != null && !values.isEmpty()) {
+            // A context-menu action ("Query this node") carries a query to run; a plain tap does not.
+            final String query = values.get(0).getParamValue(RUN_QUERY_PARAM);
+            if (query != null && onRunQuery != null) {
+                onRunQuery.accept(query);
+                return;
+            }
+        }
         // TODO(P5): open the tapped element's properties and drive dashboard-style selection linking.
         GWT.log("GraphResultWidget: element selected (" + NullSafe.size(values) + ")");
     }

@@ -75,7 +75,7 @@ public class GraphDbDataPresenter
 
         // The Graph DB Data tab adds a Graph view alongside the table, driven by the same result store
         // (Cytoscape implementation plan P3). The toggle stays hidden for every other query data tab.
-        graphResultWidget = new GraphResultWidget(eventBus);
+        graphResultWidget = new GraphResultWidget(eventBus, this::runQuery);
         view.setGraphView(graphResultWidget, this::onViewModeChange);
 
         // ...and a discovery panel that turns the graph's schema into clickable starter queries, for analysts who
@@ -112,6 +112,12 @@ public class GraphDbDataPresenter
     private void applyDiscoveredQuery(final String query) {
         discoveryVisible = false;
         getView().showDiscovery(false);
+        runQuery(query);
+    }
+
+    /** Drop a query into the box and run it - the target of both a discovery suggestion and a graph
+     * context-menu action (e.g. "Query this node"). */
+    private void runQuery(final String query) {
         getView().setQuery(query);
         onRun();
     }

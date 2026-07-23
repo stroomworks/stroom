@@ -81,6 +81,12 @@ The table below includes licences for all Maven dependencies.
 | commons-logging                  | commons-logging                              | 1.1.1            | APL 2.0       |           |               |
 | commons-net                      | commons-net                                  | 3.1              | APL 2.0       |           |               |
 | cytoscape                        | cytoscape.js                                 | 3.34.0           | MIT           |           |               |
+| cytoscape                        | cytoscape-fcose                              | 2.2.0            | MIT           |           |               |
+| cytoscape                        | cytoscape-dagre                              | 2.5.0            | MIT           |           |               |
+| cytoscape                        | cytoscape-context-menus                      | 4.1.0            | MIT           |           |               |
+| cytoscape                        | cose-base                                    | 2.2.0            | MIT           |           |               |
+| cytoscape                        | layout-base                                  | 2.0.1            | MIT           |           |               |
+| dagrejs                          | dagre                                        | 0.8.5            | MIT           |           |               |
 | de.svenkubiak                    | jBCrypt                                      | 0.4.1            | Custom        |           |               |
 | dom4j                            | dom4j                                        | 1.6.1            | Custom BSD    |           |               |
 | io.netty                         | netty                                        | 3.6.2.Final      | APL 2.0       |           |               |

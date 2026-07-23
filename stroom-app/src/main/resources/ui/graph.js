@@ -17,36 +17,30 @@
 /*
  * The sandboxed host page for the Graph DB Data tab's Cytoscape.js graph view.
  *
- * TRANSPORT (frozen contract - P0). This page is driven over the SAME same-origin
- * postMessage protocol as ui/vis.js: the parent (GraphFrame -> MessageSupport -> PostMessage)
- * posts {frameId, [callbackId,] data:{functionName, params}}, and this listener dispatches
- * `functionName.apply(this, params)` against the global `graphManager`. Recognised calls:
- *
- *   graphManager.setElements({columns:[<name>...], rows:[[<value>...]...]})
- *       - the RETURN GRAPH element-row table (columns kind,id,labels,source,target,properties
- *         [,changeKind] - see CypherToLogicalPlan.ELEMENT_ROW_COLUMNS). Fire-and-forget.
- *   graphManager.resize()   - re-fit the viewport (call after the pane becomes visible / resizes).
+ * TRANSPORT (frozen contract - P0). Driven over the SAME same-origin postMessage protocol as ui/vis.js: the
+ * parent (GraphFrame -> MessageSupport -> PostMessage) posts {frameId, [callbackId,] data:{functionName, params}},
+ * and this listener dispatches `functionName.apply(this, params)` against the global `graphManager`:
+ *   graphManager.setElements({columns:[...], rows:[[...]...]})  - the RETURN GRAPH element-row table. Fire-and-forget.
+ *   graphManager.resize()   - re-fit the viewport.
  *   graphManager.clear()    - drop all elements.
+ * Reverse channel: stroom.select([...]) posts a selection back (handled by MessageSupport as a "select" message).
+ * A plain node/edge tap posts the tapped element; the "Query this node" context-menu action posts a selection
+ * carrying a `__stroomQuery` param, which the parent runs as a new query (the vis->engine bridge, without needing
+ * a new transport message type). Fire-and-forget calls must NOT invoke the callback (mirrors vis.js).
  *
- * Reverse channel: a node/edge tap posts stroom.select([{id,kind}]) back to the parent
- * (handled by MessageSupport as a "select" message). Fire-and-forget calls must NOT invoke the
- * callback (mirrors vis.js's setData/resize), or the parent logs an "unexpected message".
+ * The row->elements ADAPTER (render() below) is the single reshape the design study (§3, §7) calls for.
  *
- * The row->elements ADAPTER (render() below) is the single reshape the design study (§3, §7)
- * calls for: split rows by kind, de-duplicate nodes by id, build edges from source/target,
- * spread the JSON `properties` map, and style by `changeKind`. Keeping it here means a future
- * dashboard surface can reuse this file unchanged.
- *
- * The library (cytoscape.min.js, optional cytoscape-fcose.js) is loaded locally by graph.html -
- * no CDN - and is vendored separately (air-gap). If it is absent this page shows a hint rather
- * than failing silently.
+ * INTERACTION. On top of Cytoscape's built-in pan/zoom/drag/select, this adds (all optional - each degrades if its
+ * vendored extension is absent): a layout picker + Fit toolbar (fcose / dagre / concentric / tree / basic force),
+ * hover tooltips showing an element's properties, and a right-click context menu (query this node, highlight
+ * neighbourhood, hide, reset). Libraries are vendored under script/cytoscape/ - see graph.html.
  */
 
 var stroomParent;
 var stroomFrameId;
 var stroomOrigin;
 
-// The minimal `stroom` bridge (a subset of vis.js) - only what a graph tap needs.
+// The minimal `stroom` bridge (a subset of vis.js) - only what a graph interaction needs.
 !function () {
     var stroom = {};
 
@@ -65,9 +59,8 @@ var stroomOrigin;
 }();
 
 /**
- * Captures the parent window/frame/origin from an inbound message so stroom.select can reply.
- * A fire-and-forget call leaves onSuccess/onFailure as no-ops (the parent posts no callbackId
- * and would treat a reply as an unexpected message).
+ * Captures the parent window/frame/origin from an inbound message so stroom.select can reply. A fire-and-forget
+ * call leaves onSuccess/onFailure as no-ops (the parent posts no callbackId and would treat a reply as unexpected).
  */
 function Callback(event, frameId, callbackId) {
     stroomParent = event.source;
@@ -81,11 +74,16 @@ function Callback(event, frameId, callbackId) {
 }
 
 /**
- * Loads element rows into a Cytoscape instance and keeps it laid out and fitted.
+ * Loads element rows into a Cytoscape instance and keeps it laid out, fitted and interactive.
  */
 function GraphManager() {
     var cy = null;
-    var lastElements = null;
+    var currentLayout = 'fcose';
+    var tooltip = null;
+
+    var RESERVED_DATA_KEYS = {
+        id: true, source: true, target: true, label: true, labels: true, type: true, changeKind: true
+    };
 
     var STYLE = [
         {
@@ -121,6 +119,9 @@ function GraphManager() {
         {selector: '.removed', style: {'background-color': '#d64545', 'line-color': '#d64545', 'target-arrow-color': '#d64545'}},
         {selector: '.modified', style: {'background-color': '#d9a441', 'line-color': '#d9a441', 'target-arrow-color': '#d9a441'}},
         {selector: '.unchanged', style: {'opacity': 0.55}},
+        // Neighbourhood-highlight (context menu).
+        {selector: '.faded', style: {'opacity': 0.12}},
+        {selector: '.highlighted', style: {'z-index': 20}},
         {selector: ':selected', style: {'border-width': 3, 'border-color': '#111111'}}
     ];
 
@@ -207,7 +208,6 @@ function GraphManager() {
                 if (changeKind) {
                     nodeData.changeKind = changeKind;
                 }
-                // A real node row overwrites any stub added by an earlier edge endpoint.
                 nodes[id] = {group: 'nodes', data: nodeData, classes: cls};
             }
         }
@@ -219,7 +219,6 @@ function GraphManager() {
             }
         }
         for (var e = 0; e < edges.length; e++) {
-            // Drop dangling edges whose endpoints never resolved to a node id.
             if (edges[e].data.source && edges[e].data.target) {
                 elements.push(edges[e]);
             }
@@ -238,9 +237,8 @@ function GraphManager() {
             });
             layout.run();
         };
-        // Prefer fcose when its extension is present; fall back to the built-in cose; then to a plain fit.
         try {
-            run('fcose');
+            run(currentLayout);
         } catch (ex) {
             try {
                 run('cose');
@@ -248,6 +246,181 @@ function GraphManager() {
                 cy.fit(undefined, 30);
             }
         }
+    };
+
+    var escapeHtml = function (text) {
+        return String(text)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+    };
+
+    // ---- interaction wiring (attached once, when the Cytoscape instance is first created) ----
+
+    var buildToolbar = function () {
+        if (document.getElementById('graph-toolbar')) {
+            return;
+        }
+        var bar = document.createElement('div');
+        bar.id = 'graph-toolbar';
+
+        var select = document.createElement('select');
+        select.title = 'Layout';
+        var layouts = [
+            {value: 'fcose', text: 'Force'},
+            {value: 'dagre', text: 'Hierarchy'},
+            {value: 'concentric', text: 'Concentric'},
+            {value: 'breadthfirst', text: 'Tree'},
+            {value: 'cose', text: 'Force (basic)'}
+        ];
+        for (var i = 0; i < layouts.length; i++) {
+            var opt = document.createElement('option');
+            opt.value = layouts[i].value;
+            opt.text = layouts[i].text;
+            select.appendChild(opt);
+        }
+        select.value = currentLayout;
+        select.onchange = function () {
+            currentLayout = select.value;
+            runLayout();
+        };
+
+        var fit = document.createElement('button');
+        fit.type = 'button';
+        fit.textContent = 'Fit';
+        fit.title = 'Fit the graph to the view';
+        fit.onclick = function () {
+            if (cy) {
+                cy.fit(undefined, 30);
+            }
+        };
+
+        bar.appendChild(select);
+        bar.appendChild(fit);
+        document.body.appendChild(bar);
+    };
+
+    var setupTooltip = function () {
+        tooltip = document.getElementById('graph-tooltip');
+        if (!tooltip) {
+            tooltip = document.createElement('div');
+            tooltip.id = 'graph-tooltip';
+            document.body.appendChild(tooltip);
+        }
+
+        var show = function (evt) {
+            var target = evt.target;
+            var data = target.data();
+            var isEdge = target.isEdge();
+            var html = '<div><b>' + escapeHtml(isEdge ? (data.type || 'edge') : (data.label || data.id)) + '</b></div>';
+            html += '<div class="k">' + (isEdge ? 'relationship' : 'node') + ' &middot; ' + escapeHtml(data.id) + '</div>';
+            for (var key in data) {
+                if (data.hasOwnProperty(key) && !RESERVED_DATA_KEYS[key] && data[key] !== null && data[key] !== undefined) {
+                    html += '<div><span class="k">' + escapeHtml(key) + ':</span> ' + escapeHtml(data[key]) + '</div>';
+                }
+            }
+            if (data.changeKind) {
+                html += '<div class="k">changeKind: ' + escapeHtml(data.changeKind) + '</div>';
+            }
+            tooltip.innerHTML = html;
+            tooltip.style.display = 'block';
+        };
+        var move = function (evt) {
+            if (tooltip.style.display === 'block' && evt.originalEvent) {
+                tooltip.style.left = (evt.originalEvent.clientX + 12) + 'px';
+                tooltip.style.top = (evt.originalEvent.clientY + 12) + 'px';
+            }
+        };
+        var hide = function () {
+            tooltip.style.display = 'none';
+        };
+
+        cy.on('mouseover', 'node, edge', show);
+        cy.on('mousemove', move);
+        cy.on('mouseout', 'node, edge', hide);
+        cy.on('pan zoom drag', hide);
+    };
+
+    var highlightNeighbourhood = function (node) {
+        cy.elements().addClass('faded');
+        var neighbourhood = node.closedNeighborhood();
+        neighbourhood.removeClass('faded').addClass('highlighted');
+    };
+
+    var clearHighlight = function () {
+        cy.elements().removeClass('faded').removeClass('highlighted');
+    };
+
+    // Best-effort anchored query for a node: its first label + id (returns rows where that pair is indexed;
+    // otherwise a valid, editable starting query). Sent to the parent to run via the select channel.
+    var nodeQuery = function (node) {
+        var labels = node.data('labels');
+        var id = node.data('id');
+        if (!labels || !id) {
+            return null;
+        }
+        var label = String(labels).split(',')[0];
+        return "MATCH (n:" + label + " {id: '" + String(id).replace(/'/g, "\\'") + "'}) RETURN GRAPH";
+    };
+
+    var sendQuery = function (query) {
+        if (query) {
+            stroom.select([{__stroomQuery: query}]);
+        }
+    };
+
+    var setupContextMenu = function () {
+        if (typeof cy.contextMenus !== 'function') {
+            return; // extension not vendored - skip gracefully
+        }
+        cy.contextMenus({
+            menuItems: [
+                {
+                    id: 'query-node',
+                    content: 'Query this node',
+                    selector: 'node',
+                    onClickFunction: function (evt) {
+                        sendQuery(nodeQuery(evt.target));
+                    }
+                },
+                {
+                    id: 'highlight-neighbourhood',
+                    content: 'Highlight neighbourhood',
+                    selector: 'node',
+                    onClickFunction: function (evt) {
+                        highlightNeighbourhood(evt.target);
+                    }
+                },
+                {
+                    id: 'hide-element',
+                    content: 'Hide',
+                    selector: 'node, edge',
+                    onClickFunction: function (evt) {
+                        evt.target.remove();
+                    }
+                },
+                {
+                    id: 'reset-view',
+                    content: 'Reset view',
+                    coreAsWell: true,
+                    onClickFunction: function () {
+                        clearHighlight();
+                        cy.fit(undefined, 30);
+                    }
+                }
+            ]
+        });
+    };
+
+    var wireInteractions = function () {
+        cy.on('tap', 'node, edge', function (evt) {
+            var target = evt.target;
+            var data = target.data();
+            stroom.select([{id: data.id, kind: target.isEdge() ? 'EDGE' : 'NODE'}]);
+        });
+        buildToolbar();
+        setupTooltip();
+        setupContextMenu();
     };
 
     var showHint = function (text) {
@@ -265,7 +438,6 @@ function GraphManager() {
         }
 
         var elements = toElements(payload);
-        lastElements = elements;
 
         if (!cy) {
             cy = cytoscape({
@@ -274,12 +446,11 @@ function GraphManager() {
                 style: STYLE,
                 layout: {name: 'preset'}
             });
-            cy.on('tap', 'node, edge', function (evt) {
-                var target = evt.target;
-                var data = target.data();
-                stroom.select([{id: data.id, kind: target.isEdge() ? 'EDGE' : 'NODE'}]);
-            });
+            wireInteractions();
         } else {
+            if (tooltip) {
+                tooltip.style.display = 'none';
+            }
             cy.elements().remove();
             cy.add(elements);
         }
@@ -314,7 +485,6 @@ var messageListener = function (event) {
     var origin = event.origin;
     var hostname = window.location.hostname;
 
-    // Stop this script being driven from other domains.
     var eventLocation = document.createElement('a');
     eventLocation.href = origin;
     var eventHostname = eventLocation.hostname;
