@@ -37,6 +37,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
@@ -310,16 +311,24 @@ class TestCypherQueryParser {
             "MATCH (a:Account) DELETE a",
             "MATCH (a:Account) REMOVE a.x RETURN a",
             "MATCH (a:Account) MERGE (b:Owner) RETURN a, b",
-            // RETURN GRAPH is a bare terminal form - none of the scalar RETURN's modifiers apply to it (see
-            // Cypher.g4's returnClause rule comment).
+            // RETURN GRAPH carries none of the scalar RETURN's per-item modifiers (see Cypher.g4's returnClause
+            // rule comment). It DOES accept an optional LIMIT - covered by returnGraphLimit_parses below.
             "MATCH (a:Account) RETURN GRAPH, a.id",
             "MATCH (a:Account) RETURN DISTINCT GRAPH",
             "MATCH (a:Account) RETURN GRAPH ORDER BY a.id",
-            "MATCH (a:Account) RETURN GRAPH LIMIT 5",
             "MATCH (a:Account) RETURN GRAPH SKIP 5"
     })
     void outOfSubsetConstructs_throwSyntaxException(final String cypher) {
         assertThatThrownBy(() -> CypherQueryParser.parse(cypher)).isInstanceOf(SyntaxException.class);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "MATCH (n) RETURN GRAPH LIMIT 100",
+            "MATCH (a:Account) RETURN GRAPH LIMIT 5"
+    })
+    void returnGraphLimit_parses(final String cypher) {
+        assertThatCode(() -> CypherQueryParser.parse(cypher)).doesNotThrowAnyException();
     }
 
     @Test

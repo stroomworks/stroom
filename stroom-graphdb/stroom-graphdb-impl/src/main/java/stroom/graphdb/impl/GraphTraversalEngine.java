@@ -156,11 +156,19 @@ public final class GraphTraversalEngine {
      */
     private static final long MAX_ACCUMULATED_ROWS = 1_000_000L;
 
+    /**
+     * The node cap for an unanchored {@code MATCH (n) RETURN GRAPH} whole-graph preview when the query gives no
+     * {@code LIMIT} (a bare preview must still be bounded - it walks the store rather than seeking an index). A
+     * query's own {@code LIMIT} overrides this. See {@link #dumpWholeGraph}.
+     */
+    private static final int DEFAULT_WHOLE_GRAPH_NODE_CAP = 100;
+
     private final GraphStores stores;
     private final ExpressionPredicateFactory expressionPredicateFactory;
     private final long maxVarLengthPathStates;
     private final Duration maxTraversalDuration;
     private final long maxAccumulatedRows;
+    private final int wholeGraphNodeCap;
 
     public GraphTraversalEngine(final GraphStores stores,
                                 final ExpressionPredicateFactory expressionPredicateFactory) {
@@ -201,12 +209,27 @@ public final class GraphTraversalEngine {
                         final long maxVarLengthPathStates,
                         final Duration maxTraversalDuration,
                         final long maxAccumulatedRows) {
+        this(stores, expressionPredicateFactory, maxVarLengthPathStates, maxTraversalDuration, maxAccumulatedRows,
+                DEFAULT_WHOLE_GRAPH_NODE_CAP);
+    }
+
+    /**
+     * Test-only seam - lets a test exercise the whole-graph dump's node cap ({@link #dumpWholeGraph}) over a small
+     * fixture rather than needing to seed {@link #DEFAULT_WHOLE_GRAPH_NODE_CAP}+ nodes.
+     */
+    GraphTraversalEngine(final GraphStores stores,
+                        final ExpressionPredicateFactory expressionPredicateFactory,
+                        final long maxVarLengthPathStates,
+                        final Duration maxTraversalDuration,
+                        final long maxAccumulatedRows,
+                        final int wholeGraphNodeCap) {
         this.stores = Objects.requireNonNull(stores, "stores");
         this.expressionPredicateFactory =
                 Objects.requireNonNull(expressionPredicateFactory, "expressionPredicateFactory");
         this.maxVarLengthPathStates = maxVarLengthPathStates;
         this.maxTraversalDuration = Objects.requireNonNull(maxTraversalDuration, "maxTraversalDuration");
         this.maxAccumulatedRows = maxAccumulatedRows;
+        this.wholeGraphNodeCap = wholeGraphNodeCap;
     }
 
     /**
@@ -598,7 +621,158 @@ public final class GraphTraversalEngine {
         Objects.requireNonNull(readTxn, "readTxn");
         Objects.requireNonNull(plan, "plan");
         Objects.requireNonNull(dateTimeSettings, "dateTimeSettings");
-        return collectGraphElements(readTxn, plan, resolveAccess(temporalContext), dateTimeSettings);
+        final PlanShape shape = unwrap(plan);
+        // A MATCH (n) or MATCH (n:Label) RETURN GRAPH ("show me the graph[, of these]") has no property anchor to
+        // seek and no hops, so resolveAnchors cannot serve it. Route it to a bounded whole-graph / label-scoped
+        // preview instead. (Only the plain path - not the DIFF per-instant path - offers this; a diff still needs
+        // an anchored pattern.)
+        final Map<ElementId, ElementDetail> elements = isWholeGraphPreview(shape)
+                ? dumpWholeGraph(readTxn, shape, temporalContext, dateTimeSettings)
+                : collectGraphElements(readTxn, plan, resolveAccess(temporalContext), dateTimeSettings);
+
+        // A RETURN GRAPH LIMIT n bounds the result to n nodes plus the edges between them. The dump already scans
+        // only n nodes; the anchored path collects the full matched union, so cap it here. No-op without a LIMIT,
+        // and the DIFF path (which rejects LIMIT at compile time) never routes through here.
+        if (shape.limit() != null && shape.limit() > 0) {
+            return capToNodeLimit(elements, shape.limit());
+        }
+        return elements;
+    }
+
+    /**
+     * Caps a {@code RETURN GRAPH} element union to the first {@code nodeLimit} distinct nodes (in insertion order)
+     * plus every edge whose endpoints are both among those kept nodes - so a {@code LIMIT} never leaves a dangling
+     * edge to a dropped node.
+     */
+    private static Map<ElementId, ElementDetail> capToNodeLimit(final Map<ElementId, ElementDetail> elements,
+                                                                final long nodeLimit) {
+        final Set<Long> keptNodeUids = new HashSet<>();
+        final Map<ElementId, ElementDetail> capped = new LinkedHashMap<>();
+        for (final Map.Entry<ElementId, ElementDetail> entry : elements.entrySet()) {
+            if (entry.getKey() instanceof final ElementId.Node node && keptNodeUids.size() < nodeLimit) {
+                keptNodeUids.add(node.uid());
+                capped.put(entry.getKey(), entry.getValue());
+            }
+        }
+        for (final Map.Entry<ElementId, ElementDetail> entry : elements.entrySet()) {
+            if (entry.getKey() instanceof final ElementId.Edge edge
+                && keptNodeUids.contains(edge.srcUid())
+                && keptNodeUids.contains(edge.dstUid())) {
+                capped.put(entry.getKey(), entry.getValue());
+            }
+        }
+        return capped;
+    }
+
+    private static boolean isWholeGraphPreview(final PlanShape shape) {
+        return shape.nodeScan().propertyAnchor() == null
+                && shape.hops().isEmpty()
+                && shape.varLengthExpand() == null;
+    }
+
+    /**
+     * The graph preview behind a {@code MATCH (n) RETURN GRAPH} (the Graph DB Data tab's default query) or its
+     * label-scoped form {@code MATCH (n:Label) RETURN GRAPH}: the first {@code LIMIT} (or
+     * {@link #DEFAULT_WHOLE_GRAPH_NODE_CAP}) distinct nodes present at the instant that carry the required label(s),
+     * plus every edge between two of those included nodes. It lets an analyst see that a graph holds data and what
+     * shape it takes, or browse one label's nodes, without knowing a specific id up front - the one access path that
+     * walks the store rather than seeking the property index, so it is deliberately bounded.
+     *
+     * <p>Label filter: a label-only anchor has no property index to seek, so the required labels are applied as a
+     * post-read filter on each scanned node ({@link GraphNodeDb.NodeVersion#labelUids()}); an unknown label matches
+     * nothing. Edges: there is no untyped adjacency index (the stores are per-edge-type keyed), so this enumerates
+     * the interned edge types and reuses the ordinary as-of {@link TemporalAccess#expandOut} for each included node
+     * - keeping the hardened temporal edge read as the single source of truth rather than re-decoding edge versions
+     * here. Only the {@code AS OF}/latest access is supported; {@code AROUND}/{@code BETWEEN} over an unanchored
+     * pattern is rejected (add an anchor, or use {@code AS OF}).</p>
+     */
+    private Map<ElementId, ElementDetail> dumpWholeGraph(final Txn<ByteBuffer> readTxn, final PlanShape shape,
+                                                         final @Nullable TemporalContext temporalContext,
+                                                         final DateTimeSettings dateTimeSettings) {
+        final Instant asOf = resolveDumpInstant(temporalContext);
+        final TemporalAccess access = asOfAccess(asOf);
+        final long nodeCap = shape.limit() != null && shape.limit() > 0
+                ? shape.limit()
+                : wholeGraphNodeCap;
+
+        final Predicate<Map<String, Val>> wherePredicate = shape.where() == null
+                ? row -> true
+                : expressionPredicateFactory
+                        .createOptional(shape.where(), rowAccessors(), dateTimeSettings)
+                        .orElse(row -> true);
+
+        final Instant deadline = Instant.now().plus(maxTraversalDuration);
+        final Map<ElementId, ElementDetail> elements = new LinkedHashMap<>();
+
+        // 0. Resolve any label constraint (MATCH (n:Label) RETURN GRAPH). An unknown label matches nothing.
+        final Set<Long> requiredLabelUids = new HashSet<>();
+        for (final String label : shape.nodeScan().labels()) {
+            final Optional<Long> labelUid = lookupUid(readTxn, stores.getLabelUids(), label);
+            if (labelUid.isEmpty()) {
+                return elements;
+            }
+            requiredLabelUids.add(labelUid.get());
+        }
+
+        // 1. Nodes: distinct nodes present at the instant that carry the required label(s) and pass any WHERE,
+        //    capped at nodeCap. Streaming lets the scan stop once nodeCap matches are collected.
+        final Set<Long> includedNodeUids = new HashSet<>();
+        stores.getNodes().forEachDistinctNodeUid(readTxn, nodeUid -> {
+            if (includedNodeUids.size() >= nodeCap) {
+                return false;
+            }
+            checkDeadline(deadline);
+            final Optional<GraphNodeDb.NodeVersion> node = access.getNode(readTxn, nodeUid);
+            if (node.isPresent()
+                && node.get().labelUids().containsAll(requiredLabelUids)
+                && wherePredicate.test(rowFor(shape.nodeScan().variable(), node.get().properties()))) {
+                includedNodeUids.add(nodeUid);
+                elements.put(new ElementId.Node(nodeUid), nodeDetail(readTxn, node.get()));
+            }
+            return true;
+        });
+
+        // 2. Edges strictly between two included nodes, per interned edge type.
+        for (final long edgeTypeUid : enumerateEdgeTypeUids(readTxn)) {
+            if (elements.size() >= MAX_ACCUMULATED_ROWS) {
+                break;
+            }
+            final String edgeTypeName = decodeUidName(readTxn, stores.getEdgeTypeUids(), edgeTypeUid);
+            for (final long srcUid : includedNodeUids) {
+                checkDeadline(deadline);
+                access.expandOut(readTxn, srcUid, edgeTypeUid, step -> {
+                    final long dstUid = step.neighbourUid();
+                    if (includedNodeUids.contains(dstUid)) {
+                        elements.put(
+                                new ElementId.Edge(srcUid, edgeTypeUid, dstUid),
+                                new ElementDetail(List.of(edgeTypeName), step.edgeProperties(),
+                                        new ElementId.Node(srcUid), new ElementId.Node(dstUid)));
+                    }
+                });
+            }
+        }
+        return elements;
+    }
+
+    private static Instant resolveDumpInstant(final @Nullable TemporalContext temporalContext) {
+        if (temporalContext == null) {
+            return LATEST;
+        }
+        return switch (temporalContext.mode()) {
+            case AS_OF -> temporalContext.instant();
+            case AROUND, BETWEEN -> throw new UnsupportedOperationException(
+                    "not yet supported: an unanchored MATCH (n) RETURN GRAPH with AROUND/BETWEEN - add a label and "
+                    + "property anchor, or use AS OF");
+        };
+    }
+
+    /** Enumerates every interned edge-type UID (there is usually only a handful), decoded to a long exactly as
+     * {@link #lookupUid} decodes a name lookup's result. */
+    private List<Long> enumerateEdgeTypeUids(final Txn<ByteBuffer> readTxn) {
+        final List<Long> typeUids = new ArrayList<>();
+        stores.getEdgeTypeUids().forEachUid(readTxn, uidBuffer ->
+                typeUids.add(UnsignedBytesInstances.ofLength(uidBuffer.remaining()).get(uidBuffer.duplicate())));
+        return typeUids;
     }
 
     /**

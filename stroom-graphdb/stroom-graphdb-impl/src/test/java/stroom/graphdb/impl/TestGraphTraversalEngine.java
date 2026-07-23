@@ -1179,6 +1179,166 @@ class TestGraphTraversalEngine {
     }
 
     @Test
+    void wholeGraphDump_unanchoredReturnGraph_returnsEveryNodeAndEdge(@TempDir final Path root) {
+        // An unanchored MATCH (n) RETURN GRAPH (the Data tab's default "show me the graph") has no label/property
+        // anchor to seek, so it rides the engine's whole-graph dump path: every node, plus every edge between two
+        // included nodes, at the latest instant. seedDeviceConnectedToAccounts stores 4 nodes and 3 edges.
+        try (GraphStores stores = GraphStores.provision(root.resolve("wholegraphdump"), DOC)) {
+            seedDeviceConnectedToAccounts(stores);
+
+            final GraphTraversalEngine engine = new GraphTraversalEngine(stores, new ExpressionPredicateFactory());
+            final CompiledCypherPlan compiled = compile("MATCH (n) RETURN GRAPH");
+            assertThat(compiled.returnGraph()).isTrue();
+
+            final List<Val[]> rows = stores.read(readTxn ->
+                    GraphElementExecutor.execute(readTxn, engine, stores, compiled.plan(),
+                            compiled.temporalContext(), compiled.diffContext(), DateTimeSettings.builder().build()));
+
+            assertThat(rows).extracting(r -> text(r[0])).filteredOn("NODE"::equals).hasSize(4);
+            assertThat(rows).extracting(r -> text(r[0])).filteredOn("EDGE"::equals).hasSize(3);
+            assertThat(rows)
+                    .extracting(r -> text(r[0]), r -> text(r[1]), r -> text(r[2]), r -> text(r[3]), r -> text(r[4]))
+                    .containsExactlyInAnyOrder(
+                            Tuple.tuple("NODE", "d-42", "Device", null, null),
+                            Tuple.tuple("NODE", "account-a", "Account", null, null),
+                            Tuple.tuple("NODE", "account-b", "Account,Premium", null, null),
+                            Tuple.tuple("NODE", "gw-1", "Device", null, null),
+                            Tuple.tuple("EDGE", "d-42|CONNECTED_TO|account-a", "CONNECTED_TO", "d-42", "account-a"),
+                            Tuple.tuple("EDGE", "d-42|CONNECTED_TO|account-b", "CONNECTED_TO", "d-42", "account-b"),
+                            Tuple.tuple("EDGE", "gw-1|CONNECTED_TO|d-42", "CONNECTED_TO", "gw-1", "d-42"));
+        }
+    }
+
+    @Test
+    void wholeGraphDump_respectsNodeCap_andNeverEmitsDanglingEdges(@TempDir final Path root) {
+        // The node cap bounds the preview scan (RETURN GRAPH takes no LIMIT clause, so the cap is engine-side); an
+        // edge is emitted only when BOTH its endpoints are among the included nodes, so a capped-out neighbour
+        // never leaves a dangling edge. Uses the test-only cap of 2 rather than seeding 100+ nodes.
+        try (GraphStores stores = GraphStores.provision(root.resolve("wholegraphdumplimit"), DOC)) {
+            seedDeviceConnectedToAccounts(stores);
+
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory(), 200_000L, Duration.ofSeconds(30), 1_000_000L, 2);
+            final CompiledCypherPlan compiled = compile("MATCH (n) RETURN GRAPH");
+
+            final List<Val[]> rows = stores.read(readTxn ->
+                    GraphElementExecutor.execute(readTxn, engine, stores, compiled.plan(),
+                            compiled.temporalContext(), compiled.diffContext(), DateTimeSettings.builder().build()));
+
+            final List<String> nodeIds = rows.stream()
+                    .filter(r -> "NODE".equals(text(r[0])))
+                    .map(r -> text(r[1]))
+                    .toList();
+            assertThat(nodeIds).hasSize(2);
+            assertThat(rows)
+                    .filteredOn(r -> "EDGE".equals(text(r[0])))
+                    .allSatisfy(r -> {
+                        assertThat(nodeIds).contains(text(r[3]));
+                        assertThat(nodeIds).contains(text(r[4]));
+                    });
+        }
+    }
+
+    @Test
+    void returnGraphLimit_wholeGraph_capsNodesAndTheirEdges(@TempDir final Path root) {
+        // RETURN GRAPH LIMIT n (valid syntax) bounds the whole-graph preview to n nodes plus the edges between them
+        // - the analyst-controlled counterpart of the engine's default cap.
+        try (GraphStores stores = GraphStores.provision(root.resolve("wholegraphlimit"), DOC)) {
+            seedDeviceConnectedToAccounts(stores);
+
+            final GraphTraversalEngine engine = new GraphTraversalEngine(stores, new ExpressionPredicateFactory());
+            final CompiledCypherPlan compiled = compile("MATCH (n) RETURN GRAPH LIMIT 2");
+            assertThat(compiled.returnGraph()).isTrue();
+
+            final List<Val[]> rows = stores.read(readTxn ->
+                    GraphElementExecutor.execute(readTxn, engine, stores, compiled.plan(),
+                            compiled.temporalContext(), compiled.diffContext(), DateTimeSettings.builder().build()));
+
+            final List<String> nodeIds = rows.stream()
+                    .filter(r -> "NODE".equals(text(r[0])))
+                    .map(r -> text(r[1]))
+                    .toList();
+            assertThat(nodeIds).hasSize(2);
+            assertThat(rows)
+                    .filteredOn(r -> "EDGE".equals(text(r[0])))
+                    .allSatisfy(r -> {
+                        assertThat(nodeIds).contains(text(r[3]));
+                        assertThat(nodeIds).contains(text(r[4]));
+                    });
+        }
+    }
+
+    @Test
+    void returnGraphLimit_anchoredPattern_capsTheMatchedUnionToNodesAndTheirEdges(@TempDir final Path root) {
+        // An anchored RETURN GRAPH LIMIT n collects the full matched union, then caps it to n nodes plus the edges
+        // between them (capToNodeLimit) - never leaving a dangling edge to a dropped node.
+        try (GraphStores stores = GraphStores.provision(root.resolve("anchoredlimit"), DOC)) {
+            seedDeviceConnectedToAccounts(stores);
+
+            final GraphTraversalEngine engine = new GraphTraversalEngine(stores, new ExpressionPredicateFactory());
+            // Without LIMIT: d-42 + account-a + account-b + 2 edges. LIMIT 2 keeps 2 nodes and only their edges.
+            final CompiledCypherPlan compiled = compile(
+                    "MATCH (d:Device {id: 'd-42'})-[:CONNECTED_TO]->(a:Account) RETURN GRAPH LIMIT 2");
+
+            final List<Val[]> rows = stores.read(readTxn ->
+                    GraphElementExecutor.execute(readTxn, engine, stores, compiled.plan(),
+                            compiled.temporalContext(), compiled.diffContext(), DateTimeSettings.builder().build()));
+
+            final List<String> nodeIds = rows.stream()
+                    .filter(r -> "NODE".equals(text(r[0])))
+                    .map(r -> text(r[1]))
+                    .toList();
+            assertThat(nodeIds).hasSize(2);
+            assertThat(rows)
+                    .filteredOn(r -> "EDGE".equals(text(r[0])))
+                    .allSatisfy(r -> {
+                        assertThat(nodeIds).contains(text(r[3]));
+                        assertThat(nodeIds).contains(text(r[4]));
+                    });
+        }
+    }
+
+    @Test
+    void returnGraph_labelScoped_returnsOnlyThatLabelsNodes(@TempDir final Path root) {
+        // MATCH (n:Account) RETURN GRAPH browses one label's nodes - a label-only anchor with no property index to
+        // seek, served by the preview scan + a label filter. seedDeviceConnectedToAccounts has 2 Account nodes
+        // (account-a, account-b) and 2 Device nodes; every edge is Device->Account or Device->Device, so no edge
+        // connects two Accounts and the label-scoped result has 0 edges.
+        try (GraphStores stores = GraphStores.provision(root.resolve("labelscoped"), DOC)) {
+            seedDeviceConnectedToAccounts(stores);
+
+            final GraphTraversalEngine engine = new GraphTraversalEngine(stores, new ExpressionPredicateFactory());
+            final CompiledCypherPlan compiled = compile("MATCH (n:Account) RETURN GRAPH");
+
+            final List<Val[]> rows = stores.read(readTxn ->
+                    GraphElementExecutor.execute(readTxn, engine, stores, compiled.plan(),
+                            compiled.temporalContext(), compiled.diffContext(), DateTimeSettings.builder().build()));
+
+            assertThat(rows)
+                    .extracting(r -> text(r[0]), r -> text(r[1]))
+                    .containsExactlyInAnyOrder(
+                            Tuple.tuple("NODE", "account-a"),
+                            Tuple.tuple("NODE", "account-b"));
+        }
+    }
+
+    @Test
+    void returnGraph_labelScoped_unknownLabel_returnsEmpty(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("labelscopedunknown"), DOC)) {
+            seedDeviceConnectedToAccounts(stores);
+
+            final GraphTraversalEngine engine = new GraphTraversalEngine(stores, new ExpressionPredicateFactory());
+            final CompiledCypherPlan compiled = compile("MATCH (n:NoSuchLabel) RETURN GRAPH");
+
+            final List<Val[]> rows = stores.read(readTxn ->
+                    GraphElementExecutor.execute(readTxn, engine, stores, compiled.plan(),
+                            compiled.temporalContext(), compiled.diffContext(), DateTimeSettings.builder().build()));
+
+            assertThat(rows).isEmpty();
+        }
+    }
+
+    @Test
     void returnGraph_whereClause_onlyIncludesElementsFromFullyMatchingPaths(@TempDir final Path root) {
         // Connectivity guarantee (§5.6): an element only appears if it is on a path that fully matches the
         // pattern AND its WHERE - account-a's path fails "balance > 100", so neither account-a nor its edge

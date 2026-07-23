@@ -98,13 +98,14 @@ withClause
 
 // `RETURN GRAPH` (Stroom-specific; see docs/temporal-cypher-diff-operator.md §4.4 and
 // docs/graphdb-cytoscape-visualisation.html §3) is the element-row terminal form: instead of a scalar item list it
-// emits the de-duplicated union of every matched node/edge as one row per element. It is deliberately a bare
-// keyword pair with none of RETURN's other modifiers (no DISTINCT/items/ORDER BY/SKIP/LIMIT) - there is no
-// per-item projection to apply DISTINCT/ORDER BY to, and a result-size cap is a v1.1 refinement (see that design
-// doc's open questions), not required for this form to be useful.
+// emits the de-duplicated union of every matched node/edge as one row per element. It carries none of RETURN's
+// per-item modifiers (no DISTINCT/items/ORDER BY/SKIP - there is no per-item projection to apply them to), but it
+// DOES accept an optional LIMIT to bound the result: on a whole-graph preview (unanchored MATCH (n) RETURN GRAPH)
+// the LIMIT caps the number of nodes returned (plus the edges between them); on an anchored pattern it caps the
+// nodes in the matched element union the same way (see GraphTraversalEngine's dump/cap paths).
 returnClause
     : RETURN DISTINCT? returnItem (COMMA returnItem)* orderByClause? skipClause? limitClause?  # returnItemsClause
-    | RETURN GRAPH                                                                             # returnGraphClause
+    | RETURN GRAPH limitClause?                                                                # returnGraphClause
     ;
 
 // ----- graph patterns -----

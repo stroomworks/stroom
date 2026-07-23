@@ -280,6 +280,18 @@ public final class CypherToLogicalPlan {
         plan = new Project(plan, elementRowFields(query.returnClause().position(), diffContext != null),
                 query.returnClause().position());
 
+        // RETURN GRAPH now accepts an optional LIMIT (Cypher.g4). It bounds the nodes in the result (plus the edges
+        // between them) - GraphTraversalEngine reads it off the plan's Limit node. A DIFF ... RETURN GRAPH LIMIT is
+        // rejected: "which classified elements to keep" is not defined for a delta subgraph in this version.
+        final var graphLimit = query.returnClause().limit();
+        if (graphLimit != null) {
+            if (diffContext != null) {
+                throw new CypherCompileException(
+                        "not supported in this version: LIMIT on a DIFF ... RETURN GRAPH", graphLimit.position());
+            }
+            plan = new Limit(plan, List.of(graphLimit.value()), graphLimit.position());
+        }
+
         return new CompiledCypherPlan(plan, temporalContext, false, null, diffContext, true);
     }
 

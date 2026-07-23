@@ -39,7 +39,8 @@ import java.util.Objects;
  *                 grammar requires at least one item there; always empty when {@link #graph()}.
  * @param orderBy  nullable; always null when {@link #graph()}.
  * @param skip     nullable; always null when {@link #graph()}.
- * @param limit    nullable; always null when {@link #graph()}.
+ * @param limit    nullable; permitted in <em>both</em> forms - the scalar {@code LIMIT n}, and, for
+ *                 {@code RETURN GRAPH}, an optional cap on the nodes returned (plus the edges between them).
  * @param position never null.
  */
 public record AstReturnClause(
@@ -55,9 +56,11 @@ public record AstReturnClause(
         Objects.requireNonNull(items, "items");
         Objects.requireNonNull(position, "position");
         items = List.copyOf(items);
-        if (graph && (distinct || !items.isEmpty() || orderBy != null || skip != null || limit != null)) {
+        // RETURN GRAPH accepts an optional LIMIT (see Cypher.g4's returnGraphClause) but none of the per-item
+        // modifiers, which have no item list to apply to.
+        if (graph && (distinct || !items.isEmpty() || orderBy != null || skip != null)) {
             throw new IllegalArgumentException(
-                    "RETURN GRAPH does not accept DISTINCT, an item list, ORDER BY, SKIP or LIMIT");
+                    "RETURN GRAPH does not accept DISTINCT, an item list, ORDER BY or SKIP");
         }
     }
 }

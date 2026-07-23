@@ -40,6 +40,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.function.LongPredicate;
 
 /**
  * The node store (design doc &sect;5.1; implementation plan Task PoC.4): {@code nodeUid} &rarr; the node's
@@ -225,6 +226,36 @@ public final class GraphNodeDb {
     public long count(final Txn<ByteBuffer> readTxn) {
         Objects.requireNonNull(readTxn, "readTxn");
         return dbi.stat(readTxn).entries;
+    }
+
+    /**
+     * Streams the distinct node UIDs in ascending-UID order to {@code consumer}, stopping early as soon as
+     * {@code consumer} returns {@code false} - the whole-graph / label-scoped preview scan used by a
+     * {@code MATCH (n[:Label]) RETURN GRAPH} (see {@code GraphTraversalEngine}'s dump path). There is no per-label
+     * index for "every node", so this walks the store; a node's multiple temporal versions are contiguous under one
+     * UID prefix (the same layout {@link #deleteOldData} relies on), so distinctness is a cheap consecutive-UID
+     * collapse. Streaming (rather than returning a fixed list) lets the caller apply its own per-node filter -
+     * temporal presence, label, {@code WHERE} - and stop once it has collected enough <em>matching</em> nodes,
+     * without over- or under-reading the store.
+     *
+     * <p><b>Preconditions:</b> neither argument is null. <b>Postconditions:</b> {@code consumer} is invoked at most
+     * once per distinct UID, in ascending order, until it returns {@code false} or the store is exhausted.</p>
+     */
+    public void forEachDistinctNodeUid(final Txn<ByteBuffer> readTxn, final LongPredicate consumer) {
+        Objects.requireNonNull(readTxn, "readTxn");
+        Objects.requireNonNull(consumer, "consumer");
+        Long current = null;
+        try (LmdbIterable iterable = LmdbIterable.create(readTxn, dbi, LmdbKeyRange.all())) {
+            for (final LmdbEntry entry : iterable) {
+                final long nodeUid = NODE_UID_BYTES.get(entry.getKey().duplicate());
+                if (!Objects.equals(current, nodeUid)) {
+                    current = nodeUid;
+                    if (!consumer.test(nodeUid)) {
+                        return;
+                    }
+                }
+            }
+        }
     }
 
     /**

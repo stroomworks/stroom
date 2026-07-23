@@ -139,7 +139,10 @@ public final class AstCypherBuilder {
 
     private AstReturnClause buildReturn(final ReturnClauseContext ctx) {
         if (ctx instanceof final ReturnGraphClauseContext graphCtx) {
-            return new AstReturnClause(true, false, List.of(), null, null, null, position(graphCtx));
+            final AstLimit graphLimit = graphCtx.limitClause() == null
+                    ? null
+                    : buildLimit(graphCtx.limitClause());
+            return new AstReturnClause(true, false, List.of(), null, null, graphLimit, position(graphCtx));
         }
         final ReturnItemsClauseContext itemsCtx = (ReturnItemsClauseContext) ctx;
         final List<AstReturnItem> items = new ArrayList<>(itemsCtx.returnItem().size());
