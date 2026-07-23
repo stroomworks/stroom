@@ -179,6 +179,14 @@ public class UidLookupDb {
         LmdbIterable.iterate(readTxn, uidToKeyDbi, (key, val) -> keyConsumer.accept(key));
     }
 
+    /**
+     * Iterates every interned value (the original name each UID was interned from), in UID order. The counterpart
+     * of {@link #forEachUid} for callers that want the names rather than the ids (e.g. schema discovery).
+     */
+    public void forEachName(final Txn<ByteBuffer> readTxn, final Consumer<ByteBuffer> nameConsumer) {
+        LmdbIterable.iterate(readTxn, uidToKeyDbi, (key, val) -> nameConsumer.accept(val));
+    }
+
     public void deleteByUid(final Txn<ByteBuffer> writeTxn, final ByteBuffer uid) {
         final ByteBuffer key = uidToKeyDbi.get(writeTxn, uid);
         keyToUidDbi.delete(writeTxn, key);

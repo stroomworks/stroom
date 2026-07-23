@@ -57,4 +57,12 @@ public interface GraphDbResource extends RestResource, DirectRestService, FetchW
     GraphDbDoc update(
             @PathParam("uuid") String uuid,
             @Parameter(description = "doc", required = true) GraphDbDoc doc);
+
+    @GET
+    @Path("/{uuid}/schema")
+    @Operation(
+            summary = "Discover a graph db's vocabulary (labels, edge types, property keys) and sample nodes, to "
+                      + "help build a query",
+            operationId = "fetchGraphDbSchema")
+    GraphDbSchema fetchSchema(@PathParam("uuid") String uuid);
 }

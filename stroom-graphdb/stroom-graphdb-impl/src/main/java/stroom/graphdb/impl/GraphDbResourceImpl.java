@@ -21,6 +21,7 @@ import stroom.docstore.api.DocumentResourceHelper;
 import stroom.event.logging.rs.api.AutoLogged;
 import stroom.graphdb.shared.GraphDbDoc;
 import stroom.graphdb.shared.GraphDbResource;
+import stroom.graphdb.shared.GraphDbSchema;
 import stroom.util.shared.EntityServiceException;
 import stroom.util.shared.FetchWithUuid;
 
@@ -28,19 +29,26 @@ import jakarta.inject.Inject;
 import jakarta.inject.Provider;
 
 /**
- * Task P5.2: mirrors {@code stroom.planb.impl.PlanBDocResourceImpl} exactly.
+ * Task P5.2: mirrors {@code stroom.planb.impl.PlanBDocResourceImpl} exactly, plus {@link #fetchSchema} for the
+ * Data tab's graph-discovery help.
  */
 @AutoLogged
 class GraphDbResourceImpl implements GraphDbResource, FetchWithUuid<GraphDbDoc> {
 
+    /** A small handful of example nodes - enough to illustrate the graph's shape without a heavy scan. */
+    private static final int SAMPLE_NODE_LIMIT = 20;
+
     private final Provider<GraphDbDocStore> graphDbDocStoreProvider;
     private final Provider<DocumentResourceHelper> documentResourceHelperProvider;
+    private final Provider<GraphSchemaService> graphSchemaServiceProvider;
 
     @Inject
     GraphDbResourceImpl(final Provider<GraphDbDocStore> graphDbDocStoreProvider,
-                       final Provider<DocumentResourceHelper> documentResourceHelperProvider) {
+                       final Provider<DocumentResourceHelper> documentResourceHelperProvider,
+                       final Provider<GraphSchemaService> graphSchemaServiceProvider) {
         this.graphDbDocStoreProvider = graphDbDocStoreProvider;
         this.documentResourceHelperProvider = documentResourceHelperProvider;
+        this.graphSchemaServiceProvider = graphSchemaServiceProvider;
     }
 
     @Override
@@ -54,6 +62,12 @@ class GraphDbResourceImpl implements GraphDbResource, FetchWithUuid<GraphDbDoc> 
             throw new EntityServiceException("The document UUID must match the update UUID");
         }
         return documentResourceHelperProvider.get().update(graphDbDocStoreProvider.get(), doc);
+    }
+
+    @Override
+    public GraphDbSchema fetchSchema(final String uuid) {
+        final GraphDbDoc doc = fetch(uuid);
+        return graphSchemaServiceProvider.get().discover(doc, SAMPLE_NODE_LIMIT);
     }
 
     private DocRef getDocRef(final String uuid) {
