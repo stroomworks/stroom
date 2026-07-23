@@ -291,10 +291,18 @@ select a.EventTime, a.Status, b.Name
 What happens under the covers when the optimiser executes this:
 
 1. Each side is compiled into its own ordinary single-source query and run to completion.
-2. The two row sets are combined in memory by the join key (`a.User = b.Id`), honouring `INNER` (default) or
-   `LEFT` semantics.
+2. The two sides are joined by key (`a.User = b.Id`), honouring `INNER` (default) or `LEFT` semantics, by one of
+   two strategies:
+   - **Enrichment fast path** — when one side is a keyed Plan B / State store (type `PlanB`, joined on its
+     `Key` field), that side is *not* materialised; the other side is streamed and each row does a single point
+     lookup against the store.
+   - **Streaming hash join** (the general case) — for an `INNER` join the *smaller* side is built into a lookup
+     that spills to an LMDB store once it exceeds a heap threshold, and the larger side is streamed and probed
+     against it. A `LEFT` join always keeps the left side as the probe so unmatched left rows can be emitted
+     null-padded.
 3. The combined rows are fed into the outer query's result pipeline, which applies `select` (and any
-   `group`/`having`/`sort`/`limit`) exactly as for a single-source query.
+   `group`/`having`/`sort`/`limit`) exactly as for a single-source query. Numeric join keys are canonicalised so
+   `5`, `5.0` and `"5"` match across sources.
 
 Result (INNER join — only users present in both):
 
@@ -316,8 +324,8 @@ select a.EventTime, a.Status, b.Name
 returns only the joined rows where `a.Status >= 500` (numeric comparison — the optimiser evaluates the predicate
 with the right type, not as a string).
 
-> **`LEFT` joins** pad unmatched left rows with nulls on the right-hand columns. Each side is currently realised
-> in full before the join, so a `where` clause narrows the *result*, not the amount each side scans (see
+> **`LEFT` joins** pad unmatched left rows with nulls on the right-hand columns. There is no per-side predicate
+> push-down yet, so a `where` clause narrows the *result*, not the amount each side scans (see
 > [§8](#8-where-the-system-goes-next)).
 
 ---
@@ -392,14 +400,16 @@ The remaining work, roughly in priority order. Full detail (with the research fi
   into that side's sub-query so it pre-filters before the join — a real efficiency win. It needs the pushed
   predicate's alias stripped (a single-source side knows the field as `field`, not `alias.field`).
 - **N-way joins.** Extend beyond a single two-source join to left-deep chains.
-- **Enrichment / broadcast-lookup joins.** A join whose build side is a State/Plan B store should reuse the
-  existing single-key lookup functions (`GetState`) instead of materialising that side in full — with candidate
-  sources *discovered by domain type* rather than hard-wired.
+- **Domain-type-discovered enrichment joins.** The enrichment / broadcast-lookup fast path itself is
+  implemented (§2, §5.6): a keyed Plan B / State side is probed per-row rather than materialised. What remains is
+  *discovering* enrichment candidates **by domain type** — inferring that a join to such a store is an enrichment
+  — rather than detecting it structurally (type `PlanB` + `Key` field) as today.
 - **Real cost adapters.** Replace the placeholder index-shard and state-store cost signals with real ones
   (summing shard document counts over the pruned partition range, reading state-store key counts) so `EXPLAIN`
   gives measured, high-confidence estimates for index/state scans.
-- **`EXPLAIN` for joins.** Annotate the plan tree with the chosen join algorithm and per-side/combined cardinality
-  estimates using real distinct-key counts.
+- **High-confidence join `EXPLAIN`.** The plan tree already annotates a join with its chosen algorithm, build
+  side and a cardinality estimate; what remains is feeding it *real* distinct-key counts (rather than the current
+  placeholder) so the estimate is measured rather than a pessimistic upper bound.
 - **Domain relationships.** Extend domain types from "same entity" equi-joins to *relationship-mediated*
   enrichment joins (e.g. `User.id --OWNS--> Account.number`), routed through the store that materialises the
   relationship. Shared with the temporal Cypher graph initiative.
@@ -429,5 +439,7 @@ OFF  →  SHADOW (soak, watch divergence logs)  →  ON
 | Pre-run duration warning (UI) | ✅ minimal |
 | Two-source join (INNER/LEFT), with or without a `where` clause | ✅ executes, returns real rows |
 | Per-side filter push-down through the join (efficiency) | ⛔ future |
-| N-way joins, enrichment joins, domain relationships | ⛔ future |
-| Real index/state cost adapters, join `EXPLAIN` | ⛔ future |
+| Enrichment (broadcast-lookup) join to a keyed State/Plan B store | ✅ structural detection (type `PlanB` + `Key`) |
+| `EXPLAIN` join annotation (algorithm, build side, cardinality) | ✅ (cardinality low-confidence — see above) |
+| N-way joins, domain-type-discovered enrichment, domain relationships | ⛔ future |
+| Real (measured) index/state cost adapters — high-confidence estimates | ⛔ future |

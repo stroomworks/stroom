@@ -167,6 +167,7 @@
     <li><a href="#datatab">Surface A — built-in on the Data tab</a></li>
     <li><a href="#dashboard">Surface B — a dashboard visualisation</a></li>
     <li><a href="#oneadapter">One adapter, two surfaces</a></li>
+    <li><a href="#interact">Interaction &amp; analysis — and the client/server division</a></li>
     <li><a href="#reused-new">Reused vs. built new</a></li>
     <li><a href="#risks">Risk profile</a></li>
     <li><a href="#open">Non-goals &amp; open questions</a></li>
@@ -245,7 +246,108 @@
     <tr><td><strong>E. Entities native + a flatten function</strong> — <em>the mirror of C</em></td><td>The graph always returns entity-valued <strong>path rows</strong> (Neo4j-style: cells hold node/edge objects with id + labels + properties); a <code>flatten</code>/<code>properties()</code> function turns them into a value table, while the graph view reads the entities directly.</td><td><strong>+</strong> One native shape; a single entity query can feed the graph view, a flattened table, <em>and</em> — once join-key properties are extracted — joins: the full "one result, table or graph, and joinable" experience. <strong>&minus;</strong> Needs a graph-entity <code>Val</code> type threaded through the stack (the flat-<code>Val[]</code> invariant, as in B), and inverts today's ergonomics — a table now always needs the flatten. Must be entity <strong>path rows</strong>, not the element-union: the union (today's <code>RETURN GRAPH</code>) discards which elements were on which path, so it can't be un-flattened back to a value table losslessly.</td></tr>
   </tbody>
 </table></div>
-<div class="callout"><strong>Recommendation.</strong> <strong>A</strong> is the right base and is what shipped — it respects the flat row model and the existing visualisation framework. <strong>C</strong> is the most attractive <em>addition</em>: because the dashboard vis already binds element roles by column name (§6), the same field-mapping could let the Cytoscape view render any id/source/target-shaped table — including a joined result — with no new engine mode, and it is the natural route to "style the graph by joined data" (§10). <strong>B</strong> is the full Neo4j experience but costs the flat-<code>Val[]</code> invariant — pursue only if that UX becomes a priority. <strong>E</strong> is B done right for Stroom (an explicit, honest flatten rather than pretending a Table can render an entity cell) and the principled path to the full "one result → table or graph, and joinable" experience — but it is the biggest change (an entity <code>Val</code> type across the whole stack). <strong>D</strong> only if a strong "one query, both panes, always in sync" need emerges.</div>
+<div class="callout"><strong>Recommendation.</strong> <strong>A</strong> is the right base and is what shipped — it respects the flat row model and the existing visualisation framework. <strong>C</strong> is the most attractive <em>addition</em>: because the dashboard vis already binds element roles by column name (§6), the same field-mapping could let the Cytoscape view render any id/source/target-shaped table — including a joined result — with no new engine mode, and it is the natural route to "style the graph by joined data" (§11). <strong>B</strong> is the full Neo4j experience but costs the flat-<code>Val[]</code> invariant — pursue only if that UX becomes a priority. <strong>E</strong> is B done right for Stroom (an explicit, honest flatten rather than pretending a Table can render an entity cell) and the principled path to the full "one result → table or graph, and joinable" experience — but it is the biggest change (an entity <code>Val</code> type across the whole stack). <strong>D</strong> only if a strong "one query, both panes, always in sync" need emerges.</div>
+
+<h3>Driving the graph from a value table (Option C in detail)</h3>
+<p>Option C is worth spelling out, as it is the most likely near-term addition. The idea: run an ordinary scalar
+query and drive the graph off its columns, instead of a separate <code>RETURN GRAPH</code>. How the entries map
+to rows:</p>
+<ul>
+  <li><strong>Identity is a returned value.</strong> A node's id is a value in a column you designate (e.g.
+    <code>u.id</code>); each distinct value becomes one node, de-duplicated across rows. It is <em>not</em> the
+    internal element UID — the analyst picks the meaningful key.</li>
+  <li><strong>A node needs one id column; an edge needs two.</strong> For an edge you designate a <em>source-id</em>
+    and a <em>target-id</em> column and each row becomes one edge between them — for a single-hop pattern
+    <code>(a)-[]-&gt;(b)</code> that is just "map <code>a</code>'s id column to source, <code>b</code>'s to
+    target". A query that returns no source/target pair yields a node-only graph.</li>
+  <li><strong>Extra columns decorate.</strong> Any other column — including an <code>eval</code>'d value or one
+    <strong>joined from another dataset</strong> — is available to style the graph (size/colour a node by a score,
+    label an edge). This is the "style the graph by joined data" convergence (§11): because the graph is driven
+    from table columns, you enrich it simply by adding columns.</li>
+</ul>
+<p><strong>Worked example.</strong> An ordinary scalar query:</p>
+<pre><code>MATCH (u:User)-[:OWNS]-&gt;(a:Account)
+RETURN u.id AS userId, u.name AS userName, a.number AS acct, a.risk AS risk</code></pre>
+<p>returns a value table — one row per matched <code>(user, account)</code> pair:</p>
+<div class="table-wrap"><table>
+  <thead><tr><th>userId</th><th>userName</th><th>acct</th><th>risk</th></tr></thead>
+  <tbody>
+    <tr><td><code>U1</code></td><td>Alice</td><td><code>A100</code></td><td>8</td></tr>
+    <tr><td><code>U1</code></td><td>Alice</td><td><code>A200</code></td><td>2</td></tr>
+    <tr><td><code>U2</code></td><td>Bob</td><td><code>A300</code></td><td>5</td></tr>
+  </tbody>
+</table></div>
+<p>The graph field-mapping designates <code>userId</code> = <strong>source</strong> id, <code>acct</code> =
+<strong>target</strong> id (so each row is an edge), <code>userName</code> = the source node's <strong>label</strong>,
+and <code>risk</code> = a <strong>style</strong> input. The adapter derives:</p>
+<div class="table-wrap"><table>
+  <thead><tr><th>Derived</th><th>From the rows</th></tr></thead>
+  <tbody>
+    <tr><td><strong>5 nodes</strong></td><td><code>U1</code> (Alice), <code>U2</code> (Bob), <code>A100</code>, <code>A200</code>, <code>A300</code> — <code>U1</code> is in two rows but de-duplicates to <em>one</em> node</td></tr>
+    <tr><td><strong>3 edges</strong></td><td><code>U1&rarr;A100</code>, <code>U1&rarr;A200</code>, <code>U2&rarr;A300</code> — one per row</td></tr>
+  </tbody>
+</table></div>
+<figure>
+<svg viewBox="0 0 560 200" role="img" aria-label="The three-row table rendered as a graph: two users linked to three accounts, accounts bordered by risk">
+  <defs><marker id="ownsArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--arrow)"/></marker></defs>
+  <line class="d-flow" x1="128" y1="60"  x2="382" y2="42"  marker-end="url(#ownsArrow)"/>
+  <line class="d-flow" x1="128" y1="60"  x2="382" y2="106" marker-end="url(#ownsArrow)"/>
+  <line class="d-flow" x1="128" y1="154" x2="382" y2="170" marker-end="url(#ownsArrow)"/>
+  <text class="d-lbl sm" x="250" y="44" text-anchor="middle">OWNS</text>
+  <rect class="d-hub" x="24"  y="40"  width="104" height="40" rx="9"/>
+  <text class="d-lbl b" x="76" y="60" text-anchor="middle">U1</text><text class="d-lbl sm" x="76" y="74" text-anchor="middle">Alice</text>
+  <rect class="d-hub" x="24"  y="134" width="104" height="40" rx="9"/>
+  <text class="d-lbl b" x="76" y="154" text-anchor="middle">U2</text><text class="d-lbl sm" x="76" y="168" text-anchor="middle">Bob</text>
+  <rect class="d-box" x="384" y="22"  width="120" height="40" rx="9" style="stroke:var(--stop);stroke-width:2.4"/>
+  <text class="d-lbl b" x="444" y="42" text-anchor="middle">A100</text><text class="d-lbl sm" x="444" y="56" text-anchor="middle">risk 8</text>
+  <rect class="d-box" x="384" y="86"  width="120" height="40" rx="9" style="stroke:var(--ok);stroke-width:2.4"/>
+  <text class="d-lbl b" x="444" y="106" text-anchor="middle">A200</text><text class="d-lbl sm" x="444" y="120" text-anchor="middle">risk 2</text>
+  <rect class="d-box" x="384" y="150" width="120" height="40" rx="9" style="stroke:var(--warn);stroke-width:2.4"/>
+  <text class="d-lbl b" x="444" y="170" text-anchor="middle">A300</text><text class="d-lbl sm" x="444" y="184" text-anchor="middle">risk 5</text>
+</svg>
+<figcaption>The three rows rendered: users (blue) linked by <code>OWNS</code> to accounts, each account's border coloured by its row's <code>risk</code> column (red = high, amber = mid, green = low). <code>U1</code>'s two rows collapse to a single node; layout is Cytoscape's, not from the data.</figcaption>
+</figure>
+<p>Mechanically this is the vis <strong>field-mapping</strong> the dashboard already has (§6) — bind columns to
+<code>id</code>/<code>source</code>/<code>target</code>/style roles by name — extended to the Data tab as a column
+picker. The reshape is the same client-side JS as the element-row adapter (each row &rarr; its node(s) + edge), so
+it needs no engine change.</p>
+<p><strong>When to prefer it vs <code>RETURN GRAPH</code>.</strong> Use the value-table + column-mapping approach for
+<em>simple, correlational</em> graphs — one query feeds the table, joins <em>and</em> the graph, decorated by extra
+columns. Use <code>RETURN GRAPH</code> for <em>rich / whole-subgraph / diff</em> graphs, where it earns its place:
+identity is the internal UID (no value-collision collapse), edges are unambiguous, and an arbitrary <em>multi-hop</em>
+path — which a flat column-mapping cannot cleanly express (which column pairs are the edges?) — is carried in full.</p>
+
+<h3>A lower-effort render path: a single element-JSON column</h3>
+<p>Between the analyst-driven column-mapping (Option C) and the structured element table sits an even simpler
+render path: have the GraphDB emit the <em>whole element</em> as one JSON string column, and let the client
+<code>JSON.parse</code> it straight into Cytoscape. It is a serialisation variant of <code>RETURN GRAPH</code> —
+which already generates the element server-side and already JSON-encodes the property map — collapsing the
+<code>kind/id/source/target/props</code> columns into one:</p>
+<pre><code>row 1  {"group":"nodes","data":{"id":"u1","label":"User","dept":"Sales"}}
+row 2  {"group":"nodes","data":{"id":"a100","label":"Account"}}
+row 3  {"group":"edges","data":{"id":"u1|OWNS|a100","source":"u1","target":"a100"}}</code></pre>
+<p>The adapter just parses each row and calls <code>cy.add(...)</code> — <strong>no field knowledge, no column
+mapping, no analyst decisions</strong> — and identity / de-dup / source-target linkage are all done server-side
+(as <code>RETURN GRAPH</code> already does). Crucially it stays a flat <code>ValString</code> column, so it needs
+<strong>no entity-<code>Val</code> type and no invariant change</strong>: this is how you get Option E's
+"engine produces the graph shape" convenience <em>without</em> Option E's cost.</p>
+<p>Caveats:</p>
+<ul>
+  <li><strong>Render-only / opaque.</strong> The JSON column can't be meaningfully sorted, joined or aggregated — it
+    <em>complements</em> the scalar columns used for analysis, it doesn't replace them.</li>
+  <li><strong>Library coupling.</strong> Emitting Cytoscape's exact <code>{group, data}</code> shape ties the server
+    output to Cytoscape. Prefer a <strong>neutral element JSON</strong> (<code>id/labels/source/target/props</code>)
+    with a thin client map, or accept the coupling for simplicity — a deliberate choice.</li>
+  <li><strong>Decoration by joined/eval'd data is harder</strong> than Option C: those columns are added after the
+    graph query and sit <em>outside</em> the pre-baked JSON, so styling by them means a client-side merge by id.
+    Option C's column-mapping stays the better path when decoration matters.</li>
+  <li><strong>One element per row</strong>, not a single 1&times;1 cell holding the whole <code>{nodes,edges}</code> —
+    per-row fits the tabular / coprocessor / <code>Store</code>-tree model and streams; a giant single cell does not.</li>
+</ul>
+<p>So there is a spectrum of render paths, by how much the server pre-packages vs. the client/analyst assembles:
+<strong>element-JSON column</strong> (zero effort, engine-generated, opaque to analysis) &rarr; <strong>Option&nbsp;C
+column-mapping</strong> (analyst-driven, decorates naturally, works on any/joined table) &rarr; <strong>RETURN GRAPH
+columns</strong> (structured, the current shape). They are complementary — pick per use.</p>
 
 <h3>Table and graph together, today</h3>
 <p>Because a query returns one shape, to <em>analyse tabularly</em> and <em>visualise the graph</em> you use <strong>two components over the same <code>MATCH</code></strong>: a scalar <code>RETURN</code> feeding a Table (and joins / other vis), plus a <code>RETURN GRAPH</code> feeding the Cytoscape pane. Each stays semantically clean — you never join on, or bar-chart, an interleaved node/edge list. Option C would later collapse this to one query, where the field-mapping decides whether a given table is <em>also</em> renderable as a graph.</p>
@@ -332,7 +434,67 @@
 </figure>
 <p>Practically, the adapter and a thin Cytoscape wrapper can be authored once and hosted twice: as the client widget behind the Data tab's Graph view, and inside the dashboard vis's <code>index.html</code> bundle. Both receive the same columns; both emit the same elements.</p>
 
-<h2 id="reused-new">8. What's reused vs. built new</h2>
+<h2 id="interact">8. Interaction &amp; analysis — and the client/server division</h2>
+<p>A fair question before committing to Cytoscape.js: is it powerful enough to be worth building around?
+It clears the bar comfortably — because it carries a real <strong>graph-theory API</strong>, not just a renderer.</p>
+
+<h3>Interaction (mostly core)</h3>
+<ul>
+  <li><strong>Navigation &amp; selection</strong> — pan, zoom, box-select, multi-select, node drag. <code>tap</code>,
+    <code>hover</code> and <code>cxttap</code> (right-click) events fire on nodes, edges and the background, each with a
+    callback. Those callbacks are exactly what wire into <code>stroom.select(...)</code> for dashboard linking, into
+    tooltips (element properties) and into context menus (drill-down).</li>
+  <li><strong>Styling by data</strong> — a selector + mapper stylesheet drives colour, size, shape and opacity from any
+    <code>data</code> attribute, so the "colour/size a node by a <code>risk</code> or joined column" story (§4) is native,
+    and restyling is dynamic (re-run a mapper after an update).</li>
+  <li><strong>Layouts</strong> — several built in (grid, circle, concentric, breadthfirst, force-directed <code>cose</code>);
+    higher-quality ones via extensions (fcose, cola, dagre / elk for hierarchical). All animatable.</li>
+  <li><strong>Show / hide, filter, expand / collapse, animation</strong>, and <strong>export</strong>
+    (<code>cy.png()</code> / <code>jpg()</code>, SVG via extension, and a lossless <code>cy.json()</code> round-trip).</li>
+</ul>
+
+<h3>Analysis — a real graph-theory API (core)</h3>
+<p>Unusually for a browser library, Cytoscape.js can run graph algorithms <em>client-side</em>, over the loaded elements:</p>
+<ul>
+  <li><strong>Traversal &amp; structure</strong> — BFS / DFS, neighbourhood, successors / predecessors, connected and
+    biconnected components, degree statistics.</li>
+  <li><strong>Pathfinding</strong> — Dijkstra, A*, Bellman-Ford, Floyd-Warshall (weighted shortest paths), Kruskal (MST).</li>
+  <li><strong>Centrality</strong> — degree, closeness, betweenness, PageRank.</li>
+  <li><strong>Clustering</strong> — Markov clustering, k-means, k-medoids, hierarchical, affinity propagation.</li>
+</ul>
+<p>So an analyst can highlight a shortest path, rank nodes by centrality, or cluster a result interactively — with no
+server round-trip.</p>
+<div class="callout"><strong>The client/server division (the important caveat).</strong> Client-side analysis runs only on
+<em>what is loaded</em> — the returned subgraph, not the whole GraphDB. The labour therefore splits cleanly:
+<strong>Cytoscape</strong> does interactive exploration and <em>local</em> analysis of a query result (centrality of the
+visible graph, path highlighting, on-screen clustering); the <strong>server</strong> (the Cypher / graph engine) owns
+whole-graph queries, temporal / diff, aggregation, and <strong>expand-on-demand</strong>. Cytoscape's algorithms are
+excellent for exploration but are <em>not</em> a substitute for server-side analytics over the full store.</div>
+
+<h3>Expand-on-demand — the vis&harr;engine bridge</h3>
+<p>The most valuable interaction is tapping a node to pull in its neighbours: a <code>tap</code> handler issues a
+<em>new</em> Cypher query (e.g. <code>MATCH (n {id:'…'})-[]-&gt;(m) RETURN GRAPH</code>) and <code>cy.add(...)</code>s the
+result into the existing graph. That turns a static result into progressive exploration, and it is precisely where the
+visualisation and the engine meet — it leans on the <code>from "GraphDb"</code> routing (a query per interaction from a
+generic surface) and on a bounded per-expansion result (the caps below).</p>
+
+<h3>Maturity, ecosystem, and the performance ceiling</h3>
+<p><strong>Cytoscape.js is mature and permissively licensed</strong> — roughly a decade old (from the Cytoscape
+bioinformatics lineage), <strong>MIT</strong>, self-hostable and so air-gap friendly (§6), with a large extension ecosystem
+(context-menus, popper tooltips, expand-collapse, a navigator minimap, edge-handles, undo-redo). The main constraint is the
+<strong>performance ceiling</strong>: the canvas renderer is comfortable into the low thousands of elements and degrades on
+force layouts past roughly 5&ndash;10k, so a graph query feeding the vis needs the node/edge <strong>caps and, for large
+regions, server-side aggregation</strong> already discussed (§10 risk profile, plus the graph engine's own row ceiling). A
+headless mode exists for pure computation without rendering.</p>
+
+<h3>Recommendation: a spike</h3>
+<p>It is worth investigating further. A small spike would validate the whole picture at once: render a representative result
+through the row&rarr;elements adapter; wire <code>tap &rarr; stroom.select</code> plus a context-menu
+<strong>"expand neighbours"</strong> that issues a Cypher query; try one algorithm (e.g. betweenness or a shortest-path
+highlight); and measure at a realistic element count to confirm the ceiling and the cap you will need. That exercises fit,
+the vis&harr;engine interaction, and the guardrail requirement together.</p>
+
+<h2 id="reused-new">9. What's reused vs. built new</h2>
 <div class="table-wrap"><table>
   <thead><tr><th>Reused (already shipped)</th><th>Built new</th></tr></thead>
   <tbody>
@@ -343,7 +505,7 @@
   </tbody>
 </table></div>
 
-<h2 id="risks">9. Risk profile</h2>
+<h2 id="risks">10. Risk profile</h2>
 <p>Ranked most-significant first; no effort figures.</p>
 <div class="table-wrap"><table>
   <thead><tr><th>Risk</th><th>Severity</th><th>Why it matters</th><th>Mitigation</th></tr></thead>
@@ -382,7 +544,7 @@
 </table></div>
 <div class="callout"><strong>Overall:</strong> low-to-moderate — the query-side output modes are implemented, so what remains is UI/adapter work over already-shipped frameworks (Cytoscape bundle + the row&rarr;elements adapter + the two hosting surfaces). Building the adapter once for both surfaces is the main lever for keeping it cheap and consistent.</div>
 
-<h2 id="open">10. Non-goals &amp; open questions</h2>
+<h2 id="open">11. Non-goals &amp; open questions</h2>
 <ul>
   <li><strong>Non-goal: a bespoke graph renderer.</strong> Cytoscape.js is the renderer; this note is about feeding and hosting it, not reimplementing layout.</li>
   <li><strong>Non-goal: time-scrubbed animation.</strong> A temporal "scrubber" over <code>AS OF</code> instants is a later enhancement; v1 renders one result (including a diff's annotated snapshot).</li>
