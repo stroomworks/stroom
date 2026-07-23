@@ -60,12 +60,6 @@ public class FloorMapSettingsViewImpl
     @UiField
     SimplePanel schemaGridContainer;
 
-    @UiField
-    SimplePanel typeStylesToolbarContainer;
-
-    @UiField
-    SimplePanel typeStylesGridContainer;
-
     @Inject
     public FloorMapSettingsViewImpl(final Binder binder) {
         widget = binder.createAndBindUi(this);
@@ -124,26 +118,6 @@ public class FloorMapSettingsViewImpl
     @Override
     public void setSchemaGrid(final Widget grid) {
         this.schemaGridContainer.setWidget(grid);
-    }
-
-    /**
-     * Sets the toolbar widget displayed above the type styles grid.
-     *
-     * @param toolbar the toolbar widget for type-style actions
-     */
-    @Override
-    public void setTypeStylesToolbar(final Widget toolbar) {
-        this.typeStylesToolbarContainer.setWidget(toolbar);
-    }
-
-    /**
-     * Sets the grid widget that displays the per-type styles.
-     *
-     * @param grid the type styles grid widget
-     */
-    @Override
-    public void setTypeStylesGrid(final Widget grid) {
-        this.typeStylesGridContainer.setWidget(grid);
     }
 
     /**

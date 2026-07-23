@@ -210,25 +210,17 @@ public class FloorMapEditorPresenter
      * Type styles edited via the Layers panel (reorder / appearance / discovered
      * types) that are not yet saved. When non-null this is the authoritative
      * ordered list: {@link #typeStyles()} prefers it and {@link #onWrite} writes
-     * it back. Kept in step with the Settings tab via
-     * {@link #typeStylesChangeListener}.
+     * it back.
      */
     private List<TypeStyle> pendingTypeStyles;
 
     /**
      * Notified when area support is enabled on this document, so the parent
      * {@link FloorMapPresenter} can refresh the Settings tab's grids — the
-     * Settings tab writes {@code valueSchema}/{@code typeStyles} wholesale on
-     * save and would otherwise silently revert the upgrade.
+     * Settings tab writes {@code valueSchema} wholesale on save and would
+     * otherwise silently revert the upgrade.
      */
     private Runnable areaSupportEnabledListener;
-
-    /**
-     * Notified with the new ordered type styles whenever the Layers panel edits
-     * them, so the parent {@link FloorMapPresenter} can keep the Settings tab's
-     * grid in step (same reason as {@link #areaSupportEnabledListener}).
-     */
-    private Consumer<List<TypeStyle>> typeStylesChangeListener;
 
     // -----------------------------------------------------------------------
 
@@ -581,14 +573,6 @@ public class FloorMapEditorPresenter
     }
 
     /**
-     * Sets the callback notified with the new ordered type styles whenever the
-     * Layers panel edits them, so the Settings tab can be kept in step.
-     */
-    public void setTypeStylesChangeListener(final Consumer<List<TypeStyle>> listener) {
-        this.typeStylesChangeListener = listener;
-    }
-
-    /**
      * Adopts an initial view {@code {scale, offsetX, offsetY}} computed by the
      * Map tab so the Editor's first frame matches and the view doesn't jump on
      * the tab switch. Only affects the one-time initial view; user pan/zoom in
@@ -603,8 +587,7 @@ public class FloorMapEditorPresenter
     /**
      * Handles a type-styles edit from the Layers panel (reorder / appearance /
      * discovered types): stages the new list, applies it live to the canvas and
-     * object-edit dialog, marks the document dirty, and notifies the parent so
-     * the Settings tab stays in step.
+     * object-edit dialog, and marks the document dirty.
      *
      * @param newTypeStyles the new ordered type styles
      */
@@ -613,9 +596,6 @@ public class FloorMapEditorPresenter
         floorMapCanvasPresenter.setTypeStyles(newTypeStyles);
         floorMapObjectEditPresenter.setFloorMapDoc(sessionEntity());
         setDirty(true);
-        if (typeStylesChangeListener != null) {
-            typeStylesChangeListener.accept(newTypeStyles);
-        }
     }
 
     /**
