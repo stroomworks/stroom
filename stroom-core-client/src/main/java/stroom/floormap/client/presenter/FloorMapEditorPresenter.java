@@ -160,6 +160,8 @@ public class FloorMapEditorPresenter
     private final FloorMapTimeListPresenter floorMapTimeListPresenter;
     private final FloorMapObjectEditPresenter floorMapObjectEditPresenter;
     private final FloorMapDockPresenter floorMapDockPresenter;
+    private final FloorMapLayersPresenter floorMapLayersPresenter;
+    private final FloorMapLayerStylePresenter floorMapLayerStylePresenter;
 
     /** The GWT-free model containing all shared state and pure logic. */
     private final FloorMapEditorModel model;
@@ -195,12 +197,28 @@ public class FloorMapEditorPresenter
     private List<TypeStyle> pendingAreaTypeStyles;
 
     /**
+     * Type styles edited via the Layers panel (reorder / appearance / discovered
+     * types) that are not yet saved. When non-null this is the authoritative
+     * ordered list: {@link #typeStyles()} prefers it and {@link #onWrite} writes
+     * it back. Kept in step with the Settings tab via
+     * {@link #typeStylesChangeListener}.
+     */
+    private List<TypeStyle> pendingTypeStyles;
+
+    /**
      * Notified when area support is enabled on this document, so the parent
      * {@link FloorMapPresenter} can refresh the Settings tab's grids — the
      * Settings tab writes {@code valueSchema}/{@code typeStyles} wholesale on
      * save and would otherwise silently revert the upgrade.
      */
     private Runnable areaSupportEnabledListener;
+
+    /**
+     * Notified with the new ordered type styles whenever the Layers panel edits
+     * them, so the parent {@link FloorMapPresenter} can keep the Settings tab's
+     * grid in step (same reason as {@link #areaSupportEnabledListener}).
+     */
+    private Consumer<List<TypeStyle>> typeStylesChangeListener;
 
     // -----------------------------------------------------------------------
 
@@ -213,7 +231,9 @@ public class FloorMapEditorPresenter
                                    final Provider<FloorMapFactListPresenter> factListProvider,
                                    final Provider<FloorMapTimeListPresenter> timeListProvider,
                                    final Provider<FloorMapObjectEditPresenter> propertiesProvider,
-                                   final Provider<FloorMapDockPresenter> dockProvider) {
+                                   final Provider<FloorMapDockPresenter> dockProvider,
+                                   final Provider<FloorMapLayersPresenter> layersProvider,
+                                   final Provider<FloorMapLayerStylePresenter> layerStyleProvider) {
         super(eventBus, view);
         this.restFactory = restFactory;
         this.model = new FloorMapEditorModel(
@@ -227,6 +247,9 @@ public class FloorMapEditorPresenter
         this.floorMapTimeListPresenter = timeListProvider.get();
         this.floorMapObjectEditPresenter = propertiesProvider.get();
         this.floorMapDockPresenter = dockProvider.get();
+        this.floorMapLayersPresenter = layersProvider.get();
+        this.floorMapLayersPresenter.setEditorMode(true);
+        this.floorMapLayerStylePresenter = layerStyleProvider.get();
 
         // Always in edit mode, with the grid overlay shown as an editing aid.
         floorMapCanvasPresenter.setEditMode(true);
@@ -259,6 +282,24 @@ public class FloorMapEditorPresenter
         // presenter, so no map-help button appears there.)
         helpToolbar = createHelpToolbar();
         floorMapTimelinePresenter.setHelpContent(FloorMapEditorHelp.timeline());
+
+        // The Layers panel is the Editor dock's tab.
+        floorMapDockPresenter.addTab("Layers", floorMapLayersPresenter);
+        floorMapLayersPresenter.setChangeHandler(() -> {
+            floorMapCanvasPresenter.setLayerVisibility(
+                    floorMapLayersPresenter.getHiddenTypes(),
+                    floorMapLayersPresenter.getDimmedTypes());
+            floorMapCanvasPresenter.setLockedTypes(floorMapLayersPresenter.getLockedTypes());
+        });
+        // Persist reorder / appearance / discovered-type edits from the panel.
+        floorMapLayersPresenter.setTypeStylesEditHandler(this::onLayerTypeStylesEdited);
+        // Open the appearance dialog (shape + colour) for a layer, then hand the
+        // edited style back to the panel.
+        floorMapLayersPresenter.setStyleEditor((typeStyle, callback) ->
+                floorMapLayerStylePresenter.show(
+                        typeStyle.getType(), typeStyle.getShape(), typeStyle.getColour(),
+                        (shape, colour) -> callback.accept(
+                                new TypeStyle(typeStyle.getType(), shape, colour))));
 
         setInSlot(MAIN, floorMapCanvasPresenter);
         setInSlot(DOCK, floorMapDockPresenter);
@@ -370,6 +411,18 @@ public class FloorMapEditorPresenter
             pendingAreaSchema = null;
             pendingAreaTypeStyles = null;
         }
+        // Once the saved document carries the Layers-panel type-styles edit, the
+        // staged copy has been persisted and can be dropped.
+        if (pendingTypeStyles != null && pendingTypeStyles.equals(document.getTypeStyles())) {
+            pendingTypeStyles = null;
+        }
+
+        // Populate the Layers panel from the document's type styles.
+        floorMapLayersPresenter.setLayers(typeStyles());
+        floorMapCanvasPresenter.setLayerVisibility(
+                floorMapLayersPresenter.getHiddenTypes(),
+                floorMapLayersPresenter.getDimmedTypes());
+        floorMapCanvasPresenter.setLockedTypes(floorMapLayersPresenter.getLockedTypes());
 
         final String mapName = getMapName();
         if (mapName == null) {
@@ -405,14 +458,22 @@ public class FloorMapEditorPresenter
      */
     @Override
     protected FloorMapDoc onWrite(final FloorMapDoc document) {
-        if (pendingAreaSchema == null) {
+        if (pendingAreaSchema == null && pendingTypeStyles == null) {
             return document;
         }
-        return document.copy()
-                .valueSchema(FloorMapFieldMapping.withAreaMappings(
-                        document.getValueSchema(), document.getValueFormat()))
-                .typeStyles(TypeStyle.withAreaStyle(document.getTypeStyles()))
-                .build();
+        final FloorMapDoc.Builder builder = document.copy();
+        if (pendingAreaSchema != null) {
+            builder.valueSchema(FloorMapFieldMapping.withAreaMappings(
+                    document.getValueSchema(), document.getValueFormat()));
+        }
+        // An explicit Layers-panel edit is the authoritative type-styles list;
+        // otherwise apply the area upgrade's list when that is what's pending.
+        if (pendingTypeStyles != null) {
+            builder.typeStyles(pendingTypeStyles);
+        } else if (pendingAreaSchema != null) {
+            builder.typeStyles(TypeStyle.withAreaStyle(document.getTypeStyles()));
+        }
+        return builder.build();
     }
 
     /**
@@ -431,6 +492,9 @@ public class FloorMapEditorPresenter
      * {@link #valueSchema()}).
      */
     private List<TypeStyle> typeStyles() {
+        if (pendingTypeStyles != null) {
+            return pendingTypeStyles;
+        }
         return pendingAreaTypeStyles != null
                 ? pendingAreaTypeStyles
                 : getEntity().getTypeStyles();
@@ -444,12 +508,12 @@ public class FloorMapEditorPresenter
      * against the pre-upgrade schema until the document is saved.
      */
     private FloorMapDoc sessionEntity() {
-        if (pendingAreaSchema == null) {
+        if (pendingAreaSchema == null && pendingTypeStyles == null) {
             return getEntity();
         }
         return getEntity().copy()
-                .valueSchema(pendingAreaSchema)
-                .typeStyles(pendingAreaTypeStyles)
+                .valueSchema(valueSchema())
+                .typeStyles(typeStyles())
                 .build();
     }
 
@@ -483,6 +547,32 @@ public class FloorMapEditorPresenter
      */
     public void setAreaSupportEnabledListener(final Runnable listener) {
         this.areaSupportEnabledListener = listener;
+    }
+
+    /**
+     * Sets the callback notified with the new ordered type styles whenever the
+     * Layers panel edits them, so the Settings tab can be kept in step.
+     */
+    public void setTypeStylesChangeListener(final Consumer<List<TypeStyle>> listener) {
+        this.typeStylesChangeListener = listener;
+    }
+
+    /**
+     * Handles a type-styles edit from the Layers panel (reorder / appearance /
+     * discovered types): stages the new list, applies it live to the canvas and
+     * object-edit dialog, marks the document dirty, and notifies the parent so
+     * the Settings tab stays in step.
+     *
+     * @param newTypeStyles the new ordered type styles
+     */
+    private void onLayerTypeStylesEdited(final List<TypeStyle> newTypeStyles) {
+        pendingTypeStyles = newTypeStyles;
+        floorMapCanvasPresenter.setTypeStyles(newTypeStyles);
+        floorMapObjectEditPresenter.setFloorMapDoc(sessionEntity());
+        setDirty(true);
+        if (typeStylesChangeListener != null) {
+            typeStylesChangeListener.accept(newTypeStyles);
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -765,6 +855,14 @@ public class FloorMapEditorPresenter
                 ValueAccessorFactory.forFormat(getEntity().getValueFormat()));
         floorMapCanvasPresenter.setTypeStyles(typeStyles());
         floorMapCanvasPresenter.setFacts(facts);
+        // Surface any fact types not yet configured as layers in the Layers panel.
+        final Set<String> seenTypes = new HashSet<>();
+        for (final Fact fact : facts) {
+            if (fact.getType() != null) {
+                seenTypes.add(fact.getType());
+            }
+        }
+        floorMapLayersPresenter.setSeenTypes(seenTypes);
         // Restore the full (multi-)selection highlight after re-rendering, so a
         // group stays selected across canvas refreshes (e.g. after a transform).
         floorMapCanvasPresenter.setSelectedObjectIds(model.getSelectedFactKeys());

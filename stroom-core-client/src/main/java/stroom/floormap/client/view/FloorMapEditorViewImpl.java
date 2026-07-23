@@ -146,6 +146,8 @@ public class FloorMapEditorViewImpl extends ViewImpl implements FloorMapEditorVi
         // ---- Outer vertical split: top area vs bottom strip -----------------
         outerSplitPanel = new ThinSplitLayoutPanel();
         outerSplitPanel.setSize("100%", "100%");
+        // Thin divider between the document toolbar and the canvas area.
+        outerSplitPanel.addStyleName("stroom-border-top");
         outerSplitPanel.setVSplits(BOTTOM_STRIP_SPLIT);
         outerSplitPanel.addSouth(bottomPanel, BOTTOM_STRIP_INITIAL_HEIGHT); // bottom strip
         outerSplitPanel.add(topSplitPanel);                                     // canvas + dock (centre)

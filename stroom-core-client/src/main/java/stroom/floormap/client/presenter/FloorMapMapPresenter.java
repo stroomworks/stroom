@@ -98,6 +98,7 @@ public class FloorMapMapPresenter
     private final FloorMapTimelinePresenter floorMapTimelinePresenter;
     private final FloorMapObjectEditPresenter floorMapObjectEditPresenter;
     private final FloorMapTrackingPresenter floorMapTrackingPresenter;
+    private final FloorMapLayersPresenter floorMapLayersPresenter;
     private final FloorMapDockPresenter floorMapDockPresenter;
 
     /** Roster of every entity seen on the map, feeding the tracking panel. */
@@ -165,7 +166,8 @@ public class FloorMapMapPresenter
                                 final Provider<FloorMapTimelinePresenter> floorMapTimelinePresenterProvider,
                                 final Provider<FloorMapObjectEditPresenter> floorMapObjectEditPresenterProvider,
                                 final Provider<FloorMapTrackingPresenter> floorMapEntityListPresenterProvider,
-                                final Provider<FloorMapDockPresenter> floorMapDockPresenterProvider) {
+                                final Provider<FloorMapDockPresenter> floorMapDockPresenterProvider,
+                                final Provider<FloorMapLayersPresenter> floorMapLayersPresenterProvider) {
         super(eventBus, view);
 
         this.floorMapCanvasPresenter = floorMapCanvasPresenterProvider.get();
@@ -173,12 +175,20 @@ public class FloorMapMapPresenter
         this.floorMapObjectEditPresenter = floorMapObjectEditPresenterProvider.get();
         this.floorMapTrackingPresenter = floorMapEntityListPresenterProvider.get();
         this.floorMapDockPresenter = floorMapDockPresenterProvider.get();
+        this.floorMapLayersPresenter = floorMapLayersPresenterProvider.get();
 
         // Default initial time
         this.selectedTime = System.currentTimeMillis();
 
-        // The Tracking panel now lives as the first tab of the right-hand dock.
+        // The Tracking and Layers panels live as tabs of the right-hand dock.
         floorMapDockPresenter.addTab("Tracking", floorMapTrackingPresenter);
+        floorMapDockPresenter.addTab("Layers", floorMapLayersPresenter);
+        // Layer visibility is a transient view control on the Map tab; push
+        // changes to the canvas as hidden / dimmed type sets.
+        floorMapLayersPresenter.setChangeHandler(() ->
+                floorMapCanvasPresenter.setLayerVisibility(
+                        floorMapLayersPresenter.getHiddenTypes(),
+                        floorMapLayersPresenter.getDimmedTypes()));
 
         setInSlot(MAP, floorMapCanvasPresenter);
         setInSlot(DOCK, floorMapDockPresenter);
@@ -373,6 +383,13 @@ public class FloorMapMapPresenter
         // A (re-)opened document starts with a fresh entity roster.
         entityList.clear();
         floorMapTrackingPresenter.setData(Collections.emptyList());
+
+        // Populate the Layers panel from the document's type styles and sync the
+        // canvas with the current (transient) layer visibility.
+        floorMapLayersPresenter.setLayers(document.getTypeStyles());
+        floorMapCanvasPresenter.setLayerVisibility(
+                floorMapLayersPresenter.getHiddenTypes(),
+                floorMapLayersPresenter.getDimmedTypes());
 
         // Start timeline (and histogram query) only after models are ready.
         // Initialise the range on the first read only; on a save-triggered

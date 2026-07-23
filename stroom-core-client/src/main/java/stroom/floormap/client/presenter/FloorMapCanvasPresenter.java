@@ -246,6 +246,15 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     /** The facts to render (backgrounds + static facts), from the parser. */
     private List<Fact> facts = new ArrayList<>();
 
+    /** Types the Layers panel has hidden: not drawn and not hit-tested. */
+    private final Set<String> hiddenTypes = new HashSet<>();
+    /** Types the Layers panel has dimmed to 30% opacity. */
+    private final Set<String> dimmedTypes = new HashSet<>();
+    /** Types the Layers panel has locked (Editor): their items can't be moved. */
+    private final Set<String> lockedTypes = new HashSet<>();
+    /** Fact keys belonging to a locked type — recomputed whenever facts change. */
+    private final Set<String> lockedKeys = new HashSet<>();
+
     // -------------------------------------------------------------------------
     // Entity tracking (Map tab)
     // -------------------------------------------------------------------------
@@ -482,9 +491,14 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
                 // (1) A transform handle takes priority over object/background
                 // hit-testing so a handle drag starts a scale/rotate gesture.
+                // Point glyphs (no image, no area geometry) are fixed screen-size
+                // and can't be scaled/rotated, so their handles are drawn greyed
+                // and are inert — the press is consumed but starts no gesture.
                 final String handle = handleRole(event.getNativeEvent().getEventTarget());
                 if (handle != null && !selectedObjectIds.isEmpty()) {
-                    beginHandleGesture(handle, event.getX(), event.getY());
+                    if (selectionTransformable()) {
+                        beginHandleGesture(handle, event.getX(), event.getY());
+                    }
                     return;
                 }
 
@@ -499,6 +513,23 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                         && (!pansWhenUnselected || selectedObjectIds.contains(hitId));
 
                 if (onObject) {
+                    // A locked layer's items stay selectable but can't be moved:
+                    // update the selection like a normal click, but do not begin
+                    // a MOVING gesture.
+                    if (lockedKeys.contains(hitId)) {
+                        if (modifier) {
+                            if (!selectedObjectIds.remove(hitId)) {
+                                selectedObjectIds.add(hitId);
+                            }
+                        } else if (!selectedObjectIds.contains(hitId)) {
+                            selectedObjectIds.clear();
+                            selectedObjectIds.add(hitId);
+                        }
+                        fireSelectionChanged();
+                        gesture = Gesture.NONE;
+                        isDragging = false;
+                        return;
+                    }
                     if (modifier) {
                         // Shift/Ctrl-click toggles the object in the selection.
                         if (!selectedObjectIds.remove(hitId)) {
@@ -713,7 +744,17 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                 // of the whole selection.
                 if (moved && transform != null && !selectedObjectIds.isEmpty()
                         && dragHandler != null) {
-                    dragHandler.onTransform(new ArrayList<>(selectedObjectIds), transform);
+                    // Never transform items on a locked layer (covers the case
+                    // where a layer was locked after its items were selected).
+                    final List<String> movable = new ArrayList<>(selectedObjectIds.size());
+                    for (final String id : selectedObjectIds) {
+                        if (!lockedKeys.contains(id)) {
+                            movable.add(id);
+                        }
+                    }
+                    if (!movable.isEmpty()) {
+                        dragHandler.onTransform(movable, transform);
+                    }
                 }
             } else if (finished == Gesture.MARQUEE) {
                 // Select every fact the rubber-band touched, adding to the
@@ -723,7 +764,12 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                         Math.min(marqueeStartY, marqueeCurY),
                         Math.max(marqueeStartX, marqueeCurX),
                         Math.max(marqueeStartY, marqueeCurY)};
-                selectedObjectIds.addAll(getView().hitTestScreenRect(rect));
+                // The marquee never selects items on a locked layer.
+                for (final String id : getView().hitTestScreenRect(rect)) {
+                    if (!lockedKeys.contains(id)) {
+                        selectedObjectIds.add(id);
+                    }
+                }
                 fireSelectionChanged();
                 redraw();
             } else if (finished == Gesture.PANNING
@@ -929,10 +975,11 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         final List<FloorMapObject> overlay =
                 buildAnimatedDrawList(/* nowMs — irrelevant when no animations */ 0.0);
         getView().draw(scale, offsetX, offsetY,
-                FloorMapZOrder.sort(factsExcludingOverlay(overlay), typeStyles),
-                overlay, selectedObjectIds, typeStyles, showGrid,
+                FloorMapZOrder.sort(visibleFacts(factsExcludingOverlay(overlay)), typeStyles),
+                visibleEvents(overlay), selectedObjectIds, typeStyles, showGrid, dimmedTypes,
                 gesture == Gesture.MARQUEE ? currentMarqueeRect() : null,
                 editMode && !selectedObjectIds.isEmpty() && gesture != Gesture.MARQUEE,
+                selectionTransformable(),
                 gesture == Gesture.DRAWING_AREA ? currentAreaDraftPx() : null);
     }
 
@@ -990,6 +1037,22 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
      * @param px   the pointer X at gesture start (element pixels)
      * @param py   the pointer Y at gesture start (element pixels)
      */
+    /**
+     * True if the current selection contains at least one fact that can be
+     * meaningfully scaled or rotated — an image fact or an area (which has real
+     * geometry). Bare point glyphs are drawn at a fixed screen size, so
+     * transforming them has no visible effect; their handles are greyed and inert.
+     */
+    private boolean selectionTransformable() {
+        for (final Fact fact : facts) {
+            if (selectedObjectIds.contains(fact.getKey())
+                    && (fact.hasImage() || fact.hasVertices())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private void beginHandleGesture(final String role, final double px, final double py) {
         final double[] frame = getView().getSelectionFrame();
         if (frame == null) {
@@ -1301,8 +1364,9 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                     // Draw the current frame. No marquee/handles/draft during playback.
                     final List<FloorMapObject> overlay = buildAnimatedDrawList(timestamp);
                     getView().draw(scale, offsetX, offsetY,
-                            FloorMapZOrder.sort(factsExcludingOverlay(overlay), typeStyles),
-                            overlay, selectedObjectIds, typeStyles, showGrid, null, false, null);
+                            FloorMapZOrder.sort(visibleFacts(factsExcludingOverlay(overlay)), typeStyles),
+                            visibleEvents(overlay), selectedObjectIds, typeStyles, showGrid, dimmedTypes,
+                            null, false, false, null);
 
                     // Keep looping.
                     AnimationScheduler.get().requestAnimationFrame(this);
@@ -1785,6 +1849,81 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     }
 
     /**
+     * Sets per-type layer visibility from the Layers panel. Types in
+     * {@code hidden} are neither drawn nor hit-tested; types in {@code dimmed}
+     * render at reduced opacity.
+     *
+     * @param hidden types to hide; {@code null} treated as empty
+     * @param dimmed types to render dimmed; {@code null} treated as empty
+     */
+    public void setLayerVisibility(final Set<String> hidden, final Set<String> dimmed) {
+        hiddenTypes.clear();
+        if (hidden != null) {
+            hiddenTypes.addAll(hidden);
+        }
+        dimmedTypes.clear();
+        if (dimmed != null) {
+            dimmedTypes.addAll(dimmed);
+        }
+        redraw();
+    }
+
+    /**
+     * Sets the types whose items are locked against movement (Editor Layers
+     * panel). Locked items stay visible and selectable but cannot be dragged.
+     *
+     * @param locked the locked types; {@code null} treated as empty
+     */
+    public void setLockedTypes(final Set<String> locked) {
+        lockedTypes.clear();
+        if (locked != null) {
+            lockedTypes.addAll(locked);
+        }
+        recomputeLockedKeys();
+    }
+
+    /** Recomputes {@link #lockedKeys} from the current facts and locked types. */
+    private void recomputeLockedKeys() {
+        lockedKeys.clear();
+        if (lockedTypes.isEmpty()) {
+            return;
+        }
+        for (final Fact fact : facts) {
+            if (lockedTypes.contains(fact.getType())) {
+                lockedKeys.add(fact.getKey());
+            }
+        }
+    }
+
+    /** Facts minus those whose type is a hidden layer. */
+    private List<Fact> visibleFacts(final List<Fact> in) {
+        if (in == null || hiddenTypes.isEmpty()) {
+            return in;
+        }
+        final List<Fact> out = new ArrayList<>(in.size());
+        for (final Fact fact : in) {
+            if (!hiddenTypes.contains(fact.getType())) {
+                out.add(fact);
+            }
+        }
+        return out;
+    }
+
+    /** Event objects minus those whose type is a hidden layer. */
+    private List<FloorMapObject> visibleEvents(final List<FloorMapObject> in) {
+        if (in == null || hiddenTypes.isEmpty()) {
+            return in;
+        }
+        final List<FloorMapObject> out = new ArrayList<>(in.size());
+        for (final FloorMapObject ev : in) {
+            if (!hiddenTypes.contains(ev.getType())) {
+                out.add(ev);
+            }
+        }
+        return out;
+    }
+
+    /**
      * Sets the facts to render (backgrounds + static facts) as produced by the
      * parser. Replaces the legacy background-image/matrix/objects inputs.
      *
@@ -1805,6 +1944,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                 areaKeys.add(fact.getKey());
             }
         }
+        recomputeLockedKeys();
         redraw();
     }
 
@@ -2028,8 +2168,9 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
          */
         void draw(double scale, double x, double y, List<Fact> facts,
                 List<FloorMapObject> events, Set<String> selectedObjectIds,
-                List<TypeStyle> typeStyles, boolean showGrid, double[] marqueeRectPx,
-                boolean drawSelectionHandles, double[] areaDraftPx);
+                List<TypeStyle> typeStyles, boolean showGrid, Set<String> dimmedTypes,
+                double[] marqueeRectPx, boolean drawSelectionHandles, boolean scaleRotateEnabled,
+                double[] areaDraftPx);
 
         /**
          * Returns the keys of facts whose on-screen bounds intersect the given

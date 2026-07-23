@@ -464,6 +464,23 @@ public class FloorMapSettingsPresenter
     // Type Styles
     // -----------------------------------------------------------------------
 
+    /**
+     * Replaces the Type Styles grid contents with the given list and marks the
+     * document dirty. Called when the Editor's Layers panel edits type styles
+     * (reorder / appearance / discovered types), so the Settings tab — which
+     * writes {@code typeStyles} wholesale on save — stays in step and does not
+     * revert the Layers-panel edits. Safe to call before this tab is opened.
+     *
+     * @param typeStyles the new ordered type styles
+     */
+    public void applyTypeStyles(final List<TypeStyle> typeStyles) {
+        typeStylesDataProvider.setList(new ArrayList<>(typeStyles));
+        typeStylesSelectionModel.clear();
+        refreshTypeStylesGrid();
+        updateTypeButtons();
+        onChange();
+    }
+
     private void replaceTypeStyle(final int index, final TypeStyle updated) {
         final List<TypeStyle> list = typeStylesDataProvider.getList();
         if (index >= 0 && index < list.size()) {

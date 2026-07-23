@@ -96,6 +96,12 @@ public class FloorMapCanvasViewImpl
     private static final double MIN_FRAME_PX = 24;
     private static final String HANDLE_STROKE = "#1e88e5";
     private static final String HANDLE_FILL = "#ffffff";
+    /** Greyed handle colours, shown when the selection can't be scaled/rotated. */
+    private static final String HANDLE_DISABLED_STROKE = "#9e9e9e";
+    private static final String HANDLE_DISABLED_FILL = "#e0e0e0";
+    /** Tooltip explaining why the handles are inert for a non-transformable fact. */
+    private static final String HANDLE_DISABLED_TOOLTIP =
+            "Only image facts and areas can be scaled or rotated";
 
     /** Default translucency of an area fact's fill when no opacity is stored. */
     private static final double DEFAULT_AREA_FILL_OPACITY = 0.3;
@@ -236,8 +242,10 @@ public class FloorMapCanvasViewImpl
                      final Set<String> selectedObjectIds,
                      final List<TypeStyle> typeStyles,
                      final boolean showGrid,
+                     final Set<String> dimmedTypes,
                      final double[] marqueeRectPx,
                      final boolean drawSelectionHandles,
+                     final boolean scaleRotateEnabled,
                      final double[] areaDraftPx) {
         final HtmlBuilder htmlBuilder = new HtmlBuilder();
 
@@ -270,15 +278,13 @@ public class FloorMapCanvasViewImpl
                     if (facts != null) {
                         for (final Fact fact : facts) {
                             final boolean isSelected = selectedObjectIds.contains(fact.getKey());
-                            // Image first: a fact carrying an image always
-                            // renders that image (the long-standing invariant);
-                            // vertices only take effect on imageless facts.
-                            if (fact.hasImage()) {
-                                appendImageFact(flipGroup, fact, isSelected);
-                            } else if (fact.hasVertices()) {
-                                appendAreaFact(flipGroup, fact, isSelected, typeStyles);
+                            // A dimmed layer wraps its facts in a group at 30%
+                            // opacity; otherwise the fact is drawn directly.
+                            if (dimmedTypes != null && dimmedTypes.contains(fact.getType())) {
+                                flipGroup.elem(g -> renderFact(g, fact, isSelected, typeStyles, scale),
+                                        SafeHtmlUtil.from("g"), new Attribute("opacity", "0.3"));
                             } else {
-                                appendDefaultGraphic(flipGroup, fact, isSelected, typeStyles, scale);
+                                renderFact(flipGroup, fact, isSelected, typeStyles, scale);
                             }
                         }
                     }
@@ -286,8 +292,13 @@ public class FloorMapCanvasViewImpl
                     // ---- Event entities drawn on top ----
                     if (events != null) {
                         for (final FloorMapObject ev : events) {
-                            appendEvent(flipGroup, ev, selectedObjectIds.contains(ev.getId()),
-                                    typeStyles, scale);
+                            final boolean evSelected = selectedObjectIds.contains(ev.getId());
+                            if (dimmedTypes != null && dimmedTypes.contains(ev.getType())) {
+                                flipGroup.elem(g -> appendEvent(g, ev, evSelected, typeStyles, scale),
+                                        SafeHtmlUtil.from("g"), new Attribute("opacity", "0.3"));
+                            } else {
+                                appendEvent(flipGroup, ev, evSelected, typeStyles, scale);
+                            }
                         }
                     }
                 }, SafeHtmlUtil.from("g"), new Attribute("transform", "scale(1,-1)")),
@@ -307,7 +318,7 @@ public class FloorMapCanvasViewImpl
 
             // Selection frame + scale/rotate handles — screen space, on top.
             if (drawSelectionHandles) {
-                appendSelectionHandles(svg);
+                appendSelectionHandles(svg, scaleRotateEnabled);
             }
         },
             SafeHtmlUtil.from("svg"),
@@ -435,6 +446,25 @@ public class FloorMapCanvasViewImpl
                     new Attribute("stroke", "#1e88e5"),
                     new Attribute("stroke-width", closable ? "2" : "1"),
                     new Attribute("pointer-events", "none"));
+        }
+    }
+
+    /**
+     * Renders a single fact into the given builder, dispatching by content:
+     * image facts render their image; imageless facts with vertices render as
+     * areas; everything else renders as the type's default glyph.
+     */
+    private void renderFact(final HtmlBuilder builder,
+                            final Fact fact,
+                            final boolean isSelected,
+                            final List<TypeStyle> typeStyles,
+                            final double scale) {
+        if (fact.hasImage()) {
+            appendImageFact(builder, fact, isSelected);
+        } else if (fact.hasVertices()) {
+            appendAreaFact(builder, fact, isSelected, typeStyles);
+        } else {
+            appendDefaultGraphic(builder, fact, isSelected, typeStyles, scale);
         }
     }
 
@@ -656,7 +686,7 @@ public class FloorMapCanvasViewImpl
      * so the presenter can route a mousedown on it to a scale/rotate gesture.
      * Scaling is always aspect-preserving, so only corner handles are offered.
      */
-    private void appendSelectionHandles(final HtmlBuilder svg) {
+    private void appendSelectionHandles(final HtmlBuilder svg, final boolean enabled) {
         final double[] f = computeSelectionFrame();
         if (f == null) {
             return;
@@ -689,39 +719,52 @@ public class FloorMapCanvasViewImpl
                 new Attribute("stroke", HANDLE_STROKE),
                 new Attribute("stroke-width", "1"),
                 new Attribute("pointer-events", "none"));
-        appendRotateHandle(svg, cx, ry);
+        appendRotateHandle(svg, cx, ry, enabled);
 
         // 4 corner scale handles (aspect-preserving scale about the opposite corner).
-        appendScaleHandle(svg, minX, minY, "scale-nw", "nwse-resize");
-        appendScaleHandle(svg, maxX, minY, "scale-ne", "nesw-resize");
-        appendScaleHandle(svg, maxX, maxY, "scale-se", "nwse-resize");
-        appendScaleHandle(svg, minX, maxY, "scale-sw", "nesw-resize");
+        appendScaleHandle(svg, minX, minY, "scale-nw", "nwse-resize", enabled);
+        appendScaleHandle(svg, maxX, minY, "scale-ne", "nesw-resize", enabled);
+        appendScaleHandle(svg, maxX, maxY, "scale-se", "nwse-resize", enabled);
+        appendScaleHandle(svg, minX, maxY, "scale-sw", "nesw-resize", enabled);
     }
 
     private void appendScaleHandle(final HtmlBuilder svg, final double x, final double y,
-                                   final String role, final String cursor) {
-        svg.elem(SafeHtmlUtil.from("rect"),
+                                   final String role, final String cursor, final boolean enabled) {
+        svg.elem(
+                builder -> {
+                    if (!enabled) {
+                        builder.elem(HANDLE_DISABLED_TOOLTIP, SafeHtmlUtil.from("title"));
+                    }
+                },
+                SafeHtmlUtil.from("rect"),
                 new Attribute("id", FloorMapJsonKeys.HANDLE_PREFIX + role),
                 new Attribute("x", String.valueOf(x - HANDLE_SIZE_PX / 2)),
                 new Attribute("y", String.valueOf(y - HANDLE_SIZE_PX / 2)),
                 new Attribute("width", String.valueOf(HANDLE_SIZE_PX)),
                 new Attribute("height", String.valueOf(HANDLE_SIZE_PX)),
-                new Attribute("fill", HANDLE_FILL),
-                new Attribute("stroke", HANDLE_STROKE),
+                new Attribute("fill", enabled ? HANDLE_FILL : HANDLE_DISABLED_FILL),
+                new Attribute("stroke", enabled ? HANDLE_STROKE : HANDLE_DISABLED_STROKE),
                 new Attribute("stroke-width", "1"),
-                new Attribute("cursor", cursor));
+                new Attribute("cursor", enabled ? cursor : "not-allowed"));
     }
 
-    private void appendRotateHandle(final HtmlBuilder svg, final double x, final double y) {
-        svg.elem(SafeHtmlUtil.from("circle"),
+    private void appendRotateHandle(final HtmlBuilder svg, final double x, final double y,
+                                    final boolean enabled) {
+        svg.elem(
+                builder -> {
+                    if (!enabled) {
+                        builder.elem(HANDLE_DISABLED_TOOLTIP, SafeHtmlUtil.from("title"));
+                    }
+                },
+                SafeHtmlUtil.from("circle"),
                 new Attribute("id", FloorMapJsonKeys.HANDLE_PREFIX + "rotate"),
                 new Attribute("cx", String.valueOf(x)),
                 new Attribute("cy", String.valueOf(y)),
                 new Attribute("r", String.valueOf(ROTATE_HANDLE_RADIUS_PX)),
-                new Attribute("fill", HANDLE_FILL),
-                new Attribute("stroke", HANDLE_STROKE),
+                new Attribute("fill", enabled ? HANDLE_FILL : HANDLE_DISABLED_FILL),
+                new Attribute("stroke", enabled ? HANDLE_STROKE : HANDLE_DISABLED_STROKE),
                 new Attribute("stroke-width", "1"),
-                new Attribute("cursor", "grab"));
+                new Attribute("cursor", enabled ? "grab" : "not-allowed"));
     }
 
     /**

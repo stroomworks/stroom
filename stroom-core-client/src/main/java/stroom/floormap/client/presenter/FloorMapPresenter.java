@@ -26,6 +26,7 @@ import stroom.entity.client.presenter.LinkTabPanelView;
 import stroom.entity.client.presenter.MarkdownEditPresenter;
 import stroom.entity.client.presenter.MarkdownTabProvider;
 import stroom.floormap.shared.FloorMapDoc;
+import stroom.floormap.shared.TypeStyle;
 import stroom.security.client.presenter.DocumentUserPermissionsTabProvider;
 import stroom.widget.tab.client.presenter.TabData;
 import stroom.widget.tab.client.presenter.TabDataImpl;
@@ -34,6 +35,7 @@ import com.google.inject.Inject;
 import com.google.web.bindery.event.shared.EventBus;
 import com.gwtplatform.mvp.client.PresenterWidget;
 
+import java.util.List;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import javax.inject.Provider;
@@ -77,6 +79,13 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
      */
     private boolean areaSupportEnabled;
 
+    /**
+     * The latest type-styles edit made from the Editor's Layers panel, stashed
+     * so that a Settings tab opened <em>afterwards</em> is initialised with it
+     * (mirrors {@link #areaSupportEnabled}). {@code null} until the first edit.
+     */
+    private List<TypeStyle> pendingLayerTypeStyles;
+
     @Inject
     public FloorMapPresenter(final EventBus eventBus,
                              final LinkTabPanelView view,
@@ -104,6 +113,16 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
                 areaSupportEnabled = true;
                 if (floorMapSettingsPresenter != null) {
                     floorMapSettingsPresenter.applyAreaPatch();
+                }
+            });
+            // Keep the Settings tab's Type Styles grid in step with edits made
+            // from the Editor's Layers panel (reorder / appearance / discovery),
+            // stashing them for a Settings tab opened later — otherwise its
+            // wholesale onWrite would revert them on save.
+            floorMapEditorPresenter.setTypeStylesChangeListener(typeStyles -> {
+                pendingLayerTypeStyles = typeStyles;
+                if (floorMapSettingsPresenter != null) {
+                    floorMapSettingsPresenter.applyTypeStyles(typeStyles);
                 }
             });
             return floorMapEditorPresenter;
@@ -153,6 +172,11 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
                 // Area support was enabled before this tab was first opened —
                 // keep its grids patched (idempotent; also re-applied on read).
                 floorMapSettingsPresenter.applyAreaPatch();
+            }
+            if (pendingLayerTypeStyles != null) {
+                // A Layers-panel type-styles edit was made before this tab was
+                // first opened — seed the grid so its onWrite doesn't revert it.
+                floorMapSettingsPresenter.applyTypeStyles(pendingLayerTypeStyles);
             }
             return floorMapSettingsPresenter;
         }));

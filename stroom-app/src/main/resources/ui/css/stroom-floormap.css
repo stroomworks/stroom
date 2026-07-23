@@ -578,3 +578,121 @@
 .stroom-floormap-area-draw-hint--visible {
     display: block;
 }
+
+/* -----------------------------------------------------------------------
+   Layers panel (dock tab)
+   ----------------------------------------------------------------------- */
+
+.floormap-layers-list {
+    padding: 4px;
+}
+
+/* One layer row: [reorder handle via drag] eye [lock] name */
+.floormap-layer-row {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    height: 28px;
+    padding: 0 4px;
+    border-radius: 4px;
+}
+
+.floormap-layer-row:hover {
+    background-color: rgba(128, 128, 128, 0.12);
+}
+
+/* Whole row is a drag handle for reordering (Editor tab) */
+.floormap-layer-row[draggable="true"] {
+    cursor: grab;
+}
+
+.floormap-layer-row[draggable="true"]:active {
+    cursor: grabbing;
+}
+
+/* Layer name fills the row and truncates rather than wrapping */
+.floormap-layer-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding-left: 4px;
+    font-size: 12px;
+    color: var(--text-color);
+}
+
+/* The eye / lock icon buttons keep the standard icon-button sizing; nudge
+   spacing so they sit tightly at the start of the row */
+.floormap-layer-eye,
+.floormap-layer-lock {
+    flex: 0 0 auto;
+}
+
+/* Drag handle (Editor): the classic six-dot grip, drawn with a tiled radial
+   gradient so no icon asset is needed. Signals the row can be grabbed to
+   reorder; the whole row is the drag source. */
+.floormap-layer-grip {
+    flex: 0 0 auto;
+    width: 10px;
+    height: 16px;
+    margin-right: 2px;
+    color: var(--text-color--low-emphasis);
+    opacity: 0.65;
+    background-image: radial-gradient(circle, currentColor 1px, transparent 1.5px);
+    background-size: 4px 5px;
+    background-position: center;
+    background-repeat: round;
+    cursor: grab;
+}
+
+.floormap-layer-row:hover .floormap-layer-grip {
+    opacity: 1;
+}
+
+/* Appearance swatch (Editor): previews the layer's shape in its colour and
+   opens the style dialog. */
+.floormap-layer-swatch {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 18px;
+    margin-left: 4px;
+    border-radius: 3px;
+    cursor: pointer;
+}
+
+.floormap-layer-swatch:hover {
+    background-color: rgba(128, 128, 128, 0.15);
+}
+
+/* Layer appearance dialog — align the shape/colour rows */
+.floormap-layer-style-dialog {
+    border-spacing: 8px 10px;
+}
+
+.floormap-layer-style-dialog td {
+    vertical-align: middle;
+}
+
+.floormap-layer-style-dialog td:first-child {
+    text-align: right;
+    white-space: nowrap;
+    color: var(--text-color--low-emphasis);
+}
+
+.floormap-layer-style-dialog td:last-child > * {
+    width: 150px;
+}
+
+/* Discovered-but-unsaved type: muted + italic, with an add button */
+.floormap-layer-row--provisional .floormap-layer-name {
+    font-style: italic;
+    color: var(--text-color--low-emphasis);
+}
+
+.floormap-layer-add {
+    flex: 0 0 auto;
+}
