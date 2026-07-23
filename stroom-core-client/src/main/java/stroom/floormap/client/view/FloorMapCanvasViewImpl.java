@@ -94,8 +94,14 @@ public class FloorMapCanvasViewImpl
     private static final double ROTATE_HANDLE_OFFSET_PX = 24;
     /** Minimum on-screen frame size (px) so the handles stay separable on tiny objects. */
     private static final double MIN_FRAME_PX = 24;
+    /** On-screen radius (px) of a round edge-midpoint "+" insert handle. */
+    private static final double INSERT_HANDLE_RADIUS_PX = 6;
+    /** Edges shorter than this on-screen (px) omit their "+" insert handle. */
+    private static final double MIN_INSERT_EDGE_PX = 24;
     private static final String HANDLE_STROKE = "#1e88e5";
     private static final String HANDLE_FILL = "#ffffff";
+    /** Fill for the round "+" insert handle (light blue tint). */
+    private static final String INSERT_HANDLE_FILL = "#e3f2fd";
     /** Greyed handle colours, shown when the selection can't be scaled/rotated. */
     private static final String HANDLE_DISABLED_STROKE = "#9e9e9e";
     private static final String HANDLE_DISABLED_FILL = "#e0e0e0";
@@ -318,7 +324,13 @@ public class FloorMapCanvasViewImpl
 
             // Selection frame + scale/rotate handles — screen space, on top.
             if (drawSelectionHandles) {
-                appendSelectionHandles(svg, scaleRotateEnabled);
+                final Fact areaFact = singleSelectedArea();
+                appendSelectionHandles(svg, scaleRotateEnabled, areaFact != null);
+                // Per-vertex move + midpoint insert handles for a single area,
+                // painted over the frame so they win the mousedown.
+                if (areaFact != null) {
+                    appendAreaHandles(svg, areaFact);
+                }
             }
         },
             SafeHtmlUtil.from("svg"),
@@ -626,6 +638,62 @@ public class FloorMapCanvasViewImpl
     }
 
     @Override
+    public double[] getContentMapBounds() {
+        if (lastFacts == null || lastFacts.isEmpty()) {
+            return null;
+        }
+        double minX = Double.MAX_VALUE;
+        double minY = Double.MAX_VALUE;
+        double maxX = -Double.MAX_VALUE;
+        double maxY = -Double.MAX_VALUE;
+        boolean any = false;
+        for (final Fact fact : lastFacts) {
+            final FloorMapTransformationMatrix w2m = fact.getWorldToMap();
+            if (w2m == null) {
+                continue;
+            }
+            // Collect this fact's map-space extreme points. Same dispatch order
+            // as draw()/factScreenBounds(): image wins over vertices.
+            final double[][] pts;
+            if (!fact.hasImage() && fact.hasVertices()) {
+                // Area polygon: every vertex, local → map.
+                final double[][] verts = fact.getVertices();
+                pts = new double[verts.length][];
+                for (int i = 0; i < verts.length; i++) {
+                    pts[i] = w2m.transformPoint(verts[i][0], verts[i][1]);
+                }
+            } else if (fact.hasImage()) {
+                // Image rect corners through the render wrapper transform
+                // (worldToMap · translate(0,h) · scale(1,-1)); aspect falls back
+                // to square when not yet loaded, matching the renderer.
+                final Double ar = imageAspectRatioCache.get(fact.getImage());
+                final double aspect = ar != null ? ar : 1.0;
+                final double w = IMAGE_DISPLAY_WIDTH;
+                final double h = w / aspect;
+                final FloorMapTransformationMatrix m = w2m
+                        .multiply(FloorMapTransformationMatrix.translate(0, h))
+                        .multiply(FloorMapTransformationMatrix.scale(1, -1));
+                pts = new double[][]{
+                        m.transformPoint(0, 0), m.transformPoint(w, 0),
+                        m.transformPoint(0, h), m.transformPoint(w, h)};
+            } else {
+                // Point glyph: its anchor (fixed screen-size, so no map padding).
+                final double[] pos = fact.getPosition();
+                pts = new double[][]{w2m.transformPoint(
+                        pos != null ? pos[0] : 0, pos != null ? pos[1] : 0)};
+            }
+            for (final double[] p : pts) {
+                minX = Math.min(minX, p[0]);
+                minY = Math.min(minY, p[1]);
+                maxX = Math.max(maxX, p[0]);
+                maxY = Math.max(maxY, p[1]);
+                any = true;
+            }
+        }
+        return any ? new double[]{minX, minY, maxX, maxY} : null;
+    }
+
+    @Override
     public double[] getFactMapAnchor(final Fact fact) {
         return fact.mapAnchor(IMAGE_DISPLAY_WIDTH,
                 imageAspectRatioCache.get(fact.getImage()));
@@ -686,15 +754,21 @@ public class FloorMapCanvasViewImpl
      * so the presenter can route a mousedown on it to a scale/rotate gesture.
      * Scaling is always aspect-preserving, so only corner handles are offered.
      */
-    private void appendSelectionHandles(final HtmlBuilder svg, final boolean enabled) {
+    private void appendSelectionHandles(final HtmlBuilder svg, final boolean enabled,
+                                        final boolean areaOffset) {
         final double[] f = computeSelectionFrame();
         if (f == null) {
             return;
         }
-        final double minX = f[0];
-        final double minY = f[1];
-        final double maxX = f[2];
-        final double maxY = f[3];
+        // For a single-area selection, push the frame outward by ~0.5 minor
+        // grid units so the scale/rotate handles clear the vertex handles.
+        final double off = areaOffset
+                ? FloorMapGrid.majorDivisionScreenPx(lastScale) / 20
+                : 0;
+        final double minX = f[0] - off;
+        final double minY = f[1] - off;
+        final double maxX = f[2] + off;
+        final double maxY = f[3] + off;
         final double cx = (minX + maxX) / 2;
 
         // Frame outline (non-interactive).
@@ -765,6 +839,116 @@ public class FloorMapCanvasViewImpl
                 new Attribute("stroke", enabled ? HANDLE_STROKE : HANDLE_DISABLED_STROKE),
                 new Attribute("stroke-width", "1"),
                 new Attribute("cursor", enabled ? "grab" : "not-allowed"));
+    }
+
+    /**
+     * Returns the single selected fact when it is an editable area (exactly one
+     * selection, no image, {@code >= 3} vertices), or {@code null} otherwise.
+     * Used to decide whether to draw per-vertex editing handles and to offset
+     * the scale/rotate frame outward.
+     */
+    private Fact singleSelectedArea() {
+        if (lastFacts == null || lastSelectedIds == null || lastSelectedIds.size() != 1) {
+            return null;
+        }
+        for (final Fact f : lastFacts) {
+            if (lastSelectedIds.contains(f.getKey())) {
+                return !f.hasImage() && f.hasVertices() ? f : null;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Projects a fact-local vertex to screen space using the last-drawn scale
+     * and pan (local → map via {@code worldToMap}, then the Y-up screen flip).
+     */
+    private double[] vertexToScreen(final Fact area, final double[] vertex) {
+        final double[] mapPt = area.getWorldToMap().transformPoint(vertex[0], vertex[1]);
+        return new double[]{
+                lastOffsetX + lastScale * mapPt[0],
+                lastOffsetY - lastScale * mapPt[1]};
+    }
+
+    /**
+     * Draws the per-vertex editing handles for a single selected area: a square
+     * move handle on each vertex (id {@code HANDLE_PREFIX + "vertex-" + i}) and
+     * a round "+" insert handle at each edge midpoint (id
+     * {@code HANDLE_PREFIX + "insert-" + i}), all in screen space at the SVG
+     * root so they paint over the area and win the mousedown. Insert handles on
+     * very short on-screen edges are skipped to avoid crowding.
+     */
+    private void appendAreaHandles(final HtmlBuilder svg, final Fact area) {
+        final double[][] verts = area.getVertices();
+        if (verts == null || verts.length < 3) {
+            return;
+        }
+        final double[][] screen = new double[verts.length][];
+        for (int i = 0; i < verts.length; i++) {
+            screen[i] = vertexToScreen(area, verts[i]);
+        }
+
+        // Insert "+" handles at edge midpoints (skip very short edges).
+        for (int i = 0; i < screen.length; i++) {
+            final double[] a = screen[i];
+            final double[] b = screen[(i + 1) % screen.length];
+            final double dx = b[0] - a[0];
+            final double dy = b[1] - a[1];
+            if (Math.sqrt(dx * dx + dy * dy) < MIN_INSERT_EDGE_PX) {
+                continue;
+            }
+            appendInsertHandle(svg, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2, i);
+        }
+
+        // Vertex move handles.
+        for (int i = 0; i < screen.length; i++) {
+            appendVertexHandle(svg, screen[i][0], screen[i][1], i);
+        }
+    }
+
+    private void appendVertexHandle(final HtmlBuilder svg, final double x, final double y,
+                                    final int index) {
+        svg.elem(SafeHtmlUtil.from("rect"),
+                new Attribute("id", FloorMapJsonKeys.HANDLE_PREFIX + "vertex-" + index),
+                new Attribute("x", String.valueOf(x - HANDLE_SIZE_PX / 2)),
+                new Attribute("y", String.valueOf(y - HANDLE_SIZE_PX / 2)),
+                new Attribute("width", String.valueOf(HANDLE_SIZE_PX)),
+                new Attribute("height", String.valueOf(HANDLE_SIZE_PX)),
+                new Attribute("fill", HANDLE_FILL),
+                new Attribute("stroke", HANDLE_STROKE),
+                new Attribute("stroke-width", "1"),
+                new Attribute("cursor", "move"));
+    }
+
+    private void appendInsertHandle(final HtmlBuilder svg, final double x, final double y,
+                                    final int edgeIndex) {
+        svg.elem(SafeHtmlUtil.from("circle"),
+                new Attribute("id", FloorMapJsonKeys.HANDLE_PREFIX + "insert-" + edgeIndex),
+                new Attribute("cx", String.valueOf(x)),
+                new Attribute("cy", String.valueOf(y)),
+                new Attribute("r", String.valueOf(INSERT_HANDLE_RADIUS_PX)),
+                new Attribute("fill", INSERT_HANDLE_FILL),
+                new Attribute("stroke", HANDLE_STROKE),
+                new Attribute("stroke-width", "1"),
+                new Attribute("cursor", "copy"));
+        // "+" glyph, non-interactive so the circle keeps the mousedown.
+        final double r = INSERT_HANDLE_RADIUS_PX * 0.6;
+        svg.elem(SafeHtmlUtil.from("line"),
+                new Attribute("x1", String.valueOf(x - r)),
+                new Attribute("y1", String.valueOf(y)),
+                new Attribute("x2", String.valueOf(x + r)),
+                new Attribute("y2", String.valueOf(y)),
+                new Attribute("stroke", HANDLE_STROKE),
+                new Attribute("stroke-width", "1"),
+                new Attribute("pointer-events", "none"));
+        svg.elem(SafeHtmlUtil.from("line"),
+                new Attribute("x1", String.valueOf(x)),
+                new Attribute("y1", String.valueOf(y - r)),
+                new Attribute("x2", String.valueOf(x)),
+                new Attribute("y2", String.valueOf(y + r)),
+                new Attribute("stroke", HANDLE_STROKE),
+                new Attribute("stroke-width", "1"),
+                new Attribute("pointer-events", "none"));
     }
 
     /**

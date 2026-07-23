@@ -51,6 +51,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Consumer;
 import javax.inject.Inject;
 
 /**
@@ -116,19 +117,42 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
      */
     private static final double ORIGIN_INSET_MAJOR_DIVISIONS = 0.5;
 
+    /**
+     * Fraction of the viewport kept as empty margin on each side when the
+     * initial view is zoomed to fit all content.
+     */
+    private static final double FIT_MARGIN = 0.08;
+
     // Zoom and pan state
     private double scale = DEFAULT_SCALE;
     private double offsetX = 0;
     private double offsetY = 0;
     /**
-     * Whether the size-dependent default view has been applied yet. Applied
-     * once, the first time the canvas has a real height (see
-     * {@link #applyDefaultView()}); user pan/zoom afterwards is left untouched.
+     * Whether the initial view (zoom-to-fit, or the bottom-left origin fallback)
+     * has been applied yet. Applied once, when the canvas first has both a real
+     * size and — for the fit — content or an injected view; user pan/zoom
+     * afterwards is left untouched.
      */
-    private boolean defaultViewApplied = false;
+    private boolean initialViewApplied = false;
+
+    /**
+     * An initial view {@code {scale, offsetX, offsetY}} handed over from another
+     * tab (Map → Editor) so the first frame matches exactly and nothing jumps.
+     * {@code null} when this canvas must compute its own fit. Consulted once, on
+     * the first {@link #maybeApplyInitialView()}.
+     */
+    private double[] injectedInitialView;
+
+    /**
+     * Notified once with this canvas's computed initial view
+     * {@code {scale, offsetX, offsetY}} so another tab can reuse it. {@code null}
+     * when nothing is listening.
+     */
+    private Consumer<double[]> initialViewListener;
 
     // Dragging state
     private DragHandler dragHandler;
+    private GeometryHandler geometryHandler;
     private SelectionHandler selectionHandler;
     private boolean isDragging = false;
     /** True only if the mouse actually moved while dragging an object (distinguishes click-to-select from drag). */
@@ -141,10 +165,22 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
     /** The kind of pointer gesture currently in progress. */
     private enum Gesture {
-        NONE, PANNING, MOVING, MARQUEE, SCALING, ROTATING, DRAWING_AREA
+        NONE, PANNING, MOVING, MARQUEE, SCALING, ROTATING, DRAWING_AREA, MOVING_VERTEX
     }
 
     private Gesture gesture = Gesture.NONE;
+
+    // Area vertex-edit state (valid while gesture == MOVING_VERTEX).
+    /** Key of the area whose vertices are being edited. */
+    private String editingAreaKey;
+    /** The area's world-to-map at edit start (to map screen ↔ local frame). */
+    private FloorMapTransformationMatrix editingWorldToMap;
+    /** Working copy of the area's local-frame vertices during the edit. */
+    private double[][] workingVertices;
+    /** Index of the vertex being dragged, or -1. */
+    private int editingVertexIndex = -1;
+    /** True when the current vertex edit inserted a new vertex (persist even if not dragged). */
+    private boolean vertexInserted;
 
     /** Rubber-band marquee corners in element-pixel space (valid while MARQUEE). */
     private double marqueeStartX;
@@ -366,7 +402,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
             // Apply the bottom-left default view as soon as the canvas has a
             // real size. onResize() self-defers until layout completes, then
             // fires this back.
-            getView().setResizeListener(this::applyDefaultView);
+            getView().setResizeListener(this::maybeApplyInitialView);
             getView().onResize();
         }
 
@@ -385,8 +421,21 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
      * from the grid's own adaptive-decade sizing so it always matches the drawn
      * grid. Subsequent user pan/zoom is left untouched.</p>
      */
-    private void applyDefaultView() {
-        if (defaultViewApplied) {
+    /**
+     * Applies the one-time initial view the first time it can, then leaves the
+     * view alone. Ordering of layout vs. fact loading is not guaranteed, so this
+     * is called from both the resize listener and {@link #setFacts}; it runs at
+     * most once. Priority:
+     * <ol>
+     *   <li>An injected view from another tab (Map → Editor) — applied verbatim
+     *       so the first frame matches and nothing jumps.</li>
+     *   <li>Zoom-to-fit all content, when facts are present.</li>
+     *   <li>The bottom-left origin fallback, when there is no content (does
+     *       <em>not</em> lock in, so a later {@link #setFacts} can still fit).</li>
+     * </ol>
+     */
+    private void maybeApplyInitialView() {
+        if (initialViewApplied) {
             return;
         }
         final int height = getView().getFocusPanel().getElement().getOffsetHeight();
@@ -395,6 +444,77 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
             return;
         }
 
+        if (injectedInitialView != null) {
+            scale = injectedInitialView[0];
+            offsetX = injectedInitialView[1];
+            offsetY = injectedInitialView[2];
+            initialViewApplied = true;
+            redraw();
+            return;
+        }
+
+        final double[] bounds = getView().getContentMapBounds();
+        if (bounds != null && applyFitView(bounds, height)) {
+            initialViewApplied = true;
+            if (initialViewListener != null) {
+                initialViewListener.accept(new double[]{scale, offsetX, offsetY});
+            }
+            return;
+        }
+
+        // No content yet — show the bottom-left origin view but leave the gate
+        // open so the first setFacts can still fit.
+        applyOriginView(height);
+    }
+
+    /**
+     * Sets {@code scale}/{@code offsetX}/{@code offsetY} so the given map-space
+     * content bounds are centred and fill the viewport with a {@link #FIT_MARGIN}
+     * border. A degenerate (zero-extent) axis keeps {@link #DEFAULT_SCALE} rather
+     * than zooming to the clamp. Does not redraw on its own when it returns
+     * {@code false}.
+     *
+     * @param b      the content bounds {@code {minX, minY, maxX, maxY}}
+     * @param height the current viewport height (already known to be {@code > 0})
+     * @return {@code true} if a view was applied
+     */
+    private boolean applyFitView(final double[] b, final int height) {
+        final int width = getView().getFocusPanel().getElement().getOffsetWidth();
+        if (width <= 0) {
+            return false;
+        }
+        final double cw = b[2] - b[0];
+        final double ch = b[3] - b[1];
+        final double usableW = width * (1 - 2 * FIT_MARGIN);
+        final double usableH = height * (1 - 2 * FIT_MARGIN);
+
+        double fit = DEFAULT_SCALE;
+        final double sx = cw > 1e-9 ? usableW / cw : Double.MAX_VALUE;
+        final double sy = ch > 1e-9 ? usableH / ch : Double.MAX_VALUE;
+        final double candidate = Math.min(sx, sy);
+        if (candidate != Double.MAX_VALUE) {
+            fit = candidate;
+        }
+        scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, fit));
+
+        // Centre the content's map-space midpoint in the viewport. Screen Y grows
+        // downward and screenY = offsetY - scale·mapY, so offsetY gets +scale·cy.
+        final double cx = (b[0] + b[2]) / 2;
+        final double cy = (b[1] + b[3]) / 2;
+        offsetX = width / 2.0 - scale * cx;
+        offsetY = height / 2.0 + scale * cy;
+        redraw();
+        return true;
+    }
+
+    /**
+     * Positions the view so the map origin (0,0) sits near the bottom-left
+     * corner, inset by {@link #ORIGIN_INSET_MAJOR_DIVISIONS} of a major grid
+     * division at the default zoom. The empty-map fallback.
+     *
+     * @param height the current viewport height (already known to be {@code > 0})
+     */
+    private void applyOriginView(final int height) {
         // Half a major grid division, in screen pixels, at the default zoom.
         // The grid is drawn with an identity world-to-map matrix, so its
         // effective scale is simply the user zoom (DEFAULT_SCALE).
@@ -407,7 +527,6 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         scale = DEFAULT_SCALE;
         offsetX = insetPx;
         offsetY = height - insetPx;
-        defaultViewApplied = true;
         redraw();
     }
 
@@ -663,6 +782,18 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                         hasMoved = true;
                         redraw();
                         break;
+                    case MOVING_VERTEX:
+                        if (workingVertices != null && editingWorldToMap != null
+                                && editingVertexIndex >= 0
+                                && editingVertexIndex < workingVertices.length) {
+                            final double[] map = screenToMapCoords(event.getX(), event.getY());
+                            final double[] local = editingWorldToMap.inverse()
+                                    .transformPoint(map[0], map[1]);
+                            workingVertices[editingVertexIndex] = new double[]{local[0], local[1]};
+                            hasMoved = true;
+                            redraw();
+                        }
+                        break;
                     case ROTATING: {
                         final double[] cur = screenToMapCoords(event.getX(), event.getY());
                         final double a0 = Math.atan2(gestureStartMapY - gestureCentreY,
@@ -756,6 +887,20 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                         dragHandler.onTransform(movable, transform);
                     }
                 }
+            } else if (finished == Gesture.MOVING_VERTEX) {
+                // Persist the edited/inserted vertex (skip a pure click that
+                // didn't move an existing vertex, and locked layers).
+                if ((moved || vertexInserted) && editingAreaKey != null
+                        && workingVertices != null && workingVertices.length >= AREA_MIN_VERTICES
+                        && geometryHandler != null
+                        && !lockedKeys.contains(editingAreaKey)) {
+                    geometryHandler.onGeometryEdited(editingAreaKey, workingVertices);
+                }
+                editingAreaKey = null;
+                editingWorldToMap = null;
+                workingVertices = null;
+                editingVertexIndex = -1;
+                vertexInserted = false;
             } else if (finished == Gesture.MARQUEE) {
                 // Select every fact the rubber-band touched, adding to the
                 // existing selection (the marquee is a Shift/Ctrl gesture).
@@ -848,6 +993,23 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
             final int clientX = event.getNativeEvent().getClientX();
             final int clientY = event.getNativeEvent().getClientY();
+
+            // Right-clicking an area vertex handle opens a vertex-specific menu
+            // (offering "Delete Vertex") rather than the object/canvas menu.
+            final String contextRole = handleRole(event.getNativeEvent().getEventTarget());
+            if (contextRole != null && contextRole.startsWith("vertex-")) {
+                final Fact area = selectedAreaFact();
+                if (area != null) {
+                    final Element panel = getView().getFocusPanel().getElement();
+                    final double[] vertexMap = screenToMapCoords(
+                            clientX - panel.getAbsoluteLeft(),
+                            clientY - panel.getAbsoluteTop());
+                    MapContextMenuEvent.fireVertex(this, area.getKey(),
+                            vertexMap[0], vertexMap[1], clientX, clientY,
+                            parseHandleIndex(contextRole, "vertex-"));
+                }
+                return;
+            }
 
             // Convert viewport-relative client coordinates to element-relative
             // coordinates, matching the coordinate space used by event.getX()/getY()
@@ -1054,8 +1216,26 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     }
 
     private void beginHandleGesture(final String role, final double px, final double py) {
+        isDragging = true;
+        hasMoved = false;
+        pendingTransform = null;
+        lastMouseX = px;
+        lastMouseY = py;
+
+        // Area vertex editing takes priority over the scale/rotate frame.
+        if (role.startsWith("vertex-")) {
+            beginVertexEdit(parseHandleIndex(role, "vertex-"), false);
+            return;
+        }
+        if (role.startsWith("insert-")) {
+            beginVertexEdit(parseHandleIndex(role, "insert-"), true);
+            return;
+        }
+
         final double[] frame = getView().getSelectionFrame();
         if (frame == null) {
+            isDragging = false;
+            gesture = Gesture.NONE;
             return;
         }
         final double minX = frame[0];
@@ -1064,12 +1244,6 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         final double maxY = frame[3];
         final double cx = (minX + maxX) / 2;
         final double cy = (minY + maxY) / 2;
-
-        isDragging = true;
-        hasMoved = false;
-        pendingTransform = null;
-        lastMouseX = px;
-        lastMouseY = py;
 
         if ("rotate".equals(role)) {
             gesture = Gesture.ROTATING;
@@ -1095,6 +1269,111 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
             gestureRefX = ref[0];
             gestureRefY = ref[1];
         }
+    }
+
+    /** Parses the integer index from a handle role like {@code "vertex-3"}. */
+    private static int parseHandleIndex(final String role, final String prefix) {
+        try {
+            return Integer.parseInt(role.substring(prefix.length()));
+        } catch (final NumberFormatException e) {
+            return -1;
+        }
+    }
+
+    /**
+     * The single selected area fact (imageless, with vertices), or {@code null}
+     * when the selection is empty, multiple, or not an area.
+     */
+    private Fact selectedAreaFact() {
+        if (selectedObjectIds.size() != 1) {
+            return null;
+        }
+        final String id = selectedObjectIds.iterator().next();
+        for (final Fact fact : facts) {
+            if (id.equals(fact.getKey()) && fact.hasVertices() && !fact.hasImage()) {
+                return fact;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Begins a {@link Gesture#MOVING_VERTEX} edit. For {@code insert}, a new
+     * vertex is spliced at the midpoint of edge {@code index} and immediately
+     * dragged; otherwise the existing vertex {@code index} is dragged.
+     */
+    private void beginVertexEdit(final int index, final boolean insert) {
+        final Fact area = selectedAreaFact();
+        if (area == null || index < 0 || lockedKeys.contains(area.getKey())) {
+            isDragging = false;
+            gesture = Gesture.NONE;
+            return;
+        }
+        final double[][] v = area.getVertices();
+        editingAreaKey = area.getKey();
+        editingWorldToMap = area.getWorldToMap();
+        vertexInserted = insert;
+
+        if (insert) {
+            if (index >= v.length) {
+                isDragging = false;
+                gesture = Gesture.NONE;
+                return;
+            }
+            final int n = v.length;
+            final int j = (index + 1) % n;
+            final double[] mid = {(v[index][0] + v[j][0]) / 2.0, (v[index][1] + v[j][1]) / 2.0};
+            final double[][] nv = new double[n + 1][];
+            for (int i = 0; i <= index; i++) {
+                nv[i] = new double[]{v[i][0], v[i][1]};
+            }
+            nv[index + 1] = mid;
+            for (int i = index + 1; i < n; i++) {
+                nv[i + 1] = new double[]{v[i][0], v[i][1]};
+            }
+            workingVertices = nv;
+            editingVertexIndex = index + 1;
+        } else {
+            if (index >= v.length) {
+                isDragging = false;
+                gesture = Gesture.NONE;
+                return;
+            }
+            final double[][] nv = new double[v.length][];
+            for (int i = 0; i < v.length; i++) {
+                nv[i] = new double[]{v[i][0], v[i][1]};
+            }
+            workingVertices = nv;
+            editingVertexIndex = index;
+        }
+        gesture = Gesture.MOVING_VERTEX;
+        redraw();
+    }
+
+    /** Deletes vertex {@code index} of the selected area (keeps a minimum of 3). */
+    /**
+     * Deletes the vertex at {@code index} from the single selected area,
+     * enforcing the 3-vertex minimum and skipping locked layers. Persists via
+     * the geometry handler. No-op when there is no single-area selection.
+     *
+     * @param index the vertex index to delete
+     */
+    public void deleteVertex(final int index) {
+        final Fact area = selectedAreaFact();
+        if (area == null || geometryHandler == null || lockedKeys.contains(area.getKey())) {
+            return;
+        }
+        final double[][] v = area.getVertices();
+        if (index < 0 || index >= v.length || v.length <= AREA_MIN_VERTICES) {
+            return;
+        }
+        final double[][] nv = new double[v.length - 1][];
+        for (int i = 0, k = 0; i < v.length; i++) {
+            if (i != index) {
+                nv[k++] = new double[]{v[i][0], v[i][1]};
+            }
+        }
+        geometryHandler.onGeometryEdited(area.getKey(), nv);
     }
 
     /**
@@ -1607,12 +1886,16 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
      * On release the same transform is persisted via {@link DragHandler#onTransform}.
      */
     private List<Fact> factsForDraw() {
-        if (pendingTransform == null || selectedObjectIds.isEmpty()) {
+        final boolean editingVertices = editingAreaKey != null && workingVertices != null;
+        if ((pendingTransform == null || selectedObjectIds.isEmpty()) && !editingVertices) {
             return facts;
         }
         final List<Fact> out = new ArrayList<>(facts.size());
         for (final Fact fact : facts) {
-            if (selectedObjectIds.contains(fact.getKey())) {
+            if (editingVertices && editingAreaKey.equals(fact.getKey())) {
+                // Live vertex-edit preview.
+                out.add(fact.withVertices(workingVertices));
+            } else if (pendingTransform != null && selectedObjectIds.contains(fact.getKey())) {
                 out.add(fact.withWorldToMap(
                         pendingTransform.multiply(fact.getWorldToMap())));
             } else {
@@ -1945,7 +2228,34 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
             }
         }
         recomputeLockedKeys();
+        // Draw first so the view's content bounds reflect these facts, THEN try
+        // the initial fit — getContentMapBounds() reads the last-drawn facts.
+        // Facts may arrive before or after first layout; this fits as soon as
+        // both are available (no-op once the view has been applied).
         redraw();
+        maybeApplyInitialView();
+    }
+
+    /**
+     * Injects an initial view {@code {scale, offsetX, offsetY}} from another tab
+     * (Map → Editor) so this canvas's first frame matches exactly and nothing
+     * jumps on the tab switch. Only honoured before the initial view is applied;
+     * user pan/zoom afterwards is independent per canvas.
+     *
+     * @param view the view state, or {@code null} to compute a fit locally
+     */
+    public void setInitialViewState(final double[] view) {
+        this.injectedInitialView = view;
+    }
+
+    /**
+     * Registers a listener notified once with this canvas's computed initial
+     * view {@code {scale, offsetX, offsetY}}, so another tab can reuse it.
+     *
+     * @param listener the callback, or {@code null} to remove
+     */
+    public void setInitialViewListener(final Consumer<double[]> listener) {
+        this.initialViewListener = listener;
     }
 
 
@@ -1956,6 +2266,15 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
      */
     public void setDragHandler(final DragHandler dragHandler) {
         this.dragHandler = dragHandler;
+    }
+
+    /**
+     * Sets the handler that persists an area's edited geometry.
+     *
+     * @param geometryHandler the callback, or {@code null} to remove
+     */
+    public void setGeometryHandler(final GeometryHandler geometryHandler) {
+        this.geometryHandler = geometryHandler;
     }
 
     /**
@@ -2007,6 +2326,21 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
          *                          onto each fact ({@code newWorldToMap = T · old})
          */
         void onTransform(Collection<String> keys, FloorMapTransformationMatrix mapSpaceTransform);
+    }
+
+    /**
+     * Callback invoked when an area's geometry is edited (a vertex moved,
+     * inserted or deleted), to persist the new local-frame vertices.
+     */
+    public interface GeometryHandler {
+
+        /**
+         * Persists the area's new vertices (local frame).
+         *
+         * @param key      the area fact's key
+         * @param vertices the new local-frame vertices ({@code >= 3})
+         */
+        void onGeometryEdited(String key, double[][] vertices);
     }
 
     /**
@@ -2202,6 +2536,16 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
          * @return the selection frame in element pixels, or {@code null}
          */
         double[] getSelectionFrame();
+
+        /**
+         * Returns the map-space bounding box {@code {minX, minY, maxX, maxY}} of
+         * all facts from the last {@link #draw} call, or {@code null} if there is
+         * no content. Used to compute the initial zoom-to-fit view. Independent
+         * of the current scale/pan (unlike {@link #getSelectionFrame()}).
+         *
+         * @return the content bounds in map space, or {@code null}
+         */
+        double[] getContentMapBounds();
 
         /**
          * Registers a listener that is called whenever the view needs to

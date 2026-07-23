@@ -857,6 +857,17 @@ public class FloorMapMapPresenter
         return floorMapTimelinePresenter;
     }
 
+    /**
+     * Registers a listener notified once with this tab's computed initial view
+     * {@code {scale, offsetX, offsetY}}, so the Editor tab can adopt the same
+     * initial zoom + translation and nothing jumps on the first tab switch.
+     *
+     * @param listener the callback, or {@code null} to remove
+     */
+    public void setInitialViewListener(final java.util.function.Consumer<double[]> listener) {
+        floorMapCanvasPresenter.setInitialViewListener(listener);
+    }
+
     public interface FloorMapMapView extends View {
 
         /**

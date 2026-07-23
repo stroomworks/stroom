@@ -696,3 +696,19 @@
 .floormap-layer-add {
     flex: 0 0 auto;
 }
+
+/* Discover action footer at the foot of the layer list */
+.floormap-layers-footer {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 4px;
+    padding: 4px 4px 0;
+    border-top: 1px solid var(--border-color);
+}
+
+.floormap-layers-footer-label {
+    font-size: 12px;
+    color: var(--text-color--low-emphasis);
+    cursor: pointer;
+}

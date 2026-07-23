@@ -22,6 +22,7 @@ import stroom.widget.datepicker.client.DateTimeBox;
 import stroom.widget.datepicker.client.DateTimePopup;
 import stroom.widget.form.client.FormGroup;
 
+import com.google.gwt.event.dom.client.MouseDownEvent;
 import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
 import com.google.gwt.user.client.ui.CheckBox;
@@ -112,14 +113,19 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
         effectiveTimeBox.setPopupProvider(dateTimePopupProvider);
         setAreaFieldsVisible(false);
         fillDefaultCheck.setValue(true);
-        fillBox.setEnabled(false);
         //noinspection unused e
-        fillDefaultCheck.addValueChangeHandler(e -> {
-            fillDirty = true;
-            fillBox.setEnabled(enabled && !Boolean.TRUE.equals(fillDefaultCheck.getValue()));
-        });
+        fillDefaultCheck.addValueChangeHandler(e -> fillDirty = true);
         //noinspection unused e
         fillBox.addValueChangeHandler(e -> fillDirty = true);
+        // The colour swatch stays clickable even while "Default" is ticked;
+        // clicking it means "I want a custom colour", so untick Default (firing
+        // its handler) before the native picker opens.
+        //noinspection unused e
+        fillBox.addDomHandler(e -> {
+            if (Boolean.TRUE.equals(fillDefaultCheck.getValue())) {
+                fillDefaultCheck.setValue(false, true);
+            }
+        }, MouseDownEvent.getType());
     }
 
     @Override
@@ -207,7 +213,9 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
         if (!isDefault) {
             fillBox.setValue(hexColour);
         }
-        fillBox.setEnabled(enabled && !isDefault);
+        // The swatch stays clickable regardless of Default (clicking it unticks
+        // Default); only the form's enabled state gates it.
+        fillBox.setEnabled(enabled);
         fillDirty = false;
     }
 
@@ -358,7 +366,7 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
                 w2mTx, w2mTy, w2mSx, w2mSy, w2mRot,
                 opacityBox);
         fillDefaultCheck.setEnabled(enabled);
-        fillBox.setEnabled(enabled && !Boolean.TRUE.equals(fillDefaultCheck.getValue()));
+        fillBox.setEnabled(enabled);
     }
 
     private static void setTextBoxesEnabled(final boolean enabled, final TextBox... boxes) {

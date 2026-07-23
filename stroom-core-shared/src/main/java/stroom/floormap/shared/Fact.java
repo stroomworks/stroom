@@ -210,6 +210,15 @@ public final class Fact {
         return new Fact(key, type, image, newWorldToMap, position, vertices, fill, opacity);
     }
 
+    /**
+     * Returns a copy of this fact with different area vertices (local frame) —
+     * used for live vertex-edit previews. All other fields are carried over
+     * unchanged.
+     */
+    public Fact withVertices(final double[][] newVertices) {
+        return new Fact(key, type, image, worldToMap, position, newVertices, fill, opacity);
+    }
+
     private static double[][] copyVertices(final double[][] source) {
         if (source == null) {
             return null;

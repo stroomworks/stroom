@@ -561,6 +561,46 @@ public class FloorMapEditorModel {
         return transformed;
     }
 
+    /**
+     * Records an edit to an area's geometry (moved / inserted / deleted vertices).
+     * The vertices are in the fact's local frame and written verbatim to the
+     * {@code GEOMETRY} role — {@code WORLD_TO_MAP} is left unchanged, so the area
+     * is edited in place. Staged like any other change and flushed on save.
+     *
+     * @param key           the area fact's key
+     * @param localVertices the new vertices in local frame ({@code >= 3})
+     * @param schema        the value schema
+     * @param accessor      the value accessor
+     * @return {@code true} if an entry was found and updated
+     */
+    public boolean updateFactGeometry(final String key,
+                                      final double[][] localVertices,
+                                      final List<FloorMapFieldMapping> schema,
+                                      final ValueAccessor accessor) {
+        if (key == null || localVertices == null || localVertices.length < 3) {
+            return false;
+        }
+        if (schema == null || schema.isEmpty()) {
+            throw new IllegalStateException(
+                    "No Value Schema is configured. "
+                    + "Please configure a Value Schema in the Settings tab.");
+        }
+        final double[] flatLocal = new double[localVertices.length * 2];
+        for (int i = 0; i < localVertices.length; i++) {
+            flatLocal[i * 2] = localVertices[i][0];
+            flatLocal[i * 2 + 1] = localVertices[i][1];
+        }
+        final List<TemporalEntry> all = pendingChanges.applyTo(serverEntriesAtCurrentTime);
+        for (final TemporalEntry e : all) {
+            if (key.equals(e.getKey())) {
+                pendingChanges.recordUpdate(
+                        buildUpdatedEntryWithGeometry(e, flatLocal, schema, accessor));
+                return true;
+            }
+        }
+        return false;
+    }
+
     // -----------------------------------------------------------------------
     // Object deletion
     // -----------------------------------------------------------------------
@@ -914,6 +954,36 @@ public class FloorMapEditorModel {
         accessor.setArray(parsed, FloorMapEntryParser.findPath(schema, role),
                 new double[]{matrix.getA(), matrix.getB(), matrix.getC(),
                         matrix.getD(), matrix.getE(), matrix.getF()});
+        return new TemporalEntry(
+                original.getMap(),
+                original.getKey(),
+                original.getEffectiveTimeMs(),
+                accessor.serialize(parsed));
+    }
+
+    /**
+     * Builds a copy of {@code original} with new area geometry — the flat local
+     * vertex array {@code [x0,y0,x1,y1,...]} written to the {@code GEOMETRY} role.
+     *
+     * @param original          the entry to update
+     * @param flatLocalVertices the new geometry (local frame, flat pairs)
+     * @param schema            the value schema
+     * @param accessor          the value accessor
+     * @return a new {@link TemporalEntry} with the updated geometry
+     * @throws IllegalStateException if the entry's value cannot be parsed
+     */
+    public static TemporalEntry buildUpdatedEntryWithGeometry(
+            final TemporalEntry original,
+            final double[] flatLocalVertices,
+            final List<FloorMapFieldMapping> schema,
+            final ValueAccessor accessor) {
+        final ParsedValue parsed = accessor.parse(original.getValue());
+        if (parsed == null) {
+            throw new IllegalStateException(
+                    "Entry value could not be parsed: " + original.getValue());
+        }
+        accessor.setArray(parsed, FloorMapEntryParser.findPath(schema, Role.GEOMETRY),
+                flatLocalVertices);
         return new TemporalEntry(
                 original.getMap(),
                 original.getKey(),

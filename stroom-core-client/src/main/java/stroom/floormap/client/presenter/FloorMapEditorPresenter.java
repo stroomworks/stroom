@@ -31,7 +31,9 @@ import stroom.floormap.client.presenter.FloorMapEditorPresenter.FloorMapEditorVi
 import stroom.floormap.shared.Fact;
 import stroom.floormap.shared.FloorMapDoc;
 import stroom.floormap.shared.FloorMapEditorModel;
+import stroom.floormap.client.event.FloorMapDataEvent;
 import stroom.floormap.shared.FloorMapEntryParser;
+import stroom.floormap.shared.FloorMapObject;
 import stroom.floormap.shared.FloorMapFieldMapping;
 import stroom.floormap.shared.FloorMapFieldMapping.Role;
 import stroom.floormap.shared.FloorMapJsonKeys;
@@ -163,6 +165,14 @@ public class FloorMapEditorPresenter
     private final FloorMapLayersPresenter floorMapLayersPresenter;
     private final FloorMapLayerStylePresenter floorMapLayerStylePresenter;
 
+    /**
+     * Cumulative set of types observed this document session — fact types from
+     * the canvas plus event (PlanB) types seen via {@link FloorMapDataEvent}
+     * (which fires from the Map tab's events query on the shared event bus).
+     * Fed to the Layers panel so unsaved types appear as provisional layers.
+     */
+    private final Set<String> observedTypes = new HashSet<>();
+
     /** The GWT-free model containing all shared state and pure logic. */
     private final FloorMapEditorModel model;
 
@@ -267,9 +277,10 @@ public class FloorMapEditorPresenter
         dockToggleButton = new InlineSvgToggleButton();
         dockToggleButton.setSvg(SvgImage.SHOW_MENU);
         dockToggleButton.setTitle("Show Controls");
-        dockToggleButton.setState(false);
+        dockToggleButton.setState(true);
         // Persist a drag as a single translate of the whole selection.
         floorMapCanvasPresenter.setDragHandler(this::onFactsTransformed);
+        floorMapCanvasPresenter.setGeometryHandler(this::onFactGeometryEdited);
         floorMapCanvasPresenter.setSelectionHandler(this::onCanvasSelectionChanged);
         floorMapCanvasPresenter.setAreaHandler(this::onAreaDrawn);
 
@@ -300,6 +311,8 @@ public class FloorMapEditorPresenter
                         typeStyle.getType(), typeStyle.getShape(), typeStyle.getColour(),
                         (shape, colour) -> callback.accept(
                                 new TypeStyle(typeStyle.getType(), shape, colour))));
+        // Full facts-store type-discovery scan behind the panel's Discover action.
+        floorMapLayersPresenter.setDiscoverHandler(this::onDiscoverTypes);
 
         setInSlot(MAIN, floorMapCanvasPresenter);
         setInSlot(DOCK, floorMapDockPresenter);
@@ -320,6 +333,21 @@ public class FloorMapEditorPresenter
         //noinspection unused e
         registerHandler(dockToggleButton.addClickHandler(e ->
                 getView().setDockVisible(dockToggleButton.getState())));
+
+        // Event (PlanB) objects are produced by the events query and broadcast
+        // on the shared event bus (driven by the Map tab). Listen here too so
+        // their types surface as provisional layers in the Editor's Layers panel.
+        registerHandler(getEventBus().addHandler(FloorMapDataEvent.getType(), event -> {
+            boolean added = false;
+            for (final FloorMapObject object : event.getObjects()) {
+                if (object.getType() != null && observedTypes.add(object.getType())) {
+                    added = true;
+                }
+            }
+            if (added) {
+                floorMapLayersPresenter.setSeenTypes(observedTypes);
+            }
+        }));
 
         // ---- Timeline events ------------------------------------------------
         registerHandler(getEventBus().addHandler(TimeChangeEvent.getType(), event -> {
@@ -417,7 +445,10 @@ public class FloorMapEditorPresenter
             pendingTypeStyles = null;
         }
 
-        // Populate the Layers panel from the document's type styles.
+        // Populate the Layers panel from the document's type styles. Reset the
+        // observed-type accumulator for the (re-)opened document.
+        observedTypes.clear();
+        floorMapLayersPresenter.setSeenTypes(observedTypes);
         floorMapLayersPresenter.setLayers(typeStyles());
         floorMapCanvasPresenter.setLayerVisibility(
                 floorMapLayersPresenter.getHiddenTypes(),
@@ -558,6 +589,18 @@ public class FloorMapEditorPresenter
     }
 
     /**
+     * Adopts an initial view {@code {scale, offsetX, offsetY}} computed by the
+     * Map tab so the Editor's first frame matches and the view doesn't jump on
+     * the tab switch. Only affects the one-time initial view; user pan/zoom in
+     * the Editor is independent afterwards.
+     *
+     * @param view the view state, or {@code null} to fit locally
+     */
+    public void setInitialViewState(final double[] view) {
+        floorMapCanvasPresenter.setInitialViewState(view);
+    }
+
+    /**
      * Handles a type-styles edit from the Layers panel (reorder / appearance /
      * discovered types): stages the new list, applies it live to the canvas and
      * object-edit dialog, marks the document dirty, and notifies the parent so
@@ -573,6 +616,48 @@ public class FloorMapEditorPresenter
         if (typeStylesChangeListener != null) {
             typeStylesChangeListener.accept(newTypeStyles);
         }
+    }
+
+    /**
+     * Scans the whole facts store for every distinct type (all keys, all times),
+     * unions it with the types already observed this session (fact + event), and
+     * hands the result to the Layers panel to merge into the saved layers. Backs
+     * the panel's Discover action.
+     */
+    private void onDiscoverTypes() {
+        final Set<String> discovered = new HashSet<>(observedTypes);
+        final DocRef store = getEntity() != null
+                ? getEntity().getFactsStoreRef()
+                : null;
+        if (store == null || store.getName() == null || store.getName().isEmpty()) {
+            // No facts store to scan — still commit anything already observed.
+            floorMapLayersPresenter.mergeDiscovered(discovered);
+            return;
+        }
+        final ExpressionOperator expression = ExpressionOperator.builder()
+                .addTerm(ExpressionTerm.builder()
+                        .field("Map").condition(Condition.EQUALS).value(store.getName())
+                        .build())
+                .build();
+        final ExpressionCriteria criteria = new ExpressionCriteria(expression);
+        final List<FloorMapFieldMapping> schema = valueSchema();
+        restFactory.create(SQL_TEMPORAL_STORE_RESOURCE)
+                .method(res -> res.find(criteria))
+                .onSuccess(result -> {
+                    final List<TemporalEntry> entries = result != null
+                            ? result.getValues()
+                            : null;
+                    final List<Fact> parsed = FloorMapEntryParser.parse(
+                            entries, schema,
+                            ValueAccessorFactory.forFormat(getEntity().getValueFormat()), null);
+                    for (final Fact fact : parsed) {
+                        if (fact.getType() != null && !fact.getType().isEmpty()) {
+                            discovered.add(fact.getType());
+                        }
+                    }
+                    floorMapLayersPresenter.mergeDiscovered(discovered);
+                })
+                .exec();
     }
 
     // -----------------------------------------------------------------------
@@ -855,14 +940,18 @@ public class FloorMapEditorPresenter
                 ValueAccessorFactory.forFormat(getEntity().getValueFormat()));
         floorMapCanvasPresenter.setTypeStyles(typeStyles());
         floorMapCanvasPresenter.setFacts(facts);
-        // Surface any fact types not yet configured as layers in the Layers panel.
-        final Set<String> seenTypes = new HashSet<>();
+        // Accumulate fact types seen on the canvas and surface any not yet
+        // configured as layers in the Layers panel (event types are added
+        // separately via the FloorMapDataEvent handler).
+        boolean added = false;
         for (final Fact fact : facts) {
-            if (fact.getType() != null) {
-                seenTypes.add(fact.getType());
+            if (fact.getType() != null && observedTypes.add(fact.getType())) {
+                added = true;
             }
         }
-        floorMapLayersPresenter.setSeenTypes(seenTypes);
+        if (added) {
+            floorMapLayersPresenter.setSeenTypes(observedTypes);
+        }
         // Restore the full (multi-)selection highlight after re-rendering, so a
         // group stays selected across canvas refreshes (e.g. after a transform).
         floorMapCanvasPresenter.setSelectedObjectIds(model.getSelectedFactKeys());
@@ -967,6 +1056,32 @@ public class FloorMapEditorPresenter
         } catch (final Exception ex) {
             AlertEvent.fireError(this,
                     "Cannot transform selection: " + ex.getMessage(), null);
+        }
+        refreshCanvasOnly();
+    }
+
+    /**
+     * Called when an area's geometry is edited on the canvas (a vertex moved,
+     * inserted or deleted). Persists the new local-frame vertices through the
+     * pending-changes pipeline and refreshes the canvas.
+     *
+     * @param key           the area fact's key
+     * @param localVertices the new local-frame vertices ({@code >= 3})
+     */
+    private void onFactGeometryEdited(final String key, final double[][] localVertices) {
+        if (getMapName() == null || key == null || localVertices == null) {
+            return;
+        }
+        try {
+            final boolean changed = model.updateFactGeometry(key, localVertices,
+                    valueSchema(),
+                    ValueAccessorFactory.forFormat(getEntity().getValueFormat()));
+            if (changed) {
+                setDirty(true);
+            }
+        } catch (final Exception ex) {
+            AlertEvent.fireError(this,
+                    "Cannot edit area geometry: " + ex.getMessage(), null);
         }
         refreshCanvasOnly();
     }
@@ -1164,7 +1279,8 @@ public class FloorMapEditorPresenter
                 event.getMapX(),
                 event.getMapY(),
                 event.getClientX(),
-                event.getClientY());
+                event.getClientY(),
+                event.getVertexIndex());
     }
 
     /**
@@ -1198,7 +1314,8 @@ public class FloorMapEditorPresenter
                                        final double mapX,
                                        final double mapY,
                                        final int clientX,
-                                       final int clientY) {
+                                       final int clientY,
+                                       final int vertexIndex) {
         final String mapName = getMapName();
         if (mapName == null) {
             return;
@@ -1206,7 +1323,15 @@ public class FloorMapEditorPresenter
 
         final List<Item> menuItems = new ArrayList<>();
 
-        if (objectId == null) {
+        if (vertexIndex >= 0) {
+            // ---- Right-clicked an area vertex handle ----
+            menuItems.add(new IconMenuItem.Builder()
+                    .priority(1)
+                    .icon(SvgImage.DELETE)
+                    .text("Delete Vertex")
+                    .command(() -> floorMapCanvasPresenter.deleteVertex(vertexIndex))
+                    .build());
+        } else if (objectId == null) {
             // ---- Right-clicked on empty canvas ----
             menuItems.add(new IconMenuItem.Builder()
                     .priority(1)

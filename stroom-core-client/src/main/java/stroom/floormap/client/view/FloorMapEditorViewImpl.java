@@ -118,7 +118,8 @@ public class FloorMapEditorViewImpl extends ViewImpl implements FloorMapEditorVi
         topSplitPanel.setSize("100%", "100%");
         topSplitPanel.addEast(dockPanel, DOCK_INITIAL_WIDTH);   // right-hand dock
         topSplitPanel.add(canvasPanel);                          // canvas (fills rest)
-        // The Editor dock is empty until the Layers panel lands, so start hidden.
+        // Start visible to match the toggle button's initial on state
+        // (FloorMapEditorPresenter sets dockToggleButton state = true).
         topSplitPanel.setWidgetHidden(dockPanel, false);
 
         timelinePanel = new SimplePanel();

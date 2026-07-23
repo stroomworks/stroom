@@ -42,6 +42,7 @@ import com.gwtplatform.mvp.client.MyPresenterWidget;
 import com.gwtplatform.mvp.client.View;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -88,6 +89,8 @@ public class FloorMapLayersPresenter extends MyPresenterWidget<FloorMapLayersVie
     private Consumer<List<TypeStyle>> typeStylesEditHandler;
     /** Opens the appearance dialog for a layer and calls back with the edited style. */
     private BiConsumer<TypeStyle, Consumer<TypeStyle>> styleEditor;
+    /** Runs a full-store type discovery scan (Editor only). */
+    private Runnable discoverHandler;
 
     /** Highlight colour for the drag-reorder drop indicator. */
     private static final String DROP_INDICATOR = "#2196f3";
@@ -134,6 +137,34 @@ public class FloorMapLayersPresenter extends MyPresenterWidget<FloorMapLayersVie
      */
     public void setStyleEditor(final BiConsumer<TypeStyle, Consumer<TypeStyle>> styleEditor) {
         this.styleEditor = styleEditor;
+    }
+
+    /**
+     * @param discoverHandler runs a full facts-store type-discovery scan; when
+     *                        set (Editor only) a Discover action is shown
+     */
+    public void setDiscoverHandler(final Runnable discoverHandler) {
+        this.discoverHandler = discoverHandler;
+        rebuild();
+    }
+
+    /**
+     * Merges the given discovered types into the saved layers (new types are
+     * appended alphabetically) and persists via the edit handler.
+     *
+     * @param types the discovered type names
+     */
+    public void mergeDiscovered(final Collection<String> types) {
+        final int before = layers.size();
+        final List<TypeStyle> newList = TypeStyle.merge(new ArrayList<>(layers), types);
+        if (newList.size() == before) {
+            return;
+        }
+        layers = newList;
+        rebuild();
+        if (typeStylesEditHandler != null) {
+            typeStylesEditHandler.accept(new ArrayList<>(newList));
+        }
     }
 
     /**
@@ -230,7 +261,29 @@ public class FloorMapLayersPresenter extends MyPresenterWidget<FloorMapLayersVie
                     list.add(buildProvisionalRow(type));
                 }
             }
+
+            // A Discover action that scans the whole facts store for types.
+            if (discoverHandler != null) {
+                list.add(buildDiscoverFooter());
+            }
         }
+    }
+
+    private Widget buildDiscoverFooter() {
+        final FlowPanel footer = new FlowPanel();
+        footer.addStyleName("floormap-layers-footer");
+
+        final InlineSvgButton discover = new InlineSvgButton();
+        discover.setSvg(SvgImage.REFRESH);
+        discover.setTitle("Discover types from the facts store");
+        discover.addClickHandler(event -> discoverHandler.run());
+        footer.add(discover);
+
+        final Label label = new Label("Discover types");
+        label.addStyleName("floormap-layers-footer-label");
+        label.addClickHandler(event -> discoverHandler.run());
+        footer.add(label);
+        return footer;
     }
 
     /** A discovered-but-unsaved type: name + an add button to make it a layer. */
@@ -445,6 +498,7 @@ public class FloorMapLayersPresenter extends MyPresenterWidget<FloorMapLayersVie
             // The default graphic for imageless facts is a rectangle.
             return "<rect x=\"2.5\" y=\"4.5\" width=\"11\" height=\"7\" rx=\"1.5\" fill=\"" + fill + "\"/>";
         }
+        //noinspection EnhancedSwitchMigration
         switch (shape) {
             case SQUARE:
                 return "<rect x=\"3\" y=\"3\" width=\"10\" height=\"10\" rx=\"1\" fill=\"" + fill + "\"/>";

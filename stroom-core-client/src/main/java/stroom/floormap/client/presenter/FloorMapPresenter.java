@@ -86,6 +86,14 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
      */
     private List<TypeStyle> pendingLayerTypeStyles;
 
+    /**
+     * The initial view {@code {scale, offsetX, offsetY}} the Map tab zoomed to
+     * fit on open, stashed so the Editor tab (opened afterwards) adopts the same
+     * zoom + translation and nothing jumps on the switch. {@code null} until the
+     * Map has fitted, or when the Editor is opened first (it fits locally).
+     */
+    private double[] sharedInitialView;
+
     @Inject
     public FloorMapPresenter(final EventBus eventBus,
                              final LinkTabPanelView view,
@@ -101,11 +109,25 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
 
         addTab(MAP, new DocTabProvider<>(() -> {
             floorMapMapPresenter = floorMapMapPresenterProvider.get();
+            // Stash the Map's zoom-to-fit initial view so the Editor tab adopts
+            // the same zoom + translation (no jump on the first switch).
+            floorMapMapPresenter.setInitialViewListener(initialView -> {
+                sharedInitialView = initialView;
+                if (floorMapEditorPresenter != null) {
+                    floorMapEditorPresenter.setInitialViewState(initialView);
+                }
+            });
             return floorMapMapPresenter;
         }));
 
         addTab(EDITOR, new DocTabProvider<>(() -> {
             floorMapEditorPresenter = floorMapEditorPresenterProvider.get();
+            // Adopt the Map tab's initial zoom + translation, if it has fitted
+            // already, so the Editor opens on the same view. If the Editor is
+            // opened first this is null and it fits its own content locally.
+            if (sharedInitialView != null) {
+                floorMapEditorPresenter.setInitialViewState(sharedInitialView);
+            }
             // When the Editor enables area support (schema/type-style upgrade),
             // the Settings tab's grids must be re-patched or its wholesale
             // onWrite would silently revert the upgrade on save.
