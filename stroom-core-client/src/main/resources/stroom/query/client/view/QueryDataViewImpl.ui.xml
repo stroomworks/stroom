@@ -29,10 +29,17 @@
             <b:InlineSvgButton ui:field="run" title="Run" addStyleNames="QueryButtons-button play dock-min"/>
             <b:InlineSvgButton ui:field="stop" title="Stop" addStyleNames="QueryButtons-button stop dock-min"/>
             <b:InlineSvgButton ui:field="createDashboard" title="Create Dashboard" addStyleNames="QueryButtons-button create-dashboard dock-min"/>
+            <b:InlineSvgButton ui:field="discover" title="Discover what's in this graph" addStyleNames="QueryButtons-button discover dock-min" visible="false"/>
         </g:FlowPanel>
+        <g:FlowPanel ui:field="viewToggleBar" styleName="dock-min dock-container-horizontal align-center form-padding input-row" visible="false">
+            <g:ToggleButton ui:field="tableToggle" addStyleNames="dock-min"/>
+            <g:ToggleButton ui:field="graphToggle" addStyleNames="dock-min"/>
+        </g:FlowPanel>
+        <g:SimplePanel ui:field="discoveryContainer" styleName="dock-min" visible="false"/>
         <g:ScrollPanel ui:field="errorContainer" styleName="{style.errorContainer}" visible="false">
             <g:Label ui:field="errorLabel" styleName="{style.errorLabel}"/>
         </g:ScrollPanel>
         <g:SimplePanel ui:field="tableContainer" styleName="max dock-max"/>
+        <g:SimplePanel ui:field="graphContainer" styleName="max dock-max" visible="false"/>
     </g:FlowPanel>
 </ui:UiBinder>

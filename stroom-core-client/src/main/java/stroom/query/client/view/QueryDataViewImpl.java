@@ -11,14 +11,18 @@ import com.google.gwt.event.dom.client.KeyDownEvent;
 import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
 import com.google.gwt.uibinder.client.UiHandler;
+import com.google.gwt.user.client.ui.FlowPanel;
 import com.google.gwt.user.client.ui.Label;
 import com.google.gwt.user.client.ui.ScrollPanel;
 import com.google.gwt.user.client.ui.SimplePanel;
 import com.google.gwt.user.client.ui.TextBox;
+import com.google.gwt.user.client.ui.ToggleButton;
 import com.google.gwt.user.client.ui.Widget;
 import com.google.inject.Inject;
 import com.gwtplatform.mvp.client.View;
 import com.gwtplatform.mvp.client.ViewWithUiHandlers;
+
+import java.util.function.Consumer;
 
 public class QueryDataViewImpl extends ViewWithUiHandlers<QueryDataUiHandlers> implements QueryDataView {
 
@@ -42,7 +46,21 @@ public class QueryDataViewImpl extends ViewWithUiHandlers<QueryDataUiHandlers> i
     @UiField
     InlineSvgButton createDashboard;
     @UiField
+    InlineSvgButton discover;
+    @UiField
+    SimplePanel discoveryContainer;
+    @UiField
+    FlowPanel viewToggleBar;
+    @UiField
+    ToggleButton tableToggle;
+    @UiField
+    ToggleButton graphToggle;
+    @UiField
     SimplePanel tableContainer;
+    @UiField
+    SimplePanel graphContainer;
+
+    private Consumer<Boolean> onViewModeChange;
 
     @Inject
     public QueryDataViewImpl(final Binder binder) {
@@ -51,6 +69,12 @@ public class QueryDataViewImpl extends ViewWithUiHandlers<QueryDataUiHandlers> i
         run.setSvg(SvgImage.PLAY);
         stop.setSvg(SvgImage.STOP);
         createDashboard.setSvg(SvgImage.DOCUMENT_DASHBOARD);
+        discover.setSvg(SvgImage.EXPLORER);
+
+        tableToggle.setText("Table");
+        graphToggle.setText("Graph");
+        tableToggle.addClickHandler(event -> showTable());
+        graphToggle.addClickHandler(event -> showGraph());
     }
 
     @Override
@@ -72,6 +96,47 @@ public class QueryDataViewImpl extends ViewWithUiHandlers<QueryDataUiHandlers> i
     public void setTable(final View view) {
         view.asWidget().addStyleName("TablePresenter");
         tableContainer.setWidget(view.asWidget());
+    }
+
+    @Override
+    public void setGraphView(final Widget graphWidget, final Consumer<Boolean> onViewModeChange) {
+        this.onViewModeChange = onViewModeChange;
+        graphWidget.addStyleName("GraphPresenter");
+        graphContainer.setWidget(graphWidget);
+        viewToggleBar.setVisible(true);
+        // Start on the table (the default, unchanged view).
+        showTable();
+    }
+
+    private void showTable() {
+        tableToggle.setDown(true);
+        graphToggle.setDown(false);
+        tableContainer.setVisible(true);
+        graphContainer.setVisible(false);
+        if (onViewModeChange != null) {
+            onViewModeChange.accept(false);
+        }
+    }
+
+    private void showGraph() {
+        tableToggle.setDown(false);
+        graphToggle.setDown(true);
+        tableContainer.setVisible(false);
+        graphContainer.setVisible(true);
+        if (onViewModeChange != null) {
+            onViewModeChange.accept(true);
+        }
+    }
+
+    @Override
+    public void setDiscoveryWidget(final Widget discoveryWidget) {
+        discoveryContainer.setWidget(discoveryWidget);
+        discover.setVisible(true);
+    }
+
+    @Override
+    public void showDiscovery(final boolean visible) {
+        discoveryContainer.setVisible(visible);
     }
 
     @Override
@@ -127,6 +192,14 @@ public class QueryDataViewImpl extends ViewWithUiHandlers<QueryDataUiHandlers> i
     public void onCreateDashboard(final ClickEvent event) {
         if (getUiHandlers() != null) {
             getUiHandlers().onCreateDashboard();
+        }
+    }
+
+    @UiHandler("discover")
+    @SuppressWarnings("unused")
+    public void onDiscover(final ClickEvent event) {
+        if (getUiHandlers() != null) {
+            getUiHandlers().onDiscover();
         }
     }
 

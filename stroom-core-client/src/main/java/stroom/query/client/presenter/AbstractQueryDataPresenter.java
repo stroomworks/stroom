@@ -140,9 +140,31 @@ public abstract class AbstractQueryDataPresenter<V extends QueryDataView, D>
         }
     }
 
+    @Override
+    public void onDiscover() {
+        // Datasources that offer schema discovery (the Graph DB Data tab) override this; others do nothing and
+        // never surface the Discover control.
+    }
+
+    protected DocRef getCurrentDocRef() {
+        return currentDocRef;
+    }
+
+    protected RestFactory getRestFactory() {
+        return restFactory;
+    }
+
     protected abstract String getDefaultQuery(DocRef docRef, D doc);
 
     protected abstract List<Column> getPreferredColumns(D doc);
+
+    /**
+     * The tab's result table. Exposed so a subclass can drive an additional view (e.g. the Graph DB Data tab's
+     * graph view) from the rows this tab has already fetched, rather than starting a second search.
+     */
+    protected QueryResultTablePresenter getTablePresenter() {
+        return tablePresenter;
+    }
 
     private void selectOffendingToken(final TokenError tokenError) {
         final String queryText = getView().getQuery();
