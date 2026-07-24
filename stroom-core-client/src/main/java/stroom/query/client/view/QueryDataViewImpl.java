@@ -140,6 +140,14 @@ public class QueryDataViewImpl extends ViewWithUiHandlers<QueryDataUiHandlers> i
     }
 
     @Override
+    public void selectGraphView() {
+        // Only meaningful once a graph view has been installed (GraphDb tab); a no-op elsewhere.
+        if (graphContainer.getWidget() != null) {
+            showGraph();
+        }
+    }
+
+    @Override
     public void setError(final String error) {
         if (error != null && !error.trim().isEmpty()) {
             errorLabel.setText(error);

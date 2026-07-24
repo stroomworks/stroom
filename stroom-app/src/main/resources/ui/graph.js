@@ -24,16 +24,18 @@
  *   graphManager.resize()   - re-fit the viewport.
  *   graphManager.clear()    - drop all elements.
  * Reverse channel: stroom.select([...]) posts a selection back (handled by MessageSupport as a "select" message).
- * A plain node/edge tap posts the tapped element; the "Query this node" context-menu action posts a selection
- * carrying a `__stroomQuery` param, which the parent runs as a new query (the vis->engine bridge, without needing
- * a new transport message type). Fire-and-forget calls must NOT invoke the callback (mirrors vis.js).
+ * A plain node/edge tap posts the tapped element; the context-menu actions post a selection carrying a command
+ * param instead - `__stroomExpand` (expand this node's neighbours, merged in) or `__stroomFocus` (replace the view
+ * with this node + its neighbours) - which the parent resolves identity-based via the /expand endpoint (the
+ * vis->engine bridge, without needing a new transport message type). Fire-and-forget calls must NOT invoke the
+ * callback (mirrors vis.js).
  *
  * The row->elements ADAPTER (render() below) is the single reshape the design study (§3, §7) calls for.
  *
  * INTERACTION. On top of Cytoscape's built-in pan/zoom/drag/select, this adds (all optional - each degrades if its
  * vendored extension is absent): a layout picker + Fit toolbar (fcose / dagre / concentric / tree / basic force),
- * hover tooltips showing an element's properties, and a right-click context menu (query this node, highlight
- * neighbourhood, hide, reset). Libraries are vendored under script/cytoscape/ - see graph.html.
+ * hover tooltips showing an element's properties, and a right-click context menu (expand neighbours, focus on this
+ * node, highlight neighbourhood, hide, reset). Libraries are vendored under script/cytoscape/ - see graph.html.
  */
 
 var stroomParent;
@@ -351,28 +353,18 @@ function GraphManager() {
         cy.elements().removeClass('faded').removeClass('highlighted');
     };
 
-    // Best-effort anchored query for a node: its first label + id (returns rows where that pair is indexed;
-    // otherwise a valid, editable starting query). Sent to the parent to run via the select channel.
-    var nodeQuery = function (node) {
-        var labels = node.data('labels');
-        var id = node.data('id');
-        if (!labels || !id) {
-            return null;
-        }
-        var label = String(labels).split(',')[0];
-        return "MATCH (n:" + label + " {id: '" + String(id).replace(/'/g, "\\'") + "'}) RETURN GRAPH";
-    };
-
-    var sendQuery = function (query) {
-        if (query) {
-            stroom.select([{__stroomQuery: query}]);
-        }
-    };
-
     // Ask the parent to expand this node's neighbours (all edge types, both directions) and merge them in.
     var sendExpand = function (nodeId) {
         if (nodeId) {
             stroom.select([{__stroomExpand: nodeId}]);
+        }
+    };
+
+    // Ask the parent to focus on this node - fetch it and its immediate neighbours (identity-based, so it always
+    // resolves) and REPLACE the view with them. Distinct from expand, which merges into the current graph.
+    var sendFocus = function (nodeId) {
+        if (nodeId) {
+            stroom.select([{__stroomFocus: nodeId}]);
         }
     };
 
@@ -415,11 +407,11 @@ function GraphManager() {
                     }
                 },
                 {
-                    id: 'query-node',
-                    content: 'Query this node',
+                    id: 'focus-node',
+                    content: 'Focus on this node',
                     selector: 'node',
                     onClickFunction: function (evt) {
-                        sendQuery(nodeQuery(evt.target));
+                        sendFocus(evt.target.data('id'));
                     }
                 },
                 {

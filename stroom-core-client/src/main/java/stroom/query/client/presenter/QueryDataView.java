@@ -33,6 +33,9 @@ public interface QueryDataView extends View, HasUiHandlers<QueryDataUiHandlers> 
     /** Show or hide the discovery panel installed by {@link #setDiscoveryWidget}. */
     void showDiscovery(boolean visible);
 
+    /** Switch to the graph view (if one was installed via {@link #setGraphView}); a no-op otherwise. */
+    void selectGraphView();
+
     void setError(String error);
 
     void clearError();

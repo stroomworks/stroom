@@ -44,9 +44,16 @@ public class GraphDiscoveryWidget extends Composite {
 
     private final FlowPanel panel;
     private final Consumer<String> onApplyQuery;
+    private final Consumer<String> onFocusNode;
 
-    public GraphDiscoveryWidget(final Consumer<String> onApplyQuery) {
+    /**
+     * @param onApplyQuery runs a reliable, always-valid query (whole-graph / label preview).
+     * @param onFocusNode  focuses on a specific node by its id - identity-based via the /expand endpoint, so it
+     *                     resolves regardless of which property is indexed (unlike a property-anchored query).
+     */
+    public GraphDiscoveryWidget(final Consumer<String> onApplyQuery, final Consumer<String> onFocusNode) {
         this.onApplyQuery = onApplyQuery;
+        this.onFocusNode = onFocusNode;
         panel = new FlowPanel();
         panel.addStyleName("GraphDiscovery");
         initWidget(panel);
@@ -90,7 +97,7 @@ public class GraphDiscoveryWidget extends Composite {
         }
 
         if (!schema.sampleNodes().isEmpty()) {
-            final FlowPanel samples = section("Example nodes - click to query one");
+            final FlowPanel samples = section("Example nodes - click to focus on one");
             for (final GraphDbSchema.SampleNode node : schema.sampleNodes()) {
                 samples.add(sampleNode(node));
             }
@@ -111,26 +118,11 @@ public class GraphDiscoveryWidget extends Composite {
                 break;
             }
         }
-
-        final String query = buildAnchoredQuery(node);
-        return query != null
-                ? clickable(text.toString(), query)
+        // Focus by id (identity-based, always resolves) - not a property-anchored query, which would return
+        // nothing unless that (label, property) pair happens to be indexed.
+        return node.id() != null
+                ? focusChip(text.toString(), node.id())
                 : reference(text.toString());
-    }
-
-    /**
-     * A best-effort anchored query for a sample node: its first label plus its first property as the seek
-     * predicate. Returns rows only where that (label, property) pair is indexed - otherwise it is still a valid,
-     * editable starting template.
-     */
-    private static String buildAnchoredQuery(final GraphDbSchema.SampleNode node) {
-        if (node.labels().isEmpty() || node.properties().isEmpty()) {
-            return null;
-        }
-        final String label = node.labels().get(0);
-        final Map.Entry<String, String> firstProperty = node.properties().entrySet().iterator().next();
-        final String value = firstProperty.getValue().replace("'", "\\'");
-        return "MATCH (n:" + label + " {" + firstProperty.getKey() + ": '" + value + "'}) RETURN GRAPH";
     }
 
     private Label clickable(final String text, final String query) {
@@ -140,6 +132,18 @@ public class GraphDiscoveryWidget extends Composite {
         chip.addClickHandler(event -> {
             if (onApplyQuery != null) {
                 onApplyQuery.accept(query);
+            }
+        });
+        return chip;
+    }
+
+    private Label focusChip(final String text, final String nodeId) {
+        final Label chip = new Label(text);
+        chip.addStyleName("GraphDiscovery-chip GraphDiscovery-chip__clickable");
+        chip.setTitle("Focus on this node");
+        chip.addClickHandler(event -> {
+            if (onFocusNode != null) {
+                onFocusNode.accept(nodeId);
             }
         });
         return chip;

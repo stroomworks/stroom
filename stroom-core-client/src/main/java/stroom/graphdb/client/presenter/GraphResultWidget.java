@@ -52,21 +52,22 @@ import java.util.function.Consumer;
  */
 public class GraphResultWidget extends Composite implements SelectionUiHandlers {
 
-    /** Param keys a context-menu action uses to ask the parent to act (see {@code ui/graph.js}). */
-    private static final String RUN_QUERY_PARAM = "__stroomQuery";
+    /** Param keys a context-menu action uses to ask the parent to act (see {@code ui/graph.js}). Both resolve the
+     * node identity-based via the /expand endpoint: expand merges the result in, focus replaces the view with it. */
     private static final String EXPAND_NODE_PARAM = "__stroomExpand";
+    private static final String FOCUS_NODE_PARAM = "__stroomFocus";
 
     private final GraphFrame frame;
     private final SimplePanel graphHolder;
     private final Label messageLabel;
-    private final Consumer<String> onRunQuery;
     private final Consumer<String> onExpandNode;
+    private final Consumer<String> onFocusNode;
 
     public GraphResultWidget(final EventBus eventBus,
-                             final Consumer<String> onRunQuery,
-                             final Consumer<String> onExpandNode) {
-        this.onRunQuery = onRunQuery;
+                             final Consumer<String> onExpandNode,
+                             final Consumer<String> onFocusNode) {
         this.onExpandNode = onExpandNode;
+        this.onFocusNode = onFocusNode;
         frame = new GraphFrame(eventBus);
         frame.setUiHandlers(this);
 
@@ -188,9 +189,9 @@ public class GraphResultWidget extends Composite implements SelectionUiHandlers 
                 onExpandNode.accept(expandNodeId);
                 return;
             }
-            final String query = selection.getParamValue(RUN_QUERY_PARAM);
-            if (query != null && onRunQuery != null) {
-                onRunQuery.accept(query);
+            final String focusNodeId = selection.getParamValue(FOCUS_NODE_PARAM);
+            if (focusNodeId != null && onFocusNode != null) {
+                onFocusNode.accept(focusNodeId);
                 return;
             }
         }
@@ -202,8 +203,28 @@ public class GraphResultWidget extends Composite implements SelectionUiHandlers 
      * Merge an "Expand neighbours" result into the already-rendered graph (additive - does not replace the view).
      */
     public void addElements(final GraphElementTable table) {
+        final JSONObject payload = toPayload(table);
+        if (payload != null) {
+            frame.addElements(payload);
+        }
+    }
+
+    /**
+     * Replace the view with a "Focus on this node" result (the node + its neighbours). The /expand endpoint is
+     * identity-based, so a focused node always resolves and the result is never empty - it never blanks the graph.
+     */
+    public void focusElements(final GraphElementTable table) {
+        final JSONObject payload = toPayload(table);
+        if (payload != null) {
+            showGraph();
+            frame.setElements(payload);
+            frame.onResize();
+        }
+    }
+
+    private static JSONObject toPayload(final GraphElementTable table) {
         if (table == null || table.rows().isEmpty()) {
-            return;
+            return null;
         }
         final JSONArray columnArray = new JSONArray();
         final List<String> columns = NullSafe.list(table.columns());
@@ -228,6 +249,6 @@ public class GraphResultWidget extends Composite implements SelectionUiHandlers 
         final JSONObject payload = new JSONObject();
         payload.put("columns", columnArray);
         payload.put("rows", rowArray);
-        frame.addElements(payload);
+        return payload;
     }
 }

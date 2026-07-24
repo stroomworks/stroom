@@ -20,6 +20,7 @@ import stroom.dispatch.client.RestFactory;
 import stroom.docref.DocRef;
 import stroom.graphdb.shared.GraphDbDoc;
 import stroom.graphdb.shared.GraphDbResource;
+import stroom.graphdb.shared.GraphElementTable;
 import stroom.query.api.Column;
 import stroom.query.client.presenter.AbstractQueryDataPresenter;
 import stroom.query.client.presenter.DateTimeSettingsFactory;
@@ -76,13 +77,13 @@ public class GraphDbDataPresenter
 
         // The Graph DB Data tab adds a Graph view alongside the table, driven by the same result store
         // (Cytoscape implementation plan P3). The toggle stays hidden for every other query data tab.
-        graphResultWidget = new GraphResultWidget(eventBus, this::runQuery, this::expandNode);
+        graphResultWidget = new GraphResultWidget(eventBus, this::expandNode, this::focusNode);
         view.setGraphView(graphResultWidget, this::onViewModeChange);
 
         // ...and a discovery panel that turns the graph's schema into clickable starter queries, for analysts who
         // don't yet know its labels/ids. Only the Graph DB tab installs it, so the Discover control stays hidden
         // elsewhere.
-        discoveryWidget = new GraphDiscoveryWidget(this::applyDiscoveredQuery);
+        discoveryWidget = new GraphDiscoveryWidget(this::applyDiscoveredQuery, this::focusNodeFromDiscovery);
         view.setDiscoveryWidget(discoveryWidget);
     }
 
@@ -116,25 +117,46 @@ public class GraphDbDataPresenter
         runQuery(query);
     }
 
-    /** Drop a query into the box and run it - the target of both a discovery suggestion and a graph
-     * context-menu action (e.g. "Query this node"). */
+    /** Focus on an example node picked from the discovery panel: hide the panel, switch to the graph view, and
+     * render that node + its neighbours (identity-based - always resolves, never blanks). */
+    private void focusNodeFromDiscovery(final String nodeId) {
+        discoveryVisible = false;
+        getView().showDiscovery(false);
+        getView().selectGraphView();
+        focusNode(nodeId);
+    }
+
+    /** Drop a query into the box and run it - the target of a discovery-panel suggestion. */
     private void runQuery(final String query) {
         getView().setQuery(query);
         onRun();
     }
 
-    /** Expand a node's neighbours (all edge types, both directions) and merge them into the current graph -
-     * the graph context-menu "Expand neighbours" action. Graph-view only; the table is left unchanged. */
+    /** Expand a node's neighbours (all edge types, both directions) and MERGE them into the current graph - the
+     * graph context-menu "Expand neighbours" action. Graph-view only; the table is left unchanged. */
     private void expandNode(final String nodeId) {
+        fetchNeighbours(nodeId, graphResultWidget::addElements);
+    }
+
+    /** Focus on a node: fetch it and its neighbours and REPLACE the view with them - the graph context-menu
+     * "Focus on this node" action. Identity-based (never blanks the graph), unlike a property-anchored query. */
+    private void focusNode(final String nodeId) {
+        fetchNeighbours(nodeId, graphResultWidget::focusElements);
+    }
+
+    private void fetchNeighbours(final String nodeId,
+                                 final java.util.function.Consumer<GraphElementTable> onResult) {
         final DocRef docRef = getCurrentDocRef();
         if (docRef == null || nodeId == null) {
             return;
         }
+        // Use the query that produced the current graph so the expand matches its temporal instant/window (the
+        // box may have been edited without re-running).
         final String query = lastRunQuery != null ? lastRunQuery : getView().getQuery();
         getRestFactory()
                 .create(GRAPH_DB_RESOURCE)
                 .method(res -> res.expandNode(docRef.getUuid(), nodeId, query))
-                .onSuccess(graphResultWidget::addElements)
+                .onSuccess(onResult::accept)
                 .taskMonitorFactory(this)
                 .exec();
     }
