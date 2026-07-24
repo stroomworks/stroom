@@ -133,6 +133,13 @@ public class FloorMapMapPresenter
      */
     private boolean timelineInitialised;
 
+    /**
+     * UUID of the document this Map is showing, used to ignore
+     * {@link FloorMapDataEvent}s fired by other open FloorMap documents on the
+     * shared event bus (which would otherwise render another doc's entities here).
+     */
+    private String docUuid;
+
     private static final long ONE_DAY_MS = 24L * 60 * 60 * 1000;
 
     /**
@@ -283,6 +290,10 @@ public class FloorMapMapPresenter
             }
         }));
         registerHandler(getEventBus().addHandler(FloorMapDataEvent.getType(), e -> {
+            // Ignore events from other open FloorMap documents (shared event bus).
+            if (!java.util.Objects.equals(docUuid, e.getDocUuid())) {
+                return;
+            }
             floorMapCanvasPresenter.setEventObjects(e.getObjects());
             // Keep the tracking panel's roster up to date. Only re-push grid
             // data when membership actually changed so playback refreshes
@@ -366,6 +377,7 @@ public class FloorMapMapPresenter
      */
     @Override
     protected void onRead(final DocRef docRef, final FloorMapDoc document, final boolean readOnly) {
+        this.docUuid = docRef != null ? docRef.getUuid() : null;
         // Initialise and reset both query models BEFORE starting any searches, so that the histogram query
         // started inside updateTimelineRange() is not immediately cancelled by the reset() call below.
         queryModel.init(docRef);

@@ -426,7 +426,7 @@ public class FloorMapEditorModel {
      * @param key the fact key
      * @return the active merged entry, or {@code null} if none
      */
-    private TemporalEntry activeMergedEntryForKey(final String key) {
+    public TemporalEntry activeMergedEntryForKey(final String key) {
         final List<TemporalEntry> active = activeEntriesAtSelectedTime(
                 pendingChanges.applyTo(serverEntriesAtCurrentTime));
         if (active == null) {

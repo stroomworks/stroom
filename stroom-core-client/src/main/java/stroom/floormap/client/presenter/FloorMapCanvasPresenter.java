@@ -23,6 +23,7 @@ import stroom.floormap.client.view.FloorMapGrid;
 import stroom.floormap.shared.Fact;
 import stroom.floormap.shared.FloorMapJsonKeys;
 import stroom.floormap.shared.FloorMapObject;
+import stroom.floormap.shared.FloorMapEntityAnimator;
 import stroom.floormap.shared.FloorMapTransformationMatrix;
 import stroom.floormap.shared.FloorMapViewport;
 import stroom.floormap.shared.FloorMapZOrder;
@@ -71,24 +72,6 @@ import javax.inject.Inject;
  */
 public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasView> {
 
-    // -------------------------------------------------------------------------
-    // Animation constants
-    // -------------------------------------------------------------------------
-
-    /** How long (wall-clock ms) a single position-change animation lasts. */
-    private static final double ANIMATION_DURATION_MS = 800.0;
-
-    /**
-     * Maximum number of recorded trail points per entity.  Set high enough
-     * that the trail covers the full journey during normal playback (~83 s
-     * at 60 fps).  The single SVG {@code <path>} rendering makes this
-     * inexpensive; trail data is cleaned up on fade completion and
-     * discontinuous time jumps.
-     */
-    private static final int TRAIL_MAX_PTS = 5000;
-
-    /** How long (wall-clock ms) trails take to fade out after the entity stops moving. */
-    private static final double TRAIL_FADE_DURATION_MS = 2000.0;
 
     // -------------------------------------------------------------------------
     /**
@@ -258,12 +241,6 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
      */
     private final Set<String> areaKeys = new HashSet<>();
 
-    /**
-     * Event entities that are not currently animated. When playing, moving
-     * entities are built dynamically in {@link #buildAnimatedDrawList}.
-     */
-    private List<FloorMapObject> eventObjects = new ArrayList<>();
-
     // Edit mode
     private boolean editMode = false;
     /**
@@ -342,43 +319,12 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     // Playback / animation state
     // -------------------------------------------------------------------------
 
-    /** {@code true} while the timeline is actively playing. */
-    private boolean isPlaying = false;
-
     /**
-     * When {@code true}, the next call to {@link #setEventObjects} will teleport
-     * entities directly to their new positions without creating animations, even if
-     * {@link #isPlaying} is {@code true}.  Set by {@link #clearAnimationState()} so
-     * that a scrub/skip/loop-around places users instantly rather than replaying a
-     * batch of movements.
+     * The entity animation data machine (interpolation, trails, teleport). This
+     * presenter owns only the scheduler loop, camera-follow and drawing; all the
+     * per-entity bookkeeping lives in the shared, unit-tested animator.
      */
-    private boolean pendingTeleport = false;
-
-    /**
-     * In-flight animations keyed by entity id.  Only populated while playing.
-     */
-    private final Map<String, EntityAnimation> activeAnimations = new HashMap<>();
-
-    /**
-     * Last known rendered state (id, type, map-space position) for each event
-     * entity, used as the start point for the next animation and to keep the
-     * entity drawn (with its correct type styling) between event refreshes.
-     */
-    private final Map<String, FloorMapObject> lastEntityPositions = new HashMap<>();
-
-    /**
-     * Trail points for each entity.  Each entry is {@code [mapX, mapY]}.
-     * Points are appended during animation; oldest are at the front.
-     * The list is bounded by {@link #TRAIL_MAX_PTS}.
-     */
-    private final Map<String, List<double[]>> entityTrails = new HashMap<>();
-
-    /**
-     * AnimationScheduler timestamp when each entity's last animation completed,
-     * initiating the trail fade-out.  Entries are removed once the fade finishes
-     * or if the entity starts a new animation.
-     */
-    private final Map<String, Double> trailFadeStartTimes = new HashMap<>();
+    private final FloorMapEntityAnimator animator = new FloorMapEntityAnimator();
 
     /** {@code true} while the {@link #animationCallback} loop is scheduled. */
     private boolean animationLoopRunning = false;
@@ -537,7 +483,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
      * @param playing {@code true} when playback starts, {@code false} when it stops.
      */
     public void setPlaying(final boolean playing) {
-        this.isPlaying = playing;
+        animator.setPlaying(playing);
     }
 
     /**
@@ -545,16 +491,13 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
      * whenever the timeline time jumps non-continuously (scrub, step, loop-around,
      * stop-at-end) so stale animation state does not carry over.
      * <p>
-     * Also sets {@link #pendingTeleport} so that the <em>next</em> call to
-     * {@link #setEventObjects} places entities at their new positions instantly
-     * (teleport) rather than animating them from stale positions, even when
-     * {@link #isPlaying} is {@code true}.
+     * Arms a teleport (via {@link FloorMapEntityAnimator#clear()}) so the
+     * <em>next</em> {@link #setEventObjects} places entities at their new
+     * positions instantly rather than animating from stale positions, even
+     * during playback.
      */
     public void clearAnimationState() {
-        activeAnimations.clear();
-        entityTrails.clear();
-        trailFadeStartTimes.clear();
-        pendingTeleport = true;
+        animator.clear();
         // Deliberately do NOT force animationLoopRunning = false here. A frame
         // may already be scheduled; clearing the flag and then calling
         // ensureAnimationLoop() (e.g. the teleport path re-arming camera-follow)
@@ -1483,47 +1426,15 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
      *              Pass {@code 0.0} when there are no active animations.
      */
     private List<FloorMapObject> buildAnimatedDrawList(final double nowMs) {
-        // Facts are rendered separately from the facts list; this list is the
-        // event overlay only.
-        final List<FloorMapObject> combined = new ArrayList<>(eventObjects);
+        final List<FloorMapObject> combined = animator.buildDrawList(nowMs);
 
-        // Entities currently mid-animation — add at their interpolated position.
-        for (final Map.Entry<String, EntityAnimation> entry : activeAnimations.entrySet()) {
-            final EntityAnimation anim = entry.getValue();
-            final FloorMapObject obj = new FloorMapObject(
-                    anim.id, anim.type, anim.currentX(), anim.currentY());
-            attachTrail(obj, anim.id, nowMs);
-            combined.add(obj);
-        }
-
-        // Stationary entities (animation finished or idle during playback) —
-        // draw at their last known position and attach any fading trail.  A set
-        // of already-drawn IDs prevents duplicates when the same entity is also
-        // present in eventObjects (e.g. after play stops).
-        final Set<String> drawnIds = new HashSet<>();
-        for (final FloorMapObject obj : combined) {
-            drawnIds.add(obj.getId());
-        }
-        for (final Map.Entry<String, FloorMapObject> entry : lastEntityPositions.entrySet()) {
-            final String id = entry.getKey();
-            if (!drawnIds.contains(id)) {
-                final FloorMapObject last = entry.getValue();
-                // Fresh copy each draw so per-frame trail data never leaks
-                // between frames via a shared instance.
-                final FloorMapObject obj = new FloorMapObject(
-                        id, last.getType(), last.getX(), last.getY());
-                attachTrail(obj, id, nowMs);
-                combined.add(obj);
-            }
-        }
-
-        // Decorate each entity with its image-bearing fact twin (if any) so
-        // the view renders the entity's configured icon at the live position
-        // instead of the generic type glyph. The static twin itself is
-        // suppressed by factsExcludingOverlay, so without this the icon would
-        // vanish the moment the entity appears in the events stream. Set
-        // unconditionally (null clears) because eventObjects instances are
-        // reused across draws.
+        // Decorate each entity with its image-bearing fact twin (if any) so the
+        // view renders the entity's configured icon at the live position instead
+        // of the generic type glyph. The static twin is suppressed by
+        // factsExcludingOverlay, so without this the icon would vanish the moment
+        // the entity appears in the events stream. This is a rendering concern
+        // (it needs `facts`), so it stays in the presenter rather than the
+        // shared animator. Set unconditionally (null clears).
         final Map<String, Fact> imageFactsByKey = new HashMap<>();
         for (final Fact fact : facts) {
             if (fact.hasImage()) {
@@ -1533,54 +1444,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         for (final FloorMapObject obj : combined) {
             obj.setImageFact(imageFactsByKey.get(obj.getId()));
         }
-
         return combined;
-    }
-
-    /**
-     * Computes per-point alpha values using a positional (index-based) gradient
-     * and attaches the resulting {@code [x, y, alpha]} list to {@code obj}.
-     * <p>
-     * Alpha runs from {@code 0.0} at the oldest point (index 0) to {@code 1.0}
-     * at the newest point (last index).  This ensures the <em>entire</em> spatial
-     * path from the start of a journey to the user's current position is always
-     * drawn — the tail fades to transparent but the leading edge always meets the
-     * user's circle, so the trail visually grows to the full journey length.
-     * <p>
-     * When the entity has stopped moving, a global fade factor is applied on top
-     * of the index-based gradient so the trail fades out over
-     * {@link #TRAIL_FADE_DURATION_MS} and then disappears.
-     *
-     * @param nowMs current AnimationScheduler timestamp in ms, used to compute
-     *              the fade factor for stopped entities.  Pass {@code 0.0} when
-     *              the animation loop is not running.
-     */
-    private void attachTrail(final FloorMapObject obj, final String id, final double nowMs) {
-        final List<double[]> raw = entityTrails.get(id);
-        if (raw == null || raw.isEmpty()) {
-            return;
-        }
-
-        // Compute a global fade multiplier for trails of stopped people.
-        double fadeFactor = 1.0;
-        final Double fadeStart = trailFadeStartTimes.get(id);
-        if (fadeStart != null && nowMs > 0) {
-            final double elapsed = nowMs - fadeStart;
-            fadeFactor = Math.max(0.0, 1.0 - elapsed / TRAIL_FADE_DURATION_MS);
-        }
-        if (fadeFactor <= 0.0) {
-            return; // Fully faded — nothing to render.
-        }
-
-        final int size = raw.size();
-        final List<double[]> trailWithAlpha = new ArrayList<>(size);
-        for (int i = 0; i < size; i++) {
-            final double[] pt = raw.get(i);
-            // Oldest point → alpha 0, newest → alpha 1, scaled by fade factor.
-            final double alpha = (size == 1 ? 1.0 : (double) i / (size - 1)) * fadeFactor;
-            trailWithAlpha.add(new double[]{pt[0], pt[1], alpha});
-        }
-        obj.setTrail(trailWithAlpha);
     }
 
     // =========================================================================
@@ -1599,55 +1463,12 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                             : 16.0;
                     lastAnimationTimestamp = timestamp;
 
-                    // Advance each active animation by the fraction of ANIMATION_DURATION_MS
-                    // that elapsed since the last frame.  This is independent of any absolute
-                    // clock, so it works correctly regardless of the time-base used by the
-                    // AnimationScheduler (performance.now() vs Date.now()).
-                    final List<String> finished = new ArrayList<>();
-                    for (final Map.Entry<String, EntityAnimation> entry : activeAnimations.entrySet()) {
-                        final EntityAnimation anim = entry.getValue();
-                        anim.progress = Math.min(1.0, anim.progress + deltaMs / ANIMATION_DURATION_MS);
-
-                        // Record the current interpolated position into the trail.
-                        recordTrailPoint(anim.id, anim.currentX(), anim.currentY());
-
-                        if (anim.progress >= 1.0) {
-                            // Snap to the destination and record final position.
-                            lastEntityPositions.put(anim.id, new FloorMapObject(
-                                    anim.id, anim.type, anim.toX, anim.toY));
-                            finished.add(anim.id);
-                            // Start fading the trail for this entity.
-                            trailFadeStartTimes.put(anim.id, timestamp);
-                        }
-                    }
-                    for (final String id : finished) {
-                        activeAnimations.remove(id);
-                    }
-
-                    // Process fading trails: remove entries that are fully faded or
-                    // whose entity has started a new animation.
-                    final List<String> doneFading = new ArrayList<>();
-                    for (final Map.Entry<String, Double> fade : trailFadeStartTimes.entrySet()) {
-                        final String id = fade.getKey();
-                        if (activeAnimations.containsKey(id)) {
-                            // Entity started moving again — cancel the fade.
-                            doneFading.add(id);
-                        } else if (timestamp - fade.getValue() >= TRAIL_FADE_DURATION_MS) {
-                            // Fully faded — remove trail data.
-                            entityTrails.remove(id);
-                            doneFading.add(id);
-                        }
-                    }
-                    for (final String id : doneFading) {
-                        trailFadeStartTimes.remove(id);
-                    }
-
-                    // Glide the camera after the tracked entity (damped).
+                    // Advance entity animations + trail fades (shared animator),
+                    // then glide the damped camera-follow (presenter-owned).
+                    final boolean animActive = animator.advanceFrame(timestamp, deltaMs);
                     final boolean cameraMoved = followStep(deltaMs);
 
-                    if (!cameraMoved
-                            && activeAnimations.isEmpty()
-                            && trailFadeStartTimes.isEmpty()) {
+                    if (!cameraMoved && !animActive) {
                         // Nothing left to animate, fade, or glide — let the loop terminate.
                         animationLoopRunning = false;
                         lastAnimationTimestamp = 0;
@@ -1666,97 +1487,11 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                 }
             };
 
-    /**
-     * Handles an entity position update from the events query
-     * ({@link #setEventObjects}).
-     * <p>
-     * When not playing: records the position in {@link #lastEntityPositions} so
-     * play-start has a valid "from" anchor.  The caller is responsible for
-     * placing the object in the appropriate draw list for immediate display.
-     * <p>
-     * When playing: creates an animation if the position has changed and there
-     * is not already an animation running to the same destination.
-     *
-     * @return {@code true} if the caller should add the object to its draw list
-     *         (i.e., it was NOT animated and should be shown at its current position),
-     *         {@code false} if the animation system has taken ownership.
-     */
-    private boolean handleEntityUpdate(final FloorMapObject obj) {
-        if (!isPlaying || pendingTeleport) {
-            // Teleport: record position for later play-start animation anchor.
-            lastEntityPositions.put(obj.getId(), new FloorMapObject(
-                    obj.getId(), obj.getType(), obj.getX(), obj.getY()));
-            return true; // caller adds to draw list
-        }
-
-        final FloorMapObject last = lastEntityPositions.get(obj.getId());
-        if (last == null) {
-            // First appearance while playing — place without animation.
-            lastEntityPositions.put(obj.getId(), new FloorMapObject(
-                    obj.getId(), obj.getType(), obj.getX(), obj.getY()));
-            return true;
-        }
-
-        // Check whether we already have an animation running toward this exact destination.
-        final EntityAnimation existing = activeAnimations.get(obj.getId());
-        final boolean alreadyAnimatingToTarget = existing != null
-                && Math.abs(existing.toX - obj.getX()) < 0.001
-                && Math.abs(existing.toY - obj.getY()) < 0.001;
-
-        if (!alreadyAnimatingToTarget) {
-            // Compare the new target against the CURRENT destination: the
-            // in-flight animation's endpoint if animating, else the last
-            // committed position. Comparing against `last` while an A→B
-            // animation is in flight would drop a "return to A" update (dx≈0)
-            // and let the entity wrongly finish at B.
-            final double refX = existing != null ? existing.toX : last.getX();
-            final double refY = existing != null ? existing.toY : last.getY();
-            final double dx = refX - obj.getX();
-            final double dy = refY - obj.getY();
-            if (dx * dx + dy * dy > 0.0001) {
-                final double fromX = existing != null ? existing.currentX() : last.getX();
-                final double fromY = existing != null ? existing.currentY() : last.getY();
-                activeAnimations.put(obj.getId(), new EntityAnimation(
-                        obj.getId(), obj.getType(),
-                        fromX, fromY,
-                        obj.getX(), obj.getY()));
-                // lastEntityPositions updated by animation loop when progress ≥ 1.0
-                return false; // animation system owns this entity
-            }
-        }
-
-        // Position unchanged or already animating to target — animation loop owns it.
-        return false;
-    }
-
     /** Starts the animation loop if it is not already running. */
     private void ensureAnimationLoop() {
         if (!animationLoopRunning) {
             animationLoopRunning = true;
             AnimationScheduler.get().requestAnimationFrame(animationCallback);
-        }
-    }
-
-    /**
-     * Appends {@code [x, y]} to the trail for {@code id}, enforcing the maximum
-     * trail length by dropping the oldest point when the cap is exceeded.
-     * <p>
-     * Trail points no longer carry a wall-clock timestamp; fading is now
-     * index-based (see {@link #attachTrail}) so the full spatial path is always
-     * visible regardless of how long the journey took.
-     */
-    private void recordTrailPoint(final String id,
-                                  final double x,
-                                  final double y) {
-
-        //noinspection unused k
-        final List<double[]> trail = entityTrails.computeIfAbsent(id, k -> new ArrayList<>());
-        trail.add(new double[]{x, y});
-
-        // Hard cap to avoid unbounded growth.
-        while (trail.size() > TRAIL_MAX_PTS) {
-            //noinspection SequencedCollectionMethodCanBeUsed GWT does not support
-            trail.remove(0);
         }
     }
 
@@ -1879,21 +1614,14 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
      * @return {@code {mapX, mapY}}, or {@code null} if the entity is unknown
      */
     private double[] trackedPosition() {
-        final EntityAnimation animation = activeAnimations.get(trackedObjectId);
-        if (animation != null) {
-            return new double[]{animation.currentX(), animation.currentY()};
+        // The animator knows live/animated/last-known and current-overlay positions.
+        final double[] pos = animator.positionOf(trackedObjectId);
+        if (pos != null) {
+            return pos;
         }
-        final FloorMapObject last = lastEntityPositions.get(trackedObjectId);
-        if (last != null) {
-            return new double[]{last.getX(), last.getY()};
-        }
-        for (final FloorMapObject obj : eventObjects) {
-            if (trackedObjectId.equals(obj.getId())) {
-                return new double[]{obj.getX(), obj.getY()};
-            }
-        }
+        // Fall back to a static fact placed in the facts store.
         for (final Fact fact : facts) {
-            if (trackedObjectId.equals(fact.getKey())) {
+            if (trackedObjectId != null && trackedObjectId.equals(fact.getKey())) {
                 // Image anchors need the aspect ratio, known only to the view.
                 return getView().getFactMapAnchor(fact);
             }
@@ -1974,67 +1702,15 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
      * last known position to the new one, regardless of type.
      */
     public void setEventObjects(final List<FloorMapObject> objects) {
-        if (!isPlaying || pendingTeleport) {
-            // Not playing, or a discontinuous time jump just occurred — teleport all entities.
-            this.eventObjects = objects != null ? objects : new ArrayList<>();
-            // Drop per-entity animation/position/trail state for entities no
-            // longer present, so a vanished entity (e.g. after scrubbing to a
-            // time with fewer entities) can't linger as a ghost via
-            // lastEntityPositions. Pruning only on the teleport path — not on
-            // every event — avoids stripping anchors when the events query
-            // delivers partial result batches during playback (which would make
-            // a still-present entity teleport instead of animate).
-            final Set<String> currentIds = new HashSet<>();
-            if (objects != null) {
-                for (final FloorMapObject obj : objects) {
-                    currentIds.add(obj.getId());
-                }
-            }
-            lastEntityPositions.keySet().retainAll(currentIds);
-            activeAnimations.clear();
-            // Teleport places entities instantly, so there are no in-progress
-            // journeys — drop any trails left over from prior playback rather
-            // than leaving them drawn at full opacity.
-            entityTrails.clear();
-            trailFadeStartTimes.clear();
-            // Record positions for play-start animation anchor.
-            if (objects != null) {
-                for (final FloorMapObject obj : objects) {
-                    lastEntityPositions.put(obj.getId(), new FloorMapObject(
-                            obj.getId(), obj.getType(), obj.getX(), obj.getY()));
-                }
-            }
-            // One-shot: clear the teleport flag now that positions are committed.
-            pendingTeleport = false;
-            // Glide the camera after the tracked entity's new position (the
-            // damped follow runs on animation frames, so make sure the loop is
-            // ticking even though nothing is animating).
-            if (trackedObjectId != null && !followPaused) {
-                ensureAnimationLoop();
-            }
-            redraw();
-            return;
+        final boolean teleported = animator.onEventObjects(objects);
+        // Run the loop for the animate path (it advances animations + glides the
+        // camera and repaints); on the teleport path only if tracking, so the
+        // damped camera-follow glides to the new position.
+        if (!teleported || (trackedObjectId != null && !followPaused)) {
+            ensureAnimationLoop();
         }
-
-        final List<FloorMapObject> unanimated = new ArrayList<>();
-
-        if (objects != null) {
-            for (final FloorMapObject obj : objects) {
-                if (handleEntityUpdate(obj)) {
-                    // Entity placed without animation (first appearance, etc.) —
-                    // add to draw list so it's visible.
-                    unanimated.add(obj);
-                }
-            }
-        }
-
-        this.eventObjects = unanimated;
-        // The loop advances animations AND glides the damped camera-follow —
-        // including toward an entity's first appearance while playing.
-        ensureAnimationLoop();
-        // Force a paint so updates that don't start an animation still repaint
-        // during playback — the animation loop returns without drawing when
-        // there is nothing to animate or glide.
+        // Force a paint so an update that starts no animation still repaints (the
+        // loop returns without drawing when there is nothing to animate or glide).
         redraw();
     }
 
@@ -2408,58 +2084,6 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         void onSelectionChanged(Collection<String> keys, String primary);
     }
 
-    // =========================================================================
-    // Inner classes
-    // =========================================================================
-
-    /**
-     * Tracks a single in-progress movement animation for a person entity.
-     * <p>
-     * Progress is advanced externally each animation frame by adding
-     * {@code deltaMs / ANIMATION_DURATION_MS}, so no absolute start timestamp is
-     * stored — the animation is insulated from any time-base differences between
-     * {@link com.google.gwt.core.client.Duration#currentTimeMillis()} and the
-     * {@link AnimationScheduler} callback timestamp.
-     * <p>
-     * Interpolation is deliberately <strong>linear</strong>: for timeline playback
-     * of historical data the destination is just the last recorded position, not a
-     * physical stopping point, so ease-in-out deceleration looks unnatural.
-     */
-    private static class EntityAnimation {
-
-        final String id;
-        final String type;
-        final double fromX;
-        final double fromY;
-        final double toX;
-        final double toY;
-        double progress; // 0.0 → 1.0, advanced per frame by the animation loop
-
-        EntityAnimation(final String id,
-                      final String type,
-                      final double fromX,
-                      final double fromY,
-                      final double toX,
-                      final double toY) {
-            this.id = id;
-            this.type = type;
-            this.fromX = fromX;
-            this.fromY = fromY;
-            this.toX = toX;
-            this.toY = toY;
-            this.progress = 0.0;
-        }
-
-        /** Current interpolated X position in map space (linear). */
-        double currentX() {
-            return fromX + (toX - fromX) * progress;
-        }
-
-        /** Current interpolated Y position in map space (linear). */
-        double currentY() {
-            return fromY + (toY - fromY) * progress;
-        }
-    }
 
     // =========================================================================
     // View interface

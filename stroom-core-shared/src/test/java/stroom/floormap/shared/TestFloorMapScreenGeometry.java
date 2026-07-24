@@ -1,0 +1,125 @@
+/*
+ * Copyright 2016-2026 Crown Copyright
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package stroom.floormap.shared;
+
+import org.junit.jupiter.api.Test;
+
+import java.util.List;
+import java.util.Set;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.within;
+
+class TestFloorMapScreenGeometry {
+
+    private static final double IMAGE_DISPLAY_WIDTH = 1000;
+    private static final double OBJECT_SIZE = 60;
+    private static final double TOL = 1e-6;
+
+    /** No aspect ratios known (square fallback). */
+    private static final FloorMapScreenGeometry.AspectRatioSource NO_AR = url -> null;
+
+    private FloorMapScreenGeometry geometry(final double scale, final double ox, final double oy) {
+        return new FloorMapScreenGeometry(scale, ox, oy, IMAGE_DISPLAY_WIDTH, OBJECT_SIZE, NO_AR);
+    }
+
+    private static Fact pointFact(final String key, final double x, final double y) {
+        return new Fact(key, "t", null, FloorMapTransformationMatrix.identity(),
+                new double[]{x, y});
+    }
+
+    private static Fact areaFact(final String key, final double[][] verts) {
+        return new Fact(key, "area", null, FloorMapTransformationMatrix.identity(),
+                null, verts, null, null);
+    }
+
+    // -----------------------------------------------------------------------
+
+    /** A point glyph is a fixed OBJECT_SIZE box around its projected anchor (Y-flip). */
+    @Test
+    void testPointGlyphBounds() {
+        // scale 2, offset (100, 200); map (10, 5) → screen (100+2*10, 200-2*5) = (120, 190).
+        final double[] b = geometry(2, 100, 200).factScreenBounds(pointFact("p", 10, 5));
+        assertThat(b[0]).isCloseTo(120 - 30, within(TOL));
+        assertThat(b[1]).isCloseTo(190 - 30, within(TOL));
+        assertThat(b[2]).isCloseTo(120 + 30, within(TOL));
+        assertThat(b[3]).isCloseTo(190 + 30, within(TOL));
+    }
+
+    /** An area's screen bounds are the AABB of its projected vertices. */
+    @Test
+    void testAreaBounds() {
+        final Fact area = areaFact("a", new double[][]{{0, 0}, {10, 0}, {10, 10}});
+        final double[] b = geometry(1, 0, 0).factScreenBounds(area);
+        // Y-flip: map y=0 → screen 0, map y=10 → screen -10.
+        assertThat(b[0]).isCloseTo(0, within(TOL));    // minX
+        assertThat(b[1]).isCloseTo(-10, within(TOL));  // minY (from y=10)
+        assertThat(b[2]).isCloseTo(10, within(TOL));   // maxX
+        assertThat(b[3]).isCloseTo(0, within(TOL));    // maxY (from y=0)
+    }
+
+    /** contentMapBounds is scale/pan independent and covers all facts. */
+    @Test
+    void testContentMapBounds() {
+        final double[] b = geometry(7, 3, 9).contentMapBounds(List.of(
+                pointFact("p1", -5, -5), pointFact("p2", 20, 30)));
+        assertThat(b).containsExactly(-5, -5, 20, 30);
+    }
+
+    @Test
+    void testContentMapBounds_emptyIsNull() {
+        assertThat(geometry(1, 0, 0).contentMapBounds(List.of())).isNull();
+    }
+
+    /** Marquee hit test returns facts whose screen AABB intersects the rect. */
+    @Test
+    void testHitTestRect() {
+        final List<Fact> facts = List.of(pointFact("in", 0, 0), pointFact("out", 1000, 1000));
+        final Set<String> hits = geometry(1, 0, 0)
+                .hitTestRect(facts, new double[]{-40, -40, 40, 40});
+        assertThat(hits).containsExactly("in");
+    }
+
+    /** A single tiny selection is padded out to the minimum frame size. */
+    @Test
+    void testSelectionFrame_padsToMinimum() {
+        final double[] f = geometry(1, 0, 0).selectionFrame(
+                List.of(pointFact("p", 0, 0)), Set.of("p"), 200);
+        // Point box is 60px; padded to 200 about the centre (0,0).
+        assertThat(f[2] - f[0]).isCloseTo(200, within(TOL));
+        assertThat(f[3] - f[1]).isCloseTo(200, within(TOL));
+    }
+
+    @Test
+    void testSelectionFrame_noSelectionIsNull() {
+        assertThat(geometry(1, 0, 0).selectionFrame(
+                List.of(pointFact("p", 0, 0)), Set.of(), 24)).isNull();
+    }
+
+    /** Image bounds use the render-wrapper transform; square fallback when aspect unknown. */
+    @Test
+    void testImageBounds_squareFallback() {
+        final Fact img = new Fact("bg", "background", "asset://x.png",
+                FloorMapTransformationMatrix.identity(), null);
+        final double[] b = geometry(1, 0, 0).factScreenBounds(img);
+        // Wrapper places the image in the first quadrant up-and-right of origin;
+        // width = 1000, height = 1000/1 = 1000. Screen Y-flip maps the top to -1000.
+        assertThat(b[0]).isCloseTo(0, within(TOL));
+        assertThat(b[2]).isCloseTo(1000, within(TOL));
+        assertThat(b[3] - b[1]).isCloseTo(1000, within(TOL));
+    }
+}

@@ -30,14 +30,18 @@ import java.util.List;
 public class FloorMapDataEvent extends GwtEvent<FloorMapDataEvent.Handler> {
 
     private static Type<Handler> TYPE;
+    private final String docUuid;
     private final List<FloorMapObject> objects;
 
-    public FloorMapDataEvent(final List<FloorMapObject> objects) {
+    public FloorMapDataEvent(final String docUuid, final List<FloorMapObject> objects) {
+        this.docUuid = docUuid;
         this.objects = objects;
     }
 
-    public static void fire(final HasHandlers handlers, final List<FloorMapObject> objects) {
-        handlers.fireEvent(new FloorMapDataEvent(objects));
+    public static void fire(final HasHandlers handlers,
+                            final String docUuid,
+                            final List<FloorMapObject> objects) {
+        handlers.fireEvent(new FloorMapDataEvent(docUuid, objects));
     }
 
     public static Type<Handler> getType() {
@@ -55,6 +59,15 @@ public class FloorMapDataEvent extends GwtEvent<FloorMapDataEvent.Handler> {
     @Override
     protected void dispatch(final Handler handler) {
         handler.onDataChange(this);
+    }
+
+    /**
+     * @return the UUID of the document whose query produced these objects, so
+     *         receivers on the shared event bus can ignore events from other
+     *         open FloorMap documents; may be {@code null}
+     */
+    public String getDocUuid() {
+        return docUuid;
     }
 
     /**

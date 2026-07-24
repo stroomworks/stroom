@@ -1,0 +1,247 @@
+/*
+ * Copyright 2016-2026 Crown Copyright
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package stroom.floormap.shared;
+
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+
+/**
+ * Pure map/screen geometry for the floor-map canvas — fact bounding boxes,
+ * content bounds, marquee hit-testing and the selection frame. Extracted from
+ * the GWT view so the projection maths (which must stay in lock-step with the
+ * renderer's transform pipeline) is unit-testable on the JVM.
+ *
+ * <p>Screen projection matches the view's draw transform: a map point
+ * {@code (mx, my)} maps to screen {@code (offsetX + scale·mx, offsetY − scale·my)}
+ * (map space is Y-up, SVG is Y-down). Image facts are placed by the render
+ * wrapper {@code worldToMap · translate(0,h) · scale(1,-1)}, matching
+ * {@code FloorMapCanvasViewImpl.appendImageGlyph}.</p>
+ *
+ * <p>Holds no GWT/DOM types. The view constructs one per query with the
+ * last-drawn scale/pan and an {@link AspectRatioSource} backed by its image
+ * aspect-ratio cache.</p>
+ */
+public final class FloorMapScreenGeometry {
+
+    /** Supplies an image's aspect ratio (width/height) by URL, or {@code null} if unknown. */
+    public interface AspectRatioSource {
+
+        Double aspectRatio(String imageUrl);
+    }
+
+    private final double scale;
+    private final double offsetX;
+    private final double offsetY;
+    private final double imageDisplayWidth;
+    private final double objectSize;
+    private final AspectRatioSource aspectRatioSource;
+
+    /**
+     * @param scale             the last-drawn zoom scale
+     * @param offsetX           the last-drawn pan offset X (screen px)
+     * @param offsetY           the last-drawn pan offset Y (screen px)
+     * @param imageDisplayWidth the map-space width image facts render at
+     * @param objectSize        the fixed on-screen size (px) of an imageless glyph
+     * @param aspectRatioSource supplies image aspect ratios (may return {@code null})
+     */
+    public FloorMapScreenGeometry(final double scale,
+                                  final double offsetX,
+                                  final double offsetY,
+                                  final double imageDisplayWidth,
+                                  final double objectSize,
+                                  final AspectRatioSource aspectRatioSource) {
+        this.scale = scale;
+        this.offsetX = offsetX;
+        this.offsetY = offsetY;
+        this.imageDisplayWidth = imageDisplayWidth;
+        this.objectSize = objectSize;
+        this.aspectRatioSource = aspectRatioSource;
+    }
+
+    /**
+     * Returns a fact's on-screen bounding box {@code {minX, minY, maxX, maxY}},
+     * or {@code null} if the fact has no matrix. Dispatch order matches the
+     * renderer: image wins over vertices, else a fixed-size glyph box.
+     */
+    public double[] factScreenBounds(final Fact fact) {
+        final FloorMapTransformationMatrix w2m = fact.getWorldToMap();
+        if (w2m == null) {
+            return null;
+        }
+        if (!fact.hasImage() && fact.hasVertices()) {
+            final double[] acc = newBoundsAccumulator();
+            for (final double[] v : fact.getVertices()) {
+                final double[] mapPt = w2m.transformPoint(v[0], v[1]);
+                expandScreen(acc, mapPt[0], mapPt[1]);
+            }
+            return acc;
+        }
+        if (fact.hasImage()) {
+            final double[] acc = newBoundsAccumulator();
+            for (final double[] c : imageCornersMap(fact, w2m)) {
+                expandScreen(acc, c[0], c[1]);
+            }
+            return acc;
+        }
+        final double[] pos = fact.getPosition();
+        final double[] mapPt = w2m.transformPoint(
+                pos != null ? pos[0] : 0, pos != null ? pos[1] : 0);
+        final double sx = offsetX + scale * mapPt[0];
+        final double sy = offsetY - scale * mapPt[1];
+        final double half = objectSize / 2.0;
+        return new double[]{sx - half, sy - half, sx + half, sy + half};
+    }
+
+    /**
+     * Returns the map-space bounding box {@code {minX, minY, maxX, maxY}} of all
+     * facts, or {@code null} if there is none. Independent of the current
+     * scale/pan (used to compute an initial zoom-to-fit).
+     */
+    public double[] contentMapBounds(final List<Fact> facts) {
+        if (facts == null || facts.isEmpty()) {
+            return null;
+        }
+        final double[] acc = newBoundsAccumulator();
+        boolean any = false;
+        for (final Fact fact : facts) {
+            final FloorMapTransformationMatrix w2m = fact.getWorldToMap();
+            if (w2m == null) {
+                continue;
+            }
+            final double[][] pts;
+            if (!fact.hasImage() && fact.hasVertices()) {
+                final double[][] verts = fact.getVertices();
+                pts = new double[verts.length][];
+                for (int i = 0; i < verts.length; i++) {
+                    pts[i] = w2m.transformPoint(verts[i][0], verts[i][1]);
+                }
+            } else if (fact.hasImage()) {
+                pts = imageCornersMap(fact, w2m);
+            } else {
+                final double[] pos = fact.getPosition();
+                pts = new double[][]{w2m.transformPoint(
+                        pos != null ? pos[0] : 0, pos != null ? pos[1] : 0)};
+            }
+            for (final double[] p : pts) {
+                expandMap(acc, p[0], p[1]);
+                any = true;
+            }
+        }
+        return any ? acc : null;
+    }
+
+    /**
+     * Returns the keys of facts whose on-screen AABB intersects the rectangle
+     * {@code {minX, minY, maxX, maxY}} (element pixels); touch counts as a hit.
+     */
+    public Set<String> hitTestRect(final List<Fact> facts, final double[] rectPx) {
+        final Set<String> hits = new HashSet<>();
+        if (facts == null || rectPx == null) {
+            return hits;
+        }
+        for (final Fact fact : facts) {
+            final double[] b = factScreenBounds(fact);
+            if (b != null && b[0] <= rectPx[2] && b[2] >= rectPx[0]
+                    && b[1] <= rectPx[3] && b[3] >= rectPx[1]) {
+                hits.add(fact.getKey());
+            }
+        }
+        return hits;
+    }
+
+    /**
+     * Returns the screen-space bounding box of the selected facts (union of
+     * their on-screen bounds), padded to {@code minFramePx} so handles stay
+     * separable. Returns {@code null} when nothing is selected or laid out.
+     */
+    public double[] selectionFrame(final List<Fact> facts,
+                                   final Set<String> selectedIds,
+                                   final double minFramePx) {
+        if (facts == null || selectedIds == null || selectedIds.isEmpty()) {
+            return null;
+        }
+        final double[] acc = newBoundsAccumulator();
+        boolean any = false;
+        for (final Fact f : facts) {
+            if (selectedIds.contains(f.getKey())) {
+                final double[] b = factScreenBounds(f);
+                if (b != null) {
+                    acc[0] = Math.min(acc[0], b[0]);
+                    acc[1] = Math.min(acc[1], b[1]);
+                    acc[2] = Math.max(acc[2], b[2]);
+                    acc[3] = Math.max(acc[3], b[3]);
+                    any = true;
+                }
+            }
+        }
+        if (!any) {
+            return null;
+        }
+        if (acc[2] - acc[0] < minFramePx) {
+            final double c = (acc[0] + acc[2]) / 2;
+            acc[0] = c - minFramePx / 2;
+            acc[2] = c + minFramePx / 2;
+        }
+        if (acc[3] - acc[1] < minFramePx) {
+            final double c = (acc[1] + acc[3]) / 2;
+            acc[1] = c - minFramePx / 2;
+            acc[3] = c + minFramePx / 2;
+        }
+        return acc;
+    }
+
+    /**
+     * The four corners of an image fact in map space, via the render wrapper
+     * transform {@code worldToMap · translate(0,h) · scale(1,-1)}. Aspect ratio
+     * falls back to square when unknown, matching the renderer's pre-load state.
+     */
+    private double[][] imageCornersMap(final Fact fact, final FloorMapTransformationMatrix w2m) {
+        final Double ar = aspectRatioSource != null
+                ? aspectRatioSource.aspectRatio(fact.getImage())
+                : null;
+        final double aspect = ar != null ? ar : 1.0;
+        final double w = imageDisplayWidth;
+        final double h = w / aspect;
+        final FloorMapTransformationMatrix m = w2m
+                .multiply(FloorMapTransformationMatrix.translate(0, h))
+                .multiply(FloorMapTransformationMatrix.scale(1, -1));
+        return new double[][]{
+                m.transformPoint(0, 0), m.transformPoint(w, 0),
+                m.transformPoint(0, h), m.transformPoint(w, h)};
+    }
+
+    private static double[] newBoundsAccumulator() {
+        return new double[]{Double.MAX_VALUE, Double.MAX_VALUE, -Double.MAX_VALUE, -Double.MAX_VALUE};
+    }
+
+    private void expandScreen(final double[] acc, final double mapX, final double mapY) {
+        final double sx = offsetX + scale * mapX;
+        final double sy = offsetY - scale * mapY;
+        acc[0] = Math.min(acc[0], sx);
+        acc[1] = Math.min(acc[1], sy);
+        acc[2] = Math.max(acc[2], sx);
+        acc[3] = Math.max(acc[3], sy);
+    }
+
+    private static void expandMap(final double[] acc, final double x, final double y) {
+        acc[0] = Math.min(acc[0], x);
+        acc[1] = Math.min(acc[1], y);
+        acc[2] = Math.max(acc[2], x);
+        acc[3] = Math.max(acc[3], y);
+    }
+}

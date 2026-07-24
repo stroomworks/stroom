@@ -23,6 +23,7 @@ import stroom.floormap.client.presenter.FloorMapCanvasPresenter.FloorMapCanvasVi
 import stroom.floormap.shared.Fact;
 import stroom.floormap.shared.FloorMapJsonKeys;
 import stroom.floormap.shared.FloorMapObject;
+import stroom.floormap.shared.FloorMapScreenGeometry;
 import stroom.floormap.shared.FloorMapShapes;
 import stroom.floormap.shared.FloorMapTransformationMatrix;
 import stroom.floormap.shared.TypeStyle;
@@ -555,148 +556,29 @@ public class FloorMapCanvasViewImpl
                 new Attribute("id", FloorMapJsonKeys.SVG_GROUP_PREFIX + fact.getKey()));
     }
 
-    @Override
-    public Set<String> hitTestScreenRect(final double[] rectPx) {
-        final Set<String> hits = new HashSet<>();
-        if (lastFacts == null || rectPx == null) {
-            return hits;
-        }
-        final double minX = rectPx[0];
-        final double minY = rectPx[1];
-        final double maxX = rectPx[2];
-        final double maxY = rectPx[3];
-        for (final Fact fact : lastFacts) {
-            final double[] b = factScreenBounds(fact);
-            // AABB intersection (touch counts as a hit).
-            if (b != null && b[0] <= maxX && b[2] >= minX && b[1] <= maxY && b[3] >= minY) {
-                hits.add(fact.getKey());
-            }
-        }
-        return hits;
+    /**
+     * A geometry helper bound to the last-drawn scale/pan and this view's image
+     * aspect-ratio cache. The projection maths lives in the shared, unit-tested
+     * {@link FloorMapScreenGeometry}; the view just supplies its current state.
+     */
+    private FloorMapScreenGeometry geometry() {
+        return new FloorMapScreenGeometry(lastScale, lastOffsetX, lastOffsetY,
+                IMAGE_DISPLAY_WIDTH, OBJECT_SIZE, imageAspectRatioCache::get);
     }
 
-    /**
-     * Returns a fact's on-screen bounding box {@code {minX, minY, maxX, maxY}}
-     * using the last-drawn scale/pan. Image facts use the projected corners of
-     * their placed image rect; imageless glyphs use a fixed-size box around the
-     * projected anchor. Returns {@code null} if the fact has no matrix.
-     */
+    @Override
+    public Set<String> hitTestScreenRect(final double[] rectPx) {
+        return geometry().hitTestRect(lastFacts, rectPx);
+    }
+
+    /** A fact's on-screen bounding box (see {@link FloorMapScreenGeometry}). */
     private double[] factScreenBounds(final Fact fact) {
-        final FloorMapTransformationMatrix w2m = fact.getWorldToMap();
-        if (w2m == null) {
-            return null;
-        }
-        // Same dispatch order as draw(): image wins over vertices.
-        if (!fact.hasImage() && fact.hasVertices()) {
-            // Area polygon: the AABB of every vertex projected local → map →
-            // screen. (An AABB over-selects concave/rotated areas on marquee —
-            // acceptable for v1.)
-            double minX = Double.MAX_VALUE;
-            double minY = Double.MAX_VALUE;
-            double maxX = -Double.MAX_VALUE;
-            double maxY = -Double.MAX_VALUE;
-            for (final double[] v : fact.getVertices()) {
-                final double[] mapPt = w2m.transformPoint(v[0], v[1]);
-                final double px = lastOffsetX + lastScale * mapPt[0];
-                final double py = lastOffsetY - lastScale * mapPt[1];
-                minX = Math.min(minX, px);
-                minY = Math.min(minY, py);
-                maxX = Math.max(maxX, px);
-                maxY = Math.max(maxY, py);
-            }
-            return new double[]{minX, minY, maxX, maxY};
-        }
-        if (fact.hasImage()) {
-            final Double ar = imageAspectRatioCache.get(fact.getImage());
-            final double aspect = ar != null ? ar : 1.0;
-            final double w = IMAGE_DISPLAY_WIDTH;
-            final double h = w / aspect;
-            // image-local → map space (matches the render wrapper transform:
-            // worldToMap · translate(0,h) · scale(1,-1)).
-            final FloorMapTransformationMatrix m = w2m
-                    .multiply(FloorMapTransformationMatrix.translate(0, h))
-                    .multiply(FloorMapTransformationMatrix.scale(1, -1));
-            final double[][] corners = {
-                    m.transformPoint(0, 0), m.transformPoint(w, 0),
-                    m.transformPoint(0, h), m.transformPoint(w, h)};
-            double minX = Double.MAX_VALUE;
-            double minY = Double.MAX_VALUE;
-            double maxX = -Double.MAX_VALUE;
-            double maxY = -Double.MAX_VALUE;
-            for (final double[] c : corners) {
-                final double sx = lastOffsetX + lastScale * c[0];
-                final double sy = lastOffsetY - lastScale * c[1];
-                minX = Math.min(minX, sx);
-                minY = Math.min(minY, sy);
-                maxX = Math.max(maxX, sx);
-                maxY = Math.max(maxY, sy);
-            }
-            return new double[]{minX, minY, maxX, maxY};
-        }
-        // Imageless glyph: a fixed screen-size box around the projected anchor.
-        final double[] pos = fact.getPosition();
-        final double[] mapPt = w2m.transformPoint(
-                pos != null ? pos[0] : 0, pos != null ? pos[1] : 0);
-        final double sx = lastOffsetX + lastScale * mapPt[0];
-        final double sy = lastOffsetY - lastScale * mapPt[1];
-        final double half = OBJECT_SIZE / 2.0;
-        return new double[]{sx - half, sy - half, sx + half, sy + half};
+        return geometry().factScreenBounds(fact);
     }
 
     @Override
     public double[] getContentMapBounds() {
-        if (lastFacts == null || lastFacts.isEmpty()) {
-            return null;
-        }
-        double minX = Double.MAX_VALUE;
-        double minY = Double.MAX_VALUE;
-        double maxX = -Double.MAX_VALUE;
-        double maxY = -Double.MAX_VALUE;
-        boolean any = false;
-        for (final Fact fact : lastFacts) {
-            final FloorMapTransformationMatrix w2m = fact.getWorldToMap();
-            if (w2m == null) {
-                continue;
-            }
-            // Collect this fact's map-space extreme points. Same dispatch order
-            // as draw()/factScreenBounds(): image wins over vertices.
-            final double[][] pts;
-            if (!fact.hasImage() && fact.hasVertices()) {
-                // Area polygon: every vertex, local → map.
-                final double[][] verts = fact.getVertices();
-                pts = new double[verts.length][];
-                for (int i = 0; i < verts.length; i++) {
-                    pts[i] = w2m.transformPoint(verts[i][0], verts[i][1]);
-                }
-            } else if (fact.hasImage()) {
-                // Image rect corners through the render wrapper transform
-                // (worldToMap · translate(0,h) · scale(1,-1)); aspect falls back
-                // to square when not yet loaded, matching the renderer.
-                final Double ar = imageAspectRatioCache.get(fact.getImage());
-                final double aspect = ar != null ? ar : 1.0;
-                final double w = IMAGE_DISPLAY_WIDTH;
-                final double h = w / aspect;
-                final FloorMapTransformationMatrix m = w2m
-                        .multiply(FloorMapTransformationMatrix.translate(0, h))
-                        .multiply(FloorMapTransformationMatrix.scale(1, -1));
-                pts = new double[][]{
-                        m.transformPoint(0, 0), m.transformPoint(w, 0),
-                        m.transformPoint(0, h), m.transformPoint(w, h)};
-            } else {
-                // Point glyph: its anchor (fixed screen-size, so no map padding).
-                final double[] pos = fact.getPosition();
-                pts = new double[][]{w2m.transformPoint(
-                        pos != null ? pos[0] : 0, pos != null ? pos[1] : 0)};
-            }
-            for (final double[] p : pts) {
-                minX = Math.min(minX, p[0]);
-                minY = Math.min(minY, p[1]);
-                maxX = Math.max(maxX, p[0]);
-                maxY = Math.max(maxY, p[1]);
-                any = true;
-            }
-        }
-        return any ? new double[]{minX, minY, maxX, maxY} : null;
+        return geometry().contentMapBounds(lastFacts);
     }
 
     @Override
@@ -717,40 +599,7 @@ public class FloorMapCanvasViewImpl
      * nothing is selected or laid out.
      */
     private double[] computeSelectionFrame() {
-        if (lastFacts == null || lastSelectedIds == null || lastSelectedIds.isEmpty()) {
-            return null;
-        }
-        double minX = Double.MAX_VALUE;
-        double minY = Double.MAX_VALUE;
-        double maxX = -Double.MAX_VALUE;
-        double maxY = -Double.MAX_VALUE;
-        boolean any = false;
-        for (final Fact f : lastFacts) {
-            if (lastSelectedIds.contains(f.getKey())) {
-                final double[] b = factScreenBounds(f);
-                if (b != null) {
-                    minX = Math.min(minX, b[0]);
-                    minY = Math.min(minY, b[1]);
-                    maxX = Math.max(maxX, b[2]);
-                    maxY = Math.max(maxY, b[3]);
-                    any = true;
-                }
-            }
-        }
-        if (!any) {
-            return null;
-        }
-        if (maxX - minX < MIN_FRAME_PX) {
-            final double c = (minX + maxX) / 2;
-            minX = c - MIN_FRAME_PX / 2;
-            maxX = c + MIN_FRAME_PX / 2;
-        }
-        if (maxY - minY < MIN_FRAME_PX) {
-            final double c = (minY + maxY) / 2;
-            minY = c - MIN_FRAME_PX / 2;
-            maxY = c + MIN_FRAME_PX / 2;
-        }
-        return new double[]{minX, minY, maxX, maxY};
+        return geometry().selectionFrame(lastFacts, lastSelectedIds, MIN_FRAME_PX);
     }
 
     /**

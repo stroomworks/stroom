@@ -30,6 +30,7 @@ import stroom.floormap.client.event.TimeChangeEvent;
 import stroom.floormap.client.presenter.FloorMapEditorPresenter.FloorMapEditorView;
 import stroom.floormap.shared.Fact;
 import stroom.floormap.shared.FloorMapDoc;
+import stroom.floormap.shared.FloorMapDocSession;
 import stroom.floormap.shared.FloorMapEditorModel;
 import stroom.floormap.client.event.FloorMapDataEvent;
 import stroom.floormap.shared.FloorMapEntryParser;
@@ -197,22 +198,12 @@ public class FloorMapEditorPresenter
     private final InlineSvgToggleButton dockToggleButton;
 
     /**
-     * When the user enables area support on a document whose schema/type styles
-     * predate areas (see {@link #ensureAreaSupport}), the merged lists live
-     * here until the document is saved — the loaded entity itself is read-only.
-     * {@code null} when no upgrade is pending; {@link #valueSchema()} and
-     * {@link #typeStyles()} prefer these over the entity's persisted lists.
+     * The Editor's pending document-level edits — the area-support upgrade and
+     * the Layers-panel type-styles list — with their read/write invariants. The
+     * loaded entity is read-only, so these are staged here until save. See the
+     * shared, unit-tested {@link FloorMapDocSession}.
      */
-    private List<FloorMapFieldMapping> pendingAreaSchema;
-    private List<TypeStyle> pendingAreaTypeStyles;
-
-    /**
-     * Type styles edited via the Layers panel (reorder / appearance / discovered
-     * types) that are not yet saved. When non-null this is the authoritative
-     * ordered list: {@link #typeStyles()} prefers it and {@link #onWrite} writes
-     * it back.
-     */
-    private List<TypeStyle> pendingTypeStyles;
+    private final FloorMapDocSession docSession = new FloorMapDocSession();
 
     /**
      * Notified when area support is enabled on this document, so the parent
@@ -221,6 +212,22 @@ public class FloorMapEditorPresenter
      * otherwise silently revert the upgrade.
      */
     private Runnable areaSupportEnabledListener;
+
+    /**
+     * Whether the timeline range/scrubber has been initialised. Set on the first
+     * {@code onRead}; a save triggers a re-read of every tab, and the timeline
+     * must not re-initialise then — it would discard the user's chosen range and
+     * jump the scrubber (and every panel) to the newest time. Mirrors
+     * {@code FloorMapMapPresenter.timelineInitialised}.
+     */
+    private boolean timelineInitialised;
+
+    /**
+     * UUID of the document this Editor is showing, used to ignore
+     * {@link FloorMapDataEvent}s fired by other open FloorMap documents on the
+     * shared event bus (which would otherwise pollute this doc's observed types).
+     */
+    private String docUuid;
 
     // -----------------------------------------------------------------------
 
@@ -330,6 +337,10 @@ public class FloorMapEditorPresenter
         // on the shared event bus (driven by the Map tab). Listen here too so
         // their types surface as provisional layers in the Editor's Layers panel.
         registerHandler(getEventBus().addHandler(FloorMapDataEvent.getType(), event -> {
+            // Ignore events from other open FloorMap documents (shared event bus).
+            if (!java.util.Objects.equals(docUuid, event.getDocUuid())) {
+                return;
+            }
             boolean added = false;
             for (final FloorMapObject object : event.getObjects()) {
                 if (object.getType() != null && observedTypes.add(object.getType())) {
@@ -420,27 +431,10 @@ public class FloorMapEditorPresenter
      */
     @Override
     protected void onRead(final DocRef docRef, final FloorMapDoc document, final boolean readOnly) {
-        // Once a saved document carries the full area upgrade — schema roles
-        // AND the "area" type style (the post-save re-read) — the pending
-        // upgrade has been persisted and can be dropped. Both must be checked:
-        // a document whose schema already mapped the roles would otherwise
-        // discard a staged, never-persisted type-style upgrade.
-        if (pendingAreaSchema != null
-                && hasAreaSupport(document.getValueSchema())
-                && hasAreaStyle(document.getTypeStyles())) {
-            pendingAreaSchema = null;
-            pendingAreaTypeStyles = null;
-        }
-        // Once the saved document carries the Layers-panel type-styles edit, the
-        // staged copy has been persisted and can be dropped. Accept the
-        // area-folded form too, since onWrite folds the "area" style into the
-        // written list when an area upgrade was pending (see onWrite).
-        if (pendingTypeStyles != null
-                && (pendingTypeStyles.equals(document.getTypeStyles())
-                    || TypeStyle.withAreaStyle(pendingTypeStyles)
-                            .equals(document.getTypeStyles()))) {
-            pendingTypeStyles = null;
-        }
+        this.docUuid = docRef != null ? docRef.getUuid() : null;
+        // Drop any staged doc-level edits (area upgrade / Layers type-styles)
+        // that this just-read document already carries (post-save re-read).
+        docSession.reconcileAfterRead(document);
 
         // Populate the Layers panel from the document's type styles. Reset the
         // observed-type accumulator for the (re-)opened document.
@@ -463,11 +457,17 @@ public class FloorMapEditorPresenter
         floorMapObjectEditPresenter.setMapName(mapName);
         floorMapObjectEditPresenter.setFloorMapDoc(sessionEntity());
 
-        // Load time range → initialise slider → load canvas + Fact List
+        // Load time range → initialise slider → load canvas + Fact List.
+        // Initialise the range/scrubber on the first read only; a save-triggered
+        // re-read keeps the user's chosen range and current position (otherwise
+        // the scrubber would jump to the newest time on every save).
         restFactory.create(SQL_TEMPORAL_STORE_RESOURCE)
                 .method(res -> res.getTimeRange(mapName))
                 .onSuccess(range -> {
-                    initTimeline(range);
+                    if (!timelineInitialised) {
+                        timelineInitialised = true;
+                        initTimeline(range);
+                    }
                     loadAtTime(model.getSelectedTime());
                 })
                 .exec();
@@ -486,28 +486,7 @@ public class FloorMapEditorPresenter
      */
     @Override
     protected FloorMapDoc onWrite(final FloorMapDoc document) {
-        if (pendingAreaSchema == null && pendingTypeStyles == null) {
-            return document;
-        }
-        final FloorMapDoc.Builder builder = document.copy();
-        if (pendingAreaSchema != null) {
-            builder.valueSchema(FloorMapFieldMapping.withAreaMappings(
-                    document.getValueSchema(), document.getValueFormat()));
-        }
-        // An explicit Layers-panel edit is the authoritative type-styles list;
-        // otherwise apply the area upgrade's list when that is what's pending.
-        // When an area upgrade is also pending, fold the "area" style into the
-        // written list (idempotent) so a Layers edit made around the upgrade
-        // can't drop it — otherwise the doc would carry the area schema but no
-        // area style, wedging the upgrade permanently.
-        if (pendingTypeStyles != null) {
-            builder.typeStyles(pendingAreaSchema != null
-                    ? TypeStyle.withAreaStyle(pendingTypeStyles)
-                    : pendingTypeStyles);
-        } else if (pendingAreaSchema != null) {
-            builder.typeStyles(TypeStyle.withAreaStyle(document.getTypeStyles()));
-        }
-        return builder.build();
+        return docSession.applyToWrite(document);
     }
 
     /**
@@ -516,9 +495,7 @@ public class FloorMapEditorPresenter
      * schema.
      */
     private List<FloorMapFieldMapping> valueSchema() {
-        return pendingAreaSchema != null
-                ? pendingAreaSchema
-                : getEntity().getValueSchema();
+        return docSession.valueSchema(getEntity().getValueSchema());
     }
 
     /**
@@ -526,12 +503,7 @@ public class FloorMapEditorPresenter
      * {@link #valueSchema()}).
      */
     private List<TypeStyle> typeStyles() {
-        if (pendingTypeStyles != null) {
-            return pendingTypeStyles;
-        }
-        return pendingAreaTypeStyles != null
-                ? pendingAreaTypeStyles
-                : getEntity().getTypeStyles();
+        return docSession.typeStyles(getEntity().getTypeStyles());
     }
 
     /**
@@ -542,37 +514,7 @@ public class FloorMapEditorPresenter
      * against the pre-upgrade schema until the document is saved.
      */
     private FloorMapDoc sessionEntity() {
-        if (pendingAreaSchema == null && pendingTypeStyles == null) {
-            return getEntity();
-        }
-        return getEntity().copy()
-                .valueSchema(valueSchema())
-                .typeStyles(typeStyles())
-                .build();
-    }
-
-    /**
-     * {@code true} when the schema maps every role areas need.
-     */
-    private static boolean hasAreaSupport(final List<FloorMapFieldMapping> schema) {
-        return FloorMapEntryParser.findPath(schema, Role.GEOMETRY) != null
-                && FloorMapEntryParser.findPath(schema, Role.FILL) != null
-                && FloorMapEntryParser.findPath(schema, Role.OPACITY) != null;
-    }
-
-    /**
-     * {@code true} when the type styles contain an {@code "area"} entry (which
-     * seeds the just-above-background z-order for areas).
-     */
-    private static boolean hasAreaStyle(final List<TypeStyle> typeStyles) {
-        if (typeStyles != null) {
-            for (final TypeStyle style : typeStyles) {
-                if (style != null && FloorMapJsonKeys.AREA.equals(style.getType())) {
-                    return true;
-                }
-            }
-        }
-        return false;
+        return docSession.sessionEntity(getEntity());
     }
 
     /**
@@ -603,7 +545,7 @@ public class FloorMapEditorPresenter
      * @param newTypeStyles the new ordered type styles
      */
     private void onLayerTypeStylesEdited(final List<TypeStyle> newTypeStyles) {
-        pendingTypeStyles = newTypeStyles;
+        docSession.stageTypeStyles(newTypeStyles);
         floorMapCanvasPresenter.setTypeStyles(newTypeStyles);
         floorMapObjectEditPresenter.setFloorMapDoc(sessionEntity());
         setDirty(true);
@@ -901,12 +843,30 @@ public class FloorMapEditorPresenter
      * @param key     the fact key
      */
     private void fetchTimeList(final String mapName, final String key) {
+        fetchTimeList(mapName, key, null);
+    }
+
+    /**
+     * Fetches all shards for the key, then runs {@code after} (if non-null) once
+     * the model's time list has been populated. Callers that must act on the
+     * fresh time list (e.g. "Add Time Version" on a fact that isn't the current
+     * selection) use the callback so they don't run against the previous
+     * selection's stale shards.
+     *
+     * @param mapName the temporal store name
+     * @param key     the fact key
+     * @param after   action to run after the fetch completes, or {@code null}
+     */
+    private void fetchTimeList(final String mapName, final String key, final Runnable after) {
         restFactory.create(SQL_TEMPORAL_STORE_RESOURCE)
                 .method(res -> res.find(mapKeyCriteria(mapName, key)))
                 .onSuccess(result -> {
                     model.onTimeListFetched(
                             result != null ? result.getValues() : null);
                     refreshTimeListAtTime(model.getSelectedTime());
+                    if (after != null) {
+                        after.run();
+                    }
                 })
                 .exec();
     }
@@ -1435,14 +1395,12 @@ public class FloorMapEditorPresenter
                         floorMapFactListPresenter.setSelected(objectId);
                         loadTimeListForSelectedFact();
 
-                        // Find the active entry for this object at the current time
-                        // and open the edit dialog
-                        final List<TemporalEntry> all = model.buildMergedCanvasEntries();
-                        for (final TemporalEntry e : all) {
-                            if (objectId.equals(e.getKey())) {
-                                onEditTimeInTimeList(e);
-                                break;
-                            }
+                        // Edit the shard the canvas is showing (active at the
+                        // scrubber), not the first key match (which could be a
+                        // historical shard under a pending time-version).
+                        final TemporalEntry active = model.activeMergedEntryForKey(objectId);
+                        if (active != null) {
+                            onEditTimeInTimeList(active);
                         }
                     })
                     .build());
@@ -1453,12 +1411,18 @@ public class FloorMapEditorPresenter
                     .icon(SvgImage.HISTORY)
                     .text("Add Time Version")
                     .command(() -> {
-                        // Select the object first so the time list loads
+                        final String addMapName = getMapName();
+                        if (addMapName == null) {
+                            return;
+                        }
+                        // Select the object, then FETCH its time list before
+                        // adding — otherwise the model still holds the previous
+                        // selection's shards, so the same-time overwrite guard is
+                        // bypassed and the new version clones blank data.
                         model.setSelectedFactKey(objectId);
                         floorMapCanvasPresenter.setSelectedObjectId(objectId);
                         floorMapFactListPresenter.setSelected(objectId);
-                        // Trigger the same flow as "Add Time" on the Time List
-                        onAddTimeInTimeList();
+                        fetchTimeList(addMapName, objectId, this::onAddTimeInTimeList);
                     })
                     .build());
 
@@ -1583,7 +1547,8 @@ public class FloorMapEditorPresenter
      * @param onReady the action to run once area support is available
      */
     private void ensureAreaSupport(final Runnable onReady) {
-        if (hasAreaSupport(valueSchema()) && hasAreaStyle(typeStyles())) {
+        if (FloorMapDocSession.hasAreaSupport(valueSchema())
+                && FloorMapDocSession.hasAreaStyle(typeStyles())) {
             onReady.run();
             return;
         }
@@ -1597,14 +1562,13 @@ public class FloorMapEditorPresenter
                     if (!ok) {
                         return;
                     }
-                    pendingAreaSchema = FloorMapFieldMapping.withAreaMappings(
-                            valueSchema(), getEntity().getValueFormat());
-                    pendingAreaTypeStyles = TypeStyle.withAreaStyle(typeStyles());
+                    docSession.stageAreaUpgrade(valueSchema(),
+                            getEntity().getValueFormat(), typeStyles());
                     // Apply the styles to the live canvas so the first drawn
                     // area z-orders correctly before the document is saved, and
                     // re-hand the upgraded document to the object-edit dialog
                     // so it resolves the new roles immediately.
-                    floorMapCanvasPresenter.setTypeStyles(pendingAreaTypeStyles);
+                    floorMapCanvasPresenter.setTypeStyles(typeStyles());
                     floorMapObjectEditPresenter.setFloorMapDoc(sessionEntity());
                     setDirty(true);
                     if (areaSupportEnabledListener != null) {
@@ -1692,16 +1656,10 @@ public class FloorMapEditorPresenter
             return;
         }
 
-        // Find the current entry for this object
-        final List<TemporalEntry> all = model.buildMergedCanvasEntries();
-        TemporalEntry sourceEntry = null;
-        for (final TemporalEntry e : all) {
-            if (originalKey.equals(e.getKey())) {
-                sourceEntry = e;
-                break;
-            }
-        }
-
+        // Duplicate the shard the canvas is showing (active at the scrubber),
+        // not merely the first key match — which could be a historical shard
+        // under a pending time-version.
+        final TemporalEntry sourceEntry = model.activeMergedEntryForKey(originalKey);
         if (sourceEntry == null) {
             return;
         }
