@@ -261,14 +261,14 @@ public class FloorMapEditorPresenter
         // SvgImage has no dedicated grid glyph; TABLE renders as a grid of cells.
         showGridButton = new InlineSvgToggleButton();
         showGridButton.setSvg(SvgImage.TABLE);
-        showGridButton.setTitle("Show Grid");
+        showGridButton.setTitle("Toggle Grid");
         showGridButton.setState(true);
 
         // Show/hide the right-hand dock; off by default (the Editor dock is
         // empty until the Layers panel lands). The view also starts it hidden.
         dockToggleButton = new InlineSvgToggleButton();
         dockToggleButton.setSvg(SvgImage.SHOW_MENU);
-        dockToggleButton.setTitle("Show Controls");
+        dockToggleButton.setTitle("Toggle Controls");
         dockToggleButton.setState(true);
         // Persist a drag as a single translate of the whole selection.
         floorMapCanvasPresenter.setDragHandler(this::onFactsTransformed);
@@ -432,8 +432,13 @@ public class FloorMapEditorPresenter
             pendingAreaTypeStyles = null;
         }
         // Once the saved document carries the Layers-panel type-styles edit, the
-        // staged copy has been persisted and can be dropped.
-        if (pendingTypeStyles != null && pendingTypeStyles.equals(document.getTypeStyles())) {
+        // staged copy has been persisted and can be dropped. Accept the
+        // area-folded form too, since onWrite folds the "area" style into the
+        // written list when an area upgrade was pending (see onWrite).
+        if (pendingTypeStyles != null
+                && (pendingTypeStyles.equals(document.getTypeStyles())
+                    || TypeStyle.withAreaStyle(pendingTypeStyles)
+                            .equals(document.getTypeStyles()))) {
             pendingTypeStyles = null;
         }
 
@@ -491,8 +496,14 @@ public class FloorMapEditorPresenter
         }
         // An explicit Layers-panel edit is the authoritative type-styles list;
         // otherwise apply the area upgrade's list when that is what's pending.
+        // When an area upgrade is also pending, fold the "area" style into the
+        // written list (idempotent) so a Layers edit made around the upgrade
+        // can't drop it — otherwise the doc would carry the area schema but no
+        // area style, wedging the upgrade permanently.
         if (pendingTypeStyles != null) {
-            builder.typeStyles(pendingTypeStyles);
+            builder.typeStyles(pendingAreaSchema != null
+                    ? TypeStyle.withAreaStyle(pendingTypeStyles)
+                    : pendingTypeStyles);
         } else if (pendingAreaSchema != null) {
             builder.typeStyles(TypeStyle.withAreaStyle(document.getTypeStyles()));
         }
@@ -696,8 +707,10 @@ public class FloorMapEditorPresenter
         restFactory.create(SQL_TEMPORAL_STORE_RESOURCE)
                 .method(res -> res.applyChanges(buildApplyChangesRequest()))
                 .onSuccess(result -> {
-                    model.clearPendingChanges();
                     if (result.isSuccess()) {
+                        // Only discard the staged changes once the server has
+                        // confirmed they were applied.
+                        model.clearPendingChanges();
                         // Reload all panels so they reflect the newly-persisted data
                         reloadAllPanels();
                         callback.accept(document);
@@ -706,10 +719,16 @@ public class FloorMapEditorPresenter
                     }
                 })
                 .onFailure(error -> {
-                    model.clearPendingChanges();
+                    // Keep the staged changes so a transient failure (network
+                    // blip, timeout — where we cannot even know whether the
+                    // server committed) does not throw away the editing session.
+                    // applyChanges replays idempotently (creations/updates are
+                    // upserts, deletions are idempotent), so the user can simply
+                    // retry the save. Do NOT reload over their in-progress edits.
                     AlertEvent.fireError(this,
-                            "Error saving floor map editor changes: " + error.getMessage(),
-                            this::reloadAllPanels);
+                            "Error saving floor map editor changes — your changes "
+                            + "have been kept, please try saving again: "
+                            + error.getMessage(), null);
                 })
                 .taskMonitorFactory(this)
                 .exec();
@@ -882,24 +901,30 @@ public class FloorMapEditorPresenter
      * @param key     the fact key
      */
     private void fetchTimeList(final String mapName, final String key) {
-        final ExpressionOperator expression = ExpressionOperator.builder()
-                .addTerm(ExpressionTerm.builder()
-                        .field("Map").condition(Condition.EQUALS).value(mapName)
-                        .build())
-                .addTerm(ExpressionTerm.builder()
-                        .field("Key").condition(Condition.EQUALS).value(key)
-                        .build())
-                .build();
-
-        final ExpressionCriteria criteria = new ExpressionCriteria(expression);
         restFactory.create(SQL_TEMPORAL_STORE_RESOURCE)
-                .method(res -> res.find(criteria))
+                .method(res -> res.find(mapKeyCriteria(mapName, key)))
                 .onSuccess(result -> {
                     model.onTimeListFetched(
                             result != null ? result.getValues() : null);
                     refreshTimeListAtTime(model.getSelectedTime());
                 })
                 .exec();
+    }
+
+    /**
+     * Criteria selecting <em>every</em> shard (all effective times) of a single
+     * fact key within a map. Shared by the Time List fetch and the "delete all
+     * versions" flow.
+     */
+    private ExpressionCriteria mapKeyCriteria(final String mapName, final String key) {
+        return new ExpressionCriteria(ExpressionOperator.builder()
+                .addTerm(ExpressionTerm.builder()
+                        .field("Map").condition(Condition.EQUALS).value(mapName)
+                        .build())
+                .addTerm(ExpressionTerm.builder()
+                        .field("Key").condition(Condition.EQUALS).value(key)
+                        .build())
+                .build());
     }
 
     // -----------------------------------------------------------------------
@@ -1068,7 +1093,7 @@ public class FloorMapEditorPresenter
 
 
     /**
-     * Refreshes the canvas by re-applying pending changes and re-parsing,
+     * Refreshes the canvas by re-applying pending changes and reparsing,
      * without reloading the Fact List (which would clear its selection
      * and cascade into the Time List).
      */
@@ -1163,6 +1188,19 @@ public class FloorMapEditorPresenter
         // Default the new shard to the timeline scrubber position, cloning its
         // attributes from the shard in effect at that time.
         final long newTime = model.getSelectedTime();
+
+        // Refuse to add a version at a time that already has one: the store
+        // upserts by (key, effective-time), so this would silently overwrite
+        // the existing shard rather than adding a new version.
+        if (model.selectedFactHasEntryAtTime(newTime)) {
+            AlertEvent.fireWarn(this,
+                    "A time version already exists at this time for '"
+                    + model.getSelectedFactKey() + "'. Move the timeline to a "
+                    + "different time to add a new version, or edit the existing one.",
+                    null);
+            return;
+        }
+
         final TemporalEntry newEntry = model.buildNewEntryAtTime(mapName, newTime);
 
         floorMapObjectEditPresenter.show(
@@ -1198,24 +1236,63 @@ public class FloorMapEditorPresenter
         if (key == null) {
             return;
         }
+        final String mapName = getMapName();
+        if (mapName == null) {
+            return;
+        }
+        // Only blank the Time List / edit panel if the fact being deleted is the
+        // one currently selected (the canvas context menu can delete any fact,
+        // not just the selected one — deleting an unselected fact must not wipe
+        // the selected fact's panels).
+        final boolean wasSelected = key.equals(model.getSelectedFactKey());
         ConfirmEvent.fire(this,
                 "Delete all entries for '" + key + "'? This cannot be undone.",
                 ok -> {
                     if (ok) {
-                        // Was this key the current selection? Capture before staging,
-                        // since the model clears the selection as part of the deletion.
-                        final boolean wasSelected = key.equals(model.getSelectedFactKey());
-                        if (model.stageFactDeletion(key)) {
-                            setDirty(true);
-                        }
-                        // Clear selection and refresh
-                        if (wasSelected) {
-                            floorMapTimeListPresenter.setData(new ArrayList<>());
-                            floorMapObjectEditPresenter.loadEntry(null);
-                        }
-                        loadAtTime(model.getSelectedTime());
+                        deleteAllShardsForKey(mapName, key, () -> {
+                            if (wasSelected) {
+                                floorMapTimeListPresenter.setData(new ArrayList<>());
+                                floorMapObjectEditPresenter.loadEntry(null);
+                            }
+                            loadAtTime(model.getSelectedTime());
+                        });
                     }
                 });
+    }
+
+    /**
+     * Fetches every shard of {@code key} (all effective times) and stages a
+     * deletion for each, so "delete object" removes the whole history rather
+     * than only the shard active at the scrubber (which would let the fact
+     * reappear at other times / after reload). Runs {@code onDone} once the
+     * deletions are staged.
+     *
+     * @param mapName the map name
+     * @param key     the fact key to delete
+     * @param onDone  run after deletions are staged (UI refresh)
+     */
+    private void deleteAllShardsForKey(final String mapName,
+                                       final String key,
+                                       final Runnable onDone) {
+        restFactory.create(SQL_TEMPORAL_STORE_RESOURCE)
+                .method(res -> res.find(mapKeyCriteria(mapName, key)))
+                .onSuccess(result -> {
+                    if (model.stageFactDeletionForAllShards(
+                            key, result != null ? result.getValues() : null)) {
+                        setDirty(true);
+                    }
+                    onDone.run();
+                })
+                .onFailure(error -> {
+                    AlertEvent.fireError(this,
+                            "Could not load all versions to delete '" + key + "': "
+                            + error.getMessage(), null);
+                    // Still run onDone so a batch delete's completion count can't
+                    // stall on a single failed key.
+                    onDone.run();
+                })
+                .taskMonitorFactory(this)
+                .exec();
     }
 
     /**
@@ -1680,19 +1757,22 @@ public class FloorMapEditorPresenter
                 + " selected objects? This cannot be undone.",
                 ok -> {
                     if (ok) {
-                        boolean any = false;
-                        for (final String key : keys) {
-                            if (model.stageFactDeletion(key)) {
-                                any = true;
-                            }
+                        final String mapName = getMapName();
+                        if (mapName == null) {
+                            return;
                         }
-                        if (any) {
-                            setDirty(true);
+                        // Delete every shard of every selected key (each needs its
+                        // own full-history fetch), then refresh once all are staged.
+                        final List<String> keyList = new ArrayList<>(keys);
+                        final int[] remaining = {keyList.size()};
+                        for (final String key : keyList) {
+                            deleteAllShardsForKey(mapName, key, () -> {
+                                if (--remaining[0] == 0) {
+                                    applySelection(new ArrayList<>());
+                                    loadAtTime(model.getSelectedTime());
+                                }
+                            });
                         }
-                        // Clear the selection across model/canvas/list + side
-                        // panels, then refresh so the deleted facts disappear.
-                        applySelection(new ArrayList<>());
-                        loadAtTime(model.getSelectedTime());
                     }
                 });
     }
@@ -1772,13 +1852,15 @@ public class FloorMapEditorPresenter
      * @param result the failed {@link ApplyChangesResult}
      */
     private void onFlushError(final ApplyChangesResult result) {
-        model.getPendingChanges().clear();
+        // The server reported the changes were NOT applied, so keep them staged
+        // for a retry rather than clearing the user's work and reloading over
+        // it (replay is idempotent — upserts + deletions).
         final String message = result.getErrorMessage() != null
                 ? result.getErrorMessage()
                 : "Unknown error";
         AlertEvent.fireError(this,
-                "Error saving floor map editor changes: " + message,
-                this::reloadAllPanels);
+                "Error saving floor map editor changes — your changes have been "
+                + "kept, please try saving again: " + message, null);
     }
 
     /**

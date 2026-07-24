@@ -18,6 +18,7 @@ package stroom.floormap.client.view;
 
 import stroom.document.client.event.DirtyUiHandlers;
 import stroom.entity.client.presenter.ReadOnlyChangeHandler;
+import stroom.floormap.client.presenter.FloorMapCanvasPresenter;
 import stroom.floormap.client.presenter.FloorMapCanvasPresenter.FloorMapCanvasView;
 import stroom.floormap.shared.Fact;
 import stroom.floormap.shared.FloorMapJsonKeys;
@@ -34,7 +35,6 @@ import com.google.gwt.dom.client.Element;
 import com.google.gwt.event.dom.client.HasMouseMoveHandlers;
 import com.google.gwt.event.dom.client.HasMouseUpHandlers;
 import com.google.gwt.event.dom.client.HasMouseWheelHandlers;
-import com.google.gwt.safehtml.shared.SafeHtmlUtils;
 import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
 import com.google.gwt.user.client.ui.FocusPanel;
@@ -98,7 +98,13 @@ public class FloorMapCanvasViewImpl
     private static final double INSERT_HANDLE_RADIUS_PX = 6;
     /** Edges shorter than this on-screen (px) omit their "+" insert handle. */
     private static final double MIN_INSERT_EDGE_PX = 24;
-    private static final String HANDLE_STROKE = "#1e88e5";
+    /** Primary accent (blue) used for handles, the marquee and the area draft. */
+    private static final String ACCENT_BLUE = "#1e88e5";
+    /** Selection highlight (orange) drawn around a selected fact. */
+    private static final String SELECTION_STROKE = "#ff9800";
+    /** Opacity applied to a dimmed (0.3) layer group. */
+    private static final String DIMMED_LAYER_OPACITY = "0.3";
+    private static final String HANDLE_STROKE = ACCENT_BLUE;
     private static final String HANDLE_FILL = "#ffffff";
     /** Fill for the round "+" insert handle (light blue tint). */
     private static final String INSERT_HANDLE_FILL = "#e3f2fd";
@@ -113,11 +119,11 @@ public class FloorMapCanvasViewImpl
     private static final double DEFAULT_AREA_FILL_OPACITY = 0.3;
     /**
      * On-screen radius (px) of the vertex-0 close-target ring in the area
-     * drawing draft. Keep in step with
-     * {@code FloorMapCanvasPresenter.AREA_CLOSE_RADIUS_PX}, which decides when
-     * a click actually closes the polygon.
+     * drawing draft — shares the presenter's single constant so the drawn ring
+     * and the click hit-test always match.
      */
-    private static final double AREA_DRAFT_CLOSE_RADIUS_PX = 10;
+    private static final double AREA_DRAFT_CLOSE_RADIUS_PX =
+            FloorMapCanvasPresenter.AREA_CLOSE_RADIUS_PX;
 
     private final Widget widget;
 
@@ -288,7 +294,7 @@ public class FloorMapCanvasViewImpl
                             // opacity; otherwise the fact is drawn directly.
                             if (dimmedTypes != null && dimmedTypes.contains(fact.getType())) {
                                 flipGroup.elem(g -> renderFact(g, fact, isSelected, typeStyles, scale),
-                                        SafeHtmlUtil.from("g"), new Attribute("opacity", "0.3"));
+                                        SafeHtmlUtil.from("g"), new Attribute("opacity", DIMMED_LAYER_OPACITY));
                             } else {
                                 renderFact(flipGroup, fact, isSelected, typeStyles, scale);
                             }
@@ -301,7 +307,7 @@ public class FloorMapCanvasViewImpl
                             final boolean evSelected = selectedObjectIds.contains(ev.getId());
                             if (dimmedTypes != null && dimmedTypes.contains(ev.getType())) {
                                 flipGroup.elem(g -> appendEvent(g, ev, evSelected, typeStyles, scale),
-                                        SafeHtmlUtil.from("g"), new Attribute("opacity", "0.3"));
+                                        SafeHtmlUtil.from("g"), new Attribute("opacity", DIMMED_LAYER_OPACITY));
                             } else {
                                 appendEvent(flipGroup, ev, evSelected, typeStyles, scale);
                             }
@@ -378,9 +384,9 @@ public class FloorMapCanvasViewImpl
                 new Attribute("y", String.valueOf(rectPx[1])),
                 new Attribute("width", String.valueOf(rectPx[2] - rectPx[0])),
                 new Attribute("height", String.valueOf(rectPx[3] - rectPx[1])),
-                new Attribute("fill", "#1e88e5"),
+                new Attribute("fill", ACCENT_BLUE),
                 new Attribute("fill-opacity", "0.12"),
-                new Attribute("stroke", "#1e88e5"),
+                new Attribute("stroke", ACCENT_BLUE),
                 new Attribute("stroke-width", "1"),
                 new Attribute("stroke-dasharray", "4,4"),
                 new Attribute("pointer-events", "none"));
@@ -413,7 +419,7 @@ public class FloorMapCanvasViewImpl
             svg.elem(SafeHtmlUtil.from("polyline"),
                     new Attribute("points", committedPoints.toString()),
                     new Attribute("fill", "none"),
-                    new Attribute("stroke", "#1e88e5"),
+                    new Attribute("stroke", ACCENT_BLUE),
                     new Attribute("stroke-width", "2"),
                     new Attribute("pointer-events", "none"));
         }
@@ -425,7 +431,7 @@ public class FloorMapCanvasViewImpl
                     new Attribute("y1", String.valueOf(draftPx[(committed - 1) * 2 + 1])),
                     new Attribute("x2", String.valueOf(draftPx[(points - 1) * 2])),
                     new Attribute("y2", String.valueOf(draftPx[(points - 1) * 2 + 1])),
-                    new Attribute("stroke", "#1e88e5"),
+                    new Attribute("stroke", ACCENT_BLUE),
                     new Attribute("stroke-width", "1"),
                     new Attribute("stroke-dasharray", "4,4"),
                     new Attribute("pointer-events", "none"));
@@ -437,7 +443,7 @@ public class FloorMapCanvasViewImpl
                     new Attribute("cx", String.valueOf(draftPx[i * 2])),
                     new Attribute("cy", String.valueOf(draftPx[i * 2 + 1])),
                     new Attribute("r", "3"),
-                    new Attribute("fill", "#1e88e5"),
+                    new Attribute("fill", ACCENT_BLUE),
                     new Attribute("pointer-events", "none"));
         }
 
@@ -453,9 +459,9 @@ public class FloorMapCanvasViewImpl
                     new Attribute("cx", String.valueOf(draftPx[0])),
                     new Attribute("cy", String.valueOf(draftPx[1])),
                     new Attribute("r", String.valueOf(AREA_DRAFT_CLOSE_RADIUS_PX)),
-                    new Attribute("fill", closable ? "#1e88e5" : "none"),
+                    new Attribute("fill", closable ? ACCENT_BLUE : "none"),
                     new Attribute("fill-opacity", closable ? "0.4" : "0"),
-                    new Attribute("stroke", "#1e88e5"),
+                    new Attribute("stroke", ACCENT_BLUE),
                     new Attribute("stroke-width", closable ? "2" : "1"),
                     new Attribute("pointer-events", "none"));
         }
@@ -514,7 +520,7 @@ public class FloorMapCanvasViewImpl
         final double opacity = fact.getOpacity() != null
                 ? Math.max(0.0, Math.min(1.0, fact.getOpacity()))
                 : DEFAULT_AREA_FILL_OPACITY;
-        final String stroke = isSelected ? "#ff9800" : colour;
+        final String stroke = isSelected ? SELECTION_STROKE : colour;
         final String strokeWidth = isSelected ? "4" : "2";
 
         parent.elem(areaGroup -> {
@@ -959,7 +965,7 @@ public class FloorMapCanvasViewImpl
     private void appendImageFact(final HtmlBuilder parent,
                                  final Fact fact,
                                  final boolean isSelected) {
-        appendImageGlyph(parent, fact, fact.getWorldToMap(), false, isSelected, "#1e88e5");
+        appendImageGlyph(parent, fact, fact.getWorldToMap(), false, isSelected, ACCENT_BLUE);
     }
 
     /**
@@ -1006,8 +1012,12 @@ public class FloorMapCanvasViewImpl
 
         parent.elem(imgGroup -> {
             imgGroup.elem(SafeHtmlUtil.from("image"),
-                new Attribute(SafeHtmlUtils.fromSafeConstant("href"),
-                        SafeHtmlUtils.fromTrustedString(fact.getImage())),
+                // Escape the image URL — it is document-controlled data going
+                // into innerHTML, so an unescaped value (a stray quote) allows
+                // markup/attribute injection (stored XSS). Attribute(String,
+                // String) escapes via SafeHtmlUtil.from; a normal URL is
+                // unaffected, and an SVG <image href> does not run javascript:.
+                new Attribute("href", fact.getImage()),
                 new Attribute("x", "0"),
                 new Attribute("y", "0"),
                 new Attribute("width", String.valueOf(IMAGE_DISPLAY_WIDTH)),
@@ -1112,7 +1122,7 @@ public class FloorMapCanvasViewImpl
             final FloorMapTransformationMatrix placement = new FloorMapTransformationMatrix(
                     w2m.getA(), w2m.getB(), w2m.getC(), w2m.getD(),
                     obj.getX(), obj.getY());
-            appendImageGlyph(parent, imageFact, placement, true, isSelected, "#ff9800");
+            appendImageGlyph(parent, imageFact, placement, true, isSelected, SELECTION_STROKE);
         } else {
             // The trail above stays in map space so it scales with the map;
             // the glyph itself is fixed screen size.
@@ -1138,7 +1148,7 @@ public class FloorMapCanvasViewImpl
                                    final double scale) {
         final String fillColour = colourForType(type, typeStyles);
         final TypeStyle.Shape shape = shapeForType(type, typeStyles);
-        final String stroke = isSelected ? "#ff9800" : "none";
+        final String stroke = isSelected ? SELECTION_STROKE : "none";
         final String strokeWidth = isSelected ? "4" : "0";
         final String vectorEffect = isSelected ? "non-scaling-stroke" : "none";
         final String polygon = FloorMapShapes.polygonPoints(shape, OBJECT_SIZE / 2.0);

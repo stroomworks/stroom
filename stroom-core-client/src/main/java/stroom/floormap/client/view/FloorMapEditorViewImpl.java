@@ -48,7 +48,7 @@ import com.gwtplatform.mvp.client.ViewImpl;
  * <ul>
  *   <li><b>Outer (vertical)</b> — top area vs bottom strip (draggable).</li>
  *   <li><b>Top-inner (vertical)</b> — canvas (fill) above timeline (fixed south, no splitter).</li>
- *   <li><b>Bottom-inner (horizontal)</b> — three equal columns in the bottom strip (draggable).</li>
+ *   <li><b>Bottom-inner (horizontal)</b> — two equal columns (Fact List | Time List) in the bottom strip (draggable).</li>
  * </ul>
  */
 public class FloorMapEditorViewImpl extends ViewImpl implements FloorMapEditorView {
@@ -79,7 +79,7 @@ public class FloorMapEditorViewImpl extends ViewImpl implements FloorMapEditorVi
     private static final int TIMELINE_HEIGHT = 110;
 
     // -----------------------------------------------------------------------
-    // Bottom-inner (horizontal) split — three equal columns
+    // Bottom-inner (horizontal) split — two equal columns (Fact List | Time List)
     // -----------------------------------------------------------------------
 
     /** Initial width of each anchored (West) column in pixels. */
@@ -125,7 +125,7 @@ public class FloorMapEditorViewImpl extends ViewImpl implements FloorMapEditorVi
         timelinePanel = new SimplePanel();
         timelinePanel.addStyleName("dashboard-panel overflow-hidden stroom-border-bottom");
 
-        // ---- Bottom strip: three horizontal columns -------------------------
+        // ---- Bottom strip: two horizontal columns (Fact List | Time List) --
         factListPanel = new SimplePanel();
         factListPanel.addStyleName("dashboard-panel overflow-hidden");
 

@@ -92,22 +92,27 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
     // -------------------------------------------------------------------------
     /**
-     * Minimum zoom scale. At extreme zoom-out the grid decade selection and
-     * SVG coordinate values lose precision. This limit (~1e-12) provides
-     * roughly 12 orders of magnitude of zoom-out from the default — far
-     * beyond any practical use.
+     * Minimum/maximum zoom scale — the single source of truth lives on
+     * {@link FloorMapViewport} (shared, unit-tested) so the clamp used here and
+     * in the viewport maths cannot drift apart. Beyond these (~1e±12) the grid
+     * decade selection and SVG coordinate values lose precision.
      */
-    private static final double MIN_SCALE = 1e-12;
-
-    /**
-     * Maximum zoom scale. At extreme zoom-in the same precision issues
-     * apply. This limit (~1e12) provides roughly 12 orders of magnitude
-     * of zoom-in from the default.
-     */
-    private static final double MAX_SCALE = 1e12;
+    private static final double MIN_SCALE = FloorMapViewport.MIN_SCALE;
+    private static final double MAX_SCALE = FloorMapViewport.MAX_SCALE;
 
     /** The zoom level a freshly opened map starts at (100 %). */
     private static final double DEFAULT_SCALE = 1.0;
+
+    /**
+     * The map→screen "background" matrix handed to {@link FloorMapViewport} for
+     * projection: map space is Y-up, the SVG render pipeline is Y-down, so the
+     * only fixed transform on top of pan/zoom is a Y flip. With this as the
+     * viewport's background, {@code viewport.mapToScreen}/{@code screenToMap}
+     * reproduce this presenter's projection exactly, so the (unit-tested)
+     * viewport maths is the single source of the projection formula.
+     */
+    private static final FloorMapTransformationMatrix Y_FLIP =
+            FloorMapTransformationMatrix.scale(1, -1);
 
     /**
      * How far the origin (0,0) is inset from the bottom-left corner in the
@@ -192,10 +197,11 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     private static final int AREA_MIN_VERTICES = 3;
     /**
      * Screen-pixel radius around vertex 0 within which a click closes the
-     * polygon. Keep in step with the close-target ring drawn by
-     * {@code FloorMapCanvasViewImpl.AREA_DRAFT_CLOSE_RADIUS_PX}.
+     * polygon, and the radius of the close-target ring the view draws. Public
+     * so {@code FloorMapCanvasViewImpl} shares this single value (the hit test
+     * and the drawn ring must match).
      */
-    private static final double AREA_CLOSE_RADIUS_PX = 10;
+    public static final double AREA_CLOSE_RADIUS_PX = 10;
 
     /**
      * Committed draft vertices for the in-progress DRAWING_AREA gesture, in
@@ -411,17 +417,6 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     }
 
     /**
-     * Positions the initial view so the map origin (0,0) sits near the
-     * bottom-left corner of the canvas, inset by
-     * {@link #ORIGIN_INSET_MAJOR_DIVISIONS} of a major grid division at the
-     * default zoom.
-     *
-     * <p>Runs once, the first time the canvas has a real height, so the result
-     * is correct at any window size and any default zoom; the inset is derived
-     * from the grid's own adaptive-decade sizing so it always matches the drawn
-     * grid. Subsequent user pan/zoom is left untouched.</p>
-     */
-    /**
      * Applies the one-time initial view the first time it can, then leaves the
      * view alone. Ordering of layout vs. fact loading is not guaranteed, so this
      * is called from both the resize listener and {@link #setFacts}; it runs at
@@ -560,8 +555,14 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         entityTrails.clear();
         trailFadeStartTimes.clear();
         pendingTeleport = true;
-        animationLoopRunning = false;
-        lastAnimationTimestamp = 0;
+        // Deliberately do NOT force animationLoopRunning = false here. A frame
+        // may already be scheduled; clearing the flag and then calling
+        // ensureAnimationLoop() (e.g. the teleport path re-arming camera-follow)
+        // would start a SECOND loop while the old frame is still pending,
+        // double-driving trails/draws. With the data cleared above, any running
+        // loop simply finds nothing to do and self-terminates on its next frame
+        // (which also resets lastAnimationTimestamp); a stopped loop stays
+        // stopped.
         redraw();
     }
 
@@ -736,6 +737,12 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                 } else {
                     isDragging = false;
                     hasMoved = false;
+                    // A vertex drag whose mouseup was lost off-canvas must clear
+                    // its editing state too, else factsForDraw() keeps rendering
+                    // the never-persisted working vertices forever.
+                    if (gesture == Gesture.MOVING_VERTEX) {
+                        clearVertexEditState();
+                    }
                     gesture = Gesture.NONE;
                     pendingTransform = null;
                     return;
@@ -763,9 +770,12 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                     case MOVING:
                         // Accumulate the drag in map space (Y-up) for live feedback
                         // and a single transform applied to the selection on drop.
-                        dragDxMap += deltaX / scale;
-                        //noinspection UnnecessaryUnaryMinus
-                        dragDyMap += -(deltaY / scale);
+                        // The shared viewport converts the screen delta to a map
+                        // delta (scale + Y flip) — one projection code path.
+                        final double[] dMap = new FloorMapViewport(scale, offsetX, offsetY)
+                                .dragItemMapDelta(Y_FLIP, deltaX, deltaY);
+                        dragDxMap += dMap[0];
+                        dragDyMap += dMap[1];
                         pendingTransform = FloorMapTransformationMatrix.translate(
                                 dragDxMap, dragDyMap);
                         hasMoved = true;
@@ -896,11 +906,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                         && !lockedKeys.contains(editingAreaKey)) {
                     geometryHandler.onGeometryEdited(editingAreaKey, workingVertices);
                 }
-                editingAreaKey = null;
-                editingWorldToMap = null;
-                workingVertices = null;
-                editingVertexIndex = -1;
-                vertexInserted = false;
+                clearVertexEditState();
             } else if (finished == Gesture.MARQUEE) {
                 // Select every fact the rubber-band touched, adding to the
                 // existing selection (the marquee is a Shift/Ctrl gesture).
@@ -936,26 +942,17 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         registerHandler(getView().getMouseWheelHandlers().addMouseWheelHandler(event -> {
             event.preventDefault();
 
-            double zoomFactor = 1.1;
-            if (event.getNativeDeltaY() > 0) {
-                zoomFactor = 1 / zoomFactor; // Zoom out
-            }
-
             // Note: zooming deliberately does NOT pause following — zooming in
             // on a tracked entity is the natural way to watch it, and the
             // dead-zone follow simply keeps it in view at the new zoom level.
-
-            final double mouseX = event.getX();
-            final double mouseY = event.getY();
-
-            // Coordinate shift to ensure we zoom toward the mouse pointer
-            offsetX = mouseX - (mouseX - offsetX) * zoomFactor;
-            offsetY = mouseY - (mouseY - offsetY) * zoomFactor;
-            scale *= zoomFactor;
-
-            // Clamp to prevent floating-point precision breakdown at
-            // extreme zoom levels.
-            scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale));
+            // Delegate the zoom-toward-cursor + clamp maths to the shared,
+            // unit-tested viewport, then read the updated pan/zoom back.
+            final boolean zoomIn = event.getNativeDeltaY() <= 0;
+            final FloorMapViewport vp = new FloorMapViewport(scale, offsetX, offsetY);
+            vp.zoom(event.getX(), event.getY(), zoomIn);
+            scale = vp.getScale();
+            offsetX = vp.getOffsetX();
+            offsetY = vp.getOffsetY();
 
             redraw();
         }));
@@ -1025,7 +1022,11 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                 final Element element = Element.as(target);
                 final String id = element.getId();
                 if (id != null && !id.isEmpty()
-                        && !id.startsWith(FloorMapJsonKeys.SVG_GROUP_PREFIX)) {
+                        && !id.startsWith(FloorMapJsonKeys.SVG_GROUP_PREFIX)
+                        && !id.startsWith(FloorMapJsonKeys.HANDLE_PREFIX)) {
+                    // Selection handles (scale/rotate) carry a HANDLE_PREFIX id
+                    // and are not objects — right-clicking one must not open an
+                    // object menu targeting a nonexistent key.
                     objectId = id;
                 }
             }
@@ -1107,11 +1108,10 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
      * @return a two-element array {@code {mapX, mapY}} in map space
      */
     private double[] screenToMapCoords(final double screenX, final double screenY) {
-        // Remove the zoom/pan offset and scale, then undo the Y-up render flip
-        // (map space is Y-up; SVG is Y-down) — the inverse of the draw pipeline.
-        final double mapX = (screenX - offsetX) / scale;
-        final double mapY = -((screenY - offsetY) / scale);
-        return new double[]{mapX, mapY};
+        // Delegate to the shared, unit-tested viewport maths (Y_FLIP is the
+        // Y-up→Y-down background); this is the inverse of the draw pipeline.
+        return new FloorMapViewport(scale, offsetX, offsetY)
+                .screenToMap(screenX, screenY, Y_FLIP);
     }
 
     /**
@@ -1192,14 +1192,6 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     }
 
     /**
-     * Begins a scale or rotate gesture from the given handle, snapshotting the
-     * pivot/centre (in map space) from the current selection frame.
-     *
-     * @param role the handle role ({@code "scale-*"} or {@code "rotate"})
-     * @param px   the pointer X at gesture start (element pixels)
-     * @param py   the pointer Y at gesture start (element pixels)
-     */
-    /**
      * True if the current selection contains at least one fact that can be
      * meaningfully scaled or rotated — an image fact or an area (which has real
      * geometry). Bare point glyphs are drawn at a fixed screen size, so
@@ -1215,6 +1207,14 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         return false;
     }
 
+    /**
+     * Begins a scale or rotate gesture from the given handle, snapshotting the
+     * pivot/centre (in map space) from the current selection frame.
+     *
+     * @param role the handle role ({@code "scale-*"} or {@code "rotate"})
+     * @param px   the pointer X at gesture start (element pixels)
+     * @param py   the pointer Y at gesture start (element pixels)
+     */
     private void beginHandleGesture(final String role, final double px, final double py) {
         isDragging = true;
         hasMoved = false;
@@ -1374,6 +1374,20 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
             }
         }
         geometryHandler.onGeometryEdited(area.getKey(), nv);
+    }
+
+    /**
+     * Clears all transient vertex-editing state. Called on every path that ends
+     * a {@code MOVING_VERTEX} gesture (normal mouseup and the lost-mouseup
+     * recovery) so the {@link #factsForDraw()} live preview cannot outlive the
+     * gesture.
+     */
+    private void clearVertexEditState() {
+        editingAreaKey = null;
+        editingWorldToMap = null;
+        workingVertices = null;
+        editingVertexIndex = -1;
+        vertexInserted = false;
     }
 
     /**
@@ -1690,8 +1704,15 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                 && Math.abs(existing.toY - obj.getY()) < 0.001;
 
         if (!alreadyAnimatingToTarget) {
-            final double dx = last.getX() - obj.getX();
-            final double dy = last.getY() - obj.getY();
+            // Compare the new target against the CURRENT destination: the
+            // in-flight animation's endpoint if animating, else the last
+            // committed position. Comparing against `last` while an A→B
+            // animation is in flight would drop a "return to A" update (dx≈0)
+            // and let the entity wrongly finish at B.
+            final double refX = existing != null ? existing.toX : last.getX();
+            final double refY = existing != null ? existing.toY : last.getY();
+            final double dx = refX - obj.getX();
+            final double dy = refY - obj.getY();
             if (dx * dx + dy * dy > 0.0001) {
                 final double fromX = existing != null ? existing.currentX() : last.getX();
                 final double fromY = existing != null ? existing.currentY() : last.getY();
@@ -1820,10 +1841,11 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
             // Keep centreOnNextFollow armed until we have a position fix.
             return false;
         }
-        // Project the map-space position through the draw transform (map space
-        // is Y-up; SVG is Y-down, hence the flip) to get the on-screen point.
-        final double screenX = offsetX + scale * pos[0];
-        final double screenY = offsetY - scale * pos[1];
+        // Project the map-space position to the on-screen point via the shared
+        // projection helper.
+        final double[] screen = mapToScreen(pos);
+        final double screenX = screen[0];
+        final double screenY = screen[1];
         final Element panel = getView().getFocusPanel().getElement();
         // Margin 0.5 collapses the dead zone to the centre point (hard-centre).
         final boolean centre = centreOnNextFollow;
@@ -1955,7 +1977,26 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         if (!isPlaying || pendingTeleport) {
             // Not playing, or a discontinuous time jump just occurred — teleport all entities.
             this.eventObjects = objects != null ? objects : new ArrayList<>();
+            // Drop per-entity animation/position/trail state for entities no
+            // longer present, so a vanished entity (e.g. after scrubbing to a
+            // time with fewer entities) can't linger as a ghost via
+            // lastEntityPositions. Pruning only on the teleport path — not on
+            // every event — avoids stripping anchors when the events query
+            // delivers partial result batches during playback (which would make
+            // a still-present entity teleport instead of animate).
+            final Set<String> currentIds = new HashSet<>();
+            if (objects != null) {
+                for (final FloorMapObject obj : objects) {
+                    currentIds.add(obj.getId());
+                }
+            }
+            lastEntityPositions.keySet().retainAll(currentIds);
             activeAnimations.clear();
+            // Teleport places entities instantly, so there are no in-progress
+            // journeys — drop any trails left over from prior playback rather
+            // than leaving them drawn at full opacity.
+            entityTrails.clear();
+            trailFadeStartTimes.clear();
             // Record positions for play-start animation anchor.
             if (objects != null) {
                 for (final FloorMapObject obj : objects) {
@@ -2085,9 +2126,8 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
      * {@link #screenToMapCoords} (pan/zoom plus the Y-up flip).
      */
     private double[] mapToScreen(final double[] mapPoint) {
-        return new double[]{
-                offsetX + scale * mapPoint[0],
-                offsetY - scale * mapPoint[1]};
+        return new FloorMapViewport(scale, offsetX, offsetY)
+                .mapToScreen(mapPoint[0], mapPoint[1], Y_FLIP);
     }
 
     /**
@@ -2560,11 +2600,11 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         /**
          * Registers a listener that is called once the canvas has a real
          * (non-zero) on-screen size — i.e. after layout completes. The
-         * presenter uses this to apply its size-dependent default view (which
-         * needs the canvas height to place the origin at the bottom-left).
+         * presenter uses this to apply its size-dependent initial view (which
+         * needs the canvas dimensions to fit or place the content).
          *
          * @param resizeListener the callback to invoke, typically
-         *                       {@code FloorMapCanvasPresenter::applyDefaultView}
+         *                       {@code FloorMapCanvasPresenter::maybeApplyInitialView}
          */
         void setResizeListener(Runnable resizeListener);
     }
