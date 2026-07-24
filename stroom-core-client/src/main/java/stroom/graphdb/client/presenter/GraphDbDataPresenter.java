@@ -85,6 +85,11 @@ public class GraphDbDataPresenter
         // elsewhere.
         discoveryWidget = new GraphDiscoveryWidget(this::applyDiscoveredQuery, this::focusNodeFromDiscovery);
         view.setDiscoveryWidget(discoveryWidget);
+
+        // "Create Dashboard" is disabled here for now: a dashboard would need to carry the Cypher query text
+        // (the classic query component is StroomQL-expression-based), which is future work. The button and its
+        // onCreateDashboard handler remain in place for when that lands.
+        view.setCreateDashboardEnabled(false);
     }
 
     @Override

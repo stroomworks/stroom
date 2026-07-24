@@ -148,6 +148,14 @@ public class QueryDataViewImpl extends ViewWithUiHandlers<QueryDataUiHandlers> i
     }
 
     @Override
+    public void setCreateDashboardEnabled(final boolean enabled) {
+        createDashboard.setEnabled(enabled);
+        createDashboard.setTitle(enabled
+                ? "Create Dashboard"
+                : "Create Dashboard (not yet supported for graph queries)");
+    }
+
+    @Override
     public void setError(final String error) {
         if (error != null && !error.trim().isEmpty()) {
             errorLabel.setText(error);

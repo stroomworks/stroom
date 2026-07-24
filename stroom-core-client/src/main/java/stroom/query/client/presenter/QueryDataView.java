@@ -36,6 +36,10 @@ public interface QueryDataView extends View, HasUiHandlers<QueryDataUiHandlers> 
     /** Switch to the graph view (if one was installed via {@link #setGraphView}); a no-op otherwise. */
     void selectGraphView();
 
+    /** Enable/disable (grey out) the "Create Dashboard" button - e.g. the Graph DB tab disables it until
+     * dashboards can carry a Cypher query. The button and its handler remain wired for future use. */
+    void setCreateDashboardEnabled(boolean enabled);
+
     void setError(String error);
 
     void clearError();
