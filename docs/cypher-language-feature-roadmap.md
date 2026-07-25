@@ -29,7 +29,7 @@ The next features worth adding, in priority order:
 | 3 | **`collect()`** + **`count(DISTINCT x)`** | High | Low | Low | ✅ Implemented |
 | 4 | **Field-vs-field `WHERE`** (`a.x > b.y`) | Medium-High | Low-Med | Low | ✅ Implemented |
 | 5 | **`OPTIONAL MATCH`** (left-outer patterns) | High | Medium | Medium | ✅ Implemented (v1) |
-| 6 | **Multi-stage `WITH` / multiple `MATCH`** (already parses) | High | Medium | Medium | Plan carefully |
+| 6 | **Multi-stage `WITH`** (single-pipe `HAVING`) | High | Medium | Medium | ✅ Implemented (v1) |
 | 7 | **Scalar & string functions** (`toUpper`, `coalesce`, `CASE`, …) — wire Stroom's existing engine | High | Low-Med | Low | **Build soon** |
 | 8 | **`UNWIND`** (list → rows) | Medium | Medium | Low-Med | Opportunistic |
 | 9 | **`UNION` / `UNION ALL`** | Medium | Medium | Low | Opportunistic |
@@ -38,7 +38,7 @@ The next features worth adding, in priority order:
 | 12 | **Unbounded variable-length** (`-[*]->`) | Low | Low (parse) / High (safety) | High | Deliberately never |
 | 13 | **Writes** (`CREATE`/`MERGE`/`SET`/`DELETE`), `CALL` | Low here | High | High | Out of scope |
 
-Rows 1–5 are **implemented** (see [`cypher-subset-extension-implementation-plan.md`](cypher-subset-extension-implementation-plan.md), Phases 0–6); row 6 (multi-stage `WITH`) is the next planned phase. Row **7 (scalar functions)** is the newest candidate and a standout: unlike a from-scratch function library, it mostly *wires an engine Stroom already has* (§ Tier 4 item 7). The implemented rows were all *downstream of the traversal engine* — filters and reducers over rows it already produces — which is why they carried so little risk; everything from row 8 down touches the planner, the traversal engine, or the storage model and needs a design conversation before a line of code.
+Rows 1–7 are **implemented** (see [`cypher-subset-extension-implementation-plan.md`](cypher-subset-extension-implementation-plan.md), Phases 0–8) — row 6 as a single-pipe `WITH … WHERE` (HAVING), row 7 (scalar functions) by *wiring an engine Stroom already has* (§ Tier 4 item 7). The implemented rows were largely *downstream of the traversal engine* — filters, reducers, and post-aggregation steps over rows it already produces — which is why they carried so little risk; everything from row 8 down touches the planner, the traversal engine, or the storage model and needs a design conversation before a line of code.
 
 ---
 
