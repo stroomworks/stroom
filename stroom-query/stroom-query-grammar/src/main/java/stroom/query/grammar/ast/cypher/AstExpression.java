@@ -25,7 +25,8 @@ import stroom.query.grammar.ast.AstPosition;
  * {@code WHERE}) - that is a semantic concern for {@code CypherToLogicalPlan} (Task PoC.3), not a parse concern.
  */
 public sealed interface AstExpression
-        permits AstPropertyAccessExpr, AstVariableExpr, AstLiteralExpr, AstAggregateExpr, AstDiffAccessorExpr {
+        permits AstPropertyAccessExpr, AstVariableExpr, AstLiteralExpr, AstAggregateExpr, AstDiffAccessorExpr,
+        AstArithmeticExpr {
 
     AstPosition position();
 }

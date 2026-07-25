@@ -24,6 +24,8 @@ import stroom.query.api.ExpressionTerm.Condition;
 import stroom.query.grammar.ast.AstPosition;
 import stroom.query.grammar.ast.cypher.AstAggregateExpr;
 import stroom.query.grammar.ast.cypher.AstAggregateFunction;
+import stroom.query.grammar.ast.cypher.AstArithmeticExpr;
+import stroom.query.grammar.ast.cypher.AstArithmeticOp;
 import stroom.query.grammar.ast.cypher.AstAndExpr;
 import stroom.query.grammar.ast.cypher.AstAround;
 import stroom.query.grammar.ast.cypher.AstAsOf;
@@ -421,6 +423,10 @@ public final class CypherToLogicalPlan {
                 if (lit.value() instanceof final AstFunctionValue f) {
                     f.arguments().forEach(a -> validateExpressionInScope(a, scope));
                 }
+            }
+            case final AstArithmeticExpr arithmetic -> {
+                validateExpressionInScope(arithmetic.left(), scope);
+                validateExpressionInScope(arithmetic.right(), scope);
             }
         }
     }
@@ -1194,6 +1200,16 @@ public final class CypherToLogicalPlan {
     // expression / value rendering (StroomQL-style text for ProjectField.rawExpression)
     // ------------------------------------------------------------------------------------------------------
 
+    private static String arithmeticSymbol(final AstArithmeticOp op) {
+        return switch (op) {
+            case ADD -> "+";
+            case SUBTRACT -> "-";
+            case MULTIPLY -> "*";
+            case DIVIDE -> "/";
+            case POWER -> "^";
+        };
+    }
+
     private static String renderExpression(final AstExpression expression) {
         if (expression instanceof final AstPropertyAccessExpr propertyAccess) {
             return "${" + propertyAccess.variable() + "." + propertyAccess.property() + "}";
@@ -1214,6 +1230,11 @@ public final class CypherToLogicalPlan {
             // "after.<var>.<prop>" key per accessor, so this ${...} reference resolves against that side's value
             // (docs/temporal-cypher-diff-operator.md §4.3).
             return "${" + diffAccessorRowKey(accessor) + "}";
+        } else if (expression instanceof final AstArithmeticExpr arithmetic) {
+            // Stroom's expression engine evaluates infix + - * / ^; render parenthesised to preserve the AST's
+            // precedence structure (Phase 10 - runtime is free).
+            return "(" + renderExpression(arithmetic.left()) + " " + arithmeticSymbol(arithmetic.op()) + " "
+                   + renderExpression(arithmetic.right()) + ")";
         }
         throw new CypherCompileException("Unrecognised expression", expression.position());
     }
@@ -1313,8 +1334,28 @@ public final class CypherToLogicalPlan {
                 }
                 yield renderCoalesce(args, 0);
             }
+            case "id" -> {
+                requireArity(f, args, 1, "id(variable)");
+                yield "${" + GraphIdentity.nodeIdKey(identityVariable(f, "id")) + "}";
+            }
+            case "type" -> {
+                requireArity(f, args, 1, "type(variable)");
+                yield "${" + GraphIdentity.edgeTypeKey(identityVariable(f, "type")) + "}";
+            }
+            case "labels", "keys", "properties" -> throw new CypherCompileException(
+                    "not supported in this version: " + f.name() + "() returns a list/map, which needs the "
+                    + "list-valued Val type (a later phase)", f.position());
             default -> null;
         };
+    }
+
+    /** The bare pattern-variable name argument of {@code id(v)}/{@code type(r)} - rejects any other argument. */
+    private static String identityVariable(final AstFunctionValue f, final String function) {
+        if (f.arguments().getFirst() instanceof final AstVariableExpr v) {
+            return v.name();
+        }
+        throw new CypherCompileException(
+                function + "(...) requires a bare pattern variable, e.g. " + function + "(a)", f.position());
     }
 
     /**

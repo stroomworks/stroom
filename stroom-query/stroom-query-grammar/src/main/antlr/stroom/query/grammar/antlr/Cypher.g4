@@ -207,12 +207,33 @@ comparisonOp
 
 // ----- expressions: shared by RETURN/WITH items, ORDER BY items, and WHERE operands -----
 
+// Arithmetic (`+ - * / ^`) is a precedence hierarchy over the base terms: `^` (right-assoc) binds tighter than
+// `*`/`/`, which bind tighter than `+`/`-`; parentheses group. CypherToLogicalPlan renders these to Stroom's
+// expression engine, which already evaluates infix arithmetic - so there is no runtime/engine change, only this
+// grammar and the rendering. (No `%` modulo: Stroom has no such function.)
 expression
+    : addExpr
+    ;
+
+addExpr
+    : mulExpr (op+=(PLUS | DASH) mulExpr)*
+    ;
+
+mulExpr
+    : powExpr (op+=(STAR | SLASH) powExpr)*
+    ;
+
+powExpr
+    : atom (CARET powExpr)?
+    ;
+
+atom
     : aggregateCall
     | diffAccessor
     | propertyAccess
     | variableRef=NAME
     | value
+    | OPEN_PAREN expression CLOSE_PAREN
     ;
 
 // `DISTINCT` is admitted uniformly for every aggregate at the grammar level; CypherToLogicalPlan currently accepts
@@ -335,6 +356,9 @@ COMMA         : ',' ;
 DOTDOT        : '..' ;
 DOT           : '.' ;
 STAR          : '*' ;
+PLUS          : '+' ;
+SLASH         : '/' ;
+CARET         : '^' ;
 // The Unicode '±' sign, or the ASCII fallback '+/-' (typing '±' directly is impractical for most users/editors).
 PLUSMINUS     : '±' | '+/-' ;
 RARROW        : '->' ;

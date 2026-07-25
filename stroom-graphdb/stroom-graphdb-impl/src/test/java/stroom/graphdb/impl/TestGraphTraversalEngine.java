@@ -347,6 +347,67 @@ class TestGraphTraversalEngine {
         return rows.getFirst()[0].toString();
     }
 
+    private static double oneDouble(final GraphStores stores, final GraphTraversalEngine engine,
+                                    final String cypher) {
+        final List<Val[]> rows = runFull(stores, engine, cypher);
+        assertThat(rows).hasSize(1);
+        return rows.getFirst()[0].toDouble();
+    }
+
+    @Test
+    void graphIdentityFunctions_returnNodeIdAndEdgeType(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("graphidentity"), DOC)) {
+            seedDeviceConnectedToAccounts(stores);
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory());
+
+            final List<Val[]> rows = runFull(stores, engine,
+                    "MATCH (d:Device {id: 'd-42'})-[r:CONNECTED_TO]->(a:Account) RETURN id(d), type(r), id(a)");
+
+            assertThat(rows).hasSize(2);
+            assertThat(rows).allSatisfy(row -> {
+                assertThat(row[0].toString()).isEqualTo("d-42");            // id(d): the anchor's external id
+                assertThat(row[1].toString()).isEqualTo("CONNECTED_TO");    // type(r): the traversed edge's type
+            });
+            assertThat(rows).extracting(row -> row[2].toString())          // id(a): each reached node's id
+                    .containsExactlyInAnyOrder("account-a", "account-b");
+        }
+    }
+
+    @Test
+    void dateTimeFunctions_evaluate(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("datetimefns"), DOC)) {
+            seedDeviceConnectedToAccounts(stores);
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory());
+            final String anchor = "MATCH (a:Account {id: 'account-a'}) RETURN ";
+
+            // formatDate(millis): epoch 0 formats to a 1970 timestamp (deterministic).
+            assertThat(one(stores, engine, anchor + "formatDate(0)")).contains("1970");
+            // now() wires through and yields a non-blank value.
+            assertThat(one(stores, engine, anchor + "now()")).isNotBlank();
+        }
+    }
+
+    @Test
+    void arithmetic_evaluatesWithPrecedence(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("arithmetic"), DOC)) {
+            seedDeviceConnectedToAccounts(stores);
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory());
+            // account-a's balance is 50.
+            final String anchor = "MATCH (a:Account {id: 'account-a'}) RETURN ";
+
+            assertThat(oneDouble(stores, engine, anchor + "a.balance * 2")).isEqualTo(100.0);
+            assertThat(oneDouble(stores, engine, anchor + "a.balance - 10")).isEqualTo(40.0);
+            assertThat(oneDouble(stores, engine, anchor + "a.balance / 5")).isEqualTo(10.0);
+            // Precedence: * before +.
+            assertThat(oneDouble(stores, engine, anchor + "2 + 3 * 4")).isEqualTo(14.0);
+            // Parentheses override.
+            assertThat(oneDouble(stores, engine, anchor + "(2 + 3) * 4")).isEqualTo(20.0);
+        }
+    }
+
     @Test
     void scalarFunction_coalescesAnOptionalMatchNull(@TempDir final Path root) {
         try (GraphStores stores = GraphStores.provision(root.resolve("coalesce"), DOC)) {

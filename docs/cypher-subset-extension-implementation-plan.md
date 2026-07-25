@@ -1899,6 +1899,12 @@ a Cypher-name call in adjacent tests). **Done-when.** All green. **Verify.**
 **Phase gate:** `./gradlew :stroom-query:stroom-query-grammar:test :stroom-query:stroom-query-planner:test
 :stroom-graphdb:stroom-graphdb-impl:test` green.
 
+> **Implementation note (2026-07-25): done, as designed.** `expression` was restructured into `addExpr`/`mulExpr`/
+> `powExpr`/`atom` (with grouping parens); new `AstArithmeticExpr`/`AstArithmeticOp`; `renderExpression` emits
+> parenthesised infix that Stroom's engine evaluates (`+`/`-`/`*`/`/`/`^` map to its operator functions). No engine
+> change. Arithmetic in a `MATCH`'s `WHERE` is auto-rejected (its operand is neither a field nor a literal); `%` is
+> not supported. The dash/star pattern-token disambiguation was verified by regression parses.
+
 **The runtime is free.** Stroom's expression engine **already evaluates infix `+ - * / ^`** (they are registered
 functions named `add`/`-`/`*`/`/`/`^`), and Phase 8's `RowProjector` already routes any non-bare-`${…}` `RETURN`
 expression through `ExpressionParser`. So this is a **grammar (operator precedence) + rendering** job with **no engine
@@ -1952,6 +1958,15 @@ assert `a.x * 2`, `a.hi - a.lo`, precedence (`2 + 3 * 4 = 14`), and division. **
 
 **Phase gate:** `./gradlew :stroom-query:stroom-query-planner:test :stroom-graphdb:stroom-graphdb-impl:test` green.
 
+> **Implementation note (2026-07-25): done, scalar `id`/`type` only.** `id(v)` → the node's external id
+> (`decodeUidName`), `type(r)` → the hop's edge type, both carried in reserved row keys (`GraphIdentity`) populated
+> at the anchor and each fixed-length hop's target/edge (`GraphTraversalEngine.putNodeIdentity` + the edge-type put
+> in `acceptChainNeighbour`). **Simplification vs the plan:** always-populated (no referenced-variable set threaded
+> through `execute`) - the extra per-row cost is one `decodeUidName` LMDB lookup, negligible beside the `getNode`
+> already done per neighbour. `labels`/`keys`/`properties` are rejected (list/map → need `ValList`). **Known v1 gap:**
+> identity is populated only on the fixed-length path, so `id`/`type` over a variable-length or `OPTIONAL MATCH`
+> target (or under `DIFF`) is not yet populated - a follow-on.
+
 **Why an engine change is needed.** The traversal *has* each node's UID (→ external id via `decodeUidName`) and each
 hop's edge type, but the row map (`Map<String,Val>`) keeps only `"variable.property"` values - a node's identity and
 an edge's type are discarded mid-traversal. `id(v)`/`type(e)` return **scalars**, so they are doable now by carrying
@@ -1999,6 +2014,12 @@ edge type; `labels(a)` rejected. **Verify.** `./gradlew :stroom-query:stroom-que
 **Phase goal:** `RETURN year(a.ts)`, `formatDate(a.created, …)`, `day(a.ts)`, `now()` etc. work over graph rows.
 
 **Phase gate:** `./gradlew :stroom-query:stroom-query-planner:test :stroom-graphdb:stroom-graphdb-impl:test` green.
+
+> **Implementation note (2026-07-25): done, arg-taking functions only.** Wired into `CypherFunctions.ALLOWED`:
+> `formatDate`/`parseDate`/`formatDuration`/`parseDuration`, `now()`, `isWeekend`, and the `floor`/`round`/`ceiling`
+> time-bucketing families (`floorDay`/`roundHour`/`ceilingMonth`/…). **Audit finding:** Stroom's bare `year`/`month`/
+> `day`/`hour`/… are *current-time truncation* (no argument), **not** Cypher-style component extractors, so they were
+> deliberately **not** exposed (they would mislead). No engine change.
 
 **Pure Phase-8-style additions - no engine change.** Stroom already ships the date/time functions; this wires a
 curated set into the `CypherFunctions` allowlist under their Stroom names (they flow through the `RowProjector`/

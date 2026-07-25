@@ -17,8 +17,10 @@
 package stroom.query.grammar.ast.cypher;
 
 import stroom.query.grammar.antlr.CypherParser;
+import stroom.query.grammar.antlr.CypherParser.AddExprContext;
 import stroom.query.grammar.antlr.CypherParser.AggregateCallContext;
 import stroom.query.grammar.antlr.CypherParser.AndExprContext;
+import stroom.query.grammar.antlr.CypherParser.AtomContext;
 import stroom.query.grammar.antlr.CypherParser.AroundClauseContext;
 import stroom.query.grammar.antlr.CypherParser.AsOfClauseContext;
 import stroom.query.grammar.antlr.CypherParser.BetweenClauseContext;
@@ -40,6 +42,7 @@ import stroom.query.grammar.antlr.CypherParser.IsNullPredicateContext;
 import stroom.query.grammar.antlr.CypherParser.LimitClauseContext;
 import stroom.query.grammar.antlr.CypherParser.ListValueContext;
 import stroom.query.grammar.antlr.CypherParser.MatchClauseContext;
+import stroom.query.grammar.antlr.CypherParser.MulExprContext;
 import stroom.query.grammar.antlr.CypherParser.NodeLabelsContext;
 import stroom.query.grammar.antlr.CypherParser.NodePatternContext;
 import stroom.query.grammar.antlr.CypherParser.NotExprContext;
@@ -50,6 +53,7 @@ import stroom.query.grammar.antlr.CypherParser.OrderItemContext;
 import stroom.query.grammar.antlr.CypherParser.ParamValueContext;
 import stroom.query.grammar.antlr.CypherParser.PatternContext;
 import stroom.query.grammar.antlr.CypherParser.PatternHopContext;
+import stroom.query.grammar.antlr.CypherParser.PowExprContext;
 import stroom.query.grammar.antlr.CypherParser.PrimaryContext;
 import stroom.query.grammar.antlr.CypherParser.PropertyAccessContext;
 import stroom.query.grammar.antlr.CypherParser.PropertyKeyValueContext;
@@ -361,6 +365,43 @@ public final class AstCypherBuilder {
     // ------------------------------------------------------------------------------------------------------
 
     private AstExpression buildExpression(final ExpressionContext ctx) {
+        return buildAddExpr(ctx.addExpr());
+    }
+
+    // addExpr / mulExpr fold left-to-right over their operator lists (left-associative); powExpr recurses right
+    // (right-associative). A level with no operator collapses to its single child, so a plain `a.name` produces
+    // the same AST as before arithmetic existed.
+    private AstExpression buildAddExpr(final AddExprContext ctx) {
+        AstExpression left = buildMulExpr(ctx.mulExpr(0));
+        for (int i = 0; i < ctx.op.size(); i++) {
+            final AstArithmeticOp op = ctx.op.get(i).getType() == CypherParser.PLUS
+                    ? AstArithmeticOp.ADD
+                    : AstArithmeticOp.SUBTRACT;
+            left = new AstArithmeticExpr(left, op, buildMulExpr(ctx.mulExpr(i + 1)), position(ctx));
+        }
+        return left;
+    }
+
+    private AstExpression buildMulExpr(final MulExprContext ctx) {
+        AstExpression left = buildPowExpr(ctx.powExpr(0));
+        for (int i = 0; i < ctx.op.size(); i++) {
+            final AstArithmeticOp op = ctx.op.get(i).getType() == CypherParser.STAR
+                    ? AstArithmeticOp.MULTIPLY
+                    : AstArithmeticOp.DIVIDE;
+            left = new AstArithmeticExpr(left, op, buildPowExpr(ctx.powExpr(i + 1)), position(ctx));
+        }
+        return left;
+    }
+
+    private AstExpression buildPowExpr(final PowExprContext ctx) {
+        final AstExpression base = buildAtom(ctx.atom());
+        if (ctx.powExpr() == null) {
+            return base;
+        }
+        return new AstArithmeticExpr(base, AstArithmeticOp.POWER, buildPowExpr(ctx.powExpr()), position(ctx));
+    }
+
+    private AstExpression buildAtom(final AtomContext ctx) {
         if (ctx.aggregateCall() != null) {
             return buildAggregateCall(ctx.aggregateCall());
         } else if (ctx.diffAccessor() != null) {
@@ -371,8 +412,11 @@ public final class AstCypherBuilder {
             return new AstVariableExpr(ctx.variableRef.getText(), position(ctx));
         } else if (ctx.value() != null) {
             return new AstLiteralExpr(buildValue(ctx.value()), position(ctx));
+        } else if (ctx.expression() != null) {
+            // Parenthesised sub-expression.
+            return buildExpression(ctx.expression());
         }
-        throw new IllegalStateException("Unrecognised expression: " + ctx.getText());
+        throw new IllegalStateException("Unrecognised expression atom: " + ctx.getText());
     }
 
     private AstAggregateExpr buildAggregateCall(final AggregateCallContext ctx) {

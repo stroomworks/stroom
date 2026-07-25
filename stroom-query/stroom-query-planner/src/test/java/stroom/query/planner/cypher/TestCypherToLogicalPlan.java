@@ -576,6 +576,58 @@ class TestCypherToLogicalPlan {
     }
 
     @Test
+    void arithmetic_rendersInfixPreservingPrecedence() {
+        assertThat(renderedReturnExpression("MATCH (a:Account) RETURN a.balance * 1.2"))
+                .isEqualTo("(${a.balance} * 1.2)");
+        // '*' binds tighter than '+'.
+        assertThat(renderedReturnExpression("MATCH (a:Account) RETURN 2 + 3 * 4"))
+                .isEqualTo("(2 + (3 * 4))");
+        // Parentheses override precedence.
+        assertThat(renderedReturnExpression("MATCH (a:Account) RETURN (2 + 3) * 4"))
+                .isEqualTo("((2 + 3) * 4)");
+        // Mixed with a function argument.
+        assertThat(renderedReturnExpression("MATCH (a:Account) RETURN upperCase(a.name) AS u, a.x - a.y AS d"))
+                .isEqualTo("upperCase(${a.name})");
+    }
+
+    @Test
+    void arithmeticInMatchWhere_throwsCompileException() {
+        // v1: arithmetic is a RETURN/WITH-item concern; a computed operand in a MATCH WHERE is rejected.
+        assertThatThrownBy(() -> compile("MATCH (a:Account) WHERE a.balance * 2 > 100 RETURN a.id"))
+                .isInstanceOf(CypherCompileException.class);
+    }
+
+    @Test
+    void dateTimeFunctions_wireThroughAsStroomFunctions() {
+        assertThat(renderedReturnExpression("MATCH (a:Account) RETURN formatDate(a.ts)"))
+                .isEqualTo("formatDate(${a.ts})");
+        assertThat(renderedReturnExpression("MATCH (a:Account) RETURN floorDay(a.ts)"))
+                .isEqualTo("floorDay(${a.ts})");
+    }
+
+    @Test
+    void graphIdentityFunctions_lowerToReservedIdentityKeys() {
+        assertThat(renderedReturnExpression("MATCH (a:Account) RETURN id(a)"))
+                .isEqualTo("${" + GraphIdentity.nodeIdKey("a") + "}");
+        assertThat(renderedReturnExpression("MATCH (a:Account)-[r:CONNECTED_TO]->(b:Account) RETURN type(r)"))
+                .isEqualTo("${" + GraphIdentity.edgeTypeKey("r") + "}");
+    }
+
+    @Test
+    void labelsFunction_throwsCompileException() {
+        assertThatThrownBy(() -> compile("MATCH (a:Account) RETURN labels(a)"))
+                .isInstanceOf(CypherCompileException.class)
+                .hasMessageContaining("needs the list-valued Val");
+    }
+
+    @Test
+    void idOfNonVariable_throwsCompileException() {
+        assertThatThrownBy(() -> compile("MATCH (a:Account) RETURN id(a.name)"))
+                .isInstanceOf(CypherCompileException.class)
+                .hasMessageContaining("bare pattern variable");
+    }
+
+    @Test
     void unaliasedCountStar_defaultsToACleanFunctionStarName() {
         // Code-review fix: previously an unaliased aggregate's default name was renderExpression's "${...}"-laden
         // text (e.g. "count()"), unusable as a FieldIndex/column identifier - see defaultAggregateName's Javadoc.

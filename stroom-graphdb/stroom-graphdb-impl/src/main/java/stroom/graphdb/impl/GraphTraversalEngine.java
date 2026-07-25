@@ -42,6 +42,7 @@ import stroom.query.language.functions.ref.ValueReferenceIndex;
 import stroom.query.planner.cypher.AggregateColumn;
 import stroom.query.planner.cypher.CypherAggregation;
 import stroom.query.planner.cypher.FieldComparison;
+import stroom.query.planner.cypher.GraphIdentity;
 import stroom.query.planner.cypher.GroupKeyColumn;
 import stroom.query.planner.cypher.OptionalMatchSupport;
 import stroom.query.planner.cypher.OutputColumn;
@@ -414,7 +415,9 @@ public final class GraphTraversalEngine {
             if (anchor.isEmpty()) {
                 continue;
             }
-            frontier.add(new Frontier(anchorUid, rowFor(shape.nodeScan.variable(), anchor.get().properties())));
+            final Map<String, Val> anchorRow = rowFor(shape.nodeScan.variable(), anchor.get().properties());
+            putNodeIdentity(readTxn, anchorRow, shape.nodeScan.variable(), anchorUid);
+            frontier.add(new Frontier(anchorUid, anchorRow));
         }
 
         if (shape.hops.isEmpty()) {
@@ -1303,10 +1306,14 @@ public final class GraphTraversalEngine {
         }
         final Map<String, Val> row = new HashMap<>(rowSoFar);
         row.putAll(rowFor(hop.targetVariable(), target.get().properties()));
+        putNodeIdentity(readTxn, row, hop.targetVariable(), neighbourUid);
         // Bind the traversed edge's own properties to the hop's relationship variable, if it named one, so a
         // projection/filter over e.g. c.startTime resolves (before this, edge data was discarded mid-traversal).
         if (hop.edgeVariable() != null) {
             row.putAll(rowFor(hop.edgeVariable(), edgeStep.edgeProperties()));
+            if (hop.edgeType() != null) {
+                row.put(GraphIdentity.edgeTypeKey(hop.edgeVariable()), ValString.create(hop.edgeType()));
+            }
         }
         if (isLastHop) {
             if (wherePredicate.test(row)) {
@@ -1670,6 +1677,18 @@ public final class GraphTraversalEngine {
             row.put(variable + "." + entry.getKey(), entry.getValue());
         }
         return row;
+    }
+
+    /**
+     * Records a bound node variable's identity (its external id, reverse-resolved from the interned UID) under the
+     * reserved {@link GraphIdentity#nodeIdKey} key, so {@code id(variable)} in the projection resolves - a node's
+     * own identity is otherwise not present in a traversal row (which carries only {@code "variable.property"}
+     * values).
+     */
+    private void putNodeIdentity(final Txn<ByteBuffer> readTxn, final Map<String, Val> row, final String variable,
+                                 final long nodeUid) {
+        row.put(GraphIdentity.nodeIdKey(variable),
+                ValString.create(decodeUidName(readTxn, stores.getNodeUids(), nodeUid)));
     }
 
     private static ValueFunctionFactories<Map<String, Val>> rowAccessors() {

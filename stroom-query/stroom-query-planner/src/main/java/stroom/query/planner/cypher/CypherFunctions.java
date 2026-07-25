@@ -53,7 +53,17 @@ public final class CypherFunctions {
             "toBoolean", "toDouble", "toInteger", "toLong", "typeOf",
             "isNull", "isValue", "isNumber", "isString", "isBoolean",
             // conditional
-            "if", "case", "match");
+            "if", "case", "match",
+            // date/time (Phase 12) - exposed under Stroom names/semantics. Note Stroom's bare year/month/day/hour/
+            // ... are *current-time truncation* (not Cypher-style component extractors), so they are deliberately
+            // NOT exposed; the arg-taking, unambiguous ones are: format/parse, the floor/round/ceiling time-bucketing
+            // families (which round a supplied time to a unit boundary - useful for grouping timestamps), isWeekend,
+            // and now().
+            "formatDate", "parseDate", "formatDuration", "parseDuration", "now", "isWeekend",
+            "floorSecond", "floorMinute", "floorHour", "floorDay", "floorWeek", "floorMonth", "floorYear",
+            "roundSecond", "roundMinute", "roundHour", "roundDay", "roundWeek", "roundMonth", "roundYear",
+            "ceilingSecond", "ceilingMinute", "ceilingHour", "ceilingDay", "ceilingWeek", "ceilingMonth",
+            "ceilingYear");
 
     // Cypher-name aliases that are semantically identical to their Stroom target (a plain name swap, no argument
     // adaptation). Cypher functions whose signature differs from Stroom's (substring/left/right/coalesce/size) are
