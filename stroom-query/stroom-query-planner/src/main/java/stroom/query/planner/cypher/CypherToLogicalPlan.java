@@ -30,6 +30,7 @@ import stroom.query.grammar.ast.cypher.AstAsOf;
 import stroom.query.grammar.ast.cypher.AstBetween;
 import stroom.query.grammar.ast.cypher.AstBooleanExpr;
 import stroom.query.grammar.ast.cypher.AstBooleanValue;
+import stroom.query.grammar.ast.cypher.AstComparisonOp;
 import stroom.query.grammar.ast.cypher.AstComparisonPredicate;
 import stroom.query.grammar.ast.cypher.AstCypherQuery;
 import stroom.query.grammar.ast.cypher.AstDiff;
@@ -39,7 +40,10 @@ import stroom.query.grammar.ast.cypher.AstEdgeDirection;
 import stroom.query.grammar.ast.cypher.AstEdgePattern;
 import stroom.query.grammar.ast.cypher.AstExpression;
 import stroom.query.grammar.ast.cypher.AstFunctionValue;
+import stroom.query.grammar.ast.cypher.AstInPredicate;
+import stroom.query.grammar.ast.cypher.AstIsNullPredicate;
 import stroom.query.grammar.ast.cypher.AstLiteralExpr;
+import stroom.query.grammar.ast.cypher.AstListValue;
 import stroom.query.grammar.ast.cypher.AstMatch;
 import stroom.query.grammar.ast.cypher.AstNodePattern;
 import stroom.query.grammar.ast.cypher.AstNotExpr;
@@ -448,6 +452,10 @@ public final class CypherToLogicalPlan {
                     .build();
         } else if (expr instanceof final AstComparisonPredicate predicate) {
             return ExpressionOperator.builder().addTerm(compileComparisonTerm(predicate)).build();
+        } else if (expr instanceof final AstInPredicate in) {
+            return ExpressionOperator.builder().addTerm(compileInTerm(in)).build();
+        } else if (expr instanceof final AstIsNullPredicate isNull) {
+            return ExpressionOperator.builder().addTerm(compileIsNullTerm(isNull)).build();
         }
         throw new CypherCompileException("Unrecognised WHERE expression", expr.position());
     }
@@ -455,6 +463,10 @@ public final class CypherToLogicalPlan {
     private ExpressionItem compileBooleanExprAsItem(final AstBooleanExpr expr) {
         if (expr instanceof final AstComparisonPredicate predicate) {
             return compileComparisonTerm(predicate);
+        } else if (expr instanceof final AstInPredicate in) {
+            return compileInTerm(in);
+        } else if (expr instanceof final AstIsNullPredicate isNull) {
+            return compileIsNullTerm(isNull);
         }
         return compileBooleanExpr(expr);
     }
@@ -471,10 +483,81 @@ public final class CypherToLogicalPlan {
                     "not in PoC subset: comparing two field references (or an aggregate) is not yet supported "
                     + "- the right side of a WHERE comparison must be a literal", predicate.right().position());
         }
+        final String value = renderLiteralValue(literal.value());
+        // Regex safety: cap the pattern length at compile time. This is a coarse guard against pathological
+        // (catastrophic-backtracking / oversized) patterns - it deliberately does NOT attempt static ReDoS
+        // detection, only bounds the input the engine's StringRegex will compile at query time.
+        if (predicate.op() == AstComparisonOp.REGEX && value.length() > MAX_REGEX_PATTERN_LENGTH) {
+            throw new CypherCompileException(
+                    "the =~ regular expression is too long (max " + MAX_REGEX_PATTERN_LENGTH + " characters)",
+                    predicate.right().position());
+        }
         return ExpressionTerm.builder()
                 .field(field)
                 .condition(toCondition(predicate.op()))
-                .value(renderLiteralValue(literal.value()))
+                .value(value)
+                .build();
+    }
+
+    /**
+     * Upper bound on the length of a {@code =~} regular-expression literal, enforced at compile time. A coarse
+     * safety cap, not a ReDoS analysis - see {@link #compileComparisonTerm}.
+     */
+    private static final int MAX_REGEX_PATTERN_LENGTH = 1000;
+
+    /**
+     * Lowers {@code left IN [a, b, ...]} to a single {@link Condition#IN} term. The left side must resolve to a
+     * field via {@link #fieldNameOf}; the right side must be a literal list ({@link AstListValue}) of scalar
+     * literals. The element literals are joined with {@code ", "} - the shared comma delimiter that
+     * {@code ExpressionPredicateFactory.StringIn} parses (its comma-split + trim was established in the Phase 0
+     * fix). An empty list renders to an empty value, which {@code StringIn} treats as "matches nothing".
+     *
+     * <p><b>Null status:</b> {@code predicate} non-null; never returns null.
+     */
+    private ExpressionTerm compileInTerm(final AstInPredicate predicate) {
+        final String field = fieldNameOf(predicate.left());
+        if (field == null) {
+            throw new CypherCompileException(
+                    "not in PoC subset: the left side of IN must be a property access or variable reference",
+                    predicate.left().position());
+        }
+        if (!(predicate.right() instanceof final AstLiteralExpr literal)
+                || !(literal.value() instanceof final AstListValue list)) {
+            throw new CypherCompileException(
+                    "not in PoC subset: the right side of IN must be a literal list, e.g. ['a', 'b']",
+                    predicate.right().position());
+        }
+        // renderLiteralValue rejects any non-scalar element (a nested list or function), so `IN [['a']]` fails
+        // loud here rather than producing a wrong term. Join with ", " to match StringIn's comma delimiter.
+        final String value = list.elements().stream()
+                .map(CypherToLogicalPlan::renderLiteralValue)
+                .reduce((a, b) -> a + ", " + b)
+                .orElse("");
+        return ExpressionTerm.builder()
+                .field(field)
+                .condition(Condition.IN)
+                .value(value)
+                .build();
+    }
+
+    /**
+     * Lowers {@code operand IS [NOT] NULL} to a single {@link Condition#IS_NULL}/{@link Condition#IS_NOT_NULL}
+     * term (no value). The operand must be a property access - a bare pattern variable ({@code v IS NULL}) is
+     * rejected here, since a whole matched node/edge has no existence representation in this subset yet (that is a
+     * later, OPTIONAL MATCH, concern).
+     *
+     * <p><b>Null status:</b> {@code predicate} non-null; never returns null.
+     */
+    private ExpressionTerm compileIsNullTerm(final AstIsNullPredicate predicate) {
+        if (!(predicate.operand() instanceof AstPropertyAccessExpr)) {
+            throw new CypherCompileException(
+                    "not in PoC subset: IS NULL is only supported on a property, e.g. `a.name IS NULL`",
+                    predicate.operand().position());
+        }
+        final String field = fieldNameOf(predicate.operand());
+        return ExpressionTerm.builder()
+                .field(field)
+                .condition(predicate.negated() ? Condition.IS_NOT_NULL : Condition.IS_NULL)
                 .build();
     }
 
@@ -487,7 +570,7 @@ public final class CypherToLogicalPlan {
         return null;
     }
 
-    private static Condition toCondition(final stroom.query.grammar.ast.cypher.AstComparisonOp op) {
+    private static Condition toCondition(final AstComparisonOp op) {
         return switch (op) {
             case EQ -> Condition.EQUALS;
             case NEQ -> Condition.NOT_EQUALS;
@@ -495,6 +578,10 @@ public final class CypherToLogicalPlan {
             case LE -> Condition.LESS_THAN_OR_EQUAL_TO;
             case GT -> Condition.GREATER_THAN;
             case GE -> Condition.GREATER_THAN_OR_EQUAL_TO;
+            case STARTS_WITH -> Condition.STARTS_WITH;
+            case CONTAINS -> Condition.CONTAINS;
+            case ENDS_WITH -> Condition.ENDS_WITH;
+            case REGEX -> Condition.MATCHES_REGEX;
         };
     }
 
@@ -581,7 +668,11 @@ public final class CypherToLogicalPlan {
      */
     private static String defaultAggregateName(final AstAggregateExpr aggregate) {
         final String fn = aggregate.function().name().toLowerCase(Locale.ROOT);
-        return aggregate.star() ? fn + "(*)" : fn + "(" + defaultColumnName(aggregate.argument()) + ")";
+        // Render DISTINCT so count(distinct a.x) and count(a.x) get distinct column keys / FieldIndex entries.
+        final String distinct = aggregate.distinct() ? "distinct " : "";
+        return aggregate.star()
+                ? fn + "(*)"
+                : fn + "(" + distinct + defaultColumnName(aggregate.argument()) + ")";
     }
 
     // ------------------------------------------------------------------------------------------------------
@@ -655,6 +746,14 @@ public final class CypherToLogicalPlan {
     private OutputColumn compileAggregateColumn(final AstAggregateExpr aggregate) {
         final AstAggregateFunction function = aggregate.function();
         final String functionName = function.name().toLowerCase(Locale.ROOT);
+        final boolean distinct = aggregate.distinct();
+        // DISTINCT is currently supported only on count(DISTINCT <property>). Reject it loudly everywhere else
+        // (rather than silently ignoring it and returning a wrong count) - fail loud, never wrong.
+        if (distinct && function != AstAggregateFunction.COUNT) {
+            throw new CypherCompileException(
+                    "not supported in this version: DISTINCT is only supported on count(...), not "
+                    + functionName + "(...)", aggregate.position());
+        }
         if (aggregate.star()) {
             if (function != AstAggregateFunction.COUNT) {
                 throw new CypherCompileException(
@@ -662,13 +761,18 @@ public final class CypherToLogicalPlan {
                         + "meaningful over a whole row; " + functionName + " needs a property to aggregate, e.g. "
                         + functionName + "(a.balance)", aggregate.position());
             }
-            return new AggregateColumn(function, null, true, false);
+            if (distinct) {
+                throw new CypherCompileException(
+                        "not supported in this version: count(DISTINCT *) is not meaningful - use "
+                        + "count(DISTINCT a.property)", aggregate.position());
+            }
+            return new AggregateColumn(function, null, true, false, false);
         }
 
         final AstExpression argument = aggregate.argument();
         if (argument instanceof final AstPropertyAccessExpr propertyAccess) {
             return new AggregateColumn(
-                    function, propertyAccess.variable() + "." + propertyAccess.property(), false, false);
+                    function, propertyAccess.variable() + "." + propertyAccess.property(), false, false, distinct);
         }
         if (argument instanceof final AstVariableExpr variable) {
             if (function != AstAggregateFunction.COUNT) {
@@ -678,7 +782,13 @@ public final class CypherToLogicalPlan {
                         + "instead, e.g. " + functionName + "(" + variable.name() + ".someProperty)",
                         aggregate.position());
             }
-            return new AggregateColumn(function, null, false, true);
+            if (distinct) {
+                throw new CypherCompileException(
+                        "not supported in this version: count(DISTINCT " + variable.name() + ") over a whole "
+                        + "matched node/edge is not supported - use count(DISTINCT " + variable.name()
+                        + ".someProperty)", aggregate.position());
+            }
+            return new AggregateColumn(function, null, false, true, false);
         }
         throw new CypherCompileException(
                 "not in PoC subset: an aggregate argument must be a property access (e.g. 'a.balance') or, for "
@@ -762,7 +872,8 @@ public final class CypherToLogicalPlan {
             // enum-name text like "MIN" under a Turkish-variant locale (dotless-i folding). These five function
             // names are ASCII-only literals, not user-locale-sensitive text, so Locale.ROOT is the correct fold.
             final String fn = aggregate.function().name().toLowerCase(Locale.ROOT);
-            return aggregate.star() ? fn + "()" : fn + "(" + renderExpression(aggregate.argument()) + ")";
+            final String distinct = aggregate.distinct() ? "distinct " : "";
+            return aggregate.star() ? fn + "()" : fn + "(" + distinct + renderExpression(aggregate.argument()) + ")";
         } else if (expression instanceof final AstDiffAccessorExpr accessor) {
             // before(a.p)/after(a.p) project the property's value from the baseline (t1) / comparison (t2)
             // snapshot. DiffExecutor populates the delta-table row with a "before.<var>.<prop>" /
@@ -935,6 +1046,11 @@ public final class CypherToLogicalPlan {
                 rejectIfDiffConstruct(cmp.left());
                 rejectIfDiffConstruct(cmp.right());
             }
+            case final AstInPredicate in -> {
+                rejectIfDiffConstruct(in.left());
+                rejectIfDiffConstruct(in.right());
+            }
+            case final AstIsNullPredicate isNull -> rejectIfDiffConstruct(isNull.operand());
         }
     }
 
@@ -953,6 +1069,11 @@ public final class CypherToLogicalPlan {
                 rejectDiffConstructInDiffWhere(cmp.left());
                 rejectDiffConstructInDiffWhere(cmp.right());
             }
+            case final AstInPredicate in -> {
+                rejectDiffConstructInDiffWhere(in.left());
+                rejectDiffConstructInDiffWhere(in.right());
+            }
+            case final AstIsNullPredicate isNull -> rejectDiffConstructInDiffWhere(isNull.operand());
         }
     }
 

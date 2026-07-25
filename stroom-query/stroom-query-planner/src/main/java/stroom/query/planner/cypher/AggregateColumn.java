@@ -37,12 +37,17 @@ import java.util.Objects;
  *                     {@code COUNT} - enforced where this is built, not here).
  * @param argIsVariable true for {@code count(v)} over a bare pattern variable (only ever {@code true} when
  *                      {@code function} is {@code COUNT} - enforced where this is built, not here).
+ * @param distinct     true for {@code count(DISTINCT a.property)} - the group's values at {@code argRowKey} are
+ *                     de-duplicated before reduction. Orthogonal to the argument-mode invariant; only ever
+ *                     {@code true} together with a non-null {@code argRowKey} and {@code COUNT} in this version
+ *                     (enforced where this is built, not here).
  */
 public record AggregateColumn(
         AstAggregateFunction function,
         @Nullable String argRowKey,
         boolean star,
-        boolean argIsVariable) implements OutputColumn {
+        boolean argIsVariable,
+        boolean distinct) implements OutputColumn {
 
     /**
      * <b>Preconditions:</b> exactly one of {@code star}, {@code argIsVariable}, or a non-null {@code argRowKey}

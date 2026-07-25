@@ -25,5 +25,9 @@ public enum AstComparisonOp {
     LT,
     LE,
     GT,
-    GE
+    GE,
+    STARTS_WITH,
+    CONTAINS,
+    ENDS_WITH,
+    REGEX
 }

@@ -28,12 +28,15 @@ import java.util.Objects;
  * @param function never null.
  * @param argument nullable - null only when {@link #star()} is true ({@code count(*)}); present otherwise.
  * @param star     true for the {@code count(*)} form.
+ * @param distinct true for the {@code DISTINCT} form ({@code count(DISTINCT a.type)}); orthogonal to
+ *                 {@code star}/{@code argument}.
  * @param position never null.
  */
 public record AstAggregateExpr(
         AstAggregateFunction function,
         @Nullable AstExpression argument,
         boolean star,
+        boolean distinct,
         AstPosition position) implements AstExpression {
 
     /**

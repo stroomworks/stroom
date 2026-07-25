@@ -105,6 +105,122 @@ class TestGraphTraversalEngine {
     }
 
     @Test
+    void whereStringPredicates_filterByStartsContainsEndsAndRegex(@TempDir final Path root) {
+        // String predicates (STARTS WITH / CONTAINS / ENDS WITH / =~) compile to the shared ExpressionTerm
+        // Condition vocabulary, which the engine's WHERE predicate path already evaluates - so this needs no
+        // GraphTraversalEngine change, only that the whole pipeline flows through end-to-end.
+        try (GraphStores stores = GraphStores.provision(root.resolve("strpred"), DOC)) {
+            seedDeviceConnectedToAccounts(stores);
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory());
+            final String prefix = "MATCH (d:Device {id: 'd-42'})-[:CONNECTED_TO]->(a:Account) WHERE ";
+
+            // ENDS WITH: only account-b ends in 'b'.
+            assertThat(matchedIds(stores, engine, prefix + "a.id ENDS WITH 'b' RETURN a.id"))
+                    .containsExactly("account-b");
+            // CONTAINS: 'unt-a' occurs only in account-a.
+            assertThat(matchedIds(stores, engine, prefix + "a.id CONTAINS 'unt-a' RETURN a.id"))
+                    .containsExactly("account-a");
+            // STARTS WITH: both accounts start with 'account'.
+            assertThat(matchedIds(stores, engine, prefix + "a.id STARTS WITH 'account' RETURN a.id"))
+                    .containsExactlyInAnyOrder("account-a", "account-b");
+            // =~ regex: '.*-a' anchors to account-a only.
+            assertThat(matchedIds(stores, engine, prefix + "a.id =~ '.*-a' RETURN a.id"))
+                    .containsExactly("account-a");
+        }
+    }
+
+    @Test
+    void whereInAndIsNull_flowThroughEndToEnd(@TempDir final Path root) {
+        // IN / IS NULL / IS NOT NULL compile to the shared Condition vocabulary, already evaluated by the engine's
+        // WHERE path - so, like the string predicates, this needs no engine change, only end-to-end flow.
+        try (GraphStores stores = GraphStores.provision(root.resolve("inisnull"), DOC)) {
+            seedDeviceConnectedToAccounts(stores);
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory());
+            final String prefix = "MATCH (d:Device {id: 'd-42'})-[:CONNECTED_TO]->(a:Account) WHERE ";
+
+            // IN: only account-b listed.
+            assertThat(matchedIds(stores, engine, prefix + "a.id IN ['account-b'] RETURN a.id"))
+                    .containsExactly("account-b");
+            // IN: both listed.
+            assertThat(matchedIds(stores, engine, prefix + "a.id IN ['account-a', 'account-b'] RETURN a.id"))
+                    .containsExactlyInAnyOrder("account-a", "account-b");
+            // IN []: matches nothing.
+            assertThat(matchedIds(stores, engine, prefix + "a.id IN [] RETURN a.id")).isEmpty();
+            // IS NULL on an absent property: both accounts (neither carries 'closed').
+            assertThat(matchedIds(stores, engine, prefix + "a.closed IS NULL RETURN a.id"))
+                    .containsExactlyInAnyOrder("account-a", "account-b");
+            // IS NOT NULL on a present property: both accounts have 'balance'.
+            assertThat(matchedIds(stores, engine, prefix + "a.balance IS NOT NULL RETURN a.id"))
+                    .containsExactlyInAnyOrder("account-a", "account-b");
+            // IS NOT NULL on an absent property: none.
+            assertThat(matchedIds(stores, engine, prefix + "a.closed IS NOT NULL RETURN a.id")).isEmpty();
+        }
+    }
+
+    @Test
+    void countDistinct_dedupesValuesWithinAGroup(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("countdistinct"), DOC)) {
+            seedOfficerWithRepeatedCrimeTypes(stores);
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory());
+
+            // o-1 investigates 3 crimes of types {theft, theft, fraud}: count = 3, count(DISTINCT) = 2.
+            final CompiledCypherPlan compiled = compile(
+                    "MATCH (o:Officer {id: 'o-1'})-[:INVESTIGATED]->(c:Crime) "
+                    + "RETURN o.id, count(c.type) AS total, count(DISTINCT c.type) AS distinctTypes");
+            final List<Val[]> rows = stores.read(readTxn ->
+                    engine.execute(readTxn, compiled.plan(), compiled.temporalContext(),
+                            DateTimeSettings.builder().build(), compiled.distinct(), compiled.aggregation()));
+
+            assertThat(rows).hasSize(1);
+            assertThat(rows.getFirst()[1].toString()).isEqualTo("3");
+            assertThat(rows.getFirst()[2].toString()).isEqualTo("2");
+        }
+    }
+
+    private static void seedOfficerWithRepeatedCrimeTypes(final GraphStores stores) {
+        final long officerLabel = intern(stores, stores.getLabelUids(), "Officer");
+        final long crimeLabel = intern(stores, stores.getLabelUids(), "Crime");
+        final long idKey = intern(stores, stores.getPropertyKeyUids(), "id");
+        final long investigated = intern(stores, stores.getEdgeTypeUids(), "INVESTIGATED");
+
+        final long officerUid = intern(stores, stores.getNodeUids(), "o-1");
+        final long c1 = intern(stores, stores.getNodeUids(), "c-1");
+        final long c2 = intern(stores, stores.getNodeUids(), "c-2");
+        final long c3 = intern(stores, stores.getNodeUids(), "c-3");
+
+        stores.write(writer -> {
+            stores.getNodes().insert(writer, officerUid, T1, List.of(officerLabel),
+                    Map.of("id", ValString.create("o-1")));
+            stores.getNodes().insert(writer, c1, T1, List.of(crimeLabel),
+                    Map.of("id", ValString.create("c-1"), "type", ValString.create("theft")));
+            stores.getNodes().insert(writer, c2, T1, List.of(crimeLabel),
+                    Map.of("id", ValString.create("c-2"), "type", ValString.create("theft")));
+            stores.getNodes().insert(writer, c3, T1, List.of(crimeLabel),
+                    Map.of("id", ValString.create("c-3"), "type", ValString.create("fraud")));
+            stores.getPropertyIndex().insert(
+                    writer, officerLabel, idKey, "o-1".getBytes(StandardCharsets.UTF_8), officerUid);
+            for (final long crime : List.of(c1, c2, c3)) {
+                stores.getOutEdges().insert(writer, officerUid, investigated, crime, T1, Map.of());
+                stores.getInEdges().insert(writer, officerUid, investigated, crime, T1, Map.of());
+            }
+            return null;
+        });
+    }
+
+    private static List<String> matchedIds(final GraphStores stores,
+                                           final GraphTraversalEngine engine,
+                                           final String cypher) {
+        final CompiledCypherPlan compiled = compile(cypher);
+        final List<Val[]> rows = stores.read(readTxn ->
+                engine.execute(readTxn, compiled.plan(), compiled.temporalContext(),
+                        DateTimeSettings.builder().build()));
+        return rows.stream().map(row -> row[0].toString()).toList();
+    }
+
+    @Test
     void bareAnchorWithNoHop_returnsJustTheAnchorRow(@TempDir final Path root) {
         try (GraphStores stores = GraphStores.provision(root.resolve("graph3"), DOC)) {
             seedDeviceConnectedToAccounts(stores);

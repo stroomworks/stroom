@@ -25,7 +25,10 @@ import stroom.query.grammar.ast.cypher.AstCypherQuery;
 import stroom.query.grammar.ast.cypher.AstDiff;
 import stroom.query.grammar.ast.cypher.AstDiffAccessorExpr;
 import stroom.query.grammar.ast.cypher.AstDiffSide;
+import stroom.query.grammar.ast.cypher.AstComparisonOp;
+import stroom.query.grammar.ast.cypher.AstComparisonPredicate;
 import stroom.query.grammar.ast.cypher.AstEdgeDirection;
+import stroom.query.grammar.ast.cypher.AstInPredicate;
 import stroom.query.grammar.ast.cypher.AstMatch;
 import stroom.query.grammar.ast.cypher.AstNodePattern;
 import stroom.query.grammar.ast.cypher.AstPropertyAccessExpr;
@@ -105,6 +108,42 @@ class TestCypherQueryParser {
     }
 
     @Test
+    void stringPredicates_parseToTheirComparisonOps() {
+        assertComparisonOp("MATCH (a:Account) WHERE a.name STARTS WITH 'Pow' RETURN a.id",
+                AstComparisonOp.STARTS_WITH);
+        assertComparisonOp("MATCH (a:Account) WHERE a.name CONTAINS 'ow' RETURN a.id",
+                AstComparisonOp.CONTAINS);
+        assertComparisonOp("MATCH (a:Account) WHERE a.name ENDS WITH 'ell' RETURN a.id",
+                AstComparisonOp.ENDS_WITH);
+        assertComparisonOp("MATCH (a:Account) WHERE a.name =~ 'Pow.*' RETURN a.id",
+                AstComparisonOp.REGEX);
+    }
+
+    private static void assertComparisonOp(final String cypher, final AstComparisonOp expected) {
+        final AstCypherQuery query = CypherQueryParser.parse(cypher);
+        final AstMatch match = (AstMatch) query.readingClauses().getFirst();
+        final AstComparisonPredicate predicate = (AstComparisonPredicate) match.where().expr();
+        assertThat(predicate.op()).isEqualTo(expected);
+    }
+
+    @Test
+    void inAndIsNullPredicates_parse() {
+        assertThatCode(() -> CypherQueryParser.parse(
+                "MATCH (a:Account) WHERE a.id IN ['x', 'y'] RETURN a.id")).doesNotThrowAnyException();
+        assertThatCode(() -> CypherQueryParser.parse(
+                "MATCH (a:Account) WHERE a.closed IS NULL RETURN a.id")).doesNotThrowAnyException();
+        assertThatCode(() -> CypherQueryParser.parse(
+                "MATCH (a:Account) WHERE a.closed IS NOT NULL RETURN a.id")).doesNotThrowAnyException();
+        assertThatCode(() -> CypherQueryParser.parse(
+                "MATCH (a:Account) WHERE a.id IN [] RETURN a.id")).doesNotThrowAnyException();
+
+        final AstCypherQuery query = CypherQueryParser.parse(
+                "MATCH (a:Account) WHERE a.id IN ['x', 'y'] RETURN a.id");
+        final AstMatch match = (AstMatch) query.readingClauses().getFirst();
+        assertThat(match.where().expr()).isInstanceOf(AstInPredicate.class);
+    }
+
+    @Test
     void returnDistinctWithAlias_parses() {
         final AstCypherQuery query = CypherQueryParser.parse(
                 "MATCH (a:Account) RETURN DISTINCT a.id AS accountId");
@@ -134,6 +173,18 @@ class TestCypherQueryParser {
         assertThat(aggregate.function()).isEqualTo(AstAggregateFunction.COUNT);
         assertThat(aggregate.star()).isTrue();
         assertThat(aggregate.argument()).isNull();
+    }
+
+    @Test
+    void countDistinctOfProperty_parsesWithDistinctFlag() {
+        final AstCypherQuery query = CypherQueryParser.parse(
+                "MATCH (o:Officer) RETURN count(DISTINCT o.rank) AS ranks");
+
+        final AstAggregateExpr aggregate = (AstAggregateExpr) query.returnClause().items().getFirst().expression();
+        assertThat(aggregate.function()).isEqualTo(AstAggregateFunction.COUNT);
+        assertThat(aggregate.distinct()).isTrue();
+        assertThat(aggregate.star()).isFalse();
+        assertThat(aggregate.argument()).isInstanceOf(AstPropertyAccessExpr.class);
     }
 
     @Test

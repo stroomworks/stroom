@@ -524,6 +524,50 @@ class TestExpressionPredicateFactory {
                 .isFalse();
     }
 
+    @Test
+    void testTextIn_commaDelimited() {
+        // Regression: every IN-value producer joins on a comma (AstToSearchRequestMapper with ", ",
+        // MetaExpressionUtil with ","); StringIn.create must split on the comma DELIMITER and trim each
+        // element, not on a single space. Before the fix, "Powell, Smith" split on space into
+        // {"Powell,", "Smith"} and never matched a real surname of "Powell".
+        final QueryField field = QueryField.createText("myField");
+        final ValueFunctionFactories<String> valueFunctionFactories = StringValueFunctionFactory.create(field);
+
+        final Predicate<String> commaSpace = inPredicate(field, "Powell, Smith", valueFunctionFactories);
+        assertThat(commaSpace.test("Powell")).isTrue();
+        assertThat(commaSpace.test("Smith")).isTrue();
+        assertThat(commaSpace.test("Powells")).isFalse();
+        assertThat(commaSpace.test("Jones")).isFalse();
+
+        // Comma-only join (no space) also works, thanks to the trim.
+        final Predicate<String> commaOnly = inPredicate(field, "Powell,Smith", valueFunctionFactories);
+        assertThat(commaOnly.test("Powell")).isTrue();
+        assertThat(commaOnly.test("Smith")).isTrue();
+
+        // A single value that itself contains a space now matches (previously space-split into fragments).
+        final Predicate<String> multiWord = inPredicate(field, "New York", valueFunctionFactories);
+        assertThat(multiWord.test("New York")).isTrue();
+        assertThat(multiWord.test("New")).isFalse();
+
+        // Empty / blank IN value matches nothing.
+        assertThat(inPredicate(field, "", valueFunctionFactories).test("Powell")).isFalse();
+        assertThat(inPredicate(field, "   ", valueFunctionFactories).test("Powell")).isFalse();
+    }
+
+    private Predicate<String> inPredicate(final QueryField field,
+                                          final String value,
+                                          final ValueFunctionFactories<String> valueFunctionFactories) {
+        final ExpressionOperator operator = ExpressionOperator.builder()
+                .op(Op.AND)
+                .addTerm(ExpressionTerm.builder()
+                        .field(field.getFldName())
+                        .condition(ExpressionTerm.Condition.IN)
+                        .value(value)
+                        .build())
+                .build();
+        return new ExpressionPredicateFactory().create(operator, valueFunctionFactories);
+    }
+
     private void testWildcardReplacement(final String in, final String expected) {
         final String out;
         if (ExpressionPredicateFactory.containsWildcard(in)) {

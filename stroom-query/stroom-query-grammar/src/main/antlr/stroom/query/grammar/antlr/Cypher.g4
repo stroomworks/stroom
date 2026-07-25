@@ -174,13 +174,30 @@ notExpr
     ;
 primary
     : OPEN_PAREN expr CLOSE_PAREN
+    | inPredicate
+    | isNullPredicate
     | comparisonPredicate
+    ;
+
+// `x IN [ ... ]` - list membership. The right side is a general `expression`; CypherToLogicalPlan requires it to be
+// a literal list (`AstListValue`) and rejects anything else. `x IS [NOT] NULL` - a null/existence test on a property.
+inPredicate
+    : left=expression IN right=expression
+    ;
+
+isNullPredicate
+    : operand=expression IS NOT? NULL_
     ;
 comparisonPredicate
     : left=expression op=comparisonOp right=expression
     ;
+// String predicates (STARTS WITH / CONTAINS / ENDS WITH / =~) are lowered by CypherToLogicalPlan to the shared
+// ExpressionTerm Condition vocabulary (STARTS_WITH/CONTAINS/ENDS_WITH/MATCHES_REGEX), which the graph WHERE path
+// already evaluates - see that class's toCondition. `STARTS WITH`/`ENDS WITH` are two-token phrases reusing the
+// existing WITH keyword; each alternative starts with a distinct token so the builder can switch on the start token.
 comparisonOp
     : EQ | NEQ | LT | LE | GT | GE
+    | STARTS WITH | ENDS WITH | CONTAINS | REGEX
     ;
 
 // ----- expressions: shared by RETURN/WITH items, ORDER BY items, and WHERE operands -----
@@ -193,8 +210,11 @@ expression
     | value
     ;
 
+// `DISTINCT` is admitted uniformly for every aggregate at the grammar level; CypherToLogicalPlan currently accepts
+// it only on count(DISTINCT <property>) and rejects the rest (sum/avg/min/max DISTINCT, count(DISTINCT *),
+// count(DISTINCT <variable>)) at compile time - parse-now, restrict-at-compile, per this grammar's convention.
 aggregateCall
-    : fn=(COUNT | SUM | AVG | MIN | MAX) OPEN_PAREN (STAR | expression) CLOSE_PAREN
+    : fn=(COUNT | SUM | AVG | MIN | MAX) OPEN_PAREN DISTINCT? (STAR | expression) CLOSE_PAREN
     ;
 
 // Stroom DIFF extension: before(a.prop)/after(a.prop) name a property value in the baseline (t1) / comparison
@@ -217,6 +237,7 @@ value
     | (TRUE | FALSE)  # booleanValue
     | PARAM           # paramValue
     | functionCall    # functionValue
+    | OPEN_BRACKET (value (COMMA value)*)? CLOSE_BRACKET  # listValue
     ;
 
 returnItem
@@ -282,6 +303,13 @@ TO       : T O ;
 BEFORE   : B E F O R E ;
 AFTER    : A F T E R ;
 GRAPH    : G R A P H ;
+STARTS   : S T A R T S ;
+ENDS     : E N D S ;
+CONTAINS : C O N T A I N S ;
+IN       : I N ;
+IS       : I S ;
+// Trailing underscore to avoid reader confusion with Java's null keyword (matches the SKIP_ convention above).
+NULL_    : N U L L ;
 
 // ----- structural / operator tokens -----
 OPEN_PAREN    : '(' ;
@@ -301,6 +329,7 @@ RARROW        : '->' ;
 LARROW        : '<-' ;
 DASH          : '-' ;
 NEQ : '<>' | '!=' ;
+REGEX : '=~' ;
 LE  : '<=' ;
 GE  : '>=' ;
 LT  : '<' ;

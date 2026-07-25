@@ -1938,7 +1938,16 @@ public class ExpressionPredicateFactory {
 
         private static <T> Optional<ScoringPredicate<T>> create(final ExpressionTerm term,
                                                                 final Function<T, String> extractionFunction) {
-            final String[] in = term.getValue().split(" ");
+            // Split on the shared IN delimiter (comma) and trim each element, matching the numeric/date
+            // IN paths (getTermNumbers/getTermDates) and every IN-value producer (AstToSearchRequestMapper
+            // joins with ", ", MetaExpressionUtil with ","). Previously this split on a single space, which
+            // meant a comma-joined text IN value (the only kind produced) never matched. Blank elements are
+            // dropped - including the sole [""] element that "".split(",") yields for an empty value - so an
+            // empty IN matches nothing (see the in.length == 0 guard below).
+            final String[] in = Arrays.stream(term.getValue().split(DELIMITER))
+                    .map(String::trim)
+                    .filter(s -> !s.isEmpty())
+                    .toArray(String[]::new);
             // If there are no terms then always a false match.
             if (in.length == 0) {
                 return Optional.of(matchNone());

@@ -1816,6 +1816,18 @@ public final class GraphTraversalEngine {
         if (aggregateColumn.star() || aggregateColumn.argIsVariable()) {
             return ValLong.create(group.size());
         }
+        if (aggregateColumn.distinct()) {
+            // count(DISTINCT a.property): count distinct non-null values at the property. Val has value-based
+            // equals/hashCode (the same basis finalizeAggregatedRows' own DISTINCT dedup relies on).
+            final Set<Val> distinctValues = new HashSet<>();
+            for (final Map<String, Val> row : group) {
+                final Val value = row.get(aggregateColumn.argRowKey());
+                if (isPresent(value)) {
+                    distinctValues.add(value);
+                }
+            }
+            return ValLong.create(distinctValues.size());
+        }
         long count = 0;
         for (final Map<String, Val> row : group) {
             if (isPresent(row.get(aggregateColumn.argRowKey()))) {

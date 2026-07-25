@@ -18,15 +18,21 @@ package stroom.query.grammar.ast.cypher;
 
 import stroom.query.grammar.ast.AstPosition;
 
-/**
- * A literal value: a string, number, boolean, scalar parameter reference, or function-call literal (e.g.
- * {@code datetime('2026-07-01T09:00:00Z')}, used by the temporal clause). Unlike StroomQL's {@code AstValue}
- * (which captures raw source text for a legacy tokeniser to re-parse), Cypher has no legacy oracle to defer to,
- * so each kind is parsed into its own proper type here.
- */
-public sealed interface AstValue
-        permits AstStringValue, AstNumberValue, AstBooleanValue, AstParameterValue, AstFunctionValue,
-        AstListValue {
+import java.util.Objects;
 
-    AstPosition position();
+/**
+ * {@code operand IS NULL} (or {@code operand IS NOT NULL} when {@code negated}) - a null/existence test, a leaf of
+ * a {@code WHERE} boolean expression tree.
+ *
+ * @param operand  never null; the property (or variable) whose presence is tested.
+ * @param negated  {@code true} for {@code IS NOT NULL}, {@code false} for {@code IS NULL}.
+ * @param position never null.
+ */
+public record AstIsNullPredicate(AstExpression operand, boolean negated, AstPosition position)
+        implements AstBooleanExpr {
+
+    public AstIsNullPredicate {
+        Objects.requireNonNull(operand, "operand");
+        Objects.requireNonNull(position, "position");
+    }
 }

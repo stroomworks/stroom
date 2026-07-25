@@ -141,6 +141,97 @@ class TestCypherToLogicalPlan {
     }
 
     @Test
+    void whereStartsWith_compilesToStartsWithCondition() {
+        assertWhereCondition("MATCH (a:Account) WHERE a.name STARTS WITH 'Pow' RETURN a.id",
+                "a.name", Condition.STARTS_WITH, "Pow");
+    }
+
+    @Test
+    void whereContains_compilesToContainsCondition() {
+        assertWhereCondition("MATCH (a:Account) WHERE a.name CONTAINS 'ow' RETURN a.id",
+                "a.name", Condition.CONTAINS, "ow");
+    }
+
+    @Test
+    void whereEndsWith_compilesToEndsWithCondition() {
+        assertWhereCondition("MATCH (a:Account) WHERE a.name ENDS WITH 'ell' RETURN a.id",
+                "a.name", Condition.ENDS_WITH, "ell");
+    }
+
+    @Test
+    void whereRegex_compilesToMatchesRegexCondition() {
+        assertWhereCondition("MATCH (a:Account) WHERE a.name =~ 'Pow.*' RETURN a.id",
+                "a.name", Condition.MATCHES_REGEX, "Pow.*");
+    }
+
+    @Test
+    void whereRegex_tooLong_throwsCompileException() {
+        final String longPattern = "a".repeat(1001);
+        assertThatThrownBy(() -> compile(
+                "MATCH (a:Account) WHERE a.name =~ '" + longPattern + "' RETURN a.id"))
+                .isInstanceOf(CypherCompileException.class)
+                .hasMessageContaining("regular expression is too long");
+    }
+
+    private void assertWhereCondition(final String cypher,
+                                      final String field,
+                                      final Condition condition,
+                                      final String value) {
+        final ExpressionTerm term = whereTerm(cypher);
+        assertThat(term.getField()).isEqualTo(field);
+        assertThat(term.getCondition()).isEqualTo(condition);
+        assertThat(term.getValue()).isEqualTo(value);
+    }
+
+    private ExpressionTerm whereTerm(final String cypher) {
+        final CompiledCypherPlan compiled = compile(cypher);
+        final Project project = (Project) compiled.plan();
+        assertThat(project.input()).isInstanceOf(Filter.class);
+        final Filter filter = (Filter) project.input();
+        return (ExpressionTerm) filter.wherePredicate().getChildren().getFirst();
+    }
+
+    @Test
+    void whereIn_compilesToInConditionWithCommaJoinedValue() {
+        assertWhereCondition("MATCH (a:Account) WHERE a.id IN ['account-a', 'account-b'] RETURN a.id",
+                "a.id", Condition.IN, "account-a, account-b");
+    }
+
+    @Test
+    void whereInEmptyList_compilesToInConditionWithEmptyValue() {
+        assertWhereCondition("MATCH (a:Account) WHERE a.id IN [] RETURN a.id",
+                "a.id", Condition.IN, "");
+    }
+
+    @Test
+    void whereIsNull_compilesToIsNullConditionWithNoValue() {
+        final ExpressionTerm term = whereTerm("MATCH (a:Account) WHERE a.closed IS NULL RETURN a.id");
+        assertThat(term.getField()).isEqualTo("a.closed");
+        assertThat(term.getCondition()).isEqualTo(Condition.IS_NULL);
+        assertThat(term.getValue()).isNull();
+    }
+
+    @Test
+    void whereIsNotNull_compilesToIsNotNullCondition() {
+        final ExpressionTerm term = whereTerm("MATCH (a:Account) WHERE a.closed IS NOT NULL RETURN a.id");
+        assertThat(term.getCondition()).isEqualTo(Condition.IS_NOT_NULL);
+    }
+
+    @Test
+    void whereInWithNonListRightSide_throwsCompileException() {
+        assertThatThrownBy(() -> compile("MATCH (a:Account) WHERE a.id IN 'account-a' RETURN a.id"))
+                .isInstanceOf(CypherCompileException.class)
+                .hasMessageContaining("right side of IN must be a literal list");
+    }
+
+    @Test
+    void whereBareVariableIsNull_throwsCompileException() {
+        assertThatThrownBy(() -> compile("MATCH (a:Account) WHERE a IS NULL RETURN a.id"))
+                .isInstanceOf(CypherCompileException.class)
+                .hasMessageContaining("IS NULL is only supported on a property");
+    }
+
+    @Test
     void limitWithoutOrderBy_wrapsTheProject() {
         final CompiledCypherPlan compiled = compile("MATCH (a:Account) RETURN a.id LIMIT 10");
 
@@ -224,7 +315,7 @@ class TestCypherToLogicalPlan {
 
         assertThat(compiled.aggregation()).isNotNull();
         assertThat(compiled.aggregation().columns()).containsExactly(
-                new AggregateColumn(AstAggregateFunction.COUNT, null, true, false));
+                new AggregateColumn(AstAggregateFunction.COUNT, null, true, false, false));
     }
 
     @Test
@@ -235,7 +326,7 @@ class TestCypherToLogicalPlan {
         assertThat(compiled.aggregation()).isNotNull();
         assertThat(compiled.aggregation().columns()).containsExactly(
                 new GroupKeyColumn("o.surname"),
-                new AggregateColumn(AstAggregateFunction.COUNT, null, false, true));
+                new AggregateColumn(AstAggregateFunction.COUNT, null, false, true, false));
 
         // The aggregation columns align 1:1, in order, with the compiled Project's fields.
         final Project project = (Project) compiled.plan();
@@ -249,7 +340,49 @@ class TestCypherToLogicalPlan {
         final CompiledCypherPlan compiled = compile("MATCH (a:Account) RETURN sum(a.balance) AS total");
 
         assertThat(compiled.aggregation().columns()).containsExactly(
-                new AggregateColumn(AstAggregateFunction.SUM, "a.balance", false, false));
+                new AggregateColumn(AstAggregateFunction.SUM, "a.balance", false, false, false));
+    }
+
+    @Test
+    void countDistinctOverProperty_setsTheDistinctFlag() {
+        final CompiledCypherPlan compiled = compile(
+                "MATCH (c:Crime)-[:INVESTIGATED_BY]->(o:Officer) RETURN o.surname, count(DISTINCT c.type) AS types");
+
+        assertThat(compiled.aggregation().columns()).containsExactly(
+                new GroupKeyColumn("o.surname"),
+                new AggregateColumn(AstAggregateFunction.COUNT, "c.type", false, false, true));
+    }
+
+    @Test
+    void countDistinct_getsADistinctColumnNameToAvoidCollisionWithPlainCount() {
+        final CompiledCypherPlan compiled = compile(
+                "MATCH (a:Account) RETURN count(a.balance), count(DISTINCT a.balance)");
+        final Project project = (Project) compiled.plan();
+        assertThat(project.fields()).hasSize(2);
+        assertThat(project.fields().get(0).name()).isEqualTo("count(a.balance)");
+        assertThat(project.fields().get(1).name()).isEqualTo("count(distinct a.balance)");
+    }
+
+    @Test
+    void distinctOnNonCountAggregate_throwsCompileException() {
+        assertThatThrownBy(() -> compile("MATCH (a:Account) RETURN sum(DISTINCT a.balance)"))
+                .isInstanceOf(CypherCompileException.class)
+                .hasMessageContaining("DISTINCT is only supported on count");
+    }
+
+    @Test
+    void countDistinctStar_throwsCompileException() {
+        assertThatThrownBy(() -> compile("MATCH (a:Account) RETURN count(DISTINCT *)"))
+                .isInstanceOf(CypherCompileException.class)
+                .hasMessageContaining("count(DISTINCT *)");
+    }
+
+    @Test
+    void countDistinctBareVariable_throwsCompileException() {
+        assertThatThrownBy(() -> compile(
+                "MATCH (c:Crime)-[:INVESTIGATED_BY]->(o:Officer) RETURN o.surname, count(DISTINCT c)"))
+                .isInstanceOf(CypherCompileException.class)
+                .hasMessageContaining("whole");
     }
 
     @Test
@@ -291,7 +424,7 @@ class TestCypherToLogicalPlan {
         final CompiledCypherPlan compiled = compile("MATCH (a:Account) RETURN count(a) AS total");
 
         assertThat(compiled.aggregation().columns()).containsExactly(
-                new AggregateColumn(AstAggregateFunction.COUNT, null, false, true));
+                new AggregateColumn(AstAggregateFunction.COUNT, null, false, true, false));
     }
 
     @Test

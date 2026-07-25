@@ -35,7 +35,10 @@ import stroom.query.grammar.antlr.CypherParser.EdgePatternContext;
 import stroom.query.grammar.antlr.CypherParser.ExpressionContext;
 import stroom.query.grammar.antlr.CypherParser.FunctionCallContext;
 import stroom.query.grammar.antlr.CypherParser.FunctionValueContext;
+import stroom.query.grammar.antlr.CypherParser.InPredicateContext;
+import stroom.query.grammar.antlr.CypherParser.IsNullPredicateContext;
 import stroom.query.grammar.antlr.CypherParser.LimitClauseContext;
+import stroom.query.grammar.antlr.CypherParser.ListValueContext;
 import stroom.query.grammar.antlr.CypherParser.MatchClauseContext;
 import stroom.query.grammar.antlr.CypherParser.NodeLabelsContext;
 import stroom.query.grammar.antlr.CypherParser.NodePatternContext;
@@ -310,8 +313,20 @@ public final class AstCypherBuilder {
     private AstBooleanExpr buildPrimary(final PrimaryContext ctx) {
         if (ctx.expr() != null) {
             return buildOrExpr(ctx.expr().orExpr());
+        } else if (ctx.inPredicate() != null) {
+            return buildInPredicate(ctx.inPredicate());
+        } else if (ctx.isNullPredicate() != null) {
+            return buildIsNullPredicate(ctx.isNullPredicate());
         }
         return buildComparisonPredicate(ctx.comparisonPredicate());
+    }
+
+    private AstInPredicate buildInPredicate(final InPredicateContext ctx) {
+        return new AstInPredicate(buildExpression(ctx.left), buildExpression(ctx.right), position(ctx));
+    }
+
+    private AstIsNullPredicate buildIsNullPredicate(final IsNullPredicateContext ctx) {
+        return new AstIsNullPredicate(buildExpression(ctx.operand), ctx.NOT() != null, position(ctx));
     }
 
     private AstComparisonPredicate buildComparisonPredicate(final ComparisonPredicateContext ctx) {
@@ -330,6 +345,11 @@ public final class AstCypherBuilder {
             case CypherParser.LE -> AstComparisonOp.LE;
             case CypherParser.GT -> AstComparisonOp.GT;
             case CypherParser.GE -> AstComparisonOp.GE;
+            // `STARTS WITH` / `ENDS WITH` are two-token phrases; the start token (STARTS / ENDS) identifies them.
+            case CypherParser.STARTS -> AstComparisonOp.STARTS_WITH;
+            case CypherParser.ENDS -> AstComparisonOp.ENDS_WITH;
+            case CypherParser.CONTAINS -> AstComparisonOp.CONTAINS;
+            case CypherParser.REGEX -> AstComparisonOp.REGEX;
             default -> throw new IllegalStateException("Unrecognised comparison operator: " + ctx.getText());
         };
     }
@@ -362,10 +382,11 @@ public final class AstCypherBuilder {
             case CypherParser.MAX -> AstAggregateFunction.MAX;
             default -> throw new IllegalStateException("Unrecognised aggregate function: " + ctx.getText());
         };
+        final boolean distinct = ctx.DISTINCT() != null;
         if (ctx.STAR() != null) {
-            return new AstAggregateExpr(function, null, true, position(ctx));
+            return new AstAggregateExpr(function, null, true, distinct, position(ctx));
         }
-        return new AstAggregateExpr(function, buildExpression(ctx.expression()), false, position(ctx));
+        return new AstAggregateExpr(function, buildExpression(ctx.expression()), false, distinct, position(ctx));
     }
 
     private AstPropertyAccessExpr buildPropertyAccess(final PropertyAccessContext ctx) {
@@ -399,6 +420,12 @@ public final class AstCypherBuilder {
             return new AstParameterValue(paramCtx.PARAM().getText().substring(1), position(ctx));
         } else if (ctx instanceof final FunctionValueContext functionCtx) {
             return buildFunctionCall(functionCtx.functionCall());
+        } else if (ctx instanceof final ListValueContext listCtx) {
+            final List<AstValue> elements = new ArrayList<>(listCtx.value().size());
+            for (final ValueContext valueCtx : listCtx.value()) {
+                elements.add(buildValue(valueCtx));
+            }
+            return new AstListValue(elements, position(ctx));
         }
         throw new IllegalStateException("Unrecognised value: " + ctx.getText());
     }
