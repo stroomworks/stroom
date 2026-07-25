@@ -1,6 +1,6 @@
 # Stroom graph query engine vs. the GQL mandatory feature set
 
-**Date:** 2026-07-25 · **Branch:** `sw-query-optimiser-graph-backend` · **Commit:** `0c44648260`
+**Date:** 2026-07-25 · **Branch:** `sw-query-optimiser-graph-backend` · **Commit:** `6a2fd0092a`
 **Standard compared against:** ISO/IEC 39075:2024 (GQL — Graph Query Language)
 
 ---
@@ -47,7 +47,7 @@ where Stroom is genuinely strong.
 | Result projection (`RETURN`, `DISTINCT`, aliases) | ✅ Supported |
 | Result ordering & paging (`ORDER BY`, `SKIP`, `LIMIT`) | ✅ Supported |
 | Comparison predicates, `IS NULL` / `IS NOT NULL` | ✅ Supported |
-| `CASE` value expression | ⚠️ Via `stroom.case(...)` function, not `CASE WHEN` syntax |
+| `CASE` value expression | ✅ Supported (`CASE WHEN …` searched form and simple form) |
 | `EXISTS` predicate / subqueries | ❌ Not supported |
 | Aggregate functions (`count`, `sum`, `avg`, `min`, `max`) | ✅ Supported (+ `collect`) |
 | Arithmetic value expressions | ✅ Supported (`+ - * / ^ %`) |
@@ -62,11 +62,11 @@ where Stroom is genuinely strong.
 
 **Bottom line:** within the **read/query half** of GQL's mandatory surface,
 Stroom covers the great majority of the capability — pattern matching, filtering,
-projection, ordering/paging, aggregation and arithmetic are all present. The
+projection, ordering/paging, aggregation, arithmetic and `CASE` are all present. The
 distance to "a standard graph query language" is dominated by the **write half**
 (data modification, catalog, sessions, transactions), which Stroom's architecture
 deliberately does not address, plus a handful of query-side items (`EXISTS`
-subqueries, `CASE WHEN` syntax, `SELECT`, list/`UNWIND`).
+subqueries, `SELECT`, list/`UNWIND`).
 
 ---
 
@@ -127,7 +127,7 @@ pattern grammar is not.
 - **`IS NULL` / `IS NOT NULL`** — ✅
 - **`IN` list membership** — ✅
 - **String predicates** `STARTS WITH` / `CONTAINS` / `ENDS WITH` / `=~` — ✅ (a Cypher extension beyond bare GQL)
-- **`CASE`** — ⚠️ available as the `stroom.case(...)` **function**, not the `CASE WHEN … THEN … END` **expression** syntax
+- **`CASE`** — ✅ both the searched form (`CASE WHEN <cond> THEN … ELSE … END`, with `AND`/`OR`/`NOT` and `IS [NOT] NULL` conditions) and the simple form (`CASE <input> WHEN <value> THEN … END`); a missing `ELSE` yields null. (Also still reachable as the `stroom.case(...)` function.) *String predicates / `IN` inside a `CASE` condition are the only rejected sub-cases.*
 - **`EXISTS`** (existential subquery / pattern) — ❌ not supported
 - **Aggregates** `count` / `sum` / `avg` / `min` / `max` — ✅ (plus `collect`, and `count(DISTINCT …)`)
 - **Arithmetic** — ✅ `+ - * / ^ %` with correct precedence and parentheses
@@ -154,18 +154,18 @@ have no counterpart, by design.
 Setting aside the deliberately out-of-scope write/catalog/session categories,
 these are the query-side items closest to worth doing, roughly in value order:
 
-1. **`CASE WHEN … THEN … ELSE … END` expression syntax.** The capability already
-   exists via `stroom.case(...)`; this is a grammar-and-lowering task to accept
-   the standard surface syntax. *Low risk.*
-2. **True list values + `UNWIND`.** Today `collect()` returns a delimited string,
+1. **True list values + `UNWIND`.** Today `collect()` returns a delimited string,
    not a real list; `UNWIND`, `keys()`, `labels()`, `range()`, list slicing all
    wait on a first-class list value type threaded through the value model.
    *Higher effort (cross-cutting value-type change).*
-3. **`EXISTS { pattern }` / existential subqueries.** Needs a sub-pattern
+2. **`EXISTS { pattern }` / existential subqueries.** Needs a sub-pattern
    evaluation hook in the WHERE path. *Medium effort.*
-4. **Unanchored label-only node scan** (`MATCH (n:Person) RETURN …`). Needs a
+3. **Unanchored label-only node scan** (`MATCH (n:Person) RETURN …`). Needs a
    label-indexed node scan as a plan source. *Medium effort.*
-5. **`UNION` of query results.** *Medium effort.*
+4. **`UNION` of query results.** *Medium effort.*
+
+*Recently closed:* the `CASE WHEN` expression (both forms) and the modulo (`%`)
+operator are now implemented — they previously headed this list.
 
 None of these block the common analytic queries the engine is built for; they are
 the standards-completeness tail.
@@ -180,9 +180,9 @@ conformance without a fundamentally larger scope (write statements, catalog,
 sessions). Judged on the fair question — *can a user express standard graph
 queries?* — it covers the **majority of GQL's mandatory querying capability**:
 pattern matching, optional matching, rich filtering, projection with distinct/
-alias, ordering and paging, the full mandatory aggregate set, and arithmetic. The
-notable query-side omissions are `CASE WHEN` syntax, `EXISTS` subqueries, real
-list values/`UNWIND`, `UNION`, and the `SELECT` tabular form.
+alias, ordering and paging, the full mandatory aggregate set, arithmetic and
+`CASE`. The notable query-side omissions are `EXISTS` subqueries, real list
+values/`UNWIND`, `UNION`, and the `SELECT` tabular form.
 
 ---
 
