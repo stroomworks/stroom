@@ -1765,6 +1765,120 @@ round-trip for one function query.
 
 ---
 
+## Phase 9 — Cypher-exact function semantics (both flavours available)
+
+**Phase goal:** a Cypher-literate user can call functions by their **openCypher names with openCypher semantics**
+(`toUpper`, `substring(s, start, length)`, `coalesce(a, b, …)`, `size`, `split`, `left`, `right`, …), *without*
+losing the Stroom-native functions Phase 8 exposed. Both flavours coexist: Stroom's names keep Stroom semantics;
+Cypher's names get Cypher semantics.
+
+**Phase gate:** `./gradlew :stroom-query:stroom-query-planner:test :stroom-graphdb:stroom-graphdb-impl:test` green.
+
+**Why this is a follow-on, not part of Phase 8.** Phase 8 exposed functions under their **Stroom** names/semantics
+(the safe, no-surprise default) precisely because a blind name-alias is *wrong* where the two libraries disagree. The
+verified example: `substring('hello', 1, 3)` is `"ell"` in Cypher (third arg = **length**) but `"el"` in Stroom
+(third arg = exclusive **end index** - it calls Java's `"hello".substring(1, 3)`). Cypher-exact semantics is a
+per-function audit + adapter, worth its own phase.
+
+### Design decisions
+
+**(a) Keep both flavours; do not replace Phase 8's Stroom-native functions.** Every Stroom function stays reachable
+under its Stroom name with Stroom semantics (backward-compatible, zero churn to Phase 8). Phase 9 is **additive**: it
+adds Cypher names with Cypher semantics.
+
+**(b) The names mostly do not collide - so most of this is pure addition.** Cypher's function names are largely
+*distinct* from Stroom's (`toUpper` vs `upperCase`, `toLower` vs `lowerCase`, `size` vs `stringLength`, `ceil` vs
+`ceiling`), and Cypher has functions Stroom names differently or not at all (`coalesce`, `split`, `left`, `right`,
+`reverse`, `ltrim`/`rtrim`, `head`/`last`/`tail`). Each of those is a new allowlist entry lowering to a Stroom
+function (or composition) - no conflict.
+
+**(c) The genuinely-colliding names need one rule.** A small set is spelled *identically* in both with *different*
+semantics: `substring`, `round`, `replace`, `toString`, `toInteger`, `toBoolean`, `floor`. **Recommended rule
+(confirm before building):** the bare colliding name resolves **Cypher-first** (the portability win - a pasted Cypher
+query behaves as written), and Stroom's own version of that function stays reachable under a `stroom_`-prefixed
+alias (`stroom_substring`, `stroom_round`, …) - a plain `NAME`, so **no grammar change**. This does change Phase 8's
+bare `substring`/`round`/… from Stroom to Cypher semantics - an acceptable, documented churn on unreleased code, but
+flag it in the changelog. (Alternative, if backward-compat with Phase 8's bare names is preferred: keep bare = Stroom
+and put the Cypher-exact colliders under a `cypher_` prefix. Pick one in Task 9.1.)
+
+**(d) Argument adaptation is a compile-time rewrite, not new runtime.** Where Cypher's signature differs from
+Stroom's, the compiler rewrites the call when rendering it to the expression engine. E.g. Cypher `substring(s,
+start, length)` renders to Stroom `substring(${s}, <start>, add(<start>, <length>))` (end index = start + length,
+reusing Stroom's `add`); Cypher `coalesce(a, b, c)` renders to nested Stroom `if(isNull(a), if(isNull(b), c, b),
+a)`. This lives entirely in the `CypherFunctions`/`renderFunctionCall` layer (Phase 8) - no engine change.
+
+**(e) Null propagation.** Cypher functions generally return `null` when any argument is `null`. Where Stroom's
+function does not already, wrap the rendered call so a null argument yields `ValNull` (or assert Stroom's function
+already does). Audit per function; cover with tests.
+
+**(f) List-returning Cypher functions are gated on `ValList`.** `split`, `keys`, `labels`, `range`, `head`/`last`/
+`tail` return lists; with only the delimiter-joined-`ValString` `collect()` representation (Phase 4), they cannot be
+Cypher-exact. Defer the list-returning subset until a real `ValList` lands (Phase 4 Task 4.1), or ship `split` as a
+`ValString` with a documented caveat. Decide in Task 9.1.
+
+### Task 9.1 — Audit + the Cypher→Stroom mapping table
+
+**Goal.** Produce the authoritative per-function table and lock the design decisions (b)/(c)/(f).
+
+**Depends on.** Nothing.
+
+**Files.** New/edit: `CypherFunctions` (the allowlist/alias table from Phase 8) + a design note.
+
+**Contract.** For every Cypher scalar function in scope, record: Cypher name; Stroom target function (or composition);
+the argument adaptation (order/indexing/count); the null-propagation rule; and whether it is list-returning (deferred).
+Seed table (audit each target against `stroom.query.language.functions` before relying on it - names are contracts):
+
+| Cypher | Stroom target | Adaptation |
+|---|---|---|
+| `toUpper`/`toLower` | `upperCase`/`lowerCase` | none (1:1) |
+| `substring(s,start,len)` | `substring(s,start,end)` | `end = add(start, len)`; 2-arg form 1:1 |
+| `left(s,n)` / `right(s,n)` | `substring` | `left → substring(s,0,n)`; `right → substring(s, subtract(stringLength(s),n), stringLength(s))` |
+| `trim`/`ltrim`/`rtrim` | (confirm Stroom equivalents) | audit |
+| `replace(o,search,repl)` | `replace` | confirm Stroom `replace` is literal (not regex) + arg order |
+| `reverse(s)` | (confirm) | audit |
+| `size(list)` / `size(s)` | `stringLength` (string only) | list form gated on `ValList` |
+| `coalesce(a,b,…)` | `if`/`isNull` | nested `if(isNull(a), coalesce(b,…), a)` |
+| `toString`/`toInteger`/`toFloat`/`toBoolean` | same-ish | audit format + null-on-unparseable |
+| `round`/`floor`/`ceil` | `round`/`floor`/`ceiling` | `ceil→ceiling`; audit rounding mode/precision args |
+| `split`/`head`/`last`/`tail`/`keys`/`labels`/`range` | — | **list-returning: deferred to `ValList`** |
+
+**Done-when.** The table is complete and each target/adaptation is verified against the Stroom source. **Verify.**
+Review only.
+
+### Task 9.2 — Compiler: Cypher names + argument adaptation
+
+**Goal.** Extend `CypherFunctions`/`renderFunctionCall` (Phase 8) with the Cypher-named entries and their adapters,
+and the collision rule from 9.1.
+
+**Depends on.** Task 9.1.
+
+**Files.** Edit: `CypherFunctions.java`, `CypherToLogicalPlan.renderFunctionCall`; tests `TestCypherToLogicalPlan`.
+
+**Contract.** Add each Cypher name to the allowlist; where the signature differs, the renderer emits the adapted
+Stroom expression text (decision (d)). Apply the collision rule (decision (c)) - bare Cypher-first, Stroom under a
+`stroom_` alias (or the confirmed alternative). Preserve every Phase 8 rejection (unknown function, aggregate/
+`before()`/`after()` argument). **Done-when.** `substring('x', 1, 3)`, `toUpper(a.name)`, `coalesce(c.type, 'none')`
+each render to the correct Stroom expression, verified by `rawExpression` assertions. **Verify.**
+`./gradlew :stroom-query:stroom-query-planner:test`.
+
+### Task 9.3 — Null-propagation + end-to-end tests
+
+**Goal.** Cypher functions return `null` on null input where the spec requires it, and every mapped function is
+tested over real rows.
+
+**Depends on.** Task 9.2.
+
+**Files.** Edit: `CypherToLogicalPlan.renderFunctionCall` (null-wrapping where needed); tests
+`TestGraphTraversalEngine`, `TestGraphSearchProvider`.
+
+**Contract.** For each Cypher function: an engine test evaluating it over a seeded row (including a null/absent
+argument), asserting the Cypher-exact result - e.g. `substring('hello', 1, 3) = 'ell'` (not `'el'`),
+`coalesce(<absent>, 'x') = 'x'`, `toUpper(<null>) = null`. Both flavours coexist in one test class (a Stroom-name and
+a Cypher-name call in adjacent tests). **Done-when.** All green. **Verify.**
+`./gradlew :stroom-query:stroom-query-planner:test :stroom-graphdb:stroom-graphdb-impl:test`.
+
+---
+
 ## 3. Documentation & user-facing updates
 
 - Update [`cypher-language-feature-roadmap.md`](cypher-language-feature-roadmap.md)'s "What the subset covers today"

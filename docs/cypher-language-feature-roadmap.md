@@ -209,6 +209,11 @@ RETURN toUpper(p.surname), coalesce(c.type, 'none'), substring(p.postcode, 0, 4)
 - **Risk: Low.** Contained to the projection step; keep the allowlist to pure, deterministic functions so it
   cannot destabilise the engine or the temporal model. `RETURN`-side first (biggest win, lowest risk); functions
   in `WHERE` are a follow-on through a second evaluator.
+- **Status: implemented (Phase 8), under Stroom names/semantics.** A follow-on (**Phase 9** in the build plan) adds
+  a *second flavour* - Cypher's own function names with Cypher-exact semantics (`substring(s, start, length)`,
+  `coalesce`, `size`, `left`/`right`, …) alongside the Stroom-native ones - via per-function argument adaptation at
+  compile time. Both flavours coexist; the list-returning Cypher functions (`split`, `keys`, `range`, …) wait on a
+  real `ValList` (Tier 1 item 3's deferred half).
 
 ### 8. `UNWIND` (list → rows)
 
