@@ -1211,6 +1211,19 @@ pattern match anything" is `WHERE v IS NULL`; shipping `OPTIONAL MATCH` before `
 untestable by any means this subset offers, and would risk landing the wrong bound/unbound semantics undetected. Do
 not attempt this phase out of order.
 
+> **Implementation note (2026-07-25): done, with a narrowed v1 scope.** The optional match is folded onto the
+> mandatory plan as an `optional` `Expand` (an `optional` boolean added to `Expand` with a back-compatible
+> convenience constructor, so no rewrite-rule/test churn). The engine (`GraphTraversalEngine.expandOptionalHop`)
+> emits the input row unchanged when the hop matches nothing, and sets a reserved **bound-marker** row key
+> (`OptionalMatchSupport.boundKey`) on matched rows; the compiler lowers `count(<optionalVar>)` to a count over
+> that marker key, so an unmatched anchor yields count 0 (not 1). **v1 restrictions (all fail-loud):** exactly one
+> optional hop, extending the mandatory pattern's terminal (frontier) variable; the OPTIONAL MATCH may carry no
+> WHERE or temporal clause of its own; not combined with `DIFF`/`RETURN GRAPH`. **Two deferrals vs. the original
+> task:** (1) `WHERE v IS NULL` filtering on the optional variable needs a host clause (`WITH`, Phase 7), so it is
+> not wired yet - the bound marker that would support it is in place; (2) the "all persons" unanchored form needs a
+> label-only node scan (`MATCH (p:Person)` with no property anchor), a pre-existing gap for *every* scalar query -
+> so v1 OPTIONAL MATCH requires an anchored mandatory match, like all scalar matches today.
+
 ---
 
 ### Task 6.1 — Grammar + AST: `OPTIONAL MATCH`

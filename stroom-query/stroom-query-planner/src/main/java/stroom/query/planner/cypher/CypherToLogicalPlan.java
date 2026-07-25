@@ -173,16 +173,32 @@ public final class CypherToLogicalPlan {
     public CompiledCypherPlan compile(final AstCypherQuery query) {
         Objects.requireNonNull(query, "query");
 
-        if (query.readingClauses().size() != 1) {
+        // Accepted reading-clause shapes: a single MATCH, or a MATCH followed by one OPTIONAL MATCH. Every other
+        // shape (WITH-chaining, a second mandatory MATCH, >2 clauses, a leading OPTIONAL MATCH) is a later phase.
+        final List<AstReadingClause> clauses = query.readingClauses();
+        if (clauses.isEmpty() || clauses.size() > 2) {
             throw new CypherCompileException(
-                    "not in PoC subset: exactly one MATCH clause is supported (WITH-chaining and multiple "
-                    + "MATCH clauses are a later phase), found " + query.readingClauses().size(),
-                    query.position());
+                    "not in PoC subset: only a single MATCH, optionally followed by one OPTIONAL MATCH, is "
+                    + "supported (WITH-chaining and further MATCH clauses are a later phase), found "
+                    + clauses.size() + " reading clauses", query.position());
         }
-        final AstReadingClause readingClause = query.readingClauses().getFirst();
-        if (!(readingClause instanceof final AstMatch match)) {
+        if (!(clauses.getFirst() instanceof final AstMatch match)) {
             throw new CypherCompileException(
-                    "not in PoC subset: a WITH clause is not yet compiled", readingClause.position());
+                    "not in PoC subset: a WITH clause is not yet compiled", clauses.getFirst().position());
+        }
+        if (match.optional()) {
+            throw new CypherCompileException(
+                    "not supported in this version: a query cannot begin with OPTIONAL MATCH - it must extend a "
+                    + "preceding MATCH", match.position());
+        }
+        AstMatch optionalMatch = null;
+        if (clauses.size() == 2) {
+            if (!(clauses.get(1) instanceof final AstMatch second) || !second.optional()) {
+                throw new CypherCompileException(
+                        "not in PoC subset: a MATCH may only be followed by an OPTIONAL MATCH (WITH-chaining and a "
+                        + "second mandatory MATCH are a later phase)", clauses.get(1).position());
+            }
+            optionalMatch = second;
         }
 
         final PatternResult patternResult = compilePattern(match.pattern());
@@ -198,6 +214,11 @@ public final class CypherToLogicalPlan {
         }
 
         if (query.returnClause().graph()) {
+            if (optionalMatch != null) {
+                throw new CypherCompileException(
+                        "not supported in this version: OPTIONAL MATCH combined with RETURN GRAPH",
+                        optionalMatch.position());
+            }
             return compileReturnGraph(query, match, plan, temporalContext, diffContext);
         }
 
@@ -211,6 +232,20 @@ public final class CypherToLogicalPlan {
             // later phase - reject it here rather than silently evaluating it against a single snapshot's row
             // where those keys are absent (docs/temporal-cypher-diff-operator.md §12.1).
             rejectDiffConstructsInDiffWhere(match.where().expr());
+        }
+
+        // Fold an OPTIONAL MATCH's single hop onto the mandatory plan as an `optional` Expand - before the WHERE
+        // Filter, so the Filter stays directly under the terminal Project (as unwrap expects) and the optional
+        // hop is the plan's last hop. optionalVariables feeds count(...) lowering below.
+        Set<String> optionalVariables = Set.of();
+        if (optionalMatch != null) {
+            if (diffContext != null) {
+                throw new CypherCompileException(
+                        "not supported in this version: OPTIONAL MATCH combined with DIFF", optionalMatch.position());
+            }
+            final OptionalFold fold = foldOptionalMatch(plan, patternResult.terminalVariable(), optionalMatch);
+            plan = fold.plan();
+            optionalVariables = fold.optionalVariables();
         }
 
         List<FieldComparison> fieldComparisons = List.of();
@@ -228,7 +263,7 @@ public final class CypherToLogicalPlan {
         }
 
         final List<ProjectField> fields = buildProjectFields(query.returnClause());
-        final CypherAggregation aggregation = buildAggregation(query.returnClause());
+        final CypherAggregation aggregation = buildAggregation(query.returnClause(), optionalVariables);
         if (diffContext != null && aggregation != null) {
             // v1 delta-table diffs one path at a time; grouping/reducing the classified delta table
             // (diff-aggregation) is deferred (docs/temporal-cypher-diff-operator.md §12.1).
@@ -342,17 +377,19 @@ public final class CypherToLogicalPlan {
     // pattern: NodeScan [+ Expand chain]
     // ------------------------------------------------------------------------------------------------------
 
-    private record PatternResult(LogicalPlan plan) {
+    private record PatternResult(LogicalPlan plan, String terminalVariable) {
     }
 
     private PatternResult compilePattern(final AstPathPattern pattern) {
         final NodeScan anchor = compileNodeScan(pattern.anchor());
 
         if (pattern.hops().size() == 1 && pattern.hops().getFirst().edge().varLength() != null) {
-            return new PatternResult(compileVarLengthExpand(anchor, pattern.hops().getFirst()));
+            final VarLengthExpand vle = compileVarLengthExpand(anchor, pattern.hops().getFirst());
+            return new PatternResult(vle, vle.targetVariable());
         }
 
         LogicalPlan plan = anchor;
+        String terminalVariable = anchor.variable();
         for (final var hop : pattern.hops()) {
             final AstEdgePattern edge = hop.edge();
             if (edge.varLength() != null) {
@@ -375,8 +412,9 @@ public final class CypherToLogicalPlan {
                     hop.node().labels(),
                     compilePropertyPredicate(hop.node().properties()),
                     hop.position());
+            terminalVariable = targetVariable;
         }
-        return new PatternResult(plan);
+        return new PatternResult(plan, terminalVariable);
     }
 
     private VarLengthExpand compileVarLengthExpand(final NodeScan anchor, final AstPatternHop hop) {
@@ -402,6 +440,75 @@ public final class CypherToLogicalPlan {
     private NodeScan compileNodeScan(final AstNodePattern node) {
         final String variable = node.variable() != null ? node.variable() : nextAnonymousVariable();
         return new NodeScan(variable, node.labels(), compilePropertyPredicate(node.properties()), node.position());
+    }
+
+    private record OptionalFold(LogicalPlan plan, Set<String> optionalVariables) {
+    }
+
+    /**
+     * Folds an {@code OPTIONAL MATCH}'s single hop onto the mandatory plan as an {@code optional} {@link Expand}.
+     * v1 restrictions, each a fail-loud rejection: the optional pattern must start from a bare variable that is
+     * the mandatory pattern's terminal (frontier) variable, extend it by exactly one fixed-length hop, and carry
+     * no {@code WHERE}/temporal clause of its own.
+     *
+     * <p><b>Null status:</b> no parameter is nullable; never returns null.</p>
+     */
+    private OptionalFold foldOptionalMatch(final LogicalPlan mandatoryPlan, final String mandatoryTerminal,
+                                           final AstMatch optionalMatch) {
+        if (optionalMatch.where() != null) {
+            throw new CypherCompileException(
+                    "not supported in this version: a WHERE on an OPTIONAL MATCH (constraining the optional "
+                    + "pattern) is a later phase", optionalMatch.where().position());
+        }
+        if (optionalMatch.temporal() != null) {
+            throw new CypherCompileException(
+                    "not supported in this version: a temporal clause on an OPTIONAL MATCH",
+                    optionalMatch.position());
+        }
+        final AstPathPattern pattern = optionalMatch.pattern();
+        final AstNodePattern anchorNode = pattern.anchor();
+        if (anchorNode.variable() == null
+                || !anchorNode.labels().isEmpty()
+                || !anchorNode.properties().isEmpty()) {
+            throw new CypherCompileException(
+                    "not supported in this version: an OPTIONAL MATCH must start from a bare variable already "
+                    + "bound by the preceding MATCH, e.g. OPTIONAL MATCH (p)-[:R]->(c)", anchorNode.position());
+        }
+        if (!anchorNode.variable().equals(mandatoryTerminal)) {
+            throw new CypherCompileException(
+                    "not supported in this version: an OPTIONAL MATCH must extend the preceding MATCH's final "
+                    + "variable ('" + mandatoryTerminal + "'), found '" + anchorNode.variable() + "'",
+                    anchorNode.position());
+        }
+        if (pattern.hops().size() != 1) {
+            throw new CypherCompileException(
+                    "not supported in this version: an OPTIONAL MATCH supports exactly one hop, e.g. "
+                    + "OPTIONAL MATCH (p)-[:R]->(c)", pattern.position());
+        }
+        final AstPatternHop hop = pattern.hops().getFirst();
+        if (hop.edge().varLength() != null) {
+            throw new CypherCompileException(
+                    "not supported in this version: a variable-length OPTIONAL MATCH", hop.edge().position());
+        }
+        final String targetVariable = hop.node().variable() != null
+                ? hop.node().variable()
+                : nextAnonymousVariable();
+        final LogicalPlan plan = new Expand(
+                mandatoryPlan,
+                hop.edge().type(),
+                toDirection(hop.edge().direction()),
+                hop.edge().variable(),
+                targetVariable,
+                hop.node().labels(),
+                compilePropertyPredicate(hop.node().properties()),
+                true,
+                hop.position());
+        final Set<String> optionalVariables = new HashSet<>();
+        optionalVariables.add(targetVariable);
+        if (hop.edge().variable() != null) {
+            optionalVariables.add(hop.edge().variable());
+        }
+        return new OptionalFold(plan, optionalVariables);
     }
 
     /**
@@ -772,7 +879,8 @@ public final class CypherToLogicalPlan {
      *                                 shape this PoC subset does not support (see
      *                                 {@link #compileAggregateColumn}).
      */
-    private @Nullable CypherAggregation buildAggregation(final AstReturnClause returnClause) {
+    private @Nullable CypherAggregation buildAggregation(final AstReturnClause returnClause,
+                                                         final Set<String> optionalVariables) {
         Objects.requireNonNull(returnClause, "returnClause");
         boolean anyAggregate = false;
         for (final AstReturnItem item : returnClause.items()) {
@@ -786,7 +894,7 @@ public final class CypherToLogicalPlan {
         }
         final List<OutputColumn> columns = new ArrayList<>(returnClause.items().size());
         for (final AstReturnItem item : returnClause.items()) {
-            columns.add(compileOutputColumn(item));
+            columns.add(compileOutputColumn(item, optionalVariables));
         }
         return new CypherAggregation(columns);
     }
@@ -800,10 +908,10 @@ public final class CypherToLogicalPlan {
      * {@code GraphTraversalEngine.evaluate}'s bare-variable rejection already enforces for the non-aggregated
      * path).
      */
-    private OutputColumn compileOutputColumn(final AstReturnItem item) {
+    private OutputColumn compileOutputColumn(final AstReturnItem item, final Set<String> optionalVariables) {
         final AstExpression expression = item.expression();
         if (expression instanceof final AstAggregateExpr aggregate) {
-            return compileAggregateColumn(aggregate);
+            return compileAggregateColumn(aggregate, optionalVariables);
         }
         if (expression instanceof final AstPropertyAccessExpr propertyAccess) {
             return new GroupKeyColumn(propertyAccess.variable() + "." + propertyAccess.property());
@@ -822,7 +930,8 @@ public final class CypherToLogicalPlan {
      * {@code OPTIONAL MATCH} to make the variable ever unbound; {@code sum}/{@code avg}/{@code min}/{@code max}
      * over a bare variable are rejected, since a whole node/edge has no single value to reduce).
      */
-    private OutputColumn compileAggregateColumn(final AstAggregateExpr aggregate) {
+    private OutputColumn compileAggregateColumn(final AstAggregateExpr aggregate,
+                                                final Set<String> optionalVariables) {
         final AstAggregateFunction function = aggregate.function();
         final String functionName = function.name().toLowerCase(Locale.ROOT);
         final boolean distinct = aggregate.distinct();
@@ -867,6 +976,13 @@ public final class CypherToLogicalPlan {
                         "not supported in this version: count(DISTINCT " + variable.name() + ") over a whole "
                         + "matched node/edge is not supported - use count(DISTINCT " + variable.name()
                         + ".someProperty)", aggregate.position());
+            }
+            if (optionalVariables.contains(variable.name())) {
+                // count(<optional variable>): count the rows where the OPTIONAL MATCH actually bound it, via its
+                // bound-marker key (the null-padded rows emitted for a non-match lack this key). Without this,
+                // count(c) would return 1 for a row with no optional match instead of 0. See OptionalMatchSupport.
+                return new AggregateColumn(
+                        function, OptionalMatchSupport.boundKey(variable.name()), false, false, false);
             }
             return new AggregateColumn(function, null, false, true, false);
         }

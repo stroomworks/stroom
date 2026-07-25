@@ -127,6 +127,16 @@ class TestCypherQueryParser {
     }
 
     @Test
+    void optionalMatch_parsesWithOptionalFlag() {
+        final AstCypherQuery query = CypherQueryParser.parse(
+                "MATCH (p:Person {id: 'p-1'}) OPTIONAL MATCH (p)-[:PARTY_TO]->(c:Crime) RETURN p.id");
+
+        assertThat(query.readingClauses()).hasSize(2);
+        assertThat(((AstMatch) query.readingClauses().get(0)).optional()).isFalse();
+        assertThat(((AstMatch) query.readingClauses().get(1)).optional()).isTrue();
+    }
+
+    @Test
     void inAndIsNullPredicates_parse() {
         assertThatCode(() -> CypherQueryParser.parse(
                 "MATCH (a:Account) WHERE a.id IN ['x', 'y'] RETURN a.id")).doesNotThrowAnyException();
@@ -367,7 +377,6 @@ class TestCypherQueryParser {
             "MATCH (a:Account) SET a.x = 1 RETURN a",
             "MATCH (a) RETURN a UNION MATCH (b) RETURN b",
             "UNWIND [1, 2, 3] AS x RETURN x",
-            "OPTIONAL MATCH (a:Account) RETURN a",
             "MATCH (a:Account)-[:OWNS*]->(b) RETURN b",     // unbounded var-length - no finite max
             "CALL db.labels() RETURN *",
             "MATCH (a:Account) DELETE a",

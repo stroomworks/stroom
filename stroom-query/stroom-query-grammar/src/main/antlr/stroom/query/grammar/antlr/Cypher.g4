@@ -88,8 +88,11 @@ readingClause
     | withClause
     ;
 
+// `OPTIONAL MATCH` (left-outer): CypherToLogicalPlan accepts it only as a second reading clause whose pattern
+// extends a variable already bound by a preceding mandatory MATCH, and lowers its single hop to an `optional`
+// Expand. Every other multi-clause shape is still rejected at compile time.
 matchClause
-    : MATCH pattern temporalClause? whereClause?
+    : OPTIONAL? MATCH pattern temporalClause? whereClause?
     ;
 
 withClause
@@ -309,6 +312,7 @@ CONTAINS : C O N T A I N S ;
 IN       : I N ;
 IS       : I S ;
 COLLECT  : C O L L E C T ;
+OPTIONAL : O P T I O N A L ;
 // Trailing underscore to avoid reader confusion with Java's null keyword (matches the SKIP_ convention above).
 NULL_    : N U L L ;
 

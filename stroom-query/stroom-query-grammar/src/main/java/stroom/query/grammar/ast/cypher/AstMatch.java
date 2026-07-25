@@ -29,12 +29,14 @@ import java.util.Objects;
  * @param pattern  never null.
  * @param temporal nullable - absent means "latest" (no as-of/window restriction).
  * @param where    nullable - absent means no filter predicate.
+ * @param optional true for {@code OPTIONAL MATCH} (left-outer semantics).
  * @param position never null.
  */
 public record AstMatch(
         AstPathPattern pattern,
         @Nullable AstTemporal temporal,
         @Nullable AstWhere where,
+        boolean optional,
         AstPosition position) implements AstReadingClause {
 
     public AstMatch {

@@ -259,6 +259,75 @@ class TestGraphTraversalEngine {
         });
     }
 
+    @Test
+    void optionalMatch_includesUnmatchedAnchorWithZeroCountAndNullProjection(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("optionalmatch"), DOC)) {
+            seedPersonsAndCrimes(stores);
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory());
+
+            // p1 has two crimes: count(c) = 2.
+            final List<Val[]> p1 = runFull(stores, engine,
+                    "MATCH (p:Person {id: 'p1'}) OPTIONAL MATCH (p)-[:PARTY_TO]->(c:Crime) "
+                    + "RETURN p.id, count(c) AS n");
+            assertThat(p1).hasSize(1);
+            assertThat(p1.getFirst()[0].toString()).isEqualTo("p1");
+            assertThat(p1.getFirst()[1].toString()).isEqualTo("2");
+
+            // p2 has no crimes: still appears, count 0 (left-outer via the bound marker).
+            final List<Val[]> p2 = runFull(stores, engine,
+                    "MATCH (p:Person {id: 'p2'}) OPTIONAL MATCH (p)-[:PARTY_TO]->(c:Crime) "
+                    + "RETURN p.id, count(c) AS n");
+            assertThat(p2).hasSize(1);
+            assertThat(p2.getFirst()[0].toString()).isEqualTo("p2");
+            assertThat(p2.getFirst()[1].toString()).isEqualTo("0");
+
+            // p2's unmatched optional property projects as null (row kept, not an error).
+            final List<Val[]> proj = runFull(stores, engine,
+                    "MATCH (p:Person {id: 'p2'}) OPTIONAL MATCH (p)-[:PARTY_TO]->(c:Crime) RETURN p.id, c.type");
+            assertThat(proj).hasSize(1);
+            assertThat(proj.getFirst()[0].toString()).isEqualTo("p2");
+            assertThat(proj.getFirst()[1]).isEqualTo(ValNull.INSTANCE);
+        }
+    }
+
+    private static List<Val[]> runFull(final GraphStores stores, final GraphTraversalEngine engine,
+                                       final String cypher) {
+        final CompiledCypherPlan compiled = compile(cypher);
+        return stores.read(readTxn -> engine.execute(readTxn, compiled.plan(), compiled.temporalContext(),
+                DateTimeSettings.builder().build(), compiled.distinct(), compiled.aggregation(),
+                compiled.fieldComparisons()));
+    }
+
+    private static void seedPersonsAndCrimes(final GraphStores stores) {
+        final long personLabel = intern(stores, stores.getLabelUids(), "Person");
+        final long crimeLabel = intern(stores, stores.getLabelUids(), "Crime");
+        final long idKey = intern(stores, stores.getPropertyKeyUids(), "id");
+        final long partyTo = intern(stores, stores.getEdgeTypeUids(), "PARTY_TO");
+        final long p1 = intern(stores, stores.getNodeUids(), "p1");
+        final long p2 = intern(stores, stores.getNodeUids(), "p2");
+        final long cr1 = intern(stores, stores.getNodeUids(), "cr1");
+        final long cr2 = intern(stores, stores.getNodeUids(), "cr2");
+
+        stores.write(writer -> {
+            stores.getNodes().insert(writer, p1, T1, List.of(personLabel), Map.of("id", ValString.create("p1")));
+            stores.getNodes().insert(writer, p2, T1, List.of(personLabel), Map.of("id", ValString.create("p2")));
+            stores.getNodes().insert(writer, cr1, T1, List.of(crimeLabel),
+                    Map.of("id", ValString.create("cr1"), "type", ValString.create("theft")));
+            stores.getNodes().insert(writer, cr2, T1, List.of(crimeLabel),
+                    Map.of("id", ValString.create("cr2"), "type", ValString.create("fraud")));
+            stores.getPropertyIndex().insert(
+                    writer, personLabel, idKey, "p1".getBytes(StandardCharsets.UTF_8), p1);
+            stores.getPropertyIndex().insert(
+                    writer, personLabel, idKey, "p2".getBytes(StandardCharsets.UTF_8), p2);
+            for (final long crime : List.of(cr1, cr2)) {
+                stores.getOutEdges().insert(writer, p1, partyTo, crime, T1, Map.of());
+                stores.getInEdges().insert(writer, p1, partyTo, crime, T1, Map.of());
+            }
+            return null;
+        });
+    }
+
     private static void seedOfficerWithRepeatedCrimeTypes(final GraphStores stores) {
         final long officerLabel = intern(stores, stores.getLabelUids(), "Officer");
         final long crimeLabel = intern(stores, stores.getLabelUids(), "Crime");

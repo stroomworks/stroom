@@ -26,6 +26,7 @@ import stroom.query.common.v2.ExpressionPredicateFactory;
 import stroom.query.common.v2.ExpressionPredicateFactory.ValueFunctionFactories;
 import stroom.query.language.functions.Type;
 import stroom.query.language.functions.Val;
+import stroom.query.language.functions.ValBoolean;
 import stroom.query.language.functions.ValDouble;
 import stroom.query.language.functions.ValLong;
 import stroom.query.language.functions.ValNull;
@@ -34,6 +35,7 @@ import stroom.query.planner.cypher.AggregateColumn;
 import stroom.query.planner.cypher.CypherAggregation;
 import stroom.query.planner.cypher.FieldComparison;
 import stroom.query.planner.cypher.GroupKeyColumn;
+import stroom.query.planner.cypher.OptionalMatchSupport;
 import stroom.query.planner.cypher.OutputColumn;
 import stroom.query.planner.cypher.TemporalContext;
 import stroom.query.planner.logical.Direction;
@@ -410,8 +412,14 @@ public final class GraphTraversalEngine {
                 if (rowSink.size() >= rowCap) {
                     break;
                 }
-                expandChainHop(readTxn, f.nodeUid(), access, hop, f.row(), isLastHop, wherePredicate, next, rowSink,
-                        rowCap, deadline);
+                if (hop.optional()) {
+                    // OPTIONAL MATCH hop: left-outer - emit the input row even when nothing matches (see method).
+                    expandOptionalHop(readTxn, f, access, hop, isLastHop, wherePredicate, next, rowSink,
+                            rowCap, deadline);
+                } else {
+                    expandChainHop(readTxn, f.nodeUid(), access, hop, f.row(), isLastHop, wherePredicate, next,
+                            rowSink, rowCap, deadline);
+                }
             }
             frontier = next;
         }
@@ -1277,6 +1285,76 @@ public final class GraphTraversalEngine {
             }
         } else {
             nextFrontier.add(new Frontier(neighbourUid, row));
+        }
+    }
+
+    /**
+     * Expands an {@code OPTIONAL MATCH} hop for one input row: like {@link #expandChainHop}, but if no neighbour
+     * matches, emits the input row unchanged (this hop's target/edge variables left unbound) instead of dropping
+     * it - Cypher's left-outer semantics. Each matched neighbour's row is marked bound (see
+     * {@link stroom.query.planner.cypher.OptionalMatchSupport}) so {@code count(<optionalVar>)} counts only real
+     * matches, not the null-padded rows.
+     */
+    private void expandOptionalHop(final Txn<ByteBuffer> readTxn, final Frontier from, final TemporalAccess access,
+                                   final Expand hop, final boolean isLastHop,
+                                   final Predicate<Map<String, Val>> wherePredicate,
+                                   final List<Frontier> nextFrontier, final RowSink rowSink, final long rowCap,
+                                   final Instant deadline) {
+        final int[] accepted = {0};
+        final Optional<Long> edgeTypeUid = resolveRequiredEdgeTypeUid(readTxn, hop.edgeType());
+        if (edgeTypeUid.isPresent()) {
+            final Consumer<EdgeStep> onNeighbour = edgeStep -> acceptOptionalNeighbour(
+                    readTxn, edgeStep, access, hop, from.row(), isLastHop, wherePredicate, nextFrontier, rowSink,
+                    rowCap, deadline, accepted);
+            collectNeighbours(readTxn, from.nodeUid(), edgeTypeUid.get(), access, hop.direction(), onNeighbour);
+        }
+        if (accepted[0] == 0) {
+            // No optional match for this row: emit it unchanged (target/edge variables unbound, no bound marker),
+            // subject to the query's WHERE. The mandatory WHERE references only mandatory-bound variables, so it
+            // yields the same verdict here as for any bound row of the same anchor.
+            if (isLastHop) {
+                if (rowSink.size() < rowCap && wherePredicate.test(from.row())) {
+                    rowSink.add(from.row());
+                }
+            } else {
+                nextFrontier.add(from);
+            }
+        }
+    }
+
+    private void acceptOptionalNeighbour(final Txn<ByteBuffer> readTxn, final EdgeStep edgeStep,
+                                         final TemporalAccess access, final Expand hop,
+                                         final Map<String, Val> rowSoFar, final boolean isLastHop,
+                                         final Predicate<Map<String, Val>> wherePredicate,
+                                         final List<Frontier> nextFrontier, final RowSink rowSink,
+                                         final long rowCap, final Instant deadline, final int[] accepted) {
+        if (isLastHop && rowSink.size() >= rowCap) {
+            return;
+        }
+        checkDeadline(deadline);
+        final Optional<GraphNodeDb.NodeVersion> target = access.getNode(readTxn, edgeStep.neighbourUid());
+        if (target.isEmpty()
+            || !matchesTargetConstraint(
+                    readTxn, hop.targetLabels(), hop.targetPropertyPredicate(), target.get())) {
+            return;
+        }
+        accepted[0]++;
+        final Map<String, Val> row = new HashMap<>(rowSoFar);
+        row.putAll(rowFor(hop.targetVariable(), target.get().properties()));
+        if (hop.edgeVariable() != null) {
+            row.putAll(rowFor(hop.edgeVariable(), edgeStep.edgeProperties()));
+        }
+        // Mark the optional variable(s) bound so count(<optionalVar>) counts this row (unbound rows lack the key).
+        row.put(OptionalMatchSupport.boundKey(hop.targetVariable()), ValBoolean.create(true));
+        if (hop.edgeVariable() != null) {
+            row.put(OptionalMatchSupport.boundKey(hop.edgeVariable()), ValBoolean.create(true));
+        }
+        if (isLastHop) {
+            if (wherePredicate.test(row)) {
+                rowSink.add(row);
+            }
+        } else {
+            nextFrontier.add(new Frontier(edgeStep.neighbourUid(), row));
         }
     }
 

@@ -124,6 +124,7 @@ public final class AstCypherBuilder {
                 buildPattern(ctx.pattern()),
                 ctx.temporalClause() == null ? null : buildTemporal(ctx.temporalClause()),
                 ctx.whereClause() == null ? null : buildWhere(ctx.whereClause()),
+                ctx.OPTIONAL() != null,
                 position(ctx));
     }
 

@@ -460,6 +460,56 @@ class TestCypherToLogicalPlan {
     }
 
     @Test
+    void optionalMatch_lowersToAnOptionalExpand() {
+        final CompiledCypherPlan compiled = compile(
+                "MATCH (p:Person {id: 'p1'}) OPTIONAL MATCH (p)-[:PARTY_TO]->(c:Crime) RETURN p.id");
+        final Expand expand = (Expand) ((Project) compiled.plan()).input();
+        assertThat(expand.optional()).isTrue();
+        assertThat(expand.targetVariable()).isEqualTo("c");
+    }
+
+    @Test
+    void countOverOptionalVariable_countsBoundRowsViaTheMarkerKey() {
+        final CompiledCypherPlan compiled = compile(
+                "MATCH (p:Person {id: 'p1'}) OPTIONAL MATCH (p)-[:PARTY_TO]->(c:Crime) RETURN p.id, count(c) AS n");
+        assertThat(compiled.aggregation().columns()).containsExactly(
+                new GroupKeyColumn("p.id"),
+                new AggregateColumn(
+                        AstAggregateFunction.COUNT, OptionalMatchSupport.boundKey("c"), false, false, false));
+    }
+
+    @Test
+    void leadingOptionalMatch_throwsCompileException() {
+        assertThatThrownBy(() -> compile("OPTIONAL MATCH (p:Person {id: 'p1'})-[:PARTY_TO]->(c:Crime) RETURN c.id"))
+                .isInstanceOf(CypherCompileException.class)
+                .hasMessageContaining("cannot begin with OPTIONAL MATCH");
+    }
+
+    @Test
+    void twoMandatoryMatches_throwCompileException() {
+        assertThatThrownBy(() -> compile("MATCH (p:Person {id: 'p1'}) MATCH (q:Person) RETURN p.id"))
+                .isInstanceOf(CypherCompileException.class)
+                .hasMessageContaining("OPTIONAL MATCH");
+    }
+
+    @Test
+    void optionalMatchNotExtendingTerminalVariable_throwsCompileException() {
+        assertThatThrownBy(() -> compile(
+                "MATCH (p:Person {id: 'p1'}) OPTIONAL MATCH (x)-[:PARTY_TO]->(c:Crime) RETURN p.id"))
+                .isInstanceOf(CypherCompileException.class)
+                .hasMessageContaining("final variable");
+    }
+
+    @Test
+    void multiHopOptionalMatch_throwsCompileException() {
+        assertThatThrownBy(() -> compile(
+                "MATCH (p:Person {id: 'p1'}) OPTIONAL MATCH (p)-[:PARTY_TO]->(c:Crime)-[:AT]->(l:Location) "
+                + "RETURN p.id"))
+                .isInstanceOf(CypherCompileException.class)
+                .hasMessageContaining("exactly one hop");
+    }
+
+    @Test
     void unaliasedCountStar_defaultsToACleanFunctionStarName() {
         // Code-review fix: previously an unaliased aggregate's default name was renderExpression's "${...}"-laden
         // text (e.g. "count()"), unusable as a FieldIndex/column identifier - see defaultAggregateName's Javadoc.

@@ -57,6 +57,12 @@ import java.util.Objects;
  * @param targetPropertyPredicate the target node pattern's inline property map, lowered to an equality
  *                       predicate tree exactly as {@link NodeScan#propertyAnchor()} is, or {@code null} if the
  *                       target node pattern had no properties.
+ * @param optional       {@code true} for a hop lowered from an {@code OPTIONAL MATCH} (left-outer): when the hop
+ *                       finds no neighbour for an input row, the executor still emits that row (with this hop's
+ *                       {@code targetVariable}/{@code edgeVariable} unbound) rather than dropping it. Always
+ *                       {@code false} for an ordinary {@code MATCH} hop. A {@code JoinType} cannot model this (a
+ *                       hop is not a relational equi-join - see the class note above); this flag is the
+ *                       graph-native equivalent.
  * @param position       never null.
  */
 public record Expand(
@@ -67,6 +73,7 @@ public record Expand(
         String targetVariable,
         List<String> targetLabels,
         @Nullable ExpressionOperator targetPropertyPredicate,
+        boolean optional,
         AstPosition position) implements LogicalPlan {
 
     public Expand {
@@ -76,5 +83,21 @@ public record Expand(
         Objects.requireNonNull(targetLabels, "targetLabels");
         Objects.requireNonNull(position, "position");
         targetLabels = List.copyOf(targetLabels);
+    }
+
+    /**
+     * Convenience constructor for an ordinary (non-optional) hop, preserving the pre-{@code optional} signature so
+     * existing call sites and plan-rewrite rules need no change. Delegates with {@code optional = false}.
+     */
+    public Expand(final LogicalPlan input,
+                  final @Nullable String edgeType,
+                  final Direction direction,
+                  final @Nullable String edgeVariable,
+                  final String targetVariable,
+                  final List<String> targetLabels,
+                  final @Nullable ExpressionOperator targetPropertyPredicate,
+                  final AstPosition position) {
+        this(input, edgeType, direction, edgeVariable, targetVariable, targetLabels, targetPropertyPredicate,
+                false, position);
     }
 }
