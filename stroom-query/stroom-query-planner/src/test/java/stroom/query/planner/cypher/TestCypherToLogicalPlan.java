@@ -571,6 +571,24 @@ class TestCypherToLogicalPlan {
                 .isEqualTo("ceiling(${a.x})");
     }
 
+    @Test
+    void generalMathsFunctions_renderToSameNamedStroomFunctions() {
+        // abs/sqrt/sign/exp/log/log10 are Cypher-standard names that map 1:1 onto the new Stroom functions.
+        assertThat(renderedReturnExpression("MATCH (a:Account) RETURN abs(a.x)"))
+                .isEqualTo("abs(${a.x})");
+        assertThat(renderedReturnExpression("MATCH (a:Account) RETURN sqrt(a.x)"))
+                .isEqualTo("sqrt(${a.x})");
+        assertThat(renderedReturnExpression("MATCH (a:Account) RETURN sign(a.x)"))
+                .isEqualTo("sign(${a.x})");
+        assertThat(renderedReturnExpression("MATCH (a:Account) RETURN exp(a.x)"))
+                .isEqualTo("exp(${a.x})");
+        assertThat(renderedReturnExpression("MATCH (a:Account) RETURN log(a.x)"))
+                .isEqualTo("log(${a.x})");
+        // Reachable under the stroom.* namespace too, and composes with arithmetic.
+        assertThat(renderedReturnExpression("MATCH (a:Account) RETURN stroom.abs(a.x - a.y)"))
+                .isEqualTo("abs((${a.x} - ${a.y}))");
+    }
+
     private String renderedReturnExpression(final String cypher) {
         return ((Project) compile(cypher).plan()).fields().getFirst().rawExpression();
     }

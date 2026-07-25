@@ -48,7 +48,13 @@ public final class CypherFunctions {
             Map.entry("toFloat", "toFloat"),
             Map.entry("toBoolean", "toBoolean"),
             Map.entry("round", "round"),
-            Map.entry("floor", "floor"));
+            Map.entry("floor", "floor"),
+            // general maths (Cypher-standard names that map 1:1 onto the Stroom functions of the same name)
+            Map.entry("abs", "abs"),
+            Map.entry("sqrt", "sqrt"),
+            Map.entry("sign", "sign"),
+            Map.entry("exp", "exp"),
+            Map.entry("log", "log"));
 
     // Pure, deterministic Stroom-native functions callable as `stroom.<name>` (render name == the name). Includes
     // `substring` (Stroom's (string, start, endIndex) semantics - the bare `substring` is Cypher's instead). The
@@ -60,7 +66,7 @@ public final class CypherFunctions {
             "upperCase", "lowerCase", "substring", "substringBefore", "substringAfter", "replace", "stringLength",
             "concat", "indexOf", "lastIndexOf", "contains", "toString", "decode", "encodeUrl", "decodeUrl", "hash",
             // maths
-            "add", "round", "floor", "ceiling", "negate",
+            "add", "round", "floor", "ceiling", "negate", "abs", "sqrt", "sign", "exp", "log",
             // type coercion / tests
             "toBoolean", "toDouble", "toFloat", "toInteger", "toLong", "typeOf",
             "isNull", "isValue", "isNumber", "isString", "isBoolean",

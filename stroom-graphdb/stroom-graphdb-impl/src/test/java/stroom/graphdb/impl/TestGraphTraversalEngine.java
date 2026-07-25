@@ -329,6 +329,26 @@ class TestGraphTraversalEngine {
     }
 
     @Test
+    void generalMathsFunctions_evaluateOverRows(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("mathsfns"), DOC)) {
+            seedDeviceConnectedToAccounts(stores);
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory());
+            // account-a's balance is 50; operands are property-based so the arithmetic feeds real numeric values in.
+            final String anchor = "MATCH (a:Account {id: 'account-a'}) RETURN ";
+
+            assertThat(one(stores, engine, anchor + "abs(a.balance - 60)")).isEqualTo("10");
+            assertThat(one(stores, engine, anchor + "sqrt(a.balance - 34)")).isEqualTo("4");
+            assertThat(one(stores, engine, anchor + "sign(a.balance - 60)")).isEqualTo("-1");
+            // exp/log are natural-base; exact at these inputs (exp(0)=1, log(1)=0).
+            assertThat(one(stores, engine, anchor + "exp(a.balance - 50)")).isEqualTo("1");
+            assertThat(one(stores, engine, anchor + "log(a.balance - 49)")).isEqualTo("0");
+            // Reachable under the stroom.* namespace too.
+            assertThat(one(stores, engine, anchor + "stroom.abs(a.balance - 60)")).isEqualTo("10");
+        }
+    }
+
+    @Test
     void cypherCoalesce_returnsFirstNonNull_overOptionalMatchNull(@TempDir final Path root) {
         try (GraphStores stores = GraphStores.provision(root.resolve("coalescefn"), DOC)) {
             seedPersonsAndCrimes(stores);
