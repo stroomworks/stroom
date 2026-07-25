@@ -1251,17 +1251,91 @@ public final class CypherToLogicalPlan {
      * scalar function evaluates per row, so it cannot host an aggregate.
      */
     private static String renderFunctionCall(final AstFunctionValue f) {
+        final List<String> args = f.arguments().stream()
+                .map(CypherToLogicalPlan::renderFunctionArgument)
+                .toList();
+        // Cypher-exact functions whose signature differs from Stroom's are rewritten (Phase 9); everything else is
+        // a plain name map/alias (Phase 8).
+        final String adapted = renderCypherAdaptedFunction(f, args);
+        if (adapted != null) {
+            return adapted;
+        }
         final String stroomName = CypherFunctions.toStroomName(f.name());
         if (stroomName == null) {
             throw new CypherCompileException(
                     "not supported in this version: function '" + f.name() + "' is not available in a Cypher "
-                    + "RETURN (supported: " + CypherFunctions.supportedNames() + ")", f.position());
+                    + "RETURN (supported: " + CypherFunctions.supportedNames()
+                    + ", substring, left, right, size, coalesce)", f.position());
         }
-        final String args = f.arguments().stream()
-                .map(CypherToLogicalPlan::renderFunctionArgument)
-                .reduce((a, b) -> a + ", " + b)
-                .orElse("");
-        return stroomName + "(" + args + ")";
+        return stroomName + "(" + String.join(", ", args) + ")";
+    }
+
+    /**
+     * Renders the Cypher functions whose signature differs from Stroom's by rewriting the call to an equivalent
+     * Stroom expression - Cypher-exact semantics over Stroom's existing engine (Phase 9). Returns {@code null} if
+     * {@code f} is not one of these adapted functions, so the caller falls back to the plain name-alias path.
+     */
+    private static @Nullable String renderCypherAdaptedFunction(final AstFunctionValue f, final List<String> args) {
+        return switch (f.name()) {
+            case "substring" -> {
+                // Cypher substring(s, start[, length]); Stroom substring(s, start[, endIndex]). The 2-arg (to-end)
+                // form is 1:1; the 3-arg form's length becomes an end index of start + length.
+                if (args.size() == 2) {
+                    yield "substring(" + args.get(0) + ", " + args.get(1) + ")";
+                }
+                if (args.size() == 3) {
+                    yield "substring(" + args.get(0) + ", " + args.get(1) + ", add(" + args.get(1) + ", "
+                          + args.get(2) + "))";
+                }
+                throw new CypherCompileException(
+                        "substring takes 2 or 3 arguments: substring(string, start[, length])", f.position());
+            }
+            case "left" -> {
+                requireArity(f, args, 2, "left(string, length)");
+                yield "substring(" + args.get(0) + ", 0, " + args.get(1) + ")";
+            }
+            case "right" -> {
+                requireArity(f, args, 2, "right(string, length)");
+                final String s = args.get(0);
+                final String n = args.get(1);
+                // Last n chars: substring(s, stringLength(s) - n, stringLength(s)); subtraction via add + negate.
+                yield "substring(" + s + ", add(stringLength(" + s + "), negate(" + n + ")), stringLength(" + s
+                      + "))";
+            }
+            case "size" -> {
+                requireArity(f, args, 1, "size(string)");
+                // v1: string length only - size(list) waits on a real list value (ValList; see Phase 4).
+                yield "stringLength(" + args.get(0) + ")";
+            }
+            case "coalesce" -> {
+                if (args.isEmpty()) {
+                    throw new CypherCompileException("coalesce needs at least one argument", f.position());
+                }
+                yield renderCoalesce(args, 0);
+            }
+            default -> null;
+        };
+    }
+
+    /**
+     * {@code coalesce(a, b, ..., z)} - Cypher's first-non-null - rendered over Stroom's {@code if}/{@code isNull}
+     * as {@code if(isNull(a), if(isNull(b), ..., z), a)}.
+     */
+    private static String renderCoalesce(final List<String> args, final int index) {
+        if (index == args.size() - 1) {
+            return args.get(index);
+        }
+        return "if(isNull(" + args.get(index) + "), " + renderCoalesce(args, index + 1) + ", "
+               + args.get(index) + ")";
+    }
+
+    private static void requireArity(final AstFunctionValue f, final List<String> args, final int arity,
+                                     final String usage) {
+        if (args.size() != arity) {
+            throw new CypherCompileException(
+                    f.name() + " takes " + arity + " argument" + (arity == 1 ? "" : "s") + ": " + usage,
+                    f.position());
+        }
     }
 
     private static String renderFunctionArgument(final AstExpression arg) {

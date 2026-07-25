@@ -39,10 +39,13 @@ import java.util.stream.Stream;
  */
 public final class CypherFunctions {
 
-    // Pure, deterministic Stroom functions exposed in a Cypher RETURN, by their Stroom name.
+    // Pure, deterministic Stroom functions exposed in a Cypher RETURN, by their Stroom name. (`substring` is NOT
+    // here: the bare name is adapted to Cypher's (string, start, length) semantics - see
+    // CypherToLogicalPlan.renderCypherAdaptedFunction; Stroom's own (string, start, endIndex) substring stays
+    // reachable as `stroom_substring`, an alias below.)
     private static final Set<String> ALLOWED = Set.of(
             // strings
-            "upperCase", "lowerCase", "substring", "substringBefore", "substringAfter", "replace", "stringLength",
+            "upperCase", "lowerCase", "substringBefore", "substringAfter", "replace", "stringLength",
             "concat", "indexOf", "lastIndexOf", "contains", "toString", "decode", "encodeUrl", "decodeUrl", "hash",
             // maths
             "add", "round", "floor", "ceiling", "negate",
@@ -52,10 +55,16 @@ public final class CypherFunctions {
             // conditional
             "if", "case", "match");
 
-    // Cypher-name aliases that are semantically identical to their Stroom target.
+    // Cypher-name aliases that are semantically identical to their Stroom target (a plain name swap, no argument
+    // adaptation). Cypher functions whose signature differs from Stroom's (substring/left/right/coalesce/size) are
+    // adapted in CypherToLogicalPlan.renderCypherAdaptedFunction instead, not aliased here.
     private static final Map<String, String> ALIASES = Map.of(
             "toUpper", "upperCase",
-            "toLower", "lowerCase");
+            "toLower", "lowerCase",
+            "ceil", "ceiling",
+            // Escape hatch: Stroom's own substring (string, start, endIndex), since the bare `substring` is now
+            // Cypher's (string, start, length).
+            "stroom_substring", "substring");
 
     private CypherFunctions() {
     }

@@ -540,6 +540,42 @@ class TestCypherToLogicalPlan {
     }
 
     @Test
+    void cypherSubstring_adaptsLengthToAnEndIndex() {
+        // Cypher substring(s, start, length) -> Stroom substring(s, start, start + length).
+        assertThat(renderedReturnExpression("MATCH (a:Account) RETURN substring(a.name, 1, 3)"))
+                .isEqualTo("substring(${a.name}, 1, add(1, 3))");
+        // Stroom's own end-index substring stays reachable under stroom_substring (unadapted).
+        assertThat(renderedReturnExpression("MATCH (a:Account) RETURN stroom_substring(a.name, 1, 3)"))
+                .isEqualTo("substring(${a.name}, 1, 3)");
+    }
+
+    @Test
+    void cypherLeftRightSize_composeFromStroomFunctions() {
+        assertThat(renderedReturnExpression("MATCH (a:Account) RETURN left(a.name, 2)"))
+                .isEqualTo("substring(${a.name}, 0, 2)");
+        assertThat(renderedReturnExpression("MATCH (a:Account) RETURN right(a.name, 2)"))
+                .isEqualTo("substring(${a.name}, add(stringLength(${a.name}), negate(2)), stringLength(${a.name}))");
+        assertThat(renderedReturnExpression("MATCH (a:Account) RETURN size(a.name)"))
+                .isEqualTo("stringLength(${a.name})");
+    }
+
+    @Test
+    void cypherCoalesce_composesFromIfIsNull() {
+        assertThat(renderedReturnExpression("MATCH (a:Account) RETURN coalesce(a.x, a.y, 'none')"))
+                .isEqualTo("if(isNull(${a.x}), if(isNull(${a.y}), 'none', ${a.y}), ${a.x})");
+    }
+
+    @Test
+    void cypherCeilAlias_mapsToCeiling() {
+        assertThat(renderedReturnExpression("MATCH (a:Account) RETURN ceil(a.x)"))
+                .isEqualTo("ceiling(${a.x})");
+    }
+
+    private String renderedReturnExpression(final String cypher) {
+        return ((Project) compile(cypher).plan()).fields().getFirst().rawExpression();
+    }
+
+    @Test
     void unaliasedCountStar_defaultsToACleanFunctionStarName() {
         // Code-review fix: previously an unaliased aggregate's default name was renderExpression's "${...}"-laden
         // text (e.g. "count()"), unusable as a FieldIndex/column identifier - see defaultAggregateName's Javadoc.

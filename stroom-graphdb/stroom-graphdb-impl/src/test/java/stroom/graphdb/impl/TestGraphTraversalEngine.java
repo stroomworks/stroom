@@ -307,6 +307,47 @@ class TestGraphTraversalEngine {
     }
 
     @Test
+    void cypherExactFunctions_evaluateWithCypherSemantics_bothFlavoursCoexist(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("cypherfns"), DOC)) {
+            seedDeviceConnectedToAccounts(stores);
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory());
+            final String anchor = "MATCH (a:Account {id: 'account-a'}) RETURN ";
+
+            // Cypher substring(s, start, length): 'ell' (3 chars from index 1) - NOT Stroom's 'el' (end index 3).
+            assertThat(one(stores, engine, anchor + "substring('hello', 1, 3)")).isEqualTo("ell");
+            // Stroom's own substring (end-index) stays reachable as stroom_substring - both flavours available.
+            assertThat(one(stores, engine, anchor + "stroom_substring('hello', 1, 3)")).isEqualTo("el");
+
+            assertThat(one(stores, engine, anchor + "left('hello', 2)")).isEqualTo("he");
+            assertThat(one(stores, engine, anchor + "right('hello', 2)")).isEqualTo("lo");
+            assertThat(one(stores, engine, anchor + "size('hello')")).isEqualTo("5");
+            // Cypher toUpper alias and Stroom-native upperCase both work.
+            assertThat(one(stores, engine, anchor + "toUpper('hi')")).isEqualTo("HI");
+            assertThat(one(stores, engine, anchor + "upperCase('hi')")).isEqualTo("HI");
+        }
+    }
+
+    @Test
+    void cypherCoalesce_returnsFirstNonNull_overOptionalMatchNull(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("coalescefn"), DOC)) {
+            seedPersonsAndCrimes(stores);
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory());
+            // p2 has no crime, so c.type is null; coalesce falls through to 'none'.
+            assertThat(one(stores, engine,
+                    "MATCH (p:Person {id: 'p2'}) OPTIONAL MATCH (p)-[:PARTY_TO]->(c:Crime) "
+                    + "RETURN coalesce(c.type, 'none')")).isEqualTo("none");
+        }
+    }
+
+    private static String one(final GraphStores stores, final GraphTraversalEngine engine, final String cypher) {
+        final List<Val[]> rows = runFull(stores, engine, cypher);
+        assertThat(rows).hasSize(1);
+        return rows.getFirst()[0].toString();
+    }
+
+    @Test
     void scalarFunction_coalescesAnOptionalMatchNull(@TempDir final Path root) {
         try (GraphStores stores = GraphStores.provision(root.resolve("coalesce"), DOC)) {
             seedPersonsAndCrimes(stores);

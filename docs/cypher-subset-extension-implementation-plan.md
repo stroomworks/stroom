@@ -1780,6 +1780,19 @@ verified example: `substring('hello', 1, 3)` is `"ell"` in Cypher (third arg = *
 (third arg = exclusive **end index** - it calls Java's `"hello".substring(1, 3)`). Cypher-exact semantics is a
 per-function audit + adapter, worth its own phase.
 
+> **Implementation note (2026-07-25): done, as a compile-time rewrite - no engine change.** The audit (Task 9.1)
+> found only **`substring`** genuinely needs adaptation among the collisions - `round`/`floor`/`toString`/`toInteger`
+> turned out already Cypher-compatible under their bare names (Phase 8), so they needed no work. Implemented in
+> `CypherToLogicalPlan.renderCypherAdaptedFunction`: `substring(s, start, length)` → `substring(s, start, add(start,
+> length))` (2-arg form 1:1); `left(s, n)` → `substring(s, 0, n)`; `right(s, n)` → `substring(s, add(stringLength(s),
+> negate(n)), stringLength(s))`; `size(s)` → `stringLength(s)`; `coalesce(a, b, …)` → nested `if(isNull(a), …, a)`.
+> Aliases (`CypherFunctions`): `ceil`→`ceiling`, plus Phase 8's `toUpper`/`toLower`. **Both flavours coexist:** the
+> bare `substring` is now Cypher's, and Stroom's end-index substring stays reachable as **`stroom_substring`** (a
+> plain `NAME`, no grammar change). **Deferred:** `replace` (Stroom's is regex, Cypher's literal - needs runtime
+> regex-quoting) and every list-returning function (`split`/`keys`/`range`/`head`/`tail`, gated on `ValList`). No
+> explicit null-wrapping was needed for the implemented set (`coalesce` handles null itself; verified over an
+> `OPTIONAL MATCH` null).
+
 ### Design decisions
 
 **(a) Keep both flavours; do not replace Phase 8's Stroom-native functions.** Every Stroom function stays reachable
