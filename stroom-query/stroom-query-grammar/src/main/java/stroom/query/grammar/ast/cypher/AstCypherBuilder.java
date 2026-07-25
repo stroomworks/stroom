@@ -135,6 +135,7 @@ public final class AstCypherBuilder {
         }
         return new AstWith(
                 items,
+                ctx.whereClause() == null ? null : buildWhere(ctx.whereClause()),
                 ctx.orderByClause() == null ? null : buildOrderBy(ctx.orderByClause()),
                 ctx.skipClause() == null ? null : buildSkip(ctx.skipClause()),
                 ctx.limitClause() == null ? null : buildLimit(ctx.limitClause()),

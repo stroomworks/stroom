@@ -206,6 +206,27 @@ class TestGraphSearchProvider {
     }
 
     @Test
+    void withHavingPipe_returnsRealRows_throughRealCoprocessors(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root, DOC)) {
+            seedDeviceConnectedToAccounts(stores);
+
+            final GraphSearchProvider provider = provider(stores);
+            // Aggregate to a total per device, then filter on the aggregate (HAVING) - impossible without WITH.
+            // d-42's two accounts total 250, which passes total > 100.
+            final SearchRequest request = compilerDerivedRequest(
+                    "MATCH (d:Device {id: 'd-42'})-[:CONNECTED_TO]->(a:Account) "
+                    + "WITH d.id AS device, sum(a.balance) AS total WHERE total > 100 "
+                    + "RETURN device, total");
+
+            final ResultStore resultStore = provider.createResultStore(request);
+
+            final List<Val[]> rows = readTableRows(resultStore);
+            assertThat(rows).extracting(row -> row[0].toString(), row -> row[1].toDouble())
+                    .containsExactly(Tuple.tuple("d-42", 250.0));
+        }
+    }
+
+    @Test
     void missingGraphSpec_rejectedClearly() {
         final GraphSearchProvider provider = provider(null);
         final SearchRequest requestWithNoGraphSpec = SearchRequest.builder()

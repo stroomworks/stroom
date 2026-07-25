@@ -171,7 +171,11 @@ public class GraphSearchProvider implements SearchProvider, IndexFieldProvider {
         try {
             final CompiledCypherPlan compiled = new CypherToLogicalPlan().compile(
                     CypherQueryParser.parse(graphSpec.getCypher()));
-            final List<ProjectField> projectFields = terminalProject(compiled.plan()).fields();
+            // A WITH pipe's output columns are the final RETURN's fields (the second stage), not stage one's WITH
+            // columns; every other query's output columns are its terminal Project's.
+            final List<ProjectField> projectFields = compiled.secondStage() != null
+                    ? compiled.secondStage().finalFields()
+                    : terminalProject(compiled.plan()).fields();
             final int[] mapping = buildFieldMapping(fieldIndex, projectFields);
 
             final GraphStores stores = graphStoreManager.getOrOpen(doc);
@@ -189,7 +193,7 @@ public class GraphSearchProvider implements SearchProvider, IndexFieldProvider {
                                 searchRequest.getDateTimeSettings(), compiled.distinct())
                         : engine.execute(readTxn, compiled.plan(), compiled.temporalContext(),
                                 searchRequest.getDateTimeSettings(), compiled.distinct(), compiled.aggregation(),
-                                compiled.fieldComparisons());
+                                compiled.fieldComparisons(), compiled.secondStage());
             });
             for (final Val[] row : rows) {
                 coprocessors.accept(assembleRow(row, mapping, fieldIndex.size()));

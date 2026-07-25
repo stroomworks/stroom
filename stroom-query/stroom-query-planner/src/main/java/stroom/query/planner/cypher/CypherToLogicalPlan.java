@@ -173,18 +173,19 @@ public final class CypherToLogicalPlan {
     public CompiledCypherPlan compile(final AstCypherQuery query) {
         Objects.requireNonNull(query, "query");
 
-        // Accepted reading-clause shapes: a single MATCH, or a MATCH followed by one OPTIONAL MATCH. Every other
-        // shape (WITH-chaining, a second mandatory MATCH, >2 clauses, a leading OPTIONAL MATCH) is a later phase.
+        // Accepted reading-clause shapes: a single MATCH; a MATCH followed by one OPTIONAL MATCH; or a MATCH
+        // followed by one WITH (a single pipe). Every other shape (WITH-chaining, a second mandatory MATCH, a
+        // MATCH after a WITH, >2 clauses, a leading OPTIONAL MATCH/WITH) is a later phase.
         final List<AstReadingClause> clauses = query.readingClauses();
         if (clauses.isEmpty() || clauses.size() > 2) {
             throw new CypherCompileException(
-                    "not in PoC subset: only a single MATCH, optionally followed by one OPTIONAL MATCH, is "
-                    + "supported (WITH-chaining and further MATCH clauses are a later phase), found "
-                    + clauses.size() + " reading clauses", query.position());
+                    "not in PoC subset: only a single MATCH, optionally followed by one OPTIONAL MATCH or one "
+                    + "WITH, is supported (further pipelining is a later phase), found " + clauses.size()
+                    + " reading clauses", query.position());
         }
         if (!(clauses.getFirst() instanceof final AstMatch match)) {
             throw new CypherCompileException(
-                    "not in PoC subset: a WITH clause is not yet compiled", clauses.getFirst().position());
+                    "not supported in this version: a query must begin with a MATCH", clauses.getFirst().position());
         }
         if (match.optional()) {
             throw new CypherCompileException(
@@ -193,12 +194,16 @@ public final class CypherToLogicalPlan {
         }
         AstMatch optionalMatch = null;
         if (clauses.size() == 2) {
-            if (!(clauses.get(1) instanceof final AstMatch second) || !second.optional()) {
-                throw new CypherCompileException(
-                        "not in PoC subset: a MATCH may only be followed by an OPTIONAL MATCH (WITH-chaining and a "
-                        + "second mandatory MATCH are a later phase)", clauses.get(1).position());
+            final AstReadingClause second = clauses.get(1);
+            if (second instanceof final AstWith with) {
+                return compileWithPipe(query, match, with);
             }
-            optionalMatch = second;
+            if (!(second instanceof final AstMatch secondMatch) || !secondMatch.optional()) {
+                throw new CypherCompileException(
+                        "not in PoC subset: a MATCH may only be followed by an OPTIONAL MATCH or a WITH (a second "
+                        + "mandatory MATCH is a later phase)", second.position());
+            }
+            optionalMatch = secondMatch;
         }
 
         final PatternResult patternResult = compilePattern(match.pattern());
@@ -284,7 +289,140 @@ public final class CypherToLogicalPlan {
 
         return new CompiledCypherPlan(
                 plan, temporalContext, query.returnClause().distinct(), aggregation, diffContext, false,
-                fieldComparisons);
+                fieldComparisons, null);
+    }
+
+    // ------------------------------------------------------------------------------------------------------
+    // WITH pipe: MATCH ... [WHERE] WITH <aliased items> [WHERE having] RETURN <final> (a single pipe)
+    // ------------------------------------------------------------------------------------------------------
+
+    /**
+     * Compiles a single {@code MATCH ... WITH ... RETURN} pipe. The {@code WITH} is compiled as stage one's
+     * terminal projection/aggregation (reusing {@link #buildProjectFields}/{@link #buildAggregation}/
+     * {@link #compileReturn}), producing one row per {@code WITH} column; the {@code WITH}'s own {@code WHERE}
+     * (Cypher's HAVING) and the final {@code RETURN} become a {@link WithStage} the executor applies to those
+     * rows. Every reference in the {@code HAVING}/final {@code RETURN} is validated to name a {@code WITH} column
+     * (Cypher's WITH-scoping rule), so an out-of-scope reference fails loud rather than resolving to null.
+     *
+     * <p>v1 restrictions, each a fail-loud rejection: exactly one {@code WITH} and no second {@code MATCH}; every
+     * {@code WITH} item must be aliased ({@code <expr> AS <name>}); no {@code ORDER BY}/{@code SKIP}/{@code LIMIT}
+     * on the {@code WITH} or on the final {@code RETURN}; no aggregate in the final {@code RETURN}; not combined
+     * with {@code DIFF}/{@code RETURN GRAPH}.</p>
+     */
+    private CompiledCypherPlan compileWithPipe(final AstCypherQuery query, final AstMatch match,
+                                               final AstWith with) {
+        final AstReturnClause finalReturn = query.returnClause();
+        if (finalReturn.graph()) {
+            throw new CypherCompileException(
+                    "not supported in this version: RETURN GRAPH after a WITH", finalReturn.position());
+        }
+        if (match.temporal() instanceof AstDiff) {
+            throw new CypherCompileException(
+                    "not supported in this version: DIFF combined with WITH", match.position());
+        }
+        if (with.orderBy() != null || with.skip() != null || with.limit() != null) {
+            throw new CypherCompileException(
+                    "not supported in this version: ORDER BY / SKIP / LIMIT on a WITH", with.position());
+        }
+        if (finalReturn.orderBy() != null || finalReturn.skip() != null || finalReturn.limit() != null) {
+            throw new CypherCompileException(
+                    "not supported in this version: ORDER BY / SKIP / LIMIT on the RETURN after a WITH",
+                    finalReturn.position());
+        }
+        // Every WITH item must be aliased, so each stage-one column is a clean name the second stage references.
+        for (final AstReturnItem item : with.items()) {
+            if (item.alias() == null) {
+                throw new CypherCompileException(
+                        "not supported in this version: every WITH item must be aliased, e.g. `WITH p.surname AS "
+                        + "surname, count(c) AS crimes`", item.position());
+            }
+        }
+
+        // --- stage one: the MATCH pattern, its pre-WHERE, then the WITH's projection/aggregation ---
+        LogicalPlan plan = compilePattern(match.pattern()).plan();
+        TemporalContext temporalContext = match.temporal() == null ? null : resolveTemporal(match.temporal());
+
+        List<FieldComparison> fieldComparisons = List.of();
+        if (match.where() != null) {
+            final WhereCompilation where = compileWhere(match.where().expr());
+            fieldComparisons = where.fieldComparisons();
+            if (where.literalPredicate() != null) {
+                plan = new Filter(plan, where.literalPredicate(), null, match.where().position());
+            }
+        }
+
+        final AstReturnClause withAsReturn = new AstReturnClause(
+                false, false, with.items(), null, null, null, with.position());
+        final List<ProjectField> withFields = buildProjectFields(withAsReturn);
+        final CypherAggregation withAggregation = buildAggregation(withAsReturn, Set.of());
+        plan = compileReturn(plan, withAsReturn, withFields);
+
+        final List<String> stageColumns = withFields.stream().map(ProjectField::name).toList();
+        final Set<String> scope = new HashSet<>(stageColumns);
+
+        // --- stage two: HAVING (the WITH's WHERE) + the final RETURN, validated against the WITH's scope ---
+        ExpressionOperator having = null;
+        if (with.where() != null) {
+            validateBooleanInScope(with.where().expr(), scope);
+            having = compileBooleanExpr(with.where().expr());
+        }
+        for (final AstReturnItem item : finalReturn.items()) {
+            validateExpressionInScope(item.expression(), scope);
+        }
+        final List<ProjectField> finalFields = buildProjectFields(finalReturn);
+
+        final WithStage secondStage = new WithStage(stageColumns, having, finalFields, finalReturn.distinct());
+        return new CompiledCypherPlan(
+                plan, temporalContext, false, withAggregation, null, false, fieldComparisons, secondStage);
+    }
+
+    /** Validates that every reference in a {@code HAVING} boolean tree names a {@code WITH} column. */
+    private static void validateBooleanInScope(final AstBooleanExpr expr, final Set<String> scope) {
+        switch (expr) {
+            case final AstOrExpr or -> or.operands().forEach(o -> validateBooleanInScope(o, scope));
+            case final AstAndExpr and -> and.operands().forEach(o -> validateBooleanInScope(o, scope));
+            case final AstNotExpr not -> validateBooleanInScope(not.operand(), scope);
+            case final AstComparisonPredicate cmp -> {
+                validateExpressionInScope(cmp.left(), scope);
+                validateExpressionInScope(cmp.right(), scope);
+            }
+            case final AstInPredicate in -> {
+                validateExpressionInScope(in.left(), scope);
+                validateExpressionInScope(in.right(), scope);
+            }
+            case final AstIsNullPredicate isNull -> validateExpressionInScope(isNull.operand(), scope);
+        }
+    }
+
+    /**
+     * Validates that an expression (a {@code HAVING} operand or a final-{@code RETURN} item) references only
+     * {@code WITH} columns - Cypher's WITH-scoping rule. A property access, aggregate, or {@code before()}/
+     * {@code after()} is out of scope after a {@code WITH} (only the projected scalar columns survive).
+     */
+    private static void validateExpressionInScope(final AstExpression expr, final Set<String> scope) {
+        switch (expr) {
+            case final AstVariableExpr v -> {
+                if (!scope.contains(v.name())) {
+                    throw new CypherCompileException(
+                            "'" + v.name() + "' is not a column produced by the WITH (in scope after WITH: "
+                            + String.join(", ", scope) + ")", v.position());
+                }
+            }
+            case final AstPropertyAccessExpr p -> throw new CypherCompileException(
+                    "not supported in this version: after a WITH only its projected columns are in scope, so the "
+                    + "property access '" + p.variable() + "." + p.property() + "' is out of scope - project it in "
+                    + "the WITH (e.g. `WITH " + p.variable() + "." + p.property() + " AS x`)", p.position());
+            case final AstAggregateExpr a -> throw new CypherCompileException(
+                    "not supported in this version: an aggregate in the RETURN after a WITH (aggregate in the "
+                    + "WITH instead)", a.position());
+            case final AstDiffAccessorExpr d -> throw new CypherCompileException(
+                    "not supported in this version: before()/after() in the RETURN after a WITH", d.position());
+            case final AstLiteralExpr lit -> {
+                if (lit.value() instanceof final AstFunctionValue f) {
+                    f.arguments().forEach(a -> validateExpressionInScope(a, scope));
+                }
+            }
+        }
     }
 
     // ------------------------------------------------------------------------------------------------------
@@ -341,7 +479,7 @@ public final class CypherToLogicalPlan {
             plan = new Limit(plan, List.of(graphLimit.value()), graphLimit.position());
         }
 
-        return new CompiledCypherPlan(plan, temporalContext, false, null, diffContext, true, List.of());
+        return new CompiledCypherPlan(plan, temporalContext, false, null, diffContext, true, List.of(), null);
     }
 
     private void rejectVarLengthUnderReturnGraph(final AstPathPattern pattern) {

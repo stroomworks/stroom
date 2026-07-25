@@ -852,12 +852,52 @@ class TestCypherToLogicalPlan {
     }
 
     @Test
-    void withClause_throwsNotInPoCSubset() {
-        final AstCypherQuery ast = CypherQueryParser.parse(
-                "MATCH (a:Account) WITH a ORDER BY a.id RETURN a.id");
+    void withHaving_compilesToAStageOneAggregationAndASecondStage() {
+        final CompiledCypherPlan compiled = compile(
+                "MATCH (p:Person {id: 'p1'})-[:PARTY_TO]->(c:Crime) "
+                + "WITH p.id AS pid, count(c) AS n WHERE n > 1 RETURN pid, n");
+        // Stage one is the WITH's projection/aggregation (group by pid, count).
+        assertThat(compiled.aggregation()).isNotNull();
+        // Stage two carries the WITH's columns, the HAVING, and the final RETURN projection.
+        assertThat(compiled.secondStage()).isNotNull();
+        assertThat(compiled.secondStage().stageColumns()).containsExactly("pid", "n");
+        assertThat(compiled.secondStage().having()).isNotNull();
+        assertThat(compiled.secondStage().finalFields()).extracting(f -> f.name()).containsExactly("pid", "n");
+    }
 
-        assertThatThrownBy(() -> new CypherToLogicalPlan().compile(ast))
-                .isInstanceOf(CypherCompileException.class);
+    @Test
+    void referenceToDroppedVariableAfterWith_throwsCompileException() {
+        // c is dropped by the WITH (only pid, n survive), so referencing c.type in the RETURN is out of scope.
+        assertThatThrownBy(() -> compile(
+                "MATCH (p:Person {id: 'p1'})-[:PARTY_TO]->(c:Crime) "
+                + "WITH p.id AS pid, count(c) AS n RETURN pid, c.type"))
+                .isInstanceOf(CypherCompileException.class)
+                .hasMessageContaining("out of scope");
+    }
+
+    @Test
+    void unknownColumnAfterWith_throwsCompileException() {
+        assertThatThrownBy(() -> compile(
+                "MATCH (p:Person {id: 'p1'})-[:PARTY_TO]->(c:Crime) "
+                + "WITH p.id AS pid, count(c) AS n RETURN pid, bogus"))
+                .isInstanceOf(CypherCompileException.class)
+                .hasMessageContaining("not a column produced by the WITH");
+    }
+
+    @Test
+    void unaliasedWithItem_throwsCompileException() {
+        assertThatThrownBy(() -> compile(
+                "MATCH (p:Person {id: 'p1'})-[:PARTY_TO]->(c:Crime) WITH p.id, count(c) AS n RETURN n"))
+                .isInstanceOf(CypherCompileException.class)
+                .hasMessageContaining("must be aliased");
+    }
+
+    @Test
+    void orderByOnWith_throwsCompileException() {
+        assertThatThrownBy(() -> compile(
+                "MATCH (a:Account) WITH a.id AS id ORDER BY id RETURN id"))
+                .isInstanceOf(CypherCompileException.class)
+                .hasMessageContaining("ORDER BY / SKIP / LIMIT on a WITH");
     }
 
     @Test

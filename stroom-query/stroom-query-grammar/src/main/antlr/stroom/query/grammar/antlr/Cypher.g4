@@ -95,8 +95,10 @@ matchClause
     : OPTIONAL? MATCH pattern temporalClause? whereClause?
     ;
 
+// A `WITH ... WHERE ...` is Cypher's HAVING: the WHERE filters the (possibly aggregated) projected columns, so it
+// comes after the items. CypherToLogicalPlan lowers a single `MATCH ... WITH ... [WHERE] RETURN ...` pipe.
 withClause
-    : WITH returnItem (COMMA returnItem)* orderByClause? skipClause? limitClause?
+    : WITH returnItem (COMMA returnItem)* whereClause? orderByClause? skipClause? limitClause?
     ;
 
 // `RETURN GRAPH` (Stroom-specific; see docs/temporal-cypher-diff-operator.md §4.4 and

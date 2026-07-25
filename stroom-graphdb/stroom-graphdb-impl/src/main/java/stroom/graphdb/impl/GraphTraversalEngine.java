@@ -46,6 +46,7 @@ import stroom.query.planner.cypher.GroupKeyColumn;
 import stroom.query.planner.cypher.OptionalMatchSupport;
 import stroom.query.planner.cypher.OutputColumn;
 import stroom.query.planner.cypher.TemporalContext;
+import stroom.query.planner.cypher.WithStage;
 import stroom.query.planner.logical.Direction;
 import stroom.query.planner.logical.Expand;
 import stroom.query.planner.logical.Filter;
@@ -306,6 +307,25 @@ public final class GraphTraversalEngine {
                                final DateTimeSettings dateTimeSettings, final boolean distinct,
                                final @Nullable CypherAggregation aggregation) {
         return execute(readTxn, plan, temporalContext, dateTimeSettings, distinct, aggregation, List.of());
+    }
+
+    /**
+     * As the {@code fieldComparisons} overload, but for a {@code MATCH ... WITH ... RETURN} pipe: runs stage one
+     * (this {@code plan}/{@code aggregation} = the {@code WITH}) then applies {@code secondStage} (the {@code
+     * WITH}'s HAVING + the final RETURN projection) to its rows - see {@link WithStage}. A null {@code secondStage}
+     * runs an ordinary single-stage query, unchanged.
+     */
+    public List<Val[]> execute(final Txn<ByteBuffer> readTxn, final LogicalPlan plan,
+                               final @Nullable TemporalContext temporalContext,
+                               final DateTimeSettings dateTimeSettings, final boolean distinct,
+                               final @Nullable CypherAggregation aggregation,
+                               final List<FieldComparison> fieldComparisons,
+                               final @Nullable WithStage secondStage) {
+        final List<Val[]> stageOne = execute(
+                readTxn, plan, temporalContext, dateTimeSettings, distinct, aggregation, fieldComparisons);
+        return secondStage == null
+                ? stageOne
+                : applySecondStage(stageOne, secondStage, dateTimeSettings);
     }
 
     /**
@@ -2226,6 +2246,41 @@ public final class GraphTraversalEngine {
     }
 
     private static final String[] EMPTY_FIELDS = new String[0];
+
+    /**
+     * Applies a {@link WithStage} to stage one's output rows (the {@code WITH}'s columns): re-keys each row by the
+     * {@code WITH} column names, applies the optional {@code HAVING} filter, projects the final {@code RETURN}, and
+     * de-duplicates when the final {@code RETURN} was {@code DISTINCT}. Stage one's {@code Val[]} rows are aligned
+     * 1:1, in order, with {@code stageColumns} (both come from the same {@code WITH} projection), so the re-keying
+     * is a positional zip.
+     */
+    private List<Val[]> applySecondStage(final List<Val[]> stageOneRows, final WithStage stage,
+                                         final DateTimeSettings dateTimeSettings) {
+        final Predicate<Map<String, Val>> having = stage.having() == null
+                ? row -> true
+                : expressionPredicateFactory
+                        .createOptional(stage.having(), rowAccessors(), dateTimeSettings)
+                        .orElse(row -> true);
+        final RowProjector projector = new RowProjector(stage.finalFields());
+        final List<String> columns = stage.stageColumns();
+        final Set<List<Val>> seen = stage.finalDistinct() ? new HashSet<>() : null;
+        final List<Val[]> out = new ArrayList<>();
+        for (final Val[] stageRow : stageOneRows) {
+            final Map<String, Val> row = new HashMap<>();
+            for (int i = 0; i < columns.size(); i++) {
+                row.put(columns.get(i), stageRow[i]);
+            }
+            if (!having.test(row)) {
+                continue;
+            }
+            final Val[] tuple = projector.project(row);
+            if (seen != null && !seen.add(Arrays.asList(tuple))) {
+                continue;
+            }
+            out.add(tuple);
+        }
+        return out;
+    }
 
     // ------------------------------------------------------------------------------------------------------
     // temporal

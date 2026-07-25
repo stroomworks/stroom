@@ -322,12 +322,33 @@ class TestGraphTraversalEngine {
         }
     }
 
+    @Test
+    void withHaving_filtersOnAnAggregate(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("withhaving"), DOC)) {
+            seedPersonsAndCrimes(stores);
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory());
+            final String pipe = "MATCH (p:Person {id: 'p1'})-[:PARTY_TO]->(c:Crime) "
+                    + "WITH p.id AS pid, count(c) AS n ";
+
+            // p1 has 2 crimes. HAVING n > 1 keeps the group; the aggregate value flows to the final RETURN.
+            // (Filtering on an aggregate is impossible without WITH - WHERE on a MATCH is pre-aggregation.)
+            final List<Val[]> kept = runFull(stores, engine, pipe + "WHERE n > 1 RETURN pid, n");
+            assertThat(kept).hasSize(1);
+            assertThat(kept.getFirst()[0].toString()).isEqualTo("p1");
+            assertThat(kept.getFirst()[1].toString()).isEqualTo("2");
+
+            // HAVING n > 5 drops it.
+            assertThat(runFull(stores, engine, pipe + "WHERE n > 5 RETURN pid, n")).isEmpty();
+        }
+    }
+
     private static List<Val[]> runFull(final GraphStores stores, final GraphTraversalEngine engine,
                                        final String cypher) {
         final CompiledCypherPlan compiled = compile(cypher);
         return stores.read(readTxn -> engine.execute(readTxn, compiled.plan(), compiled.temporalContext(),
                 DateTimeSettings.builder().build(), compiled.distinct(), compiled.aggregation(),
-                compiled.fieldComparisons()));
+                compiled.fieldComparisons(), compiled.secondStage()));
     }
 
     private static void seedPersonsAndCrimes(final GraphStores stores) {

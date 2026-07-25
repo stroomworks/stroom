@@ -56,6 +56,9 @@ import java.util.Objects;
  *                        stroom.query.planner.logical.Filter} because the shared {@code ExpressionTerm} IR has no
  *                        second-field slot - see {@link FieldComparison}. The executor AND-combines them with the
  *                        {@code Filter}'s literal predicate.
+ * @param secondStage     {@code null} for a plain single-stage query; otherwise a {@code MATCH ... WITH ... RETURN}
+ *                        pipe whose {@code WITH} is stage one ({@code plan}/{@code aggregation}) and whose {@code
+ *                        HAVING} + final {@code RETURN} the executor applies afterward - see {@link WithStage}.
  */
 public record CompiledCypherPlan(
         LogicalPlan plan,
@@ -64,7 +67,8 @@ public record CompiledCypherPlan(
         @Nullable CypherAggregation aggregation,
         @Nullable DiffContext diffContext,
         boolean returnGraph,
-        List<FieldComparison> fieldComparisons) {
+        List<FieldComparison> fieldComparisons,
+        @Nullable WithStage secondStage) {
 
     public CompiledCypherPlan {
         Objects.requireNonNull(plan, "plan");

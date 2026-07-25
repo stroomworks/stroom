@@ -36,6 +36,7 @@ import java.util.Objects;
  */
 public record AstWith(
         List<AstReturnItem> items,
+        @Nullable AstWhere where,
         @Nullable AstOrderBy orderBy,
         @Nullable AstSkip skip,
         @Nullable AstLimit limit,

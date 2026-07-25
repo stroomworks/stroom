@@ -127,6 +127,13 @@ class TestCypherQueryParser {
     }
 
     @Test
+    void withHavingPipe_parses() {
+        assertThatCode(() -> CypherQueryParser.parse(
+                "MATCH (p:Person)-[:PARTY_TO]->(c:Crime) WITH p.id AS pid, count(c) AS n WHERE n > 5 "
+                + "RETURN pid, n")).doesNotThrowAnyException();
+    }
+
+    @Test
     void functionWithPropertyArgument_parses() {
         // Function arguments are now general expressions, so a scalar function can apply to a matched property.
         assertThatCode(() -> CypherQueryParser.parse(

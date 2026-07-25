@@ -1422,6 +1422,28 @@ stages — confirmed by direct read, and by the existing rejection being compile
 This is the deepest phase in this plan because it is compiler + engine only, against a compiler that has always
 assumed exactly one implicit scope.
 
+> **Implementation note (2026-07-25): done, scoped to `WITH … HAVING` (no second `MATCH`).** v1 delivers the
+> highest-value slice - **aggregate-then-filter (`HAVING`)**, impossible before - and rejects the rest fail-loud.
+> - **Grammar discovery:** the grammar did *not* actually accept `WITH … WHERE …`; `withClause` had no
+>   `whereClause`, so a `WITH … WHERE` failed to *parse*. Added `whereClause?` to `withClause` (Cypher's `HAVING`)
+>   and a `@Nullable AstWhere where` to `AstWith`.
+> - **Approach (no engine restructure of `execute`):** the `WITH` is compiled as stage one's terminal
+>   projection/aggregation by synthesising an `AstReturnClause` from its items and reusing
+>   `buildProjectFields`/`buildAggregation`/`compileReturn` wholesale. The `WITH`'s `WHERE` (HAVING) + the final
+>   `RETURN` become a `WithStage` on `CompiledCypherPlan`; the engine runs stage one unchanged, then
+>   `applySecondStage` re-keys each stage-one `Val[]` by the `WITH` column names, applies HAVING, projects the final
+>   `RETURN`, and de-dups if `DISTINCT`. `GraphSearchProvider` advertises `WithStage.finalFields()` as the output
+>   columns. So the plan's "frontier-seeding `execute` restructure" (Task 7.3) was **not needed** for this slice - it
+>   is only needed for a *second `MATCH`* after the `WITH`, which v1 defers.
+> - **Scope narrowing (the plan's core correctness concern):** `compileWithPipe` builds the scope from the `WITH`'s
+>   (mandatorily aliased) column names and validates every reference in the HAVING and final `RETURN` against it -
+>   a property access, a dropped variable, or an aggregate in the final `RETURN` **fails loud** rather than resolving
+>   to null.
+> - **v1 rejections (fail-loud):** a second `MATCH` after `WITH`; un-aliased `WITH` items; `ORDER BY`/`SKIP`/`LIMIT`
+>   on the `WITH` or the final `RETURN`; an aggregate in the final `RETURN`; `WITH` combined with `DIFF`/`RETURN
+>   GRAPH`. **Deferred:** the second-`MATCH` "narrow-then-expand" pipe (needs the engine to seed a stage-two frontier
+>   from stage-one rows carrying node UIDs) and general N-stage chains.
+
 ---
 
 ### Task 7.1 — Compiler: scope environment
