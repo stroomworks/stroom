@@ -2049,6 +2049,84 @@ evaluate correctly. **Verify.** `./gradlew :stroom-graphdb:stroom-graphdb-impl:t
 
 ---
 
+## Phase 13 — Namespace Stroom-native functions under `stroom.` (both, clearly separated)
+
+**Phase goal:** bare function names are **Cypher-standard** (portable, Cypher semantics); every Stroom-native
+extension is called through a `stroom.` namespace, e.g. `stroom.upperCase(a.name)`, `stroom.formatDate(a.ts)`,
+`stroom.jq(a.json, '.id')`. So `RETURN toUpper(a.name)` is portable Cypher and `RETURN stroom.upperCase(a.name)`
+is visibly a vendor extension - and the two can never clash.
+
+**Phase gate:** `./gradlew :stroom-query:stroom-query-grammar:test :stroom-query:stroom-query-planner:test
+:stroom-graphdb:stroom-graphdb-impl:test` green.
+
+**Do it now (unreleased) - it is a breaking rename.** Phases 8/12 exposed Stroom functions under bare names; this
+moves them behind `stroom.` and reserves the bare namespace for Cypher. Cheap now, painful after release. Follows
+the Cypher/Neo4j convention (bare standard functions; namespaced extensions, cf. `apoc.*`).
+
+### Design decisions
+
+**(a) The namespace is a front-end vocabulary only - rendering is unchanged.** A Cypher function still lowers to
+Stroom's raw engine function name in the rendered `${…}`/`name(…)` text (that text is evaluated by Stroom's
+`ExpressionParser`, which knows nothing of this namespace). `stroom.upperCase(x)` and the bare Cypher `toUpper(x)`
+both render to `upperCase(${x})`. So no engine change - Phase 13 is grammar + the `CypherFunctions` classification
++ `renderFunctionCall` dispatch.
+
+**(b) Classification.** Bare = the openCypher function names (`toUpper`, `toLower`, `substring`, `left`, `right`,
+`size`, `coalesce`, `ceil`, `id`, `type`, `toString`, `toInteger`, `toFloat`, `toBoolean`, `round`, `floor`, and the
+Phase-10 arithmetic). `stroom.*` = everything else Stroom exposes: `upperCase`, `lowerCase`, `substringBefore`/
+`substringAfter`, `replace`, `stringLength`, `concat`, `indexOf`/`lastIndexOf`, `contains`, `decode`, `encodeUrl`/
+`decodeUrl`, `hash`, `add`/`negate`, `ceiling`, `typeOf`, the `is*` tests, `if`/`case`/`match`, all the date/time
+functions (`formatDate`, `parseDate`, `formatDuration`, `parseDuration`, `now`, `isWeekend`, `floorDay`/`roundHour`/
+`ceilingMonth`/…), and the Stroom-only ones a later phase may add (`jq`, `xpath`, `extractHostFromUri`, …). The
+Stroom-semantics variant of a colliding name lives here too: **`stroom.substring`** (end-index) replaces the ad-hoc
+`stroom_substring`.
+
+**(c) Grammar: a qualified function name, disambiguated from property access.** `functionCall` gains an optional
+namespace: `(namespace=NAME DOT)? name=NAME OPEN_PAREN …`. Both `stroom.upperCase(x)` (qualified call) and `a.balance`
+(property access) start `NAME DOT NAME`; ANTLR ALL(*) resolves by the trailing `(` (a call) vs none (a property).
+**Test this disambiguation explicitly** - `RETURN a.balance` (property), `RETURN stroom.upperCase(a.name)` (call),
+and `WHERE a.b = 1` all in one suite. `stroom` stays an ordinary `NAME` (not a reserved keyword), validated as the
+only recognised namespace at compile time.
+
+### Task 13.1 — Grammar + AST: qualified function names
+
+**Goal.** Parse `namespace.name(args)`. **Files.** `Cypher.g4`, `AstFunctionValue` (+ `@Nullable String namespace`),
+`AstCypherBuilder`; `TestCypherQueryParser`. **Contract.** `functionCall : (namespace=NAME DOT)? name=NAME
+OPEN_PAREN (expression (COMMA expression)*)? CLOSE_PAREN`; builder sets `namespace` (null when unqualified). The
+temporal-clause constructors (`datetime(…)`/`duration(…)`) remain unqualified. **Done-when.** `stroom.upperCase(a.x)`
+parses with `namespace = "stroom"`; the property-access disambiguation regressions pass. **Verify.**
+`./gradlew :stroom-query:stroom-query-grammar:test`.
+
+### Task 13.2 — Compiler: split the vocabulary, dispatch on namespace
+
+**Goal.** Reclassify `CypherFunctions` and route by namespace.
+
+**Files.** `CypherFunctions` (two tables: `CYPHER` bare-standard + aliases/adapters, and `STROOM` extensions),
+`CypherToLogicalPlan.renderFunctionCall`; `TestCypherToLogicalPlan`.
+
+**Contract.**
+- **Unqualified** call → Cypher-standard only: the Phase 9 aliases/adapters (`toUpper`, `substring`, `coalesce`,
+  `id`, `type`, …). A bare name that is *not* Cypher-standard (e.g. bare `upperCase`, `formatDate`) is **rejected**
+  with a message pointing at the `stroom.` form: `"'formatDate' is a Stroom extension - call it as
+  stroom.formatDate(...)"`.
+- **`stroom.`-qualified** call → the `STROOM` table; renders to that raw Stroom function name. An unknown
+  `stroom.<x>` is rejected with the supported list.
+- **Any other namespace** (`foo.bar(...)`) → rejected (`"unknown function namespace 'foo'"`).
+- Retire the `stroom_substring` alias in favour of `stroom.substring`.
+- Rendering is otherwise unchanged (still raw Stroom names in the `${…}` text - decision (a)).
+
+**Done-when.** `stroom.upperCase(a.name)` and `toUpper(a.name)` both render to `upperCase(${a.name})`; bare
+`upperCase(...)` and `formatDate(...)` are rejected with an actionable message; `stroom.substring` gives Stroom's
+end-index semantics while bare `substring` gives Cypher's. **Verify.** `./gradlew :stroom-query:stroom-query-planner:test`.
+
+### Task 13.3 — Tests + doc/changelog migration
+
+**Goal/Contract.** Engine + provider round-trip for a `stroom.`-qualified call; update every prior phase's tests,
+the roadmap, and the user docs that showed a bare Stroom-name call (`upperCase`, `formatDate`, `floorDay`, …) to the
+`stroom.` form; a changelog entry noting the rename. **Verify.** the full three-module gate.
+
+---
+
 ## 3. Documentation & user-facing updates
 
 - Update [`cypher-language-feature-roadmap.md`](cypher-language-feature-roadmap.md)'s "What the subset covers today"
