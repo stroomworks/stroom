@@ -386,6 +386,39 @@ class TestCypherToLogicalPlan {
     }
 
     @Test
+    void collectOverProperty_compilesToCollectAggregateColumn() {
+        final CompiledCypherPlan compiled = compile(
+                "MATCH (o:Officer)-[:INVESTIGATED]->(c:Crime) RETURN o.id, collect(c.type) AS types");
+        assertThat(compiled.aggregation().columns()).containsExactly(
+                new GroupKeyColumn("o.id"),
+                new AggregateColumn(AstAggregateFunction.COLLECT, "c.type", false, false, false));
+    }
+
+    @Test
+    void collectDistinct_setsTheDistinctFlag() {
+        final CompiledCypherPlan compiled = compile(
+                "MATCH (o:Officer)-[:INVESTIGATED]->(c:Crime) RETURN o.id, collect(DISTINCT c.type) AS types");
+        assertThat(compiled.aggregation().columns()).containsExactly(
+                new GroupKeyColumn("o.id"),
+                new AggregateColumn(AstAggregateFunction.COLLECT, "c.type", false, false, true));
+    }
+
+    @Test
+    void collectStar_throwsCompileException() {
+        assertThatThrownBy(() -> compile("MATCH (a:Account) RETURN collect(*)"))
+                .isInstanceOf(CypherCompileException.class)
+                .hasMessageContaining("collect(*)");
+    }
+
+    @Test
+    void collectBareVariable_throwsCompileException() {
+        assertThatThrownBy(() -> compile(
+                "MATCH (o:Officer)-[:INVESTIGATED]->(c:Crime) RETURN o.id, collect(c)"))
+                .isInstanceOf(CypherCompileException.class)
+                .hasMessageContaining("whole");
+    }
+
+    @Test
     void unaliasedCountStar_defaultsToACleanFunctionStarName() {
         // Code-review fix: previously an unaliased aggregate's default name was renderExpression's "${...}"-laden
         // text (e.g. "count()"), unusable as a FieldIndex/column identifier - see defaultAggregateName's Javadoc.

@@ -24,5 +24,6 @@ public enum AstAggregateFunction {
     SUM,
     AVG,
     MIN,
-    MAX
+    MAX,
+    COLLECT
 }

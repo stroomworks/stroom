@@ -29,6 +29,7 @@ import stroom.query.language.functions.Val;
 import stroom.query.language.functions.ValDouble;
 import stroom.query.language.functions.ValLong;
 import stroom.query.language.functions.ValNull;
+import stroom.query.language.functions.ValString;
 import stroom.query.planner.cypher.AggregateColumn;
 import stroom.query.planner.cypher.CypherAggregation;
 import stroom.query.planner.cypher.GroupKeyColumn;
@@ -1803,7 +1804,32 @@ public final class GraphTraversalEngine {
             case AVG -> reduceAvg(aggregateColumn, group);
             case MIN -> reduceMinOrMax(aggregateColumn, group, true);
             case MAX -> reduceMinOrMax(aggregateColumn, group, false);
+            case COLLECT -> reduceCollect(aggregateColumn, group);
         };
+    }
+
+    /**
+     * {@code collect(a.property)} gathers the group's non-null values at the property. v1 representation: a
+     * comma-joined {@code ValString} (e.g. {@code "theft, fraud"}), not a true list value - a real list-valued
+     * {@code Val} is a deferred, cross-cutting change (see
+     * {@code docs/cypher-subset-extension-implementation-plan.md}, Phase 4 / the analytic-functions plan's Phase 2
+     * "ValList ripple" note). {@code collect(DISTINCT a.property)} de-duplicates by {@link Val} value first,
+     * preserving first-appearance order. An empty group yields an empty string.
+     */
+    private static Val reduceCollect(final AggregateColumn aggregateColumn, final List<Map<String, Val>> group) {
+        final List<String> values = new ArrayList<>();
+        final Set<Val> seen = aggregateColumn.distinct() ? new HashSet<>() : null;
+        for (final Map<String, Val> row : group) {
+            final Val value = row.get(aggregateColumn.argRowKey());
+            if (!isPresent(value)) {
+                continue;
+            }
+            if (seen != null && !seen.add(value)) {
+                continue;
+            }
+            values.add(value.toString());
+        }
+        return ValString.create(String.join(", ", values));
     }
 
     /**

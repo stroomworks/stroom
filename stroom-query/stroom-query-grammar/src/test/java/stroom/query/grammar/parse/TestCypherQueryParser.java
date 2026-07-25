@@ -188,6 +188,17 @@ class TestCypherQueryParser {
     }
 
     @Test
+    void collectOfProperty_parses() {
+        final AstCypherQuery query = CypherQueryParser.parse(
+                "MATCH (o:Officer)-[:INVESTIGATED]->(c:Crime) RETURN o.id, collect(c.type) AS types");
+
+        final AstAggregateExpr aggregate =
+                (AstAggregateExpr) query.returnClause().items().get(1).expression();
+        assertThat(aggregate.function()).isEqualTo(AstAggregateFunction.COLLECT);
+        assertThat(aggregate.distinct()).isFalse();
+    }
+
+    @Test
     void sumOfProperty_parses() {
         final AstCypherQuery query = CypherQueryParser.parse("MATCH (a:Account) RETURN sum(a.balance) AS total");
 

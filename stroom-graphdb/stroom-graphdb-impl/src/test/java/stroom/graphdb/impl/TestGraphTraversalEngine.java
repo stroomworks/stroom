@@ -180,6 +180,30 @@ class TestGraphTraversalEngine {
         }
     }
 
+    @Test
+    void collect_gathersGroupValuesAsAJoinedString(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("collect"), DOC)) {
+            seedOfficerWithRepeatedCrimeTypes(stores);
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory());
+
+            // o-1 investigates crimes of types {theft, theft, fraud}. v1 collect() representation is a
+            // comma-joined ValString; collect(DISTINCT) de-duplicates.
+            final CompiledCypherPlan compiled = compile(
+                    "MATCH (o:Officer {id: 'o-1'})-[:INVESTIGATED]->(c:Crime) "
+                    + "RETURN o.id, collect(c.type) AS all, collect(DISTINCT c.type) AS distinctTypes");
+            final List<Val[]> rows = stores.read(readTxn ->
+                    engine.execute(readTxn, compiled.plan(), compiled.temporalContext(),
+                            DateTimeSettings.builder().build(), compiled.distinct(), compiled.aggregation()));
+
+            assertThat(rows).hasSize(1);
+            assertThat(rows.getFirst()[1].toString().split(", "))
+                    .containsExactlyInAnyOrder("theft", "theft", "fraud");
+            assertThat(rows.getFirst()[2].toString().split(", "))
+                    .containsExactlyInAnyOrder("theft", "fraud");
+        }
+    }
+
     private static void seedOfficerWithRepeatedCrimeTypes(final GraphStores stores) {
         final long officerLabel = intern(stores, stores.getLabelUids(), "Officer");
         final long crimeLabel = intern(stores, stores.getLabelUids(), "Crime");

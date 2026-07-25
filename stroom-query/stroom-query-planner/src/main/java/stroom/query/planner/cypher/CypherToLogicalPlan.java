@@ -747,11 +747,12 @@ public final class CypherToLogicalPlan {
         final AstAggregateFunction function = aggregate.function();
         final String functionName = function.name().toLowerCase(Locale.ROOT);
         final boolean distinct = aggregate.distinct();
-        // DISTINCT is currently supported only on count(DISTINCT <property>). Reject it loudly everywhere else
-        // (rather than silently ignoring it and returning a wrong count) - fail loud, never wrong.
-        if (distinct && function != AstAggregateFunction.COUNT) {
+        // DISTINCT is supported on count(DISTINCT <property>) and collect(DISTINCT <property>). Reject it loudly
+        // on sum/avg/min/max (rather than silently ignoring it and returning a wrong result) - fail loud, never
+        // wrong.
+        if (distinct && function != AstAggregateFunction.COUNT && function != AstAggregateFunction.COLLECT) {
             throw new CypherCompileException(
-                    "not supported in this version: DISTINCT is only supported on count(...), not "
+                    "not supported in this version: DISTINCT is only supported on count(...) and collect(...), not "
                     + functionName + "(...)", aggregate.position());
         }
         if (aggregate.star()) {

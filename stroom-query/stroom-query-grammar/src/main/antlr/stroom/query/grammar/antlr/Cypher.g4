@@ -214,7 +214,7 @@ expression
 // it only on count(DISTINCT <property>) and rejects the rest (sum/avg/min/max DISTINCT, count(DISTINCT *),
 // count(DISTINCT <variable>)) at compile time - parse-now, restrict-at-compile, per this grammar's convention.
 aggregateCall
-    : fn=(COUNT | SUM | AVG | MIN | MAX) OPEN_PAREN DISTINCT? (STAR | expression) CLOSE_PAREN
+    : fn=(COUNT | SUM | AVG | MIN | MAX | COLLECT) OPEN_PAREN DISTINCT? (STAR | expression) CLOSE_PAREN
     ;
 
 // Stroom DIFF extension: before(a.prop)/after(a.prop) name a property value in the baseline (t1) / comparison
@@ -308,6 +308,7 @@ ENDS     : E N D S ;
 CONTAINS : C O N T A I N S ;
 IN       : I N ;
 IS       : I S ;
+COLLECT  : C O L L E C T ;
 // Trailing underscore to avoid reader confusion with Java's null keyword (matches the SKIP_ convention above).
 NULL_    : N U L L ;
 

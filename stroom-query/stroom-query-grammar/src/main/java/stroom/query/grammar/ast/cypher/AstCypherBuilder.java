@@ -380,6 +380,7 @@ public final class AstCypherBuilder {
             case CypherParser.AVG -> AstAggregateFunction.AVG;
             case CypherParser.MIN -> AstAggregateFunction.MIN;
             case CypherParser.MAX -> AstAggregateFunction.MAX;
+            case CypherParser.COLLECT -> AstAggregateFunction.COLLECT;
             default -> throw new IllegalStateException("Unrecognised aggregate function: " + ctx.getText());
         };
         final boolean distinct = ctx.DISTINCT() != null;

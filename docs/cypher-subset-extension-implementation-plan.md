@@ -841,6 +841,16 @@ values, not the raw row count.
 **Phase gate:** `./gradlew :stroom-query:stroom-query-grammar:test :stroom-query:stroom-query-planner:test
 :stroom-graphdb:stroom-graphdb-impl:test` green.
 
+> **Implementation note (2026-07-25): shipped with the delimiter-joined `ValString` fallback, not `ValList`.**
+> Task 4.1's true `ValList` proved a disproportionate ripple - a new `Val` variant needs a new `Type` id, a
+> `ValSerialiser` entry, and handling across many `Type`/`Val` consumers (search Solr/Elastic, plan-b, UI clients,
+> query functions), several via non-exhaustive `instanceof` chains that would silently mishandle a new variant (a
+> fail-loud violation in modules outside this plan's test scope). Per this plan's Risks table and the
+> analytic-functions plan's own Phase 2 alternative, `collect()` therefore produces a **comma-joined `ValString`**
+> (`GraphTraversalEngine.reduceCollect`), DISTINCT-aware, with zero serialisation ripple. A true list-valued `Val`
+> (which would also enable a future `UNWIND` over a collected list) remains deferred: **Task 4.1 (`ValList`) is not
+> done**; Tasks 4.2-4.5 are, against the `ValString` representation.
+
 ---
 
 ### Task 4.1 — `ValList`: the new list-valued `Val` (cross-cutting; do this first, in isolation)
