@@ -385,9 +385,13 @@ public final class AstCypherBuilder {
     private AstExpression buildMulExpr(final MulExprContext ctx) {
         AstExpression left = buildPowExpr(ctx.powExpr(0));
         for (int i = 0; i < ctx.op.size(); i++) {
-            final AstArithmeticOp op = ctx.op.get(i).getType() == CypherParser.STAR
-                    ? AstArithmeticOp.MULTIPLY
-                    : AstArithmeticOp.DIVIDE;
+            final AstArithmeticOp op = switch (ctx.op.get(i).getType()) {
+                case CypherParser.STAR -> AstArithmeticOp.MULTIPLY;
+                case CypherParser.SLASH -> AstArithmeticOp.DIVIDE;
+                case CypherParser.PERCENT -> AstArithmeticOp.MODULO;
+                default -> throw new IllegalStateException(
+                        "unexpected mulExpr operator token: " + ctx.op.get(i).getText());
+            };
             left = new AstArithmeticExpr(left, op, buildPowExpr(ctx.powExpr(i + 1)), position(ctx));
         }
         return left;

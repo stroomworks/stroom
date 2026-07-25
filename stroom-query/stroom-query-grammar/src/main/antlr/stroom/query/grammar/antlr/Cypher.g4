@@ -220,7 +220,7 @@ addExpr
     ;
 
 mulExpr
-    : powExpr (op+=(STAR | SLASH) powExpr)*
+    : powExpr (op+=(STAR | SLASH | PERCENT) powExpr)*
     ;
 
 powExpr
@@ -361,6 +361,7 @@ DOT           : '.' ;
 STAR          : '*' ;
 PLUS          : '+' ;
 SLASH         : '/' ;
+PERCENT       : '%' ;
 CARET         : '^' ;
 // The Unicode '±' sign, or the ASCII fallback '+/-' (typing '±' directly is impractical for most users/editors).
 PLUSMINUS     : '±' | '+/-' ;

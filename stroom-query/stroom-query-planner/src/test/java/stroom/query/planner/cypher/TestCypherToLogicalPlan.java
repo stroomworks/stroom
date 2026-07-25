@@ -603,6 +603,11 @@ class TestCypherToLogicalPlan {
         // Parentheses override precedence.
         assertThat(renderedReturnExpression("MATCH (a:Account) RETURN (2 + 3) * 4"))
                 .isEqualTo("((2 + 3) * 4)");
+        // Modulo '%' renders to Stroom's '%' operator and binds like '*' / '/'.
+        assertThat(renderedReturnExpression("MATCH (a:Account) RETURN a.n % 3"))
+                .isEqualTo("(${a.n} % 3)");
+        assertThat(renderedReturnExpression("MATCH (a:Account) RETURN a.n % 3 + 1"))
+                .isEqualTo("((${a.n} % 3) + 1)");
         // Mixed with a function argument.
         assertThat(renderedReturnExpression("MATCH (a:Account) RETURN toUpper(a.name) AS u, a.x - a.y AS d"))
                 .isEqualTo("upperCase(${a.name})");

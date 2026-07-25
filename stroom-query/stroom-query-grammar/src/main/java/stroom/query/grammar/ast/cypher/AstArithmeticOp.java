@@ -24,5 +24,6 @@ public enum AstArithmeticOp {
     SUBTRACT,
     MULTIPLY,
     DIVIDE,
+    MODULO,
     POWER
 }

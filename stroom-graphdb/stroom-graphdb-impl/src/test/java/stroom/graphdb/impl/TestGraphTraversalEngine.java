@@ -421,6 +421,8 @@ class TestGraphTraversalEngine {
             assertThat(oneDouble(stores, engine, anchor + "a.balance * 2")).isEqualTo(100.0);
             assertThat(oneDouble(stores, engine, anchor + "a.balance - 10")).isEqualTo(40.0);
             assertThat(oneDouble(stores, engine, anchor + "a.balance / 5")).isEqualTo(10.0);
+            // Modulo: 50 % 30 = 20.
+            assertThat(oneDouble(stores, engine, anchor + "a.balance % 30")).isEqualTo(20.0);
             // Precedence: * before +.
             assertThat(oneDouble(stores, engine, anchor + "2 + 3 * 4")).isEqualTo(14.0);
             // Parentheses override.

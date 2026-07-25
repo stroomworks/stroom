@@ -129,7 +129,7 @@ class TestCypherQueryParser {
     @Test
     void arithmeticExpressions_parse() {
         assertThatCode(() -> CypherQueryParser.parse(
-                "MATCH (a:Account) RETURN a.balance * 1.2, a.x + a.y, (a.hi - a.lo) / 2, 2 ^ 3"))
+                "MATCH (a:Account) RETURN a.balance * 1.2, a.x + a.y, (a.hi - a.lo) / 2, 2 ^ 3, a.n % 3"))
                 .doesNotThrowAnyException();
         // Regression: '-' and '*' still work as pattern tokens alongside arithmetic.
         assertThatCode(() -> CypherQueryParser.parse(

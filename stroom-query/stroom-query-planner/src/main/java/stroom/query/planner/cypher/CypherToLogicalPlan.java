@@ -1206,6 +1206,7 @@ public final class CypherToLogicalPlan {
             case SUBTRACT -> "-";
             case MULTIPLY -> "*";
             case DIVIDE -> "/";
+            case MODULO -> "%";
             case POWER -> "^";
         };
     }
