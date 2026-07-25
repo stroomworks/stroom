@@ -594,6 +594,41 @@ class TestCypherToLogicalPlan {
     }
 
     @Test
+    void simpleCase_rendersToStroomCaseFunction() {
+        // CASE input WHEN t THEN r ... ELSE e END -> case(input, t1, r1, ..., otherwise).
+        assertThat(renderedReturnExpression(
+                "MATCH (a:Account) RETURN CASE a.status WHEN 1 THEN 'on' WHEN 0 THEN 'off' ELSE 'unknown' END"))
+                .isEqualTo("case(${a.status}, 1, 'on', 0, 'off', 'unknown')");
+        // A missing ELSE lowers to null().
+        assertThat(renderedReturnExpression(
+                "MATCH (a:Account) RETURN CASE a.status WHEN 1 THEN 'on' END"))
+                .isEqualTo("case(${a.status}, 1, 'on', null())");
+    }
+
+    @Test
+    void searchedCase_rendersToNestedIf() {
+        // CASE WHEN cond THEN r ... ELSE e END -> if(cond1, r1, if(cond2, r2, ..., otherwise)).
+        assertThat(renderedReturnExpression(
+                "MATCH (a:Account) RETURN CASE WHEN a.balance > 0 THEN 'credit' ELSE 'debit' END"))
+                .isEqualTo("if((${a.balance} > 0), 'credit', 'debit')");
+        // Multiple arms + a boolean-combined condition; missing ELSE -> null().
+        assertThat(renderedReturnExpression(
+                "MATCH (a:Account) RETURN CASE WHEN a.x > 0 AND a.y < 5 THEN 'a' WHEN a.z = 1 THEN 'b' END"))
+                .isEqualTo("if(and((${a.x} > 0), (${a.y} < 5)), 'a', if((${a.z} = 1), 'b', null()))");
+        // IS NULL condition + result arithmetic.
+        assertThat(renderedReturnExpression(
+                "MATCH (a:Account) RETURN CASE WHEN a.closed IS NULL THEN a.balance * 2 ELSE 0 END"))
+                .isEqualTo("if(isNull(${a.closed}), (${a.balance} * 2), 0)");
+    }
+
+    @Test
+    void searchedCase_rejectsStringPredicateInCondition() {
+        assertThatThrownBy(() -> compile(
+                "MATCH (a:Account) RETURN CASE WHEN a.name STARTS WITH 'x' THEN 1 ELSE 0 END"))
+                .isInstanceOf(CypherCompileException.class);
+    }
+
+    @Test
     void arithmetic_rendersInfixPreservingPrecedence() {
         assertThat(renderedReturnExpression("MATCH (a:Account) RETURN a.balance * 1.2"))
                 .isEqualTo("(${a.balance} * 1.2)");

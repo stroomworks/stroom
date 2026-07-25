@@ -32,6 +32,8 @@ import stroom.query.grammar.ast.cypher.AstAsOf;
 import stroom.query.grammar.ast.cypher.AstBetween;
 import stroom.query.grammar.ast.cypher.AstBooleanExpr;
 import stroom.query.grammar.ast.cypher.AstBooleanValue;
+import stroom.query.grammar.ast.cypher.AstCaseExpr;
+import stroom.query.grammar.ast.cypher.AstCaseWhen;
 import stroom.query.grammar.ast.cypher.AstComparisonOp;
 import stroom.query.grammar.ast.cypher.AstComparisonPredicate;
 import stroom.query.grammar.ast.cypher.AstCypherQuery;
@@ -427,6 +429,23 @@ public final class CypherToLogicalPlan {
             case final AstArithmeticExpr arithmetic -> {
                 validateExpressionInScope(arithmetic.left(), scope);
                 validateExpressionInScope(arithmetic.right(), scope);
+            }
+            case final AstCaseExpr caseExpr -> {
+                if (caseExpr.input() != null) {
+                    validateExpressionInScope(caseExpr.input(), scope);
+                }
+                for (final AstCaseWhen when : caseExpr.whens()) {
+                    if (when.testValue() != null) {
+                        validateExpressionInScope(when.testValue(), scope);
+                    }
+                    if (when.testCondition() != null) {
+                        validateBooleanInScope(when.testCondition(), scope);
+                    }
+                    validateExpressionInScope(when.result(), scope);
+                }
+                if (caseExpr.elseResult() != null) {
+                    validateExpressionInScope(caseExpr.elseResult(), scope);
+                }
             }
         }
     }
@@ -1236,8 +1255,95 @@ public final class CypherToLogicalPlan {
             // precedence structure (Phase 10 - runtime is free).
             return "(" + renderExpression(arithmetic.left()) + " " + arithmeticSymbol(arithmetic.op()) + " "
                    + renderExpression(arithmetic.right()) + ")";
+        } else if (expression instanceof final AstCaseExpr caseExpr) {
+            return renderCaseExpression(caseExpr);
         }
         throw new CypherCompileException("Unrecognised expression", expression.position());
+    }
+
+    /**
+     * Lowers a CASE value expression to Stroom's expression engine:
+     * <ul>
+     *   <li><b>simple</b> ({@code CASE input WHEN t THEN r ... [ELSE e] END}) -&gt; Stroom's exact-match switch
+     *       {@code case(input, t1, r1, ..., tN, rN, otherwise)}.</li>
+     *   <li><b>searched</b> ({@code CASE WHEN cond THEN r ... [ELSE e] END}) -&gt; right-nested
+     *       {@code if(cond1, r1, if(cond2, r2, ..., otherwise))}.</li>
+     * </ul>
+     * A missing {@code ELSE} becomes {@code null()} (openCypher yields null for an unmatched CASE).
+     */
+    private static String renderCaseExpression(final AstCaseExpr caseExpr) {
+        final String otherwise = caseExpr.elseResult() == null
+                ? "null()"
+                : renderExpression(caseExpr.elseResult());
+
+        if (caseExpr.input() != null) {
+            final StringBuilder sb = new StringBuilder("case(");
+            sb.append(renderExpression(caseExpr.input()));
+            for (final AstCaseWhen when : caseExpr.whens()) {
+                sb.append(", ").append(renderExpression(when.testValue()))
+                        .append(", ").append(renderExpression(when.result()));
+            }
+            return sb.append(", ").append(otherwise).append(")").toString();
+        }
+
+        // Searched form: fold from the last arm inwards so arm 1 is the outermost if().
+        String acc = otherwise;
+        final List<AstCaseWhen> whens = caseExpr.whens();
+        for (int i = whens.size() - 1; i >= 0; i--) {
+            final AstCaseWhen when = whens.get(i);
+            acc = "if(" + renderBooleanCondition(when.testCondition()) + ", "
+                  + renderExpression(when.result()) + ", " + acc + ")";
+        }
+        return acc;
+    }
+
+    /**
+     * Renders a boolean predicate (a searched-CASE {@code WHEN} condition) to a Stroom expression-engine string that
+     * evaluates to a boolean - reusing Stroom's {@code and}/{@code or}/{@code not}/{@code isNull} functions and its
+     * infix comparison operators. This is the string-rendering counterpart of the WHERE lowering (which instead
+     * targets {@code ExpressionTerm} conditions); the two paths are separate because a CASE condition must live
+     * inside a value expression, not a filter.
+     */
+    private static String renderBooleanCondition(final AstBooleanExpr condition) {
+        return switch (condition) {
+            case final AstAndExpr and -> renderBooleanFunction("and", and.operands());
+            case final AstOrExpr or -> renderBooleanFunction("or", or.operands());
+            case final AstNotExpr not -> "not(" + renderBooleanCondition(not.operand()) + ")";
+            case final AstIsNullPredicate isNull -> {
+                final String test = "isNull(" + renderExpression(isNull.operand()) + ")";
+                yield isNull.negated() ? "not(" + test + ")" : test;
+            }
+            case final AstComparisonPredicate cmp -> renderComparisonCondition(cmp);
+            case final AstInPredicate in -> throw new CypherCompileException(
+                    "not supported in this version: an IN predicate inside a CASE WHEN condition (use nested "
+                    + "comparisons, or filter in WHERE)", in.position());
+        };
+    }
+
+    private static String renderBooleanFunction(final String fn, final List<AstBooleanExpr> operands) {
+        final StringBuilder sb = new StringBuilder(fn).append("(");
+        for (int i = 0; i < operands.size(); i++) {
+            if (i > 0) {
+                sb.append(", ");
+            }
+            sb.append(renderBooleanCondition(operands.get(i)));
+        }
+        return sb.append(")").toString();
+    }
+
+    private static String renderComparisonCondition(final AstComparisonPredicate cmp) {
+        final String op = switch (cmp.op()) {
+            case EQ -> "=";
+            case NEQ -> "!=";
+            case LT -> "<";
+            case LE -> "<=";
+            case GT -> ">";
+            case GE -> ">=";
+            case STARTS_WITH, CONTAINS, ENDS_WITH, REGEX -> throw new CypherCompileException(
+                    "not supported in this version: a string predicate (STARTS WITH / CONTAINS / ENDS WITH / =~) "
+                    + "inside a CASE WHEN condition", cmp.position());
+        };
+        return "(" + renderExpression(cmp.left()) + " " + op + " " + renderExpression(cmp.right()) + ")";
     }
 
     /**

@@ -375,6 +375,30 @@ class TestGraphTraversalEngine {
     }
 
     @Test
+    void caseExpression_evaluatesOverRows(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("casefns"), DOC)) {
+            seedDeviceConnectedToAccounts(stores);
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory());
+            // account-a's balance is 50.
+            final String anchor = "MATCH (a:Account {id: 'account-a'}) RETURN ";
+
+            // Searched CASE: 50 is not > 100 but is > 10 -> 'ok'.
+            assertThat(one(stores, engine, anchor
+                    + "CASE WHEN a.balance > 100 THEN 'rich' WHEN a.balance > 10 THEN 'ok' ELSE 'poor' END"))
+                    .isEqualTo("ok");
+            // Simple CASE: input matches the second-arm value.
+            assertThat(one(stores, engine, anchor
+                    + "CASE a.id WHEN 'nobody' THEN 'x' WHEN 'account-a' THEN 'me' ELSE 'other' END"))
+                    .isEqualTo("me");
+            // Boolean-combined condition + arithmetic result.
+            assertThat(oneDouble(stores, engine, anchor
+                    + "CASE WHEN a.balance > 10 AND a.balance < 100 THEN a.balance * 2 ELSE 0 END"))
+                    .isEqualTo(100.0);
+        }
+    }
+
+    @Test
     void graphIdentityFunctions_returnNodeIdAndEdgeType(@TempDir final Path root) {
         try (GraphStores stores = GraphStores.provision(root.resolve("graphidentity"), DOC)) {
             seedDeviceConnectedToAccounts(stores);

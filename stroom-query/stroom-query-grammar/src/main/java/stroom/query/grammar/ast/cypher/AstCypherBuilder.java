@@ -25,6 +25,7 @@ import stroom.query.grammar.antlr.CypherParser.AroundClauseContext;
 import stroom.query.grammar.antlr.CypherParser.AsOfClauseContext;
 import stroom.query.grammar.antlr.CypherParser.BetweenClauseContext;
 import stroom.query.grammar.antlr.CypherParser.BooleanValueContext;
+import stroom.query.grammar.antlr.CypherParser.CaseExpressionContext;
 import stroom.query.grammar.antlr.CypherParser.ComparisonOpContext;
 import stroom.query.grammar.antlr.CypherParser.ComparisonPredicateContext;
 import stroom.query.grammar.antlr.CypherParser.DiffAccessorContext;
@@ -64,11 +65,15 @@ import stroom.query.grammar.antlr.CypherParser.ReturnClauseContext;
 import stroom.query.grammar.antlr.CypherParser.ReturnGraphClauseContext;
 import stroom.query.grammar.antlr.CypherParser.ReturnItemContext;
 import stroom.query.grammar.antlr.CypherParser.ReturnItemsClauseContext;
+import stroom.query.grammar.antlr.CypherParser.SearchedCaseContext;
+import stroom.query.grammar.antlr.CypherParser.SimpleCaseContext;
 import stroom.query.grammar.antlr.CypherParser.SkipClauseContext;
 import stroom.query.grammar.antlr.CypherParser.StringValueContext;
 import stroom.query.grammar.antlr.CypherParser.TemporalClauseContext;
 import stroom.query.grammar.antlr.CypherParser.ValueContext;
 import stroom.query.grammar.antlr.CypherParser.VarLengthContext;
+import stroom.query.grammar.antlr.CypherParser.WhenSearchContext;
+import stroom.query.grammar.antlr.CypherParser.WhenValueContext;
 import stroom.query.grammar.antlr.CypherParser.WhereClauseContext;
 import stroom.query.grammar.antlr.CypherParser.WithClauseContext;
 import stroom.query.grammar.ast.AstPosition;
@@ -406,7 +411,9 @@ public final class AstCypherBuilder {
     }
 
     private AstExpression buildAtom(final AtomContext ctx) {
-        if (ctx.aggregateCall() != null) {
+        if (ctx.caseExpression() != null) {
+            return buildCaseExpression(ctx.caseExpression());
+        } else if (ctx.aggregateCall() != null) {
             return buildAggregateCall(ctx.aggregateCall());
         } else if (ctx.diffAccessor() != null) {
             return buildDiffAccessor(ctx.diffAccessor());
@@ -421,6 +428,25 @@ public final class AstCypherBuilder {
             return buildExpression(ctx.expression());
         }
         throw new IllegalStateException("Unrecognised expression atom: " + ctx.getText());
+    }
+
+    private AstCaseExpr buildCaseExpression(final CaseExpressionContext ctx) {
+        if (ctx instanceof final SimpleCaseContext simple) {
+            final List<AstCaseWhen> whens = new ArrayList<>(simple.whenValue().size());
+            for (final WhenValueContext when : simple.whenValue()) {
+                whens.add(new AstCaseWhen(buildExpression(when.test), null, buildExpression(when.result)));
+            }
+            final AstExpression elseResult = simple.elseResult == null ? null : buildExpression(simple.elseResult);
+            return new AstCaseExpr(buildExpression(simple.input), whens, elseResult, position(ctx));
+        } else if (ctx instanceof final SearchedCaseContext searched) {
+            final List<AstCaseWhen> whens = new ArrayList<>(searched.whenSearch().size());
+            for (final WhenSearchContext when : searched.whenSearch()) {
+                whens.add(new AstCaseWhen(null, buildOrExpr(when.condition.orExpr()), buildExpression(when.result)));
+            }
+            final AstExpression elseResult = searched.elseResult == null ? null : buildExpression(searched.elseResult);
+            return new AstCaseExpr(null, whens, elseResult, position(ctx));
+        }
+        throw new IllegalStateException("Unrecognised CASE expression: " + ctx.getText());
     }
 
     private AstAggregateExpr buildAggregateCall(final AggregateCallContext ctx) {

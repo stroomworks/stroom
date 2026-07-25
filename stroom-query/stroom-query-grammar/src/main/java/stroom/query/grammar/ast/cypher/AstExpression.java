@@ -26,7 +26,7 @@ import stroom.query.grammar.ast.AstPosition;
  */
 public sealed interface AstExpression
         permits AstPropertyAccessExpr, AstVariableExpr, AstLiteralExpr, AstAggregateExpr, AstDiffAccessorExpr,
-        AstArithmeticExpr {
+        AstArithmeticExpr, AstCaseExpr {
 
     AstPosition position();
 }

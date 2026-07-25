@@ -137,6 +137,25 @@ class TestCypherQueryParser {
     }
 
     @Test
+    void caseExpressions_parse() {
+        // Searched form (WHEN <boolean> THEN <value>), with and without ELSE, and a boolean-combined condition.
+        assertThatCode(() -> CypherQueryParser.parse(
+                "MATCH (a:Account) RETURN CASE WHEN a.balance > 0 THEN 'credit' ELSE 'debit' END"))
+                .doesNotThrowAnyException();
+        assertThatCode(() -> CypherQueryParser.parse(
+                "MATCH (a:Account) RETURN CASE WHEN a.x > 0 AND a.y < 5 THEN 'a' WHEN a.z = 1 THEN 'b' END"))
+                .doesNotThrowAnyException();
+        // Simple form (CASE <input> WHEN <value> THEN <value>).
+        assertThatCode(() -> CypherQueryParser.parse(
+                "MATCH (a:Account) RETURN CASE a.status WHEN 1 THEN 'on' WHEN 0 THEN 'off' ELSE 'unknown' END"))
+                .doesNotThrowAnyException();
+        // CASE nested inside a function argument and combined with arithmetic.
+        assertThatCode(() -> CypherQueryParser.parse(
+                "MATCH (a:Account) RETURN stroom.upperCase(CASE WHEN a.n > 0 THEN 'p' ELSE 'n' END), a.n % 2"))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
     void withHavingPipe_parses() {
         assertThatCode(() -> CypherQueryParser.parse(
                 "MATCH (p:Person)-[:PARTY_TO]->(c:Crime) WITH p.id AS pid, count(c) AS n WHERE n > 5 "

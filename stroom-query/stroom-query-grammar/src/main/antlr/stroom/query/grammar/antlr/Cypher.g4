@@ -228,13 +228,29 @@ powExpr
     ;
 
 atom
-    : aggregateCall
+    : caseExpression
+    | aggregateCall
     | diffAccessor
     | propertyAccess
     | variableRef=NAME
     | value
     | OPEN_PAREN expression CLOSE_PAREN
     ;
+
+// CASE value expression, both openCypher forms:
+//   simple   - `CASE input WHEN test THEN result ... [ELSE otherwise] END` (each test is compared to input)
+//   searched - `CASE WHEN condition THEN result ... [ELSE otherwise] END`  (each condition is a boolean predicate)
+// The two are disambiguated by whether a value expression follows CASE before the first WHEN (an `expression`
+// cannot begin with WHEN, so ALL(*) picks the right alternative). CypherToLogicalPlan lowers the simple form to
+// Stroom's `case(input, test1, result1, ..., otherwise)` and the searched form to nested `if(...)`; a missing ELSE
+// becomes `null()`.
+caseExpression
+    : CASE input=expression whenValue+ (ELSE elseResult=expression)? END   # simpleCase
+    | CASE whenSearch+ (ELSE elseResult=expression)? END                   # searchedCase
+    ;
+
+whenValue  : WHEN test=expression THEN result=expression ;
+whenSearch : WHEN condition=expr THEN result=expression ;
 
 // `DISTINCT` is admitted uniformly for every aggregate at the grammar level; CypherToLogicalPlan currently accepts
 // it only on count(DISTINCT <property>) and rejects the rest (sum/avg/min/max DISTINCT, count(DISTINCT *),
@@ -344,6 +360,11 @@ IN       : I N ;
 IS       : I S ;
 COLLECT  : C O L L E C T ;
 OPTIONAL : O P T I O N A L ;
+CASE     : C A S E ;
+WHEN     : W H E N ;
+THEN     : T H E N ;
+ELSE     : E L S E ;
+END      : E N D ;
 // Trailing underscore to avoid reader confusion with Java's null keyword (matches the SKIP_ convention above).
 NULL_    : N U L L ;
 
