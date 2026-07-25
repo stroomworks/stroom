@@ -1275,20 +1275,41 @@ public final class CypherToLogicalPlan {
         final List<String> args = f.arguments().stream()
                 .map(CypherToLogicalPlan::renderFunctionArgument)
                 .toList();
-        // Cypher-exact functions whose signature differs from Stroom's are rewritten (Phase 9); everything else is
-        // a plain name map/alias (Phase 8).
+        final String namespace = f.namespace();
+
+        // `stroom.`-qualified: a Stroom-native extension, rendered to its raw engine name (Phase 13).
+        if (namespace != null) {
+            if (!CypherFunctions.STROOM_NAMESPACE.equals(namespace)) {
+                throw new CypherCompileException(
+                        "not supported in this version: unknown function namespace '" + namespace
+                        + "' - use a bare Cypher function or the stroom.* namespace", f.position());
+            }
+            if (!CypherFunctions.isStroomFunction(f.name())) {
+                throw new CypherCompileException(
+                        "not supported in this version: 'stroom." + f.name() + "' is not a recognised Stroom "
+                        + "function (available: " + CypherFunctions.stroomNames() + ")", f.position());
+            }
+            return f.name() + "(" + String.join(", ", args) + ")";
+        }
+
+        // Bare = Cypher-standard. Signature-adapted Cypher functions first (Phase 9/10/11), then the 1:1-mapped ones.
         final String adapted = renderCypherAdaptedFunction(f, args);
         if (adapted != null) {
             return adapted;
         }
-        final String stroomName = CypherFunctions.toStroomName(f.name());
-        if (stroomName == null) {
-            throw new CypherCompileException(
-                    "not supported in this version: function '" + f.name() + "' is not available in a Cypher "
-                    + "RETURN (supported: " + CypherFunctions.supportedNames()
-                    + ", substring, left, right, size, coalesce)", f.position());
+        final String render = CypherFunctions.cypherRenderName(f.name());
+        if (render != null) {
+            return render + "(" + String.join(", ", args) + ")";
         }
-        return stroomName + "(" + String.join(", ", args) + ")";
+        // Not a Cypher-standard function. If it is a Stroom extension, point at the stroom. form.
+        if (CypherFunctions.isStroomFunction(f.name())) {
+            throw new CypherCompileException(
+                    "not supported in this version: '" + f.name() + "' is a Stroom extension - call it as stroom."
+                    + f.name() + "(...)", f.position());
+        }
+        throw new CypherCompileException(
+                "not supported in this version: function '" + f.name() + "' is not available in a Cypher RETURN",
+                f.position());
     }
 
     /**
@@ -1576,6 +1597,7 @@ public final class CypherToLogicalPlan {
 
     private static Instant resolveInstant(final AstValue value) {
         if (value instanceof final AstFunctionValue f
+                && f.namespace() == null
                 && f.name().equalsIgnoreCase("datetime")
                 && f.arguments().size() == 1
                 && f.arguments().getFirst() instanceof final AstLiteralExpr lit
@@ -1599,6 +1621,7 @@ public final class CypherToLogicalPlan {
 
     private static Duration resolveDuration(final AstValue value) {
         if (value instanceof final AstFunctionValue f
+                && f.namespace() == null
                 && f.name().equalsIgnoreCase("duration")
                 && f.arguments().size() == 1
                 && f.arguments().getFirst() instanceof final AstLiteralExpr lit

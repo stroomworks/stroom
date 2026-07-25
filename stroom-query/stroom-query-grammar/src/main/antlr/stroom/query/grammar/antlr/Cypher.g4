@@ -258,8 +258,11 @@ propertyAccess
 // expression engine (ExpressionParser) over a curated allowlist, and rejects aggregate/diff-accessor arguments.
 // Temporal-clause literals like `datetime('...')` still parse here (their string argument is just a literal
 // expression); resolveInstant/resolveDuration unwrap it.
+// An optional `namespace.` prefix (only `stroom.` is recognised, at compile time) selects the Stroom-native
+// function library; a bare name is a Cypher-standard function. `stroom.upperCase(x)` and property access `a.b`
+// both start NAME DOT NAME - the parser tells them apart by the trailing `(` (a call) vs none (a property).
 functionCall
-    : name=NAME OPEN_PAREN (expression (COMMA expression)*)? CLOSE_PAREN
+    : (namespace=NAME DOT)? name=NAME OPEN_PAREN (expression (COMMA expression)*)? CLOSE_PAREN
     ;
 
 value

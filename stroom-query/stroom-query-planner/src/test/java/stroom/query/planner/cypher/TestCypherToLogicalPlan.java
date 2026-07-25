@@ -520,7 +520,7 @@ class TestCypherToLogicalPlan {
     @Test
     void nestedScalarFunctions_renderRecursively() {
         final CompiledCypherPlan compiled = compile(
-                "MATCH (a:Account) RETURN concat(upperCase(a.first), lowerCase(a.last))");
+                "MATCH (a:Account) RETURN stroom.concat(stroom.upperCase(a.first), stroom.lowerCase(a.last))");
         assertThat(((Project) compiled.plan()).fields().getFirst().rawExpression())
                 .isEqualTo("concat(upperCase(${a.first}), lowerCase(${a.last}))");
     }
@@ -544,8 +544,8 @@ class TestCypherToLogicalPlan {
         // Cypher substring(s, start, length) -> Stroom substring(s, start, start + length).
         assertThat(renderedReturnExpression("MATCH (a:Account) RETURN substring(a.name, 1, 3)"))
                 .isEqualTo("substring(${a.name}, 1, add(1, 3))");
-        // Stroom's own end-index substring stays reachable under stroom_substring (unadapted).
-        assertThat(renderedReturnExpression("MATCH (a:Account) RETURN stroom_substring(a.name, 1, 3)"))
+        // Stroom's own end-index substring stays reachable under the stroom.* namespace (unadapted).
+        assertThat(renderedReturnExpression("MATCH (a:Account) RETURN stroom.substring(a.name, 1, 3)"))
                 .isEqualTo("substring(${a.name}, 1, 3)");
     }
 
@@ -586,7 +586,7 @@ class TestCypherToLogicalPlan {
         assertThat(renderedReturnExpression("MATCH (a:Account) RETURN (2 + 3) * 4"))
                 .isEqualTo("((2 + 3) * 4)");
         // Mixed with a function argument.
-        assertThat(renderedReturnExpression("MATCH (a:Account) RETURN upperCase(a.name) AS u, a.x - a.y AS d"))
+        assertThat(renderedReturnExpression("MATCH (a:Account) RETURN toUpper(a.name) AS u, a.x - a.y AS d"))
                 .isEqualTo("upperCase(${a.name})");
     }
 
@@ -599,9 +599,9 @@ class TestCypherToLogicalPlan {
 
     @Test
     void dateTimeFunctions_wireThroughAsStroomFunctions() {
-        assertThat(renderedReturnExpression("MATCH (a:Account) RETURN formatDate(a.ts)"))
+        assertThat(renderedReturnExpression("MATCH (a:Account) RETURN stroom.formatDate(a.ts)"))
                 .isEqualTo("formatDate(${a.ts})");
-        assertThat(renderedReturnExpression("MATCH (a:Account) RETURN floorDay(a.ts)"))
+        assertThat(renderedReturnExpression("MATCH (a:Account) RETURN stroom.floorDay(a.ts)"))
                 .isEqualTo("floorDay(${a.ts})");
     }
 
@@ -625,6 +625,34 @@ class TestCypherToLogicalPlan {
         assertThatThrownBy(() -> compile("MATCH (a:Account) RETURN id(a.name)"))
                 .isInstanceOf(CypherCompileException.class)
                 .hasMessageContaining("bare pattern variable");
+    }
+
+    @Test
+    void stroomNamespacedFunction_rendersToTheRawStroomFunction() {
+        assertThat(renderedReturnExpression("MATCH (a:Account) RETURN stroom.upperCase(a.name)"))
+                .isEqualTo("upperCase(${a.name})");
+    }
+
+    @Test
+    void bareStroomExtensionName_rejectedWithNamespaceHint() {
+        // upperCase is a Stroom extension, not Cypher-standard - the bare name must be namespaced.
+        assertThatThrownBy(() -> compile("MATCH (a:Account) RETURN upperCase(a.name)"))
+                .isInstanceOf(CypherCompileException.class)
+                .hasMessageContaining("call it as stroom.upperCase");
+    }
+
+    @Test
+    void unknownNamespace_throwsCompileException() {
+        assertThatThrownBy(() -> compile("MATCH (a:Account) RETURN foo.bar(a.name)"))
+                .isInstanceOf(CypherCompileException.class)
+                .hasMessageContaining("unknown function namespace 'foo'");
+    }
+
+    @Test
+    void unknownStroomFunction_throwsCompileException() {
+        assertThatThrownBy(() -> compile("MATCH (a:Account) RETURN stroom.bogus(a.name)"))
+                .isInstanceOf(CypherCompileException.class)
+                .hasMessageContaining("not a recognised Stroom function");
     }
 
     @Test

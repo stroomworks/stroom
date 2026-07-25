@@ -2063,6 +2063,16 @@ is visibly a vendor extension - and the two can never clash.
 moves them behind `stroom.` and reserves the bare namespace for Cypher. Cheap now, painful after release. Follows
 the Cypher/Neo4j convention (bare standard functions; namespaced extensions, cf. `apoc.*`).
 
+> **Implementation note (2026-07-25): done, as designed.** `functionCall` gained `(namespace=NAME DOT)?`;
+> `AstFunctionValue.namespace`; `CypherFunctions` now holds a `CYPHER_STANDARD` map (bare 1:1 names) and a `STROOM`
+> set (extensions), and `renderFunctionCall` dispatches: a bare name uses the Phase-9/10/11 adapters then the
+> Cypher-standard map (a bare Stroom-extension name is **rejected with a `call it as stroom.X(...)` hint**); a
+> `stroom.`-qualified name renders the raw Stroom function; any other namespace is rejected. The `stroom_substring`
+> escape hatch was retired for `stroom.substring`. No engine change (the namespace never reaches the rendered text -
+> decision (a)). ANTLR's ALL(*) disambiguated the namespaced call from property access with no grammar conflict
+> (regression-tested). All prior phases' tests + the tests here were migrated to the `stroom.` form; the "both
+> flavours" tests now read `toUpper(x)` (bare Cypher) vs `stroom.upperCase(x)` (namespaced) side by side.
+
 ### Design decisions
 
 **(a) The namespace is a front-end vocabulary only - rendering is unchanged.** A Cypher function still lowers to

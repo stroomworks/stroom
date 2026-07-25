@@ -18,6 +18,8 @@ package stroom.query.grammar.ast.cypher;
 
 import stroom.query.grammar.ast.AstPosition;
 
+import org.jspecify.annotations.Nullable;
+
 import java.util.List;
 import java.util.Objects;
 
@@ -25,12 +27,14 @@ import java.util.Objects;
  * A function-call literal, e.g. {@code datetime('2026-07-01T09:00:00Z')} or {@code duration('PT1H')} - the
  * temporal clause's instant/duration/bound values are always this shape (see the design doc's worked example).
  *
+ * @param namespace nullable; the {@code namespace.} qualifier (e.g. {@code "stroom"}) or null for a bare
+ *                  (Cypher-standard) function.
  * @param name      never null; the function name.
  * @param arguments never null; possibly empty; in source order.
  * @param position  never null.
  */
-public record AstFunctionValue(String name, List<AstExpression> arguments, AstPosition position)
-        implements AstValue {
+public record AstFunctionValue(@Nullable String namespace, String name, List<AstExpression> arguments,
+                               AstPosition position) implements AstValue {
 
     public AstFunctionValue {
         Objects.requireNonNull(name, "name");

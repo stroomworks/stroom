@@ -144,6 +144,15 @@ class TestCypherQueryParser {
     }
 
     @Test
+    void namespacedFunctionAndPropertyAccess_disambiguate() {
+        // A namespaced call (NAME.NAME(...)) and a property access (NAME.NAME) both start NAME DOT NAME; the
+        // trailing '(' tells them apart. All three coexist in one query.
+        assertThatCode(() -> CypherQueryParser.parse(
+                "MATCH (a:Account) WHERE a.balance = 1 RETURN a.id, stroom.upperCase(a.name)"))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
     void functionWithPropertyArgument_parses() {
         // Function arguments are now general expressions, so a scalar function can apply to a matched property.
         assertThatCode(() -> CypherQueryParser.parse(

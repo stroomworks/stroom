@@ -21,82 +21,80 @@ import org.jspecify.annotations.Nullable;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 /**
- * The curated allowlist of scalar functions a Cypher {@code RETURN} may apply to matched row values, and the
- * mapping from a Cypher function name to its Stroom expression-engine name.
+ * The two function vocabularies a Cypher {@code RETURN} may use (Phase 13): <b>bare</b> names are Cypher-standard
+ * functions (portable, Cypher semantics); the <b>{@code stroom.}</b> namespace exposes Stroom-native extensions.
+ * The two can never clash, and any {@code stroom.} call is a visible non-portable dependency (the Cypher/Neo4j
+ * {@code apoc.*} convention).
  *
- * <p>Rather than reimplement Cypher's standard library, a Cypher {@code RETURN} function is lowered to Stroom's
- * existing 232-function expression engine ({@code stroom.query.language.functions}) - see
- * {@code CypherToLogicalPlan.renderFunctionCall} and {@code GraphTraversalEngine}'s projection. Only pure,
- * deterministic functions are exposed; the library's dashboard/annotation/link/current-user/state/I-O functions
- * are deliberately withheld. Functions are exposed under their <b>Stroom</b> names (so their semantics are exactly
- * Stroom's, with no surprise), plus a small set of Cypher-name aliases that are semantically identical to their
- * target. A fuller Cypher-name-and-semantics compatibility layer (e.g. Cypher's {@code substring(s, start,
- * length)} vs Stroom's {@code substring(s, startIndex, endIndex)}, or a {@code coalesce} built on {@code if}/
- * {@code isNull}) is a deliberate follow-on.</p>
+ * <p>Neither reimplements anything: a call lowers to Stroom's existing expression engine
+ * ({@code stroom.query.language.functions}) - the namespace is purely the front-end vocabulary and validation, and
+ * the rendered {@code ${…}}/{@code name(…)} text always uses Stroom's raw engine function names (see
+ * {@code CypherToLogicalPlan.renderFunctionCall}). Bare Cypher functions whose <em>signature</em> differs from
+ * Stroom's ({@code substring}/{@code left}/{@code right}/{@code size}/{@code coalesce}/{@code id}/{@code type}) are
+ * adapted in {@code CypherToLogicalPlan.renderCypherAdaptedFunction}, not mapped here.</p>
  */
 public final class CypherFunctions {
 
-    // Pure, deterministic Stroom functions exposed in a Cypher RETURN, by their Stroom name. (`substring` is NOT
-    // here: the bare name is adapted to Cypher's (string, start, length) semantics - see
-    // CypherToLogicalPlan.renderCypherAdaptedFunction; Stroom's own (string, start, endIndex) substring stays
-    // reachable as `stroom_substring`, an alias below.)
-    private static final Set<String> ALLOWED = Set.of(
+    // Bare Cypher-standard function name -> Stroom render name, for the ones that are a plain 1:1 map (no argument
+    // adaptation). The signature-differing Cypher functions are handled by renderCypherAdaptedFunction instead.
+    private static final Map<String, String> CYPHER_STANDARD = Map.ofEntries(
+            Map.entry("toUpper", "upperCase"),
+            Map.entry("toLower", "lowerCase"),
+            Map.entry("ceil", "ceiling"),
+            Map.entry("toString", "toString"),
+            Map.entry("toInteger", "toInteger"),
+            Map.entry("toFloat", "toFloat"),
+            Map.entry("toBoolean", "toBoolean"),
+            Map.entry("round", "round"),
+            Map.entry("floor", "floor"));
+
+    // Pure, deterministic Stroom-native functions callable as `stroom.<name>` (render name == the name). Includes
+    // `substring` (Stroom's (string, start, endIndex) semantics - the bare `substring` is Cypher's instead). The
+    // library's dashboard/annotation/link/current-user/state/I-O functions are deliberately withheld. Stroom's bare
+    // year/month/day/hour/... are current-time truncation (not component extractors), so those are not exposed; the
+    // arg-taking date functions (format/parse, the floor/round/ceiling time-bucketing families, isWeekend, now) are.
+    private static final Set<String> STROOM = Set.of(
             // strings
-            "upperCase", "lowerCase", "substringBefore", "substringAfter", "replace", "stringLength",
+            "upperCase", "lowerCase", "substring", "substringBefore", "substringAfter", "replace", "stringLength",
             "concat", "indexOf", "lastIndexOf", "contains", "toString", "decode", "encodeUrl", "decodeUrl", "hash",
             // maths
             "add", "round", "floor", "ceiling", "negate",
             // type coercion / tests
-            "toBoolean", "toDouble", "toInteger", "toLong", "typeOf",
+            "toBoolean", "toDouble", "toFloat", "toInteger", "toLong", "typeOf",
             "isNull", "isValue", "isNumber", "isString", "isBoolean",
             // conditional
             "if", "case", "match",
-            // date/time (Phase 12) - exposed under Stroom names/semantics. Note Stroom's bare year/month/day/hour/
-            // ... are *current-time truncation* (not Cypher-style component extractors), so they are deliberately
-            // NOT exposed; the arg-taking, unambiguous ones are: format/parse, the floor/round/ceiling time-bucketing
-            // families (which round a supplied time to a unit boundary - useful for grouping timestamps), isWeekend,
-            // and now().
+            // date/time
             "formatDate", "parseDate", "formatDuration", "parseDuration", "now", "isWeekend",
             "floorSecond", "floorMinute", "floorHour", "floorDay", "floorWeek", "floorMonth", "floorYear",
             "roundSecond", "roundMinute", "roundHour", "roundDay", "roundWeek", "roundMonth", "roundYear",
             "ceilingSecond", "ceilingMinute", "ceilingHour", "ceilingDay", "ceilingWeek", "ceilingMonth",
             "ceilingYear");
 
-    // Cypher-name aliases that are semantically identical to their Stroom target (a plain name swap, no argument
-    // adaptation). Cypher functions whose signature differs from Stroom's (substring/left/right/coalesce/size) are
-    // adapted in CypherToLogicalPlan.renderCypherAdaptedFunction instead, not aliased here.
-    private static final Map<String, String> ALIASES = Map.of(
-            "toUpper", "upperCase",
-            "toLower", "lowerCase",
-            "ceil", "ceiling",
-            // Escape hatch: Stroom's own substring (string, start, endIndex), since the bare `substring` is now
-            // Cypher's (string, start, length).
-            "stroom_substring", "substring");
+    /** The recognised function namespace for Stroom-native extensions. */
+    public static final String STROOM_NAMESPACE = "stroom";
 
     private CypherFunctions() {
     }
 
     /**
-     * The Stroom expression-engine name for a Cypher function name, or {@code null} if the function is not exposed
-     * in a Cypher {@code RETURN}.
-     *
-     * <p><b>Null status:</b> {@code cypherName} non-null; returns null when unsupported.</p>
+     * The Stroom render name for a bare, 1:1-mapped Cypher-standard function, or {@code null} if {@code name} is
+     * not such a function (it may still be a signature-adapted Cypher function - handled elsewhere - or a Stroom
+     * extension, or unknown).
      */
-    public static @Nullable String toStroomName(final String cypherName) {
-        final String aliased = ALIASES.get(cypherName);
-        if (aliased != null) {
-            return aliased;
-        }
-        return ALLOWED.contains(cypherName) ? cypherName : null;
+    public static @Nullable String cypherRenderName(final String name) {
+        return CYPHER_STANDARD.get(name);
     }
 
-    /** A sorted, comma-separated list of the supported function names, for error messages. */
-    public static String supportedNames() {
-        return Stream.concat(ALIASES.keySet().stream(), ALLOWED.stream())
-                .sorted()
-                .collect(Collectors.joining(", "));
+    /** Whether {@code name} is a Stroom-native function callable as {@code stroom.<name>}. */
+    public static boolean isStroomFunction(final String name) {
+        return STROOM.contains(name);
+    }
+
+    /** A sorted, comma-separated list of the Stroom-namespace functions, for error messages. */
+    public static String stroomNames() {
+        return STROOM.stream().sorted().collect(Collectors.joining(", "));
     }
 }

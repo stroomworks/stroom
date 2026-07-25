@@ -298,9 +298,9 @@ class TestGraphTraversalEngine {
             final GraphTraversalEngine engine = new GraphTraversalEngine(
                     stores, new ExpressionPredicateFactory());
 
-            // upperCase over a matched property value.
+            // stroom.upperCase over a matched property value.
             final List<Val[]> upper = runFull(stores, engine,
-                    "MATCH (a:Account {id: 'account-a'}) RETURN upperCase(a.id)");
+                    "MATCH (a:Account {id: 'account-a'}) RETURN stroom.upperCase(a.id)");
             assertThat(upper).hasSize(1);
             assertThat(upper.getFirst()[0].toString()).isEqualTo("ACCOUNT-A");
         }
@@ -316,15 +316,15 @@ class TestGraphTraversalEngine {
 
             // Cypher substring(s, start, length): 'ell' (3 chars from index 1) - NOT Stroom's 'el' (end index 3).
             assertThat(one(stores, engine, anchor + "substring('hello', 1, 3)")).isEqualTo("ell");
-            // Stroom's own substring (end-index) stays reachable as stroom_substring - both flavours available.
-            assertThat(one(stores, engine, anchor + "stroom_substring('hello', 1, 3)")).isEqualTo("el");
+            // Stroom's own substring (end-index) stays reachable as stroom.substring - both flavours available.
+            assertThat(one(stores, engine, anchor + "stroom.substring('hello', 1, 3)")).isEqualTo("el");
 
             assertThat(one(stores, engine, anchor + "left('hello', 2)")).isEqualTo("he");
             assertThat(one(stores, engine, anchor + "right('hello', 2)")).isEqualTo("lo");
             assertThat(one(stores, engine, anchor + "size('hello')")).isEqualTo("5");
-            // Cypher toUpper alias and Stroom-native upperCase both work.
+            // Bare Cypher toUpper and namespaced Stroom stroom.upperCase both work.
             assertThat(one(stores, engine, anchor + "toUpper('hi')")).isEqualTo("HI");
-            assertThat(one(stores, engine, anchor + "upperCase('hi')")).isEqualTo("HI");
+            assertThat(one(stores, engine, anchor + "stroom.upperCase('hi')")).isEqualTo("HI");
         }
     }
 
@@ -382,10 +382,10 @@ class TestGraphTraversalEngine {
                     stores, new ExpressionPredicateFactory());
             final String anchor = "MATCH (a:Account {id: 'account-a'}) RETURN ";
 
-            // formatDate(millis): epoch 0 formats to a 1970 timestamp (deterministic).
-            assertThat(one(stores, engine, anchor + "formatDate(0)")).contains("1970");
-            // now() wires through and yields a non-blank value.
-            assertThat(one(stores, engine, anchor + "now()")).isNotBlank();
+            // stroom.formatDate(millis): epoch 0 formats to a 1970 timestamp (deterministic).
+            assertThat(one(stores, engine, anchor + "stroom.formatDate(0)")).contains("1970");
+            // stroom.now() wires through and yields a non-blank value.
+            assertThat(one(stores, engine, anchor + "stroom.now()")).isNotBlank();
         }
     }
 
@@ -415,10 +415,11 @@ class TestGraphTraversalEngine {
             final GraphTraversalEngine engine = new GraphTraversalEngine(
                     stores, new ExpressionPredicateFactory());
 
-            // p2 has no crime, so c.type is null; if(isNull(...), 'none', ...) is Cypher's coalesce idiom.
+            // p2 has no crime, so c.type is null; stroom.if(stroom.isNull(...), ...) mirrors coalesce, via the
+            // Stroom namespace.
             final List<Val[]> rows = runFull(stores, engine,
                     "MATCH (p:Person {id: 'p2'}) OPTIONAL MATCH (p)-[:PARTY_TO]->(c:Crime) "
-                    + "RETURN if(isNull(c.type), 'none', c.type)");
+                    + "RETURN stroom.if(stroom.isNull(c.type), 'none', c.type)");
             assertThat(rows).hasSize(1);
             assertThat(rows.getFirst()[0].toString()).isEqualTo("none");
         }

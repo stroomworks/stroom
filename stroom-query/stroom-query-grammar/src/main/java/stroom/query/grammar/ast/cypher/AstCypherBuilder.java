@@ -452,7 +452,8 @@ public final class AstCypherBuilder {
         for (final ExpressionContext exprCtx : ctx.expression()) {
             arguments.add(buildExpression(exprCtx));
         }
-        return new AstFunctionValue(ctx.name.getText(), arguments, position(ctx));
+        final String namespace = ctx.namespace == null ? null : ctx.namespace.getText();
+        return new AstFunctionValue(namespace, ctx.name.getText(), arguments, position(ctx));
     }
 
     private AstValue buildValue(final ValueContext ctx) {
