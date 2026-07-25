@@ -1620,6 +1620,26 @@ wired to a graph traversal row."*
 - A **curated allowlist** of pure, deterministic functions only - the 232 include dashboard/annotation/link/
   current-user/I-O functions that are irrelevant or unsafe for a graph query.
 
+> **Implementation note (2026-07-25): done, with one discovery and one scoping call.**
+> - **Discovery the tasks below missed:** the grammar's `functionCall` took **`value`** arguments, not `expression`
+>   - so `toUpper(a.name)` did not even *parse* (functions accepted only literals, for temporal constructors like
+>   `datetime('...')`). Phase 8 therefore also changed `functionCall` args `value → expression`,
+>   `AstFunctionValue.arguments` `List<AstValue> → List<AstExpression>`, and updated `resolveInstant`/
+>   `resolveDuration` to unwrap the now-`AstLiteralExpr`-wrapped temporal string.
+> - **Scoping call:** rather than alias Cypher names to Stroom functions with *possibly different semantics*
+>   (Cypher `substring(s,start,length)` vs Stroom `substring(s,startIndex,endIndex)`; no Stroom `coalesce`),
+>   functions are exposed under their **Stroom names** (exact Stroom semantics, no surprise) via a curated allowlist
+>   (`CypherFunctions`), plus two safe 1:1 Cypher aliases (`toUpper`→`upperCase`, `toLower`→`lowerCase`). Cypher's
+>   `coalesce` is expressed as `if(isNull(x), y, x)` (tested against an `OPTIONAL MATCH` null). A fuller
+>   Cypher-name-and-semantics compatibility layer is a documented follow-on.
+> - **Free wins:** functions in `WHERE` and functions-with-aggregation were **already rejected** by existing code
+>   (`fieldNameOf` returns null for a function; `compileOutputColumn` requires a property for a non-aggregate group
+>   item), so no new rejection code was needed for those.
+> - **Engine:** `evaluate()` was replaced by a `RowProjector`/`CompiledProjectField` that compiles each column once
+>   (fast path for a bare `${var.prop}`; `ExpressionParser` → `Generator` for anything else) and evaluates per row.
+>   A regression was caught and fixed: the `DIFF` path's dot-less `changeKind` row key must be looked up at eval
+>   time before the bare-variable rejection fires.
+
 ---
 
 ### Task 8.1 — Design spike: evaluate a `ProjectField` expression over a graph row

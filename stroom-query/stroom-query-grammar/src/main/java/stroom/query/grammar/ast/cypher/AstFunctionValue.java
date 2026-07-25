@@ -29,7 +29,8 @@ import java.util.Objects;
  * @param arguments never null; possibly empty; in source order.
  * @param position  never null.
  */
-public record AstFunctionValue(String name, List<AstValue> arguments, AstPosition position) implements AstValue {
+public record AstFunctionValue(String name, List<AstExpression> arguments, AstPosition position)
+        implements AstValue {
 
     public AstFunctionValue {
         Objects.requireNonNull(name, "name");

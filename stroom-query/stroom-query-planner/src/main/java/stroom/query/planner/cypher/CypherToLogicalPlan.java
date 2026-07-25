@@ -1101,10 +1101,38 @@ public final class CypherToLogicalPlan {
         } else if (value instanceof final AstParameterValue p) {
             return "${" + p.name() + "}";
         } else if (value instanceof final AstFunctionValue f) {
-            return f.name() + "(" + f.arguments().stream().map(CypherToLogicalPlan::renderValueAsExpression)
-                    .reduce((a, b) -> a + ", " + b).orElse("") + ")";
+            return renderFunctionCall(f);
         }
         throw new CypherCompileException("Unrecognised value", value.position());
+    }
+
+    /**
+     * Lowers a Cypher {@code RETURN} function call to Stroom's expression-engine syntax: the function name is
+     * mapped/validated via {@link CypherFunctions} (unknown/withheld functions fail loud), and each argument is
+     * rendered as a Stroom expression. An aggregate or {@code before()}/{@code after()} argument is rejected - a
+     * scalar function evaluates per row, so it cannot host an aggregate.
+     */
+    private static String renderFunctionCall(final AstFunctionValue f) {
+        final String stroomName = CypherFunctions.toStroomName(f.name());
+        if (stroomName == null) {
+            throw new CypherCompileException(
+                    "not supported in this version: function '" + f.name() + "' is not available in a Cypher "
+                    + "RETURN (supported: " + CypherFunctions.supportedNames() + ")", f.position());
+        }
+        final String args = f.arguments().stream()
+                .map(CypherToLogicalPlan::renderFunctionArgument)
+                .reduce((a, b) -> a + ", " + b)
+                .orElse("");
+        return stroomName + "(" + args + ")";
+    }
+
+    private static String renderFunctionArgument(final AstExpression arg) {
+        if (arg instanceof AstAggregateExpr || arg instanceof AstDiffAccessorExpr) {
+            throw new CypherCompileException(
+                    "not supported in this version: an aggregate or before()/after() cannot be an argument to a "
+                    + "scalar function", arg.position());
+        }
+        return renderExpression(arg);
     }
 
     /**
@@ -1297,7 +1325,8 @@ public final class CypherToLogicalPlan {
         if (value instanceof final AstFunctionValue f
                 && f.name().equalsIgnoreCase("datetime")
                 && f.arguments().size() == 1
-                && f.arguments().getFirst() instanceof final AstStringValue s) {
+                && f.arguments().getFirst() instanceof final AstLiteralExpr lit
+                && lit.value() instanceof final AstStringValue s) {
             return parseInstant(s.value(), value.position());
         } else if (value instanceof final AstStringValue s) {
             return parseInstant(s.value(), value.position());
@@ -1319,7 +1348,8 @@ public final class CypherToLogicalPlan {
         if (value instanceof final AstFunctionValue f
                 && f.name().equalsIgnoreCase("duration")
                 && f.arguments().size() == 1
-                && f.arguments().getFirst() instanceof final AstStringValue s) {
+                && f.arguments().getFirst() instanceof final AstLiteralExpr lit
+                && lit.value() instanceof final AstStringValue s) {
             return parseDuration(s.value(), value.position());
         } else if (value instanceof final AstStringValue s) {
             return parseDuration(s.value(), value.position());

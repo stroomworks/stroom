@@ -291,6 +291,37 @@ class TestGraphTraversalEngine {
         }
     }
 
+    @Test
+    void scalarFunctions_evaluateOverRows(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("scalarfns"), DOC)) {
+            seedDeviceConnectedToAccounts(stores);
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory());
+
+            // upperCase over a matched property value.
+            final List<Val[]> upper = runFull(stores, engine,
+                    "MATCH (a:Account {id: 'account-a'}) RETURN upperCase(a.id)");
+            assertThat(upper).hasSize(1);
+            assertThat(upper.getFirst()[0].toString()).isEqualTo("ACCOUNT-A");
+        }
+    }
+
+    @Test
+    void scalarFunction_coalescesAnOptionalMatchNull(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("coalesce"), DOC)) {
+            seedPersonsAndCrimes(stores);
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory());
+
+            // p2 has no crime, so c.type is null; if(isNull(...), 'none', ...) is Cypher's coalesce idiom.
+            final List<Val[]> rows = runFull(stores, engine,
+                    "MATCH (p:Person {id: 'p2'}) OPTIONAL MATCH (p)-[:PARTY_TO]->(c:Crime) "
+                    + "RETURN if(isNull(c.type), 'none', c.type)");
+            assertThat(rows).hasSize(1);
+            assertThat(rows.getFirst()[0].toString()).isEqualTo("none");
+        }
+    }
+
     private static List<Val[]> runFull(final GraphStores stores, final GraphTraversalEngine engine,
                                        final String cypher) {
         final CompiledCypherPlan compiled = compile(cypher);

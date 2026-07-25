@@ -510,6 +510,36 @@ class TestCypherToLogicalPlan {
     }
 
     @Test
+    void scalarFunction_rendersToMappedStroomExpression() {
+        final CompiledCypherPlan compiled = compile("MATCH (a:Account) RETURN toUpper(a.name)");
+        // toUpper is aliased to Stroom's upperCase; the property becomes a ${...} field reference.
+        assertThat(((Project) compiled.plan()).fields().getFirst().rawExpression())
+                .isEqualTo("upperCase(${a.name})");
+    }
+
+    @Test
+    void nestedScalarFunctions_renderRecursively() {
+        final CompiledCypherPlan compiled = compile(
+                "MATCH (a:Account) RETURN concat(upperCase(a.first), lowerCase(a.last))");
+        assertThat(((Project) compiled.plan()).fields().getFirst().rawExpression())
+                .isEqualTo("concat(upperCase(${a.first}), lowerCase(${a.last}))");
+    }
+
+    @Test
+    void unknownFunction_throwsCompileException() {
+        assertThatThrownBy(() -> compile("MATCH (a:Account) RETURN bogusFn(a.name)"))
+                .isInstanceOf(CypherCompileException.class)
+                .hasMessageContaining("not available in a Cypher RETURN");
+    }
+
+    @Test
+    void aggregateAsFunctionArgument_throwsCompileException() {
+        assertThatThrownBy(() -> compile("MATCH (a:Account) RETURN upperCase(count(a))"))
+                .isInstanceOf(CypherCompileException.class)
+                .hasMessageContaining("aggregate or before()/after()");
+    }
+
+    @Test
     void unaliasedCountStar_defaultsToACleanFunctionStarName() {
         // Code-review fix: previously an unaliased aggregate's default name was renderExpression's "${...}"-laden
         // text (e.g. "count()"), unusable as a FieldIndex/column identifier - see defaultAggregateName's Javadoc.

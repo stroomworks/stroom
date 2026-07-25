@@ -127,6 +127,15 @@ class TestCypherQueryParser {
     }
 
     @Test
+    void functionWithPropertyArgument_parses() {
+        // Function arguments are now general expressions, so a scalar function can apply to a matched property.
+        assertThatCode(() -> CypherQueryParser.parse(
+                "MATCH (a:Account) RETURN upperCase(a.name)")).doesNotThrowAnyException();
+        assertThatCode(() -> CypherQueryParser.parse(
+                "MATCH (a:Account) RETURN concat(a.first, ' ', a.last)")).doesNotThrowAnyException();
+    }
+
+    @Test
     void optionalMatch_parsesWithOptionalFlag() {
         final AstCypherQuery query = CypherQueryParser.parse(
                 "MATCH (p:Person {id: 'p-1'}) OPTIONAL MATCH (p)-[:PARTY_TO]->(c:Crime) RETURN p.id");

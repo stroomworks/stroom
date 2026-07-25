@@ -230,8 +230,13 @@ propertyAccess
     : variable=NAME DOT property=NAME
     ;
 
+// Function arguments are general expressions (property accesses, literals, nested calls) so a scalar function can
+// apply to matched row values, e.g. `upperCase(a.name)` - CypherToLogicalPlan lowers a RETURN function to Stroom's
+// expression engine (ExpressionParser) over a curated allowlist, and rejects aggregate/diff-accessor arguments.
+// Temporal-clause literals like `datetime('...')` still parse here (their string argument is just a literal
+// expression); resolveInstant/resolveDuration unwrap it.
 functionCall
-    : name=NAME OPEN_PAREN (value (COMMA value)*)? CLOSE_PAREN
+    : name=NAME OPEN_PAREN (expression (COMMA expression)*)? CLOSE_PAREN
     ;
 
 value

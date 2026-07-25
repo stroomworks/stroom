@@ -25,12 +25,20 @@ import stroom.query.api.ExpressionTerm;
 import stroom.query.common.v2.ExpressionPredicateFactory;
 import stroom.query.common.v2.ExpressionPredicateFactory.ValueFunctionFactories;
 import stroom.query.language.functions.Type;
+import stroom.query.language.functions.Expression;
+import stroom.query.language.functions.ExpressionContext;
+import stroom.query.language.functions.ExpressionParser;
+import stroom.query.language.functions.FieldIndex;
+import stroom.query.language.functions.Generator;
+import stroom.query.language.functions.ParamFactory;
 import stroom.query.language.functions.Val;
 import stroom.query.language.functions.ValBoolean;
 import stroom.query.language.functions.ValDouble;
 import stroom.query.language.functions.ValLong;
 import stroom.query.language.functions.ValNull;
 import stroom.query.language.functions.ValString;
+import stroom.query.language.functions.ref.StoredValues;
+import stroom.query.language.functions.ref.ValueReferenceIndex;
 import stroom.query.planner.cypher.AggregateColumn;
 import stroom.query.planner.cypher.CypherAggregation;
 import stroom.query.planner.cypher.FieldComparison;
@@ -56,6 +64,7 @@ import org.lmdbjava.Txn;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.text.ParseException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -1726,7 +1735,7 @@ public final class GraphTraversalEngine {
             rows.sort(rowComparator(shape.sortKeys()));
         }
 
-        final List<ProjectField> fields = shape.project().fields();
+        final RowProjector projector = new RowProjector(shape.project().fields());
         final long limit = shape.limit() == null ? Long.MAX_VALUE : shape.limit();
         final Set<List<Val>> seen = distinct ? new HashSet<>() : null;
         final List<Val[]> out = new ArrayList<>();
@@ -1734,10 +1743,7 @@ public final class GraphTraversalEngine {
             if (out.size() >= limit) {
                 break;
             }
-            final Val[] tuple = new Val[fields.size()];
-            for (int i = 0; i < fields.size(); i++) {
-                tuple[i] = evaluate(fields.get(i), row);
-            }
+            final Val[] tuple = projector.project(row);
             // DISTINCT de-duplicates by projected value (every Val type implements equals/hashCode), preserving
             // the first appearance in the already-sorted order. A duplicate is skipped WITHOUT counting toward
             // the LIMIT, so `RETURN DISTINCT ... LIMIT n` yields n distinct rows, not n raw rows deduped.
@@ -2111,34 +2117,115 @@ public final class GraphTraversalEngine {
                 + "rejected at compile time by CypherToLogicalPlan.validateOrderByAgainstAggregation");
     }
 
-    private static Val evaluate(final ProjectField field, final Map<String, Val> row) {
-        final String expr = field.rawExpression();
-        if (expr.startsWith("${") && expr.endsWith("}")) {
-            final String reference = expr.substring(2, expr.length() - 1);
-            if (row.containsKey(reference)) {
-                return row.get(reference);
+    /**
+     * Projects each traversal row to its output {@link Val} tuple, compiling every {@link ProjectField} once
+     * (never per row). A field that is a single {@code ${variable.property}} reference takes a fast row-lookup
+     * path; anything else (a function call, literal, or arithmetic) is compiled to Stroom's expression engine
+     * ({@link Expression}/{@link Generator}) and evaluated over the row - see {@link CompiledProjectField}.
+     */
+    private static final class RowProjector {
+
+        private final CompiledProjectField[] fields;
+
+        private RowProjector(final List<ProjectField> projectFields) {
+            fields = new CompiledProjectField[projectFields.size()];
+            for (int i = 0; i < projectFields.size(); i++) {
+                fields[i] = CompiledProjectField.compile(projectFields.get(i));
             }
-            // Code-review fix: rowFor() only populates a "variable.property" key when the matched node actually
-            // has that property. A graph is schemaless, so a well-formed property reference to a property this
-            // node happens to lack (e.g. RETURN a.email where this account has no email) is absent from the row -
-            // Cypher's semantics for that is null, so return ValNull rather than crashing an otherwise-valid
-            // query. Only a bare pattern-variable reference (no '.', e.g. "RETURN n") is genuinely unsupported:
-            // rowFor() never produces a bare "variable" key and a whole matched node/edge has no single Val
-            // representation yet, so that case still throws (fail loud) rather than silently returning a fixed
-            // string for every row - the failure mode this class's top-level Javadoc says it avoids elsewhere.
-            if (reference.indexOf('.') >= 0) {
-                return ValNull.INSTANCE;
-            }
-            throw new UnsupportedOperationException(
-                    "not yet supported: RETURN item '" + expr + "' names a bare pattern variable - only a "
-                    + "property/variable reference of the form 'variable.property' is wired to a graph traversal "
-                    + "row; a whole matched node/edge has no single value representation yet");
         }
-        throw new UnsupportedOperationException(
-                "not yet supported: RETURN item '" + expr + "' is not a bare property/variable reference - "
-                + "literals, aggregates and function calls need the full ExpressionParser, not wired to a "
-                + "graph traversal row");
+
+        private Val[] project(final Map<String, Val> row) {
+            final Val[] tuple = new Val[fields.length];
+            for (int i = 0; i < fields.length; i++) {
+                tuple[i] = fields[i].eval(row);
+            }
+            return tuple;
+        }
     }
+
+    /**
+     * One compiled {@code RETURN} column: either a bare {@code "variable.property"} row reference (fast path), or a
+     * compiled Stroom {@link Expression} evaluated per row via its {@link Generator}. A bare pattern-variable
+     * reference (no {@code '.'}) still fails loud - a whole matched node/edge has no single {@link Val}.
+     */
+    private static final class CompiledProjectField {
+
+        private final @Nullable String bareRef;
+        private final @Nullable String bareVariable;
+        private final @Nullable Generator generator;
+        private final @Nullable ValueReferenceIndex valueReferenceIndex;
+        private final String[] fieldNames;
+
+        private CompiledProjectField(final @Nullable String bareRef, final @Nullable String bareVariable,
+                                     final @Nullable Generator generator,
+                                     final @Nullable ValueReferenceIndex valueReferenceIndex,
+                                     final String[] fieldNames) {
+            this.bareRef = bareRef;
+            this.bareVariable = bareVariable;
+            this.generator = generator;
+            this.valueReferenceIndex = valueReferenceIndex;
+            this.fieldNames = fieldNames;
+        }
+
+        private static CompiledProjectField compile(final ProjectField field) {
+            final String expr = field.rawExpression();
+            // Fast path: a single "${...}" reference (the common case - a plain RETURN a.name). Anything with more
+            // structure (a function, arithmetic, a literal) goes to the expression engine.
+            if (expr.startsWith("${") && expr.endsWith("}") && expr.indexOf("${", 2) < 0
+                && expr.indexOf('}') == expr.length() - 1) {
+                final String reference = expr.substring(2, expr.length() - 1);
+                if (reference.indexOf('.') >= 0) {
+                    // A well-formed property reference; an absent property resolves to ValNull at eval time
+                    // (schemaless graph - Cypher's semantics for a missing property).
+                    return new CompiledProjectField(reference, null, null, null, EMPTY_FIELDS);
+                }
+                // A dot-less reference is either a special row key the DIFF path populates (e.g. "changeKind") or a
+                // bare pattern variable (e.g. RETURN n). Which one is a per-row question (the DIFF key is present in
+                // the row; a whole matched node/edge has no single Val), so eval() decides: present -> value,
+                // absent -> fail loud.
+                return new CompiledProjectField(null, reference, null, null, EMPTY_FIELDS);
+            }
+
+            // Compile the rendered expression (e.g. upperCase(${a.name})) to Stroom's expression engine once.
+            final ExpressionParser parser = new ExpressionParser(new ParamFactory(new HashMap<>()));
+            final FieldIndex fieldIndex = new FieldIndex();
+            final ValueReferenceIndex valueReferenceIndex = new ValueReferenceIndex();
+            try {
+                final Expression expression = parser.parse(new ExpressionContext(), fieldIndex, expr);
+                expression.addValueReferences(valueReferenceIndex);
+                final Generator generator = expression.createGenerator();
+                return new CompiledProjectField(null, null, generator, valueReferenceIndex, fieldIndex.getFields());
+            } catch (final ParseException e) {
+                throw new UnsupportedOperationException(
+                        "could not compile RETURN expression '" + expr + "': " + e.getMessage(), e);
+            }
+        }
+
+        private Val eval(final Map<String, Val> row) {
+            if (bareRef != null) {
+                return row.getOrDefault(bareRef, ValNull.INSTANCE);
+            }
+            if (bareVariable != null) {
+                // A special DIFF row key (e.g. "changeKind") is present in the row; a bare pattern variable is not.
+                if (row.containsKey(bareVariable)) {
+                    return row.get(bareVariable);
+                }
+                throw new UnsupportedOperationException(
+                        "not yet supported: RETURN item names bare pattern variable '" + bareVariable + "' - only "
+                        + "a 'variable.property' reference (or a scalar function over one) is wired to a graph "
+                        + "traversal row; a whole matched node/edge has no single value representation yet");
+            }
+            final Val[] values = new Val[fieldNames.length];
+            for (int i = 0; i < fieldNames.length; i++) {
+                values[i] = row.getOrDefault(fieldNames[i], ValNull.INSTANCE);
+            }
+            final StoredValues storedValues = valueReferenceIndex.createStoredValues();
+            generator.set(values, storedValues);
+            return generator.eval(storedValues, null);
+        }
+    }
+
+    private static final String[] EMPTY_FIELDS = new String[0];
 
     // ------------------------------------------------------------------------------------------------------
     // temporal

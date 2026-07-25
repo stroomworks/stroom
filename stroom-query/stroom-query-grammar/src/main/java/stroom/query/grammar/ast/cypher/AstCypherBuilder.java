@@ -403,9 +403,9 @@ public final class AstCypherBuilder {
     }
 
     private AstFunctionValue buildFunctionCall(final FunctionCallContext ctx) {
-        final List<AstValue> arguments = new ArrayList<>(ctx.value().size());
-        for (final ValueContext valueCtx : ctx.value()) {
-            arguments.add(buildValue(valueCtx));
+        final List<AstExpression> arguments = new ArrayList<>(ctx.expression().size());
+        for (final ExpressionContext exprCtx : ctx.expression()) {
+            arguments.add(buildExpression(exprCtx));
         }
         return new AstFunctionValue(ctx.name.getText(), arguments, position(ctx));
     }
