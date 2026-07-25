@@ -188,7 +188,8 @@ public class GraphSearchProvider implements SearchProvider, IndexFieldProvider {
                         ? DiffExecutor.execute(readTxn, engine, compiled.plan(), compiled.diffContext(),
                                 searchRequest.getDateTimeSettings(), compiled.distinct())
                         : engine.execute(readTxn, compiled.plan(), compiled.temporalContext(),
-                                searchRequest.getDateTimeSettings(), compiled.distinct(), compiled.aggregation());
+                                searchRequest.getDateTimeSettings(), compiled.distinct(), compiled.aggregation(),
+                                compiled.fieldComparisons());
             });
             for (final Val[] row : rows) {
                 coprocessors.accept(assembleRow(row, mapping, fieldIndex.size()));

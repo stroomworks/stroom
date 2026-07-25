@@ -20,6 +20,7 @@ import stroom.query.api.ExpressionOperator;
 import stroom.query.api.ExpressionTerm;
 import stroom.query.api.ExpressionTerm.Condition;
 import stroom.query.grammar.ast.cypher.AstAggregateFunction;
+import stroom.query.grammar.ast.cypher.AstComparisonOp;
 import stroom.query.grammar.ast.cypher.AstCypherQuery;
 import stroom.query.grammar.parse.CypherQueryParser;
 import stroom.query.planner.logical.Direction;
@@ -419,6 +420,46 @@ class TestCypherToLogicalPlan {
     }
 
     @Test
+    void fieldVsFieldOnly_producesAFieldComparisonAndNoFilter() {
+        final CompiledCypherPlan compiled = compile(
+                "MATCH (a:Account)-[:TRANSFER]->(b:Account) WHERE a.balance > b.balance RETURN a.id");
+        assertThat(compiled.fieldComparisons()).containsExactly(
+                new FieldComparison("a.balance", AstComparisonOp.GT, "b.balance"));
+        // The only WHERE term was field-vs-field, so no literal Filter is inserted.
+        assertThat(((Project) compiled.plan()).input()).isNotInstanceOf(Filter.class);
+    }
+
+    @Test
+    void fieldVsFieldAndedWithLiteral_splitsBetweenFilterAndFieldComparison() {
+        final CompiledCypherPlan compiled = compile(
+                "MATCH (a:Account)-[:TRANSFER]->(b:Account) "
+                + "WHERE a.balance > b.balance AND a.active = true RETURN a.id");
+        assertThat(compiled.fieldComparisons()).containsExactly(
+                new FieldComparison("a.balance", AstComparisonOp.GT, "b.balance"));
+        final Filter filter = (Filter) ((Project) compiled.plan()).input();
+        final ExpressionTerm term = (ExpressionTerm) filter.wherePredicate().getChildren().getFirst();
+        assertThat(term.getField()).isEqualTo("a.active");
+        assertThat(term.getCondition()).isEqualTo(Condition.EQUALS);
+    }
+
+    @Test
+    void fieldVsFieldInsideOr_throwsCompileException() {
+        assertThatThrownBy(() -> compile(
+                "MATCH (a:Account)-[:TRANSFER]->(b:Account) "
+                + "WHERE a.balance > b.balance OR a.active = true RETURN a.id"))
+                .isInstanceOf(CypherCompileException.class)
+                .hasMessageContaining("top-level conjunct");
+    }
+
+    @Test
+    void fieldVsFieldWithStringOperator_throwsCompileException() {
+        assertThatThrownBy(() -> compile(
+                "MATCH (a:Account)-[:TRANSFER]->(b:Account) WHERE a.name STARTS WITH b.prefix RETURN a.id"))
+                .isInstanceOf(CypherCompileException.class)
+                .hasMessageContaining("not string operators");
+    }
+
+    @Test
     void unaliasedCountStar_defaultsToACleanFunctionStarName() {
         // Code-review fix: previously an unaliased aggregate's default name was renderExpression's "${...}"-laden
         // text (e.g. "count()"), unusable as a FieldIndex/column identifier - see defaultAggregateName's Javadoc.
@@ -740,13 +781,12 @@ class TestCypherToLogicalPlan {
     }
 
     @Test
-    void comparingTwoFieldReferences_throwsNotInPoCSubset() {
-        final AstCypherQuery ast = CypherQueryParser.parse(
-                "MATCH (a:Account) WHERE a.balance = a.cap RETURN a.id");
-
-        assertThatThrownBy(() -> new CypherToLogicalPlan().compile(ast))
-                .isInstanceOf(CypherCompileException.class)
-                .hasMessageContaining("comparing two field references");
+    void comparingTwoFieldReferences_compilesToAFieldComparison() {
+        // Field-vs-field is now supported as a top-level WHERE conjunct (Phase 5), carried as a FieldComparison
+        // rather than rejected.
+        final CompiledCypherPlan compiled = compile("MATCH (a:Account) WHERE a.balance = a.cap RETURN a.id");
+        assertThat(compiled.fieldComparisons()).containsExactly(
+                new FieldComparison("a.balance", AstComparisonOp.EQ, "a.cap"));
     }
 
     // ------------------------------------------------------------------------------------------------------

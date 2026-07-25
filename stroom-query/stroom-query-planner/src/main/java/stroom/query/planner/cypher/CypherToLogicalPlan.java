@@ -213,9 +213,18 @@ public final class CypherToLogicalPlan {
             rejectDiffConstructsInDiffWhere(match.where().expr());
         }
 
+        List<FieldComparison> fieldComparisons = List.of();
         if (match.where() != null) {
-            final ExpressionOperator predicate = compileBooleanExpr(match.where().expr());
-            plan = new Filter(plan, predicate, null, match.where().position());
+            final WhereCompilation where = compileWhere(match.where().expr());
+            if (diffContext != null && !where.fieldComparisons().isEmpty()) {
+                throw new CypherCompileException(
+                        "not supported in this version: comparing two fields (e.g. a.x > b.y) in a DIFF query's "
+                        + "WHERE", match.where().position());
+            }
+            fieldComparisons = where.fieldComparisons();
+            if (where.literalPredicate() != null) {
+                plan = new Filter(plan, where.literalPredicate(), null, match.where().position());
+            }
         }
 
         final List<ProjectField> fields = buildProjectFields(query.returnClause());
@@ -239,7 +248,8 @@ public final class CypherToLogicalPlan {
         plan = compileReturn(plan, query.returnClause(), fields);
 
         return new CompiledCypherPlan(
-                plan, temporalContext, query.returnClause().distinct(), aggregation, diffContext, false);
+                plan, temporalContext, query.returnClause().distinct(), aggregation, diffContext, false,
+                fieldComparisons);
     }
 
     // ------------------------------------------------------------------------------------------------------
@@ -296,7 +306,7 @@ public final class CypherToLogicalPlan {
             plan = new Limit(plan, List.of(graphLimit.value()), graphLimit.position());
         }
 
-        return new CompiledCypherPlan(plan, temporalContext, false, null, diffContext, true);
+        return new CompiledCypherPlan(plan, temporalContext, false, null, diffContext, true, List.of());
     }
 
     private void rejectVarLengthUnderReturnGraph(final AstPathPattern pattern) {
@@ -480,8 +490,9 @@ public final class CypherToLogicalPlan {
         }
         if (!(predicate.right() instanceof final AstLiteralExpr literal)) {
             throw new CypherCompileException(
-                    "not in PoC subset: comparing two field references (or an aggregate) is not yet supported "
-                    + "- the right side of a WHERE comparison must be a literal", predicate.right().position());
+                    "not supported in this version: comparing two field references is only supported as a "
+                    + "top-level conjunct of a WHERE (ANDed), not nested inside OR/NOT or with an aggregate "
+                    + "operand", predicate.right().position());
         }
         final String value = renderLiteralValue(literal.value());
         // Regex safety: cap the pattern length at compile time. This is a coarse guard against pathological
@@ -559,6 +570,74 @@ public final class CypherToLogicalPlan {
                 .field(field)
                 .condition(predicate.negated() ? Condition.IS_NOT_NULL : Condition.IS_NULL)
                 .build();
+    }
+
+    /**
+     * The two products of lowering a {@code WHERE} clause: the literal {@link ExpressionOperator} predicate tree
+     * (field-vs-literal / {@code IN} / {@code IS NULL} terms, evaluated by the shared
+     * {@code ExpressionPredicateFactory}), and a separate list of field-vs-field {@link FieldComparison}s the
+     * shared IR cannot represent (see {@link FieldComparison}). {@code literalPredicate} is null when every
+     * top-level conjunct was a field-vs-field comparison.
+     */
+    private record WhereCompilation(@Nullable ExpressionOperator literalPredicate,
+                                    List<FieldComparison> fieldComparisons) {
+    }
+
+    /**
+     * Splits a {@code WHERE} expression into its literal predicate tree and its top-level field-vs-field
+     * comparisons. A field-vs-field comparison ({@code a.x > b.y}) is only extracted when it is a top-level
+     * conjunct (a direct operand of the root {@code AND}, or the whole {@code WHERE}); one nested inside
+     * {@code OR}/{@code NOT} (or inside parentheses) instead reaches {@link #compileComparisonTerm} and is
+     * rejected there - the v1 scope line.
+     *
+     * <p><b>Null status:</b> {@code expr} non-null; never returns null (the {@link WhereCompilation} may carry a
+     * null {@code literalPredicate}).</p>
+     */
+    private WhereCompilation compileWhere(final AstBooleanExpr expr) {
+        final List<FieldComparison> fieldComparisons = new ArrayList<>();
+        final ExpressionOperator literal = splitFieldComparisons(expr, fieldComparisons);
+        return new WhereCompilation(literal, fieldComparisons);
+    }
+
+    private @Nullable ExpressionOperator splitFieldComparisons(final AstBooleanExpr expr,
+                                                               final List<FieldComparison> out) {
+        if (expr instanceof final AstComparisonPredicate cmp && isFieldVsField(cmp)) {
+            out.add(toFieldComparison(cmp));
+            return null;
+        }
+        if (expr instanceof final AstAndExpr and) {
+            final List<ExpressionItem> literalChildren = new ArrayList<>();
+            for (final AstBooleanExpr operand : and.operands()) {
+                if (operand instanceof final AstComparisonPredicate cmp && isFieldVsField(cmp)) {
+                    out.add(toFieldComparison(cmp));
+                } else {
+                    literalChildren.add(compileBooleanExprAsItem(operand));
+                }
+            }
+            if (literalChildren.isEmpty()) {
+                return null;
+            }
+            return ExpressionOperator.builder().op(Op.AND).children(literalChildren).build();
+        }
+        // OR / NOT / field-vs-literal comparison / IN / IS NULL: compile normally. A field-vs-field comparison
+        // nested inside OR/NOT reaches compileComparisonTerm, which rejects it.
+        return compileBooleanExpr(expr);
+    }
+
+    /** A comparison of two property accesses (e.g. {@code a.x > b.y}); a literal or bare-variable operand is not. */
+    private static boolean isFieldVsField(final AstComparisonPredicate cmp) {
+        return cmp.left() instanceof AstPropertyAccessExpr && cmp.right() instanceof AstPropertyAccessExpr;
+    }
+
+    private static FieldComparison toFieldComparison(final AstComparisonPredicate cmp) {
+        final AstComparisonOp op = cmp.op();
+        if (op != AstComparisonOp.EQ && op != AstComparisonOp.NEQ && op != AstComparisonOp.LT
+                && op != AstComparisonOp.LE && op != AstComparisonOp.GT && op != AstComparisonOp.GE) {
+            throw new CypherCompileException(
+                    "not supported in this version: comparing two fields is only supported with =, <>, <, <=, >, "
+                    + ">= (not string operators)", cmp.position());
+        }
+        return new FieldComparison(fieldNameOf(cmp.left()), op, fieldNameOf(cmp.right()));
     }
 
     private static String fieldNameOf(final AstExpression expression) {

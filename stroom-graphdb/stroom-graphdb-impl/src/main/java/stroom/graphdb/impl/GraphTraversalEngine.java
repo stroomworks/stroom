@@ -32,6 +32,7 @@ import stroom.query.language.functions.ValNull;
 import stroom.query.language.functions.ValString;
 import stroom.query.planner.cypher.AggregateColumn;
 import stroom.query.planner.cypher.CypherAggregation;
+import stroom.query.planner.cypher.FieldComparison;
 import stroom.query.planner.cypher.GroupKeyColumn;
 import stroom.query.planner.cypher.OutputColumn;
 import stroom.query.planner.cypher.TemporalContext;
@@ -293,6 +294,22 @@ public final class GraphTraversalEngine {
                                final @Nullable TemporalContext temporalContext,
                                final DateTimeSettings dateTimeSettings, final boolean distinct,
                                final @Nullable CypherAggregation aggregation) {
+        return execute(readTxn, plan, temporalContext, dateTimeSettings, distinct, aggregation, List.of());
+    }
+
+    /**
+     * As {@link #execute(Txn, LogicalPlan, TemporalContext, DateTimeSettings, boolean, CypherAggregation)}, but
+     * additionally AND-combining a list of field-vs-field {@link FieldComparison}s (e.g. {@code a.x > b.y}) into
+     * the {@code WHERE} predicate. These are carried on {@link CompiledCypherPlan} rather than the plan's {@code
+     * Filter} because the shared {@code ExpressionTerm} IR has no second-field slot (see {@link FieldComparison}).
+     *
+     * @param fieldComparisons never null; empty for the ordinary (no field-vs-field) case.
+     */
+    public List<Val[]> execute(final Txn<ByteBuffer> readTxn, final LogicalPlan plan,
+                               final @Nullable TemporalContext temporalContext,
+                               final DateTimeSettings dateTimeSettings, final boolean distinct,
+                               final @Nullable CypherAggregation aggregation,
+                               final List<FieldComparison> fieldComparisons) {
         Objects.requireNonNull(readTxn, "readTxn");
         Objects.requireNonNull(plan, "plan");
         Objects.requireNonNull(dateTimeSettings, "dateTimeSettings");
@@ -300,11 +317,16 @@ public final class GraphTraversalEngine {
         final TemporalAccess access = resolveAccess(temporalContext);
         final PlanShape shape = unwrap(plan);
 
-        final Predicate<Map<String, Val>> wherePredicate = shape.where == null
+        final Predicate<Map<String, Val>> basePredicate = shape.where == null
                 ? row -> true
                 : expressionPredicateFactory
                         .createOptional(shape.where, rowAccessors(), dateTimeSettings)
                         .orElse(row -> true);
+        // Field-vs-field comparisons (a.x > b.y) cannot be expressed as ExpressionTerms (their value is a single
+        // literal string), so they are AND-combined here as an extra per-row predicate - see FieldComparison.
+        final Predicate<Map<String, Val>> wherePredicate = fieldComparisons.isEmpty()
+                ? basePredicate
+                : basePredicate.and(fieldComparisonPredicate(fieldComparisons));
 
         // Task P7.2: rowCap enforces a compiled Cypher LIMIT as an early-exit bound on row accumulation itself,
         // not merely a post-hoc trim of an already-fully-computed result (which is all DataStoreSettings' store
@@ -1916,6 +1938,39 @@ public final class GraphTraversalEngine {
 
     private static boolean isPresent(final @Nullable Val value) {
         return value != null && !Type.NULL.equals(value.type());
+    }
+
+    /**
+     * Builds a per-row predicate AND-combining the field-vs-field comparisons: each compares two row values
+     * (looked up by their {@code "variable.property"} keys) via {@link Val#compareTo}. A row where either side's
+     * property is absent/null fails the comparison (two-valued logic, consistent with the WHERE predicate path).
+     */
+    private static Predicate<Map<String, Val>> fieldComparisonPredicate(final List<FieldComparison> comparisons) {
+        return row -> {
+            for (final FieldComparison comparison : comparisons) {
+                final Val left = row.get(comparison.leftRowKey());
+                final Val right = row.get(comparison.rightRowKey());
+                if (!isPresent(left) || !isPresent(right)) {
+                    return false;
+                }
+                final int c = left.compareTo(right);
+                final boolean satisfied = switch (comparison.op()) {
+                    case EQ -> c == 0;
+                    case NEQ -> c != 0;
+                    case LT -> c < 0;
+                    case LE -> c <= 0;
+                    case GT -> c > 0;
+                    case GE -> c >= 0;
+                    // Rejected at compile time for field-vs-field (CypherToLogicalPlan.toFieldComparison).
+                    case STARTS_WITH, CONTAINS, ENDS_WITH, REGEX -> throw new IllegalStateException(
+                            "string operator not valid for a field-vs-field comparison: " + comparison.op());
+                };
+                if (!satisfied) {
+                    return false;
+                }
+            }
+            return true;
+        };
     }
 
     /**

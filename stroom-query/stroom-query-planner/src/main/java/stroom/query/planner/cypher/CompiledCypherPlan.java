@@ -20,6 +20,7 @@ import stroom.query.planner.logical.LogicalPlan;
 
 import org.jspecify.annotations.Nullable;
 
+import java.util.List;
 import java.util.Objects;
 
 /**
@@ -50,6 +51,11 @@ import java.util.Objects;
  *                        executor emits one row per distinct matched node/edge (see {@code GraphElementExecutor})
  *                        instead of one row per scalar-projected match. Orthogonal to {@code diffContext}: either
  *                        can be set independently of the other, and both together is the annotated-subgraph mode.
+ * @param fieldComparisons never null (may be empty); {@code WHERE} comparisons of two matched-element properties
+ *                        (e.g. {@code a.x > b.y}), carried here rather than in {@code plan}'s {@link
+ *                        stroom.query.planner.logical.Filter} because the shared {@code ExpressionTerm} IR has no
+ *                        second-field slot - see {@link FieldComparison}. The executor AND-combines them with the
+ *                        {@code Filter}'s literal predicate.
  */
 public record CompiledCypherPlan(
         LogicalPlan plan,
@@ -57,9 +63,11 @@ public record CompiledCypherPlan(
         boolean distinct,
         @Nullable CypherAggregation aggregation,
         @Nullable DiffContext diffContext,
-        boolean returnGraph) {
+        boolean returnGraph,
+        List<FieldComparison> fieldComparisons) {
 
     public CompiledCypherPlan {
         Objects.requireNonNull(plan, "plan");
+        fieldComparisons = fieldComparisons == null ? List.of() : List.copyOf(fieldComparisons);
     }
 }

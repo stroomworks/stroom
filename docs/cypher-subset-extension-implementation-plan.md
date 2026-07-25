@@ -1039,6 +1039,15 @@ confirmed by `TestCypherToLogicalPlan.comparingTwoFieldReferences_throwsNotInPoC
 (`TestCypherToLogicalPlan.java:576-584`), which parses such a query successfully and only fails at **compile** time.
 This phase is compiler + engine only.
 
+> **Implementation note (2026-07-25): done, per design decision (b).** `FieldComparison` (planner.cypher) carries
+> field-vs-field comparisons on `CompiledCypherPlan`; `GraphTraversalEngine` AND-combines them as an extra
+> `Predicate<Map<String,Val>>` (a 7-arg `execute` overload, threaded from `GraphSearchProvider`). **v1 scope:**
+> field-vs-field is only lifted out when it is a *top-level conjunct* of the `WHERE` (a direct operand of the root
+> `AND`, or the whole `WHERE`); nested inside `OR`/`NOT`/parentheses it reaches `compileComparisonTerm` and is
+> rejected. Only the six relational operators are allowed (string operators rejected); field-vs-field combined with
+> `DIFF`/`RETURN GRAPH` is rejected (keeps the single ordinary-`execute` composition site the only one needed). The
+> replaced test is now `comparingTwoFieldReferences_compilesToAFieldComparison`.
+
 ---
 
 ### Task 5.1 — Compiler: classify literal-vs-field vs. field-vs-field, carry the latter separately

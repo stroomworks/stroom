@@ -204,6 +204,61 @@ class TestGraphTraversalEngine {
         }
     }
 
+    @Test
+    void fieldVsFieldWhere_comparesTwoMatchedProperties(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("fieldvsfield"), DOC)) {
+            seedAccountTransfers(stores);
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory());
+
+            // a1(100) transfers to a2(50) and a3(200). a.balance > b.balance selects only the a2 transfer.
+            assertThat(runFieldComparison(stores, engine,
+                    "MATCH (a:Account {id: 'a1'})-[:TRANSFER]->(b:Account) "
+                    + "WHERE a.balance > b.balance RETURN b.id"))
+                    .containsExactly("a2");
+            // a.balance < b.balance selects only the a3 transfer.
+            assertThat(runFieldComparison(stores, engine,
+                    "MATCH (a:Account {id: 'a1'})-[:TRANSFER]->(b:Account) "
+                    + "WHERE a.balance < b.balance RETURN b.id"))
+                    .containsExactly("a3");
+        }
+    }
+
+    private static List<String> runFieldComparison(final GraphStores stores, final GraphTraversalEngine engine,
+                                                   final String cypher) {
+        final CompiledCypherPlan compiled = compile(cypher);
+        final List<Val[]> rows = stores.read(readTxn ->
+                engine.execute(readTxn, compiled.plan(), compiled.temporalContext(),
+                        DateTimeSettings.builder().build(), compiled.distinct(), compiled.aggregation(),
+                        compiled.fieldComparisons()));
+        return rows.stream().map(row -> row[0].toString()).toList();
+    }
+
+    private static void seedAccountTransfers(final GraphStores stores) {
+        final long accountLabel = intern(stores, stores.getLabelUids(), "Account");
+        final long idKey = intern(stores, stores.getPropertyKeyUids(), "id");
+        final long transfer = intern(stores, stores.getEdgeTypeUids(), "TRANSFER");
+        final long a1 = intern(stores, stores.getNodeUids(), "a1");
+        final long a2 = intern(stores, stores.getNodeUids(), "a2");
+        final long a3 = intern(stores, stores.getNodeUids(), "a3");
+
+        stores.write(writer -> {
+            stores.getNodes().insert(writer, a1, T1, List.of(accountLabel),
+                    Map.of("id", ValString.create("a1"), "balance", ValLong.create(100)));
+            stores.getNodes().insert(writer, a2, T1, List.of(accountLabel),
+                    Map.of("id", ValString.create("a2"), "balance", ValLong.create(50)));
+            stores.getNodes().insert(writer, a3, T1, List.of(accountLabel),
+                    Map.of("id", ValString.create("a3"), "balance", ValLong.create(200)));
+            stores.getPropertyIndex().insert(
+                    writer, accountLabel, idKey, "a1".getBytes(StandardCharsets.UTF_8), a1);
+            stores.getOutEdges().insert(writer, a1, transfer, a2, T1, Map.of());
+            stores.getInEdges().insert(writer, a1, transfer, a2, T1, Map.of());
+            stores.getOutEdges().insert(writer, a1, transfer, a3, T1, Map.of());
+            stores.getInEdges().insert(writer, a1, transfer, a3, T1, Map.of());
+            return null;
+        });
+    }
+
     private static void seedOfficerWithRepeatedCrimeTypes(final GraphStores stores) {
         final long officerLabel = intern(stores, stores.getLabelUids(), "Officer");
         final long crimeLabel = intern(stores, stores.getLabelUids(), "Crime");
