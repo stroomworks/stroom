@@ -38,7 +38,15 @@ The next features worth adding, in priority order:
 | 12 | **Unbounded variable-length** (`-[*]->`) | Low | Low (parse) / High (safety) | High | Deliberately never |
 | 13 | **Writes** (`CREATE`/`MERGE`/`SET`/`DELETE`), `CALL` | Low here | High | High | Out of scope |
 
-Rows 1–7 are **implemented** (see [`cypher-subset-extension-implementation-plan.md`](cypher-subset-extension-implementation-plan.md), Phases 0–8) — row 6 as a single-pipe `WITH … WHERE` (HAVING), row 7 (scalar functions) by *wiring an engine Stroom already has* (§ Tier 4 item 7). The implemented rows were largely *downstream of the traversal engine* — filters, reducers, and post-aggregation steps over rows it already produces — which is why they carried so little risk; everything from row 8 down touches the planner, the traversal engine, or the storage model and needs a design conversation before a line of code.
+*Function-library depth (planned as build-plan Phases 10–12, after the scalar-function base in row 7):*
+
+| # | Feature | Utility | Difficulty | Risk | Verdict |
+|---|---|---|---|---|---|
+| 14 | **Arithmetic operators** (`+ - * / ^`) in expressions | High | Medium | Low | **Build next** (runtime free — Stroom's engine already evaluates infix arithmetic) |
+| 15 | **Graph-identity functions** (`id`, `type`; `labels`/`keys`/`properties` gated on `ValList`) | High | Medium-High | Medium | Build soon (needs rows to carry node identity/edge type) |
+| 16 | **Date/time functions** (`year`/`day`/`formatDate`/`now`/…) | Medium | Low | Low | Opportunistic (wire Stroom's existing set) |
+
+Rows 1–7 are **implemented** (see [`cypher-subset-extension-implementation-plan.md`](cypher-subset-extension-implementation-plan.md), Phases 0–9) — row 6 as a single-pipe `WITH … WHERE` (HAVING), row 7 (scalar functions) in *both flavours* (Stroom-native + Cypher-exact) by *wiring an engine Stroom already has* (§ Tier 4 item 7). The implemented rows were largely *downstream of the traversal engine* — filters, reducers, and post-aggregation steps over rows it already produces — which is why they carried so little risk. Rows 14–16 extend the function library further: **14 (arithmetic)** is the standout (the engine already does the maths — it is grammar + rendering only); **15 (graph-identity)** is the most graph-native but needs the traversal to keep node identity/edge type in its rows; **16 (date/time)** is a cheap wire of Stroom's date functions. Everything else from row 8 down touches the planner, engine, or storage model and needs a design conversation first.
 
 ---
 

@@ -1892,6 +1892,142 @@ a Cypher-name call in adjacent tests). **Done-when.** All green. **Verify.**
 
 ---
 
+## Phase 10 — Arithmetic operators (`+` `-` `*` `/` `^`) in expressions
+
+**Phase goal:** `RETURN a.balance * 1.2`, `RETURN a.hi - a.lo`, `RETURN (a.x + b.y) / 2` compile and evaluate.
+
+**Phase gate:** `./gradlew :stroom-query:stroom-query-grammar:test :stroom-query:stroom-query-planner:test
+:stroom-graphdb:stroom-graphdb-impl:test` green.
+
+**The runtime is free.** Stroom's expression engine **already evaluates infix `+ - * / ^`** (they are registered
+functions named `add`/`-`/`*`/`/`/`^`), and Phase 8's `RowProjector` already routes any non-bare-`${…}` `RETURN`
+expression through `ExpressionParser`. So this is a **grammar (operator precedence) + rendering** job with **no engine
+change**. Stroom has no `%` (modulo) - reject it (a small new function is a follow-on).
+
+### Task 10.1 — Grammar + AST: arithmetic in `expression`
+
+**Goal.** Parse infix arithmetic with correct precedence and associativity.
+
+**Files.** `Cypher.g4`, new AST `AstArithmeticExpr`, `AstCypherBuilder`; tests `TestCypherQueryParser`.
+
+**Contract.**
+- Add arithmetic to the `expression` rule via ANTLR4 left-recursion, precedence high→low: `^` (right-assoc) >
+  `*`/`/` > `+`/`-`. New tokens `PLUS : '+'`, `SLASH : '/'`, `CARET : '^'`; reuse `DASH` (`-`) and `STAR` (`*`).
+- **Disambiguation risk (test it):** `DASH`/`STAR` are also pattern tokens (`-->`, `-[:R*1..2]->`). ANTLR resolves
+  by rule context (arithmetic only inside `expression`, edges inside `pattern`), but add regression parses for
+  `MATCH (a)-[:R]->(b) RETURN a.x - b.y` and a var-length pattern in the same query.
+- New `AstArithmeticExpr(AstExpression left, ArithOp op, AstExpression right, AstPosition position)` joining the
+  `AstExpression` sealed `permits`; builder constructs it. (Every exhaustive `switch` over `AstExpression` - e.g.
+  `renderExpression`, `validateExpressionInScope`, `renderFunctionArgument`'s reject list - must gain a case.)
+
+**Done-when.** `2 + 3 * 4` parses as `2 + (3 * 4)`; the dash/star pattern regressions still parse. **Verify.**
+`./gradlew :stroom-query:stroom-query-grammar:test`.
+
+### Task 10.2 — Compiler: render arithmetic to Stroom infix
+
+**Goal.** Lower `AstArithmeticExpr` to the expression engine.
+
+**Files.** `CypherToLogicalPlan.renderExpression`; tests `TestCypherToLogicalPlan`.
+
+**Contract.** `renderExpression(AstArithmeticExpr)` emits parenthesised infix text preserving structure, e.g.
+`(${a.x} * 2)`, `(${a.hi} - ${a.lo})`. Arithmetic is a `RETURN`/`WITH`-item concern only for v1: an arithmetic
+operand in a `MATCH`'s `WHERE` comparison is **rejected** (the comparison-term lowering is field-vs-literal/
+field-vs-field; a computed operand is a later step). Reject `%`.
+
+**Done-when.** `RETURN a.balance * 1.2` renders to `(${a.balance} * 1.2)`. **Verify.**
+`./gradlew :stroom-query:stroom-query-planner:test`.
+
+### Task 10.3 — Engine test suite
+
+**Goal.** End-to-end evaluation. **Files.** `TestGraphTraversalEngine`. **Contract.** Seed numeric properties;
+assert `a.x * 2`, `a.hi - a.lo`, precedence (`2 + 3 * 4 = 14`), and division. **Done-when/Verify.**
+`./gradlew :stroom-graphdb:stroom-graphdb-impl:test`.
+
+---
+
+## Phase 11 — Graph-identity functions (`id`, `type`; `labels`/`keys`/`properties` gated on `ValList`)
+
+**Phase goal:** `RETURN id(a)` returns the matched node's identity and `RETURN type(r)` the traversed edge's type.
+`labels(n)`/`keys(n)`/`properties(n)` (collection-returning) are deferred to a real `ValList` (Phase 4 Task 4.1).
+
+**Phase gate:** `./gradlew :stroom-query:stroom-query-planner:test :stroom-graphdb:stroom-graphdb-impl:test` green.
+
+**Why an engine change is needed.** The traversal *has* each node's UID (→ external id via `decodeUidName`) and each
+hop's edge type, but the row map (`Map<String,Val>`) keeps only `"variable.property"` values - a node's identity and
+an edge's type are discarded mid-traversal. `id(v)`/`type(e)` return **scalars**, so they are doable now by carrying
+those in reserved row keys; `labels`/`keys`/`properties` return a **list/map**, so they wait on `ValList`.
+
+### Task 11.1 — Engine: carry node identity + edge type in rows
+
+**Goal.** Populate a reserved row key per bound variable: `id(v)`'s external node id, and `type(e)`'s edge type.
+
+**Files.** `GraphTraversalEngine` (`rowFor`/`acceptChainNeighbour`/anchor row build), a shared key helper (mirror
+`OptionalMatchSupport.boundKey`); `GraphRowValueFunctionFactory` unchanged (it already serves arbitrary row keys).
+
+**Contract.** Reserved, collision-safe keys (space-prefixed): `identityKey(var)` = `ValString(external node id)`
+(from `decodeUidName(nodeUid)`), set wherever a node variable is bound (anchor + each hop target); `edgeTypeKey(var)`
+= `ValString(hop.edgeType())`, set when a hop's edge variable is bound. **Overhead control:** carry identity only for
+variables the query's `id()`/`type()` calls actually reference - the compiler collects that set (like
+`fieldComparisons`) and passes it to `execute`, so rows for queries that use neither are unchanged.
+
+**Done-when.** A bound node/edge row carries its identity/type under the reserved keys. **Verify.** engine unit test.
+
+### Task 11.2 — Compiler: `id`/`type` adapters; reject the collection-returning ones
+
+**Goal.** Lower `id(v)`/`type(v)` to a reference to the reserved key; reject `labels`/`keys`/`properties` clearly.
+
+**Files.** `CypherFunctions`/`CypherToLogicalPlan.renderCypherAdaptedFunction`; `TestCypherToLogicalPlan`.
+
+**Contract.** `id(v)` → `${<identityKey(v)>}`, `type(e)` → `${<edgeTypeKey(e)>}` (argument must be a bare pattern
+variable - reject a property access or literal). `labels`/`keys`/`properties` → `"not supported in this version:
+<fn>() returns a list/map, which needs the list-valued Val type (a later phase)"`. Thread the referenced-variable
+set (Task 11.1) onto `CompiledCypherPlan`.
+
+**Done-when.** `id(a)`/`type(r)` compile and reference the reserved keys; `labels(a)` fails loud. **Verify.**
+`./gradlew :stroom-query:stroom-query-planner:test`.
+
+### Task 11.3 — Tests
+
+**Goal/Contract.** Engine + provider: `RETURN id(a), type(r)` over a seeded hop returns the node's external id and the
+edge type; `labels(a)` rejected. **Verify.** `./gradlew :stroom-query:stroom-query-planner:test
+:stroom-graphdb:stroom-graphdb-impl:test`.
+
+---
+
+## Phase 12 — Date/time functions
+
+**Phase goal:** `RETURN year(a.ts)`, `formatDate(a.created, …)`, `day(a.ts)`, `now()` etc. work over graph rows.
+
+**Phase gate:** `./gradlew :stroom-query:stroom-query-planner:test :stroom-graphdb:stroom-graphdb-impl:test` green.
+
+**Pure Phase-8-style additions - no engine change.** Stroom already ships the date/time functions; this wires a
+curated set into the `CypherFunctions` allowlist under their Stroom names (they flow through the `RowProjector`/
+`ExpressionParser` unchanged). This is the *scalar date-function* subset, **not** Cypher's temporal type system
+(`datetime`/`date`/`duration` values and `datetime.year` property-style component access) - that larger feature stays
+out of scope.
+
+### Task 12.1 — Allowlist: add the date/time functions
+
+**Goal.** Extend `CypherFunctions.ALLOWED` with the curated, verified date/time set.
+
+**Files.** `CypherFunctions`; `TestCypherToLogicalPlan`.
+
+**Contract.** Add (audit each signature against `stroom.query.language.functions` first): `year`, `month`, `day`,
+`hour`, `minute`, `second`, `formatDate`, `parseDate`, `now`, `roundDay`/`roundHour`/… , `floorDay`/… ,
+`ceilingDay`/… , `formatDuration`, `parseDuration`, `isWeekend`, `period`. Keep them pure/deterministic (`now()` is
+the one clock-dependent entry - include it but note it is evaluated once per query, matching Stroom's own
+`now`/`currentUser`-style semantics). Add Cypher-ish aliases only where a name is 1:1 and unambiguous.
+
+**Done-when.** `year(a.ts)` compiles to `year(${a.ts})`; an unaudited name is not added. **Verify.**
+`./gradlew :stroom-query:stroom-query-planner:test`.
+
+### Task 12.2 — Engine test suite
+
+**Goal/Contract.** Seed an ISO-8601 string/timestamp property; assert `year(...)`, `formatDate(...)`, `day(...)`
+evaluate correctly. **Verify.** `./gradlew :stroom-graphdb:stroom-graphdb-impl:test`.
+
+---
+
 ## 3. Documentation & user-facing updates
 
 - Update [`cypher-language-feature-roadmap.md`](cypher-language-feature-roadmap.md)'s "What the subset covers today"
