@@ -57,15 +57,24 @@ public class GraphResultWidget extends Composite implements SelectionUiHandlers 
     private static final String EXPAND_NODE_PARAM = "__stroomExpand";
     private static final String FOCUS_NODE_PARAM = "__stroomFocus";
 
+    /** Hard cap on element rows rendered at once, so a runaway result can never lock up the browser (P4 guardrail).
+     * The default queries are {@code LIMIT}-bounded well below this; it only bites on a pathological result. */
+    private static final int MAX_ELEMENT_ROWS = 2000;
+
     private final GraphFrame frame;
     private final SimplePanel graphHolder;
     private final Label messageLabel;
+    private final Label warningLabel;
+    private final GraphTemporalWidget temporalWidget;
     private final Consumer<String> onExpandNode;
     private final Consumer<String> onFocusNode;
 
     public GraphResultWidget(final EventBus eventBus,
                              final Consumer<String> onExpandNode,
-                             final Consumer<String> onFocusNode) {
+                             final Consumer<String> onFocusNode,
+                             final Consumer<Long> onSnapshot,
+                             final Runnable onLive,
+                             final java.util.function.BiConsumer<Long, Long> onCompare) {
         this.onExpandNode = onExpandNode;
         this.onFocusNode = onFocusNode;
         frame = new GraphFrame(eventBus);
@@ -78,9 +87,19 @@ public class GraphResultWidget extends Composite implements SelectionUiHandlers 
         messageLabel.addStyleName("GraphResultWidget-message");
         messageLabel.setVisible(false);
 
+        // A non-blocking banner shown alongside the graph when the result is capped or only a page of a larger set.
+        warningLabel = new Label();
+        warningLabel.addStyleName("GraphResultWidget-warning");
+        warningLabel.setVisible(false);
+
+        // A floating time-travel slider overlaid on the graph (anchors to the position:relative panel below).
+        temporalWidget = new GraphTemporalWidget(onSnapshot, onLive, onCompare);
+
         final FlowPanel panel = new FlowPanel();
         panel.addStyleName("max GraphResultWidget");
         panel.add(graphHolder);
+        panel.add(temporalWidget);
+        panel.add(warningLabel);
         panel.add(messageLabel);
         initWidget(panel);
     }
@@ -103,6 +122,11 @@ public class GraphResultWidget extends Composite implements SelectionUiHandlers 
         frame.onResize();
     }
 
+    /** Track the app's light/dark theme in the sandbox chrome (see {@link GraphFrame#setClassName}). */
+    public void setClassName(final String className) {
+        frame.setClassName(className);
+    }
+
     /**
      * Render a result, or show guidance when it isn't a graph shape.
      */
@@ -122,8 +146,39 @@ public class GraphResultWidget extends Composite implements SelectionUiHandlers 
         }
 
         showGraph();
-        frame.setElements(buildPayload(columns, NullSafe.list(result.getRows())));
+
+        // Size guardrail (P4): warn when the graph is only a page of a larger result, and hard-cap what we render.
+        final List<Row> allRows = NullSafe.list(result.getRows());
+        List<Row> rows = allRows;
+        final StringBuilder warning = new StringBuilder();
+
+        final Long totalResults = result.getTotalResults();
+        if (totalResults != null && totalResults > allRows.size()) {
+            warning.append("Showing ")
+                    .append(allRows.size())
+                    .append(" of ")
+                    .append(totalResults)
+                    .append(" result rows — the graph may be incomplete. Refine the query or adjust its LIMIT.");
+        }
+        if (rows.size() > MAX_ELEMENT_ROWS) {
+            rows = rows.subList(0, MAX_ELEMENT_ROWS);
+            if (warning.length() > 0) {
+                warning.append(' ');
+            }
+            warning.append("Rendering the first ")
+                    .append(MAX_ELEMENT_ROWS)
+                    .append(" elements for performance.");
+        }
+
+        frame.setElements(buildPayload(columns, rows));
         frame.onResize();
+
+        if (warning.length() > 0) {
+            warningLabel.setText(warning.toString());
+            warningLabel.setVisible(true);
+        } else {
+            warningLabel.setVisible(false);
+        }
     }
 
     /**
@@ -171,12 +226,15 @@ public class GraphResultWidget extends Composite implements SelectionUiHandlers 
     private void showGraph() {
         messageLabel.setVisible(false);
         graphHolder.setVisible(true);
+        temporalWidget.setVisible(true);
     }
 
     private void showMessage(final String message) {
         messageLabel.setText(message);
         messageLabel.setVisible(true);
         graphHolder.setVisible(false);
+        temporalWidget.setVisible(false);
+        warningLabel.setVisible(false);
     }
 
     @Override

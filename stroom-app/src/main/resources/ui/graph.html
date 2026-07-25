@@ -65,19 +65,227 @@
             left: 6px;
             z-index: 10;
             display: flex;
+            flex-wrap: wrap;
             gap: 6px;
             align-items: center;
+            max-width: 60%;
             font-size: 12px;
         }
 
         #graph-toolbar select,
-        #graph-toolbar button {
+        #graph-toolbar button,
+        #graph-toolbar input {
             font-size: 12px;
             padding: 2px 6px;
             border: 1px solid #b0b0b0;
             border-radius: 3px;
             background: #ffffff;
             cursor: pointer;
+        }
+
+        #graph-toolbar input {
+            cursor: text;
+            width: 130px;
+        }
+
+        #graph-toolbar button.active {
+            background: #3a7bd5;
+            border-color: #3a7bd5;
+            color: #ffffff;
+        }
+
+        /* Interactive legend / filter (bottom-left). */
+        #graph-legend {
+            position: absolute;
+            bottom: 6px;
+            left: 6px;
+            z-index: 10;
+            max-height: 45%;
+            max-width: 220px;
+            overflow: auto;
+            padding: 6px 8px;
+            border: 1px solid #d0d0d0;
+            border-radius: 4px;
+            background: rgba(255, 255, 255, 0.92);
+            font-size: 11px;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+        }
+
+        .graph-legend-header {
+            font-weight: bold;
+            color: #555555;
+            margin: 4px 0 2px;
+            text-transform: uppercase;
+            font-size: 10px;
+            letter-spacing: 0.04em;
+        }
+
+        .graph-legend-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 2px 2px;
+            cursor: pointer;
+            border-radius: 3px;
+            white-space: nowrap;
+        }
+
+        .graph-legend-row:hover {
+            background: rgba(0, 0, 0, 0.06);
+        }
+
+        .graph-legend-row.off {
+            opacity: 0.4;
+            text-decoration: line-through;
+        }
+
+        .graph-legend-swatch {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            flex: 0 0 auto;
+            border: 1px solid rgba(0, 0, 0, 0.2);
+        }
+
+        /* Shape hints in the legend swatch, echoing the node shapes. */
+        .graph-legend-swatch.shape-ellipse {
+            border-radius: 50%;
+        }
+
+        .graph-legend-swatch.shape-round-rectangle {
+            border-radius: 3px;
+        }
+
+        .graph-legend-swatch.shape-diamond {
+            transform: rotate(45deg) scale(0.8);
+        }
+
+        .graph-legend-swatch.graph-legend-edge {
+            height: 3px;
+            background: #b0b0b0;
+            border: none;
+        }
+
+        .graph-legend-text {
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* Inspector panel (right). */
+        #graph-inspector {
+            position: absolute;
+            top: 6px;
+            right: 6px;
+            bottom: 6px;
+            z-index: 15;
+            width: 260px;
+            overflow: auto;
+            padding: 10px 12px;
+            border: 1px solid #d0d0d0;
+            border-radius: 4px;
+            background: rgba(255, 255, 255, 0.97);
+            font-size: 12px;
+            box-shadow: 0 1px 6px rgba(0, 0, 0, 0.18);
+        }
+
+        .graph-inspector-head {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 8px;
+        }
+
+        .graph-inspector-title {
+            font-weight: bold;
+            font-size: 13px;
+            word-break: break-word;
+        }
+
+        .graph-inspector-close {
+            cursor: pointer;
+            color: #888888;
+            font-size: 18px;
+            line-height: 1;
+        }
+
+        .graph-inspector-close:hover {
+            color: #222222;
+        }
+
+        .graph-inspector-kind {
+            color: #888888;
+            font-size: 10px;
+            margin: 2px 0 8px;
+            word-break: break-all;
+        }
+
+        .graph-inspector-prop {
+            display: flex;
+            gap: 8px;
+            padding: 2px 0;
+            border-top: 1px solid #eeeeee;
+        }
+
+        .graph-inspector-key {
+            flex: 0 0 40%;
+            color: #666666;
+            word-break: break-word;
+        }
+
+        .graph-inspector-val {
+            flex: 1 1 auto;
+            word-break: break-word;
+        }
+
+        .graph-inspector-empty {
+            color: #999999;
+            font-style: italic;
+        }
+
+        .graph-inspector-subhead {
+            margin: 10px 0 2px;
+            font-size: 10px;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: #888888;
+        }
+
+        /* Transient status pill (shortest-path results etc.), bottom-centre. */
+        #graph-status {
+            position: absolute;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 30;
+            display: none;
+            padding: 6px 12px;
+            border-radius: 14px;
+            background: rgba(20, 20, 20, 0.88);
+            color: #ffffff;
+            font-size: 12px;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+        }
+
+        .graph-inspector-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            margin-top: 10px;
+        }
+
+        .graph-inspector-actions button {
+            font-size: 11px;
+            padding: 3px 8px;
+            border: 1px solid #b0b0b0;
+            border-radius: 3px;
+            background: #ffffff;
+            cursor: pointer;
+        }
+
+        .graph-inspector-actions button:hover {
+            background: #eef3fb;
+            border-color: #3a7bd5;
         }
 
         #graph-tooltip {
@@ -97,6 +305,53 @@
 
         #graph-tooltip .k {
             opacity: 0.7;
+        }
+
+        /* Dark theme: the parent posts graphManager.setClassName('stroom-theme-dark'); the graph canvas is
+           transparent (the themed app background shows through), so only the floating chrome needs recolouring. */
+        body.stroom-theme-dark .graph-hint {
+            color: #b8b8b8;
+        }
+
+        body.stroom-theme-dark #graph-toolbar select,
+        body.stroom-theme-dark #graph-toolbar button,
+        body.stroom-theme-dark #graph-toolbar input {
+            background: #2b2f36;
+            border-color: #4a4f57;
+            color: #e6e6e6;
+        }
+
+        body.stroom-theme-dark #graph-legend,
+        body.stroom-theme-dark #graph-inspector {
+            background: rgba(30, 33, 38, 0.95);
+            border-color: #4a4f57;
+            color: #e6e6e6;
+        }
+
+        body.stroom-theme-dark .graph-legend-header,
+        body.stroom-theme-dark .graph-inspector-kind,
+        body.stroom-theme-dark .graph-inspector-subhead,
+        body.stroom-theme-dark .graph-inspector-key {
+            color: #a8b0ba;
+        }
+
+        body.stroom-theme-dark .graph-legend-row:hover {
+            background: rgba(255, 255, 255, 0.10);
+        }
+
+        body.stroom-theme-dark .graph-inspector-prop {
+            border-top-color: #3a3f47;
+        }
+
+        body.stroom-theme-dark .graph-inspector-actions button {
+            background: #2b2f36;
+            border-color: #4a4f57;
+            color: #e6e6e6;
+        }
+
+        body.stroom-theme-dark .graph-inspector-actions button:hover {
+            background: #363b44;
+            border-color: #6b93d6;
         }
     </style>
     <script type="text/javascript" src="script/cytoscape/cytoscape.min.js"></script>

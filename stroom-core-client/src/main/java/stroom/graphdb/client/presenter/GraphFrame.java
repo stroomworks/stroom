@@ -47,6 +47,7 @@ public class GraphFrame extends Composite {
 
     private boolean loaded;
     private JSONValue pendingElements;
+    private String className;
 
     public GraphFrame(final EventBus eventBus) {
         frame = new Frame("ui/graph.html");
@@ -108,6 +109,29 @@ public class GraphFrame extends Composite {
         messageSupport.postMessage(message);
     }
 
+    /**
+     * Track the app's light/dark theme in the sandbox (mirrors {@code VisFrame.setClassName}); the class name
+     * drives the graph chrome's colours (see {@code ui/graph.js} / {@code ui/graph.html}). Held and re-posted once
+     * the iframe has loaded (a class name set before load would otherwise be lost, like the initial elements).
+     */
+    public void setClassName(final String className) {
+        this.className = className;
+        postClassName();
+    }
+
+    private void postClassName() {
+        if (!loaded || className == null) {
+            return;
+        }
+        final JSONArray params = new JSONArray();
+        params.set(0, new JSONString(className));
+
+        final JSONObject message = new JSONObject();
+        message.put("functionName", new JSONString("graphManager.setClassName"));
+        message.put("params", params);
+        messageSupport.postMessage(message);
+    }
+
     public void onResize() {
         final JSONObject message = new JSONObject();
         message.put("functionName", new JSONString("graphManager.resize"));
@@ -117,6 +141,7 @@ public class GraphFrame extends Composite {
     private void onFrameLoaded() {
         loaded = true;
         flush();
+        postClassName();
     }
 
     private void flush() {

@@ -18,15 +18,19 @@ package stroom.graphdb.client.presenter;
 
 import stroom.dispatch.client.RestFactory;
 import stroom.docref.DocRef;
+import stroom.editor.client.presenter.ChangeCurrentPreferencesEvent;
+import stroom.editor.client.presenter.CurrentPreferences;
 import stroom.graphdb.shared.GraphDbDoc;
 import stroom.graphdb.shared.GraphDbResource;
 import stroom.graphdb.shared.GraphElementTable;
+import stroom.graphdb.shared.GraphTemporal;
 import stroom.query.api.Column;
 import stroom.query.client.presenter.AbstractQueryDataPresenter;
 import stroom.query.client.presenter.DateTimeSettingsFactory;
 import stroom.query.client.presenter.QueryDataView;
 import stroom.query.client.presenter.QueryResultTablePresenter;
 import stroom.query.client.presenter.ResultStoreModel;
+import stroom.ui.config.shared.Theme;
 
 import com.google.gwt.core.client.GWT;
 import com.google.inject.Inject;
@@ -59,9 +63,13 @@ public class GraphDbDataPresenter
 
     private final GraphResultWidget graphResultWidget;
     private final GraphDiscoveryWidget discoveryWidget;
+    private final CurrentPreferences currentPreferences;
     private boolean graphVisible;
     private boolean discoveryVisible;
     private String lastRunQuery;
+    // The query the time-travel slider snapshots against - captured on first snapshot, cleared by a manual run.
+    private String temporalBaseQuery;
+    private boolean runningSnapshot;
 
     public interface GraphDbDataView extends QueryDataView {
     }
@@ -72,12 +80,15 @@ public class GraphDbDataPresenter
                                 final QueryResultTablePresenter tablePresenter,
                                 final RestFactory restFactory,
                                 final DateTimeSettingsFactory dateTimeSettingsFactory,
-                                final ResultStoreModel resultStoreModel) {
+                                final ResultStoreModel resultStoreModel,
+                                final CurrentPreferences currentPreferences) {
         super(eventBus, view, tablePresenter, restFactory, dateTimeSettingsFactory, resultStoreModel);
+        this.currentPreferences = currentPreferences;
 
         // The Graph DB Data tab adds a Graph view alongside the table, driven by the same result store
         // (Cytoscape implementation plan P3). The toggle stays hidden for every other query data tab.
-        graphResultWidget = new GraphResultWidget(eventBus, this::expandNode, this::focusNode);
+        graphResultWidget = new GraphResultWidget(eventBus, this::expandNode, this::focusNode,
+                this::snapshotAt, this::exitTimeTravel, this::compareWindow);
         view.setGraphView(graphResultWidget, this::onViewModeChange);
 
         // ...and a discovery panel that turns the graph's schema into clickable starter queries, for analysts who
@@ -171,7 +182,61 @@ public class GraphDbDataPresenter
         // Remember the query that produced the current graph, so an "Expand neighbours" runs at the same
         // temporal instant/window (the box may be edited afterwards without re-running).
         lastRunQuery = getView().getQuery();
+        // A manual run (not a slider tick) re-bases the time-travel window on the new query.
+        if (!runningSnapshot) {
+            temporalBaseQuery = null;
+        }
         super.onRun();
+    }
+
+    /** Render the displayed graph as of {@code instantMillis}: rewrite the base query's temporal clause to
+     * {@code AS OF} that instant and run it (see {@link GraphTemporal#withAsOf}). The graph re-renders from the
+     * result via the normal table-update path. Graph-view only. */
+    private void snapshotAt(final Long instantMillis) {
+        if (instantMillis == null) {
+            return;
+        }
+        if (temporalBaseQuery == null) {
+            temporalBaseQuery = lastRunQuery != null ? lastRunQuery : getView().getQuery();
+        }
+        final String snapshotQuery = GraphTemporal.withAsOf(temporalBaseQuery, instantMillis);
+        runningSnapshot = true;
+        try {
+            runQuery(snapshotQuery);
+        } finally {
+            runningSnapshot = false;
+        }
+    }
+
+    /** Leave time-travel: re-run the base query to restore the live (latest) view. */
+    private void exitTimeTravel() {
+        if (temporalBaseQuery != null) {
+            final String base = temporalBaseQuery;
+            temporalBaseQuery = null;
+            runQuery(base);
+        }
+    }
+
+    /** Compare two instants: run the base query as {@code DIFF FROM from TO to} so the result carries the
+     * changeKind the graph view styles as added / removed / modified / unchanged. */
+    private void compareWindow(final Long fromMillis, final Long toMillis) {
+        if (fromMillis == null || toMillis == null) {
+            return;
+        }
+        if (temporalBaseQuery == null) {
+            temporalBaseQuery = lastRunQuery != null ? lastRunQuery : getView().getQuery();
+        }
+        final String diffQuery = GraphTemporal.withDiff(temporalBaseQuery, fromMillis, toMillis);
+        runningSnapshot = true;
+        try {
+            runQuery(diffQuery);
+        } finally {
+            runningSnapshot = false;
+        }
+    }
+
+    private void applyTheme(final String theme) {
+        graphResultWidget.setClassName(Theme.getClassName(theme));
     }
 
     @Override
@@ -184,6 +249,10 @@ public class GraphDbDataPresenter
                 graphResultWidget.setData(getTablePresenter().getCurrentTableResult());
             }
         }));
+        // Track the app's light/dark theme in the graph sandbox (mirrors VisPresenter).
+        applyTheme(currentPreferences.getTheme());
+        registerHandler(getEventBus().addHandler(ChangeCurrentPreferencesEvent.getType(),
+                event -> applyTheme(event.getTheme())));
     }
 
     @Override
