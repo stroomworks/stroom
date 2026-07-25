@@ -24,23 +24,21 @@ The next features worth adding, in priority order:
 
 | # | Feature | Utility | Difficulty | Risk | Verdict |
 |---|---|---|---|---|---|
-| 1 | **String predicates** (`STARTS WITH`, `CONTAINS`, `ENDS WITH`, `=~`) | High | Low | Low | **Build next** |
-| 2 | **`IN` list membership** + **`IS NULL`/`IS NOT NULL`** | High | Low | Low | **Build next** |
-| 3 | **`collect()`** + **`count(DISTINCT x)`** | High | Low | Low | **Build next** |
-| 4 | **Field-vs-field `WHERE`** (`a.x > b.y`) | Medium-High | Low-Med | Low | Build soon |
-| 5 | **`OPTIONAL MATCH`** (left-outer patterns) | High | Medium | Medium | Plan carefully |
+| 1 | **String predicates** (`STARTS WITH`, `CONTAINS`, `ENDS WITH`, `=~`) | High | Low | Low | ✅ Implemented |
+| 2 | **`IN` list membership** + **`IS NULL`/`IS NOT NULL`** | High | Low | Low | ✅ Implemented |
+| 3 | **`collect()`** + **`count(DISTINCT x)`** | High | Low | Low | ✅ Implemented |
+| 4 | **Field-vs-field `WHERE`** (`a.x > b.y`) | Medium-High | Low-Med | Low | ✅ Implemented |
+| 5 | **`OPTIONAL MATCH`** (left-outer patterns) | High | Medium | Medium | ✅ Implemented (v1) |
 | 6 | **Multi-stage `WITH` / multiple `MATCH`** (already parses) | High | Medium | Medium | Plan carefully |
-| 7 | **`UNWIND`** + list/scalar function library | Medium | Medium | Low-Med | Opportunistic |
-| 8 | **`UNION` / `UNION ALL`** | Medium | Medium | Low | Opportunistic |
-| 9 | **Multi-type relationships** (`-[:A\|B]->`) | Medium | Medium | Medium | Defer |
-| 10 | **`shortestPath` / `allShortestPaths`** | High (niche) | High | High | Defer, scope hard |
-| 11 | **Unbounded variable-length** (`-[*]->`) | Low | Low (parse) / High (safety) | High | Deliberately never |
-| 12 | **Writes** (`CREATE`/`MERGE`/`SET`/`DELETE`), `CALL` | Low here | High | High | Out of scope |
+| 7 | **Scalar & string functions** (`toUpper`, `coalesce`, `CASE`, …) — wire Stroom's existing engine | High | Low-Med | Low | **Build soon** |
+| 8 | **`UNWIND`** (list → rows) | Medium | Medium | Low-Med | Opportunistic |
+| 9 | **`UNION` / `UNION ALL`** | Medium | Medium | Low | Opportunistic |
+| 10 | **Multi-type relationships** (`-[:A\|B]->`) | Medium | Medium | Medium | Defer |
+| 11 | **`shortestPath` / `allShortestPaths`** | High (niche) | High | High | Defer, scope hard |
+| 12 | **Unbounded variable-length** (`-[*]->`) | Low | Low (parse) / High (safety) | High | Deliberately never |
+| 13 | **Writes** (`CREATE`/`MERGE`/`SET`/`DELETE`), `CALL` | Low here | High | High | Out of scope |
 
-The first three rows are all *downstream of the traversal engine* — filters and reducers over rows the engine
-already produces. They carry essentially no architectural risk and unblock a disproportionate share of real
-queries. Everything from row 5 down touches the planner, the traversal engine, or the storage model and needs a
-design conversation before a line of code.
+Rows 1–5 are **implemented** (see [`cypher-subset-extension-implementation-plan.md`](cypher-subset-extension-implementation-plan.md), Phases 0–6); row 6 (multi-stage `WITH`) is the next planned phase. Row **7 (scalar functions)** is the newest candidate and a standout: unlike a from-scratch function library, it mostly *wires an engine Stroom already has* (§ Tier 4 item 7). The implemented rows were all *downstream of the traversal engine* — filters and reducers over rows it already produces — which is why they carried so little risk; everything from row 8 down touches the planner, the traversal engine, or the storage model and needs a design conversation before a line of code.
 
 ---
 
@@ -188,22 +186,43 @@ RETURN p.surname, crimes, a.postcode
 
 ## Tier 4 — opportunistic (moderate utility, do when adjacent work makes them cheap)
 
-### 7. `UNWIND` + a small scalar/list function library
+### 7. Scalar & string functions — wire Stroom's existing expression engine
+
+```cypher
+MATCH (p:Person) OPTIONAL MATCH (p)-[:PARTY_TO]->(c:Crime)
+RETURN toUpper(p.surname), coalesce(c.type, 'none'), substring(p.postcode, 0, 4)
+```
+
+- **Utility: High.** Everyday transforms (`toUpper`/`toLower`/`substring`/`replace`/`trim`/`split`/`toString`),
+  null handling (`coalesce`, `CASE`), and `size` for `collect()` results. `coalesce`/`CASE` are *especially*
+  valuable now that `OPTIONAL MATCH` (item 5) produces nulls. Today the graph projection supports only bare
+  property/variable references — any function in `RETURN` throws.
+- **Difficulty: Low-Medium — and this is the key insight.** Stroom **already ships a 232-function expression
+  library** (`stroom.query.language.functions`: `UpperCase`, `Substring`, `Replace`, `Case`, `Decode`, `Round`,
+  `Concat`, …) plus an `ExpressionParser`, and the Cypher compiler **already renders `RETURN` items into that
+  engine's exact syntax** (property refs as `${a.name}`, calls as `name(...)`). The graph projection's
+  `evaluate()` even names the gap: *"function calls need the full ExpressionParser, not wired to a graph traversal
+  row."* So this is **connecting two existing components**, not reimplementing Cypher's stdlib. The real work is a
+  small **Cypher-name → Stroom-name alias layer** (`toUpper`→`upperCase`, `size`→`stringLength`, …) over a
+  **curated allowlist** (most of the 232 — dashboard/annotation/link/current-user functions — are irrelevant or
+  unsafe for graph queries).
+- **Risk: Low.** Contained to the projection step; keep the allowlist to pure, deterministic functions so it
+  cannot destabilise the engine or the temporal model. `RETURN`-side first (biggest win, lowest risk); functions
+  in `WHERE` are a follow-on through a second evaluator.
+
+### 8. `UNWIND` (list → rows)
 
 ```cypher
 UNWIND ['Powell','Smith'] AS name
 MATCH (p:Person {surname: name}) RETURN p
 ```
 
-- **Utility: Medium.** `UNWIND` (list → rows) pairs with `collect()` and with `IN`, and a minimal function library
-  (`toUpper`, `toLower`, `coalesce`, `size`, `substring`, basic arithmetic in expressions) removes a lot of
-  small friction. Currently expressions have no arithmetic and no scalar functions beyond literal constructors.
-- **Difficulty: Medium.** `UNWIND` is a row generator (a new source in the planner); the function library is an
-  expression-evaluation extension. Both are self-contained but non-trivial.
-- **Risk: Low-Medium.** Keep the function set curated and pure (no I/O, deterministic) so it can't destabilise the
-  engine or the temporal model.
+- **Utility: Medium.** `UNWIND` (list → rows) pairs with `collect()` and with `IN`.
+- **Difficulty: Medium.** A row generator — a new source in the planner. Self-contained but non-trivial.
+- **Risk: Low-Medium.** Interacts with the frontier-seeding model; cleanest once multi-stage plumbing (item 6)
+  exists.
 
-### 8. `UNION` / `UNION ALL`
+### 9. `UNION` / `UNION ALL`
 
 ```cypher
 MATCH (p:Person {city:'Leeds'})  RETURN p.surname
@@ -216,7 +235,7 @@ MATCH (p:Person {city:'York'})   RETURN p.surname
   result-assembly concern, little storage/traversal impact.
 - **Risk: Low.** Well-contained once multi-clause plumbing (Tier 3) exists.
 
-### 9. Multi-type relationships (`-[:A|B]->`)
+### 10. Multi-type relationships (`-[:A|B]->`)
 
 ```cypher
 MATCH (p:Person)-[:PARTY_TO|WITNESSED]->(c:Crime) RETURN p, c
@@ -231,7 +250,7 @@ MATCH (p:Person)-[:PARTY_TO|WITNESSED]->(c:Crime) RETURN p, c
 
 ## Tier 5 — defer / hard-scope (high cost, or fundamentally at odds with the model)
 
-### 10. `shortestPath` / `allShortestPaths`
+### 11. `shortestPath` / `allShortestPaths`
 
 - **Utility: High but niche.** Genuinely valuable for investigative "how is A connected to B" questions, but a
   minority of workloads.
@@ -240,7 +259,7 @@ MATCH (p:Person)-[:PARTY_TO|WITNESSED]->(c:Crime) RETURN p, c
 - **Risk: High.** Unbounded search space; needs hard depth/breadth/time budgets to be safe on a large graph.
   Worth a dedicated feasibility spike, not a casual add.
 
-### 11. Unbounded variable-length (`-[:R*]->`)
+### 12. Unbounded variable-length (`-[:R*]->`)
 
 - **Utility: Low** (and dangerous). Bounded var-length already covers the safe, useful cases.
 - **Difficulty:** trivial to *parse*, but…
@@ -248,7 +267,7 @@ MATCH (p:Person)-[:PARTY_TO|WITNESSED]->(c:Crime) RETURN p, c
   parse-time error from day one. Removing that bound reintroduces unbounded fan-out. **Recommend keeping the bound
   mandatory**; if ever added, gate behind a hard cost budget, not a grammar relaxation.
 
-### 12. Writes (`CREATE`/`MERGE`/`SET`/`DELETE`) and `CALL` procedures
+### 13. Writes (`CREATE`/`MERGE`/`SET`/`DELETE`) and `CALL` procedures
 
 - **Utility: Low in Stroom's model.** The Graph DB is populated by the **mutation-XML ingest pipeline**, not by ad
   hoc query-language writes. A write path through Cypher would conflict with that ingest path (concurrency,
@@ -261,13 +280,16 @@ MATCH (p:Person)-[:PARTY_TO|WITNESSED]->(c:Crime) RETURN p, c
 
 ## Recommended sequence
 
-1. **Tier 1 (items 1–3)** as one small release — string predicates, `IN`/`IS NULL`, `collect()`/`count(DISTINCT)`.
-   Biggest expressiveness gain per unit of risk; all downstream of the engine.
-2. **Field-vs-field `WHERE` (4)** — small, removes a specific documented rejection.
-3. **`IS NULL` → `OPTIONAL MATCH` (2 → 5)** as a pair — outer joins are only useful with null-aware expressions.
+1. ~~**Tier 1 (items 1–3)** — string predicates, `IN`/`IS NULL`, `collect()`/`count(DISTINCT)`.~~ **Done** (Phases 0–3).
+2. ~~**Field-vs-field `WHERE` (4)**.~~ **Done** (Phase 5).
+3. ~~**`IS NULL` → `OPTIONAL MATCH` (2 → 5)** as a pair.~~ **Done** (Phases 2, 6) — `IS NULL` landed first, exactly as
+   this pairing recommended.
 4. **Single-`WITH` pipelining (6)** — unlocks aggregate-then-filter (`HAVING`) and multi-stage queries; the grammar
-   is already waiting for it.
-5. Everything below the line (7–12) on demand, each with its own design note. Hold the line on **no writes** and
+   is already waiting for it. *(next planned phase)*
+5. **Scalar & string functions (7)** — the best remaining payoff-per-effort, because it mostly *wires an engine
+   Stroom already has* (`coalesce`/`CASE` pair naturally with the now-shipped `OPTIONAL MATCH` nulls). Fits cleanly
+   after single-`WITH`.
+6. Everything below the line (8–13) on demand, each with its own design note. Hold the line on **no writes** and
    **no unbounded traversal**.
 
 Throughout, preserve the subset's defining contract: **out-of-subset input fails loud with a precise, positioned

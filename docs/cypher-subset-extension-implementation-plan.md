@@ -1587,6 +1587,142 @@ courtesy).
 
 ---
 
+## Phase 8 — Scalar & string functions in `RETURN` (wire the existing expression engine)
+
+**Phase goal:** a non-aggregated `RETURN` may apply scalar functions to matched values, e.g.
+`MATCH (p:Person) OPTIONAL MATCH (p)-[:PARTY_TO]->(c:Crime) RETURN toUpper(p.surname), coalesce(c.type, 'none')` -
+compiling and evaluating the functions over each traversal row, instead of today's "bare property/variable
+reference only" projection.
+
+**Phase gate:** `./gradlew :stroom-query:stroom-query-planner:test :stroom-graphdb:stroom-graphdb-impl:test` green.
+
+**The key insight — this wires an engine Stroom already has; it does not reimplement Cypher's stdlib.** Three facts
+make this a "connect two components" job, not a "write 40 functions" job:
+1. `stroom.query.language.functions` already contains a **232-class expression-function library** (`UpperCase`,
+   `LowerCase`, `Substring`, `Replace`, `StringLength`, `Concat`, `Case`, `Decode`, `Round`, `Ceiling`, `Floor`,
+   `ToString`, `IndexOf`, …) plus an `ExpressionParser` (`ExpressionParser.parse(ExpressionContext, FieldIndex,
+   String) -> Expression`).
+2. The Cypher compiler **already renders `RETURN` items into that engine's exact syntax** - property refs as
+   `${a.name}` and function calls as `name(...)` (see `CypherToLogicalPlan.renderExpression` /
+   `renderValueAsExpression`; the rendered text lands in `ProjectField.rawExpression()`).
+3. `GraphRowValueFunctionFactory` already bridges a traversal row (`Map<String,Val>`) to the `Val`/value-function
+   world for the `WHERE` path.
+The only thing missing is the wiring: `GraphTraversalEngine.evaluate(ProjectField, row)` (`~line 2114`, called per
+column from `finalizeRows` `~line 1739`) currently handles a bare `${ref}` and **throws** for anything else, with a
+message that names the fix exactly: *"literals, aggregates and function calls need the full ExpressionParser, not
+wired to a graph traversal row."*
+
+**Scope for this phase (fail-loud on everything outside it):**
+- Functions in a **non-aggregated `RETURN`** only. Functions combined with aggregation (over a group key, or inside
+  an aggregate argument) is a follow-on - reject at compile with a clear message.
+- Functions in **`WHERE`** are a follow-on (the `WHERE` path is a different evaluator - `ExpressionPredicateFactory`,
+  not the projection `evaluate()`); reject a function in `WHERE` for now.
+- A **curated allowlist** of pure, deterministic functions only - the 232 include dashboard/annotation/link/
+  current-user/I-O functions that are irrelevant or unsafe for a graph query.
+
+---
+
+### Task 8.1 — Design spike: evaluate a `ProjectField` expression over a graph row
+
+**Goal.** Establish the exact mechanism by which a `ProjectField.rawExpression()` (e.g. `upperCase(${a.name})`)
+compiles once to an `Expression` and evaluates to a `Val` for a given traversal row - reusing the same
+`ExpressionParser`/`Generator` machinery the relational (StroomQL) result path already uses, not a bespoke evaluator.
+
+**Depends on.** Nothing (read-only investigation + a throwaway proof).
+
+**Files (read).**
+- `stroom-query/stroom-query-language/src/main/java/stroom/query/language/functions/ExpressionParser.java`
+  (`parse(ExpressionContext, FieldIndex, String)`), `Expression`, `Generator`, `FieldIndex`.
+- The relational consumer that compiles `ProjectField`/column expressions and feeds row values per row (find via
+  `CompiledField`/`CompiledColumn`/coprocessor usage of `ExpressionParser`) - copy its pattern.
+- `stroom-graphdb/.../GraphTraversalEngine.java` (`evaluate`, `finalizeRows`, `rowAccessors`),
+  `GraphRowValueFunctionFactory.java`.
+
+**Contract.** Produce a written note (or a spike test) answering: (a) how to build the `FieldIndex` for one
+`ProjectField` from the `${...}` references its expression names; (b) how to supply that field's `Val` values per
+row (from the `Map<String,Val>` traversal row) into the compiled `Expression`; (c) where the compiled `Expression`
+is cached (compile once per `ProjectField`, evaluate per row - not per row re-parse); (d) the `ExpressionContext`/
+`DateTimeSettings` the parser needs. **Done-when** the mechanism is written down and a throwaway test evaluates
+`upperCase(${a.name})` to a `ValString` over a hand-built row.
+
+**Verify.** Spike only; no production code merged from this task.
+
+---
+
+### Task 8.2 — Compiler: Cypher-name → Stroom-name alias layer + allowlist
+
+**Goal.** Map Cypher function names to their Stroom equivalents and reject anything off the curated allowlist, at
+compile time with a positioned error.
+
+**Depends on.** Task 8.1.
+
+**Files.**
+- Edit: `CypherToLogicalPlan.java` (`renderValueAsExpression`/`renderExpression`'s `AstFunctionValue` branch - the
+  site that renders `name(...)`).
+- New: a small alias/allowlist table (e.g. `CypherFunctions` in `stroom.query.planner.cypher`).
+- Edit (tests): `TestCypherToLogicalPlan.java`.
+
+**Contract.**
+- A curated map: `toUpper`→`upperCase`, `toLower`→`lowerCase`, `size`→`stringLength` (on a string), `substring`,
+  `replace`, `trim`, `split`, `toString`, `coalesce`→(Stroom's null-coalescing equivalent), `CASE`→`Decode`/`Case`,
+  `abs`/`round`/`floor`/`ceil` - confirm each target name against `stroom.query.language.functions` before adding it
+  (names are contracts; e.g. `UpperCase`/`Substring`/`Replace`/`StringLength`/`Round`/`Ceiling`/`Floor` exist).
+- Render the mapped Stroom name into the `${...}`-style expression text.
+- **Reject** an unmapped/unknown function name and any name not on the allowlist with
+  `"not supported in this version: function '<name>' is not available in Cypher RETURN (supported: <list>)"` and the
+  call's AST position. Keep the existing temporal-literal constructors (`datetime`/`duration`) working in the
+  temporal-clause context unchanged (they are not projection functions).
+
+**Done-when.** `RETURN toUpper(a.name)` compiles to a `ProjectField` whose `rawExpression` names the Stroom function;
+an unknown function fails loud. **Verify.** `./gradlew :stroom-query:stroom-query-planner:test`.
+
+---
+
+### Task 8.3 — Engine: evaluate a compiled expression per row
+
+**Goal.** `GraphTraversalEngine.evaluate` compiles a non-bare-ref `ProjectField.rawExpression` via `ExpressionParser`
+(once) and evaluates it per row, replacing today's `UnsupportedOperationException`. The existing bare-`${ref}` fast
+path stays (no per-row parse for the common case).
+
+**Depends on.** Tasks 8.1, 8.2.
+
+**Files.**
+- Edit: `stroom-graphdb/.../GraphTraversalEngine.java` (`evaluate`; cache the compiled `Expression` per
+  `ProjectField`, e.g. built once when the `PlanShape` is unwrapped).
+- Edit (tests): `TestGraphTraversalEngine.java`.
+
+**Contract.**
+- Keep the current behaviour for a bare `${var.prop}` / `${var}` reference exactly (fast path; the bare-variable
+  rejection and absent-property→`ValNull` semantics are unchanged).
+- For any other expression: evaluate the cached `Expression` over the row's `Val`s (per Task 8.1's mechanism). A
+  reference to an absent property resolves to `ValNull` (so functions compose with `OPTIONAL MATCH` nulls -
+  `coalesce(c.type,'none')` yields `'none'` for an unmatched `c`).
+- Errors in evaluation surface as `ValErr` (the engine's existing error-value convention), not a thrown exception
+  that aborts the whole query.
+
+**Done-when.** The phase-goal query evaluates its functions correctly, including `coalesce` over an unmatched
+`OPTIONAL MATCH` variable. **Verify.** `./gradlew :stroom-graphdb:stroom-graphdb-impl:test`.
+
+---
+
+### Task 8.4 — Test suite for Phase 8
+
+**Goal.** Cover the alias layer, the allowlist rejection, and end-to-end evaluation of the priority functions.
+
+**Depends on.** Tasks 8.2, 8.3.
+
+**Files.** Edit: `TestCypherToLogicalPlan.java`, `TestGraphTraversalEngine.java`, `TestGraphSearchProvider.java`.
+
+**Contract — matrix:** `toUpper`/`toLower`/`substring`/`replace`/`toString` over a property; `coalesce`/`CASE` over a
+present value and over an absent/`OPTIONAL MATCH`-null value; an unknown function → `CypherCompileException`; a
+function in `WHERE` → rejected (follow-on); a function combined with aggregation → rejected (follow-on); provider
+round-trip for one function query.
+
+**Done-when.** All green. **Verify.** `./gradlew :stroom-query:stroom-query-planner:test
+:stroom-graphdb:stroom-graphdb-impl:test`.
+
+---
+
 ## 3. Documentation & user-facing updates
 
 - Update [`cypher-language-feature-roadmap.md`](cypher-language-feature-roadmap.md)'s "What the subset covers today"
@@ -1629,7 +1765,10 @@ One PR per phase, in the order above (this **is** the dependency order, not mere
 6. **Phase 6** (`OPTIONAL MATCH`) — **hard dependency on Phase 2**; do not merge before it.
 7. **Phase 7** (multi-stage `WITH`) — depends on Phase 3's `CypherAggregation`/`buildAggregation` reuse (Task 7.2);
    softly benefits from every other phase being stable first, since its regression surface (Task 7.4) covers all of
-   them. Merge last.
+   them.
+8. **Phase 8** (scalar functions in `RETURN`) — independent of Phase 7; can merge any time after Phase 1. `coalesce`/
+   `CASE` are most useful once Phase 6 (`OPTIONAL MATCH`, merged) is present, since that is what produces the nulls
+   they handle. Start with a design spike (Task 8.1) before touching production code.
 
 Each phase's own commit sequence (grammar → AST → compiler → engine → tests, per its tasks) mirrors the
 analytic-functions plan's own §4 convention: land the null-safe/no-op default first within a phase wherever a task
@@ -1662,8 +1801,14 @@ utility/difficulty/risk rationale behind each:
 
 - **Writes** (`CREATE`/`MERGE`/`SET`/`DELETE`), **`CALL`/procedures** — conflicts with the mutation-XML ingest
   pipeline's ownership of writes; deliberately out of scope, not merely deferred.
-- **`UNWIND`** + a scalar/list function library (`toUpper`, `coalesce`, `size`, arithmetic) — Tier 4, opportunistic;
-  pairs naturally with Phase 4's `collect()`/Phase 2's `IN` once built, but not part of this plan.
+- **`UNWIND`** (list → rows) — Tier 4, opportunistic; pairs naturally with Phase 4's `collect()`/Phase 2's `IN`, but
+  not part of this plan. (Scalar/string functions, formerly bundled with `UNWIND` here, are now **Phase 8** — the
+  function *library* already exists in Stroom and only needs wiring.)
+- **Scalar functions in `WHERE`, and functions combined with aggregation** — Phase 8 wires functions into the
+  non-aggregated `RETURN` projection only; a function in a `WHERE` (a different evaluator) or over a group key / inside
+  an aggregate argument is a follow-on, rejected with a clear message by Phase 8.
+- **Non-allowlisted functions** — Phase 8 exposes a curated allowlist of pure, deterministic functions; the rest of
+  Stroom's 232-function library (dashboard/annotation/link/current-user/I-O functions) stays unavailable in Cypher.
 - **`UNION`/`UNION ALL`** — Tier 4; column-compatibility + concatenation, well-contained once Phase 7's multi-clause
   plumbing exists, but not attempted here.
 - **Multi-type relationships** (`-[:A|B]->`) — Tier 4; the adjacency stores are keyed per edge type (design doc
