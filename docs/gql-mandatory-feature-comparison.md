@@ -1,6 +1,6 @@
 # Stroom graph query engine vs. the GQL mandatory feature set
 
-**Date:** 2026-07-26 · **Branch:** `sw-query-optimiser-graph-backend` · **Commit:** `065c545d1e`
+**Date:** 2026-07-26 · **Branch:** `sw-query-optimiser-graph-backend` · **Commit:** `1b9042b1f7`
 **Standard compared against:** ISO/IEC 39075:2024 (GQL — Graph Query Language)
 
 ---
@@ -171,6 +171,60 @@ the standards-completeness tail.
 
 ---
 
+## Worked example: the Neo4j "Movie Graph" tutorial
+
+As a concrete check on the analysis above, every query in Neo4j's own
+["Get started with Cypher"](https://neo4j.com/docs/getting-started/cypher/intro-tutorial/)
+tutorial was tried against Stroom's grammar/compiler/engine. The tutorial builds
+a small movies-and-actors graph, then walks through progressively richer
+`MATCH`/`RETURN` queries. It's a good stress test precisely because it wasn't
+written with Stroom in mind.
+
+### Data loading — not possible (by design)
+The whole "Create the Movie Graph" section (`CREATE CONSTRAINT ... IS UNIQUE`,
+`MERGE (x:Label {...}) ON CREATE SET ...`, relationship writes) is out of scope:
+no `MERGE`/`CREATE`/`SET`/`DELETE` exist in the grammar (read-only engine), and
+`CREATE CONSTRAINT` is schema/DDL for a store that is deliberately schemaless.
+This is the same "write half is out of scope" conclusion as the rest of this
+document, just concretely instantiated.
+
+### Query section — verdict per query
+
+| Query (paraphrased) | Verdict | Why |
+|---|---|---|
+| `MATCH (tom:Person {name:"Tom Hanks"}) RETURN tom` | ⚠️ Partial | `MATCH` fine; `RETURN tom` (a bare node) isn't — no single-value representation for "a whole matched node" yet. `RETURN tom.name` works. |
+| `MATCH (cloudAtlas:Movie) WHERE cloudAtlas.title = "Cloud Atlas" RETURN cloudAtlas` | ⚠️ Partial | Label-only scan + `WHERE` works; same bare-`RETURN` issue. |
+| `MATCH (p:Person) RETURN p.name LIMIT 10` | ✅ Works as-is | |
+| `MATCH (nineties:Movie) WHERE nineties.released > 1990 AND nineties.released < 2000 RETURN nineties.title` | ✅ Works as-is | |
+| `MATCH (tom:Person {name:"Tom Hanks"})-[r]->(tomHanksMovies:Movie) RETURN tom,r,tomHanksMovies` | ❌ Not possible | `-[r]->` has **no relationship type** — Stroom's edges are stored per-type-keyed, so an untyped edge pattern has no access path (throws at execution). Bare-variable `RETURN` compounds it. |
+| `MATCH (cloudAtlas:Movie {title:"Cloud Atlas"})<-[:DIRECTED]-(directors) RETURN directors.name` | ✅ Works as-is | Typed edge, incoming direction, unlabelled target, property-access `RETURN` — squarely in scope. |
+| `MATCH (tom)-[a:ACTED_IN]->(m:Movie)<-[b:ACTED_IN]-(coActors) RETURN tom, m, a, b, coActors` | ⚠️ Partial | The two-hop typed-edge `MATCH` works; only the all-bare-variable `RETURN` fails. `RETURN tom.name, m.title, coActors.name` would work today. |
+| `MATCH (people:Person)-[relatedTo]-(:Movie {title:"Cloud Atlas"}) RETURN people.name, type(relatedTo), relatedTo` | ❌ Not possible | Untyped **and** undirected edge — same per-type-store limitation, fails before `RETURN` is reached. |
+| `MATCH (bacon:Person {name:"Kevin Bacon"})-[*1..3]-(a:Person) RETURN DISTINCT bacon, a` | ❌ Not possible | Untyped variable-length hop — same limitation applies to `VarLengthExpand` too; plus bare-variable `RETURN`. |
+| `MATCH p = (bacon)-[*1..3]-(a:Person) RETURN DISTINCT bacon, a, p` | ❌ Not possible | No `p = pattern` path-variable syntax exists in the grammar at all, and no path value type to return. |
+| `MATCH p = shortestPath((bacon)-[*]-(meg)) RETURN p` | ❌ Not possible | `shortestPath()` isn't implemented — no path-finding algorithms. |
+| `MATCH (n) DETACH DELETE n` | ❌ Not possible | No `DELETE`; read-only engine. |
+| `MATCH (n) RETURN count(*)` | ❌ Not possible | A **fully unlabelled** `MATCH (n)` is explicitly rejected ("requires at least one label") — label-only scans work (`MATCH (n:Person)`), a zero-label whole-store scan doesn't. |
+
+### The pattern underneath
+Three limitations account for nearly every "not possible" above, and none of
+them are in the query-side gap list (they're structural, not missing features
+to be added incrementally):
+1. **Read-only** — no write/DDL surface (kills the load section + cleanup).
+2. **No untyped-edge or path-value support** — edges are stored per-type, so
+   `-[r]->` / `-->` / `[*]` with no relationship type has no access path, and
+   there is no path (`p = ...`) value or `shortestPath()`.
+3. **No "whole node/relationship" return value** — every `RETURN` item must
+   name a property (`x.prop`) or a scalar function; a bare `RETURN tom` isn't
+   representable yet.
+
+Every query that avoids those three — anchored/labelled property lookups,
+typed fixed-length hops in any direction, `WHERE`, aggregates, `LIMIT` — works
+as demonstrated, including the "Directors of Cloud Atlas" query completely
+unchanged.
+
+---
+
 ## Honest verdict
 
 Stroom's graph engine is best understood as **"a capable read/query slice of a
@@ -193,8 +247,9 @@ tabular form.
 - [GQL Conformance — Ultipa documentation (mandatory-feature-by-subclause summary)](https://www.ultipa.com/docs/gql/gql-conformance)
 - [Spanner Graph and ISO standards — Google Cloud (mandatory minimal data-type set)](https://docs.cloud.google.com/spanner/docs/graph/iso-standards)
 - [gqlstandards.org — GQL standard overview](https://www.gqlstandards.org/)
+- [Get started with Cypher — Neo4j intro tutorial (source of the worked example above)](https://neo4j.com/docs/getting-started/cypher/intro-tutorial/)
 
 *Stroom-side capability claims in this document are drawn from the branch's Cypher
 grammar (`Cypher.g4`), the compiler (`CypherToLogicalPlan`) and the graph engine
-(`GraphTraversalEngine`) as of commit `0c44648260`; see also
+(`GraphTraversalEngine`) as of commit `1b9042b1f7`; see also
 `docs/cypher-language-feature-roadmap.md`.*
