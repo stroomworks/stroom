@@ -1,6 +1,6 @@
 # Stroom graph query engine vs. the GQL mandatory feature set
 
-**Date:** 2026-07-26 · **Branch:** `sw-query-optimiser-graph-backend` · **Commit:** `1b9042b1f7`
+**Date:** 2026-07-26 · **Branch:** `sw-query-optimiser-graph-backend` · **Commit:** `2a7616f1b6`
 **Standard compared against:** ISO/IEC 39075:2024 (GQL — Graph Query Language)
 
 ---
@@ -169,6 +169,12 @@ now implemented — they previously headed this list.
 None of these block the common analytic queries the engine is built for; they are
 the standards-completeness tail.
 
+*(This list predates the broader dataset survey below, which surfaces several
+additional — and in practice more frequently used — gaps such as procedure
+calls and path values; see
+["Missing features observed in real-world Cypher content"](#missing-features-observed-in-real-world-cypher-content)
+for the fuller, evidence-based picture.)*
+
 ---
 
 ## Worked example: the Neo4j "Movie Graph" tutorial
@@ -225,6 +231,103 @@ unchanged.
 
 ---
 
+## Broader survey: Neo4j's example-graph catalogue
+
+One tutorial is a thin slice. Neo4j publishes a
+[catalogue of ~17 example datasets](https://neo4j.com/docs/getting-started/appendix/example-data/)
+used across its own guides, sandboxes and documentation — a much broader sample
+of "what real Cypher looks like in the wild." Every dataset with a genuine,
+independently-fetchable source (a linked GitHub repository) was pulled and read
+in full: the import script, the README, and every "browser guide"/`.adoc`
+walkthrough document, extracting every distinct Cypher query shown.
+
+**Methodology and coverage.** 11 of the catalogue's datasets link to a GitHub
+repository and were fully reviewed this way: **Northwind**, **StackOverflow**,
+**Movie recommendations**, **Neoflix**, **Crime investigation (POLE)**,
+**FinCEN**, **Panama/Paradise Papers**, **Game of Thrones**, **Twitter**,
+**London public transportation**, and **IT management (network-management)**.
+The remaining 6 — **Healthcare analysis**, **BBC recipes**, **UK companies**,
+**Airbnb listings**, **Football transfers**, **WordNet** — are reachable only
+via a live demo-server bolt connection or a Neo4j Browser `:guide` command, not
+a fetchable page, so they could not be independently verified and are not
+covered below (no claims are made about them one way or the other). ("Movies"
+on the catalogue page links, apparently by a documentation error, to the
+`recommendations` repo rather than a dedicated movies repo; the actual Movies
+dataset is the one already covered in the worked example above.)
+
+### Universal finding: none of these are loadable
+
+Every one of the 11 reviewed datasets is distributed as either a **write-Cypher
+script** (`MERGE`/`CREATE ... SET`, sometimes generated procedurally with
+`UNWIND`/`FOREACH`/`CASE` as in `network-management`'s 8,000-machine synthetic
+datacenter), a **`LOAD CSV` import** (Northwind, the CSV variant of FinCEN,
+London transport), an **APOC JSON/REST import** (`apoc.load.json`/
+`apoc.load.jsonArray`, used by StackOverflow, Game of Thrones, and FinCEN's JSON
+variant), or a **binary Neo4j dump file** loaded via `neo4j-admin database load`
+(the fallback/primary path for nearly all of them). None of these mechanisms
+runs on a read-only engine — this simply re-confirms, at a larger sample size,
+that Stroom's Cypher layer cannot load *any* of these datasets via their
+published scripts; graph data has to arrive through Stroom's own ingest
+pipeline instead.
+
+### What each dataset's queries actually exercise
+
+| Dataset | Notable query-language features demonstrated |
+|---|---|
+| **Northwind** | Aggregation (`SUM`, `collect(distinct …)`), a variable-length category hierarchy (`[:PARENT*0..]`), a named path variable (`path=(...)`). |
+| **StackOverflow** | `allShortestPaths()`/`shortestPath()` over an untyped `[*]` wildcard, heavy APOC use (`apoc.load.json`, `apoc.date.format`, `apoc.create.vRelationship`), native procedure `db.schema.visualization`, negated-pattern predicates (`NOT (q)<-[:ANSWERED]-()`), `UNWIND`. |
+| **Movie recommendations** | Extensive list comprehensions (Jaccard similarity), `UNWIND`, `reduce()`, `count{ }` subqueries, and (unrendered but authored) a full GDS pipeline — `gds.graph.project` → `gds.fastRP.mutate` → `gds.knn.write` — plus live `gds.similarity.cosine`/`gds.similarity.pearson`. |
+| **Neoflix** | A thin app layer over the recommendations dataset; only plain CRUD (`MATCH`/`MERGE`/`DELETE`) and map-projection syntax (`m {.*, favorite: …}`) — no algorithms of its own. |
+| **Crime investigation (POLE)** | The heaviest user of path features: `allshortestpaths()`/`shortestpath()`, multi-type variable-length edges (`[:KNOWS\|KNOWS_LW\|KNOWS_SN\|FAMILY_REL\|KNOWS_PHONE*..3]`), ~9 path variables, `WHERE NOT (pattern)` idioms, spatial `point()`/`point.distance()`, and a full GDS pipeline (`gds.graph.project`, `gds.triangleCount.stream`, `gds.betweenness.stream`, `gds.alpha.graph.project`). |
+| **FinCEN** | `LOAD CSV`/`apoc.load.json` import, `OPTIONAL MATCH`, and (notebook-only) GDS **PageRank** and **Louvain** community detection over a Spark-loaded weighted graph. |
+| **Panama/Paradise Papers** | The heaviest user of path variables (~15+ occurrences) and multi-type variable-length edges (`[:OFFICER_OF\|INTERMEDIARY_OF\|REGISTERED_ADDRESS*..10]`); a full **native full-text index** (`db.index.fulltext.createNodeIndex`/`queryNodes`, incl. fuzzy/boolean Lucene syntax) combined with graph pattern matching; `USING JOIN ON` planner hints; list comprehensions and list slicing; GDS PageRank. |
+| **Game of Thrones** | APOC-driven JSON import (`apoc.load.jsonArray`, `apoc.map.*`, `apoc.convert.toMap`), `CASE` expressions, list comprehensions, `UNWIND`, one variable-length path with a path variable. No centrality/community-detection queries (those live in third-party repos this one merely links to). |
+| **Twitter** | Notably plain — fixed-length typed-edge chains, aggregation, negated-pattern recommendation logic; no APOC, no GDS, no full-text, no `shortestPath`, no path variables, despite being a social graph. |
+| **London public transportation** | Unfinished/WIP — `LOAD CSV` + `apoc.create.relationship` (to give each edge a *data-driven* relationship-type name) is as far as it goes; no route-finding query exists despite being a transit network. |
+| **IT management (network-management)** | The clearest "impact analysis" narrative: a resilience story (cut a cable → `allShortestPaths` route count drops → add redundancy → recovers) built entirely on **native** `allShortestPaths()`/variable-length paths, no GDS; also `OPTIONAL MATCH`, list comprehensions, `CASE`, map-literal event construction, and one APOC call (`apoc.date.format`). |
+
+### Missing features observed in real-world Cypher content
+
+Consolidating every gap actually hit across all 11 datasets (not just guessed
+at) gives a much more complete and better-prioritised picture than the
+single-tutorial worked example above. Two tiers, matching the document's
+existing "out of scope by design" vs. "could be added" framing:
+
+**Tier 1 — structural (procedure/algorithm/index ecosystem; not a short-term roadmap item, closer in kind to the write/catalog/session gaps already out of scope)**
+
+| Feature | Stroom status | Evidence (datasets) |
+|---|---|---|
+| **Any procedure call (`CALL ...`)** | ❌ `CALL` does not exist anywhere in the grammar — confirmed by inspection, not just absence of examples. This single gap blocks APOC, the Graph Data Science library, *and* Neo4j's own built-in procedures (`db.schema.visualization`, `db.index.fulltext.*`) all at once — it is the single most pervasive missing feature in this survey. | 8 of 11 datasets use `CALL` for *something*: StackOverflow, FinCEN, Game of Thrones, Panama Papers, POLE, London transport, network-management, recommendations (all APOC and/or GDS); StackOverflow, Panama Papers, and network-management also call native (non-APOC) procedures. Only Northwind, Neoflix, and Twitter use no procedure calls at all. |
+| **Graph algorithms** (PageRank, Louvain, betweenness centrality, triangle count, kNN/FastRP embeddings, similarity functions) | ❌ No algorithm library of any kind — a consequence of no `CALL`, but even if `CALL` existed, none of these algorithms are implemented. | FinCEN (PageRank, Louvain), POLE (triangle count, betweenness), recommendations (kNN, FastRP, cosine/Pearson similarity), Panama Papers (PageRank). |
+| **`shortestPath()` / `allShortestPaths()`** | ❌ Not implemented (this is core openCypher, not GDS) — no path-finding algorithm exists in the engine. | StackOverflow, POLE, Panama Papers, network-management (network-management's entire "impact analysis" story depends on it, run 4 times). |
+| **Full-text search** (`db.index.fulltext.createNodeIndex`/`queryNodes`) | ❌ No index-management DDL and no full-text query syntax exposed through Cypher. | Panama Papers (extensively — simple, field-scoped, fuzzy, and boolean Lucene-syntax searches). |
+| **Vector indexes / embedding search** | ❌ No vector index concept. *(Weak evidence of need: the recommendations dataset ships pre-computed embeddings, but no example query in any reviewed guide actually queries them via a vector index — this is a shipped-but-unused capability even in Neo4j's own materials.)* | recommendations (data only, no query). |
+| **Spatial types/functions** (`point()`, `point.distance()`) | ❌ No point/spatial value type. | POLE (proximity search around a location). |
+| **`LOAD CSV` / write Cypher / `CREATE CONSTRAINT`+index DDL** | ❌ Out of scope by design (read-only engine, schemaless store) — already documented above; reinforced by every single dataset in this survey. | All 11. |
+
+**Tier 2 — query-language surface gaps (pure read-side Cypher features; could in principle be added to the subset)**
+
+| Feature | Stroom status | Evidence (datasets) |
+|---|---|---|
+| **Path variables** (`MATCH p = (a)-[]->(b) RETURN p`) | ❌ No `p = pattern` syntax in the grammar at all, and no path value type to return — confirmed by inspection. This is arguably the single most common idiom across real Neo4j Browser guides, used purely to visualize "show me this relationship as a graph." | Northwind, POLE (~9 occurrences), Panama Papers (~15+, nearly every sample query), Game of Thrones, network-management (~6). |
+| **Multi-type edge patterns** (`-[:TYPE_A\|TYPE_B\|TYPE_C]->`) | ❌ The grammar's `edgeDetail` rule allows only a single `edgeType=NAME` after the colon — no `\|`-alternation exists at all. Distinct from (and in addition to) the already-documented "fully untyped edge" gap. | POLE (5-type social-network traversal), Panama Papers (3-type ownership-chain traversal), recommendations (3-type similarity traversal), network-management (3-type infrastructure traversal). |
+| **Untyped / wildcard-type edges** (`-->`, `-[r]-`, `[*]`) | ❌ Already documented — edges are stored per-type-keyed, so an untyped pattern has no access path. | Movie tutorial, StackOverflow (`allShortestPaths` over `[*]`), FinCEN (`(f)--(e)`). |
+| **Whole node/relationship values** (`RETURN n`, `RETURN r`, `RETURN *`) | ❌ Already documented (no single-value representation for a matched node/edge). Newly confirmed: `RETURN *` itself has no grammar production — only an explicit item list or `RETURN GRAPH`. | Used constantly for graph-visualization results in literally every dataset surveyed. |
+| **`UNWIND` + true list values** | ❌ Already the documented "last remaining query-side gap"; this survey shows it is also one of the most-used. `collect()` still returns a delimited string, not a real list. | StackOverflow (import), POLE (double-`UNWIND` idiom), recommendations (Pearson similarity), Game of Thrones (pagination), network-management (event ingestion via `UNWIND $events`). |
+| **List comprehensions** (`[x IN list \| expr]`, `[x IN list WHERE cond]`) | ❌ No list value type at all (same root cause as `UNWIND`). | recommendations (Jaccard similarity, extensively), Panama Papers, Game of Thrones, network-management. |
+| **Map-literal expressions as a value** (`RETURN {a:1, b:2}`, map projections `m {.*, x: y}`) | ❌ No map-literal expression grammar — property maps only exist inside a `MATCH` node/edge pattern, never as a general `RETURN`-able value. | network-management (event-simulation query), Neoflix (map-projection app-layer style). |
+| **Chained / multi-hop `OPTIONAL MATCH`** | ⚠️ Partial — Stroom's `OPTIONAL MATCH` is deliberately v1-restricted to exactly *one* optional hop extending the prior mandatory `MATCH`'s terminal variable, with no `WHERE` of its own. Real guides sometimes chain a second `OPTIONAL MATCH` off the first's result. | network-management (OS-version-chain query: `OPTIONAL MATCH (v)<-[:PREVIOUS]-(vnext)` after an earlier `OPTIONAL MATCH`), FinCEN, recommendations. |
+| **`USING JOIN ON` planner hints** | ❌ No planner-hint syntax of any kind. | Panama Papers ("joint involvement" queries). |
+| **Restated label/property on an already-bound `EXISTS` anchor** | ⚠️ Partial — a nuance on Stroom's own `EXISTS` support (added this session): the anchor must be a *completely bare* variable, since it's required to already be bound by the outer `MATCH`. Real Cypher commonly (redundantly but validly) restates the label anyway, e.g. `WHERE NOT (p:Person)-[:PARTY_TO]->(:Crime)` where `p` was already matched as `:Person`. Dropping the restated label (`WHERE NOT (p)-[:PARTY_TO]->(:Crime)`) makes the same query work today. | POLE's "vulnerable persons" / "dangerous friends" queries. |
+
+None of Tier 2 is a small effort — several (path values, list values) are the
+same underlying value-model gap already flagged as cross-cutting — but they
+are the concrete shape of "what would need to change" if Stroom's Cypher subset
+were ever pushed further toward general-purpose graph exploration rather than
+its current analytic-query focus.
+
+---
+
 ## Honest verdict
 
 Stroom's graph engine is best understood as **"a capable read/query slice of a
@@ -235,8 +338,17 @@ queries?* — it covers the **majority of GQL's mandatory querying capability**:
 pattern matching, optional matching, rich filtering, projection with distinct/
 alias, ordering and paging, the full mandatory aggregate set, arithmetic,
 `CASE`, label-only scans, `UNION`/`UNION ALL` and `EXISTS` subqueries. The
-notable query-side omissions are real list values/`UNWIND` and the `SELECT`
-tabular form.
+broader dataset survey above sharpens where the boundary actually sits in
+practice: the single biggest gap by far is that **`CALL` doesn't exist** —
+Stroom has no procedure ecosystem at all, so APOC, the Graph Data Science
+library, and Neo4j's own built-in procedures are equally out of reach, which in
+turn is why algorithmic staples like `shortestPath()`, PageRank, and full-text
+search are all absent too. On the pure query-language surface, path values
+(`p = pattern`), multi-type edge patterns (`[:A|B|C]`), returning a whole
+node/relationship, and real list values/`UNWIND` are the gaps that would
+actually get hit first by someone porting real-world Cypher content in; the
+`SELECT` tabular form, by contrast, is rarely used in practice (none of the
+12 real-world datasets surveyed used it).
 
 ---
 
@@ -248,8 +360,9 @@ tabular form.
 - [Spanner Graph and ISO standards — Google Cloud (mandatory minimal data-type set)](https://docs.cloud.google.com/spanner/docs/graph/iso-standards)
 - [gqlstandards.org — GQL standard overview](https://www.gqlstandards.org/)
 - [Get started with Cypher — Neo4j intro tutorial (source of the worked example above)](https://neo4j.com/docs/getting-started/cypher/intro-tutorial/)
+- [Example datasets — Neo4j Getting Started (source of the broader survey above)](https://neo4j.com/docs/getting-started/appendix/example-data/), and the 11 GitHub repositories it links to that were reviewed: [Northwind](https://github.com/neo4j-graph-examples/northwind), [StackOverflow](https://github.com/neo4j-graph-examples/stackoverflow), [Movie recommendations](https://github.com/neo4j-graph-examples/recommendations), [Neoflix](https://github.com/adam-cowley/neoflix), [Crime investigation (POLE)](https://github.com/neo4j-graph-examples/pole), [FinCEN](https://github.com/jexp/fincen), [Panama/Paradise Papers](https://github.com/neo4j-graph-examples/icij-paradise-papers), [Game of Thrones](https://github.com/neo4j-examples/game-of-thrones), [Twitter](https://github.com/neo4j-graph-examples/twitter-v2), [London public transportation](https://github.com/neo4j-partners/neo4j-transport-for-london), [IT management](https://github.com/neo4j-graph-examples/network-management)
 
 *Stroom-side capability claims in this document are drawn from the branch's Cypher
 grammar (`Cypher.g4`), the compiler (`CypherToLogicalPlan`) and the graph engine
-(`GraphTraversalEngine`) as of commit `1b9042b1f7`; see also
+(`GraphTraversalEngine`) as of commit `2a7616f1b6`; see also
 `docs/cypher-language-feature-roadmap.md`.*
