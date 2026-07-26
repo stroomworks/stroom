@@ -338,6 +338,8 @@ public final class AstCypherBuilder {
     private AstBooleanExpr buildPrimary(final PrimaryContext ctx) {
         if (ctx.expr() != null) {
             return buildOrExpr(ctx.expr().orExpr());
+        } else if (ctx.existsPredicate() != null) {
+            return new AstExistsPredicate(buildPattern(ctx.existsPredicate().pattern()), position(ctx));
         } else if (ctx.inPredicate() != null) {
             return buildInPredicate(ctx.inPredicate());
         } else if (ctx.isNullPredicate() != null) {

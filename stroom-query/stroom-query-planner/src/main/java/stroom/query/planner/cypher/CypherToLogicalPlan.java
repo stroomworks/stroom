@@ -40,6 +40,7 @@ import stroom.query.grammar.ast.cypher.AstCypherQuery;
 import stroom.query.grammar.ast.cypher.AstCypherStatement;
 import stroom.query.grammar.ast.cypher.AstDiff;
 import stroom.query.grammar.ast.cypher.AstDiffAccessorExpr;
+import stroom.query.grammar.ast.cypher.AstExistsPredicate;
 import stroom.query.grammar.ast.cypher.AstDiffSide;
 import stroom.query.grammar.ast.cypher.AstEdgeDirection;
 import stroom.query.grammar.ast.cypher.AstEdgePattern;
@@ -298,6 +299,7 @@ public final class CypherToLogicalPlan {
         }
 
         List<FieldComparison> fieldComparisons = List.of();
+        List<CypherExists> existsPredicates = List.of();
         if (match.where() != null) {
             final WhereCompilation where = compileWhere(match.where().expr());
             if (diffContext != null && !where.fieldComparisons().isEmpty()) {
@@ -305,7 +307,13 @@ public final class CypherToLogicalPlan {
                         "not supported in this version: comparing two fields (e.g. a.x > b.y) in a DIFF query's "
                         + "WHERE", match.where().position());
             }
+            if (diffContext != null && !where.existsPredicates().isEmpty()) {
+                throw new CypherCompileException(
+                        "not supported in this version: EXISTS { ... } in a DIFF query's WHERE",
+                        match.where().position());
+            }
             fieldComparisons = where.fieldComparisons();
+            existsPredicates = where.existsPredicates();
             if (where.literalPredicate() != null) {
                 plan = new Filter(plan, where.literalPredicate(), null, match.where().position());
             }
@@ -333,7 +341,7 @@ public final class CypherToLogicalPlan {
 
         return new CompiledCypherPlan(
                 plan, temporalContext, query.returnClause().distinct(), aggregation, diffContext, false,
-                fieldComparisons, null);
+                fieldComparisons, existsPredicates, null);
     }
 
     // ------------------------------------------------------------------------------------------------------
@@ -387,9 +395,11 @@ public final class CypherToLogicalPlan {
         TemporalContext temporalContext = match.temporal() == null ? null : resolveTemporal(match.temporal());
 
         List<FieldComparison> fieldComparisons = List.of();
+        List<CypherExists> existsPredicates = List.of();
         if (match.where() != null) {
             final WhereCompilation where = compileWhere(match.where().expr());
             fieldComparisons = where.fieldComparisons();
+            existsPredicates = where.existsPredicates();
             if (where.literalPredicate() != null) {
                 plan = new Filter(plan, where.literalPredicate(), null, match.where().position());
             }
@@ -417,7 +427,8 @@ public final class CypherToLogicalPlan {
 
         final WithStage secondStage = new WithStage(stageColumns, having, finalFields, finalReturn.distinct());
         return new CompiledCypherPlan(
-                plan, temporalContext, false, withAggregation, null, false, fieldComparisons, secondStage);
+                plan, temporalContext, false, withAggregation, null, false, fieldComparisons, existsPredicates,
+                secondStage);
     }
 
     /** Validates that every reference in a {@code HAVING} boolean tree names a {@code WITH} column. */
@@ -426,6 +437,8 @@ public final class CypherToLogicalPlan {
             case final AstOrExpr or -> or.operands().forEach(o -> validateBooleanInScope(o, scope));
             case final AstAndExpr and -> and.operands().forEach(o -> validateBooleanInScope(o, scope));
             case final AstNotExpr not -> validateBooleanInScope(not.operand(), scope);
+            case final AstExistsPredicate exists -> throw new CypherCompileException(
+                    "not supported in this version: EXISTS { ... } in a WITH's WHERE (HAVING)", exists.position());
             case final AstComparisonPredicate cmp -> {
                 validateExpressionInScope(cmp.left(), scope);
                 validateExpressionInScope(cmp.right(), scope);
@@ -544,7 +557,8 @@ public final class CypherToLogicalPlan {
             plan = new Limit(plan, List.of(graphLimit.value()), graphLimit.position());
         }
 
-        return new CompiledCypherPlan(plan, temporalContext, false, null, diffContext, true, List.of(), null);
+        return new CompiledCypherPlan(
+                plan, temporalContext, false, null, diffContext, true, List.of(), List.of(), null);
     }
 
     private void rejectVarLengthUnderReturnGraph(final AstPathPattern pattern) {
@@ -776,6 +790,11 @@ public final class CypherToLogicalPlan {
             return ExpressionOperator.builder().addTerm(compileInTerm(in)).build();
         } else if (expr instanceof final AstIsNullPredicate isNull) {
             return ExpressionOperator.builder().addTerm(compileIsNullTerm(isNull)).build();
+        } else if (expr instanceof AstExistsPredicate) {
+            throw new CypherCompileException(
+                    "not supported in this version: EXISTS { ... } is only supported as a top-level WHERE conjunct "
+                    + "of an ordinary (non-DIFF, non-RETURN GRAPH) query - not nested inside OR, and not combined "
+                    + "with a non-EXISTS NOT", expr.position());
         }
         throw new CypherCompileException("Unrecognised WHERE expression", expr.position());
     }
@@ -890,7 +909,8 @@ public final class CypherToLogicalPlan {
      * top-level conjunct was a field-vs-field comparison.
      */
     private record WhereCompilation(@Nullable ExpressionOperator literalPredicate,
-                                    List<FieldComparison> fieldComparisons) {
+                                    List<FieldComparison> fieldComparisons,
+                                    List<CypherExists> existsPredicates) {
     }
 
     /**
@@ -905,21 +925,35 @@ public final class CypherToLogicalPlan {
      */
     private WhereCompilation compileWhere(final AstBooleanExpr expr) {
         final List<FieldComparison> fieldComparisons = new ArrayList<>();
-        final ExpressionOperator literal = splitFieldComparisons(expr, fieldComparisons);
-        return new WhereCompilation(literal, fieldComparisons);
+        final List<CypherExists> existsPredicates = new ArrayList<>();
+        final ExpressionOperator literal = splitGraphLocalPredicates(expr, fieldComparisons, existsPredicates);
+        return new WhereCompilation(literal, fieldComparisons, existsPredicates);
     }
 
-    private @Nullable ExpressionOperator splitFieldComparisons(final AstBooleanExpr expr,
-                                                               final List<FieldComparison> out) {
+    /**
+     * Splits a {@code WHERE} expression into its literal predicate tree, its top-level field-vs-field comparisons,
+     * and its top-level {@code [NOT] EXISTS { ... }} predicates. A graph-local predicate (field-vs-field or EXISTS)
+     * is only extracted when it is a top-level conjunct (a direct operand of the root {@code AND}, or the whole
+     * {@code WHERE}); one nested inside {@code OR}/{@code NOT} (of a non-EXISTS) reaches {@link #compileBooleanExpr}
+     * and is rejected there - the v1 scope line.
+     */
+    private @Nullable ExpressionOperator splitGraphLocalPredicates(final AstBooleanExpr expr,
+                                                                   final List<FieldComparison> fieldOut,
+                                                                   final List<CypherExists> existsOut) {
         if (expr instanceof final AstComparisonPredicate cmp && isFieldVsField(cmp)) {
-            out.add(toFieldComparison(cmp));
+            fieldOut.add(toFieldComparison(cmp));
+            return null;
+        }
+        if (tryExtractExists(expr, existsOut)) {
             return null;
         }
         if (expr instanceof final AstAndExpr and) {
             final List<ExpressionItem> literalChildren = new ArrayList<>();
             for (final AstBooleanExpr operand : and.operands()) {
                 if (operand instanceof final AstComparisonPredicate cmp && isFieldVsField(cmp)) {
-                    out.add(toFieldComparison(cmp));
+                    fieldOut.add(toFieldComparison(cmp));
+                } else if (tryExtractExists(operand, existsOut)) {
+                    // extracted as a graph-local existence predicate
                 } else {
                     literalChildren.add(compileBooleanExprAsItem(operand));
                 }
@@ -929,9 +963,64 @@ public final class CypherToLogicalPlan {
             }
             return ExpressionOperator.builder().op(Op.AND).children(literalChildren).build();
         }
-        // OR / NOT / field-vs-literal comparison / IN / IS NULL: compile normally. A field-vs-field comparison
-        // nested inside OR/NOT reaches compileComparisonTerm, which rejects it.
+        // OR / NOT / field-vs-literal comparison / IN / IS NULL: compile normally. A field-vs-field comparison or a
+        // stray EXISTS nested inside OR/NOT reaches compileBooleanExpr/compileComparisonTerm, which rejects it.
         return compileBooleanExpr(expr);
+    }
+
+    /**
+     * Extracts a top-level {@code EXISTS { ... }} (or {@code NOT EXISTS { ... }}) into {@code out}, returning
+     * {@code true} when {@code expr} was such a predicate. Any other shape returns {@code false} (the caller
+     * handles it).
+     */
+    private boolean tryExtractExists(final AstBooleanExpr expr, final List<CypherExists> out) {
+        if (expr instanceof final AstExistsPredicate exists) {
+            out.add(compileExists(exists, false));
+            return true;
+        }
+        if (expr instanceof final AstNotExpr not && not.operand() instanceof final AstExistsPredicate exists) {
+            out.add(compileExists(exists, true));
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Compiles a correlated {@code EXISTS { (x)-[:TYPE]->(y) }} to a {@link CypherExists}. v1 restrictions (each a
+     * fail-loud rejection): the inner anchor is a bare variable (bound by the outer MATCH - a labels/property
+     * constraint on it, or an anonymous anchor, is rejected), extended by exactly one typed fixed-length hop.
+     */
+    private CypherExists compileExists(final AstExistsPredicate exists, final boolean negated) {
+        final AstPathPattern pattern = exists.pattern();
+        final AstNodePattern anchor = pattern.anchor();
+        if (anchor.variable() == null || !anchor.labels().isEmpty() || !anchor.properties().isEmpty()) {
+            throw new CypherCompileException(
+                    "not supported in this version: EXISTS { ... } must start from a bare variable already bound "
+                    + "by the MATCH, e.g. EXISTS { (a)-[:R]->(b) }", anchor.position());
+        }
+        if (pattern.hops().size() != 1) {
+            throw new CypherCompileException(
+                    "not supported in this version: EXISTS { ... } supports exactly one hop, e.g. "
+                    + "EXISTS { (a)-[:R]->(b) }", pattern.position());
+        }
+        final AstPatternHop hop = pattern.hops().getFirst();
+        if (hop.edge().varLength() != null) {
+            throw new CypherCompileException(
+                    "not supported in this version: a variable-length hop inside EXISTS { ... }",
+                    hop.edge().position());
+        }
+        if (hop.edge().type() == null) {
+            throw new CypherCompileException(
+                    "not supported in this version: EXISTS { ... } requires a typed edge, e.g. "
+                    + "EXISTS { (a)-[:R]->(b) }", hop.edge().position());
+        }
+        return new CypherExists(
+                anchor.variable(),
+                hop.edge().type(),
+                toDirection(hop.edge().direction()),
+                hop.node().labels(),
+                compilePropertyPredicate(hop.node().properties()),
+                negated);
     }
 
     /** A comparison of two property accesses (e.g. {@code a.x > b.y}); a literal or bare-variable operand is not. */
@@ -1357,6 +1446,8 @@ public final class CypherToLogicalPlan {
             case final AstInPredicate in -> throw new CypherCompileException(
                     "not supported in this version: an IN predicate inside a CASE WHEN condition (use nested "
                     + "comparisons, or filter in WHERE)", in.position());
+            case final AstExistsPredicate exists -> throw new CypherCompileException(
+                    "not supported in this version: EXISTS { ... } inside a CASE WHEN condition", exists.position());
         };
     }
 
@@ -1696,6 +1787,10 @@ public final class CypherToLogicalPlan {
                 rejectIfDiffConstruct(in.right());
             }
             case final AstIsNullPredicate isNull -> rejectIfDiffConstruct(isNull.operand());
+            case final AstExistsPredicate ignored -> {
+                // The EXISTS pattern contains only graph elements (no value expressions), so there is no diff
+                // construct to reject here; EXISTS-under-DIFF is rejected in compile() via existsPredicates.
+            }
         }
     }
 
@@ -1719,6 +1814,9 @@ public final class CypherToLogicalPlan {
                 rejectDiffConstructInDiffWhere(in.right());
             }
             case final AstIsNullPredicate isNull -> rejectDiffConstructInDiffWhere(isNull.operand());
+            case final AstExistsPredicate ignored -> {
+                // No value expressions inside an EXISTS pattern; EXISTS-under-DIFF is rejected in compile().
+            }
         }
     }
 

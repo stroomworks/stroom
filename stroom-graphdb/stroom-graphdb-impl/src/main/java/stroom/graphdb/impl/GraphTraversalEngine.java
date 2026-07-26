@@ -41,6 +41,7 @@ import stroom.query.language.functions.ref.StoredValues;
 import stroom.query.language.functions.ref.ValueReferenceIndex;
 import stroom.query.planner.cypher.AggregateColumn;
 import stroom.query.planner.cypher.CypherAggregation;
+import stroom.query.planner.cypher.CypherExists;
 import stroom.query.planner.cypher.FieldComparison;
 import stroom.query.planner.cypher.GraphIdentity;
 import stroom.query.planner.cypher.GroupKeyColumn;
@@ -307,7 +308,8 @@ public final class GraphTraversalEngine {
                                final @Nullable TemporalContext temporalContext,
                                final DateTimeSettings dateTimeSettings, final boolean distinct,
                                final @Nullable CypherAggregation aggregation) {
-        return execute(readTxn, plan, temporalContext, dateTimeSettings, distinct, aggregation, List.of());
+        return execute(readTxn, plan, temporalContext, dateTimeSettings, distinct, aggregation,
+                List.of(), List.of());
     }
 
     /**
@@ -321,9 +323,11 @@ public final class GraphTraversalEngine {
                                final DateTimeSettings dateTimeSettings, final boolean distinct,
                                final @Nullable CypherAggregation aggregation,
                                final List<FieldComparison> fieldComparisons,
+                               final List<CypherExists> existsPredicates,
                                final @Nullable WithStage secondStage) {
         final List<Val[]> stageOne = execute(
-                readTxn, plan, temporalContext, dateTimeSettings, distinct, aggregation, fieldComparisons);
+                readTxn, plan, temporalContext, dateTimeSettings, distinct, aggregation, fieldComparisons,
+                existsPredicates);
         return secondStage == null
                 ? stageOne
                 : applySecondStage(stageOne, secondStage, dateTimeSettings);
@@ -341,7 +345,8 @@ public final class GraphTraversalEngine {
                                final @Nullable TemporalContext temporalContext,
                                final DateTimeSettings dateTimeSettings, final boolean distinct,
                                final @Nullable CypherAggregation aggregation,
-                               final List<FieldComparison> fieldComparisons) {
+                               final List<FieldComparison> fieldComparisons,
+                               final List<CypherExists> existsPredicates) {
         Objects.requireNonNull(readTxn, "readTxn");
         Objects.requireNonNull(plan, "plan");
         Objects.requireNonNull(dateTimeSettings, "dateTimeSettings");
@@ -355,10 +360,14 @@ public final class GraphTraversalEngine {
                         .createOptional(shape.where, rowAccessors(), dateTimeSettings)
                         .orElse(row -> true);
         // Field-vs-field comparisons (a.x > b.y) cannot be expressed as ExpressionTerms (their value is a single
-        // literal string), so they are AND-combined here as an extra per-row predicate - see FieldComparison.
-        final Predicate<Map<String, Val>> wherePredicate = fieldComparisons.isEmpty()
+        // literal string), and EXISTS { ... } subqueries need a graph lookup - so both are AND-combined here as
+        // extra per-row predicates (see FieldComparison / CypherExists).
+        Predicate<Map<String, Val>> wherePredicate = fieldComparisons.isEmpty()
                 ? basePredicate
                 : basePredicate.and(fieldComparisonPredicate(fieldComparisons));
+        if (!existsPredicates.isEmpty()) {
+            wherePredicate = wherePredicate.and(existsRowPredicate(readTxn, access, existsPredicates));
+        }
 
         // Task P7.2: rowCap enforces a compiled Cypher LIMIT as an early-exit bound on row accumulation itself,
         // not merely a post-hoc trim of an already-fully-computed result (which is all DataStoreSettings' store
@@ -2130,6 +2139,77 @@ public final class GraphTraversalEngine {
             }
             return true;
         };
+    }
+
+    /**
+     * Builds the per-row predicate for a query's {@code [NOT] EXISTS { ... }} subqueries. For each row it resolves
+     * each EXISTS's anchor variable to its bound node and tests whether the described adjacency exists at the read
+     * instant; the row is kept only when every EXISTS is satisfied ({@code found} for a plain EXISTS, {@code !found}
+     * for {@code NOT EXISTS}). {@code readTxn}/{@code access} are captured from the enclosing execute.
+     */
+    private Predicate<Map<String, Val>> existsRowPredicate(final Txn<ByteBuffer> readTxn,
+                                                           final TemporalAccess access,
+                                                           final List<CypherExists> existsPredicates) {
+        return row -> {
+            for (final CypherExists exists : existsPredicates) {
+                final boolean found = existsMatches(readTxn, access, exists, row);
+                // Keep the row iff found (plain EXISTS) / not found (NOT EXISTS). found == negated means the
+                // opposite, so drop it.
+                if (found == exists.negated()) {
+                    return false;
+                }
+            }
+            return true;
+        };
+    }
+
+    /**
+     * True when the correlated pattern of {@code exists} holds for {@code row}: the anchor variable's bound node has
+     * an edge of the required type/direction to a neighbour satisfying the inner target labels/properties. Reuses
+     * the ordinary as-of {@link TemporalAccess#expandOut}/{@link TemporalAccess#expandIn} and
+     * {@link #matchesTargetConstraint}. The anchor's node uid is recovered from its identity recorded in the row
+     * ({@link GraphIdentity#nodeIdKey}); an EXISTS over a variable that is not a bound node in this row fails loud.
+     */
+    private boolean existsMatches(final Txn<ByteBuffer> readTxn, final TemporalAccess access,
+                                  final CypherExists exists, final Map<String, Val> row) {
+        final Val anchorId = row.get(GraphIdentity.nodeIdKey(exists.anchorVariable()));
+        if (!isPresent(anchorId)) {
+            throw new UnsupportedOperationException(
+                    "EXISTS { ... } is anchored on '" + exists.anchorVariable() + "', which is not a bound node "
+                    + "variable in this pattern - an EXISTS can only extend a node bound by the MATCH");
+        }
+        final Optional<Long> anchorUid = lookupUid(readTxn, stores.getNodeUids(), anchorId.toString());
+        if (anchorUid.isEmpty()) {
+            return false;
+        }
+        final Optional<Long> typeUid = lookupUid(readTxn, stores.getEdgeTypeUids(), exists.edgeType());
+        if (typeUid.isEmpty()) {
+            return false;
+        }
+
+        final boolean[] found = {false};
+        final Consumer<EdgeStep> onStep = step -> {
+            if (found[0]) {
+                return;
+            }
+            final Optional<GraphNodeDb.NodeVersion> target = access.getNode(readTxn, step.neighbourUid());
+            if (target.isPresent()
+                && matchesTargetConstraint(
+                        readTxn, exists.targetLabels(), exists.targetPropertyPredicate(), target.get())) {
+                found[0] = true;
+            }
+        };
+        switch (exists.direction()) {
+            case OUT -> access.expandOut(readTxn, anchorUid.get(), typeUid.get(), onStep);
+            case IN -> access.expandIn(readTxn, anchorUid.get(), typeUid.get(), onStep);
+            case BOTH -> {
+                access.expandOut(readTxn, anchorUid.get(), typeUid.get(), onStep);
+                if (!found[0]) {
+                    access.expandIn(readTxn, anchorUid.get(), typeUid.get(), onStep);
+                }
+            }
+        }
+        return found[0];
     }
 
     /**

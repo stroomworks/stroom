@@ -191,9 +191,18 @@ notExpr
     ;
 primary
     : OPEN_PAREN expr CLOSE_PAREN
+    | existsPredicate
     | inPredicate
     | isNullPredicate
     | comparisonPredicate
+    ;
+
+// `EXISTS { (x)-[:TYPE]->(y) }` - a correlated existence subquery over an outer-bound node variable. v1 (see
+// CypherToLogicalPlan): the inner pattern is a single fixed-length hop from a variable already bound by the outer
+// MATCH; combine with `NOT` (via notExpr) for a non-existence test. Carried on CompiledCypherPlan as a graph-local
+// predicate (like FieldComparison) - the shared ExpressionTerm IR cannot express a traversal.
+existsPredicate
+    : EXISTS OPEN_BRACE pattern CLOSE_BRACE
     ;
 
 // `x IN [ ... ]` - list membership. The right side is a general `expression`; CypherToLogicalPlan requires it to be
@@ -374,6 +383,7 @@ COLLECT  : C O L L E C T ;
 OPTIONAL : O P T I O N A L ;
 UNION    : U N I O N ;
 ALL      : A L L ;
+EXISTS   : E X I S T S ;
 CASE     : C A S E ;
 WHEN     : W H E N ;
 THEN     : T H E N ;

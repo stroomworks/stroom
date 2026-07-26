@@ -594,6 +594,38 @@ class TestCypherToLogicalPlan {
     }
 
     @Test
+    void existsSubquery_isCarriedOnThePlanAsAGraphLocalPredicate() {
+        final CompiledCypherPlan positive = compile(
+                "MATCH (p:Person) WHERE EXISTS { (p)-[:PARTY_TO]->(c:Crime {type: 'theft'}) } RETURN p.id");
+        assertThat(positive.existsPredicates()).hasSize(1);
+        final CypherExists exists = positive.existsPredicates().getFirst();
+        assertThat(exists.anchorVariable()).isEqualTo("p");
+        assertThat(exists.edgeType()).isEqualTo("PARTY_TO");
+        assertThat(exists.targetLabels()).containsExactly("Crime");
+        assertThat(exists.negated()).isFalse();
+
+        // NOT EXISTS sets the negated flag.
+        assertThat(compile("MATCH (p:Person) WHERE NOT EXISTS { (p)-[:PARTY_TO]->(:Crime) } RETURN p.id")
+                .existsPredicates().getFirst().negated()).isTrue();
+    }
+
+    @Test
+    void existsSubquery_rejectsUnsupportedShapes() {
+        // Anchor may not carry its own label/property (it must be an outer-bound variable).
+        assertThatThrownBy(() -> compile(
+                "MATCH (p:Person) WHERE EXISTS { (p:Person)-[:R]->(x) } RETURN p.id"))
+                .isInstanceOf(CypherCompileException.class);
+        // Nested inside OR is not a top-level conjunct.
+        assertThatThrownBy(() -> compile(
+                "MATCH (p:Person) WHERE p.id = 'x' OR EXISTS { (p)-[:R]->(x) } RETURN p.id"))
+                .isInstanceOf(CypherCompileException.class);
+        // Multi-hop inner pattern is not supported.
+        assertThatThrownBy(() -> compile(
+                "MATCH (p:Person) WHERE EXISTS { (p)-[:R]->(x)-[:S]->(y) } RETURN p.id"))
+                .isInstanceOf(CypherCompileException.class);
+    }
+
+    @Test
     void compileStatement_singleBranch_isSingle() {
         final CompiledCypherStatement statement = new CypherToLogicalPlan().compileStatement(
                 CypherQueryParser.parseStatement("MATCH (a:Account) RETURN a.id"));

@@ -22,7 +22,8 @@ import stroom.query.grammar.ast.AstPosition;
  * A boolean-valued expression: the {@code WHERE} predicate tree (or a subtree of it).
  */
 public sealed interface AstBooleanExpr
-        permits AstOrExpr, AstAndExpr, AstNotExpr, AstComparisonPredicate, AstInPredicate, AstIsNullPredicate {
+        permits AstOrExpr, AstAndExpr, AstNotExpr, AstComparisonPredicate, AstInPredicate, AstIsNullPredicate,
+        AstExistsPredicate {
 
     AstPosition position();
 }

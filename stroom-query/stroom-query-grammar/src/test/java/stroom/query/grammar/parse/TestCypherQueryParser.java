@@ -138,6 +138,20 @@ class TestCypherQueryParser {
     }
 
     @Test
+    void existsSubqueries_parse() {
+        assertThatCode(() -> CypherQueryParser.parse(
+                "MATCH (p:Person) WHERE EXISTS { (p)-[:PARTY_TO]->(:Crime) } RETURN p.id"))
+                .doesNotThrowAnyException();
+        assertThatCode(() -> CypherQueryParser.parse(
+                "MATCH (p:Person) WHERE NOT EXISTS { (p)-[:PARTY_TO]->(c:Crime {type: 'theft'}) } RETURN p.id"))
+                .doesNotThrowAnyException();
+        // Combined with other predicates.
+        assertThatCode(() -> CypherQueryParser.parse(
+                "MATCH (p:Person) WHERE p.age > 30 AND EXISTS { (p)-[:OWNS]->(:Car) } RETURN p.id"))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
     void caseExpressions_parse() {
         // Searched form (WHEN <boolean> THEN <value>), with and without ELSE, and a boolean-combined condition.
         assertThatCode(() -> CypherQueryParser.parse(

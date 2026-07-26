@@ -60,6 +60,10 @@ import java.util.Objects;
  *                        stroom.query.planner.logical.Filter} because the shared {@code ExpressionTerm} IR has no
  *                        second-field slot - see {@link FieldComparison}. The executor AND-combines them with the
  *                        {@code Filter}'s literal predicate.
+ * @param existsPredicates never null (may be empty); {@code [NOT] EXISTS { ... }} correlated existence subqueries
+ *                        from the {@code WHERE}, carried here (like {@code fieldComparisons}) because the shared IR
+ *                        cannot express a traversal - see {@link CypherExists}. The executor AND-combines them with
+ *                        the {@code Filter}'s predicate.
  * @param secondStage     {@code null} for a plain single-stage query; otherwise a {@code MATCH ... WITH ... RETURN}
  *                        pipe whose {@code WITH} is stage one ({@code plan}/{@code aggregation}) and whose {@code
  *                        HAVING} + final {@code RETURN} the executor applies afterward - see {@link WithStage}.
@@ -72,11 +76,13 @@ public record CompiledCypherPlan(
         @Nullable DiffContext diffContext,
         boolean returnGraph,
         List<FieldComparison> fieldComparisons,
+        List<CypherExists> existsPredicates,
         @Nullable WithStage secondStage) {
 
     public CompiledCypherPlan {
         Objects.requireNonNull(plan, "plan");
         fieldComparisons = fieldComparisons == null ? List.of() : List.copyOf(fieldComparisons);
+        existsPredicates = existsPredicates == null ? List.of() : List.copyOf(existsPredicates);
     }
 
     /**

@@ -230,7 +230,7 @@ class TestGraphTraversalEngine {
         final List<Val[]> rows = stores.read(readTxn ->
                 engine.execute(readTxn, compiled.plan(), compiled.temporalContext(),
                         DateTimeSettings.builder().build(), compiled.distinct(), compiled.aggregation(),
-                        compiled.fieldComparisons()));
+                        compiled.fieldComparisons(), compiled.existsPredicates()));
         return rows.stream().map(row -> row[0].toString()).toList();
     }
 
@@ -372,6 +372,37 @@ class TestGraphTraversalEngine {
         final List<Val[]> rows = runFull(stores, engine, cypher);
         assertThat(rows).hasSize(1);
         return rows.getFirst()[0].toDouble();
+    }
+
+    @Test
+    void existsSubquery_filtersByCorrelatedAdjacency(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("exists"), DOC)) {
+            seedPersonsAndCrimes(stores);
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory());
+            // p1 has PARTY_TO edges to crimes; p2 has none.
+            assertThat(runFull(stores, engine,
+                    "MATCH (p:Person) WHERE EXISTS { (p)-[:PARTY_TO]->(:Crime) } RETURN p.id"))
+                    .extracting(row -> row[0].toString()).containsExactly("p1");
+            // NOT EXISTS selects the complement.
+            assertThat(runFull(stores, engine,
+                    "MATCH (p:Person) WHERE NOT EXISTS { (p)-[:PARTY_TO]->(:Crime) } RETURN p.id"))
+                    .extracting(row -> row[0].toString()).containsExactly("p2");
+            // Inner target property constraint: p1 has a theft, no assault.
+            assertThat(runFull(stores, engine,
+                    "MATCH (p:Person) WHERE EXISTS { (p)-[:PARTY_TO]->(c:Crime {type: 'theft'}) } RETURN p.id"))
+                    .extracting(row -> row[0].toString()).containsExactly("p1");
+            assertThat(runFull(stores, engine,
+                    "MATCH (p:Person) WHERE EXISTS { (p)-[:PARTY_TO]->(c:Crime {type: 'assault'}) } RETURN p.id"))
+                    .isEmpty();
+            // Combined with a literal predicate via AND, and works over a specific anchored node too.
+            assertThat(runFull(stores, engine,
+                    "MATCH (p:Person) WHERE p.id = 'p1' AND EXISTS { (p)-[:PARTY_TO]->(:Crime) } RETURN p.id"))
+                    .extracting(row -> row[0].toString()).containsExactly("p1");
+            assertThat(runFull(stores, engine,
+                    "MATCH (p:Person {id: 'p2'}) WHERE NOT EXISTS { (p)-[:PARTY_TO]->(:Crime) } RETURN p.id"))
+                    .extracting(row -> row[0].toString()).containsExactly("p2");
+        }
     }
 
     @Test
@@ -526,7 +557,7 @@ class TestGraphTraversalEngine {
         final CompiledCypherPlan compiled = compile(cypher);
         return stores.read(readTxn -> engine.execute(readTxn, compiled.plan(), compiled.temporalContext(),
                 DateTimeSettings.builder().build(), compiled.distinct(), compiled.aggregation(),
-                compiled.fieldComparisons(), compiled.secondStage()));
+                compiled.fieldComparisons(), compiled.existsPredicates(), compiled.secondStage()));
     }
 
     private static void seedPersonsAndCrimes(final GraphStores stores) {

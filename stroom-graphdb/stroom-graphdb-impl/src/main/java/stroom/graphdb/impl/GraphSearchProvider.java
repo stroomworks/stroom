@@ -228,7 +228,7 @@ public class GraphSearchProvider implements SearchProvider, IndexFieldProvider {
                         searchRequest.getDateTimeSettings(), compiled.distinct())
                 : engine.execute(readTxn, compiled.plan(), compiled.temporalContext(),
                         searchRequest.getDateTimeSettings(), compiled.distinct(), compiled.aggregation(),
-                        compiled.fieldComparisons(), compiled.secondStage());
+                        compiled.fieldComparisons(), compiled.existsPredicates(), compiled.secondStage());
     }
 
     /**
