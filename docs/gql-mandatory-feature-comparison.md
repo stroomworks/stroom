@@ -1,6 +1,6 @@
 # Stroom graph query engine vs. the GQL mandatory feature set
 
-**Date:** 2026-07-26 · **Branch:** `sw-query-optimiser-graph-backend` · **Commit:** `2a7616f1b6`
+**Date:** 2026-07-26 · **Branch:** `sw-query-optimiser-graph-backend` · **Commit:** `b1c50565d5`
 **Standard compared against:** ISO/IEC 39075:2024 (GQL — Graph Query Language)
 
 ---
@@ -328,6 +328,95 @@ its current analytic-query focus.
 
 ---
 
+## Stroom-native alternatives to `CALL`
+
+Implementing general `CALL` syntax means building a procedure ecosystem — an
+open-ended commitment (Tier 1 above). But every *specific* `CALL` use case
+actually observed across the 11 surveyed datasets can be considered on its own,
+the same way `RETURN GRAPH` is already a Stroom-native extension rather than
+borrowed Cypher syntax. Some turn out to be cheap (the data they need is
+already sitting in Stroom's stores); one category is a different kind of
+engineering effort entirely. Ranked from cheapest to most expensive:
+
+**Already solved — no gap at all.** `apoc.date.format`/`apoc.date.parse`
+(StackOverflow, network-management, FinCEN) have direct Stroom-native
+equivalents already wired into Cypher — `stroom.formatDate(...)`/
+`stroom.parseDate(...)` (Phase 12, this branch) — just via an ordinary function
+call instead of `CALL`. Nothing to build.
+
+**Not applicable — out of scope by design, not a fresh gap.** The import-time
+procedures (`apoc.load.json`/`apoc.load.jsonArray`, `apoc.util.sleep`,
+`apoc.create.relationship` for data-driven relationship types — StackOverflow,
+Game of Thrones, FinCEN, London transport) are all write/import concerns.
+Stroom loads graph data through its own ingest pipeline, never through Cypher,
+so there's nothing here to "replace" — this is the same read-only-engine
+boundary already documented, just instantiated by the loading step rather than
+the query step.
+
+**Cheap — the data already exists, this is assembly, not new capability.**
+Schema/metagraph discovery (`db.schema.visualization()`, `apoc.meta.graphSample()`
+— StackOverflow, POLE, Panama Papers) answers "what labels and relationship
+types exist in this graph, and how do they connect?" — pure exploration, no
+computation. Stroom already interns every label, edge type, and property key
+name into its own lookup store (`GraphStores.getLabelUids()`/`getEdgeTypeUids()`/
+`getPropertyKeyUids()`), and `UidLookupDb.forEachName` — which already exists —
+carries a doc comment anticipating exactly this: *"for callers that want the
+names rather than the ids (e.g. schema discovery)"*. A small dedicated feature
+(a "Schema" view on the GraphDb doc, or a synthetic metagraph — one node per
+label, one edge per observed label-pair/edge-type combination — riding the
+existing `RETURN GRAPH`/`GraphElementTable`/Cytoscape pipeline) would assemble
+data that is already sitting there, with no new storage or algorithm work.
+
+**Cheap-to-medium — one layer is already built.** Virtual/synthetic
+relationships for visualization (`apoc.create.vRelationship` — StackOverflow,
+Panama Papers) let a computed result (e.g. tag co-occurrence counts from an
+aggregation) be drawn as a graph edge without writing anything. Checked
+directly against the client code: the wire format (`GraphElementTable` — a
+plain `columns`/`rows` table) and the rendering JS
+(`stroom-app/.../ui/graph.js`) already treat *any* row with non-empty
+`source`/`target` columns as an edge, auto-creating placeholder nodes for
+endpoints they haven't seen (`ensureNode`) — they have no concept of "real vs.
+synthetic" and need no changes. The only missing piece is upstream: a way for
+`RETURN` to emit an element-table-shaped row from an ordinary computed result
+(a `MATCH ... WITH t1, t2, count(*) AS freq`-style aggregation) rather than
+only from `GraphElementExecutor`'s real-traversal path — most naturally another
+`RETURN GRAPH`-style extension, compiler/engine work only.
+
+**Medium — bridges to capability that exists elsewhere in the platform, but
+not yet reachable from Cypher.** Full-text/fuzzy search
+(`db.index.fulltext.createNodeIndex`/`queryNodes`, incl. fuzzy `~` and boolean
+`+` Lucene syntax — Panama Papers) is partially covered already: Stroom's
+`CONTAINS`/`STARTS WITH`/`ENDS WITH`/`=~` string predicates (Phase 1) handle
+exact substring/regex matching. True ranked fuzzy search would mean bridging
+to Stroom's own Lucene-based full-text search capability (central to its core
+log-search product) for property/node lookup — a real but bounded integration
+task, not new search technology.
+
+**No extra cost — piggybacks on an already-planned gap.** Manual similarity
+computation (cosine/Pearson similarity via plain arithmetic — the
+`recommendations` dataset's *non-GDS* fallback queries, using `reduce()`,
+`sqrt()`, `^`, and list collection) isn't actually a `CALL`/procedure gap at
+all: Stroom already has the needed arithmetic (`+ - * / ^ %`, `sqrt` from this
+branch's general-maths phase) and aggregates. It's blocked purely by the
+already-documented Tier 2 gap — list values/`UNWIND` — so once that lands,
+this specific class of "algorithm" becomes plain Cypher with no `CALL` needed.
+
+**Expensive — a different category of work, not a query-language feature.**
+True graph algorithms requiring global/iterative computation — PageRank,
+Louvain community detection, betweenness centrality, triangle count,
+kNN/FastRP embeddings (FinCEN, POLE, Panama Papers, recommendations) — need
+multi-pass, fixed-point, or matrix-style computation over the *whole* graph
+(or a projected subgraph), fundamentally unlike Stroom's per-row traversal
+engine. A genuine Stroom-native equivalent would mean building actual
+graph-algorithm implementations, either into `GraphTraversalEngine` or as a
+companion algorithm engine — architecturally a different kind of project from
+everything else in this document (an algorithm library, not a query-language
+feature), and one that would warrant its own dedicated design effort rather
+than being bolted onto the Cypher subset. Not recommended without a specific,
+strong use case driving it.
+
+---
+
 ## Honest verdict
 
 Stroom's graph engine is best understood as **"a capable read/query slice of a
@@ -364,5 +453,5 @@ actually get hit first by someone porting real-world Cypher content in; the
 
 *Stroom-side capability claims in this document are drawn from the branch's Cypher
 grammar (`Cypher.g4`), the compiler (`CypherToLogicalPlan`) and the graph engine
-(`GraphTraversalEngine`) as of commit `2a7616f1b6`; see also
+(`GraphTraversalEngine`) as of commit `b1c50565d5`; see also
 `docs/cypher-language-feature-roadmap.md`.*
