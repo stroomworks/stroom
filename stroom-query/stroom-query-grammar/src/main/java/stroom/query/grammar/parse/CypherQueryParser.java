@@ -20,6 +20,7 @@ import stroom.query.grammar.antlr.CypherLexer;
 import stroom.query.grammar.antlr.CypherParser;
 import stroom.query.grammar.ast.cypher.AstCypherBuilder;
 import stroom.query.grammar.ast.cypher.AstCypherQuery;
+import stroom.query.grammar.ast.cypher.AstCypherStatement;
 
 import org.antlr.v4.runtime.CharStreams;
 import org.antlr.v4.runtime.CommonTokenStream;
@@ -53,6 +54,26 @@ public final class CypherQueryParser {
      * @throws SyntaxException on any lexer or parser error, precise to the offending line/column.
      */
     public static AstCypherQuery parse(final String cypher) {
+        final AstCypherStatement statement = parseStatement(cypher);
+        if (!statement.isSingle()) {
+            throw new SyntaxException(
+                    "this query uses UNION; parse it with parseStatement(...) (the single-query parse(...) entry "
+                    + "point returns one AstCypherQuery)",
+                    statement.position().line(), statement.position().column(), java.util.List.of());
+        }
+        return statement.branches().getFirst();
+    }
+
+    /**
+     * The statement entry point: parses Cypher text that may combine several single queries with {@code UNION} /
+     * {@code UNION ALL} into an {@link AstCypherStatement} (a plain query is a one-branch statement). Same
+     * lexer/parser/error contract as {@link #parse(String)}.
+     *
+     * @param cypher the Cypher text to parse.
+     * @return never null.
+     * @throws SyntaxException on any lexer or parser error, precise to the offending line/column.
+     */
+    public static AstCypherStatement parseStatement(final String cypher) {
         Objects.requireNonNull(cypher, "cypher");
 
         final CypherLexer lexer = new CypherLexer(CharStreams.fromString(cypher));

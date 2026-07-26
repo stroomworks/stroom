@@ -22,6 +22,7 @@ import stroom.query.grammar.ast.cypher.AstAround;
 import stroom.query.grammar.ast.cypher.AstAsOf;
 import stroom.query.grammar.ast.cypher.AstBetween;
 import stroom.query.grammar.ast.cypher.AstCypherQuery;
+import stroom.query.grammar.ast.cypher.AstCypherStatement;
 import stroom.query.grammar.ast.cypher.AstDiff;
 import stroom.query.grammar.ast.cypher.AstDiffAccessorExpr;
 import stroom.query.grammar.ast.cypher.AstDiffSide;
@@ -153,6 +154,41 @@ class TestCypherQueryParser {
         assertThatCode(() -> CypherQueryParser.parse(
                 "MATCH (a:Account) RETURN stroom.upperCase(CASE WHEN a.n > 0 THEN 'p' ELSE 'n' END), a.n % 2"))
                 .doesNotThrowAnyException();
+    }
+
+    @Test
+    void unionStatements_parse() {
+        // parseStatement returns all branches; unionAll flags one entry per UNION operator.
+        final AstCypherStatement union = CypherQueryParser.parseStatement(
+                "MATCH (a:Account) RETURN a.id AS id UNION MATCH (d:Device) RETURN d.id AS id");
+        assertThat(union.branches()).hasSize(2);
+        assertThat(union.unionAll()).containsExactly(false);
+        assertThat(union.isSingle()).isFalse();
+
+        final AstCypherStatement unionAll = CypherQueryParser.parseStatement(
+                "MATCH (a:Account) RETURN a.id AS id UNION ALL MATCH (a:Account) RETURN a.id AS id");
+        assertThat(unionAll.unionAll()).containsExactly(true);
+
+        // A three-branch statement mixing UNION and UNION ALL.
+        final AstCypherStatement mixed = CypherQueryParser.parseStatement(
+                "MATCH (a:Account) RETURN a.id AS id "
+                + "UNION MATCH (d:Device) RETURN d.id AS id "
+                + "UNION ALL MATCH (a:Account) RETURN a.id AS id");
+        assertThat(mixed.branches()).hasSize(3);
+        assertThat(mixed.unionAll()).containsExactly(false, true);
+
+        // A plain query is a one-branch statement; the single-query parse() entry point unwraps it.
+        assertThat(CypherQueryParser.parseStatement("MATCH (a:Account) RETURN a.id").isSingle()).isTrue();
+    }
+
+    @Test
+    void parseRejectsUnion_directingToStatementApi() {
+        // The single-query parse(...) entry point cannot represent a UNION - it fails loud rather than dropping
+        // branches.
+        assertThatThrownBy(() -> CypherQueryParser.parse(
+                "MATCH (a:Account) RETURN a.id AS id UNION MATCH (d:Device) RETURN d.id AS id"))
+                .isInstanceOf(SyntaxException.class)
+                .hasMessageContaining("UNION");
     }
 
     @Test

@@ -30,9 +30,11 @@ import stroom.query.api.SearchRequest;
 import stroom.query.api.TableSettings;
 import stroom.query.grammar.ast.AstPosition;
 import stroom.query.grammar.ast.cypher.AstCypherQuery;
+import stroom.query.grammar.ast.cypher.AstCypherStatement;
 import stroom.query.grammar.parse.CypherQueryParser;
 import stroom.query.language.SearchRequestFactory;
 import stroom.query.language.functions.ExpressionContext;
+import stroom.query.planner.cypher.CompiledCypherStatement;
 import stroom.query.planner.cypher.CypherCompileException;
 import stroom.query.planner.cypher.CypherToLogicalPlan;
 import stroom.query.planner.logical.Limit;
@@ -102,9 +104,13 @@ public final class CypherCompiler {
         final Query inQuery = Objects.requireNonNull(in.getQuery(), "in.getQuery()");
 
         // Fail fast: parse + compile now so a query outside the v1 subset is rejected at compile time, not
-        // silently deferred to GraphSearchProvider re-parsing it at execution time.
-        final AstCypherQuery ast = CypherQueryParser.parse(cypher);
-        final LogicalPlan plan = new CypherToLogicalPlan().compile(ast).plan();
+        // silently deferred to GraphSearchProvider re-parsing it at execution time. A UNION statement is compiled
+        // in full here (so a bad branch / mismatched columns fails fast); its branches all share output columns and
+        // datasource, so the first branch's plan describes the result columns.
+        final AstCypherStatement statement = CypherQueryParser.parseStatement(cypher);
+        final CompiledCypherStatement compiled = new CypherToLogicalPlan().compileStatement(statement);
+        final AstCypherQuery ast = statement.branches().getFirst();
+        final LogicalPlan plan = compiled.first().plan();
 
         final DocRef dataSource = resolveDataSource(inQuery.getDataSource(), ast);
 

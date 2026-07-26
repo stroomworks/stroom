@@ -113,6 +113,41 @@ class TestGraphSearchProvider {
     }
 
     @Test
+    void unionQuery_mergesBranchesAndDeduplicates(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root, DOC)) {
+            seedDeviceConnectedToAccounts(stores);
+            final GraphSearchProvider provider = provider(stores);
+
+            // Two branches over different labels, columns aligned via AS id: the distinct union of all ids
+            // (this fixture has one Device, d-42, and two Accounts).
+            final List<Val[]> unionRows = readTableRows(provider.createResultStore(requestFor(
+                    "MATCH (a:Account) RETURN a.id AS id UNION MATCH (d:Device) RETURN d.id AS id", "id")));
+            assertThat(unionRows).extracting(row -> row[0].toString())
+                    .containsExactlyInAnyOrder("account-a", "account-b", "d-42");
+
+            // Plain UNION of two identical branches de-duplicates to the distinct rows.
+            final List<Val[]> deduped = readTableRows(provider.createResultStore(requestFor(
+                    "MATCH (a:Account) RETURN a.id UNION MATCH (a:Account) RETURN a.id")));
+            assertThat(deduped).extracting(row -> row[0].toString())
+                    .containsExactlyInAnyOrder("account-a", "account-b");
+        }
+    }
+
+    @Test
+    void unionAllQuery_keepsDuplicates(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root, DOC)) {
+            seedDeviceConnectedToAccounts(stores);
+            final GraphSearchProvider provider = provider(stores);
+
+            // UNION ALL keeps every row: the two identical branches yield each account twice.
+            final List<Val[]> rows = readTableRows(provider.createResultStore(requestFor(
+                    "MATCH (a:Account) RETURN a.id UNION ALL MATCH (a:Account) RETURN a.id")));
+            assertThat(rows).extracting(row -> row[0].toString())
+                    .containsExactlyInAnyOrder("account-a", "account-a", "account-b", "account-b");
+        }
+    }
+
+    @Test
     void singleHopCypherQuery_withCompilerDerivedResultRequests_returnsRealRows(@TempDir final Path root) {
         // Proves CypherCompiler's own resultRequests (rather than this test class's hand-built one, see
         // requestFor()) carry a real Cypher RETURN clause's columns all the way through to real rows - i.e. that
@@ -526,8 +561,12 @@ class TestGraphSearchProvider {
     }
 
     private static SearchRequest requestFor(final String cypher) {
+        return requestFor(cypher, "a.id");
+    }
+
+    private static SearchRequest requestFor(final String cypher, final String columnField) {
         final TableSettings tableSettings = TableSettings.builder()
-                .addColumns(column("a.id"))
+                .addColumns(column(columnField))
                 .extractValues(true)
                 .build();
         final ResultRequest tableResultRequest = ResultRequest.builder()

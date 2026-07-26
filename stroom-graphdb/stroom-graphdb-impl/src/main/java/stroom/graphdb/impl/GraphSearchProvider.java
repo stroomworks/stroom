@@ -39,20 +39,22 @@ import stroom.query.language.functions.FieldIndex;
 import stroom.query.language.functions.Val;
 import stroom.query.language.functions.ValNull;
 import stroom.query.planner.cypher.CompiledCypherPlan;
+import stroom.query.planner.cypher.CompiledCypherStatement;
 import stroom.query.planner.cypher.CypherToLogicalPlan;
-import stroom.query.planner.logical.Limit;
-import stroom.query.planner.logical.LogicalPlan;
-import stroom.query.planner.logical.Project;
 import stroom.query.planner.logical.ProjectField;
-import stroom.query.planner.logical.Sort;
 import stroom.security.api.SecurityContext;
 import stroom.util.shared.ResultPage;
 
 import jakarta.inject.Inject;
+import org.lmdbjava.Txn;
 
+import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * A {@link SearchProvider} for {@link GraphDbDoc} (Task PoC.6): resolves the target doc from
@@ -169,32 +171,18 @@ public class GraphSearchProvider implements SearchProvider, IndexFieldProvider {
         final ResultStore resultStore = resultStoreFactory.create(
                 searchRequest.getSearchRequestSource(), coprocessors);
         try {
-            final CompiledCypherPlan compiled = new CypherToLogicalPlan().compile(
-                    CypherQueryParser.parse(graphSpec.getCypher()));
-            // A WITH pipe's output columns are the final RETURN's fields (the second stage), not stage one's WITH
-            // columns; every other query's output columns are its terminal Project's.
-            final List<ProjectField> projectFields = compiled.secondStage() != null
-                    ? compiled.secondStage().finalFields()
-                    : terminalProject(compiled.plan()).fields();
-            final int[] mapping = buildFieldMapping(fieldIndex, projectFields);
+            final CompiledCypherStatement statement = new CypherToLogicalPlan().compileStatement(
+                    CypherQueryParser.parseStatement(graphSpec.getCypher()));
+            // All UNION branches share the same output columns (checked at compile time), so the first branch's
+            // columns describe the result. A WITH pipe's output columns are the final RETURN's fields (the second
+            // stage), not stage one's WITH columns; every other query's are its terminal Project's - see
+            // CompiledCypherPlan.outputFields().
+            final int[] mapping = buildFieldMapping(fieldIndex, statement.first().outputFields());
 
             final GraphStores stores = graphStoreManager.getOrOpen(doc);
             final GraphTraversalEngine engine = new GraphTraversalEngine(stores, expressionPredicateFactory);
-            // Three execution shapes, all yielding Val[] rows fed identically downstream: RETURN GRAPH (the
-            // element-row union, plain or under DIFF - GraphElementExecutor); a scalar DIFF (the delta table -
-            // DiffExecutor, two instants + classification); every other query (a single ordinary traversal).
-            final List<Val[]> rows = stores.read(readTxn -> {
-                if (compiled.returnGraph()) {
-                    return GraphElementExecutor.execute(readTxn, engine, stores, compiled.plan(),
-                            compiled.temporalContext(), compiled.diffContext(), searchRequest.getDateTimeSettings());
-                }
-                return compiled.diffContext() != null
-                        ? DiffExecutor.execute(readTxn, engine, compiled.plan(), compiled.diffContext(),
-                                searchRequest.getDateTimeSettings(), compiled.distinct())
-                        : engine.execute(readTxn, compiled.plan(), compiled.temporalContext(),
-                                searchRequest.getDateTimeSettings(), compiled.distinct(), compiled.aggregation(),
-                                compiled.fieldComparisons(), compiled.secondStage());
-            });
+            final List<Val[]> rows = stores.read(readTxn ->
+                    executeStatement(readTxn, engine, stores, statement, searchRequest));
             for (final Val[] row : rows) {
                 coprocessors.accept(assembleRow(row, mapping, fieldIndex.size()));
             }
@@ -207,26 +195,63 @@ public class GraphSearchProvider implements SearchProvider, IndexFieldProvider {
     }
 
     /**
-     * Walks past any {@link Limit} then {@link Sort} wrapper to the plan's terminal {@link Project} node - mirrors
-     * {@code GraphTraversalEngine.unwrap}'s own first steps (kept as a small separate copy rather than exposing
-     * that private method, since this class needs only the Project's fields for field-index mapping). Strips
-     * {@link Limit} before {@link Sort} for the same reason {@code unwrap} does: {@code CypherToLogicalPlan} nests
-     * them {@code Limit(Sort(Project))}.
+     * Runs a whole statement, folding its {@code UNION} branches left-to-right: {@code UNION ALL} concatenates,
+     * plain {@code UNION} additionally de-duplicates the accumulated rows by value (first-appearance order). A
+     * single-branch (non-UNION) statement is just its one branch executed unchanged.
      */
-    private static Project terminalProject(final LogicalPlan plan) {
-        LogicalPlan current = plan;
-        while (current instanceof final Limit limit) {
-            current = limit.input();
+    private static List<Val[]> executeStatement(final Txn<ByteBuffer> readTxn, final GraphTraversalEngine engine,
+                                                 final GraphStores stores, final CompiledCypherStatement statement,
+                                                 final SearchRequest searchRequest) {
+        List<Val[]> result = executeBranch(readTxn, engine, stores, statement.branches().getFirst(), searchRequest);
+        for (int i = 1; i < statement.branches().size(); i++) {
+            final List<Val[]> branchRows =
+                    executeBranch(readTxn, engine, stores, statement.branches().get(i), searchRequest);
+            result = foldUnion(result, branchRows, statement.unionAll().get(i - 1));
         }
-        while (current instanceof final Sort sort) {
-            current = sort.input();
+        return result;
+    }
+
+    /**
+     * Executes one compiled branch to its {@code Val[]} rows. Three execution shapes, all fed identically
+     * downstream: {@code RETURN GRAPH} (the element-row union, plain or under DIFF - {@link GraphElementExecutor});
+     * a scalar DIFF (the delta table - {@link DiffExecutor}); every other query (a single ordinary traversal).
+     */
+    private static List<Val[]> executeBranch(final Txn<ByteBuffer> readTxn, final GraphTraversalEngine engine,
+                                              final GraphStores stores, final CompiledCypherPlan compiled,
+                                              final SearchRequest searchRequest) {
+        if (compiled.returnGraph()) {
+            return GraphElementExecutor.execute(readTxn, engine, stores, compiled.plan(),
+                    compiled.temporalContext(), compiled.diffContext(), searchRequest.getDateTimeSettings());
         }
-        if (!(current instanceof final Project project)) {
-            throw new IllegalArgumentException(
-                    "Unsupported compiled plan shape for graph traversal: expected a Project node (after "
-                    + "unwrapping Limit/Sort), found " + current.getClass().getSimpleName());
+        return compiled.diffContext() != null
+                ? DiffExecutor.execute(readTxn, engine, compiled.plan(), compiled.diffContext(),
+                        searchRequest.getDateTimeSettings(), compiled.distinct())
+                : engine.execute(readTxn, compiled.plan(), compiled.temporalContext(),
+                        searchRequest.getDateTimeSettings(), compiled.distinct(), compiled.aggregation(),
+                        compiled.fieldComparisons(), compiled.secondStage());
+    }
+
+    /**
+     * Concatenates {@code accumulated} with {@code branch}; when {@code unionAll} is false (a plain {@code UNION})
+     * de-duplicates the combined rows by value, keeping first appearance. Row equality is element-wise {@link Val}
+     * equality (via {@link Arrays#asList}), matching the engine's {@code RETURN DISTINCT} de-duplication.
+     */
+    private static List<Val[]> foldUnion(final List<Val[]> accumulated, final List<Val[]> branch,
+                                         final boolean unionAll) {
+        final List<Val[]> combined = new ArrayList<>(accumulated.size() + branch.size());
+        combined.addAll(accumulated);
+        combined.addAll(branch);
+        if (unionAll) {
+            return combined;
         }
-        return project;
+        final Set<List<Val>> seen = new HashSet<>();
+        final List<Val[]> distinct = new ArrayList<>(combined.size());
+        for (final Val[] row : combined) {
+            if (seen.add(Arrays.asList(row))) {
+                distinct.add(row);
+            }
+        }
+        return distinct;
     }
 
     /**

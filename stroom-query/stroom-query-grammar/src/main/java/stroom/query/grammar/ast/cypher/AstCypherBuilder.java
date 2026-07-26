@@ -67,11 +67,13 @@ import stroom.query.grammar.antlr.CypherParser.ReturnItemContext;
 import stroom.query.grammar.antlr.CypherParser.ReturnItemsClauseContext;
 import stroom.query.grammar.antlr.CypherParser.SearchedCaseContext;
 import stroom.query.grammar.antlr.CypherParser.SimpleCaseContext;
+import stroom.query.grammar.antlr.CypherParser.SingleQueryContext;
 import stroom.query.grammar.antlr.CypherParser.SkipClauseContext;
 import stroom.query.grammar.antlr.CypherParser.StringValueContext;
 import stroom.query.grammar.antlr.CypherParser.TemporalClauseContext;
 import stroom.query.grammar.antlr.CypherParser.ValueContext;
 import stroom.query.grammar.antlr.CypherParser.VarLengthContext;
+import stroom.query.grammar.antlr.CypherParser.UnionClauseContext;
 import stroom.query.grammar.antlr.CypherParser.WhenSearchContext;
 import stroom.query.grammar.antlr.CypherParser.WhenValueContext;
 import stroom.query.grammar.antlr.CypherParser.WhereClauseContext;
@@ -103,8 +105,20 @@ public final class AstCypherBuilder {
      * @param ctx the root parse tree node, as produced by {@code CypherParser.query()}.
      * @return never null.
      */
-    public AstCypherQuery build(final QueryContext ctx) {
+    public AstCypherStatement build(final QueryContext ctx) {
         Objects.requireNonNull(ctx, "ctx");
+        final List<AstCypherQuery> branches = new ArrayList<>(ctx.singleQuery().size());
+        for (final SingleQueryContext singleQueryCtx : ctx.singleQuery()) {
+            branches.add(buildSingleQuery(singleQueryCtx));
+        }
+        final List<Boolean> unionAll = new ArrayList<>(ctx.unionClause().size());
+        for (final UnionClauseContext unionCtx : ctx.unionClause()) {
+            unionAll.add(unionCtx.ALL() != null);
+        }
+        return new AstCypherStatement(branches, unionAll, position(ctx));
+    }
+
+    private AstCypherQuery buildSingleQuery(final SingleQueryContext ctx) {
         final String dataSourceName = ctx.fromClause() == null
                 ? null
                 : unescapeString(ctx.fromClause().STRING().getText());

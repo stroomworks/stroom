@@ -37,6 +37,7 @@ import stroom.query.grammar.ast.cypher.AstCaseWhen;
 import stroom.query.grammar.ast.cypher.AstComparisonOp;
 import stroom.query.grammar.ast.cypher.AstComparisonPredicate;
 import stroom.query.grammar.ast.cypher.AstCypherQuery;
+import stroom.query.grammar.ast.cypher.AstCypherStatement;
 import stroom.query.grammar.ast.cypher.AstDiff;
 import stroom.query.grammar.ast.cypher.AstDiffAccessorExpr;
 import stroom.query.grammar.ast.cypher.AstDiffSide;
@@ -174,6 +175,45 @@ public final class CypherToLogicalPlan {
      * @throws CypherCompileException if {@code query} is outside the compiled shape described in this class's
      *                                 Javadoc.
      */
+    /**
+     * Compiles a whole statement - one or more single queries combined with {@code UNION} / {@code UNION ALL} -
+     * into a {@link CompiledCypherStatement}. Each branch is compiled by {@link #compile(AstCypherQuery)}; a
+     * multi-branch (UNION) statement additionally requires every branch to expose the same output column names and
+     * forbids {@code RETURN GRAPH} / {@code DIFF} branches (those produce non-scalar row shapes that cannot be
+     * union-folded). A single-branch statement is compiled with no extra constraints.
+     */
+    public CompiledCypherStatement compileStatement(final AstCypherStatement statement) {
+        Objects.requireNonNull(statement, "statement");
+        final List<CompiledCypherPlan> branches = new ArrayList<>(statement.branches().size());
+        for (final AstCypherQuery branch : statement.branches()) {
+            branches.add(compile(branch));
+        }
+
+        if (statement.branches().size() > 1) {
+            final List<String> firstColumns = columnNames(branches.getFirst());
+            for (int i = 0; i < branches.size(); i++) {
+                final CompiledCypherPlan branch = branches.get(i);
+                final AstPosition pos = statement.branches().get(i).position();
+                if (branch.returnGraph() || branch.diffContext() != null) {
+                    throw new CypherCompileException(
+                            "not supported in this version: UNION with a RETURN GRAPH or DIFF branch (branch "
+                            + (i + 1) + ")", pos);
+                }
+                final List<String> columns = columnNames(branch);
+                if (!columns.equals(firstColumns)) {
+                    throw new CypherCompileException(
+                            "all UNION branches must return the same columns in the same order: branch 1 returns "
+                            + firstColumns + " but branch " + (i + 1) + " returns " + columns, pos);
+                }
+            }
+        }
+        return new CompiledCypherStatement(branches, statement.unionAll());
+    }
+
+    private static List<String> columnNames(final CompiledCypherPlan plan) {
+        return plan.outputFields().stream().map(ProjectField::name).toList();
+    }
+
     public CompiledCypherPlan compile(final AstCypherQuery query) {
         Objects.requireNonNull(query, "query");
 

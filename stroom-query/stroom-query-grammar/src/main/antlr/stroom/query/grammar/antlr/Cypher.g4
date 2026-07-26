@@ -75,8 +75,20 @@ grammar Cypher;
 // SearchRequestSource.ownerDocRef. It is purely a datasource selector - CypherToLogicalPlan needs no change - and
 // is optional so a query submitted where ownerDocRef already names the graph (e.g. the GraphDb doc's Data tab)
 // need not repeat it.
+// A statement is one or more single queries combined with UNION / UNION ALL. AstCypherBuilder produces an
+// AstCypherStatement (a single query is just a one-branch statement); CypherToLogicalPlan compiles each branch and
+// the executor folds them left-to-right (UNION ALL concatenates, UNION also de-duplicates). All branches must have
+// the same RETURN column names - enforced at compile time.
 query
-    : fromClause? readingClause+ returnClause EOF
+    : singleQuery (unionClause singleQuery)* EOF
+    ;
+
+singleQuery
+    : fromClause? readingClause+ returnClause
+    ;
+
+unionClause
+    : UNION ALL?
     ;
 
 fromClause
@@ -360,6 +372,8 @@ IN       : I N ;
 IS       : I S ;
 COLLECT  : C O L L E C T ;
 OPTIONAL : O P T I O N A L ;
+UNION    : U N I O N ;
+ALL      : A L L ;
 CASE     : C A S E ;
 WHEN     : W H E N ;
 THEN     : T H E N ;

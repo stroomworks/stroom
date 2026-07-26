@@ -16,7 +16,11 @@
 
 package stroom.query.planner.cypher;
 
+import stroom.query.planner.logical.Limit;
 import stroom.query.planner.logical.LogicalPlan;
+import stroom.query.planner.logical.Project;
+import stroom.query.planner.logical.ProjectField;
+import stroom.query.planner.logical.Sort;
 
 import org.jspecify.annotations.Nullable;
 
@@ -73,5 +77,29 @@ public record CompiledCypherPlan(
     public CompiledCypherPlan {
         Objects.requireNonNull(plan, "plan");
         fieldComparisons = fieldComparisons == null ? List.of() : List.copyOf(fieldComparisons);
+    }
+
+    /**
+     * The query's visible output columns: a {@code WITH} pipe's final {@code RETURN} fields (the {@link
+     * #secondStage}), otherwise the terminal {@link Project}'s fields (walking past any {@link Limit}/{@link Sort}
+     * wrapper, mirroring how the executor unwraps the plan). Used to advertise result columns and to check that all
+     * {@code UNION} branches agree on their columns.
+     */
+    public List<ProjectField> outputFields() {
+        if (secondStage != null) {
+            return secondStage.finalFields();
+        }
+        LogicalPlan current = plan;
+        while (current instanceof final Limit limit) {
+            current = limit.input();
+        }
+        while (current instanceof final Sort sort) {
+            current = sort.input();
+        }
+        if (current instanceof final Project project) {
+            return project.fields();
+        }
+        throw new IllegalStateException(
+                "compiled plan has no terminal Project (found " + current.getClass().getSimpleName() + ")");
     }
 }

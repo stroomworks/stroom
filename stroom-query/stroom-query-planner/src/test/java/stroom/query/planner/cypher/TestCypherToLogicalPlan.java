@@ -594,6 +594,33 @@ class TestCypherToLogicalPlan {
     }
 
     @Test
+    void compileStatement_singleBranch_isSingle() {
+        final CompiledCypherStatement statement = new CypherToLogicalPlan().compileStatement(
+                CypherQueryParser.parseStatement("MATCH (a:Account) RETURN a.id"));
+        assertThat(statement.isSingle()).isTrue();
+        assertThat(statement.branches()).hasSize(1);
+    }
+
+    @Test
+    void compileStatement_unionBranchesWithMatchingColumns_compile() {
+        final CompiledCypherStatement statement = new CypherToLogicalPlan().compileStatement(
+                CypherQueryParser.parseStatement(
+                        "MATCH (a:Account) RETURN a.id AS id UNION ALL MATCH (d:Device) RETURN d.id AS id"));
+        assertThat(statement.branches()).hasSize(2);
+        assertThat(statement.unionAll()).containsExactly(true);
+    }
+
+    @Test
+    void compileStatement_unionBranchesWithMismatchedColumns_throws() {
+        // Branch 1's column is named "id" (aliased); branch 2's is "d.id" - UNION requires them to match.
+        assertThatThrownBy(() -> new CypherToLogicalPlan().compileStatement(
+                CypherQueryParser.parseStatement(
+                        "MATCH (a:Account) RETURN a.id AS id UNION MATCH (d:Device) RETURN d.id")))
+                .isInstanceOf(CypherCompileException.class)
+                .hasMessageContaining("same columns");
+    }
+
+    @Test
     void simpleCase_rendersToStroomCaseFunction() {
         // CASE input WHEN t THEN r ... ELSE e END -> case(input, t1, r1, ..., otherwise).
         assertThat(renderedReturnExpression(

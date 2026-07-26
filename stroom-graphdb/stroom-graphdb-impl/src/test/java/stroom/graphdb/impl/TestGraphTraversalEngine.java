@@ -191,7 +191,7 @@ class TestGraphTraversalEngine {
             // comma-joined ValString; collect(DISTINCT) de-duplicates.
             final CompiledCypherPlan compiled = compile(
                     "MATCH (o:Officer {id: 'o-1'})-[:INVESTIGATED]->(c:Crime) "
-                    + "RETURN o.id, collect(c.type) AS all, collect(DISTINCT c.type) AS distinctTypes");
+                    + "RETURN o.id, collect(c.type) AS allTypes, collect(DISTINCT c.type) AS distinctTypes");
             final List<Val[]> rows = stores.read(readTxn ->
                     engine.execute(readTxn, compiled.plan(), compiled.temporalContext(),
                             DateTimeSettings.builder().build(), compiled.distinct(), compiled.aggregation()));
@@ -390,6 +390,9 @@ class TestGraphTraversalEngine {
             // A secondary label (account-b also carries Premium) is a valid scan target.
             assertThat(matchedIds(stores, engine, "MATCH (a:Premium) RETURN a.id"))
                     .containsExactly("account-b");
+            // Both Device nodes are scanned (d-42 and gw-1).
+            assertThat(matchedIds(stores, engine, "MATCH (d:Device) RETURN d.id"))
+                    .containsExactlyInAnyOrder("d-42", "gw-1");
             // A label-only scan is a valid traversal anchor too: scan every Device, expand out over CONNECTED_TO.
             // d-42 -> account-a/account-b; gw-1 -> d-42 (a Device, filtered out by the :Account target label).
             assertThat(matchedIds(stores, engine,
@@ -1317,7 +1320,7 @@ class TestGraphTraversalEngine {
             final GraphTraversalEngine engine = new GraphTraversalEngine(stores, new ExpressionPredicateFactory());
             final CompiledCypherPlan compiled = compile(
                     "MATCH (o:Officer {id: 'o-larive'})<-[:INVESTIGATED_BY]-(c:Crime) "
-                    + "RETURN count(*) AS all, count(c.severity) AS withSeverity");
+                    + "RETURN count(*) AS total, count(c.severity) AS withSeverity");
 
             final List<Val[]> rows = execute(stores, engine, compiled);
             assertThat(rows).hasSize(1);
