@@ -1602,16 +1602,8 @@ public final class GraphTraversalEngine {
                                       final TemporalAccess access) {
         if (nodeScan.labels().isEmpty()) {
             throw new UnsupportedOperationException(
-                    "not yet supported: an anchor MATCH requires at least one label to seek the property index "
-                    + "(a full unlabelled scan is not indexed)");
-        }
-        final List<ExpressionItem> terms = nodeScan.propertyAnchor() == null
-                ? List.of()
-                : nodeScan.propertyAnchor().getChildren();
-        if (terms == null || terms.isEmpty()) {
-            throw new UnsupportedOperationException(
-                    "not yet supported: an anchor MATCH requires at least one property predicate (a "
-                    + "label-only \"scan every node with this label\" access path is not indexed)");
+                    "not yet supported: an anchor MATCH requires at least one label (a fully unlabelled scan is "
+                    + "not indexed; add a label, e.g. MATCH (n:Person))");
         }
 
         final List<Long> requiredLabelUids = new ArrayList<>(nodeScan.labels().size());
@@ -1621,6 +1613,18 @@ public final class GraphTraversalEngine {
                 return List.of();
             }
             requiredLabelUids.add(labelUid.get());
+        }
+
+        final List<ExpressionItem> terms = nodeScan.propertyAnchor() == null
+                ? List.of()
+                : nodeScan.propertyAnchor().getChildren();
+        if (terms == null || terms.isEmpty()) {
+            // Label-only anchor (MATCH (n:Label) ...): there is no property index to seek, so scan the node store
+            // for every node carrying the required label(s). This is the scalar/aggregation counterpart of the
+            // RETURN GRAPH label browse (dumpWholeGraph), but - unlike that bounded preview - it must return every
+            // match so results are never silently truncated; the fail-loud maxAccumulatedRows ceiling below is the
+            // only bound (a too-broad label scan fails loud, telling the user to add a property/WHERE/LIMIT).
+            return scanAnchorsByLabel(readTxn, requiredLabelUids, access);
         }
 
         final ExpressionTerm seekTerm = (ExpressionTerm) terms.getFirst();
@@ -1649,6 +1653,38 @@ public final class GraphTraversalEngine {
                 matched.add(candidate);
             }
         }
+        return matched;
+    }
+
+    /**
+     * Seeds anchors for a label-only {@code MATCH (n:Label) ...} by scanning the node store for every node that
+     * carries the required label(s) at the read instant. There is no property index to seek here (unlike
+     * {@link #resolveAnchors}'s main path), so this walks {@link GraphNodeDb#forEachDistinctNodeUid} - the same
+     * access path as the {@code RETURN GRAPH} browse ({@link #dumpWholeGraph}), but returning <em>all</em> matches
+     * (a scalar query must never silently drop rows). The only bound is the fail-loud {@link #maxAccumulatedRows}
+     * ceiling: a label matching more nodes than that throws {@link GraphTraversalLimitExceededException} rather than
+     * truncating, so the caller is told to add a property constraint / {@code WHERE} / {@code LIMIT}. Any
+     * {@code WHERE} on the pattern is applied downstream, not here (this only chooses seed nodes).
+     */
+    private List<Long> scanAnchorsByLabel(final Txn<ByteBuffer> readTxn, final List<Long> requiredLabelUids,
+                                          final TemporalAccess access) {
+        final Set<Long> required = new HashSet<>(requiredLabelUids);
+        final Instant deadline = Instant.now().plus(maxTraversalDuration);
+        final List<Long> matched = new ArrayList<>();
+        stores.getNodes().forEachDistinctNodeUid(readTxn, nodeUid -> {
+            checkDeadline(deadline);
+            if (matched.size() >= maxAccumulatedRows) {
+                throw new GraphTraversalLimitExceededException(
+                        "a label-only MATCH matched more than the maximum allowed " + maxAccumulatedRows
+                        + " anchor nodes; add a property constraint (e.g. MATCH (n:Label {id: ...})), a WHERE "
+                        + "filter, or a LIMIT to reduce the result set");
+            }
+            final Optional<GraphNodeDb.NodeVersion> node = access.getNode(readTxn, nodeUid);
+            if (node.isPresent() && node.get().labelUids().containsAll(required)) {
+                matched.add(nodeUid);
+            }
+            return true;
+        });
         return matched;
     }
 

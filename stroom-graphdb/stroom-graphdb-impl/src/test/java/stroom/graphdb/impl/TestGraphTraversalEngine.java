@@ -375,6 +375,32 @@ class TestGraphTraversalEngine {
     }
 
     @Test
+    void labelOnlyMatch_scansAllNodesOfTheLabel(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("labelscan"), DOC)) {
+            seedDeviceConnectedToAccounts(stores);
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory());
+
+            // No anchor property, no hop: scan every Account node (account-a, account-b).
+            assertThat(matchedIds(stores, engine, "MATCH (a:Account) RETURN a.id"))
+                    .containsExactlyInAnyOrder("account-a", "account-b");
+            // A WHERE still filters the scanned rows (account-b's balance is 200).
+            assertThat(matchedIds(stores, engine, "MATCH (a:Account) WHERE a.balance > 100 RETURN a.id"))
+                    .containsExactly("account-b");
+            // A secondary label (account-b also carries Premium) is a valid scan target.
+            assertThat(matchedIds(stores, engine, "MATCH (a:Premium) RETURN a.id"))
+                    .containsExactly("account-b");
+            // A label-only scan is a valid traversal anchor too: scan every Device, expand out over CONNECTED_TO.
+            // d-42 -> account-a/account-b; gw-1 -> d-42 (a Device, filtered out by the :Account target label).
+            assertThat(matchedIds(stores, engine,
+                    "MATCH (d:Device)-[:CONNECTED_TO]->(a:Account) RETURN a.id"))
+                    .containsExactlyInAnyOrder("account-a", "account-b");
+            // An unknown label matches nothing (fails closed, not loud).
+            assertThat(matchedIds(stores, engine, "MATCH (a:Ghost) RETURN a.id")).isEmpty();
+        }
+    }
+
+    @Test
     void caseExpression_evaluatesOverRows(@TempDir final Path root) {
         try (GraphStores stores = GraphStores.provision(root.resolve("casefns"), DOC)) {
             seedDeviceConnectedToAccounts(stores);
