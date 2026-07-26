@@ -1,6 +1,6 @@
 # Stroom graph query engine vs. the GQL mandatory feature set
 
-**Date:** 2026-07-26 · **Branch:** `sw-query-optimiser-graph-backend` · **Commit:** `994ad12141`
+**Date:** 2026-07-26 · **Branch:** `sw-query-optimiser-graph-backend` · **Commit:** `065c545d1e`
 **Standard compared against:** ISO/IEC 39075:2024 (GQL — Graph Query Language)
 
 ---
@@ -48,7 +48,7 @@ where Stroom is genuinely strong.
 | Result ordering & paging (`ORDER BY`, `SKIP`, `LIMIT`) | ✅ Supported |
 | Comparison predicates, `IS NULL` / `IS NOT NULL` | ✅ Supported |
 | `CASE` value expression | ✅ Supported (`CASE WHEN …` searched form and simple form) |
-| `EXISTS` predicate / subqueries | ❌ Not supported |
+| `EXISTS { pattern }` subqueries | ✅ Supported (correlated single typed hop; `NOT EXISTS` too) |
 | Aggregate functions (`count`, `sum`, `avg`, `min`, `max`) | ✅ Supported (+ `collect`) |
 | Arithmetic value expressions | ✅ Supported (`+ - * / ^ %`) |
 | Scalar / string / date functions | ✅ Supported (Stroom's 230+ function library) |
@@ -129,7 +129,7 @@ pattern grammar is not.
 - **`IN` list membership** — ✅
 - **String predicates** `STARTS WITH` / `CONTAINS` / `ENDS WITH` / `=~` — ✅ (a Cypher extension beyond bare GQL)
 - **`CASE`** — ✅ both the searched form (`CASE WHEN <cond> THEN … ELSE … END`, with `AND`/`OR`/`NOT` and `IS [NOT] NULL` conditions) and the simple form (`CASE <input> WHEN <value> THEN … END`); a missing `ELSE` yields null. (Also still reachable as the `stroom.case(...)` function.) *String predicates / `IN` inside a `CASE` condition are the only rejected sub-cases.*
-- **`EXISTS`** (existential subquery / pattern) — ❌ not supported
+- **`EXISTS { pattern }`** (existential subquery) — ✅ correlated `[NOT] EXISTS { (x)-[:T]->(y) }`: a single typed hop from an outer-bound node, with optional inner target labels/properties. *Deferred: multi-hop / inner-WHERE existence patterns.*
 - **Aggregates** `count` / `sum` / `avg` / `min` / `max` — ✅ (plus `collect`, and `count(DISTINCT …)`)
 - **Arithmetic** — ✅ `+ - * / ^ %` with correct precedence and parentheses
 
@@ -155,16 +155,16 @@ have no counterpart, by design.
 Setting aside the deliberately out-of-scope write/catalog/session categories,
 these are the query-side items closest to worth doing, roughly in value order:
 
-1. **`EXISTS { pattern }` / existential subqueries.** Needs a sub-pattern
-   evaluation hook in the WHERE path. *Medium effort.*
-2. **True list values + `UNWIND`.** Today `collect()` returns a delimited string,
+1. **True list values + `UNWIND`.** Today `collect()` returns a delimited string,
    not a real list; `UNWIND`, `keys()`, `labels()`, `range()`, list slicing all
    wait on a first-class list value type threaded through the value model.
-   *Higher effort — a cross-cutting change touching shared search/dashboard code.*
+   *Higher effort — a cross-cutting change touching shared search/dashboard code.
+   This is now the last remaining query-side gap of any size.*
 
 *Recently closed:* the `CASE WHEN` expression (both forms), the modulo (`%`)
-operator, the **label-only node scan** (`MATCH (n:Person) RETURN …`) and
-**`UNION` / `UNION ALL`** are now implemented — they previously headed this list.
+operator, the **label-only node scan** (`MATCH (n:Person) RETURN …`),
+**`UNION` / `UNION ALL`**, and **`EXISTS { pattern }`** correlated subqueries are
+now implemented — they previously headed this list.
 
 None of these block the common analytic queries the engine is built for; they are
 the standards-completeness tail.
@@ -180,8 +180,8 @@ sessions). Judged on the fair question — *can a user express standard graph
 queries?* — it covers the **majority of GQL's mandatory querying capability**:
 pattern matching, optional matching, rich filtering, projection with distinct/
 alias, ordering and paging, the full mandatory aggregate set, arithmetic,
-`CASE`, label-only scans and `UNION`/`UNION ALL`. The notable query-side
-omissions are `EXISTS` subqueries, real list values/`UNWIND`, and the `SELECT`
+`CASE`, label-only scans, `UNION`/`UNION ALL` and `EXISTS` subqueries. The
+notable query-side omissions are real list values/`UNWIND` and the `SELECT`
 tabular form.
 
 ---
