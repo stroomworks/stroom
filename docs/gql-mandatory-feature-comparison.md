@@ -1,6 +1,6 @@
 # Stroom graph query engine vs. the GQL mandatory feature set
 
-**Date:** 2026-07-25 · **Branch:** `sw-query-optimiser-graph-backend` · **Commit:** `6a2fd0092a`
+**Date:** 2026-07-26 · **Branch:** `sw-query-optimiser-graph-backend` · **Commit:** `994ad12141`
 **Standard compared against:** ISO/IEC 39075:2024 (GQL — Graph Query Language)
 
 ---
@@ -97,9 +97,10 @@ capability is effectively "always the one graph you opened."
 Both are implemented. `MATCH` supports fixed-length chains and bounded
 variable-length paths; `OPTIONAL MATCH` extends a matched pattern with a single
 optional hop, null-padding unmatched rows (Cypher's left-join semantics).
-*Limitation:* the leading `MATCH` generally needs to be **anchored** (a node with
-a property predicate or an id); a purely label-only scan such as
-`MATCH (n:Person) RETURN n.id` with no anchor is not yet a general node-scan.
+A label-only pattern such as `MATCH (n:Person) RETURN n.id` (no property
+anchor) is supported — the engine scans the node store for nodes carrying the
+label (bounded by the fail-loud in-memory ceiling). A *fully unlabelled* scan
+(`MATCH (n) RETURN …`, no label at all) is still rejected — add a label.
 
 ### Subclause 14.9 — Order and paging (`ORDER BY`, offset/limit) · ✅ Supported
 `ORDER BY` (multi-key, asc/desc), `SKIP n` and `LIMIT n` are all supported on the
@@ -154,18 +155,16 @@ have no counterpart, by design.
 Setting aside the deliberately out-of-scope write/catalog/session categories,
 these are the query-side items closest to worth doing, roughly in value order:
 
-1. **True list values + `UNWIND`.** Today `collect()` returns a delimited string,
+1. **`EXISTS { pattern }` / existential subqueries.** Needs a sub-pattern
+   evaluation hook in the WHERE path. *Medium effort.*
+2. **True list values + `UNWIND`.** Today `collect()` returns a delimited string,
    not a real list; `UNWIND`, `keys()`, `labels()`, `range()`, list slicing all
    wait on a first-class list value type threaded through the value model.
-   *Higher effort (cross-cutting value-type change).*
-2. **`EXISTS { pattern }` / existential subqueries.** Needs a sub-pattern
-   evaluation hook in the WHERE path. *Medium effort.*
-3. **Unanchored label-only node scan** (`MATCH (n:Person) RETURN …`). Needs a
-   label-indexed node scan as a plan source. *Medium effort.*
-4. **`UNION` of query results.** *Medium effort.*
+   *Higher effort — a cross-cutting change touching shared search/dashboard code.*
 
-*Recently closed:* the `CASE WHEN` expression (both forms) and the modulo (`%`)
-operator are now implemented — they previously headed this list.
+*Recently closed:* the `CASE WHEN` expression (both forms), the modulo (`%`)
+operator, the **label-only node scan** (`MATCH (n:Person) RETURN …`) and
+**`UNION` / `UNION ALL`** are now implemented — they previously headed this list.
 
 None of these block the common analytic queries the engine is built for; they are
 the standards-completeness tail.
@@ -180,9 +179,10 @@ conformance without a fundamentally larger scope (write statements, catalog,
 sessions). Judged on the fair question — *can a user express standard graph
 queries?* — it covers the **majority of GQL's mandatory querying capability**:
 pattern matching, optional matching, rich filtering, projection with distinct/
-alias, ordering and paging, the full mandatory aggregate set, arithmetic and
-`CASE`. The notable query-side omissions are `EXISTS` subqueries, real list
-values/`UNWIND`, `UNION`, and the `SELECT` tabular form.
+alias, ordering and paging, the full mandatory aggregate set, arithmetic,
+`CASE`, label-only scans and `UNION`/`UNION ALL`. The notable query-side
+omissions are `EXISTS` subqueries, real list values/`UNWIND`, and the `SELECT`
+tabular form.
 
 ---
 
