@@ -21,9 +21,9 @@ import stroom.floormap.client.event.MapObjectSelectedEvent;
 import stroom.floormap.client.presenter.FloorMapCanvasPresenter.FloorMapCanvasView;
 import stroom.floormap.client.view.FloorMapGrid;
 import stroom.floormap.shared.Fact;
+import stroom.floormap.shared.FloorMapEntityAnimator;
 import stroom.floormap.shared.FloorMapJsonKeys;
 import stroom.floormap.shared.FloorMapObject;
-import stroom.floormap.shared.FloorMapEntityAnimator;
 import stroom.floormap.shared.FloorMapTransformationMatrix;
 import stroom.floormap.shared.FloorMapViewport;
 import stroom.floormap.shared.FloorMapZOrder;
@@ -1293,7 +1293,6 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         redraw();
     }
 
-    /** Deletes vertex {@code index} of the selected area (keeps a minimum of 3). */
     /**
      * Deletes the vertex at {@code index} from the single selected area,
      * enforcing the 3-vertex minimum and skipping locked layers. Persists via

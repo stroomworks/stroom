@@ -48,7 +48,7 @@ import com.gwtplatform.mvp.client.ViewImpl;
  * <ul>
  *   <li><b>Outer (vertical)</b> — top area vs bottom strip (draggable).</li>
  *   <li><b>Top-inner (vertical)</b> — canvas (fill) above timeline (fixed south, no splitter).</li>
- *   <li><b>Bottom-inner (horizontal)</b> — two equal columns (Fact List | Time List) in the bottom strip (draggable).</li>
+ *   <li><b>Bottom-inner (horizontal)</b> — two equal columns, Fact List | Time List (draggable).</li>
  * </ul>
  */
 public class FloorMapEditorViewImpl extends ViewImpl implements FloorMapEditorView {
