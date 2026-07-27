@@ -701,6 +701,8 @@
 }
 
 /* Graph DB Data tab temporal "time-travel" slider: floats over the top-centre of the graph. */
+/* Positioning-only wrapper: carries no chrome so nothing shows until the controls are switched on
+   (activation is driven by the in-graph toolbar's "Time travel" toggle). */
 .GraphTemporal {
     position: absolute;
     top: 6px;
@@ -709,13 +711,7 @@
     z-index: 20;
     display: flex;
     align-items: center;
-    gap: 8px;
     max-width: 90%;
-    padding: 4px 8px;
-    border: 1px solid var(--border-color, #ccc);
-    border-radius: 4px;
-    background-color: var(--app-background-color, rgba(255, 255, 255, 0.94));
-    box-shadow: 0 1px 6px rgba(0, 0, 0, 0.18);
     font-size: 12px;
 }
 
@@ -724,6 +720,12 @@
     align-items: center;
     gap: 6px;
     flex-wrap: wrap;
+    padding: 4px 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-color);
+    background-color: rgba(var(--dialog__background-color-rgb), 0.96);
+    box-shadow: 0 1px 6px rgba(var(--black-rgb), 0.18);
 }
 
 .GraphTemporal-caption {
@@ -746,7 +748,7 @@
 }
 
 .GraphTemporal-instant__error {
-    color: var(--error-color, #d64545);
+    color: var(--text-color--red);
 }
 
 .GraphTemporal-compare {

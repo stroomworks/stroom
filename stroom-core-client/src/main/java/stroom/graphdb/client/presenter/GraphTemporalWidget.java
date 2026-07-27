@@ -90,11 +90,9 @@ public class GraphTemporalWidget extends Composite {
         final FlowPanel panel = new FlowPanel();
         panel.addStyleName("GraphTemporal");
 
-        final ToggleButton enable = new ToggleButton("Time travel");
-        enable.addStyleName("GraphTemporal-enable");
-        enable.addClickHandler(event -> setEnabled(enable.isDown()));
-        panel.add(enable);
-
+        // Activation is driven externally by the in-graph toolbar's "Time travel" toggle (relayed through the
+        // sandbox's reverse channel to GraphResultWidget, which calls #setActive) rather than by a button here,
+        // so the panel shows no chrome until it is switched on.
         controls = new FlowPanel();
         controls.addStyleName("GraphTemporal-controls");
         controls.setVisible(false);
@@ -135,7 +133,11 @@ public class GraphTemporalWidget extends Composite {
         initWidget(panel);
     }
 
-    private void setEnabled(final boolean on) {
+    /**
+     * Show or hide the time-travel controls. Called by {@link GraphResultWidget} when the in-graph toolbar's
+     * "Time travel" toggle is switched. Switching off stops any playback and restores the live (latest) view.
+     */
+    public void setActive(final boolean on) {
         controls.setVisible(on);
         if (on) {
             slider.setValue(0);

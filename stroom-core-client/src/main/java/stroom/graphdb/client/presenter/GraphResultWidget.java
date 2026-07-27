@@ -56,6 +56,7 @@ public class GraphResultWidget extends Composite implements SelectionUiHandlers 
      * node identity-based via the /expand endpoint: expand merges the result in, focus replaces the view with it. */
     private static final String EXPAND_NODE_PARAM = "__stroomExpand";
     private static final String FOCUS_NODE_PARAM = "__stroomFocus";
+    private static final String TIME_TRAVEL_PARAM = "__stroomTimeTravel";
 
     /** Hard cap on element rows rendered at once, so a runaway result can never lock up the browser (P4 guardrail).
      * The default queries are {@code LIMIT}-bounded well below this; it only bites on a pathological result. */
@@ -162,6 +163,7 @@ public class GraphResultWidget extends Composite implements SelectionUiHandlers 
         }
         if (rows.size() > MAX_ELEMENT_ROWS) {
             rows = rows.subList(0, MAX_ELEMENT_ROWS);
+            //noinspection SizeReplaceableByIsEmpty
             if (warning.length() > 0) {
                 warning.append(' ');
             }
@@ -173,6 +175,7 @@ public class GraphResultWidget extends Composite implements SelectionUiHandlers 
         frame.setElements(buildPayload(columns, rows));
         frame.onResize();
 
+        //noinspection SizeReplaceableByIsEmpty
         if (warning.length() > 0) {
             warningLabel.setText(warning.toString());
             warningLabel.setVisible(true);
@@ -240,6 +243,7 @@ public class GraphResultWidget extends Composite implements SelectionUiHandlers 
     @Override
     public void onSelection(final List<ComponentSelection> values) {
         if (values != null && !values.isEmpty()) {
+            @SuppressWarnings("SequencedCollectionMethodCanBeUsed")
             final ComponentSelection selection = values.get(0);
             // Context-menu actions carry a command param; a plain tap carries neither.
             final String expandNodeId = selection.getParamValue(EXPAND_NODE_PARAM);
@@ -250,6 +254,12 @@ public class GraphResultWidget extends Composite implements SelectionUiHandlers 
             final String focusNodeId = selection.getParamValue(FOCUS_NODE_PARAM);
             if (focusNodeId != null && onFocusNode != null) {
                 onFocusNode.accept(focusNodeId);
+                return;
+            }
+            // The in-graph toolbar's "Time travel" toggle relays an on/off command here; show/hide the panel.
+            final String timeTravel = selection.getParamValue(TIME_TRAVEL_PARAM);
+            if (timeTravel != null) {
+                temporalWidget.setActive("on".equals(timeTravel));
                 return;
             }
         }

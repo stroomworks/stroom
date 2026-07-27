@@ -108,6 +108,7 @@ function GraphManager() {
     var captionSelect = null;   // the caption picker <select> (options rebuilt as the graph changes)
     var edgeWidthKey = null;    // null = uniform width, else a numeric edge property mapped to thickness
     var edgeWidthSelect = null; // the edge-width picker <select> (options rebuilt as the graph changes)
+    var timeTravelActive = false; // whether the parent-owned time-travel panel is shown (toggled from the toolbar)
 
     var DECLUTTER_ZOOM = 0.5;   // below this zoom level, labels are hidden when auto-declutter is on
     var EDGE_WIDTH_MIN = 1;     // px, thinnest edge when mapping a property to thickness
@@ -422,6 +423,20 @@ function GraphManager() {
             applyDeclutter();
         };
 
+        // Toggle: reveal the time-travel controls. The temporal panel (slider / play / compare) lives in the
+        // parent GWT widget, so this button just relays an on/off command up the reverse channel (the same
+        // mechanism as the "Expand"/"Focus" context-menu actions); the parent shows or hides its panel.
+        var timeTravelBtn = document.createElement('button');
+        timeTravelBtn.type = 'button';
+        timeTravelBtn.textContent = 'Time travel';
+        timeTravelBtn.title = 'Show the time-travel controls to view the graph as of a past instant';
+        setActive(timeTravelBtn, timeTravelActive);
+        timeTravelBtn.onclick = function () {
+            timeTravelActive = !timeTravelActive;
+            setActive(timeTravelBtn, timeTravelActive);
+            stroom.select([{__stroomTimeTravel: timeTravelActive ? 'on' : 'off'}]);
+        };
+
         // Caption picker: choose which property (or label / id) is shown on nodes. Options rebuilt per graph.
         captionSelect = document.createElement('select');
         captionSelect.title = 'Node caption';
@@ -479,6 +494,7 @@ function GraphManager() {
         bar.appendChild(degreeBtn);
         bar.appendChild(edgeLabelBtn);
         bar.appendChild(declutterBtn);
+        bar.appendChild(timeTravelBtn);
         bar.appendChild(captionSelect);
         bar.appendChild(edgeWidthSelect);
         bar.appendChild(exportSelect);
@@ -1421,10 +1437,15 @@ function GraphManager() {
             showInspector(target);
             stroom.select([{id: data.id, kind: target.isEdge() ? 'EDGE' : 'NODE'}]);
         });
-        // A tap on empty canvas closes the inspector and clears any search highlight.
+        // A tap on empty canvas closes the inspector and clears any active highlight (search,
+        // neighbourhood, or shortest-path), returning the graph to its normal, fully-visible state.
         cy.on('tap', function (evt) {
             if (evt.target === cy) {
                 hideInspector();
+                if (searchInput) {
+                    searchInput.value = '';
+                }
+                clearHighlight();
             }
         });
         // Auto-declutter reacts to zoom level.
