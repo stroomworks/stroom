@@ -101,7 +101,9 @@ public class DocumentAssetChooserPresenter
 
     public String getSelectedAssetUrl() {
         if (selectedItem != null && document != null) {
-            return "/assets/" + document.getUuid() + DocumentAssetPresenterUtils.getItemPath(selectedItem);
+            return DocumentAssetPresenter.ASSET_SERVLET_PATH_PREFIX
+                    + document.getUuid()
+                    + DocumentAssetPresenterUtils.getItemPath(selectedItem);
         }
         return null;
     }

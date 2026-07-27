@@ -16,9 +16,9 @@
 
 package stroom.floormap.client.presenter;
 
+import stroom.floormap.client.FloorMapSwatchHtml;
 import stroom.floormap.client.presenter.FloorMapLayersPresenter.FloorMapLayersView;
 import stroom.floormap.shared.TypeStyle;
-import stroom.floormap.shared.TypeStyle.Shape;
 import stroom.svg.shared.SvgImage;
 import stroom.widget.button.client.InlineSvgButton;
 
@@ -30,8 +30,6 @@ import com.google.gwt.event.dom.client.DragLeaveEvent;
 import com.google.gwt.event.dom.client.DragOverEvent;
 import com.google.gwt.event.dom.client.DragStartEvent;
 import com.google.gwt.event.dom.client.DropEvent;
-import com.google.gwt.safehtml.shared.SafeHtml;
-import com.google.gwt.safehtml.shared.SafeHtmlUtils;
 import com.google.gwt.user.client.ui.FlowPanel;
 import com.google.gwt.user.client.ui.HTML;
 import com.google.gwt.user.client.ui.Label;
@@ -457,12 +455,15 @@ public class FloorMapLayersPresenter extends MyPresenterWidget<FloorMapLayersVie
 
         row.add(name);
 
-        // Editor-only: a swatch previewing the layer's shape in its colour,
-        // which opens the appearance dialog (shape + colour) for this layer.
+        // Editor-only: a swatch previewing the layer's graphic — its image if it
+        // has one, otherwise its shape in its colour — which opens the appearance
+        // dialog for this layer.
         if (editorMode) {
-            final HTML swatch = new HTML(shapeSwatchHtml(ts.getShape(), ts.getColour()));
+            final HTML swatch = new HTML(FloorMapSwatchHtml.swatch(ts, SWATCH_SIZE_PX));
             swatch.addStyleName("floormap-layer-swatch");
-            swatch.setTitle("Edit appearance (shape & colour)");
+            swatch.setTitle(ts.hasGraphic()
+                    ? "Edit appearance (image & colour)"
+                    : "Edit appearance (shape & colour)");
             swatch.addDomHandler(event -> {
                 if (styleEditor != null) {
                     styleEditor.accept(ts, this::applyStyle);
@@ -474,46 +475,8 @@ public class FloorMapLayersPresenter extends MyPresenterWidget<FloorMapLayersVie
         return row;
     }
 
-    /** Fallback swatch fill when a layer has no configured colour. */
-    private static final String DEFAULT_SWATCH_COLOUR = "#90a4ae";
-
-    /** A 16×16 inline-SVG preview of the shape filled with the layer's colour. */
-    private SafeHtml shapeSwatchHtml(final Shape shape, final String colour) {
-        final String fill = isValidColour(colour)
-                ? colour
-                : DEFAULT_SWATCH_COLOUR;
-        return SafeHtmlUtils.fromTrustedString(
-                "<svg width=\"16\" height=\"16\" viewBox=\"0 0 16 16\" "
-                + "xmlns=\"http://www.w3.org/2000/svg\">"
-                + shapeSvg(shape, fill)
-                + "</svg>");
-    }
-
-    private static boolean isValidColour(final String colour) {
-        return colour != null && colour.matches("^#[0-9a-fA-F]{3,8}$");
-    }
-
-    private static String shapeSvg(final Shape shape, final String fill) {
-        if (shape == null) {
-            // The default graphic for imageless facts is a rectangle.
-            return "<rect x=\"2.5\" y=\"4.5\" width=\"11\" height=\"7\" rx=\"1.5\" fill=\"" + fill + "\"/>";
-        }
-        //noinspection EnhancedSwitchMigration
-        switch (shape) {
-            case SQUARE:
-                return "<rect x=\"3\" y=\"3\" width=\"10\" height=\"10\" rx=\"1\" fill=\"" + fill + "\"/>";
-            case TRIANGLE:
-                return "<polygon points=\"8,2.5 13.5,13 2.5,13\" fill=\"" + fill + "\"/>";
-            case DIAMOND:
-                return "<polygon points=\"8,2 14,8 8,14 2,8\" fill=\"" + fill + "\"/>";
-            case PIN:
-                return "<path d=\"M8 14 C4 9 4.2 3.5 8 3.5 C11.8 3.5 12 9 8 14 Z\" fill=\"" + fill + "\"/>"
-                        + "<circle cx=\"8\" cy=\"6.3\" r=\"1.6\" fill=\"#ffffff\"/>";
-            case CIRCLE:
-            default:
-                return "<circle cx=\"8\" cy=\"8\" r=\"5\" fill=\"" + fill + "\"/>";
-        }
-    }
+    /** Size of each row's graphic preview in pixels. */
+    private static final int SWATCH_SIZE_PX = 16;
 
     private void applyLockState(final InlineSvgButton lock, final boolean locked) {
         lock.setSvg(locked
