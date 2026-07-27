@@ -5,7 +5,12 @@
 on Stroom's temporal-Cypher Graph DB, with an honest record of what worked, what didn't, and step-by-step
 instructions so a human can replicate it. Run 2026-07-20 against a live single-node Stroom via the REST API;
 re-run and extended 2026-07-21 against the same instance (existing `GraphDb Test` folder, data reprocessed
-after a stale duplicate-name error was cleared) to verify the newly-added aggregation functions live.*
+after a stale duplicate-name error was cleared) to verify the newly-added aggregation functions live.
+Re-run again 2026-07-27 (`sw-query-optimiser` branch) — via the MCP tools this time, into a fresh `POLE` folder
+(`POLE Graph` / `POLE-GRAPH` / `POLE Graph Pipeline`), routing Cypher with a leading `from "POLE Graph"` clause —
+to record three further additions verified live: **label-only anchor scans** (`MATCH (c:Crime)` with no property
+predicate), **`collect()`** (incl. `collect(DISTINCT …)`), and **`WITH`** — each of which the 07-21 record listed
+as unsupported.*
 
 ---
 
@@ -19,21 +24,24 @@ after a stale duplicate-name error was cleared) to verify the newly-added aggreg
   node, and `ORDER BY` / `DISTINCT` / `LIMIT`.
 - **Update (verified live 2026-07-21):** `count`/`sum`/`avg`/`min`/`max` aggregation, with implicit `GROUP BY`,
   now works — see [§5's "Aggregation" note](#aggregation-added--see-graphdb-analytic-functions-implementation-planmd).
-  The anchor-property-predicate rule still applies, and **`ORDER BY` must reference the aggregate's alias, not
-  the aggregate expression itself** (`ORDER BY total DESC` works; `ORDER BY count(c) DESC`, exactly as POLE's
-  queries are written, is rejected) — so q3–q5/q7/q14 need a one-word rewrite to run. `collect()`, spatial,
-  path-finding, pattern-predicates, and writes remain out of scope (below, as originally reported).
-- **But most POLE *queries as written* still do not run**, because the guide is built on capabilities Stroom's
-  PoC Cypher otherwise omits: **`collect()`**, **spatial** (`point`, `point.distance`), and **path-finding**
-  (`allShortestPaths`, multi-type variable-length paths, `RETURN path`), plus **pattern-predicates**
-  (`WHERE NOT (a)-[:X]->(b)`) and **writes** (`SET`).
+  **`ORDER BY` must reference the aggregate's alias, not the aggregate expression itself** (`ORDER BY total DESC`
+  works; `ORDER BY count(c) DESC`, exactly as POLE's queries are written, is rejected) — so q3–q5/q7/q14 still need
+  a one-word rewrite to run.
+- **Update (verified live 2026-07-27, `sw-query-optimiser`):** two of the gaps below have since closed —
+  **label-only anchor scans** (`MATCH (c:Crime)` with no property predicate now scans all nodes of a label) and
+  **`collect()`** (incl. `collect(DISTINCT …)`) both execute for real. Together with aggregation, this means POLE's
+  **crime-totals** (q2) and **top-locations** queries now run essentially as written — only `ORDER BY <alias>`
+  (not the aggregate call) needs changing. **`WITH`** also compiles and executes now; **`OPTIONAL MATCH`** is
+  accepted only as a continuation of a preceding `MATCH`, not as a query's opening clause. **Spatial**
+  (`point`, `point.distance`), **path-finding** (`allShortestPaths`, multi-type variable-length paths,
+  `RETURN path`), **pattern-predicates** (`WHERE NOT (a)-[:X]->(b)`) and **writes** (`SET`) remain out of scope.
 - **Every unsupported query fails with a clear compile error, never a 500 or a wrong answer** — which is exactly
   the PoC's stated contract.
 - **Stroom adds something POLE can't do: time.** Every node/edge has a `validFrom`, so the same traversal can be
   run `AS OF` a past instant and returns the graph as it was then.
 
-Net: you can reproduce POLE's **structure, traversals, and counting** (aggregation), not its **spatial/path-finding**
-analytics or `collect()`.
+Net: you can reproduce POLE's **structure, traversals, counting** (aggregation) and **`collect()`/grouping**
+questions, not its **spatial** or **path-finding** analytics.
 
 ---
 
@@ -156,11 +164,15 @@ Neo4j guide. It composes with aggregation too (verified live): the same query wi
 
 ## 5. What didn't work — and why (all fail with a clear compile error, not a 500)
 
+*Updated 2026-07-27 (`sw-query-optimiser`): the two rows marked ✅ **now work** — label-only anchor scans and
+`collect()` have landed — so POLE's counting queries run essentially as written. The remaining rows are still
+clean compile rejections.*
+
 | POLE query | Stroom outcome | Missing capability |
 |---|---|---|
 | Schema visualization (q1) | n/a | No `db.schema.visualization()` procedure |
-| Count / frequency (q2, q3) | **partially supported** — `count`/`sum`/`avg`/`min`/`max` now execute, but q2/q3 as written still fail | (a) anchor needs a property predicate — `MATCH (c:Crime)` alone is still rejected (see §6); (b) q3's `ORDER BY count(c) DESC` is rejected — must `ORDER BY` the aggregate's alias instead (see below) |
-| Aggregated variants of q4, q5, q7, q14 | **the aggregation itself now works**; each query still needs a 1-word rewrite (`ORDER BY <alias>` instead of `ORDER BY count(...)`) to run as-is | `collect()` still rejected (not yet in the grammar) |
+| Count / frequency (q2, q3) | ✅ **now works (2026-07-27)** — label-only `MATCH (c:Crime)` scans all crimes and aggregates over them: `MATCH (c:Crime) RETURN c.type AS crime_type, count(c) AS total ORDER BY total DESC` → `Drugs: 3, Burglary: 1`. `MATCH (c:Crime) RETURN count(c)` → `4` | Label-only scan now supported. Only caveat: `ORDER BY` the alias, not `count(c)` (see below) |
+| Aggregated variants of q4, q5, q7, q14 | ✅ **now works** — aggregation **and** `collect()`/`collect(DISTINCT …)` both execute; each needs only the `ORDER BY <alias>` rewrite | `collect()` is now in the grammar (see below) |
 | Create point property (q6) | rejected | No **writes** (`SET`) and no spatial types in the read-only PoC subset |
 | Spatial distance / radius / nearest (q8–q12) | rejected: *mismatched input '('* | No **`point` / `point.distance`** functions |
 | `RETURN *` / `RETURN path` (q13, q15, q16, q17, q18, q21) | rejected | `RETURN` must be `variable.property`; **whole-node / path returns** not supported |
@@ -195,11 +207,23 @@ written — is rejected: *"not in PoC subset: an ORDER BY item must be a propert
 (order by the alias, not the aggregate call) before it will run — a small, mechanical rewrite, not a missing
 capability, but worth calling out since it means those queries don't run completely unmodified.
 
-`collect()` (gathering a group's values into a list) is not yet implemented — it needs a grammar change and a
-new list-valued cell type, neither of which exist yet — so it remains a rejected, later-phase addition:
-`MATCH (p:Person {surname:'Powell'})-[:PARTY_TO]->(c:Crime) RETURN p.surname, collect(c.type)` fails to parse
-(*"mismatched input '.' expecting '('"* — `collect` isn't in the locked aggregate-function grammar at all, unlike
-`count`/`sum`/`avg`/`min`/`max`).
+### Since added (verified live 2026-07-27, `sw-query-optimiser`)
+
+- **`collect()` now works** (grammar + a list-valued cell type both landed):
+  `MATCH (p:Person {surname:'Powell'})-[:PARTY_TO]->(c:Crime) RETURN p.surname, collect(c.type)` returns
+  `Powell, "Drugs, Drugs"`, and `collect(DISTINCT c.type)` deduplicates
+  (`MATCH (o:Officer {surname:'Larive'})<-[:INVESTIGATED_BY]-(c:Crime) RETURN o.surname, collect(DISTINCT c.type)`
+  → `Larive, Drugs`).
+- **Label-only anchor scans now work** — `MATCH (c:Crime) …` with no `{prop: val}` predicate scans all nodes of
+  the label (there *is* now an all-of-label access path), so the anchor-property-predicate rule in §6 no longer
+  holds. This is what lets q2's crime-totals run as written (modulo `ORDER BY <alias>`).
+- **`WITH` now compiles and executes** —
+  `MATCH (c:Crime {type:'Drugs'}) WITH c.last_outcome AS o RETURN o` returns the three Drugs crimes' outcomes.
+  **`OPTIONAL MATCH`** is accepted only as a *continuation* of a preceding `MATCH`, not as a query's opening
+  clause (*"a query cannot begin with OPTIONAL MATCH — it must extend a preceding MATCH"*).
+
+Still rejected as before: spatial (`point`/`point.distance`), path-finding (`allShortestPaths`, multi-type
+variable-length paths, `RETURN path`), pattern-predicates (`WHERE NOT (a)-[:X]->(b)`), and writes (`SET`).
 
 ### The pattern behind the gaps
 POLE is, at its core, an **analytics** tutorial: it ranks by `count`, measures `point.distance`, and finds
@@ -215,14 +239,17 @@ fold traversal + geometry + shortest-path into one statement are not.
 
 - **Unique GraphDb name.** The Graph Filter resolves the target store by **name**; a duplicate name anywhere in
   the tree causes a FATAL ingest error. (This is consistent with how other Stroom stores are keyed by name.)
-- **Anchor must have a label *and* a property predicate.** `MATCH (c:Crime {type:'Drugs'})` works;
-  `MATCH (c:Crime)` does not — there is no "scan all nodes of a label" access path.
+- **Anchor: label with *or without* a property predicate (updated 2026-07-27).** Both `MATCH (c:Crime {type:'Drugs'})`
+  and bare `MATCH (c:Crime)` now work — the latter scans all nodes of the label. *(Before 2026-07-27 a property
+  predicate was mandatory; that restriction is gone.)*
 - **`RETURN variable.property`**, not whole nodes or paths. To see a related entity, return its properties.
+  Aggregates and `collect(...)` in `RETURN` are fine.
 - **One `MATCH`, one pattern, single relationship type per hop.** Fixed-length multi-hop chains are fine; one
-  variable-length hop (`*a..b`, bounded) is fine as the sole hop.
-- **`count`/`sum`/`avg`/`min`/`max` aggregation now works** (implicit `GROUP BY` over every non-aggregate
-  `RETURN` item — see §5), and composes with `AS OF`. **`ORDER BY` an aggregate's alias, not the aggregate call
-  itself** — `ORDER BY total DESC` works, `ORDER BY count(c) DESC` does not. `collect()`, spatial, shortest-path,
+  variable-length hop (`*a..b`, bounded) is fine as the sole hop. `WITH` and (continuation-only) `OPTIONAL MATCH`
+  now compile.
+- **`count`/`sum`/`avg`/`min`/`max` aggregation and `collect()` now work** (implicit `GROUP BY` over every
+  non-aggregate `RETURN` item — see §5), and compose with `AS OF`. **`ORDER BY` an aggregate's alias, not the
+  aggregate call itself** — `ORDER BY total DESC` works, `ORDER BY count(c) DESC` does not. Spatial, shortest-path,
   pattern-predicates, and writes remain out of scope in the current PoC — expect a clear "not yet
   supported"/parse error.
 - **Route via `ownerDocRef`** (REST), the GraphDb **Data tab** (UI), or a leading **`from "GraphDb"`** clause
@@ -235,11 +262,12 @@ fold traversal + geometry + shortest-path into one statement are not.
 
 ## 7. Verdict
 
-You can stand up the POLE graph on Stroom and answer POLE's underlying **relationship and counting questions**
-through anchored traversals with `count`/`sum`/`avg`/`min`/`max` aggregation, verified live against a running
-instance — with the bonus of **temporal** "as of" analysis (which now composes with aggregation too) that the
-Neo4j guide has no equivalent for. POLE's own aggregated queries (q3–q5, q7, q14) need a small, mechanical
-rewrite — `ORDER BY` the aggregate's alias rather than the aggregate call — to run at all. You cannot, today,
-reproduce POLE's **`collect()`, spatial, and path-finding** queries as written; those are the concrete,
+You can stand up the POLE graph on Stroom and answer POLE's underlying **relationship, counting and grouping
+questions** through traversals (anchored or whole-label) with `count`/`sum`/`avg`/`min`/`max` aggregation and
+`collect()`, verified live against a running instance — with the bonus of **temporal** "as of" analysis (which
+composes with aggregation too) that the Neo4j guide has no equivalent for. As of 2026-07-27 (`sw-query-optimiser`),
+POLE's counting queries (q2–q5, q7, q14) run essentially **as written**, needing only the one-word `ORDER BY <alias>`
+rewrite. You cannot, today, reproduce POLE's **spatial** (`point.distance`) and **path-finding** (`allShortestPaths`,
+`RETURN path`) queries, nor its `SET` writes or pattern-predicate `WHERE`s; those are the concrete,
 clearly-signposted boundaries of the current Cypher subset and the natural candidates for the next phase of
 graph-query work.
