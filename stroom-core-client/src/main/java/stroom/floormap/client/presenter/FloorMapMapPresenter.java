@@ -81,9 +81,9 @@ import java.util.Map;
  *     <li>{@link #TIMELINE} – the {@link FloorMapTimelinePresenter} (timeline scrubber)</li>
  * </ul>
  *
- * <p>Two separate {@link QueryModel} instances are maintained: one for the facts query
- * playback and one for the histogram (events) query that populates the timeline density
- * bars.</p>
+ * <p>Three {@link QueryModel}-based searches are maintained: the facts query playback,
+ * the events query playback (the entity overlay the canvas animates), and the histogram
+ * query that populates the timeline density bars.</p>
  */
 public class FloorMapMapPresenter
         extends DocPresenter<FloorMapMapView, FloorMapDoc>
@@ -99,12 +99,24 @@ public class FloorMapMapPresenter
     private final FloorMapObjectEditPresenter floorMapObjectEditPresenter;
     private final FloorMapTrackingPresenter floorMapTrackingPresenter;
     private final FloorMapLayersPresenter floorMapLayersPresenter;
-    private final FloorMapDockPresenter floorMapDockPresenter;
 
     /** Roster of every entity seen on the map, feeding the tracking panel. */
     private final FloorMapEntityList entityList = new FloorMapEntityList();
 
     private final QueryModel queryModel;
+
+    /**
+     * Runs the document's events query at the selected time, producing the
+     * entity overlay that {@link FloorMapCanvasPresenter} animates.
+     *
+     * <p>The Map tab owns this query rather than {@link FloorMapQueryPresenter}
+     * (the Events Query tab): that presenter is created lazily, the first time
+     * its tab is opened, so a Map tab depending on it showed no live entities at
+     * all — and therefore no movement animation — until the user happened to
+     * visit another tab.</p>
+     */
+    private final QueryModel eventsQueryModel;
+
     private final HistogramQueryHelper histogramQueryHelper;
     private final HistogramQueryHelper factsHistogramQueryHelper;
     private final HistogramDataModel histogramDataModel;
@@ -173,16 +185,16 @@ public class FloorMapMapPresenter
                                 final Provider<FloorMapTimelinePresenter> floorMapTimelinePresenterProvider,
                                 final Provider<FloorMapObjectEditPresenter> floorMapObjectEditPresenterProvider,
                                 final Provider<FloorMapTrackingPresenter> floorMapEntityListPresenterProvider,
-                                final Provider<FloorMapDockPresenter> floorMapDockPresenterProvider,
-                                final Provider<FloorMapLayersPresenter> floorMapLayersPresenterProvider) {
+                                final Provider<FloorMapLayersPresenter> floorMapLayersPresenterProvider,
+                                final Provider<FloorMapDockPresenter> floorMapDockPresenterProvider) {
         super(eventBus, view);
 
         this.floorMapCanvasPresenter = floorMapCanvasPresenterProvider.get();
         this.floorMapTimelinePresenter = floorMapTimelinePresenterProvider.get();
         this.floorMapObjectEditPresenter = floorMapObjectEditPresenterProvider.get();
         this.floorMapTrackingPresenter = floorMapEntityListPresenterProvider.get();
-        this.floorMapDockPresenter = floorMapDockPresenterProvider.get();
         this.floorMapLayersPresenter = floorMapLayersPresenterProvider.get();
+        final FloorMapDockPresenter floorMapDockPresenter = floorMapDockPresenterProvider.get();
 
         // Default initial time
         this.selectedTime = System.currentTimeMillis();
@@ -254,6 +266,48 @@ public class FloorMapMapPresenter
                 () -> QueryTablePreferences.builder().build());
         this.queryModel.addResultComponent(QueryModel.TABLE_COMPONENT_ID, resultConsumer);
 
+        // Result component to parse and handle Events query results — the entity
+        // overlay that gets animated during playback.
+        final ResultComponent eventsResultConsumer = new ResultComponent() {
+            @Override
+            public OffsetRange getRequestedRange() {
+                return new OffsetRange(0, 1000); // Fetch up to 1000 items
+            }
+
+            @Override
+            public GroupSelection getGroupSelection() {
+                return null;
+            }
+
+            @Override
+            public void reset() {}
+
+            @Override
+            public void startSearch() {}
+
+            @Override
+            public void endSearch() {}
+
+            @Override
+            public void setData(final Result componentResult) {
+                if (componentResult instanceof final TableResult tableResult) {
+                    publishEventEntities(tableResult);
+                }
+            }
+
+            @Override
+            public void setQueryModel(final QueryModel queryModel) {}
+        };
+
+        this.eventsQueryModel = new QueryModel(
+                eventBus,
+                restFactory,
+                dateTimeSettingsFactory,
+                resultStoreModel,
+                () -> QueryTablePreferences.builder().build());
+        this.eventsQueryModel.addResultComponent(
+                QueryModel.TABLE_COMPONENT_ID, eventsResultConsumer);
+
         // Histogram data model — buckets timestamps and notifies the timeline.
         this.histogramDataModel = new HistogramDataModel(HISTOGRAM_BINS);
         this.histogramDataModel.setDataHandler(
@@ -290,7 +344,9 @@ public class FloorMapMapPresenter
             }
         }));
         registerHandler(getEventBus().addHandler(FloorMapDataEvent.getType(), e -> {
-            // Ignore events from other open FloorMap documents (shared event bus).
+            // Fired by this tab's own events query (see publishEventEntities) and,
+            // while it is open, by the Events Query tab as the user edits/runs the
+            // query. Ignore events from other open FloorMap documents (shared bus).
             if (!java.util.Objects.equals(docUuid, e.getDocUuid())) {
                 return;
             }
@@ -378,10 +434,12 @@ public class FloorMapMapPresenter
     @Override
     protected void onRead(final DocRef docRef, final FloorMapDoc document, final boolean readOnly) {
         this.docUuid = docRef != null ? docRef.getUuid() : null;
-        // Initialise and reset both query models BEFORE starting any searches, so that the histogram query
-        // started inside updateTimelineRange() is not immediately cancelled by the reset() call below.
+        // Initialise and reset every query model BEFORE starting any searches, so that the histogram query
+        // started inside updateTimelineRange() is not immediately cancelled by the reset() calls below.
         queryModel.init(docRef);
         queryModel.reset(DestroyReason.NO_LONGER_NEEDED);
+        eventsQueryModel.init(docRef);
+        eventsQueryModel.reset(DestroyReason.NO_LONGER_NEEDED);
         histogramQueryHelper.init(docRef);
         histogramQueryHelper.reset();
         factsHistogramQueryHelper.init(docRef);
@@ -451,46 +509,100 @@ public class FloorMapMapPresenter
     }
 
     /**
-     * Responds to a timeline time-change event. Runs the facts StroomQL
-     * query via {@link QueryModel} at the selected time.
+     * Responds to a timeline time-change event. Runs both StroomQL queries at
+     * the selected time via their {@link QueryModel}s: the facts query (static
+     * floor-plan content) and the events query (the entity overlay that the
+     * canvas animates between positions).
      *
      * @param time the new selected time in milliseconds since epoch
      */
     private void onTimeChange(final long time) {
         this.selectedTime = time;
+        runQueryAtSelectedTime(queryModel, getFactsQueryToUse(),
+                "factsTable", "Facts Query Playback");
+        runQueryAtSelectedTime(eventsQueryModel, getEventsQueryToUse(),
+                "eventsTable", "Events Query Playback");
+    }
 
-        final String factsQuery = getFactsQueryToUse();
-        if (factsQuery != null && !factsQuery.trim().isEmpty()) {
-            // Resolve param('FactStore') / param('EventStore') references
-            // in the query text so the from-clause resolves correctly.
-            final Map<String, String> vars =
-                    FloorMapQueryPresenter.buildQueryVariables(getEntity());
-            String resolvedQuery = factsQuery;
-            List<Param> params = null;
-            if (!vars.isEmpty()) {
-                params = new ArrayList<>();
-                for (final Map.Entry<String, String> entry : vars.entrySet()) {
-                    params.add(new Param(entry.getKey(), entry.getValue()));
-                    resolvedQuery = resolvedQuery.replace(
-                            "param('" + entry.getKey() + "')",
-                            "\"" + entry.getValue() + "\"");
-                }
-            }
-
-            final TimeRange timeRange =
-                    new TimeRange("CUSTOM", String.valueOf(selectedTime), String.valueOf(selectedTime));
-            queryModel.startNewSearch(
-                    QueryModel.TABLE_COMPONENT_ID,
-                    "factsTable",
-                    resolvedQuery,
-                    params,
-                    timeRange,
-                    false,
-                    false,
-                    "Facts Query Playback",
-                    null
-            );
+    /**
+     * Starts a search for the given query text at {@link #selectedTime}, as an
+     * instant (start == end) custom time range. A {@code null}/blank query is a
+     * no-op.
+     *
+     * @param model         the query model to run the search on
+     * @param query         the StroomQL query text; may be {@code null} or blank
+     * @param componentName the table component name for the search
+     * @param taskName      the task name shown in the task monitor
+     */
+    private void runQueryAtSelectedTime(final QueryModel model,
+                                        final String query,
+                                        final String componentName,
+                                        final String taskName) {
+        if (query == null || query.trim().isEmpty()) {
+            return;
         }
+        final TimeRange timeRange =
+                new TimeRange("CUSTOM", String.valueOf(selectedTime), String.valueOf(selectedTime));
+        model.startNewSearch(
+                QueryModel.TABLE_COMPONENT_ID,
+                componentName,
+                // Resolve param('FactStore') / param('EventStore') references in
+                // the query text so the from-clause resolves correctly.
+                resolveQueryParams(query),
+                queryParams(),
+                timeRange,
+                false,
+                false,
+                taskName,
+                null
+        );
+    }
+
+    /**
+     * The document's store references as query {@link Param}s, matching the
+     * substitutions {@link #resolveQueryParams(String)} makes in the text.
+     *
+     * @return the params, or {@code null} when the document declares none
+     */
+    private List<Param> queryParams() {
+        final Map<String, String> vars =
+                FloorMapQueryPresenter.buildQueryVariables(getEntity());
+        if (vars.isEmpty()) {
+            return null;
+        }
+        final List<Param> params = new ArrayList<>(vars.size());
+        for (final Map.Entry<String, String> entry : vars.entrySet()) {
+            params.add(new Param(entry.getKey(), entry.getValue()));
+        }
+        return params;
+    }
+
+    /**
+     * Returns the document's events query — the entity locations over time that
+     * become the animated overlay.
+     *
+     * @return the StroomQL query text, or {@code null} if none is configured
+     */
+    private String getEventsQueryToUse() {
+        return getEntity() != null ? getEntity().getEventsQuery() : null;
+    }
+
+    /**
+     * Parses an events query result into entities and publishes them on the
+     * shared event bus — the single channel into the canvas overlay, the tracking
+     * roster and the Editor's layer discovery (see the
+     * {@link FloorMapDataEvent} handler in {@link #onBind()}).
+     *
+     * @param tableResult the events query result to parse
+     */
+    private void publishEventEntities(final TableResult tableResult) {
+        if (getEntity() == null) {
+            return;
+        }
+        FloorMapDataEvent.fire(this, docUuid, FloorMapQueryPresenter.parseRows(
+                tableResult,
+                getEntity().getEntityIdColumn(),
+                getEntity().getLocationIdColumn()));
     }
 
     /**
@@ -856,17 +968,6 @@ public class FloorMapMapPresenter
         if (getEntity() != null) {
             onTimeChange(selectedTime);
         }
-    }
-
-    /**
-     * Returns this tab's timeline presenter, used as the time-change source
-     * that the events Query tab should follow (so it ignores time-changes from
-     * the Editor tab or from other open FloorMap documents).
-     *
-     * @return the Map tab's timeline presenter
-     */
-    public FloorMapTimelinePresenter getTimelinePresenter() {
-        return floorMapTimelinePresenter;
     }
 
     /**

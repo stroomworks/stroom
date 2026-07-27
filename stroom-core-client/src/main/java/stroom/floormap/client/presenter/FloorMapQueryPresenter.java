@@ -19,7 +19,6 @@ package stroom.floormap.client.presenter;
 import stroom.docref.DocRef;
 import stroom.entity.client.presenter.HasToolbar;
 import stroom.floormap.client.event.FloorMapDataEvent;
-import stroom.floormap.client.event.TimeChangeEvent;
 import stroom.floormap.client.presenter.FloorMapQueryPresenter.FloorMapQueryView;
 import stroom.floormap.shared.FloorMapDoc;
 import stroom.floormap.shared.FloorMapJsonKeys;
@@ -62,14 +61,6 @@ public class FloorMapQueryPresenter extends MyPresenterWidget<FloorMapQueryView>
     /** UUID of the document being queried, stamped onto {@link FloorMapDataEvent}. */
     private String docUuid;
 
-    /**
-     * The time-change source (this document's Map-tab timeline) that this query
-     * should follow. The event bus is shared across tabs and across any other
-     * open FloorMap document, so time-changes from a different source must be
-     * ignored. {@code null} until wired — see {@link #setTimeSource}.
-     */
-    private Object timeSource;
-
     @Inject
     public FloorMapQueryPresenter(final EventBus eventBus,
                                   final FloorMapQueryView view,
@@ -98,40 +89,17 @@ public class FloorMapQueryPresenter extends MyPresenterWidget<FloorMapQueryView>
                     .getCurrentTableResult();
 
             if (tableResult != null) {
-                final List<FloorMapObject> objects = parseRows(tableResult);
+                final List<FloorMapObject> objects = parseRows(
+                        tableResult, currentEntityColumn, currentLocationColumn);
                 FloorMapDataEvent.fire(FloorMapQueryPresenter.this, docUuid, objects);
             }
         }));
 
-        // Listen to timeline playback changes to automatically update query time and re-run.
-        registerHandler(getEventBus().addHandler(TimeChangeEvent.getType(), e -> {
-            // Only react to this document's own time source. The bus is shared
-            // across tabs and across any other open FloorMap document, so an
-            // unguarded handler would re-run this query for the Editor tab's
-            // timeline or a second document. Until a source is wired we fall
-            // back to reacting to all, preserving the previous behaviour.
-            if (timeSource != null && e.getSource() != timeSource) {
-                return;
-            }
-            final TimeRange timeRange = new TimeRange(
-                    "CUSTOM",
-                    String.valueOf(e.getTime()),
-                    String.valueOf(e.getTime()));
-            queryEditPresenter.setTimeRange(timeRange);
-            queryEditPresenter.start();
-        }));
-    }
-
-    /**
-     * Sets the time-change source this query should follow — the owning
-     * document's Map-tab timeline. Time-change events from any other source
-     * (the Editor tab's timeline, or another open FloorMap document) are
-     * ignored.
-     *
-     * @param timeSource the timeline presenter to follow; may be {@code null}
-     */
-    public void setTimeSource(final Object timeSource) {
-        this.timeSource = timeSource;
+        // This tab does NOT follow the timeline. The playback events query is
+        // owned by FloorMapMapPresenter, because this presenter is created
+        // lazily (only when its tab is first opened) and the Map tab's animated
+        // entity overlay must not depend on that. Running it here as well would
+        // fire a second, identical query per playback tick.
     }
 
     /**
@@ -173,13 +141,21 @@ public class FloorMapQueryPresenter extends MyPresenterWidget<FloorMapQueryView>
 
     /**
      * Parses all rows of the supplied {@link TableResult} into
-     * {@link FloorMapObject} instances using the currently selected entity and
-     * location column mappings.
+     * {@link FloorMapObject} instances using the given entity and location
+     * column mappings.
      *
-     * @param tableResult the query result to parse
+     * <p>Static and package-visible because two callers run the same events
+     * query: this editor tab, and {@link FloorMapMapPresenter}, which owns the
+     * timeline-driven playback query feeding the animated entity overlay.</p>
+     *
+     * @param tableResult    the query result to parse
+     * @param entityColumn   the column name holding the entity id
+     * @param locationColumn the column name holding the {@code map, x, y} location
      * @return a list of map objects; never {@code null}
      */
-    private List<FloorMapObject> parseRows(final TableResult tableResult) {
+    static List<FloorMapObject> parseRows(final TableResult tableResult,
+                                          final String entityColumn,
+                                          final String locationColumn) {
         final List<FloorMapObject> list = new ArrayList<>();
 
         if (tableResult == null || tableResult.getRows() == null || tableResult.getColumns() == null) {
@@ -195,9 +171,9 @@ public class FloorMapQueryPresenter extends MyPresenterWidget<FloorMapQueryView>
         for (int i = 0; i < columns.size(); i++) {
             final Column col = columns.get(i);
 
-            if (col.getName().equals(currentEntityColumn)) {
+            if (col.getName().equals(entityColumn)) {
                 entityColIndex = i;
-            } else if (col.getName().equals(currentLocationColumn)) {
+            } else if (col.getName().equals(locationColumn)) {
                 locationColIndex = i;
             } else if (col.getName().equalsIgnoreCase("type")) {
                 typeColIndex = i;

@@ -43,6 +43,9 @@ public class FloorMapTimelineSettingsViewImpl extends ViewImpl implements FloorM
 
     private final Widget widget;
 
+    /** Called when the Show All button is clicked. */
+    private Runnable showAllHandler;
+
     @UiField
     DateTimeBox startDateTimeBox;
     @UiField
@@ -59,6 +62,16 @@ public class FloorMapTimelineSettingsViewImpl extends ViewImpl implements FloorM
 
         startDateTimeBox.setPopupProvider(dateTimePopupProvider);
         endDateTimeBox.setPopupProvider(dateTimePopupProvider);
+
+        // Registered once and dispatched through a field, so a second
+        // setShowAllHandler() call replaces the handler instead of stacking
+        // another click registration (which would run it twice per click).
+        //noinspection unused e
+        showAllButton.addClickHandler(e -> {
+            if (showAllHandler != null) {
+                showAllHandler.run();
+            }
+        });
     }
 
     @Override
@@ -78,8 +91,7 @@ public class FloorMapTimelineSettingsViewImpl extends ViewImpl implements FloorM
 
     @Override
     public void setShowAllHandler(final Runnable handler) {
-        //noinspection unused e
-        showAllButton.addClickHandler(e -> handler.run());
+        this.showAllHandler = handler;
     }
 
     @Override
