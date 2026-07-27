@@ -617,6 +617,23 @@
     white-space: pre-wrap;
 }
 
+/* Non-blocking size-guardrail banner: floats at the bottom-centre, over the graph. */
+.GraphResultWidget-warning {
+    position: absolute;
+    bottom: 6px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 20;
+    max-width: 70%;
+    padding: 4px 10px;
+    border: 1px solid var(--warning-color, #d9a441);
+    border-radius: 4px;
+    background-color: var(--tooltip-background-color, rgba(217, 164, 65, 0.15));
+    color: var(--text-color);
+    font-size: 11px;
+    text-align: center;
+}
+
 .GraphFrame-container {
     width: 100%;
     height: 100%;
@@ -681,6 +698,59 @@
     font-size: 12px;
     opacity: 0.8;
     white-space: normal;
+}
+
+/* Graph DB Data tab temporal "time-travel" slider: floats over the top-centre of the graph. */
+.GraphTemporal {
+    position: absolute;
+    top: 6px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    max-width: 90%;
+    padding: 4px 8px;
+    border: 1px solid var(--border-color, #ccc);
+    border-radius: 4px;
+    background-color: var(--app-background-color, rgba(255, 255, 255, 0.94));
+    box-shadow: 0 1px 6px rgba(0, 0, 0, 0.18);
+    font-size: 12px;
+}
+
+.GraphTemporal-controls {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.GraphTemporal-caption {
+    opacity: 0.7;
+}
+
+.GraphTemporal-time {
+    width: 168px;
+    font-size: 11px;
+}
+
+.GraphTemporal-slider {
+    width: 160px;
+    vertical-align: middle;
+}
+
+.GraphTemporal-instant {
+    font-family: monospace;
+    min-width: 150px;
+}
+
+.GraphTemporal-instant__error {
+    color: var(--error-color, #d64545);
+}
+
+.GraphTemporal-compare {
+    font-size: 11px;
 }
 
 /** DEBUG **/
