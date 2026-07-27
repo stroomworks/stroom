@@ -116,4 +116,47 @@ class TestTypeStyle {
         assertThat(result).isEqualTo(existing);
         assertThat(result.get(0).getColour()).isEqualTo("#123456");
     }
+
+    @Test
+    void testGraphic_absentByDefault() {
+        // The 3-arg convenience constructor is the shape-and-colour case, so every
+        // existing call site keeps drawing a shape.
+        final TypeStyle style = new TypeStyle("person", Shape.CIRCLE, "#1f77b4");
+
+        assertThat(style.getGraphic()).isNull();
+        assertThat(style.hasGraphic()).isFalse();
+    }
+
+    @Test
+    void testGraphic_setAndReported() {
+        final TypeStyle style = new TypeStyle("van", null, "#1f77b4", "/assets/abc/icons/van.svg");
+
+        assertThat(style.getGraphic()).isEqualTo("/assets/abc/icons/van.svg");
+        assertThat(style.hasGraphic()).isTrue();
+    }
+
+    @Test
+    void testGraphic_blankIsNotAGraphic() {
+        // A cleared picker yields "", which must fall back to the shape rather than
+        // rendering an image with an empty href.
+        assertThat(new TypeStyle("van", Shape.SQUARE, "#111111", "").hasGraphic()).isFalse();
+    }
+
+    @Test
+    void testGraphic_participatesInEquality() {
+        final TypeStyle shapeStyle = new TypeStyle("van", null, "#111111", null);
+        final TypeStyle imageStyle = new TypeStyle("van", null, "#111111", "/assets/abc/van.png");
+
+        assertThat(imageStyle).isNotEqualTo(shapeStyle);
+        assertThat(imageStyle).isEqualTo(new TypeStyle("van", null, "#111111", "/assets/abc/van.png"));
+        assertThat(imageStyle.hashCode()).isEqualTo(
+                new TypeStyle("van", null, "#111111", "/assets/abc/van.png").hashCode());
+    }
+
+    @Test
+    void testMerge_discoveredTypesHaveNoGraphic() {
+        final List<TypeStyle> result = TypeStyle.merge(null, List.of("van"));
+
+        assertThat(result.get(0).hasGraphic()).isFalse();
+    }
 }

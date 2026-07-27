@@ -303,13 +303,9 @@ public class FloorMapEditorPresenter
         });
         // Persist reorder / appearance / discovered-type edits from the panel.
         floorMapLayersPresenter.setTypeStylesEditHandler(this::onLayerTypeStylesEdited);
-        // Open the appearance dialog (shape + colour) for a layer, then hand the
-        // edited style back to the panel.
-        floorMapLayersPresenter.setStyleEditor((typeStyle, callback) ->
-                floorMapLayerStylePresenter.show(
-                        typeStyle.getType(), typeStyle.getShape(), typeStyle.getColour(),
-                        (shape, colour) -> callback.accept(
-                                new TypeStyle(typeStyle.getType(), shape, colour))));
+        // Open the appearance dialog (shape or image, plus colour) for a layer,
+        // then hand the edited style back to the panel.
+        floorMapLayersPresenter.setStyleEditor(floorMapLayerStylePresenter::show);
         // Full facts-store type-discovery scan behind the panel's Discover action.
         floorMapLayersPresenter.setDiscoverHandler(this::onDiscoverTypes);
 
@@ -435,6 +431,9 @@ public class FloorMapEditorPresenter
         // Drop any staged doc-level edits (area upgrade / Layers type-styles)
         // that this just-read document already carries (post-save re-read).
         docSession.reconcileAfterRead(document);
+
+        // The appearance dialog picks layer graphics from this document's assets.
+        floorMapLayerStylePresenter.setDocument(document);
 
         // Populate the Layers panel from the document's type styles. Reset the
         // observed-type accumulator for the (re-)opened document.
@@ -1540,9 +1539,9 @@ public class FloorMapEditorPresenter
      * {@code "area"} type style that paints areas just above the background).
      * Rather than failing in {@link #pathForRole}, this offers to add the
      * missing defaults. The merge is role-based, so customised paths for those
-     * roles are left untouched; the upgrade is staged in
-     * {@link #pendingAreaSchema} and persisted by {@link #onWrite} on the next
-     * document save.</p>
+     * roles are left untouched; the upgrade is staged via
+     * {@link FloorMapDocSession#stageAreaUpgrade} and persisted by
+     * {@link #onWrite} on the next document save.</p>
      *
      * @param onReady the action to run once area support is available
      */

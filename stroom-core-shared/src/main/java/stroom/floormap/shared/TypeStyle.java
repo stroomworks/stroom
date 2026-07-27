@@ -17,6 +17,7 @@
 package stroom.floormap.shared;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -37,8 +38,9 @@ import java.util.TreeSet;
  * <p>Types are held on the {@link FloorMapDoc} as an <em>ordered</em> list of
  * {@code TypeStyle}s. The list <strong>order is the z-order</strong> — earlier
  * entries paint behind later ones — and each entry also carries the default
- * graphic ({@link #shape} + {@link #colour}) drawn for a fact of that type when
- * it has no image.</p>
+ * graphic drawn for a fact of that type when it has no image of its own: either
+ * a {@link #shape} filled with {@link #colour}, or an arbitrary image from the
+ * document's asset store ({@link #graphic}).</p>
  */
 @JsonInclude(Include.NON_NULL)
 @JsonPropertyOrder(alphabetic = true)
@@ -59,14 +61,25 @@ public class TypeStyle {
     private final Shape shape;
     @JsonProperty
     private final String colour;
+    @JsonProperty
+    private final String graphic;
 
     @JsonCreator
     public TypeStyle(@JsonProperty("type") final String type,
                      @JsonProperty("shape") final Shape shape,
-                     @JsonProperty("colour") final String colour) {
+                     @JsonProperty("colour") final String colour,
+                     @JsonProperty("graphic") final String graphic) {
         this.type = type;
         this.shape = shape;
         this.colour = colour;
+        this.graphic = graphic;
+    }
+
+    /** Convenience for a shape-and-colour style with no image graphic. */
+    public TypeStyle(final String type,
+                     final Shape shape,
+                     final String colour) {
+        this(type, shape, colour, null);
     }
 
     /** The fact type this style applies to. */
@@ -82,6 +95,25 @@ public class TypeStyle {
     /** The default graphic fill colour (e.g. {@code "#1f77b4"}), or {@code null}. */
     public String getColour() {
         return colour;
+    }
+
+    /**
+     * The asset-store URL of the image to draw instead of {@link #shape} (e.g.
+     * {@code "/assets/<docUuid>/icons/van.svg"}), or {@code null} to draw the
+     * shape. Any format the browser can render is allowed.
+     *
+     * <p>The image is drawn at the same fixed screen size as a shape glyph, so
+     * layers stay legible at every zoom level. A fact carrying its own image
+     * takes precedence over its layer's graphic.</p>
+     */
+    public String getGraphic() {
+        return graphic;
+    }
+
+    /** True if this style draws an image rather than a shape. */
+    @JsonIgnore
+    public boolean hasGraphic() {
+        return graphic != null && !graphic.isEmpty();
     }
 
     /**
@@ -171,16 +203,18 @@ public class TypeStyle {
         final TypeStyle that = (TypeStyle) o;
         return Objects.equals(type, that.type)
                 && shape == that.shape
-                && Objects.equals(colour, that.colour);
+                && Objects.equals(colour, that.colour)
+                && Objects.equals(graphic, that.graphic);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(type, shape, colour);
+        return Objects.hash(type, shape, colour, graphic);
     }
 
     @Override
     public String toString() {
-        return "TypeStyle{type='" + type + "', shape=" + shape + ", colour='" + colour + "'}";
+        return "TypeStyle{type='" + type + "', shape=" + shape + ", colour='" + colour
+                + "', graphic='" + graphic + "'}";
     }
 }

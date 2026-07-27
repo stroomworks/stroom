@@ -668,7 +668,7 @@
     background-color: rgba(128, 128, 128, 0.15);
 }
 
-/* Layer appearance dialog — align the shape/colour rows */
+/* Layer appearance dialog — align the graphic/shape/image/colour rows */
 .floormap-layer-style-dialog {
     border-spacing: 8px 10px;
 }
@@ -684,7 +684,61 @@
 }
 
 .floormap-layer-style-dialog td:last-child > * {
-    width: 150px;
+    width: 260px;
+}
+
+/* Whichever of the Shape / Image rows the current mode does not use. */
+.floormap-layer-style-row-dimmed td {
+    opacity: 0.45;
+}
+
+/* Shape | Image mode radios, side by side */
+.floormap-layer-style-modes {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+}
+
+/* Asset picker + Upload button on one line, picker taking the slack */
+.floormap-layer-style-image {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+}
+
+.floormap-layer-style-image > :first-child {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.floormap-layer-style-image > :last-child {
+    flex: 0 0 auto;
+}
+
+/* Preview graphic beside its explanatory hint */
+.floormap-layer-style-preview-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.floormap-layer-style-preview {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 3px;
+    background-color: rgba(128, 128, 128, 0.12);
+}
+
+.floormap-layer-style-hint {
+    flex: 1 1 auto;
+    font-size: 0.85em;
+    line-height: 1.3;
+    color: var(--text-color--low-emphasis);
+    white-space: normal;
 }
 
 /* Discovered-but-unsaved type: muted + italic, with an add button */

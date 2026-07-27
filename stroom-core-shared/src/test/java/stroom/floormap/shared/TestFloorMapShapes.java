@@ -44,4 +44,36 @@ class TestFloorMapShapes {
         assertThat(FloorMapShapes.polygonPoints(Shape.PIN, 10)).isNull();
         assertThat(FloorMapShapes.polygonPoints(null, 10)).isNull();
     }
+
+    @Test
+    void testPin_isAClosedTeardropPointingDown() {
+        // Two mirrored cubics from the tip, back to the tip, then closed.
+        assertThat(FloorMapShapes.pinPath(10))
+                .isEqualTo("M0.0,7.5"
+                           + " C-5.0,1.25 -4.75,-5.625 0.0,-5.625"
+                           + " C4.75,-5.625 5.0,1.25 0.0,7.5"
+                           + " Z");
+    }
+
+    @Test
+    void testPin_scalesWithHalfSize() {
+        // The tip sits at +0.75 * halfSize in the y-down glyph frame, so the pin
+        // grows proportionally rather than at a fixed pixel size.
+        assertThat(FloorMapShapes.pinPath(20)).startsWith("M0.0,15.0");
+        assertThat(FloorMapShapes.pinPath(10)).startsWith("M0.0,7.5");
+    }
+
+    @Test
+    void testPin_holeSitsInsideTheBulb() {
+        final double halfSize = 10;
+        final double centreY = halfSize * FloorMapShapes.PIN_HOLE_CENTRE_Y_RATIO;
+        final double radius = halfSize * FloorMapShapes.PIN_HOLE_RADIUS_RATIO;
+
+        // Above centre (negative y is up), and wholly within the bulb, whose top
+        // edge is at -0.5625 * halfSize.
+        assertThat(centreY).isLessThan(0);
+        assertThat(radius).isGreaterThan(0);
+        assertThat(centreY - radius).isGreaterThan(-0.5625 * halfSize);
+        assertThat(centreY + radius).isLessThan(0.75 * halfSize);
+    }
 }

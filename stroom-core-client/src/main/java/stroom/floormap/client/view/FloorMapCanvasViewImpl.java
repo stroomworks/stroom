@@ -87,6 +87,13 @@ public class FloorMapCanvasViewImpl
      */
     private static final int OBJECT_SIZE = 60;
 
+    /**
+     * Longest edge a layer graphic may occupy, as a multiple of {@link #OBJECT_SIZE}
+     * — stops a banner-shaped image becoming an unreadably wide sliver when its box
+     * is area-matched to a shape glyph. See {@link #graphicBoxSize}.
+     */
+    private static final double MAX_GRAPHIC_EDGE_RATIO = 2.0;
+
     /** On-screen size (px) of a square scale handle. */
     private static final double HANDLE_SIZE_PX = 8;
     /** On-screen radius (px) of the round rotation handle. */
@@ -471,7 +478,11 @@ public class FloorMapCanvasViewImpl
     /**
      * Renders a single fact into the given builder, dispatching by content:
      * image facts render their image; imageless facts with vertices render as
-     * areas; everything else renders as the type's default glyph.
+     * areas; everything else renders as the type's default glyph — which is
+     * itself either the layer's configured image or its shape.
+     *
+     * <p>Note the precedence: a fact carrying its own {@code img} takes this
+     * first branch, so it always beats its layer's graphic.</p>
      */
     private void renderFact(final HtmlBuilder builder,
                             final Fact fact,
@@ -899,9 +910,10 @@ public class FloorMapCanvasViewImpl
 
     /**
      * Draws the default graphic for an imageless fact at its map position
-     * (world-to-map applied to the fact's world coordinates), using the shape and
-     * colour configured for its type. The graphic and its label are drawn at a
-     * fixed screen size (independent of zoom) via {@link #fixedSizeTransform}.
+     * (world-to-map applied to the fact's world coordinates), using the image or
+     * the shape and colour configured for its type. The graphic and its label are
+     * drawn at a fixed screen size (independent of zoom) via
+     * {@link #fixedSizeTransform}.
      */
     private void appendDefaultGraphic(final HtmlBuilder parent,
                                       final Fact fact,
@@ -983,9 +995,18 @@ public class FloorMapCanvasViewImpl
     /**
      * Draws the type-styled default graphic — the single glyph rendering shared
      * by imageless facts and event entities — anchored at a map-space point and
-     * drawn at a fixed screen size. Shape and colour come from the type's
-     * {@link TypeStyle}; the shape element carries {@code id} so click-detection
-     * works, and a centred short label is drawn on top.
+     * drawn at a fixed screen size.
+     *
+     * <p>The graphic comes from the type's {@link TypeStyle}: its
+     * {@link TypeStyle#getGraphic() image} if it has one, otherwise its
+     * {@link TypeStyle#getShape() shape} filled with its colour. Either way the
+     * glyph occupies the same {@code OBJECT_SIZE} box, so switching a layer
+     * between a shape and an image does not change how much room it takes; an
+     * image is letterboxed into that box rather than stretched.</p>
+     *
+     * <p>The graphic element carries {@code id} so click-detection works. A short
+     * label is drawn on top of a shape, but not over an image or inside a pin's
+     * hole, where it would be unreadable.</p>
      */
     private void appendStyledGlyph(final HtmlBuilder parent,
                                    final String id,
@@ -997,14 +1018,66 @@ public class FloorMapCanvasViewImpl
                                    final double scale) {
         final String fillColour = colourForType(type, typeStyles);
         final TypeStyle.Shape shape = shapeForType(type, typeStyles);
+        final String graphic = graphicForType(type, typeStyles);
         final String stroke = isSelected ? SELECTION_STROKE : "none";
         final String strokeWidth = isSelected ? "4" : "0";
         final String vectorEffect = isSelected ? "non-scaling-stroke" : "none";
         final String polygon = FloorMapShapes.polygonPoints(shape, OBJECT_SIZE / 2.0);
         final String label = shortLabel(id);
+        final double half = OBJECT_SIZE / 2.0;
 
         parent.elem(objGroup -> {
-            if (shape == TypeStyle.Shape.CIRCLE) {
+            if (graphic != null) {
+                // The layer's own image, drawn in a box of the same AREA as a shape
+                // glyph's box so the two read at the same size (see
+                // graphicBoxSize). No label is drawn over it — the image is the
+                // identity.
+                final double[] box = graphicBoxSize(graphic);
+                final double gw = box[0];
+                final double gh = box[1];
+                objGroup.elem(SafeHtmlUtil.from("image"),
+                    // Escape the URL: it is document-controlled data going into
+                    // innerHTML, so an unescaped value allows attribute injection.
+                    new Attribute("href", graphic),
+                    new Attribute("x", String.valueOf(-gw / 2.0)),
+                    new Attribute("y", String.valueOf(-gh / 2.0)),
+                    new Attribute("width", String.valueOf(gw)),
+                    new Attribute("height", String.valueOf(gh)),
+                    // The box already matches the image's own aspect ratio, so this
+                    // fits exactly rather than letterboxing; it only matters while
+                    // the ratio is still being probed.
+                    new Attribute("preserveAspectRatio", "xMidYMid meet"),
+                    new Attribute("id", id));
+                if (isSelected) {
+                    objGroup.elem(SafeHtmlUtil.from("rect"),
+                        new Attribute("x", String.valueOf(-gw / 2.0)),
+                        new Attribute("y", String.valueOf(-gh / 2.0)),
+                        new Attribute("width", String.valueOf(gw)),
+                        new Attribute("height", String.valueOf(gh)),
+                        new Attribute("fill", "none"),
+                        // Same weight as a selected shape's border, so selection
+                        // reads identically whichever graphic a layer uses.
+                        new Attribute("stroke", SELECTION_STROKE),
+                        new Attribute("stroke-width", strokeWidth),
+                        new Attribute("vector-effect", vectorEffect),
+                        new Attribute("pointer-events", "none"));
+                }
+            } else if (shape == TypeStyle.Shape.PIN) {
+                objGroup.elem(SafeHtmlUtil.from("path"),
+                    new Attribute("d", FloorMapShapes.pinPath(half)),
+                    new Attribute("fill", fillColour),
+                    new Attribute("stroke", stroke),
+                    new Attribute("stroke-width", strokeWidth),
+                    new Attribute("vector-effect", vectorEffect),
+                    new Attribute("id", id));
+                // The pin's hole, matching the Layers panel swatch.
+                objGroup.elem(SafeHtmlUtil.from("circle"),
+                    new Attribute("cx", "0"),
+                    new Attribute("cy", String.valueOf(half * FloorMapShapes.PIN_HOLE_CENTRE_Y_RATIO)),
+                    new Attribute("r", String.valueOf(half * FloorMapShapes.PIN_HOLE_RADIUS_RATIO)),
+                    new Attribute("fill", "#ffffff"),
+                    new Attribute("pointer-events", "none"));
+            } else if (shape == TypeStyle.Shape.CIRCLE) {
                 objGroup.elem(SafeHtmlUtil.from("circle"),
                     new Attribute("cx", "0"),
                     new Attribute("cy", "0"),
@@ -1018,6 +1091,21 @@ public class FloorMapCanvasViewImpl
                 objGroup.elem(SafeHtmlUtil.from("polygon"),
                     new Attribute("points", polygon),
                     new Attribute("fill", fillColour),
+                    new Attribute("stroke", stroke),
+                    new Attribute("stroke-width", strokeWidth),
+                    new Attribute("vector-effect", vectorEffect),
+                    new Attribute("id", id));
+            } else if (shape == TypeStyle.Shape.SQUARE) {
+                // Barely-rounded, so a configured SQUARE is distinguishable from
+                // the heavily-rounded fallback glyph below.
+                objGroup.elem(SafeHtmlUtil.from("rect"),
+                    new Attribute("x", String.valueOf(-half)),
+                    new Attribute("y", String.valueOf(-half)),
+                    new Attribute("width", String.valueOf(OBJECT_SIZE)),
+                    new Attribute("height", String.valueOf(OBJECT_SIZE)),
+                    new Attribute("fill", fillColour),
+                    new Attribute("rx", "2"),
+                    new Attribute("ry", "2"),
                     new Attribute("stroke", stroke),
                     new Attribute("stroke-width", strokeWidth),
                     new Attribute("vector-effect", vectorEffect),
@@ -1037,16 +1125,20 @@ public class FloorMapCanvasViewImpl
                     new Attribute("id", id));
             }
 
-            objGroup.elem(label,
-                    SafeHtmlUtil.from("text"),
-                    new Attribute("x", "0"),
-                    new Attribute("y", "0"),
-                    new Attribute("dy", "0.35em"),
-                    new Attribute("text-anchor", "middle"),
-                    new Attribute("fill", "white"),
-                    new Attribute("font-size", "14px"),
-                    new Attribute("font-family", "sans-serif"),
-                    new Attribute("pointer-events", "none"));
+            // A centred label would sit on top of the image, or in the pin's hole,
+            // so those two carry no label — the graphic itself is the identity.
+            if (graphic == null && shape != TypeStyle.Shape.PIN) {
+                objGroup.elem(label,
+                        SafeHtmlUtil.from("text"),
+                        new Attribute("x", "0"),
+                        new Attribute("y", "0"),
+                        new Attribute("dy", "0.35em"),
+                        new Attribute("text-anchor", "middle"),
+                        new Attribute("fill", "white"),
+                        new Attribute("font-size", "14px"),
+                        new Attribute("font-family", "sans-serif"),
+                        new Attribute("pointer-events", "none"));
+            }
         },
                 SafeHtmlUtil.from("g"),
                 // Counter-flip + counter-scale so the graphic + label stay
@@ -1134,6 +1226,74 @@ public class FloorMapCanvasViewImpl
             return TypeStyle.Shape.CIRCLE;
         }
         return null;
+    }
+
+    /**
+     * Returns the asset-store URL of the image configured as the given type's
+     * layer graphic, or {@code null} to draw a shape instead.
+     *
+     * <p>This only applies to facts and entities with <em>no image of their own</em>
+     * — {@link #renderFact} sends image-bearing facts down the
+     * {@link #appendImageFact} path first, so a fact's own {@code img} always wins
+     * over its layer's graphic.</p>
+     */
+    private static String graphicForType(final String type, final List<TypeStyle> typeStyles) {
+        if (type != null && typeStyles != null) {
+            for (final TypeStyle style : typeStyles) {
+                if (style != null && type.equals(style.getType()) && style.hasGraphic()) {
+                    return style.getGraphic();
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * The on-screen {@code {width, height}} to draw a layer graphic at, sized so it
+     * carries the <strong>same visual weight as a shape glyph</strong>.
+     *
+     * <p>Matching the shape's bounding box is not enough: a shape is solid ink out
+     * to its box edge, whereas an image preserving its aspect ratio inside a square
+     * box only reaches the edge on its longer side (a 4:3 icon would fill just
+     * three quarters of the height), and most icons carry transparent margins on
+     * top of that. So the box is sized to match the shape box's <em>area</em>
+     * instead — for aspect ratio {@code r}, that is
+     * {@code (S·√r, S/√r)}, which has area {@code S²} for every {@code r} and
+     * gives a square image exactly the shape's {@code S × S}.</p>
+     *
+     * <p>The ratio comes from {@link #imageAspectRatioCache}; until it resolves the
+     * graphic is drawn square, and {@link #onImageAspectRatioResolved} triggers a
+     * redraw at the true size.</p>
+     *
+     * @param url the graphic's asset URL
+     * @return a two-element {@code {width, height}} in SVG user-units
+     */
+    private double[] graphicBoxSize(final String url) {
+        final Double cached = imageAspectRatioCache.get(url);
+        if (cached == null) {
+            loadImageAspectRatio(url);
+            return new double[]{OBJECT_SIZE, OBJECT_SIZE};
+        }
+        final double ratio = cached;
+        if (ratio <= 0 || Double.isNaN(ratio) || Double.isInfinite(ratio)) {
+            return new double[]{OBJECT_SIZE, OBJECT_SIZE};
+        }
+
+        final double root = Math.sqrt(ratio);
+        double width = OBJECT_SIZE * root;
+        double height = OBJECT_SIZE / root;
+
+        // An extreme ratio (a banner-shaped image) would otherwise become a very
+        // wide, very thin sliver, so cap the longest edge and scale both down
+        // together, keeping the aspect ratio.
+        final double longest = Math.max(width, height);
+        final double cap = OBJECT_SIZE * MAX_GRAPHIC_EDGE_RATIO;
+        if (longest > cap) {
+            final double shrink = cap / longest;
+            width = width * shrink;
+            height = height * shrink;
+        }
+        return new double[]{width, height};
     }
 
     /**

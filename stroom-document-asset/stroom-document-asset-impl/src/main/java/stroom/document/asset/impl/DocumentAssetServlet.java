@@ -392,10 +392,13 @@ public class DocumentAssetServlet extends HttpServlet implements IsServlet {
         String mimetype = defaultMimetype;
         final int dotIndex = path.lastIndexOf('.');
         if (dotIndex != -1) {
-            // Got an extension - look it up
-            final String extension = path.substring(dotIndex + 1);
-            if (mimetypes.containsKey(extension.toLowerCase(Locale.ROOT))) {
-                mimetype = mimetypes.get(extension);
+            // Got an extension - look it up. Match case-insensitively, and look up
+            // with the SAME lower-cased key we tested, so an upper-case extension
+            // (IMAGE.PNG) resolves rather than yielding a null content type.
+            final String extension = path.substring(dotIndex + 1).toLowerCase(Locale.ROOT);
+            final String mapped = mimetypes.get(extension);
+            if (mapped != null) {
+                mimetype = mapped;
             }
         }
 
