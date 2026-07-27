@@ -18,10 +18,12 @@ package stroom.floormap.client.view;
 
 import stroom.document.client.event.DirtyUiHandlers;
 import stroom.entity.client.presenter.ReadOnlyChangeHandler;
+import stroom.floormap.client.presenter.FloorMapCanvasPresenter;
 import stroom.floormap.client.presenter.FloorMapCanvasPresenter.FloorMapCanvasView;
 import stroom.floormap.shared.Fact;
 import stroom.floormap.shared.FloorMapJsonKeys;
 import stroom.floormap.shared.FloorMapObject;
+import stroom.floormap.shared.FloorMapScreenGeometry;
 import stroom.floormap.shared.FloorMapShapes;
 import stroom.floormap.shared.FloorMapTransformationMatrix;
 import stroom.floormap.shared.TypeStyle;
@@ -34,7 +36,6 @@ import com.google.gwt.dom.client.Element;
 import com.google.gwt.event.dom.client.HasMouseMoveHandlers;
 import com.google.gwt.event.dom.client.HasMouseUpHandlers;
 import com.google.gwt.event.dom.client.HasMouseWheelHandlers;
-import com.google.gwt.safehtml.shared.SafeHtmlUtils;
 import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
 import com.google.gwt.user.client.ui.FocusPanel;
@@ -94,18 +95,36 @@ public class FloorMapCanvasViewImpl
     private static final double ROTATE_HANDLE_OFFSET_PX = 24;
     /** Minimum on-screen frame size (px) so the handles stay separable on tiny objects. */
     private static final double MIN_FRAME_PX = 24;
-    private static final String HANDLE_STROKE = "#1e88e5";
+    /** On-screen radius (px) of a round edge-midpoint "+" insert handle. */
+    private static final double INSERT_HANDLE_RADIUS_PX = 6;
+    /** Edges shorter than this on-screen (px) omit their "+" insert handle. */
+    private static final double MIN_INSERT_EDGE_PX = 24;
+    /** Primary accent (blue) used for handles, the marquee and the area draft. */
+    private static final String ACCENT_BLUE = "#1e88e5";
+    /** Selection highlight (orange) drawn around a selected fact. */
+    private static final String SELECTION_STROKE = "#ff9800";
+    /** Opacity applied to a dimmed (0.3) layer group. */
+    private static final String DIMMED_LAYER_OPACITY = "0.3";
+    private static final String HANDLE_STROKE = ACCENT_BLUE;
     private static final String HANDLE_FILL = "#ffffff";
+    /** Fill for the round "+" insert handle (light blue tint). */
+    private static final String INSERT_HANDLE_FILL = "#e3f2fd";
+    /** Greyed handle colours, shown when the selection can't be scaled/rotated. */
+    private static final String HANDLE_DISABLED_STROKE = "#9e9e9e";
+    private static final String HANDLE_DISABLED_FILL = "#e0e0e0";
+    /** Tooltip explaining why the handles are inert for a non-transformable fact. */
+    private static final String HANDLE_DISABLED_TOOLTIP =
+            "Only image facts and areas can be scaled or rotated";
 
     /** Default translucency of an area fact's fill when no opacity is stored. */
     private static final double DEFAULT_AREA_FILL_OPACITY = 0.3;
     /**
      * On-screen radius (px) of the vertex-0 close-target ring in the area
-     * drawing draft. Keep in step with
-     * {@code FloorMapCanvasPresenter.AREA_CLOSE_RADIUS_PX}, which decides when
-     * a click actually closes the polygon.
+     * drawing draft — shares the presenter's single constant so the drawn ring
+     * and the click hit-test always match.
      */
-    private static final double AREA_DRAFT_CLOSE_RADIUS_PX = 10;
+    private static final double AREA_DRAFT_CLOSE_RADIUS_PX =
+            FloorMapCanvasPresenter.AREA_CLOSE_RADIUS_PX;
 
     private final Widget widget;
 
@@ -236,8 +255,10 @@ public class FloorMapCanvasViewImpl
                      final Set<String> selectedObjectIds,
                      final List<TypeStyle> typeStyles,
                      final boolean showGrid,
+                     final Set<String> dimmedTypes,
                      final double[] marqueeRectPx,
                      final boolean drawSelectionHandles,
+                     final boolean scaleRotateEnabled,
                      final double[] areaDraftPx) {
         final HtmlBuilder htmlBuilder = new HtmlBuilder();
 
@@ -270,15 +291,13 @@ public class FloorMapCanvasViewImpl
                     if (facts != null) {
                         for (final Fact fact : facts) {
                             final boolean isSelected = selectedObjectIds.contains(fact.getKey());
-                            // Image first: a fact carrying an image always
-                            // renders that image (the long-standing invariant);
-                            // vertices only take effect on imageless facts.
-                            if (fact.hasImage()) {
-                                appendImageFact(flipGroup, fact, isSelected);
-                            } else if (fact.hasVertices()) {
-                                appendAreaFact(flipGroup, fact, isSelected, typeStyles);
+                            // A dimmed layer wraps its facts in a group at 30%
+                            // opacity; otherwise the fact is drawn directly.
+                            if (dimmedTypes != null && dimmedTypes.contains(fact.getType())) {
+                                flipGroup.elem(g -> renderFact(g, fact, isSelected, typeStyles, scale),
+                                        SafeHtmlUtil.from("g"), new Attribute("opacity", DIMMED_LAYER_OPACITY));
                             } else {
-                                appendDefaultGraphic(flipGroup, fact, isSelected, typeStyles, scale);
+                                renderFact(flipGroup, fact, isSelected, typeStyles, scale);
                             }
                         }
                     }
@@ -286,8 +305,13 @@ public class FloorMapCanvasViewImpl
                     // ---- Event entities drawn on top ----
                     if (events != null) {
                         for (final FloorMapObject ev : events) {
-                            appendEvent(flipGroup, ev, selectedObjectIds.contains(ev.getId()),
-                                    typeStyles, scale);
+                            final boolean evSelected = selectedObjectIds.contains(ev.getId());
+                            if (dimmedTypes != null && dimmedTypes.contains(ev.getType())) {
+                                flipGroup.elem(g -> appendEvent(g, ev, evSelected, typeStyles, scale),
+                                        SafeHtmlUtil.from("g"), new Attribute("opacity", DIMMED_LAYER_OPACITY));
+                            } else {
+                                appendEvent(flipGroup, ev, evSelected, typeStyles, scale);
+                            }
                         }
                     }
                 }, SafeHtmlUtil.from("g"), new Attribute("transform", "scale(1,-1)")),
@@ -307,7 +331,13 @@ public class FloorMapCanvasViewImpl
 
             // Selection frame + scale/rotate handles — screen space, on top.
             if (drawSelectionHandles) {
-                appendSelectionHandles(svg);
+                final Fact areaFact = singleSelectedArea();
+                appendSelectionHandles(svg, scaleRotateEnabled, areaFact != null);
+                // Per-vertex move + midpoint insert handles for a single area,
+                // painted over the frame so they win the mousedown.
+                if (areaFact != null) {
+                    appendAreaHandles(svg, areaFact);
+                }
             }
         },
             SafeHtmlUtil.from("svg"),
@@ -355,9 +385,9 @@ public class FloorMapCanvasViewImpl
                 new Attribute("y", String.valueOf(rectPx[1])),
                 new Attribute("width", String.valueOf(rectPx[2] - rectPx[0])),
                 new Attribute("height", String.valueOf(rectPx[3] - rectPx[1])),
-                new Attribute("fill", "#1e88e5"),
+                new Attribute("fill", ACCENT_BLUE),
                 new Attribute("fill-opacity", "0.12"),
-                new Attribute("stroke", "#1e88e5"),
+                new Attribute("stroke", ACCENT_BLUE),
                 new Attribute("stroke-width", "1"),
                 new Attribute("stroke-dasharray", "4,4"),
                 new Attribute("pointer-events", "none"));
@@ -390,7 +420,7 @@ public class FloorMapCanvasViewImpl
             svg.elem(SafeHtmlUtil.from("polyline"),
                     new Attribute("points", committedPoints.toString()),
                     new Attribute("fill", "none"),
-                    new Attribute("stroke", "#1e88e5"),
+                    new Attribute("stroke", ACCENT_BLUE),
                     new Attribute("stroke-width", "2"),
                     new Attribute("pointer-events", "none"));
         }
@@ -402,7 +432,7 @@ public class FloorMapCanvasViewImpl
                     new Attribute("y1", String.valueOf(draftPx[(committed - 1) * 2 + 1])),
                     new Attribute("x2", String.valueOf(draftPx[(points - 1) * 2])),
                     new Attribute("y2", String.valueOf(draftPx[(points - 1) * 2 + 1])),
-                    new Attribute("stroke", "#1e88e5"),
+                    new Attribute("stroke", ACCENT_BLUE),
                     new Attribute("stroke-width", "1"),
                     new Attribute("stroke-dasharray", "4,4"),
                     new Attribute("pointer-events", "none"));
@@ -414,7 +444,7 @@ public class FloorMapCanvasViewImpl
                     new Attribute("cx", String.valueOf(draftPx[i * 2])),
                     new Attribute("cy", String.valueOf(draftPx[i * 2 + 1])),
                     new Attribute("r", "3"),
-                    new Attribute("fill", "#1e88e5"),
+                    new Attribute("fill", ACCENT_BLUE),
                     new Attribute("pointer-events", "none"));
         }
 
@@ -430,11 +460,30 @@ public class FloorMapCanvasViewImpl
                     new Attribute("cx", String.valueOf(draftPx[0])),
                     new Attribute("cy", String.valueOf(draftPx[1])),
                     new Attribute("r", String.valueOf(AREA_DRAFT_CLOSE_RADIUS_PX)),
-                    new Attribute("fill", closable ? "#1e88e5" : "none"),
+                    new Attribute("fill", closable ? ACCENT_BLUE : "none"),
                     new Attribute("fill-opacity", closable ? "0.4" : "0"),
-                    new Attribute("stroke", "#1e88e5"),
+                    new Attribute("stroke", ACCENT_BLUE),
                     new Attribute("stroke-width", closable ? "2" : "1"),
                     new Attribute("pointer-events", "none"));
+        }
+    }
+
+    /**
+     * Renders a single fact into the given builder, dispatching by content:
+     * image facts render their image; imageless facts with vertices render as
+     * areas; everything else renders as the type's default glyph.
+     */
+    private void renderFact(final HtmlBuilder builder,
+                            final Fact fact,
+                            final boolean isSelected,
+                            final List<TypeStyle> typeStyles,
+                            final double scale) {
+        if (fact.hasImage()) {
+            appendImageFact(builder, fact, isSelected);
+        } else if (fact.hasVertices()) {
+            appendAreaFact(builder, fact, isSelected, typeStyles);
+        } else {
+            appendDefaultGraphic(builder, fact, isSelected, typeStyles, scale);
         }
     }
 
@@ -472,7 +521,7 @@ public class FloorMapCanvasViewImpl
         final double opacity = fact.getOpacity() != null
                 ? Math.max(0.0, Math.min(1.0, fact.getOpacity()))
                 : DEFAULT_AREA_FILL_OPACITY;
-        final String stroke = isSelected ? "#ff9800" : colour;
+        final String stroke = isSelected ? SELECTION_STROKE : colour;
         final String strokeWidth = isSelected ? "4" : "2";
 
         parent.elem(areaGroup -> {
@@ -507,92 +556,29 @@ public class FloorMapCanvasViewImpl
                 new Attribute("id", FloorMapJsonKeys.SVG_GROUP_PREFIX + fact.getKey()));
     }
 
-    @Override
-    public Set<String> hitTestScreenRect(final double[] rectPx) {
-        final Set<String> hits = new HashSet<>();
-        if (lastFacts == null || rectPx == null) {
-            return hits;
-        }
-        final double minX = rectPx[0];
-        final double minY = rectPx[1];
-        final double maxX = rectPx[2];
-        final double maxY = rectPx[3];
-        for (final Fact fact : lastFacts) {
-            final double[] b = factScreenBounds(fact);
-            // AABB intersection (touch counts as a hit).
-            if (b != null && b[0] <= maxX && b[2] >= minX && b[1] <= maxY && b[3] >= minY) {
-                hits.add(fact.getKey());
-            }
-        }
-        return hits;
+    /**
+     * A geometry helper bound to the last-drawn scale/pan and this view's image
+     * aspect-ratio cache. The projection maths lives in the shared, unit-tested
+     * {@link FloorMapScreenGeometry}; the view just supplies its current state.
+     */
+    private FloorMapScreenGeometry geometry() {
+        return new FloorMapScreenGeometry(lastScale, lastOffsetX, lastOffsetY,
+                IMAGE_DISPLAY_WIDTH, OBJECT_SIZE, imageAspectRatioCache::get);
     }
 
-    /**
-     * Returns a fact's on-screen bounding box {@code {minX, minY, maxX, maxY}}
-     * using the last-drawn scale/pan. Image facts use the projected corners of
-     * their placed image rect; imageless glyphs use a fixed-size box around the
-     * projected anchor. Returns {@code null} if the fact has no matrix.
-     */
+    @Override
+    public Set<String> hitTestScreenRect(final double[] rectPx) {
+        return geometry().hitTestRect(lastFacts, rectPx);
+    }
+
+    /** A fact's on-screen bounding box (see {@link FloorMapScreenGeometry}). */
     private double[] factScreenBounds(final Fact fact) {
-        final FloorMapTransformationMatrix w2m = fact.getWorldToMap();
-        if (w2m == null) {
-            return null;
-        }
-        // Same dispatch order as draw(): image wins over vertices.
-        if (!fact.hasImage() && fact.hasVertices()) {
-            // Area polygon: the AABB of every vertex projected local → map →
-            // screen. (An AABB over-selects concave/rotated areas on marquee —
-            // acceptable for v1.)
-            double minX = Double.MAX_VALUE;
-            double minY = Double.MAX_VALUE;
-            double maxX = -Double.MAX_VALUE;
-            double maxY = -Double.MAX_VALUE;
-            for (final double[] v : fact.getVertices()) {
-                final double[] mapPt = w2m.transformPoint(v[0], v[1]);
-                final double px = lastOffsetX + lastScale * mapPt[0];
-                final double py = lastOffsetY - lastScale * mapPt[1];
-                minX = Math.min(minX, px);
-                minY = Math.min(minY, py);
-                maxX = Math.max(maxX, px);
-                maxY = Math.max(maxY, py);
-            }
-            return new double[]{minX, minY, maxX, maxY};
-        }
-        if (fact.hasImage()) {
-            final Double ar = imageAspectRatioCache.get(fact.getImage());
-            final double aspect = ar != null ? ar : 1.0;
-            final double w = IMAGE_DISPLAY_WIDTH;
-            final double h = w / aspect;
-            // image-local → map space (matches the render wrapper transform:
-            // worldToMap · translate(0,h) · scale(1,-1)).
-            final FloorMapTransformationMatrix m = w2m
-                    .multiply(FloorMapTransformationMatrix.translate(0, h))
-                    .multiply(FloorMapTransformationMatrix.scale(1, -1));
-            final double[][] corners = {
-                    m.transformPoint(0, 0), m.transformPoint(w, 0),
-                    m.transformPoint(0, h), m.transformPoint(w, h)};
-            double minX = Double.MAX_VALUE;
-            double minY = Double.MAX_VALUE;
-            double maxX = -Double.MAX_VALUE;
-            double maxY = -Double.MAX_VALUE;
-            for (final double[] c : corners) {
-                final double sx = lastOffsetX + lastScale * c[0];
-                final double sy = lastOffsetY - lastScale * c[1];
-                minX = Math.min(minX, sx);
-                minY = Math.min(minY, sy);
-                maxX = Math.max(maxX, sx);
-                maxY = Math.max(maxY, sy);
-            }
-            return new double[]{minX, minY, maxX, maxY};
-        }
-        // Imageless glyph: a fixed screen-size box around the projected anchor.
-        final double[] pos = fact.getPosition();
-        final double[] mapPt = w2m.transformPoint(
-                pos != null ? pos[0] : 0, pos != null ? pos[1] : 0);
-        final double sx = lastOffsetX + lastScale * mapPt[0];
-        final double sy = lastOffsetY - lastScale * mapPt[1];
-        final double half = OBJECT_SIZE / 2.0;
-        return new double[]{sx - half, sy - half, sx + half, sy + half};
+        return geometry().factScreenBounds(fact);
+    }
+
+    @Override
+    public double[] getContentMapBounds() {
+        return geometry().contentMapBounds(lastFacts);
     }
 
     @Override
@@ -613,40 +599,7 @@ public class FloorMapCanvasViewImpl
      * nothing is selected or laid out.
      */
     private double[] computeSelectionFrame() {
-        if (lastFacts == null || lastSelectedIds == null || lastSelectedIds.isEmpty()) {
-            return null;
-        }
-        double minX = Double.MAX_VALUE;
-        double minY = Double.MAX_VALUE;
-        double maxX = -Double.MAX_VALUE;
-        double maxY = -Double.MAX_VALUE;
-        boolean any = false;
-        for (final Fact f : lastFacts) {
-            if (lastSelectedIds.contains(f.getKey())) {
-                final double[] b = factScreenBounds(f);
-                if (b != null) {
-                    minX = Math.min(minX, b[0]);
-                    minY = Math.min(minY, b[1]);
-                    maxX = Math.max(maxX, b[2]);
-                    maxY = Math.max(maxY, b[3]);
-                    any = true;
-                }
-            }
-        }
-        if (!any) {
-            return null;
-        }
-        if (maxX - minX < MIN_FRAME_PX) {
-            final double c = (minX + maxX) / 2;
-            minX = c - MIN_FRAME_PX / 2;
-            maxX = c + MIN_FRAME_PX / 2;
-        }
-        if (maxY - minY < MIN_FRAME_PX) {
-            final double c = (minY + maxY) / 2;
-            minY = c - MIN_FRAME_PX / 2;
-            maxY = c + MIN_FRAME_PX / 2;
-        }
-        return new double[]{minX, minY, maxX, maxY};
+        return geometry().selectionFrame(lastFacts, lastSelectedIds, MIN_FRAME_PX);
     }
 
     /**
@@ -656,15 +609,21 @@ public class FloorMapCanvasViewImpl
      * so the presenter can route a mousedown on it to a scale/rotate gesture.
      * Scaling is always aspect-preserving, so only corner handles are offered.
      */
-    private void appendSelectionHandles(final HtmlBuilder svg) {
+    private void appendSelectionHandles(final HtmlBuilder svg, final boolean enabled,
+                                        final boolean areaOffset) {
         final double[] f = computeSelectionFrame();
         if (f == null) {
             return;
         }
-        final double minX = f[0];
-        final double minY = f[1];
-        final double maxX = f[2];
-        final double maxY = f[3];
+        // For a single-area selection, push the frame outward by ~0.5 minor
+        // grid units so the scale/rotate handles clear the vertex handles.
+        final double off = areaOffset
+                ? FloorMapGrid.majorDivisionScreenPx(lastScale) / 20
+                : 0;
+        final double minX = f[0] - off;
+        final double minY = f[1] - off;
+        final double maxX = f[2] + off;
+        final double maxY = f[3] + off;
         final double cx = (minX + maxX) / 2;
 
         // Frame outline (non-interactive).
@@ -689,19 +648,123 @@ public class FloorMapCanvasViewImpl
                 new Attribute("stroke", HANDLE_STROKE),
                 new Attribute("stroke-width", "1"),
                 new Attribute("pointer-events", "none"));
-        appendRotateHandle(svg, cx, ry);
+        appendRotateHandle(svg, cx, ry, enabled);
 
         // 4 corner scale handles (aspect-preserving scale about the opposite corner).
-        appendScaleHandle(svg, minX, minY, "scale-nw", "nwse-resize");
-        appendScaleHandle(svg, maxX, minY, "scale-ne", "nesw-resize");
-        appendScaleHandle(svg, maxX, maxY, "scale-se", "nwse-resize");
-        appendScaleHandle(svg, minX, maxY, "scale-sw", "nesw-resize");
+        appendScaleHandle(svg, minX, minY, "scale-nw", "nwse-resize", enabled);
+        appendScaleHandle(svg, maxX, minY, "scale-ne", "nesw-resize", enabled);
+        appendScaleHandle(svg, maxX, maxY, "scale-se", "nwse-resize", enabled);
+        appendScaleHandle(svg, minX, maxY, "scale-sw", "nesw-resize", enabled);
     }
 
     private void appendScaleHandle(final HtmlBuilder svg, final double x, final double y,
-                                   final String role, final String cursor) {
-        svg.elem(SafeHtmlUtil.from("rect"),
+                                   final String role, final String cursor, final boolean enabled) {
+        svg.elem(
+                builder -> {
+                    if (!enabled) {
+                        builder.elem(HANDLE_DISABLED_TOOLTIP, SafeHtmlUtil.from("title"));
+                    }
+                },
+                SafeHtmlUtil.from("rect"),
                 new Attribute("id", FloorMapJsonKeys.HANDLE_PREFIX + role),
+                new Attribute("x", String.valueOf(x - HANDLE_SIZE_PX / 2)),
+                new Attribute("y", String.valueOf(y - HANDLE_SIZE_PX / 2)),
+                new Attribute("width", String.valueOf(HANDLE_SIZE_PX)),
+                new Attribute("height", String.valueOf(HANDLE_SIZE_PX)),
+                new Attribute("fill", enabled ? HANDLE_FILL : HANDLE_DISABLED_FILL),
+                new Attribute("stroke", enabled ? HANDLE_STROKE : HANDLE_DISABLED_STROKE),
+                new Attribute("stroke-width", "1"),
+                new Attribute("cursor", enabled ? cursor : "not-allowed"));
+    }
+
+    private void appendRotateHandle(final HtmlBuilder svg, final double x, final double y,
+                                    final boolean enabled) {
+        svg.elem(
+                builder -> {
+                    if (!enabled) {
+                        builder.elem(HANDLE_DISABLED_TOOLTIP, SafeHtmlUtil.from("title"));
+                    }
+                },
+                SafeHtmlUtil.from("circle"),
+                new Attribute("id", FloorMapJsonKeys.HANDLE_PREFIX + "rotate"),
+                new Attribute("cx", String.valueOf(x)),
+                new Attribute("cy", String.valueOf(y)),
+                new Attribute("r", String.valueOf(ROTATE_HANDLE_RADIUS_PX)),
+                new Attribute("fill", enabled ? HANDLE_FILL : HANDLE_DISABLED_FILL),
+                new Attribute("stroke", enabled ? HANDLE_STROKE : HANDLE_DISABLED_STROKE),
+                new Attribute("stroke-width", "1"),
+                new Attribute("cursor", enabled ? "grab" : "not-allowed"));
+    }
+
+    /**
+     * Returns the single selected fact when it is an editable area (exactly one
+     * selection, no image, {@code >= 3} vertices), or {@code null} otherwise.
+     * Used to decide whether to draw per-vertex editing handles and to offset
+     * the scale/rotate frame outward.
+     */
+    private Fact singleSelectedArea() {
+        if (lastFacts == null || lastSelectedIds == null || lastSelectedIds.size() != 1) {
+            return null;
+        }
+        for (final Fact f : lastFacts) {
+            if (lastSelectedIds.contains(f.getKey())) {
+                return !f.hasImage() && f.hasVertices() ? f : null;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Projects a fact-local vertex to screen space using the last-drawn scale
+     * and pan (local → map via {@code worldToMap}, then the Y-up screen flip).
+     */
+    private double[] vertexToScreen(final Fact area, final double[] vertex) {
+        final double[] mapPt = area.getWorldToMap().transformPoint(vertex[0], vertex[1]);
+        return new double[]{
+                lastOffsetX + lastScale * mapPt[0],
+                lastOffsetY - lastScale * mapPt[1]};
+    }
+
+    /**
+     * Draws the per-vertex editing handles for a single selected area: a square
+     * move handle on each vertex (id {@code HANDLE_PREFIX + "vertex-" + i}) and
+     * a round "+" insert handle at each edge midpoint (id
+     * {@code HANDLE_PREFIX + "insert-" + i}), all in screen space at the SVG
+     * root so they paint over the area and win the mousedown. Insert handles on
+     * very short on-screen edges are skipped to avoid crowding.
+     */
+    private void appendAreaHandles(final HtmlBuilder svg, final Fact area) {
+        final double[][] verts = area.getVertices();
+        if (verts == null || verts.length < 3) {
+            return;
+        }
+        final double[][] screen = new double[verts.length][];
+        for (int i = 0; i < verts.length; i++) {
+            screen[i] = vertexToScreen(area, verts[i]);
+        }
+
+        // Insert "+" handles at edge midpoints (skip very short edges).
+        for (int i = 0; i < screen.length; i++) {
+            final double[] a = screen[i];
+            final double[] b = screen[(i + 1) % screen.length];
+            final double dx = b[0] - a[0];
+            final double dy = b[1] - a[1];
+            if (Math.sqrt(dx * dx + dy * dy) < MIN_INSERT_EDGE_PX) {
+                continue;
+            }
+            appendInsertHandle(svg, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2, i);
+        }
+
+        // Vertex move handles.
+        for (int i = 0; i < screen.length; i++) {
+            appendVertexHandle(svg, screen[i][0], screen[i][1], i);
+        }
+    }
+
+    private void appendVertexHandle(final HtmlBuilder svg, final double x, final double y,
+                                    final int index) {
+        svg.elem(SafeHtmlUtil.from("rect"),
+                new Attribute("id", FloorMapJsonKeys.HANDLE_PREFIX + "vertex-" + index),
                 new Attribute("x", String.valueOf(x - HANDLE_SIZE_PX / 2)),
                 new Attribute("y", String.valueOf(y - HANDLE_SIZE_PX / 2)),
                 new Attribute("width", String.valueOf(HANDLE_SIZE_PX)),
@@ -709,19 +772,38 @@ public class FloorMapCanvasViewImpl
                 new Attribute("fill", HANDLE_FILL),
                 new Attribute("stroke", HANDLE_STROKE),
                 new Attribute("stroke-width", "1"),
-                new Attribute("cursor", cursor));
+                new Attribute("cursor", "move"));
     }
 
-    private void appendRotateHandle(final HtmlBuilder svg, final double x, final double y) {
+    private void appendInsertHandle(final HtmlBuilder svg, final double x, final double y,
+                                    final int edgeIndex) {
         svg.elem(SafeHtmlUtil.from("circle"),
-                new Attribute("id", FloorMapJsonKeys.HANDLE_PREFIX + "rotate"),
+                new Attribute("id", FloorMapJsonKeys.HANDLE_PREFIX + "insert-" + edgeIndex),
                 new Attribute("cx", String.valueOf(x)),
                 new Attribute("cy", String.valueOf(y)),
-                new Attribute("r", String.valueOf(ROTATE_HANDLE_RADIUS_PX)),
-                new Attribute("fill", HANDLE_FILL),
+                new Attribute("r", String.valueOf(INSERT_HANDLE_RADIUS_PX)),
+                new Attribute("fill", INSERT_HANDLE_FILL),
                 new Attribute("stroke", HANDLE_STROKE),
                 new Attribute("stroke-width", "1"),
-                new Attribute("cursor", "grab"));
+                new Attribute("cursor", "copy"));
+        // "+" glyph, non-interactive so the circle keeps the mousedown.
+        final double r = INSERT_HANDLE_RADIUS_PX * 0.6;
+        svg.elem(SafeHtmlUtil.from("line"),
+                new Attribute("x1", String.valueOf(x - r)),
+                new Attribute("y1", String.valueOf(y)),
+                new Attribute("x2", String.valueOf(x + r)),
+                new Attribute("y2", String.valueOf(y)),
+                new Attribute("stroke", HANDLE_STROKE),
+                new Attribute("stroke-width", "1"),
+                new Attribute("pointer-events", "none"));
+        svg.elem(SafeHtmlUtil.from("line"),
+                new Attribute("x1", String.valueOf(x)),
+                new Attribute("y1", String.valueOf(y - r)),
+                new Attribute("x2", String.valueOf(x)),
+                new Attribute("y2", String.valueOf(y + r)),
+                new Attribute("stroke", HANDLE_STROKE),
+                new Attribute("stroke-width", "1"),
+                new Attribute("pointer-events", "none"));
     }
 
     /**
@@ -732,7 +814,7 @@ public class FloorMapCanvasViewImpl
     private void appendImageFact(final HtmlBuilder parent,
                                  final Fact fact,
                                  final boolean isSelected) {
-        appendImageGlyph(parent, fact, fact.getWorldToMap(), false, isSelected, "#1e88e5");
+        appendImageGlyph(parent, fact, fact.getWorldToMap(), false, isSelected, ACCENT_BLUE);
     }
 
     /**
@@ -779,8 +861,12 @@ public class FloorMapCanvasViewImpl
 
         parent.elem(imgGroup -> {
             imgGroup.elem(SafeHtmlUtil.from("image"),
-                new Attribute(SafeHtmlUtils.fromSafeConstant("href"),
-                        SafeHtmlUtils.fromTrustedString(fact.getImage())),
+                // Escape the image URL — it is document-controlled data going
+                // into innerHTML, so an unescaped value (a stray quote) allows
+                // markup/attribute injection (stored XSS). Attribute(String,
+                // String) escapes via SafeHtmlUtil.from; a normal URL is
+                // unaffected, and an SVG <image href> does not run javascript:.
+                new Attribute("href", fact.getImage()),
                 new Attribute("x", "0"),
                 new Attribute("y", "0"),
                 new Attribute("width", String.valueOf(IMAGE_DISPLAY_WIDTH)),
@@ -885,7 +971,7 @@ public class FloorMapCanvasViewImpl
             final FloorMapTransformationMatrix placement = new FloorMapTransformationMatrix(
                     w2m.getA(), w2m.getB(), w2m.getC(), w2m.getD(),
                     obj.getX(), obj.getY());
-            appendImageGlyph(parent, imageFact, placement, true, isSelected, "#ff9800");
+            appendImageGlyph(parent, imageFact, placement, true, isSelected, SELECTION_STROKE);
         } else {
             // The trail above stays in map space so it scales with the map;
             // the glyph itself is fixed screen size.
@@ -911,7 +997,7 @@ public class FloorMapCanvasViewImpl
                                    final double scale) {
         final String fillColour = colourForType(type, typeStyles);
         final TypeStyle.Shape shape = shapeForType(type, typeStyles);
-        final String stroke = isSelected ? "#ff9800" : "none";
+        final String stroke = isSelected ? SELECTION_STROKE : "none";
         final String strokeWidth = isSelected ? "4" : "0";
         final String vectorEffect = isSelected ? "non-scaling-stroke" : "none";
         final String polygon = FloorMapShapes.polygonPoints(shape, OBJECT_SIZE / 2.0);

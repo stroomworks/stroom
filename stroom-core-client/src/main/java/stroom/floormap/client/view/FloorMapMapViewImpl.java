@@ -22,6 +22,7 @@ import stroom.floormap.client.presenter.FloorMapMapPresenter.FloorMapMapView;
 import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
 import com.google.gwt.user.client.ui.SimplePanel;
+import com.google.gwt.user.client.ui.ThinSplitLayoutPanel;
 import com.google.gwt.user.client.ui.Widget;
 import com.google.inject.Inject;
 import com.gwtplatform.mvp.client.ViewImpl;
@@ -29,12 +30,11 @@ import com.gwtplatform.mvp.client.ViewImpl;
 /**
  * View implementation for the floor map canvas area.
  *
- * <p>Uses a UiBinder layout to host the map canvas in the main area,
- * the entity-tracking panel in a resizable east column beside it, and the
- * timeline control strip docked beneath both at a fixed, non-resizable
- * height. Slot routing directs content from
+ * <p>Uses a UiBinder split layout to host the map canvas in the main area,
+ * the right-hand dock in a resizable east column beside it, and the timeline
+ * control strip beneath both. Slot routing directs content from
  * {@link FloorMapMapPresenter#MAP} into the map panel,
- * {@link FloorMapMapPresenter#ENTITY_LIST} into the entity list panel, and
+ * {@link FloorMapMapPresenter#DOCK} into the dock panel, and
  * {@link FloorMapMapPresenter#TIMELINE} into the timeline panel.</p>
  */
 public class FloorMapMapViewImpl extends ViewImpl implements FloorMapMapView {
@@ -42,9 +42,11 @@ public class FloorMapMapViewImpl extends ViewImpl implements FloorMapMapView {
     private final Widget widget;
 
     @UiField
+    ThinSplitLayoutPanel topSplitPanel;
+    @UiField
     SimplePanel mapPanel;
     @UiField
-    SimplePanel entityListPanel;
+    SimplePanel dockPanel;
     @UiField
     SimplePanel timelinePanel;
 
@@ -59,17 +61,23 @@ public class FloorMapMapViewImpl extends ViewImpl implements FloorMapMapView {
     }
 
     /**
-     * Routes GWTP slot content into the map, entity list, or timeline panel.
+     * Routes GWTP slot content into the map, dock, or timeline panel.
      */
     @Override
     public void setInSlot(final Object slot, final Widget content) {
         if (FloorMapMapPresenter.MAP.equals(slot)) {
             mapPanel.setWidget(content);
-        } else if (FloorMapMapPresenter.ENTITY_LIST.equals(slot)) {
-            entityListPanel.setWidget(content);
+        } else if (FloorMapMapPresenter.DOCK.equals(slot)) {
+            dockPanel.setWidget(content);
         } else if (FloorMapMapPresenter.TIMELINE.equals(slot)) {
             timelinePanel.setWidget(content);
         }
+    }
+
+    @Override
+    public void setDockVisible(final boolean visible) {
+        // Hides the dock and its splitter while retaining the dragged width.
+        topSplitPanel.setWidgetHidden(dockPanel, !visible);
     }
 
     public interface Binder extends UiBinder<Widget, FloorMapMapViewImpl> {

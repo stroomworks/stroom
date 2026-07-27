@@ -55,7 +55,7 @@
                 <p>The main roles:</p>
                 <ul>
                     <li><strong>Type</strong> — the fact's type; drives paint order and the
-                        default graphic (see Type Styles).</li>
+                        default graphic (configured on the Layers panel).</li>
                     <li><strong>Label</strong> — the name shown on the map.</li>
                     <li><strong>Position</strong> — the world coordinates <code>[x, y]</code> of a
                         point fact.</li>
@@ -70,28 +70,6 @@
             <g:FlowPanel>
                 <g:SimplePanel ui:field="schemaToolbarContainer" />
                 <g:SimplePanel ui:field="schemaGridContainer" height="250px" />
-            </g:FlowPanel>
-        </form:FormGroup>
-        <!-- Type Styles (z-order + default graphic per type) -->
-        <form:FormGroup label="Type Styles" addStyleNames="stroom-floormap-settings-section">
-            <form:HelpHTML>
-                <p>Controls how each type of fact is presented.</p>
-                <ul>
-                    <li><strong>Order is paint (z) order:</strong> types higher in the list are
-                        painted <em>behind</em> those lower down — so put background types at the
-                        top. Reorder with the up/down buttons. A type present in the data but not
-                        yet listed is painted on top until you add it.</li>
-                    <li><strong>Shape</strong> and <strong>Colour</strong> define the default
-                        graphic drawn for an <em>imageless</em> fact of that type. A fact that
-                        carries an image is drawn as that image and ignores these.</li>
-                </ul>
-                <p><strong>Discover</strong> scans the Facts Store for the distinct type values in
-                    your data and adds any that are missing (alphabetically); existing rows keep
-                    their order. <strong>Delete</strong> removes a type's style.</p>
-            </form:HelpHTML>
-            <g:FlowPanel>
-                <g:SimplePanel ui:field="typeStylesToolbarContainer" />
-                <g:SimplePanel ui:field="typeStylesGridContainer" height="250px" />
             </g:FlowPanel>
         </form:FormGroup>
     </g:FlowPanel>

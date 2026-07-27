@@ -1534,6 +1534,105 @@ class TestFloorMapEditorModel {
                     FloorMapFieldMapping.Role.WORLD_TO_MAP, null, null));
 
     // -----------------------------------------------------------------------
+    // Edits target the shard active at the scrubber (regression)
+    // -----------------------------------------------------------------------
+
+    /**
+     * With a pending time-version at a later effective time than the server
+     * shard, a transform must update the shard the canvas is showing (the one
+     * active at {@code selectedTime}), not merely the first key match — which
+     * would silently move the historical server shard instead.
+     */
+    @Test
+    void testTransformFacts_targetsActiveShardNotFirstMatch() {
+        // Server shard at t=100 (translation 10,20); pending time-version at
+        // t=200 (translation 30,40). applyTo appends the creation after the
+        // server entry, so the naive "first match" is the t=100 server shard.
+        model.onEntriesFetched(List.of(entry("k1", 100,
+                "{\"tm-world-to-map\":[1,0,0,1,10,20]}")));
+        model.getPendingChanges().recordCreation(entry("k1", 200,
+                "{\"tm-world-to-map\":[1,0,0,1,30,40]}"));
+        // Scrubber on the later shard — the canvas renders t=200.
+        model.setSelectedTime(200L);
+
+        model.translateFacts(List.of("k1"), 5.0, 6.0, SCHEMA, ACCESSOR);
+
+        final List<TemporalEntry> merged = model.buildMergedCanvasEntries();
+        final TemporalEntry shard200 = merged.stream()
+                .filter(e -> e.getKey().equals("k1") && e.getEffectiveTimeMs() == 200)
+                .findFirst().orElseThrow();
+        final TemporalEntry shard100 = merged.stream()
+                .filter(e -> e.getKey().equals("k1") && e.getEffectiveTimeMs() == 100)
+                .findFirst().orElseThrow();
+        final double[] m200 = ACCESSOR.getArray(ACCESSOR.parse(shard200.getValue()), ".tm-world-to-map");
+        final double[] m100 = ACCESSOR.getArray(ACCESSOR.parse(shard100.getValue()), ".tm-world-to-map");
+        // The active (t=200) shard moved to (35,46); the historical shard is untouched.
+        assertThat(m200[4]).isCloseTo(35.0, within(0.001));
+        assertThat(m200[5]).isCloseTo(46.0, within(0.001));
+        assertThat(m100[4]).isCloseTo(10.0, within(0.001));
+        assertThat(m100[5]).isCloseTo(20.0, within(0.001));
+    }
+
+    /**
+     * A geometry edit on a schema with no {@code GEOMETRY} mapping must be a
+     * no-op that stages nothing (and so leaves the document clean), rather than
+     * recording an identical Update that only marks the doc dirty.
+     */
+    @Test
+    void testUpdateFactGeometry_noGeometryRole_stagesNothing() {
+        model.onEntriesFetched(List.of(entry("area-1", 100, "{\"type\":\"area\"}")));
+        assertThat(model.getPendingChanges().isDirty()).isFalse();
+
+        final boolean changed = model.updateFactGeometry("area-1",
+                new double[][]{{0, 0}, {1, 0}, {1, 1}},
+                SCHEMA_WITHOUT_AREA_ROLES, ACCESSOR);
+
+        assertThat(changed).isFalse();
+        assertThat(model.getPendingChanges().isDirty()).isFalse();
+    }
+
+    // -----------------------------------------------------------------------
+    // Delete all shards (regression)
+    // -----------------------------------------------------------------------
+
+    /**
+     * Deleting a fact must stage a deletion for every shard supplied (all
+     * effective times), plus any pending creation for the key — so no time
+     * version survives to resurrect the fact.
+     */
+    @Test
+    void testStageFactDeletionForAllShards_deletesEveryVersion() {
+        final List<TemporalEntry> serverShards = List.of(
+                entry("k1", 100, "{}"),
+                entry("k1", 200, "{}"),
+                entry("k1", 300, "{}"));
+        // A pending, never-saved creation at a further time must also go.
+        model.getPendingChanges().recordCreation(entry("k1", 400, "{}"));
+
+        final boolean staged = model.stageFactDeletionForAllShards("k1", serverShards);
+
+        assertThat(staged).isTrue();
+        // Applying the staged deletions over the full shard set leaves nothing.
+        final List<TemporalEntry> afterServer = model.getPendingChanges().applyTo(serverShards);
+        assertThat(afterServer).noneMatch(e -> e.getKey().equals("k1"));
+    }
+
+    /**
+     * {@link FloorMapEditorModel#selectedFactHasEntryAtTime(long)} detects an
+     * existing shard at an exact effective time (so "Add Time Version" can warn
+     * instead of overwriting).
+     */
+    @Test
+    void testSelectedFactHasEntryAtTime() {
+        model.setSelectedFactKey("k1");
+        model.onTimeListFetched(List.of(entry("k1", 100, "{}"), entry("k1", 200, "{}")));
+
+        assertThat(model.selectedFactHasEntryAtTime(100)).isTrue();
+        assertThat(model.selectedFactHasEntryAtTime(200)).isTrue();
+        assertThat(model.selectedFactHasEntryAtTime(150)).isFalse();
+    }
+
+    // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
 

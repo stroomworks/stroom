@@ -316,6 +316,24 @@ public class FloorMapEditorModel {
     }
 
     /**
+     * Returns {@code true} if the selected fact already has a time shard at
+     * exactly {@code timeMs} (server or pending, staged deletions applied).
+     * Used to warn before "Add Time Version" would otherwise overwrite an
+     * existing shard at the same effective time.
+     *
+     * @param timeMs the candidate effective time
+     * @return {@code true} if a shard already exists at that exact time
+     */
+    public boolean selectedFactHasEntryAtTime(final long timeMs) {
+        for (final TemporalEntry e : buildMergedTimeList()) {
+            if (e.getEffectiveTimeMs() == timeMs) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * Finds the index in a sorted time list of the entry that is "active" at
      * the given time (i.e. the last entry with effectiveTimeMs ≤ timeMs).
      *
@@ -397,6 +415,31 @@ public class FloorMapEditorModel {
         return new ArrayList<>(byKey.values());
     }
 
+    /**
+     * Returns the single merged (server + pending) entry for {@code key} that is
+     * <em>active at {@link #selectedTime}</em> — i.e. the exact shard the canvas
+     * is currently rendering (see {@link #parseForCanvas}). Edits must target
+     * this shard; matching the first entry by key instead can land an edit on a
+     * historical shard when a pending time-version exists at another effective
+     * time, silently moving the wrong version.
+     *
+     * @param key the fact key
+     * @return the active merged entry, or {@code null} if none
+     */
+    public TemporalEntry activeMergedEntryForKey(final String key) {
+        final List<TemporalEntry> active = activeEntriesAtSelectedTime(
+                pendingChanges.applyTo(serverEntriesAtCurrentTime));
+        if (active == null) {
+            return null;
+        }
+        for (final TemporalEntry e : active) {
+            if (key.equals(e.getKey())) {
+                return e;
+            }
+        }
+        return null;
+    }
+
     // -----------------------------------------------------------------------
     // Object move (coordinate update)
     // -----------------------------------------------------------------------
@@ -419,26 +462,25 @@ public class FloorMapEditorModel {
                                     final double mapY,
                                     final List<FloorMapFieldMapping> schema,
                                     final ValueAccessor accessor) {
-        final List<TemporalEntry> all = pendingChanges.applyTo(serverEntriesAtCurrentTime);
-        for (final TemporalEntry e : all) {
-            if (objectId.equals(e.getKey())) {
-                if (schema == null || schema.isEmpty()) {
-                    throw new IllegalStateException(
-                            "No Value Schema is configured. "
-                            + "Please configure a Value Schema in the Settings tab.");
-                }
-                if (FloorMapEntryParser.findPath(schema, Role.POSITION) == null) {
-                    // Without a Position mapping the new coordinates have
-                    // nowhere to be written; fail loudly rather than staging an
-                    // update that would silently persist nothing.
-                    throw new IllegalStateException(
-                            "No Position field is mapped in the Value Schema. "
-                            + "Add a field with the Position role in the Settings tab.");
-                }
-                pendingChanges.recordUpdate(
-                        buildUpdatedEntryWithCoords(e, mapX, mapY, schema, accessor));
-                return true;
-            }
+        if (schema == null || schema.isEmpty()) {
+            throw new IllegalStateException(
+                    "No Value Schema is configured. "
+                    + "Please configure a Value Schema in the Settings tab.");
+        }
+        if (FloorMapEntryParser.findPath(schema, Role.POSITION) == null) {
+            // Without a Position mapping the new coordinates have nowhere to be
+            // written; fail loudly rather than staging an update that would
+            // silently persist nothing.
+            throw new IllegalStateException(
+                    "No Position field is mapped in the Value Schema. "
+                    + "Add a field with the Position role in the Settings tab.");
+        }
+        // Target the shard the canvas is showing, not just the first key match.
+        final TemporalEntry e = activeMergedEntryForKey(objectId);
+        if (e != null) {
+            pendingChanges.recordUpdate(
+                    buildUpdatedEntryWithCoords(e, mapX, mapY, schema, accessor));
+            return true;
         }
         return false;
     }
@@ -460,18 +502,21 @@ public class FloorMapEditorModel {
                                        final FloorMapTransformationMatrix matrix,
                                        final List<FloorMapFieldMapping> schema,
                                        final ValueAccessor accessor) {
-        final List<TemporalEntry> all = pendingChanges.applyTo(serverEntriesAtCurrentTime);
-        for (final TemporalEntry e : all) {
-            if (objectId.equals(e.getKey())) {
-                if (schema == null || schema.isEmpty()) {
-                    throw new IllegalStateException(
-                            "No Value Schema is configured. "
-                            + "Please configure a Value Schema in the Settings tab.");
-                }
-                pendingChanges.recordUpdate(buildUpdatedEntryWithMatrix(
-                        e, Role.WORLD_TO_MAP, matrix, schema, accessor));
-                return true;
-            }
+        if (schema == null || schema.isEmpty()) {
+            throw new IllegalStateException(
+                    "No Value Schema is configured. "
+                    + "Please configure a Value Schema in the Settings tab.");
+        }
+        if (FloorMapEntryParser.findPath(schema, Role.WORLD_TO_MAP) == null) {
+            // No placement field mapped — skip rather than stage a no-op.
+            return false;
+        }
+        // Target the shard the canvas is showing, not just the first key match.
+        final TemporalEntry e = activeMergedEntryForKey(objectId);
+        if (e != null) {
+            pendingChanges.recordUpdate(buildUpdatedEntryWithMatrix(
+                    e, Role.WORLD_TO_MAP, matrix, schema, accessor));
+            return true;
         }
         return false;
     }
@@ -533,32 +578,80 @@ public class FloorMapEditorModel {
                     "No Value Schema is configured. "
                     + "Please configure a Value Schema in the Settings tab.");
         }
-        final List<TemporalEntry> all = pendingChanges.applyTo(serverEntriesAtCurrentTime);
+        if (FloorMapEntryParser.findPath(schema, Role.WORLD_TO_MAP) == null) {
+            // No placement field mapped — an update would write nowhere and
+            // stage a no-op that still marks the doc dirty. Skip.
+            return 0;
+        }
         int transformed = 0;
         for (final String objectId : objectIds) {
-            for (final TemporalEntry e : all) {
-                if (objectId.equals(e.getKey())) {
-                    final ParsedValue parsed = accessor.parse(e.getValue());
-                    if (parsed != null) {
-                        double[] m = accessor.getArray(
-                                parsed, FloorMapEntryParser.findPath(schema, Role.WORLD_TO_MAP));
-                        if (m == null || m.length < 6) {
-                            m = new double[]{1, 0, 0, 1, 0, 0};
-                        }
-                        final FloorMapTransformationMatrix oldMatrix =
-                                new FloorMapTransformationMatrix(
-                                        m[0], m[1], m[2], m[3], m[4], m[5]);
-                        final FloorMapTransformationMatrix newMatrix =
-                                mapSpaceTransform.multiply(oldMatrix);
-                        pendingChanges.recordUpdate(buildUpdatedEntryWithMatrix(
-                                e, Role.WORLD_TO_MAP, newMatrix, schema, accessor));
-                        transformed++;
+            // Target the shard the canvas is showing, not just the first key
+            // match (which may be a historical shard under a pending edit).
+            final TemporalEntry e = activeMergedEntryForKey(objectId);
+            if (e != null) {
+                final ParsedValue parsed = accessor.parse(e.getValue());
+                if (parsed != null) {
+                    double[] m = accessor.getArray(
+                            parsed, FloorMapEntryParser.findPath(schema, Role.WORLD_TO_MAP));
+                    if (m == null || m.length < 6) {
+                        m = new double[]{1, 0, 0, 1, 0, 0};
                     }
-                    break;
+                    final FloorMapTransformationMatrix oldMatrix =
+                            new FloorMapTransformationMatrix(
+                                    m[0], m[1], m[2], m[3], m[4], m[5]);
+                    final FloorMapTransformationMatrix newMatrix =
+                            mapSpaceTransform.multiply(oldMatrix);
+                    pendingChanges.recordUpdate(buildUpdatedEntryWithMatrix(
+                            e, Role.WORLD_TO_MAP, newMatrix, schema, accessor));
+                    transformed++;
                 }
             }
         }
         return transformed;
+    }
+
+    /**
+     * Records an edit to an area's geometry (moved / inserted / deleted vertices).
+     * The vertices are in the fact's local frame and written verbatim to the
+     * {@code GEOMETRY} role — {@code WORLD_TO_MAP} is left unchanged, so the area
+     * is edited in place. Staged like any other change and flushed on save.
+     *
+     * @param key           the area fact's key
+     * @param localVertices the new vertices in local frame ({@code >= 3})
+     * @param schema        the value schema
+     * @param accessor      the value accessor
+     * @return {@code true} if an entry was found and updated
+     */
+    public boolean updateFactGeometry(final String key,
+                                      final double[][] localVertices,
+                                      final List<FloorMapFieldMapping> schema,
+                                      final ValueAccessor accessor) {
+        if (key == null || localVertices == null || localVertices.length < 3) {
+            return false;
+        }
+        if (schema == null || schema.isEmpty()) {
+            throw new IllegalStateException(
+                    "No Value Schema is configured. "
+                    + "Please configure a Value Schema in the Settings tab.");
+        }
+        if (FloorMapEntryParser.findPath(schema, Role.GEOMETRY) == null) {
+            // No geometry field mapped — writing would be a no-op that still
+            // marks the doc dirty and snaps back on refresh. Skip.
+            return false;
+        }
+        final double[] flatLocal = new double[localVertices.length * 2];
+        for (int i = 0; i < localVertices.length; i++) {
+            flatLocal[i * 2] = localVertices[i][0];
+            flatLocal[i * 2 + 1] = localVertices[i][1];
+        }
+        // Target the shard the canvas is showing, not just the first key match.
+        final TemporalEntry e = activeMergedEntryForKey(key);
+        if (e != null) {
+            pendingChanges.recordUpdate(
+                    buildUpdatedEntryWithGeometry(e, flatLocal, schema, accessor));
+            return true;
+        }
+        return false;
     }
 
     // -----------------------------------------------------------------------
@@ -596,6 +689,47 @@ public class FloorMapEditorModel {
             }
         }
         // Deselect the deleted fact if it was part of the selection.
+        selectedFactKeys.remove(key);
+        return staged;
+    }
+
+    /**
+     * Stages deletions for <em>every</em> shard of {@code key} given the full
+     * set of that key's server shards (fetched by the caller across all
+     * effective times), plus any pending creation for the key. Use this rather
+     * than {@link #stageFactDeletion(String)} for a "delete object" action: the
+     * latter only sees the shard active at the scrubber plus the selected
+     * fact's time list, so it silently leaves other time versions behind and
+     * the fact reappears.
+     *
+     * @param key         the fact key to delete
+     * @param serverShards all server shards for the key (any effective time)
+     * @return {@code true} if at least one deletion was staged
+     */
+    public boolean stageFactDeletionForAllShards(final String key,
+                                                 final List<TemporalEntry> serverShards) {
+        if (key == null) {
+            return false;
+        }
+        final List<TemporalEntry> all = new ArrayList<>();
+        if (serverShards != null) {
+            all.addAll(serverShards);
+        }
+        // Include pending creations for the key (no server shard yet), so a
+        // just-created-but-unsaved fact is removed too.
+        all.addAll(pendingChanges.applyTo(new ArrayList<>()));
+        final Set<TemporalEntryId> seen = new HashSet<>();
+        boolean staged = false;
+        for (final TemporalEntry e : all) {
+            if (key.equals(e.getKey())) {
+                final TemporalEntryId id = new TemporalEntryId(
+                        e.getMap(), e.getKey(), e.getEffectiveTimeMs());
+                if (seen.add(id)) {
+                    pendingChanges.recordDeletion(id);
+                    staged = true;
+                }
+            }
+        }
         selectedFactKeys.remove(key);
         return staged;
     }
@@ -914,6 +1048,36 @@ public class FloorMapEditorModel {
         accessor.setArray(parsed, FloorMapEntryParser.findPath(schema, role),
                 new double[]{matrix.getA(), matrix.getB(), matrix.getC(),
                         matrix.getD(), matrix.getE(), matrix.getF()});
+        return new TemporalEntry(
+                original.getMap(),
+                original.getKey(),
+                original.getEffectiveTimeMs(),
+                accessor.serialize(parsed));
+    }
+
+    /**
+     * Builds a copy of {@code original} with new area geometry — the flat local
+     * vertex array {@code [x0,y0,x1,y1,...]} written to the {@code GEOMETRY} role.
+     *
+     * @param original          the entry to update
+     * @param flatLocalVertices the new geometry (local frame, flat pairs)
+     * @param schema            the value schema
+     * @param accessor          the value accessor
+     * @return a new {@link TemporalEntry} with the updated geometry
+     * @throws IllegalStateException if the entry's value cannot be parsed
+     */
+    public static TemporalEntry buildUpdatedEntryWithGeometry(
+            final TemporalEntry original,
+            final double[] flatLocalVertices,
+            final List<FloorMapFieldMapping> schema,
+            final ValueAccessor accessor) {
+        final ParsedValue parsed = accessor.parse(original.getValue());
+        if (parsed == null) {
+            throw new IllegalStateException(
+                    "Entry value could not be parsed: " + original.getValue());
+        }
+        accessor.setArray(parsed, FloorMapEntryParser.findPath(schema, Role.GEOMETRY),
+                flatLocalVertices);
         return new TemporalEntry(
                 original.getMap(),
                 original.getKey(),

@@ -76,7 +76,8 @@ import java.util.Map;
  * <h3>Layout slots</h3>
  * <ul>
  *     <li>{@link #MAP} – the {@link FloorMapCanvasPresenter} (canvas / visualisation)</li>
- *     <li>{@link #ENTITY_LIST} – the {@link FloorMapEntityListPresenter} (entity tracking panel)</li>
+ *     <li>{@link #DOCK} – the {@link FloorMapDockPresenter} (right-hand dock; hosts the
+ *     {@link FloorMapTrackingPresenter} tracking panel as its first tab)</li>
  *     <li>{@link #TIMELINE} – the {@link FloorMapTimelinePresenter} (timeline scrubber)</li>
  * </ul>
  *
@@ -89,14 +90,16 @@ public class FloorMapMapPresenter
         implements HasToolbar {
 
     public static final Object MAP = new Object();
-    public static final Object ENTITY_LIST = new Object();
+    public static final Object DOCK = new Object();
     public static final Object TIMELINE = new Object();
     private static final int HISTOGRAM_BINS = 100;
 
     private final FloorMapCanvasPresenter floorMapCanvasPresenter;
     private final FloorMapTimelinePresenter floorMapTimelinePresenter;
     private final FloorMapObjectEditPresenter floorMapObjectEditPresenter;
-    private final FloorMapEntityListPresenter floorMapEntityListPresenter;
+    private final FloorMapTrackingPresenter floorMapTrackingPresenter;
+    private final FloorMapLayersPresenter floorMapLayersPresenter;
+    private final FloorMapDockPresenter floorMapDockPresenter;
 
     /** Roster of every entity seen on the map, feeding the tracking panel. */
     private final FloorMapEntityList entityList = new FloorMapEntityList();
@@ -114,6 +117,12 @@ public class FloorMapMapPresenter
      */
     private final InlineSvgToggleButton showGridButton;
 
+    /**
+     * Toolbar toggle that shows/hides the right-hand dock. On by default on the
+     * Map tab, which always has the Tracking panel to show.
+     */
+    private final InlineSvgToggleButton dockToggleButton;
+
     private long selectedTime;
 
     /**
@@ -123,6 +132,13 @@ public class FloorMapMapPresenter
      * the user's chosen range (e.g. after "Show All").
      */
     private boolean timelineInitialised;
+
+    /**
+     * UUID of the document this Map is showing, used to ignore
+     * {@link FloorMapDataEvent}s fired by other open FloorMap documents on the
+     * shared event bus (which would otherwise render another doc's entities here).
+     */
+    private String docUuid;
 
     private static final long ONE_DAY_MS = 24L * 60 * 60 * 1000;
 
@@ -156,27 +172,47 @@ public class FloorMapMapPresenter
                                 final Provider<FloorMapCanvasPresenter> floorMapCanvasPresenterProvider,
                                 final Provider<FloorMapTimelinePresenter> floorMapTimelinePresenterProvider,
                                 final Provider<FloorMapObjectEditPresenter> floorMapObjectEditPresenterProvider,
-                                final Provider<FloorMapEntityListPresenter> floorMapEntityListPresenterProvider) {
+                                final Provider<FloorMapTrackingPresenter> floorMapEntityListPresenterProvider,
+                                final Provider<FloorMapDockPresenter> floorMapDockPresenterProvider,
+                                final Provider<FloorMapLayersPresenter> floorMapLayersPresenterProvider) {
         super(eventBus, view);
 
         this.floorMapCanvasPresenter = floorMapCanvasPresenterProvider.get();
         this.floorMapTimelinePresenter = floorMapTimelinePresenterProvider.get();
         this.floorMapObjectEditPresenter = floorMapObjectEditPresenterProvider.get();
-        this.floorMapEntityListPresenter = floorMapEntityListPresenterProvider.get();
+        this.floorMapTrackingPresenter = floorMapEntityListPresenterProvider.get();
+        this.floorMapDockPresenter = floorMapDockPresenterProvider.get();
+        this.floorMapLayersPresenter = floorMapLayersPresenterProvider.get();
 
         // Default initial time
         this.selectedTime = System.currentTimeMillis();
 
+        // The Tracking and Layers panels live as tabs of the right-hand dock.
+        floorMapDockPresenter.addTab("Tracking", floorMapTrackingPresenter);
+        floorMapDockPresenter.addTab("Layers", floorMapLayersPresenter);
+        // Layer visibility is a transient view control on the Map tab; push
+        // changes to the canvas as hidden / dimmed type sets.
+        floorMapLayersPresenter.setChangeHandler(() ->
+                floorMapCanvasPresenter.setLayerVisibility(
+                        floorMapLayersPresenter.getHiddenTypes(),
+                        floorMapLayersPresenter.getDimmedTypes()));
+
         setInSlot(MAP, floorMapCanvasPresenter);
-        setInSlot(ENTITY_LIST, floorMapEntityListPresenter);
+        setInSlot(DOCK, floorMapDockPresenter);
         setInSlot(TIMELINE, floorMapTimelinePresenter);
 
         // Grid on/off toggle, surfaced next to the save buttons (HasToolbar).
         // SvgImage has no dedicated grid glyph; TABLE renders as a grid of cells.
         showGridButton = new InlineSvgToggleButton();
         showGridButton.setSvg(SvgImage.TABLE);
-        showGridButton.setTitle("Show Grid");
+        showGridButton.setTitle("Toggle Grid");
         showGridButton.setState(false);
+
+        // Show/hide the right-hand dock
+        dockToggleButton = new InlineSvgToggleButton();
+        dockToggleButton.setSvg(SvgImage.SHOW_MENU);
+        dockToggleButton.setTitle("Toggle Controls");
+        dockToggleButton.setState(true);
 
         // Result component to parse and handle Facts query results
         final ResultComponent resultConsumer = new ResultComponent() {
@@ -242,6 +278,9 @@ public class FloorMapMapPresenter
         //noinspection unused e
         registerHandler(showGridButton.addClickHandler(e ->
                 floorMapCanvasPresenter.setShowGrid(showGridButton.getState())));
+        //noinspection unused e
+        registerHandler(dockToggleButton.addClickHandler(e ->
+                getView().setDockVisible(dockToggleButton.getState())));
 
         // Only react to this tab's own timeline — the Editor tab has its own
         // timeline firing the same event type, and the tabs must not time-sync.
@@ -251,6 +290,10 @@ public class FloorMapMapPresenter
             }
         }));
         registerHandler(getEventBus().addHandler(FloorMapDataEvent.getType(), e -> {
+            // Ignore events from other open FloorMap documents (shared event bus).
+            if (!java.util.Objects.equals(docUuid, e.getDocUuid())) {
+                return;
+            }
             floorMapCanvasPresenter.setEventObjects(e.getObjects());
             // Keep the tracking panel's roster up to date. Only re-push grid
             // data when membership actually changed so playback refreshes
@@ -281,7 +324,7 @@ public class FloorMapMapPresenter
             if (e.getSource() == floorMapCanvasPresenter
                     && e.getObjectId() != null
                     && entityList.contains(e.getObjectId())) {
-                floorMapEntityListPresenter.setSelected(e.getObjectId());
+                floorMapTrackingPresenter.setSelected(e.getObjectId());
                 floorMapCanvasPresenter.setTrackedObjectId(e.getObjectId());
             }
         }));
@@ -295,7 +338,7 @@ public class FloorMapMapPresenter
         // selecting nothing stops tracking. Re-clicking the selected row
         // re-invokes this consumer, which re-centres and resumes following
         // after a manual pan paused it.
-        this.floorMapEntityListPresenter.setSelectionConsumer(entry ->
+        this.floorMapTrackingPresenter.setSelectionConsumer(entry ->
                 floorMapCanvasPresenter.setTrackedObjectId(entry != null
                         ? entry.getId()
                         : null));
@@ -320,6 +363,7 @@ public class FloorMapMapPresenter
     public List<Widget> getToolbars() {
         final ButtonPanel toolbar = new ButtonPanel();
         toolbar.addButton(showGridButton);
+        toolbar.addButton(dockToggleButton);
         return Collections.singletonList(toolbar);
     }
 
@@ -333,6 +377,7 @@ public class FloorMapMapPresenter
      */
     @Override
     protected void onRead(final DocRef docRef, final FloorMapDoc document, final boolean readOnly) {
+        this.docUuid = docRef != null ? docRef.getUuid() : null;
         // Initialise and reset both query models BEFORE starting any searches, so that the histogram query
         // started inside updateTimelineRange() is not immediately cancelled by the reset() call below.
         queryModel.init(docRef);
@@ -349,7 +394,14 @@ public class FloorMapMapPresenter
 
         // A (re-)opened document starts with a fresh entity roster.
         entityList.clear();
-        floorMapEntityListPresenter.setData(Collections.emptyList());
+        floorMapTrackingPresenter.setData(Collections.emptyList());
+
+        // Populate the Layers panel from the document's type styles and sync the
+        // canvas with the current (transient) layer visibility.
+        floorMapLayersPresenter.setLayers(document.getTypeStyles());
+        floorMapCanvasPresenter.setLayerVisibility(
+                floorMapLayersPresenter.getHiddenTypes(),
+                floorMapLayersPresenter.getDimmedTypes());
 
         // Start timeline (and histogram query) only after models are ready.
         // Initialise the range on the first read only; on a save-triggered
@@ -564,9 +616,9 @@ public class FloorMapMapPresenter
      * selection consumer because {@code EntityEntry} equality is id-based.
      */
     private void refreshEntityGrid() {
-        final String selectedId = floorMapEntityListPresenter.getSelectedId();
-        floorMapEntityListPresenter.setData(entityList.getEntities());
-        floorMapEntityListPresenter.setSelected(selectedId);
+        final String selectedId = floorMapTrackingPresenter.getSelectedId();
+        floorMapTrackingPresenter.setData(entityList.getEntities());
+        floorMapTrackingPresenter.setSelected(selectedId);
     }
 
     /**
@@ -817,7 +869,24 @@ public class FloorMapMapPresenter
         return floorMapTimelinePresenter;
     }
 
+    /**
+     * Registers a listener notified once with this tab's computed initial view
+     * {@code {scale, offsetX, offsetY}}, so the Editor tab can adopt the same
+     * initial zoom + translation and nothing jumps on the first tab switch.
+     *
+     * @param listener the callback, or {@code null} to remove
+     */
+    public void setInitialViewListener(final java.util.function.Consumer<double[]> listener) {
+        floorMapCanvasPresenter.setInitialViewListener(listener);
+    }
+
     public interface FloorMapMapView extends View {
 
+        /**
+         * Shows or hides the right-hand dock, preserving its dragged width.
+         *
+         * @param visible {@code true} to show the dock, {@code false} to hide it
+         */
+        void setDockVisible(boolean visible);
     }
 }

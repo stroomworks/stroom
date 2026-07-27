@@ -17,7 +17,7 @@
 package stroom.floormap.client.presenter;
 
 import stroom.data.grid.client.MyDataGrid;
-import stroom.floormap.client.presenter.FloorMapEntityListPresenter.FloorMapEntityListView;
+import stroom.floormap.client.presenter.FloorMapTrackingPresenter.FloorMapTrackingView;
 import stroom.floormap.shared.FloorMapEntityList.EntityEntry;
 import stroom.svg.client.SvgPresets;
 import stroom.widget.button.client.ButtonPanel;
@@ -51,7 +51,7 @@ import java.util.function.Consumer;
  * following without deselecting first. The toolbar's single
  * <strong>Stop Tracking</strong> button clears the selection.</p>
  */
-public class FloorMapEntityListPresenter extends MyPresenterWidget<FloorMapEntityListView> {
+public class FloorMapTrackingPresenter extends MyPresenterWidget<FloorMapTrackingView> {
 
     private final MyDataGrid<EntityEntry> dataGrid;
     private final ListDataProvider<EntityEntry> dataProvider = new ListDataProvider<>();
@@ -61,8 +61,8 @@ public class FloorMapEntityListPresenter extends MyPresenterWidget<FloorMapEntit
     private final ButtonView stopTrackingButton;
 
     @Inject
-    public FloorMapEntityListPresenter(final EventBus eventBus,
-                                       final FloorMapEntityListView view) {
+    public FloorMapTrackingPresenter(final EventBus eventBus,
+                                     final FloorMapTrackingView view) {
         super(eventBus, view);
 
         dataGrid = new MyDataGrid<>(this);
@@ -205,7 +205,7 @@ public class FloorMapEntityListPresenter extends MyPresenterWidget<FloorMapEntit
      * <p>Implementations provide the layout that hosts the data grid and the
      * toolbar strip above it.</p>
      */
-    public interface FloorMapEntityListView extends View {
+    public interface FloorMapTrackingView extends View {
 
         /**
          * Sets the data-grid widget into the main content area of the panel.

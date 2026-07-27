@@ -21,6 +21,7 @@ import stroom.floormap.client.event.MapObjectSelectedEvent;
 import stroom.floormap.client.presenter.FloorMapCanvasPresenter.FloorMapCanvasView;
 import stroom.floormap.client.view.FloorMapGrid;
 import stroom.floormap.shared.Fact;
+import stroom.floormap.shared.FloorMapEntityAnimator;
 import stroom.floormap.shared.FloorMapJsonKeys;
 import stroom.floormap.shared.FloorMapObject;
 import stroom.floormap.shared.FloorMapTransformationMatrix;
@@ -51,6 +52,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Consumer;
 import javax.inject.Inject;
 
 /**
@@ -70,43 +72,30 @@ import javax.inject.Inject;
  */
 public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasView> {
 
-    // -------------------------------------------------------------------------
-    // Animation constants
-    // -------------------------------------------------------------------------
-
-    /** How long (wall-clock ms) a single position-change animation lasts. */
-    private static final double ANIMATION_DURATION_MS = 800.0;
-
-    /**
-     * Maximum number of recorded trail points per entity.  Set high enough
-     * that the trail covers the full journey during normal playback (~83 s
-     * at 60 fps).  The single SVG {@code <path>} rendering makes this
-     * inexpensive; trail data is cleaned up on fade completion and
-     * discontinuous time jumps.
-     */
-    private static final int TRAIL_MAX_PTS = 5000;
-
-    /** How long (wall-clock ms) trails take to fade out after the entity stops moving. */
-    private static final double TRAIL_FADE_DURATION_MS = 2000.0;
 
     // -------------------------------------------------------------------------
     /**
-     * Minimum zoom scale. At extreme zoom-out the grid decade selection and
-     * SVG coordinate values lose precision. This limit (~1e-12) provides
-     * roughly 12 orders of magnitude of zoom-out from the default — far
-     * beyond any practical use.
+     * Minimum/maximum zoom scale — the single source of truth lives on
+     * {@link FloorMapViewport} (shared, unit-tested) so the clamp used here and
+     * in the viewport maths cannot drift apart. Beyond these (~1e±12) the grid
+     * decade selection and SVG coordinate values lose precision.
      */
-    private static final double MIN_SCALE = 1e-12;
-
-    /**
-     * Maximum zoom scale. At extreme zoom-in the same precision issues
-     * apply. This limit (~1e12) provides roughly 12 orders of magnitude
-     * of zoom-in from the default.
-     */
-    private static final double MAX_SCALE = 1e12;
+    private static final double MIN_SCALE = FloorMapViewport.MIN_SCALE;
+    private static final double MAX_SCALE = FloorMapViewport.MAX_SCALE;
 
     /** The zoom level a freshly opened map starts at (100 %). */
     private static final double DEFAULT_SCALE = 1.0;
+
+    /**
+     * The map→screen "background" matrix handed to {@link FloorMapViewport} for
+     * projection: map space is Y-up, the SVG render pipeline is Y-down, so the
+     * only fixed transform on top of pan/zoom is a Y flip. With this as the
+     * viewport's background, {@code viewport.mapToScreen}/{@code screenToMap}
+     * reproduce this presenter's projection exactly, so the (unit-tested)
+     * viewport maths is the single source of the projection formula.
+     */
+    private static final FloorMapTransformationMatrix Y_FLIP =
+            FloorMapTransformationMatrix.scale(1, -1);
 
     /**
      * How far the origin (0,0) is inset from the bottom-left corner in the
@@ -116,19 +105,42 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
      */
     private static final double ORIGIN_INSET_MAJOR_DIVISIONS = 0.5;
 
+    /**
+     * Fraction of the viewport kept as empty margin on each side when the
+     * initial view is zoomed to fit all content.
+     */
+    private static final double FIT_MARGIN = 0.08;
+
     // Zoom and pan state
     private double scale = DEFAULT_SCALE;
     private double offsetX = 0;
     private double offsetY = 0;
     /**
-     * Whether the size-dependent default view has been applied yet. Applied
-     * once, the first time the canvas has a real height (see
-     * {@link #applyDefaultView()}); user pan/zoom afterwards is left untouched.
+     * Whether the initial view (zoom-to-fit, or the bottom-left origin fallback)
+     * has been applied yet. Applied once, when the canvas first has both a real
+     * size and — for the fit — content or an injected view; user pan/zoom
+     * afterwards is left untouched.
      */
-    private boolean defaultViewApplied = false;
+    private boolean initialViewApplied = false;
+
+    /**
+     * An initial view {@code {scale, offsetX, offsetY}} handed over from another
+     * tab (Map → Editor) so the first frame matches exactly and nothing jumps.
+     * {@code null} when this canvas must compute its own fit. Consulted once, on
+     * the first {@link #maybeApplyInitialView()}.
+     */
+    private double[] injectedInitialView;
+
+    /**
+     * Notified once with this canvas's computed initial view
+     * {@code {scale, offsetX, offsetY}} so another tab can reuse it. {@code null}
+     * when nothing is listening.
+     */
+    private Consumer<double[]> initialViewListener;
 
     // Dragging state
     private DragHandler dragHandler;
+    private GeometryHandler geometryHandler;
     private SelectionHandler selectionHandler;
     private boolean isDragging = false;
     /** True only if the mouse actually moved while dragging an object (distinguishes click-to-select from drag). */
@@ -141,10 +153,22 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
     /** The kind of pointer gesture currently in progress. */
     private enum Gesture {
-        NONE, PANNING, MOVING, MARQUEE, SCALING, ROTATING, DRAWING_AREA
+        NONE, PANNING, MOVING, MARQUEE, SCALING, ROTATING, DRAWING_AREA, MOVING_VERTEX
     }
 
     private Gesture gesture = Gesture.NONE;
+
+    // Area vertex-edit state (valid while gesture == MOVING_VERTEX).
+    /** Key of the area whose vertices are being edited. */
+    private String editingAreaKey;
+    /** The area's world-to-map at edit start (to map screen ↔ local frame). */
+    private FloorMapTransformationMatrix editingWorldToMap;
+    /** Working copy of the area's local-frame vertices during the edit. */
+    private double[][] workingVertices;
+    /** Index of the vertex being dragged, or -1. */
+    private int editingVertexIndex = -1;
+    /** True when the current vertex edit inserted a new vertex (persist even if not dragged). */
+    private boolean vertexInserted;
 
     /** Rubber-band marquee corners in element-pixel space (valid while MARQUEE). */
     private double marqueeStartX;
@@ -156,10 +180,11 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     private static final int AREA_MIN_VERTICES = 3;
     /**
      * Screen-pixel radius around vertex 0 within which a click closes the
-     * polygon. Keep in step with the close-target ring drawn by
-     * {@code FloorMapCanvasViewImpl.AREA_DRAFT_CLOSE_RADIUS_PX}.
+     * polygon, and the radius of the close-target ring the view draws. Public
+     * so {@code FloorMapCanvasViewImpl} shares this single value (the hit test
+     * and the drawn ring must match).
      */
-    private static final double AREA_CLOSE_RADIUS_PX = 10;
+    public static final double AREA_CLOSE_RADIUS_PX = 10;
 
     /**
      * Committed draft vertices for the in-progress DRAWING_AREA gesture, in
@@ -216,12 +241,6 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
      */
     private final Set<String> areaKeys = new HashSet<>();
 
-    /**
-     * Event entities that are not currently animated. When playing, moving
-     * entities are built dynamically in {@link #buildAnimatedDrawList}.
-     */
-    private List<FloorMapObject> eventObjects = new ArrayList<>();
-
     // Edit mode
     private boolean editMode = false;
     /**
@@ -245,6 +264,15 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
     /** The facts to render (backgrounds + static facts), from the parser. */
     private List<Fact> facts = new ArrayList<>();
+
+    /** Types the Layers panel has hidden: not drawn and not hit-tested. */
+    private final Set<String> hiddenTypes = new HashSet<>();
+    /** Types the Layers panel has dimmed to 30% opacity. */
+    private final Set<String> dimmedTypes = new HashSet<>();
+    /** Types the Layers panel has locked (Editor): their items can't be moved. */
+    private final Set<String> lockedTypes = new HashSet<>();
+    /** Fact keys belonging to a locked type — recomputed whenever facts change. */
+    private final Set<String> lockedKeys = new HashSet<>();
 
     // -------------------------------------------------------------------------
     // Entity tracking (Map tab)
@@ -291,43 +319,12 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     // Playback / animation state
     // -------------------------------------------------------------------------
 
-    /** {@code true} while the timeline is actively playing. */
-    private boolean isPlaying = false;
-
     /**
-     * When {@code true}, the next call to {@link #setEventObjects} will teleport
-     * entities directly to their new positions without creating animations, even if
-     * {@link #isPlaying} is {@code true}.  Set by {@link #clearAnimationState()} so
-     * that a scrub/skip/loop-around places users instantly rather than replaying a
-     * batch of movements.
+     * The entity animation data machine (interpolation, trails, teleport). This
+     * presenter owns only the scheduler loop, camera-follow and drawing; all the
+     * per-entity bookkeeping lives in the shared, unit-tested animator.
      */
-    private boolean pendingTeleport = false;
-
-    /**
-     * In-flight animations keyed by entity id.  Only populated while playing.
-     */
-    private final Map<String, EntityAnimation> activeAnimations = new HashMap<>();
-
-    /**
-     * Last known rendered state (id, type, map-space position) for each event
-     * entity, used as the start point for the next animation and to keep the
-     * entity drawn (with its correct type styling) between event refreshes.
-     */
-    private final Map<String, FloorMapObject> lastEntityPositions = new HashMap<>();
-
-    /**
-     * Trail points for each entity.  Each entry is {@code [mapX, mapY]}.
-     * Points are appended during animation; oldest are at the front.
-     * The list is bounded by {@link #TRAIL_MAX_PTS}.
-     */
-    private final Map<String, List<double[]>> entityTrails = new HashMap<>();
-
-    /**
-     * AnimationScheduler timestamp when each entity's last animation completed,
-     * initiating the trail fade-out.  Entries are removed once the fade finishes
-     * or if the entity starts a new animation.
-     */
-    private final Map<String, Double> trailFadeStartTimes = new HashMap<>();
+    private final FloorMapEntityAnimator animator = new FloorMapEntityAnimator();
 
     /** {@code true} while the {@link #animationCallback} loop is scheduled. */
     private boolean animationLoopRunning = false;
@@ -357,7 +354,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
             // Apply the bottom-left default view as soon as the canvas has a
             // real size. onResize() self-defers until layout completes, then
             // fires this back.
-            getView().setResizeListener(this::applyDefaultView);
+            getView().setResizeListener(this::maybeApplyInitialView);
             getView().onResize();
         }
 
@@ -366,18 +363,20 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     }
 
     /**
-     * Positions the initial view so the map origin (0,0) sits near the
-     * bottom-left corner of the canvas, inset by
-     * {@link #ORIGIN_INSET_MAJOR_DIVISIONS} of a major grid division at the
-     * default zoom.
-     *
-     * <p>Runs once, the first time the canvas has a real height, so the result
-     * is correct at any window size and any default zoom; the inset is derived
-     * from the grid's own adaptive-decade sizing so it always matches the drawn
-     * grid. Subsequent user pan/zoom is left untouched.</p>
+     * Applies the one-time initial view the first time it can, then leaves the
+     * view alone. Ordering of layout vs. fact loading is not guaranteed, so this
+     * is called from both the resize listener and {@link #setFacts}; it runs at
+     * most once. Priority:
+     * <ol>
+     *   <li>An injected view from another tab (Map → Editor) — applied verbatim
+     *       so the first frame matches and nothing jumps.</li>
+     *   <li>Zoom-to-fit all content, when facts are present.</li>
+     *   <li>The bottom-left origin fallback, when there is no content (does
+     *       <em>not</em> lock in, so a later {@link #setFacts} can still fit).</li>
+     * </ol>
      */
-    private void applyDefaultView() {
-        if (defaultViewApplied) {
+    private void maybeApplyInitialView() {
+        if (initialViewApplied) {
             return;
         }
         final int height = getView().getFocusPanel().getElement().getOffsetHeight();
@@ -386,6 +385,77 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
             return;
         }
 
+        if (injectedInitialView != null) {
+            scale = injectedInitialView[0];
+            offsetX = injectedInitialView[1];
+            offsetY = injectedInitialView[2];
+            initialViewApplied = true;
+            redraw();
+            return;
+        }
+
+        final double[] bounds = getView().getContentMapBounds();
+        if (bounds != null && applyFitView(bounds, height)) {
+            initialViewApplied = true;
+            if (initialViewListener != null) {
+                initialViewListener.accept(new double[]{scale, offsetX, offsetY});
+            }
+            return;
+        }
+
+        // No content yet — show the bottom-left origin view but leave the gate
+        // open so the first setFacts can still fit.
+        applyOriginView(height);
+    }
+
+    /**
+     * Sets {@code scale}/{@code offsetX}/{@code offsetY} so the given map-space
+     * content bounds are centred and fill the viewport with a {@link #FIT_MARGIN}
+     * border. A degenerate (zero-extent) axis keeps {@link #DEFAULT_SCALE} rather
+     * than zooming to the clamp. Does not redraw on its own when it returns
+     * {@code false}.
+     *
+     * @param b      the content bounds {@code {minX, minY, maxX, maxY}}
+     * @param height the current viewport height (already known to be {@code > 0})
+     * @return {@code true} if a view was applied
+     */
+    private boolean applyFitView(final double[] b, final int height) {
+        final int width = getView().getFocusPanel().getElement().getOffsetWidth();
+        if (width <= 0) {
+            return false;
+        }
+        final double cw = b[2] - b[0];
+        final double ch = b[3] - b[1];
+        final double usableW = width * (1 - 2 * FIT_MARGIN);
+        final double usableH = height * (1 - 2 * FIT_MARGIN);
+
+        double fit = DEFAULT_SCALE;
+        final double sx = cw > 1e-9 ? usableW / cw : Double.MAX_VALUE;
+        final double sy = ch > 1e-9 ? usableH / ch : Double.MAX_VALUE;
+        final double candidate = Math.min(sx, sy);
+        if (candidate != Double.MAX_VALUE) {
+            fit = candidate;
+        }
+        scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, fit));
+
+        // Centre the content's map-space midpoint in the viewport. Screen Y grows
+        // downward and screenY = offsetY - scale·mapY, so offsetY gets +scale·cy.
+        final double cx = (b[0] + b[2]) / 2;
+        final double cy = (b[1] + b[3]) / 2;
+        offsetX = width / 2.0 - scale * cx;
+        offsetY = height / 2.0 + scale * cy;
+        redraw();
+        return true;
+    }
+
+    /**
+     * Positions the view so the map origin (0,0) sits near the bottom-left
+     * corner, inset by {@link #ORIGIN_INSET_MAJOR_DIVISIONS} of a major grid
+     * division at the default zoom. The empty-map fallback.
+     *
+     * @param height the current viewport height (already known to be {@code > 0})
+     */
+    private void applyOriginView(final int height) {
         // Half a major grid division, in screen pixels, at the default zoom.
         // The grid is drawn with an identity world-to-map matrix, so its
         // effective scale is simply the user zoom (DEFAULT_SCALE).
@@ -398,7 +468,6 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         scale = DEFAULT_SCALE;
         offsetX = insetPx;
         offsetY = height - insetPx;
-        defaultViewApplied = true;
         redraw();
     }
 
@@ -414,7 +483,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
      * @param playing {@code true} when playback starts, {@code false} when it stops.
      */
     public void setPlaying(final boolean playing) {
-        this.isPlaying = playing;
+        animator.setPlaying(playing);
     }
 
     /**
@@ -422,18 +491,21 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
      * whenever the timeline time jumps non-continuously (scrub, step, loop-around,
      * stop-at-end) so stale animation state does not carry over.
      * <p>
-     * Also sets {@link #pendingTeleport} so that the <em>next</em> call to
-     * {@link #setEventObjects} places entities at their new positions instantly
-     * (teleport) rather than animating them from stale positions, even when
-     * {@link #isPlaying} is {@code true}.
+     * Arms a teleport (via {@link FloorMapEntityAnimator#clear()}) so the
+     * <em>next</em> {@link #setEventObjects} places entities at their new
+     * positions instantly rather than animating from stale positions, even
+     * during playback.
      */
     public void clearAnimationState() {
-        activeAnimations.clear();
-        entityTrails.clear();
-        trailFadeStartTimes.clear();
-        pendingTeleport = true;
-        animationLoopRunning = false;
-        lastAnimationTimestamp = 0;
+        animator.clear();
+        // Deliberately do NOT force animationLoopRunning = false here. A frame
+        // may already be scheduled; clearing the flag and then calling
+        // ensureAnimationLoop() (e.g. the teleport path re-arming camera-follow)
+        // would start a SECOND loop while the old frame is still pending,
+        // double-driving trails/draws. With the data cleared above, any running
+        // loop simply finds nothing to do and self-terminates on its next frame
+        // (which also resets lastAnimationTimestamp); a stopped loop stays
+        // stopped.
         redraw();
     }
 
@@ -482,9 +554,14 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
                 // (1) A transform handle takes priority over object/background
                 // hit-testing so a handle drag starts a scale/rotate gesture.
+                // Point glyphs (no image, no area geometry) are fixed screen-size
+                // and can't be scaled/rotated, so their handles are drawn greyed
+                // and are inert — the press is consumed but starts no gesture.
                 final String handle = handleRole(event.getNativeEvent().getEventTarget());
                 if (handle != null && !selectedObjectIds.isEmpty()) {
-                    beginHandleGesture(handle, event.getX(), event.getY());
+                    if (selectionTransformable()) {
+                        beginHandleGesture(handle, event.getX(), event.getY());
+                    }
                     return;
                 }
 
@@ -499,6 +576,23 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                         && (!pansWhenUnselected || selectedObjectIds.contains(hitId));
 
                 if (onObject) {
+                    // A locked layer's items stay selectable but can't be moved:
+                    // update the selection like a normal click, but do not begin
+                    // a MOVING gesture.
+                    if (lockedKeys.contains(hitId)) {
+                        if (modifier) {
+                            if (!selectedObjectIds.remove(hitId)) {
+                                selectedObjectIds.add(hitId);
+                            }
+                        } else if (!selectedObjectIds.contains(hitId)) {
+                            selectedObjectIds.clear();
+                            selectedObjectIds.add(hitId);
+                        }
+                        fireSelectionChanged();
+                        gesture = Gesture.NONE;
+                        isDragging = false;
+                        return;
+                    }
                     if (modifier) {
                         // Shift/Ctrl-click toggles the object in the selection.
                         if (!selectedObjectIds.remove(hitId)) {
@@ -586,6 +680,12 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                 } else {
                     isDragging = false;
                     hasMoved = false;
+                    // A vertex drag whose mouseup was lost off-canvas must clear
+                    // its editing state too, else factsForDraw() keeps rendering
+                    // the never-persisted working vertices forever.
+                    if (gesture == Gesture.MOVING_VERTEX) {
+                        clearVertexEditState();
+                    }
                     gesture = Gesture.NONE;
                     pendingTransform = null;
                     return;
@@ -613,9 +713,12 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                     case MOVING:
                         // Accumulate the drag in map space (Y-up) for live feedback
                         // and a single transform applied to the selection on drop.
-                        dragDxMap += deltaX / scale;
-                        //noinspection UnnecessaryUnaryMinus
-                        dragDyMap += -(deltaY / scale);
+                        // The shared viewport converts the screen delta to a map
+                        // delta (scale + Y flip) — one projection code path.
+                        final double[] dMap = new FloorMapViewport(scale, offsetX, offsetY)
+                                .dragItemMapDelta(Y_FLIP, deltaX, deltaY);
+                        dragDxMap += dMap[0];
+                        dragDyMap += dMap[1];
                         pendingTransform = FloorMapTransformationMatrix.translate(
                                 dragDxMap, dragDyMap);
                         hasMoved = true;
@@ -631,6 +734,18 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                         pendingTransform = computeScaleTransform(event.getX(), event.getY());
                         hasMoved = true;
                         redraw();
+                        break;
+                    case MOVING_VERTEX:
+                        if (workingVertices != null && editingWorldToMap != null
+                                && editingVertexIndex >= 0
+                                && editingVertexIndex < workingVertices.length) {
+                            final double[] map = screenToMapCoords(event.getX(), event.getY());
+                            final double[] local = editingWorldToMap.inverse()
+                                    .transformPoint(map[0], map[1]);
+                            workingVertices[editingVertexIndex] = new double[]{local[0], local[1]};
+                            hasMoved = true;
+                            redraw();
+                        }
                         break;
                     case ROTATING: {
                         final double[] cur = screenToMapCoords(event.getX(), event.getY());
@@ -713,8 +828,28 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                 // of the whole selection.
                 if (moved && transform != null && !selectedObjectIds.isEmpty()
                         && dragHandler != null) {
-                    dragHandler.onTransform(new ArrayList<>(selectedObjectIds), transform);
+                    // Never transform items on a locked layer (covers the case
+                    // where a layer was locked after its items were selected).
+                    final List<String> movable = new ArrayList<>(selectedObjectIds.size());
+                    for (final String id : selectedObjectIds) {
+                        if (!lockedKeys.contains(id)) {
+                            movable.add(id);
+                        }
+                    }
+                    if (!movable.isEmpty()) {
+                        dragHandler.onTransform(movable, transform);
+                    }
                 }
+            } else if (finished == Gesture.MOVING_VERTEX) {
+                // Persist the edited/inserted vertex (skip a pure click that
+                // didn't move an existing vertex, and locked layers).
+                if ((moved || vertexInserted) && editingAreaKey != null
+                        && workingVertices != null && workingVertices.length >= AREA_MIN_VERTICES
+                        && geometryHandler != null
+                        && !lockedKeys.contains(editingAreaKey)) {
+                    geometryHandler.onGeometryEdited(editingAreaKey, workingVertices);
+                }
+                clearVertexEditState();
             } else if (finished == Gesture.MARQUEE) {
                 // Select every fact the rubber-band touched, adding to the
                 // existing selection (the marquee is a Shift/Ctrl gesture).
@@ -723,7 +858,12 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                         Math.min(marqueeStartY, marqueeCurY),
                         Math.max(marqueeStartX, marqueeCurX),
                         Math.max(marqueeStartY, marqueeCurY)};
-                selectedObjectIds.addAll(getView().hitTestScreenRect(rect));
+                // The marquee never selects items on a locked layer.
+                for (final String id : getView().hitTestScreenRect(rect)) {
+                    if (!lockedKeys.contains(id)) {
+                        selectedObjectIds.add(id);
+                    }
+                }
                 fireSelectionChanged();
                 redraw();
             } else if (finished == Gesture.PANNING
@@ -745,26 +885,17 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         registerHandler(getView().getMouseWheelHandlers().addMouseWheelHandler(event -> {
             event.preventDefault();
 
-            double zoomFactor = 1.1;
-            if (event.getNativeDeltaY() > 0) {
-                zoomFactor = 1 / zoomFactor; // Zoom out
-            }
-
             // Note: zooming deliberately does NOT pause following — zooming in
             // on a tracked entity is the natural way to watch it, and the
             // dead-zone follow simply keeps it in view at the new zoom level.
-
-            final double mouseX = event.getX();
-            final double mouseY = event.getY();
-
-            // Coordinate shift to ensure we zoom toward the mouse pointer
-            offsetX = mouseX - (mouseX - offsetX) * zoomFactor;
-            offsetY = mouseY - (mouseY - offsetY) * zoomFactor;
-            scale *= zoomFactor;
-
-            // Clamp to prevent floating-point precision breakdown at
-            // extreme zoom levels.
-            scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale));
+            // Delegate the zoom-toward-cursor + clamp maths to the shared,
+            // unit-tested viewport, then read the updated pan/zoom back.
+            final boolean zoomIn = event.getNativeDeltaY() <= 0;
+            final FloorMapViewport vp = new FloorMapViewport(scale, offsetX, offsetY);
+            vp.zoom(event.getX(), event.getY(), zoomIn);
+            scale = vp.getScale();
+            offsetX = vp.getOffsetX();
+            offsetY = vp.getOffsetY();
 
             redraw();
         }));
@@ -787,6 +918,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                 if (areaDraftMap.isEmpty()) {
                     cancelAreaDrawing();
                 } else {
+                    //noinspection SequencedCollectionMethodCanBeUsed
                     areaDraftMap.remove(areaDraftMap.size() - 1);
                     redraw();
                 }
@@ -802,6 +934,23 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
             final int clientX = event.getNativeEvent().getClientX();
             final int clientY = event.getNativeEvent().getClientY();
 
+            // Right-clicking an area vertex handle opens a vertex-specific menu
+            // (offering "Delete Vertex") rather than the object/canvas menu.
+            final String contextRole = handleRole(event.getNativeEvent().getEventTarget());
+            if (contextRole != null && contextRole.startsWith("vertex-")) {
+                final Fact area = selectedAreaFact();
+                if (area != null) {
+                    final Element panel = getView().getFocusPanel().getElement();
+                    final double[] vertexMap = screenToMapCoords(
+                            clientX - panel.getAbsoluteLeft(),
+                            clientY - panel.getAbsoluteTop());
+                    MapContextMenuEvent.fireVertex(this, area.getKey(),
+                            vertexMap[0], vertexMap[1], clientX, clientY,
+                            parseHandleIndex(contextRole, "vertex-"));
+                }
+                return;
+            }
+
             // Convert viewport-relative client coordinates to element-relative
             // coordinates, matching the coordinate space used by event.getX()/getY()
             // and the zoom/pan model (offsetX, offsetY, scale).
@@ -816,7 +965,11 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                 final Element element = Element.as(target);
                 final String id = element.getId();
                 if (id != null && !id.isEmpty()
-                        && !id.startsWith(FloorMapJsonKeys.SVG_GROUP_PREFIX)) {
+                        && !id.startsWith(FloorMapJsonKeys.SVG_GROUP_PREFIX)
+                        && !id.startsWith(FloorMapJsonKeys.HANDLE_PREFIX)) {
+                    // Selection handles (scale/rotate) carry a HANDLE_PREFIX id
+                    // and are not objects — right-clicking one must not open an
+                    // object menu targeting a nonexistent key.
                     objectId = id;
                 }
             }
@@ -861,6 +1014,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
             }
             event.preventDefault();
             if (areaDraftMap.size() >= 2) {
+                //noinspection SequencedCollectionMethodCanBeUsed
                 final double[] last = mapToScreen(
                         areaDraftMap.get(areaDraftMap.size() - 1));
                 final double[] prev = mapToScreen(
@@ -869,6 +1023,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                 final double dy = last[1] - prev[1];
                 if (dx * dx + dy * dy
                         <= AREA_CLOSE_RADIUS_PX * AREA_CLOSE_RADIUS_PX) {
+                    //noinspection SequencedCollectionMethodCanBeUsed
                     areaDraftMap.remove(areaDraftMap.size() - 1);
                 }
             }
@@ -896,11 +1051,10 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
      * @return a two-element array {@code {mapX, mapY}} in map space
      */
     private double[] screenToMapCoords(final double screenX, final double screenY) {
-        // Remove the zoom/pan offset and scale, then undo the Y-up render flip
-        // (map space is Y-up; SVG is Y-down) — the inverse of the draw pipeline.
-        final double mapX = (screenX - offsetX) / scale;
-        final double mapY = -((screenY - offsetY) / scale);
-        return new double[]{mapX, mapY};
+        // Delegate to the shared, unit-tested viewport maths (Y_FLIP is the
+        // Y-up→Y-down background); this is the inverse of the draw pipeline.
+        return new FloorMapViewport(scale, offsetX, offsetY)
+                .screenToMap(screenX, screenY, Y_FLIP);
     }
 
     /**
@@ -926,10 +1080,11 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         final List<FloorMapObject> overlay =
                 buildAnimatedDrawList(/* nowMs — irrelevant when no animations */ 0.0);
         getView().draw(scale, offsetX, offsetY,
-                FloorMapZOrder.sort(factsExcludingOverlay(overlay), typeStyles),
-                overlay, selectedObjectIds, typeStyles, showGrid,
+                FloorMapZOrder.sort(visibleFacts(factsExcludingOverlay(overlay)), typeStyles),
+                visibleEvents(overlay), selectedObjectIds, typeStyles, showGrid, dimmedTypes,
                 gesture == Gesture.MARQUEE ? currentMarqueeRect() : null,
                 editMode && !selectedObjectIds.isEmpty() && gesture != Gesture.MARQUEE,
+                selectionTransformable(),
                 gesture == Gesture.DRAWING_AREA ? currentAreaDraftPx() : null);
     }
 
@@ -980,6 +1135,22 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     }
 
     /**
+     * True if the current selection contains at least one fact that can be
+     * meaningfully scaled or rotated — an image fact or an area (which has real
+     * geometry). Bare point glyphs are drawn at a fixed screen size, so
+     * transforming them has no visible effect; their handles are greyed and inert.
+     */
+    private boolean selectionTransformable() {
+        for (final Fact fact : facts) {
+            if (selectedObjectIds.contains(fact.getKey())
+                    && (fact.hasImage() || fact.hasVertices())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * Begins a scale or rotate gesture from the given handle, snapshotting the
      * pivot/centre (in map space) from the current selection frame.
      *
@@ -988,8 +1159,26 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
      * @param py   the pointer Y at gesture start (element pixels)
      */
     private void beginHandleGesture(final String role, final double px, final double py) {
+        isDragging = true;
+        hasMoved = false;
+        pendingTransform = null;
+        lastMouseX = px;
+        lastMouseY = py;
+
+        // Area vertex editing takes priority over the scale/rotate frame.
+        if (role.startsWith("vertex-")) {
+            beginVertexEdit(parseHandleIndex(role, "vertex-"), false);
+            return;
+        }
+        if (role.startsWith("insert-")) {
+            beginVertexEdit(parseHandleIndex(role, "insert-"), true);
+            return;
+        }
+
         final double[] frame = getView().getSelectionFrame();
         if (frame == null) {
+            isDragging = false;
+            gesture = Gesture.NONE;
             return;
         }
         final double minX = frame[0];
@@ -998,12 +1187,6 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         final double maxY = frame[3];
         final double cx = (minX + maxX) / 2;
         final double cy = (minY + maxY) / 2;
-
-        isDragging = true;
-        hasMoved = false;
-        pendingTransform = null;
-        lastMouseX = px;
-        lastMouseY = py;
 
         if ("rotate".equals(role)) {
             gesture = Gesture.ROTATING;
@@ -1029,6 +1212,124 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
             gestureRefX = ref[0];
             gestureRefY = ref[1];
         }
+    }
+
+    /** Parses the integer index from a handle role like {@code "vertex-3"}. */
+    private static int parseHandleIndex(final String role, final String prefix) {
+        try {
+            return Integer.parseInt(role.substring(prefix.length()));
+        } catch (final NumberFormatException e) {
+            return -1;
+        }
+    }
+
+    /**
+     * The single selected area fact (imageless, with vertices), or {@code null}
+     * when the selection is empty, multiple, or not an area.
+     */
+    private Fact selectedAreaFact() {
+        if (selectedObjectIds.size() != 1) {
+            return null;
+        }
+        final String id = selectedObjectIds.iterator().next();
+        for (final Fact fact : facts) {
+            if (id.equals(fact.getKey()) && fact.hasVertices() && !fact.hasImage()) {
+                return fact;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Begins a {@link Gesture#MOVING_VERTEX} edit. For {@code insert}, a new
+     * vertex is spliced at the midpoint of edge {@code index} and immediately
+     * dragged; otherwise the existing vertex {@code index} is dragged.
+     */
+    private void beginVertexEdit(final int index, final boolean insert) {
+        final Fact area = selectedAreaFact();
+        if (area == null || index < 0 || lockedKeys.contains(area.getKey())) {
+            isDragging = false;
+            gesture = Gesture.NONE;
+            return;
+        }
+        final double[][] v = area.getVertices();
+        editingAreaKey = area.getKey();
+        editingWorldToMap = area.getWorldToMap();
+        vertexInserted = insert;
+
+        if (insert) {
+            if (index >= v.length) {
+                isDragging = false;
+                gesture = Gesture.NONE;
+                return;
+            }
+            final int n = v.length;
+            final int j = (index + 1) % n;
+            final double[] mid = {(v[index][0] + v[j][0]) / 2.0, (v[index][1] + v[j][1]) / 2.0};
+            final double[][] nv = new double[n + 1][];
+            for (int i = 0; i <= index; i++) {
+                nv[i] = new double[]{v[i][0], v[i][1]};
+            }
+            nv[index + 1] = mid;
+            for (int i = index + 1; i < n; i++) {
+                nv[i + 1] = new double[]{v[i][0], v[i][1]};
+            }
+            workingVertices = nv;
+            editingVertexIndex = index + 1;
+        } else {
+            if (index >= v.length) {
+                isDragging = false;
+                gesture = Gesture.NONE;
+                return;
+            }
+            final double[][] nv = new double[v.length][];
+            for (int i = 0; i < v.length; i++) {
+                nv[i] = new double[]{v[i][0], v[i][1]};
+            }
+            workingVertices = nv;
+            editingVertexIndex = index;
+        }
+        gesture = Gesture.MOVING_VERTEX;
+        redraw();
+    }
+
+    /**
+     * Deletes the vertex at {@code index} from the single selected area,
+     * enforcing the 3-vertex minimum and skipping locked layers. Persists via
+     * the geometry handler. No-op when there is no single-area selection.
+     *
+     * @param index the vertex index to delete
+     */
+    public void deleteVertex(final int index) {
+        final Fact area = selectedAreaFact();
+        if (area == null || geometryHandler == null || lockedKeys.contains(area.getKey())) {
+            return;
+        }
+        final double[][] v = area.getVertices();
+        if (index < 0 || index >= v.length || v.length <= AREA_MIN_VERTICES) {
+            return;
+        }
+        final double[][] nv = new double[v.length - 1][];
+        for (int i = 0, k = 0; i < v.length; i++) {
+            if (i != index) {
+                nv[k++] = new double[]{v[i][0], v[i][1]};
+            }
+        }
+        geometryHandler.onGeometryEdited(area.getKey(), nv);
+    }
+
+    /**
+     * Clears all transient vertex-editing state. Called on every path that ends
+     * a {@code MOVING_VERTEX} gesture (normal mouseup and the lost-mouseup
+     * recovery) so the {@link #factsForDraw()} live preview cannot outlive the
+     * gesture.
+     */
+    private void clearVertexEditState() {
+        editingAreaKey = null;
+        editingWorldToMap = null;
+        workingVertices = null;
+        editingVertexIndex = -1;
+        vertexInserted = false;
     }
 
     /**
@@ -1124,47 +1425,15 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
      *              Pass {@code 0.0} when there are no active animations.
      */
     private List<FloorMapObject> buildAnimatedDrawList(final double nowMs) {
-        // Facts are rendered separately from the facts list; this list is the
-        // event overlay only.
-        final List<FloorMapObject> combined = new ArrayList<>(eventObjects);
+        final List<FloorMapObject> combined = animator.buildDrawList(nowMs);
 
-        // Entities currently mid-animation — add at their interpolated position.
-        for (final Map.Entry<String, EntityAnimation> entry : activeAnimations.entrySet()) {
-            final EntityAnimation anim = entry.getValue();
-            final FloorMapObject obj = new FloorMapObject(
-                    anim.id, anim.type, anim.currentX(), anim.currentY());
-            attachTrail(obj, anim.id, nowMs);
-            combined.add(obj);
-        }
-
-        // Stationary entities (animation finished or idle during playback) —
-        // draw at their last known position and attach any fading trail.  A set
-        // of already-drawn IDs prevents duplicates when the same entity is also
-        // present in eventObjects (e.g. after play stops).
-        final Set<String> drawnIds = new HashSet<>();
-        for (final FloorMapObject obj : combined) {
-            drawnIds.add(obj.getId());
-        }
-        for (final Map.Entry<String, FloorMapObject> entry : lastEntityPositions.entrySet()) {
-            final String id = entry.getKey();
-            if (!drawnIds.contains(id)) {
-                final FloorMapObject last = entry.getValue();
-                // Fresh copy each draw so per-frame trail data never leaks
-                // between frames via a shared instance.
-                final FloorMapObject obj = new FloorMapObject(
-                        id, last.getType(), last.getX(), last.getY());
-                attachTrail(obj, id, nowMs);
-                combined.add(obj);
-            }
-        }
-
-        // Decorate each entity with its image-bearing fact twin (if any) so
-        // the view renders the entity's configured icon at the live position
-        // instead of the generic type glyph. The static twin itself is
-        // suppressed by factsExcludingOverlay, so without this the icon would
-        // vanish the moment the entity appears in the events stream. Set
-        // unconditionally (null clears) because eventObjects instances are
-        // reused across draws.
+        // Decorate each entity with its image-bearing fact twin (if any) so the
+        // view renders the entity's configured icon at the live position instead
+        // of the generic type glyph. The static twin is suppressed by
+        // factsExcludingOverlay, so without this the icon would vanish the moment
+        // the entity appears in the events stream. This is a rendering concern
+        // (it needs `facts`), so it stays in the presenter rather than the
+        // shared animator. Set unconditionally (null clears).
         final Map<String, Fact> imageFactsByKey = new HashMap<>();
         for (final Fact fact : facts) {
             if (fact.hasImage()) {
@@ -1174,54 +1443,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         for (final FloorMapObject obj : combined) {
             obj.setImageFact(imageFactsByKey.get(obj.getId()));
         }
-
         return combined;
-    }
-
-    /**
-     * Computes per-point alpha values using a positional (index-based) gradient
-     * and attaches the resulting {@code [x, y, alpha]} list to {@code obj}.
-     * <p>
-     * Alpha runs from {@code 0.0} at the oldest point (index 0) to {@code 1.0}
-     * at the newest point (last index).  This ensures the <em>entire</em> spatial
-     * path from the start of a journey to the user's current position is always
-     * drawn — the tail fades to transparent but the leading edge always meets the
-     * user's circle, so the trail visually grows to the full journey length.
-     * <p>
-     * When the entity has stopped moving, a global fade factor is applied on top
-     * of the index-based gradient so the trail fades out over
-     * {@link #TRAIL_FADE_DURATION_MS} and then disappears.
-     *
-     * @param nowMs current AnimationScheduler timestamp in ms, used to compute
-     *              the fade factor for stopped entities.  Pass {@code 0.0} when
-     *              the animation loop is not running.
-     */
-    private void attachTrail(final FloorMapObject obj, final String id, final double nowMs) {
-        final List<double[]> raw = entityTrails.get(id);
-        if (raw == null || raw.isEmpty()) {
-            return;
-        }
-
-        // Compute a global fade multiplier for trails of stopped people.
-        double fadeFactor = 1.0;
-        final Double fadeStart = trailFadeStartTimes.get(id);
-        if (fadeStart != null && nowMs > 0) {
-            final double elapsed = nowMs - fadeStart;
-            fadeFactor = Math.max(0.0, 1.0 - elapsed / TRAIL_FADE_DURATION_MS);
-        }
-        if (fadeFactor <= 0.0) {
-            return; // Fully faded — nothing to render.
-        }
-
-        final int size = raw.size();
-        final List<double[]> trailWithAlpha = new ArrayList<>(size);
-        for (int i = 0; i < size; i++) {
-            final double[] pt = raw.get(i);
-            // Oldest point → alpha 0, newest → alpha 1, scaled by fade factor.
-            final double alpha = (size == 1 ? 1.0 : (double) i / (size - 1)) * fadeFactor;
-            trailWithAlpha.add(new double[]{pt[0], pt[1], alpha});
-        }
-        obj.setTrail(trailWithAlpha);
     }
 
     // =========================================================================
@@ -1240,55 +1462,12 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                             : 16.0;
                     lastAnimationTimestamp = timestamp;
 
-                    // Advance each active animation by the fraction of ANIMATION_DURATION_MS
-                    // that elapsed since the last frame.  This is independent of any absolute
-                    // clock, so it works correctly regardless of the time-base used by the
-                    // AnimationScheduler (performance.now() vs Date.now()).
-                    final List<String> finished = new ArrayList<>();
-                    for (final Map.Entry<String, EntityAnimation> entry : activeAnimations.entrySet()) {
-                        final EntityAnimation anim = entry.getValue();
-                        anim.progress = Math.min(1.0, anim.progress + deltaMs / ANIMATION_DURATION_MS);
-
-                        // Record the current interpolated position into the trail.
-                        recordTrailPoint(anim.id, anim.currentX(), anim.currentY());
-
-                        if (anim.progress >= 1.0) {
-                            // Snap to the destination and record final position.
-                            lastEntityPositions.put(anim.id, new FloorMapObject(
-                                    anim.id, anim.type, anim.toX, anim.toY));
-                            finished.add(anim.id);
-                            // Start fading the trail for this entity.
-                            trailFadeStartTimes.put(anim.id, timestamp);
-                        }
-                    }
-                    for (final String id : finished) {
-                        activeAnimations.remove(id);
-                    }
-
-                    // Process fading trails: remove entries that are fully faded or
-                    // whose entity has started a new animation.
-                    final List<String> doneFading = new ArrayList<>();
-                    for (final Map.Entry<String, Double> fade : trailFadeStartTimes.entrySet()) {
-                        final String id = fade.getKey();
-                        if (activeAnimations.containsKey(id)) {
-                            // Entity started moving again — cancel the fade.
-                            doneFading.add(id);
-                        } else if (timestamp - fade.getValue() >= TRAIL_FADE_DURATION_MS) {
-                            // Fully faded — remove trail data.
-                            entityTrails.remove(id);
-                            doneFading.add(id);
-                        }
-                    }
-                    for (final String id : doneFading) {
-                        trailFadeStartTimes.remove(id);
-                    }
-
-                    // Glide the camera after the tracked entity (damped).
+                    // Advance entity animations + trail fades (shared animator),
+                    // then glide the damped camera-follow (presenter-owned).
+                    final boolean animActive = animator.advanceFrame(timestamp, deltaMs);
                     final boolean cameraMoved = followStep(deltaMs);
 
-                    if (!cameraMoved
-                            && activeAnimations.isEmpty()
-                            && trailFadeStartTimes.isEmpty()) {
+                    if (!cameraMoved && !animActive) {
                         // Nothing left to animate, fade, or glide — let the loop terminate.
                         animationLoopRunning = false;
                         lastAnimationTimestamp = 0;
@@ -1298,98 +1477,20 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                     // Draw the current frame. No marquee/handles/draft during playback.
                     final List<FloorMapObject> overlay = buildAnimatedDrawList(timestamp);
                     getView().draw(scale, offsetX, offsetY,
-                            FloorMapZOrder.sort(factsExcludingOverlay(overlay), typeStyles),
-                            overlay, selectedObjectIds, typeStyles, showGrid, null, false, null);
+                            FloorMapZOrder.sort(visibleFacts(factsExcludingOverlay(overlay)), typeStyles),
+                            visibleEvents(overlay), selectedObjectIds, typeStyles, showGrid, dimmedTypes,
+                            null, false, false, null);
 
                     // Keep looping.
                     AnimationScheduler.get().requestAnimationFrame(this);
                 }
             };
 
-    /**
-     * Handles an entity position update from the events query
-     * ({@link #setEventObjects}).
-     * <p>
-     * When not playing: records the position in {@link #lastEntityPositions} so
-     * play-start has a valid "from" anchor.  The caller is responsible for
-     * placing the object in the appropriate draw list for immediate display.
-     * <p>
-     * When playing: creates an animation if the position has changed and there
-     * is not already an animation running to the same destination.
-     *
-     * @return {@code true} if the caller should add the object to its draw list
-     *         (i.e., it was NOT animated and should be shown at its current position),
-     *         {@code false} if the animation system has taken ownership.
-     */
-    private boolean handleEntityUpdate(final FloorMapObject obj) {
-        if (!isPlaying || pendingTeleport) {
-            // Teleport: record position for later play-start animation anchor.
-            lastEntityPositions.put(obj.getId(), new FloorMapObject(
-                    obj.getId(), obj.getType(), obj.getX(), obj.getY()));
-            return true; // caller adds to draw list
-        }
-
-        final FloorMapObject last = lastEntityPositions.get(obj.getId());
-        if (last == null) {
-            // First appearance while playing — place without animation.
-            lastEntityPositions.put(obj.getId(), new FloorMapObject(
-                    obj.getId(), obj.getType(), obj.getX(), obj.getY()));
-            return true;
-        }
-
-        // Check whether we already have an animation running toward this exact destination.
-        final EntityAnimation existing = activeAnimations.get(obj.getId());
-        final boolean alreadyAnimatingToTarget = existing != null
-                && Math.abs(existing.toX - obj.getX()) < 0.001
-                && Math.abs(existing.toY - obj.getY()) < 0.001;
-
-        if (!alreadyAnimatingToTarget) {
-            final double dx = last.getX() - obj.getX();
-            final double dy = last.getY() - obj.getY();
-            if (dx * dx + dy * dy > 0.0001) {
-                final double fromX = existing != null ? existing.currentX() : last.getX();
-                final double fromY = existing != null ? existing.currentY() : last.getY();
-                activeAnimations.put(obj.getId(), new EntityAnimation(
-                        obj.getId(), obj.getType(),
-                        fromX, fromY,
-                        obj.getX(), obj.getY()));
-                // lastEntityPositions updated by animation loop when progress ≥ 1.0
-                return false; // animation system owns this entity
-            }
-        }
-
-        // Position unchanged or already animating to target — animation loop owns it.
-        return false;
-    }
-
     /** Starts the animation loop if it is not already running. */
     private void ensureAnimationLoop() {
         if (!animationLoopRunning) {
             animationLoopRunning = true;
             AnimationScheduler.get().requestAnimationFrame(animationCallback);
-        }
-    }
-
-    /**
-     * Appends {@code [x, y]} to the trail for {@code id}, enforcing the maximum
-     * trail length by dropping the oldest point when the cap is exceeded.
-     * <p>
-     * Trail points no longer carry a wall-clock timestamp; fading is now
-     * index-based (see {@link #attachTrail}) so the full spatial path is always
-     * visible regardless of how long the journey took.
-     */
-    private void recordTrailPoint(final String id,
-                                  final double x,
-                                  final double y) {
-
-        //noinspection unused k
-        final List<double[]> trail = entityTrails.computeIfAbsent(id, k -> new ArrayList<>());
-        trail.add(new double[]{x, y});
-
-        // Hard cap to avoid unbounded growth.
-        while (trail.size() > TRAIL_MAX_PTS) {
-            //noinspection SequencedCollectionMethodCanBeUsed GWT does not support
-            trail.remove(0);
         }
     }
 
@@ -1474,10 +1575,11 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
             // Keep centreOnNextFollow armed until we have a position fix.
             return false;
         }
-        // Project the map-space position through the draw transform (map space
-        // is Y-up; SVG is Y-down, hence the flip) to get the on-screen point.
-        final double screenX = offsetX + scale * pos[0];
-        final double screenY = offsetY - scale * pos[1];
+        // Project the map-space position to the on-screen point via the shared
+        // projection helper.
+        final double[] screen = mapToScreen(pos);
+        final double screenX = screen[0];
+        final double screenY = screen[1];
         final Element panel = getView().getFocusPanel().getElement();
         // Margin 0.5 collapses the dead zone to the centre point (hard-centre).
         final boolean centre = centreOnNextFollow;
@@ -1511,21 +1613,14 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
      * @return {@code {mapX, mapY}}, or {@code null} if the entity is unknown
      */
     private double[] trackedPosition() {
-        final EntityAnimation animation = activeAnimations.get(trackedObjectId);
-        if (animation != null) {
-            return new double[]{animation.currentX(), animation.currentY()};
+        // The animator knows live/animated/last-known and current-overlay positions.
+        final double[] pos = animator.positionOf(trackedObjectId);
+        if (pos != null) {
+            return pos;
         }
-        final FloorMapObject last = lastEntityPositions.get(trackedObjectId);
-        if (last != null) {
-            return new double[]{last.getX(), last.getY()};
-        }
-        for (final FloorMapObject obj : eventObjects) {
-            if (trackedObjectId.equals(obj.getId())) {
-                return new double[]{obj.getX(), obj.getY()};
-            }
-        }
+        // Fall back to a static fact placed in the facts store.
         for (final Fact fact : facts) {
-            if (trackedObjectId.equals(fact.getKey())) {
+            if (trackedObjectId != null && trackedObjectId.equals(fact.getKey())) {
                 // Image anchors need the aspect ratio, known only to the view.
                 return getView().getFactMapAnchor(fact);
             }
@@ -1540,12 +1635,16 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
      * On release the same transform is persisted via {@link DragHandler#onTransform}.
      */
     private List<Fact> factsForDraw() {
-        if (pendingTransform == null || selectedObjectIds.isEmpty()) {
+        final boolean editingVertices = editingAreaKey != null && workingVertices != null;
+        if ((pendingTransform == null || selectedObjectIds.isEmpty()) && !editingVertices) {
             return facts;
         }
         final List<Fact> out = new ArrayList<>(facts.size());
         for (final Fact fact : facts) {
-            if (selectedObjectIds.contains(fact.getKey())) {
+            if (editingVertices && editingAreaKey.equals(fact.getKey())) {
+                // Live vertex-edit preview.
+                out.add(fact.withVertices(workingVertices));
+            } else if (pendingTransform != null && selectedObjectIds.contains(fact.getKey())) {
                 out.add(fact.withWorldToMap(
                         pendingTransform.multiply(fact.getWorldToMap())));
             } else {
@@ -1602,48 +1701,15 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
      * last known position to the new one, regardless of type.
      */
     public void setEventObjects(final List<FloorMapObject> objects) {
-        if (!isPlaying || pendingTeleport) {
-            // Not playing, or a discontinuous time jump just occurred — teleport all entities.
-            this.eventObjects = objects != null ? objects : new ArrayList<>();
-            activeAnimations.clear();
-            // Record positions for play-start animation anchor.
-            if (objects != null) {
-                for (final FloorMapObject obj : objects) {
-                    lastEntityPositions.put(obj.getId(), new FloorMapObject(
-                            obj.getId(), obj.getType(), obj.getX(), obj.getY()));
-                }
-            }
-            // One-shot: clear the teleport flag now that positions are committed.
-            pendingTeleport = false;
-            // Glide the camera after the tracked entity's new position (the
-            // damped follow runs on animation frames, so make sure the loop is
-            // ticking even though nothing is animating).
-            if (trackedObjectId != null && !followPaused) {
-                ensureAnimationLoop();
-            }
-            redraw();
-            return;
+        final boolean teleported = animator.onEventObjects(objects);
+        // Run the loop for the animate path (it advances animations + glides the
+        // camera and repaints); on the teleport path only if tracking, so the
+        // damped camera-follow glides to the new position.
+        if (!teleported || (trackedObjectId != null && !followPaused)) {
+            ensureAnimationLoop();
         }
-
-        final List<FloorMapObject> unanimated = new ArrayList<>();
-
-        if (objects != null) {
-            for (final FloorMapObject obj : objects) {
-                if (handleEntityUpdate(obj)) {
-                    // Entity placed without animation (first appearance, etc.) —
-                    // add to draw list so it's visible.
-                    unanimated.add(obj);
-                }
-            }
-        }
-
-        this.eventObjects = unanimated;
-        // The loop advances animations AND glides the damped camera-follow —
-        // including toward an entity's first appearance while playing.
-        ensureAnimationLoop();
-        // Force a paint so updates that don't start an animation still repaint
-        // during playback — the animation loop returns without drawing when
-        // there is nothing to animate or glide.
+        // Force a paint so an update that starts no animation still repaints (the
+        // loop returns without drawing when there is nothing to animate or glide).
         redraw();
     }
 
@@ -1723,6 +1789,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         if (areaDraftMap.isEmpty()) {
             return false;
         }
+        //noinspection SequencedCollectionMethodCanBeUsed
         final double[] first = mapToScreen(areaDraftMap.get(0));
         final double dx = screenX - first[0];
         final double dy = screenY - first[1];
@@ -1734,9 +1801,8 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
      * {@link #screenToMapCoords} (pan/zoom plus the Y-up flip).
      */
     private double[] mapToScreen(final double[] mapPoint) {
-        return new double[]{
-                offsetX + scale * mapPoint[0],
-                offsetY - scale * mapPoint[1]};
+        return new FloorMapViewport(scale, offsetX, offsetY)
+                .mapToScreen(mapPoint[0], mapPoint[1], Y_FLIP);
     }
 
     /**
@@ -1781,6 +1847,81 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     }
 
     /**
+     * Sets per-type layer visibility from the Layers panel. Types in
+     * {@code hidden} are neither drawn nor hit-tested; types in {@code dimmed}
+     * render at reduced opacity.
+     *
+     * @param hidden types to hide; {@code null} treated as empty
+     * @param dimmed types to render dimmed; {@code null} treated as empty
+     */
+    public void setLayerVisibility(final Set<String> hidden, final Set<String> dimmed) {
+        hiddenTypes.clear();
+        if (hidden != null) {
+            hiddenTypes.addAll(hidden);
+        }
+        dimmedTypes.clear();
+        if (dimmed != null) {
+            dimmedTypes.addAll(dimmed);
+        }
+        redraw();
+    }
+
+    /**
+     * Sets the types whose items are locked against movement (Editor Layers
+     * panel). Locked items stay visible and selectable but cannot be dragged.
+     *
+     * @param locked the locked types; {@code null} treated as empty
+     */
+    public void setLockedTypes(final Set<String> locked) {
+        lockedTypes.clear();
+        if (locked != null) {
+            lockedTypes.addAll(locked);
+        }
+        recomputeLockedKeys();
+    }
+
+    /** Recomputes {@link #lockedKeys} from the current facts and locked types. */
+    private void recomputeLockedKeys() {
+        lockedKeys.clear();
+        if (lockedTypes.isEmpty()) {
+            return;
+        }
+        for (final Fact fact : facts) {
+            if (lockedTypes.contains(fact.getType())) {
+                lockedKeys.add(fact.getKey());
+            }
+        }
+    }
+
+    /** Facts minus those whose type is a hidden layer. */
+    private List<Fact> visibleFacts(final List<Fact> in) {
+        if (in == null || hiddenTypes.isEmpty()) {
+            return in;
+        }
+        final List<Fact> out = new ArrayList<>(in.size());
+        for (final Fact fact : in) {
+            if (!hiddenTypes.contains(fact.getType())) {
+                out.add(fact);
+            }
+        }
+        return out;
+    }
+
+    /** Event objects minus those whose type is a hidden layer. */
+    private List<FloorMapObject> visibleEvents(final List<FloorMapObject> in) {
+        if (in == null || hiddenTypes.isEmpty()) {
+            return in;
+        }
+        final List<FloorMapObject> out = new ArrayList<>(in.size());
+        for (final FloorMapObject ev : in) {
+            if (!hiddenTypes.contains(ev.getType())) {
+                out.add(ev);
+            }
+        }
+        return out;
+    }
+
+    /**
      * Sets the facts to render (backgrounds + static facts) as produced by the
      * parser. Replaces the legacy background-image/matrix/objects inputs.
      *
@@ -1801,7 +1942,35 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                 areaKeys.add(fact.getKey());
             }
         }
+        recomputeLockedKeys();
+        // Draw first so the view's content bounds reflect these facts, THEN try
+        // the initial fit — getContentMapBounds() reads the last-drawn facts.
+        // Facts may arrive before or after first layout; this fits as soon as
+        // both are available (no-op once the view has been applied).
         redraw();
+        maybeApplyInitialView();
+    }
+
+    /**
+     * Injects an initial view {@code {scale, offsetX, offsetY}} from another tab
+     * (Map → Editor) so this canvas's first frame matches exactly and nothing
+     * jumps on the tab switch. Only honoured before the initial view is applied;
+     * user pan/zoom afterwards is independent per canvas.
+     *
+     * @param view the view state, or {@code null} to compute a fit locally
+     */
+    public void setInitialViewState(final double[] view) {
+        this.injectedInitialView = view;
+    }
+
+    /**
+     * Registers a listener notified once with this canvas's computed initial
+     * view {@code {scale, offsetX, offsetY}}, so another tab can reuse it.
+     *
+     * @param listener the callback, or {@code null} to remove
+     */
+    public void setInitialViewListener(final Consumer<double[]> listener) {
+        this.initialViewListener = listener;
     }
 
 
@@ -1812,6 +1981,15 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
      */
     public void setDragHandler(final DragHandler dragHandler) {
         this.dragHandler = dragHandler;
+    }
+
+    /**
+     * Sets the handler that persists an area's edited geometry.
+     *
+     * @param geometryHandler the callback, or {@code null} to remove
+     */
+    public void setGeometryHandler(final GeometryHandler geometryHandler) {
+        this.geometryHandler = geometryHandler;
     }
 
     /**
@@ -1866,6 +2044,21 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     }
 
     /**
+     * Callback invoked when an area's geometry is edited (a vertex moved,
+     * inserted or deleted), to persist the new local-frame vertices.
+     */
+    public interface GeometryHandler {
+
+        /**
+         * Persists the area's new vertices (local frame).
+         *
+         * @param key      the area fact's key
+         * @param vertices the new local-frame vertices ({@code >= 3})
+         */
+        void onGeometryEdited(String key, double[][] vertices);
+    }
+
+    /**
      * Callback invoked when the user finishes drawing an area polygon (see
      * {@link #startAreaDrawing()}).
      */
@@ -1890,58 +2083,6 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         void onSelectionChanged(Collection<String> keys, String primary);
     }
 
-    // =========================================================================
-    // Inner classes
-    // =========================================================================
-
-    /**
-     * Tracks a single in-progress movement animation for a person entity.
-     * <p>
-     * Progress is advanced externally each animation frame by adding
-     * {@code deltaMs / ANIMATION_DURATION_MS}, so no absolute start timestamp is
-     * stored — the animation is insulated from any time-base differences between
-     * {@link com.google.gwt.core.client.Duration#currentTimeMillis()} and the
-     * {@link AnimationScheduler} callback timestamp.
-     * <p>
-     * Interpolation is deliberately <strong>linear</strong>: for timeline playback
-     * of historical data the destination is just the last recorded position, not a
-     * physical stopping point, so ease-in-out deceleration looks unnatural.
-     */
-    private static class EntityAnimation {
-
-        final String id;
-        final String type;
-        final double fromX;
-        final double fromY;
-        final double toX;
-        final double toY;
-        double progress; // 0.0 → 1.0, advanced per frame by the animation loop
-
-        EntityAnimation(final String id,
-                      final String type,
-                      final double fromX,
-                      final double fromY,
-                      final double toX,
-                      final double toY) {
-            this.id = id;
-            this.type = type;
-            this.fromX = fromX;
-            this.fromY = fromY;
-            this.toX = toX;
-            this.toY = toY;
-            this.progress = 0.0;
-        }
-
-        /** Current interpolated X position in map space (linear). */
-        double currentX() {
-            return fromX + (toX - fromX) * progress;
-        }
-
-        /** Current interpolated Y position in map space (linear). */
-        double currentY() {
-            return fromY + (toY - fromY) * progress;
-        }
-    }
 
     // =========================================================================
     // View interface
@@ -2024,8 +2165,9 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
          */
         void draw(double scale, double x, double y, List<Fact> facts,
                 List<FloorMapObject> events, Set<String> selectedObjectIds,
-                List<TypeStyle> typeStyles, boolean showGrid, double[] marqueeRectPx,
-                boolean drawSelectionHandles, double[] areaDraftPx);
+                List<TypeStyle> typeStyles, boolean showGrid, Set<String> dimmedTypes,
+                double[] marqueeRectPx, boolean drawSelectionHandles, boolean scaleRotateEnabled,
+                double[] areaDraftPx);
 
         /**
          * Returns the keys of facts whose on-screen bounds intersect the given
@@ -2059,6 +2201,16 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         double[] getSelectionFrame();
 
         /**
+         * Returns the map-space bounding box {@code {minX, minY, maxX, maxY}} of
+         * all facts from the last {@link #draw} call, or {@code null} if there is
+         * no content. Used to compute the initial zoom-to-fit view. Independent
+         * of the current scale/pan (unlike {@link #getSelectionFrame()}).
+         *
+         * @return the content bounds in map space, or {@code null}
+         */
+        double[] getContentMapBounds();
+
+        /**
          * Registers a listener that is called whenever the view needs to
          * trigger a redraw from outside the normal presenter flow (e.g.
          * after an asynchronous image aspect-ratio calculation completes).
@@ -2071,11 +2223,11 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         /**
          * Registers a listener that is called once the canvas has a real
          * (non-zero) on-screen size — i.e. after layout completes. The
-         * presenter uses this to apply its size-dependent default view (which
-         * needs the canvas height to place the origin at the bottom-left).
+         * presenter uses this to apply its size-dependent initial view (which
+         * needs the canvas dimensions to fit or place the content).
          *
          * @param resizeListener the callback to invoke, typically
-         *                       {@code FloorMapCanvasPresenter::applyDefaultView}
+         *                       {@code FloorMapCanvasPresenter::maybeApplyInitialView}
          */
         void setResizeListener(Runnable resizeListener);
     }

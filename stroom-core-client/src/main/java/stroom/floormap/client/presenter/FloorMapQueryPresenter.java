@@ -59,6 +59,8 @@ public class FloorMapQueryPresenter extends MyPresenterWidget<FloorMapQueryView>
     private final QueryEditPresenter queryEditPresenter;
     private String currentEntityColumn;
     private String currentLocationColumn;
+    /** UUID of the document being queried, stamped onto {@link FloorMapDataEvent}. */
+    private String docUuid;
 
     /**
      * The time-change source (this document's Map-tab timeline) that this query
@@ -97,7 +99,7 @@ public class FloorMapQueryPresenter extends MyPresenterWidget<FloorMapQueryView>
 
             if (tableResult != null) {
                 final List<FloorMapObject> objects = parseRows(tableResult);
-                FloorMapDataEvent.fire(FloorMapQueryPresenter.this, objects);
+                FloorMapDataEvent.fire(FloorMapQueryPresenter.this, docUuid, objects);
             }
         }));
 
@@ -273,6 +275,7 @@ public class FloorMapQueryPresenter extends MyPresenterWidget<FloorMapQueryView>
                      final String locationIdColumn,
                      final boolean showColumnMappings,
                      final Map<String, String> queryVariables) {
+        this.docUuid = docRef != null ? docRef.getUuid() : null;
         this.currentEntityColumn = entityIdColumn;
         this.currentLocationColumn = locationIdColumn;
 

@@ -184,6 +184,7 @@ class TestFloorMapEntityList {
 
         final List<EntityEntry> entities = entityList.getEntities();
         assertThat(entities).hasSize(1);
+        //noinspection SequencedCollectionMethodCanBeUsed
         assertThat(entities.get(0).getType()).isEqualTo("vehicle");
     }
 
@@ -207,6 +208,7 @@ class TestFloorMapEntityList {
 
         final List<EntityEntry> entities = entityList.getEntities();
         assertThat(entities).hasSize(1);
+        //noinspection SequencedCollectionMethodCanBeUsed
         assertThat(entities.get(0).getType()).isEqualTo("vehicle");
     }
 

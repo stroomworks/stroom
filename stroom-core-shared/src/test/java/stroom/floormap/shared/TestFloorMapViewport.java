@@ -140,6 +140,30 @@ class TestFloorMapViewport {
         assertThat(viewport.getScale()).isEqualTo(FloorMapViewport.MIN_SCALE);
     }
 
+    /**
+     * At the scale clamp the point under the cursor must still stay fixed — the
+     * offset shift uses the actually-applied ratio, so a wheel tick at the limit
+     * doesn't drift the view.
+     */
+    @Test
+    void testZoom_atClampKeepsCursorFixed() {
+        final FloorMapViewport viewport = new FloorMapViewport(
+                FloorMapViewport.MAX_SCALE, 30, 70);
+        final double cursorX = 400;
+        final double cursorY = 300;
+
+        final double[] before = viewport.screenToMap(cursorX, cursorY, BACKGROUND);
+        viewport.zoom(cursorX, cursorY, true); // already at max — clamp bites
+        final double[] after = viewport.screenToMap(cursorX, cursorY, BACKGROUND);
+
+        assertThat(viewport.getScale()).isEqualTo(FloorMapViewport.MAX_SCALE);
+        assertThat(after[0]).isCloseTo(before[0], within(TOLERANCE));
+        assertThat(after[1]).isCloseTo(before[1], within(TOLERANCE));
+        // Offset unchanged because no scale change was actually applied.
+        assertThat(viewport.getOffsetX()).isCloseTo(30, within(TOLERANCE));
+        assertThat(viewport.getOffsetY()).isCloseTo(70, within(TOLERANCE));
+    }
+
     // -----------------------------------------------------------------------
     // Pan
     // -----------------------------------------------------------------------

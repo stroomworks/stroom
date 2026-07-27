@@ -161,10 +161,15 @@ public final class FloorMapViewport {
                 ? ZOOM_STEP
                 : 1.0 / ZOOM_STEP;
 
-        // Shift the offset so the point under the cursor stays put, then scale.
-        offsetX = cursorX - (cursorX - offsetX) * zoomFactor;
-        offsetY = cursorY - (cursorY - offsetY) * zoomFactor;
-        scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale * zoomFactor));
+        // Clamp the scale first, then shift the offset by the ratio ACTUALLY
+        // applied — so the point under the cursor stays fixed even at the
+        // MIN/MAX clamp. Shifting by the raw factor before clamping would drift
+        // the view under the cursor on every wheel tick once a clamp is hit.
+        final double newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale * zoomFactor));
+        final double effectiveFactor = scale != 0 ? newScale / scale : 1.0;
+        offsetX = cursorX - (cursorX - offsetX) * effectiveFactor;
+        offsetY = cursorY - (cursorY - offsetY) * effectiveFactor;
+        scale = newScale;
     }
 
     /**

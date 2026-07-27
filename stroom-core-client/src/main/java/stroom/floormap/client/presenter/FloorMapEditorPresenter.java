@@ -25,16 +25,19 @@ import stroom.entity.client.presenter.HasToolbar;
 import stroom.entity.shared.ExpressionCriteria;
 import stroom.floormap.client.FloorMapEditorHelp;
 import stroom.floormap.client.ValueAccessorFactory;
+import stroom.floormap.client.event.FloorMapDataEvent;
 import stroom.floormap.client.event.MapContextMenuEvent;
 import stroom.floormap.client.event.TimeChangeEvent;
 import stroom.floormap.client.presenter.FloorMapEditorPresenter.FloorMapEditorView;
 import stroom.floormap.shared.Fact;
 import stroom.floormap.shared.FloorMapDoc;
+import stroom.floormap.shared.FloorMapDocSession;
 import stroom.floormap.shared.FloorMapEditorModel;
 import stroom.floormap.shared.FloorMapEntryParser;
 import stroom.floormap.shared.FloorMapFieldMapping;
 import stroom.floormap.shared.FloorMapFieldMapping.Role;
 import stroom.floormap.shared.FloorMapJsonKeys;
+import stroom.floormap.shared.FloorMapObject;
 import stroom.floormap.shared.FloorMapPendingChanges;
 import stroom.floormap.shared.FloorMapTransformationMatrix;
 import stroom.floormap.shared.ParsedValue;
@@ -134,6 +137,9 @@ public class FloorMapEditorPresenter
     /** Slot for the interactive map canvas. */
     public static final Object MAIN = new Object();
 
+    /** Slot for the right-hand dock (empty until the Layers panel lands). */
+    public static final Object DOCK = new Object();
+
     /**
      * Slot for the timeline scrubber.
      * Fixed-height — stored in {@code FloorMapEditorViewImpl.TIMELINE_HEIGHT}.
@@ -156,6 +162,17 @@ public class FloorMapEditorPresenter
     private final FloorMapFactListPresenter floorMapFactListPresenter;
     private final FloorMapTimeListPresenter floorMapTimeListPresenter;
     private final FloorMapObjectEditPresenter floorMapObjectEditPresenter;
+    private final FloorMapDockPresenter floorMapDockPresenter;
+    private final FloorMapLayersPresenter floorMapLayersPresenter;
+    private final FloorMapLayerStylePresenter floorMapLayerStylePresenter;
+
+    /**
+     * Cumulative set of types observed this document session — fact types from
+     * the canvas plus event (PlanB) types seen via {@link FloorMapDataEvent}
+     * (which fires from the Map tab's events query on the shared event bus).
+     * Fed to the Layers panel so unsaved types appear as provisional layers.
+     */
+    private final Set<String> observedTypes = new HashSet<>();
 
     /** The GWT-free model containing all shared state and pure logic. */
     private final FloorMapEditorModel model;
@@ -175,22 +192,42 @@ public class FloorMapEditorPresenter
     private final ButtonPanel helpToolbar;
 
     /**
-     * When the user enables area support on a document whose schema/type styles
-     * predate areas (see {@link #ensureAreaSupport}), the merged lists live
-     * here until the document is saved — the loaded entity itself is read-only.
-     * {@code null} when no upgrade is pending; {@link #valueSchema()} and
-     * {@link #typeStyles()} prefer these over the entity's persisted lists.
+     * Toolbar toggle that shows/hides the right-hand dock. Off by default on the
+     * Editor tab, whose dock is empty until the Layers panel lands.
      */
-    private List<FloorMapFieldMapping> pendingAreaSchema;
-    private List<TypeStyle> pendingAreaTypeStyles;
+    private final InlineSvgToggleButton dockToggleButton;
+
+    /**
+     * The Editor's pending document-level edits — the area-support upgrade and
+     * the Layers-panel type-styles list — with their read/write invariants. The
+     * loaded entity is read-only, so these are staged here until save. See the
+     * shared, unit-tested {@link FloorMapDocSession}.
+     */
+    private final FloorMapDocSession docSession = new FloorMapDocSession();
 
     /**
      * Notified when area support is enabled on this document, so the parent
      * {@link FloorMapPresenter} can refresh the Settings tab's grids — the
-     * Settings tab writes {@code valueSchema}/{@code typeStyles} wholesale on
-     * save and would otherwise silently revert the upgrade.
+     * Settings tab writes {@code valueSchema} wholesale on save and would
+     * otherwise silently revert the upgrade.
      */
     private Runnable areaSupportEnabledListener;
+
+    /**
+     * Whether the timeline range/scrubber has been initialised. Set on the first
+     * {@code onRead}; a save triggers a re-read of every tab, and the timeline
+     * must not re-initialise then — it would discard the user's chosen range and
+     * jump the scrubber (and every panel) to the newest time. Mirrors
+     * {@code FloorMapMapPresenter.timelineInitialised}.
+     */
+    private boolean timelineInitialised;
+
+    /**
+     * UUID of the document this Editor is showing, used to ignore
+     * {@link FloorMapDataEvent}s fired by other open FloorMap documents on the
+     * shared event bus (which would otherwise pollute this doc's observed types).
+     */
+    private String docUuid;
 
     // -----------------------------------------------------------------------
 
@@ -202,7 +239,10 @@ public class FloorMapEditorPresenter
                                    final Provider<FloorMapTimelinePresenter> timelineProvider,
                                    final Provider<FloorMapFactListPresenter> factListProvider,
                                    final Provider<FloorMapTimeListPresenter> timeListProvider,
-                                   final Provider<FloorMapObjectEditPresenter> propertiesProvider) {
+                                   final Provider<FloorMapObjectEditPresenter> propertiesProvider,
+                                   final Provider<FloorMapDockPresenter> dockProvider,
+                                   final Provider<FloorMapLayersPresenter> layersProvider,
+                                   final Provider<FloorMapLayerStylePresenter> layerStyleProvider) {
         super(eventBus, view);
         this.restFactory = restFactory;
         this.model = new FloorMapEditorModel(
@@ -215,6 +255,10 @@ public class FloorMapEditorPresenter
         this.floorMapFactListPresenter = factListProvider.get();
         this.floorMapTimeListPresenter = timeListProvider.get();
         this.floorMapObjectEditPresenter = propertiesProvider.get();
+        this.floorMapDockPresenter = dockProvider.get();
+        this.floorMapLayersPresenter = layersProvider.get();
+        this.floorMapLayersPresenter.setEditorMode(true);
+        this.floorMapLayerStylePresenter = layerStyleProvider.get();
 
         // Always in edit mode, with the grid overlay shown as an editing aid.
         floorMapCanvasPresenter.setEditMode(true);
@@ -224,10 +268,18 @@ public class FloorMapEditorPresenter
         // SvgImage has no dedicated grid glyph; TABLE renders as a grid of cells.
         showGridButton = new InlineSvgToggleButton();
         showGridButton.setSvg(SvgImage.TABLE);
-        showGridButton.setTitle("Show Grid");
+        showGridButton.setTitle("Toggle Grid");
         showGridButton.setState(true);
+
+        // Show/hide the right-hand dock; off by default (the Editor dock is
+        // empty until the Layers panel lands). The view also starts it hidden.
+        dockToggleButton = new InlineSvgToggleButton();
+        dockToggleButton.setSvg(SvgImage.SHOW_MENU);
+        dockToggleButton.setTitle("Toggle Controls");
+        dockToggleButton.setState(true);
         // Persist a drag as a single translate of the whole selection.
         floorMapCanvasPresenter.setDragHandler(this::onFactsTransformed);
+        floorMapCanvasPresenter.setGeometryHandler(this::onFactGeometryEdited);
         floorMapCanvasPresenter.setSelectionHandler(this::onCanvasSelectionChanged);
         floorMapCanvasPresenter.setAreaHandler(this::onAreaDrawn);
 
@@ -241,7 +293,28 @@ public class FloorMapEditorPresenter
         helpToolbar = createHelpToolbar();
         floorMapTimelinePresenter.setHelpContent(FloorMapEditorHelp.timeline());
 
+        // The Layers panel is the Editor dock's tab.
+        floorMapDockPresenter.addTab("Layers", floorMapLayersPresenter);
+        floorMapLayersPresenter.setChangeHandler(() -> {
+            floorMapCanvasPresenter.setLayerVisibility(
+                    floorMapLayersPresenter.getHiddenTypes(),
+                    floorMapLayersPresenter.getDimmedTypes());
+            floorMapCanvasPresenter.setLockedTypes(floorMapLayersPresenter.getLockedTypes());
+        });
+        // Persist reorder / appearance / discovered-type edits from the panel.
+        floorMapLayersPresenter.setTypeStylesEditHandler(this::onLayerTypeStylesEdited);
+        // Open the appearance dialog (shape + colour) for a layer, then hand the
+        // edited style back to the panel.
+        floorMapLayersPresenter.setStyleEditor((typeStyle, callback) ->
+                floorMapLayerStylePresenter.show(
+                        typeStyle.getType(), typeStyle.getShape(), typeStyle.getColour(),
+                        (shape, colour) -> callback.accept(
+                                new TypeStyle(typeStyle.getType(), shape, colour))));
+        // Full facts-store type-discovery scan behind the panel's Discover action.
+        floorMapLayersPresenter.setDiscoverHandler(this::onDiscoverTypes);
+
         setInSlot(MAIN, floorMapCanvasPresenter);
+        setInSlot(DOCK, floorMapDockPresenter);
         setInSlot(TIMELINE, floorMapTimelinePresenter);
         setInSlot(FACT_LIST, floorMapFactListPresenter);
         setInSlot(TIME_LIST, floorMapTimeListPresenter);
@@ -256,6 +329,28 @@ public class FloorMapEditorPresenter
         //noinspection unused e
         registerHandler(showGridButton.addClickHandler(e ->
                 floorMapCanvasPresenter.setShowGrid(showGridButton.getState())));
+        //noinspection unused e
+        registerHandler(dockToggleButton.addClickHandler(e ->
+                getView().setDockVisible(dockToggleButton.getState())));
+
+        // Event (PlanB) objects are produced by the events query and broadcast
+        // on the shared event bus (driven by the Map tab). Listen here too so
+        // their types surface as provisional layers in the Editor's Layers panel.
+        registerHandler(getEventBus().addHandler(FloorMapDataEvent.getType(), event -> {
+            // Ignore events from other open FloorMap documents (shared event bus).
+            if (!java.util.Objects.equals(docUuid, event.getDocUuid())) {
+                return;
+            }
+            boolean added = false;
+            for (final FloorMapObject object : event.getObjects()) {
+                if (object.getType() != null && observedTypes.add(object.getType())) {
+                    added = true;
+                }
+            }
+            if (added) {
+                floorMapLayersPresenter.setSeenTypes(observedTypes);
+            }
+        }));
 
         // ---- Timeline events ------------------------------------------------
         registerHandler(getEventBus().addHandler(TimeChangeEvent.getType(), event -> {
@@ -320,6 +415,7 @@ public class FloorMapEditorPresenter
     public List<Widget> getToolbars() {
         final ButtonPanel gridToolbar = new ButtonPanel();
         gridToolbar.addButton(showGridButton);
+        gridToolbar.addButton(dockToggleButton);
         return Arrays.asList(gridToolbar, helpToolbar);
     }
 
@@ -335,17 +431,20 @@ public class FloorMapEditorPresenter
      */
     @Override
     protected void onRead(final DocRef docRef, final FloorMapDoc document, final boolean readOnly) {
-        // Once a saved document carries the full area upgrade — schema roles
-        // AND the "area" type style (the post-save re-read) — the pending
-        // upgrade has been persisted and can be dropped. Both must be checked:
-        // a document whose schema already mapped the roles would otherwise
-        // discard a staged, never-persisted type-style upgrade.
-        if (pendingAreaSchema != null
-                && hasAreaSupport(document.getValueSchema())
-                && hasAreaStyle(document.getTypeStyles())) {
-            pendingAreaSchema = null;
-            pendingAreaTypeStyles = null;
-        }
+        this.docUuid = docRef != null ? docRef.getUuid() : null;
+        // Drop any staged doc-level edits (area upgrade / Layers type-styles)
+        // that this just-read document already carries (post-save re-read).
+        docSession.reconcileAfterRead(document);
+
+        // Populate the Layers panel from the document's type styles. Reset the
+        // observed-type accumulator for the (re-)opened document.
+        observedTypes.clear();
+        floorMapLayersPresenter.setSeenTypes(observedTypes);
+        floorMapLayersPresenter.setLayers(typeStyles());
+        floorMapCanvasPresenter.setLayerVisibility(
+                floorMapLayersPresenter.getHiddenTypes(),
+                floorMapLayersPresenter.getDimmedTypes());
+        floorMapCanvasPresenter.setLockedTypes(floorMapLayersPresenter.getLockedTypes());
 
         final String mapName = getMapName();
         if (mapName == null) {
@@ -358,11 +457,17 @@ public class FloorMapEditorPresenter
         floorMapObjectEditPresenter.setMapName(mapName);
         floorMapObjectEditPresenter.setFloorMapDoc(sessionEntity());
 
-        // Load time range → initialise slider → load canvas + Fact List
+        // Load time range → initialise slider → load canvas + Fact List.
+        // Initialise the range/scrubber on the first read only; a save-triggered
+        // re-read keeps the user's chosen range and current position (otherwise
+        // the scrubber would jump to the newest time on every save).
         restFactory.create(SQL_TEMPORAL_STORE_RESOURCE)
                 .method(res -> res.getTimeRange(mapName))
                 .onSuccess(range -> {
-                    initTimeline(range);
+                    if (!timelineInitialised) {
+                        timelineInitialised = true;
+                        initTimeline(range);
+                    }
                     loadAtTime(model.getSelectedTime());
                 })
                 .exec();
@@ -381,14 +486,7 @@ public class FloorMapEditorPresenter
      */
     @Override
     protected FloorMapDoc onWrite(final FloorMapDoc document) {
-        if (pendingAreaSchema == null) {
-            return document;
-        }
-        return document.copy()
-                .valueSchema(FloorMapFieldMapping.withAreaMappings(
-                        document.getValueSchema(), document.getValueFormat()))
-                .typeStyles(TypeStyle.withAreaStyle(document.getTypeStyles()))
-                .build();
+        return docSession.applyToWrite(document);
     }
 
     /**
@@ -397,9 +495,7 @@ public class FloorMapEditorPresenter
      * schema.
      */
     private List<FloorMapFieldMapping> valueSchema() {
-        return pendingAreaSchema != null
-                ? pendingAreaSchema
-                : getEntity().getValueSchema();
+        return docSession.valueSchema(getEntity().getValueSchema());
     }
 
     /**
@@ -407,9 +503,7 @@ public class FloorMapEditorPresenter
      * {@link #valueSchema()}).
      */
     private List<TypeStyle> typeStyles() {
-        return pendingAreaTypeStyles != null
-                ? pendingAreaTypeStyles
-                : getEntity().getTypeStyles();
+        return docSession.typeStyles(getEntity().getTypeStyles());
     }
 
     /**
@@ -420,37 +514,7 @@ public class FloorMapEditorPresenter
      * against the pre-upgrade schema until the document is saved.
      */
     private FloorMapDoc sessionEntity() {
-        if (pendingAreaSchema == null) {
-            return getEntity();
-        }
-        return getEntity().copy()
-                .valueSchema(pendingAreaSchema)
-                .typeStyles(pendingAreaTypeStyles)
-                .build();
-    }
-
-    /**
-     * {@code true} when the schema maps every role areas need.
-     */
-    private static boolean hasAreaSupport(final List<FloorMapFieldMapping> schema) {
-        return FloorMapEntryParser.findPath(schema, Role.GEOMETRY) != null
-                && FloorMapEntryParser.findPath(schema, Role.FILL) != null
-                && FloorMapEntryParser.findPath(schema, Role.OPACITY) != null;
-    }
-
-    /**
-     * {@code true} when the type styles contain an {@code "area"} entry (which
-     * seeds the just-above-background z-order for areas).
-     */
-    private static boolean hasAreaStyle(final List<TypeStyle> typeStyles) {
-        if (typeStyles != null) {
-            for (final TypeStyle style : typeStyles) {
-                if (style != null && FloorMapJsonKeys.AREA.equals(style.getType())) {
-                    return true;
-                }
-            }
-        }
-        return false;
+        return docSession.sessionEntity(getEntity());
     }
 
     /**
@@ -459,6 +523,74 @@ public class FloorMapEditorPresenter
      */
     public void setAreaSupportEnabledListener(final Runnable listener) {
         this.areaSupportEnabledListener = listener;
+    }
+
+    /**
+     * Adopts an initial view {@code {scale, offsetX, offsetY}} computed by the
+     * Map tab so the Editor's first frame matches and the view doesn't jump on
+     * the tab switch. Only affects the one-time initial view; user pan/zoom in
+     * the Editor is independent afterwards.
+     *
+     * @param view the view state, or {@code null} to fit locally
+     */
+    public void setInitialViewState(final double[] view) {
+        floorMapCanvasPresenter.setInitialViewState(view);
+    }
+
+    /**
+     * Handles a type-styles edit from the Layers panel (reorder / appearance /
+     * discovered types): stages the new list, applies it live to the canvas and
+     * object-edit dialog, and marks the document dirty.
+     *
+     * @param newTypeStyles the new ordered type styles
+     */
+    private void onLayerTypeStylesEdited(final List<TypeStyle> newTypeStyles) {
+        docSession.stageTypeStyles(newTypeStyles);
+        floorMapCanvasPresenter.setTypeStyles(newTypeStyles);
+        floorMapObjectEditPresenter.setFloorMapDoc(sessionEntity());
+        setDirty(true);
+    }
+
+    /**
+     * Scans the whole facts store for every distinct type (all keys, all times),
+     * unions it with the types already observed this session (fact + event), and
+     * hands the result to the Layers panel to merge into the saved layers. Backs
+     * the panel's Discover action.
+     */
+    private void onDiscoverTypes() {
+        final Set<String> discovered = new HashSet<>(observedTypes);
+        final DocRef store = getEntity() != null
+                ? getEntity().getFactsStoreRef()
+                : null;
+        if (store == null || store.getName() == null || store.getName().isEmpty()) {
+            // No facts store to scan — still commit anything already observed.
+            floorMapLayersPresenter.mergeDiscovered(discovered);
+            return;
+        }
+        final ExpressionOperator expression = ExpressionOperator.builder()
+                .addTerm(ExpressionTerm.builder()
+                        .field("Map").condition(Condition.EQUALS).value(store.getName())
+                        .build())
+                .build();
+        final ExpressionCriteria criteria = new ExpressionCriteria(expression);
+        final List<FloorMapFieldMapping> schema = valueSchema();
+        restFactory.create(SQL_TEMPORAL_STORE_RESOURCE)
+                .method(res -> res.find(criteria))
+                .onSuccess(result -> {
+                    final List<TemporalEntry> entries = result != null
+                            ? result.getValues()
+                            : null;
+                    final List<Fact> parsed = FloorMapEntryParser.parse(
+                            entries, schema,
+                            ValueAccessorFactory.forFormat(getEntity().getValueFormat()), null);
+                    for (final Fact fact : parsed) {
+                        if (fact.getType() != null && !fact.getType().isEmpty()) {
+                            discovered.add(fact.getType());
+                        }
+                    }
+                    floorMapLayersPresenter.mergeDiscovered(discovered);
+                })
+                .exec();
     }
 
     // -----------------------------------------------------------------------
@@ -517,8 +649,10 @@ public class FloorMapEditorPresenter
         restFactory.create(SQL_TEMPORAL_STORE_RESOURCE)
                 .method(res -> res.applyChanges(buildApplyChangesRequest()))
                 .onSuccess(result -> {
-                    model.clearPendingChanges();
                     if (result.isSuccess()) {
+                        // Only discard the staged changes once the server has
+                        // confirmed they were applied.
+                        model.clearPendingChanges();
                         // Reload all panels so they reflect the newly-persisted data
                         reloadAllPanels();
                         callback.accept(document);
@@ -527,10 +661,16 @@ public class FloorMapEditorPresenter
                     }
                 })
                 .onFailure(error -> {
-                    model.clearPendingChanges();
+                    // Keep the staged changes so a transient failure (network
+                    // blip, timeout — where we cannot even know whether the
+                    // server committed) does not throw away the editing session.
+                    // applyChanges replays idempotently (creations/updates are
+                    // upserts, deletions are idempotent), so the user can simply
+                    // retry the save. Do NOT reload over their in-progress edits.
                     AlertEvent.fireError(this,
-                            "Error saving floor map editor changes: " + error.getMessage(),
-                            this::reloadAllPanels);
+                            "Error saving floor map editor changes — your changes "
+                            + "have been kept, please try saving again: "
+                            + error.getMessage(), null);
                 })
                 .taskMonitorFactory(this)
                 .exec();
@@ -703,24 +843,48 @@ public class FloorMapEditorPresenter
      * @param key     the fact key
      */
     private void fetchTimeList(final String mapName, final String key) {
-        final ExpressionOperator expression = ExpressionOperator.builder()
+        fetchTimeList(mapName, key, null);
+    }
+
+    /**
+     * Fetches all shards for the key, then runs {@code after} (if non-null) once
+     * the model's time list has been populated. Callers that must act on the
+     * fresh time list (e.g. "Add Time Version" on a fact that isn't the current
+     * selection) use the callback so they don't run against the previous
+     * selection's stale shards.
+     *
+     * @param mapName the temporal store name
+     * @param key     the fact key
+     * @param after   action to run after the fetch completes, or {@code null}
+     */
+    private void fetchTimeList(final String mapName, final String key, final Runnable after) {
+        restFactory.create(SQL_TEMPORAL_STORE_RESOURCE)
+                .method(res -> res.find(mapKeyCriteria(mapName, key)))
+                .onSuccess(result -> {
+                    model.onTimeListFetched(
+                            result != null ? result.getValues() : null);
+                    refreshTimeListAtTime(model.getSelectedTime());
+                    if (after != null) {
+                        after.run();
+                    }
+                })
+                .exec();
+    }
+
+    /**
+     * Criteria selecting <em>every</em> shard (all effective times) of a single
+     * fact key within a map. Shared by the Time List fetch and the "delete all
+     * versions" flow.
+     */
+    private ExpressionCriteria mapKeyCriteria(final String mapName, final String key) {
+        return new ExpressionCriteria(ExpressionOperator.builder()
                 .addTerm(ExpressionTerm.builder()
                         .field("Map").condition(Condition.EQUALS).value(mapName)
                         .build())
                 .addTerm(ExpressionTerm.builder()
                         .field("Key").condition(Condition.EQUALS).value(key)
                         .build())
-                .build();
-
-        final ExpressionCriteria criteria = new ExpressionCriteria(expression);
-        restFactory.create(SQL_TEMPORAL_STORE_RESOURCE)
-                .method(res -> res.find(criteria))
-                .onSuccess(result -> {
-                    model.onTimeListFetched(
-                            result != null ? result.getValues() : null);
-                    refreshTimeListAtTime(model.getSelectedTime());
-                })
-                .exec();
+                .build());
     }
 
     // -----------------------------------------------------------------------
@@ -741,6 +905,18 @@ public class FloorMapEditorPresenter
                 ValueAccessorFactory.forFormat(getEntity().getValueFormat()));
         floorMapCanvasPresenter.setTypeStyles(typeStyles());
         floorMapCanvasPresenter.setFacts(facts);
+        // Accumulate fact types seen on the canvas and surface any not yet
+        // configured as layers in the Layers panel (event types are added
+        // separately via the FloorMapDataEvent handler).
+        boolean added = false;
+        for (final Fact fact : facts) {
+            if (fact.getType() != null && observedTypes.add(fact.getType())) {
+                added = true;
+            }
+        }
+        if (added) {
+            floorMapLayersPresenter.setSeenTypes(observedTypes);
+        }
         // Restore the full (multi-)selection highlight after re-rendering, so a
         // group stays selected across canvas refreshes (e.g. after a transform).
         floorMapCanvasPresenter.setSelectedObjectIds(model.getSelectedFactKeys());
@@ -849,9 +1025,35 @@ public class FloorMapEditorPresenter
         refreshCanvasOnly();
     }
 
+    /**
+     * Called when an area's geometry is edited on the canvas (a vertex moved,
+     * inserted or deleted). Persists the new local-frame vertices through the
+     * pending-changes pipeline and refreshes the canvas.
+     *
+     * @param key           the area fact's key
+     * @param localVertices the new local-frame vertices ({@code >= 3})
+     */
+    private void onFactGeometryEdited(final String key, final double[][] localVertices) {
+        if (getMapName() == null || key == null || localVertices == null) {
+            return;
+        }
+        try {
+            final boolean changed = model.updateFactGeometry(key, localVertices,
+                    valueSchema(),
+                    ValueAccessorFactory.forFormat(getEntity().getValueFormat()));
+            if (changed) {
+                setDirty(true);
+            }
+        } catch (final Exception ex) {
+            AlertEvent.fireError(this,
+                    "Cannot edit area geometry: " + ex.getMessage(), null);
+        }
+        refreshCanvasOnly();
+    }
+
 
     /**
-     * Refreshes the canvas by re-applying pending changes and re-parsing,
+     * Refreshes the canvas by re-applying pending changes and reparsing,
      * without reloading the Fact List (which would clear its selection
      * and cascade into the Time List).
      */
@@ -946,6 +1148,19 @@ public class FloorMapEditorPresenter
         // Default the new shard to the timeline scrubber position, cloning its
         // attributes from the shard in effect at that time.
         final long newTime = model.getSelectedTime();
+
+        // Refuse to add a version at a time that already has one: the store
+        // upserts by (key, effective-time), so this would silently overwrite
+        // the existing shard rather than adding a new version.
+        if (model.selectedFactHasEntryAtTime(newTime)) {
+            AlertEvent.fireWarn(this,
+                    "A time version already exists at this time for '"
+                    + model.getSelectedFactKey() + "'. Move the timeline to a "
+                    + "different time to add a new version, or edit the existing one.",
+                    null);
+            return;
+        }
+
         final TemporalEntry newEntry = model.buildNewEntryAtTime(mapName, newTime);
 
         floorMapObjectEditPresenter.show(
@@ -981,24 +1196,63 @@ public class FloorMapEditorPresenter
         if (key == null) {
             return;
         }
+        final String mapName = getMapName();
+        if (mapName == null) {
+            return;
+        }
+        // Only blank the Time List / edit panel if the fact being deleted is the
+        // one currently selected (the canvas context menu can delete any fact,
+        // not just the selected one — deleting an unselected fact must not wipe
+        // the selected fact's panels).
+        final boolean wasSelected = key.equals(model.getSelectedFactKey());
         ConfirmEvent.fire(this,
                 "Delete all entries for '" + key + "'? This cannot be undone.",
                 ok -> {
                     if (ok) {
-                        // Was this key the current selection? Capture before staging,
-                        // since the model clears the selection as part of the deletion.
-                        final boolean wasSelected = key.equals(model.getSelectedFactKey());
-                        if (model.stageFactDeletion(key)) {
-                            setDirty(true);
-                        }
-                        // Clear selection and refresh
-                        if (wasSelected) {
-                            floorMapTimeListPresenter.setData(new ArrayList<>());
-                            floorMapObjectEditPresenter.loadEntry(null);
-                        }
-                        loadAtTime(model.getSelectedTime());
+                        deleteAllShardsForKey(mapName, key, () -> {
+                            if (wasSelected) {
+                                floorMapTimeListPresenter.setData(new ArrayList<>());
+                                floorMapObjectEditPresenter.loadEntry(null);
+                            }
+                            loadAtTime(model.getSelectedTime());
+                        });
                     }
                 });
+    }
+
+    /**
+     * Fetches every shard of {@code key} (all effective times) and stages a
+     * deletion for each, so "delete object" removes the whole history rather
+     * than only the shard active at the scrubber (which would let the fact
+     * reappear at other times / after reload). Runs {@code onDone} once the
+     * deletions are staged.
+     *
+     * @param mapName the map name
+     * @param key     the fact key to delete
+     * @param onDone  run after deletions are staged (UI refresh)
+     */
+    private void deleteAllShardsForKey(final String mapName,
+                                       final String key,
+                                       final Runnable onDone) {
+        restFactory.create(SQL_TEMPORAL_STORE_RESOURCE)
+                .method(res -> res.find(mapKeyCriteria(mapName, key)))
+                .onSuccess(result -> {
+                    if (model.stageFactDeletionForAllShards(
+                            key, result != null ? result.getValues() : null)) {
+                        setDirty(true);
+                    }
+                    onDone.run();
+                })
+                .onFailure(error -> {
+                    AlertEvent.fireError(this,
+                            "Could not load all versions to delete '" + key + "': "
+                            + error.getMessage(), null);
+                    // Still run onDone so a batch delete's completion count can't
+                    // stall on a single failed key.
+                    onDone.run();
+                })
+                .taskMonitorFactory(this)
+                .exec();
     }
 
     /**
@@ -1042,7 +1296,8 @@ public class FloorMapEditorPresenter
                 event.getMapX(),
                 event.getMapY(),
                 event.getClientX(),
-                event.getClientY());
+                event.getClientY(),
+                event.getVertexIndex());
     }
 
     /**
@@ -1076,7 +1331,8 @@ public class FloorMapEditorPresenter
                                        final double mapX,
                                        final double mapY,
                                        final int clientX,
-                                       final int clientY) {
+                                       final int clientY,
+                                       final int vertexIndex) {
         final String mapName = getMapName();
         if (mapName == null) {
             return;
@@ -1084,7 +1340,15 @@ public class FloorMapEditorPresenter
 
         final List<Item> menuItems = new ArrayList<>();
 
-        if (objectId == null) {
+        if (vertexIndex >= 0) {
+            // ---- Right-clicked an area vertex handle ----
+            menuItems.add(new IconMenuItem.Builder()
+                    .priority(1)
+                    .icon(SvgImage.DELETE)
+                    .text("Delete Vertex")
+                    .command(() -> floorMapCanvasPresenter.deleteVertex(vertexIndex))
+                    .build());
+        } else if (objectId == null) {
             // ---- Right-clicked on empty canvas ----
             menuItems.add(new IconMenuItem.Builder()
                     .priority(1)
@@ -1131,14 +1395,12 @@ public class FloorMapEditorPresenter
                         floorMapFactListPresenter.setSelected(objectId);
                         loadTimeListForSelectedFact();
 
-                        // Find the active entry for this object at the current time
-                        // and open the edit dialog
-                        final List<TemporalEntry> all = model.buildMergedCanvasEntries();
-                        for (final TemporalEntry e : all) {
-                            if (objectId.equals(e.getKey())) {
-                                onEditTimeInTimeList(e);
-                                break;
-                            }
+                        // Edit the shard the canvas is showing (active at the
+                        // scrubber), not the first key match (which could be a
+                        // historical shard under a pending time-version).
+                        final TemporalEntry active = model.activeMergedEntryForKey(objectId);
+                        if (active != null) {
+                            onEditTimeInTimeList(active);
                         }
                     })
                     .build());
@@ -1149,12 +1411,18 @@ public class FloorMapEditorPresenter
                     .icon(SvgImage.HISTORY)
                     .text("Add Time Version")
                     .command(() -> {
-                        // Select the object first so the time list loads
+                        final String addMapName = getMapName();
+                        if (addMapName == null) {
+                            return;
+                        }
+                        // Select the object, then FETCH its time list before
+                        // adding — otherwise the model still holds the previous
+                        // selection's shards, so the same-time overwrite guard is
+                        // bypassed and the new version clones blank data.
                         model.setSelectedFactKey(objectId);
                         floorMapCanvasPresenter.setSelectedObjectId(objectId);
                         floorMapFactListPresenter.setSelected(objectId);
-                        // Trigger the same flow as "Add Time" on the Time List
-                        onAddTimeInTimeList();
+                        fetchTimeList(addMapName, objectId, this::onAddTimeInTimeList);
                     })
                     .build());
 
@@ -1279,7 +1547,8 @@ public class FloorMapEditorPresenter
      * @param onReady the action to run once area support is available
      */
     private void ensureAreaSupport(final Runnable onReady) {
-        if (hasAreaSupport(valueSchema()) && hasAreaStyle(typeStyles())) {
+        if (FloorMapDocSession.hasAreaSupport(valueSchema())
+                && FloorMapDocSession.hasAreaStyle(typeStyles())) {
             onReady.run();
             return;
         }
@@ -1293,14 +1562,13 @@ public class FloorMapEditorPresenter
                     if (!ok) {
                         return;
                     }
-                    pendingAreaSchema = FloorMapFieldMapping.withAreaMappings(
-                            valueSchema(), getEntity().getValueFormat());
-                    pendingAreaTypeStyles = TypeStyle.withAreaStyle(typeStyles());
+                    docSession.stageAreaUpgrade(valueSchema(),
+                            getEntity().getValueFormat(), typeStyles());
                     // Apply the styles to the live canvas so the first drawn
                     // area z-orders correctly before the document is saved, and
                     // re-hand the upgraded document to the object-edit dialog
                     // so it resolves the new roles immediately.
-                    floorMapCanvasPresenter.setTypeStyles(pendingAreaTypeStyles);
+                    floorMapCanvasPresenter.setTypeStyles(typeStyles());
                     floorMapObjectEditPresenter.setFloorMapDoc(sessionEntity());
                     setDirty(true);
                     if (areaSupportEnabledListener != null) {
@@ -1388,16 +1656,10 @@ public class FloorMapEditorPresenter
             return;
         }
 
-        // Find the current entry for this object
-        final List<TemporalEntry> all = model.buildMergedCanvasEntries();
-        TemporalEntry sourceEntry = null;
-        for (final TemporalEntry e : all) {
-            if (originalKey.equals(e.getKey())) {
-                sourceEntry = e;
-                break;
-            }
-        }
-
+        // Duplicate the shard the canvas is showing (active at the scrubber),
+        // not merely the first key match — which could be a historical shard
+        // under a pending time-version.
+        final TemporalEntry sourceEntry = model.activeMergedEntryForKey(originalKey);
         if (sourceEntry == null) {
             return;
         }
@@ -1453,19 +1715,22 @@ public class FloorMapEditorPresenter
                 + " selected objects? This cannot be undone.",
                 ok -> {
                     if (ok) {
-                        boolean any = false;
-                        for (final String key : keys) {
-                            if (model.stageFactDeletion(key)) {
-                                any = true;
-                            }
+                        final String mapName = getMapName();
+                        if (mapName == null) {
+                            return;
                         }
-                        if (any) {
-                            setDirty(true);
+                        // Delete every shard of every selected key (each needs its
+                        // own full-history fetch), then refresh once all are staged.
+                        final List<String> keyList = new ArrayList<>(keys);
+                        final int[] remaining = {keyList.size()};
+                        for (final String key : keyList) {
+                            deleteAllShardsForKey(mapName, key, () -> {
+                                if (--remaining[0] == 0) {
+                                    applySelection(new ArrayList<>());
+                                    loadAtTime(model.getSelectedTime());
+                                }
+                            });
                         }
-                        // Clear the selection across model/canvas/list + side
-                        // panels, then refresh so the deleted facts disappear.
-                        applySelection(new ArrayList<>());
-                        loadAtTime(model.getSelectedTime());
                     }
                 });
     }
@@ -1545,13 +1810,15 @@ public class FloorMapEditorPresenter
      * @param result the failed {@link ApplyChangesResult}
      */
     private void onFlushError(final ApplyChangesResult result) {
-        model.getPendingChanges().clear();
+        // The server reported the changes were NOT applied, so keep them staged
+        // for a retry rather than clearing the user's work and reloading over
+        // it (replay is idempotent — upserts + deletions).
         final String message = result.getErrorMessage() != null
                 ? result.getErrorMessage()
                 : "Unknown error";
         AlertEvent.fireError(this,
-                "Error saving floor map editor changes: " + message,
-                this::reloadAllPanels);
+                "Error saving floor map editor changes — your changes have been "
+                + "kept, please try saving again: " + message, null);
     }
 
     /**
@@ -1628,11 +1895,17 @@ public class FloorMapEditorPresenter
     /**
      * View interface for the Editor tab.
      *
-     * <p>No custom methods are needed here — all child content is routed
-     * through GWTP's standard {@link com.gwtplatform.mvp.client.View#setInSlot}
-     * mechanism, overridden in {@link stroom.floormap.client.view.FloorMapEditorViewImpl}.</p>
+     * <p>Child content is routed through GWTP's standard
+     * {@link com.gwtplatform.mvp.client.View#setInSlot} mechanism, overridden in
+     * {@link stroom.floormap.client.view.FloorMapEditorViewImpl}.</p>
      */
     public interface FloorMapEditorView extends View {
 
+        /**
+         * Shows or hides the right-hand dock, preserving its dragged width.
+         *
+         * @param visible {@code true} to show the dock, {@code false} to hide it
+         */
+        void setDockVisible(boolean visible);
     }
 }

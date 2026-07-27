@@ -38,9 +38,10 @@ public class MapContextMenuEvent extends GwtEvent<Handler> {
     private final double mapY;
     private final int clientX;
     private final int clientY;
+    private final int vertexIndex;
 
     /**
-     * Creates a new {@code MapContextMenuEvent}.
+     * Creates a new {@code MapContextMenuEvent} for a non-vertex right-click.
      *
      * @param objectId the ID of the right-clicked map object, or {@code null}
      *                 if the click was on empty canvas
@@ -54,11 +55,33 @@ public class MapContextMenuEvent extends GwtEvent<Handler> {
                                final double mapY,
                                final int clientX,
                                final int clientY) {
+        this(objectId, mapX, mapY, clientX, clientY, -1);
+    }
+
+    /**
+     * Creates a new {@code MapContextMenuEvent}.
+     *
+     * @param objectId    the ID of the right-clicked map object, or {@code null}
+     *                    if the click was on empty canvas
+     * @param mapX        the X coordinate in map space
+     * @param mapY        the Y coordinate in map space
+     * @param clientX     the screen X coordinate for popup positioning
+     * @param clientY     the screen Y coordinate for popup positioning
+     * @param vertexIndex the index of the right-clicked area vertex handle, or
+     *                    {@code -1} when the click was not on a vertex handle
+     */
+    public MapContextMenuEvent(final String objectId,
+                               final double mapX,
+                               final double mapY,
+                               final int clientX,
+                               final int clientY,
+                               final int vertexIndex) {
         this.objectId = objectId;
         this.mapX = mapX;
         this.mapY = mapY;
         this.clientX = clientX;
         this.clientY = clientY;
+        this.vertexIndex = vertexIndex;
     }
 
     /**
@@ -78,6 +101,29 @@ public class MapContextMenuEvent extends GwtEvent<Handler> {
                             final int clientX,
                             final int clientY) {
         handlers.fireEvent(new MapContextMenuEvent(objectId, mapX, mapY, clientX, clientY));
+    }
+
+    /**
+     * Fires a {@code MapContextMenuEvent} for a right-click on an area vertex
+     * handle.
+     *
+     * @param handlers    the source capable of firing events
+     * @param objectId    the area fact's key
+     * @param mapX        the X coordinate in map space
+     * @param mapY        the Y coordinate in map space
+     * @param clientX     the screen X coordinate for popup positioning
+     * @param clientY     the screen Y coordinate for popup positioning
+     * @param vertexIndex the index of the right-clicked vertex handle
+     */
+    public static void fireVertex(final HasHandlers handlers,
+                                  final String objectId,
+                                  final double mapX,
+                                  final double mapY,
+                                  final int clientX,
+                                  final int clientY,
+                                  final int vertexIndex) {
+        handlers.fireEvent(new MapContextMenuEvent(
+                objectId, mapX, mapY, clientX, clientY, vertexIndex));
     }
 
     /**
@@ -147,6 +193,16 @@ public class MapContextMenuEvent extends GwtEvent<Handler> {
      */
     public int getClientY() {
         return clientY;
+    }
+
+    /**
+     * Returns the index of the right-clicked area vertex handle.
+     *
+     * @return the vertex index, or {@code -1} if the click was not on a vertex
+     *         handle
+     */
+    public int getVertexIndex() {
+        return vertexIndex;
     }
 
     // --------------------------------------------------------------------------------

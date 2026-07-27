@@ -48,7 +48,7 @@ import com.gwtplatform.mvp.client.ViewImpl;
  * <ul>
  *   <li><b>Outer (vertical)</b> — top area vs bottom strip (draggable).</li>
  *   <li><b>Top-inner (vertical)</b> — canvas (fill) above timeline (fixed south, no splitter).</li>
- *   <li><b>Bottom-inner (horizontal)</b> — three equal columns in the bottom strip (draggable).</li>
+ *   <li><b>Bottom-inner (horizontal)</b> — two equal columns, Fact List | Time List (draggable).</li>
  * </ul>
  */
 public class FloorMapEditorViewImpl extends ViewImpl implements FloorMapEditorView {
@@ -79,17 +79,26 @@ public class FloorMapEditorViewImpl extends ViewImpl implements FloorMapEditorVi
     private static final int TIMELINE_HEIGHT = 110;
 
     // -----------------------------------------------------------------------
-    // Bottom-inner (horizontal) split — three equal columns
+    // Bottom-inner (horizontal) split — two equal columns (Fact List | Time List)
     // -----------------------------------------------------------------------
 
     /** Initial width of each anchored (West) column in pixels. */
     private static final int BOTTOM_COLUMN_INITIAL_WIDTH = 300;
 
     // -----------------------------------------------------------------------
+    // Top-inner (horizontal) split — canvas beside the right-hand dock
+    // -----------------------------------------------------------------------
+
+    /** Initial width of the right-hand dock in pixels. */
+    private static final int DOCK_INITIAL_WIDTH = 200;
+
+    // -----------------------------------------------------------------------
 
     private final ThinSplitLayoutPanel outerSplitPanel;
+    private final ThinSplitLayoutPanel topSplitPanel;
 
     private final SimplePanel canvasPanel;
+    private final SimplePanel dockPanel;
     private final SimplePanel timelinePanel;
 
     private final SimplePanel factListPanel;
@@ -98,14 +107,25 @@ public class FloorMapEditorViewImpl extends ViewImpl implements FloorMapEditorVi
     @Inject
     public FloorMapEditorViewImpl() {
 
-        // ---- Top area: canvas (fill) above timeline (fixed south) -----------
+        // ---- Top area: canvas (fill) beside the right-hand dock (east) ------
         canvasPanel = new SimplePanel();
         canvasPanel.addStyleName("dashboard-panel overflow-hidden");
+
+        dockPanel = new SimplePanel();
+        dockPanel.addStyleName("dashboard-panel overflow-hidden");
+
+        topSplitPanel = new ThinSplitLayoutPanel();
+        topSplitPanel.setSize("100%", "100%");
+        topSplitPanel.addEast(dockPanel, DOCK_INITIAL_WIDTH);   // right-hand dock
+        topSplitPanel.add(canvasPanel);                          // canvas (fills rest)
+        // Start visible to match the toggle button's initial on state
+        // (FloorMapEditorPresenter sets dockToggleButton state = true).
+        topSplitPanel.setWidgetHidden(dockPanel, false);
 
         timelinePanel = new SimplePanel();
         timelinePanel.addStyleName("dashboard-panel overflow-hidden stroom-border-bottom");
 
-        // ---- Bottom strip: three horizontal columns -------------------------
+        // ---- Bottom strip: two horizontal columns (Fact List | Time List) --
         factListPanel = new SimplePanel();
         factListPanel.addStyleName("dashboard-panel overflow-hidden");
 
@@ -127,9 +147,11 @@ public class FloorMapEditorViewImpl extends ViewImpl implements FloorMapEditorVi
         // ---- Outer vertical split: top area vs bottom strip -----------------
         outerSplitPanel = new ThinSplitLayoutPanel();
         outerSplitPanel.setSize("100%", "100%");
+        // Thin divider between the document toolbar and the canvas area.
+        outerSplitPanel.addStyleName("stroom-border-top");
         outerSplitPanel.setVSplits(BOTTOM_STRIP_SPLIT);
         outerSplitPanel.addSouth(bottomPanel, BOTTOM_STRIP_INITIAL_HEIGHT); // bottom strip
-        outerSplitPanel.add(canvasPanel);                                       // canvas + timeline (centre)
+        outerSplitPanel.add(topSplitPanel);                                     // canvas + dock (centre)
     }
 
     @Override
@@ -151,6 +173,8 @@ public class FloorMapEditorViewImpl extends ViewImpl implements FloorMapEditorVi
     public void setInSlot(final Object slot, final Widget content) {
         if (FloorMapEditorPresenter.MAIN.equals(slot)) {
             canvasPanel.setWidget(content);
+        } else if (FloorMapEditorPresenter.DOCK.equals(slot)) {
+            dockPanel.setWidget(content);
         } else if (FloorMapEditorPresenter.TIMELINE.equals(slot)) {
             timelinePanel.setWidget(content);
         } else if (FloorMapEditorPresenter.FACT_LIST.equals(slot)) {
@@ -158,5 +182,11 @@ public class FloorMapEditorViewImpl extends ViewImpl implements FloorMapEditorVi
         } else if (FloorMapEditorPresenter.TIME_LIST.equals(slot)) {
             timeListPanel.setWidget(content);
         }
+    }
+
+    @Override
+    public void setDockVisible(final boolean visible) {
+        // Hides the dock and its splitter while retaining the dragged width.
+        topSplitPanel.setWidgetHidden(dockPanel, !visible);
     }
 }
