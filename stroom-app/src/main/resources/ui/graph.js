@@ -437,6 +437,17 @@ function GraphManager() {
             stroom.select([{__stroomTimeTravel: timeTravelActive ? 'on' : 'off'}]);
         };
 
+        // Discover: ask the parent to toggle the schema-discovery panel (starter queries built from the graph's
+        // labels/ids). That panel is a parent GWT widget, so relay a toggle command up the reverse channel; the
+        // parent's onDiscover handles show/hide.
+        var discoverBtn = document.createElement('button');
+        discoverBtn.type = 'button';
+        discoverBtn.textContent = 'Discover';
+        discoverBtn.title = 'Discover what\'s in this graph';
+        discoverBtn.onclick = function () {
+            stroom.select([{__stroomDiscover: 'toggle'}]);
+        };
+
         // Caption picker: choose which property (or label / id) is shown on nodes. Options rebuilt per graph.
         captionSelect = document.createElement('select');
         captionSelect.title = 'Node caption';
@@ -495,6 +506,7 @@ function GraphManager() {
         bar.appendChild(edgeLabelBtn);
         bar.appendChild(declutterBtn);
         bar.appendChild(timeTravelBtn);
+        bar.appendChild(discoverBtn);
         bar.appendChild(captionSelect);
         bar.appendChild(edgeWidthSelect);
         bar.appendChild(exportSelect);

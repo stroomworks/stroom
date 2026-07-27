@@ -129,9 +129,20 @@ public class QueryDataViewImpl extends ViewWithUiHandlers<QueryDataUiHandlers> i
     }
 
     @Override
+    public void setGraphOnly(final Widget graphWidget) {
+        graphWidget.addStyleName("GraphPresenter");
+        graphContainer.setWidget(graphWidget);
+        // Graph is the only surface: no toggle, table container hidden (it still runs to feed the graph).
+        viewToggleBar.setVisible(false);
+        tableContainer.setVisible(false);
+        graphContainer.setVisible(true);
+    }
+
+    @Override
     public void setDiscoveryWidget(final Widget discoveryWidget) {
+        // Install the panel only. The GraphDb Explore tab triggers discovery from its Cytoscape toolbar's
+        // "Discover" button (relayed via the sandbox), so the query-toolbar 'discover' button stays hidden.
         discoveryContainer.setWidget(discoveryWidget);
-        discover.setVisible(true);
     }
 
     @Override
@@ -153,6 +164,11 @@ public class QueryDataViewImpl extends ViewWithUiHandlers<QueryDataUiHandlers> i
         createDashboard.setTitle(enabled
                 ? "Create Dashboard"
                 : "Create Dashboard (not yet supported for graph queries)");
+    }
+
+    @Override
+    public void setCreateDashboardVisible(final boolean visible) {
+        createDashboard.setVisible(visible);
     }
 
     @Override

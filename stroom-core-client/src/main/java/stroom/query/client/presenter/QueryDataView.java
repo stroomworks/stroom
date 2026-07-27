@@ -25,8 +25,18 @@ public interface QueryDataView extends View, HasUiHandlers<QueryDataUiHandlers> 
     void setGraphView(Widget graphWidget, Consumer<Boolean> onViewModeChange);
 
     /**
+     * Install a graph view as the tab's sole result surface: the graph is always shown, the table container and
+     * the Table/Graph toggle stay hidden, and no toggle is offered. The table result store still runs underneath
+     * (it is what feeds the graph). Used by the Graph DB "Explore" tab, whose counterpart "Data" tab owns the
+     * tabular surface. Distinct from {@link #setGraphView}, which offers a Table/Graph toggle.
+     *
+     * @param graphWidget the graph view's widget.
+     */
+    void setGraphOnly(Widget graphWidget);
+
+    /**
      * Install an optional discovery panel (schema + starter queries) and reveal the "Discover" control. Only the
-     * Graph DB Data tab calls this; other tabs never do, so the control and panel stay hidden.
+     * Graph DB Explore tab calls this; other tabs never do, so the control and panel stay hidden.
      */
     void setDiscoveryWidget(Widget discoveryWidget);
 
@@ -39,6 +49,10 @@ public interface QueryDataView extends View, HasUiHandlers<QueryDataUiHandlers> 
     /** Enable/disable (grey out) the "Create Dashboard" button - e.g. the Graph DB tab disables it until
      * dashboards can carry a Cypher query. The button and its handler remain wired for future use. */
     void setCreateDashboardEnabled(boolean enabled);
+
+    /** Show or hide the "Create Dashboard" button entirely. The Graph DB Explore (graph) tab hides it, since
+     * creating a dashboard is a table-oriented action; its sibling Data tab keeps it (disabled for now). */
+    void setCreateDashboardVisible(boolean visible);
 
     void setError(String error);
 

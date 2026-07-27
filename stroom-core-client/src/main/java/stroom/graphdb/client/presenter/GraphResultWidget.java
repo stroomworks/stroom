@@ -57,6 +57,7 @@ public class GraphResultWidget extends Composite implements SelectionUiHandlers 
     private static final String EXPAND_NODE_PARAM = "__stroomExpand";
     private static final String FOCUS_NODE_PARAM = "__stroomFocus";
     private static final String TIME_TRAVEL_PARAM = "__stroomTimeTravel";
+    private static final String DISCOVER_PARAM = "__stroomDiscover";
 
     /** Hard cap on element rows rendered at once, so a runaway result can never lock up the browser (P4 guardrail).
      * The default queries are {@code LIMIT}-bounded well below this; it only bites on a pathological result. */
@@ -69,15 +70,18 @@ public class GraphResultWidget extends Composite implements SelectionUiHandlers 
     private final GraphTemporalWidget temporalWidget;
     private final Consumer<String> onExpandNode;
     private final Consumer<String> onFocusNode;
+    private final Runnable onDiscover;
 
     public GraphResultWidget(final EventBus eventBus,
                              final Consumer<String> onExpandNode,
                              final Consumer<String> onFocusNode,
                              final Consumer<Long> onSnapshot,
                              final Runnable onLive,
-                             final java.util.function.BiConsumer<Long, Long> onCompare) {
+                             final java.util.function.BiConsumer<Long, Long> onCompare,
+                             final Runnable onDiscover) {
         this.onExpandNode = onExpandNode;
         this.onFocusNode = onFocusNode;
+        this.onDiscover = onDiscover;
         frame = new GraphFrame(eventBus);
         frame.setUiHandlers(this);
 
@@ -260,6 +264,12 @@ public class GraphResultWidget extends Composite implements SelectionUiHandlers 
             final String timeTravel = selection.getParamValue(TIME_TRAVEL_PARAM);
             if (timeTravel != null) {
                 temporalWidget.setActive("on".equals(timeTravel));
+                return;
+            }
+            // The in-graph toolbar's "Discover" button relays a toggle command here; onDiscover toggles the panel.
+            final String discover = selection.getParamValue(DISCOVER_PARAM);
+            if (discover != null && onDiscover != null) {
+                onDiscover.run();
                 return;
             }
         }

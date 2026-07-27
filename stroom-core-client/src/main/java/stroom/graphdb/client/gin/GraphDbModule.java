@@ -19,10 +19,12 @@ package stroom.graphdb.client.gin;
 import stroom.core.client.gin.PluginModule;
 import stroom.graphdb.client.GraphDbPlugin;
 import stroom.graphdb.client.presenter.GraphDbDataPresenter;
+import stroom.graphdb.client.presenter.GraphDbExplorePresenter;
 import stroom.graphdb.client.presenter.GraphDbPresenter;
 import stroom.graphdb.client.presenter.GraphDbSettingsPresenter;
 import stroom.graphdb.client.presenter.GraphDbSettingsPresenter.GraphDbSettingsView;
 import stroom.graphdb.client.view.GraphDbDataViewImpl;
+import stroom.graphdb.client.view.GraphDbExploreViewImpl;
 import stroom.graphdb.client.view.GraphDbSettingsViewImpl;
 
 /**
@@ -40,6 +42,10 @@ public class GraphDbModule extends PluginModule {
                 GraphDbDataPresenter.class,
                 GraphDbDataPresenter.GraphDbDataView.class,
                 GraphDbDataViewImpl.class);
+        bindPresenterWidget(
+                GraphDbExplorePresenter.class,
+                GraphDbExplorePresenter.GraphDbExploreView.class,
+                GraphDbExploreViewImpl.class);
         bindPresenterWidget(
                 GraphDbSettingsPresenter.class,
                 GraphDbSettingsView.class,

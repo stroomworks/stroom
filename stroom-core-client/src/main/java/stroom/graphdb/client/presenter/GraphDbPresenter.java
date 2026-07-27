@@ -53,6 +53,7 @@ public class GraphDbPresenter extends DocTabPresenter<LinkTabPanelView, GraphDbD
 
     private static final TabData SETTINGS = new TabDataImpl("Settings");
     private static final TabData DATA = new TabDataImpl("Data");
+    private static final TabData EXPLORE = new TabDataImpl("Explore");
     private static final TabData DOCUMENTATION = new TabDataImpl("Documentation");
     private static final TabData PERMISSIONS = new TabDataImpl("Permissions");
 
@@ -62,11 +63,15 @@ public class GraphDbPresenter extends DocTabPresenter<LinkTabPanelView, GraphDbD
             final LinkTabPanelView view,
             final Provider<GraphDbSettingsPresenter> graphDbSettingsPresenterProvider,
             final Provider<GraphDbDataPresenter> graphDbDataPresenterProvider,
+            final Provider<GraphDbExplorePresenter> graphDbExplorePresenterProvider,
             final Provider<MarkdownEditPresenter> markdownEditPresenterProvider,
             final DocumentUserPermissionsTabProvider<GraphDbDoc> documentUserPermissionsTabProvider) {
         super(eventBus, view);
 
         addTab(SETTINGS, new DocTabProvider<>(graphDbSettingsPresenterProvider::get));
+        // The interactive Cytoscape graph surface (query + graph + discovery + time-travel) sits ahead of the
+        // table-only Data tab.
+        addTab(EXPLORE, new DocTabProvider<>(graphDbExplorePresenterProvider::get));
         addTab(DATA, new DocTabProvider<>(graphDbDataPresenterProvider::get));
         addTab(DOCUMENTATION, new MarkdownTabProvider<>(eventBus, markdownEditPresenterProvider) {
             @Override
@@ -85,7 +90,7 @@ public class GraphDbPresenter extends DocTabPresenter<LinkTabPanelView, GraphDbD
             }
         });
         addTab(PERMISSIONS, documentUserPermissionsTabProvider);
-        selectTab(DATA);
+        selectTab(SETTINGS);
     }
 
     @Override
