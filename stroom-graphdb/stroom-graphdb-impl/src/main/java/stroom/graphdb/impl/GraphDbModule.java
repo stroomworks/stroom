@@ -139,13 +139,23 @@ public class GraphDbModule extends AbstractModule {
                     // stroom.planb.impl.data.ShardManager's own maintenance loops use for the identical reason.
                     try {
                         final GraphDbDoc doc = graphDbDocStore.readDocument(docRef);
+                        // Note the store is now opened for any graph, because condensing applies to all of them.
+                        // The eager-open concern the comment below records is therefore accepted rather than
+                        // avoided - and less sharp than it was, since a store whose document has been deleted is
+                        // reclaimed by cleanupOrphanedStores above.
                         // Code-review fix: only open the store when retention is actually enabled. getOrOpen()
                         // eagerly opens (and permanently caches - there is no eviction) the doc's LMDB
                         // environment, so calling it unconditionally would, every 10 minutes, open an env for
                         // every graph doc even though retention is disabled by default and deleteOldData() would
                         // immediately no-op - leaving every never-queried doc's env held open forever.
-                        if (doc != null && retentionEnabled(doc)) {
-                            graphStoreManager.getOrOpen(doc).deleteOldData(doc);
+                        if (doc != null) {
+                            // Condensing is unconditional: it changes no query result and benefits any graph
+                            // reloaded on a schedule, whether or not retention is enabled. Retention still is
+                            // conditional - and checked first, so condense works on the smaller surviving set.
+                            if (retentionEnabled(doc)) {
+                                graphStoreManager.getOrOpen(doc).deleteOldData(doc);
+                            }
+                            graphStoreManager.getOrOpen(doc).condense();
                         }
                     } catch (final RuntimeException e) {
                         LOGGER.error("Error running retention for {}", docRef, e);

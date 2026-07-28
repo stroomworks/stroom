@@ -189,6 +189,38 @@ public final class GraphStores implements AutoCloseable {
     }
 
     /**
+     * Collapses runs of consecutive identical versions across the node and both edge stores.
+     *
+     * <p>This is the piece retention cannot do. Loading a graph on a schedule re-asserts every node and edge
+     * whether or not anything changed, so a week of unchanged data costs seven versions of everything; each is a
+     * legitimate version inside the retention window, so nothing ages it out. Condensing is what bounds a graph
+     * fed continuously with mostly-static data.</p>
+     *
+     * <p><b>It changes no query result</b>, at any instant, which is why it needs no cut-off and no opt-in. A
+     * point-in-time lookup is a reverse floor scan, so for any instant inside a collapsed run the surviving
+     * earliest version is the one the scan reaches - and it holds the same value as those removed. Keeping the
+     * earliest rather than the latest is what makes that hold.</p>
+     *
+     * <p>The property index is untouched: an anchor is keyed on a value rather than a version, so collapsing
+     * versions that share a value cannot orphan one.</p>
+     *
+     * <p><b>Postconditions:</b> every run of consecutive identical versions in the three version stores has been
+     * reduced to its earliest member.
+     *
+     * @return the number of versions removed.
+     */
+    public long condense() {
+        return env.write(writer -> {
+            long count = 0;
+            count += nodes.condense(writer);
+            count += outEdges.condense(writer);
+            count += inEdges.condense(writer);
+            writer.commit();
+            return count;
+        });
+    }
+
+    /**
      * Rebuilds the property index from the node versions currently in the store.
      *
      * <p>Anchors are re-recorded against the property-key lookup as they are written, so the caller's

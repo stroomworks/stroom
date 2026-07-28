@@ -36,6 +36,7 @@ import org.lmdbjava.Txn;
 import java.nio.ByteBuffer;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -387,6 +388,67 @@ public final class GraphNodeDb {
         buffer.put(bytes);
         buffer.flip();
         return buffer;
+    }
+
+    /**
+     * Collapses runs of consecutive versions of the same node whose stored value is identical, keeping the
+     * <b>earliest</b> of each run.
+     *
+     * <p>Loading a graph daily re-asserts every node whether or not it changed, so ten unchanged days cost ten
+     * versions. Retention cannot help - each is a legitimate version within the window - so this is the only thing
+     * that bounds a graph fed continuously with mostly-static data.</p>
+     *
+     * <p><b>No query result changes.</b> A point-in-time lookup is a reverse floor scan: for any instant inside a
+     * collapsed run, the surviving earliest version is the one the scan lands on, and by definition it holds the
+     * same value as the ones removed. Keeping the earliest rather than the latest is what makes that true - the
+     * version that matters is the one where the value started.</p>
+     *
+     * <p>Runs are detected within one node's version sequence only, which the key order gives for free: a key is
+     * {@code [nodeUid][validFrom]}, so all of a node's versions are contiguous and in ascending time order.</p>
+     *
+     * <p><b>Preconditions:</b> {@code writer} is not null.
+     * <b>Postconditions:</b> every run of consecutive identical versions has been reduced to its earliest member.
+     * <b>Null status:</b> {@code writer} is not nullable.
+     *
+     * @param writer the write transaction to condense under.
+     * @return the number of versions removed.
+     */
+    public long condense(final LmdbWriter writer) {
+        Objects.requireNonNull(writer, "writer");
+
+        // Collected before deleting: deleting through a live cursor over the same dbi is not safe here, the same
+        // reason deleteOldData collects first.
+        final List<byte[]> toDelete = new ArrayList<>();
+        Long currentNodeUid = null;
+        byte[] previousValue = null;
+
+        try (LmdbIterable iterable = LmdbIterable.create(writer.getWriteTxn(), dbi, LmdbKeyRange.all())) {
+            for (final LmdbEntry entry : iterable) {
+                final byte[] keyBytes = copy(entry.getKey());
+                final byte[] valueBytes = copy(entry.getVal());
+                final long nodeUid = NODE_UID_BYTES.get(ByteBuffer.wrap(keyBytes, 0, GraphStores.NODE_UID_WIDTH));
+
+                if (!Objects.equals(currentNodeUid, nodeUid)) {
+                    // A new node starts a new run; its first version is always kept.
+                    currentNodeUid = nodeUid;
+                    previousValue = valueBytes;
+                    continue;
+                }
+
+                if (Arrays.equals(previousValue, valueBytes)) {
+                    // Same value as the version before it, so it says nothing the survivor does not.
+                    toDelete.add(keyBytes);
+                } else {
+                    previousValue = valueBytes;
+                }
+            }
+        }
+
+        for (final byte[] keyBytes : toDelete) {
+            dbi.delete(writer.getWriteTxn(), directCopy(keyBytes));
+            writer.tryCommit();
+        }
+        return toDelete.size();
     }
 
     /** One raw, in-memory copy of a stored version's key/value, retained past the read iterator's lifetime. */

@@ -375,6 +375,57 @@ public final class GraphAdjacencyDb {
         }
     }
 
+    /**
+     * Collapses runs of consecutive versions of the same out-edge whose stored value is identical, keeping the
+     * <b>earliest</b> of each run - the companion to {@code GraphNodeDb.condense}, which documents why this
+     * changes no query result.
+     *
+     * <p>An edge's identity is everything in its key before the {@code validFrom}, and the key order groups
+     * those contiguously in ascending time, so a run is detected by comparing each entry's identity prefix with
+     * the previous one's.</p>
+     *
+     * <p><b>Preconditions:</b> {@code writer} is not null.
+     * <b>Postconditions:</b> every run of consecutive identical versions has been reduced to its earliest member.
+     * <b>Null status:</b> {@code writer} is not nullable.
+     *
+     * @param writer the write transaction to condense under.
+     * @return the number of versions removed.
+     */
+    public long condense(final LmdbWriter writer) {
+        Objects.requireNonNull(writer, "writer");
+
+        final int identityWidth = keyWidth - timeSerde.getSize();
+        final List<byte[]> toDelete = new ArrayList<>();
+        byte[] previousIdentity = null;
+        byte[] previousValue = null;
+
+        try (LmdbIterable iterable = LmdbIterable.create(writer.getWriteTxn(), dbi, LmdbKeyRange.all())) {
+            for (final LmdbEntry entry : iterable) {
+                final byte[] keyBytes = copy(entry.getKey());
+                final byte[] valueBytes = copy(entry.getVal());
+                final byte[] identity = Arrays.copyOfRange(keyBytes, 0, identityWidth);
+
+                if (!Arrays.equals(previousIdentity, identity)) {
+                    previousIdentity = identity;
+                    previousValue = valueBytes;
+                    continue;
+                }
+
+                if (Arrays.equals(previousValue, valueBytes)) {
+                    toDelete.add(keyBytes);
+                } else {
+                    previousValue = valueBytes;
+                }
+            }
+        }
+
+        for (final byte[] keyBytes : toDelete) {
+            dbi.delete(writer.getWriteTxn(), directCopy(keyBytes));
+            writer.tryCommit();
+        }
+        return toDelete.size();
+    }
+
     private static byte[] copy(final ByteBuffer buffer) {
         final ByteBuffer duplicate = buffer.duplicate();
         final byte[] bytes = new byte[duplicate.remaining()];

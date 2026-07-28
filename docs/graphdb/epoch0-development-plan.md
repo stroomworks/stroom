@@ -410,9 +410,24 @@ production call site in the repository that does. Thread `GraphDbConfig.maxStore
 `open`/`provision`, and mark the getter as requiring a restart: LMDB fixes the map size at environment
 creation.
 
-**Condense and compact.** Port the copy-with-compact plus atomic swap from Plan B's `StoreShard`, and
-implement a graph `condense` collapsing consecutive identical node and edge versions — the temporal-store
-condense is the template. Independent of the cluster work, so it can proceed in parallel if resourced.
+**Condense — done. Compact — not started, and worth splitting.** The plan treated these as one item; they are
+unrelated in both mechanism and risk.
+
+`GraphStores.condense()` collapses runs of consecutive identical node and out/in-edge versions to the **earliest**
+of each run. Keeping the earliest rather than the latest is the whole correctness argument: a point-in-time lookup
+is a reverse floor scan, so for any instant inside a collapsed run the survivor is what the scan reaches, and it
+holds the same value as those removed. Because no answer changes at any instant, condensing needs **no cut-off and
+no setting** — unlike Plan B's `condenseBefore`, whose purpose is to avoid churning data still being written — and
+it runs for every graph on every maintenance cycle regardless of whether retention is enabled.
+
+The test that carries this is `condensing_changesNoAnswerAtAnyInstant`, which queries every instant across the
+history before and after. Validated by sabotage: switching the implementation to keep the *latest* of each run
+fails that test and nothing else, which is exactly the point — a row-count assertion would have passed.
+
+**Compaction is separate and still to do.** LMDB reuses freed pages for new writes, so a condensed or aged store
+stops growing but does not shrink on disk. `StoreShard.compact` is the template (copy-with-compact into a sibling
+directory, then an atomic swap while no reader holds the old file), but note `PlanBEnv` does not currently expose
+compaction at all, and the swap is the risky part. Tracked as item 4a in [12-future-work.md](12-future-work.md).
 
 **Retention for the property index** and the property-key table, which the current sweep skips. This is why
 storage grows monotonically even with retention enabled.
