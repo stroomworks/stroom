@@ -4,7 +4,7 @@
 **Audience:** the implementing agent (Claude Sonnet) and its reviewers
 **Scope:** The remaining Graph DB feature work discussed in the design set, **excluding the diff operator's delta-table output, which is already done.** Four workstreams: (A) portable `from "GraphDb"` routing, (B) the Graph DB configuration/settings tab, (C) a Cypher sub-query as a StroomQL join side, and (D) the `RETURN GRAPH` element-row output plus Cytoscape.js rendering.
 **Companion documents (read the relevant one before starting a workstream):**
-- [`graphdb-index.html`](graphdb-index.html) — index of the whole set.
+- [`graphdb-index.html`](graphdb/archive/graphdb-index.html) — index of the whole set.
 - [`graphdb-stroomql-join.html`](graphdb-stroomql-join.html) + [`graphdb-stroomql-join-implementation-plan.md`](graphdb-stroomql-join-implementation-plan.md) — Workstream C detail.
 - [`graphdb-settings-surface.html`](graphdb-settings-surface.html) — Workstream B rationale (tiers, altitude).
 - [`graphdb-cytoscape-visualisation.html`](graphdb-cytoscape-visualisation.html) — Workstream D detail.

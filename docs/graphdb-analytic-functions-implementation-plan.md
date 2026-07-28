@@ -1,7 +1,7 @@
 # Implementation plan: analytic (aggregation) functions for Stroom Graph DB
 
-**Companion to** [`graphdb-analytic-functions-proposal.md`](graphdb-analytic-functions-proposal.md) (the *proposal* —
-which functions & why) and [`pole-on-stroom-graphdb.md`](pole-on-stroom-graphdb.md) (the *motivation* — the POLE
+**Companion to** [`graphdb-analytic-functions-proposal.md`](graphdb/archive/graphdb-analytic-functions-proposal.md) (the *proposal* —
+which functions & why) and [`pole-on-stroom-graphdb.md`](graphdb/archive/pole-on-stroom-graphdb.md) (the *motivation* — the POLE
 queries these unblock). This document is the *build plan*: ordered, self-contained tasks a coding agent can pick up
 cold. It mirrors the task shape of [`temporal-cypher-graph-implementation-plan.md`](temporal-cypher-graph-implementation-plan.md),
 which delivered the Cypher engine this work extends.
@@ -462,7 +462,7 @@ still pass.
 
 ## 3. Documentation & user-facing updates
 
-- Update [`pole-on-stroom-graphdb.md`](pole-on-stroom-graphdb.md) §5's gap table: aggregation moves from "missing" to
+- Update [`pole-on-stroom-graphdb.md`](graphdb/archive/pole-on-stroom-graphdb.md) §5's gap table: aggregation moves from "missing" to
   "supported" for `count`/`sum`/`avg`/`min`/`max` (+ `collect` after Phase 2), with a one-line worked example
   (`RETURN o.surname, count(c) AS caseload`).
 - Add a short "Aggregation" subsection to the Cypher user guide / help text (wherever the current subset is

@@ -1,6 +1,6 @@
 # Implementation plan: extending Stroom's Cypher subset (Tiers 1-3)
 
-**Companion to** [`cypher-language-feature-roadmap.md`](cypher-language-feature-roadmap.md) (the *survey* — what to
+**Companion to** [`cypher-language-feature-roadmap.md`](graphdb/archive/cypher-language-feature-roadmap.md) (the *survey* — what to
 build and why, in priority order) and
 [`graphdb-analytic-functions-implementation-plan.md`](graphdb-analytic-functions-implementation-plan.md) (the sibling
 build plan whose Phase 1 — grouping + `count`/`sum`/`avg`/`min`/`max` — is **already merged**; this plan builds
@@ -2139,7 +2139,7 @@ the roadmap, and the user docs that showed a bare Stroom-name call (`upperCase`,
 
 ## 3. Documentation & user-facing updates
 
-- Update [`cypher-language-feature-roadmap.md`](cypher-language-feature-roadmap.md)'s "What the subset covers today"
+- Update [`cypher-language-feature-roadmap.md`](graphdb/archive/cypher-language-feature-roadmap.md)'s "What the subset covers today"
   section and its priority table as each phase merges — move each shipped feature from the table into the
   "baseline" prose, the same way this plan's own §1 records the analytic-functions plan's Phase 1 having already
   merged.
@@ -2210,7 +2210,7 @@ introduces a new parameter with a backward-compatible default (e.g. Phase 5's ne
 
 ## 6. Out of scope (explicitly not this plan)
 
-Per the roadmap's Tiers 4-5 — see [`cypher-language-feature-roadmap.md`](cypher-language-feature-roadmap.md) for the
+Per the roadmap's Tiers 4-5 — see [`cypher-language-feature-roadmap.md`](graphdb/archive/cypher-language-feature-roadmap.md) for the
 utility/difficulty/risk rationale behind each:
 
 - **Writes** (`CREATE`/`MERGE`/`SET`/`DELETE`), **`CALL`/procedures** — conflicts with the mutation-XML ingest

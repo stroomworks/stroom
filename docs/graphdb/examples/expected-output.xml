@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<graph xmlns="graph-mutation:1" version="1.0">
+   <node id="app:gateway" validFrom="2026-07-03T08:00:00.000Z">
+      <label>Application</label>
+      <property name="name">Gateway</property>
+      <property name="environment">Production</property>
+   </node>
+   <node id="app:payroll" validFrom="2026-07-01T09:15:00.000Z">
+      <label>Application</label>
+      <property name="name">Payroll</property>
+      <property name="environment">Production</property>
+   </node>
+   <node id="device:db-01.example.org" validFrom="2026-07-03T08:00:00.000Z">
+      <label>Device</label>
+      <property name="hostName">db-01.example.org</property>
+      <property name="ipAddress">10.0.5.20</property>
+   </node>
+   <node id="device:fw-01.example.org" validFrom="2026-07-03T08:00:00.000Z">
+      <label>Device</label>
+      <property name="hostName">fw-01.example.org</property>
+      <property name="ipAddress">10.0.0.1</property>
+   </node>
+   <node id="device:ws-001.example.org" validFrom="2026-07-01T09:15:00.000Z">
+      <label>Device</label>
+      <property name="hostName">ws-001.example.org</property>
+      <property name="ipAddress">10.0.0.11</property>
+   </node>
+   <node id="device:ws-002.example.org" validFrom="2026-07-02T14:02:00.000Z">
+      <label>Device</label>
+      <property name="hostName">ws-002.example.org</property>
+      <property name="ipAddress">10.0.0.12</property>
+   </node>
+   <node id="device:ws-003.example.org" validFrom="2026-07-03T08:05:00.000Z">
+      <label>Device</label>
+      <property name="hostName">ws-003.example.org</property>
+      <property name="ipAddress">10.0.0.13</property>
+   </node>
+   <node id="file:/finance/bonus.csv" validFrom="2026-07-02T14:02:00.000Z">
+      <label>File</label>
+      <property name="path">/finance/bonus.csv</property>
+      <property name="name">bonus.csv</property>
+   </node>
+   <node id="file:/finance/salaries.xlsx" validFrom="2026-07-01T09:20:00.000Z">
+      <label>File</label>
+      <property name="path">/finance/salaries.xlsx</property>
+      <property name="name">salaries.xlsx</property>
+   </node>
+   <node id="session:sess-1001" validFrom="2026-07-01T09:15:00.000Z">
+      <label>Session</label>
+      <property name="sessionId">sess-1001</property>
+   </node>
+   <node id="session:sess-2002" validFrom="2026-07-02T14:02:00.000Z">
+      <label>Session</label>
+      <property name="sessionId">sess-2002</property>
+   </node>
+   <node id="user:alice" validFrom="2026-07-01T09:15:00.000Z">
+      <label>User</label>
+      <property name="id">alice</property>
+   </node>
+   <node id="user:bob" validFrom="2026-07-02T14:02:00.000Z">
+      <label>User</label>
+      <property name="id">bob</property>
+   </node>
+   <node id="user:carol" validFrom="2026-07-03T08:05:00.000Z">
+      <label>User</label>
+      <property name="id">carol</property>
+   </node>
+   <edge type="USED" validFrom="2026-07-01T09:15:00.000Z">
+      <src>user:alice</src>
+      <dst>app:payroll</dst>
+   </edge>
+   <edge type="AUTHENTICATED_ON" validFrom="2026-07-01T09:15:00.000Z">
+      <src>user:alice</src>
+      <dst>device:ws-001.example.org</dst>
+      <property name="outcome">SUCCESS</property>
+   </edge>
+   <edge type="STARTED_SESSION" validFrom="2026-07-01T09:15:00.000Z">
+      <src>user:alice</src>
+      <dst>session:sess-1001</dst>
+   </edge>
+   <edge type="SESSION_ON" validFrom="2026-07-01T09:15:00.000Z">
+      <src>session:sess-1001</src>
+      <dst>device:ws-001.example.org</dst>
+   </edge>
+   <edge type="USED" validFrom="2026-07-01T09:20:00.000Z">
+      <src>user:alice</src>
+      <dst>app:payroll</dst>
+   </edge>
+   <edge type="ACCESSED" validFrom="2026-07-01T09:20:00.000Z">
+      <src>user:alice</src>
+      <dst>file:/finance/salaries.xlsx</dst>
+      <property name="action">VIEW</property>
+      <property name="outcome">SUCCESS</property>
+   </edge>
+   <edge type="HOSTED_ON" validFrom="2026-07-01T09:20:00.000Z">
+      <src>file:/finance/salaries.xlsx</src>
+      <dst>device:ws-001.example.org</dst>
+   </edge>
+   <edge type="USED" validFrom="2026-07-01T09:31:22.500Z">
+      <src>user:alice</src>
+      <dst>app:payroll</dst>
+   </edge>
+   <edge type="ACCESSED" validFrom="2026-07-01T09:31:22.500Z">
+      <src>user:alice</src>
+      <dst>file:/finance/salaries.xlsx</dst>
+      <property name="action">UPDATE</property>
+      <property name="outcome">SUCCESS</property>
+   </edge>
+   <edge type="HOSTED_ON" validFrom="2026-07-01T09:31:22.500Z">
+      <src>file:/finance/salaries.xlsx</src>
+      <dst>device:ws-001.example.org</dst>
+   </edge>
+   <edge type="USED" validFrom="2026-07-02T14:02:00.000Z">
+      <src>user:bob</src>
+      <dst>app:payroll</dst>
+   </edge>
+   <edge type="ACCESSED" validFrom="2026-07-02T14:02:00.000Z">
+      <src>user:bob</src>
+      <dst>file:/finance/bonus.csv</dst>
+      <property name="action">CREATE</property>
+      <property name="outcome">SUCCESS</property>
+   </edge>
+   <edge type="HOSTED_ON" validFrom="2026-07-02T14:02:00.000Z">
+      <src>file:/finance/bonus.csv</src>
+      <dst>device:ws-002.example.org</dst>
+   </edge>
+   <edge type="USED" validFrom="2026-07-02T14:40:10.000Z">
+      <src>user:bob</src>
+      <dst>app:payroll</dst>
+   </edge>
+   <edge type="ACCESSED" validFrom="2026-07-02T14:40:10.000Z">
+      <src>user:bob</src>
+      <dst>file:/finance/bonus.csv</dst>
+      <property name="action">DELETE</property>
+      <property name="outcome">FAILURE</property>
+   </edge>
+   <edge type="HOSTED_ON" validFrom="2026-07-02T14:40:10.000Z">
+      <src>file:/finance/bonus.csv</src>
+      <dst>device:ws-002.example.org</dst>
+   </edge>
+   <edge type="USED" validFrom="2026-07-03T08:00:00.000Z">
+      <src>user:alice</src>
+      <dst>app:gateway</dst>
+   </edge>
+   <edge type="CONNECTED_TO" validFrom="2026-07-03T08:00:00.000Z">
+      <src>device:ws-001.example.org</src>
+      <dst>device:db-01.example.org</dst>
+   </edge>
+   <edge type="USED" validFrom="2026-07-03T08:05:00.000Z">
+      <src>user:carol</src>
+      <dst>app:payroll</dst>
+   </edge>
+</graph>

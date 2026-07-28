@@ -375,7 +375,7 @@
 <p>Two things fall out of that design that are unusual:</p>
 <ul>
   <li><strong>"A hop is a join" already.</strong> Inside the graph engine, a Cypher hop <em>lowers to</em> a join over adjacency on the same IR. Making a graph <em>result</em> a StroomQL join operand is the same idea one level up — join composition is the native currency, not a special case.</li>
-  <li><strong>The graph side is temporal.</strong> Because the Graph DB supports <code>AS OF</code> / <code>AROUND</code> / <code>BETWEEN</code> (see <a href="temporal-cypher-features.html">temporal-cypher-features</a>), a StroomQL join can correlate a live event stream against <em>the graph as it existed at a chosen instant</em> — a point-in-time enrichment that graph-over-tables systems don't offer natively.</li>
+  <li><strong>The graph side is temporal.</strong> Because the Graph DB supports <code>AS OF</code> / <code>AROUND</code> / <code>BETWEEN</code> (see <a href="graphdb/archive/temporal-cypher-features.html">temporal-cypher-features</a>), a StroomQL join can correlate a live event stream against <em>the graph as it existed at a chosen instant</em> — a point-in-time enrichment that graph-over-tables systems don't offer natively.</li>
 </ul>
 
 <h2 id="temporal">8. Relationship to the temporal work</h2>

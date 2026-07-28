@@ -3,7 +3,7 @@
 **Status:** Test protocol
 **Audience:** the implementing/testing agent and reviewers
 **Scope:** An end-to-end protocol that exercises **(1)** the new query system (the StroomQL grammar-driven optimiser: joins, enrichment, where-splitting, known-difference fixes), **(2)** the full shipped Graph DB Cypher surface (anchors, hops, variable-length, `WHERE`, `ORDER BY`/`DISTINCT`/`LIMIT`, aggregates, temporal `AS OF`/`AROUND`/`BETWEEN`, and the already-done **diff** delta table), and **(3)** every feature added by the [feature-completion plan](graphdb-features-implementation-plan.md) — `from "GraphDb"` routing (A), the settings tab (B), the Cypher-as-a-join-side (C), and `RETURN GRAPH` + Cytoscape (D).
-**Companion:** [`graphdb-features-implementation-plan.md`](graphdb-features-implementation-plan.md) (this is its Phase Z gate); [`graphdb-index.html`](graphdb-index.html).
+**Companion:** [`graphdb-features-implementation-plan.md`](graphdb-features-implementation-plan.md) (this is its Phase Z gate); [`graphdb-index.html`](graphdb/archive/graphdb-index.html).
 
 ---
 

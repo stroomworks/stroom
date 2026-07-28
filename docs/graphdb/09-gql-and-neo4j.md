@@ -1,0 +1,174 @@
+# Comparison with ISO GQL and Neo4j
+
+**Status:** Evaluation / proof of concept — not production ready. See the
+[production-readiness blockers](README.md#production-readiness--known-blockers).
+**Audience:** evaluators, and anyone porting queries from Neo4j.
+**Scope:** how Graph DB's language relates to the ISO GQL standard and to Neo4j's Cypher, and what that
+means in practice. Condensed from the engineering comparison — see
+[Further reading](#further-reading-engineering) for the clause-by-clause detail.
+**Companion documents:** [06-language-reference.md](06-language-reference.md) (what is supported),
+[12-future-work.md](12-future-work.md) (what may change).
+
+*Facts verified on 2026-07-28 against branch `sw-query-optimiser`.*
+
+---
+
+## The short version
+
+Graph DB implements a **read-only subset of openCypher**, not ISO GQL. The two languages share ancestry —
+GQL (ISO/IEC 39075:2024) was heavily influenced by Cypher — but they differ in syntax and Graph DB targets
+neither completely.
+
+Comparing by capability rather than syntax:
+
+| | Status |
+|---|---|
+| Pattern matching, traversal, projection | Supported |
+| Filtering, aggregation, ordering, limiting | Supported |
+| Set operations (`UNION`) | Supported |
+| Temporal querying | **Beyond both** — no GQL or Cypher equivalent |
+| Data modification | Not supported, by design |
+| Schema and catalogue statements | Not supported |
+| Path variables, path finding | Not supported |
+| Typed values beyond strings | Not supported |
+| Sessions, transactions, procedures | Not supported |
+
+The honest summary: **the traversal core is there, the analytics layer largely is not, and writes never
+will be from the query language.**
+
+## Where Graph DB goes beyond both
+
+Worth stating first, because it is the reason the subset exists at all.
+
+Every node and edge version carries a `validFrom`, and the language exposes that directly:
+
+```cypher
+MATCH (p:Person {surname: 'Powell'})-[:PARTY_TO]->(c:Crime)
+AS OF datetime('2021-01-01T00:00:00Z')
+RETURN c.type
+```
+
+Neither Cypher nor GQL has an equivalent. In Neo4j, history is something you model yourself — usually with
+`validFrom`/`validTo` properties and predicates on every hop, which is verbose and easy to get wrong.
+`DIFF FROM … TO …`, which classifies elements as added, removed, modified or unchanged, has no counterpart
+at all.
+
+If temporal analysis is central to what you are doing, this is the trade the subset is buying.
+
+## Porting from Neo4j
+
+### What ports unchanged
+
+Simple anchored traversals, which is more than it sounds:
+
+```cypher
+MATCH (p:Person {name: 'Alice'})-[:KNOWS]->(f:Person) RETURN f.name
+MATCH (a:Account {id: '123'})<-[:OWNS]-(c:Customer) RETURN c.name, c.email
+MATCH (u:User {id: 'x'})-[:MEMBER_OF*1..3]->(g:Group) RETURN DISTINCT g.name
+MATCH (o:Order {id: '9'})-[:CONTAINS]->(i:Item)-[:MADE_BY]->(m:Maker) RETURN m.name
+```
+
+Aggregation ports too, with one edit:
+
+```cypher
+-- Neo4j
+MATCH (c:Crime) RETURN c.type, count(c) AS total ORDER BY count(c) DESC
+-- Graph DB: order by the alias
+MATCH (c:Crime) RETURN c.type AS crime_type, count(c) AS total ORDER BY total DESC
+```
+
+### What needs rewriting
+
+| Neo4j | Graph DB | Fix |
+|---|---|---|
+| `RETURN n` | Rejected | Name the properties, or use `RETURN GRAPH` |
+| `RETURN *` | Rejected | List the columns |
+| `ORDER BY count(x)` | Rejected | Order by the `AS` alias |
+| `SKIP 10 LIMIT 10` | `SKIP` rejected | `LIMIT` only; no pagination |
+| `MATCH (a), (b)` | Rejected | One `MATCH`, one pattern |
+| `MATCH (a) MATCH (b)` | Rejected | Combine, or use `OPTIONAL MATCH`/`WITH` |
+| `-[:A\|B]->` | Rejected | Separate queries plus `UNION` |
+| `-[:R*]->` | Rejected | Give the upper bound: `-[:R*1..5]->` |
+| `-->` as an access path | Rejected | Name the edge type |
+| `WHERE NOT (a)-[:R]->(b)` | Rejected | `EXISTS { … }` where the shape allows |
+| `labels(n)`, `keys(n)` | Rejected | Use `RETURN GRAPH` |
+| `collect(x)` as a list | Returns a string | Split downstream |
+
+### What has no equivalent
+
+- **Writes** — `CREATE`, `SET`, `MERGE`, `DELETE`. Data enters only through pipelines.
+- **Path finding** — `shortestPath`, `allShortestPaths`, path variables (`p = (a)-->(b)`), `RETURN p`.
+- **Graph algorithms** — no GDS equivalent: no centrality, community detection or triangle counting
+  server-side. The Explore tab computes degree, pageRank and betweenness in the browser over whatever is
+  currently drawn, which is a visual aid rather than an analytic result.
+- **Spatial** — no `point()`, no `point.distance()`.
+- **Procedures** — no `CALL`, no `db.schema.visualization()`. The Explore tab's **Discover** panel serves
+  the schema-inspection need.
+- **List and map values** — no `UNWIND`, no comprehensions, no map projections.
+
+### Behavioural differences that will not raise an error
+
+These are the dangerous ones, because the query runs and returns something plausible.
+
+| Difference | Consequence |
+|---|---|
+| **`collect()` returns a comma-joined string** | Code expecting a list gets a string. No error |
+| **All property values are strings** | `WHERE n.count > 9` compares lexically — `"10"` is less than `"9"`. Use `toInteger()`, or store zero-padded |
+| **A node version replaces, it does not merge** | Re-loading a node without a property removes it, rather than leaving the old value |
+| **Deleted data stays visible to historical queries** | Correct behaviour, but surprising if you expect a delete to be final |
+| **The whole-graph preview caps at 100 nodes silently** | `MATCH (n) RETURN GRAPH` looks complete and is not |
+
+### Structural differences
+
+**Anchoring matters.** Neo4j's planner picks a start point and may reorder your pattern. Graph DB folds
+strictly left to right from the first node pattern and never reorders, so the anchor you write is the
+anchor it uses. Rewriting a pattern to start from an indexed value is the main performance lever
+([10-limits.md](10-limits.md)).
+
+**One query, one graph.** There is no `USE` clause and no cross-graph query. A query names its graph with a
+leading `from "Name"` clause, or inherits it from the document it is run in.
+
+**Read-only, always.** Not a temporary limitation: ingest is the pipeline's job, which keeps provenance,
+permissions and reprocessing consistent with the rest of Stroom.
+
+## Neo4j's example datasets
+
+The Neo4j example graphs are a useful yardstick. None of them load directly — they ship as Neo4j dump files
+or `LOAD CSV` scripts, and Graph DB has neither importer, so any dataset must be converted to
+`graph-mutation:1` first ([03-ingest.md](03-ingest.md)).
+
+Once loaded, roughly:
+
+| Dataset | How it fares |
+|---|---|
+| **Movies** | Most queries port. Recommendation queries needing `collect()` as a list do not |
+| **POLE** | Structure and traversals port; counting ports with the alias edit. Spatial and path-finding queries do not — see [08-analysis-examples.md](08-analysis-examples.md) |
+| **Northwind** | Aggregation-heavy; ports with alias edits |
+| **Fraud detection** | Depends on path finding and shared-attribute rings — largely does not port |
+| **Recommendations** | Depends on `collect()` lists and GDS similarity — does not port |
+
+The pattern is consistent: **datasets whose questions are "what is connected to what" port well; datasets
+whose questions are "score, rank or find the best path" do not.**
+
+## Choosing between them
+
+**Graph DB suits you if** your data already flows through Stroom, temporal analysis matters, your graphs
+are modest, and your questions are traversal-shaped.
+
+**Neo4j (or another mature graph database) suits you if** you need writes from the query language, path
+finding or graph algorithms, spatial queries, large graphs, or production-grade operational guarantees —
+see the [blockers](README.md#production-readiness--known-blockers).
+
+They are not really competitors. Graph DB adds a graph-shaped view of data that is already in Stroom,
+with a temporal dimension no general-purpose graph database offers.
+
+## Next
+
+- [12-future-work.md](12-future-work.md) — which of these gaps may close
+- [06-language-reference.md](06-language-reference.md) — the supported language in full
+
+### Further reading (engineering)
+
+`docs/gql-mandatory-feature-comparison.md` walks the ISO GQL mandatory features clause by clause and
+surveys Neo4j's example-graph catalogue in detail. [`archive/cypher-language-feature-roadmap.md`](archive/cypher-language-feature-roadmap.md) estimates the
+value and cost of the unsupported features.

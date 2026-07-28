@@ -327,7 +327,7 @@
   <li><strong>Row shape is positional.</strong> Combined rows are always <code>[probe…, build…]</code>; <code>assembleRow</code>/<code>whereRowPredicate</code>/<code>buildFieldMapping</code> depend on it regardless of which side is physically probe vs build.</li>
   <li><strong>Provider dispatch is by <code>DocRef.getType()</code> only.</strong> Registering a duplicate type now fails fast rather than silently overwriting.</li>
   <li><strong>Unsupported Cypher fails loud.</strong> Anything outside the compiled subset is a positioned compile error, never a silent wrong answer.</li>
-  <li><strong>Graph properties are string-typed (v1)</strong> — type-sensitive <code>ORDER BY</code>/aggregates use string coercion; and edges are identified by <code>(source, type, target)</code> (no multigraph). See the review's F2/F9 and the <a href="temporal-cypher-features.html">temporal-features caveats</a>.</li>
+  <li><strong>Graph properties are string-typed (v1)</strong> — type-sensitive <code>ORDER BY</code>/aggregates use string coercion; and edges are identified by <code>(source, type, target)</code> (no multigraph). See the review's F2/F9 and the <a href="graphdb/archive/temporal-cypher-features.html">temporal-features caveats</a>.</li>
 </ul>
 
 <h2 id="testing">11. Where the tests are</h2>
@@ -341,7 +341,7 @@
 </ul>
 
 <hr>
-<p class="foot">A map, not a spec — class names and shapes were accurate at the time of writing on <code>sw-query-optimiser</code>; when in doubt, the code wins. Companion docs: the <a href="graphdb-index.html">Graph DB index</a>, the <a href="query-optimiser-user-guide.md">optimiser user guide</a>, and the design docs it links.</p>
+<p class="foot">A map, not a spec — class names and shapes were accurate at the time of writing on <code>sw-query-optimiser</code>; when in doubt, the code wins. Companion docs: the <a href="graphdb/archive/graphdb-index.html">Graph DB index</a>, the <a href="query-optimiser-user-guide.md">optimiser user guide</a>, and the design docs it links.</p>
 
 </div>
 </body>

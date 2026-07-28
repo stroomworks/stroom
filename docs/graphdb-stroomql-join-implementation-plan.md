@@ -6,7 +6,7 @@
 **Companion documents:**
 - [`graphdb-stroomql-join.html`](graphdb-stroomql-join.html) — the feasibility & design study (verdict, syntax, examples, risk profile). **Read this first.**
 - [`cypher-from-clause-implementation-plan.md`](cypher-from-clause-implementation-plan.md) — the portable `from "GraphDb"` routing prefix. **A prerequisite** (Phase 1 depends on it).
-- [`temporal-cypher-graph.html`](temporal-cypher-graph.html) / [`temporal-cypher-features.html`](temporal-cypher-features.html) — the Graph DB and its temporal clauses.
+- [`temporal-cypher-graph.html`](temporal-cypher-graph.html) / [`temporal-cypher-features.html`](graphdb/archive/temporal-cypher-features.html) — the Graph DB and its temporal clauses.
 - [`join-scalability-implementation-plan.md`](join-scalability-implementation-plan.md) — the StroomQL join executor this feature rides on.
 - [`coding-standards.md`](coding-standards.md) — the shared, build-enforced coding standards every task follows (Checkstyle, header, tests, CHANGELOG).
 
