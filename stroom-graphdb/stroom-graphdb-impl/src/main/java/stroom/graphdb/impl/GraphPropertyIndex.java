@@ -130,6 +130,15 @@ public final class GraphPropertyIndex {
     }
 
     /**
+     * @param readTxn an open read transaction; not null.
+     * @return the number of stored anchors.
+     */
+    public long count(final Txn<ByteBuffer> readTxn) {
+        Objects.requireNonNull(readTxn, "readTxn");
+        return dbi.stat(readTxn).entries;
+    }
+
+    /**
      * The anchor lookup: every node UID with property {@code propKeyUid} equal to {@code valueBytes} on label
      * {@code labelUid}.
      *

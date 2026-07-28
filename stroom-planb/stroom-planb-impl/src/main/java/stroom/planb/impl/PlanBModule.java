@@ -79,7 +79,10 @@ public class PlanBModule extends AbstractModule {
         bind(FileTransferClient.class).to(FileTransferClientImpl.class);
         bind(FileTransferService.class).to(FileTransferServiceImpl.class);
 
-        bind(QueryNodeResolver.class).to(QueryNodeResolverImpl.class);
+        // Contributed to the multibinder rather than bound directly, so Graph DB can route its own queries
+        // too - see stroom.query.impl.CompositeQueryNodeResolver.
+        GuiceUtil.buildMultiBinder(binder(), QueryNodeResolver.class)
+                .addBinding(QueryNodeResolverImpl.class);
 
         DocumentStoreBinder.create(binder())
                 .bind(PlanBDoc.TYPE, PlanBDocStore.class, PlanBDocStoreImpl.class);

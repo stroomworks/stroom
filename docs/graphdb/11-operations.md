@@ -18,17 +18,27 @@ operational and this file is where they bite.
 
 ## Where the data lives
 
-Each `GraphDb` document owns one LMDB environment on local disk:
+Each `GraphDb` document owns one LMDB environment on local disk, under the root set by `graphdb.path`
+(default `graphdb`, relative to the Stroom home directory unless absolute):
 
 ```
-<stroom app path>/graphdb/<document uuid>/
+<graphdb.path>/shards/<document uuid>/     the authoritative store for one graph
+<graphdb.path>/writer/                     per-stream fragments being written by ingest
+<graphdb.path>/receive/                    fragments arriving from other nodes
+<graphdb.path>/staging/                    received fragments awaiting merge, in arrival order
+<graphdb.path>/unzip/                      scratch space for expanding received fragments
+<graphdb.path>/merging/                    per-graph queues of fragments waiting to be merged
 ```
 
 Graphs are fully isolated: separate files, separate size budgets, no shared contention. Deleting the
 document deletes the store.
 
-> **Single-node.** The store is a local file tree, not a shared service, and Graph DB has no clustering of
-> its own. In a multi-node Stroom this matters a great deal — see
+These directories are deliberately **not** shared with Plan B's, even though the layout matches. Each
+feature's merge loop deletes a queued fragment whose owning document it cannot resolve, and a graph document
+is not a Plan B document — so sharing directories would let each feature silently discard the other's data.
+
+> **The store is a local file tree, not a shared service.** On a cluster, every node that should hold graph
+> data must be named in `graphdb.nodeList` — see
 > [Scaling and clustering](#scaling-and-clustering) below.
 
 ## Sizing — the part that will catch you out
@@ -71,86 +81,85 @@ Monitor the directory size. Nothing warns you before `MDB_MAP_FULL`.
 
 ## Scaling and clustering
 
-### Graph DB is single-node today
+### How graph data reaches every node
 
-Graph DB uses Plan B's storage primitives but **none of its clustering** — no sharding, no snapshots, no
-cross-node file transfer, no node-aware query routing. The mechanism, and why it is a deliberate decision
-rather than an oversight, is in
-[02-architecture.md](02-architecture.md#graph-db-is-single-node). Operationally, two things matter:
+Graph DB uses Plan B's storage primitives **and** its build-then-merge ingest shape. The mechanism is in
+[02-architecture.md](02-architecture.md#how-a-graph-spans-a-cluster); operationally, three things matter.
 
-- **A query reads only the local node's store.** Stroom's node-resolution hook exists and is generic, but
-  the only implementation answers for Plan B documents and expresses no preference for a `GraphDb`.
-- **In a cluster, a graph fragments silently.** The Graph Filter writes to the local node, and stream
-  processing is distributed. Each node holds only what it processed; each query returns only what is local.
-  Nothing reports the shortfall.
+**Ingest never writes the graph directly.** The Graph Filter writes each stream's mutations into a private
+fragment under `writer/`. On stream completion the fragment is zipped and sent to every node named in
+`graphdb.nodeList`, then deleted locally.
 
-This is a **correctness** problem rather than a performance one, and it is the reason
-[the README lists it first](README.md#correctness-across-a-cluster--read-this-first).
+**Each named node merges every fragment.** Replication is full, so each listed node holds the whole graph and
+can complete any traversal locally. The `Graph DB Merge Processor` job starts the merge loops; they then run
+continuously, so the schedule exists to (re)start them after a restart rather than to pace them.
 
-**There is no configuration-level fix.** Stroom has no way to pin a pipeline or a processor filter to a
-node — `ProcessorFilter` carries priority, task limits and a scheduling profile, but no node. `ProcessorTask`
-records a node name only as a fact about which node claimed it, not as a constraint. And `GraphDbDoc` has no
-placement setting. So "run graph ingest on one node" is not something you can configure; the only levers are
-blunt:
+**Queries are pinned to a listed node.** A node not in the list holds no graph store, so a query there would
+answer from nothing rather than fail.
 
-- Run graph workloads on a **single-node Stroom**, or
-- **Disable processing on every other node** (`Node.enabled`), which stops *all* processing there, not just
-  graph pipelines — usually unacceptable on a cluster doing other work.
+#### Configuring it
 
-Nor would fanning queries out repair it. A traversal can cross a fragment boundary, so merging independent
-local results does not reconstruct the answer — see
-[02-architecture.md](02-architecture.md#why-fanning-queries-out-would-not-fix-it).
+```yaml
+graphdb:
+  path: "graphdb"
+  nodeList:
+    - "node1a"
+    - "node2a"
+```
 
-There is no replication either, so a graph is only as durable as the node holding it and its backups — see
-[Backup and restore](#backup-and-restore).
+| Setting | Meaning |
+|---|---|
+| `graphdb.path` | Root for all graph data on this node. Restart required — LMDB paths are resolved at startup |
+| `graphdb.nodeList` | The nodes that hold graph data. **Empty means this node only** |
 
-### What you can do today
+> **An empty `nodeList` on a cluster is silently wrong.** It means "this node only", so each node again
+> accumulates only the fragments it processed and every query returns a partial answer. It is correct only on
+> a single-node deployment. Set it explicitly on a cluster.
+
+A node named in the list but **not enabled** is treated as an error, not a target to skip: the sending task
+fails and the stream is retried. Skipping it would leave that node's graph permanently short while it carried
+on answering queries.
+
+#### What to watch
+
+| Symptom | Meaning |
+|---|---|
+| `graphdb` merge-failure metric above zero | At least one fragment could not be merged. The fragment directory under `merging/` is **retained** deliberately so it can be merged once the cause is fixed. Check the ERROR log |
+| Fragments accumulating under `staging/` or `merging/` | The merge loops are not running. Check the `Graph DB Merge Processor` job is enabled |
+| A stream task failing with a send error | A target node was unreachable, not enabled, or running a build without the `/graphFileTransfer/v1/sendPart` endpoint. The stream will be reprocessed |
+
+During a rolling upgrade an older node has no such endpoint, so sends to it fail with a 404 and the stream
+task fails loudly. That is the intended behaviour — the alternative is losing the fragment quietly.
+
+Note there is still **no snapshot mechanism** and **no partitioning** of one graph across nodes. Replication
+is what makes a graph correct on a cluster; it does not raise the per-graph size ceiling, and capacity still
+comes from splitting across documents.
+
+### What you can do about capacity
 
 | Option | Buys you | Cost |
 |---|---|---|
 | **Split across several `GraphDb` documents** — by period, tenant, or subject area | Real capacity growth: each document has its own ceiling | No query spans two graphs. You partition the question by hand |
 | **Enable retention and shorten the window** | Bounds growth on a continuously fed graph | Loses the history that is the feature's main draw, and does not reclaim the property index |
-| **Run graph workloads on a single-node Stroom** | The only way to get correct answers today | Not an option on an existing cluster without dedicating a node to processing entirely |
 | **Reduce what you load** | Slows growth | Modelling effort — see [04-event-logging-xslt.md](04-event-logging-xslt.md) |
 
 Splitting across documents is the only one that genuinely increases the data you can hold. Treat the others
 as ways of living within one graph's ceiling.
 
-Note that none of these is a *correctness* fix on a multi-node cluster except the last, and that one is
-really a deployment constraint rather than an option. Correctness needs code — see below.
+### What would still need building
 
-### What would need building
+Each of these is a code change, sized in [12-future-work.md](12-future-work.md). Cheapest first:
 
-Each of these is a code change, sized in [12-future-work.md](12-future-work.md). Listed cheapest first,
-because the two cheapest are also the two most valuable:
-
-**Correctness needs two things, and both are necessary:**
-
-1. **Every mutation must reach one authoritative store**, whichever node processed the stream. This means
-   adopting Plan B's build-then-merge ingest: a pipeline writes a local fragment, the fragment is shipped to
-   the writer node, and it is merged in. This is the substantial piece of work, and the only one that removes
-   fragmentation at its source.
-2. **Every query must run against a complete copy** of that store — either by routing to the writer node (a
-   `GraphDb` node resolver, which is small because the routing hook is already generic) or by serving it from
-   a whole-copy snapshot.
-
-A resolver **on its own is not sufficient.** If writes are still spread across nodes, routing every query to
-one of them makes answers consistently incomplete instead of randomly incomplete. That is easier to debug and
-no more correct — worth knowing before anyone ships the cheap half and declares the problem solved.
-
-**Then the operational improvements, in increasing cost:**
-
-3. **Make the store size configurable.** `GraphStores` currently passes no size override, so every graph
+1. **Make the store size configurable.** `GraphStores` currently passes no size override, so every graph
    silently takes the 10 GiB default. The parameter already exists — a small change that lifts the hard
    ceiling.
-4. **Implement condense and compact.** Plan B performs both as scheduled maintenance; Graph DB does
+2. **Implement condense and compact.** Plan B performs both as scheduled maintenance; Graph DB does
    neither, which is why redundant versions accumulate forever. Plan B's implementations are a working
    template, and this is independent of the clustering work.
-5. **Adopt Plan B's snapshot model in full.** Writer nodes plus read-only snapshot nodes with file transfer
-   between them. This buys read scaling and locality on top of correctness — but note it would **not** raise
-   the per-graph size ceiling, because a snapshot is a whole copy of one store rather than a partition of it.
-   For a graph that whole-copy property is a feature, not a shortcoming: it is what lets any replica complete
-   a traversal locally. Capacity still comes from splitting across documents.
+3. **Snapshot nodes.** Today a node either holds graph data or is routed away from. Snapshots would let a
+   node serve graph queries from a read-only whole copy it pulled from a holder, buying read scaling and
+   locality. It would **not** raise the per-graph size ceiling, because a snapshot is a whole copy rather
+   than a partition — and for a graph that whole-copy property is the feature, not the shortcoming.
 
 ### For comparison: how a Lucene index scales
 
@@ -287,6 +296,26 @@ recovery plan.** If a graph matters, keep its source streams at least as long as
 reconstruct it. Check this relationship before you need it, not after.
 
 Rebuilding is also not instant — it reprocesses everything, so budget for a full reload.
+
+### This is an accepted limitation, not a pending fix
+
+Reprocessing is the only rebuild path, and that is a deliberate position rather than an oversight. Graph data
+is treated as **reproducible from its sources**: there is no migration tooling, and a store written by a build
+with a different on-disk format refuses to open rather than being converted. The store's format stamp exists
+precisely so that such a mismatch surfaces as a clear failure at open time and forces a deliberate rebuild,
+instead of a build silently reading old bytes under new assumptions.
+
+So the sequence you must be able to perform is: delete the store, reprocess the streams. Everything follows
+from whether those streams still exist.
+
+| If | Then |
+|---|---|
+| Source streams are retained at least as long as the graph | You can always rebuild. This is the supported configuration |
+| Source streams are aged off sooner than the graph | The graph is **unrecoverable** once they go — treat it as the primary copy and back it up accordingly ([Backup and restore](#backup-and-restore)) |
+
+An in-place compaction path that does not depend on source streams is tracked in
+[12-future-work.md](12-future-work.md) and would remove this coupling. Until it exists, source-stream retention
+is a graph's recovery plan and should be written down as such.
 
 ## Backup and restore
 

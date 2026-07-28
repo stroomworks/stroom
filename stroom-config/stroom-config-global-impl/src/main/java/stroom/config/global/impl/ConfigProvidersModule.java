@@ -342,6 +342,15 @@ public class ConfigProvidersModule extends AbstractModule {
     @Generated("stroom.config.global.impl.GenerateConfigProvidersModule")
     @Provides
     @SuppressWarnings("unused")
+    stroom.graphdb.impl.GraphDbConfig getGraphDbConfig(
+            final ConfigMapper configMapper) {
+        return configMapper.getConfigObject(
+                stroom.graphdb.impl.GraphDbConfig.class);
+    }
+
+    @Generated("stroom.config.global.impl.GenerateConfigProvidersModule")
+    @Provides
+    @SuppressWarnings("unused")
     stroom.importexport.impl.ContentPackImportConfig getContentPackImportConfig(
             final ConfigMapper configMapper) {
         return configMapper.getConfigObject(

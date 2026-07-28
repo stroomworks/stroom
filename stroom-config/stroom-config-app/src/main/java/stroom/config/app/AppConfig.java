@@ -52,6 +52,7 @@ import stroom.lifecycle.impl.LifecycleConfig;
 import stroom.lmdb.LmdbLibraryConfig;
 import stroom.node.impl.NodeConfig;
 import stroom.pipeline.PipelineConfig;
+import stroom.graphdb.impl.GraphDbConfig;
 import stroom.planb.impl.PlanBConfig;
 import stroom.processor.impl.ProcessorConfig;
 import stroom.query.common.v2.QueryConfig;
@@ -142,6 +143,7 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
     public static final String PROP_NAME_SOLR = "solr";
     public static final String PROP_NAME_SQL_STORE = "sqlStore";
     public static final String PROP_NAME_PLANB = "planb";
+    public static final String PROP_NAME_GRAPHDB = "graphdb";
 
     public static final String PROP_NAME_STATISTICS = "statistics";
     public static final String PROP_NAME_UI = "ui";
@@ -199,6 +201,7 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
     private final SolrConfig solrConfig;
     private final SqlStoreConfig sqlStoreConfig;
     private final PlanBConfig planBConfig;
+    private final GraphDbConfig graphDbConfig;
     private final StatisticsConfig statisticsConfig;
     private final StoredQueryConfig storedQueryConfig;
     private final StroomPathConfig pathConfig;
@@ -260,6 +263,7 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
                 new SolrConfig(),
                 new SqlStoreConfig(),
                 new PlanBConfig(),
+                new GraphDbConfig(),
                 new StatisticsConfig(),
                 new StoredQueryConfig(),
                 new StroomPathConfig(),
@@ -320,6 +324,7 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
                      @JsonProperty(PROP_NAME_SOLR) final SolrConfig solrConfig,
                      @JsonProperty(PROP_NAME_SQL_STORE) final SqlStoreConfig sqlStoreConfig,
                      @JsonProperty(PROP_NAME_PLANB) final PlanBConfig planBConfig,
+                     @JsonProperty(PROP_NAME_GRAPHDB) final GraphDbConfig graphDbConfig,
                      @JsonProperty(PROP_NAME_STATISTICS) final StatisticsConfig statisticsConfig,
                      @JsonProperty(PROP_NAME_QUERY_HISTORY) final StoredQueryConfig storedQueryConfig,
                      @JsonProperty(PROP_NAME_PATH) final StroomPathConfig pathConfig,
@@ -377,6 +382,7 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
         this.solrConfig = solrConfig;
         this.sqlStoreConfig = sqlStoreConfig;
         this.planBConfig = planBConfig;
+        this.graphDbConfig = graphDbConfig;
         this.statisticsConfig = statisticsConfig;
         this.storedQueryConfig = storedQueryConfig;
         this.pathConfig = pathConfig;
@@ -660,6 +666,12 @@ public class AppConfig extends AbstractConfig implements IsStroomConfig {
     @JsonPropertyDescription("Configuration for the stroom Plan B state service")
     public PlanBConfig getPlanBConfig() {
         return planBConfig;
+    }
+
+    @JsonProperty(PROP_NAME_GRAPHDB)
+    @JsonPropertyDescription("Configuration for the stroom Graph DB service")
+    public GraphDbConfig getGraphDbConfig() {
+        return graphDbConfig;
     }
 
     @JsonProperty(PROP_NAME_STATISTICS)

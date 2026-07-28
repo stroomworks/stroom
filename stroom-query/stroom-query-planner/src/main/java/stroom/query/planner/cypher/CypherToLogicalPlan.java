@@ -24,9 +24,9 @@ import stroom.query.api.ExpressionTerm.Condition;
 import stroom.query.grammar.ast.AstPosition;
 import stroom.query.grammar.ast.cypher.AstAggregateExpr;
 import stroom.query.grammar.ast.cypher.AstAggregateFunction;
+import stroom.query.grammar.ast.cypher.AstAndExpr;
 import stroom.query.grammar.ast.cypher.AstArithmeticExpr;
 import stroom.query.grammar.ast.cypher.AstArithmeticOp;
-import stroom.query.grammar.ast.cypher.AstAndExpr;
 import stroom.query.grammar.ast.cypher.AstAround;
 import stroom.query.grammar.ast.cypher.AstAsOf;
 import stroom.query.grammar.ast.cypher.AstBetween;
@@ -40,16 +40,16 @@ import stroom.query.grammar.ast.cypher.AstCypherQuery;
 import stroom.query.grammar.ast.cypher.AstCypherStatement;
 import stroom.query.grammar.ast.cypher.AstDiff;
 import stroom.query.grammar.ast.cypher.AstDiffAccessorExpr;
-import stroom.query.grammar.ast.cypher.AstExistsPredicate;
 import stroom.query.grammar.ast.cypher.AstDiffSide;
 import stroom.query.grammar.ast.cypher.AstEdgeDirection;
 import stroom.query.grammar.ast.cypher.AstEdgePattern;
+import stroom.query.grammar.ast.cypher.AstExistsPredicate;
 import stroom.query.grammar.ast.cypher.AstExpression;
 import stroom.query.grammar.ast.cypher.AstFunctionValue;
 import stroom.query.grammar.ast.cypher.AstInPredicate;
 import stroom.query.grammar.ast.cypher.AstIsNullPredicate;
-import stroom.query.grammar.ast.cypher.AstLiteralExpr;
 import stroom.query.grammar.ast.cypher.AstListValue;
+import stroom.query.grammar.ast.cypher.AstLiteralExpr;
 import stroom.query.grammar.ast.cypher.AstMatch;
 import stroom.query.grammar.ast.cypher.AstNodePattern;
 import stroom.query.grammar.ast.cypher.AstNotExpr;
@@ -166,17 +166,6 @@ public final class CypherToLogicalPlan {
     private int anonymousVariableCounter;
 
     /**
-     * <b>Preconditions:</b> {@code query} is not null.
-     * <b>Postconditions:</b> returns a plan whose leaves reference the graph datasource (a {@link NodeScan}),
-     * with the query's resolved temporal context (if any) alongside it.
-     * <b>Null status:</b> neither the parameter nor the return value is nullable.
-     *
-     * @param query the parsed Cypher query.
-     * @return never null.
-     * @throws CypherCompileException if {@code query} is outside the compiled shape described in this class's
-     *                                 Javadoc.
-     */
-    /**
      * Compiles a whole statement - one or more single queries combined with {@code UNION} / {@code UNION ALL} -
      * into a {@link CompiledCypherStatement}. Each branch is compiled by {@link #compile(AstCypherQuery)}; a
      * multi-branch (UNION) statement additionally requires every branch to expose the same output column names and
@@ -215,6 +204,17 @@ public final class CypherToLogicalPlan {
         return plan.outputFields().stream().map(ProjectField::name).toList();
     }
 
+    /**
+     * <b>Preconditions:</b> {@code query} is not null.
+     * <b>Postconditions:</b> returns a plan whose leaves reference the graph datasource (a {@link NodeScan}),
+     * with the query's resolved temporal context (if any) alongside it.
+     * <b>Null status:</b> neither the parameter nor the return value is nullable.
+     *
+     * @param query the parsed Cypher query.
+     * @return never null.
+     * @throws CypherCompileException if {@code query} is outside the compiled shape described in this class's
+     *                                 Javadoc.
+     */
     public CompiledCypherPlan compile(final AstCypherQuery query) {
         Objects.requireNonNull(query, "query");
 
@@ -392,7 +392,6 @@ public final class CypherToLogicalPlan {
 
         // --- stage one: the MATCH pattern, its pre-WHERE, then the WITH's projection/aggregation ---
         LogicalPlan plan = compilePattern(match.pattern()).plan();
-        TemporalContext temporalContext = match.temporal() == null ? null : resolveTemporal(match.temporal());
 
         List<FieldComparison> fieldComparisons = List.of();
         List<CypherExists> existsPredicates = List.of();
@@ -426,6 +425,8 @@ public final class CypherToLogicalPlan {
         final List<ProjectField> finalFields = buildProjectFields(finalReturn);
 
         final WithStage secondStage = new WithStage(stageColumns, having, finalFields, finalReturn.distinct());
+        final TemporalContext temporalContext =
+                match.temporal() == null ? null : resolveTemporal(match.temporal());
         return new CompiledCypherPlan(
                 plan, temporalContext, false, withAggregation, null, false, fieldComparisons, existsPredicates,
                 secondStage);

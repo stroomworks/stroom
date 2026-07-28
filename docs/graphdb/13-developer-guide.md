@@ -36,10 +36,59 @@ self-contained.
 | `GraphInEdgeDb` | The in-edge mirror. **Callers must dual-write** — this is the easiest invariant to break |
 | `GraphPropertyIndex` | (label, property key, value) → node. The only seekable access path |
 | `GraphPropsCodec` | Property map ↔ blob |
-| `GraphStoreManager` | Per-UUID registry of open stores; resolves `<app path>/graphdb/<uuid>` |
+| `GraphStoreManager` | Per-UUID registry of open stores; resolves `<graphdb.path>/shards/<uuid>` |
+| `GraphSchemaDb` | The `graph-info` table: the store's format stamp, and the persisted hash-clash counter |
+| `GraphAnchorEncoding` | The single definition of how a property value becomes property-index key bytes |
 
 Key widths are fixed (`NODE_UID_WIDTH = 6`, `TYPE_UID_WIDTH = 4`) because prefix range scans depend on
 it — a variable-width key would break every traversal. Physical layouts are in each class's Javadoc.
+
+### Cluster layer — `stroom.graphdb.impl`
+
+| Class | Role |
+|---|---|
+| `GraphShardWriters` | Creates the per-stream fragment ingest writes into; ships and deletes it on close |
+| `GraphFileTransferClient` / `…ClientImpl` | Replicates a fragment to every node in `graphdb.nodeList` |
+| `GraphFileTransferResource` / `…ResourceImpl` | `/graphFileTransfer/v1/sendPart` — receives a fragment |
+| `GraphPartDestination` | Lands a fragment (local or remote) and hands it to the merge processor |
+| `GraphMergeProcessor` | Merges staged fragments into each graph's authoritative store |
+| `GraphQueryNodeResolverImpl` | Pins a graph query to a node that holds graph data |
+| `GraphPaths` / `GraphDbConfig` | The directory layout and the two settings that drive it |
+
+The receive-stage-unzip-merge loop itself is **not** here: it is
+`stroom.planb.impl.data.PartMergeProcessor`, shared with Plan B. It lives in Plan B's package because
+`DirQueue` and `Dir` have package-private constructors and their durable, restart-recoverable, id-ordered
+queue semantics are the substance of what is being reused. Plan B's `MergeProcessor` is a thin façade over
+the same engine.
+
+### The store format stamp — read before changing any layout
+
+`GraphSchemaDb` records a `CURRENT_SCHEMA_VERSION` plus a textual description of the key and value layouts in
+a `graph-info` table. It is validated when a store is opened for writing and again before a merge, and a
+mismatch **refuses the operation** rather than proceeding.
+
+**If you change any of the following, bump `CURRENT_SCHEMA_VERSION`:** either UID width, the time serde, any
+of the four key layouts, the property-index tier format or its DIRECT length limit, or the props codec.
+
+There is deliberately **no migration path**. Existing graph data is treated as reproducible — a store written
+by a different build is wiped and rebuilt (`GraphStores.rebuild()`, or by reprocessing the source streams).
+The stamp exists so that a layout change fails loudly at open time instead of reading old bytes as though they
+were new ones and returning wrong answers silently.
+
+### Merge — what makes it correct
+
+Worth understanding before touching it, because two of its properties are load-bearing and neither is obvious:
+
+- **No byte-copy fast path exists.** Every key embeds fragment-local interned ids, so every row is decoded,
+  translated through a per-namespace id map and re-encoded.
+- **The property index is rebuilt, never row-copied.** Its hash-tier keys carry clash-sequence suffixes that
+  are meaningful only in the store that assigned them, so copying a hash-tier row into another store is
+  incorrect rather than merely slow. Rebuilding also reuses the ingest encoding path, which is why both sides
+  go through `GraphAnchorEncoding`.
+- **Merge is idempotent by construction** — id interning is get-or-create, no timestamp is generated during
+  merge, and index puts are same-key. Preserve this: it is what makes a fragment delivered twice harmless.
+- **Out-edge and in-edge rows for one edge are written between commit boundaries**, so an auto-commit can
+  never split a pair and leave a one-sided edge.
 
 ### Query layer
 

@@ -629,12 +629,10 @@ class JoinSearchProvider implements SearchProvider {
      * owns destroying it. On any failure opening or awaiting the store, it is destroyed before the exception
      * propagates, so no store leaks.</p>
      *
-     * @throws stroom.query.planner.join.JoinLimitExceededException if {@code sideRequest} is a graph (Task C4,
-     *                                                                docs/graphdb-stroomql-join-implementation-
-     *                                                                plan.md, Phase P4) side whose realised row
-     *                                                                count exceeds {@link
-     *                                                                JoinConfig#getMaxSideRows} - see
-     *                                                                {@link #checkGraphSideRowCap}.
+     * @throws stroom.query.planner.join.JoinLimitExceededException if {@code sideRequest} is a graph side whose
+     *                                                              realised row count exceeds
+     *                                                              {@link JoinConfig#getMaxSideRows} - see
+     *                                                              {@link #checkGraphSideRowCap}.
      */
     private OpenedSide openSide(final SearchRequest sideRequest, final JoinConfig joinConfig) {
         final DocRef dataSourceRef = sideRequest.getQuery().getDataSource();

@@ -4,6 +4,7 @@
                 xmlns:xs="http://www.w3.org/2001/XMLSchema"
                 xmlns:evt="event-logging:3"
                 xmlns:gm="graph-mutation:1"
+                xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
                 xmlns="graph-mutation:1"
                 exclude-result-prefixes="evt xs gm">
 
@@ -17,7 +18,11 @@
        ============================================================ -->
 
   <xsl:template match="/evt:Events">
-    <graph version="1.0">
+    <!-- xsi:schemaLocation is required, not decorative: a SchemaFilter placed before the Graph Filter rejects a
+         document that does not declare where its namespace's schema is, so a translation that omits it cannot be
+         validated at all. The system id must match the one the XMLSchema document is registered under. -->
+    <graph version="1.0"
+           xsi:schemaLocation="graph-mutation:1 graph-mutation-v1.0.xsd">
       <!-- Pass 1: every node reference any event implies. -->
       <xsl:variable name="refs" as="element(gm:ref)*">
         <xsl:apply-templates select="evt:Event" mode="nodes"/>

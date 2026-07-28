@@ -22,6 +22,7 @@ import stroom.graphdb.impl.pipeline.GraphElementModule;
 import stroom.graphdb.shared.GraphDbDoc;
 import stroom.job.api.ScheduledJobsBinder;
 import stroom.planb.shared.RetentionSettings;
+import stroom.query.api.QueryNodeResolver;
 import stroom.query.api.datasource.DataSourceProvider;
 import stroom.query.common.v2.IndexFieldProvider;
 import stroom.query.common.v2.SearchProvider;
@@ -57,6 +58,7 @@ public class GraphDbModule extends AbstractModule {
 
         bind(GraphDbDocCache.class).to(GraphDbDocCacheImpl.class);
         bind(GraphStoreManager.class).to(GraphStoreManagerImpl.class);
+        bind(GraphFileTransferClient.class).to(GraphFileTransferClientImpl.class);
 
         GuiceUtil.buildMultiBinder(binder(), EntityEvent.Handler.class)
                 .addBinding(GraphDbDocCacheImpl.class);
@@ -68,7 +70,12 @@ public class GraphDbModule extends AbstractModule {
                 .bind(GraphDbDoc.TYPE, GraphDbDocStore.class, GraphDbDocStoreImpl.class);
 
         RestResourcesBinder.create(binder())
-                .bind(GraphDbResourceImpl.class);
+                .bind(GraphDbResourceImpl.class)
+                .bind(GraphFileTransferResourceImpl.class);
+
+        // Read-side cluster correctness: pins a graph query to a node that actually holds graph data.
+        GuiceUtil.buildMultiBinder(binder(), QueryNodeResolver.class)
+                .addBinding(GraphQueryNodeResolverImpl.class);
 
         bind(GraphStoreStats.class).to(GraphStoreStatsAdapter.class);
 
@@ -90,6 +97,23 @@ public class GraphDbModule extends AbstractModule {
                         .description("Graph DB retention")
                         .cronSchedule(CronExpressions.EVERY_10_MINUTES.getExpression())
                         .advanced(true));
+
+        // Starts the merge loops if they are not already running, so a restart resumes any queued fragments. The
+        // loops then run continuously; the schedule exists to (re)start them, not to pace them.
+        ScheduledJobsBinder.create(binder())
+                .bindJobTo(GraphMergeRunnable.class, builder -> builder
+                        .name(GraphMergeProcessor.MERGE_TASK_NAME)
+                        .description("Graph DB fragment merge")
+                        .cronSchedule(CronExpressions.EVERY_MINUTE.getExpression())
+                        .advanced(true));
+    }
+
+    private static class GraphMergeRunnable extends RunnableWrapper {
+
+        @Inject
+        GraphMergeRunnable(final GraphMergeProcessor graphMergeProcessor) {
+            super(graphMergeProcessor::merge);
+        }
     }
 
     private static class GraphRetentionRunnable extends RunnableWrapper {

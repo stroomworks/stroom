@@ -18,6 +18,7 @@ package stroom.query.impl;
 
 import stroom.docstore.api.DocumentStoreBinder;
 import stroom.event.logging.api.ObjectInfoProviderBinder;
+import stroom.query.api.QueryNodeResolver;
 import stroom.query.api.datasource.QueryFieldProvider;
 import stroom.query.language.AlternativeQueryCompiler;
 import stroom.query.language.DispatchingQueryCompiler;
@@ -48,6 +49,13 @@ public class QueryModule extends AbstractModule {
         // stroom-graphdb-impl's GraphDbModule, contributes a binding) - QueryServiceImpl's dispatch seam needs no
         // compile-time dependency on any specific alternative-language module.
         GuiceUtil.buildMultiBinder(binder(), AlternativeQueryCompiler.class);
+
+        // Every feature whose stores live on a subset of nodes contributes a resolver here; the composite takes
+        // the first non-null answer. Declared (possibly empty) in this always-installed module so the two
+        // injection sites resolve whether or not any feature contributes.
+        GuiceUtil.buildMultiBinder(binder(), QueryNodeResolver.class);
+        bind(QueryNodeResolver.class).to(CompositeQueryNodeResolver.class);
+
         bind(FieldInfoSource.class).to(FieldInfoSourceAdapter.class);
         bind(MetaStats.class).to(MetaStatsAdapter.class);
         // NoOp placeholders - Task 3.1 deferred the real adapters (a dependency-cycle finding: they must live

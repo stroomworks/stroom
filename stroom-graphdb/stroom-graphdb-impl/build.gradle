@@ -19,6 +19,7 @@ ext.moduleName = 'stroom.graphdb.impl'
 dependencies {
     implementation project(':stroom-bytebuffer')
     implementation project(':stroom-cache:stroom-cache-api')
+    implementation project(':stroom-cluster:stroom-cluster-task-api')
     implementation project(':stroom-core-shared')
     implementation project(':stroom-docref')
     implementation project(':stroom-docstore:stroom-docstore-api')
@@ -27,6 +28,7 @@ dependencies {
     implementation project(':stroom-importexport:stroom-importexport-api')
     implementation project(':stroom-job:stroom-job-api')
     implementation project(':stroom-lmdb')
+    implementation project(':stroom-node:stroom-node-api')
     implementation project(':stroom-pipeline')
     implementation project(':stroom-planb:stroom-planb-impl')
     implementation project(':stroom-query:stroom-query-api')
@@ -35,15 +37,21 @@ dependencies {
     implementation project(':stroom-query:stroom-query-language')
     implementation project(':stroom-query:stroom-query-planner')
     implementation project(':stroom-security:stroom-security-api')
+    implementation project(':stroom-task:stroom-task-api')
     implementation project(':stroom-util')
     implementation project(':stroom-util-shared')
 
+    implementation libs.commons.compress
+    implementation libs.dropwizard.metrics.core
     implementation libs.guice
+    implementation libs.jakarta.annotation.api
     implementation libs.jspecify
     implementation libs.lmdbjava
     implementation libs.restygwt
     implementation libs.saxon.he
     implementation libs.slf4j.api
+    implementation libs.swagger.annotations
+    implementation libs.ws.rs.api
 
     testImplementation project(':stroom-cache:stroom-cache-impl')
     testImplementation project(':stroom-security:stroom-security-mock')

@@ -572,6 +572,9 @@ appConfig:
         prepStmtCacheSize: 25
         prepStmtCacheSqlLimit: 256
     localDir: "git_repo"
+  graphdb:
+    nodeList: []
+    path: "graphdb"
   haltBootOnConfigValidationFailure: true
   index:
     db:
@@ -812,6 +815,12 @@ appConfig:
     path: "planb"
     snapshotRetryFetchInterval: "PT1M"
     stateDocCache:
+      expireAfterAccess: null
+      expireAfterWrite: "PT10M"
+      maximumSize: 1000
+      refreshAfterWrite: null
+      statisticsMode: "INTERNAL"
+    stateValueCache:
       expireAfterAccess: null
       expireAfterWrite: "PT10M"
       maximumSize: 1000

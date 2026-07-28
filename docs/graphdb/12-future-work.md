@@ -24,44 +24,42 @@ acted on, it should be this one.
 
 | # | Item | Why | Difficulty | Risk |
 |---|---|---|---|---|
-| **0** | **Cluster-correct ingest** — adopt Plan B's build-then-merge write path so every mutation reaches one authoritative store regardless of which node processed the stream | **The only blocker that makes answers wrong rather than merely constrained.** In a cluster a graph fragments silently and no configuration can prevent it. See [Correctness across a cluster](#correctness-across-a-cluster) | Hard | Medium — the machinery and the tricky part both exist in Plan B already |
-| 1 | **A configuration surface** — a `GraphDbConfig` covering store size, retention defaults and the traversal guardrails | Today an administrator has no controls at all. Every limit is a `private static final` | Medium | Low |
+| ~~**0**~~ | ~~**Cluster-correct ingest**~~ — **done.** Ingest writes a per-stream fragment, which is replicated to every node in `graphdb.nodeList` and merged there | Was the only blocker that made answers wrong rather than merely constrained. See [Correctness across a cluster](#correctness-across-a-cluster) | Hard | — |
+| 1 | **A fuller configuration surface** — extend `GraphDbConfig` to cover store size, retention defaults and the traversal guardrails | `GraphDbConfig` now exists with `path` and `nodeList` only. Every limit is still a `private static final` | Medium | Low |
 | 2 | **Tunable store size** — stop passing no size override, expose it per document or globally | The fixed 10 GiB cap is the hardest ceiling in the system, and unmovable | Easy | Low |
 | 3 | **Loud ingest failures** — a strict mode that fails a stream rather than skipping records, plus schema validation | Silent partial data loss is the most dangerous current behaviour | Medium | Low |
 | 4 | **Version condensing and compaction** — merge redundant identical versions, and compact in place | Storage grows monotonically even with retention on. Plan B performs both as scheduled maintenance and is a working template; Graph DB does neither | Medium | Medium |
 | 5 | **Retention for the property index** — include it and the property-key table in the sweep | The index grows without bound regardless of retention | Medium | Medium |
 | 6 | **Compaction without source streams** — an in-place rebuild that does not depend on reprocessing | Rebuild silently stops being possible once source streams age off | Hard | High |
-| 7 | **A `GraphDb` node resolver** — route every graph query to the node holding the authoritative store | The second half of cluster correctness. **Necessary but not sufficient**: without blocker 0 it only makes answers consistently incomplete rather than randomly incomplete. The routing hook is already generic; only the resolver is Plan-B-specific | Medium | Low — additive, and the seam exists |
+| ~~7~~ | ~~**A `GraphDb` node resolver**~~ — **done.** `QueryNodeResolver` is now a multibinder behind a composite, and `GraphQueryNodeResolverImpl` pins graph queries to a configured node | The second half of cluster correctness, shipped together with blocker 0 — alone it would only have made answers consistently incomplete | Medium | — |
 | 8 | **Ship the XSD** as an XMLSchema document so a `SchemaFilter` can validate in-pipeline | It exists only as a test resource today | Easy | Low |
 
 ## Correctness across a cluster
 
-**This is the highest priority item on this page.** Everything else here is a limitation you can work around
-once you know about it. This one produces answers that are wrong while reporting themselves as complete, which
-cannot be worked around at all.
+**This was the highest priority item on this page and it has been done.** The section is kept because the
+reasoning it records is what constrains any future change here — in particular, why partitioning a graph across
+nodes is not a cheap follow-on.
 
-### What is wrong today
+### What was wrong
 
-Graph DB writes to the local node and reads from the local node. In a multi-node Stroom, stream processing is
-distributed, so each node accumulates only the fragment built from the streams it happened to handle, and a
-query returns only that fragment. No error, no warning, no partial-result indicator.
+Graph DB wrote to the local node and read from the local node. In a multi-node Stroom, stream processing is
+distributed, so each node accumulated only the fragment built from the streams it happened to handle, and a
+query returned only that fragment. No error, no warning, no partial-result indicator. There was no
+configuration-level mitigation either: Stroom cannot pin a pipeline to a node.
 
-There is **no configuration-level mitigation**: Stroom cannot pin a pipeline to a node, and `GraphDbDoc` has
-no placement setting ([11-operations.md](11-operations.md#scaling-and-clustering)). Today the only way to get
-trustworthy answers is to run graph workloads on a single-node Stroom.
-
-### What correctness requires
+### What correctness required, and how it was met
 
 Two conditions, both necessary — the reasoning is in
-[02-architecture.md](02-architecture.md#why-fanning-queries-out-would-not-fix-it):
+[02-architecture.md](02-architecture.md#why-fanning-queries-out-would-not-have-fixed-it):
 
-| | Requirement | How | Difficulty | Risk |
-|---|---|---|---|---|
-| 1 | **Every mutation reaches one authoritative store** | Plan B's build-then-merge ingest: write a local fragment, ship it to the writer node, merge it in | Hard | Medium |
-| 2 | **Every query runs against a complete copy** | A `GraphDb` node resolver routing to the writer, or a whole-copy snapshot | Medium | Low |
+| | Requirement | How it was met |
+|---|---|---|
+| 1 | **Every mutation reaches one authoritative store** | Build-then-merge ingest: the Graph Filter writes a per-stream fragment, which is shipped to every node in `graphdb.nodeList` and merged into that node's store |
+| 2 | **Every query runs against a complete copy** | `GraphQueryNodeResolverImpl` pins a graph query to a configured node; because replication is full, any of them is a complete copy |
 
-**Do not ship (2) alone and call it done.** Routing every query to one node while writes remain spread across
-the cluster converts a random wrong answer into a consistent wrong answer. More debuggable, equally incorrect.
+Shipping (2) alone would not have been a fix: routing every query to one node while writes remained spread
+across the cluster converts a random wrong answer into a consistent wrong answer — more debuggable, equally
+incorrect. Both landed together for that reason.
 
 ### Why fan-out is not an option
 
@@ -74,14 +72,17 @@ partitioning breaks it** — the inverse of the usual intuition.
 That is why Plan B's snapshot model is the right shape here despite buying no extra capacity, and why
 Lucene-style sharding is the one thing a graph cannot borrow.
 
-### The good news
+### What remains, and what it cost
 
-The hard part is already solved in Plan B. Merging stores whose keys embed locally-assigned UIDs is the
-subtle problem — and `SessionDb.merge` and `MetricDb.merge` show the idiom, with `validateSchema` guarding
-incompatible merges. See
-[the architectural note](#architectural-note-how-far-up-the-plan-b-stack-should-graph-db-sit). What remains
-is applying it across ten co-indexed tables and generalising `Shard` beyond one `Db` per document: real work,
-but not research.
+Not done, and deliberately: **snapshots** (a node either holds graph data or is routed away from),
+**partitioning** one graph across nodes, and **load-balanced routing** — the first configured node is always
+chosen, so a wrong answer is at least reproducible.
+
+Two findings worth keeping. First, the subtle part was merging stores whose keys embed locally-assigned ids;
+`SessionDb.merge` and `MetricDb.merge` showed the idiom, but graph keys have no byte-copy fast path at all, and
+the property index cannot be row-copied because its hash-tier keys carry clash-sequence suffixes local to the
+store that assigned them. Second, `Shard` did not need generalising: the merge engine was extracted from Plan
+B's `MergeProcessor` as `PartMergeProcessor` and parameterised, leaving Plan B behind a façade.
 
 
 ## Capacity and scale
@@ -128,15 +129,15 @@ wrong seam; the `Shard`/merge level is the one worth considering.
    logical map. A graph is ten co-indexed tables with cross-table invariants, notably the out-edge/in-edge
    dual write. `Shard` would need generalising to a composite, or `GraphStores` implementing it as a facade
    over its tables.
-2. **The write models are opposite.** Plan B ingests by *build-then-merge*: a pipeline writes a local
-   temporary LMDB fragment, which is zipped, transferred to the writer node, and folded in by
-   `MergeProcessor` calling `shard.merge(path)`. The Graph Filter instead writes **directly** into the
-   target environment, one record at a time.
+2. ~~**The write models are opposite.**~~ **No longer true.** Plan B ingests by *build-then-merge*, and Graph
+   DB now does the same: the Graph Filter writes a per-stream fragment which is shipped and merged. This was
+   the root cause of the cluster fragmentation described in
+   [02-architecture.md](02-architecture.md#how-a-graph-spans-a-cluster) — writes went straight to local
+   storage, so there was no transportable artefact to merge centrally.
 
-That second point is the root cause of the fragmentation described in
-[02-architecture.md](02-architecture.md#graph-db-is-single-node): Graph DB fragments in a cluster precisely
-*because* its writes go straight to local storage. Plan B does not, because a fragment is a transportable
-artefact that can be produced anywhere and merged centrally.
+Only the first mismatch remains, and it turned out not to need solving either: rather than generalising
+`Shard`, the merge *engine* was extracted from `MergeProcessor` as `PartMergeProcessor` and parameterised, so
+Graph DB reuses the lifecycle without adopting `Shard` at all.
 
 #### The obstacle that turns out not to be one
 
@@ -149,28 +150,32 @@ UIDs. A byte-level merge would silently corrupt the store.
 serde and re-encode through the *target* store's serde; where it does not, copy the bytes directly. `MetricDb.merge`
 does the same, with a `validateSchema` guard against merging incompatible stores.
 
-So the deep problem is a solved pattern. Applying it across ten tables is work, not research. The temporal
+So the deep problem was a solved pattern. Applying it across ten tables was work, not research. The temporal
 model merges naturally too: versions are distinct `validFrom`-suffixed keys, so a merge is a union needing no
 reconciliation.
 
-#### Recommended order
+Two things turned out differently from that prediction, and both are worth recording:
 
-Directionally yes — but the sequencing matters more than the destination, because the valuable fixes do not
-require any of it:
+- Graph keys have **no byte-copy fast path at all**, because every one of them embeds an interned id. Plan B's
+  idiom applies, but to every row rather than to a subset.
+- The property index **cannot be merged by copying rows**, even for identical values, because its hash-tier
+  keys carry clash-sequence suffixes local to the store that assigned them. It is rebuilt from the merged node
+  rows instead, which has the side benefit of reusing the ingest encoding path.
 
-1. **Tunable store size and a `GraphDb` node resolver.** Neither needs `Shard`. Together they lift the hard
-   ceiling and remove silent fragmentation.
-2. **`condense` and `compact` on `GraphStores`**, using Plan B's implementations as a template. Note these
-   are *separable* from clustering — bounded storage does not require the merge rewrite.
-3. **The merge-based write path**, and only if multi-node ingest is a firm requirement. This is the expensive
-   part and the only part that genuinely needs `Shard` generalised.
+#### What was actually done
 
-**Staying single-node remains a legitimate choice.** If graphs stay modest, making the constraint explicit
-and supported costs far less than adopting the shard model, and steps 1 and 2 make it respectable.
+The merge-based write path was taken, and `Shard` was **not** generalised. Instead the merge lifecycle was
+extracted out of `MergeProcessor` into a parameterised `PartMergeProcessor` that both features drive, leaving
+Plan B behind a behaviour-preserving façade. Graph DB never adopts `Shard`, so the "one `Db` per document"
+mismatch simply does not arise.
 
-The strongest argument for going further: the merge model is what makes ingest cluster-safe, and that is
-awkward to retrofit. If multi-node ingest is a firm requirement rather than a possibility, doing it before
-there is production data is considerably cheaper than after.
+What remains from the original ordering:
+
+1. **Tunable store size.** Does not need `Shard`; lifts the hardest ceiling in the system.
+2. **`condense` and `compact` on `GraphStores`**, using Plan B's implementations as a template. Separable from
+   clustering — bounded storage does not require anything above.
+3. **Snapshots**, and only if a node that holds no graph data needs to serve graph queries locally rather than
+   being routed away from. This is read scaling and locality, not correctness.
 
 
 ## Integration with the rest of Stroom
@@ -219,8 +224,9 @@ behind it.
 
 | Item | Why | Difficulty | Risk |
 |---|---|---|---|
-| **Typed property values** — numbers, booleans, dates natively | Everything is a string, so ordering is lexical and comparison needs conversion. The single biggest usability gap | Hard | High — changes the storage format and needs a migration |
-| **A real list type** so `collect()` returns a list | It returns a comma-joined string, which silently misleads anyone from Neo4j | Medium | Medium — needs a new value type through the whole stack |
+| ~~**Typed property values**~~ — **partly done.** `long` and `boolean` are available via `<property type="…">` | Every value's type used to be `STRING` regardless of what it held | Medium | — |
+| **Typed `double` and date property values** | The two types the above deliberately left out. Blocked on anchor encoding, not on effort: the equality index is keyed on a value's rendered text and a query seeks the literal's own text, so a type whose canonical rendering differs from what an author would write silently finds nothing. `42.0` renders as `42` | Medium | **Medium — needs a design decision first.** Two viable routes: (a) a canonical encoder shared by the ingest, merge and query sides, so all three agree on `42.0` ≡ `42`; (b) index both the raw and canonical forms, which removes the false negative at the cost of extra index entries — but merge only sees decoded values, so the raw form would have to be stored to survive it. Route (a) is cleaner and the reason it was not simply done now |
+| **A real list type** so `collect()` returns a list | It returns a comma-joined string, which silently misleads anyone from Neo4j | Medium | Medium — **cheaper than previously framed:** renderers need no change, since they all stringify. The cost is the sealed `Val` hierarchy and the serialiser, not a ripple through the stack. Note the inherited cap: `ValSerialiser.writeArray` limits to 255 elements, which becomes `collect()`'s real ceiling |
 | **Typed values in `graph-mutation`** — a version 1.1 or 2.0 of the ingest vocabulary | Prerequisite for typed properties | Medium | Medium |
 | **Per-property versioning** instead of whole-snapshot versions | Would cut storage growth substantially for wide, slowly-changing nodes | Hard | High |
 
@@ -306,19 +312,20 @@ defends. They are the highest value-per-effort items on the page.
 
 If the goal is a production-capable Graph DB:
 
-1. **Blocker 0 with blocker 7** — cluster-correct ingest and the node resolver, together. This is the only
-   item that makes answers *wrong*, and the two halves are not independently useful: merge without routing
-   leaves queries reading the wrong store, routing without merge makes wrong answers merely consistent.
-   Everything below is a limitation you can document and work around; this one is not.
-2. **Blockers 1, 2, 3, 8** — configuration, tunable size, loud ingest failures, ship the XSD. Mostly easy at
-   low risk, and together they remove the "the operator has no controls and no warning" class of problem.
-   Blocker 3 pairs naturally with blocker 0: one is silent data loss on the way in, the other silent omission
-   on the way out.
+1. ~~**Blocker 0 with blocker 7**~~ — **done.** Cluster-correct ingest and the node resolver, shipped
+   together, along with the store format stamp that guards every later layout change. The two halves were not
+   independently useful: merge without routing leaves queries reading the wrong store, routing without merge
+   makes wrong answers merely consistent. Everything below is a limitation you can document and work around;
+   that one was not.
+2. **Blockers 3 and 8, then 1 and 2** — loud ingest failures and the XSD first, because silent partial data
+   loss on the way in is the same class of problem as the silent omission on the way out that has just been
+   fixed. Then the fuller configuration surface and tunable store size: mostly easy at low risk, and together
+   they remove the "the operator has no controls and no warning" problem.
 3. **Documentation tests** — cheap, and they stop the rest of this set drifting.
 4. **Blockers 4, 5** — condensing, compaction and index retention, so storage is bounded rather than merely
    slowed.
-5. **Typed property values** — the biggest usability win, and best done before there is much data to
-   migrate.
+5. **Typed `double` and date values** — needs the anchor-encoding decision above settled first. `long` and
+   `boolean` are already done.
 6. **Blocker 6** — a compaction path independent of source streams.
 7. **Stream provenance on mutations** (`streamId`/`eventId`) — easy, low risk, and the gate to extraction and
    the thin-graph model. Worth doing early even if the follow-on work is not scheduled, because retrofitting

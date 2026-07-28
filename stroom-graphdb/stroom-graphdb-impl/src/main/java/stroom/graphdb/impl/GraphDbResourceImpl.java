@@ -19,6 +19,8 @@ package stroom.graphdb.impl;
 import stroom.docref.DocRef;
 import stroom.docstore.api.DocumentResourceHelper;
 import stroom.event.logging.rs.api.AutoLogged;
+import stroom.event.logging.rs.api.AutoLogged.OperationType;
+import stroom.graphdb.impl.pipeline.GraphMutationSchema;
 import stroom.graphdb.shared.GraphDbDoc;
 import stroom.graphdb.shared.GraphDbResource;
 import stroom.graphdb.shared.GraphDbSchema;
@@ -53,6 +55,16 @@ class GraphDbResourceImpl implements GraphDbResource, FetchWithUuid<GraphDbDoc> 
         this.documentResourceHelperProvider = documentResourceHelperProvider;
         this.graphSchemaServiceProvider = graphSchemaServiceProvider;
         this.graphExpandServiceProvider = graphExpandServiceProvider;
+    }
+
+    /**
+     * Returns the packaged schema source. Unlogged: it is a static, non-sensitive constant of the build, so an
+     * audit entry per fetch would be noise.
+     */
+    @AutoLogged(OperationType.UNLOGGED)
+    @Override
+    public String fetchMutationSchema() {
+        return GraphMutationSchema.text();
     }
 
     @Override

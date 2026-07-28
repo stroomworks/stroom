@@ -19,11 +19,13 @@ package stroom.graphdb.impl;
 import stroom.bytebuffer.impl6.ByteBufferFactoryImpl;
 import stroom.bytebuffer.impl6.ByteBuffers;
 import stroom.graphdb.shared.GraphDbDoc;
+import stroom.lmdb.serde.UnsignedBytes;
 import stroom.lmdb.serde.UnsignedBytesInstances;
 import stroom.planb.impl.dao.HashClashCommitRunnable;
 import stroom.planb.impl.dao.HashLookupDb;
 import stroom.planb.impl.dao.LmdbWriter;
 import stroom.planb.impl.dao.PlanBEnv;
+import stroom.planb.impl.dao.SchemaInfo;
 import stroom.planb.impl.dao.UidLookupDb;
 import stroom.planb.impl.dao.UidLookupDb.StaticUnsignedBytesFactory;
 import stroom.planb.impl.dao.UidLookupRecorder;
@@ -32,6 +34,8 @@ import stroom.planb.impl.serde.hash.HashFactory;
 import stroom.planb.impl.serde.hash.HashFactoryFactory;
 import stroom.planb.shared.HashLength;
 import stroom.planb.shared.RetentionSettings;
+import stroom.query.language.functions.Val;
+import stroom.util.logging.LogUtil;
 import stroom.util.time.SimpleDurationUtil;
 
 import org.lmdbjava.Txn;
@@ -39,10 +43,15 @@ import org.lmdbjava.Txn;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Stream;
@@ -79,6 +88,32 @@ public final class GraphStores implements AutoCloseable {
      */
     public static final int TYPE_UID_WIDTH = 4;
 
+    /**
+     * The key layouts this build writes, stamped into {@code graph-info} and validated on every writable open and
+     * every merge. Any change to a width, layout or encoding below <b>must</b> be accompanied by a bump to
+     * {@link GraphSchemaDb#CURRENT_SCHEMA_VERSION}, because a stale store would otherwise be silently
+     * reinterpreted rather than rejected.
+     */
+    private static final String KEY_SCHEMA = """
+            {"nodeUidWidth":6,"typeUidWidth":4,"timeSerde":"millisecond6",\
+            "node":"[nodeUid][validFrom]",\
+            "outEdge":"[srcUid][edgeTypeUid][dstUid][validFrom]",\
+            "inEdge":"[dstUid][edgeTypeUid][srcUid][validFrom]",\
+            "propertyIndex":"[labelUid][propertyKeyUid][tierTag][tieredValue][nodeUid]",\
+            "propertyIndexDirectMaxLength":32,"propertyValueHashLength":"LONG"}""";
+
+    /**
+     * The value encodings this build writes. See {@link #KEY_SCHEMA} for the version-bump obligation.
+     */
+    private static final String VALUE_SCHEMA = """
+            {"node":"[tag][labelCount][labelUids][propsBlob]",\
+            "edge":"[tag][propsBlob]","propsCodec":1}""";
+
+    private static final UnsignedBytes NODE_UID_BYTES =
+            UnsignedBytesInstances.ofLength(NODE_UID_WIDTH);
+    private static final UnsignedBytes TYPE_UID_BYTES =
+            UnsignedBytesInstances.ofLength(TYPE_UID_WIDTH);
+
     private static final int MAX_DBS = 32;
 
     private final PlanBEnv env;
@@ -95,6 +130,8 @@ public final class GraphStores implements AutoCloseable {
     private final GraphAdjacencyDb outEdges;
     private final GraphInEdgeDb inEdges;
     private final GraphPropertyIndex propertyIndex;
+    private final GraphSchemaDb schemaDb;
+    private final GraphDbDoc doc;
 
     private GraphStores(final PlanBEnv env,
                         final UidLookupDb nodeUids,
@@ -109,7 +146,9 @@ public final class GraphStores implements AutoCloseable {
                         final GraphNodeDb nodes,
                         final GraphAdjacencyDb outEdges,
                         final GraphInEdgeDb inEdges,
-                        final GraphPropertyIndex propertyIndex) {
+                        final GraphPropertyIndex propertyIndex,
+                        final GraphSchemaDb schemaDb,
+                        final GraphDbDoc doc) {
         this.env = env;
         this.nodeUids = nodeUids;
         this.labelUids = labelUids;
@@ -124,6 +163,8 @@ public final class GraphStores implements AutoCloseable {
         this.outEdges = outEdges;
         this.inEdges = inEdges;
         this.propertyIndex = propertyIndex;
+        this.schemaDb = schemaDb;
+        this.doc = doc;
     }
 
     /**
@@ -213,15 +254,246 @@ public final class GraphStores implements AutoCloseable {
             final GraphInEdgeDb inEdges = new GraphInEdgeDb(env);
             final GraphPropertyIndex propertyIndex = new GraphPropertyIndex(
                     env, propertyValueUids, propertyValueHashes);
+
+            // Stamp/validate the on-disk format last, so a mismatch is raised only once every table this build
+            // expects has opened cleanly - a store missing a table is a different, louder failure.
+            final GraphSchemaDb schemaDb = new GraphSchemaDb(
+                    env,
+                    byteBuffers,
+                    doc,
+                    new SchemaInfo(GraphSchemaDb.CURRENT_SCHEMA_VERSION, KEY_SCHEMA, VALUE_SCHEMA),
+                    hashClashCommitRunnable);
+
             return new GraphStores(
                     env, nodeUids, labelUids, edgeTypeUids, propertyKeyUids,
                     nodeUidRecorder, labelUidRecorder, edgeTypeUidRecorder, propertyKeyUidRecorder,
                     propertyValueRecorder,
-                    nodes, outEdges, inEdges, propertyIndex);
+                    nodes, outEdges, inEdges, propertyIndex, schemaDb, doc);
         } catch (final RuntimeException e) {
             env.close();
             throw e;
         }
+    }
+
+    /**
+     * Merges a fragment - a complete, self-contained graph store written elsewhere - into this store.
+     *
+     * <p>This is what makes Graph DB correct on a cluster: whichever node processes a stream writes a private
+     * fragment, and every fragment is merged into one authoritative store. It cannot be a byte-level copy,
+     * because <b>every</b> graph key embeds interned UIDs that are allocated per-environment, so the same UID
+     * means different things in two stores. Each row is therefore rewritten through a per-namespace translation
+     * map built from the fragment's own interning tables.</p>
+     *
+     * <p>Three properties this method must preserve, each easy to break:</p>
+     * <ul>
+     *   <li><b>Idempotency.</b> Re-merging a fragment is a no-op. Interning is get-or-create, node/edge inserts
+     *   carry no wall-clock stamp, and the property index is keyed without a time component, so replaying a
+     *   fragment re-writes byte-identical rows. This is what makes a partially-sent fragment safe to resend, so
+     *   do not introduce any aggregation or {@code Instant.now()} into this path.</li>
+     *   <li><b>Edge pair atomicity.</b> A logical edge lives in two tables with no cross-table transaction, so
+     *   both rows are written before {@link LmdbWriter#tryCommit()} is given the chance to flush. A commit
+     *   boundary between them would let a crash leave a half-edge, and traversal would then disagree forwards
+     *   versus backwards.</li>
+     *   <li><b>Buffer lifetime.</b> Buffers handed out by the source environment are valid only for the call
+     *   they arrive in, and writing to the target can move pages. Anything crossing from source to target is
+     *   copied first.</li>
+     * </ul>
+     *
+     * <p>The property index is <b>rebuilt</b> from the merged node versions rather than copied. Its keys embed
+     * both a node UID and a tiered encoding of the value, and the hash tier's keys carry clash-sequence
+     * suffixes that are only meaningful in the store that allocated them - so copying its rows would be wrong,
+     * not merely slow. Rebuilding also reuses the same insert path ingest uses, so tiering and clash handling
+     * cannot drift between the two.</p>
+     *
+     * <p><b>Preconditions:</b> {@code sourceDir} holds a graph store written by this build for the same document,
+     * and is not open elsewhere. This store is writable.
+     * <b>Postconditions:</b> every node version, edge version and derived property-index anchor in the fragment
+     * is present in this store. The fragment is left on disk for the caller to delete.
+     * <b>Null status:</b> {@code sourceDir} is not nullable.
+     *
+     * @param sourceDir the fragment to merge.
+     * @throws RuntimeException if the fragment's format stamp does not match this store's.
+     */
+    public void merge(final Path sourceDir) {
+        Objects.requireNonNull(sourceDir, "sourceDir must not be null");
+
+        try (GraphStores source = GraphStores.open(sourceDir, doc, true)) {
+            // Refuse a fragment written by different code before touching this store at all.
+            validateForMerge(source.getSchemaInfo());
+
+            write(writer -> {
+                source.read(sourceTxn -> {
+                    // Interning first: everything below translates through these.
+                    final Map<Long, Long> nodeUidMap =
+                            translateNamespace(source.nodeUids, nodeUids, sourceTxn, writer, NODE_UID_BYTES);
+                    final Map<Long, Long> labelUidMap =
+                            translateNamespace(source.labelUids, labelUids, sourceTxn, writer, TYPE_UID_BYTES);
+                    final Map<Long, Long> edgeTypeUidMap =
+                            translateNamespace(source.edgeTypeUids, edgeTypeUids, sourceTxn, writer, TYPE_UID_BYTES);
+                    final Map<Long, Long> propertyKeyUidMap = translateNamespace(
+                            source.propertyKeyUids, propertyKeyUids, sourceTxn, writer, TYPE_UID_BYTES);
+
+                    mergeNodes(source, sourceTxn, writer, nodeUidMap, labelUidMap, propertyKeyUidMap);
+                    mergeEdges(source, sourceTxn, writer, nodeUidMap, edgeTypeUidMap);
+                    return null;
+                });
+                return null;
+            });
+        }
+    }
+
+    /**
+     * Interns every name held by {@code sourceNamespace} into {@code targetNamespace}, returning the resulting
+     * source-UID to target-UID mapping.
+     *
+     * <p>Names are read in the source transaction and copied before being written to the target, because the
+     * source buffer is only valid for the duration of the read and the target write may move pages.</p>
+     */
+    private static Map<Long, Long> translateNamespace(final UidLookupDb sourceNamespace,
+                                                      final UidLookupDb targetNamespace,
+                                                      final Txn<ByteBuffer> sourceTxn,
+                                                      final LmdbWriter writer,
+                                                      final UnsignedBytes uidBytes) {
+        // Collect the source UIDs first: the buffer the iterator supplies is only valid inside its own callback.
+        final List<Long> sourceUids = new ArrayList<>();
+        sourceNamespace.forEachUid(sourceTxn, uidBuffer -> sourceUids.add(uidBytes.get(uidBuffer.duplicate())));
+
+        final Map<Long, Long> map = new HashMap<>(sourceUids.size());
+        for (final long sourceUid : sourceUids) {
+            final ByteBuffer name = copyOf(sourceNamespace.getValue(sourceTxn, sourceUid));
+            final long targetUid = targetNamespace.put(
+                    writer.getWriteTxn(), name, uidBuffer -> uidBytes.get(uidBuffer.duplicate()));
+            map.put(sourceUid, targetUid);
+            writer.tryCommit();
+        }
+        return map;
+    }
+
+    private void mergeNodes(final GraphStores source,
+                            final Txn<ByteBuffer> sourceTxn,
+                            final LmdbWriter writer,
+                            final Map<Long, Long> nodeUidMap,
+                            final Map<Long, Long> labelUidMap,
+                            final Map<Long, Long> propertyKeyUidMap) {
+        source.nodes.forEachVersion(sourceTxn, (sourceNodeUid, validFrom, version) -> {
+            final long nodeUid = translate(nodeUidMap, sourceNodeUid, "node");
+            if (version == null) {
+                nodes.delete(writer, nodeUid, validFrom);
+            } else {
+                final List<Long> targetLabelUids = new ArrayList<>(version.labelUids().size());
+                for (final long sourceLabelUid : version.labelUids()) {
+                    targetLabelUids.add(translate(labelUidMap, sourceLabelUid, "label"));
+                }
+                nodes.insert(writer, nodeUid, validFrom, targetLabelUids, version.properties());
+
+                // Rebuild this version's anchors rather than copying index rows - see this class's merge Javadoc.
+                for (final long labelUid : targetLabelUids) {
+                    for (final Map.Entry<String, Val> property : version.properties().entrySet()) {
+                        final long propertyKeyUid = propertyKeyUids.put(
+                                writer.getWriteTxn(),
+                                directCopyOfUtf8(property.getKey()),
+                                uidBuffer -> TYPE_UID_BYTES.get(uidBuffer.duplicate()));
+                        propertyIndex.insert(
+                                writer,
+                                labelUid,
+                                propertyKeyUid,
+                                GraphAnchorEncoding.anchorValueBytes(property.getValue()),
+                                nodeUid);
+                    }
+                }
+            }
+            // One commit boundary per node version, after its anchors, so a version and its anchors travel
+            // together.
+            writer.tryCommit();
+        });
+        // propertyKeyUidMap is translated for completeness and to intern the fragment's keys eagerly; anchors
+        // above re-intern by name so that a key absent from the fragment's own namespace cannot be missed.
+        Objects.requireNonNull(propertyKeyUidMap, "propertyKeyUidMap");
+    }
+
+    private void mergeEdges(final GraphStores source,
+                            final Txn<ByteBuffer> sourceTxn,
+                            final LmdbWriter writer,
+                            final Map<Long, Long> nodeUidMap,
+                            final Map<Long, Long> edgeTypeUidMap) {
+        // The fragment's two adjacency tables are mirrors of each other, written together per record by the
+        // ingest filter, so the in-edge row is derived here rather than iterated separately. That keeps a
+        // logical edge's two rows inside one commit batch.
+        final long outCount = source.outEdges.count(sourceTxn);
+        final long inCount = source.inEdges.count(sourceTxn);
+        if (outCount != inCount) {
+            throw new IllegalStateException(LogUtil.message(
+                    "Fragment adjacency tables disagree for graph '{}': out-edges={}, in-edges={}. The fragment " +
+                    "is corrupt and cannot be merged.",
+                    doc.getName(),
+                    outCount,
+                    inCount));
+        }
+
+        source.outEdges.forEachEdge(sourceTxn, (sourceSrcUid, sourceTypeUid, sourceDstUid, validFrom, properties) -> {
+            final long srcUid = translate(nodeUidMap, sourceSrcUid, "node");
+            final long dstUid = translate(nodeUidMap, sourceDstUid, "node");
+            final long edgeTypeUid = translate(edgeTypeUidMap, sourceTypeUid, "edge type");
+            if (properties == null) {
+                outEdges.delete(writer, srcUid, edgeTypeUid, dstUid, validFrom);
+                inEdges.delete(writer, srcUid, edgeTypeUid, dstUid, validFrom);
+            } else {
+                outEdges.insert(writer, srcUid, edgeTypeUid, dstUid, validFrom, properties);
+                inEdges.insert(writer, srcUid, edgeTypeUid, dstUid, validFrom, properties);
+            }
+            // Deliberately after BOTH rows - see the edge-pair atomicity note on merge.
+            writer.tryCommit();
+        });
+    }
+
+    private long translate(final Map<Long, Long> map, final long sourceUid, final String namespace) {
+        final Long targetUid = map.get(sourceUid);
+        if (targetUid == null) {
+            throw new IllegalStateException(LogUtil.message(
+                    "Fragment for graph '{}' references {} UID {}, which its own interning table does not hold. " +
+                    "The fragment is corrupt and cannot be merged.",
+                    doc.getName(),
+                    namespace,
+                    sourceUid));
+        }
+        return targetUid;
+    }
+
+    private static ByteBuffer copyOf(final ByteBuffer buffer) {
+        final ByteBuffer source = buffer.duplicate();
+        final ByteBuffer copy = ByteBuffer.allocateDirect(source.remaining());
+        copy.put(source);
+        copy.flip();
+        return copy;
+    }
+
+    private static ByteBuffer directCopyOfUtf8(final String value) {
+        final byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
+        final ByteBuffer buffer = ByteBuffer.allocateDirect(bytes.length);
+        buffer.put(bytes);
+        buffer.flip();
+        return buffer;
+    }
+
+    /**
+     * @return the on-disk format stamp this store is operating under; never null.
+     */
+    public SchemaInfo getSchemaInfo() {
+        return schemaDb.getSchemaInfo();
+    }
+
+    /**
+     * Validates an incoming fragment's format stamp against this store's before merging it.
+     *
+     * <p><b>Preconditions:</b> {@code source} is not null.
+     * <b>Postconditions:</b> returns normally only when the stamps match.
+     * <b>Null status:</b> {@code source} is not nullable.
+     *
+     * @param source the fragment's stamp.
+     * @throws RuntimeException if the stamps differ.
+     */
+    public void validateForMerge(final SchemaInfo source) {
+        schemaDb.validateForMerge(source);
     }
 
     /**

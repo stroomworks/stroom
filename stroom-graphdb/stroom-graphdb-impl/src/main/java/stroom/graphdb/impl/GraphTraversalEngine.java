@@ -24,13 +24,13 @@ import stroom.query.api.ExpressionOperator;
 import stroom.query.api.ExpressionTerm;
 import stroom.query.common.v2.ExpressionPredicateFactory;
 import stroom.query.common.v2.ExpressionPredicateFactory.ValueFunctionFactories;
-import stroom.query.language.functions.Type;
 import stroom.query.language.functions.Expression;
 import stroom.query.language.functions.ExpressionContext;
 import stroom.query.language.functions.ExpressionParser;
 import stroom.query.language.functions.FieldIndex;
 import stroom.query.language.functions.Generator;
 import stroom.query.language.functions.ParamFactory;
+import stroom.query.language.functions.Type;
 import stroom.query.language.functions.Val;
 import stroom.query.language.functions.ValBoolean;
 import stroom.query.language.functions.ValDouble;
@@ -469,7 +469,7 @@ public final class GraphTraversalEngine {
     }
 
     // ------------------------------------------------------------------------------------------------------
-    // DIFF bindings (temporal-cypher-diff-operator.md §5)
+    // DIFF bindings
     // ------------------------------------------------------------------------------------------------------
 
     /**

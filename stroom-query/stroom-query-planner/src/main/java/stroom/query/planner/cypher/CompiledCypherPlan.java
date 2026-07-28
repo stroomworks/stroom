@@ -47,9 +47,8 @@ import java.util.Objects;
  *                        executor runs the diff (two {@code AS OF} evaluations + classification) rather than an
  *                        ordinary traversal, and {@code temporalContext} is {@code null} (a query is a state query
  *                        or a diff, never both).
- * @param returnGraph     whether the query was {@code RETURN GRAPH} (see {@code docs/temporal-cypher-diff-operator
- * .md} &sect;4.4 / &sect;3) - the
- *                        element-row output mode. When {@code true}, {@code plan}'s terminal {@link
+ * @param returnGraph     whether the query was {@code RETURN GRAPH} - the element-row output mode. When
+ *                        {@code true}, {@code plan}'s terminal {@link
  *                        stroom.query.planner.logical.Project} carries the fixed element-row column schema
  *                        (synthesised by {@code CypherToLogicalPlan}, not user {@code RETURN} items), and the
  *                        executor emits one row per distinct matched node/edge (see {@code GraphElementExecutor})

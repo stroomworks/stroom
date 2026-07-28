@@ -18,32 +18,43 @@ package stroom.graphdb.impl.pipeline;
 
 import stroom.docref.DocRef;
 import stroom.graphdb.impl.GraphDbDocCache;
+import stroom.graphdb.impl.GraphFileTransferClient;
 import stroom.graphdb.impl.GraphNodeDb;
-import stroom.graphdb.impl.GraphStoreManager;
+import stroom.graphdb.impl.GraphPaths;
+import stroom.graphdb.impl.GraphShardWriters;
 import stroom.graphdb.impl.GraphStores;
 import stroom.graphdb.impl.GraphTraversalEngine;
 import stroom.graphdb.shared.GraphDbDoc;
 import stroom.lmdb.serde.UnsignedBytesInstances;
+import stroom.meta.shared.Meta;
 import stroom.pipeline.LocationFactoryProxy;
 import stroom.pipeline.errorhandler.ErrorReceiver;
 import stroom.pipeline.errorhandler.ErrorReceiverProxy;
 import stroom.pipeline.errorhandler.FatalErrorReceiver;
+import stroom.pipeline.errorhandler.LoggedException;
+import stroom.pipeline.state.MetaHolder;
 import stroom.pipeline.util.ProcessorUtil;
 import stroom.planb.impl.dao.LmdbWriter;
 import stroom.query.api.DateTimeSettings;
 import stroom.query.common.v2.ExpressionPredicateFactory;
 import stroom.query.grammar.parse.CypherQueryParser;
+import stroom.query.language.functions.Type;
 import stroom.query.language.functions.Val;
+import stroom.query.language.functions.ValLong;
 import stroom.query.language.functions.ValString;
 import stroom.query.planner.cypher.CompiledCypherPlan;
 import stroom.query.planner.cypher.CypherToLogicalPlan;
+import stroom.util.zip.ZipUtil;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -52,6 +63,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -197,12 +209,19 @@ class TestGraphFilter {
     void anchorNeedsReindexing_falseOnlyWhenLabelCarriedBeforeAndValueUnchanged() {
         // Task P8.1: the extracted decision function directly, since GraphFilter itself is awkward to unit-test
         // at this granularity via the real SAX/ingest harness.
-        assertThat(GraphFilter.anchorNeedsReindexing(true, ValString.create("active"), "active")).isFalse();
-        assertThat(GraphFilter.anchorNeedsReindexing(true, ValString.create("active"), "inactive")).isTrue();
-        assertThat(GraphFilter.anchorNeedsReindexing(true, null, "active")).isTrue();
+        assertThat(GraphFilter.anchorNeedsReindexing(
+                true, ValString.create("active"), ValString.create("active"))).isFalse();
+        assertThat(GraphFilter.anchorNeedsReindexing(
+                true, ValString.create("active"), ValString.create("inactive"))).isTrue();
+        assertThat(GraphFilter.anchorNeedsReindexing(true, null, ValString.create("active"))).isTrue();
         // A label the previous version didn't carry always needs (re-)indexing, even if the same value already
         // happens to be anchored under some other, pre-existing label.
-        assertThat(GraphFilter.anchorNeedsReindexing(false, ValString.create("active"), "active")).isTrue();
+        assertThat(GraphFilter.anchorNeedsReindexing(
+                false, ValString.create("active"), ValString.create("active"))).isTrue();
+        // Retyping a property from string "42" to long 42 keys the same anchor bytes, so no rewrite is needed.
+        // The decision is about the anchor key, not about the value's type.
+        assertThat(GraphFilter.anchorNeedsReindexing(
+                true, ValString.create("42"), ValLong.create(42L))).isFalse();
     }
 
     @Test
@@ -447,6 +466,293 @@ class TestGraphFilter {
     // Harness
     // ------------------------------------------------------------------------------------------------------
 
+    // ------------------------------------------------------------------------------------------------------
+    // Typed property values.
+    // ------------------------------------------------------------------------------------------------------
+
+    /**
+     * A declared type is preserved through storage and query, so a long comes back as a long rather than as text.
+     * This - not ordering - is what typing actually buys.
+     *
+     * <p>Ordering was already mostly right without it: Stroom's string comparator for {@code Type.STRING} is
+     * {@code AS_DOUBLE_THEN_..._STRING}, so numeric-looking strings already sorted numerically. The documentation
+     * previously claimed {@code "10" < "9"} for ordering, which is not what the comparator does. What was genuinely
+     * wrong is that every value's <i>type</i> was {@code STRING} regardless of what it represented, so a consumer
+     * reading a value back - JSON output, a downstream function, a type-aware short circuit - saw text.</p>
+     */
+    @Test
+    void declaredTypes_arePreservedThroughStorageAndQuery(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("typed1"), DOC)) {
+            ingest(stores, """
+                    <graph xmlns="graph-mutation:1" version="1.0">
+                        <node id="a" validFrom="2026-01-01T00:00:00.000Z">
+                            <label>Item</label>
+                            <property name="qty" type="long">10</property>
+                            <property name="active" type="boolean">true</property>
+                            <property name="untyped">10</property>
+                        </node>
+                    </graph>
+                    """);
+
+            final List<Val[]> rows = query(stores, "MATCH (n:Item) RETURN n.qty, n.active, n.untyped");
+            assertThat(rows).hasSize(1);
+            final Val[] row = rows.getFirst();
+            assertThat(row[0].type()).isEqualTo(Type.LONG);
+            assertThat(row[1].type()).isEqualTo(Type.BOOLEAN);
+            assertThat(row[2].type()).isEqualTo(Type.STRING);
+        }
+    }
+
+    /**
+     * A typed long orders numerically. Worth pinning even though a numeric-looking string would too, because the
+     * typed path goes through a different comparator and must not regress.
+     */
+    @Test
+    void typedLongProperty_ordersNumerically(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("typed1b"), DOC)) {
+            ingest(stores, """
+                    <graph xmlns="graph-mutation:1" version="1.0">
+                        <node id="a" validFrom="2026-01-01T00:00:00.000Z">
+                            <label>Item</label>
+                            <property name="id">a</property>
+                            <property name="qty" type="long">10</property>
+                        </node>
+                        <node id="b" validFrom="2026-01-01T00:00:00.000Z">
+                            <label>Item</label>
+                            <property name="id">b</property>
+                            <property name="qty" type="long">9</property>
+                        </node>
+                    </graph>
+                    """);
+
+            assertThat(query(stores, "MATCH (n:Item) RETURN n.id ORDER BY n.qty"))
+                    .extracting(r -> r[0].toString())
+                    .containsExactly("b", "a");
+        }
+    }
+
+    /**
+     * A typed value must still be findable through the property index. This is the case the design is most exposed
+     * on: the anchor is keyed on a value's rendered text and the query seeks the literal's text, so if the two
+     * disagree the node is silently not found rather than an error being raised.
+     *
+     * <p>This also covers the harder half by construction. Every test in this class ingests into a fragment and
+     * <b>merges</b> it before asserting, and merge only ever sees decoded values - so a pass here means ingest and
+     * merge derived byte-identical anchors from a typed value. Had ingest kept anchoring on the raw XML text, a
+     * merged graph would answer these lookups differently from a directly-ingested one and this test would fail.</p>
+     */
+    @Test
+    void typedProperties_areStillFoundByPropertyAnchor(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("typed2"), DOC)) {
+            ingest(stores, """
+                    <graph xmlns="graph-mutation:1" version="1.0">
+                        <node id="n1" validFrom="2026-01-01T00:00:00.000Z">
+                            <label>Item</label>
+                            <property name="qty" type="long">42</property>
+                            <property name="active" type="boolean">true</property>
+                            <property name="name">widget</property>
+                        </node>
+                    </graph>
+                    """);
+
+            assertThat(query(stores, "MATCH (n:Item {qty: 42}) RETURN n.name"))
+                    .extracting(row -> row[0].toString()).containsExactly("widget");
+            assertThat(query(stores, "MATCH (n:Item {active: true}) RETURN n.name"))
+                    .extracting(row -> row[0].toString()).containsExactly("widget");
+            assertThat(query(stores, "MATCH (n:Item {name: 'widget'}) RETURN n.name"))
+                    .extracting(row -> row[0].toString()).containsExactly("widget");
+        }
+    }
+
+    /**
+     * A leading-zero long is canonicalised, and the anchor follows the canonical form. Worth pinning because the
+     * anchor is derived from the decoded value rather than the raw text - which is what lets merge reproduce it -
+     * so the raw text is deliberately not what a query has to match.
+     */
+    @Test
+    void typedLong_isCanonicalised_andAnchoredOnTheCanonicalForm(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("typed3"), DOC)) {
+            ingest(stores, """
+                    <graph xmlns="graph-mutation:1" version="1.0">
+                        <node id="n1" validFrom="2026-01-01T00:00:00.000Z">
+                            <label>Item</label>
+                            <property name="qty" type="long">007</property>
+                        </node>
+                    </graph>
+                    """);
+
+            assertThat(query(stores, "MATCH (n:Item {qty: 7}) RETURN n.qty"))
+                    .extracting(row -> row[0].toString()).containsExactly("7");
+        }
+    }
+
+    /**
+     * A value that does not parse as its declared type is a bad record. Falling back to a string would put the
+     * lexical-ordering surprise back, but silently and only for the rows that failed - the worst of both.
+     */
+    @Test
+    void valueThatDoesNotParseAsItsDeclaredType_isReported(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("typed4"), DOC)) {
+            final List<String> capturedErrors = new ArrayList<>();
+            ingest(stores, """
+                    <graph xmlns="graph-mutation:1" version="1.0">
+                        <node id="n1" validFrom="2026-01-01T00:00:00.000Z">
+                            <label>Item</label>
+                            <property name="qty" type="long">not a number</property>
+                        </node>
+                    </graph>
+                    """, new AtomicReference<>(stores), capturedErrors);
+
+            assertThat(capturedErrors).anyMatch(message -> message.contains("is not a whole number"));
+        }
+    }
+
+    /**
+     * An unknown type is reported rather than quietly treated as a string, so a typo in a translation surfaces.
+     */
+    @Test
+    void anUnknownPropertyType_isReported(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("typed5"), DOC)) {
+            final List<String> capturedErrors = new ArrayList<>();
+            ingest(stores, """
+                    <graph xmlns="graph-mutation:1" version="1.0">
+                        <node id="n1" validFrom="2026-01-01T00:00:00.000Z">
+                            <label>Item</label>
+                            <property name="qty" type="integer">42</property>
+                        </node>
+                    </graph>
+                    """, new AtomicReference<>(stores), capturedErrors);
+
+            assertThat(capturedErrors).anyMatch(message -> message.contains("unknown type"));
+        }
+    }
+
+    // ------------------------------------------------------------------------------------------------------
+    // Strict mode. The tests above pin the lenient default - one bad record is logged and skipped - so these
+    // pin the opposite contract: the stream fails instead of losing data quietly.
+    // ------------------------------------------------------------------------------------------------------
+
+    /**
+     * A malformed record fails the stream in strict mode. This is the whole point of the setting: lenient mode
+     * would have logged this and carried on, leaving a graph missing one property with nothing to show for it.
+     */
+    @Test
+    void strict_malformedRecord_failsTheStream(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("strict1"), DOC)) {
+            final List<String> capturedErrors = new ArrayList<>();
+
+            assertThatThrownBy(() -> ingestStrict(stores, """
+                    <graph xmlns="graph-mutation:1" version="1.0">
+                        <node id="n1" validFrom="2026-01-01T00:00:00.000Z">
+                            <property>no name here</property>
+                        </node>
+                    </graph>
+                    """, capturedErrors))
+                    .isInstanceOf(LoggedException.class);
+
+            assertThat(capturedErrors).anyMatch(message -> message.contains("requires a name attribute"));
+        }
+    }
+
+    /**
+     * A record that only fails once it reaches the store layer must fail the stream too. These failures do not go
+     * through the validation path, so they are the case a strict flag is easiest to leave half-wired.
+     */
+    @Test
+    void strict_recordFailingAtTheStoreLayer_failsTheStream(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("strict2"), DOC)) {
+            final StringBuilder tooManyLabels = new StringBuilder();
+            for (int i = 0; i < 256; i++) {
+                tooManyLabels.append("            <label>L").append(i).append("</label>\n");
+            }
+            final List<String> capturedErrors = new ArrayList<>();
+
+            assertThatThrownBy(() -> ingestStrict(stores, """
+                    <graph xmlns="graph-mutation:1" version="1.0">
+                        <node id="bad" validFrom="2026-01-01T00:00:00.000Z">
+                    """
+                    + tooManyLabels
+                    + """
+                        </node>
+                    </graph>
+                    """, capturedErrors))
+                    .isInstanceOf(LoggedException.class);
+
+            assertThat(capturedErrors).anyMatch(message -> message.contains("Failed to write <node>"));
+        }
+    }
+
+    /**
+     * An element the vocabulary does not define is reported rather than ignored. Previously a misspelled element
+     * contributed nothing and said nothing, which is the quietest possible way to lose data.
+     */
+    @Test
+    void unrecognisedElement_isReported_andFailsTheStreamInStrictMode(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("strict3"), DOC)) {
+            final String xml = """
+                    <graph xmlns="graph-mutation:1" version="1.0">
+                        <nodee id="n1" validFrom="2026-01-01T00:00:00.000Z" />
+                    </graph>
+                    """;
+
+            // Lenient: reported, and the stream continues.
+            final List<String> lenientErrors = new ArrayList<>();
+            ingest(stores, xml, new AtomicReference<>(stores), lenientErrors);
+            assertThat(lenientErrors).anyMatch(message -> message.contains("<nodee> is not a graph-mutation element"));
+
+            // Strict: the same detection, but the stream fails.
+            final List<String> strictErrors = new ArrayList<>();
+            assertThatThrownBy(() -> ingestStrict(stores, xml, strictErrors))
+                    .isInstanceOf(LoggedException.class);
+            assertThat(strictErrors).anyMatch(message -> message.contains("is not a graph-mutation element"));
+        }
+    }
+
+    /**
+     * Every element the vocabulary does define must pass, in strict mode, without a word. Worth pinning because
+     * the unrecognised-element check is a denylist inversion: get the known set wrong and strict mode rejects
+     * valid input, which is far worse than the silence it replaced.
+     */
+    @Test
+    void strict_aFullyValidDocument_ingestsWithNoErrors(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("strict4"), DOC)) {
+            final List<String> capturedErrors = new ArrayList<>();
+
+            ingestStrict(stores, """
+                    <graph xmlns="graph-mutation:1" version="1.0">
+                        <node id="n1" validFrom="2026-01-01T00:00:00.000Z">
+                            <label>Thing</label>
+                            <property name="id">n1</property>
+                        </node>
+                        <node id="n2" validFrom="2026-01-01T00:00:00.000Z">
+                            <label>Thing</label>
+                            <property name="id">n2</property>
+                        </node>
+                        <edge type="KNOWS" validFrom="2026-01-01T00:00:00.000Z">
+                            <src>n1</src>
+                            <dst>n2</dst>
+                            <property name="since">2020</property>
+                        </edge>
+                        <edge-delete type="KNOWS" validFrom="2026-02-01T00:00:00.000Z">
+                            <src>n1</src>
+                            <dst>n2</dst>
+                        </edge-delete>
+                        <node-delete id="n2" validFrom="2026-03-01T00:00:00.000Z" />
+                    </graph>
+                    """, capturedErrors);
+
+            assertThat(capturedErrors).isEmpty();
+            final List<Val[]> rows = query(stores, "MATCH (g:Thing {id: 'n1'}) RETURN g.id");
+            assertThat(rows).extracting(row -> row[0].toString()).containsExactly("n1");
+        }
+    }
+
+    private static void ingestStrict(final GraphStores stores,
+                                     final String xml,
+                                     final List<String> capturedErrors) {
+        ingest(stores, xml, new AtomicReference<>(stores), capturedErrors, true);
+    }
+
     private static void ingest(final GraphStores stores, final String xml) {
         ingest(stores, xml, new AtomicReference<>(stores));
     }
@@ -472,6 +778,13 @@ class TestGraphFilter {
     private static void ingest(final GraphStores stores, final String xml,
                                final AtomicReference<GraphStores> currentStores,
                                final List<String> capturedErrors) {
+        ingest(stores, xml, currentStores, capturedErrors, false);
+    }
+
+    private static void ingest(final GraphStores stores, final String xml,
+                               final AtomicReference<GraphStores> currentStores,
+                               final List<String> capturedErrors,
+                               final boolean strict) {
         final GraphDbDocCache graphDbDocCache = new GraphDbDocCache() {
             @Override
             public GraphDbDoc get(final String name) {
@@ -483,29 +796,70 @@ class TestGraphFilter {
                 // Not needed by this test harness.
             }
         };
-        final GraphStoreManager graphStoreManager = new GraphStoreManager() {
-            @Override
-            public GraphStores getOrOpen(final GraphDbDoc doc) {
-                return currentStores.get();
-            }
-
-            @Override
-            public void delete(final String uuid) {
-                // Not needed by this test harness.
+        // The filter writes a self-contained fragment rather than into the graph's own store, so the harness
+        // has to complete the real path - capture the shipped fragment, then merge it - before asserting. That
+        // makes every test below an end-to-end check of ingest, fragment and merge together, which is the whole
+        // of what a node contributes to a clustered graph.
+        final List<Path> shippedFragments = new ArrayList<>();
+        final Path fragmentRoot;
+        try {
+            fragmentRoot = Files.createTempDirectory("graph-filter-fragments");
+        } catch (final IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        final GraphFileTransferClient fileTransferClient = (fileDescriptor, path, synchroniseMerge) -> {
+            try {
+                // The writer deletes its zip as soon as storePart returns, so keep a copy to merge from.
+                final Path kept = fragmentRoot.resolve("shipped-" + shippedFragments.size() + ".zip");
+                Files.copy(path, kept);
+                shippedFragments.add(kept);
+            } catch (final IOException e) {
+                throw new UncheckedIOException(e);
             }
         };
+        final GraphShardWriters graphShardWriters =
+                new GraphShardWriters(new GraphPaths(fragmentRoot.resolve("paths")), fileTransferClient);
+        final MetaHolder metaHolder = new MetaHolder();
+        metaHolder.setMeta(Meta.builder().id(1L).build());
 
         final GraphFilter graphFilter = new GraphFilter(
                 new ErrorReceiverProxy((severity, location, elementId, message, errorType, e) ->
                         capturedErrors.add(message)),
                 new LocationFactoryProxy(),
                 graphDbDocCache,
-                graphStoreManager);
+                graphShardWriters,
+                metaHolder);
         graphFilter.setGraphDb(DOC_REF);
+        graphFilter.setStrict(strict);
 
         final ByteArrayInputStream input = new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8));
         ProcessorUtil.processXml(input, new ErrorReceiverProxy(new FatalErrorReceiver()), graphFilter,
                 new LocationFactoryProxy());
+
+        mergeShippedFragments(shippedFragments, fragmentRoot, currentStores.get());
+    }
+
+    /**
+     * Unzips each shipped fragment and merges the graph directory it contains into {@code target}, which is what
+     * {@code GraphMergeProcessor} does on a running node.
+     */
+    private static void mergeShippedFragments(final List<Path> shippedFragments,
+                                              final Path fragmentRoot,
+                                              final GraphStores target) {
+        try {
+            int index = 0;
+            for (final Path zip : shippedFragments) {
+                final Path unzipped = fragmentRoot.resolve("unzipped-" + index++);
+                ZipUtil.unzip(zip, unzipped);
+                try (final Stream<Path> stream = Files.list(unzipped)) {
+                    for (final Path fragment : stream.toList()) {
+                        target.merge(fragment);
+                    }
+                }
+            }
+        } catch (final IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 
     private static List<Val[]> query(final GraphStores stores, final String cypher) {

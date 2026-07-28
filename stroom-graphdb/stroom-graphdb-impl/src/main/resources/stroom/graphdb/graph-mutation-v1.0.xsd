@@ -1,16 +1,23 @@
-<?xml version="1.1" encoding="UTF-8"?>
+<?xml version="1.0" encoding="UTF-8"?>
 
 <!-- Crown Copyright 2026 -->
 <xs:schema xmlns:gm="graph-mutation:1" xmlns:xs="http://www.w3.org/2001/XMLSchema"
            targetNamespace="graph-mutation:1" elementFormDefault="qualified" version="1.0">
     <xs:annotation>
         <xs:documentation>
-            The v1 graph-mutation vocabulary (implementation plan Task P2.1): node/edge upserts and deletes,
-            each carrying an explicit validFrom effective time (never defaulted from event/receipt time - see
-            .1). Property values are string-only in
-            v1; a typed value extension is a documented future escalation, not built here. Consumed by
-            stroom.graphdb.impl.pipeline.GraphFilter via SAX local-name dispatch, not generated JAXB bindings -
-            this schema is for validation and as documentation for XSLT authors, not a runtime dependency.
+            The v1 graph-mutation vocabulary: node and edge upserts and deletes, each carrying an explicit
+            validFrom effective time. validFrom is always explicit and never defaulted from event or receipt
+            time, because the time a fact became true is a property of the data and not of when Stroom happened
+            to see it.
+
+            Property values are strings unless a property declares a type. See the Property type below for which
+            types are supported and why the set is limited.
+
+            This schema is for validation and for documenting the vocabulary to XSLT authors. It is not a runtime
+            dependency: stroom.graphdb.impl.pipeline.GraphFilter dispatches on SAX local names rather than
+            generated bindings, so it will ingest a document this schema would reject. Put a SchemaFilter in front
+            of the Graph Filter if you want that rejected rather than ingested, and note that SchemaFilter
+            requires the instance document to carry an xsi:schemaLocation for this namespace.
         </xs:documentation>
     </xs:annotation>
 
@@ -93,15 +100,45 @@
 
     <xs:complexType name="Property">
         <xs:annotation>
-            <xs:documentation>A named property value - string-only in v1 (see this schema's own top-level
-                documentation).</xs:documentation>
+            <xs:documentation>
+                A named property value. The optional type attribute declares how the text should be interpreted;
+                omit it for a string, which is the default and what every property was before typing existed.
+
+                Type matters for ordering and comparison. A string "10" sorts before "9" because the comparison is
+                lexical; a long 10 sorts after 9. Declare a type wherever a property will be ordered or compared
+                as a number.
+
+                A value that does not parse as its declared type is a bad record, reported like any other. It is
+                not silently kept as text, because a property that was meant to be a number and quietly became a
+                string would reintroduce exactly the lexical-ordering surprise the type attribute removes.
+            </xs:documentation>
         </xs:annotation>
         <xs:simpleContent>
             <xs:extension base="xs:string">
                 <xs:attribute name="name" type="gm:NonEmptyString" use="required" />
+                <xs:attribute name="type" type="gm:PropertyType" use="optional" />
             </xs:extension>
         </xs:simpleContent>
     </xs:complexType>
+
+    <xs:simpleType name="PropertyType">
+        <xs:annotation>
+            <xs:documentation>
+                The property types v1 supports.
+
+                double and dateTime are deliberately absent. The property index is keyed on a value's rendered
+                text and a query seeks it using the query literal's own text, so a type whose canonical rendering
+                differs from the text an author would naturally write breaks that match: 42.0 is stored and
+                rendered as 42, so a query for 42.0 would silently find nothing. Adding those types needs a
+                canonical encoder shared by the ingest, merge and query sides.
+            </xs:documentation>
+        </xs:annotation>
+        <xs:restriction base="xs:string">
+            <xs:enumeration value="string" />
+            <xs:enumeration value="long" />
+            <xs:enumeration value="boolean" />
+        </xs:restriction>
+    </xs:simpleType>
 
     <xs:simpleType name="DateTimeSimpleType">
         <xs:annotation>

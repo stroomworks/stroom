@@ -21,8 +21,8 @@ import stroom.query.grammar.ast.AstPosition;
 import java.util.Objects;
 
 /**
- * A join side whose source is a Cypher sub-query rather than a named datasource (docs/graphdb-stroomql-join-
- * implementation-plan.md, Phase P1/P2) - the graph analogue of {@link Scan} as a join operand. Carries the
+ * A join side whose source is a Cypher sub-query rather than a named datasource - the graph analogue of
+ * {@link Scan} as a join operand. Carries the
  * sub-query's raw Cypher source text opaquely, not a compiled plan: {@code Binder} derives this side's schema
  * (Phase P2) by parsing and compiling it once via {@code CypherJoinSchema}, discarding the compiled plan
  * immediately afterwards, and {@code OptimisingQueryCompiler} (Phase P3) re-parses and re-compiles it again to

@@ -6347,6 +6347,25 @@
         "tags" : [ "GitRepos" ]
       }
     },
+    "/graphDb/v1/mutationSchema" : {
+      "get" : {
+        "operationId" : "fetchGraphMutationSchema",
+        "responses" : {
+          "default" : {
+            "content" : {
+              "text/plain" : {
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Fetch the graph-mutation:1 XSD source, to register as an XMLSchema document",
+        "tags" : [ "Graph DBs" ]
+      }
+    },
     "/graphDb/v1/{uuid}" : {
       "get" : {
         "operationId" : "fetchGraphDb",
@@ -6408,6 +6427,126 @@
         },
         "summary" : "Update a graph db doc",
         "tags" : [ "Graph DBs" ]
+      }
+    },
+    "/graphDb/v1/{uuid}/expand" : {
+      "get" : {
+        "operationId" : "expandGraphDbNode",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "uuid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "nodeId",
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "query",
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/GraphElementTable"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Expand a node's neighbours (all edge types, both directions) as RETURN GRAPH element rows, for additive rendering in the graph view",
+        "tags" : [ "Graph DBs" ]
+      }
+    },
+    "/graphDb/v1/{uuid}/schema" : {
+      "get" : {
+        "operationId" : "fetchGraphDbSchema",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "uuid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/GraphDbSchema"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Discover a graph db's vocabulary (labels, edge types, property keys) and sample nodes, to help build a query",
+        "tags" : [ "Graph DBs" ]
+      }
+    },
+    "/graphFileTransfer/v1/sendPart" : {
+      "post" : {
+        "operationId" : "sendGraphPart",
+        "parameters" : [ {
+          "in" : "header",
+          "name" : "createTime",
+          "schema" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        }, {
+          "in" : "header",
+          "name" : "metaId",
+          "schema" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        }, {
+          "in" : "header",
+          "name" : "fileHash",
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "header",
+          "name" : "fileName",
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "header",
+          "name" : "synchroniseMerge",
+          "schema" : {
+            "type" : "boolean"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/octet-stream" : {
+              "schema" : {
+                "type" : "object"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "default" : {
+            "description" : "Returns: 200 if the fragment was received ok, 401 if unauthorised, 500 for any other error"
+          }
+        },
+        "summary" : "Send Graph DB fragment",
+        "tags" : [ "Graph File Transfer" ]
       }
     },
     "/index/v2/addField" : {
@@ -21253,6 +21392,58 @@
           }
         }
       },
+      "GraphDbSchema" : {
+        "type" : "object",
+        "properties" : {
+          "edgeTypes" : {
+            "type" : "array",
+            "items" : {
+              "type" : "string"
+            }
+          },
+          "empty" : {
+            "type" : "boolean"
+          },
+          "nodeLabels" : {
+            "type" : "array",
+            "items" : {
+              "type" : "string"
+            }
+          },
+          "propertyKeys" : {
+            "type" : "array",
+            "items" : {
+              "type" : "string"
+            }
+          },
+          "sampleNodes" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/SampleNode"
+            }
+          }
+        }
+      },
+      "GraphElementTable" : {
+        "type" : "object",
+        "properties" : {
+          "columns" : {
+            "type" : "array",
+            "items" : {
+              "type" : "string"
+            }
+          },
+          "rows" : {
+            "type" : "array",
+            "items" : {
+              "type" : "array",
+              "items" : {
+                "type" : "string"
+              }
+            }
+          }
+        }
+      },
       "GraphNodeTypeMapping" : {
         "type" : "object",
         "properties" : {
@@ -26410,6 +26601,26 @@
           },
           "version" : {
             "type" : "string"
+          }
+        }
+      },
+      "SampleNode" : {
+        "type" : "object",
+        "properties" : {
+          "id" : {
+            "type" : "string"
+          },
+          "labels" : {
+            "type" : "array",
+            "items" : {
+              "type" : "string"
+            }
+          },
+          "properties" : {
+            "type" : "object",
+            "additionalProperties" : {
+              "type" : "string"
+            }
           }
         }
       },

@@ -20,7 +20,6 @@ import org.junit.jupiter.api.Test;
 import org.xml.sax.SAXException;
 
 import java.io.StringReader;
-import java.net.URL;
 import javax.xml.XMLConstants;
 import javax.xml.transform.stream.StreamSource;
 import javax.xml.validation.Schema;
@@ -113,11 +112,23 @@ class TestGraphMutationSchema {
                 .isInstanceOf(SAXException.class);
     }
 
+    /**
+     * Validates against the <b>shipped</b> schema resource, not a test copy of it, so these cases cannot pass
+     * while the artefact an administrator actually registers says something different.
+     */
     private static Validator validator() throws SAXException {
-        final URL xsd = TestGraphMutationSchema.class.getResource("/TestGraphFilter/graph_mutation_v1_0.xsd");
-        assertThat(xsd).as("graph_mutation_v1_0.xsd must be on the test classpath").isNotNull();
         final SchemaFactory schemaFactory = SchemaFactory.newInstance(XMLConstants.W3C_XML_SCHEMA_NS_URI);
-        final Schema schema = schemaFactory.newSchema(xsd);
+        final Schema schema = schemaFactory.newSchema(GraphMutationSchema.url());
         return schema.newValidator();
+    }
+
+    /**
+     * The schema text must be retrievable, because that is how it reaches an {@code XMLSchema} document.
+     */
+    @Test
+    void text_returnsTheSchemaSource() {
+        assertThat(GraphMutationSchema.text())
+                .contains("targetNamespace=\"" + GraphMutationSchema.NAMESPACE_URI + "\"")
+                .contains("<xs:element name=\"graph\">");
     }
 }

@@ -17,7 +17,6 @@
 package stroom.graphdb.impl;
 
 import stroom.graphdb.shared.GraphDbDoc;
-import stroom.util.io.PathCreator;
 
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
@@ -29,21 +28,19 @@ import java.util.concurrent.ConcurrentMap;
 
 /**
  * Default {@link GraphStoreManager}. Resolves each doc's on-disk directory to {@code <app path>/graphdb/<uuid>}
- * via {@link PathCreator} - the same mechanism {@code stroom.planb.impl.dao.StatePaths} uses for its own root,
+ * via {@code PathCreator} - the same mechanism {@code stroom.planb.impl.dao.StatePaths} uses for its own root,
  * without yet introducing a dedicated config surface (P5 hardening; see {@link GraphDbDocCacheImpl}'s Javadoc for
  * the same deferral on the cache side).
  */
 @Singleton
 public class GraphStoreManagerImpl implements GraphStoreManager {
 
-    private static final String ROOT_DIR_NAME = "graphdb";
-
-    private final PathCreator pathCreator;
+    private final GraphPaths graphPaths;
     private final ConcurrentMap<String, GraphStores> openStores = new ConcurrentHashMap<>();
 
     @Inject
-    public GraphStoreManagerImpl(final PathCreator pathCreator) {
-        this.pathCreator = Objects.requireNonNull(pathCreator, "pathCreator");
+    public GraphStoreManagerImpl(final GraphPaths graphPaths) {
+        this.graphPaths = Objects.requireNonNull(graphPaths, "graphPaths");
     }
 
     @Override
@@ -103,6 +100,6 @@ public class GraphStoreManagerImpl implements GraphStoreManager {
     }
 
     private Path directoryFor(final String uuid) {
-        return pathCreator.toAppPath(ROOT_DIR_NAME).resolve(uuid);
+        return graphPaths.getShardDir().resolve(uuid);
     }
 }

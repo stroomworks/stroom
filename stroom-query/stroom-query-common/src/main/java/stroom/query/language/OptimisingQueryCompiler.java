@@ -165,8 +165,8 @@ public class OptimisingQueryCompiler implements QueryCompiler {
      * (two sources), each side either a bare {@code Scan}/{@code Filter} (see {@link #findScanAndFilter} -
      * {@code PushFiltersBelowJoinsRule} can push a where-clause term down into exactly this shape when it
      * references only one side's alias, so a bare-{@code Scan}-only check would wrongly reject a query this
-     * project's own rewrite pipeline already knows how to optimise) or (Workstream C, docs/graphdb-stroomql-join-
-     * implementation-plan.md, Phase P3) a {@link GraphJoinSource} - a Cypher sub-query join side. An N-way chain
+     * project's own rewrite pipeline already knows how to optimise) or (Workstream C) a
+     * {@link GraphJoinSource} - a Cypher sub-query join side. An N-way chain
      * or a nested/nested-source join rejects cleanly (see {@link #findJoin}) rather than silently mis-binding.
      * Unlike {@link #applyPlanEnhancements}, there's no established "prior behaviour" to protect here - every
      * join query used to just throw - so this method is <b>not</b> fail-open; a genuine failure (an unsupported

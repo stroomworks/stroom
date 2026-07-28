@@ -49,8 +49,8 @@
 //   character class already includes `.` (so unquoted dotted names, and decimal numbers,
 //   tokenize as ONE token) - splitting on `.` is a binder concern, not a lexer concern, to avoid
 //   changing bareword tokenization at all.
-// - A join source may also be a bracketed sub-query (docs/graphdb-stroomql-join-implementation-
-//   plan.md, Phase P1), e.g. `join ( from "Graph" match ... return ... ) as g`. `subQueryBody`
+// - A join source may also be a bracketed sub-query, e.g.
+//   `join ( from "Graph" match ... return ... ) as g`. `subQueryBody`
 //   captures that bracketed body as opaque, paren-balanced source text - it does not, and cannot,
 //   parse the body's own grammar (Cypher today) at this level; it only needs to find the matching
 //   close bracket. This is the same "delineate a span, interpret it elsewhere" approach `fexpr`

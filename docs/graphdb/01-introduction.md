@@ -93,10 +93,11 @@ Being honest about this saves more time than any feature list.
   [blockers](README.md#production-readiness--known-blockers). This is the overriding one.
 - **Your data will exceed roughly 10 GiB in one graph.** The store size is fixed and cannot be raised
   ([10-limits.md](10-limits.md)). You can split across several graphs, but no query spans two of them.
-- **You need to scale across nodes.** Graph DB is single-node: it has no sharding and no cross-node query
-  fan-out, so in a cluster a graph fragments silently
-  ([02-architecture.md](02-architecture.md#graph-db-is-single-node)). A Lucene index has all of this and a
-  graph does not — see [why below](#a-note-on-scale-graph-db-versus-a-lucene-index).
+- **You need one graph bigger than one node's disk.** Graph DB now works correctly on a cluster — every node
+  named in `graphdb.nodeList` holds a full replica and queries are routed to one of them
+  ([02-architecture.md](02-architecture.md#how-a-graph-spans-a-cluster)) — but replication is not
+  partitioning, so it buys correctness and not capacity. A Lucene index can shard and a graph cannot; see
+  [why below](#a-note-on-scale-graph-db-versus-a-lucene-index).
 - **You need the query language to write data.** It is read-only; there is no `SET`, `CREATE`, `DELETE` or
   `MERGE`. All data arrives through pipelines.
 - **Your questions are lookups, not traversals.** "Find events where user = X and time in range" is a
@@ -127,9 +128,10 @@ That is why Graph DB has no sharding, and why adding it is genuinely hard rather
 is the same reason Neo4j's own scale-out story is largely read replicas of a whole graph rather than
 sharding one.
 
-So Graph DB's fixed size ceiling and single-node behaviour are proof-of-concept shortcuts and fixable
-([12-future-work.md](12-future-work.md)) — but **even a mature implementation would not give
-Lucene-style linear scale-out.** If a dataset genuinely needs multi-terabyte scale, an index is the right
+So Graph DB's fixed size ceiling is a proof-of-concept shortcut and fixable
+([12-future-work.md](12-future-work.md)), and clustered correctness is already done — but **even a mature
+implementation would not give Lucene-style linear scale-out**, because replicating a whole graph is what keeps
+traversals correct and that buys no capacity. If a dataset genuinely needs multi-terabyte scale, an index is the right
 tool and a graph is not, however interesting the relationships in it are.
 
 ## Where it fits in Stroom

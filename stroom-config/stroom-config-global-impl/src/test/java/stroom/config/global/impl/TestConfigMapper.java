@@ -52,6 +52,7 @@ import stroom.event.logging.impl.LoggingConfig;
 import stroom.explorer.impl.ExplorerConfig;
 import stroom.feed.impl.FeedConfig;
 import stroom.gitrepo.impl.GitRepoConfig;
+import stroom.graphdb.impl.GraphDbConfig;
 import stroom.importexport.impl.ContentPackImportConfig;
 import stroom.importexport.impl.ExportConfig;
 import stroom.index.impl.IndexConfig;
@@ -995,6 +996,7 @@ class TestConfigMapper {
                 @JsonProperty(PROP_NAME_SQL_STORE) final SqlStoreConfig sqlStoreConfig,
                 @JsonProperty(PROP_NAME_SOLR) final SolrConfig solrConfig,
                 @JsonProperty(PROP_NAME_PLANB) final PlanBConfig planBConfig,
+                @JsonProperty(PROP_NAME_GRAPHDB) final GraphDbConfig graphDbConfig,
                 @JsonProperty(PROP_NAME_STATISTICS) final StatisticsConfig statisticsConfig,
                 @JsonProperty(PROP_NAME_QUERY_HISTORY) final StoredQueryConfig storedQueryConfig,
                 @JsonProperty(PROP_NAME_PATH) final StroomPathConfig pathConfig,
@@ -1066,6 +1068,7 @@ class TestConfigMapper {
                     solrConfig,
                     sqlStoreConfig,
                     planBConfig,
+                    graphDbConfig,
                     statisticsConfig,
                     storedQueryConfig,
                     pathConfig,

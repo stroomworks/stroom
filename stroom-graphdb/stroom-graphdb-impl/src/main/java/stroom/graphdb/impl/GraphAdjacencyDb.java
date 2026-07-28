@@ -229,6 +229,44 @@ public final class GraphAdjacencyDb {
     private record VersionRunEntry(Instant validFrom, byte[] valueBytes) {
     }
 
+    /**
+     * Iterates every stored out-edge version in key order.
+     *
+     * <p>Provided for merge, which must reproduce a fragment's whole edge history rather than a point in time.
+     * The in-edge mirror is derived from this rather than iterated separately, so that each logical edge's two
+     * rows are written together.</p>
+     *
+     * <p><b>Preconditions:</b> neither parameter is null; {@code readTxn} is open on this store's environment.
+     * <b>Postconditions:</b> {@code consumer} has been called once per stored version. Buffers are not retained.
+     * <b>Null status:</b> the properties passed to {@code consumer} are null for a tombstone.
+     *
+     * @param readTxn  an open read transaction.
+     * @param consumer receives each version.
+     */
+    public void forEachEdge(final Txn<ByteBuffer> readTxn, final EdgeVersionConsumer consumer) {
+        Objects.requireNonNull(readTxn, "readTxn");
+        Objects.requireNonNull(consumer, "consumer");
+        LmdbIterable.iterate(readTxn, dbi, (key, value) -> {
+            final ByteBuffer k = key.duplicate();
+            final long srcUid = NODE_UID_BYTES.get(k);
+            final long edgeTypeUid = TYPE_UID_BYTES.get(k);
+            final long dstUid = NODE_UID_BYTES.get(k);
+            final Instant validFrom = TIME_SERDE.read(k);
+            final Neighbour neighbour = decodeNeighbour(dstUid, value);
+            consumer.accept(srcUid, edgeTypeUid, dstUid, validFrom,
+                    neighbour == null ? null : neighbour.edgeProperties());
+        });
+    }
+
+    /**
+     * Receives one stored edge version. {@code properties} is null when the version is a tombstone.
+     */
+    public interface EdgeVersionConsumer {
+
+        void accept(long srcUid, long edgeTypeUid, long dstUid, Instant validFrom,
+                    @Nullable Map<String, Val> properties);
+    }
+
     private static Neighbour decodeNeighbour(final long dstUid, final ByteBuffer value) {
         final ByteBuffer v = value.duplicate();
         final byte tag = v.get();
@@ -249,6 +287,15 @@ public final class GraphAdjacencyDb {
         TIME_SERDE.write(key, validFrom);
         key.flip();
         return key;
+    }
+
+    /**
+     * @param readTxn an open read transaction; not null.
+     * @return the number of stored out-edge versions, including tombstones.
+     */
+    public long count(final Txn<ByteBuffer> readTxn) {
+        Objects.requireNonNull(readTxn, "readTxn");
+        return dbi.stat(readTxn).entries;
     }
 
     /**

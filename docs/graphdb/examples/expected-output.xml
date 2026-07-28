@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<graph xmlns="graph-mutation:1" version="1.0">
+<graph xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns="graph-mutation:1"
+       version="1.0"
+       xsi:schemaLocation="graph-mutation:1 graph-mutation-v1.0.xsd">
    <node id="app:gateway" validFrom="2026-07-03T08:00:00.000Z">
       <label>Application</label>
       <property name="name">Gateway</property>

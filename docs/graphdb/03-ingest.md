@@ -142,27 +142,62 @@ template in your XSLT.
 > The value you choose determines where the data lands in history, and therefore what every `AS OF` query
 > returns. Use the time the fact became true in the real world, not the time you happened to process it.
 
-## Property values are strings
+## Property value types
 
-In this version every property value is stored as a string. There are no numeric, boolean or date
-property types.
+A property is a string unless you declare otherwise:
 
-This has a consequence that will bite you if unprepared: **comparison and ordering are lexical**. `"10"`
-sorts before `"9"`. `"2020-1-5"` sorts after `"2020-11-05"`.
+```xml
+<property name="surname">Powell</property>              <!-- string, the default -->
+<property name="age" type="long">42</property>          <!-- whole number -->
+<property name="active" type="boolean">true</property>  <!-- true / false -->
+```
 
-Encode at ingest so that lexical order is the order you want:
+Only `string`, `long` and `boolean` are available. A value that does not parse as its declared type is a bad
+record, reported like any other — it is not quietly kept as text.
+
+### What declaring a type actually gets you
+
+It is worth being precise, because this is easy to over-sell:
+
+| | Untyped string | Declared type |
+|---|---|---|
+| **Value's type when read back** | always `STRING` | the declared type — so JSON output renders `42` and `true` unquoted rather than as `"42"` and `"true"`, and type-aware code paths see a number |
+| **`ORDER BY`** | already numeric for numeric-looking text (see below) | numeric | 
+| **Equality anchor lookup** | on the text as written | on the value's canonical form, so `007` and `7` are the same value |
+| **Functions like `toInteger()`** | needed | unnecessary |
+
+> **Ordering was already numeric, contrary to what this document previously said.** Stroom compares
+> `STRING` values with a numeric-first comparator that falls back to text, so `"9"` already sorted before
+> `"10"`. What was genuinely wrong is that *every* value's type was `STRING` regardless of what it held, so
+> anything reading a value back saw text. That — not sort order — is what declaring a type fixes.
+
+### `double` and dates are not available, and why
+
+Both are deliberately absent rather than merely unimplemented.
+
+The equality anchor index is keyed on a value's **rendered text**, and a query seeks it using the query
+literal's **own text**. Those must agree or the node is silently not found. A double breaks the agreement:
+`42.0` renders canonically as `42`, so a query for `42.0` would find nothing and report no error. Dates have
+the same problem in a worse form, since one instant has many valid renderings.
+
+Making them safe needs a canonical encoder shared by the ingest, merge and query sides — tracked in
+[12-future-work.md](12-future-work.md).
+
+### Encoding advice for what is not typed
+
+For dates and decimals, encode so that text order is the order you want:
 
 | Kind of value | Emit as | Why |
 |---|---|---|
-| Timestamps and dates | ISO-8601, zero-padded, UTC — `2026-07-28T14:03:00.000Z` | Lexical order equals chronological order |
-| Integers you will sort or range-filter | Zero-padded to a fixed width — `000042` | Lexical order equals numeric order |
-| Integers you will only compare for equality or convert | Plain — `42` | `toInteger(n.count)` works at query time |
-| Booleans | `true` / `false` | `toBoolean()` recognises these |
+| Timestamps and dates | ISO-8601, zero-padded, UTC — `2026-07-28T14:03:00.000Z` | Text order equals chronological order |
+| Decimals you will sort or range-filter | Zero-padded to a fixed width — `000042.50` | Text order equals numeric order |
+| Booleans | `type="boolean"` | Now a real type; no encoding needed |
+| Whole numbers | `type="long"` | Now a real type; no zero-padding needed |
 
-At query time you can convert with `toInteger()`, `toFloat()`, `toBoolean()` and parse dates with
-`stroom.parseDate()` — see [07-functions.md](07-functions.md). Conversion happens per row
-during evaluation, so it does not help the anchor lookup; if you need to filter on a value efficiently,
-store it in the form you will filter on.
+At query time you can still convert with `toInteger()`, `toFloat()`, `toBoolean()` and parse dates with
+`stroom.parseDate()` — see [07-functions.md](07-functions.md). Conversion happens per row during evaluation,
+so it does not help the anchor lookup; if you need to filter on a value efficiently, store it in the form you
+will filter on.
 
 ## Configuring the Graph Filter
 
@@ -193,23 +228,37 @@ One property, `graphDb`, a document reference to the target `GraphDb`.
 
 One filter writes to exactly one graph; there is no per-record routing to different graphs.
 
+### The `strict` property
+
+`strict` decides what a bad record costs. It defaults to `false`.
+
+| `strict` | A bad record is… | Choose it when |
+|---|---|---|
+| `false` (default) | logged at `ERROR` and **skipped**; the stream continues | A feed must keep flowing and you monitor error counts. This is also how the Plan B filter behaves |
+| `true` | logged at `FATAL_ERROR` and **fails the whole stream** | The graph's completeness is load-bearing — you would rather have no data than quietly incomplete data |
+
+Neither is simply better. Lenient loses data quietly, so a graph can look healthy while missing part of its
+input. Strict cannot lose data quietly, but one malformed record blocks a feed until someone fixes it.
+
+> **If you are loading a graph whose answers people will act on, turn `strict` on.** The failure you cannot
+> detect is worse than the one that wakes you up. Reprocessing a stream is cheap; discovering six months later
+> that a subset of edges never loaded is not.
+
 ## What happens when something is wrong
 
-The error behaviour has two tiers, and the difference matters a great deal.
+### Always fatal — the whole stream fails
 
-### Fatal — the whole stream fails
-
-Only configuration problems, both raised before any record is processed:
+Configuration problems, raised before any record is processed, regardless of `strict`:
 
 | Message | Cause |
 |---|---|
 | `Graph DB has not been set` | The `graphDb` property is empty |
 | `Unable to load graph db …` | It points at a graph that cannot be resolved — deleted, renamed, or ambiguous |
 
-### Per-record — logged and skipped
+### Per-record — skipped, or fatal in strict mode
 
-Everything else. Each record is committed as its own all-or-nothing unit; if one fails it is rolled back,
-logged at `ERROR`, and **the stream carries on with the next record**.
+Everything else. Each record is committed as its own all-or-nothing unit; if one fails it is rolled back and
+then either logged and skipped (lenient) or fails the stream (strict).
 
 | Message | Cause |
 |---|---|
@@ -220,37 +269,60 @@ logged at `ERROR`, and **the stream carries on with the next record**.
 | `<label> is only valid inside a <node> element` | Misplaced element |
 | `<property> is only valid inside a <node> or <edge> element` | Misplaced element |
 | `<property> requires a name attribute` | Missing attribute |
+| `<…> is not a graph-mutation element` | An element the vocabulary does not define — usually a typo |
 | `Unable to parse validFrom "…"` | Timestamp not in the required format |
 | `Failed to write <…>` | A storage-level failure, e.g. a value too large for a key, or more than 255 labels |
 
-> **This is the data-safety issue to keep in mind.** A partially-loaded graph looks exactly like a fully
-> loaded one. Nothing turns red. After any load, check the stream's error count rather than assuming
-> success, and treat a non-zero count as data loss until proven otherwise.
+> **In lenient mode this is the data-safety issue to keep in mind.** A partially-loaded graph looks exactly
+> like a fully loaded one. Nothing turns red. After any load, check the stream's error count rather than
+> assuming success, and treat a non-zero count as data loss until proven otherwise.
 
-There is a third, quieter failure mode with no message at all: **elements the filter does not recognise are
-simply ignored.** The filter dispatches on lower-cased element local names and performs no schema
-validation, so `<nodes>` or `<Node-Delete >` with a typo contributes nothing and reports nothing. Validating
-your output offline is the only protection.
+Unrecognised elements used to be the quietest failure of all — ignored with no message, so a misspelled
+`<nodee>` contributed nothing and reported nothing. They are now reported like any other bad record. Note
+that only element *names* are checked; nesting is the schema's job, so use a `SchemaFilter` for that.
 
-## Validating your output offline
+## Validating against the schema
 
-The `graph-mutation:1` schema exists in the source tree at:
-
-```
-stroom-graphdb/stroom-graphdb-impl/src/test/resources/TestGraphFilter/graph_mutation_v1_0.xsd
-```
-
-> **Not shipped.** It is a test resource. It is not registered as an XMLSchema document in Stroom, so you
-> cannot add a `SchemaFilter` to validate against it in-pipeline, and the Graph Filter does not validate
-> either.
-
-The practical workaround is to copy it out and validate your translation's output as part of development:
+The `graph-mutation:1` XSD is shipped, and you can fetch its source from a running Stroom:
 
 ```bash
-xmllint --noout --schema graph_mutation_v1_0.xsd my-output.xml
+curl -s -H "Authorization: Bearer $TOKEN" https://<stroom>/api/graphDb/v1/mutationSchema
 ```
 
-Given the silent-skip behaviour above, this is strongly worth doing before trusting any new translation.
+### In-pipeline validation
+
+1. Create an **XMLSchema** document and paste the XSD source into it.
+2. Set its **Namespace URI** to `graph-mutation:1` and its **System Id** to `graph-mutation-v1.0.xsd`.
+3. Add a **SchemaFilter** to your pipeline between the translation and the Graph Filter.
+
+> **Your translation must emit `xsi:schemaLocation`.** `SchemaFilter` rejects a document that does not declare
+> where its namespace's schema is, so without it validation fails outright rather than passing silently. The
+> root element needs:
+>
+> ```xml
+> <graph xmlns="graph-mutation:1"
+>        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+>        xsi:schemaLocation="graph-mutation:1 graph-mutation-v1.0.xsd"
+>        version="1.0">
+> ```
+>
+> The system id must match the one you registered the XMLSchema document under. The worked example in
+> [04-event-logging-xslt.md](04-event-logging-xslt.md) emits this.
+
+There is no prebuilt content pack for this — Stroom's content packs come from the separate
+`gchq/stroom-content` repository, so the XMLSchema document is created by hand (or by import) for now.
+
+### Offline validation
+
+Still worth doing while developing a translation, because it needs no Stroom at all:
+
+```bash
+xmllint --noout --schema graph-mutation-v1.0.xsd my-output.xml
+```
+
+Validation is not a substitute for `strict`, and neither replaces the other: the schema catches shape errors
+before ingest, while `strict` catches what a schema cannot — a value too large for a key, more than 255 labels,
+or any other failure that only appears once a record reaches storage.
 
 ## Data modelling
 

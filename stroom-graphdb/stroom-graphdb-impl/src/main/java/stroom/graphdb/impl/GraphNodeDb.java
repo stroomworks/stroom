@@ -339,6 +339,39 @@ public final class GraphNodeDb {
         }
     }
 
+    /**
+     * Iterates every stored node version in key order, decoding each into its labels and properties.
+     *
+     * <p>Provided for merge: unlike {@link #getNode} this does not resolve an instant, it visits <em>every</em>
+     * version, because merging a fragment must reproduce its whole version history rather than a point in time.</p>
+     *
+     * <p><b>Preconditions:</b> neither parameter is null; {@code readTxn} is open on this store's environment.
+     * <b>Postconditions:</b> {@code consumer} has been called once per stored version, in (nodeUid, validFrom)
+     * order. Buffers are not retained past each call.
+     * <b>Null status:</b> the version passed to {@code consumer} is null for a tombstone.
+     *
+     * @param readTxn  an open read transaction.
+     * @param consumer receives each version.
+     */
+    public void forEachVersion(final Txn<ByteBuffer> readTxn, final NodeVersionConsumer consumer) {
+        Objects.requireNonNull(readTxn, "readTxn");
+        Objects.requireNonNull(consumer, "consumer");
+        LmdbIterable.iterate(readTxn, dbi, (key, value) -> {
+            final ByteBuffer k = key.duplicate();
+            final long nodeUid = NODE_UID_BYTES.get(k);
+            final Instant validFrom = TIME_SERDE.read(k);
+            consumer.accept(nodeUid, validFrom, decodeValue(value));
+        });
+    }
+
+    /**
+     * Receives one stored node version. {@code version} is null when the version is a tombstone.
+     */
+    public interface NodeVersionConsumer {
+
+        void accept(long nodeUid, Instant validFrom, @Nullable NodeVersion version);
+    }
+
     private static byte[] copy(final ByteBuffer buffer) {
         final ByteBuffer duplicate = buffer.duplicate();
         final byte[] bytes = new byte[duplicate.remaining()];

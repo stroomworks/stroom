@@ -202,32 +202,50 @@ clear message rather than a hang. See [10-limits.md](10-limits.md) for the value
 
 ## Cluster correctness cases
 
-**These will fail on any multi-node Stroom today**, by design of the current implementation rather than by
-accident — see [12-future-work.md](12-future-work.md#correctness-across-a-cluster). They are recorded here so
-that the correctness work has an acceptance test to satisfy, and so nobody mistakes a single-node pass for a
-cluster pass.
+These are the acceptance cases for the fragment-and-merge ingest path. Run on a cluster of at least two
+processing nodes, with the same graph fed by a single feed, and **with `graphdb.nodeList` naming the nodes
+that should hold graph data** — an empty list means "this node only" and the cases below will fail as they did
+before the work landed.
 
-Run on a cluster of at least two processing nodes, with the same graph fed by a single feed.
+Allow a merge cycle to complete before asserting; the `Graph DB Merge Processor` job starts the loops and they
+run continuously thereafter.
 
-| # | Case | Expected once correctness lands |
+| # | Case | Expected |
 |---|---|---|
 | C1 | Load a dataset large enough to be split across several streams, so more than one node processes some of it. Then `MATCH (u:User) RETURN count(u)` | The full count, from **every** node the query is sent to — not a per-node fragment |
-| C2 | Run the same query repeatedly against different cluster nodes | Identical results every time. Varying results mean fragmentation |
-| C3 | Take a pattern whose two endpoints were ingested by *different* nodes and traverse it | The path is found. This is the case fan-out cannot satisfy and merge-based ingest can |
-| C4 | Compare a cluster load against the same data loaded on a single node | Byte-for-byte equivalent query results |
-| C5 | Kill a non-writer node mid-load, then query | No missing data once the surviving fragments have merged |
+| C2 | Run the same query repeatedly against different cluster nodes | Identical results every time. Varying results mean fragments have not all merged, or `nodeList` is incomplete |
+| C3 | Take a pattern whose two endpoints were ingested by *different* nodes and traverse it | The path is found. This is the case fan-out could never satisfy and merge-based ingest does |
+| C4 | Compare a cluster load against the same data loaded on a single node | Equivalent query results. Note **logical**, not byte, equivalence: interned id assignment order differs, so the stores are not identical on disk |
+| C5 | Kill a node mid-load, then query | No missing data once the surviving fragments have merged. A stream whose fragment was not fully shipped is reprocessed |
+| C6 | Reprocess a stream that has already been merged | No duplicate or altered data — merge is idempotent |
+| C7 | Name a disabled node in `nodeList`, then process a stream | The stream task **fails** with a send error. It must not succeed having skipped that node |
+| C8 | Delete a graph while one of its fragments is still queued | The fragment is discarded, the merge-failure metric stays at zero, and the queue does not block |
 
 C3 is the discriminating case. C1 and C2 can pass by accident if one node happened to process everything, so
 check the processing task distribution before trusting them.
 
-Until this work lands, the honest test position is: **acceptance testing of Graph DB is only meaningful on a
-single node**, and a cluster deployment should be treated as unsupported rather than untested.
+C4's wording matters: assert on query results, not on file comparison. Two stores holding the same graph will
+differ byte-for-byte because ids are interned in arrival order.
+
+### Store format stamp cases
+
+| # | Case | Expected |
+|---|---|---|
+| S1 | Open a graph written by a build with a different `CURRENT_SCHEMA_VERSION` | The store **refuses to open**. It must not read old bytes as new ones |
+| S2 | Merge a fragment written by a build with a different stamp | The merge throws, the fragment directory is **retained** under `merging/`, and the merge-failure metric increments |
+
+There is no migration path by design — the remedy for S1 is to wipe and rebuild the graph.
 
 ## Automated tests
 
 | Test | Covers |
 |---|---|
-| `TestGraphFilter` | Ingest parsing and per-record error handling |
+| `TestGraphFilter` | Ingest parsing and per-record error handling — end to end through fragment and merge, so it also exercises the write path a clustered node takes |
+| `TestGraphStoresMerge` | Merge itself: cross-fragment traversal, colliding id spaces, repeated merge, all versions preserved, anchor equivalence across the tier boundary, stamp mismatch refused |
+| `TestGraphMergePipeline` | The wiring: fragments from separate streams reaching one store, empty streams shipping nothing, a fragment for a deleted graph being discarded |
+| `TestGraphSchemaDb` | The format stamp: written on provision, validated on open, mismatch refused |
+| `TestGraphQueryNodeResolverImpl` | Query routing, including that it claims only `GraphDb` documents |
+| `TestCompositeQueryNodeResolver` | That more than one feature can route, and that no resolvers means no constraint |
 | `TestGraphMutationSchema` | Sample documents against the XSD |
 | `TestGraphTraversalEngine` | Traversal, temporal semantics, guardrails |
 | `TestGraphSearchProvider` | End-to-end execution, including `UNION` |

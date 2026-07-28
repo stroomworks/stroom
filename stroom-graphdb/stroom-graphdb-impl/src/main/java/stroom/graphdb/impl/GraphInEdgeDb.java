@@ -252,6 +252,15 @@ public final class GraphInEdgeDb {
     }
 
     /**
+     * @param readTxn an open read transaction; not null.
+     * @return the number of stored in-edge versions, including tombstones.
+     */
+    public long count(final Txn<ByteBuffer> readTxn) {
+        Objects.requireNonNull(readTxn, "readTxn");
+        return dbi.stat(readTxn).entries;
+    }
+
+    /**
      * Retention (Task P1.4): the in-edge mirror of {@link GraphAdjacencyDb#deleteOldData} - identical algorithm,
      * over this store's own {@code (dstUid, edgeTypeUid, srcUid)}-keyed version runs. Records {@code srcUid}/
      * {@code dstUid} and {@code edgeTypeUid} as still-used for every surviving version, exactly as the out-edge

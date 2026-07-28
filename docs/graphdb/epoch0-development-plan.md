@@ -24,7 +24,7 @@ nothing reporting it.
 
 Fanning queries out cannot fix this. A traversal can cross a fragment boundary, so merging independent
 local traversals does not reconstruct paths — the reasoning is in
-[02-architecture.md](02-architecture.md#why-fanning-queries-out-would-not-fix-it). Correctness therefore
+[02-architecture.md](02-architecture.md#why-fanning-queries-out-would-not-have-fixed-it). Correctness therefore
 requires two things together: every mutation reaching **one authoritative store**, and every query running
 against a **complete copy** of it.
 
@@ -117,10 +117,27 @@ three working practices:
 
 ---
 
-## Phase 1 — Correctness on a cluster
+## Phase 1 — Correctness on a cluster — **complete**
 
 `stroom-planb-impl` provides a working template for almost all of this. Six increments; the last two
 together deliver cluster correctness.
+
+**All six have landed.** What each increment says below is the design as executed, with three deviations
+worth recording:
+
+- **1.2** — the property index is rebuilt rather than row-copied, as planned, but the reason turned out to be
+  stronger than "hash keys may not be portable": hash-tier keys carry clash-sequence suffixes, so copying one
+  is incorrect rather than merely risky. There is also no byte-copy fast path for *any* graph key.
+- **1.4** — `Shard` did not need generalising. The merge lifecycle was extracted from Plan B's
+  `MergeProcessor` into a parameterised `PartMergeProcessor` and Plan B left behind a façade, so Graph DB
+  reuses the loop without adopting `Shard` at all.
+- **1.6** — `QueryNodeResolver` became a multibinder behind a `CompositeQueryNodeResolver` bound in
+  `QueryModule` (rather than leaving the binding in `PlanBModule`), so the two injection sites stay
+  single-valued and any feature can contribute a resolver.
+
+One thing was added that the plan did not call for: `GraphFileTransferClientImpl` **throws** rather than
+sending nowhere when there is no node list and no node identity. Silently discarding a fragment is the exact
+failure the phase exists to remove.
 
 ### 1.1 Store version stamp
 
@@ -226,43 +243,85 @@ Deferred, and not blockers: snapshots and snapshot-node reads (and with them the
 
 ---
 
-## Phase 2 — Data safety
+## Phase 2 — Data safety — **complete**
 
 **Strict ingest mode.** A `boolean strict` pipeline property on `GraphFilter` — pipeline properties cannot be
 enums, so a tri-state severity is not available. The fail mechanism already exists in the same file
-(`log(FATAL_ERROR)` followed by `throw LoggedException.create(...)`). Apply it in three places, not one:
+(`log(FATAL_ERROR)` followed by `throw LoggedException.create(...)`).
 
-- `perRecord`'s catch block;
-- the **~9 validation sites that return without throwing** and so bypass that catch entirely;
-- the **two `default` branches** that currently drop unrecognised elements with no message at all.
+Done, but with a **simpler shape than planned**. Rather than applying the escalation at each of the ~9
+validation sites, it went into `error()` alone: `error()` throws in strict mode, so every site that previously
+reported and returned now fails the stream without knowing the setting exists. Two consequential follow-ons the
+plan did not anticipate:
 
-There is no strict/lenient precedent in Stroom to copy — every existing analogue toggles whether to *warn*,
-never whether to *fail*. Four `TestGraphFilter` tests encode the lenient contract and must be inverted.
+- `perRecord` had to gain a `catch (LoggedException)` **before** its `catch (RuntimeException)`, or the generic
+  catch would have swallowed the strict-mode failure and logged it as an ordinary skipped record — defeating the
+  whole setting. It rolls back the record's partial writes, then rethrows.
+- The `default` branches needed a **known-element set** rather than a blanket complaint, because legitimate
+  non-record elements (`<graph>`, `<src>`, `<dst>`, `<label>`) reach them too. Only `startElement` reports, so a
+  bad element is not reported twice.
 
-**Ship the XSD** as a real `XMLSchema` document so a `SchemaFilter` can validate in-pipeline. Move it out of
-`src/test/resources`, add a `graphdb` content pack to `ContentPacks`, and note that `SchemaFilter`
-additionally requires the instance document to carry `xsi:schemaLocation` — the current sample has only
-`xmlns`, so the worked XSLT in [`examples/`](examples/event-logging-to-graph.xslt) needs updating too.
+The four `TestGraphFilter` tests did **not** need inverting: `strict` defaults to false, so they still pin the
+lenient contract, which is worth keeping. Four strict-mode tests were added alongside them instead — including
+one asserting a fully valid document produces no errors in strict mode, since the known-element check is a
+denylist inversion and getting the set wrong would reject valid input.
 
-**The rebuild trap.** `rebuild()` depends on source streams still existing. Under principle 1 the honest
-position is to document it and rely on the new version stamp to force a deliberate rebuild rather than
-silent corruption.
+**Ship the XSD.** Moved from `src/test/resources` to `src/main/resources/stroom/graphdb/graph-mutation-v1.0.xsd`,
+with a `GraphMutationSchema` accessor so there is one copy: shipped, tested against, and served. `SchemaFilter`
+does indeed require `xsi:schemaLocation` — confirmed in `validateSchemaLocations`, which reports
+`noSchemaLocations` and fails without it — so the worked XSLT and its expected output now emit it, re-verified
+with Saxon 9.9.1-8 and `xmllint` against the shipped schema.
 
-## Phase 3 — Correctness surprises
+**One plan step was not possible as written.** `ContentPacks` does not hold shippable content: every pack is a
+pinned commit of the external `gchq/stroom-content` repository, and packs are referenced only from tests. A
+`graphdb` content pack therefore needs an upstream change to that repository first, and is out of this repo's
+reach. What was done instead is to make the schema obtainable from a running Stroom —
+`GET /api/graphDb/v1/mutationSchema` — and to document creating the `XMLSchema` document by hand, including the
+system id it must be registered under. The content pack remains worth doing; it is now an upstream task rather
+than a Stroom-repo one.
 
-**Typed property values — far cheaper than [12-future-work.md](12-future-work.md) currently states.**
-`GraphPropsCodec` is **already typed**, with a passing round-trip test for string, long, double and boolean.
-The query side is already type-aware: the row extractors short-circuit on `LONG`/`DATE`, sorting uses
-`Val.compareTo`, `min`/`max` preserve type, and the JSON renderer already has unquoted-number branches that
-are currently dead code. The work is: type the three lines in `GraphFilter` that force `ValString`, add a
-`type` attribute to the vocabulary, and bump the schema version.
+**The rebuild trap.** Documented as an accepted limitation rather than fixed, per principle 1: graph data is
+reproducible from its sources, the format stamp forces a deliberate rebuild rather than silent corruption, and
+source-stream retention is therefore part of a graph's recovery plan. Recorded in `11-operations.md` with the
+two configurations spelled out, and the in-place compaction path that would remove the coupling left in
+`12-future-work.md`.
 
-> **Keep the property index keyed on lexical text.** Not for compatibility — for correctness. Ingest indexes
-> raw XML text and the anchor seek uses the query literal's raw text, so the two agree today. Typed index
-> keys need a canonical encoder shared by both sides, or `WHERE n.count = 42` silently stops matching. The
-> payoff would be range anchors, which is a language feature and out of scope.
+## Phase 3 — Correctness surprises — **partly complete**
 
-**A real list type for `collect()`.** Add a member to Stroom's sealed `Val` hierarchy: the `permits` clause
+### 3.1 Typed property values — **done for `long` and `boolean`**
+
+`GraphPropsCodec` is **already typed** — it delegates to the type-tagged `ValSerdeUtil` — so nothing about the
+stored bytes changed. Two of this plan's predictions were wrong, and both matter:
+
+**No schema-version bump was needed.** The plan assumed typing changed the value format. It does not: the codec
+already round-trips any `Val`, an older build decodes a `ValLong` correctly because `ValSerdeUtil` is shared,
+and for a string property the new anchor derivation produces byte-identical keys to the old one. Bumping would
+have invalidated every existing store for no correctness gain.
+
+**"Keep the property index keyed on lexical text" turned out to be impossible as stated, and the resolution
+inverts it.** Merge only ever sees *decoded* values, so it cannot reproduce an anchor derived from raw XML
+text. Ingest therefore had to move to anchoring on the **decoded** value — `GraphAnchorEncoding.anchorValueBytes(Val)`,
+which merge already used — making the two byte-identical by construction. For a string property the raw text
+and the rendered value are the same, so nothing changed there.
+
+That inversion is what limits the type set. A query seeks the anchor using the query literal's own text, so a
+type whose canonical rendering differs from what an author would naturally write silently finds nothing:
+`ValDouble(42.0)` renders as `42`, so `{x: 42.0}` would match no rows and raise no error. **`double` and dates
+are therefore deliberately excluded**, with the two viable designs recorded in `12-future-work.md`. `long` and
+`boolean` have exactly one sensible rendering, so they are safe.
+
+> **The plan's stated motivation was also wrong, and the docs repeated it.** `ORDER BY` was never lexical:
+> `ValComparators` maps `Type.STRING` to `AS_DOUBLE_THEN_..._STRING`, a numeric-first comparator, so `"9"`
+> already sorted before `"10"`. What was genuinely broken is that every value's *type* was `STRING` regardless
+> of what it held, so JSON output quoted numbers and type-aware code paths saw text. `README.md` and
+> `03-ingest.md` have been corrected, including an explicit note that the earlier claim was wrong.
+
+A value that fails to parse as its declared type is reported as a bad record rather than falling back to text —
+a silent fallback would reintroduce the very surprise typing removes, but only for the rows that failed.
+
+### 3.2 A real list type for `collect()` — **not started**
+
+Add a member to Stroom's sealed `Val` hierarchy: the `permits` clause
 and `@JsonSubTypes`, a `Type` constant (**id 8 is free**), the **two** exhaustive `ValSerdeUtil` switches (the
 compiler finds them — everything else has a `default`), a `ValSerialiser` entry, and a `ValComparators`
 entry. `ValXml` is the shape to copy. Renderers need no change at all; they stringify.
@@ -273,10 +332,20 @@ entry. `ValXml` is the shape to copy. Renderers need no change at all; they stri
 This touches shared query-language code used by Plan B, dashboards and StroomQL, so it warrants its own
 change rather than riding along with graph work.
 
-**Temporal Precision — full serde swap.** Select a `TimeSerde` by precision, exactly as Plan B's temporal
+### 3.3 Temporal Precision — full serde swap — **not started**
+
+Select a `TimeSerde` by precision, exactly as Plan B's temporal
 stores do. The serdes have different widths (2–8 bytes), so this changes all three frozen key layouts and
 every hard-coded `6`. Under principle 1 that needs no migration, but it **must** bump the schema version so
-a store written at one precision refuses to open at another. Two consequences to handle:
+a store written at one precision refuses to open at another.
+
+Measured scope, since the plan did not size it: each of `GraphNodeDb`, `GraphAdjacencyDb` and `GraphInEdgeDb`
+holds a `private static final MillisecondTimeSerde TIME_SERDE` and a `KEY_WIDTH` constant, with key offsets
+computed statically from both — including two `KEY_WIDTH - 6, 6` slices. All of that becomes per-instance state
+driven by the owning document, so the three classes that carry the module's most load-bearing invariants are
+touched at once. `GraphTraversalEngine`'s `MAX_INSTANT` also becomes serde-derived rather than a constant.
+
+Two consequences to handle:
 
 - The setting becomes **immutable after provisioning** — enforce it, as Plan B does via schema validation.
 - **Drop `NANOSECOND`.** `MillisecondTimeSerde` silently discards nanoseconds and the vocabulary permits only
@@ -389,18 +458,49 @@ Two things to know before reading a red build:
 
 ## Documentation to correct as this lands
 
-Two files in this set currently mis-size Phase 3 work, both identified by the research behind this plan:
+### Done, with Phase 1
 
-- **[12-future-work.md](12-future-work.md)** rates typed property values *Hard / High, needs a migration*.
-  It does not — the codec is already typed, so it is an ingest and schema change.
-- The same file frames `collect()` as needing a new value type through the whole stack. Renderers need no
-  change; the cost is the sealed hierarchy and the serialiser.
+- The cluster blocker in [README.md](README.md), [02-architecture.md](02-architecture.md),
+  [01-introduction.md](01-introduction.md), [11-operations.md](11-operations.md) and
+  [12-future-work.md](12-future-work.md) — rewritten to describe the fragment-and-merge design, keeping the
+  fan-out reasoning because it is what constrains any future change here.
+- The **store-format-stamp policy** added to [13-developer-guide.md](13-developer-guide.md) (including *bump
+  the version if you change any of these layouts*) and [14-testing.md](14-testing.md).
+- The **no-configuration** statements in [11-operations.md](11-operations.md) and [README.md](README.md) —
+  `graphdb.path` and `graphdb.nodeList` now exist, and the directory layout and merge job are documented.
+- The two Phase 3 mis-sizings in [12-future-work.md](12-future-work.md), corrected now so the next phase is
+  planned against real numbers: typed property values are *Medium / Low*, not *Hard / High needing a
+  migration* (the codec is already typed), and `collect()` needs no renderer changes — its cost is the sealed
+  hierarchy and the serialiser, with `ValSerialiser.writeArray`'s 255-element cap becoming its real ceiling.
+- Cluster acceptance cases in [14-testing.md](14-testing.md) turned from "will fail today" into real
+  acceptance criteria, plus format-stamp cases and the note that cluster-versus-single-node equivalence is
+  **logical**, not byte-for-byte.
 
 Already fixed while writing this plan: `../coding-standards.md` pointed at three Graph DB
 implementation plans that were retired to git history, leaving dangling links. It now points here.
 
-Also to update as each phase lands: the **store-version policy** (new — nothing records store format today)
-in [13-developer-guide.md](13-developer-guide.md) and [14-testing.md](14-testing.md); the strict-ingest and
-XSD caveats in [03-ingest.md](03-ingest.md); the fixed-size and no-configuration statements in
-[10-limits.md](10-limits.md) and [11-operations.md](11-operations.md); and the cluster blocker in
-[README.md](README.md) and [02-architecture.md](02-architecture.md).
+### Done, with Phase 2
+
+- The strict-ingest and XSD caveats in [03-ingest.md](03-ingest.md) — rewritten as a `strict` property
+  reference, an in-pipeline validation recipe, and the `xsi:schemaLocation` requirement.
+- The data-safety table in [README.md](README.md) — three rows now record what closed and what is accepted.
+- The rebuild trap in [11-operations.md](11-operations.md) as an accepted limitation with its two
+  configurations.
+- The worked output in [04-event-logging-xslt.md](04-event-logging-xslt.md) and
+  [`examples/expected-output.xml`](examples/expected-output.xml), regenerated so they match the XSLT.
+
+### Done, with Phase 3.1
+
+- The `long`/`boolean` type attribute documented in [03-ingest.md](03-ingest.md#property-value-types), with an
+  honest table of what declaring a type does and does not buy, and why `double` and dates are excluded.
+- **A correction, not just an update:** [README.md](README.md) and [03-ingest.md](03-ingest.md) both claimed
+  ordering was lexical (`"10" < "9"`). It never was. Both now say so explicitly rather than quietly changing.
+- [12-future-work.md](12-future-work.md) resized: typed `long`/`boolean` struck through, typed `double`/dates
+  split out as a separate item blocked on an anchor-encoding decision with both candidate designs written down.
+
+### Still to do, with their phases
+- The fixed-size statements in [10-limits.md](10-limits.md) and [11-operations.md](11-operations.md) — Phase 4.
+- The *Temporal Precision is inert* note in [11-operations.md](11-operations.md) and
+  [README.md](README.md) — Phase 3.
+- The `collect()` and string-only-property entries under *Correctness surprises* in
+  [README.md](README.md) — Phase 3.

@@ -17,9 +17,11 @@
 package stroom.graphdb.impl.pipeline;
 
 import stroom.docref.DocRef;
+import stroom.graphdb.impl.GraphAnchorEncoding;
 import stroom.graphdb.impl.GraphDbDocCache;
 import stroom.graphdb.impl.GraphNodeDb;
-import stroom.graphdb.impl.GraphStoreManager;
+import stroom.graphdb.impl.GraphShardWriters;
+import stroom.graphdb.impl.GraphShardWriters.GraphShardWriter;
 import stroom.graphdb.impl.GraphStores;
 import stroom.graphdb.shared.GraphDbDoc;
 import stroom.lmdb.serde.UnsignedBytesInstances;
@@ -32,9 +34,12 @@ import stroom.pipeline.factory.PipelinePropertyDocRef;
 import stroom.pipeline.filter.AbstractXMLFilter;
 import stroom.pipeline.shared.data.PipelineElementType;
 import stroom.pipeline.shared.data.PipelineElementType.Category;
+import stroom.pipeline.state.MetaHolder;
 import stroom.planb.impl.dao.LmdbWriter;
 import stroom.planb.impl.dao.UidLookupDb;
 import stroom.query.language.functions.Val;
+import stroom.query.language.functions.ValBoolean;
+import stroom.query.language.functions.ValLong;
 import stroom.query.language.functions.ValString;
 import stroom.svg.shared.SvgImage;
 import stroom.util.CharBuffer;
@@ -56,17 +61,23 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 /**
- * Parses {@code graph-mutation:1} XML (Task P2.1) and writes node/edge mutations into one target
- * {@link GraphDbDoc}'s stores (Task P2.2) - the graph analogue of {@code stroom.planb.impl.pipeline.PlanBFilter},
- * with one load-bearing difference: this filter resolves its **single** target doc via a
- * {@link PipelineProperty}/{@link DocRef} (like {@code stroom.index.impl.DynamicIndexingFilter} resolves its
- * index), not per-record from an in-XML map name - a {@code GraphDbDoc} is one directly-opened, long-lived
- * {@link GraphStores}, not a shardable/mergeable Plan B store (design doc &sect;2.1; implementation plan's P2
- * scoping note explains why {@code PlanBFilter}'s own resolution strategy does not fit here).
+ * Parses {@code graph-mutation:1} XML and writes node/edge mutations into one target {@link GraphDbDoc} - the
+ * graph analogue of {@code stroom.planb.impl.pipeline.PlanBFilter}, differing in that this filter resolves its
+ * <b>single</b> target doc via a {@link PipelineProperty}/{@link DocRef} (like
+ * {@code stroom.index.impl.DynamicIndexingFilter} resolves its index) rather than per-record from an in-XML map
+ * name.
  *
- * <p>Holds one {@link LmdbWriter} open across the whole stream (opened in {@link #startProcessing()}, closed in
+ * <p>Writes are not made into the graph's own store. {@link #startProcessing()} asks
+ * {@link GraphShardWriters} for a fragment - a complete but empty graph store holding nothing but this stream's
+ * mutations - and {@link #endProcessing()} closes it, which ships it to every node that holds graph data to be
+ * merged. Writing directly into the live store, as this filter originally did, made the graph on each node
+ * consist only of the streams that node happened to process, so every query silently returned a partial answer;
+ * routing through a fragment is what removes that.</p>
+ *
+ * <p>Holds one {@link LmdbWriter} open across the whole stream (obtained in {@link #startProcessing()}, closed in
  * {@link #endProcessing()}), but - unlike {@link LmdbWriter}'s other callers - does <b>not</b> rely on its
  * batched auto-commit threshold ({@link LmdbWriter#tryCommit()}). A node/edge write is not one write but several
  * (a node write plus N property-index anchors; an edge write is a dual out-edge/in-edge insert), so batching
@@ -78,13 +89,23 @@ import java.util.Optional;
  * only that record's writes) on failure, trading {@link LmdbWriter}'s write-batching throughput for a hard
  * per-record durability guarantee.</p>
  *
- * <p>A bad record is logged via the normal pipeline error-reporting path and skipped - it does not abort the
- * whole stream, mirroring {@code PlanBFilter}'s own resilience to isolated bad records. This covers both a
- * malformed record (missing a required attribute/child, an unparsable {@code validFrom} - detected before any
- * store write) and a record that reaches the store layer but fails there (e.g. a node with more labels than the
- * store can encode, a property value too large for the LMDB buffer, or a pre-existing corrupt version blob) -
- * every per-record store mutation runs under {@link #perRecord}, the analogue of
- * {@code PlanBFilter.catchLmdbError}.</p>
+ * <p>What happens to a bad record depends on {@link #setStrict(boolean) strict}. Either way the failure is
+ * detected in the same places: a malformed record (a missing required attribute or child, an unparsable
+ * {@code validFrom}, an element the vocabulary does not define - all caught before any store write) and a record
+ * that reaches the store layer and fails there (a node with more labels than the store can encode, a property
+ * value too large for the LMDB buffer, a corrupt existing version blob), the latter because every per-record
+ * store mutation runs under {@link #perRecord}, the analogue of {@code PlanBFilter.catchLmdbError}.</p>
+ *
+ * <p><b>Lenient</b> (the default, and {@code PlanBFilter}'s behaviour) logs the record at {@code ERROR} and
+ * carries on, so one bad record cannot cost a whole stream. <b>Strict</b> reports at {@code FATAL_ERROR} and
+ * fails the stream. The choice is a real one rather than a preference: lenient loses data quietly, so a graph
+ * can look healthy while missing a subset of its input, whereas strict cannot lose data silently but lets a
+ * single bad record block a feed. Strict is the right default for a graph whose completeness is load-bearing.</p>
+ *
+ * <p>Strict mode is implemented in {@link #error} rather than at each validation site: {@link #error} throws, so
+ * the sites that would otherwise report and return carry on failing the stream without needing to know about the
+ * setting. {@link #perRecord} rethrows that exception rather than treating it as a record-level failure, having
+ * first rolled back the record's partial writes.</p>
  */
 @ConfigurableElement(
         type = "GraphFilter",
@@ -108,6 +129,28 @@ public class GraphFilter extends AbstractXMLFilter {
     private static final String SRC_ELEMENT = "src";
     private static final String DST_ELEMENT = "dst";
 
+    private static final String GRAPH_ELEMENT = "graph";
+
+    /**
+     * Every element name the vocabulary defines. Anything else is a typo or a vocabulary mismatch, and is
+     * reported rather than ignored - a misspelled element used to contribute nothing and say nothing.
+     */
+    private static final Set<String> KNOWN_ELEMENTS = Set.of(
+            GRAPH_ELEMENT,
+            NODE_ELEMENT,
+            NODE_DELETE_ELEMENT,
+            EDGE_ELEMENT,
+            EDGE_DELETE_ELEMENT,
+            LABEL_ELEMENT,
+            PROPERTY_ELEMENT,
+            SRC_ELEMENT,
+            DST_ELEMENT);
+
+    /** The {@code <property type="...">} values the vocabulary allows. Absent means {@link #TYPE_STRING}. */
+    private static final String TYPE_STRING = "string";
+    private static final String TYPE_LONG = "long";
+    private static final String TYPE_BOOLEAN = "boolean";
+
     private static final String ID_ATTRIBUTE = "id";
     private static final String TYPE_ATTRIBUTE = "type";
     private static final String VALID_FROM_ATTRIBUTE = "validFrom";
@@ -116,11 +159,14 @@ public class GraphFilter extends AbstractXMLFilter {
     private final ErrorReceiverProxy errorReceiverProxy;
     private final LocationFactoryProxy locationFactory;
     private final GraphDbDocCache graphDbDocCache;
-    private final GraphStoreManager graphStoreManager;
+    private final GraphShardWriters graphShardWriters;
+    private final MetaHolder metaHolder;
 
     private final CharBuffer contentBuffer = new CharBuffer(32);
 
     private DocRef graphDbRef;
+    private boolean strict;
+    private GraphShardWriter shardWriter;
     private GraphStores stores;
     private LmdbWriter writer;
     private Locator locator;
@@ -131,8 +177,9 @@ public class GraphFilter extends AbstractXMLFilter {
     private String currentType;
     private Instant currentValidFrom;
     private List<String> currentLabels;
-    private Map<String, String> currentProperties;
+    private Map<String, TypedText> currentProperties;
     private String currentPropertyName;
+    private String currentPropertyType;
     private String currentSrc;
     private String currentDst;
 
@@ -140,17 +187,30 @@ public class GraphFilter extends AbstractXMLFilter {
     public GraphFilter(final ErrorReceiverProxy errorReceiverProxy,
                        final LocationFactoryProxy locationFactory,
                        final GraphDbDocCache graphDbDocCache,
-                       final GraphStoreManager graphStoreManager) {
+                       final GraphShardWriters graphShardWriters,
+                       final MetaHolder metaHolder) {
         this.errorReceiverProxy = errorReceiverProxy;
         this.locationFactory = locationFactory;
         this.graphDbDocCache = graphDbDocCache;
-        this.graphStoreManager = graphStoreManager;
+        this.graphShardWriters = graphShardWriters;
+        this.metaHolder = metaHolder;
     }
 
     @PipelineProperty(description = "The graph to write node/edge mutations into.", displayPriority = 1)
     @PipelinePropertyDocRef(types = GraphDbDoc.TYPE)
     public void setGraphDb(final DocRef graphDbRef) {
         this.graphDbRef = graphDbRef;
+    }
+
+    @PipelineProperty(
+            description = "Fail the whole stream if any record is bad, instead of logging it and carrying on. " +
+                          "Leave this off and a malformed record is skipped, so a graph can look healthy while " +
+                          "silently missing part of its input. Turn it on where the graph has to be complete or " +
+                          "known to be broken.",
+            defaultValue = "false",
+            displayPriority = 2)
+    public void setStrict(final boolean strict) {
+        this.strict = strict;
     }
 
     @Override
@@ -165,8 +225,11 @@ public class GraphFilter extends AbstractXMLFilter {
                 log(Severity.FATAL_ERROR, "Unable to load graph db " + graphDbRef, null);
                 throw LoggedException.create("Unable to load graph db " + graphDbRef);
             }
-            stores = graphStoreManager.getOrOpen(doc);
-            writer = stores.createWriter();
+            // Write into a fragment of this stream's own rather than into the live store, so the mutations can be
+            // shipped to every node that holds graph data and merged there.
+            shardWriter = graphShardWriters.createWriter(metaHolder.getMeta(), doc);
+            stores = shardWriter.getStores();
+            writer = shardWriter.getWriter();
         } finally {
             super.startProcessing();
         }
@@ -175,8 +238,9 @@ public class GraphFilter extends AbstractXMLFilter {
     @Override
     public void endProcessing() {
         try {
-            if (writer != null) {
-                writer.close();
+            if (shardWriter != null) {
+                // Closes the writer and environment, then sends the fragment for merging.
+                shardWriter.close();
             }
         } finally {
             super.endProcessing();
@@ -211,6 +275,7 @@ public class GraphFilter extends AbstractXMLFilter {
                 currentLabels = null;
                 currentProperties = null;
                 currentPropertyName = null;
+                currentPropertyType = null;
             }
             case EDGE_ELEMENT -> {
                 currentType = atts.getValue(TYPE_ATTRIBUTE);
@@ -226,13 +291,15 @@ public class GraphFilter extends AbstractXMLFilter {
                 currentLabels = null;
                 currentProperties = null;
                 currentPropertyName = null;
+                currentPropertyType = null;
                 currentSrc = null;
                 currentDst = null;
             }
-            case PROPERTY_ELEMENT -> currentPropertyName = atts.getValue(NAME_ATTRIBUTE);
-            default -> {
-                // Not a record-shaping element (e.g. the <graph> root) - nothing to do.
+            case PROPERTY_ELEMENT -> {
+                currentPropertyName = atts.getValue(NAME_ATTRIBUTE);
+                currentPropertyType = atts.getValue(TYPE_ATTRIBUTE);
             }
+            default -> checkKnownElement(localName);
         }
         super.startElement(uri, localName, qName, atts);
     }
@@ -256,7 +323,9 @@ public class GraphFilter extends AbstractXMLFilter {
                 } else if (currentPropertyName == null) {
                     error("<property> requires a name attribute");
                 } else {
-                    currentProperties.put(currentPropertyName, contentBuffer.toString());
+                    currentProperties.put(
+                            currentPropertyName,
+                            new TypedText(currentPropertyType, contentBuffer.toString()));
                 }
             }
             case SRC_ELEMENT -> currentSrc = contentBuffer.toString();
@@ -266,7 +335,7 @@ public class GraphFilter extends AbstractXMLFilter {
             case EDGE_ELEMENT -> perRecord(EDGE_ELEMENT, this::addEdge);
             case EDGE_DELETE_ELEMENT -> perRecord(EDGE_DELETE_ELEMENT, this::deleteEdge);
             default -> {
-                // Not a record-shaping element - nothing to do.
+                // Already reported by startElement's own default branch, so say nothing a second time.
             }
         }
         contentBuffer.clear();
@@ -299,11 +368,21 @@ public class GraphFilter extends AbstractXMLFilter {
         try {
             handler.run();
             writer.commit();
+            shardWriter.markDirty();
+        } catch (final LoggedException e) {
+            // Strict mode: a handler's own validation has already reported this at FATAL_ERROR. Roll back the
+            // record's partial writes, then let it fail the stream.
+            writer.abort();
+            throw e;
         } catch (final RuntimeException e) {
             writer.abort();
-            log(Severity.ERROR,
-                    "Failed to write <" + element + ">: " + e.getClass().getSimpleName() + " - " + e.getMessage(),
-                    e);
+            final String message =
+                    "Failed to write <" + element + ">: " + e.getClass().getSimpleName() + " - " + e.getMessage();
+            if (strict) {
+                log(Severity.FATAL_ERROR, message, e);
+                throw LoggedException.create(message);
+            }
+            log(Severity.ERROR, message, e);
         }
     }
 
@@ -339,7 +418,7 @@ public class GraphFilter extends AbstractXMLFilter {
             // unchanged, under some other label.
             final boolean labelCarriedBefore = previousVersion.isPresent()
                     && previousVersion.get().labelUids().contains(labelUid);
-            for (final Map.Entry<String, String> property : currentProperties.entrySet()) {
+            for (final Map.Entry<String, Val> property : properties.entrySet()) {
                 final Val previousValue = labelCarriedBefore
                         ? previousVersion.get().properties().get(property.getKey())
                         : null;
@@ -352,7 +431,11 @@ public class GraphFilter extends AbstractXMLFilter {
                 }
                 final long propKeyUid = intern(stores.getPropertyKeyUids(), property.getKey());
                 stores.getPropertyIndex().insert(writer, labelUid, propKeyUid,
-                        property.getValue().getBytes(StandardCharsets.UTF_8), nodeUid);
+                        GraphAnchorEncoding.anchorValueBytes(property.getValue()), nodeUid);
+                // Note the anchor is derived from the decoded value, not from the raw XML text. For an untyped
+                // (string) property the two are identical, but for a typed one only the decoded form is
+                // reproducible by merge - which only ever sees decoded values - so anchoring on raw text would
+                // make a merged graph answer property lookups differently from a directly-ingested one.
             }
         }
     }
@@ -373,11 +456,13 @@ public class GraphFilter extends AbstractXMLFilter {
      * @param newValue                      never null; the value being indexed now.
      */
     static boolean anchorNeedsReindexing(final boolean labelCarriedByPreviousVersion,
-                                        final @Nullable Val previousValue, final String newValue) {
+                                        final @Nullable Val previousValue, final Val newValue) {
         if (!labelCarriedByPreviousVersion) {
             return true;
         }
-        return previousValue == null || !previousValue.toString().equals(newValue);
+        // Compared on rendered form because that - not the value's type - is what the anchor key is made of. A
+        // property retyped from string "42" to long 42 keys the same anchor, so it genuinely needs no rewrite.
+        return previousValue == null || !previousValue.toString().equals(newValue.toString());
     }
 
     private void deleteNode() {
@@ -417,12 +502,76 @@ public class GraphFilter extends AbstractXMLFilter {
         stores.getInEdges().delete(writer, srcUid, edgeTypeUid, dstUid, currentValidFrom);
     }
 
-    private static Map<String, Val> toVals(final Map<String, String> properties) {
+    /**
+     * Converts a record's accumulated property text into typed values.
+     *
+     * <p>An absent or {@code string} type stays a {@link ValString}, which is what every property used to be. A
+     * declared type is parsed, and a value that does not parse is reported as a bad record rather than silently
+     * falling back to text - a property that was meant to be a number and quietly became a string would order and
+     * compare lexically, which is precisely the surprise typing exists to remove.</p>
+     *
+     * <p><b>Preconditions:</b> {@code properties} is not null.
+     * <b>Postconditions:</b> returns one entry per input entry, unless {@link #error} threw.
+     * <b>Null status:</b> {@code properties} is not nullable; the return value is never null.
+     *
+     * @param properties the record's accumulated properties.
+     * @return the typed values, in input order.
+     */
+    private Map<String, Val> toVals(final Map<String, TypedText> properties) {
         final Map<String, Val> vals = new LinkedHashMap<>(properties.size());
-        for (final Map.Entry<String, String> property : properties.entrySet()) {
-            vals.put(property.getKey(), ValString.create(property.getValue()));
+        for (final Map.Entry<String, TypedText> property : properties.entrySet()) {
+            vals.put(property.getKey(), toVal(property.getKey(), property.getValue()));
         }
         return vals;
+    }
+
+    private Val toVal(final String name, final TypedText typedText) {
+        final String text = typedText.text();
+        final String type = typedText.type() == null
+                ? TYPE_STRING
+                : typedText.type().toLowerCase(Locale.ROOT);
+        switch (type) {
+            case TYPE_STRING -> {
+                return ValString.create(text);
+            }
+            case TYPE_LONG -> {
+                try {
+                    return ValLong.create(Long.parseLong(text.trim()));
+                } catch (final NumberFormatException e) {
+                    error("<property name=\"" + name + "\" type=\"long\"> value \"" + text
+                          + "\" is not a whole number");
+                    return ValString.create(text);
+                }
+            }
+            case TYPE_BOOLEAN -> {
+                final String trimmed = text.trim();
+                // XML Schema's boolean lexical space, which is what the shipped XSD constrains this to.
+                if ("true".equals(trimmed) || "1".equals(trimmed)) {
+                    return ValBoolean.create(true);
+                }
+                if ("false".equals(trimmed) || "0".equals(trimmed)) {
+                    return ValBoolean.create(false);
+                }
+                error("<property name=\"" + name + "\" type=\"boolean\"> value \"" + text
+                      + "\" is not true or false");
+                return ValString.create(text);
+            }
+            default -> {
+                error("<property name=\"" + name + "\"> has unknown type \"" + typedText.type() + "\"");
+                return ValString.create(text);
+            }
+        }
+    }
+
+    /**
+     * A property's declared type and its text, as they appeared. Kept together so the conversion happens once, at
+     * the point the record is written, rather than being spread over the SAX callbacks.
+     *
+     * @param type the {@code type} attribute's value, or null if it was absent.
+     * @param text the element's text content.
+     */
+    private record TypedText(@Nullable String type, String text) {
+
     }
 
     private long intern(final UidLookupDb db, final String key) {
@@ -450,7 +599,42 @@ public class GraphFilter extends AbstractXMLFilter {
         }
     }
 
+    /**
+     * Reports an element the vocabulary does not define.
+     *
+     * <p>Only element names are checked, not their nesting - nesting is the XSD's job, and
+     * {@code graph-mutation:1} is now shipped as a schema document so a {@code SchemaFilter} upstream can
+     * enforce it. What this catches is the case a schema cannot: a pipeline with no validation in front of it,
+     * where a misspelled element contributed nothing and reported nothing.</p>
+     *
+     * <p><b>Postconditions:</b> a message has been reported if {@code localName} is not a known element; in
+     * strict mode a {@link LoggedException} has also been thrown.
+     * <b>Null status:</b> {@code localName} is not nullable.
+     *
+     * @param localName the element name as it appeared, before case folding.
+     */
+    private void checkKnownElement(final String localName) {
+        if (!KNOWN_ELEMENTS.contains(localName.toLowerCase(Locale.ROOT))) {
+            error("<" + localName + "> is not a graph-mutation element");
+        }
+    }
+
+    /**
+     * Reports a bad record. In strict mode this <b>throws</b>, so every caller that would otherwise have
+     * returned normally and carried on now fails the stream instead - which is why the individual validation
+     * sites need no strict-mode handling of their own.
+     *
+     * <p><b>Postconditions:</b> the message has been reported; in strict mode a {@link LoggedException} has been
+     * thrown.
+     * <b>Null status:</b> {@code message} is not nullable.
+     *
+     * @param message what was wrong with the record.
+     */
     private void error(final String message) {
+        if (strict) {
+            log(Severity.FATAL_ERROR, message, null);
+            throw LoggedException.create(message);
+        }
         log(Severity.ERROR, message, null);
     }
 

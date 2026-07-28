@@ -43,6 +43,24 @@ import org.fusesource.restygwt.client.DirectRestService;
 @Consumes(MediaType.APPLICATION_JSON)
 public interface GraphDbResource extends RestResource, DirectRestService, FetchWithUuid<GraphDbDoc> {
 
+    /**
+     * The {@code graph-mutation:1} XSD's source text.
+     *
+     * <p>Exists so the vocabulary a pipeline author must conform to can be obtained from a running Stroom rather
+     * than extracted from a jar. Paste the result into an {@code XMLSchema} document to give a
+     * {@code SchemaFilter} something to validate against.</p>
+     *
+     * <p>Declared before {@code /{uuid}} for readability only - JAX-RS matches the literal path in preference to
+     * the template regardless of order.</p>
+     */
+    @GET
+    @Path("/mutationSchema")
+    @Produces(MediaType.TEXT_PLAIN)
+    @Operation(
+            summary = "Fetch the graph-mutation:1 XSD source, to register as an XMLSchema document",
+            operationId = "fetchGraphMutationSchema")
+    String fetchMutationSchema();
+
     @GET
     @Path("/{uuid}")
     @Operation(

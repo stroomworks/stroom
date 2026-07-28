@@ -35,8 +35,6 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 /**
  * {@link GraphStoreManagerImpl} - the {@code GraphStoreManager} implementation every other test in this module
@@ -48,16 +46,15 @@ import static org.mockito.Mockito.when;
 class TestGraphStoreManagerImpl {
 
     @Test
-    void getOrOpen_opensStoresUnderPathCreatorResolvedDirectoryPlusDocUuid(@TempDir final Path appPath) {
-        final PathCreator pathCreator = mock(PathCreator.class);
-        when(pathCreator.toAppPath("graphdb")).thenReturn(appPath.resolve("graphdb"));
+    void getOrOpen_opensStoresUnderTheConfiguredShardDirectoryPlusDocUuid(@TempDir final Path appPath) {
+        final GraphPaths graphPaths = new GraphPaths(appPath.resolve("graphdb"));
 
         final GraphDbDoc doc = GraphDbDoc.builder().uuid("doc-uuid-1").name("Graph1").build();
-        final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(pathCreator);
+        final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(graphPaths);
 
         final GraphStores stores = manager.getOrOpen(doc);
         try {
-            assertThat(Files.isDirectory(appPath.resolve("graphdb").resolve("doc-uuid-1"))).isTrue();
+            assertThat(Files.isDirectory(appPath.resolve("graphdb").resolve("shards").resolve("doc-uuid-1"))).isTrue();
             // The returned instance is a genuinely open, writable GraphStores.
             final int uidWidth = stores.write(writer -> stores.getNodeUids().put(
                     writer.getWriteTxn(), directBuffer("n1"), ByteBuffer::remaining));
@@ -69,11 +66,10 @@ class TestGraphStoreManagerImpl {
 
     @Test
     void getOrOpen_returnsTheSameCachedInstanceForTheSameDoc(@TempDir final Path appPath) {
-        final PathCreator pathCreator = mock(PathCreator.class);
-        when(pathCreator.toAppPath("graphdb")).thenReturn(appPath.resolve("graphdb"));
+        final GraphPaths graphPaths = new GraphPaths(appPath.resolve("graphdb"));
 
         final GraphDbDoc doc = GraphDbDoc.builder().uuid("doc-uuid-2").name("Graph2").build();
-        final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(pathCreator);
+        final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(graphPaths);
 
         final GraphStores first = manager.getOrOpen(doc);
         final GraphStores second = manager.getOrOpen(doc);
@@ -86,19 +82,18 @@ class TestGraphStoreManagerImpl {
 
     @Test
     void getOrOpen_opensIndependentStoresForDifferentDocs(@TempDir final Path appPath) {
-        final PathCreator pathCreator = mock(PathCreator.class);
-        when(pathCreator.toAppPath("graphdb")).thenReturn(appPath.resolve("graphdb"));
+        final GraphPaths graphPaths = new GraphPaths(appPath.resolve("graphdb"));
 
         final GraphDbDoc docA = GraphDbDoc.builder().uuid("doc-uuid-a").name("GraphA").build();
         final GraphDbDoc docB = GraphDbDoc.builder().uuid("doc-uuid-b").name("GraphB").build();
-        final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(pathCreator);
+        final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(graphPaths);
 
         final GraphStores storesA = manager.getOrOpen(docA);
         final GraphStores storesB = manager.getOrOpen(docB);
         try {
             assertThat(storesA).isNotSameAs(storesB);
-            assertThat(Files.isDirectory(appPath.resolve("graphdb").resolve("doc-uuid-a"))).isTrue();
-            assertThat(Files.isDirectory(appPath.resolve("graphdb").resolve("doc-uuid-b"))).isTrue();
+            assertThat(Files.isDirectory(appPath.resolve("graphdb").resolve("shards").resolve("doc-uuid-a"))).isTrue();
+            assertThat(Files.isDirectory(appPath.resolve("graphdb").resolve("shards").resolve("doc-uuid-b"))).isTrue();
         } finally {
             storesA.close();
             storesB.close();
@@ -107,22 +102,21 @@ class TestGraphStoreManagerImpl {
 
     @Test
     void delete_closesTheOpenStoreAndRemovesItsDirectory(@TempDir final Path appPath) {
-        final PathCreator pathCreator = mock(PathCreator.class);
-        when(pathCreator.toAppPath("graphdb")).thenReturn(appPath.resolve("graphdb"));
+        final GraphPaths graphPaths = new GraphPaths(appPath.resolve("graphdb"));
 
         final GraphDbDoc doc = GraphDbDoc.builder().uuid("doc-uuid-3").name("Graph3").build();
-        final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(pathCreator);
+        final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(graphPaths);
 
         manager.getOrOpen(doc);
-        assertThat(Files.isDirectory(appPath.resolve("graphdb").resolve("doc-uuid-3"))).isTrue();
+        assertThat(Files.isDirectory(appPath.resolve("graphdb").resolve("shards").resolve("doc-uuid-3"))).isTrue();
 
         manager.delete("doc-uuid-3");
-        assertThat(Files.exists(appPath.resolve("graphdb").resolve("doc-uuid-3"))).isFalse();
+        assertThat(Files.exists(appPath.resolve("graphdb").resolve("shards").resolve("doc-uuid-3"))).isFalse();
 
         // A subsequent getOrOpen for the same UUID provisions a fresh, empty store, not a re-open of stale data.
         final GraphStores reopened = manager.getOrOpen(doc);
         try {
-            assertThat(Files.isDirectory(appPath.resolve("graphdb").resolve("doc-uuid-3"))).isTrue();
+            assertThat(Files.isDirectory(appPath.resolve("graphdb").resolve("shards").resolve("doc-uuid-3"))).isTrue();
         } finally {
             reopened.close();
         }
@@ -130,20 +124,19 @@ class TestGraphStoreManagerImpl {
 
     @Test
     void delete_ofAnUnopenedButExistingDirectory_stillRemovesIt(@TempDir final Path appPath) {
-        final PathCreator pathCreator = mock(PathCreator.class);
-        when(pathCreator.toAppPath("graphdb")).thenReturn(appPath.resolve("graphdb"));
+        final GraphPaths graphPaths = new GraphPaths(appPath.resolve("graphdb"));
 
         final GraphDbDoc doc = GraphDbDoc.builder().uuid("doc-uuid-4").name("Graph4").build();
-        final GraphStoreManagerImpl firstManager = new GraphStoreManagerImpl(pathCreator);
+        final GraphStoreManagerImpl firstManager = new GraphStoreManagerImpl(graphPaths);
         firstManager.getOrOpen(doc).close();
-        assertThat(Files.isDirectory(appPath.resolve("graphdb").resolve("doc-uuid-4"))).isTrue();
+        assertThat(Files.isDirectory(appPath.resolve("graphdb").resolve("shards").resolve("doc-uuid-4"))).isTrue();
 
         // A fresh manager instance (mirroring a restart) never opened doc-uuid-4 itself, yet its on-disk
         // directory from the previous manager still exists and must still be removable.
-        final GraphStoreManagerImpl secondManager = new GraphStoreManagerImpl(pathCreator);
+        final GraphStoreManagerImpl secondManager = new GraphStoreManagerImpl(graphPaths);
         secondManager.delete("doc-uuid-4");
 
-        assertThat(Files.exists(appPath.resolve("graphdb").resolve("doc-uuid-4"))).isFalse();
+        assertThat(Files.exists(appPath.resolve("graphdb").resolve("shards").resolve("doc-uuid-4"))).isFalse();
     }
 
     @Test
@@ -153,12 +146,11 @@ class TestGraphStoreManagerImpl {
         // so letting GraphStores.delete's UncheckedIOException propagate out of the lambda would leave the
         // now-CLOSED store cached forever - every later getOrOpen() would hand back a closed store, the exact
         // permanent corruption the race fix set out to remove. delete() must always evict, then rethrow.
-        final PathCreator pathCreator = mock(PathCreator.class);
-        when(pathCreator.toAppPath("graphdb")).thenReturn(appPath.resolve("graphdb"));
+        final GraphPaths graphPaths = new GraphPaths(appPath.resolve("graphdb"));
 
         final GraphDbDoc doc = GraphDbDoc.builder().uuid("doc-uuid-iofail").name("GraphIoFail").build();
         final RuntimeException boom = new RuntimeException("simulated undeletable file");
-        final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(pathCreator) {
+        final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(graphPaths) {
             @Override
             void deleteStoreDirectory(final Path directory) {
                 throw boom;
@@ -183,10 +175,9 @@ class TestGraphStoreManagerImpl {
 
     @Test
     void delete_ofAUuidWithNoDirectoryAtAll_isANoOp(@TempDir final Path appPath) {
-        final PathCreator pathCreator = mock(PathCreator.class);
-        when(pathCreator.toAppPath("graphdb")).thenReturn(appPath.resolve("graphdb"));
+        final GraphPaths graphPaths = new GraphPaths(appPath.resolve("graphdb"));
 
-        final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(pathCreator);
+        final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(graphPaths);
 
         assertThatCode(() -> manager.delete("never-existed")).doesNotThrowAnyException();
     }
@@ -210,11 +201,10 @@ class TestGraphStoreManagerImpl {
         // stuck holding a broken reference the way it could before this fix (verified via
         // ConcurrentMap.compute(), which makes delete()'s close-then-physically-delete sequence atomic with
         // respect to a concurrent getOrOpen()'s computeIfAbsent() for the same key).
-        final PathCreator pathCreator = mock(PathCreator.class);
-        when(pathCreator.toAppPath("graphdb")).thenReturn(appPath.resolve("graphdb"));
+        final GraphPaths graphPaths = new GraphPaths(appPath.resolve("graphdb"));
 
         final GraphDbDoc doc = GraphDbDoc.builder().uuid("doc-uuid-race").name("GraphRace").build();
-        final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(pathCreator);
+        final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(graphPaths);
         manager.getOrOpen(doc); // Seed an initial store so the very first delete() has something to race against.
 
         final int iterations = 50;

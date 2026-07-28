@@ -21,13 +21,13 @@ import stroom.query.grammar.ast.cypher.AstAggregateFunction;
 import stroom.query.grammar.ast.cypher.AstAround;
 import stroom.query.grammar.ast.cypher.AstAsOf;
 import stroom.query.grammar.ast.cypher.AstBetween;
+import stroom.query.grammar.ast.cypher.AstComparisonOp;
+import stroom.query.grammar.ast.cypher.AstComparisonPredicate;
 import stroom.query.grammar.ast.cypher.AstCypherQuery;
 import stroom.query.grammar.ast.cypher.AstCypherStatement;
 import stroom.query.grammar.ast.cypher.AstDiff;
 import stroom.query.grammar.ast.cypher.AstDiffAccessorExpr;
 import stroom.query.grammar.ast.cypher.AstDiffSide;
-import stroom.query.grammar.ast.cypher.AstComparisonOp;
-import stroom.query.grammar.ast.cypher.AstComparisonPredicate;
 import stroom.query.grammar.ast.cypher.AstEdgeDirection;
 import stroom.query.grammar.ast.cypher.AstInPredicate;
 import stroom.query.grammar.ast.cypher.AstMatch;
@@ -392,7 +392,7 @@ class TestCypherQueryParser {
     }
 
     // ------------------------------------------------------------------------------------------------------
-    // Workstream D (.md §4.4):
+    // Workstream D:
     // the RETURN GRAPH element-row terminal form, plain and combined with DIFF.
     // ------------------------------------------------------------------------------------------------------
 

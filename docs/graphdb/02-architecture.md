@@ -53,37 +53,54 @@ to fetch "all the `KNOWS` edges out of this node" as one contiguous range scan r
 
 The practical ceilings this imposes are in [10-limits.md](10-limits.md).
 
-### Graph DB is single-node
+### How a graph spans a cluster
 
 This is the most consequential thing on this page, so it is worth being precise about.
 
 Graph DB borrows Plan B's **storage primitives** — the LMDB environment wrapper, the write batching, the id
-interning tables and the value serialisers. It does **not** borrow Plan B's **clustering**. There is no
-sharding, no snapshotting, no cross-node file transfer, and no node-aware query routing. This is a
-deliberate, documented decision: `GraphStoreManager`'s own contract says it is "deliberately minimal next
-to `ShardManager` … no snapshotting, cross-node file transfer, or LRU eviction", deferred as hardening
-rather than treated as a PoC concern.
+interning tables and the value serialisers — and now also its **ingest shape**: build a fragment, ship it,
+merge it.
 
-Two consequences follow, and the second is the one that bites.
+**Ingest writes a fragment, not the graph.** When a stream reaches the Graph Filter, the filter opens a
+private, empty graph store for that stream alone and writes the stream's mutations into it. Nothing is
+written to the graph itself during processing. The filter's per-record commit-or-abort discipline still
+applies, and now protects the fragment.
 
-**A query only ever reads the local node's files.** Stroom asks a resolver which node should serve a query,
-but the only implementation answers for Plan B documents and returns "no preference" for a `GraphDb`. So a
-graph query runs on whichever node received the request, against that node's own store.
+**On stream completion the fragment is replicated.** The fragment is zipped, hashed and sent to every node
+named in `graphdb.nodeList` — over HTTP to remote nodes, directly to disk on the local one. Delivery must
+succeed to *every* listed node or the stream task fails and is retried; partial delivery reported as success
+would leave the cluster permanently disagreeing about the graph with nothing to indicate it.
 
-**In a multi-node cluster a graph is therefore fragmented, silently.** The Graph Filter writes to the local
-path on whichever node processed the stream, and stream processing is distributed across the cluster. Each
-node accumulates only the fragment it happened to build, and a query returns only that fragment. Nothing
-reports a problem — the results are simply incomplete.
+**Each receiving node merges the fragment into its own authoritative store.** Merge is not a byte copy.
+Every key in a graph store embeds **fragment-local** interned ids, so each row is decoded, its ids translated
+into the target store's own id space, and re-encoded. The property-value index is rebuilt from the merged
+node rows rather than copied, because its hash-tier keys carry clash-sequence suffixes that are meaningful
+only in the store that assigned them. Merge is idempotent by construction — id interning is get-or-create and
+no timestamp is generated during it — so a fragment delivered twice is harmless.
 
-> **Treat Graph DB as single-node.** If you run a multi-node cluster today, a graph's contents and every
-> answer derived from them are unreliable. This is verified from the code paths involved, not from observing
-> a running cluster. See [11-operations.md](11-operations.md#scaling-and-clustering) for what can be done
-> now and [12-future-work.md](12-future-work.md#correctness-across-a-cluster) for what would fix it.
+**Queries are routed to a node that holds graph data.** A node not named in `graphdb.nodeList` has no graph
+store at all, so running a query there would answer from nothing rather than fail. Queries against a
+`GraphDb` are therefore pinned to a configured node.
 
-### Why fanning queries out would not fix it
+Because replication is **full** — every listed node receives every fragment — any one of them can complete
+any traversal locally. That is the property the next section explains, and it is why replication rather than
+partitioning is the right shape here.
 
-The obvious repair — send the query to every node and merge the results, as a Lucene index does — **does not
-work for a graph**, and it is worth understanding why before anyone attempts it.
+> **On a cluster, set `graphdb.nodeList`.** An empty list means "this node only", which is correct for a
+> single-node deployment and silently wrong for a cluster: each node would again accumulate only the
+> fragments it happened to process. See
+> [11-operations.md](11-operations.md#scaling-and-clustering).
+
+Still deliberately absent: snapshots (a node either holds graph data or is routed away from), partitioning
+one graph across nodes, and load-balanced routing — the first configured node is always chosen, so a wrong
+answer is at least reproducible.
+
+### Why fanning queries out would not have fixed it
+
+Before the fragment-and-merge design above, ingest wrote straight into whichever node's store happened to
+process the stream, so a cluster held one partial graph per node. The obvious repair — send the query to
+every node and merge the results, as a Lucene index does — **does not work for a graph**, and understanding
+why is what forces the design above rather than a cheaper one.
 
 A Lucene document belongs to exactly one shard. A query can therefore be evaluated independently on each
 shard and the results concatenated, because no document's evaluation depends on another shard's contents.
@@ -100,17 +117,20 @@ architectures:
 
 | Approach | Correct? | Notes |
 |---|---|---|
-| Every mutation funnelled into one authoritative store, queried there | **Yes** | What Plan B does, via build-then-merge ingest |
-| One authoritative store plus **whole-copy** replicas, queried against any complete copy | **Yes** | Plan B's snapshot model |
+| Every mutation funnelled into one authoritative store, queried there | **Yes** | Plan B's build-then-merge ingest — **the approach Graph DB now takes** |
+| One authoritative store plus **whole-copy** replicas, queried against any complete copy | **Yes** | Plan B's snapshot model. Graph DB reaches the same end by replicating every *fragment* to every node instead of copying finished stores |
 | The graph partitioned across nodes, with traversal crossing partitions | Yes, but | Distributed graph traversal — the genuinely hard option, and not in scope |
 
-Two conditions, both necessary, fall out of that:
+Two conditions, both necessary, fall out of that, and both are now met:
 
-1. **Every mutation must reach one authoritative store**, regardless of which node processed the stream.
-2. **Every query must run against a complete copy** of that store.
+1. **Every mutation must reach one authoritative store**, regardless of which node processed the stream —
+   met by shipping each fragment to every configured node.
+2. **Every query must run against a complete copy** of that store — met by pinning graph queries to a
+   configured node.
 
-Satisfying only the second is a trap worth naming. Routing all queries to one node makes answers
-*consistently* incomplete instead of randomly incomplete — more reproducible, and no more correct.
+Satisfying only the second is a trap worth naming, because it looks like a fix. Routing all queries to one
+node while ingest still wrote locally would have made answers *consistently* incomplete instead of randomly
+incomplete — more reproducible, and no more correct.
 
 ### An inversion worth noting
 

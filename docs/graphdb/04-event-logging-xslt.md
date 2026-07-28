@@ -241,7 +241,10 @@ From seven events (a logon, a file view, an update, a create, a failed delete, a
 search the translation does not model) it produces **14 nodes and 19 edges**:
 
 ```xml
-<graph xmlns="graph-mutation:1" version="1.0">
+<graph xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns="graph-mutation:1"
+       version="1.0"
+       xsi:schemaLocation="graph-mutation:1 graph-mutation-v1.0.xsd">
    <node id="app:payroll" validFrom="2026-07-01T09:15:00.000Z">
       <label>Application</label>
       <property name="name">Payroll</property>

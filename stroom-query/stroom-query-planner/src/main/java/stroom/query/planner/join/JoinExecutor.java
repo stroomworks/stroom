@@ -62,8 +62,8 @@ import java.util.function.Consumer;
  *
  * <p><b>Streaming variant</b>: {@link #streamingHashJoin} is the same hash join with the build side hidden behind
  * a {@link BuildSideLookup} (so it can spill to disk) and the probe side consumed as an {@link Iterator} with
- * results pushed to a {@link Consumer} instead of accumulated - see {@code docs/join-scalability-implementation-
- * plan.md}, items C1/C2. The list-returning {@link #join}/{@code hashJoin} path delegates to it over an on-heap
+ * results pushed to a {@link Consumer} instead of accumulated - see items C1/C2. The list-returning
+ * {@link #join}/{@code hashJoin} path delegates to it over an on-heap
  * {@link HeapBuildSideLookup}, so both share one join loop.</p>
  *
  * <p>{@link JoinAlgorithm#BROADCAST_LOOKUP} - the enrichment-join fast path against a keyed Plan B/State store

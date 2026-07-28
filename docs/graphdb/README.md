@@ -28,31 +28,37 @@ file that covers it in detail.
 
 Read this section before anything else in this set.
 
-### Correctness across a cluster — read this first
+### Correctness across a cluster — resolved
 
-**Graph DB is correct only on a single node.** It uses Plan B's storage primitives but none of its
-clustering — no sharding, no snapshots, no node-aware query routing. In a multi-node cluster each node
-writes only the fragment built from streams it happened to process, and a query returns only the local
-fragment, with nothing reporting that the answer is partial.
+**This was the set's first and worst blocker and it has been fixed.** It is described here because the
+change alters how Graph DB must be deployed.
 
-This is a **correctness** problem, not a performance one, and it has no configuration-level fix: Stroom has
-no way to pin a pipeline to a node, so graph ingest cannot be confined without dedicating a whole node to
-processing. Fanning queries out across nodes would not repair it either — a traversal can cross a fragment
-boundary, so merging independent local results does not reconstruct the answer
-([02-architecture.md](02-architecture.md#why-fanning-queries-out-would-not-fix-it)).
+Ingest no longer writes into the live store. The Graph Filter writes each stream's mutations into a
+self-contained **fragment** — a complete but private graph store — which on stream completion is shipped to
+every node named in `graphdb.nodeList` and merged into that node's authoritative store. Every listed node
+therefore holds the whole graph, and graph queries are routed to one of them. A traversal can now follow an
+edge from data ingested by one node into data ingested by another, which is the case no amount of query
+fan-out could ever have reconstructed.
 
-Until this is addressed, **run Graph DB on a single-node Stroom** if the answers need to be trustworthy.
-There is no replication either, so a graph is only as durable as the node holding it. What would fix it is
-in [12-future-work.md](12-future-work.md#correctness-across-a-cluster).
+**Deployment requirement:** on a cluster you **must** set `graphdb.nodeList` to the nodes that should hold
+graph data. Left empty it means "this node only", which is correct on a single node and wrong on a cluster —
+each node would again accumulate only the fragments it processed. A node named in the list but not enabled
+is a hard error rather than a skipped target, because skipping it would leave that node's graph permanently
+short while it carried on answering queries.
 
-Detail: [02-architecture.md](02-architecture.md#graph-db-is-single-node),
+Two things are deliberately **not** done: one graph is not partitioned across nodes (replication is full),
+and there are no snapshots, so a node that holds no graph data cannot serve graph queries at all — it is
+routed away from instead.
+
+Detail: [02-architecture.md](02-architecture.md#how-a-graph-spans-a-cluster),
 [11-operations.md](11-operations.md#scaling-and-clustering).
 
-### Operational — the operator has no controls
+### Operational — the operator has few controls
 
-There is **no configuration surface for Graph DB at all**: no `GraphDbConfig`, no `AppConfig` entries.
-Every limit below is a `private static final` constant in the source with only a test-seam constructor, so
-none of them can be tuned by an administrator, an environment variable, or the UI.
+Graph DB now has a configuration surface, but a small one: `graphdb.path` (where graph data lives) and
+`graphdb.nodeList` (which nodes hold it). Everything in the table below is still a `private static final`
+constant in the source with only a test-seam constructor, so none of it can be tuned by an administrator, an
+environment variable, or the UI.
 
 | Blocker | Consequence |
 |---|---|
@@ -67,11 +73,25 @@ Detail: [10-limits.md](10-limits.md), [11-operations.md](11-operations.md).
 
 | Blocker | Consequence |
 |---|---|
-| **Bad records are skipped, not failed** — a malformed record is logged at `ERROR` and dropped, and the stream carries on | Partial data loss is quiet. A graph can look healthy while silently missing a subset of its input |
-| **There is no schema validation at ingest** — the `graph-mutation:1` XSD exists only as a test resource, and the Graph Filter dispatches on lower-cased element local names | A misspelled element contributes nothing and raises nothing. Validate offline before you trust a translation |
-| **`rebuild()` is the only compaction backstop, and it reprocesses source streams** | If those streams have been aged off by a retention policy, the graph cannot be rebuilt. Storage growth then has no remedy short of deleting the graph |
+| **Bad records are skipped by default** — a malformed record is logged at `ERROR` and dropped, and the stream carries on | Partial data loss is quiet. **Mitigated:** set the Graph Filter's `strict` property to fail the stream instead. It defaults to off because that is the less surprising behaviour for a feed, not because it is the safer one |
+| **`rebuild()` is the only compaction backstop, and it reprocesses source streams** | If those streams have been aged off by a retention policy, the graph cannot be rebuilt. **Accepted, not pending:** graph data is treated as reproducible from its sources, so source-stream retention is part of a graph's recovery plan ([11-operations.md](11-operations.md#rebuild--and-its-trap)) |
 | **Redundant versions are never condensed**, and the property-value index does not participate in retention | Storage grows monotonically even under a retention policy |
 | **The Graph Filter resolves its target graph by name** | Two graphs sharing a name is a fatal ingest error, and renaming a graph silently breaks every pipeline pointing at it |
+
+Three data-safety gaps have been closed:
+
+- **The store records its own on-disk format** and refuses to open — or to accept a merge — if that does not
+  match what the running build expects. Previously nothing recorded the format, so a build whose key layout had
+  changed would read old bytes as though they were new ones and return wrong answers silently. The remedy on a
+  mismatch is to wipe and rebuild; there is deliberately no migration path, because graph data is treated as
+  reproducible.
+- **The `graph-mutation:1` XSD is shipped** and retrievable from a running Stroom
+  (`GET /api/graphDb/v1/mutationSchema`), so a `SchemaFilter` can validate in-pipeline. It previously existed
+  only as a test resource. Note there is no prebuilt content pack — the XMLSchema document is created by hand —
+  and your translation must emit `xsi:schemaLocation` or `SchemaFilter` rejects the document outright
+  ([03-ingest.md](03-ingest.md#validating-against-the-schema)).
+- **Unrecognised elements are reported.** A misspelled element used to contribute nothing and raise nothing,
+  which is the quietest way to lose data there is.
 
 Detail: [03-ingest.md](03-ingest.md), [02-architecture.md](02-architecture.md),
 [11-operations.md](11-operations.md).
@@ -81,7 +101,7 @@ Detail: [03-ingest.md](03-ingest.md), [02-architecture.md](02-architecture.md),
 | Blocker | Consequence |
 |---|---|
 | **`collect()` returns a comma-joined string, not a list** | Silently wrong for anyone assuming Cypher list semantics. You cannot index it or take its size as a list |
-| **Property values are strings only** | Comparison and ordering are lexical unless values were encoded for it at ingest time. `"10" < "9"` |
+| **Property values are strings unless typed, and only `long` and `boolean` are available** | `double` and dates cannot be typed, because the equality anchor index is keyed on rendered text and `42.0` renders as `42` — a query for `42.0` would silently find nothing. Encode those as sortable text ([03-ingest.md](03-ingest.md#property-value-types)). *Correction: this table previously said ordering was lexical (`"10" < "9"`). It was not — Stroom's string comparator is numeric-first. What typing fixes is the value's type on read-back, not its sort order* |
 | **Shortest path runs in the browser over the loaded subgraph only** | A genuinely shorter path through nodes not currently on the canvas will not be found. There is no `shortestPath()` in the query language |
 | **Temporal Precision is inert** — the Settings control is editable and persisted, but no implementation code reads it | Setting it has no effect of any kind |
 
@@ -101,15 +121,15 @@ Detail: [06-language-reference.md](06-language-reference.md),
 
 ### What would have to change
 
-In rough priority order: **cluster correctness first** — every mutation funnelled into one authoritative
-store and every query served from a complete copy of it — then a real configuration surface (store size,
-retention defaults and the traversal guardrails), loud rather than silent ingest failures with schema
-validation, a compaction path that does not depend on source streams still existing, and native typed
-property values.
+Cluster correctness and the store format stamp are done. What remains, in rough priority order: loud rather
+than silent ingest failures with schema validation, native typed property values and a real `collect()` list,
+an honest Temporal Precision setting, then a fuller configuration surface (store size, retention defaults and
+the traversal guardrails) and a compaction path that does not depend on source streams still existing.
 
-Correctness leads because the others are limitations you can work around once you know about them, whereas
-an incomplete answer that reports itself as complete cannot be worked around at all. All of it is tracked in
-[12-future-work.md](12-future-work.md).
+The remaining items are limitations you can work around once you know about them, which is why they now come
+after the two that could not be worked around at all. All of it is tracked in
+[12-future-work.md](12-future-work.md), and the sequenced plan is in
+[epoch0-development-plan.md](epoch0-development-plan.md).
 
 ---
 
