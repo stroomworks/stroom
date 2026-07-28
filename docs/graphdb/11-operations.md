@@ -63,7 +63,9 @@ Some settings are safe to change at any time. Three are not, and only one of the
 > 3. Only then move it earlier in the list if you want it serving queries.
 >
 > Skipping step 2 reintroduces exactly the defect the fragment-and-merge design removed: a node answering from
-> data it never received, with nothing reporting the shortfall.
+> data it never received. It is no longer entirely unreported - a query against a graph the node holds *nothing*
+> for logs an error and increments `missingStoreQueries` - but a node holding *some* of a graph cannot be
+> detected at all, so the procedure still matters.
 
 > **Changing `graphdb.path` needs the data moved with it.** Stop the node, move
 > `<old path>/shards` to `<new path>/shards`, then start it. Nothing checks, and an empty graph looks the same as

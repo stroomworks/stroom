@@ -61,7 +61,7 @@ class TestGraphStoreStatsAdapter {
             final GraphDbDocCache graphDbDocCache = mock(GraphDbDocCache.class);
             when(graphDbDocCache.get("TestGraph")).thenReturn(DOC);
             final GraphStoreManager graphStoreManager = mock(GraphStoreManager.class);
-            when(graphStoreManager.getOrOpen(DOC)).thenReturn(stores);
+            when(graphStoreManager.getForQuery(DOC)).thenReturn(stores);
 
             final GraphStoreStatsAdapter adapter = new GraphStoreStatsAdapter(graphDbDocCache, graphStoreManager);
 

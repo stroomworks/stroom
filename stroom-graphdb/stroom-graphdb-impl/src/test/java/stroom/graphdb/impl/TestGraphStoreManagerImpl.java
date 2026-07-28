@@ -18,7 +18,11 @@ package stroom.graphdb.impl;
 
 import stroom.graphdb.shared.GraphDbDoc;
 import stroom.util.io.PathCreator;
+import stroom.util.metrics.Metrics;
+import stroom.util.metrics.MetricsImpl;
 
+import com.codahale.metrics.Counter;
+import com.codahale.metrics.MetricRegistry;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -26,6 +30,7 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -54,7 +59,8 @@ class TestGraphStoreManagerImpl {
 
         final GraphDbDoc doc = GraphDbDoc.builder().uuid("doc-uuid-1").name("Graph1").build();
         final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(
-                graphPaths, GraphDbConfig::new, () -> mock(GraphDbDocStore.class));
+                graphPaths, GraphDbConfig::new, () -> mock(GraphDbDocStore.class),
+                new MetricsImpl(new MetricRegistry()));
 
         final GraphStores stores = manager.getOrOpen(doc);
         try {
@@ -74,7 +80,8 @@ class TestGraphStoreManagerImpl {
 
         final GraphDbDoc doc = GraphDbDoc.builder().uuid("doc-uuid-2").name("Graph2").build();
         final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(
-                graphPaths, GraphDbConfig::new, () -> mock(GraphDbDocStore.class));
+                graphPaths, GraphDbConfig::new, () -> mock(GraphDbDocStore.class),
+                new MetricsImpl(new MetricRegistry()));
 
         final GraphStores first = manager.getOrOpen(doc);
         final GraphStores second = manager.getOrOpen(doc);
@@ -92,7 +99,8 @@ class TestGraphStoreManagerImpl {
         final GraphDbDoc docA = GraphDbDoc.builder().uuid("doc-uuid-a").name("GraphA").build();
         final GraphDbDoc docB = GraphDbDoc.builder().uuid("doc-uuid-b").name("GraphB").build();
         final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(
-                graphPaths, GraphDbConfig::new, () -> mock(GraphDbDocStore.class));
+                graphPaths, GraphDbConfig::new, () -> mock(GraphDbDocStore.class),
+                new MetricsImpl(new MetricRegistry()));
 
         final GraphStores storesA = manager.getOrOpen(docA);
         final GraphStores storesB = manager.getOrOpen(docB);
@@ -112,7 +120,8 @@ class TestGraphStoreManagerImpl {
 
         final GraphDbDoc doc = GraphDbDoc.builder().uuid("doc-uuid-3").name("Graph3").build();
         final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(
-                graphPaths, GraphDbConfig::new, () -> mock(GraphDbDocStore.class));
+                graphPaths, GraphDbConfig::new, () -> mock(GraphDbDocStore.class),
+                new MetricsImpl(new MetricRegistry()));
 
         manager.getOrOpen(doc);
         assertThat(Files.isDirectory(appPath.resolve("graphdb").resolve("shards").resolve("doc-uuid-3"))).isTrue();
@@ -135,14 +144,16 @@ class TestGraphStoreManagerImpl {
 
         final GraphDbDoc doc = GraphDbDoc.builder().uuid("doc-uuid-4").name("Graph4").build();
         final GraphStoreManagerImpl firstManager = new GraphStoreManagerImpl(
-                graphPaths, GraphDbConfig::new, () -> mock(GraphDbDocStore.class));
+                graphPaths, GraphDbConfig::new, () -> mock(GraphDbDocStore.class),
+                new MetricsImpl(new MetricRegistry()));
         firstManager.getOrOpen(doc).close();
         assertThat(Files.isDirectory(appPath.resolve("graphdb").resolve("shards").resolve("doc-uuid-4"))).isTrue();
 
         // A fresh manager instance (mirroring a restart) never opened doc-uuid-4 itself, yet its on-disk
         // directory from the previous manager still exists and must still be removable.
         final GraphStoreManagerImpl secondManager = new GraphStoreManagerImpl(
-                graphPaths, GraphDbConfig::new, () -> mock(GraphDbDocStore.class));
+                graphPaths, GraphDbConfig::new, () -> mock(GraphDbDocStore.class),
+                new MetricsImpl(new MetricRegistry()));
         secondManager.delete("doc-uuid-4");
 
         assertThat(Files.exists(appPath.resolve("graphdb").resolve("shards").resolve("doc-uuid-4"))).isFalse();
@@ -160,7 +171,8 @@ class TestGraphStoreManagerImpl {
         final GraphDbDoc doc = GraphDbDoc.builder().uuid("doc-uuid-iofail").name("GraphIoFail").build();
         final RuntimeException boom = new RuntimeException("simulated undeletable file");
         final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(
-                graphPaths, GraphDbConfig::new, () -> mock(GraphDbDocStore.class)) {
+                graphPaths, GraphDbConfig::new, () -> mock(GraphDbDocStore.class),
+                new MetricsImpl(new MetricRegistry())) {
             @Override
             void deleteStoreDirectory(final Path directory) {
                 throw boom;
@@ -188,7 +200,8 @@ class TestGraphStoreManagerImpl {
         final GraphPaths graphPaths = new GraphPaths(appPath.resolve("graphdb"));
 
         final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(
-                graphPaths, GraphDbConfig::new, () -> mock(GraphDbDocStore.class));
+                graphPaths, GraphDbConfig::new, () -> mock(GraphDbDocStore.class),
+                new MetricsImpl(new MetricRegistry()));
 
         assertThatCode(() -> manager.delete("never-existed")).doesNotThrowAnyException();
     }
@@ -216,7 +229,8 @@ class TestGraphStoreManagerImpl {
 
         final GraphDbDoc doc = GraphDbDoc.builder().uuid("doc-uuid-race").name("GraphRace").build();
         final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(
-                graphPaths, GraphDbConfig::new, () -> mock(GraphDbDocStore.class));
+                graphPaths, GraphDbConfig::new, () -> mock(GraphDbDocStore.class),
+                new MetricsImpl(new MetricRegistry()));
         manager.getOrOpen(doc); // Seed an initial store so the very first delete() has something to race against.
 
         final int iterations = 50;
@@ -266,7 +280,8 @@ class TestGraphStoreManagerImpl {
         final GraphDbDoc doc = GraphDbDoc.builder().uuid("doc-gone").name("Gone").build();
         final GraphDbDocStore docStore = mock(GraphDbDocStore.class);
         final GraphStoreManagerImpl manager =
-                new GraphStoreManagerImpl(graphPaths, GraphDbConfig::new, () -> docStore);
+                new GraphStoreManagerImpl(
+                        graphPaths, GraphDbConfig::new, () -> docStore, new MetricsImpl(new MetricRegistry()));
 
         // Open it while the document exists, then make the document disappear.
         when(docStore.readDocument(any())).thenReturn(doc);
@@ -290,7 +305,8 @@ class TestGraphStoreManagerImpl {
         final GraphDbDocStore docStore = mock(GraphDbDocStore.class);
         when(docStore.readDocument(any())).thenReturn(doc);
         final GraphStoreManagerImpl manager =
-                new GraphStoreManagerImpl(graphPaths, GraphDbConfig::new, () -> docStore);
+                new GraphStoreManagerImpl(
+                        graphPaths, GraphDbConfig::new, () -> docStore, new MetricsImpl(new MetricRegistry()));
 
         manager.getOrOpen(doc).close();
 
@@ -309,13 +325,98 @@ class TestGraphStoreManagerImpl {
         final GraphDbDocStore docStore = mock(GraphDbDocStore.class);
         when(docStore.readDocument(any())).thenReturn(doc);
         final GraphStoreManagerImpl manager =
-                new GraphStoreManagerImpl(graphPaths, GraphDbConfig::new, () -> docStore);
+                new GraphStoreManagerImpl(
+                        graphPaths, GraphDbConfig::new, () -> docStore, new MetricsImpl(new MetricRegistry()));
         manager.getOrOpen(doc).close();
 
         when(docStore.readDocument(any())).thenThrow(new RuntimeException("database down"));
 
         assertThat(manager.cleanupOrphanedStores()).isZero();
         assertThat(Files.isDirectory(graphPaths.getShardDir().resolve("doc-unreadable"))).isTrue();
+    }
+
+    /**
+     * On a cluster, a node asked for a graph it holds nothing for must say so. That is the visible end of two
+     * configuration mistakes the code cannot prevent: a node added to {@code graphdb.nodeList} is never
+     * backfilled, and {@code graphdb.path} changing provisions empty graphs rather than failing. Both otherwise
+     * answer from nothing in silence.
+     */
+    @Test
+    void getForQuery_onACluster_reportsAGraphThisNodeHoldsNothingFor(@TempDir final Path appPath) {
+        final GraphPaths graphPaths = new GraphPaths(appPath.resolve("graphdb"));
+        final GraphDbDoc doc = GraphDbDoc.builder().uuid("absent").name("Absent").build();
+        final MetricRegistry registry = new MetricRegistry();
+        final Metrics metrics = new MetricsImpl(registry);
+        final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(
+                graphPaths, () -> clusterConfig("node1", "node2"), () -> mock(GraphDbDocStore.class),
+                metrics);
+
+        final GraphStores stores = manager.getForQuery(doc);
+        try {
+            assertThat(counter(registry)).as("reported once").isEqualTo(1);
+            // Still answers rather than throwing: a graph nobody has loaded yet is not an error.
+            assertThat(stores).isNotNull();
+        } finally {
+            manager.delete("absent");
+        }
+    }
+
+    /**
+     * On a single node an absent store just means nothing has been ingested yet. Reporting that would fire every
+     * time someone opened a new graph, and an alert that cries wolf is how the real one gets ignored.
+     */
+    @Test
+    void getForQuery_onASingleNode_saysNothing(@TempDir final Path appPath) {
+        final GraphPaths graphPaths = new GraphPaths(appPath.resolve("graphdb"));
+        final GraphDbDoc doc = GraphDbDoc.builder().uuid("fresh").name("Fresh").build();
+        final MetricRegistry registry = new MetricRegistry();
+        final Metrics metrics = new MetricsImpl(registry);
+        final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(
+                graphPaths, GraphDbConfig::new, () -> mock(GraphDbDocStore.class), metrics);
+
+        manager.getForQuery(doc);
+        try {
+            assertThat(counter(registry)).isZero();
+        } finally {
+            manager.delete("fresh");
+        }
+    }
+
+    /**
+     * A graph this node does hold must not be reported, or the signal is worthless.
+     */
+    @Test
+    void getForQuery_forAGraphThisNodeHolds_saysNothing(@TempDir final Path appPath) {
+        final GraphPaths graphPaths = new GraphPaths(appPath.resolve("graphdb"));
+        final GraphDbDoc doc = GraphDbDoc.builder().uuid("present").name("Present").build();
+        final MetricRegistry registry = new MetricRegistry();
+        final Metrics metrics = new MetricsImpl(registry);
+        final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(
+                graphPaths, () -> clusterConfig("node1", "node2"), () -> mock(GraphDbDocStore.class),
+                metrics);
+
+        // Opening for write creates the store, as a merge would.
+        manager.getOrOpen(doc);
+        try {
+            manager.getForQuery(doc);
+            assertThat(counter(registry)).isZero();
+        } finally {
+            manager.delete("present");
+        }
+    }
+
+    private static GraphDbConfig clusterConfig(final String... nodes) {
+        return new GraphDbConfig("graphdb", List.of(nodes), null, null, null, null, null, null);
+    }
+
+    /**
+     * Total across the registry's counters. Uses a real {@link MetricRegistry} rather than {@code MockMetrics},
+     * whose {@code getRegistry()} returns a fresh registry on every call and so cannot record anything.
+     */
+    private static long counter(final MetricRegistry registry) {
+        return registry.getCounters().values().stream()
+                .mapToLong(Counter::getCount)
+                .sum();
     }
 
     private static ByteBuffer directBuffer(final String value) {

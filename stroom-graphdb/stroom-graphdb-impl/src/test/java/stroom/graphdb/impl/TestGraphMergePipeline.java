@@ -157,7 +157,7 @@ class TestGraphMergePipeline {
                         : null;
             });
 
-            storeManager = new GraphStoreManagerImpl(graphPaths, GraphDbConfig::new, () -> docStore);
+            storeManager = new GraphStoreManagerImpl(graphPaths, GraphDbConfig::new, () -> docStore, new MockMetrics());
             mergeProcessor = new GraphMergeProcessor(
                     graphPaths,
                     docStore,

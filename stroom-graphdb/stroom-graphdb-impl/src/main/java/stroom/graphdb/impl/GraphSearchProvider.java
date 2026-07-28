@@ -183,7 +183,7 @@ public class GraphSearchProvider implements SearchProvider, IndexFieldProvider {
             // CompiledCypherPlan.outputFields().
             final int[] mapping = buildFieldMapping(fieldIndex, statement.first().outputFields());
 
-            final GraphStores stores = graphStoreManager.getOrOpen(doc);
+            final GraphStores stores = graphStoreManager.getForQuery(doc);
             final GraphTraversalEngine engine = new GraphTraversalEngine(
                     stores, expressionPredicateFactory,
                     GraphTraversalLimits.from(configProvider.get()));

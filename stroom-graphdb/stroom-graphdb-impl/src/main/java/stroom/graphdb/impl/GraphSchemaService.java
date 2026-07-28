@@ -60,7 +60,7 @@ class GraphSchemaService {
      */
     GraphDbSchema discover(final GraphDbDoc doc, final int sampleLimit) {
         Objects.requireNonNull(doc, "doc");
-        final GraphStores stores = graphStoreManager.getOrOpen(doc);
+        final GraphStores stores = graphStoreManager.getForQuery(doc);
         return stores.read(readTxn -> new GraphDbSchema(
                 sortedNames(readTxn, stores.getLabelUids()),
                 sortedNames(readTxn, stores.getEdgeTypeUids()),

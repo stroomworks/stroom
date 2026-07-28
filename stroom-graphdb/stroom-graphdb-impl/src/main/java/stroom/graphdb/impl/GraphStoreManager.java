@@ -42,6 +42,32 @@ public interface GraphStoreManager {
     GraphStores getOrOpen(GraphDbDoc doc);
 
     /**
+     * Resolves a graph's stores for <b>reading</b>, reporting loudly if this node holds no data for it.
+     *
+     * <p>Same result as {@link #getOrOpen} - a query against a graph with no store still returns no rows rather
+     * than failing, because a graph that has genuinely not been loaded yet is not an error. What differs is that
+     * on a cluster, a node being asked to serve a graph it has never received a fragment for is reported.</p>
+     *
+     * <p>That case is the visible end of two configuration mistakes neither of which the code can prevent.
+     * Adding a node to {@code graphdb.nodeList} does not backfill it, and queries route to the first node in the
+     * list - so a node added at the front answers from nothing. Changing {@code graphdb.path} provisions empty
+     * graphs rather than failing. Both produce answers that are wrong and silent; this makes them merely wrong
+     * and loud, which is the difference between a bug someone finds and a bug nobody finds.</p>
+     *
+     * <p>Only reported when a node list is configured. On a single-node deployment an absent store means nothing
+     * has been ingested yet, which is unremarkable and would otherwise log an error every time someone opened a
+     * new graph.</p>
+     *
+     * <p><b>Preconditions:</b> {@code doc} is not null.
+     * <b>Postconditions:</b> returns the graph's stores, as {@link #getOrOpen} would.
+     * <b>Null status:</b> neither the parameter nor the return value is nullable.
+     *
+     * @param doc the graph being queried.
+     * @return the (possibly empty) stores.
+     */
+    GraphStores getForQuery(GraphDbDoc doc);
+
+    /**
      * Task P5.3: permanently removes the physical stores for the {@link GraphDbDoc} identified by {@code uuid} -
      * closing the cached {@link GraphStores} first if one is currently open, then deleting its on-disk directory.
      * The counterpart to {@link #getOrOpen} that a {@link GraphDbDoc} delete must call, or its physical data is

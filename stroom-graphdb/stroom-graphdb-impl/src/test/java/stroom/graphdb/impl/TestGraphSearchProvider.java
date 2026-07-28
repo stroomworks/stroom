@@ -492,7 +492,7 @@ class TestGraphSearchProvider {
 
         final GraphStoreManager graphStoreManager = mock(GraphStoreManager.class);
         if (stores != null) {
-            when(graphStoreManager.getOrOpen(DOC)).thenReturn(stores);
+            when(graphStoreManager.getForQuery(DOC)).thenReturn(stores);
         }
 
         final SecurityContext securityContext = mock(SecurityContext.class);

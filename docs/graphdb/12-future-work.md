@@ -95,7 +95,7 @@ Three settings can be changed in ways that produce wrong answers, and only one o
 |---|---|---|---|---|
 | C1 | **Backfill a node joining `graphdb.nodeList`** | There is no mechanism, so a new node holds only fragments received since it joined. Because queries route to the first node in the list, adding one at the front makes every answer silently partial - the exact defect the fragment-and-merge design removed, reachable by a config edit | Medium | **High** — it is silent |
 | C2 | **Detect a `graphdb.path` change** | The store directory is created on write-open, so pointing at a new path provisions empty graphs rather than failing. A marker file recording the expected path, or refusing to provision when the document has data recorded elsewhere, would make it loud | Easy | Medium |
-| C3 | **Refuse to route to a node with no store** | `GraphQueryNodeResolverImpl` returns the first configured node without checking it holds anything. Even a health check on the target would turn C1 from silent into loud | Easy | Medium — a partial mitigation for C1 |
+| ~~C3~~ | ~~**Refuse to route to a node with no store**~~ — **done**, as a report rather than a refusal. A query against a graph this node holds nothing for logs an ERROR naming both likely causes and increments a `missingStoreQueries` counter | It reports rather than refuses because an absent store is also what a graph nobody has loaded yet looks like, and failing that would be worse than answering empty. Only fires when a node list is configured, so a single-node deployment stays quiet. It does not detect a *partial* node - only one holding nothing - so C1 remains the real fix | Easy | — |
 
 C3 is the cheapest real safety net: it does not fix backfill, but it stops the worst outcome of forgetting it.
 

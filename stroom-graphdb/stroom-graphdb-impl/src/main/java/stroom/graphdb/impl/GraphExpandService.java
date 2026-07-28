@@ -71,7 +71,7 @@ class GraphExpandService {
             return new GraphElementTable(CypherToLogicalPlan.ELEMENT_ROW_COLUMNS, List.of());
         }
         final TemporalContext temporalContext = resolveTemporalContext(query);
-        final GraphStores stores = graphStoreManager.getOrOpen(doc);
+        final GraphStores stores = graphStoreManager.getForQuery(doc);
         return stores.read(readTxn -> {
             final GraphTraversalEngine engine = new GraphTraversalEngine(
                     stores, expressionPredicateFactory,

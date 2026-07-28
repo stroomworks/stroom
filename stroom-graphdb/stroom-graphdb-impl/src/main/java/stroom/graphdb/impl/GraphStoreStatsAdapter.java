@@ -65,7 +65,7 @@ public class GraphStoreStatsAdapter implements GraphStoreStats {
             return Optional.empty();
         }
 
-        final GraphStores stores = graphStoreManager.getOrOpen(doc);
+        final GraphStores stores = graphStoreManager.getForQuery(doc);
         final long count = stores.read(stores.getNodes()::count);
         return Optional.of(new RowCountSignal(count));
     }

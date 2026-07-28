@@ -21,7 +21,9 @@ import stroom.docstore.api.DocumentNotFoundException;
 import stroom.graphdb.shared.GraphDbDoc;
 import stroom.util.logging.LambdaLogger;
 import stroom.util.logging.LambdaLoggerFactory;
+import stroom.util.metrics.Metrics;
 
+import com.codahale.metrics.Counter;
 import jakarta.inject.Inject;
 import jakarta.inject.Provider;
 import jakarta.inject.Singleton;
@@ -49,16 +51,41 @@ public class GraphStoreManagerImpl implements GraphStoreManager {
     private final GraphPaths graphPaths;
     private final Provider<GraphDbConfig> configProvider;
     private final Provider<GraphDbDocStore> graphDbDocStoreProvider;
+    private final Counter missingStoreQueries;
     private final ConcurrentMap<String, GraphStores> openStores = new ConcurrentHashMap<>();
 
     @Inject
     public GraphStoreManagerImpl(final GraphPaths graphPaths,
                                  final Provider<GraphDbConfig> configProvider,
-                                 final Provider<GraphDbDocStore> graphDbDocStoreProvider) {
+                                 final Provider<GraphDbDocStore> graphDbDocStoreProvider,
+                                 final Metrics metrics) {
         this.graphPaths = Objects.requireNonNull(graphPaths, "graphPaths");
         this.configProvider = Objects.requireNonNull(configProvider, "configProvider");
         this.graphDbDocStoreProvider =
                 Objects.requireNonNull(graphDbDocStoreProvider, "graphDbDocStoreProvider");
+        this.missingStoreQueries = Objects.requireNonNull(metrics, "metrics")
+                .registrationBuilder(getClass())
+                .addNamePart("missingStoreQueries")
+                .counter()
+                .createAndRegister();
+    }
+
+    @Override
+    public GraphStores getForQuery(final GraphDbDoc doc) {
+        Objects.requireNonNull(doc, "doc");
+
+        // Checked before opening, because opening creates the directory - after which the evidence is gone.
+        final boolean absent = !Files.isDirectory(directoryFor(doc.getUuid()));
+        if (absent && !configProvider.get().getNodeList().isEmpty()) {
+            missingStoreQueries.inc();
+            LOGGER.error(() -> "This node holds no data for graph '" + doc.getName() + "' (" + doc.getUuid()
+                               + ") but is being queried for it, so the answer will be empty rather than wrong-"
+                               + "looking. Either this node was added to graphdb.nodeList without copying "
+                               + "existing graph data to it - joining does not backfill - or graphdb.path has "
+                               + "changed without the data being moved. If the graph has genuinely never been "
+                               + "loaded, ignore this.");
+        }
+        return getOrOpen(doc);
     }
 
     @Override
