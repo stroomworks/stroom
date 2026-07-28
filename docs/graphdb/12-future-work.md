@@ -292,7 +292,7 @@ So that nobody waits for them:
 | Item | Why | Difficulty | Risk |
 |---|---|---|---|
 | **Cypher-carrying dashboards** — make Create Dashboard work by dispatching the query component through the Cypher seam | The button is disabled today because dashboards parse query text as StroomQL | Medium | Medium |
-| **Implement Temporal Precision**, or remove the control | It is editable and persisted but read by no code — the worst of both | Medium | Low |
+| ~~**Implement Temporal Precision**~~ — **done.** It selects the `validFrom` encoding (6 bytes down to 2), is part of the schema stamp and so immutable after provisioning, and rejects `Nanosecond` | Was editable and persisted but read by no code — the worst of both | Medium | — |
 | **Warn on the silent 100-node preview cap** | Every other limit reports itself; this one truncates quietly | Easy | Low |
 | **Server-side layout for large graphs** | The 2,000-element render cap is a browser constraint | Hard | Medium |
 | **Saved queries / query history** on the graph tabs | Medium | Low |

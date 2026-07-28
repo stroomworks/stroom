@@ -344,7 +344,40 @@ entry. `ValXml` is the shape to copy. Renderers need no change at all; they stri
 This touches shared query-language code used by Plan B, dashboards and StroomQL, so it warrants its own
 change rather than riding along with graph work.
 
-### 3.3 Temporal Precision — full serde swap — **not started**
+### 3.3 Temporal Precision — full serde swap — **done**
+
+Landed, and **smaller than this plan predicted** in two ways.
+
+**No schema-version bump was needed**, for the same reason as 3.1: the mechanism already existed. The key
+schema string carries the serde's name (it read `"timeSerde":"millisecond6"`), so making that string
+precision-dependent both distinguishes the layouts *and* gives immutability for free — a store written at one
+precision produces a different stamp and is refused under another, with a `Key schema mismatch` error naming
+both. `MILLISECOND` still yields the exact string earlier builds wrote, so existing stores keep opening and
+nothing is needlessly invalidated. **No separate immutability enforcement was written.**
+
+**The refactor was contained** because all three DAOs are constructed only inside `GraphStores.open` — three
+call sites, no test builds them directly. So the whole existing suite passed unchanged, which is the strongest
+evidence available that the millisecond path is byte-identical.
+
+**This plan's stated reason for dropping `NANOSECOND` was wrong.** It said `MillisecondTimeSerde` silently
+discards nanos — but `NANOSECOND` would use `NanoTimeSerde`, which carries genuine nanoseconds in 8 bytes. The
+real reason is the **ingest vocabulary**: `graph-mutation:1` constrains a timestamp to three fractional digits,
+so nanoseconds cannot be expressed and the widest key of any option would store guaranteed zeros. That is an
+ingest-format limit, not an encoding one, so it is rejected in `GraphTimeSerdes` rather than removed from the
+shared `TemporalPrecision` enum — if the vocabulary ever widens, it becomes worth supporting.
+
+Five hard-coded `6`s were the real hazard, and three were not in the width constants at all: two
+`keyWidth - 6, 6` buffer slices and a `copyOfRange(keyBytes, 0, keyWidth - 6)` in the retention sweep. Each
+would have mis-sliced every key at any other precision, silently. Six helper methods became instance methods
+as a result, plus `GraphTraversalEngine.resolveDumpInstant`.
+
+`LATEST` also had to become per-store: it was `Instant.ofEpochMilli((1L << 48) - 1)`, the millisecond ceiling.
+At `DAY` precision that wraps rather than saturating, so a "latest" lookup would have resolved to the wrong
+version. It now comes from `GraphStores.getLatestRepresentableInstant()`, derived per precision from each
+serde's own unit **and epoch** — `SECOND` and `NANOSECOND` count from 2000 while the rest count from 1970,
+a Plan B inconsistency that is mirrored rather than corrected because the encodings must stay byte-compatible.
+
+The original sizing follows, retained because its measurement of the blast radius was accurate:
 
 Select a `TimeSerde` by precision, exactly as Plan B's temporal
 stores do. The serdes have different widths (2–8 bytes), so this changes all three frozen key layouts and
@@ -512,8 +545,10 @@ implementation plans that were retired to git history, leaving dangling links. I
 
 ### Still to do, with their phases
 - The fixed-size statements in [10-limits.md](10-limits.md) and [11-operations.md](11-operations.md) — Phase 4.
-- The *Temporal Precision is inert* note in [11-operations.md](11-operations.md) and
-  [README.md](README.md) — Phase 3.
+- ~~The *Temporal Precision is inert* note~~ — **done.** [11-operations.md](11-operations.md) now documents the
+  per-precision key widths, savings and representable ceilings, plus the fixed-at-creation rule;
+  [README.md](README.md), [10-limits.md](10-limits.md), [12-future-work.md](12-future-work.md) and
+  [13-developer-guide.md](13-developer-guide.md) updated to match.
 - The string-only-property entry under *Correctness surprises* in [README.md](README.md) — remaining part is
   typed `double`/dates, Phase 3. The `collect()` entry is done: it now records the rejection and links to
   [12a-list-value-type.md](12a-list-value-type.md).

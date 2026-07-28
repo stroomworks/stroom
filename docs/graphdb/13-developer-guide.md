@@ -252,10 +252,15 @@ side does need one.
 **Files:** `GraphDbDoc` (field + builder), `GraphDbDocSerialiser` if the shape is unusual,
 `GraphDbSettingsPresenter` and its view, and [11-operations.md](11-operations.md).
 
-> **Then make something read it.** `temporalPrecision` is editable, persisted, documented in the UI — and
-> consumed by no implementation code. A setting that silently does nothing is worse than a missing one,
+> **Then make something read it.** `temporalPrecision` used to be editable, persisted, documented in the UI —
+> and consumed by no implementation code. A setting that silently does nothing is worse than a missing one,
 > because users reasonably infer behaviour from its presence. Wire the consumer in the same change, or do
 > not add the control.
+>
+> If the setting affects a key layout, it must also become part of the schema stamp
+> (`GraphStores.keySchema`). That is what makes it immutable after provisioning, for free: a store written under
+> one value refuses to open under another instead of reinterpreting every key. See
+> [10-limits.md](10-limits.md) for the settings that work this way.
 
 ### 7. Add an internal store
 

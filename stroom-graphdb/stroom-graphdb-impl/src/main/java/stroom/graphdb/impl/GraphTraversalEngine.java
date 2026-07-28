@@ -246,6 +246,7 @@ public final class GraphTraversalEngine {
         this.maxTraversalDuration = Objects.requireNonNull(maxTraversalDuration, "maxTraversalDuration");
         this.maxAccumulatedRows = maxAccumulatedRows;
         this.wholeGraphNodeCap = wholeGraphNodeCap;
+        this.latest = stores.getLatestRepresentableInstant();
     }
 
     /**
@@ -826,9 +827,9 @@ public final class GraphTraversalEngine {
         return elements;
     }
 
-    private static Instant resolveDumpInstant(final @Nullable TemporalContext temporalContext) {
+    private Instant resolveDumpInstant(final @Nullable TemporalContext temporalContext) {
         if (temporalContext == null) {
-            return LATEST;
+            return latest;
         }
         return switch (temporalContext.mode()) {
             case AS_OF -> temporalContext.instant();
@@ -2402,11 +2403,15 @@ public final class GraphTraversalEngine {
     // ------------------------------------------------------------------------------------------------------
 
     /**
-     * The largest instant {@code MillisecondTimeSerde}'s 6-byte encoding can represent
-     * ({@code (1L << 48) - 1} epoch millis, &asymp; year 10920) - used as the floor-lookup instant for "latest".
-     * {@link Instant#MAX} cannot be used here: {@code Instant.toEpochMilli} overflows a {@code long} for it.
+     * The largest instant this graph's {@code validFrom} encoding can represent - the floor-lookup instant for
+     * "latest". Per-store rather than a constant, because Temporal Precision decides the encoding and so the
+     * ceiling: a 6-byte millisecond key reaches &asymp; year 10920, a 2-byte day key only &asymp; year 2149.
+     *
+     * <p>{@link Instant#MAX} cannot be used: every one of these encodings overflows on it. Nor can a value beyond
+     * the encodable maximum, which would wrap rather than saturate and make "latest" silently resolve to the wrong
+     * version.</p>
      */
-    private static final Instant LATEST = Instant.ofEpochMilli((1L << 48) - 1);
+    private final Instant latest;
 
     /**
      * Task P4.2: the resolved, ready-to-execute form of a plan's temporal clause - a node lookup and a
@@ -2485,13 +2490,13 @@ public final class GraphTraversalEngine {
 
     /**
      * Task P4.2: resolves a plan's temporal clause to a {@link TemporalAccess} - {@code AS OF}/no-clause become
-     * the as-of floor lookup at the resolved instant (no clause resolves to {@link #LATEST}, unchanged from
+     * the as-of floor lookup at the resolved instant (no clause resolves to {@link #latest}, unchanged from
      * before this task); {@code AROUND}/{@code BETWEEN} become the window-intersection lookup over
      * {@code [temporalContext.from, temporalContext.to]} (Task P4.1) - previously rejected outright.
      */
     private TemporalAccess resolveAccess(final @Nullable TemporalContext temporalContext) {
         if (temporalContext == null) {
-            return asOfAccess(LATEST);
+            return asOfAccess(latest);
         }
         return switch (temporalContext.mode()) {
             case AS_OF -> asOfAccess(temporalContext.instant());

@@ -24,7 +24,7 @@ import stroom.lmdb.stream.LmdbKeyRange;
 import stroom.planb.impl.dao.LmdbWriter;
 import stroom.planb.impl.dao.PlanBEnv;
 import stroom.planb.impl.dao.UidLookupRecorder;
-import stroom.planb.impl.serde.time.MillisecondTimeSerde;
+import stroom.planb.impl.serde.time.TimeSerde;
 import stroom.query.language.functions.Val;
 
 import org.jspecify.annotations.Nullable;
@@ -56,17 +56,20 @@ public final class GraphAdjacencyDb {
 
     private static final UnsignedBytes NODE_UID_BYTES = UnsignedBytesInstances.ofLength(GraphStores.NODE_UID_WIDTH);
     private static final UnsignedBytes TYPE_UID_BYTES = UnsignedBytesInstances.ofLength(GraphStores.TYPE_UID_WIDTH);
-    private static final MillisecondTimeSerde TIME_SERDE = new MillisecondTimeSerde();
     private static final int SRC_PREFIX_WIDTH = GraphStores.NODE_UID_WIDTH + GraphStores.TYPE_UID_WIDTH;
-    private static final int KEY_WIDTH = SRC_PREFIX_WIDTH + GraphStores.NODE_UID_WIDTH + 6;
 
     private static final byte TOMBSTONE = 0;
     private static final byte PRESENT = 1;
 
     private final Dbi<ByteBuffer> dbi;
+    /** Per-document, because Temporal Precision decides how many bytes of each key the time occupies. */
+    private final TimeSerde timeSerde;
+    private final int keyWidth;
 
-    GraphAdjacencyDb(final PlanBEnv env) {
+    GraphAdjacencyDb(final PlanBEnv env, final TimeSerde timeSerde) {
         Objects.requireNonNull(env, "env");
+        this.timeSerde = Objects.requireNonNull(timeSerde, "timeSerde");
+        this.keyWidth = SRC_PREFIX_WIDTH + GraphStores.NODE_UID_WIDTH + timeSerde.getSize();
         this.dbi = env.openDbi("graph-out-edge", DbiFlags.MDB_CREATE);
     }
 
@@ -135,7 +138,7 @@ public final class GraphAdjacencyDb {
                 final ByteBuffer key = entry.getKey().duplicate();
                 key.position(key.position() + SRC_PREFIX_WIDTH);
                 final long dstUid = NODE_UID_BYTES.get(key);
-                final Instant validFrom = TIME_SERDE.read(key);
+                final Instant validFrom = timeSerde.read(key);
 
                 if (!Objects.equals(currentDst, dstUid)) {
                     emit(consumer, floorForCurrentDst);
@@ -189,7 +192,7 @@ public final class GraphAdjacencyDb {
                 final ByteBuffer key = entry.getKey().duplicate();
                 key.position(key.position() + SRC_PREFIX_WIDTH);
                 final long dstUid = NODE_UID_BYTES.get(key);
-                final Instant validFrom = TIME_SERDE.read(key);
+                final Instant validFrom = timeSerde.read(key);
 
                 if (!Objects.equals(currentDst, dstUid)) {
                     emitWindowGroup(consumer, currentDst, group, from, to);
@@ -251,7 +254,7 @@ public final class GraphAdjacencyDb {
             final long srcUid = NODE_UID_BYTES.get(k);
             final long edgeTypeUid = TYPE_UID_BYTES.get(k);
             final long dstUid = NODE_UID_BYTES.get(k);
-            final Instant validFrom = TIME_SERDE.read(k);
+            final Instant validFrom = timeSerde.read(k);
             final Neighbour neighbour = decodeNeighbour(dstUid, value);
             consumer.accept(srcUid, edgeTypeUid, dstUid, validFrom,
                     neighbour == null ? null : neighbour.edgeProperties());
@@ -278,13 +281,13 @@ public final class GraphAdjacencyDb {
         return new Neighbour(dstUid, GraphPropsCodec.decode(propsBlob));
     }
 
-    private static ByteBuffer buildKey(final long srcUid, final long edgeTypeUid, final long dstUid,
+    private ByteBuffer buildKey(final long srcUid, final long edgeTypeUid, final long dstUid,
                                        final Instant validFrom) {
-        final ByteBuffer key = ByteBuffer.allocateDirect(KEY_WIDTH);
+        final ByteBuffer key = ByteBuffer.allocateDirect(keyWidth);
         NODE_UID_BYTES.put(key, srcUid);
         TYPE_UID_BYTES.put(key, edgeTypeUid);
         NODE_UID_BYTES.put(key, dstUid);
-        TIME_SERDE.write(key, validFrom);
+        timeSerde.write(key, validFrom);
         key.flip();
         return key;
     }
@@ -324,7 +327,7 @@ public final class GraphAdjacencyDb {
             for (final LmdbEntry entry : iterable) {
                 final byte[] keyBytes = copy(entry.getKey());
                 final byte[] valueBytes = copy(entry.getVal());
-                final byte[] entityPrefix = Arrays.copyOfRange(keyBytes, 0, KEY_WIDTH - 6);
+                final byte[] entityPrefix = Arrays.copyOfRange(keyBytes, 0, keyWidth - timeSerde.getSize());
 
                 if (!Arrays.equals(currentEntityPrefix, entityPrefix)) {
                     planGroupDeletions(group, deleteBefore, toDelete, survivors);
@@ -352,11 +355,12 @@ public final class GraphAdjacencyDb {
         return toDelete.size();
     }
 
-    private static void planGroupDeletions(final List<EdgeVersionEntry> group, final Instant deleteBefore,
+    private void planGroupDeletions(final List<EdgeVersionEntry> group, final Instant deleteBefore,
                                            final List<byte[]> toDelete, final List<EdgeVersionEntry> survivors) {
         EdgeVersionEntry pendingFloor = null;
         for (final EdgeVersionEntry entry : group) {
-            final Instant validFrom = TIME_SERDE.read(ByteBuffer.wrap(entry.keyBytes, KEY_WIDTH - 6, 6));
+            final Instant validFrom = timeSerde.read(ByteBuffer.wrap(
+                    entry.keyBytes, keyWidth - timeSerde.getSize(), timeSerde.getSize()));
             if (!validFrom.isAfter(deleteBefore)) {
                 if (pendingFloor != null) {
                     toDelete.add(pendingFloor.keyBytes);

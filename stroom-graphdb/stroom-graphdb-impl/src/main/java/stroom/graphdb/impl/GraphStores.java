@@ -32,8 +32,10 @@ import stroom.planb.impl.dao.UidLookupRecorder;
 import stroom.planb.impl.dao.VariableUsedLookupsRecorder;
 import stroom.planb.impl.serde.hash.HashFactory;
 import stroom.planb.impl.serde.hash.HashFactoryFactory;
+import stroom.planb.impl.serde.time.TimeSerde;
 import stroom.planb.shared.HashLength;
 import stroom.planb.shared.RetentionSettings;
+import stroom.planb.shared.TemporalPrecision;
 import stroom.query.language.functions.Val;
 import stroom.util.logging.LogUtil;
 import stroom.util.time.SimpleDurationUtil;
@@ -51,6 +53,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
@@ -94,13 +97,31 @@ public final class GraphStores implements AutoCloseable {
      * {@link GraphSchemaDb#CURRENT_SCHEMA_VERSION}, because a stale store would otherwise be silently
      * reinterpreted rather than rejected.
      */
-    private static final String KEY_SCHEMA = """
-            {"nodeUidWidth":6,"typeUidWidth":4,"timeSerde":"millisecond6",\
+    private static final String KEY_SCHEMA_TEMPLATE = """
+            {"nodeUidWidth":6,"typeUidWidth":4,"timeSerde":"%s",\
             "node":"[nodeUid][validFrom]",\
             "outEdge":"[srcUid][edgeTypeUid][dstUid][validFrom]",\
             "inEdge":"[dstUid][edgeTypeUid][srcUid][validFrom]",\
             "propertyIndex":"[labelUid][propertyKeyUid][tierTag][tieredValue][nodeUid]",\
             "propertyIndexDirectMaxLength":32,"propertyValueHashLength":"LONG"}""";
+
+    /**
+     * The key layout this build writes for {@code precision}.
+     *
+     * <p>The time serde's name is part of the stamp, which is what makes Temporal Precision immutable after
+     * provisioning: a store written at one precision produces a different key schema string and so is refused by
+     * {@link GraphSchemaDb} when opened under another. No separate immutability check is needed, and no schema
+     * version bump either - {@code MILLISECOND} still yields the exact string earlier builds wrote, so existing
+     * millisecond stores keep opening.</p>
+     *
+     * <p>The name carries the width as well as the unit because minute and second are both four bytes but encode
+     * differently - and from different epochs - so width alone would let two incompatible layouts share a stamp.</p>
+     */
+    private static String keySchema(final TemporalPrecision precision, final TimeSerde timeSerde) {
+        return String.format(
+                KEY_SCHEMA_TEMPLATE,
+                precision.name().toLowerCase(Locale.ROOT) + timeSerde.getSize());
+    }
 
     /**
      * The value encodings this build writes. See {@link #KEY_SCHEMA} for the version-bump obligation.
@@ -249,9 +270,14 @@ public final class GraphStores implements AutoCloseable {
             final VariableUsedLookupsRecorder propertyValueRecorder = new VariableUsedLookupsRecorder(
                     env, propertyValueUids, propertyValueHashes);
 
-            final GraphNodeDb nodes = new GraphNodeDb(env);
-            final GraphAdjacencyDb outEdges = new GraphAdjacencyDb(env);
-            final GraphInEdgeDb inEdges = new GraphInEdgeDb(env);
+            // Temporal Precision decides the width of every key's validFrom, so it has to be resolved before any
+            // table opens rather than consulted per write.
+            final TemporalPrecision precision = GraphTimeSerdes.resolve(doc.getTemporalPrecision());
+            final TimeSerde timeSerde = GraphTimeSerdes.forPrecision(precision);
+
+            final GraphNodeDb nodes = new GraphNodeDb(env, timeSerde);
+            final GraphAdjacencyDb outEdges = new GraphAdjacencyDb(env, timeSerde);
+            final GraphInEdgeDb inEdges = new GraphInEdgeDb(env, timeSerde);
             final GraphPropertyIndex propertyIndex = new GraphPropertyIndex(
                     env, propertyValueUids, propertyValueHashes);
 
@@ -261,7 +287,8 @@ public final class GraphStores implements AutoCloseable {
                     env,
                     byteBuffers,
                     doc,
-                    new SchemaInfo(GraphSchemaDb.CURRENT_SCHEMA_VERSION, KEY_SCHEMA, VALUE_SCHEMA),
+                    new SchemaInfo(
+                            GraphSchemaDb.CURRENT_SCHEMA_VERSION, keySchema(precision, timeSerde), VALUE_SCHEMA),
                     hashClashCommitRunnable);
 
             return new GraphStores(
@@ -558,6 +585,21 @@ public final class GraphStores implements AutoCloseable {
      */
     public VariableUsedLookupsRecorder getPropertyValueRecorder() {
         return propertyValueRecorder;
+    }
+
+    /**
+     * The latest instant this graph's {@code validFrom} encoding can represent.
+     *
+     * <p>Callers needing a "latest" sentinel must use this rather than a constant: Temporal Precision decides the
+     * encoding, so the ceiling differs per graph, and a value beyond it wraps rather than saturating.</p>
+     *
+     * <p><b>Postconditions:</b> returns an instant this store can encode.
+     * <b>Null status:</b> the return value is never null.
+     *
+     * @return the latest representable instant.
+     */
+    public Instant getLatestRepresentableInstant() {
+        return GraphTimeSerdes.latestRepresentable(GraphTimeSerdes.resolve(doc.getTemporalPrecision()));
     }
 
     /**

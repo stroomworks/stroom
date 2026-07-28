@@ -25,7 +25,7 @@ import stroom.lmdb.stream.LmdbKeyRange;
 import stroom.planb.impl.dao.LmdbWriter;
 import stroom.planb.impl.dao.PlanBEnv;
 import stroom.planb.impl.dao.UidLookupRecorder;
-import stroom.planb.impl.serde.time.MillisecondTimeSerde;
+import stroom.planb.impl.serde.time.TimeSerde;
 import stroom.query.language.functions.Val;
 
 import org.jspecify.annotations.Nullable;
@@ -58,8 +58,6 @@ public final class GraphNodeDb {
 
     private static final UnsignedBytes NODE_UID_BYTES = UnsignedBytesInstances.ofLength(GraphStores.NODE_UID_WIDTH);
     private static final UnsignedBytes LABEL_UID_BYTES = UnsignedBytesInstances.ofLength(GraphStores.TYPE_UID_WIDTH);
-    private static final MillisecondTimeSerde TIME_SERDE = new MillisecondTimeSerde();
-    private static final int KEY_WIDTH = GraphStores.NODE_UID_WIDTH + 6;
 
     private static final byte TOMBSTONE = 0;
     private static final byte PRESENT = 1;
@@ -68,9 +66,14 @@ public final class GraphNodeDb {
     private static final int MAX_LABEL_COUNT = 255;
 
     private final Dbi<ByteBuffer> dbi;
+    /** Per-document, because Temporal Precision decides how many bytes of each key the time occupies. */
+    private final TimeSerde timeSerde;
+    private final int keyWidth;
 
-    GraphNodeDb(final PlanBEnv env) {
+    GraphNodeDb(final PlanBEnv env, final TimeSerde timeSerde) {
         Objects.requireNonNull(env, "env");
+        this.timeSerde = Objects.requireNonNull(timeSerde, "timeSerde");
+        this.keyWidth = GraphStores.NODE_UID_WIDTH + timeSerde.getSize();
         this.dbi = env.openDbi("graph-node", DbiFlags.MDB_CREATE);
     }
 
@@ -189,7 +192,7 @@ public final class GraphNodeDb {
             for (final LmdbEntry entry : iterable) {
                 final ByteBuffer key = entry.getKey().duplicate();
                 key.position(key.position() + GraphStores.NODE_UID_WIDTH);
-                run.add(new VersionRunEntry(TIME_SERDE.read(key), copy(entry.getVal())));
+                run.add(new VersionRunEntry(timeSerde.read(key), copy(entry.getVal())));
             }
         }
         return Optional.ofNullable(latestIntersecting(run, from, to));
@@ -319,12 +322,12 @@ public final class GraphNodeDb {
      * {@code validFrom <= deleteBefore} version except the last one seen) and which survive (that last one, plus
      * every version {@code > deleteBefore}).
      */
-    private static void planGroupDeletions(final List<VersionEntry> group, final Instant deleteBefore,
+    private void planGroupDeletions(final List<VersionEntry> group, final Instant deleteBefore,
                                            final List<byte[]> toDelete, final List<VersionEntry> survivors) {
         VersionEntry pendingFloor = null;
         for (final VersionEntry entry : group) {
-            final Instant validFrom = TIME_SERDE.read(
-                    ByteBuffer.wrap(entry.keyBytes, GraphStores.NODE_UID_WIDTH, 6));
+            final Instant validFrom = timeSerde.read(
+                    ByteBuffer.wrap(entry.keyBytes, GraphStores.NODE_UID_WIDTH, timeSerde.getSize()));
             if (!validFrom.isAfter(deleteBefore)) {
                 if (pendingFloor != null) {
                     toDelete.add(pendingFloor.keyBytes);
@@ -359,7 +362,7 @@ public final class GraphNodeDb {
         LmdbIterable.iterate(readTxn, dbi, (key, value) -> {
             final ByteBuffer k = key.duplicate();
             final long nodeUid = NODE_UID_BYTES.get(k);
-            final Instant validFrom = TIME_SERDE.read(k);
+            final Instant validFrom = timeSerde.read(k);
             consumer.accept(nodeUid, validFrom, decodeValue(value));
         });
     }
@@ -407,10 +410,10 @@ public final class GraphNodeDb {
         return new NodeVersion(labelUids, GraphPropsCodec.decode(propsBlob));
     }
 
-    private static ByteBuffer buildKey(final long nodeUid, final Instant validFrom) {
-        final ByteBuffer key = ByteBuffer.allocateDirect(KEY_WIDTH);
+    private ByteBuffer buildKey(final long nodeUid, final Instant validFrom) {
+        final ByteBuffer key = ByteBuffer.allocateDirect(keyWidth);
         NODE_UID_BYTES.put(key, nodeUid);
-        TIME_SERDE.write(key, validFrom);
+        timeSerde.write(key, validFrom);
         key.flip();
         return key;
     }

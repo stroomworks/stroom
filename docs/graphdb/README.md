@@ -103,7 +103,7 @@ Detail: [03-ingest.md](03-ingest.md), [02-architecture.md](02-architecture.md),
 | **`collect()` is unavailable** | It is rejected at compile time rather than returning a comma-joined string, which was silently wrong for anyone assuming Cypher list semantics. Use `RETURN DISTINCT` or aggregate with `count`. Held back deliberately because a list value type touches the sealed `Val` hierarchy shared across the product — the full analysis is in [12a-list-value-type.md](12a-list-value-type.md) |
 | **Property values are strings unless typed, and only `long` and `boolean` are available** | `double` and dates cannot be typed, because the equality anchor index is keyed on rendered text and `42.0` renders as `42` — a query for `42.0` would silently find nothing. Encode those as sortable text ([03-ingest.md](03-ingest.md#property-value-types)). *Correction: this table previously said ordering was lexical (`"10" < "9"`). It was not — Stroom's string comparator is numeric-first. What typing fixes is the value's type on read-back, not its sort order* |
 | **Shortest path runs in the browser over the loaded subgraph only** | A genuinely shorter path through nodes not currently on the canvas will not be found. There is no `shortestPath()` in the query language |
-| **Temporal Precision is inert** — the Settings control is editable and persisted, but no implementation code reads it | Setting it has no effect of any kind |
+| ~~**Temporal Precision is inert**~~ — **fixed.** It now selects the `validFrom` encoding, from 6 bytes per key down to 2 | Choose the coarsest precision your questions tolerate; it is the largest lever on a graph's size. It is fixed at creation — a store refuses to open under a different precision rather than misreading its keys ([11-operations.md](11-operations.md#temporal-precision)) |
 
 Detail: [06-language-reference.md](06-language-reference.md), [03-ingest.md](03-ingest.md),
 [07-functions.md](07-functions.md).
@@ -121,11 +121,10 @@ Detail: [06-language-reference.md](06-language-reference.md),
 
 ### What would have to change
 
-Cluster correctness, the store format stamp, strict ingest and the shipped schema are done. What remains, in
-rough priority order: an honest Temporal Precision setting (it is currently inert), native typed `double` and
-date property values, a real `collect()` list, then a fuller configuration surface (store size, retention
-defaults and the traversal guardrails) and a compaction path that does not depend on source streams still
-existing.
+Cluster correctness, the store format stamp, strict ingest, the shipped schema and Temporal Precision are done. What remains, in
+rough priority order: native typed `double` and date property values, a real `collect()` list, then a fuller
+configuration surface (store size, retention defaults and the traversal guardrails) and a compaction path that
+does not depend on source streams still existing.
 
 The remaining items are limitations you can work around once you know about them, which is why they now come
 after the two that could not be worked around at all. All of it is tracked in

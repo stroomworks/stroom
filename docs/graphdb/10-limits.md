@@ -21,6 +21,11 @@ maintainer can re-verify by grep.*
 > queries. This is one of the
 > [production-readiness blockers](README.md#production-readiness--known-blockers).
 
+> **Temporal Precision is fixed at creation.** It determines the width of every key's `validFrom`, so it is part
+> of the store's format stamp: a graph refuses to open under a different precision rather than misreading its keys.
+> Choose it when you create the graph — changing it later means a new graph and a reload
+> ([11-operations.md](11-operations.md#temporal-precision)).
+
 The three per-document Settings-tab controls — Temporal Precision, Data Retention and Node Type Mappings —
 are the sole exception, and none of them affects the limits below.
 

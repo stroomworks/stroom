@@ -359,16 +359,35 @@ likely to be overlooked.
 Maps node labels onto Stroom domain types, so graph entities line up with the domain-type catalogue used
 elsewhere in Stroom. Optional; affects presentation and integration, not storage or queries.
 
-### Temporal Precision (present but not yet in effect)
+### Temporal Precision
 
-A selector offering day, hour, minute, second, millisecond and nanosecond.
+How much of each key's space the `validFrom` timestamp occupies. Every node and edge version key ends with one,
+and a graph is mostly keys, so this is the largest single lever on a graph's on-disk size.
 
-> **This setting currently does nothing.** The value is editable and is persisted with the document, but no
-> implementation code reads it. Timestamps are handled at millisecond precision regardless of what you
-> choose here. Setting it has no effect on ingest, storage or queries.
+| Precision | Key bytes for time | Saving vs millisecond | Latest representable |
+|---|---|---|---|
+| Millisecond (default) | 6 | — | ≈ year 10920 |
+| Second | 4 | 2 bytes per version | ≈ year 2106 |
+| Minute | 4 | 2 bytes per version | ≈ year 10136 |
+| Hour | 3 | 3 bytes per version | ≈ year 3882 |
+| Day | 2 | 4 bytes per version | ≈ year 2149 |
 
-It is documented here only so that nobody deduces behaviour from its presence. Tracked in
-[12-future-work.md](12-future-work.md).
+Choose the coarsest precision your questions tolerate. If you only ever ask "what did this look like on that
+day", `Day` costs a third of the key space `Millisecond` does — and a `validFrom` is truncated to the chosen
+unit, so two events in the same second become the same version at `Second` precision or coarser.
+
+> **Precision is fixed when the graph is created.** It is part of the key layout, so a store records it and
+> **refuses to open** under a different one — you get a `Key schema mismatch` error naming both precisions rather
+> than silently misreading every key. Changing it means creating a new graph and reloading.
+
+> **Nanosecond is rejected.** The `graph-mutation:1` vocabulary allows only three fractional digits in a
+> timestamp, so nanoseconds cannot be ingested; permitting it would spend 8 bytes per key — the widest option —
+> storing guaranteed zeros. Selecting it fails at open with an explanation.
+
+Note the non-monotonic "latest representable" column: `Second` reaches only 2106 because its encoding counts
+seconds from the year 2000 in four bytes, whereas `Minute` counts minutes from 1970. Both are Plan B encodings
+that Graph DB reuses unchanged. None of these ceilings is likely to matter, but a `validFrom` beyond one would be
+rejected rather than silently wrapped.
 
 ## Monitoring
 
