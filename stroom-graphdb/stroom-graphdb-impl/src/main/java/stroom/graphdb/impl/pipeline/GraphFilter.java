@@ -166,6 +166,7 @@ public class GraphFilter extends AbstractXMLFilter {
 
     private DocRef graphDbRef;
     private boolean strict;
+    private long ingestErrors;
     private GraphShardWriter shardWriter;
     private GraphStores stores;
     private LmdbWriter writer;
@@ -233,6 +234,7 @@ public class GraphFilter extends AbstractXMLFilter {
             }
             // Write into a fragment of this stream's own rather than into the live store, so the mutations can be
             // shipped to every node that holds graph data and merged there.
+            ingestErrors = 0;
             shardWriter = graphShardWriters.createWriter(metaHolder.getMeta(), doc);
             stores = shardWriter.getStores();
             writer = shardWriter.getWriter();
@@ -244,6 +246,16 @@ public class GraphFilter extends AbstractXMLFilter {
     @Override
     public void endProcessing() {
         try {
+            // A per-record ERROR is easy to miss among thousands of log lines, so the stream also gets one line
+            // saying how much it lost. Without this, "did that load completely?" is a question you have to go
+            // looking for - which is the whole reason lenient mode is dangerous rather than merely permissive.
+            if (ingestErrors > 0) {
+                log(Severity.ERROR,
+                        ingestErrors + " ingest error(s) were reported for this stream and the affected data is "
+                        + "NOT in the graph, which is therefore incomplete. Set the Graph Filter's 'strict' "
+                        + "property to fail the stream instead of skipping bad data.",
+                        null);
+            }
             if (shardWriter != null) {
                 // Closes the writer and environment, then sends the fragment for merging.
                 shardWriter.close();
@@ -389,6 +401,7 @@ public class GraphFilter extends AbstractXMLFilter {
                 throw LoggedException.create(message);
             }
             log(Severity.ERROR, message, e);
+            ingestErrors++;
         }
     }
 
@@ -642,6 +655,9 @@ public class GraphFilter extends AbstractXMLFilter {
             throw LoggedException.create(message);
         }
         log(Severity.ERROR, message, null);
+        // Counted here rather than only in perRecord: a handler's own validation reports and returns normally,
+        // so it never reaches that catch - and those are the common failures, not the store-layer ones.
+        ingestErrors++;
     }
 
     private void log(final Severity severity, final String message, final Exception e) {

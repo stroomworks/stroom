@@ -511,6 +511,62 @@ class TestGraphFilter {
         }
     }
 
+    /**
+     * Lenient mode must say how much it lost. A per-record error among thousands of log lines is easy to miss,
+     * so a stream that lost anything gets one line stating the graph is incomplete - which is what turns silent
+     * partial loss into something an operator would notice.
+     *
+     * <p>The count comes from {@code error}, not from {@code perRecord}'s catch, because a handler's own
+     * validation reports and returns normally without ever reaching that catch - and those are the common
+     * failures.
+     */
+    @Test
+    void lenientMode_reportsHowMuchItLost(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("skipcount"), DOC)) {
+            final List<String> capturedErrors = new ArrayList<>();
+            ingest(stores, """
+                    <graph xmlns="graph-mutation:1" version="1.0">
+                        <node validFrom="2026-01-01T00:00:00.000Z"><label>Thing</label></node>
+                        <node id="n2" validFrom="not-a-timestamp"><label>Thing</label></node>
+                        <node id="n3" validFrom="2026-01-01T00:00:00.000Z">
+                            <label>Thing</label>
+                            <property name="id">n3</property>
+                        </node>
+                    </graph>
+                    """, new AtomicReference<>(stores), capturedErrors);
+
+            // Three errors for two bad records: the unparsable timestamp is reported once when parsed and again
+            // when the record is found to have no validFrom. The summary counts reported errors, not records.
+            assertThat(capturedErrors)
+                    .as("a single summary naming the count")
+                    .anyMatch(message -> message.contains("3 ingest error(s) were reported"));
+            // The good record still loaded - the summary reports loss, it does not cause it.
+            assertThat(query(stores, "MATCH (g:Thing {id: 'n3'}) RETURN g.id"))
+                    .extracting(row -> row[0].toString()).containsExactly("n3");
+        }
+    }
+
+    /**
+     * A clean stream must say nothing. A summary that always fired would be noise, and noise is how a real one
+     * gets ignored.
+     */
+    @Test
+    void cleanStream_reportsNothing(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("noskip"), DOC)) {
+            final List<String> capturedErrors = new ArrayList<>();
+            ingest(stores, """
+                    <graph xmlns="graph-mutation:1" version="1.0">
+                        <node id="n1" validFrom="2026-01-01T00:00:00.000Z">
+                            <label>Thing</label>
+                            <property name="id">n1</property>
+                        </node>
+                    </graph>
+                    """, new AtomicReference<>(stores), capturedErrors);
+
+            assertThat(capturedErrors).isEmpty();
+        }
+    }
+
     // ------------------------------------------------------------------------------------------------------
     // Typed property values.
     // ------------------------------------------------------------------------------------------------------

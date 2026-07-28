@@ -141,7 +141,7 @@ These are the dangerous ones, because the query runs and returns something plaus
 | **A node version replaces, it does not merge** | Re-loading a node without a property removes it, rather than leaving the old value |
 | **Deleted data stays visible to historical queries** | Correct behaviour, but surprising if you expect a delete to be final |
 | **The whole-graph preview caps at 100 nodes silently** | `MATCH (n) RETURN GRAPH` looks complete and is not |
-| **Variable-length cycles are guarded by node, not relationship** | Cypher forbids reusing a *relationship* within a path; Graph DB forbids revisiting a *node*. In cyclic or diamond-shaped subgraphs it returns fewer paths than Neo4j, silently ([06](06-language-reference.md)) |
+| **Variable-length cycles are guarded by node, not relationship** | Cypher forbids reusing a *relationship* within a path; Graph DB forbids revisiting a *node*. So `a→b→a→c` is returned by Neo4j and not by Graph DB. It returns fewer paths, silently. **Deliberate** — relationship uniqueness is combinatorial in a dense subgraph and would trip the path-state ceiling far more often. Re-check any ported variable-length query rather than trusting it ([06](06-language-reference.md#variable-length-hops)) |
 
 ### Structural differences
 

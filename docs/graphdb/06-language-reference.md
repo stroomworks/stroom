@@ -107,12 +107,26 @@ design. `*..3` is allowed and means `*1..3`.
 A variable-length hop must be the pattern's **only** hop; it cannot be chained with others. The maximum
 permitted range is 50, and exploration is budgeted per starting node — see [10-limits.md](10-limits.md).
 
-> **Cycles are guarded by node, not by relationship.** A single path will never visit the same node twice.
-> Cypher's own rule is weaker — it forbids reusing the same *relationship*, but allows a path to pass
-> through a node more than once. Graph DB is therefore stricter, and in a cyclic or diamond-shaped
-> subgraph it can return **fewer** paths than Neo4j would for the same pattern. Nothing reports this; the
-> results are simply narrower. Note that a node reached by two genuinely different paths is still two
-> results — the restriction is only within one path.
+> **Cycles are guarded by node, not by relationship — a deliberate divergence from Cypher.** A single path will
+> never visit the same node twice. Cypher's rule is weaker: it forbids reusing the same *relationship* but allows
+> a path through the same node more than once.
+>
+> Concretely, given `a→b`, `b→a` and `a→c`, the pattern `(a)-[:R*1..3]->(x)` will **not** return the route
+> `a→b→a→c`. Neo4j does return it — those are three distinct relationships, and only the node `a` repeats.
+> Graph DB is therefore stricter and returns **fewer** paths, and **nothing reports it**: the results are simply
+> narrower.
+>
+> **Why it is this way.** Node uniqueness bounds a path at the number of nodes in the graph. Relationship
+> uniqueness is combinatorial in a dense subgraph, so adopting Cypher's rule would make the 200,000 path-state
+> ceiling ([10-limits.md](10-limits.md)) far easier to hit — trading a narrower answer for a failed one. The
+> divergence is a considered choice about which failure is preferable, not an oversight.
+>
+> **What to do about it.** A query ported from Neo4j that uses a variable-length hop over a cyclic subgraph must
+> be re-checked against expected results rather than trusted. There is no runtime signal, because knowing a query
+> *would have* matched more paths requires doing the wider traversal.
+>
+> Note that a node reached by two genuinely different paths is still two results — the restriction applies only
+> within one path.
 
 ## Temporal clauses
 

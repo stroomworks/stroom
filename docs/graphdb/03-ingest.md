@@ -273,9 +273,17 @@ then either logged and skipped (lenient) or fails the stream (strict).
 | `Unable to parse validFrom "…"` | Timestamp not in the required format |
 | `Failed to write <…>` | A storage-level failure, e.g. a value too large for a key, or more than 255 labels |
 
-> **In lenient mode this is the data-safety issue to keep in mind.** A partially-loaded graph looks exactly
-> like a fully loaded one. Nothing turns red. After any load, check the stream's error count rather than
-> assuming success, and treat a non-zero count as data loss until proven otherwise.
+> **In lenient mode, check the summary.** A stream that reported any ingest error ends with one line saying so:
+>
+> ```
+> 3 ingest error(s) were reported for this stream and the affected data is NOT in the graph, which is
+> therefore incomplete. Set the Graph Filter's 'strict' property to fail the stream instead of skipping bad data.
+> ```
+>
+> That exists because a partially-loaded graph otherwise looks exactly like a fully loaded one — the individual
+> errors are easy to lose among thousands of log lines. A clean stream says nothing, so the line only appears when
+> something was actually lost. Note it counts reported **errors**, not records: one malformed record can produce
+> more than one, so treat it as "something is missing", not as an exact tally.
 
 Unrecognised elements used to be the quietest failure of all — ignored with no message, so a misspelled
 `<nodee>` contributed nothing and reported nothing. They are now reported like any other bad record. Note

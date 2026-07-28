@@ -494,6 +494,36 @@ The essentials an implementer needs at hand:
 > specific. If `docs/` migrates to another repository, that link needs repointing — the standards themselves
 > are repository-level and should follow the code, not the documentation.
 
+## Decisions taken during implementation
+
+Two questions the plan left open were settled deliberately rather than by default, and both are recorded here
+because the reasoning matters more than the outcome.
+
+**The strict-ingest default stays lenient — because `strict` is already a per-pipeline UI choice.**
+`@PipelineProperty` becomes a `PipelinePropertyType` in the `ElementRegistry`, which the pipeline property editor
+renders, so a pipeline author sees and sets it alongside `graphDb`. A global default therefore decides only what
+happens when nobody chose, and flipping it would change behaviour for existing pipelines on upgrade — a
+version-bump surprise on data that has been "working".
+
+What made lenient acceptable was removing its silence: a stream that reported any ingest error now ends with one
+line naming the count and stating the graph is incomplete. That count is taken in `error()`, **not** in
+`perRecord`'s catch — a first attempt put it in the catch and missed almost everything, because a handler's own
+validation reports and returns normally without ever reaching it, and those are the common failures.
+
+**Variable-length cycles keep node uniqueness rather than adopting Cypher's relationship uniqueness.** Graph DB
+will not return `a→b→a→c` for `(a)-[:R*1..3]->(x)`; Neo4j will, since only the node repeats. Graph DB is
+therefore stricter and returns fewer paths, silently.
+
+This is a choice about which failure is preferable. Node uniqueness bounds a path at the number of nodes;
+relationship uniqueness is combinatorial in a dense subgraph and would make the 200,000 path-state ceiling far
+easier to hit — trading a narrower answer for a failed one. It also cannot be made non-silent: knowing that a
+query *would have* matched more paths requires performing the wider traversal.
+
+Since it cannot be signalled at runtime, it is signalled in the documentation instead. It is now a
+[README](README.md) blocker with the concrete example, expanded in
+[06-language-reference.md](06-language-reference.md#variable-length-hops), and flagged in
+[09-gql-and-neo4j.md](09-gql-and-neo4j.md) as something to re-check on any ported query.
+
 ## Out of scope
 
 Language features (`SKIP`, path variables, `shortestPath`, relationship-type alternation, multi-`MATCH`,
