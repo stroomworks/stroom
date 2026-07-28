@@ -19,8 +19,10 @@ package stroom.graphdb.impl;
 import stroom.docref.DocRef;
 import stroom.docstore.api.DocumentNotFoundException;
 import stroom.graphdb.shared.GraphDbDoc;
+import stroom.util.io.FileUtil;
 import stroom.util.logging.LambdaLogger;
 import stroom.util.logging.LambdaLoggerFactory;
+import stroom.util.logging.LogUtil;
 import stroom.util.metrics.Metrics;
 
 import com.codahale.metrics.Counter;
@@ -29,12 +31,16 @@ import jakarta.inject.Provider;
 import jakarta.inject.Singleton;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.function.Function;
 import java.util.stream.Stream;
 
 /**
@@ -48,11 +54,17 @@ public class GraphStoreManagerImpl implements GraphStoreManager {
 
     private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(GraphStoreManagerImpl.class);
 
+    /** Where a compacted copy is built. A sibling of the live store, so the swap is a rename on one filesystem. */
+    private static final String COMPACTING_SUFFIX = ".compacting";
+    /** Where the original is parked during the swap, so a failed second rename can be undone. */
+    private static final String SUPERSEDED_SUFFIX = ".superseded";
+
     private final GraphPaths graphPaths;
     private final Provider<GraphDbConfig> configProvider;
     private final Provider<GraphDbDocStore> graphDbDocStoreProvider;
     private final Counter missingStoreQueries;
     private final ConcurrentMap<String, GraphStores> openStores = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, ReadWriteLock> locks = new ConcurrentHashMap<>();
 
     @Inject
     public GraphStoreManagerImpl(final GraphPaths graphPaths,
@@ -71,7 +83,7 @@ public class GraphStoreManagerImpl implements GraphStoreManager {
     }
 
     @Override
-    public GraphStores getForQuery(final GraphDbDoc doc) {
+    public <R> R useForQuery(final GraphDbDoc doc, final Function<GraphStores, R> function) {
         Objects.requireNonNull(doc, "doc");
 
         // Checked before opening, because opening creates the directory - after which the evidence is gone.
@@ -80,19 +92,139 @@ public class GraphStoreManagerImpl implements GraphStoreManager {
             missingStoreQueries.inc();
             LOGGER.error(() -> "This node holds no data for graph '" + doc.getName() + "' (" + doc.getUuid()
                                + ") but is being queried for it, so the answer will be empty rather than wrong-"
-                               + "looking. Either this node was added to graphdb.nodeList without copying "
-                               + "existing graph data to it - joining does not backfill - or graphdb.path has "
+                               + "looking. Either this node was added to graphdb.nodeList without being "
+                               + "backfilled - joining does not backfill automatically - or graphdb.path has "
                                + "changed without the data being moved. If the graph has genuinely never been "
                                + "loaded, ignore this.");
         }
-        return getOrOpen(doc);
+        return use(doc, function);
     }
 
+    /**
+     * Holds the graph's read lock for the duration of {@code function}, so nothing can close or replace the store
+     * under it. Several callers may hold it at once; only {@link #compact} and {@link #delete} exclude them.
+     */
     @Override
-    public GraphStores getOrOpen(final GraphDbDoc doc) {
+    public <R> R use(final GraphDbDoc doc, final Function<GraphStores, R> function) {
         Objects.requireNonNull(doc, "doc");
+        Objects.requireNonNull(function, "function");
+
+        final ReadWriteLock lock = lockFor(doc.getUuid());
+        lock.readLock().lock();
+        try {
+            return function.apply(getOrOpenUnguarded(doc));
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    /**
+     * Opens and caches the store without taking the lock.
+     *
+     * <p><b>Named for what it is missing.</b> Nothing outside this class may hold a store, and inside it only
+     * {@link #use} and {@link #compact} may call this - both hold a lock already. Anything else calling it gets
+     * a reference that {@link #compact} can invalidate, which is precisely the hazard the lending design
+     * removes. It is not private only so tests can assert on the cache directly.</p>
+     */
+    GraphStores getOrOpenUnguarded(final GraphDbDoc doc) {
         return openStores.computeIfAbsent(doc.getUuid(), uuid ->
                 GraphStores.open(directoryFor(uuid), doc, false, configProvider.get().getMaxStoreSize()));
+    }
+
+    /**
+     * Compacts by copy-and-swap, because LMDB has no in-place compaction: the environment is copied minus its
+     * free pages, and the copy replaces the original.
+     *
+     * <p>The ordering is chosen so that <b>every failure leaves a usable store</b>, which matters more here than
+     * anywhere else in this class - the failure being guarded against is one that loses a whole graph.</p>
+     *
+     * <ol>
+     *   <li>Copy first, with the original still open and serving. A failed copy changes nothing.</li>
+     *   <li>Compare sizes and abandon if the copy is not smaller. LMDB writes at least a root page and a meta
+     *       page, so an already-compact store copies to roughly its own size; swapping then costs a reopen and
+     *       buys nothing.</li>
+     *   <li>Close, then move the original aside rather than deleting it. If the copy cannot be moved into place
+     *       the original is moved back, so the window in which no store exists is two renames on one
+     *       filesystem.</li>
+     *   <li>Delete the original last. A failure there leaves a stale directory, which
+     *       {@link #cleanupOrphanedStores} reclaims because no document resolves its name.</li>
+     * </ol>
+     *
+     * <p>The store is dropped from the cache rather than reopened here, so the next {@link #use} opens the new
+     * file. Reopening eagerly would mean holding an environment open for a graph nobody has asked for.</p>
+     */
+    @Override
+    public long compact(final GraphDbDoc doc) {
+        Objects.requireNonNull(doc, "doc");
+
+        final String uuid = doc.getUuid();
+        final ReadWriteLock lock = lockFor(uuid);
+        lock.writeLock().lock();
+        try {
+            final Path live = directoryFor(uuid);
+            if (!Files.isDirectory(live)) {
+                // Nothing on disk yet, so nothing to reclaim. Opening one purely to compact it would create the
+                // very directory this node may be right not to have.
+                return 0;
+            }
+
+            final Path working = live.resolveSibling(uuid + COMPACTING_SUFFIX);
+            final Path previous = live.resolveSibling(uuid + SUPERSEDED_SUFFIX);
+            // Anything left by an interrupted earlier run, which would otherwise make the copy below fail.
+            deleteQuietly(working);
+            deleteQuietly(previous);
+
+            final long sizeBefore = FileUtil.getByteSize(live);
+            try {
+                Files.createDirectories(working);
+                // Directly, not through use() - the write lock is already held, and the copy is taken under an
+                // LMDB read transaction so the environment being open is not a problem.
+                getOrOpenUnguarded(doc).copyTo(working);
+
+                final long sizeAfter = FileUtil.getByteSize(working);
+                if (sizeAfter >= sizeBefore) {
+                    LOGGER.debug(() -> LogUtil.message(
+                            "Graph '{}' is already compact ({} -> {} bytes); leaving it alone",
+                            doc.getName(), sizeBefore, sizeAfter));
+                    return 0;
+                }
+
+                swapIn(uuid, live, working, previous);
+
+                LOGGER.info(() -> LogUtil.message("Compacted graph '{}', reclaiming {} bytes",
+                        doc.getName(), sizeBefore - sizeAfter));
+                return sizeBefore - sizeAfter;
+
+            } catch (final IOException e) {
+                throw new UncheckedIOException("Unable to compact graph '" + doc.getName() + "'", e);
+
+            } finally {
+                deleteQuietly(working);
+                deleteQuietly(previous);
+            }
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    /**
+     * Closes the live store and puts {@code working} in its place. Rolls back if the second move fails, which is
+     * the only step that can leave a graph with no directory at all.
+     */
+    private void swapIn(final String uuid, final Path live, final Path working, final Path previous)
+            throws IOException {
+        final GraphStores open = openStores.remove(uuid);
+        if (open != null) {
+            open.close();
+        }
+
+        Files.move(live, previous);
+        try {
+            Files.move(working, live);
+        } catch (final IOException e) {
+            Files.move(previous, live);
+            throw e;
+        }
     }
 
     /**
@@ -117,6 +249,19 @@ public class GraphStoreManagerImpl implements GraphStoreManager {
     @Override
     public void delete(final String uuid) {
         Objects.requireNonNull(uuid, "uuid");
+        final ReadWriteLock lock = lockFor(uuid);
+        // Excludes in-flight use() of this graph. The ConcurrentMap reasoning below still stands and still does
+        // the work for the map itself; the lock is what stops a traversal reading an environment being closed
+        // here, which no amount of map atomicity can prevent.
+        lock.writeLock().lock();
+        try {
+            deleteUnderLock(uuid);
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    private void deleteUnderLock(final String uuid) {
         final RuntimeException[] deleteFailure = new RuntimeException[1];
         openStores.compute(uuid, (key, stores) -> {
             if (stores != null) {
@@ -196,6 +341,29 @@ public class GraphStoreManagerImpl implements GraphStoreManager {
      */
     void deleteStoreDirectory(final Path directory) {
         GraphStores.delete(directory);
+    }
+
+    /**
+     * The lock guarding one graph, created on demand and never removed.
+     *
+     * <p>Keyed on UUID rather than held on the store, because it must exist while no store does - {@link #delete}
+     * and {@link #compact} both need to exclude other callers across the moment the store is closed. Never
+     * removed because the map holds one small object per graph a node has touched, and reclaiming them would
+     * need exactly the coordination the lock is there to provide.</p>
+     */
+    private ReadWriteLock lockFor(final String uuid) {
+        return locks.computeIfAbsent(uuid, key -> new ReentrantReadWriteLock());
+    }
+
+    /** Removes a working directory if it is there, reporting failure without derailing the caller. */
+    private void deleteQuietly(final Path directory) {
+        try {
+            if (Files.isDirectory(directory)) {
+                GraphStores.delete(directory);
+            }
+        } catch (final RuntimeException e) {
+            LOGGER.error(() -> "Unable to remove " + FileUtil.getCanonicalPath(directory), e);
+        }
     }
 
     private Path directoryFor(final String uuid) {

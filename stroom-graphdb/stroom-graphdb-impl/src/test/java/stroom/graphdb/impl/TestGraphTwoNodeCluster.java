@@ -267,7 +267,7 @@ class TestGraphTwoNodeCluster {
     }
 
     private static List<String> query(final Node node, final String cypher) {
-        final GraphStores stores = node.storeManager.getOrOpen(DOC);
+        final GraphStores stores = node.storeManager.getOrOpenUnguarded(DOC);
         final CompiledCypherPlan compiled = new CypherToLogicalPlan().compile(CypherQueryParser.parse(cypher));
         final GraphTraversalEngine engine = new GraphTraversalEngine(stores, new ExpressionPredicateFactory());
         final List<Val[]> rows = stores.read(readTxn -> engine.execute(
@@ -277,7 +277,7 @@ class TestGraphTwoNodeCluster {
 
     /** Every node version in the store, so a merge that duplicated rather than deduplicated is visible. */
     private static long nodeVersionCount(final Node node) {
-        final GraphStores stores = node.storeManager.getOrOpen(DOC);
+        final GraphStores stores = node.storeManager.getOrOpenUnguarded(DOC);
         return stores.read(txn -> {
             final long[] seen = {0};
             stores.getNodes().forEachVersion(txn, (uid, validFrom, version) -> seen[0]++);
@@ -297,7 +297,7 @@ class TestGraphTwoNodeCluster {
     }
 
     private static List<String> nodeIds(final Node node) {
-        final GraphStores stores = node.storeManager.getOrOpen(DOC);
+        final GraphStores stores = node.storeManager.getOrOpenUnguarded(DOC);
         return stores.read(txn -> {
             final List<String> ids = new ArrayList<>();
             stores.getNodeUids().forEachName(txn, name ->

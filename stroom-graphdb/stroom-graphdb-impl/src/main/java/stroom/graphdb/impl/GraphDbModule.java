@@ -152,7 +152,7 @@ public class GraphDbModule extends AbstractModule {
                         // The eager-open concern the comment below records is therefore accepted rather than
                         // avoided - and less sharp than it was, since a store whose document has been deleted is
                         // reclaimed by cleanupOrphanedStores above.
-                        // Code-review fix: only open the store when retention is actually enabled. getOrOpen()
+                        // Code-review fix: only open the store when retention is actually enabled. use()
                         // eagerly opens (and permanently caches - there is no eviction) the doc's LMDB
                         // environment, so calling it unconditionally would, every 10 minutes, open an env for
                         // every graph doc even though retention is disabled by default and deleteOldData() would
@@ -161,10 +161,20 @@ public class GraphDbModule extends AbstractModule {
                             // Condensing is unconditional: it changes no query result and benefits any graph
                             // reloaded on a schedule, whether or not retention is enabled. Retention still is
                             // conditional - and checked first, so condense works on the smaller surviving set.
-                            if (retentionEnabled(doc)) {
-                                graphStoreManager.getOrOpen(doc).deleteOldData(doc);
+                            final long removed = graphStoreManager.use(doc, stores -> {
+                                final long aged = retentionEnabled(doc)
+                                        ? stores.deleteOldData(doc)
+                                        : 0L;
+                                return aged + stores.condense();
+                            });
+
+                            // Compaction only when something was actually removed. It rewrites the whole store
+                            // and needs room for a second copy, so running it on an unchanged graph would spend
+                            // that on nothing - and on a graph nothing writes to, the free pages this reclaims
+                            // are created only by the two operations above.
+                            if (removed > 0) {
+                                graphStoreManager.compact(doc);
                             }
-                            graphStoreManager.getOrOpen(doc).condense();
                         }
                     } catch (final RuntimeException e) {
                         LOGGER.error("Error running retention for {}", docRef, e);

@@ -77,7 +77,7 @@ class TestGraphMergePipeline {
 
             fixture.mergeProcessor.mergeCurrent();
 
-            final GraphStores target = fixture.storeManager.getOrOpen(DOC);
+            final GraphStores target = fixture.storeManager.getOrOpenUnguarded(DOC);
             assertThat(nodeIds(target)).containsExactlyInAnyOrder("alice", "bob");
             assertThat(fixture.mergeProcessor.getMergeFailureCount()).isZero();
         } finally {

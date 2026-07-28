@@ -119,7 +119,10 @@ public class GraphBackfillService {
                 Files.createDirectories(copyDir);
 
                 LOGGER.info(() -> LogUtil.message("Backfilling graph '{}' - copying store", doc.getName()));
-                graphStoreManager.getOrOpen(doc).copyTo(copyDir);
+                graphStoreManager.use(doc, stores -> {
+                    stores.copyTo(copyDir);
+                    return null;
+                });
 
                 ZipUtil.zip(zipFile, working);
                 final String fileHash = FileHashUtil.hash(zipFile);

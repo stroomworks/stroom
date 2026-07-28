@@ -107,7 +107,10 @@ public class GraphMergeProcessor {
 
             @Override
             public void merge(final Path sourceDir) {
-                graphStoreManager.getOrOpen(doc).merge(sourceDir);
+                graphStoreManager.use(doc, stores -> {
+                    stores.merge(sourceDir);
+                    return null;
+                });
             }
         };
     }

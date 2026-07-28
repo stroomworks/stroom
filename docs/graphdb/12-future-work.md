@@ -29,7 +29,7 @@ acted on, it should be this one.
 | ~~2~~ | ~~**Tunable store size**~~ — **done** via `graphdb.maxStoreSize` | Still needs a restart, and applies only to graphs opened afterwards, because LMDB fixes an environment's size at creation | Easy | — |
 | 3 | **Loud ingest failures** — a strict mode that fails a stream rather than skipping records, plus schema validation | Silent partial data loss is the most dangerous current behaviour | Medium | Low |
 | ~~4~~ | ~~**Version condensing**~~ — **done.** Runs of consecutive identical node and edge versions are collapsed to the earliest of each run, unconditionally | Needs no cut-off or setting because it changes no answer at any instant | Medium | — |
-| 4a | **In-place compaction** — return freed pages to the filesystem | LMDB reuses freed pages for new writes, so a condensed or aged store stops growing but does not shrink. `StoreShard.compact` is the template: copy-with-compact into a sibling directory, then swap atomically while no reader holds the old file. The copy half already exists — `PlanBEnv.copy(File, CopyFlags...)`, which backfill uses | Medium | Medium — **the swap is the whole of it.** `getOrOpen` hands out a raw store reference, so replacing a store under a caller that already holds one needs the manager to own *use* rather than hand out references. Same refactor idle eviction needs |
+| ~~4a~~ | ~~**In-place compaction**~~ — **done.** A maintenance run that removed anything follows it with a copy-and-swap compaction, returning the freed pages to the filesystem | It needed the store manager to **lend** stores for the duration of a call rather than hand out references, so replacing one under a live reader is impossible rather than merely unlikely. Runs only when something was removed, since rewriting an unchanged store reclaims nothing; needs room for a second copy; excludes queries on that graph while it runs. Every failure path leaves the original store usable | Medium | — |
 | ~~5~~ | ~~**Retention for the property index**~~ — **done.** The sweep now clears and re-derives the index from the versions that survived, which reclaims the per-version value anchors that made storage grow monotonically | Two things shaped it: the table has no `validFrom` so cannot be aged, and a stored anchor's value cannot be decoded back out of its key so it cannot be pruned row by row. **The property-value lookup is still not swept** — values above the inline tier are interned inside `insert`, so the rebuild does not know which entries were used and cannot record them; sweeping blind would break every long-valued anchor | Medium | — |
 | ~~5a~~ | ~~**Sweep the property-value lookup**~~ — **done.** `GraphPropertyIndex.insert` now takes an optional recorder and reports which lookup entry each anchor references, so the rebuild can record usage and the sweep can delete the rest | Recording happens in `insert` because that is the only place that knows the tier: an inline value references no entry at all, and guessing which did would delete entries live anchors depend on. Ingest passes no recorder, since bookkeeping outside a sweep is consumed by nothing | Easy–Medium | — |
 | 6 | **Compaction without source streams** — an in-place rebuild that does not depend on reprocessing | Rebuild silently stops being possible once source streams age off | Hard | High |
@@ -111,7 +111,7 @@ The operational workarounds available today are in
 | Item | Why | Difficulty | Risk |
 |---|---|---|---|
 | ~~**Tunable store size**~~ — **done** via `graphdb.maxStoreSize` | Raises the per-graph ceiling, but only for stores created afterwards: LMDB fixes an environment's size at creation | Easy | — |
-| ~~**Condense**~~ — **done.** ~~**Compact**~~ — outstanding, as item 4a above | Condense collapses runs of identical versions and runs unconditionally, because no answer changes at any instant. Compaction is what returns the freed pages to the filesystem | Medium | — / Medium |
+| ~~**Condense and compact**~~ — **done.** | Condense collapses runs of identical versions and runs unconditionally, because no answer changes at any instant. Compaction then returns the freed pages to the filesystem, and runs only when something was removed | Medium | — |
 | **Snapshot fan-out** — read-only snapshot nodes on top of a correct writer | Read scaling and query locality. Presupposes correctness work item 1; a snapshot of a fragmented store is a complete copy of an incomplete graph | Hard | Medium |
 | **Genuine partitioning** — spread one logical graph across nodes by key | The only route to a graph larger than one node's disk. Neither Graph DB nor Plan B has this, and it is the one approach that would reintroduce the correctness problem deliberately, requiring distributed traversal to solve properly | Hard | High |
 
@@ -188,9 +188,7 @@ mismatch simply does not arise.
 What remains from the original ordering:
 
 1. ~~**Tunable store size.**~~ Done — `graphdb.maxStoreSize`.
-2. **`compact` on `GraphStores`.** Condense is done; compaction is what actually returns space, and it needs
-   the store swapped under live readers. Separable from clustering — bounded storage does not require anything
-   above.
+2. ~~**Condense and compact.**~~ Done — both run as scheduled maintenance.
 3. **Snapshots**, and only if a node that holds no graph data needs to serve graph queries locally rather than
    being routed away from. This is read scaling and locality, not correctness.
 
@@ -339,11 +337,12 @@ If the goal is a production-capable Graph DB:
    fixed. Then the fuller configuration surface and tunable store size: mostly easy at low risk, and together
    they remove the "the operator has no controls and no warning" problem.
 3. **Documentation tests** — cheap, and they stop the rest of this set drifting.
-4. **Blockers 4, 5** — condensing, compaction and index retention, so storage is bounded rather than merely
-   slowed.
+4. ~~**Blockers 4, 5**~~ — **done.** Condensing, compaction and index retention, so storage is bounded rather
+   than merely slowed.
 5. **Typed `double` and date values** — needs the anchor-encoding decision above settled first. `long` and
    `boolean` are already done.
-6. **Blocker 6** — a compaction path independent of source streams.
+6. **Blocker 6** — a recovery path independent of source streams. Compaction reclaims free pages; it cannot
+   reconstruct data, so rebuilding a corrupt store still means reprocessing the streams.
 7. **Stream provenance on mutations** (`streamId`/`eventId`) — easy, low risk, and the gate to extraction and
    the thin-graph model. Worth doing early even if the follow-on work is not scheduled, because retrofitting
    provenance onto an already-populated graph means a rebuild.

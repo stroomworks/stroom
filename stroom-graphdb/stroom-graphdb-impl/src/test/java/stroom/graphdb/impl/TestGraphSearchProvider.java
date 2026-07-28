@@ -69,11 +69,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executor;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -492,7 +494,10 @@ class TestGraphSearchProvider {
 
         final GraphStoreManager graphStoreManager = mock(GraphStoreManager.class);
         if (stores != null) {
-            when(graphStoreManager.getForQuery(DOC)).thenReturn(stores);
+            // The manager lends the store for the duration of a call rather than returning it, so the stub has to
+            // invoke the function it is given.
+            when(graphStoreManager.useForQuery(eq(DOC), any()))
+                    .thenAnswer(invocation -> invocation.getArgument(1, Function.class).apply(stores));
         }
 
         final SecurityContext securityContext = mock(SecurityContext.class);

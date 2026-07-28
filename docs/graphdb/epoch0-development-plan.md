@@ -424,10 +424,10 @@ The test that carries this is `condensing_changesNoAnswerAtAnyInstant`, which qu
 history before and after. Validated by sabotage: switching the implementation to keep the *latest* of each run
 fails that test and nothing else, which is exactly the point — a row-count assertion would have passed.
 
-**Compaction is separate and still to do.** LMDB reuses freed pages for new writes, so a condensed or aged store
-stops growing but does not shrink on disk. `StoreShard.compact` is the template (copy-with-compact into a sibling
-directory, then an atomic swap while no reader holds the old file), but note `PlanBEnv` does not currently expose
-compaction at all, and the swap is the risky part. Tracked as item 4a in [12-future-work.md](12-future-work.md).
+**Compaction — done later, after backfill.** LMDB reuses freed pages for new writes, so a condensed or aged store
+stops growing but does not shrink on disk. See [Beyond the plan — compaction](#beyond-the-plan--compaction-item-4a)
+below; note that the claim in the previous sentence of the original text - that `PlanBEnv` exposes no compaction -
+was wrong, and is corrected there.
 
 **Retention for the property index** and the property-key table, which the current sweep skips. This is why
 storage grows monotonically even with retention enabled.
@@ -501,6 +501,51 @@ The test that carries this is in `TestGraphTwoNodeCluster`, and it starts by ass
 detached from the transport, reattached, then asked a traversal spanning old and new data returns nothing while
 the node that was always there returns the answer. Backfill then converges it. Validated by sabotage twice —
 skipping the send fails only the convergence test, and skipping the cleanup fails only the no-leftover-files test.
+
+## Beyond the plan — compaction (item 4a)
+
+The plan bundled condense and compact as one item. They were split during Phase 4 because they are unrelated in
+mechanism and risk; condense shipped then, and this is compact.
+
+**The blocker was never the copy.** It was that `GraphStoreManager.getOrOpen` *returned* a store, so a caller held
+a reference the manager knew nothing about. Nothing that needs to close or replace a store - compaction, idle
+eviction, deleting a graph - then has a safe moment to act, because a traversal might be part-way through the
+environment it is about to close. Note that `delete` had this hazard already; it was not introduced by
+compaction, only made visible by looking for it.
+
+So the manager now **lends**: `use(doc, function)` and `useForQuery(doc, function)` run the caller's work against
+the store and return its result, holding a per-graph read lock for exactly that long. `compact` and `delete` take
+the write lock. Eight call sites, all of which already used the store within a single method - nothing had to be
+restructured, which is the sign the reference was never needed in the first place. `getOrOpenUnguarded` remains,
+named to discourage use and documented as callable only from `use` and `compact`.
+
+Compaction itself is copy-and-swap, ordered so that **every failure leaves a usable store**:
+
+1. Copy first, original still open and serving. A failed copy changes nothing.
+2. Abandon if the copy is not smaller. LMDB always writes a meta and root page, so an already-compact store
+   copies to about its own size, and swapping it in would cost a whole rewrite for nothing.
+3. Close, move the original aside, move the copy in. If the second move fails the first is undone, so the window
+   with no store is two renames on one filesystem.
+4. Delete the original last. A failure there leaves a stale directory that `cleanupOrphanedStores` reclaims,
+   because no document resolves its name.
+
+Triggered from the maintenance job **only when retention or condense actually removed something**. Compaction
+rewrites the whole store and needs room for a second copy, so running it on an unchanged graph spends that on
+nothing - and on a graph nothing writes to, those two operations are the only source of free pages.
+
+**Two things the tests found that the design did not anticipate.** Condensing 20,000 versions leaves the file a
+page *larger*, because the deletions are themselves writes - so "condensing does not shrink the file" is
+understated. And file size is not a usable assertion for "was this store rewritten", because *opening* an
+environment writes to it: a freshly compacted 20 KB store is 96 KB after one read. The already-compact test
+therefore asserts on the data file's inode, which answers "was it replaced" directly.
+
+Validated by sabotage three times: removing the read lock from `use` fails only the concurrency test, always
+swapping fails only the already-compact test, and skipping the superseded-directory cleanup fails only the
+no-leftover-directories test.
+
+**Idle eviction remains deliberately unimplemented**, but the reason has changed. It was unsafe; now it is merely
+not worth it. An idle store holds file descriptors and reserved address space rather than heap, and reopening it
+costs a real query.
 
 ---
 
@@ -673,6 +718,13 @@ implementation plans that were retired to git history, leaving dangling links. I
   three of its six rows described the pre-cluster design.
 - The add-a-node procedure in [11-operations.md](11-operations.md) — **done**, with backfill; it previously
   told an operator to copy shard directories by hand.
+- The *deleted space is never returned* statements — **done**, with compaction, in
+  [11-operations.md](11-operations.md), [README.md](README.md) and [12-future-work.md](12-future-work.md). The
+  rebuild-trap section keeps its warning, corrected: compaction reclaims free pages and cannot reconstruct data,
+  so it does not loosen the source-stream coupling.
+- **The store-lending rule added to [13-developer-guide.md](13-developer-guide.md)** — new, and load-bearing.
+  Holding a `GraphStores` past the call that obtained it defeats compaction, and nothing in the type system
+  stops it.
 - ~~The *Temporal Precision is inert* note~~ — **done.** [11-operations.md](11-operations.md) now documents the
   per-precision key widths, savings and representable ceilings, plus the fixed-at-creation rule;
   [README.md](README.md), [10-limits.md](10-limits.md), [12-future-work.md](12-future-work.md) and

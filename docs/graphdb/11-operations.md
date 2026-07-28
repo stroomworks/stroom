@@ -213,12 +213,9 @@ as ways of living within one graph's ceiling.
 
 ### What would still need building
 
-Each of these is a code change, sized in [12-future-work.md](12-future-work.md). Cheapest first:
+One thing, sized in [12-future-work.md](12-future-work.md):
 
-1. **Compact a store in place.** Condense already runs as scheduled maintenance and collapses redundant
-   versions, but the space it frees stays inside the LMDB file rather than returning to the filesystem.
-   Compaction needs the store swapped under live readers, which is the part still to build.
-2. **Snapshot nodes.** Today a node either holds graph data or is routed away from. Snapshots would let a
+- **Snapshot nodes.** Today a node either holds graph data or is routed away from. Snapshots would let a
    node serve graph queries from a read-only whole copy it pulled from a holder, buying read scaling and
    locality. It would **not** raise the per-graph size ceiling, because a snapshot is a whole copy rather
    than a partition — and for a graph that whole-copy property is the feature, not the shortcoming.
@@ -353,9 +350,19 @@ Retention itself is configured **per document**, on the Settings tab, using the 
   runs on every maintenance cycle for **every** graph, whether or not retention is enabled, because it changes no
   answer at any instant: a point-in-time lookup is a floor scan, so it lands on the surviving earliest version,
   which holds the same value as the ones removed.
-- **Deleted space is not returned to the filesystem.** LMDB reuses freed pages for new writes, so a store that
-  has condensed or aged data does not shrink on disk - it stops growing. Reclaiming the file itself needs an
-  in-place compaction pass, which is still to be built.
+- **Freed space is now returned to the filesystem.** LMDB reuses freed pages for new writes rather than
+  shrinking the file, so retention and condensing on their own make a store stop growing, not get smaller. A
+  maintenance run that actually removed something now follows it with a compaction, which rewrites the store
+  without its free pages. Three consequences worth knowing:
+  - **It only runs when something was removed.** A graph nothing changed in is left alone, because compacting it
+    would rewrite the whole store to reclaim nothing.
+  - **It excludes queries on that graph while it runs**, since the file underneath them is being replaced. Other
+    graphs are unaffected.
+  - **It needs room for a second copy** of the graph while it runs. On a volume sized to hold exactly one copy
+    of everything, compaction is the thing that will fail first.
+
+  A compaction that fails for any reason leaves the original store in place and usable; there is no half-swapped
+  state to recover from.
 
 The property-**value** lookup, for values too long to store inline, is now swept as well: the rebuild reports
 which entries the surviving anchors reference and the rest are removed.
@@ -405,9 +412,9 @@ from whether those streams still exist.
 | Source streams are retained at least as long as the graph | You can always rebuild. This is the supported configuration |
 | Source streams are aged off sooner than the graph | The graph is **unrecoverable** once they go — treat it as the primary copy and back it up accordingly ([Backup and restore](#backup-and-restore)) |
 
-An in-place compaction path that does not depend on source streams is tracked in
-[12-future-work.md](12-future-work.md) and would remove this coupling. Until it exists, source-stream retention
-is a graph's recovery plan and should be written down as such.
+Note that in-place compaction, which now runs as maintenance, does **not** remove this coupling. It reclaims
+free pages; it cannot reconstruct data. Rebuilding remains the only way back from a corrupt or wrongly-shaped
+store, so source-stream retention is still a graph's recovery plan and should be written down as such.
 
 ## Backup and restore
 

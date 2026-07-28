@@ -36,12 +36,31 @@ self-contained.
 | `GraphInEdgeDb` | The in-edge mirror. **Callers must dual-write** — this is the easiest invariant to break |
 | `GraphPropertyIndex` | (label, property key, value) → node. The only seekable access path |
 | `GraphPropsCodec` | Property map ↔ blob |
-| `GraphStoreManager` | Per-UUID registry of open stores; resolves `<graphdb.path>/shards/<uuid>` |
+| `GraphStoreManager` | Per-UUID registry of open stores; resolves `<graphdb.path>/shards/<uuid>`. **Lends** a store for the duration of a call — see below |
 | `GraphSchemaDb` | The `graph-info` table: the store's format stamp, and the persisted hash-clash counter |
 | `GraphAnchorEncoding` | The single definition of how a property value becomes property-index key bytes |
 
 Key widths are fixed (`NODE_UID_WIDTH = 6`, `TYPE_UID_WIDTH = 4`) because prefix range scans depend on
 it — a variable-width key would break every traversal. Physical layouts are in each class's Javadoc.
+
+#### Never hold a `GraphStores` past the call that got it
+
+`GraphStoreManager` has no method that returns a store. Everything goes through:
+
+```java
+final long count = graphStoreManager.use(doc, stores -> stores.read(stores.getNodes()::count));
+```
+
+with `useForQuery` as the read-side variant that additionally reports a node holding nothing for the graph.
+Work with no result returns `null`, matching `GraphStores.write`.
+
+The reason is `compact`, which replaces a store's file on disk. It takes the graph's write lock, so it waits
+for every in-flight `use` to return and cannot start while one is running — but only because no reference
+exists outside those calls. A store stashed in a field, returned from a method, or captured by a lambda that
+outlives the call is a reference the manager cannot see, and compaction will pull the file out from under it.
+The same applies to `delete`.
+
+`getOrOpenUnguarded` exists and is named to be unattractive. Only `use` and `compact` may call it.
 
 ### Cluster layer — `stroom.graphdb.impl`
 

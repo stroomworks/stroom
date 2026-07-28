@@ -62,7 +62,7 @@ class TestGraphStoreManagerImpl {
                 graphPaths, GraphDbConfig::new, () -> mock(GraphDbDocStore.class),
                 new MetricsImpl(new MetricRegistry()));
 
-        final GraphStores stores = manager.getOrOpen(doc);
+        final GraphStores stores = manager.getOrOpenUnguarded(doc);
         try {
             assertThat(Files.isDirectory(appPath.resolve("graphdb").resolve("shards").resolve("doc-uuid-1"))).isTrue();
             // The returned instance is a genuinely open, writable GraphStores.
@@ -83,8 +83,8 @@ class TestGraphStoreManagerImpl {
                 graphPaths, GraphDbConfig::new, () -> mock(GraphDbDocStore.class),
                 new MetricsImpl(new MetricRegistry()));
 
-        final GraphStores first = manager.getOrOpen(doc);
-        final GraphStores second = manager.getOrOpen(doc);
+        final GraphStores first = manager.getOrOpenUnguarded(doc);
+        final GraphStores second = manager.getOrOpenUnguarded(doc);
         try {
             assertThat(second).isSameAs(first);
         } finally {
@@ -102,8 +102,8 @@ class TestGraphStoreManagerImpl {
                 graphPaths, GraphDbConfig::new, () -> mock(GraphDbDocStore.class),
                 new MetricsImpl(new MetricRegistry()));
 
-        final GraphStores storesA = manager.getOrOpen(docA);
-        final GraphStores storesB = manager.getOrOpen(docB);
+        final GraphStores storesA = manager.getOrOpenUnguarded(docA);
+        final GraphStores storesB = manager.getOrOpenUnguarded(docB);
         try {
             assertThat(storesA).isNotSameAs(storesB);
             assertThat(Files.isDirectory(appPath.resolve("graphdb").resolve("shards").resolve("doc-uuid-a"))).isTrue();
@@ -123,14 +123,14 @@ class TestGraphStoreManagerImpl {
                 graphPaths, GraphDbConfig::new, () -> mock(GraphDbDocStore.class),
                 new MetricsImpl(new MetricRegistry()));
 
-        manager.getOrOpen(doc);
+        manager.getOrOpenUnguarded(doc);
         assertThat(Files.isDirectory(appPath.resolve("graphdb").resolve("shards").resolve("doc-uuid-3"))).isTrue();
 
         manager.delete("doc-uuid-3");
         assertThat(Files.exists(appPath.resolve("graphdb").resolve("shards").resolve("doc-uuid-3"))).isFalse();
 
         // A subsequent getOrOpen for the same UUID provisions a fresh, empty store, not a re-open of stale data.
-        final GraphStores reopened = manager.getOrOpen(doc);
+        final GraphStores reopened = manager.getOrOpenUnguarded(doc);
         try {
             assertThat(Files.isDirectory(appPath.resolve("graphdb").resolve("shards").resolve("doc-uuid-3"))).isTrue();
         } finally {
@@ -146,7 +146,7 @@ class TestGraphStoreManagerImpl {
         final GraphStoreManagerImpl firstManager = new GraphStoreManagerImpl(
                 graphPaths, GraphDbConfig::new, () -> mock(GraphDbDocStore.class),
                 new MetricsImpl(new MetricRegistry()));
-        firstManager.getOrOpen(doc).close();
+        firstManager.getOrOpenUnguarded(doc).close();
         assertThat(Files.isDirectory(appPath.resolve("graphdb").resolve("shards").resolve("doc-uuid-4"))).isTrue();
 
         // A fresh manager instance (mirroring a restart) never opened doc-uuid-4 itself, yet its on-disk
@@ -179,13 +179,13 @@ class TestGraphStoreManagerImpl {
             }
         };
 
-        manager.getOrOpen(doc); // Cache an open store, then make its physical delete fail.
+        manager.getOrOpenUnguarded(doc); // Cache an open store, then make its physical delete fail.
 
         assertThatThrownBy(() -> manager.delete(doc.getUuid())).isSameAs(boom);
 
         // Despite the failure, the closed store must NOT still be cached: a fresh getOrOpen() yields a genuinely
         // usable store (the directory is still on disk since the delete threw before removing anything).
-        final GraphStores reopened = manager.getOrOpen(doc);
+        final GraphStores reopened = manager.getOrOpenUnguarded(doc);
         try {
             final int uidWidth = reopened.write(writer -> reopened.getNodeUids().put(
                     writer.getWriteTxn(), directBuffer("n1"), ByteBuffer::remaining));
@@ -231,7 +231,8 @@ class TestGraphStoreManagerImpl {
         final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(
                 graphPaths, GraphDbConfig::new, () -> mock(GraphDbDocStore.class),
                 new MetricsImpl(new MetricRegistry()));
-        manager.getOrOpen(doc); // Seed an initial store so the very first delete() has something to race against.
+        // Seed an initial store so the very first delete() has something to race against.
+        manager.getOrOpenUnguarded(doc);
 
         final int iterations = 50;
         final ExecutorService executor = Executors.newFixedThreadPool(2);
@@ -245,7 +246,7 @@ class TestGraphStoreManagerImpl {
                 });
                 final Future<GraphStores> getOrOpenFuture = executor.submit(() -> {
                     barrier.await();
-                    return manager.getOrOpen(doc);
+                    return manager.getOrOpenUnguarded(doc);
                 });
 
                 // Neither call itself should ever throw, regardless of how they interleave.
@@ -255,7 +256,7 @@ class TestGraphStoreManagerImpl {
                 // The invariant that matters: an ordinary, non-racing getOrOpen() taken straight afterwards
                 // always returns a fresh, genuinely usable store - proving the cache was never left stuck with
                 // a permanently-broken reference by however the race above happened to resolve.
-                final GraphStores stores = manager.getOrOpen(doc);
+                final GraphStores stores = manager.getOrOpenUnguarded(doc);
                 final String nodeId = "n" + i;
                 final int uidWidth = stores.write(writer -> stores.getNodeUids().put(
                         writer.getWriteTxn(), directBuffer(nodeId), ByteBuffer::remaining));
@@ -285,7 +286,7 @@ class TestGraphStoreManagerImpl {
 
         // Open it while the document exists, then make the document disappear.
         when(docStore.readDocument(any())).thenReturn(doc);
-        manager.getOrOpen(doc).close();
+        manager.getOrOpenUnguarded(doc).close();
         final Path directory = graphPaths.getShardDir().resolve("doc-gone");
         assertThat(Files.isDirectory(directory)).isTrue();
 
@@ -308,7 +309,7 @@ class TestGraphStoreManagerImpl {
                 new GraphStoreManagerImpl(
                         graphPaths, GraphDbConfig::new, () -> docStore, new MetricsImpl(new MetricRegistry()));
 
-        manager.getOrOpen(doc).close();
+        manager.getOrOpenUnguarded(doc).close();
 
         assertThat(manager.cleanupOrphanedStores()).isZero();
         assertThat(Files.isDirectory(graphPaths.getShardDir().resolve("doc-live"))).isTrue();
@@ -327,7 +328,7 @@ class TestGraphStoreManagerImpl {
         final GraphStoreManagerImpl manager =
                 new GraphStoreManagerImpl(
                         graphPaths, GraphDbConfig::new, () -> docStore, new MetricsImpl(new MetricRegistry()));
-        manager.getOrOpen(doc).close();
+        manager.getOrOpenUnguarded(doc).close();
 
         when(docStore.readDocument(any())).thenThrow(new RuntimeException("database down"));
 
@@ -351,7 +352,7 @@ class TestGraphStoreManagerImpl {
                 graphPaths, () -> clusterConfig("node1", "node2"), () -> mock(GraphDbDocStore.class),
                 metrics);
 
-        final GraphStores stores = manager.getForQuery(doc);
+        final GraphStores stores = manager.useForQuery(doc, graphStores -> graphStores);
         try {
             assertThat(counter(registry)).as("reported once").isEqualTo(1);
             // Still answers rather than throwing: a graph nobody has loaded yet is not an error.
@@ -374,7 +375,7 @@ class TestGraphStoreManagerImpl {
         final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(
                 graphPaths, GraphDbConfig::new, () -> mock(GraphDbDocStore.class), metrics);
 
-        manager.getForQuery(doc);
+        manager.useForQuery(doc, graphStores -> graphStores);
         try {
             assertThat(counter(registry)).isZero();
         } finally {
@@ -396,9 +397,9 @@ class TestGraphStoreManagerImpl {
                 metrics);
 
         // Opening for write creates the store, as a merge would.
-        manager.getOrOpen(doc);
+        manager.getOrOpenUnguarded(doc);
         try {
-            manager.getForQuery(doc);
+            manager.useForQuery(doc, graphStores -> graphStores);
             assertThat(counter(registry)).isZero();
         } finally {
             manager.delete("present");

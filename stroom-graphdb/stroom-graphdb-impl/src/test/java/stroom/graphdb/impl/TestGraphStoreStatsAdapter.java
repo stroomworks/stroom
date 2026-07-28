@@ -32,9 +32,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Optional;
+import java.util.function.Function;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -61,7 +64,10 @@ class TestGraphStoreStatsAdapter {
             final GraphDbDocCache graphDbDocCache = mock(GraphDbDocCache.class);
             when(graphDbDocCache.get("TestGraph")).thenReturn(DOC);
             final GraphStoreManager graphStoreManager = mock(GraphStoreManager.class);
-            when(graphStoreManager.getForQuery(DOC)).thenReturn(stores);
+            // The manager lends the store for the duration of a call rather than returning it, so the stub has to
+            // invoke the function it is given.
+            when(graphStoreManager.useForQuery(eq(DOC), any()))
+                    .thenAnswer(invocation -> invocation.getArgument(1, Function.class).apply(stores));
 
             final GraphStoreStatsAdapter adapter = new GraphStoreStatsAdapter(graphDbDocCache, graphStoreManager);
 

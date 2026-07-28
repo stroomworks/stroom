@@ -183,12 +183,13 @@ public class GraphSearchProvider implements SearchProvider, IndexFieldProvider {
             // CompiledCypherPlan.outputFields().
             final int[] mapping = buildFieldMapping(fieldIndex, statement.first().outputFields());
 
-            final GraphStores stores = graphStoreManager.getForQuery(doc);
-            final GraphTraversalEngine engine = new GraphTraversalEngine(
-                    stores, expressionPredicateFactory,
-                    GraphTraversalLimits.from(configProvider.get()));
-            final List<Val[]> rows = stores.read(readTxn ->
-                    executeStatement(readTxn, engine, stores, statement, searchRequest));
+            final List<Val[]> rows = graphStoreManager.useForQuery(doc, stores -> {
+                final GraphTraversalEngine engine = new GraphTraversalEngine(
+                        stores, expressionPredicateFactory,
+                        GraphTraversalLimits.from(configProvider.get()));
+                return stores.read(readTxn ->
+                        executeStatement(readTxn, engine, stores, statement, searchRequest));
+            });
             for (final Val[] row : rows) {
                 coprocessors.accept(assembleRow(row, mapping, fieldIndex.size()));
             }

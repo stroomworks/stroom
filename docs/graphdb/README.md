@@ -75,7 +75,7 @@ Detail: [10-limits.md](10-limits.md), [11-operations.md](11-operations.md).
 |---|---|
 | **Bad records are skipped by default** — a malformed record is logged at `ERROR` and dropped, and the stream carries on | Partial data loss is quiet. **Mitigated:** set the Graph Filter's `strict` property to fail the stream instead. It defaults to off because that is the less surprising behaviour for a feed, not because it is the safer one |
 | **`rebuild()` is the only compaction backstop, and it reprocesses source streams** | If those streams have been aged off by a retention policy, the graph cannot be rebuilt. **Accepted, not pending:** graph data is treated as reproducible from its sources, so source-stream retention is part of a graph's recovery plan ([11-operations.md](11-operations.md#rebuild--and-its-trap)) |
-| ~~**Redundant versions are never condensed**~~ — **fixed.** Runs of consecutive identical node and edge versions are now collapsed to the earliest of each run, unconditionally, because doing so changes no answer at any instant | This is what bounds a graph reloaded on a schedule: a week of unchanged data used to cost seven versions of everything, and retention could not touch them. Every table is now bounded. What remains is in-place file compaction: a store stops growing but does not shrink, because LMDB reuses freed pages rather than returning them ([12-future-work.md](12-future-work.md)) |
+| ~~**Redundant versions are never condensed, and a store never shrinks**~~ — **fixed, both parts.** Runs of consecutive identical node and edge versions are collapsed to the earliest of each run, unconditionally, because doing so changes no answer at any instant; and a maintenance run that removed anything then compacts the store, returning the freed pages to the filesystem | Condensing is what bounds a graph reloaded on a schedule: a week of unchanged data used to cost seven versions of everything, and retention could not touch them. Compaction is what makes that visible as free disk, since LMDB otherwise keeps freed pages for reuse. Compaction excludes queries on that graph while it runs and needs room for a second copy, so it is deliberately tied to having actually removed something ([11-operations.md](11-operations.md#retention-and-maintenance)) |
 | ~~**The Graph Filter resolves its target graph by name**~~ — **fixed.** It resolves by UUID, so a rename no longer breaks a pipeline and two graphs sharing a name no longer matter | Queries still resolve by name, deliberately: a query fails visibly at the moment you run it, whereas a pipeline is long-lived configuration that would have failed silently on the next stream |
 
 Three data-safety gaps have been closed:
@@ -122,10 +122,9 @@ Detail: [06-language-reference.md](06-language-reference.md),
 
 ### What would have to change
 
-Cluster correctness, the store format stamp, strict ingest, the shipped schema and Temporal Precision are done. What remains, in
-rough priority order: native typed `double` and date property values, a real `collect()` list, then a fuller
-configuration surface (store size, retention defaults and the traversal guardrails) and a compaction path that
-does not depend on source streams still existing.
+Cluster correctness, the store format stamp, strict ingest, the shipped schema, Temporal Precision, the
+configuration surface, backfill, condensing and compaction are all done. What remains, in rough priority order:
+native typed `double` and date property values, then a real `collect()` list.
 
 The remaining items are limitations you can work around once you know about them, which is why they now come
 after the two that could not be worked around at all. All of it is tracked in
