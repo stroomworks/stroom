@@ -49,23 +49,46 @@ Some settings are safe to change at any time. Three are not, and only one of the
 |---|---|---|
 | **Temporal Precision** (per document) | Part of the key layout, so a store written at one precision **refuses to open** at another. You get a `Key schema mismatch` naming both | **Yes** — fails loudly |
 | **`graphdb.path`** | The old stores are not moved. A graph opened under a new path is **provisioned empty**, so every graph silently appears to have no data | **No** |
-| **`graphdb.nodeList`** — adding a node | The new node receives fragments from that point on and **is never backfilled**. If it sorts first in the list it becomes the query target, and answers are silently partial | **No** |
+| **`graphdb.nodeList`** — adding a node | The new node receives fragments from that point on but holds nothing from before it joined, so if it sorts first in the list it becomes the query target and answers are silently partial. **Backfill it** (below) as part of adding it | **No** — but there is now a supported fix |
 | `graphdb.nodeList` — removing a node | That node keeps a stale copy which nothing updates or deletes | No, but harmless while it is not queried |
 | `graphdb.maxStoreSize` | Applies only to graphs opened after a restart; existing stores keep their original ceiling | Partially — needs a restart |
 | Data Retention, Node Type Mappings, description | Safe. Shortening a retention window deletes data on the next maintenance run, which is not reversible | n/a |
 
-> **Adding a node to `graphdb.nodeList` needs a deliberate procedure**, because there is no backfill and queries
-> go to the first node in the list. To add a node safely:
+> **Adding a node to `graphdb.nodeList` needs a deliberate procedure**, because replication ships only new
+> fragments and queries go to the first node in the list. To add a node safely:
 >
 > 1. Add it to `graphdb.nodeList` on every node, positioned **last**, so it does not become the query target.
-> 2. Copy each `<graphdb.path>/shards/<uuid>` directory to the new node while nothing is writing, or reload the
->    source streams so every graph is rebuilt everywhere.
+> 2. **Backfill every graph** (below).
 > 3. Only then move it earlier in the list if you want it serving queries.
 >
 > Skipping step 2 reintroduces exactly the defect the fragment-and-merge design removed: a node answering from
-> data it never received. It is no longer entirely unreported - a query against a graph the node holds *nothing*
-> for logs an error and increments `missingStoreQueries` - but a node holding *some* of a graph cannot be
+> data it never received. It is no longer entirely unreported — a query against a graph the node holds *nothing*
+> for logs an error and increments `missingStoreQueries` — but a node holding *some* of a graph cannot be
 > detected at all, so the procedure still matters.
+
+### Backfilling a node
+
+Backfill copies one node's whole copy of a graph and sends it to every node in `graphdb.nodeList`. Run it once
+per graph, from a node that already holds the data:
+
+```
+POST /api/graphDb/v1/<graph uuid>/backfill
+```
+
+It requires the **Manage Nodes** application permission, and returns when every target has received the copy —
+which for a large graph is not instant. The copy is merged on each target's next merge cycle, within a minute.
+
+Three things worth knowing:
+
+- **It is safe to run against a node that needs nothing.** The copy goes to every configured node, including
+  the one it came from, and merging data a node already holds changes nothing.
+- **It does not need a quiet period.** The copy is taken under a read transaction, so ingest can continue.
+  Writes that land after it starts are not in the copy, but they replicate normally, so the end state is
+  complete either way.
+- **It is manual by design.** Nothing detects that a node has joined, so nothing triggers this for you.
+
+If a backfill fails part-way, run it again — there is no partial state to clean up, because a node either
+receives a whole copy or none of it.
 
 > **Changing `graphdb.path` needs the data moved with it.** Stop the node, move
 > `<old path>/shards` to `<new path>/shards`, then start it. Nothing checks, and an empty graph looks the same as
@@ -75,9 +98,9 @@ Some settings are safe to change at any time. Three are not, and only one of the
 
 Three facts combine badly, and an administrator needs all three:
 
-1. **The store is capped at 10 GiB per graph and cannot be enlarged.** Graph DB does not pass a size
-   override, so it always takes the default. There is no config property, environment variable or UI
-   control for it ([10-limits.md](10-limits.md)).
+1. **The store is capped per graph, at 10 GiB by default.** `graphdb.maxStoreSize` raises it, but LMDB fixes
+   an environment's size when it is created, so a new value applies to graphs opened after a restart and not
+   to ones already on disk ([10-limits.md](10-limits.md)). Set it before you need it.
 2. **Retention is off by default**, so every version of every node and edge is kept forever.
 3. **Nothing is ever overwritten.** Every update writes a new version; every delete writes a tombstone.
    Deleting data *increases* the size of the store.
@@ -192,13 +215,10 @@ as ways of living within one graph's ceiling.
 
 Each of these is a code change, sized in [12-future-work.md](12-future-work.md). Cheapest first:
 
-1. **Make the store size configurable.** `GraphStores` currently passes no size override, so every graph
-   silently takes the 10 GiB default. The parameter already exists — a small change that lifts the hard
-   ceiling.
-2. **Implement condense and compact.** Plan B performs both as scheduled maintenance; Graph DB does
-   neither, which is why redundant versions accumulate forever. Plan B's implementations are a working
-   template, and this is independent of the clustering work.
-3. **Snapshot nodes.** Today a node either holds graph data or is routed away from. Snapshots would let a
+1. **Compact a store in place.** Condense already runs as scheduled maintenance and collapses redundant
+   versions, but the space it frees stays inside the LMDB file rather than returning to the filesystem.
+   Compaction needs the store swapped under live readers, which is the part still to build.
+2. **Snapshot nodes.** Today a node either holds graph data or is routed away from. Snapshots would let a
    node serve graph queries from a read-only whole copy it pulled from a holder, buying read scaling and
    locality. It would **not** raise the per-graph size ceiling, because a snapshot is a whole copy rather
    than a partition — and for a graph that whole-copy property is the feature, not the shortcoming.
@@ -210,15 +230,17 @@ Graph DB is missing and why.
 
 | | Lucene index | Graph DB |
 |---|---|---|
-| **Capacity ceiling** | Sum of the volumes in its volume group — grow by adding volumes | Fixed 10 GiB per graph, not tunable |
+| **Capacity ceiling** | Sum of the volumes in its volume group — grow by adding volumes | One store per graph, `graphdb.maxStoreSize`, fixed once that store is created |
 | **Splitting a dataset** | Automatic: `partitionBy`/`partitionSize` by time, then `shardsPerPartition`, with shards rolling at `maxDocsPerShard` | Manual — separate documents, and no query spans two |
-| **Placement** | Shards sit on volumes bound to named nodes, recorded in the database | Wherever the stream happened to be processed |
-| **Multi-node reads** | Shards grouped per node, dispatched to each, results merged | Local node only |
-| **Fragmentation risk** | None — placement is tracked, so a query knows every shard to visit | Silent and unreported |
-| **Administrator controls** | Volume groups, per-volume byte limits, partition and shard settings | None |
+| **Placement** | Shards sit on volumes bound to named nodes, recorded in the database | Every node in `graphdb.nodeList` holds the whole graph |
+| **Multi-node reads** | Shards grouped per node, dispatched to each, results merged | One listed node answers the whole query locally |
+| **Fragmentation risk** | None — placement is tracked, so a query knows every shard to visit | None — every listed node holds everything, so there is nothing to gather |
+| **Administrator controls** | Volume groups, per-volume byte limits, partition and shard settings | Store size, node list, five traversal ceilings, per-document retention |
 
-This is why a Lucene index *requires* a volume group and a graph has no equivalent setting: the index has a
-placement model to configure, and Graph DB has nowhere to put one.
+The two models answer different questions. An index partitions a dataset and gathers the pieces at query
+time; a graph cannot, because a traversal follows edges across whatever boundary you draw. So Graph DB
+replicates instead of partitioning, which buys correctness and costs capacity: adding nodes makes a graph
+more available, never larger.
 
 Note that the index capability is not automatic either — a volume group whose volumes all sit on one node
 gives a single-node index. The difference is that an administrator gets to decide, and with Graph DB there is
@@ -466,7 +488,7 @@ can watch:
 
 | What | Where | Why |
 |---|---|---|
-| Store directory size | The filesystem, under `<app path>/graphdb/<uuid>` | The only warning before the 10 GiB cap |
+| Store directory size | The filesystem, under `<app path>/graphdb/shards/<uuid>` | The only warning before `graphdb.maxStoreSize` is reached |
 | Stream error counts on graph feeds | Stream processing | Skipped records mean silently missing data ([03-ingest.md](03-ingest.md)) |
 | "Graph DB Maintenance" job | Jobs screen | Confirms reclamation, retention and condensing are running |
 | Query failures | Query surfaces | Guardrail messages indicate queries that need rewriting ([10-limits.md](10-limits.md)) |

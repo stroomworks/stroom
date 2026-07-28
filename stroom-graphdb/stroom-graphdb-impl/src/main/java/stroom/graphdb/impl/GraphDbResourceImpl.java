@@ -25,6 +25,8 @@ import stroom.graphdb.shared.GraphDbDoc;
 import stroom.graphdb.shared.GraphDbResource;
 import stroom.graphdb.shared.GraphDbSchema;
 import stroom.graphdb.shared.GraphElementTable;
+import stroom.security.api.SecurityContext;
+import stroom.security.shared.AppPermission;
 import stroom.util.shared.EntityServiceException;
 import stroom.util.shared.FetchWithUuid;
 
@@ -45,16 +47,22 @@ class GraphDbResourceImpl implements GraphDbResource, FetchWithUuid<GraphDbDoc> 
     private final Provider<DocumentResourceHelper> documentResourceHelperProvider;
     private final Provider<GraphSchemaService> graphSchemaServiceProvider;
     private final Provider<GraphExpandService> graphExpandServiceProvider;
+    private final Provider<GraphBackfillService> graphBackfillServiceProvider;
+    private final Provider<SecurityContext> securityContextProvider;
 
     @Inject
     GraphDbResourceImpl(final Provider<GraphDbDocStore> graphDbDocStoreProvider,
                        final Provider<DocumentResourceHelper> documentResourceHelperProvider,
                        final Provider<GraphSchemaService> graphSchemaServiceProvider,
-                       final Provider<GraphExpandService> graphExpandServiceProvider) {
+                       final Provider<GraphExpandService> graphExpandServiceProvider,
+                       final Provider<GraphBackfillService> graphBackfillServiceProvider,
+                       final Provider<SecurityContext> securityContextProvider) {
         this.graphDbDocStoreProvider = graphDbDocStoreProvider;
         this.documentResourceHelperProvider = documentResourceHelperProvider;
         this.graphSchemaServiceProvider = graphSchemaServiceProvider;
         this.graphExpandServiceProvider = graphExpandServiceProvider;
+        this.graphBackfillServiceProvider = graphBackfillServiceProvider;
+        this.securityContextProvider = securityContextProvider;
     }
 
     /**
@@ -84,6 +92,26 @@ class GraphDbResourceImpl implements GraphDbResource, FetchWithUuid<GraphDbDoc> 
     public GraphDbSchema fetchSchema(final String uuid) {
         final GraphDbDoc doc = fetch(uuid);
         return graphSchemaServiceProvider.get().discover(doc, SAMPLE_NODE_LIMIT);
+    }
+
+    /**
+     * Sends this node's whole copy of the graph to every node in {@code graphdb.nodeList}.
+     *
+     * <p>Restricted to node management rather than document permissions. It is part of changing the cluster's
+     * shape, and it moves an entire graph between machines, so it belongs with the operations that add and
+     * remove nodes rather than with the ones that read a graph.</p>
+     *
+     * <p>Runs to completion before returning, because copying a large store is not instant and an operator
+     * following the add-a-node procedure needs to know it finished rather than that it started.</p>
+     *
+     * @return {@code true} - a value only so the REST client has something to wait on.
+     */
+    @Override
+    public boolean backfill(final String uuid) {
+        return securityContextProvider.get().secureResult(AppPermission.MANAGE_NODES_PERMISSION, () -> {
+            graphBackfillServiceProvider.get().backfill(fetch(uuid));
+            return true;
+        });
     }
 
     @Override

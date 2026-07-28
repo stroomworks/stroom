@@ -47,8 +47,8 @@ This choice determines everything else, so make it deliberately.
 
 **Recommendation: event as edge**, which is what the translation below does. It produces roughly a third of
 the elements, keeps patterns short, and suits the temporal model — an edge that recurs simply gains
-versions, which is exactly what `AS OF` and `DIFF` are for. Given the fixed 10 GiB store
-([10-limits.md](10-limits.md)), the size difference is not academic.
+versions, which is exactly what `AS OF` and `DIFF` are for. Given that a graph's store size is fixed once it
+is created ([10-limits.md](10-limits.md)), the size difference is not academic.
 
 Choose event-as-node when the event itself carries attributes you need to filter or aggregate on, or when
 you must count repeated occurrences of the same action on the same pair separately. You can mix: model most

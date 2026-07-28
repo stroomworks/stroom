@@ -25,6 +25,7 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.GET;
+import jakarta.ws.rs.POST;
 import jakarta.ws.rs.PUT;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
@@ -84,6 +85,14 @@ public interface GraphDbResource extends RestResource, DirectRestService, FetchW
                       + "help build a query",
             operationId = "fetchGraphDbSchema")
     GraphDbSchema fetchSchema(@PathParam("uuid") String uuid);
+
+    @POST
+    @Path("/{uuid}/backfill")
+    @Operation(
+            summary = "Send this node's whole copy of a graph to every node that holds graph data, so a node "
+                      + "added to the cluster gains the history that predates it",
+            operationId = "backfillGraphDb")
+    boolean backfill(@PathParam("uuid") String uuid);
 
     @GET
     @Path("/{uuid}/expand")

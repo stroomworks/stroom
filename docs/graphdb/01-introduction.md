@@ -91,8 +91,10 @@ Being honest about this saves more time than any feature list.
 
 - **You need production reliability today.** See the
   [blockers](README.md#production-readiness--known-blockers). This is the overriding one.
-- **Your data will exceed roughly 10 GiB in one graph.** The store size is fixed and cannot be raised
-  ([10-limits.md](10-limits.md)). You can split across several graphs, but no query spans two of them.
+- **Your data will exceed one node's disk in one graph.** `graphdb.maxStoreSize` raises the per-graph ceiling
+  from its 10 GiB default, but it is fixed when a store is created and every node holds a whole replica, so a
+  graph can never be larger than the smallest node holding it ([10-limits.md](10-limits.md)). You can split
+  across several graphs, but no query spans two of them.
 - **You need one graph bigger than one node's disk.** Graph DB now works correctly on a cluster — every node
   named in `graphdb.nodeList` holds a full replica and queries are routed to one of them
   ([02-architecture.md](02-architecture.md#how-a-graph-spans-a-cluster)) — but replication is not

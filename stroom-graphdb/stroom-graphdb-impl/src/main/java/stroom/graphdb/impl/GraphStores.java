@@ -40,6 +40,7 @@ import stroom.query.language.functions.Val;
 import stroom.util.logging.LogUtil;
 import stroom.util.time.SimpleDurationUtil;
 
+import org.lmdbjava.CopyFlags;
 import org.lmdbjava.Txn;
 
 import java.io.IOException;
@@ -186,6 +187,28 @@ public final class GraphStores implements AutoCloseable {
         this.propertyIndex = propertyIndex;
         this.schemaDb = schemaDb;
         this.doc = doc;
+    }
+
+    /**
+     * Writes a consistent copy of this graph's whole environment into {@code destination}.
+     *
+     * <p>Safe to call while the graph is being written: LMDB copies under a read transaction, so the result is
+     * the graph as of the moment the copy began rather than a torn file. The copy is compacting, so it contains
+     * only live pages.</p>
+     *
+     * <p>The output is a complete, self-contained graph store - the same shape as an ingest fragment - which is
+     * what lets a copy be shipped through the ordinary fragment transport and merged by a node that is missing
+     * it. Merge is idempotent, so a node that already holds the data is unaffected by receiving it again.</p>
+     *
+     * <p><b>Preconditions:</b> {@code destination} is not null and is an existing, empty directory.
+     * <b>Postconditions:</b> {@code destination} holds a complete copy of this store.
+     * <b>Null status:</b> {@code destination} is not nullable.
+     *
+     * @param destination the directory to copy into.
+     */
+    public void copyTo(final Path destination) {
+        Objects.requireNonNull(destination, "destination must not be null");
+        env.copy(destination.toFile(), CopyFlags.MDB_CP_COMPACT);
     }
 
     /**

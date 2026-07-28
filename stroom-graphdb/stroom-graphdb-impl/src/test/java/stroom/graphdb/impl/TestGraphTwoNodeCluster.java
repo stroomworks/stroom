@@ -146,6 +146,96 @@ class TestGraphTwoNodeCluster {
     }
 
     /**
+     * The defect backfill exists to fix, asserted before the fix so the fix has something to prove. Replication
+     * only ever ships new fragments, so a node that joins later holds nothing from before it joined - and a
+     * traversal spanning old and new data fails on it while succeeding on the node that was always there.
+     */
+    @Test
+    void nodeThatJoinedLate_answersPartially(@TempDir final Path root) {
+        try (Cluster cluster = new Cluster(root)) {
+            cluster.detach(cluster.nodeTwo);
+            cluster.nodeOne.writeEdgeFragment(1L, "alice", "bob");
+            cluster.mergeEverywhere();
+
+            cluster.attach(cluster.nodeTwo);
+            cluster.nodeOne.writeEdgeFragment(2L, "bob", "carol");
+            cluster.mergeEverywhere();
+
+            assertThat(twoHopTargets(cluster.nodeOne, "alice")).as("the node that was always there")
+                    .containsExactly("carol");
+            assertThat(twoHopTargets(cluster.nodeTwo, "alice")).as("the node that joined late").isEmpty();
+        }
+    }
+
+    /**
+     * Backfill converges the late node. The whole store is copied from a node that holds it and shipped down the
+     * ordinary fragment path, so the traversal that failed above now succeeds on both.
+     */
+    @Test
+    void backfillingAJoinedNode_convergesItWithTheRest(@TempDir final Path root) {
+        try (Cluster cluster = new Cluster(root)) {
+            cluster.detach(cluster.nodeTwo);
+            cluster.nodeOne.writeEdgeFragment(1L, "alice", "bob");
+            cluster.mergeEverywhere();
+
+            cluster.attach(cluster.nodeTwo);
+            cluster.nodeOne.writeEdgeFragment(2L, "bob", "carol");
+            cluster.mergeEverywhere();
+
+            cluster.nodeOne.backfillService.backfill(DOC);
+            cluster.mergeEverywhere();
+
+            for (final Node node : cluster.nodes()) {
+                assertThat(nodeIds(node)).as("node ids on " + node.name)
+                        .containsExactlyInAnyOrder("alice", "bob", "carol");
+                assertThat(twoHopTargets(node, "alice")).as("two-hop traversal on " + node.name)
+                        .containsExactly("carol");
+            }
+        }
+    }
+
+    /**
+     * Backfill reaches every configured node, including the one it was run from - the transport has no notion of
+     * which node needs the data. Merge idempotence is what makes that safe, so it is asserted rather than assumed:
+     * a node already holding everything must be unchanged, not doubled.
+     */
+    @Test
+    void backfillingANodeThatNeedsNothing_changesNothing(@TempDir final Path root) {
+        try (Cluster cluster = new Cluster(root)) {
+            cluster.nodeOne.writeEdgeFragment(1L, "alice", "bob");
+            cluster.nodeTwo.writeEdgeFragment(2L, "bob", "carol");
+            cluster.mergeEverywhere();
+
+            final List<String> before = nodeIds(cluster.nodeTwo);
+            final long versionsBefore = nodeVersionCount(cluster.nodeTwo);
+
+            cluster.nodeOne.backfillService.backfill(DOC);
+            cluster.mergeEverywhere();
+
+            assertThat(nodeIds(cluster.nodeTwo)).containsExactlyInAnyOrderElementsOf(before);
+            assertThat(nodeVersionCount(cluster.nodeTwo)).as("node versions").isEqualTo(versionsBefore);
+            assertThat(twoHopTargets(cluster.nodeTwo, "alice")).containsExactly("carol");
+        }
+    }
+
+    /**
+     * Backfill leaves nothing behind. It copies a whole graph rather than one stream's worth, so a leaked working
+     * copy or zip is the size of the graph - on a repeatedly backfilled node that fills the volume the store
+     * itself needs.
+     */
+    @Test
+    void backfill_leavesNoWorkingFiles(@TempDir final Path root) {
+        try (Cluster cluster = new Cluster(root)) {
+            cluster.nodeOne.writeEdgeFragment(1L, "alice", "bob");
+            cluster.mergeEverywhere();
+
+            cluster.nodeOne.backfillService.backfill(DOC);
+
+            assertThat(listOf(cluster.nodeOne.graphPaths.getWriterDir())).isEmpty();
+        }
+    }
+
+    /**
      * A fragment whose bytes do not match its declared hash must be refused. Corruption in transit that was
      * accepted would be merged as though it were sound, and a truncated LMDB environment is not a recoverable
      * kind of wrong.
@@ -185,6 +275,27 @@ class TestGraphTwoNodeCluster {
         return rows.stream().map(row -> row[0].toString()).toList();
     }
 
+    /** Every node version in the store, so a merge that duplicated rather than deduplicated is visible. */
+    private static long nodeVersionCount(final Node node) {
+        final GraphStores stores = node.storeManager.getOrOpen(DOC);
+        return stores.read(txn -> {
+            final long[] seen = {0};
+            stores.getNodes().forEachVersion(txn, (uid, validFrom, version) -> seen[0]++);
+            return seen[0];
+        });
+    }
+
+    private static List<Path> listOf(final Path dir) {
+        if (!Files.isDirectory(dir)) {
+            return List.of();
+        }
+        try (var children = Files.list(dir)) {
+            return children.toList();
+        } catch (final IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
     private static List<String> nodeIds(final Node node) {
         final GraphStores stores = node.storeManager.getOrOpen(DOC);
         return stores.read(txn -> {
@@ -208,14 +319,30 @@ class TestGraphTwoNodeCluster {
         private final Node nodeOne;
         private final Node nodeTwo;
         private final List<Path> sentZips = new ArrayList<>();
+        /** The nodes the transport currently delivers to - the cluster's node list, in effect. */
+        private final List<Node> attached = new ArrayList<>();
 
         private Cluster(final Path root) {
             nodeOne = new Node("node1", root.resolve("node1"), this);
             nodeTwo = new Node("node2", root.resolve("node2"), this);
+            attached.add(nodeOne);
+            attached.add(nodeTwo);
         }
 
         private List<Node> nodes() {
             return List.of(nodeOne, nodeTwo);
+        }
+
+        /** Removes a node from the transport's targets, so it misses everything sent while it is out. */
+        private void detach(final Node node) {
+            attached.remove(node);
+        }
+
+        /** Puts a node back in the targets - it now receives new fragments but nothing that predates this. */
+        private void attach(final Node node) {
+            if (!attached.contains(node)) {
+                attached.add(node);
+            }
         }
 
         /**
@@ -234,7 +361,7 @@ class TestGraphTwoNodeCluster {
         }
 
         private void deliver(final FileDescriptor descriptor, final Path zip) {
-            for (final Node node : nodes()) {
+            for (final Node node : List.copyOf(attached)) {
                 try {
                     // Both go through the remote entry point, which is the code with no other test coverage. The
                     // only thing missing versus production is the Jersey hop.
@@ -285,6 +412,7 @@ class TestGraphTwoNodeCluster {
         private final GraphMergeProcessor mergeProcessor;
         private final GraphPartDestination partDestination;
         private final GraphShardWriters shardWriters;
+        private final GraphBackfillService backfillService;
 
         private Node(final String name, final Path root, final Cluster cluster) {
             this.name = name;
@@ -312,10 +440,13 @@ class TestGraphTwoNodeCluster {
                     new GraphPartDestination(new MockSecurityContext(), graphPaths, () -> mergeProcessor);
 
             // The transport hands every fragment this node produces to the cluster, which replicates it to both.
-            shardWriters = new GraphShardWriters(
-                    graphPaths,
-                    (descriptor, path, synchroniseMerge) -> cluster.replicate(this, descriptor, path),
-                    GraphDbConfig::new);
+            final GraphFileTransferClient transport =
+                    (descriptor, path, synchroniseMerge) -> cluster.replicate(this, descriptor, path);
+            shardWriters = new GraphShardWriters(graphPaths, transport, GraphDbConfig::new);
+            // Backfill deliberately shares that transport - shipping a whole store down the fragment path is the
+            // whole design, so a test that gave it its own route would prove nothing.
+            backfillService = new GraphBackfillService(
+                    graphPaths, storeManager, transport, new MockSecurityContext());
         }
 
         private void receiveRemote(final FileDescriptor descriptor, final Path zip) throws IOException {

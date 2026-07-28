@@ -469,6 +469,39 @@ passes no recorder, since bookkeeping outside a sweep is consumed by nothing.
 Verified by sabotage, and the test needs a value **longer than the 32-byte inline tier** or it exercises nothing:
 a short value references no lookup entry, so the case would pass whether or not the sweep worked.
 
+## Beyond the plan — backfill (item C1)
+
+Not in this plan, because the plan's cluster scope was "make ingest and query correct on the nodes that are
+already there". Adding a node was left to [12-future-work.md](12-future-work.md), and it is the one remaining
+way a config edit reintroduces partial answers.
+
+The implementation turned out to be small, for a reason worth recording: **a graph store and an ingest fragment
+are the same shape.** A fragment is a complete graph store containing one stream's mutations, so a whole store
+can be sent down the identical path — copy, zip, hash, `storePart` — and the receiving node stages and merges it
+with no idea it was not produced by ingest. `GraphBackfillService` is therefore about forty lines of orchestration
+over machinery that already existed.
+
+Two properties of merge do the real work, and both were deliberate choices from Phase 1 rather than luck. Merge
+is **idempotent**, so shipping the store to every configured node — including ones that need nothing, which the
+transport cannot distinguish — is harmless. And it is a **union of versions**, so a node holding part of the graph
+converges rather than having one copy overwrite the other.
+
+**A correction to an earlier statement in this document.** The compaction section above says `PlanBEnv` "does not
+currently expose compaction at all". It does: `PlanBEnv.copy(File, CopyFlags...)` wraps LMDB's own copy, which
+takes a consistent snapshot under a read transaction and accepts `MDB_CP_COMPACT`. Item 4a is therefore not
+blocked on a missing primitive, only on the atomic swap. Backfill uses that same primitive via
+`GraphStores.copyTo`, which is why a backfill needs no quiet period.
+
+**It is deliberately manual.** Detecting that a node has joined and needs backfilling means tracking cluster
+membership over time, which nothing in this feature does. `POST /api/graphDb/v1/<uuid>/backfill` requires the
+Manage Nodes permission and is documented as a step in the add-a-node procedure in
+[11-operations.md](11-operations.md#backfilling-a-node).
+
+The test that carries this is in `TestGraphTwoNodeCluster`, and it starts by asserting the **defect**: a node
+detached from the transport, reattached, then asked a traversal spanning old and new data returns nothing while
+the node that was always there returns the answer. Backfill then converges it. Validated by sabotage twice —
+skipping the send fails only the convergence test, and skipping the cleanup fails only the no-leftover-files test.
+
 ---
 
 ## Coding standards and housekeeping
@@ -632,7 +665,14 @@ implementation plans that were retired to git history, leaving dangling links. I
   split out as a separate item blocked on an anchor-encoding decision with both candidate designs written down.
 
 ### Still to do, with their phases
-- The fixed-size statements in [10-limits.md](10-limits.md) and [11-operations.md](11-operations.md) — Phase 4.
+- ~~The fixed-size statements in [10-limits.md](10-limits.md) and [11-operations.md](11-operations.md)~~ —
+  **done.** Swept with backfill, because the sizing and scaling sections of
+  [11-operations.md](11-operations.md) still said the store "cannot be enlarged" and listed making it
+  configurable as future work, and [01-introduction.md](01-introduction.md) and
+  [04-event-logging-xslt.md](04-event-logging-xslt.md) repeated it. The Lucene comparison table went with them:
+  three of its six rows described the pre-cluster design.
+- The add-a-node procedure in [11-operations.md](11-operations.md) — **done**, with backfill; it previously
+  told an operator to copy shard directories by hand.
 - ~~The *Temporal Precision is inert* note~~ — **done.** [11-operations.md](11-operations.md) now documents the
   per-precision key widths, savings and representable ceilings, plus the fixed-at-creation rule;
   [README.md](README.md), [10-limits.md](10-limits.md), [12-future-work.md](12-future-work.md) and

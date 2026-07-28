@@ -29,7 +29,7 @@ acted on, it should be this one.
 | ~~2~~ | ~~**Tunable store size**~~ — **done** via `graphdb.maxStoreSize` | Still needs a restart, and applies only to graphs opened afterwards, because LMDB fixes an environment's size at creation | Easy | — |
 | 3 | **Loud ingest failures** — a strict mode that fails a stream rather than skipping records, plus schema validation | Silent partial data loss is the most dangerous current behaviour | Medium | Low |
 | ~~4~~ | ~~**Version condensing**~~ — **done.** Runs of consecutive identical node and edge versions are collapsed to the earliest of each run, unconditionally | Needs no cut-off or setting because it changes no answer at any instant | Medium | — |
-| 4a | **In-place compaction** — return freed pages to the filesystem | LMDB reuses freed pages for new writes, so a condensed or aged store stops growing but does not shrink. `StoreShard.compact` is the template: copy-with-compact into a sibling directory, then swap atomically while no reader holds the old file | Medium | Medium — the swap is the risky part, and `PlanBEnv` does not currently expose compaction |
+| 4a | **In-place compaction** — return freed pages to the filesystem | LMDB reuses freed pages for new writes, so a condensed or aged store stops growing but does not shrink. `StoreShard.compact` is the template: copy-with-compact into a sibling directory, then swap atomically while no reader holds the old file. The copy half already exists — `PlanBEnv.copy(File, CopyFlags...)`, which backfill uses | Medium | Medium — **the swap is the whole of it.** `getOrOpen` hands out a raw store reference, so replacing a store under a caller that already holds one needs the manager to own *use* rather than hand out references. Same refactor idle eviction needs |
 | ~~5~~ | ~~**Retention for the property index**~~ — **done.** The sweep now clears and re-derives the index from the versions that survived, which reclaims the per-version value anchors that made storage grow monotonically | Two things shaped it: the table has no `validFrom` so cannot be aged, and a stored anchor's value cannot be decoded back out of its key so it cannot be pruned row by row. **The property-value lookup is still not swept** — values above the inline tier are interned inside `insert`, so the rebuild does not know which entries were used and cannot record them; sweeping blind would break every long-valued anchor | Medium | — |
 | ~~5a~~ | ~~**Sweep the property-value lookup**~~ — **done.** `GraphPropertyIndex.insert` now takes an optional recorder and reports which lookup entry each anchor references, so the rebuild can record usage and the sweep can delete the rest | Recording happens in `insert` because that is the only place that knows the tier: an inline value references no entry at all, and guessing which did would delete entries live anchors depend on. Ingest passes no recorder, since bookkeeping outside a sweep is consumed by nothing | Easy–Medium | — |
 | 6 | **Compaction without source streams** — an in-place rebuild that does not depend on reprocessing | Rebuild silently stops being possible once source streams age off | Hard | High |
@@ -89,15 +89,17 @@ B's `MergeProcessor` as `PartMergeProcessor` and parameterised, leaving Plan B b
 
 ## Configuration changes that are silently unsafe
 
-Three settings can be changed in ways that produce wrong answers, and only one of them is enforced.
+Three settings could be changed in ways that produce wrong answers. Two now have an answer; one does not.
 
 | # | Item | Why | Difficulty | Risk |
 |---|---|---|---|---|
-| C1 | **Backfill a node joining `graphdb.nodeList`** | There is no mechanism, so a new node holds only fragments received since it joined. Because queries route to the first node in the list, adding one at the front makes every answer silently partial - the exact defect the fragment-and-merge design removed, reachable by a config edit | Medium | **High** — it is silent |
+| ~~C1~~ | ~~**Backfill a node joining `graphdb.nodeList`**~~ — **done.** `POST /api/graphDb/v1/<uuid>/backfill` copies a graph's whole store from the node it is run on and ships it to every configured node through the ordinary fragment transport | Almost no new machinery was needed: a fragment *is* a complete graph store, so a whole store can travel the same path, and merge idempotence means sending it to nodes that need nothing is harmless. Deliberately manual — nothing tracks cluster membership over time, so nothing can detect that a node has joined | Medium | — |
 | C2 | **Detect a `graphdb.path` change** | The store directory is created on write-open, so pointing at a new path provisions empty graphs rather than failing. A marker file recording the expected path, or refusing to provision when the document has data recorded elsewhere, would make it loud | Easy | Medium |
-| ~~C3~~ | ~~**Refuse to route to a node with no store**~~ — **done**, as a report rather than a refusal. A query against a graph this node holds nothing for logs an ERROR naming both likely causes and increments a `missingStoreQueries` counter | It reports rather than refuses because an absent store is also what a graph nobody has loaded yet looks like, and failing that would be worse than answering empty. Only fires when a node list is configured, so a single-node deployment stays quiet. It does not detect a *partial* node - only one holding nothing - so C1 remains the real fix | Easy | — |
+| ~~C3~~ | ~~**Refuse to route to a node with no store**~~ — **done**, as a report rather than a refusal. A query against a graph this node holds nothing for logs an ERROR naming both likely causes and increments a `missingStoreQueries` counter | It reports rather than refuses because an absent store is also what a graph nobody has loaded yet looks like, and failing that would be worse than answering empty. Only fires when a node list is configured, so a single-node deployment stays quiet. It does not detect a *partial* node - only one holding nothing | Easy | — |
 
-C3 is the cheapest real safety net: it does not fix backfill, but it stops the worst outcome of forgetting it.
+C1 and C3 complement each other rather than overlapping: C3 reports the case where a node holds *nothing*,
+which is the only case detectable from inside a query; C1 fixes the case where it holds *some*, which is not
+detectable at all and so has to be an operator action taken as part of the documented procedure.
 
 ## Capacity and scale
 
@@ -108,8 +110,8 @@ The operational workarounds available today are in
 
 | Item | Why | Difficulty | Risk |
 |---|---|---|---|
-| **Tunable store size** (also blocker 2) | The only change that raises the per-graph ceiling. `GraphStores` passes no size override, so every graph takes the default; the parameter already exists | Easy | Low |
-| **Condense and compact** (also blocker 4) | Reclaims space from redundant versions, using Plan B's implementations as a template. Independent of the clustering work | Medium | Medium |
+| ~~**Tunable store size**~~ — **done** via `graphdb.maxStoreSize` | Raises the per-graph ceiling, but only for stores created afterwards: LMDB fixes an environment's size at creation | Easy | — |
+| ~~**Condense**~~ — **done.** ~~**Compact**~~ — outstanding, as item 4a above | Condense collapses runs of identical versions and runs unconditionally, because no answer changes at any instant. Compaction is what returns the freed pages to the filesystem | Medium | — / Medium |
 | **Snapshot fan-out** — read-only snapshot nodes on top of a correct writer | Read scaling and query locality. Presupposes correctness work item 1; a snapshot of a fragmented store is a complete copy of an incomplete graph | Hard | Medium |
 | **Genuine partitioning** — spread one logical graph across nodes by key | The only route to a graph larger than one node's disk. Neither Graph DB nor Plan B has this, and it is the one approach that would reintroduce the correctness problem deliberately, requiring distributed traversal to solve properly | Hard | High |
 
@@ -185,9 +187,10 @@ mismatch simply does not arise.
 
 What remains from the original ordering:
 
-1. **Tunable store size.** Does not need `Shard`; lifts the hardest ceiling in the system.
-2. **`condense` and `compact` on `GraphStores`**, using Plan B's implementations as a template. Separable from
-   clustering — bounded storage does not require anything above.
+1. ~~**Tunable store size.**~~ Done — `graphdb.maxStoreSize`.
+2. **`compact` on `GraphStores`.** Condense is done; compaction is what actually returns space, and it needs
+   the store swapped under live readers. Separable from clustering — bounded storage does not require anything
+   above.
 3. **Snapshots**, and only if a node that holds no graph data needs to serve graph queries locally rather than
    being routed away from. This is read scaling and locality, not correctness.
 

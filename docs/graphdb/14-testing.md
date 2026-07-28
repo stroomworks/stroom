@@ -238,6 +238,8 @@ run continuously thereafter.
 | C6 | Reprocess a stream that has already been merged | No duplicate or altered data — merge is idempotent |
 | C7 | Name a disabled node in `nodeList`, then process a stream | The stream task **fails** with a send error. It must not succeed having skipped that node |
 | C8 | Delete a graph while one of its fragments is still queued | The fragment is discarded, the merge-failure metric stays at zero, and the queue does not block |
+| C9 | Add a third node to `nodeList` after a load, query it, then `POST /api/graphDb/v1/<uuid>/backfill` from an existing node | Partial answers before, complete answers after a merge cycle. The **before** half is the point — it confirms the case is real rather than masked by a coincidental reload |
+| C10 | Run a backfill while the graph is being fed | It completes without a quiet period, and the writes that landed during it arrive by ordinary replication. Nothing is lost either way |
 
 C3 is the discriminating case. C1 and C2 can pass by accident if one node happened to process everything, so
 check the processing task distribution before trusting them.
