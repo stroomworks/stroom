@@ -220,7 +220,13 @@ public class GraphFilter extends AbstractXMLFilter {
                 log(Severity.FATAL_ERROR, "Graph DB has not been set", null);
                 throw LoggedException.create("Graph DB has not been set");
             }
-            final GraphDbDoc doc = graphDbDocCache.get(graphDbRef.getName());
+            // Resolved by UUID, not name. A pipeline property is long-lived configuration, so a graph renamed
+            // after the pipeline was built would otherwise stop resolving with no warning until the next stream
+            // ran - and two graphs sharing a name failed outright. The name is used only if the reference somehow
+            // carries no UUID, which a document picker always supplies.
+            final GraphDbDoc doc = graphDbRef.getUuid() != null
+                    ? graphDbDocCache.getByUuid(graphDbRef.getUuid())
+                    : graphDbDocCache.get(graphDbRef.getName());
             if (doc == null) {
                 log(Severity.FATAL_ERROR, "Unable to load graph db " + graphDbRef, null);
                 throw LoggedException.create("Unable to load graph db " + graphDbRef);

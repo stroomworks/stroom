@@ -38,6 +38,22 @@ public interface GraphDbDocCache {
     GraphDbDoc get(String name);
 
     /**
+     * Resolves a graph by its UUID.
+     *
+     * <p>Preferred over {@link #get(String)} wherever a UUID is available, because a name is not a stable
+     * identifier: renaming a graph silently breaks every pipeline that referenced it by name, and two graphs
+     * sharing a name make resolution fail outright. A UUID survives both.</p>
+     *
+     * <p><b>Preconditions:</b> {@code uuid} is not null.
+     * <b>Postconditions:</b> returns the graph, or throws if it cannot be resolved or the caller may not use it.
+     * <b>Null status:</b> {@code uuid} is not nullable; the return value is never null.
+     *
+     * @param uuid the graph's UUID.
+     * @return the graph.
+     */
+    GraphDbDoc getByUuid(String uuid);
+
+    /**
      * Evicts {@code name} from the cache, so the next {@link #get(String)} reloads it from the store.
      *
      * <b>Preconditions:</b> {@code name} is not null. <b>Null status:</b> {@code name} is not nullable.

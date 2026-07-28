@@ -57,6 +57,7 @@ public class GraphDbDocCacheImpl implements GraphDbDocCache, Clearable, EntityEv
 
     private final GraphDbDocStore graphDbDocStore;
     private final LoadingStroomCache<String, GraphDbDoc> cache;
+    private final LoadingStroomCache<String, GraphDbDoc> uuidCache;
     private final SecurityContext securityContext;
     private final DocFinder docFinder;
     private final GraphStoreManager graphStoreManager;
@@ -75,6 +76,8 @@ public class GraphDbDocCacheImpl implements GraphDbDocCache, Clearable, EntityEv
         this.docFinder = docFinder;
         this.graphStoreManager = graphStoreManager;
         cache = cacheManager.createLoadingCache(CACHE_NAME, CacheConfig::new, this::create);
+        uuidCache = cacheManager.createLoadingCache(
+                CACHE_NAME + " (by UUID)", CacheConfig::new, this::createByUuid);
     }
 
     /**
@@ -107,6 +110,35 @@ public class GraphDbDocCacheImpl implements GraphDbDocCache, Clearable, EntityEv
         });
     }
 
+    /**
+     * Loads by UUID, which needs no name search at all - so unlike {@link #create} it cannot fail on an ambiguous
+     * name, and is unaffected by a rename.
+     */
+    private GraphDbDoc createByUuid(final String uuid) {
+        return securityContext.asProcessingUserResult(() -> {
+            final DocRef docRef = DocRef.builder().type(GraphDbDoc.TYPE).uuid(uuid).build();
+            final GraphDbDoc loaded = graphDbDocStore.readDocument(docRef);
+            if (loaded == null) {
+                throw new DocumentNotFoundException(docRef);
+            }
+            return loaded;
+        });
+    }
+
+    @Override
+    public GraphDbDoc getByUuid(final String uuid) {
+        Objects.requireNonNull(uuid, "Null key supplied");
+        final GraphDbDoc doc = uuidCache.get(uuid);
+
+        final DocRef docRef = doc.asDocRef();
+        if (!securityContext.hasDocumentPermission(docRef, DocumentPermission.USE)) {
+            throw new PermissionException(
+                    securityContext.getUserRef(),
+                    "You are not authorised to read " + docRef);
+        }
+        return doc;
+    }
+
     @Override
     public GraphDbDoc get(final String name) {
         Objects.requireNonNull(name, "Null key supplied");
@@ -126,11 +158,15 @@ public class GraphDbDocCacheImpl implements GraphDbDocCache, Clearable, EntityEv
     public void remove(final String name) {
         Objects.requireNonNull(name, "Null key supplied");
         cache.invalidate(name);
+        // The UUID cache is keyed by UUID, so a name gives no entry to invalidate precisely. Clearing it is the
+        // safe choice: a rename leaves the UUID mapping valid but its cached document stale.
+        uuidCache.clear();
     }
 
     @Override
     public void clear() {
         cache.clear();
+        uuidCache.clear();
     }
 
     @Override

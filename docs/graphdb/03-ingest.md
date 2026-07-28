@@ -222,9 +222,9 @@ is worth knowing before you go looking for one.
 
 One property, `graphDb`, a document reference to the target `GraphDb`.
 
-> **The graph is resolved by *name*, not by UUID.** Two graphs sharing a name make ingest fail outright,
-> and renaming a graph silently breaks every pipeline pointing at it. Give graphs distinctive names and
-> treat them as part of your pipeline contract.
+> **The graph is resolved by UUID.** Renaming a graph does not break a pipeline pointing at it, and two graphs
+> sharing a name is no longer a problem for ingest. The property stores a document reference, and it is the
+> reference — not the name — that the filter follows.
 
 One filter writes to exactly one graph; there is no per-record routing to different graphs.
 

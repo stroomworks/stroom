@@ -62,6 +62,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
@@ -467,6 +468,49 @@ class TestGraphFilter {
     // Harness
     // ------------------------------------------------------------------------------------------------------
 
+    /**
+     * A graph renamed after the pipeline was configured must still resolve. This is the silent-breakage case: a
+     * pipeline property is long-lived configuration, so resolving by name meant a rename stopped ingest with no
+     * warning until the next stream ran - and by then the reference looked simply wrong rather than stale.
+     */
+    @Test
+    void renamingTheGraph_doesNotBreakThePipeline(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("renamed"), DOC)) {
+            // The cache answers by UUID but no longer recognises the old name at all, exactly as it would after a
+            // rename. Resolution must still succeed.
+            final GraphDbDocCache renamedCache = new GraphDbDocCache() {
+                @Override
+                public GraphDbDoc get(final String name) {
+                    throw new NoSuchElementException("No graph db doc can be found for name: " + name);
+                }
+
+                @Override
+                public GraphDbDoc getByUuid(final String uuid) {
+                    return DOC_REF.getUuid().equals(uuid)
+                            ? DOC
+                            : null;
+                }
+
+                @Override
+                public void remove(final String name) {
+                    // Not needed by this test.
+                }
+            };
+
+            ingestWithCache(stores, renamedCache, """
+                    <graph xmlns="graph-mutation:1" version="1.0">
+                        <node id="n1" validFrom="2026-01-01T00:00:00.000Z">
+                            <label>Thing</label>
+                            <property name="id">n1</property>
+                        </node>
+                    </graph>
+                    """);
+
+            assertThat(query(stores, "MATCH (g:Thing {id: 'n1'}) RETURN g.id"))
+                    .extracting(row -> row[0].toString()).containsExactly("n1");
+        }
+    }
+
     // ------------------------------------------------------------------------------------------------------
     // Typed property values.
     // ------------------------------------------------------------------------------------------------------
@@ -782,13 +826,25 @@ class TestGraphFilter {
         ingest(stores, xml, currentStores, capturedErrors, false);
     }
 
+    /** Drives ingest with a caller-supplied doc cache, so a test can control how the graph resolves. */
+    private static void ingestWithCache(final GraphStores stores,
+                                        final GraphDbDocCache graphDbDocCache,
+                                        final String xml) {
+        ingest(stores, xml, new AtomicReference<>(stores), new ArrayList<>(), false, graphDbDocCache);
+    }
+
     private static void ingest(final GraphStores stores, final String xml,
                                final AtomicReference<GraphStores> currentStores,
                                final List<String> capturedErrors,
                                final boolean strict) {
-        final GraphDbDocCache graphDbDocCache = new GraphDbDocCache() {
+        ingest(stores, xml, currentStores, capturedErrors, strict, new GraphDbDocCache() {
             @Override
             public GraphDbDoc get(final String name) {
+                return DOC;
+            }
+
+            @Override
+            public GraphDbDoc getByUuid(final String uuid) {
                 return DOC;
             }
 
@@ -796,7 +852,14 @@ class TestGraphFilter {
             public void remove(final String name) {
                 // Not needed by this test harness.
             }
-        };
+        });
+    }
+
+    private static void ingest(final GraphStores stores, final String xml,
+                               final AtomicReference<GraphStores> currentStores,
+                               final List<String> capturedErrors,
+                               final boolean strict,
+                               final GraphDbDocCache graphDbDocCache) {
         // The filter writes a self-contained fragment rather than into the graph's own store, so the harness
         // has to complete the real path - capture the shipped fragment, then merge it - before asserting. That
         // makes every test below an end-to-end check of ingest, fragment and merge together, which is the whole
