@@ -25,6 +25,7 @@ import stroom.floormap.client.event.MapObjectSelectedEvent;
 import stroom.floormap.client.event.TimeChangeEvent;
 import stroom.floormap.client.presenter.FloorMapMapPresenter.FloorMapMapView;
 import stroom.floormap.shared.Fact;
+import stroom.floormap.shared.FloorMapAreaMembership;
 import stroom.floormap.shared.FloorMapDoc;
 import stroom.floormap.shared.FloorMapEntityList;
 import stroom.floormap.shared.FloorMapEntryParser;
@@ -102,6 +103,14 @@ public class FloorMapMapPresenter
 
     /** Roster of every entity seen on the map, feeding the tracking panel. */
     private final FloorMapEntityList entityList = new FloorMapEntityList();
+
+    /**
+     * The latest facts and event entities, kept so area containment can be
+     * recomputed when either side refreshes (the two queries refresh
+     * independently). See {@link #updateAreaMembership()}.
+     */
+    private List<Fact> lastFacts;
+    private List<FloorMapObject> lastEventObjects;
 
     private final QueryModel queryModel;
 
@@ -357,6 +366,9 @@ public class FloorMapMapPresenter
             if (entityList.update(e.getObjects())) {
                 refreshEntityGrid();
             }
+            // Entities have moved, so which areas they are in may have changed.
+            lastEventObjects = e.getObjects();
+            updateAreaMembership();
         }));
 
         // Re-run the histogram whenever the user changes the visible date range via the settings popup.
@@ -450,9 +462,14 @@ public class FloorMapMapPresenter
         }
         floorMapObjectEditPresenter.setFloorMapDoc(document);
 
-        // A (re-)opened document starts with a fresh entity roster.
+        // A (re-)opened document starts with a fresh entity roster and no
+        // inherited area containment.
         entityList.clear();
         floorMapTrackingPresenter.setData(Collections.emptyList());
+        lastFacts = null;
+        lastEventObjects = null;
+        floorMapTrackingPresenter.clearAreaState();
+        floorMapCanvasPresenter.setAreaMembership(FloorMapAreaMembership.EMPTY);
 
         // Populate the Layers panel from the document's type styles and sync the
         // canvas with the current (transient) layer visibility.
@@ -720,6 +737,36 @@ public class FloorMapMapPresenter
         if (entityList.updateFacts(facts)) {
             refreshEntityGrid();
         }
+
+        // Areas and static placements may have changed (a new timeline shard),
+        // so recompute containment.
+        lastFacts = facts;
+        updateAreaMembership();
+    }
+
+    /**
+     * Recomputes which entities are inside which areas at the current timeline
+     * instant, then pushes the snapshot to the canvas (containment highlight and
+     * occupant badges) and the tracking panel (Area column).
+     *
+     * <p>Driven by query refreshes — a facts reload or an events refresh — not by
+     * animation frames, so the cost is bounded by how often the data changes
+     * rather than by the frame rate.</p>
+     */
+    private void updateAreaMembership() {
+        final FloorMapAreaMembership membership =
+                FloorMapAreaMembership.compute(lastFacts, lastEventObjects);
+        floorMapCanvasPresenter.setAreaMembership(membership);
+        floorMapTrackingPresenter.setAreaMembership(membership, this::areaDisplayName);
+    }
+
+    /**
+     * Resolves an area's fact key to the name shown in the tracking panel. The
+     * roster already holds the display name for every fact it has seen, so this
+     * matches what the area's own row is labelled with.
+     */
+    private String areaDisplayName(final String areaKey) {
+        return FloorMapEntityList.displayName(areaKey);
     }
 
     /**
