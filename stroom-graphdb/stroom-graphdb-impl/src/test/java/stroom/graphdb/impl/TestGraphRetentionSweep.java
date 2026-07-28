@@ -137,6 +137,37 @@ class TestGraphRetentionSweep {
         }
     }
 
+    /**
+     * A value too long to inline is interned into a lookup table, and that table used never to be swept - one
+     * entry per distinct long value ever seen. The rebuild now reports which entries the surviving anchors use,
+     * so the rest can go.
+     *
+     * <p>The value must exceed the 32-byte inline tier or this exercises nothing: a short value references no
+     * lookup entry, so the test would pass whether or not the sweep worked.</p>
+     */
+    @Test
+    void longValuesLookupEntry_isReclaimedWithItsAnchor(@TempDir final Path root) {
+        final GraphDbDoc doc = docWithRetention();
+        try (GraphStores stores = GraphStores.provision(root.resolve("sweep5"), doc)) {
+            final String supersededLongValue = "superseded-".repeat(6);
+            final String survivingLongValue = "surviving-".repeat(6);
+            assertThat(supersededLongValue.length()).as("must exceed the inline tier").isGreaterThan(32);
+
+            final long nodeUid = writeNode(stores, "n1", OLDEST, supersededLongValue);
+            writeVersion(stores, nodeUid, OLD, survivingLongValue);
+            writeVersion(stores, nodeUid, RECENT, survivingLongValue);
+
+            assertThat(anchorsFor(stores, supersededLongValue)).containsExactly(nodeUid);
+
+            assertThat(stores.deleteOldData(doc)).isPositive();
+
+            assertThat(anchorsFor(stores, supersededLongValue)).as("superseded long value").isEmpty();
+            // The surviving long value must still resolve - which it can only do if its lookup entry was kept.
+            assertThat(anchorsFor(stores, survivingLongValue)).as("surviving long value")
+                    .containsExactly(nodeUid);
+        }
+    }
+
     private static List<Long> anchorsFor(final GraphStores stores, final String value) {
         final long labelUid = uidOf(stores, stores.getLabelUids(), "Thing");
         final long propKeyUid = uidOf(stores, stores.getPropertyKeyUids(), "status");

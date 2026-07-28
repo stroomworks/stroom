@@ -459,9 +459,15 @@ waste space - it leaves live anchors referencing key ids nothing resolves to, an
 then silently returns no rows. Verified by sabotage: removing the single `recordUsed` call fails two of the four
 tests.
 
-The **property-value lookup is still not swept**, and deliberately: values above the inline tier are interned
-inside `insert`, so the rebuild cannot know which entries were used. Sweeping blind would break every long-valued
-anchor. Tracked as item 5a in [12-future-work.md](12-future-work.md).
+The **property-value lookup is swept too**, on a follow-up. The blocker was that a value above the inline tier is
+interned inside `insert`, so the rebuild could not know which entries were used - and sweeping blind deletes
+entries live anchors reference, which makes the affected queries return nothing. The fix is to record where the
+knowledge is: `insert` takes an optional recorder and reports the tagged value segment as it writes, which is
+exactly what `VariableUsedLookupsRecorder` reads to pick a lookup table and to ignore an inline value. Ingest
+passes no recorder, since bookkeeping outside a sweep is consumed by nothing.
+
+Verified by sabotage, and the test needs a value **longer than the 32-byte inline tier** or it exercises nothing:
+a short value references no lookup entry, so the case would pass whether or not the sweep worked.
 
 ---
 

@@ -295,6 +295,9 @@ that graph actually has retention enabled, so leaving it on is cheap.
 - **Deleted space is not returned to the filesystem.** LMDB reuses freed pages for new writes, so a store that
   has condensed or aged data does not shrink on disk - it stops growing. Reclaiming the file itself needs an
   in-place compaction pass, which is still to be built.
+
+The property-**value** lookup, for values too long to store inline, is now swept as well: the rebuild reports
+which entries the surviving anchors reference and the rest are removed.
 - **The property-value lookup is not swept.** Property values longer than the inline tier are interned into a
   lookup table, and entries there are never removed - one per distinct long value ever seen.
 
@@ -308,8 +311,8 @@ The property-key table is swept at the same time.
 > than before - it was previously a partial scan. If the job starts overrunning its ten-minute schedule, lengthen
 > the schedule rather than disabling retention.
 
-Between retention and condensing, the versioned tables and the property index are now bounded. What is not: the
-property-value lookup for long values, and the size of the file on disk.
+Between retention and condensing, every table is now bounded. What is not bounded is the size of the file on
+disk, which stops growing but does not shrink.
 
 ## Rebuild — and its trap
 

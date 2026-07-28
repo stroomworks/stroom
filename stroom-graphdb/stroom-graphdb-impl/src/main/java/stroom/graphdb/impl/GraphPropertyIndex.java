@@ -26,6 +26,7 @@ import stroom.planb.impl.dao.HashLookupDb;
 import stroom.planb.impl.dao.LmdbWriter;
 import stroom.planb.impl.dao.PlanBEnv;
 import stroom.planb.impl.dao.UidLookupDb;
+import stroom.planb.impl.dao.UsedLookupsRecorder;
 import stroom.planb.impl.serde.val.VariableValType;
 
 import org.lmdbjava.Dbi;
@@ -118,10 +119,44 @@ public final class GraphPropertyIndex {
      */
     public void insert(final LmdbWriter writer, final long labelUid, final long propKeyUid,
                        final byte[] valueBytes, final long nodeUid) {
+        insert(writer, labelUid, propKeyUid, valueBytes, nodeUid, null);
+    }
+
+    /**
+     * Inserts an anchor and, if a recorder is supplied, reports which property-value lookup entry the anchor now
+     * depends on.
+     *
+     * <p>Only a rebuild passes a recorder. The retention sweep needs to know which lookup entries the surviving
+     * anchors reference before it can delete the rest, and this is the only place that knows: the tier is chosen
+     * here, and a value below the inline length limit references no lookup entry at all. Ingest passes null,
+     * because recording usage outside a sweep would accumulate bookkeeping nothing consumes.</p>
+     *
+     * <p>The recorder is handed the tagged value segment - the tier byte followed by the lookup id - which is
+     * exactly what {@code VariableUsedLookupsRecorder} reads to decide which of the two lookup tables to mark,
+     * and to ignore an inline value.</p>
+     *
+     * <p><b>Preconditions:</b> {@code writer} and {@code valueBytes} are not null.
+     * <b>Postconditions:</b> the anchor exists, and any lookup entry it references has been recorded as used.
+     * <b>Null status:</b> {@code usedLookupsRecorder} is nullable, meaning "do not record".
+     *
+     * @param writer              the write transaction.
+     * @param labelUid            the label the anchor is under.
+     * @param propKeyUid          the property key.
+     * @param valueBytes          the property's value.
+     * @param nodeUid             the node to anchor.
+     * @param usedLookupsRecorder records the lookup entry used, or null to skip recording.
+     */
+    public void insert(final LmdbWriter writer, final long labelUid, final long propKeyUid,
+                       final byte[] valueBytes, final long nodeUid,
+                       final UsedLookupsRecorder usedLookupsRecorder) {
         Objects.requireNonNull(writer, "writer");
         Objects.requireNonNull(valueBytes, "valueBytes");
 
         final ByteBuffer valueSegment = encodeForInsert(writer, valueBytes);
+        if (usedLookupsRecorder != null) {
+            // Duplicated because the recorder consumes the buffer's position while reading the tier byte.
+            usedLookupsRecorder.recordUsed(writer, valueSegment.duplicate());
+        }
         final ByteBuffer key = buildKey(labelUid, propKeyUid, valueSegment, nodeUid);
         final ByteBuffer value = ByteBuffer.allocateDirect(1);
         value.put(MARKER);

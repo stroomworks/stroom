@@ -228,11 +228,11 @@ public final class GraphStores implements AutoCloseable {
      * not a space leak but a correctness bug - an anchor whose key id has been swept references nothing, and the
      * query that would have used it silently returns no rows.</p>
      *
-     * <p><b>The property-value lookup is deliberately not swept.</b> Values above the inline-length tier are
-     * interned by {@link GraphPropertyIndex#insert} rather than here, so this method does not know which lookup
-     * entries were used and cannot record them. Sweeping it without that knowledge would break every long-valued
-     * anchor. It therefore still grows, bounded by the number of distinct long property values ever seen -
-     * a smaller leak than the per-version anchors this does reclaim, and tracked as remaining work.</p>
+     * <p>The property-<b>value</b> lookup is swept too. A value above the inline-length tier is interned by
+     * {@link GraphPropertyIndex#insert}, which is the only place that knows which lookup entry an anchor ended up
+     * referencing - so the rebuild passes it a recorder and it reports each one as it writes. Recording there
+     * rather than here is what makes this safe: an inline value references no entry at all, and guessing which
+     * did would delete entries live anchors depend on.</p>
      *
      * <p><b>Preconditions:</b> {@code writer} is not null and holds the write transaction.
      * <b>Postconditions:</b> the property index contains exactly the anchors implied by the stored node versions,
@@ -269,7 +269,8 @@ public final class GraphStores implements AutoCloseable {
                     buffer -> UnsignedBytesInstances.ofLength(buffer.remaining()).get(buffer.duplicate()));
             propertyKeyUidRecorder.recordUsed(writer, propKeyUid);
             propertyIndex.insert(writer, anchor.labelUid(), propKeyUid,
-                    GraphAnchorEncoding.anchorValueBytes(anchor.value()), anchor.nodeUid());
+                    GraphAnchorEncoding.anchorValueBytes(anchor.value()), anchor.nodeUid(),
+                    propertyValueRecorder);
         }
     }
 
@@ -953,6 +954,7 @@ public final class GraphStores implements AutoCloseable {
                     // every property-anchored query silently miss.
                     if (reindexed) {
                         propertyKeyUidRecorder.deleteUnused(readTxn, writer);
+                        propertyValueRecorder.deleteUnused(readTxn, writer);
                     }
                     return null;
                 });
