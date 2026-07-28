@@ -64,10 +64,14 @@ public class FloorMapTimelineViewImpl extends ViewImpl implements FloorMapTimeli
     private Consumer<Double> scrubHandler;
     /** Called on mouse-up (release) — commits the time and triggers data queries. */
     private Consumer<Double> commitHandler;
+    /** Called when the play/pause button is clicked. */
+    private Runnable playPauseHandler;
     /** Called when the step-back button is clicked. */
     private Runnable stepBackHandler;
     /** Called when the step-forward button is clicked. */
     private Runnable stepForwardHandler;
+    /** Called when the settings button is clicked. */
+    private Runnable settingsHandler;
     /** Called when the speed badge is clicked (or activated from the keyboard). */
     private Runnable speedBadgeHandler;
     private boolean dragging;
@@ -113,6 +117,18 @@ public class FloorMapTimelineViewImpl extends ViewImpl implements FloorMapTimeli
         outerBar.addDomHandler(this::onBarMouseMove, MouseMoveEvent.getType());
         outerBar.addDomHandler(this::onBarMouseUp, MouseUpEvent.getType());
 
+        // Button handlers are registered ONCE here and dispatch through a
+        // mutable field, so a second setXxxHandler() call (e.g. a rebind of the
+        // presenter) replaces the handler rather than stacking another click
+        // registration — two registrations on play/pause would toggle `playing`
+        // twice per click and silently cancel playback.
+        //noinspection unused e
+        playPauseButton.addClickHandler(e -> {
+            if (playPauseHandler != null) {
+                playPauseHandler.run();
+            }
+        });
+
         // Step button handlers.
         //noinspection unused e
         stepBackButton.addDomHandler(e -> {
@@ -126,6 +142,13 @@ public class FloorMapTimelineViewImpl extends ViewImpl implements FloorMapTimeli
                 stepForwardHandler.run();
             }
         }, ClickEvent.getType());
+
+        //noinspection unused e
+        settingsButton.addClickHandler(e -> {
+            if (settingsHandler != null) {
+                settingsHandler.run();
+            }
+        });
 
         // Speed badge behaves as a button: click or keyboard activation opens the speed menu.
         speedBadge.setTitle("Playback Speed");
@@ -240,8 +263,7 @@ public class FloorMapTimelineViewImpl extends ViewImpl implements FloorMapTimeli
 
     @Override
     public void setPlayPauseHandler(final Runnable handler) {
-        //noinspection unused e
-        playPauseButton.addClickHandler(e -> handler.run());
+        this.playPauseHandler = handler;
     }
 
     // -----------------------------------------------------------------------
@@ -282,8 +304,7 @@ public class FloorMapTimelineViewImpl extends ViewImpl implements FloorMapTimeli
 
     @Override
     public void setSettingsHandler(final Runnable handler) {
-        //noinspection unused e
-        settingsButton.addClickHandler(e -> handler.run());
+        this.settingsHandler = handler;
     }
 
     @Override

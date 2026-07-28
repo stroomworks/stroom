@@ -21,6 +21,8 @@ import stroom.floormap.client.event.MapObjectSelectedEvent;
 import stroom.floormap.client.presenter.FloorMapCanvasPresenter.FloorMapCanvasView;
 import stroom.floormap.client.view.FloorMapGrid;
 import stroom.floormap.shared.Fact;
+import stroom.floormap.shared.FloorMapAreaMembership;
+import stroom.floormap.shared.FloorMapAreaOverlay;
 import stroom.floormap.shared.FloorMapEntityAnimator;
 import stroom.floormap.shared.FloorMapJsonKeys;
 import stroom.floormap.shared.FloorMapObject;
@@ -295,6 +297,14 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
     /** Id of the entity the camera is following, or {@code null} when not tracking. */
     private String trackedObjectId = null;
+
+    /**
+     * Which entities are inside which areas at the current timeline instant,
+     * supplied by the owning tab (see {@link #setAreaMembership}). Drives the
+     * reciprocal containment highlight and the occupant-count badges; empty
+     * until the tab pushes a snapshot, so nothing is decorated by default.
+     */
+    private FloorMapAreaMembership areaMembership = FloorMapAreaMembership.EMPTY;
 
     /**
      * {@code true} after a deliberate manual pan while tracking — the highlight
@@ -1085,7 +1095,26 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                 gesture == Gesture.MARQUEE ? currentMarqueeRect() : null,
                 editMode && !selectedObjectIds.isEmpty() && gesture != Gesture.MARQUEE,
                 selectionTransformable(),
-                gesture == Gesture.DRAWING_AREA ? currentAreaDraftPx() : null);
+                gesture == Gesture.DRAWING_AREA ? currentAreaDraftPx() : null,
+                areaOverlay());
+    }
+
+    /**
+     * The area-containment decorations for this frame: badges for every occupied
+     * area, plus the reciprocal highlight for whatever is currently focused.
+     *
+     * <p>Focus is the tracked entity when the camera is following one, otherwise
+     * a lone selected object — so the highlight works on the Editor tab (which
+     * selects but never tracks) as well as the Map tab. A multi-selection has no
+     * single subject, so it highlights nothing.</p>
+     */
+    private FloorMapAreaOverlay areaOverlay() {
+        final String focusId = trackedObjectId != null
+                ? trackedObjectId
+                : selectedObjectIds.size() == 1
+                        ? selectedObjectIds.iterator().next()
+                        : null;
+        return FloorMapAreaOverlay.of(areaMembership, focusId);
     }
 
     /**
@@ -1479,7 +1508,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                     getView().draw(scale, offsetX, offsetY,
                             FloorMapZOrder.sort(visibleFacts(factsExcludingOverlay(overlay)), typeStyles),
                             visibleEvents(overlay), selectedObjectIds, typeStyles, showGrid, dimmedTypes,
-                            null, false, false, null);
+                            null, false, false, null, areaOverlay());
 
                     // Keep looping.
                     AnimationScheduler.get().requestAnimationFrame(this);
@@ -1497,6 +1526,30 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     // =========================================================================
     // Setters
     // =========================================================================
+
+    /**
+     * Sets the area-containment snapshot used to decorate the canvas — the
+     * reciprocal highlight (areas holding the focused entity, entities inside
+     * the focused area) and the per-area occupant-count badges.
+     *
+     * <p>Recomputed and pushed by the owning tab whenever the facts or event
+     * entities change (a query refresh), never per animation frame. An unchanged
+     * snapshot does not redraw — the tab pushes one on every refresh, and the
+     * accompanying {@code setFacts}/{@code setEventObjects} has already
+     * triggered a redraw of its own.</p>
+     *
+     * @param areaMembership the snapshot, or {@code null} to clear the
+     *                       decorations
+     */
+    public void setAreaMembership(final FloorMapAreaMembership areaMembership) {
+        final FloorMapAreaMembership next = areaMembership != null
+                ? areaMembership
+                : FloorMapAreaMembership.EMPTY;
+        if (!next.equals(this.areaMembership)) {
+            this.areaMembership = next;
+            redraw();
+        }
+    }
 
     /**
      * Single-select façade: highlights exactly one object (or clears the
@@ -2162,12 +2215,16 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
          * @param areaDraftPx     the in-progress area-drawing polyline in element
          *                        pixels ({@code [x0, y0, x1, y1, ...]}, last point =
          *                        live cursor), or {@code null} when not drawing
+         * @param areaOverlay     area-containment decorations — which facts/entities
+         *                        carry the "related to the focused entity" highlight
+         *                        and what each area's occupant-count badge reads;
+         *                        never {@code null}
          */
         void draw(double scale, double x, double y, List<Fact> facts,
                 List<FloorMapObject> events, Set<String> selectedObjectIds,
                 List<TypeStyle> typeStyles, boolean showGrid, Set<String> dimmedTypes,
                 double[] marqueeRectPx, boolean drawSelectionHandles, boolean scaleRotateEnabled,
-                double[] areaDraftPx);
+                double[] areaDraftPx, FloorMapAreaOverlay areaOverlay);
 
         /**
          * Returns the keys of facts whose on-screen bounds intersect the given
