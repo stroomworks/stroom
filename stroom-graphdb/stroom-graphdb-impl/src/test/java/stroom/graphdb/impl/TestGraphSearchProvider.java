@@ -508,7 +508,8 @@ class TestGraphSearchProvider {
                 new ExpressionPredicateFactory(),
                 securityContext,
                 mock(FieldInfoResultPageFactory.class),
-                mock(DocFinder.class));
+                mock(DocFinder.class),
+                GraphDbConfig::new);
     }
 
     /**
@@ -553,7 +554,8 @@ class TestGraphSearchProvider {
                 new ExpressionPredicateFactory(),
                 securityContext,
                 mock(FieldInfoResultPageFactory.class),
-                mock(DocFinder.class));
+                mock(DocFinder.class),
+                GraphDbConfig::new);
     }
 
     private static Column column(final String name) {

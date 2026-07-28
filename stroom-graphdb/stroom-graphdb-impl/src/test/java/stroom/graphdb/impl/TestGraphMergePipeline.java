@@ -148,7 +148,7 @@ class TestGraphMergePipeline {
 
         private Fixture(final Path root) {
             graphPaths = new GraphPaths(root.resolve("graphdb"));
-            storeManager = new GraphStoreManagerImpl(graphPaths);
+            storeManager = new GraphStoreManagerImpl(graphPaths, GraphDbConfig::new);
 
             final GraphDbDocStore docStore = mock(GraphDbDocStore.class);
             when(docStore.readDocument(any())).thenAnswer(invocation -> {
@@ -184,7 +184,7 @@ class TestGraphMergePipeline {
                 shipped.add(path);
                 realClient.storePart(fileDescriptor, path, synchroniseMerge);
             };
-            shardWriters = new GraphShardWriters(graphPaths, transferClient);
+            shardWriters = new GraphShardWriters(graphPaths, transferClient, GraphDbConfig::new);
         }
 
         /**

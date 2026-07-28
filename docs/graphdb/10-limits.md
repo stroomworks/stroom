@@ -14,33 +14,32 @@ maintainer can re-verify by grep.*
 
 ---
 
-> **None of these limits are configurable.** There is no `GraphDbConfig` and there are no `AppConfig`
-> entries for Graph DB. Every value below is a `private static final` constant in the source, reachable
-> only by a test-seam constructor. They cannot be changed by an administrator, an environment variable, a
-> system property, or the UI. The only levers you have are how you model your data and how you write your
-> queries. This is one of the
-> [production-readiness blockers](README.md#production-readiness--known-blockers).
+> **The query and traversal limits are now configurable**, under `graphdb` in the application configuration. The
+> defaults below are unchanged from when they were hard-coded, so an existing deployment behaves identically
+> until someone changes one. Raising a limit is a legitimate response to a legitimate query that trips it, but
+> the better fix is usually a tighter pattern, a `LIMIT`, or a narrower `WHERE` — the limits exist because the
+> alternative to failing is exhausting the node.
 
 > **Temporal Precision is fixed at creation.** It determines the width of every key's `validFrom`, so it is part
 > of the store's format stamp: a graph refuses to open under a different precision rather than misreading its keys.
 > Choose it when you create the graph — changing it later means a new graph and a reload
 > ([11-operations.md](11-operations.md#temporal-precision)).
 
-The three per-document Settings-tab controls — Temporal Precision, Data Retention and Node Type Mappings —
-are the sole exception, and none of them affects the limits below.
+The three per-document Settings-tab controls — Temporal Precision, Data Retention and Node Type Mappings — are
+per graph rather than per deployment, and none of them affects the limits below.
 
 ## Query and traversal limits
 
 These stop a running query. They fail loudly with an explanatory message rather than silently truncating.
 
-| Limit | Value | Scope | What you see | Source constant |
+| Limit | Default | Scope | What you see | Setting |
 |---|---|---|---|---|
-| Variable-length hop range | **50** | Per pattern | `… exceeds the maximum allowed maxHops of 50` — raised before any work is done | `GraphTraversalEngine.MAX_VAR_LENGTH_HOPS` |
-| Path states explored | **200,000** | **Per anchor node**, not per query | `variable-length traversal explored more than 200000 path-states; narrow the pattern's label/property constraints or reduce the hop range` | `GraphTraversalEngine.MAX_VAR_LENGTH_PATH_STATES` |
-| Traversal wall-clock | **30 seconds** | Per query | `graph traversal exceeded the maximum allowed duration of PT30S` | `GraphTraversalEngine.MAX_TRAVERSAL_DURATION` |
-| Rows held in memory | **1,000,000** | Per query | `graph traversal accumulated more than the maximum allowed 1000000 rows in memory; narrow the pattern's … or add a WHERE filter` | `GraphTraversalEngine.MAX_ACCUMULATED_ROWS` |
-| Anchor nodes from a label-only `MATCH` | **1,000,000** | Per query | `a label-only MATCH matched more than the maximum allowed 1000000 anchor nodes; add a property constraint …` | `GraphTraversalEngine.MAX_ACCUMULATED_ROWS` |
-| Whole-graph preview nodes | **100** | `MATCH (n) RETURN GRAPH` with no `LIMIT` | Silently capped — this is the one limit that truncates without telling you | `GraphTraversalEngine.DEFAULT_WHOLE_GRAPH_NODE_CAP` |
+| Variable-length hop range | **50** | Per pattern | `… exceeds the maximum allowed maxHops of 50` — raised before any work is done | `graphdb.maxVarLengthHops` |
+| Path states explored | **200,000** | **Per anchor node**, not per query | `variable-length traversal explored more than 200000 path-states; narrow the pattern's label/property constraints or reduce the hop range` | `graphdb.maxVarLengthPathStates` |
+| Traversal wall-clock | **30 seconds** | Per query | `graph traversal exceeded the maximum allowed duration of PT30S` | `graphdb.maxTraversalDuration` |
+| Rows held in memory | **1,000,000** | Per query | `graph traversal accumulated more than the maximum allowed 1000000 rows in memory; narrow the pattern's … or add a WHERE filter` | `graphdb.maxAccumulatedRows` |
+| Anchor nodes from a label-only `MATCH` | **1,000,000** | Per query | `a label-only MATCH matched more than the maximum allowed 1000000 anchor nodes; add a property constraint …` | `graphdb.maxAccumulatedRows` |
+| Whole-graph preview nodes | **100** | `MATCH (n) RETURN GRAPH` with no `LIMIT` | Silently capped — this is the one limit that truncates without telling you | `graphdb.wholeGraphNodeCap` |
 
 **Per anchor, not per query** deserves emphasis. A variable-length query starting from one node gets a
 200,000-state budget. The same query starting from 500 nodes runs 500 explorations, each with its own
@@ -50,7 +49,7 @@ budget — so it will not trip the path-state limit, but it will very likely hit
 
 | Limit | Value | Consequence | Source constant |
 |---|---|---|---|
-| Store size per graph | **10 GiB** | Hard ceiling. Exceeding it fails with `MDB_MAP_FULL`. **Not tunable** — the graph layer passes no size override, so it always takes the default | `LmdbConfig.DEFAULT_MAX_STORE_SIZE` (via `GraphStores`) |
+| Store size per graph | **10 GiB** | Exceeding it fails with `MDB_MAP_FULL`. **Now tunable.** LMDB fixes an environment's size when it is created, so raising this applies to graphs opened afterwards, not to ones already on disk — hence the restart requirement. It reserves address space rather than disk, so a generous value is cheap | `graphdb.maxStoreSize` |
 | Labels per node version | **255** | The record is rejected and skipped at ingest | `GraphNodeDb.MAX_LABEL_COUNT` |
 | Key length | **511 bytes** | Bounds how long an indexed property value can be before it is handled indirectly | `Db.MAX_KEY_LENGTH` |
 | Property value indexed inline | **32 bytes** | Values up to this are fastest to seek | `GraphPropertyIndex.DIRECT_MAX_LENGTH` |
@@ -139,7 +138,9 @@ You ran `MATCH (n) RETURN GRAPH` with no `LIMIT`, which caps at 100. Add an expl
 query on something specific.
 
 **`MDB_MAP_FULL`, or the store has stopped accepting writes**
-The graph has reached 10 GiB. Since the size cannot be raised, the options are: enable retention on the
+The graph has reached its configured maximum (10 GiB by default). Raise `graphdb.maxStoreSize` and restart —
+noting that only graphs opened after the restart pick up the new size, so an existing store must be rebuilt to
+grow past its original ceiling. Otherwise the options are: enable retention on the
 document and wait for the scheduled job; split the data across several graphs; or rebuild after reducing
 what you load. See [11-operations.md](11-operations.md) — and note the rebuild caveat, which
 requires the source streams to still exist.

@@ -125,85 +125,55 @@ import java.util.function.Predicate;
  */
 public final class GraphTraversalEngine {
 
-    /**
-     * Task P7.2: a variable-length hop range wider than this is rejected up front, before any traversal work -
-     * {@code Cypher.g4} makes {@code maxHops} mandatory (so {@code -[:T*]->} is a parse-time error) but places no
-     * ceiling on the value itself, so {@code -[:T*1..100000]->} was previously accepted and attempted verbatim.
-     */
-    private static final int MAX_VAR_LENGTH_HOPS = 50;
-
-    /**
-     * Task P7.2: a hard ceiling on the total number of BFS path-states {@link #expandVarLength} will explore
-     * across every depth of a single variable-length hop. Guards the case the hop-range cap alone does not: a
-     * modest {@code maxHops} (e.g. 3-4) combined with a high-fan-out hub node can still explore an exponential
-     * number of paths, all materialised in memory at once (see this class's Javadoc note on
-     * {@link #expandVarLength}).
-     *
-     * <p><b>This budget is per anchor, not per query:</b> {@link #execute} calls {@link #expandVarLength} once
-     * per matching anchor, and each call starts a fresh counter - a query matching N anchors therefore gets N
-     * independent budgets of this size, not one global ceiling shared across the whole query.</p>
-     */
-    private static final int MAX_VAR_LENGTH_PATH_STATES = 200_000;
-
-    /**
-     * Task P7.2: a fixed wall-clock budget for one {@link #execute} call. {@code GraphSearchProvider} runs a
-     * traversal synchronously on the calling thread (by design - see that class's Javadoc); this is the backstop
-     * against a pathological query (e.g. a hub-heavy fixed-length chain) simply running for an unbounded time with
-     * no way for the caller to cancel it.
-     */
-    private static final Duration MAX_TRAVERSAL_DURATION = Duration.ofSeconds(30);
-
-    /**
-     * Review finding F3 fix: a hard ceiling on the total number of rows a single {@link #execute} call will
-     * accumulate in memory, independent of any compiled {@code LIMIT} - the essential OOM safety net. {@code
-     * rowCap} (see {@link #execute}'s own Javadoc) is {@link Long#MAX_VALUE} whenever {@code ORDER BY}/
-     * {@code DISTINCT}/aggregation is present or no {@code LIMIT} was compiled, so before this fix a broad
-     * {@code MATCH} or any of those clauses could accumulate an unbounded number of rows before the wall-clock
-     * {@link #MAX_TRAVERSAL_DURATION} deadline even fired. Once accumulation would exceed this ceiling, {@link
-     * #execute} fails loud with a {@link GraphTraversalLimitExceededException} instead of silently truncating or
-     * risking an {@code OutOfMemoryError} - see {@link UnboundedRowSink}.
-     *
-     * <p><b>This default (1,000,000 rows) is a tunable, not an architectural limit:</b> it is picked high enough
-     * that a legitimate, reasonably-scoped interactive query should never trip it, and low enough that hitting it
-     * still leaves real heap headroom on a typical node. A deployment with a larger heap and a genuine need for
-     * bigger single-query result sets can raise it (via the test/production seam constructor below); the better
-     * fix for a query that trips this is almost always a tighter pattern, an added/reduced {@code LIMIT}, or a
-     * narrower {@code WHERE}.</p>
-     */
-    private static final long MAX_ACCUMULATED_ROWS = 1_000_000L;
-
-    /**
-     * The node cap for an unanchored {@code MATCH (n) RETURN GRAPH} whole-graph preview when the query gives no
-     * {@code LIMIT} (a bare preview must still be bounded - it walks the store rather than seeking an index). A
-     * query's own {@code LIMIT} overrides this. See {@link #dumpWholeGraph}.
-     */
-    private static final int DEFAULT_WHOLE_GRAPH_NODE_CAP = 100;
-
     private final GraphStores stores;
     private final ExpressionPredicateFactory expressionPredicateFactory;
-    private final long maxVarLengthPathStates;
-    private final Duration maxTraversalDuration;
-    private final long maxAccumulatedRows;
-    private final int wholeGraphNodeCap;
+    private final GraphTraversalLimits limits;
 
+    /**
+     * Uses the built-in default limits. Retained for callers with no configuration to hand - chiefly the tests,
+     * which exercise the ceilings themselves and so must not depend on a deployment's settings.
+     */
     public GraphTraversalEngine(final GraphStores stores,
                                 final ExpressionPredicateFactory expressionPredicateFactory) {
-        this(stores, expressionPredicateFactory, MAX_VAR_LENGTH_PATH_STATES, MAX_TRAVERSAL_DURATION);
+        this(stores, expressionPredicateFactory, GraphTraversalLimits.defaults());
     }
 
     /**
-     * Task P7.2: test-only seam - lets a test exercise the {@link #MAX_VAR_LENGTH_PATH_STATES} ceiling
+     * The production constructor: uses the limits an administrator has configured.
+     *
+     * <p><b>Preconditions:</b> no parameter is null.
+     * <b>Null status:</b> no parameter is nullable.
+     *
+     * @param stores                     the graph to traverse.
+     * @param expressionPredicateFactory builds the predicates a {@code WHERE} compiles to.
+     * @param limits                     the ceilings a traversal fails at.
+     */
+    public GraphTraversalEngine(final GraphStores stores,
+                                final ExpressionPredicateFactory expressionPredicateFactory,
+                                final GraphTraversalLimits limits) {
+        this.stores = Objects.requireNonNull(stores, "stores");
+        this.expressionPredicateFactory =
+                Objects.requireNonNull(expressionPredicateFactory, "expressionPredicateFactory");
+        this.limits = Objects.requireNonNull(limits, "limits");
+        this.latest = stores.getLatestRepresentableInstant();
+    }
+
+    /**
+     * Task P7.2: test-only seam - lets a test exercise the
+     * {@link GraphTraversalLimits#maxVarLengthPathStates()} ceiling
      * deterministically over a small fixture (a handful of edges) rather than needing to seed hundreds of
      * thousands of them to reach the real production default.
      */
     GraphTraversalEngine(final GraphStores stores,
                         final ExpressionPredicateFactory expressionPredicateFactory,
                         final long maxVarLengthPathStates) {
-        this(stores, expressionPredicateFactory, maxVarLengthPathStates, MAX_TRAVERSAL_DURATION);
+        this(stores, expressionPredicateFactory,
+                GraphTraversalLimits.defaults().withMaxVarLengthPathStates(maxVarLengthPathStates));
     }
 
     /**
-     * Code-review fix: test-only seam - lets a test exercise {@link #MAX_TRAVERSAL_DURATION}'s deadline
+     * Code-review fix: test-only seam - lets a test exercise
+     * {@link GraphTraversalLimits#maxTraversalDuration()}'s deadline
      * deterministically (e.g. a duration of zero) rather than needing to wait out the real 30-second production
      * default.
      */
@@ -211,12 +181,14 @@ public final class GraphTraversalEngine {
                         final ExpressionPredicateFactory expressionPredicateFactory,
                         final long maxVarLengthPathStates,
                         final Duration maxTraversalDuration) {
-        this(stores, expressionPredicateFactory, maxVarLengthPathStates, maxTraversalDuration,
-                MAX_ACCUMULATED_ROWS);
+        this(stores, expressionPredicateFactory, GraphTraversalLimits.defaults()
+                .withMaxVarLengthPathStates(maxVarLengthPathStates)
+                .withMaxTraversalDuration(maxTraversalDuration));
     }
 
     /**
-     * Review finding F3 fix: test-only seam - lets a test exercise the {@link #MAX_ACCUMULATED_ROWS} ceiling
+     * Review finding F3 fix: test-only seam - lets a test exercise the
+     * {@link GraphTraversalLimits#maxAccumulatedRows()} ceiling
      * deterministically over a small fixture (a handful of rows) rather than needing to seed a million-plus rows
      * to reach the real production default.
      */
@@ -225,13 +197,15 @@ public final class GraphTraversalEngine {
                         final long maxVarLengthPathStates,
                         final Duration maxTraversalDuration,
                         final long maxAccumulatedRows) {
-        this(stores, expressionPredicateFactory, maxVarLengthPathStates, maxTraversalDuration, maxAccumulatedRows,
-                DEFAULT_WHOLE_GRAPH_NODE_CAP);
+        this(stores, expressionPredicateFactory, GraphTraversalLimits.defaults()
+                .withMaxVarLengthPathStates(maxVarLengthPathStates)
+                .withMaxTraversalDuration(maxTraversalDuration)
+                .withMaxAccumulatedRows(maxAccumulatedRows));
     }
 
     /**
      * Test-only seam - lets a test exercise the whole-graph dump's node cap ({@link #dumpWholeGraph}) over a small
-     * fixture rather than needing to seed {@link #DEFAULT_WHOLE_GRAPH_NODE_CAP}+ nodes.
+     * fixture rather than needing to seed {@link GraphTraversalLimits#wholeGraphNodeCap()}+ nodes.
      */
     GraphTraversalEngine(final GraphStores stores,
                         final ExpressionPredicateFactory expressionPredicateFactory,
@@ -239,14 +213,11 @@ public final class GraphTraversalEngine {
                         final Duration maxTraversalDuration,
                         final long maxAccumulatedRows,
                         final int wholeGraphNodeCap) {
-        this.stores = Objects.requireNonNull(stores, "stores");
-        this.expressionPredicateFactory =
-                Objects.requireNonNull(expressionPredicateFactory, "expressionPredicateFactory");
-        this.maxVarLengthPathStates = maxVarLengthPathStates;
-        this.maxTraversalDuration = Objects.requireNonNull(maxTraversalDuration, "maxTraversalDuration");
-        this.maxAccumulatedRows = maxAccumulatedRows;
-        this.wholeGraphNodeCap = wholeGraphNodeCap;
-        this.latest = stores.getLatestRepresentableInstant();
+        this(stores, expressionPredicateFactory, GraphTraversalLimits.defaults()
+                .withMaxVarLengthPathStates(maxVarLengthPathStates)
+                .withMaxTraversalDuration(maxTraversalDuration)
+                .withMaxAccumulatedRows(maxAccumulatedRows)
+                .withWholeGraphNodeCap(wholeGraphNodeCap));
     }
 
     /**
@@ -279,7 +250,7 @@ public final class GraphTraversalEngine {
      * BY} or {@code DISTINCT} is present the traversal-time row cap is disabled (every matching row must be seen
      * before sort/de-dup can pick the correct {@code LIMIT} rows); a bare {@code LIMIT} with neither still
      * early-exits the traversal as before. Review finding F3 fix: when {@code LIMIT} is disabled this way,
-     * {@link #MAX_ACCUMULATED_ROWS} still bounds how many rows may be held in memory (see {@link
+     * {@link GraphTraversalLimits#maxAccumulatedRows()} still bounds how many rows may be held in memory (see {@link
      * UnboundedRowSink}) - and when {@code ORDER BY}+{@code LIMIT} is present without {@code DISTINCT}/
      * aggregation, accumulation itself never exceeds the {@code LIMIT} (see {@link TopNRowSink}).</p>
      *
@@ -385,23 +356,23 @@ public final class GraphTraversalEngine {
         final long rowCap = postProcess || shape.limit() == null
                 ? Long.MAX_VALUE
                 : Math.max(0L, shape.limit());
-        final Instant deadline = Instant.now().plus(maxTraversalDuration);
+        final Instant deadline = Instant.now().plus(limits.maxTraversalDuration());
 
         // Review finding F3 fix: rowCap alone is not a memory guardrail - it is Long.MAX_VALUE for exactly the
         // shapes (no LIMIT, or ORDER BY/DISTINCT/aggregation) where accumulation would otherwise be unbounded.
         // TopNRowSink closes the common "ORDER BY ... LIMIT n" case at the source (never accumulates more than
         // n rows); every other shape falls back to UnboundedRowSink, which still enforces the hard
-        // MAX_ACCUMULATED_ROWS ceiling so a broad/sorted/deduped/aggregated query fails loud instead of
+        // accumulated-rows ceiling so a broad/sorted/deduped/aggregated query fails loud instead of
         // exhausting the heap. DISTINCT and aggregation are excluded from the top-N sink because de-duplication
         // and grouping both need every matching row to decide correctly which survive - a size-n heap keyed only
         // on the ORDER BY comparator cannot answer that. A LIMIT larger than the ceiling itself is also excluded
         // (a heap that size would defeat the point), so that case degrades to the ceiling-guarded unbounded sink
         // rather than allocating an equally unbounded heap.
         final boolean topNEligible = !shape.sortKeys().isEmpty() && !distinct && aggregation == null
-                && shape.limit() != null && shape.limit() > 0 && shape.limit() <= maxAccumulatedRows;
+                && shape.limit() != null && shape.limit() > 0 && shape.limit() <= limits.maxAccumulatedRows();
         final RowSink rowSink = topNEligible
                 ? new TopNRowSink((int) (long) shape.limit(), rowComparator(shape.sortKeys()))
-                : new UnboundedRowSink(maxAccumulatedRows);
+                : new UnboundedRowSink(limits.maxAccumulatedRows());
 
         if (shape.varLengthExpand != null) {
             for (final long anchorUid : resolveAnchors(readTxn, shape.nodeScan, access)) {
@@ -519,7 +490,7 @@ public final class GraphTraversalEngine {
                         .createOptional(shape.where(), rowAccessors(), dateTimeSettings)
                         .orElse(row -> true);
 
-        final Instant deadline = Instant.now().plus(maxTraversalDuration);
+        final Instant deadline = Instant.now().plus(limits.maxTraversalDuration());
 
         List<DiffFrontier> frontier = new ArrayList<>();
         for (final long anchorUid : resolveAnchors(readTxn, shape.nodeScan(), access)) {
@@ -746,7 +717,8 @@ public final class GraphTraversalEngine {
     /**
      * The graph preview behind a {@code MATCH (n) RETURN GRAPH} (the Graph DB Data tab's default query) or its
      * label-scoped form {@code MATCH (n:Label) RETURN GRAPH}: the first {@code LIMIT} (or
-     * {@link #DEFAULT_WHOLE_GRAPH_NODE_CAP}) distinct nodes present at the instant that carry the required label(s),
+     * {@link GraphTraversalLimits#wholeGraphNodeCap()}) distinct nodes present at the instant that carry the
+     * required label(s),
      * plus every edge between two of those included nodes. It lets an analyst see that a graph holds data and what
      * shape it takes, or browse one label's nodes, without knowing a specific id up front - the one access path that
      * walks the store rather than seeking the property index, so it is deliberately bounded.
@@ -766,7 +738,7 @@ public final class GraphTraversalEngine {
         final TemporalAccess access = asOfAccess(asOf);
         final long nodeCap = shape.limit() != null && shape.limit() > 0
                 ? shape.limit()
-                : wholeGraphNodeCap;
+                : limits.wholeGraphNodeCap();
 
         final Predicate<Map<String, Val>> wherePredicate = shape.where() == null
                 ? row -> true
@@ -774,7 +746,7 @@ public final class GraphTraversalEngine {
                         .createOptional(shape.where(), rowAccessors(), dateTimeSettings)
                         .orElse(row -> true);
 
-        final Instant deadline = Instant.now().plus(maxTraversalDuration);
+        final Instant deadline = Instant.now().plus(limits.maxTraversalDuration());
         final Map<ElementId, ElementDetail> elements = new LinkedHashMap<>();
 
         // 0. Resolve any label constraint (MATCH (n:Label) RETURN GRAPH). An unknown label matches nothing.
@@ -807,7 +779,7 @@ public final class GraphTraversalEngine {
 
         // 2. Edges strictly between two included nodes, per interned edge type.
         for (final long edgeTypeUid : enumerateEdgeTypeUids(readTxn)) {
-            if (elements.size() >= MAX_ACCUMULATED_ROWS) {
+            if (elements.size() >= limits.maxAccumulatedRows()) {
                 break;
             }
             final String edgeTypeName = decodeUidName(readTxn, stores.getEdgeTypeUids(), edgeTypeUid);
@@ -881,7 +853,7 @@ public final class GraphTraversalEngine {
         }
         elements.put(new ElementId.Node(uid), nodeDetail(readTxn, centre.get()));
 
-        final Instant deadline = Instant.now().plus(maxTraversalDuration);
+        final Instant deadline = Instant.now().plus(limits.maxTraversalDuration());
         final int[] neighbourCount = {0};
 
         for (final long edgeTypeUid : enumerateEdgeTypeUids(readTxn)) {
@@ -959,7 +931,7 @@ public final class GraphTraversalEngine {
                         .createOptional(shape.where(), rowAccessors(), dateTimeSettings)
                         .orElse(row -> true);
 
-        final Instant deadline = Instant.now().plus(maxTraversalDuration);
+        final Instant deadline = Instant.now().plus(limits.maxTraversalDuration());
         final Map<ElementId, ElementDetail> allElements = new LinkedHashMap<>();
 
         List<GraphFrontier> frontier = new ArrayList<>();
@@ -1129,12 +1101,12 @@ public final class GraphTraversalEngine {
      * once per neighbour visited (Code-review fix: previously once per hop/BFS-depth iteration only, which did
      * not actually bound a single hop/depth's own wide fan-out - see {@link #acceptChainNeighbour}), the backstop
      * against a pathological query running for an unbounded time on the calling thread (see
-     * {@link #MAX_TRAVERSAL_DURATION}'s Javadoc).
+     * {@link GraphTraversalLimits#maxTraversalDuration()}'s Javadoc).
      */
     private void checkDeadline(final Instant deadline) {
         if (Instant.now().isAfter(deadline)) {
             throw new GraphTraversalLimitExceededException(
-                    "graph traversal exceeded the maximum allowed duration of " + maxTraversalDuration);
+                    "graph traversal exceeded the maximum allowed duration of " + limits.maxTraversalDuration());
         }
     }
 
@@ -1171,7 +1143,8 @@ public final class GraphTraversalEngine {
 
     /**
      * The ordinary accumulation sink: an unbounded {@link ArrayList}, guarded only by the F3 hard ceiling ({@link
-     * #MAX_ACCUMULATED_ROWS} in production; a tiny test-seam value in a test - see the test-only constructor).
+     * GraphTraversalLimits#maxAccumulatedRows()} in production; a tiny test-seam value in a test - see the
+     * test-only constructor).
      * Used whenever a bounded top-N is not sound - no {@code LIMIT}, {@code DISTINCT}, aggregation, or a {@code
      * LIMIT} itself larger than the ceiling (see {@link #execute}'s dispatch) - i.e. whenever every matching row
      * genuinely must be seen before the correct answer can be produced. Once accumulation would exceed the
@@ -1302,7 +1275,7 @@ public final class GraphTraversalEngine {
             return;
         }
         // Code-review fix: previously the wall-clock deadline was only checked once per hop (execute's outer
-        // loop), so a single hop with a wide fan-out and no LIMIT - the exact scenario MAX_TRAVERSAL_DURATION's
+        // loop), so a single hop with a wide fan-out and no LIMIT - the exact scenario the traversal-duration ceiling's
         // own Javadoc cites as its reason for existing - was never actually bounded, since this callback runs
         // once per neighbour inside one uninterrupted cursor scan. Checking here, once per neighbour, closes
         // that gap; throwing from inside this callback propagates up through the cursor's own try-with-resources
@@ -1464,13 +1437,13 @@ public final class GraphTraversalEngine {
                                  final VarLengthExpand varLengthExpand, final Map<String, Val> anchorRow,
                                  final Predicate<Map<String, Val>> wherePredicate,
                                  final RowSink rowSink, final long rowCap, final Instant deadline) {
-        // Task P7.2: reject a hop range wider than MAX_VAR_LENGTH_HOPS up front, before any BFS work at all -
+        // Task P7.2: reject a hop range wider than the configured maximum up front, before any BFS work at all -
         // Cypher.g4 forbids the unbounded -[:T*]-> form but places no ceiling on an explicit range, so
         // -[:T*1..100000]-> was previously accepted and attempted verbatim.
-        if (varLengthExpand.maxHops() > MAX_VAR_LENGTH_HOPS) {
+        if (varLengthExpand.maxHops() > limits.maxVarLengthHops()) {
             throw new GraphTraversalLimitExceededException(
                     "variable-length hop range [" + varLengthExpand.minHops() + ".." + varLengthExpand.maxHops()
-                    + "] exceeds the maximum allowed maxHops of " + MAX_VAR_LENGTH_HOPS);
+                    + "] exceeds the maximum allowed maxHops of " + limits.maxVarLengthHops());
         }
 
         final Optional<Long> resolvedEdgeTypeUid = resolveRequiredEdgeTypeUid(readTxn, varLengthExpand.edgeType());
@@ -1524,9 +1497,9 @@ public final class GraphTraversalEngine {
                         continue;
                     }
                     pathStatesExplored++;
-                    if (pathStatesExplored > maxVarLengthPathStates) {
+                    if (pathStatesExplored > limits.maxVarLengthPathStates()) {
                         throw new GraphTraversalLimitExceededException(
-                                "variable-length traversal explored more than " + maxVarLengthPathStates
+                                "variable-length traversal explored more than " + limits.maxVarLengthPathStates()
                                 + " path-states; narrow the pattern's label/property constraints or reduce the "
                                 + "hop range");
                     }
@@ -1632,7 +1605,7 @@ public final class GraphTraversalEngine {
             // Label-only anchor (MATCH (n:Label) ...): there is no property index to seek, so scan the node store
             // for every node carrying the required label(s). This is the scalar/aggregation counterpart of the
             // RETURN GRAPH label browse (dumpWholeGraph), but - unlike that bounded preview - it must return every
-            // match so results are never silently truncated; the fail-loud maxAccumulatedRows ceiling below is the
+            // match so results are never silently truncated; the fail-loud accumulated-rows ceiling below is the
             // only bound (a too-broad label scan fails loud, telling the user to add a property/WHERE/LIMIT).
             return scanAnchorsByLabel(readTxn, requiredLabelUids, access);
         }
@@ -1671,7 +1644,7 @@ public final class GraphTraversalEngine {
      * carries the required label(s) at the read instant. There is no property index to seek here (unlike
      * {@link #resolveAnchors}'s main path), so this walks {@link GraphNodeDb#forEachDistinctNodeUid} - the same
      * access path as the {@code RETURN GRAPH} browse ({@link #dumpWholeGraph}), but returning <em>all</em> matches
-     * (a scalar query must never silently drop rows). The only bound is the fail-loud {@link #maxAccumulatedRows}
+     * (a scalar query must never silently drop rows). The only bound is the fail-loud accumulated-rows ceiling
      * ceiling: a label matching more nodes than that throws {@link GraphTraversalLimitExceededException} rather than
      * truncating, so the caller is told to add a property constraint / {@code WHERE} / {@code LIMIT}. Any
      * {@code WHERE} on the pattern is applied downstream, not here (this only chooses seed nodes).
@@ -1679,13 +1652,13 @@ public final class GraphTraversalEngine {
     private List<Long> scanAnchorsByLabel(final Txn<ByteBuffer> readTxn, final List<Long> requiredLabelUids,
                                           final TemporalAccess access) {
         final Set<Long> required = new HashSet<>(requiredLabelUids);
-        final Instant deadline = Instant.now().plus(maxTraversalDuration);
+        final Instant deadline = Instant.now().plus(limits.maxTraversalDuration());
         final List<Long> matched = new ArrayList<>();
         stores.getNodes().forEachDistinctNodeUid(readTxn, nodeUid -> {
             checkDeadline(deadline);
-            if (matched.size() >= maxAccumulatedRows) {
+            if (matched.size() >= limits.maxAccumulatedRows()) {
                 throw new GraphTraversalLimitExceededException(
-                        "a label-only MATCH matched more than the maximum allowed " + maxAccumulatedRows
+                        "a label-only MATCH matched more than the maximum allowed " + limits.maxAccumulatedRows()
                         + " anchor nodes; add a property constraint (e.g. MATCH (n:Label {id: ...})), a WHERE "
                         + "filter, or a LIMIT to reduce the result set");
             }

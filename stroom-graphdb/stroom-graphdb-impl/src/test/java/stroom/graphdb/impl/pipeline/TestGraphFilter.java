@@ -17,6 +17,7 @@
 package stroom.graphdb.impl.pipeline;
 
 import stroom.docref.DocRef;
+import stroom.graphdb.impl.GraphDbConfig;
 import stroom.graphdb.impl.GraphDbDocCache;
 import stroom.graphdb.impl.GraphFileTransferClient;
 import stroom.graphdb.impl.GraphNodeDb;
@@ -818,7 +819,9 @@ class TestGraphFilter {
             }
         };
         final GraphShardWriters graphShardWriters =
-                new GraphShardWriters(new GraphPaths(fragmentRoot.resolve("paths")), fileTransferClient);
+                new GraphShardWriters(
+                        new GraphPaths(fragmentRoot.resolve("paths")), fileTransferClient,
+                        GraphDbConfig::new);
         final MetaHolder metaHolder = new MetaHolder();
         metaHolder.setMeta(Meta.builder().id(1L).build());
 

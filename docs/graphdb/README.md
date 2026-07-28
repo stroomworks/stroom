@@ -55,16 +55,15 @@ Detail: [02-architecture.md](02-architecture.md#how-a-graph-spans-a-cluster),
 
 ### Operational — the operator has few controls
 
-Graph DB now has a configuration surface, but a small one: `graphdb.path` (where graph data lives) and
-`graphdb.nodeList` (which nodes hold it). Everything in the table below is still a `private static final`
-constant in the source with only a test-seam constructor, so none of it can be tuned by an administrator, an
-environment variable, or the UI.
+Graph DB now has a real configuration surface under `graphdb`: where data lives, which nodes hold it, the
+maximum store size, and all five traversal guardrails. The defaults are unchanged from when they were
+hard-coded, so an existing deployment behaves identically until something is changed.
 
 | Blocker | Consequence |
 |---|---|
-| **Store size is fixed at 10 GiB per graph** and cannot be changed | A graph that outgrows it fails with `MDB_MAP_FULL`. The only remedies are splitting data across several `GraphDb` documents or deleting data |
+| **Store size still needs a restart to change, and only for new graphs** | LMDB fixes an environment's size at creation, so raising `graphdb.maxStoreSize` applies to graphs opened afterwards. An existing store must be rebuilt to grow past its original ceiling |
 | **Retention is off by default** — every version is kept forever | Combined with the fixed size cap, any sustained feed will eventually fill the store. Retention must be switched on deliberately, per document |
-| **Query caps abort work in flight** — 30 s traversal budget, 200,000 path-states *per anchor*, 1,000,000 accumulated rows, 50 maximum variable-length hops | A legitimate but broad query fails rather than running slowly, and nobody can raise the ceiling |
+| **Query caps abort work in flight** — 30 s traversal budget, 200,000 path-states *per anchor*, 1,000,000 accumulated rows, 50 maximum variable-length hops | A legitimate but broad query fails rather than running slowly. **Mitigated:** every one of these is now configurable ([10-limits.md](10-limits.md#query-and-traversal-limits)), though the better answer to a query that trips one is usually a tighter pattern |
 | **Queries execute synchronously on the calling thread** | This is deliberate (the engine is an in-memory call over a single LMDB read transaction with no shard fan-out), but it means a slow query occupies a request thread for up to the full 30 s budget. Concurrency behaviour under load has not been characterised |
 
 Detail: [10-limits.md](10-limits.md), [11-operations.md](11-operations.md).

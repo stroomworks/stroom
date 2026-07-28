@@ -46,6 +46,7 @@ import stroom.security.api.SecurityContext;
 import stroom.util.shared.ResultPage;
 
 import jakarta.inject.Inject;
+import jakarta.inject.Provider;
 import org.lmdbjava.Txn;
 
 import java.nio.ByteBuffer;
@@ -84,6 +85,7 @@ public class GraphSearchProvider implements SearchProvider, IndexFieldProvider {
     private final SecurityContext securityContext;
     private final FieldInfoResultPageFactory fieldInfoResultPageFactory;
     private final DocFinder docFinder;
+    private final Provider<GraphDbConfig> configProvider;
 
     @Inject
     public GraphSearchProvider(final GraphDbDocCache graphDbDocCache,
@@ -94,7 +96,8 @@ public class GraphSearchProvider implements SearchProvider, IndexFieldProvider {
                                final ExpressionPredicateFactory expressionPredicateFactory,
                                final SecurityContext securityContext,
                                final FieldInfoResultPageFactory fieldInfoResultPageFactory,
-                               final DocFinder docFinder) {
+                               final DocFinder docFinder,
+                               final Provider<GraphDbConfig> configProvider) {
         this.graphDbDocCache = graphDbDocCache;
         this.graphDbDocStore = graphDbDocStore;
         this.graphStoreManager = graphStoreManager;
@@ -104,6 +107,7 @@ public class GraphSearchProvider implements SearchProvider, IndexFieldProvider {
         this.securityContext = securityContext;
         this.fieldInfoResultPageFactory = fieldInfoResultPageFactory;
         this.docFinder = docFinder;
+        this.configProvider = configProvider;
     }
 
     private GraphDbDoc getGraphDbDoc(final DocRef docRef) {
@@ -180,7 +184,9 @@ public class GraphSearchProvider implements SearchProvider, IndexFieldProvider {
             final int[] mapping = buildFieldMapping(fieldIndex, statement.first().outputFields());
 
             final GraphStores stores = graphStoreManager.getOrOpen(doc);
-            final GraphTraversalEngine engine = new GraphTraversalEngine(stores, expressionPredicateFactory);
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, expressionPredicateFactory,
+                    GraphTraversalLimits.from(configProvider.get()));
             final List<Val[]> rows = stores.read(readTxn ->
                     executeStatement(readTxn, engine, stores, statement, searchRequest));
             for (final Val[] row : rows) {

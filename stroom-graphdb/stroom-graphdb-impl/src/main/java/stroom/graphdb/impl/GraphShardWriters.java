@@ -29,6 +29,7 @@ import stroom.util.logging.LogUtil;
 import stroom.util.zip.ZipUtil;
 
 import jakarta.inject.Inject;
+import jakarta.inject.Provider;
 import jakarta.inject.Singleton;
 
 import java.io.IOException;
@@ -58,13 +59,16 @@ public class GraphShardWriters {
 
     private final GraphPaths graphPaths;
     private final GraphFileTransferClient fileTransferClient;
+    private final Provider<GraphDbConfig> configProvider;
 
     @Inject
     public GraphShardWriters(final GraphPaths graphPaths,
-                             final GraphFileTransferClient fileTransferClient) {
+                             final GraphFileTransferClient fileTransferClient,
+                             final Provider<GraphDbConfig> configProvider) {
         this.graphPaths = Objects.requireNonNull(graphPaths, "graphPaths must not be null");
         this.fileTransferClient =
                 Objects.requireNonNull(fileTransferClient, "fileTransferClient must not be null");
+        this.configProvider = Objects.requireNonNull(configProvider, "configProvider must not be null");
 
         // Clear the writer dir on startup. Anything still in it belongs to a stream that did not finish, so it was
         // never sent and the stream will be reprocessed.
@@ -97,7 +101,8 @@ public class GraphShardWriters {
         } catch (final IOException e) {
             throw new UncheckedIOException(e);
         }
-        return new GraphShardWriter(fileTransferClient, dir, meta, doc);
+        return new GraphShardWriter(
+                fileTransferClient, dir, meta, doc, configProvider.get().getMaxStoreSize());
     }
 
     /**
@@ -119,11 +124,12 @@ public class GraphShardWriters {
         GraphShardWriter(final GraphFileTransferClient fileTransferClient,
                          final Path dir,
                          final Meta meta,
-                         final GraphDbDoc doc) {
+                         final GraphDbDoc doc,
+                         final Long maxStoreSize) {
             this.fileTransferClient = fileTransferClient;
             this.dir = dir;
             this.meta = meta;
-            this.stores = GraphStores.provision(dir.resolve(doc.getUuid()), doc);
+            this.stores = GraphStores.provision(dir.resolve(doc.getUuid()), doc, maxStoreSize);
             this.writer = stores.createWriter();
         }
 

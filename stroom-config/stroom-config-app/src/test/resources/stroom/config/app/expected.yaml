@@ -573,8 +573,14 @@ appConfig:
         prepStmtCacheSqlLimit: 256
     localDir: "git_repo"
   graphdb:
+    maxAccumulatedRows: 1000000
+    maxStoreSize: 10737418240
+    maxTraversalDuration: "PT30S"
+    maxVarLengthHops: 50
+    maxVarLengthPathStates: 200000
     nodeList: []
     path: "graphdb"
+    wholeGraphNodeCap: 100
   haltBootOnConfigValidationFailure: true
   index:
     db:

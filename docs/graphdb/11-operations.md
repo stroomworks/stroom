@@ -105,12 +105,24 @@ graphdb:
   nodeList:
     - "node1a"
     - "node2a"
+  maxStoreSize: 10737418240
+  maxVarLengthHops: 50
+  maxVarLengthPathStates: 200000
+  maxTraversalDuration: "PT30S"
+  maxAccumulatedRows: 1000000
+  wholeGraphNodeCap: 100
 ```
 
 | Setting | Meaning |
 |---|---|
 | `graphdb.path` | Root for all graph data on this node. Restart required — LMDB paths are resolved at startup |
 | `graphdb.nodeList` | The nodes that hold graph data. **Empty means this node only** |
+| `graphdb.maxStoreSize` | Maximum bytes one graph may reach. Restart required, and it applies only to graphs opened afterwards — see [10-limits.md](10-limits.md) |
+| `graphdb.maxVarLengthHops` and the three `max…` limits below it | The traversal guardrails. See [10-limits.md](10-limits.md#query-and-traversal-limits) for what each one stops and the message a user sees |
+| `graphdb.wholeGraphNodeCap` | The only limit that truncates rather than failing, because it bounds an exploratory browse |
+
+The defaults are exactly the values that were hard-coded before these settings existed, so upgrading changes
+nothing until you change something.
 
 > **An empty `nodeList` on a cluster is silently wrong.** It means "this node only", so each node again
 > accumulates only the fragments it processed and every query returns a partial answer. It is correct only on

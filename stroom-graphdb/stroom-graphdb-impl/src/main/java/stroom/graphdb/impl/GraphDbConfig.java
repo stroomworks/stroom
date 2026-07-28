@@ -16,8 +16,10 @@
 
 package stroom.graphdb.impl;
 
+import stroom.util.config.annotations.RequiresRestart;
 import stroom.util.shared.AbstractConfig;
 import stroom.util.shared.IsStroomConfig;
+import stroom.util.time.StroomDuration;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -43,20 +45,53 @@ import java.util.Objects;
 public class GraphDbConfig extends AbstractConfig implements IsStroomConfig {
 
     private static final String DEFAULT_PATH = "graphdb";
+    private static final long DEFAULT_MAX_STORE_SIZE = 10L * 1024 * 1024 * 1024;
+    private static final int DEFAULT_MAX_VAR_LENGTH_HOPS = 50;
+    private static final long DEFAULT_MAX_VAR_LENGTH_PATH_STATES = 200_000L;
+    private static final StroomDuration DEFAULT_MAX_TRAVERSAL_DURATION = StroomDuration.ofSeconds(30);
+    private static final long DEFAULT_MAX_ACCUMULATED_ROWS = 1_000_000L;
+    private static final int DEFAULT_WHOLE_GRAPH_NODE_CAP = 100;
 
     private final String path;
     private final List<String> nodeList;
+    private final long maxStoreSize;
+    private final int maxVarLengthHops;
+    private final long maxVarLengthPathStates;
+    private final StroomDuration maxTraversalDuration;
+    private final long maxAccumulatedRows;
+    private final int wholeGraphNodeCap;
 
     public GraphDbConfig() {
-        this(DEFAULT_PATH, Collections.emptyList());
+        this(DEFAULT_PATH,
+                Collections.emptyList(),
+                DEFAULT_MAX_STORE_SIZE,
+                DEFAULT_MAX_VAR_LENGTH_HOPS,
+                DEFAULT_MAX_VAR_LENGTH_PATH_STATES,
+                DEFAULT_MAX_TRAVERSAL_DURATION,
+                DEFAULT_MAX_ACCUMULATED_ROWS,
+                DEFAULT_WHOLE_GRAPH_NODE_CAP);
     }
 
     @SuppressWarnings("unused")
     @JsonCreator
     public GraphDbConfig(@JsonProperty("path") final String path,
-                         @JsonProperty("nodeList") final List<String> nodeList) {
+                         @JsonProperty("nodeList") final List<String> nodeList,
+                         @JsonProperty("maxStoreSize") final Long maxStoreSize,
+                         @JsonProperty("maxVarLengthHops") final Integer maxVarLengthHops,
+                         @JsonProperty("maxVarLengthPathStates") final Long maxVarLengthPathStates,
+                         @JsonProperty("maxTraversalDuration") final StroomDuration maxTraversalDuration,
+                         @JsonProperty("maxAccumulatedRows") final Long maxAccumulatedRows,
+                         @JsonProperty("wholeGraphNodeCap") final Integer wholeGraphNodeCap) {
         this.path = Objects.requireNonNullElse(path, DEFAULT_PATH);
         this.nodeList = Objects.requireNonNullElse(nodeList, Collections.emptyList());
+        this.maxStoreSize = Objects.requireNonNullElse(maxStoreSize, DEFAULT_MAX_STORE_SIZE);
+        this.maxVarLengthHops = Objects.requireNonNullElse(maxVarLengthHops, DEFAULT_MAX_VAR_LENGTH_HOPS);
+        this.maxVarLengthPathStates =
+                Objects.requireNonNullElse(maxVarLengthPathStates, DEFAULT_MAX_VAR_LENGTH_PATH_STATES);
+        this.maxTraversalDuration =
+                Objects.requireNonNullElse(maxTraversalDuration, DEFAULT_MAX_TRAVERSAL_DURATION);
+        this.maxAccumulatedRows = Objects.requireNonNullElse(maxAccumulatedRows, DEFAULT_MAX_ACCUMULATED_ROWS);
+        this.wholeGraphNodeCap = Objects.requireNonNullElse(wholeGraphNodeCap, DEFAULT_WHOLE_GRAPH_NODE_CAP);
     }
 
     @JsonProperty
@@ -77,11 +112,68 @@ public class GraphDbConfig extends AbstractConfig implements IsStroomConfig {
         return nodeList;
     }
 
+    @RequiresRestart(RequiresRestart.RestartScope.SYSTEM)
+    @JsonProperty
+    @JsonPropertyDescription("The maximum on-disk size a single graph may reach, in bytes. Default 10GiB. " +
+                             "A graph that outgrows this fails with MDB_MAP_FULL; the remedies are to raise this, " +
+                             "split the data across several GraphDb documents, or enable retention. This is the " +
+                             "LMDB map size, which is fixed when a store's environment is created, so a change " +
+                             "takes effect for graphs opened after a restart and not for ones already on disk.")
+    public long getMaxStoreSize() {
+        return maxStoreSize;
+    }
+
+    @JsonProperty
+    @JsonPropertyDescription("The widest variable-length hop range a query may request, e.g. the 8 in " +
+                             "[:KNOWS*1..8]. Rejected before any traversal work begins. Default 50.")
+    public int getMaxVarLengthHops() {
+        return maxVarLengthHops;
+    }
+
+    @JsonProperty
+    @JsonPropertyDescription("The most path states a single variable-length expansion may hold at once, per " +
+                             "anchor. A traversal exceeding this fails with an error naming the limit rather " +
+                             "than returning a partial result. Default 200000.")
+    public long getMaxVarLengthPathStates() {
+        return maxVarLengthPathStates;
+    }
+
+    @JsonProperty
+    @JsonPropertyDescription("How long a single graph traversal may run before it is abandoned. A query " +
+                             "exceeding this fails rather than returning what it had found so far. Note a " +
+                             "traversal runs on the calling thread, so this also bounds how long a request " +
+                             "thread can be occupied. Default 30s.")
+    public StroomDuration getMaxTraversalDuration() {
+        return maxTraversalDuration;
+    }
+
+    @JsonProperty
+    @JsonPropertyDescription("The most rows a query may accumulate in memory before sorting, de-duplication or " +
+                             "aggregation. Exceeding it fails the query; the rows accumulated so far are " +
+                             "discarded rather than returned as a partial answer. Default 1000000.")
+    public long getMaxAccumulatedRows() {
+        return maxAccumulatedRows;
+    }
+
+    @JsonProperty
+    @JsonPropertyDescription("The most nodes an unanchored RETURN GRAPH preview will draw. Unlike the other " +
+                             "limits this one truncates rather than failing, because it exists to keep a " +
+                             "browse of an unknown graph usable. Default 100.")
+    public int getWholeGraphNodeCap() {
+        return wholeGraphNodeCap;
+    }
+
     @Override
     public String toString() {
         return "GraphDbConfig{" +
                "path='" + path + '\'' +
                ", nodeList=" + nodeList +
+               ", maxStoreSize=" + maxStoreSize +
+               ", maxVarLengthHops=" + maxVarLengthHops +
+               ", maxVarLengthPathStates=" + maxVarLengthPathStates +
+               ", maxTraversalDuration=" + maxTraversalDuration +
+               ", maxAccumulatedRows=" + maxAccumulatedRows +
+               ", wholeGraphNodeCap=" + wholeGraphNodeCap +
                '}';
     }
 }

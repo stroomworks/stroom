@@ -28,6 +28,7 @@ import stroom.query.planner.cypher.DiffContext;
 import stroom.query.planner.cypher.TemporalContext;
 
 import jakarta.inject.Inject;
+import jakarta.inject.Provider;
 import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
@@ -46,13 +47,16 @@ class GraphExpandService {
 
     private final GraphStoreManager graphStoreManager;
     private final ExpressionPredicateFactory expressionPredicateFactory;
+    private final Provider<GraphDbConfig> configProvider;
 
     @Inject
     GraphExpandService(final GraphStoreManager graphStoreManager,
-                       final ExpressionPredicateFactory expressionPredicateFactory) {
+                       final ExpressionPredicateFactory expressionPredicateFactory,
+                       final Provider<GraphDbConfig> configProvider) {
         this.graphStoreManager = Objects.requireNonNull(graphStoreManager, "graphStoreManager");
         this.expressionPredicateFactory =
                 Objects.requireNonNull(expressionPredicateFactory, "expressionPredicateFactory");
+        this.configProvider = Objects.requireNonNull(configProvider, "configProvider");
     }
 
     /**
@@ -69,7 +73,9 @@ class GraphExpandService {
         final TemporalContext temporalContext = resolveTemporalContext(query);
         final GraphStores stores = graphStoreManager.getOrOpen(doc);
         return stores.read(readTxn -> {
-            final GraphTraversalEngine engine = new GraphTraversalEngine(stores, expressionPredicateFactory);
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, expressionPredicateFactory,
+                    GraphTraversalLimits.from(configProvider.get()));
             final List<Val[]> valRows = GraphElementExecutor.executeExpand(
                     readTxn, engine, stores, nodeId, MAX_NEIGHBOURS, temporalContext);
 

@@ -64,7 +64,9 @@ class TestGraphQueryNodeResolverImpl {
     }
 
     private static GraphQueryNodeResolverImpl resolverFor(final String... nodes) {
-        final GraphDbConfig config = new GraphDbConfig("graphdb", List.of(nodes));
+        // Nulls take each setting's default; this test cares only about path and nodeList.
+        final GraphDbConfig config = new GraphDbConfig(
+                "graphdb", List.of(nodes), null, null, null, null, null, null);
         return new GraphQueryNodeResolverImpl(() -> config);
     }
 

@@ -25,8 +25,8 @@ acted on, it should be this one.
 | # | Item | Why | Difficulty | Risk |
 |---|---|---|---|---|
 | ~~**0**~~ | ~~**Cluster-correct ingest**~~ — **done.** Ingest writes a per-stream fragment, which is replicated to every node in `graphdb.nodeList` and merged there | Was the only blocker that made answers wrong rather than merely constrained. See [Correctness across a cluster](#correctness-across-a-cluster) | Hard | — |
-| 1 | **A fuller configuration surface** — extend `GraphDbConfig` to cover store size, retention defaults and the traversal guardrails | `GraphDbConfig` now exists with `path` and `nodeList` only. Every limit is still a `private static final` | Medium | Low |
-| 2 | **Tunable store size** — stop passing no size override, expose it per document or globally | The fixed 10 GiB cap is the hardest ceiling in the system, and unmovable | Easy | Low |
+| ~~1~~ | ~~**A fuller configuration surface**~~ — **done.** `GraphDbConfig` now covers the store size and all five traversal guardrails as well as `path` and `nodeList` | Retention defaults remain per-document rather than global, which is where they belong | Medium | — |
+| ~~2~~ | ~~**Tunable store size**~~ — **done** via `graphdb.maxStoreSize` | Still needs a restart, and applies only to graphs opened afterwards, because LMDB fixes an environment's size at creation | Easy | — |
 | 3 | **Loud ingest failures** — a strict mode that fails a stream rather than skipping records, plus schema validation | Silent partial data loss is the most dangerous current behaviour | Medium | Low |
 | 4 | **Version condensing and compaction** — merge redundant identical versions, and compact in place | Storage grows monotonically even with retention on. Plan B performs both as scheduled maintenance and is a working template; Graph DB does neither | Medium | Medium |
 | 5 | **Retention for the property index** — include it and the property-key table in the sweep | The index grows without bound regardless of retention | Medium | Medium |

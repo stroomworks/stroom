@@ -206,6 +206,24 @@ public final class GraphStores implements AutoCloseable {
     }
 
     /**
+     * Provisions a new, empty set of stores sized by configuration.
+     *
+     * <p><b>Preconditions:</b> {@code directory} and {@code doc} are not null.
+     * <b>Postconditions:</b> as {@link #provision(Path, GraphDbDoc)}, with the environment's maximum size set.
+     * <b>Null status:</b> {@code maxStoreSize} is nullable, meaning "use the storage layer's default".
+     *
+     * @param directory    the directory to provision under.
+     * @param doc          the owning document.
+     * @param maxStoreSize the environment's maximum size in bytes, or null for the default.
+     * @return an open, writable {@link GraphStores}.
+     */
+    public static GraphStores provision(final Path directory,
+                                        final GraphDbDoc doc,
+                                        final Long maxStoreSize) {
+        return open(directory, doc, false, maxStoreSize);
+    }
+
+    /**
      * Opens the internal stores for {@code doc} under {@code directory}.
      *
      * <p><b>Preconditions:</b> neither {@code directory} nor {@code doc} is null.
@@ -220,6 +238,30 @@ public final class GraphStores implements AutoCloseable {
      * @return an open {@link GraphStores}.
      */
     public static GraphStores open(final Path directory, final GraphDbDoc doc, final boolean readOnly) {
+        return open(directory, doc, readOnly, null);
+    }
+
+    /**
+     * Opens the stores for {@code doc}, with an explicit maximum environment size.
+     *
+     * <p>LMDB fixes an environment's map size when it is created, so this bounds how large the graph can grow and
+     * a later change applies only to environments opened afterwards. It is a reservation rather than an
+     * allocation, so a generous value costs address space rather than disk.</p>
+     *
+     * <p><b>Preconditions:</b> {@code directory} and {@code doc} are not null.
+     * <b>Postconditions:</b> as {@link #open(Path, GraphDbDoc, boolean)}.
+     * <b>Null status:</b> {@code maxStoreSize} is nullable, meaning "use the storage layer's default".
+     *
+     * @param directory    the directory the stores live under.
+     * @param doc          the owning document.
+     * @param readOnly     whether to open read-only.
+     * @param maxStoreSize the environment's maximum size in bytes, or null for the default.
+     * @return an open {@link GraphStores}.
+     */
+    public static GraphStores open(final Path directory,
+                                   final GraphDbDoc doc,
+                                   final boolean readOnly,
+                                   final Long maxStoreSize) {
         Objects.requireNonNull(directory, "directory must not be null");
         Objects.requireNonNull(doc, "doc must not be null");
 
@@ -235,7 +277,7 @@ public final class GraphStores implements AutoCloseable {
         final HashClashCommitRunnable hashClashCommitRunnable = new HashClashCommitRunnable();
         final PlanBEnv env = new PlanBEnv(
                 directory,
-                null,
+                maxStoreSize,
                 MAX_DBS,
                 readOnly,
                 hashClashCommitRunnable);

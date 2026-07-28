@@ -50,7 +50,7 @@ class TestGraphStoreManagerImpl {
         final GraphPaths graphPaths = new GraphPaths(appPath.resolve("graphdb"));
 
         final GraphDbDoc doc = GraphDbDoc.builder().uuid("doc-uuid-1").name("Graph1").build();
-        final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(graphPaths);
+        final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(graphPaths, GraphDbConfig::new);
 
         final GraphStores stores = manager.getOrOpen(doc);
         try {
@@ -69,7 +69,7 @@ class TestGraphStoreManagerImpl {
         final GraphPaths graphPaths = new GraphPaths(appPath.resolve("graphdb"));
 
         final GraphDbDoc doc = GraphDbDoc.builder().uuid("doc-uuid-2").name("Graph2").build();
-        final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(graphPaths);
+        final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(graphPaths, GraphDbConfig::new);
 
         final GraphStores first = manager.getOrOpen(doc);
         final GraphStores second = manager.getOrOpen(doc);
@@ -86,7 +86,7 @@ class TestGraphStoreManagerImpl {
 
         final GraphDbDoc docA = GraphDbDoc.builder().uuid("doc-uuid-a").name("GraphA").build();
         final GraphDbDoc docB = GraphDbDoc.builder().uuid("doc-uuid-b").name("GraphB").build();
-        final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(graphPaths);
+        final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(graphPaths, GraphDbConfig::new);
 
         final GraphStores storesA = manager.getOrOpen(docA);
         final GraphStores storesB = manager.getOrOpen(docB);
@@ -105,7 +105,7 @@ class TestGraphStoreManagerImpl {
         final GraphPaths graphPaths = new GraphPaths(appPath.resolve("graphdb"));
 
         final GraphDbDoc doc = GraphDbDoc.builder().uuid("doc-uuid-3").name("Graph3").build();
-        final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(graphPaths);
+        final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(graphPaths, GraphDbConfig::new);
 
         manager.getOrOpen(doc);
         assertThat(Files.isDirectory(appPath.resolve("graphdb").resolve("shards").resolve("doc-uuid-3"))).isTrue();
@@ -127,13 +127,13 @@ class TestGraphStoreManagerImpl {
         final GraphPaths graphPaths = new GraphPaths(appPath.resolve("graphdb"));
 
         final GraphDbDoc doc = GraphDbDoc.builder().uuid("doc-uuid-4").name("Graph4").build();
-        final GraphStoreManagerImpl firstManager = new GraphStoreManagerImpl(graphPaths);
+        final GraphStoreManagerImpl firstManager = new GraphStoreManagerImpl(graphPaths, GraphDbConfig::new);
         firstManager.getOrOpen(doc).close();
         assertThat(Files.isDirectory(appPath.resolve("graphdb").resolve("shards").resolve("doc-uuid-4"))).isTrue();
 
         // A fresh manager instance (mirroring a restart) never opened doc-uuid-4 itself, yet its on-disk
         // directory from the previous manager still exists and must still be removable.
-        final GraphStoreManagerImpl secondManager = new GraphStoreManagerImpl(graphPaths);
+        final GraphStoreManagerImpl secondManager = new GraphStoreManagerImpl(graphPaths, GraphDbConfig::new);
         secondManager.delete("doc-uuid-4");
 
         assertThat(Files.exists(appPath.resolve("graphdb").resolve("shards").resolve("doc-uuid-4"))).isFalse();
@@ -150,7 +150,7 @@ class TestGraphStoreManagerImpl {
 
         final GraphDbDoc doc = GraphDbDoc.builder().uuid("doc-uuid-iofail").name("GraphIoFail").build();
         final RuntimeException boom = new RuntimeException("simulated undeletable file");
-        final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(graphPaths) {
+        final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(graphPaths, GraphDbConfig::new) {
             @Override
             void deleteStoreDirectory(final Path directory) {
                 throw boom;
@@ -177,7 +177,7 @@ class TestGraphStoreManagerImpl {
     void delete_ofAUuidWithNoDirectoryAtAll_isANoOp(@TempDir final Path appPath) {
         final GraphPaths graphPaths = new GraphPaths(appPath.resolve("graphdb"));
 
-        final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(graphPaths);
+        final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(graphPaths, GraphDbConfig::new);
 
         assertThatCode(() -> manager.delete("never-existed")).doesNotThrowAnyException();
     }
@@ -204,7 +204,7 @@ class TestGraphStoreManagerImpl {
         final GraphPaths graphPaths = new GraphPaths(appPath.resolve("graphdb"));
 
         final GraphDbDoc doc = GraphDbDoc.builder().uuid("doc-uuid-race").name("GraphRace").build();
-        final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(graphPaths);
+        final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(graphPaths, GraphDbConfig::new);
         manager.getOrOpen(doc); // Seed an initial store so the very first delete() has something to race against.
 
         final int iterations = 50;

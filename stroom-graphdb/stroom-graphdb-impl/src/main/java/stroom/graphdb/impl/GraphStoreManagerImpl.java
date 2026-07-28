@@ -19,6 +19,7 @@ package stroom.graphdb.impl;
 import stroom.graphdb.shared.GraphDbDoc;
 
 import jakarta.inject.Inject;
+import jakarta.inject.Provider;
 import jakarta.inject.Singleton;
 
 import java.nio.file.Path;
@@ -36,18 +37,21 @@ import java.util.concurrent.ConcurrentMap;
 public class GraphStoreManagerImpl implements GraphStoreManager {
 
     private final GraphPaths graphPaths;
+    private final Provider<GraphDbConfig> configProvider;
     private final ConcurrentMap<String, GraphStores> openStores = new ConcurrentHashMap<>();
 
     @Inject
-    public GraphStoreManagerImpl(final GraphPaths graphPaths) {
+    public GraphStoreManagerImpl(final GraphPaths graphPaths,
+                                 final Provider<GraphDbConfig> configProvider) {
         this.graphPaths = Objects.requireNonNull(graphPaths, "graphPaths");
+        this.configProvider = Objects.requireNonNull(configProvider, "configProvider");
     }
 
     @Override
     public GraphStores getOrOpen(final GraphDbDoc doc) {
         Objects.requireNonNull(doc, "doc");
         return openStores.computeIfAbsent(doc.getUuid(), uuid ->
-                GraphStores.open(directoryFor(uuid), doc, false));
+                GraphStores.open(directoryFor(uuid), doc, false, configProvider.get().getMaxStoreSize()));
     }
 
     /**
