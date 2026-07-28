@@ -31,6 +31,28 @@ Plan B state stores. Two consequences follow immediately:
   deleting a document deletes its store outright.
 - **The store is local to the node.** It is a file tree, not a shared service.
 
+Inside that environment sit several key/value tables, none of which appear in the explorer tree or have
+permissions of their own — they are private to the document:
+
+| Store | Purpose |
+|---|---|
+| **Node store** | Every version of every node: its labels and properties, keyed by node and `validFrom` |
+| **Out-edge store** | Every version of every edge, keyed from the source node |
+| **In-edge store** | The same edges keyed from the destination node, so backwards traversal is as cheap as forwards |
+| **Property index** | Maps a (label, property key, value) triple to the nodes carrying it. This is what lets a query *find* its starting nodes |
+| **Interning tables** | Five small lookup tables mapping node ids, labels, edge types, property keys and long property values to compact numeric identifiers |
+
+### Why ids are interned
+
+Node ids, labels, edge types and property keys are each replaced on the way in by a short fixed-width
+number, and the original string is stored once. A node id becomes 6 bytes; a label or edge type becomes 4.
+
+This matters for two reasons you will actually notice. It keeps keys small, so more of the graph stays in
+the page cache. And because the widths are *fixed*, keys sort predictably — which is what makes it possible
+to fetch "all the `KNOWS` edges out of this node" as one contiguous range scan rather than a search.
+
+The practical ceilings this imposes are in [10-limits.md](10-limits.md).
+
 ### Graph DB is single-node
 
 This is the most consequential thing on this page, so it is worth being precise about.
@@ -53,10 +75,52 @@ path on whichever node processed the stream, and stream processing is distribute
 node accumulates only the fragment it happened to build, and a query returns only that fragment. Nothing
 reports a problem — the results are simply incomplete.
 
-> **Treat Graph DB as single-node.** If you run a cluster, either pin graph processing and querying to one
-> node, or accept that results are partial. This is verified from the code paths involved, not from
-> observing a running cluster. See [11-operations.md](11-operations.md#scaling-and-clustering) for the
-> options and [12-future-work.md](12-future-work.md) for what would fix it.
+> **Treat Graph DB as single-node.** If you run a multi-node cluster today, a graph's contents and every
+> answer derived from them are unreliable. This is verified from the code paths involved, not from observing
+> a running cluster. See [11-operations.md](11-operations.md#scaling-and-clustering) for what can be done
+> now and [12-future-work.md](12-future-work.md#correctness-across-a-cluster) for what would fix it.
+
+### Why fanning queries out would not fix it
+
+The obvious repair — send the query to every node and merge the results, as a Lucene index does — **does not
+work for a graph**, and it is worth understanding why before anyone attempts it.
+
+A Lucene document belongs to exactly one shard. A query can therefore be evaluated independently on each
+shard and the results concatenated, because no document's evaluation depends on another shard's contents.
+
+A graph traversal has no such property. Consider `(a:User)-[:ACCESSED]->(f:File)` where `a` lives in the
+fragment on one node and `f` in the fragment on another. Neither node can answer: the first has the starting
+node but not the target's labels and properties; the second has the target but never sees the edge that
+reaches it. Merging two independent local traversals does not reconstruct the path, because the join those
+traversals needed to perform spanned the boundary between them. Longer patterns make it worse — every hop is
+another opportunity to cross.
+
+So **a correct answer requires the whole graph to be resolvable in one place.** That gives exactly three
+architectures:
+
+| Approach | Correct? | Notes |
+|---|---|---|
+| Every mutation funnelled into one authoritative store, queried there | **Yes** | What Plan B does, via build-then-merge ingest |
+| One authoritative store plus **whole-copy** replicas, queried against any complete copy | **Yes** | Plan B's snapshot model |
+| The graph partitioned across nodes, with traversal crossing partitions | Yes, but | Distributed graph traversal — the genuinely hard option, and not in scope |
+
+Two conditions, both necessary, fall out of that:
+
+1. **Every mutation must reach one authoritative store**, regardless of which node processed the stream.
+2. **Every query must run against a complete copy** of that store.
+
+Satisfying only the second is a trap worth naming. Routing all queries to one node makes answers
+*consistently* incomplete instead of randomly incomplete — more reproducible, and no more correct.
+
+### An inversion worth noting
+
+For most stores, sharding is the sophisticated answer and whole-copy replication the crude one. For a graph
+it is the other way round. **Whole-copy replication preserves correctness precisely because each copy can
+complete any traversal locally; partitioning breaks it.**
+
+This is why Plan B's snapshot model — a whole copy of one store rather than a slice of it — is the *right*
+shape for a graph even though it buys no extra capacity, and why Lucene-style sharding, which scales so well
+for an index, is the one thing a graph cannot borrow.
 
 ### For comparison, how Plan B does scale
 
@@ -69,28 +133,6 @@ writer node.
 Note what that is not: no hash partitioning of one store across nodes, and no replication for redundancy.
 It is one authoritative writer plus read-only snapshot fan-out — which is a read-scaling and locality
 mechanism, not a capacity one. Even fully adopted, it would not raise the per-graph size ceiling.
-
-Inside that environment sit several key/value tables, none of which appear in the explorer tree or have
-permissions of their own — they are private to the document:
-
-| Store | Purpose |
-|---|---|
-| **Node store** | Every version of every node: its labels and properties, keyed by node and `validFrom` |
-| **Out-edge store** | Every version of every edge, keyed from the source node |
-| **In-edge store** | The same edges keyed from the destination node, so backwards traversal is as cheap as forwards |
-| **Property index** | Maps a (label, property key, value) triple to the nodes carrying it. This is what lets a query *find* its starting nodes |
-| **Interning tables** | Five small lookup tables mapping node ids, labels, edge types, property keys and long property values to compact numeric identifiers |
-
-### Why ids are interned
-
-Node ids, labels, edge types and property keys are each replaced on the way in by a short fixed-width
-number, and the original string is stored once. A node id becomes 6 bytes; a label or edge type becomes 4.
-
-This matters for two reasons you will actually notice. It keeps keys small, so more of the graph stays in
-the page cache. And because the widths are *fixed*, keys sort predictably — which is what makes it possible
-to fetch "all the `KNOWS` edges out of this node" as one contiguous range scan rather than a search.
-
-The practical ceilings this imposes are in [10-limits.md](10-limits.md).
 
 ## The temporal model
 

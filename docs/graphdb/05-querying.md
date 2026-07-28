@@ -163,6 +163,57 @@ MATCH (p:Person {surname: 'Powell'})-[:PARTY_TO]->(c:Crime) RETURN c.type
 For REST calls use a **Bearer API key**, not a session cookie — cookie-authenticated `POST`s are rejected
 by CSRF protection.
 
+## Joining a graph to other Stroom data
+
+A Cypher query can be used as a **join side inside a StroomQL query**, which is how you combine graph
+relationships with data that lives elsewhere — an index, a Plan B store, anything StroomQL can read.
+
+```
+from "AuthEvents" as e
+join ( from "CorpGraph" MATCH (u:User {id:'U1'})-[:MEMBER_OF]->(g:Group) RETURN u.id, g.name ) as g
+  on e.user = g.id
+where g.name = 'admins'
+select e.time, e.action, g.name
+```
+
+The bracketed sub-query is ordinary Cypher, including its leading `from "GraphName"` clause. Its `RETURN`
+columns become the joined side's columns, addressable as `alias.column`. From there it is a normal StroomQL
+join, so **`where` and `select` can both reference the graph's columns** — which is the practical way to
+filter one dataset by a relationship held in another.
+
+Details worth knowing:
+
+- **`LEFT` and `INNER` are both supported**, defaulting to inner.
+- **Join conditions are equality only**, one or more `ON a.x = b.y` terms combined with `AND`. There is no
+  range or inequality join.
+- **The graph side is materialised, then hash-joined.** It is not a per-row point lookup — the sub-query runs
+  as a whole and its results are held for matching. (Plan B stores get an optimised point-lookup path; a
+  graph does not.) So keep the sub-query as selective as you can: everything
+  [10-limits.md](10-limits.md) says about anchoring applies to it unchanged.
+- **The sub-query is re-parsed and re-compiled** on each execution, as graph queries always are.
+
+The reverse direction is not available: a Cypher query cannot join to an index or state store from inside
+Cypher. The graph is always the joined side, never the driving one. If you want the graph to lead, put its
+sub-query first and join the other source to it.
+
+### When to use this instead of a plain graph query
+
+A graph is good at relationships and poor at bulk attributes; an index is the opposite. The join lets you
+use each for what it is good at — resolve *who is connected to whom* in the graph, then pull the volume of
+detail from the index:
+
+```
+from "AuthEvents" as e
+join ( from "CorpGraph" MATCH (u:User)-[:MEMBER_OF]->(g:Group {name:'admins'}) RETURN u.id ) as admins
+  on e.user = admins.id
+where e.outcome = 'FAILURE'
+select e.time, e.user, e.device
+```
+
+"Failed logons by anyone in the admins group" — the group membership is a traversal, the failures are an
+index scan, and neither store has to hold the other's data.
+
+
 ## Choosing a view
 
 | You want to… | Use |

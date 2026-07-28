@@ -119,6 +119,17 @@ MATCH (c:Crime) RETURN c.type AS crime_type, count(c) AS total ORDER BY total DE
   the schema-inspection need.
 - **List and map values** — no `UNWIND`, no comprehensions, no map projections.
 
+### On scale, Neo4j is closer than it looks
+
+A Neo4j user may assume they are giving up scalability by moving to Graph DB. On the query language, yes.
+On write scaling, less than expected: Neo4j's cluster architecture elects a **single leader** that applies all
+writes, with read replicas adding read capacity only, so write throughput scales vertically there too.
+Sharding via Fabric exists but requires queries to be written with the shard layout in mind.
+
+The real differences are that Neo4j has mature *whole-copy replication* (which Graph DB lacks entirely, and
+which is roadmap item 1) and no fixed per-database size ceiling. A survey of how the wider market handles
+this is in [11-operations.md](11-operations.md#how-other-graph-databases-handle-this).
+
 ### Behavioural differences that will not raise an error
 
 These are the dangerous ones, because the query runs and returns something plausible.

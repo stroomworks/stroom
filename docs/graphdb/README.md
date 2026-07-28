@@ -28,6 +28,26 @@ file that covers it in detail.
 
 Read this section before anything else in this set.
 
+### Correctness across a cluster — read this first
+
+**Graph DB is correct only on a single node.** It uses Plan B's storage primitives but none of its
+clustering — no sharding, no snapshots, no node-aware query routing. In a multi-node cluster each node
+writes only the fragment built from streams it happened to process, and a query returns only the local
+fragment, with nothing reporting that the answer is partial.
+
+This is a **correctness** problem, not a performance one, and it has no configuration-level fix: Stroom has
+no way to pin a pipeline to a node, so graph ingest cannot be confined without dedicating a whole node to
+processing. Fanning queries out across nodes would not repair it either — a traversal can cross a fragment
+boundary, so merging independent local results does not reconstruct the answer
+([02-architecture.md](02-architecture.md#why-fanning-queries-out-would-not-fix-it)).
+
+Until this is addressed, **run Graph DB on a single-node Stroom** if the answers need to be trustworthy.
+There is no replication either, so a graph is only as durable as the node holding it. What would fix it is
+in [12-future-work.md](12-future-work.md#correctness-across-a-cluster).
+
+Detail: [02-architecture.md](02-architecture.md#graph-db-is-single-node),
+[11-operations.md](11-operations.md#scaling-and-clustering).
+
 ### Operational — the operator has no controls
 
 There is **no configuration surface for Graph DB at all**: no `GraphDbConfig`, no `AppConfig` entries.
@@ -81,18 +101,15 @@ Detail: [06-language-reference.md](06-language-reference.md),
 
 ### What would have to change
 
-At minimum: a real configuration surface (store size, retention defaults and the traversal guardrails),
-loud rather than silent ingest failures with schema validation, a compaction path that does not depend on
-source streams still existing, and native typed property values. These are tracked in
-[12-future-work.md](12-future-work.md).
+In rough priority order: **cluster correctness first** — every mutation funnelled into one authoritative
+store and every query served from a complete copy of it — then a real configuration surface (store size,
+retention defaults and the traversal guardrails), loud rather than silent ingest failures with schema
+validation, a compaction path that does not depend on source streams still existing, and native typed
+property values.
 
-> **Graph DB is single-node.** It uses Plan B's storage primitives but none of its clustering — no
-> sharding, no snapshots, no node-aware query routing. In a multi-node cluster each node writes only the
-> fragment built from streams it processed, and a query returns only the local fragment, with nothing
-> reporting that the answer is partial. Either pin graph processing and querying to one node, or accept
-> incomplete results. There is also no replication, so a graph is only as durable as the node holding it.
-> See [02-architecture.md](02-architecture.md#graph-db-is-single-node) for the mechanism and
-> [11-operations.md](11-operations.md#scaling-and-clustering) for the options.
+Correctness leads because the others are limitations you can work around once you know about them, whereas
+an incomplete answer that reports itself as complete cannot be worked around at all. All of it is tracked in
+[12-future-work.md](12-future-work.md).
 
 ---
 
@@ -104,7 +121,7 @@ source streams still existing, and native typed property values. These are track
 | [02-architecture.md](02-architecture.md) | How data is stored, the temporal model, what a graph physically is | Analysts, administrators |
 | [03-ingest.md](03-ingest.md) | The `graph-mutation:1` format, the Graph Filter, loading your first graph | Pipeline authors |
 | [04-event-logging-xslt.md](04-event-logging-xslt.md) | Converting Stroom event-logging XML into graph mutations, with a worked XSLT | Translation authors |
-| [05-querying.md](05-querying.md) | Running queries: the Explore tab (graph) and the Data tab (table) | Analysts |
+| [05-querying.md](05-querying.md) | Running queries: the Explore tab (graph), the Data tab (table), and joining a graph to other Stroom data | Analysts |
 | [06-language-reference.md](06-language-reference.md) | The Cypher subset, clause by clause, and everything it rejects | Analysts |
 | [07-functions.md](07-functions.md) | Every aggregate and scalar function | Analysts |
 | [08-analysis-examples.md](08-analysis-examples.md) | Worked analyses over event data and the POLE dataset | Analysts |
@@ -114,6 +131,7 @@ source streams still existing, and native typed property values. These are track
 | [12-future-work.md](12-future-work.md) | Roadmap, with difficulty and risk per item | Stakeholders |
 | [13-developer-guide.md](13-developer-guide.md) | Code structure and how to extend Graph DB | Developers |
 | [14-testing.md](14-testing.md) | An acceptance protocol: dataset, cases and expected results | Developers, testers |
+| [epoch0-development-plan.md](epoch0-development-plan.md) | **Plan, not description** — the programme to clear the blockers above | Developers, stakeholders |
 
 ## Reading paths
 
@@ -127,6 +145,8 @@ source streams still existing, and native typed property values. These are track
   → [10](10-limits.md).
 - **Extending it** — [02](02-architecture.md) → [13](13-developer-guide.md)
   → [06](06-language-reference.md) → [14](14-testing.md).
+- **Fixing it** — the blockers above, then
+  [epoch0-development-plan.md](epoch0-development-plan.md).
 
 ## Relationship to the engineering documents
 

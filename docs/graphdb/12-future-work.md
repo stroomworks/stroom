@@ -24,35 +24,86 @@ acted on, it should be this one.
 
 | # | Item | Why | Difficulty | Risk |
 |---|---|---|---|---|
+| **0** | **Cluster-correct ingest** — adopt Plan B's build-then-merge write path so every mutation reaches one authoritative store regardless of which node processed the stream | **The only blocker that makes answers wrong rather than merely constrained.** In a cluster a graph fragments silently and no configuration can prevent it. See [Correctness across a cluster](#correctness-across-a-cluster) | Hard | Medium — the machinery and the tricky part both exist in Plan B already |
 | 1 | **A configuration surface** — a `GraphDbConfig` covering store size, retention defaults and the traversal guardrails | Today an administrator has no controls at all. Every limit is a `private static final` | Medium | Low |
 | 2 | **Tunable store size** — stop passing no size override, expose it per document or globally | The fixed 10 GiB cap is the hardest ceiling in the system, and unmovable | Easy | Low |
 | 3 | **Loud ingest failures** — a strict mode that fails a stream rather than skipping records, plus schema validation | Silent partial data loss is the most dangerous current behaviour | Medium | Low |
 | 4 | **Version condensing and compaction** — merge redundant identical versions, and compact in place | Storage grows monotonically even with retention on. Plan B performs both as scheduled maintenance and is a working template; Graph DB does neither | Medium | Medium |
 | 5 | **Retention for the property index** — include it and the property-key table in the sweep | The index grows without bound regardless of retention | Medium | Medium |
 | 6 | **Compaction without source streams** — an in-place rebuild that does not depend on reprocessing | Rebuild silently stops being possible once source streams age off | Hard | High |
-| 7 | **A `GraphDb` node resolver** — teach Stroom's node-resolution hook about graph documents so every graph query routes to one designated node | In a cluster a graph fragments silently: each node holds only what it processed and each query returns only that. The routing hook is already generic; only the resolver is Plan-B-specific | Medium | Low — additive, and the seam exists |
+| 7 | **A `GraphDb` node resolver** — route every graph query to the node holding the authoritative store | The second half of cluster correctness. **Necessary but not sufficient**: without blocker 0 it only makes answers consistently incomplete rather than randomly incomplete. The routing hook is already generic; only the resolver is Plan-B-specific | Medium | Low — additive, and the seam exists |
 | 8 | **Ship the XSD** as an XMLSchema document so a `SchemaFilter` can validate in-pipeline | It exists only as a test resource today | Easy | Low |
 
-## Scaling and clustering
+## Correctness across a cluster
 
-Graph DB is single-node: it uses Plan B's storage primitives but none of its clustering
-([02-architecture.md](02-architecture.md#graph-db-is-single-node)). The operational consequences and the
-workarounds available today are in
-[11-operations.md](11-operations.md#scaling-and-clustering); this is the work that would remove them.
+**This is the highest priority item on this page.** Everything else here is a limitation you can work around
+once you know about it. This one produces answers that are wrong while reporting themselves as complete, which
+cannot be worked around at all.
+
+### What is wrong today
+
+Graph DB writes to the local node and reads from the local node. In a multi-node Stroom, stream processing is
+distributed, so each node accumulates only the fragment built from the streams it happened to handle, and a
+query returns only that fragment. No error, no warning, no partial-result indicator.
+
+There is **no configuration-level mitigation**: Stroom cannot pin a pipeline to a node, and `GraphDbDoc` has
+no placement setting ([11-operations.md](11-operations.md#scaling-and-clustering)). Today the only way to get
+trustworthy answers is to run graph workloads on a single-node Stroom.
+
+### What correctness requires
+
+Two conditions, both necessary — the reasoning is in
+[02-architecture.md](02-architecture.md#why-fanning-queries-out-would-not-fix-it):
+
+| | Requirement | How | Difficulty | Risk |
+|---|---|---|---|---|
+| 1 | **Every mutation reaches one authoritative store** | Plan B's build-then-merge ingest: write a local fragment, ship it to the writer node, merge it in | Hard | Medium |
+| 2 | **Every query runs against a complete copy** | A `GraphDb` node resolver routing to the writer, or a whole-copy snapshot | Medium | Low |
+
+**Do not ship (2) alone and call it done.** Routing every query to one node while writes remain spread across
+the cluster converts a random wrong answer into a consistent wrong answer. More debuggable, equally incorrect.
+
+### Why fan-out is not an option
+
+Worth restating because it is the intuitive fix and it does not work. A Lucene index shards cleanly because a
+document belongs to exactly one shard and no document's evaluation depends on another shard. A graph traversal
+crosses boundaries by nature: an edge can span two fragments, so merging independent local traversals does not
+reconstruct paths that needed both. For a graph, **whole-copy replication preserves correctness and
+partitioning breaks it** — the inverse of the usual intuition.
+
+That is why Plan B's snapshot model is the right shape here despite buying no extra capacity, and why
+Lucene-style sharding is the one thing a graph cannot borrow.
+
+### The good news
+
+The hard part is already solved in Plan B. Merging stores whose keys embed locally-assigned UIDs is the
+subtle problem — and `SessionDb.merge` and `MetricDb.merge` show the idiom, with `validateSchema` guarding
+incompatible merges. See
+[the architectural note](#architectural-note-how-far-up-the-plan-b-stack-should-graph-db-sit). What remains
+is applying it across ten co-indexed tables and generalising `Shard` beyond one `Db` per document: real work,
+but not research.
+
+
+## Capacity and scale
+
+Distinct from [Correctness across a cluster](#correctness-across-a-cluster) above, which must come first.
+This section is about how *much* a graph can hold and how fast it can be read once answers are trustworthy.
+The operational workarounds available today are in
+[11-operations.md](11-operations.md#scaling-and-clustering).
 
 | Item | Why | Difficulty | Risk |
 |---|---|---|---|
 | **Tunable store size** (also blocker 2) | The only change that raises the per-graph ceiling. `GraphStores` passes no size override, so every graph takes the default; the parameter already exists | Easy | Low |
-| **A `GraphDb` node resolver** (also blocker 7) | Fixes silent fragmentation properly rather than by operational convention | Medium | Low |
-| **Condense and compact** (also blocker 4) | Reclaims space from redundant versions, using Plan B's implementations as a template | Medium | Medium |
-| **Adopt Plan B's snapshot model** — writer nodes plus read-only snapshot nodes with file transfer between them | Read scaling and query locality across a cluster. All the machinery exists in Plan B to copy | Hard | Medium |
-| **Genuine partitioning** — spread one logical graph across nodes by key | The only route to a graph larger than one node's disk. Neither Graph DB nor Plan B has this | Hard | High — traversal across a partition boundary is the hard part |
+| **Condense and compact** (also blocker 4) | Reclaims space from redundant versions, using Plan B's implementations as a template. Independent of the clustering work | Medium | Medium |
+| **Snapshot fan-out** — read-only snapshot nodes on top of a correct writer | Read scaling and query locality. Presupposes correctness work item 1; a snapshot of a fragmented store is a complete copy of an incomplete graph | Hard | Medium |
+| **Genuine partitioning** — spread one logical graph across nodes by key | The only route to a graph larger than one node's disk. Neither Graph DB nor Plan B has this, and it is the one approach that would reintroduce the correctness problem deliberately, requiring distributed traversal to solve properly | Hard | High |
 
 Two things worth being clear about when planning this:
 
-**Snapshots are not a capacity mechanism.** Plan B's model gives read scaling and locality, but a snapshot
-is a whole copy of one store rather than a partition of it. Adopting it in full would still leave the
-per-graph size ceiling exactly where it is.
+**Snapshots are not a capacity mechanism.** A snapshot is a whole copy of one store rather than a partition of
+it, so adopting the model in full would leave the per-graph size ceiling exactly where it is. For a graph that
+whole-copy property is a *feature* — it is what lets a replica complete a traversal locally — but it is not
+capacity.
 
 **Capacity today comes from splitting across documents.** That is a modelling decision, not a migration,
 and it works now — but no query spans two graphs, so you partition the question by hand. Genuine
@@ -120,6 +171,48 @@ and supported costs far less than adopting the shard model, and steps 1 and 2 ma
 The strongest argument for going further: the merge model is what makes ingest cluster-safe, and that is
 awkward to retrofit. If multi-node ingest is a firm requirement rather than a possibility, doing it before
 there is production data is considerably cheaper than after.
+
+
+## Integration with the rest of Stroom
+
+Graph DB is currently near-isolated: data goes in through a pipeline and comes out through a query, and it
+participates in almost none of Stroom's other mechanisms. The one exception is already built — see below.
+
+### Already available
+
+**A Cypher sub-query can be a StroomQL join side**, so graph relationships can be combined with index or
+state-store data and filtered in StroomQL's `where`. This is implemented and documented in
+[05-querying.md](05-querying.md#joining-a-graph-to-other-stroom-data). It was undocumented for some time,
+which is worth remembering when assessing what else might already work.
+
+### What is missing
+
+| Item | Why it matters | Difficulty | Risk |
+|---|---|---|---|
+| **Record `streamId`/`eventId` on every mutation** | The Graph Filter records no provenance, so nothing links a node or edge back to the event that created it. Useful on its own for auditing, and a **prerequisite** for the two items below | Easy | Low |
+| **Extraction over graph results** | Stroom's search extraction resolves a `streamId`/`eventId` pair back to the source event and pulls fields from it via XPath. Applied to graph results this would allow a **thin graph**: store ids, labels and relationships only, and fetch bulky attributes from the streams on demand | Medium | Medium |
+| **A graph lookup for pipelines** | Plan B exposes a lookup so a translation can enrich an event mid-pipeline from a state store. Graph DB has no equivalent, so "enrich this event with the groups its user belongs to" cannot be expressed even though the data is present | Medium | Medium |
+| **Cypher as the driving side of a join** | Today the graph can only be the *joined* side, never the one leading the query | Medium | Medium |
+
+### Why the thin-graph idea is interesting
+
+It attacks the size ceiling from a different direction to everything in
+[Capacity and scale](#capacity-and-scale). Rather than making a graph hold more, it makes a graph hold
+*less*: topology in the store, attributes in the streams that are already retained anyway. For event-derived
+graphs — where the relationships are small and the event payloads are not — that could be a far larger
+saving than any amount of compaction.
+
+Two honest limitations to design around:
+
+**Extraction is a post-filter, not a pruning predicate.** It happens per surviving row, after the traversal.
+So an extracted value could be used in a `WHERE` and would filter the answer correctly, but it could not stop
+the walk exploring, and it could not help the anchor — which is where query cost actually lives
+([10-limits.md](10-limits.md)). Useful for expressiveness; not a performance feature.
+
+**It couples the graph's usefulness to stream retention.** Age the source streams off and the extracted
+attributes disappear while the topology remains — the same trap as `rebuild()`
+([11-operations.md](11-operations.md#rebuild--and-its-trap)). A thin graph is only as complete as the data
+behind it.
 
 
 ## Data model
@@ -213,18 +306,25 @@ defends. They are the highest value-per-effort items on the page.
 
 If the goal is a production-capable Graph DB:
 
-1. **Blockers 1, 2, 3, 7, 8** — configuration, tunable size, loud ingest failures, the node resolver, ship
-   the XSD. Mostly easy or medium at low risk, and together they remove the whole class of "the operator has
-   no controls, and the system does not tell you when an answer is incomplete" problems. Blockers 3 and 7
-   belong together: one is silent data loss on the way in, the other is silent data omission on the way out.
-2. **Documentation tests** — cheap, and they stop the rest of this set drifting.
-3. **Blockers 4, 5** — condensing, compaction and index retention, so storage is bounded rather than merely
+1. **Blocker 0 with blocker 7** — cluster-correct ingest and the node resolver, together. This is the only
+   item that makes answers *wrong*, and the two halves are not independently useful: merge without routing
+   leaves queries reading the wrong store, routing without merge makes wrong answers merely consistent.
+   Everything below is a limitation you can document and work around; this one is not.
+2. **Blockers 1, 2, 3, 8** — configuration, tunable size, loud ingest failures, ship the XSD. Mostly easy at
+   low risk, and together they remove the "the operator has no controls and no warning" class of problem.
+   Blocker 3 pairs naturally with blocker 0: one is silent data loss on the way in, the other silent omission
+   on the way out.
+3. **Documentation tests** — cheap, and they stop the rest of this set drifting.
+4. **Blockers 4, 5** — condensing, compaction and index retention, so storage is bounded rather than merely
    slowed.
-4. **Typed property values** — the biggest usability win, and best done before there is much data to
+5. **Typed property values** — the biggest usability win, and best done before there is much data to
    migrate.
-5. **Blocker 6** — a compaction path independent of source streams.
-6. Language and analytics features, driven by what users actually ask for.
-7. **Snapshot model, then partitioning** — only once single-node behaviour is solid. Partitioning is the
+6. **Blocker 6** — a compaction path independent of source streams.
+7. **Stream provenance on mutations** (`streamId`/`eventId`) — easy, low risk, and the gate to extraction and
+   the thin-graph model. Worth doing early even if the follow-on work is not scheduled, because retrofitting
+   provenance onto an already-populated graph means a rebuild.
+8. Language and analytics features, driven by what users actually ask for.
+9. **Snapshot fan-out, then partitioning** — only once correctness is settled. Partitioning is the
    largest item here and the only route to a graph bigger than one node's disk. See
    [the architectural note](#architectural-note-how-far-up-the-plan-b-stack-should-graph-db-sit) before
    starting: the merge-based write path is the expensive prerequisite, and the one thing genuinely awkward to

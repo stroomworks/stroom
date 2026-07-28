@@ -200,6 +200,29 @@ clear message rather than a hang. See [10-limits.md](10-limits.md) for the value
 | A broad variable-length hop into a dense region | Path-state or 30-second message, not a hang |
 | `MATCH (n) RETURN GRAPH` with no `LIMIT` | Exactly 100 nodes, **silently** — the one cap that does not announce itself |
 
+## Cluster correctness cases
+
+**These will fail on any multi-node Stroom today**, by design of the current implementation rather than by
+accident — see [12-future-work.md](12-future-work.md#correctness-across-a-cluster). They are recorded here so
+that the correctness work has an acceptance test to satisfy, and so nobody mistakes a single-node pass for a
+cluster pass.
+
+Run on a cluster of at least two processing nodes, with the same graph fed by a single feed.
+
+| # | Case | Expected once correctness lands |
+|---|---|---|
+| C1 | Load a dataset large enough to be split across several streams, so more than one node processes some of it. Then `MATCH (u:User) RETURN count(u)` | The full count, from **every** node the query is sent to — not a per-node fragment |
+| C2 | Run the same query repeatedly against different cluster nodes | Identical results every time. Varying results mean fragmentation |
+| C3 | Take a pattern whose two endpoints were ingested by *different* nodes and traverse it | The path is found. This is the case fan-out cannot satisfy and merge-based ingest can |
+| C4 | Compare a cluster load against the same data loaded on a single node | Byte-for-byte equivalent query results |
+| C5 | Kill a non-writer node mid-load, then query | No missing data once the surviving fragments have merged |
+
+C3 is the discriminating case. C1 and C2 can pass by accident if one node happened to process everything, so
+check the processing task distribution before trusting them.
+
+Until this work lands, the honest test position is: **acceptance testing of Graph DB is only meaningful on a
+single node**, and a cluster deployment should be treated as unsupported rather than untested.
+
 ## Automated tests
 
 | Test | Covers |

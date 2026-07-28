@@ -2,7 +2,7 @@
 
 The single, shared standards every Graph DB / query **implementation plan** in this folder points to, so the rules live in one place. **Follow the repository's existing, build-enforced standards — do not invent new ones.**
 
-Referenced by: [`graphdb-features-implementation-plan.md`](graphdb-features-implementation-plan.md), [`graphdb-stroomql-join-implementation-plan.md`](graphdb-stroomql-join-implementation-plan.md), [`temporal-cypher-graph-implementation-plan.md`](temporal-cypher-graph-implementation-plan.md).
+Referenced by: [`graphdb/epoch0-development-plan.md`](graphdb/epoch0-development-plan.md). The earlier Graph DB implementation plans that also pointed here have been retired to git history.
 
 ---
 

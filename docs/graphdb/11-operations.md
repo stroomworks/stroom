@@ -84,9 +84,25 @@ rather than an oversight, is in
   processing is distributed. Each node holds only what it processed; each query returns only what is local.
   Nothing reports the shortfall.
 
-If you run a multi-node Stroom, **pin both graph processing and graph querying to a single node**, or accept
-partial answers. There is no replication either, so a graph is only as durable as the node holding it and
-its backups — see [Backup and restore](#backup-and-restore).
+This is a **correctness** problem rather than a performance one, and it is the reason
+[the README lists it first](README.md#correctness-across-a-cluster--read-this-first).
+
+**There is no configuration-level fix.** Stroom has no way to pin a pipeline or a processor filter to a
+node — `ProcessorFilter` carries priority, task limits and a scheduling profile, but no node. `ProcessorTask`
+records a node name only as a fact about which node claimed it, not as a constraint. And `GraphDbDoc` has no
+placement setting. So "run graph ingest on one node" is not something you can configure; the only levers are
+blunt:
+
+- Run graph workloads on a **single-node Stroom**, or
+- **Disable processing on every other node** (`Node.enabled`), which stops *all* processing there, not just
+  graph pipelines — usually unacceptable on a cluster doing other work.
+
+Nor would fanning queries out repair it. A traversal can cross a fragment boundary, so merging independent
+local results does not reconstruct the answer — see
+[02-architecture.md](02-architecture.md#why-fanning-queries-out-would-not-fix-it).
+
+There is no replication either, so a graph is only as durable as the node holding it and its backups — see
+[Backup and restore](#backup-and-restore).
 
 ### What you can do today
 
@@ -94,31 +110,47 @@ its backups — see [Backup and restore](#backup-and-restore).
 |---|---|---|
 | **Split across several `GraphDb` documents** — by period, tenant, or subject area | Real capacity growth: each document has its own ceiling | No query spans two graphs. You partition the question by hand |
 | **Enable retention and shorten the window** | Bounds growth on a continuously fed graph | Loses the history that is the feature's main draw, and does not reclaim the property index |
-| **Pin graph work to one node** | Removes the fragmentation risk with no code change | Manual, easy to regress, no redundancy, and does not scale |
+| **Run graph workloads on a single-node Stroom** | The only way to get correct answers today | Not an option on an existing cluster without dedicating a node to processing entirely |
 | **Reduce what you load** | Slows growth | Modelling effort — see [04-event-logging-xslt.md](04-event-logging-xslt.md) |
 
 Splitting across documents is the only one that genuinely increases the data you can hold. Treat the others
 as ways of living within one graph's ceiling.
+
+Note that none of these is a *correctness* fix on a multi-node cluster except the last, and that one is
+really a deployment constraint rather than an option. Correctness needs code — see below.
 
 ### What would need building
 
 Each of these is a code change, sized in [12-future-work.md](12-future-work.md). Listed cheapest first,
 because the two cheapest are also the two most valuable:
 
-1. **Make the store size configurable.** `GraphStores` currently passes no size override, so every graph
-   silently takes the 10 GiB default. The parameter already exists — this is a small change that lifts the
-   hard ceiling.
-2. **Register a `GraphDb` node resolver.** The routing hook is already generic; only the resolver is
-   Plan-B-specific. Teaching it about graph documents would send every graph query to one designated node,
-   which fixes the silent fragmentation properly rather than by convention.
-3. **Implement condense and compact.** Plan B performs both as scheduled maintenance; Graph DB does
+**Correctness needs two things, and both are necessary:**
+
+1. **Every mutation must reach one authoritative store**, whichever node processed the stream. This means
+   adopting Plan B's build-then-merge ingest: a pipeline writes a local fragment, the fragment is shipped to
+   the writer node, and it is merged in. This is the substantial piece of work, and the only one that removes
+   fragmentation at its source.
+2. **Every query must run against a complete copy** of that store — either by routing to the writer node (a
+   `GraphDb` node resolver, which is small because the routing hook is already generic) or by serving it from
+   a whole-copy snapshot.
+
+A resolver **on its own is not sufficient.** If writes are still spread across nodes, routing every query to
+one of them makes answers consistently incomplete instead of randomly incomplete. That is easier to debug and
+no more correct — worth knowing before anyone ships the cheap half and declares the problem solved.
+
+**Then the operational improvements, in increasing cost:**
+
+3. **Make the store size configurable.** `GraphStores` currently passes no size override, so every graph
+   silently takes the 10 GiB default. The parameter already exists — a small change that lifts the hard
+   ceiling.
+4. **Implement condense and compact.** Plan B performs both as scheduled maintenance; Graph DB does
    neither, which is why redundant versions accumulate forever. Plan B's implementations are a working
-   template.
-4. **Adopt Plan B's snapshot model.** Writer nodes plus read-only snapshot nodes, with file transfer
-   between them. This buys read scaling and locality — but note it would **not** raise the per-graph size
-   ceiling, because a snapshot is a whole copy of one store rather than a partition of it. Capacity still
-   comes from splitting across documents, or from a genuine partitioning scheme that does not exist in
-   either system today.
+   template, and this is independent of the clustering work.
+5. **Adopt Plan B's snapshot model in full.** Writer nodes plus read-only snapshot nodes with file transfer
+   between them. This buys read scaling and locality on top of correctness — but note it would **not** raise
+   the per-graph size ceiling, because a snapshot is a whole copy of one store rather than a partition of it.
+   For a graph that whole-copy property is a feature, not a shortcoming: it is what lets any replica complete
+   a traversal locally. Capacity still comes from splitting across documents.
 
 ### For comparison: how a Lucene index scales
 
@@ -146,12 +178,81 @@ belongs to exactly one shard, and a query searches each shard independently and 
 cross-cutting — an edge can span two partitions, so a multi-hop pattern may need to cross partition
 boundaries mid-traversal. Sharding a graph is therefore a substantially harder problem than sharding an
 index, which is why it sits at the bottom of
-[12-future-work.md](12-future-work.md#scaling-and-clustering) rather than being a gap someone simply has not
+[12-future-work.md](12-future-work.md#capacity-and-scale) rather than being a gap someone simply has not
 closed yet.
 
 Practical consequence when choosing between them: if the dataset needs to grow beyond what one node can
 hold, use an index and accept that relationship questions are awkward. Reach for a graph when the
 relationships are the point and the volume is modest.
+
+### How other graph databases handle this
+
+Useful context, because it shows that Graph DB's constraints are not unusual and that the roadmap's ordering
+matches what mature products actually do. *This subsection is a survey of published architectures, not
+something verified against the code like the rest of this set — treat product specifics as indicative and
+check current documentation before relying on them.*
+
+There are broadly four answers in the market, and every one of them trades something away.
+
+**1. Scale up, replicate whole copies.** One node accepts writes; complete replicas serve reads. Neo4j's
+cluster architecture works this way: primaries form a Raft group with a **single leader** applying all
+writes, and read replicas add read capacity without participating in consensus. Write throughput scales
+*vertically*.
+
+**2. Separate storage from compute.** Amazon Neptune keeps a single writer instance plus up to 15 read
+replicas over one shared storage volume, so storage grows independently of the compute tier and no manual
+sharding is needed. Write throughput is still bound to that one writer.
+
+**3. Partition over a distributed store.** JanusGraph stores adjacency lists in Cassandra, HBase or
+Bigtable, so capacity scales horizontally with the backend. The cost is explicit: an edge whose endpoints
+land on different machines is a **cut edge**, and traversing it requires machine-to-machine communication.
+JanusGraph's own documentation is blunt that random partitioning becomes *less* efficient as the cluster
+grows, because of the cross-instance communication needed to answer a query — which is why it offers
+explicit partitioning so that frequently co-traversed vertices can be co-located.
+
+**4. Build distributed traversal properly.** TigerGraph distributes both storage and computation across an
+MPP cluster so heavy traversals execute in parallel; ArangoDB's clustered mode supports distributed writes.
+This is the only approach that scales writes *and* capacity, and it is also by far the most engineering to
+build.
+
+### What this tells us
+
+| Approach | Capacity | Write scaling | Traversal cost | Correctness burden |
+|---|---|---|---|---|
+| Scale up + whole replicas | One node's disk | Vertical only | Local, fast | Low — every copy is complete |
+| Storage/compute split | Large, managed | Single writer | Local to compute tier | Low |
+| Partition over distributed store | Horizontal | Horizontal | **Pays for cut edges** | Moderate — locality must be engineered |
+| Distributed native traversal | Horizontal | Horizontal | Parallel, engineered | High — the hard problem, solved deliberately |
+
+Three things worth drawing out:
+
+**Nobody gets graph partitioning for free.** Every product either avoids partitioning (replicate whole
+copies), pushes it into a distributed storage layer and accepts cut-edge latency, or invests heavily in
+distributed traversal. That the industry term *cut edge* exists at all tells you how central the problem is.
+
+**Single-writer is the common case, not an aberration.** Neo4j and Neptune — two of the most widely deployed
+graph databases — both funnel writes through one node. Graph DB's roadmap item 1
+([12-future-work.md](12-future-work.md#correctness-across-a-cluster)) puts it in the same category as the
+mainstream answer rather than at some unusual disadvantage.
+
+**Whole-copy replication first, partitioning much later, is the well-trodden path.** It is what Neo4j did for
+years before Fabric, and Fabric's sharding still requires queries to be written with the shard layout in
+mind. So Graph DB's ordering — correct single authoritative store, then whole-copy read replicas, and
+partitioning as a distant Hard/High item — is the conventional progression, not a shortcut.
+
+Where Graph DB genuinely differs today is that it has **none** of the four, and that its per-graph ceiling is
+a fixed constant rather than a property of the hardware. Both are fixable; neither is exotic.
+
+Sources for this subsection, surveyed 2026-07-28 — check current documentation before relying on any
+product specific:
+
+- Neo4j clustering and scaling —
+  <https://neo4j.com/docs/operations-manual/current/clustering/introduction/> and
+  <https://neo4j.com/docs/operations-manual/current/scalability/scaling-with-neo4j/>
+- JanusGraph graph partitioning and cut edges —
+  <https://docs.janusgraph.org/advanced-topics/partitioning/> and
+  <https://docs.janusgraph.org/advanced-topics/data-model/>
+- Amazon Neptune architecture — <https://aws.amazon.com/neptune/>
 
 ## Retention
 
