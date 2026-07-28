@@ -92,9 +92,11 @@ public class GraphDbModule extends AbstractModule {
                 .addBinding(GraphSearchProvider.class);
 
         ScheduledJobsBinder.create(binder())
-                .bindJobTo(GraphRetentionRunnable.class, builder -> builder
-                        .name(GraphRetentionRunnable.TASK_NAME)
-                        .description("Graph DB retention")
+                .bindJobTo(GraphMaintenanceRunnable.class, builder -> builder
+                        .name(GraphMaintenanceRunnable.TASK_NAME)
+                        .description("Graph DB maintenance: reclaims graphs whose document has been deleted, "
+                                     + "applies retention where it is enabled, and condenses redundant versions "
+                                     + "for every graph")
                         .cronSchedule(CronExpressions.EVERY_10_MINUTES.getExpression())
                         .advanced(true));
 
@@ -116,14 +118,21 @@ public class GraphDbModule extends AbstractModule {
         }
     }
 
-    private static class GraphRetentionRunnable extends RunnableWrapper {
+    /**
+     * Named for what it does rather than for the one thing it used to do. It began as retention only; it now also
+     * reclaims graphs whose document has gone and condenses redundant versions - and condensing applies to every
+     * graph, including those with retention disabled. Leaving it called "retention" would have meant an operator
+     * disabling it believed they were switching off one thing and were in fact switching off three.
+     */
+    private static class GraphMaintenanceRunnable extends RunnableWrapper {
 
-        private static final Logger LOGGER = LoggerFactory.getLogger(GraphRetentionRunnable.class);
+        private static final Logger LOGGER = LoggerFactory.getLogger(GraphMaintenanceRunnable.class);
 
-        static final String TASK_NAME = "Graph DB Retention";
+        static final String TASK_NAME = "Graph DB Maintenance";
 
         @Inject
-        GraphRetentionRunnable(final GraphDbDocStore graphDbDocStore, final GraphStoreManager graphStoreManager) {
+        GraphMaintenanceRunnable(final GraphDbDocStore graphDbDocStore,
+                                 final GraphStoreManager graphStoreManager) {
             super(() -> {
                 // Reclaim graphs whose document is gone before sweeping the survivors. A document deleted while
                 // this node was down never produced an entity event here, so nothing else would ever notice.

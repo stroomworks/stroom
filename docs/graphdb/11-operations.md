@@ -275,17 +275,26 @@ product specific:
   <https://docs.janusgraph.org/advanced-topics/data-model/>
 - Amazon Neptune architecture — <https://aws.amazon.com/neptune/>
 
-## Retention
+## Retention and maintenance
 
-Configured **per document**, on the Settings tab, using the same retention control as Plan B stores.
-A scheduled job named **"Graph DB Retention"** runs every ten minutes and, for each graph with retention
-enabled, deletes versions older than the cutoff and then sweeps interned identifiers that no longer appear
-anywhere. It always keeps at least one version per entity, so historical queries continue to resolve.
+A single scheduled job, **"Graph DB Maintenance"**, runs every ten minutes and does three things:
 
-The job is marked advanced and appears in the Jobs screen like any other. It only opens a graph's store if
-that graph actually has retention enabled, so leaving it on is cheap.
+| Step | Applies to | What it does |
+|---|---|---|
+| Reclaim | graphs whose document has been deleted | Removes the store. Catches a delete that happened while this node was down, which no entity event reached |
+| Retention | graphs with retention enabled | Deletes versions older than the cutoff, then rebuilds the property index and sweeps interned identifiers no surviving anchor uses. Always keeps at least one version per entity, so historical queries still resolve |
+| Condense | **every** graph | Collapses runs of consecutive identical versions |
 
-**What retention does not reclaim** — both matter for planning:
+> **Do not think of this as only the retention job.** It was called that when retention was all it did.
+> Condensing applies to every graph including those with retention switched off, so disabling this job stops
+> storage being reclaimed on graphs that have no retention policy at all.
+
+The job is marked advanced and appears in the Jobs screen like any other. It opens every graph's store, because
+condensing applies to all of them.
+
+Retention itself is configured **per document**, on the Settings tab, using the same control as Plan B stores.
+
+**What is still not reclaimed** — matters for planning:
 
 - **Redundant versions are now condensed.** Runs of consecutive identical node and edge versions are collapsed
   to the earliest of each run, so ten identical daily snapshots of an unchanged node become one version. This
@@ -429,7 +438,7 @@ can watch:
 |---|---|---|
 | Store directory size | The filesystem, under `<app path>/graphdb/<uuid>` | The only warning before the 10 GiB cap |
 | Stream error counts on graph feeds | Stream processing | Skipped records mean silently missing data ([03-ingest.md](03-ingest.md)) |
-| "Graph DB Retention" job | Jobs screen | Confirms trimming is actually running |
+| "Graph DB Maintenance" job | Jobs screen | Confirms reclamation, retention and condensing are running |
 | Query failures | Query surfaces | Guardrail messages indicate queries that need rewriting ([10-limits.md](10-limits.md)) |
 
 The stream error count is the one to automate if you automate anything: a partially loaded graph is
