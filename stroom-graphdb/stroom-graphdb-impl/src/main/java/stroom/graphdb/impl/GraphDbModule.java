@@ -125,6 +125,13 @@ public class GraphDbModule extends AbstractModule {
         @Inject
         GraphRetentionRunnable(final GraphDbDocStore graphDbDocStore, final GraphStoreManager graphStoreManager) {
             super(() -> {
+                // Reclaim graphs whose document is gone before sweeping the survivors. A document deleted while
+                // this node was down never produced an entity event here, so nothing else would ever notice.
+                try {
+                    graphStoreManager.cleanupOrphanedStores();
+                } catch (final RuntimeException e) {
+                    LOGGER.error("Error reclaiming orphaned graph stores", e);
+                }
                 for (final DocRef docRef : graphDbDocStore.list()) {
                     // Code-review fix: previously an exception retaining one doc (a corrupt store, a disk error,
                     // ...) aborted this whole loop, silently skipping retention for every other doc due that

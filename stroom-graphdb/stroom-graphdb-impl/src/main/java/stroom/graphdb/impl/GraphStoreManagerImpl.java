@@ -16,16 +16,24 @@
 
 package stroom.graphdb.impl;
 
+import stroom.docref.DocRef;
+import stroom.docstore.api.DocumentNotFoundException;
 import stroom.graphdb.shared.GraphDbDoc;
+import stroom.util.logging.LambdaLogger;
+import stroom.util.logging.LambdaLoggerFactory;
 
 import jakarta.inject.Inject;
 import jakarta.inject.Provider;
 import jakarta.inject.Singleton;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.stream.Stream;
 
 /**
  * Default {@link GraphStoreManager}. Resolves each doc's on-disk directory to {@code <app path>/graphdb/<uuid>}
@@ -36,15 +44,21 @@ import java.util.concurrent.ConcurrentMap;
 @Singleton
 public class GraphStoreManagerImpl implements GraphStoreManager {
 
+    private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(GraphStoreManagerImpl.class);
+
     private final GraphPaths graphPaths;
     private final Provider<GraphDbConfig> configProvider;
+    private final Provider<GraphDbDocStore> graphDbDocStoreProvider;
     private final ConcurrentMap<String, GraphStores> openStores = new ConcurrentHashMap<>();
 
     @Inject
     public GraphStoreManagerImpl(final GraphPaths graphPaths,
-                                 final Provider<GraphDbConfig> configProvider) {
+                                 final Provider<GraphDbConfig> configProvider,
+                                 final Provider<GraphDbDocStore> graphDbDocStoreProvider) {
         this.graphPaths = Objects.requireNonNull(graphPaths, "graphPaths");
         this.configProvider = Objects.requireNonNull(configProvider, "configProvider");
+        this.graphDbDocStoreProvider =
+                Objects.requireNonNull(graphDbDocStoreProvider, "graphDbDocStoreProvider");
     }
 
     @Override
@@ -91,6 +105,60 @@ public class GraphStoreManagerImpl implements GraphStoreManager {
         });
         if (deleteFailure[0] != null) {
             throw deleteFailure[0];
+        }
+    }
+
+    @Override
+    public long cleanupOrphanedStores() {
+        long reclaimed = 0;
+
+        // On-disk directories first: this is the case an entity event cannot cover, because a node that was down
+        // when the document was deleted never saw the event and will never be asked for that graph again.
+        final Path shardDir = graphPaths.getShardDir();
+        if (Files.isDirectory(shardDir)) {
+            final List<Path> directories;
+            try (Stream<Path> stream = Files.list(shardDir)) {
+                directories = stream.filter(Files::isDirectory).toList();
+            } catch (final IOException e) {
+                LOGGER.error(() -> "Unable to list " + shardDir, e);
+                return reclaimed;
+            }
+
+            for (final Path directory : directories) {
+                final String uuid = directory.getFileName().toString();
+                if (documentExists(uuid)) {
+                    continue;
+                }
+                try {
+                    // Goes through delete() rather than deleting the directory directly, so an open store for the
+                    // same UUID is closed first and the map entry cannot be left pointing at deleted files.
+                    delete(uuid);
+                    reclaimed++;
+                    LOGGER.info(() -> "Reclaimed graph store for deleted document " + uuid);
+                } catch (final RuntimeException e) {
+                    // Left for the next run rather than aborting the sweep, so one undeletable directory does not
+                    // stop every other graph being reclaimed.
+                    LOGGER.error(() -> "Unable to reclaim graph store " + uuid, e);
+                }
+            }
+        }
+        return reclaimed;
+    }
+
+    /**
+     * Whether a {@link GraphDbDoc} still exists for {@code uuid}. Treats an unreadable document as existing, so a
+     * transient failure reading the document store can never cause data to be deleted.
+     */
+    private boolean documentExists(final String uuid) {
+        try {
+            return graphDbDocStoreProvider.get().readDocument(
+                    DocRef.builder().type(GraphDbDoc.TYPE).uuid(uuid).build()) != null;
+        } catch (final DocumentNotFoundException e) {
+            LOGGER.debug(e::getMessage, e);
+            return false;
+        } catch (final RuntimeException e) {
+            LOGGER.error(() -> "Unable to read graph document " + uuid + "; assuming it still exists", e);
+            return true;
         }
     }
 

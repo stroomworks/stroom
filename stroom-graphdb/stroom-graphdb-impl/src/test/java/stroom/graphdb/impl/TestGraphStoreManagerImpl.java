@@ -35,6 +35,9 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * {@link GraphStoreManagerImpl} - the {@code GraphStoreManager} implementation every other test in this module
@@ -50,7 +53,8 @@ class TestGraphStoreManagerImpl {
         final GraphPaths graphPaths = new GraphPaths(appPath.resolve("graphdb"));
 
         final GraphDbDoc doc = GraphDbDoc.builder().uuid("doc-uuid-1").name("Graph1").build();
-        final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(graphPaths, GraphDbConfig::new);
+        final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(
+                graphPaths, GraphDbConfig::new, () -> mock(GraphDbDocStore.class));
 
         final GraphStores stores = manager.getOrOpen(doc);
         try {
@@ -69,7 +73,8 @@ class TestGraphStoreManagerImpl {
         final GraphPaths graphPaths = new GraphPaths(appPath.resolve("graphdb"));
 
         final GraphDbDoc doc = GraphDbDoc.builder().uuid("doc-uuid-2").name("Graph2").build();
-        final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(graphPaths, GraphDbConfig::new);
+        final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(
+                graphPaths, GraphDbConfig::new, () -> mock(GraphDbDocStore.class));
 
         final GraphStores first = manager.getOrOpen(doc);
         final GraphStores second = manager.getOrOpen(doc);
@@ -86,7 +91,8 @@ class TestGraphStoreManagerImpl {
 
         final GraphDbDoc docA = GraphDbDoc.builder().uuid("doc-uuid-a").name("GraphA").build();
         final GraphDbDoc docB = GraphDbDoc.builder().uuid("doc-uuid-b").name("GraphB").build();
-        final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(graphPaths, GraphDbConfig::new);
+        final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(
+                graphPaths, GraphDbConfig::new, () -> mock(GraphDbDocStore.class));
 
         final GraphStores storesA = manager.getOrOpen(docA);
         final GraphStores storesB = manager.getOrOpen(docB);
@@ -105,7 +111,8 @@ class TestGraphStoreManagerImpl {
         final GraphPaths graphPaths = new GraphPaths(appPath.resolve("graphdb"));
 
         final GraphDbDoc doc = GraphDbDoc.builder().uuid("doc-uuid-3").name("Graph3").build();
-        final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(graphPaths, GraphDbConfig::new);
+        final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(
+                graphPaths, GraphDbConfig::new, () -> mock(GraphDbDocStore.class));
 
         manager.getOrOpen(doc);
         assertThat(Files.isDirectory(appPath.resolve("graphdb").resolve("shards").resolve("doc-uuid-3"))).isTrue();
@@ -127,13 +134,15 @@ class TestGraphStoreManagerImpl {
         final GraphPaths graphPaths = new GraphPaths(appPath.resolve("graphdb"));
 
         final GraphDbDoc doc = GraphDbDoc.builder().uuid("doc-uuid-4").name("Graph4").build();
-        final GraphStoreManagerImpl firstManager = new GraphStoreManagerImpl(graphPaths, GraphDbConfig::new);
+        final GraphStoreManagerImpl firstManager = new GraphStoreManagerImpl(
+                graphPaths, GraphDbConfig::new, () -> mock(GraphDbDocStore.class));
         firstManager.getOrOpen(doc).close();
         assertThat(Files.isDirectory(appPath.resolve("graphdb").resolve("shards").resolve("doc-uuid-4"))).isTrue();
 
         // A fresh manager instance (mirroring a restart) never opened doc-uuid-4 itself, yet its on-disk
         // directory from the previous manager still exists and must still be removable.
-        final GraphStoreManagerImpl secondManager = new GraphStoreManagerImpl(graphPaths, GraphDbConfig::new);
+        final GraphStoreManagerImpl secondManager = new GraphStoreManagerImpl(
+                graphPaths, GraphDbConfig::new, () -> mock(GraphDbDocStore.class));
         secondManager.delete("doc-uuid-4");
 
         assertThat(Files.exists(appPath.resolve("graphdb").resolve("shards").resolve("doc-uuid-4"))).isFalse();
@@ -150,7 +159,8 @@ class TestGraphStoreManagerImpl {
 
         final GraphDbDoc doc = GraphDbDoc.builder().uuid("doc-uuid-iofail").name("GraphIoFail").build();
         final RuntimeException boom = new RuntimeException("simulated undeletable file");
-        final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(graphPaths, GraphDbConfig::new) {
+        final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(
+                graphPaths, GraphDbConfig::new, () -> mock(GraphDbDocStore.class)) {
             @Override
             void deleteStoreDirectory(final Path directory) {
                 throw boom;
@@ -177,7 +187,8 @@ class TestGraphStoreManagerImpl {
     void delete_ofAUuidWithNoDirectoryAtAll_isANoOp(@TempDir final Path appPath) {
         final GraphPaths graphPaths = new GraphPaths(appPath.resolve("graphdb"));
 
-        final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(graphPaths, GraphDbConfig::new);
+        final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(
+                graphPaths, GraphDbConfig::new, () -> mock(GraphDbDocStore.class));
 
         assertThatCode(() -> manager.delete("never-existed")).doesNotThrowAnyException();
     }
@@ -204,7 +215,8 @@ class TestGraphStoreManagerImpl {
         final GraphPaths graphPaths = new GraphPaths(appPath.resolve("graphdb"));
 
         final GraphDbDoc doc = GraphDbDoc.builder().uuid("doc-uuid-race").name("GraphRace").build();
-        final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(graphPaths, GraphDbConfig::new);
+        final GraphStoreManagerImpl manager = new GraphStoreManagerImpl(
+                graphPaths, GraphDbConfig::new, () -> mock(GraphDbDocStore.class));
         manager.getOrOpen(doc); // Seed an initial store so the very first delete() has something to race against.
 
         final int iterations = 50;
@@ -241,6 +253,69 @@ class TestGraphStoreManagerImpl {
         } finally {
             executor.shutdownNow();
         }
+    }
+
+    /**
+     * A graph whose document has been deleted must have its directory reclaimed. An entity event covers this only
+     * on a node that was running at the time; a node that was down never saw it, and nothing will ever ask for that
+     * graph again, so nothing else would notice.
+     */
+    @Test
+    void cleanupOrphanedStores_reclaimsAGraphWhoseDocumentIsGone(@TempDir final Path appPath) {
+        final GraphPaths graphPaths = new GraphPaths(appPath.resolve("graphdb"));
+        final GraphDbDoc doc = GraphDbDoc.builder().uuid("doc-gone").name("Gone").build();
+        final GraphDbDocStore docStore = mock(GraphDbDocStore.class);
+        final GraphStoreManagerImpl manager =
+                new GraphStoreManagerImpl(graphPaths, GraphDbConfig::new, () -> docStore);
+
+        // Open it while the document exists, then make the document disappear.
+        when(docStore.readDocument(any())).thenReturn(doc);
+        manager.getOrOpen(doc).close();
+        final Path directory = graphPaths.getShardDir().resolve("doc-gone");
+        assertThat(Files.isDirectory(directory)).isTrue();
+
+        when(docStore.readDocument(any())).thenReturn(null);
+        assertThat(manager.cleanupOrphanedStores()).isEqualTo(1);
+        assertThat(Files.exists(directory)).isFalse();
+    }
+
+    /**
+     * A graph whose document still exists must be left alone - the assertion that stops the sweep being a
+     * data-destroying "delete everything under shards".
+     */
+    @Test
+    void cleanupOrphanedStores_leavesALiveGraphAlone(@TempDir final Path appPath) {
+        final GraphPaths graphPaths = new GraphPaths(appPath.resolve("graphdb"));
+        final GraphDbDoc doc = GraphDbDoc.builder().uuid("doc-live").name("Live").build();
+        final GraphDbDocStore docStore = mock(GraphDbDocStore.class);
+        when(docStore.readDocument(any())).thenReturn(doc);
+        final GraphStoreManagerImpl manager =
+                new GraphStoreManagerImpl(graphPaths, GraphDbConfig::new, () -> docStore);
+
+        manager.getOrOpen(doc).close();
+
+        assertThat(manager.cleanupOrphanedStores()).isZero();
+        assertThat(Files.isDirectory(graphPaths.getShardDir().resolve("doc-live"))).isTrue();
+    }
+
+    /**
+     * A document store that cannot be read must not cause deletion. Treating an unreadable document as absent would
+     * turn a transient database problem into permanent data loss.
+     */
+    @Test
+    void cleanupOrphanedStores_treatsAnUnreadableDocumentAsStillExisting(@TempDir final Path appPath) {
+        final GraphPaths graphPaths = new GraphPaths(appPath.resolve("graphdb"));
+        final GraphDbDoc doc = GraphDbDoc.builder().uuid("doc-unreadable").name("Unreadable").build();
+        final GraphDbDocStore docStore = mock(GraphDbDocStore.class);
+        when(docStore.readDocument(any())).thenReturn(doc);
+        final GraphStoreManagerImpl manager =
+                new GraphStoreManagerImpl(graphPaths, GraphDbConfig::new, () -> docStore);
+        manager.getOrOpen(doc).close();
+
+        when(docStore.readDocument(any())).thenThrow(new RuntimeException("database down"));
+
+        assertThat(manager.cleanupOrphanedStores()).isZero();
+        assertThat(Files.isDirectory(graphPaths.getShardDir().resolve("doc-unreadable"))).isTrue();
     }
 
     private static ByteBuffer directBuffer(final String value) {

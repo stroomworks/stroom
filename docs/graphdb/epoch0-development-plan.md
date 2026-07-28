@@ -417,7 +417,31 @@ condense is the template. Independent of the cluster work, so it can proceed in 
 **Retention for the property index** and the property-key table, which the current sweep skips. This is why
 storage grows monotonically even with retention enabled.
 
-**Evict idle stores.** `GraphStoreManagerImpl` never evicts; `ShardManager.cleanup` is the template.
+**Evict idle stores — the template says don't, and that turned out to be the answer.** `ShardManager.cleanup`
+does have an idle branch, but only `SnapshotShard` reaches it: `StoreShard.isIdle()` returns `false` with the note
+that store shards are long-lived. Every graph store is authoritative, so the Plan B precedent is *not* to evict,
+and the hazard is concrete - `getOrOpen` hands back a reference the caller uses afterwards, so closing a store
+because it looked idle can close it under a traversal that already holds it. Doing it safely needs the manager to
+hand out a lease rather than a raw reference, which costs more than it saves: an idle store holds file descriptors
+and reserved address space, not heap.
+
+What *was* implemented instead is the branch that genuinely leaks: `cleanupOrphanedStores()` reclaims graph data
+whose document no longer exists. A document delete normally reaches `delete(uuid)` via an entity event, but only
+on a node running at the time - a node that was down keeps the directory forever, and since nothing will ever ask
+for that graph again nothing notices. Bound to the retention job. An unreadable document store is treated as
+"document still exists", so a transient failure can never turn into deletion.
+
+**Retention for the property index — attempted and reverted; see [12-future-work.md](12-future-work.md) item 5.**
+Two things make it harder than the plan assumed. The table has no `validFrom`, so it cannot be aged by time; and
+{@code GraphPropertyIndex} deliberately provides no way to decode a value back out of a stored key, so it cannot
+be pruned row by row either. Reachability sweeping does not help: retention keeps a node's last version at or
+before the cut-off, so nodes essentially never disappear - it is the per-version *value* anchors that accumulate.
+That leaves clear-and-re-derive from the surviving versions as the only correct approach, and it carries a real
+trap that was found by testing: the property-key and property-value lookups may only be swept when that rebuild
+has run, because sweeping them without first recording usage deletes every entry and makes all property-anchored
+queries miss. A rebuild was written and passed three of four cases, but the surviving anchors were not findable
+afterwards and the cause was not identified, so it was reverted rather than shipped - a wrong rebuild destroys
+the index rather than merely wasting space.
 
 ---
 

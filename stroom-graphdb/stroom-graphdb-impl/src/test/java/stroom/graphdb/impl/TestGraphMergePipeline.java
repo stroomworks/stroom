@@ -148,7 +148,6 @@ class TestGraphMergePipeline {
 
         private Fixture(final Path root) {
             graphPaths = new GraphPaths(root.resolve("graphdb"));
-            storeManager = new GraphStoreManagerImpl(graphPaths, GraphDbConfig::new);
 
             final GraphDbDocStore docStore = mock(GraphDbDocStore.class);
             when(docStore.readDocument(any())).thenAnswer(invocation -> {
@@ -157,6 +156,8 @@ class TestGraphMergePipeline {
                         ? DOC
                         : null;
             });
+
+            storeManager = new GraphStoreManagerImpl(graphPaths, GraphDbConfig::new, () -> docStore);
             mergeProcessor = new GraphMergeProcessor(
                     graphPaths,
                     docStore,

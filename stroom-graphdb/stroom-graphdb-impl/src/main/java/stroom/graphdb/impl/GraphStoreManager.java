@@ -55,4 +55,27 @@ public interface GraphStoreManager {
      * @param uuid the {@link GraphDbDoc#getUuid()} of the doc whose stores should be removed.
      */
     void delete(String uuid);
+
+    /**
+     * Reclaims graph data whose document no longer exists.
+     *
+     * <p>A document delete normally reaches {@link #delete(String)} through an entity event, but only on a node
+     * that is running at the time. A node that was down when the delete happened keeps the directory forever:
+     * nothing will ever ask for that graph again, so nothing ever notices. This is the sweep that catches it.</p>
+     *
+     * <p><b>Deliberately not idle eviction.</b> An open store is left open however long it goes unused. Plan B
+     * takes the same position for the same reason - its {@code StoreShard.isIdle()} returns false with the note
+     * that store shards are long-lived - and the hazard is concrete: {@link #getOrOpen} hands back a reference the
+     * caller uses afterwards, so closing a store because it looked idle can close it underneath a traversal that
+     * has already obtained it. Doing that safely needs the manager to hand out a lease rather than a raw
+     * reference, which is a larger change than the cost it would save: an idle store holds file descriptors and
+     * reserved address space, not heap.</p>
+     *
+     * <p><b>Postconditions:</b> every open store and on-disk directory whose document cannot be resolved has been
+     * closed and deleted. A directory that cannot be removed is logged and left for the next run rather than
+     * aborting the sweep.
+     *
+     * @return the number of graphs reclaimed.
+     */
+    long cleanupOrphanedStores();
 }
