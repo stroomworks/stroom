@@ -208,6 +208,18 @@ clear message rather than a hang. See [10-limits.md](10-limits.md) for the value
 
 ## Cluster correctness cases
 
+> **C1–C4 and C6 are now covered automatically** by `TestGraphTwoNodeCluster`, which runs two independent nodes
+> in one JVM — separate paths, store managers, merge processors and receive directories — and replicates every
+> fragment between them through the real `receiveRemotePart` entry point, so the staging store's hash check is
+> exercised rather than stubbed past. Only the Jersey hop is absent.
+>
+> That test was validated by breaking it on purpose: with replication reduced to the producing node, the
+> cross-fragment traversal and convergence cases both fail. A cluster test that passes either way is worthless, so
+> check that property still holds if you change it.
+>
+> The manual cases below remain worth running before a release, because they cover what the simulation cannot:
+> real HTTP, real node enablement, real processing-task distribution, and a genuinely killed node.
+
 These are the acceptance cases for the fragment-and-merge ingest path. Run on a cluster of at least two
 processing nodes, with the same graph fed by a single feed, and **with `graphdb.nodeList` naming the nodes
 that should hold graph data** — an empty list means "this node only" and the cases below will fail as they did
@@ -248,7 +260,10 @@ There is no migration path by design — the remedy for S1 is to wipe and rebuil
 |---|---|
 | `TestGraphFilter` | Ingest parsing and per-record error handling — end to end through fragment and merge, so it also exercises the write path a clustered node takes |
 | `TestGraphStoresMerge` | Merge itself: cross-fragment traversal, colliding id spaces, repeated merge, all versions preserved, anchor equivalence across the tier boundary, stamp mismatch refused |
-| `TestGraphMergePipeline` | The wiring: fragments from separate streams reaching one store, empty streams shipping nothing, a fragment for a deleted graph being discarded |
+| `TestGraphMergePipeline` | The wiring on one node: fragments from separate streams reaching one store, empty streams shipping nothing, a fragment for a deleted graph being discarded |
+| `TestGraphTwoNodeCluster` | Two nodes in one JVM: a traversal crossing two nodes' fragments resolving on **both**, convergence on the same graph, redelivery changing nothing, and a hash mismatch being refused |
+| `TestGraphTemporalPrecision` | Every supported precision round-trips; key widths; the latest sentinel is encodable by its own serde; reopening at a different precision is refused |
+| `TestGraphTraversalLimits` | Configured guardrails reach the right field, defaults match the historical constants |
 | `TestGraphSchemaDb` | The format stamp: written on provision, validated on open, mismatch refused |
 | `TestGraphQueryNodeResolverImpl` | Query routing, including that it claims only `GraphDb` documents |
 | `TestCompositeQueryNodeResolver` | That more than one feature can route, and that no resolvers means no constraint |

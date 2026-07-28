@@ -494,10 +494,18 @@ fan-out. All remain in [12-future-work.md](12-future-work.md).
 | **Mirror invariant** | Out-edge and in-edge tables are exact mirrors after merge, tombstones included |
 | **Schema gate** | Doctor a source version; assert merge throws and the part directory is **retained** |
 
-**Simulated cluster in one JVM:** two `GraphPaths` roots and two merge processors, with a test transport
-client whose remote branch calls the second node's receive method directly. Assert both stores converge to
-identical dumps. The cluster cases in [14-testing.md](14-testing.md#cluster-correctness-cases) (C1–C5) are
-the acceptance target; **C3 is the discriminating one**.
+~~**Simulated cluster in one JVM**~~ — **done**, as `TestGraphTwoNodeCluster`: two `GraphPaths` roots, two merge
+processors, and a transport that replicates every fragment to both nodes through the real `receiveRemotePart`, so
+the staging store's hash verification is exercised rather than stubbed past. Covers C1–C4 and C6, including the
+discriminating C3.
+
+One correction to the target above: convergence is asserted on the **logical** node set, not identical dumps —
+for the reason the partition-equivalence case already gives, that interned id assignment order differs per node,
+so the two stores are legitimately not byte-identical.
+
+Validated by sabotage: with replication reduced to the producing node, the cross-fragment traversal and
+convergence cases both fail. Worth re-checking if the test changes, because a cluster test that passes either way
+proves nothing.
 
 **Regression gates:** `TestGraphTraversalEngine` (60+ call sites) should need **zero** changes — run it
 unmodified. Plan B's existing merge and shard tests must stay green after the `PartMergeProcessor`
