@@ -139,6 +139,25 @@ public final class GraphPropertyIndex {
     }
 
     /**
+     * Empties the table, so it can be rebuilt from the surviving node versions.
+     *
+     * <p>Clearing and re-deriving is the only correct way to reclaim from this table. It has no {@code validFrom},
+     * so it cannot be aged by time; and it deliberately provides no way to decode a value back out of a stored key
+     * (see this class's Javadoc), so an existing anchor cannot be tested against the surviving versions either.
+     * Re-deriving also reuses the same encoding path as ingest and merge, so the three cannot drift.</p>
+     *
+     * <p><b>Preconditions:</b> {@code writer} is not null.
+     * <b>Postconditions:</b> the table holds no anchors.
+     * <b>Null status:</b> {@code writer} is not nullable.
+     *
+     * @param writer the write transaction to clear under.
+     */
+    public void clear(final LmdbWriter writer) {
+        Objects.requireNonNull(writer, "writer");
+        dbi.drop(writer.getWriteTxn());
+    }
+
+    /**
      * The anchor lookup: every node UID with property {@code propKeyUid} equal to {@code valueBytes} on label
      * {@code labelUid}.
      *

@@ -289,11 +289,21 @@ that graph actually has retention enabled, so leaving it on is cheap.
 
 - **Redundant versions are never condensed.** Ten identical daily snapshots of an unchanged node stay ten
   versions. There is no merge pass.
-- **The property index does not participate**, and the property-key table is never swept. Stale index
-  entries are filtered at query time rather than deleted, so that portion grows monotonically regardless of
-  retention.
+- **The property-value lookup is not swept.** Property values longer than the inline tier are interned into a
+  lookup table, and entries there are never removed - one per distinct long value ever seen.
 
-Retention therefore slows growth; it does not bound it.
+The **property index itself now does participate**: when the sweep deletes any version, it clears and re-derives
+the index from the versions that survived, so the anchors those superseded versions left behind are reclaimed. That
+was the largest of the three leaks, because it accumulated one anchor per distinct value each node had ever held.
+The property-key table is swept at the same time.
+
+> **The rebuild is a full pass over the surviving versions**, so it only runs when the sweep actually deleted
+> something. On a large graph with a short retention window this makes the retention job noticeably more expensive
+> than before - it was previously a partial scan. If the job starts overrunning its ten-minute schedule, lengthen
+> the schedule rather than disabling retention.
+
+Retention therefore bounds the versioned tables and the property index, but not condensing and not the
+property-value lookup. Growth is bounded rather than eliminated.
 
 ## Rebuild — and its trap
 

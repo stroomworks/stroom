@@ -189,6 +189,72 @@ public final class GraphStores implements AutoCloseable {
     }
 
     /**
+     * Rebuilds the property index from the node versions currently in the store.
+     *
+     * <p>Anchors are re-recorded against the property-key lookup as they are written, so the caller's
+     * {@code deleteUnused} sweep afterwards removes only the keys no surviving anchor needs. Getting that wrong is
+     * not a space leak but a correctness bug - an anchor whose key id has been swept references nothing, and the
+     * query that would have used it silently returns no rows.</p>
+     *
+     * <p><b>The property-value lookup is deliberately not swept.</b> Values above the inline-length tier are
+     * interned by {@link GraphPropertyIndex#insert} rather than here, so this method does not know which lookup
+     * entries were used and cannot record them. Sweeping it without that knowledge would break every long-valued
+     * anchor. It therefore still grows, bounded by the number of distinct long property values ever seen -
+     * a smaller leak than the per-version anchors this does reclaim, and tracked as remaining work.</p>
+     *
+     * <p><b>Preconditions:</b> {@code writer} is not null and holds the write transaction.
+     * <b>Postconditions:</b> the property index contains exactly the anchors implied by the stored node versions,
+     * and every property key they use has been recorded as in use.
+     * <b>Null status:</b> {@code writer} is not nullable.
+     *
+     * @param writer the write transaction to rebuild under.
+     */
+    private void reindexProperties(final LmdbWriter writer) {
+        // Collected before writing anything: inserting into other tables while a cursor is still open over the
+        // node store on the same transaction does not reliably see the whole iteration - the same
+        // collect-then-write rule merge follows.
+        final List<Anchor> anchors = new ArrayList<>();
+        nodes.forEachVersion(writer.getWriteTxn(), (nodeUid, validFrom, version) -> {
+            if (version == null) {
+                // A tombstone carries no labels or properties, so it anchors nothing.
+                return;
+            }
+            for (final long labelUid : version.labelUids()) {
+                for (final Map.Entry<String, Val> property : version.properties().entrySet()) {
+                    anchors.add(new Anchor(labelUid, property.getKey(), property.getValue(), nodeUid));
+                }
+            }
+        });
+
+        propertyIndex.clear(writer);
+        for (final Anchor anchor : anchors) {
+            // Decoded at the buffer's own width rather than TYPE_UID_WIDTH: the lookup returns the uid it
+            // assigned, and reading it at an assumed width yields a different number, so anchors would be written
+            // under a key no query resolves to.
+            final long propKeyUid = propertyKeyUids.put(
+                    writer.getWriteTxn(),
+                    nameBuffer(anchor.propertyKey()),
+                    buffer -> UnsignedBytesInstances.ofLength(buffer.remaining()).get(buffer.duplicate()));
+            propertyKeyUidRecorder.recordUsed(writer, propKeyUid);
+            propertyIndex.insert(writer, anchor.labelUid(), propKeyUid,
+                    GraphAnchorEncoding.anchorValueBytes(anchor.value()), anchor.nodeUid());
+        }
+    }
+
+    /** One anchor to re-derive, held while the node store is still being iterated. */
+    private record Anchor(long labelUid, String propertyKey, Val value, long nodeUid) {
+
+    }
+
+    private static ByteBuffer nameBuffer(final String name) {
+        final byte[] bytes = name.getBytes(StandardCharsets.UTF_8);
+        final ByteBuffer buffer = ByteBuffer.allocateDirect(bytes.length);
+        buffer.put(bytes);
+        buffer.flip();
+        return buffer;
+    }
+
+    /**
      * Provisions a new, empty set of internal stores for {@code doc} under {@code directory} for read/write use
      * (creating {@code directory} if it does not already exist).
      *
@@ -829,11 +895,33 @@ public final class GraphStores implements AutoCloseable {
             count += outEdges.deleteOldData(writer, deleteBefore, nodeUidRecorder, edgeTypeUidRecorder);
             count += inEdges.deleteOldData(writer, deleteBefore, nodeUidRecorder, edgeTypeUidRecorder);
 
+            // The property index cannot be aged by time - its keys carry no validFrom - and its values cannot be
+            // decoded back out of a stored key, so it cannot be pruned row by row either. It is rebuilt from the
+            // versions that survived above, which is the only thing that reclaims what this table actually
+            // accumulates: an anchor per distinct value each node has ever held. Retention keeps a node's last
+            // version at or before the cut-off, so nodes themselves rarely disappear - it is those per-version
+            // value anchors that grew without bound, which is why storage grew even with retention enabled.
+            //
+            // Only when the node sweep removed something: a rebuild costs a full pass over the surviving
+            // versions, and the retention job runs every ten minutes.
+            final boolean reindexed = count > 0 && !Thread.currentThread().isInterrupted();
+            if (reindexed) {
+                reindexProperties(writer);
+            }
+
             if (!Thread.currentThread().isInterrupted()) {
                 env.read(readTxn -> {
                     nodeUidRecorder.deleteUnused(readTxn, writer);
                     labelUidRecorder.deleteUnused(readTxn, writer);
                     edgeTypeUidRecorder.deleteUnused(readTxn, writer);
+
+                    // Only sweepable when the rebuild ran, because that is what records which property keys the
+                    // surviving anchors use. Sweeping without having recorded usage deletes every entry, and the
+                    // anchors then reference key ids nothing resolves to - which does not waste space, it makes
+                    // every property-anchored query silently miss.
+                    if (reindexed) {
+                        propertyKeyUidRecorder.deleteUnused(readTxn, writer);
+                    }
                     return null;
                 });
             }

@@ -74,7 +74,7 @@ Detail: [10-limits.md](10-limits.md), [11-operations.md](11-operations.md).
 |---|---|
 | **Bad records are skipped by default** — a malformed record is logged at `ERROR` and dropped, and the stream carries on | Partial data loss is quiet. **Mitigated:** set the Graph Filter's `strict` property to fail the stream instead. It defaults to off because that is the less surprising behaviour for a feed, not because it is the safer one |
 | **`rebuild()` is the only compaction backstop, and it reprocesses source streams** | If those streams have been aged off by a retention policy, the graph cannot be rebuilt. **Accepted, not pending:** graph data is treated as reproducible from its sources, so source-stream retention is part of a graph's recovery plan ([11-operations.md](11-operations.md#rebuild--and-its-trap)) |
-| **Redundant versions are never condensed**, and the property-value index does not participate in retention | Storage grows monotonically even under a retention policy |
+| **Redundant versions are never condensed** | Retention now rebuilds the property index, so the per-version anchors it used to accumulate are reclaimed. What remains: identical consecutive versions are never collapsed, and the property-**value** lookup (for values above the inline tier) is still not swept. Storage growth is bounded rather than eliminated ([12-future-work.md](12-future-work.md)) |
 | **The Graph Filter resolves its target graph by name** | Two graphs sharing a name is a fatal ingest error, and renaming a graph silently breaks every pipeline pointing at it |
 
 Three data-safety gaps have been closed:

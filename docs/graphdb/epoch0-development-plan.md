@@ -431,17 +431,22 @@ on a node running at the time - a node that was down keeps the directory forever
 for that graph again nothing notices. Bound to the retention job. An unreadable document store is treated as
 "document still exists", so a transient failure can never turn into deletion.
 
-**Retention for the property index — attempted and reverted; see [12-future-work.md](12-future-work.md) item 5.**
-Two things make it harder than the plan assumed. The table has no `validFrom`, so it cannot be aged by time; and
-{@code GraphPropertyIndex} deliberately provides no way to decode a value back out of a stored key, so it cannot
-be pruned row by row either. Reachability sweeping does not help: retention keeps a node's last version at or
-before the cut-off, so nodes essentially never disappear - it is the per-version *value* anchors that accumulate.
-That leaves clear-and-re-derive from the surviving versions as the only correct approach, and it carries a real
-trap that was found by testing: the property-key and property-value lookups may only be swept when that rebuild
-has run, because sweeping them without first recording usage deletes every entry and makes all property-anchored
-queries miss. A rebuild was written and passed three of four cases, but the surviving anchors were not findable
-afterwards and the cause was not identified, so it was reverted rather than shipped - a wrong rebuild destroys
-the index rather than merely wasting space.
+**Retention for the property index — done, on a second attempt.** Two properties of the table shaped the design
+and neither was in this plan. It has no `validFrom`, so it cannot be aged by time; and `GraphPropertyIndex`
+deliberately offers no way to decode a value back out of a stored key, so an anchor cannot be tested against the
+surviving versions row by row. Reachability sweeping does not help either - retention keeps a node's last version
+at or before the cut-off, so nodes essentially never disappear, and it is the per-version *value* anchors that
+accumulate. So the index is cleared and re-derived from the versions that survived.
+
+The trap, found by testing and the reason the first attempt was reverted: the rebuild **must record property-key
+usage as it writes**, because the sweep afterwards deletes every key entry not recorded. Skipping that does not
+waste space - it leaves live anchors referencing key ids nothing resolves to, and every property-anchored query
+then silently returns no rows. Verified by sabotage: removing the single `recordUsed` call fails two of the four
+tests.
+
+The **property-value lookup is still not swept**, and deliberately: values above the inline tier are interned
+inside `insert`, so the rebuild cannot know which entries were used. Sweeping blind would break every long-valued
+anchor. Tracked as item 5a in [12-future-work.md](12-future-work.md).
 
 ---
 
