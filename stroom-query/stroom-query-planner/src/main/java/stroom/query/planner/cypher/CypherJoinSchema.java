@@ -27,7 +27,7 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * <b>C0 contract (docs/graphdb-stroomql-join-implementation-plan.md, Phase P0)</b>: how a Cypher sub-query used
+ * <b>C0 contract</b>: how a Cypher sub-query used
  * as a StroomQL join side advertises its columns, frozen here before any grammar work landed, per that plan's
  * gating requirement:
  *
@@ -73,7 +73,7 @@ public final class CypherJoinSchema {
     }
 
     /**
-     * <b>Preconditions:</b> {@code compiledPlan} is the {@code .plan()} of a
+     * <b>Preconditions:</b> {@code compiledPlan} is the {@code .plan} of a
      * {@link CypherToLogicalPlan#compile(stroom.query.grammar.ast.cypher.AstCypherQuery)} result.
      * <b>Postconditions:</b> returns every visible {@link ProjectField} the compiled {@code RETURN} produces, in
      * source order - never empty (a {@code RETURN} with no visible items throws instead, see below).

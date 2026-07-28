@@ -97,7 +97,7 @@ import java.util.Objects;
 import java.util.Set;
 
 /**
- * Compiles a Cypher AST (see {@code docs/temporal-cypher-graph-implementation-plan.md}, Task PoC.3) into the
+ * Compiles a Cypher AST (Task PoC.3) into the
  * shared {@link LogicalPlan} IR the relational query core already uses - Cypher is a second front-end onto one
  * IR, not a forked engine (design doc &sect;5.3).
  *
@@ -115,21 +115,21 @@ import java.util.Set;
  * Aggregate functions ({@code count}/{@code sum}/{@code avg}/{@code min}/{@code max}) compile to
  * {@link ProjectField} expressions <em>and</em> to a {@link CypherAggregation} description (see
  * {@link #buildAggregation}): every non-aggregate {@code RETURN} item becomes an implicit {@code GROUP BY} key
- * (Cypher's rule), carried on {@link CompiledCypherPlan#aggregation()} for the graph executor to group and reduce
+ * (Cypher's rule), carried on {@link CompiledCypherPlan#aggregation} for the graph executor to group and reduce
  * by - {@code null} when the {@code RETURN} has no aggregate item, so the executor's ordinary per-row projection
- * is unaffected. {@code collect()} is not yet in the grammar (a separate, later phase - see
- * {@code docs/graphdb-analytic-functions-implementation-plan.md}, Phase 2).</p>
+ * is unaffected. {@code collect} is not yet in the grammar (a separate, later phase - see
+ * Phase 2).</p>
  *
  * <p>A hop's target (non-anchor) node pattern's own labels/inline properties (Task P3.1) compile onto
- * {@link Expand#targetLabels()}/{@link Expand#targetPropertyPredicate()} (or the {@link VarLengthExpand}
- * equivalents) using the same property-term lowering as an anchor's own {@link NodeScan#propertyAnchor()} - the
+ * {@link Expand#targetLabels}/{@link Expand#targetPropertyPredicate} (or the {@link VarLengthExpand}
+ * equivalents) using the same property-term lowering as an anchor's own {@link NodeScan#propertyAnchor} - the
  * executor enforces these as a post-expand filter (see {@link Expand}'s Javadoc for why a target constraint is a
  * filter, not an alternative access path). This applies identically to every hop in a chain, not just the
  * pattern's last one.</p>
  *
  * <p>A bounded variable-length hop (Task P3.3), e.g. {@code -[:T*1..3]->}, compiles to a single
  * {@link VarLengthExpand} directly over the anchor {@link NodeScan} - {@code minHops} defaults to 1 when
- * {@link AstVarLength#min()} is absent (Cypher's own default), {@code maxHops} is always present (the grammar
+ * {@link AstVarLength#min} is absent (Cypher's own default), {@code maxHops} is always present (the grammar
  * makes an unbounded {@code *} a parse-time error). A var-length hop is only compiled when it is the pattern's
  * <em>sole</em> hop; chaining one with fixed-length hops on either side is a further generalisation this class
  * does not attempt (see below).</p>
@@ -147,8 +147,8 @@ public final class CypherToLogicalPlan {
     public static final String CHANGE_KIND_COLUMN = "changeKind";
 
     /**
-     * The frozen {@code RETURN GRAPH} element-row column schema (see {@code docs/temporal-cypher-diff-operator.md}
-     * &sect;4.4 and {@code docs/graphdb-cytoscape-visualisation.html} &sect;3, whose simpler column-mapping table
+     * The frozen {@code RETURN GRAPH} element-row column schema (
+     * &sect;4.4 and &sect;3, whose simpler column-mapping table
      * is the authoritative target shape this constant follows): {@code kind} ({@code NODE}/{@code EDGE}),
      * {@code id} (the element's stable external identity - a node's interned external id, or an edge's
      * {@code src|type|dst}), {@code labels} (a node's label set, comma-joined; an edge's single type name),
@@ -280,7 +280,7 @@ public final class CypherToLogicalPlan {
             // v1 delta-table: the WHERE clause is evaluated per snapshot (pattern predicates only). Filtering on
             // changeKind / before(...) / after(...) is a post-classification (HAVING-like) step deferred to a
             // later phase - reject it here rather than silently evaluating it against a single snapshot's row
-            // where those keys are absent (docs/temporal-cypher-diff-operator.md §12.1).
+            // where those keys are absent (.1).
             rejectDiffConstructsInDiffWhere(match.where().expr());
         }
 
@@ -323,7 +323,7 @@ public final class CypherToLogicalPlan {
         final CypherAggregation aggregation = buildAggregation(query.returnClause(), optionalVariables);
         if (diffContext != null && aggregation != null) {
             // v1 delta-table diffs one path at a time; grouping/reducing the classified delta table
-            // (diff-aggregation) is deferred (docs/temporal-cypher-diff-operator.md §12.1).
+            // (diff-aggregation) is deferred (.1).
             throw new CypherCompileException(
                     "not supported in this version: an aggregate in a DIFF query's RETURN (diff-aggregation is a "
                     + "later phase)", query.returnClause().position());
@@ -453,8 +453,8 @@ public final class CypherToLogicalPlan {
 
     /**
      * Validates that an expression (a {@code HAVING} operand or a final-{@code RETURN} item) references only
-     * {@code WITH} columns - Cypher's WITH-scoping rule. A property access, aggregate, or {@code before()}/
-     * {@code after()} is out of scope after a {@code WITH} (only the projected scalar columns survive).
+     * {@code WITH} columns - Cypher's WITH-scoping rule. A property access, aggregate, or {@code before}/
+     * {@code after} is out of scope after a {@code WITH} (only the projected scalar columns survive).
      */
     private static void validateExpressionInScope(final AstExpression expr, final Set<String> scope) {
         switch (expr) {
@@ -504,8 +504,8 @@ public final class CypherToLogicalPlan {
     }
 
     // ------------------------------------------------------------------------------------------------------
-    // RETURN GRAPH: the element-row output mode (docs/temporal-cypher-diff-operator.md §4.4,
-    // docs/graphdb-cytoscape-visualisation.html §3)
+    // RETURN GRAPH: the element-row output mode (.4,
+    // )
     // ------------------------------------------------------------------------------------------------------
 
     /**
@@ -515,7 +515,7 @@ public final class CypherToLogicalPlan {
      * {@code Project} (rather than a new plan-tree shape) is what lets {@code CypherCompiler.buildResultRequests}
      * advertise these columns with no changes of its own (it already turns any {@code Project}'s visible fields
      * into result columns). {@code GraphTraversalEngine}/{@code GraphElementExecutor} recognise this shape via
-     * {@link CompiledCypherPlan#returnGraph()}, not by inspecting the field names.
+     * {@link CompiledCypherPlan#returnGraph}, not by inspecting the field names.
      *
      * <p>Var-length patterns are rejected here exactly as {@link #rejectVarLengthUnderDiff} rejects them for the
      * scalar {@code DIFF} form (v1 scope decision, mirroring that restriction): the per-element identity/label
@@ -534,7 +534,7 @@ public final class CypherToLogicalPlan {
         }
         if (match.where() != null) {
             if (diffContext != null) {
-                // Mirrors the scalar DIFF form's v1 restriction (§12.1): changeKind/before/after filtering is a
+                // Mirrors the scalar DIFF form's v1 restriction: changeKind/before/after filtering is a
                 // post-classification step, deferred - a RETURN GRAPH's WHERE is still pattern-only.
                 rejectDiffConstructsInDiffWhere(match.where().expr());
             }
@@ -730,8 +730,8 @@ public final class CypherToLogicalPlan {
 
     /**
      * Lowers a node pattern's inline {@code {key: value, ...}} property map to an equality predicate tree, shared
-     * between an anchor's {@link NodeScan#propertyAnchor()} and a hop target's
-     * {@link Expand#targetPropertyPredicate()} (Task P3.1) - both are the same AND-of-equalities shape, just
+     * between an anchor's {@link NodeScan#propertyAnchor} and a hop target's
+     * {@link Expand#targetPropertyPredicate} (Task P3.1) - both are the same AND-of-equalities shape, just
      * consumed differently by the executor (an anchor seeks by it; a target filters by it post-expand).
      *
      * @param properties never null; possibly empty.
@@ -1078,7 +1078,7 @@ public final class CypherToLogicalPlan {
                                       final List<ProjectField> fields) {
         LogicalPlan plan = new Project(input, fields, returnClause.position());
 
-        // RETURN DISTINCT is carried on the CompiledCypherPlan (see compile()), not lowered to a plan node, since
+        // RETURN DISTINCT is carried on the CompiledCypherPlan (see compile), not lowered to a plan node, since
         // the sealed shared IR has no Distinct node; the graph executor de-duplicates the projected rows.
         if (returnClause.orderBy() != null) {
             plan = new Sort(plan, compileOrderBy(returnClause.orderBy()), returnClause.orderBy().position());
@@ -1142,7 +1142,7 @@ public final class CypherToLogicalPlan {
      * Renders an unaliased aggregate's default output column name, e.g. {@code "count(*)"},
      * {@code "count(a.balance)"}, {@code "sum(a.balance)"} - deliberately {@code ${...}}-free (unlike
      * {@link #renderExpression}'s aggregate rendering, kept for explain/debug text only), since this becomes a
-     * real {@link ProjectField#name()} / {@code FieldIndex} key (see {@link #defaultColumnName}).
+     * real {@link ProjectField#name} / {@code FieldIndex} key (see {@link #defaultColumnName}).
      */
     private static String defaultAggregateName(final AstAggregateExpr aggregate) {
         final String fn = aggregate.function().name().toLowerCase(Locale.ROOT);
@@ -1290,7 +1290,7 @@ public final class CypherToLogicalPlan {
      * item here must name a returned column by its property access or {@code AS} alias, not an arbitrary bound
      * variable/property. Reuses {@link #toQualifiedField}'s {@code (alias, field)} split and the same
      * {@code alias == null ? field : alias + "." + field} reconstruction the graph executor's row lookups use, so
-     * a match here is exactly a match against a {@link ProjectField#name()}.
+     * a match here is exactly a match against a {@link ProjectField#name}.
      *
      * @param fields {@link #buildProjectFields}'s result for the same {@code RETURN} clause {@code orderBy}
      *               belongs to.
@@ -1367,7 +1367,7 @@ public final class CypherToLogicalPlan {
         } else if (expression instanceof final AstLiteralExpr literal) {
             return renderValueAsExpression(literal.value());
         } else if (expression instanceof final AstAggregateExpr aggregate) {
-            // Code-review fix: toLowerCase() with no Locale uses the platform default, which corrupts fixed
+            // Code-review fix: toLowerCase with no Locale uses the platform default, which corrupts fixed
             // enum-name text like "MIN" under a Turkish-variant locale (dotless-i folding). These five function
             // names are ASCII-only literals, not user-locale-sensitive text, so Locale.ROOT is the correct fold.
             final String fn = aggregate.function().name().toLowerCase(Locale.ROOT);
@@ -1377,7 +1377,7 @@ public final class CypherToLogicalPlan {
             // before(a.p)/after(a.p) project the property's value from the baseline (t1) / comparison (t2)
             // snapshot. DiffExecutor populates the delta-table row with a "before.<var>.<prop>" /
             // "after.<var>.<prop>" key per accessor, so this ${...} reference resolves against that side's value
-            // (docs/temporal-cypher-diff-operator.md §4.3).
+            // (.3).
             return "${" + diffAccessorRowKey(accessor) + "}";
         } else if (expression instanceof final AstArithmeticExpr arithmetic) {
             // Stroom's expression engine evaluates infix + - * / ^; render parenthesised to preserve the AST's
@@ -1398,7 +1398,7 @@ public final class CypherToLogicalPlan {
      *   <li><b>searched</b> ({@code CASE WHEN cond THEN r ... [ELSE e] END}) -&gt; right-nested
      *       {@code if(cond1, r1, if(cond2, r2, ..., otherwise))}.</li>
      * </ul>
-     * A missing {@code ELSE} becomes {@code null()} (openCypher yields null for an unmatched CASE).
+     * A missing {@code ELSE} becomes {@code null} (openCypher yields null for an unmatched CASE).
      */
     private static String renderCaseExpression(final AstCaseExpr caseExpr) {
         final String otherwise = caseExpr.elseResult() == null
@@ -1415,7 +1415,7 @@ public final class CypherToLogicalPlan {
             return sb.append(", ").append(otherwise).append(")").toString();
         }
 
-        // Searched form: fold from the last arm inwards so arm 1 is the outermost if().
+        // Searched form: fold from the last arm inwards so arm 1 is the outermost if.
         String acc = otherwise;
         final List<AstCaseWhen> whens = caseExpr.whens();
         for (int i = whens.size() - 1; i >= 0; i--) {
@@ -1506,7 +1506,7 @@ public final class CypherToLogicalPlan {
     /**
      * Lowers a Cypher {@code RETURN} function call to Stroom's expression-engine syntax: the function name is
      * mapped/validated via {@link CypherFunctions} (unknown/withheld functions fail loud), and each argument is
-     * rendered as a Stroom expression. An aggregate or {@code before()}/{@code after()} argument is rejected - a
+     * rendered as a Stroom expression. An aggregate or {@code before}/{@code after} argument is rejected - a
      * scalar function evaluates per row, so it cannot host an aggregate.
      */
     private static String renderFunctionCall(final AstFunctionValue f) {
@@ -1693,7 +1693,7 @@ public final class CypherToLogicalPlan {
      * ({@code from == to}) is valid here (e.g. an {@code AROUND} with a zero duration), so the check is
      * {@code from <= to} rather than strictly-before. Without this guard, a swapped {@code BETWEEN} or a
      * negative-duration {@code AROUND} would silently intersect an unrelated version instead of failing to
-     * compile - see {@code docs/query-graphdb-review-report.md} finding F7.
+     * compile finding F7.
      */
     private static void requireOrderedWindow(final Instant from, final Instant to, final AstPosition position) {
         if (from.isAfter(to)) {
@@ -1705,7 +1705,7 @@ public final class CypherToLogicalPlan {
     /**
      * Resolves a {@code DIFF FROM <baseline> TO <comparison>} clause to a {@link DiffContext}, enforcing the
      * {@code baseline < comparison} (t1 &lt; t2) precondition with a positioned error (equal or reversed instants
-     * are a compile-time mistake, per {@code docs/temporal-cypher-diff-operator.md} &sect;5.5).
+     * are a compile-time mistake, per &sect;5.5).
      */
     private DiffContext resolveDiff(final AstDiff diff) {
         final Instant baseline = resolveInstant(diff.baseline());
@@ -1720,7 +1720,7 @@ public final class CypherToLogicalPlan {
 
     /**
      * Rejects a variable-length pattern under a {@code DIFF} clause. v1 diffs fixed-length patterns only
-     * (a var-length traversal run twice is deferred - {@code docs/temporal-cypher-diff-operator.md} &sect;12.1).
+     * (a var-length traversal run twice is deferred - &sect;12.1).
      */
     private void rejectVarLengthUnderDiff(final AstPathPattern pattern) {
         for (final AstPatternHop hop : pattern.hops()) {
@@ -1789,7 +1789,7 @@ public final class CypherToLogicalPlan {
             case final AstIsNullPredicate isNull -> rejectIfDiffConstruct(isNull.operand());
             case final AstExistsPredicate ignored -> {
                 // The EXISTS pattern contains only graph elements (no value expressions), so there is no diff
-                // construct to reject here; EXISTS-under-DIFF is rejected in compile() via existsPredicates.
+                // construct to reject here; EXISTS-under-DIFF is rejected in compile via existsPredicates.
             }
         }
     }
@@ -1815,7 +1815,7 @@ public final class CypherToLogicalPlan {
             }
             case final AstIsNullPredicate isNull -> rejectDiffConstructInDiffWhere(isNull.operand());
             case final AstExistsPredicate ignored -> {
-                // No value expressions inside an EXISTS pattern; EXISTS-under-DIFF is rejected in compile().
+                // No value expressions inside an EXISTS pattern; EXISTS-under-DIFF is rejected in compile.
             }
         }
     }

@@ -18,7 +18,7 @@ package stroom.query.planner.cost;
 
 /**
  * The physical access path {@link CostModel} chose for a {@code Scan}, one per cost port that can answer for it
- * (see {@code docs/query-optimiser-implementation-plan.md}, Task 3.2).
+ * (Task 3.2).
  */
 public sealed interface AccessPath permits FullScan, IndexScan, StateLookup {
 }

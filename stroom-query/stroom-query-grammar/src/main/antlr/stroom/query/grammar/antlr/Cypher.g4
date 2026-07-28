@@ -19,7 +19,7 @@
 // (GPL) grammar, and Stroom uses no Neo4j code. "Cypher" is a trademark of Neo4j; this implements a subset of the
 // openCypher-defined language, not full Cypher. See NOTICE.md.
 //
-// Cypher grammar (see docs/temporal-cypher-graph-implementation-plan.md, Task 0.2 / PoC.1).
+// Cypher grammar (2 / PoC.1).
 //
 // This is a HAND-TRIMMED subset grammar modelled on the openCypher reference grammar's structure and covering
 // exactly the v1 subset the P0.2 spike locked (see the implementation plan's Task 0.2 outcome): MATCH (single +
@@ -45,12 +45,12 @@
 //   (typically a function-call literal like `datetime('...')`/`duration('PT1H')`, matching the design doc's
 //   worked example), not a bespoke date/duration literal syntax.
 // - An optional leading `from "X"` clause is a Stroom-specific portability addition (not standard Cypher; see
-//   docs/cypher-from-clause-implementation-plan.md, Workstream A): it names the target GraphDb in the query text
+// ): it names the target GraphDb in the query text
 //   itself, purely as a datasource selector, so the identical Cypher text can run from any text-driven surface
 //   (Query doc, /csv/search, MCP, embedded dashboard) instead of only where a caller has already set
 //   SearchRequestSource.ownerDocRef. CypherToLogicalPlan is unaware of it entirely.
-// - `RETURN GRAPH` (Stroom-specific; see docs/temporal-cypher-diff-operator.md §4.4 and
-//   docs/graphdb-cytoscape-visualisation.html §3, Workstream D) is a second, element-row terminal form for RETURN,
+// - `RETURN GRAPH` (Stroom-specific; 4 and
+// ) is a second, element-row terminal form for RETURN,
 //   alongside the scalar item-list form - see the `returnClause` rule's own comment for why it carries none of the
 //   scalar form's modifiers. Valid both on a plain MATCH and combined with DIFF (an annotated-subgraph mode); the
 //   grammar admits both combinations uniformly and CypherToLogicalPlan decides what each means.
@@ -70,7 +70,7 @@ grammar Cypher;
 // ============================================================================
 
 // `fromClause` is a Stroom-specific portability extension (not standard Cypher; see
-// docs/cypher-from-clause-implementation-plan.md): naming the target GraphDb in the query text itself lets the
+// ): naming the target GraphDb in the query text itself lets the
 // same Cypher text run from any text-driven surface, rather than depending on the caller having already set
 // SearchRequestSource.ownerDocRef. It is purely a datasource selector - CypherToLogicalPlan needs no change - and
 // is optional so a query submitted where ownerDocRef already names the graph (e.g. the GraphDb doc's Data tab)
@@ -113,8 +113,8 @@ withClause
     : WITH returnItem (COMMA returnItem)* whereClause? orderByClause? skipClause? limitClause?
     ;
 
-// `RETURN GRAPH` (Stroom-specific; see docs/temporal-cypher-diff-operator.md §4.4 and
-// docs/graphdb-cytoscape-visualisation.html §3) is the element-row terminal form: instead of a scalar item list it
+// `RETURN GRAPH` (Stroom-specific; 4 and
+// ) is the element-row terminal form: instead of a scalar item list it
 // emits the de-duplicated union of every matched node/edge as one row per element. It carries none of RETURN's
 // per-item modifiers (no DISTINCT/items/ORDER BY/SKIP - there is no per-item projection to apply them to), but it
 // DOES accept an optional LIMIT to bound the result: on a whole-graph preview (unanchored MATCH (n) RETURN GRAPH)
@@ -264,7 +264,7 @@ atom
 // The two are disambiguated by whether a value expression follows CASE before the first WHEN (an `expression`
 // cannot begin with WHEN, so ALL(*) picks the right alternative). CypherToLogicalPlan lowers the simple form to
 // Stroom's `case(input, test1, result1, ..., otherwise)` and the searched form to nested `if(...)`; a missing ELSE
-// becomes `null()`.
+// becomes `null`.
 caseExpression
     : CASE input=expression whenValue+ (ELSE elseResult=expression)? END   # simpleCase
     | CASE whenSearch+ (ELSE elseResult=expression)? END                   # searchedCase

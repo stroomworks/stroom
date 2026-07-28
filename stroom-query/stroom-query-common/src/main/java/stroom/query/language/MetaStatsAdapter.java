@@ -35,7 +35,7 @@ import java.util.Optional;
 
 /**
  * The real {@link MetaStats} adapter, wrapping {@link MetaService#getSelectionSummary(FindMetaCriteria)} - see
- * {@code docs/query-optimiser-implementation-plan.md}, Task 3.1.
+ * Task 3.1.
  */
 public class MetaStatsAdapter implements MetaStats {
 

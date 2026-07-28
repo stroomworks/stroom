@@ -34,7 +34,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Smoke tests for {@code StroomQL.g4} (see docs/query-optimiser-implementation-plan.md, Task 1.1): a
+ * Smoke tests for {@code StroomQL.g4} (1): a
  * representative spread of real StroomQL constructs parses without error, and garbage input is rejected with a
  * precise position. Semantic/parity tests belong to later tasks (1.2+); this only proves the grammar accepts the
  * language it is supposed to.

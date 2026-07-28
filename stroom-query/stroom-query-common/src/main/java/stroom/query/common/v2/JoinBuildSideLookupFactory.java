@@ -29,7 +29,7 @@ import java.util.UUID;
 
 /**
  * Creates the {@link BuildSideLookup} a join's build (right) side is realised into (see
- * {@code docs/join-scalability-implementation-plan.md}, items C1/C2). Injected into {@code JoinSearchProvider}
+ * items C1/C2). Injected into {@code JoinSearchProvider}
  * so that {@code stroom-searchable-impl} does not need its own LMDB dependency - this factory owns the LMDB
  * env-dir/config wiring, exactly as {@code LmdbDataStoreFactory} does for ordinary result stores, and hands back
  * a lookup that transparently spills to disk past a threshold.
@@ -63,7 +63,7 @@ public class JoinBuildSideLookupFactory {
      * {@code maxHeapBytes} of estimated heap, then spills to disk.
      *
      * <p><b>Preconditions:</b> {@code maxHeapRows} and {@code maxHeapBytes} must each be {@code >= 0} (see
-     * {@code JoinConfig.getMaxHeapBuildRows()}/{@code getMaxHeapBuildBytes()}).<br>
+     * {@code JoinConfig.getMaxHeapBuildRows}/{@code getMaxHeapBuildBytes}).<br>
      * <b>Postconditions:</b> never null; the caller owns closing the returned lookup (which releases any spill
      * store's temporary directory).</p>
      */

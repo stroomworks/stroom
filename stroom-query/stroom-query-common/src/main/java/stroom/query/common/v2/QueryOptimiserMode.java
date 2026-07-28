@@ -18,7 +18,7 @@ package stroom.query.common.v2;
 
 /**
  * The three states {@code stroom.query.optimiser.mode} can be in - see
- * {@code docs/query-optimiser-implementation-plan.md}, Task 5.4.
+ * Task 5.4.
  */
 public enum QueryOptimiserMode {
 

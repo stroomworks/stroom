@@ -85,7 +85,7 @@ import java.util.function.Consumer;
 /**
  * A {@link QueryCompiler} that compiles StroomQL via the ANTLR grammar (see {@code stroom-query-grammar}) rather
  * than the legacy hand-coded {@link SearchRequestFactory}. Aims for exact output parity with the legacy compiler
- * for every construct the parity corpus exercises (see {@code docs/query-optimiser-implementation-plan.md},
+ * for every construct the parity corpus exercises (
  * Task 1.4) - actual compilation work is delegated to a fresh {@link AstToSearchRequestMapper} per call, since
  * that class holds per-compile mutable state and is not reusable.
  */
@@ -160,7 +160,7 @@ public class OptimisingQueryCompiler implements QueryCompiler {
     private static final String GRAPH_SIDE_PUSH_DOWN_SENTINEL = "\u0000graph-join-side-sentinel";
 
     /**
-     * Task 6.1x (see {@code docs/query-optimiser-implementation-plan.md}, Phase 6): the outer {@link
+     * Task 6.1x (Phase 6): the outer {@link
      * SearchRequest} for a join query. Scoped, like Task 6.1, to the common shape: exactly one {@code join}
      * (two sources), each side either a bare {@code Scan}/{@code Filter} (see {@link #findScanAndFilter} -
      * {@code PushFiltersBelowJoinsRule} can push a where-clause term down into exactly this shape when it
@@ -204,7 +204,7 @@ public class OptimisingQueryCompiler implements QueryCompiler {
                 : JoinSpec.JoinType.INNER;
 
         // The outer request is compiled first (from the raw query text, exactly as before A1) purely to obtain
-        // its where clause: docs/join-scalability-implementation-plan.md, decision D3 (Phase 1, item A1) splits
+        // its where clause:, decision D3 (Phase 1, item A1) splits
         // that clause into the part(s) safe to pre-filter each side with (via JoinPredicateSplitter) and a
         // residual that - as before - is still evaluated across the joined rows by JoinSearchProvider (see the
         // plan doc's Phase 6 "where across joins" note). A LEFT join never pre-filters its right (null-supplying)
@@ -301,7 +301,7 @@ public class OptimisingQueryCompiler implements QueryCompiler {
         final Scan scan = side.scanAndFilter().scan();
         final @Nullable Filter filter = toPushedFilter(scan, push);
         final SearchRequest base = compileJoinSide(scan, filter, selectFields, expressionContext);
-        // Task A3 (see docs/join-scalability-implementation-plan.md, §3): a pushed time-bound predicate must
+        // Task A3: a pushed time-bound predicate must
         // prune shards on that side exactly as it would for an ordinary single-source query (Task 5.2's
         // applyTimeRange), not just filter rows after they're read - NodeSearchTaskCreator.getPartitionTimeRange
         // only ever reads Query.timeRange, never derives bounds from Query.expression directly, so without this
@@ -313,13 +313,13 @@ public class OptimisingQueryCompiler implements QueryCompiler {
     }
 
     /**
-     * Task C3 (docs/graphdb-stroomql-join-implementation-plan.md, Phase P3): compiles a graph sub-query join side
+     * Task C3: compiles a graph sub-query join side
      * into its own single-source {@link SearchRequest} carrying a {@link GraphSpec} - instead of synthesising a
      * {@code from "<name>" select *} the way {@link #compileJoinSide} does for a plain scan side, this builds the
      * side's {@code Query} directly with {@code graphSource}'s raw Cypher text on a {@link GraphSpec} and its
      * resolved target {@code GraphDb} doc as {@code Query.dataSource} - exactly what {@code GraphSearchProvider}
      * (a registered {@code SearchProvider} for type {@code GraphDb}) already expects, so dispatch through
-     * {@code JoinSearchProvider#openSide} works unchanged (it resolves purely by {@code DocRef.getType()}).
+     * {@code JoinSearchProvider#openSide} works unchanged (it resolves purely by {@code DocRef.getType}).
      *
      * <p>This is the analogue of {@code stroom.graphdb.impl.CypherCompiler#create} for a standalone Cypher
      * query, reimplemented here rather than called directly - this module cannot depend on
@@ -495,7 +495,7 @@ public class OptimisingQueryCompiler implements QueryCompiler {
     /**
      * Parameterises {@code searchRequest} with insights from the Phase 2/3 bind/rewrite pipeline - a derived time
      * range (Task 5.2) and the auto where/filter split (Task 5.3) - see
-     * {@code docs/query-optimiser-implementation-plan.md}, Phase 5. Fail-open: {@code Binder} enforces stricter
+     * Phase 5. Fail-open: {@code Binder} enforces stricter
      * validation than {@link AstToSearchRequestMapper} does (Task 2.2), so any failure here (or any other
      * exception) falls back to {@code searchRequest} completely unmodified - this must never make {@link #create}
      * behave worse than it did before this method existed.
@@ -644,7 +644,7 @@ public class OptimisingQueryCompiler implements QueryCompiler {
     /**
      * The first real consumer of the Phase 2/3 pipeline (previously exercised only by its own unit tests): binds
      * and rewrites {@code query}, then costs each {@code Scan} - see
-     * {@code docs/query-optimiser-implementation-plan.md}, Task 4.1.
+     * Task 4.1.
      *
      * @param query same contract as {@link QueryCompiler#explain}.
      * @param expressionContext same contract as {@link QueryCompiler#explain}.
@@ -667,7 +667,7 @@ public class OptimisingQueryCompiler implements QueryCompiler {
     }
 
     /**
-     * Task 6.1b (see {@code docs/query-optimiser-implementation-plan.md}, Phase 6): compiles one join side's
+     * Task 6.1b (Phase 6): compiles one join side's
      * {@code Scan} leaf (optionally with a {@code Filter} directly over it - see {@link #createJoin}'s Javadoc
      * on why a side isn't always a bare {@code Scan}) into its own ordinary, single-source {@link SearchRequest},
      * by synthesising a {@code select <fields>} sub-query and reusing {@link AstToSearchRequestMapper} rather

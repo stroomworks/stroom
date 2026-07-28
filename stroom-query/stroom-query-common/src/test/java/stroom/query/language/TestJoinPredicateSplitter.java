@@ -32,8 +32,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Proves {@link JoinPredicateSplitter}'s per-conjunct decision (push left / push right / residual) - see
- * {@code docs/join-scalability-implementation-plan.md}, decision D3 (Phase 1, item A1). Uses index-eligible
- * fields (a real {@code ConditionSet}, {@code queryable() == true}) so these tests actually exercise a push,
+ * decision D3 (Phase 1, item A1). Uses index-eligible
+ * fields (a real {@code ConditionSet}, {@code queryable == true}) so these tests actually exercise a push,
  * unlike the field-metadata-free fixtures used elsewhere in this package for join compilation.
  */
 class TestJoinPredicateSplitter {
@@ -104,7 +104,7 @@ class TestJoinPredicateSplitter {
     @Test
     void singleEligibleRightTerm_leftJoin_neverPushes_staysResidual() {
         // The right side of a LEFT join is the null-supplying side - pre-filtering it would silently drop
-        // candidate matches that a LEFT join is supposed to null-pad, not exclude. See split()'s Javadoc.
+        // candidate matches that a LEFT join is supposed to null-pad, not exclude. See split's Javadoc.
         final ExpressionOperator where = ExpressionOperator.builder()
                 .addTerm("b.Id", Condition.EQUALS, "2")
                 .build();

@@ -31,13 +31,13 @@ import com.gwtplatform.mvp.client.HasUiHandlers;
 import com.gwtplatform.mvp.client.View;
 
 /**
- * Task B1 (docs/graphdb-features-implementation-plan.md, Workstream B): the {@code GraphDbDoc} Settings tab - an
- * editor for the three graph-level, Tier-1 fields identified by {@code docs/graphdb-settings-surface.html}:
+ * Task B1: the {@code GraphDbDoc} Settings tab - an
+ * editor for the three graph-level, Tier-1 fields identified:
  * {@code temporalPrecision}, {@code retention} and {@code nodeTypeMappings}.
  *
  * <p><b>Does not bind {@code description}.</b> See {@link GraphDbPresenter}'s class javadoc for why a previous
  * Settings tab was removed - it re-bound {@code description}, which the Documentation tab owns, and the two
- * tabs' writes clashed last-write-wins. {@link #onWrite} only ever {@code copy()}s the document and sets the
+ * tabs' writes clashed last-write-wins. {@link #onWrite} only ever {@code copy}s the document and sets the
  * three fields above, so {@code description} always passes through unchanged; {@link #onRead}/{@link #onWrite}
  * have no method to read or write {@code description} at all.</p>
  */

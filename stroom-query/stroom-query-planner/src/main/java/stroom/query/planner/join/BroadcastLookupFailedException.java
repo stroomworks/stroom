@@ -23,12 +23,12 @@ import java.util.Objects;
 
 /**
  * Thrown by {@link JoinExecutor#broadcastLookupProbe} - the enrichment-join fast path (see
- * {@code docs/join-scalability-implementation-plan.md}, decision D8, item B1) - when the configured
+ * decision D8, item B1) - when the configured
  * {@code StateFetcher} returns a {@code ValErr} for a probe row's key instead of a real value or
  * {@code ValNull}. A {@code ValErr} means the lookup itself failed - e.g. a permission deny from the doc
  * cache's {@code USE} check, or a key shape mismatched to the store's type (a {@code NumberFormatException}
  * against a ranged store) - which is a genuine error, not "no match". It must never be embedded as the
- * joined row's value or counted as a successful match (see {@code docs/query-graphdb-review-report.md},
+ * joined row's value or counted as a successful match (
  * findings F1/SEC-1). Throwing here lets the caller's usual join-failure handling (e.g.
  * {@code JoinSearchProvider.createResultStore}'s {@code ResultStore#addError(Throwable)}) surface it as a
  * failed search, exactly like {@link JoinLimitExceededException} does for a breached row cap.
@@ -46,9 +46,9 @@ public final class BroadcastLookupFailedException extends RuntimeException {
      * Builds the exception for a {@code ValErr} lookup result.
      *
      * <p><b>Preconditions:</b> {@code mapName} and {@code key} must not be null; {@code lookupError} must not
-     * be null (its {@link Val#toString()} - {@code "ERR: <message>"} for a {@code ValErr} - is embedded
+     * be null (its {@link Val#toString} - {@code "ERR: <message>"} for a {@code ValErr} - is embedded
      * verbatim in the returned exception's message).<br>
-     * <b>Postconditions:</b> the returned exception's {@link #getMessage()} is never null and names the
+     * <b>Postconditions:</b> the returned exception's {@link #getMessage} is never null and names the
      * store, the key, and the underlying error, so the failure is actionable rather than a bare exception.</p>
      *
      * @param mapName     the Plan B/State store name the lookup was against; never null.

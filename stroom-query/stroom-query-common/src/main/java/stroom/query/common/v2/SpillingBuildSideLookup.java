@@ -34,7 +34,7 @@ import java.util.function.Supplier;
 /**
  * The adaptive {@link BuildSideLookup} used by {@code JoinSearchProvider}: fast on-heap while the build side is
  * small, spilling to a disk-backed {@link LmdbJoinBuildStore} once it grows past a threshold (see
- * {@code docs/join-scalability-implementation-plan.md}, items C1/A6). This is the classic hybrid hash join - a
+ * items C1/A6). This is the classic hybrid hash join - a
  * join that fits in memory pays no disk cost, while one that would previously have exhausted heap (or been
  * aborted by the row guardrail) instead spills and completes.
  *
@@ -46,7 +46,7 @@ import java.util.function.Supplier;
  * spill and is never a correctness input, so erring high (spill a little sooner) is always safe.</p>
  *
  * <p>Both figures are measured cheaply as rows are inserted (no up-front sizing pass - a cheap up-front byte size
- * does not exist: {@code MapDataStore.getByteSize()} serialises the whole dataset, and no store exposes an O(1)
+ * does not exist: {@code MapDataStore.getByteSize} serialises the whole dataset, and no store exposes an O(1)
  * row count). Once a threshold is crossed, the next {@link #put} creates the spill store, drains the heap into it
  * once, releases the heap, and every later {@link #put}/{@link #forEachMatch} goes to disk.</p>
  *
@@ -78,10 +78,10 @@ public final class SpillingBuildSideLookup implements BuildSideLookup {
 
     /**
      * @param maxHeapRows       the number of rows kept on the heap before spilling; must be {@code >= 0} (a value
-     *                          of {@code 0} spills on the first row). See {@code JoinConfig.getMaxHeapBuildRows()}.
+     *                          of {@code 0} spills on the first row). See {@code JoinConfig.getMaxHeapBuildRows}.
      * @param maxHeapBytes      the approximate heap byte footprint kept before spilling; must be {@code >= 0} (a
      *                          value of {@code 0} spills on the first row). See
-     *                          {@code JoinConfig.getMaxHeapBuildBytes()}.
+     *                          {@code JoinConfig.getMaxHeapBuildBytes}.
      * @param spillStoreFactory creates the disk-backed store on demand (only called if a threshold is crossed);
      *                          must not be null. Deferring creation this way means a small join never touches disk.
      */
@@ -188,7 +188,7 @@ public final class SpillingBuildSideLookup implements BuildSideLookup {
         for (final Val value : row) {
             bytes += VALUE_OVERHEAD_BYTES;
             if (value instanceof final ValString s) {
-                // ValString.toString() returns its backing String (no copy); 2 bytes/char for a UTF-16 char array.
+                // ValString.toString returns its backing String (no copy); 2 bytes/char for a UTF-16 char array.
                 bytes += 2L * s.toString().length();
             } else if (value instanceof final ValXml x) {
                 bytes += x.getBytes() == null ? 0L : x.getBytes().length;

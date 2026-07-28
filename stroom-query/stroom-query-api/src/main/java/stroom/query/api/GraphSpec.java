@@ -26,8 +26,8 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.Objects;
 
 /**
- * Carried on {@link Query#getGraphSpec()} when a compiled query is a Cypher graph query (see
- * {@code docs/temporal-cypher-graph-implementation-plan.md}, Task PoC.6) - the original Cypher source text.
+ * Carried on {@link Query#getGraphSpec} when a compiled query is a Cypher graph query (see
+ * Task PoC.6) - the original Cypher source text.
  * {@code Query.dataSource} still points directly at the target {@code GraphDbDoc} (a Cypher query has no
  * {@code FROM}-equivalent clause; the graph it runs against is always the doc it was submitted to), so unlike
  * {@link JoinSpec} this carries no sub-{@link SearchRequest}s of its own.

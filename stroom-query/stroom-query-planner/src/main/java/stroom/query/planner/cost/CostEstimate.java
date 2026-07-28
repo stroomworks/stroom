@@ -20,7 +20,7 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * The design doc's cost signal shape exactly (see {@code docs/query-optimiser-implementation-plan.md}, Task
+ * The design doc's cost signal shape exactly (Task
  * 3.2) - what {@link CostModel} emits for a single access path.
  *
  * @param rows        never negative; the estimated matching row count.
@@ -48,7 +48,7 @@ public record CostEstimate(long rows, long bytes, long durationMs, double confid
         if (Double.isNaN(confidence) || confidence < 0.0 || confidence > 1.0) {
             // NaN must be rejected explicitly: NaN < 0.0 and NaN > 1.0 are both false, so a bare range check
             // would let a NaN confidence through and later corrupt comparisons like chooseAlgorithm's
-            // confidence() == 0.0 (NaN equals nothing, including itself).
+            // confidence == 0.0 (NaN equals nothing, including itself).
             throw new IllegalArgumentException("confidence must be in [0,1]: " + confidence);
         }
         Objects.requireNonNull(notes, "notes");

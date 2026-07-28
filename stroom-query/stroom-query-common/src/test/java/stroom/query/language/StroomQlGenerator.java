@@ -23,7 +23,7 @@ import java.util.stream.IntStream;
 
 /**
  * Generates random-but-valid StroomQL queries over a small, fixed, representative datasource shape, for the
- * generative parity fuzzer (see docs/query-optimiser-implementation-plan.md, Task 1.7). Deliberately restricted
+ * generative parity fuzzer (7). Deliberately restricted
  * to constructs already proven to match in the hand-written corpus (see {@code TestQueryCompilerParity}) - this
  * generator's job is to explore combinations/depths the ~30 hand-picked queries don't reach, not to hunt for
  * genuinely new syntax or malformed-input edge cases (that's the hand corpus's job).

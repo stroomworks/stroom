@@ -27,7 +27,7 @@ import java.util.Objects;
 /**
  * A leaf node finding a graph's anchor/start node(s) by label and (optionally) a property predicate - the bound
  * form of a Cypher {@code MATCH} pattern's first node, e.g. {@code (d:Device {id: 'd-42'})} (see
- * {@code docs/temporal-cypher-graph-implementation-plan.md}, Task PoC.2/PoC.3). Physically an access-path scan
+ * Task PoC.2/PoC.3). Physically an access-path scan
  * over the graph's property index (design doc &sect;5.1), the graph analogue of {@link Scan} - kept as a
  * distinct node type (rather than reusing {@link Scan}) because a graph anchor has no {@code dataSourceName}/
  * {@code alias} in the relational sense, only a pattern variable, labels, and an optional property predicate.

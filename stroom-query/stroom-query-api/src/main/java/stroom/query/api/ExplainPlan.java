@@ -29,7 +29,7 @@ import java.util.Objects;
 
 /**
  * A node in a query's explain/estimate plan tree (see
- * {@code docs/query-optimiser-implementation-plan.md}, Task 4.1) - one node per logical operator
+ * Task 4.1) - one node per logical operator
  * ({@code Scan}/{@code Filter}/{@code Join}/...), with a cost estimate present only on the nodes a
  * {@code CostModel} actually costs (currently {@code Scan}s and {@code Join}s).
  *

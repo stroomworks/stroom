@@ -40,7 +40,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Workstream C, Phase P3 (docs/graphdb-stroomql-join-implementation-plan.md): proves
+ * Workstream C, Phase P3: proves
  * {@link OptimisingQueryCompiler#create} emits a graph join side as a {@link SearchRequest} carrying a
  * {@code GraphSpec} (not a synthesised StroomQL sub-query) whose {@code Query.dataSource} targets the resolved
  * {@code GraphDb} doc - relaxing {@code createJoin}'s "both sides must be plain datasource scans" check to admit
@@ -202,7 +202,7 @@ class TestOptimisingQueryCompilerGraphJoinSide {
 
     @Test
     void multiJoinChain_withAGraphSide_isStillRejectedCleanly() {
-        // The single-join limit (docs/query-optimiser-implementation-plan.md, Phase 6) applies to a graph side
+        // The single-join limit applies to a graph side
         // exactly as it does to a plain scan side - checked before either side is even bound.
         assertThatThrownBy(() -> compiler().create(
                 "from \"AuthEvents\" as e inner join ( from \"CorpGraph\" match (u:User) return u.id as userId ) "

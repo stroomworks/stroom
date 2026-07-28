@@ -34,7 +34,7 @@ import java.util.OptionalDouble;
 /**
  * Costs a single {@link Scan}'s access path by trying each cost port in turn - {@link MetaStats}, then
  * {@link IndexShardStats}, then {@link StateStoreStats} - and using whichever answers (see
- * {@code docs/query-optimiser-implementation-plan.md}, Task 3.2).
+ * Task 3.2).
  *
  * <p><b>Not wired into anything yet.</b> Callers are expected to supply the query's time range and the
  * predicate terms relevant to selectivity directly, rather than this class extracting them from a
@@ -50,12 +50,12 @@ import java.util.OptionalDouble;
 public final class CostModel {
 
     /** Placeholder throughput used whenever a real one isn't available (no {@code IndexShardStats} signal, or
-     *  for {@link FullScan}, which has no throughput port at all) - documented in {@link CostEstimate#notes()}
+     *  for {@link FullScan}, which has no throughput port at all) - documented in {@link CostEstimate#notes}
      *  whenever it's used, never presented as if it were measured. */
     private static final double FALLBACK_ROWS_PER_MS = 1_000.0;
 
     /** Placeholder fixed cost for a {@link StateLookup} point lookup - no per-lookup latency signal exists yet
-     *  (see {@code docs/query-optimiser-implementation-plan.md}, Task 3.1's note on Plan B/State stats). */
+     *  (Task 3.1's note on Plan B/State stats). */
     private static final long STATE_LOOKUP_DURATION_MS = 1;
 
     private final MetaStats metaStats;
@@ -80,7 +80,7 @@ public final class CostModel {
      *                         term of a query's {@code where}/{@code filter} - only those the caller has
      *                         already determined apply to this specific scan.
      * @return never null. Falls back to a zero-confidence {@link FullScan} estimate (never throws) when none of
-     *         the three ports answers for {@code scan.dataSourceName()}.
+     *         the three ports answers for {@code scan.dataSourceName}.
      */
     public CostedAccessPath estimate(
             final Scan scan, final @Nullable Long fromTimeMs, final @Nullable Long toTimeMs,

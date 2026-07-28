@@ -97,7 +97,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * {@code (AstQuery, FieldInfoSource) -> LogicalPlan} - see {@code docs/query-optimiser-implementation-plan.md},
+ * {@code (AstQuery, FieldInfoSource) -> LogicalPlan},
  * Task 2.2. Fails fast with a {@link BindException} on the first unresolvable field, unsupported condition,
  * unknown join alias, or domain-incompatible join key.
  *
@@ -139,7 +139,7 @@ public final class Binder {
         ExpressionOperator havingPredicate = null;
         // Track the where and filter clause positions separately so the bound Filter node reports the clause it
         // actually came from (a where-only query previously reported the `from` clause position, misdirecting
-        // any where-predicate error/EXPLAIN location - LogicalPlan.position() is documented as "the clause this
+        // any where-predicate error/EXPLAIN location - LogicalPlan.position is documented as "the clause this
         // node was bound from"). Both default to the from position only when neither clause is present.
         AstPosition wherePosition = query.from().position();
         AstPosition filterPosition = query.from().position();
@@ -288,7 +288,7 @@ public final class Binder {
     /**
      * Binds one join's source into the {@link LogicalPlan} operand {@link Join} embeds, registering its alias in
      * {@code scope} so later {@code on}/{@code where}/{@code select} references resolve against it - a plain
-     * {@link Scan} for a named source, or (Phase P1/P2, docs/graphdb-stroomql-join-implementation-plan.md) a
+     * {@link Scan} for a named source, or (Phase P1/P2) a
      * {@link GraphJoinSource} for a Cypher sub-query source, whose schema is derived from its own
      * {@code RETURN ... AS} list via {@link CypherJoinSchema}.
      */
@@ -595,7 +595,7 @@ public final class Binder {
             // PARAM term field (e.g. `where ${p} = 1`): resolveField already qualifies every *real* field with
             // its source alias, and eval fields short-circuit above. A param is a runtime value with no
             // datasource field metadata, so there is nothing to condition-validate here - skip, exactly like the
-            // queryField.isEmpty() path below (and never fall through to onlySource(), which would throw on 2+
+            // queryField.isEmpty path below (and never fall through to onlySource, which would throw on 2+
             // sources - the raw IllegalStateException this replaces).
             return;
         }
@@ -672,7 +672,7 @@ public final class Binder {
     /**
      * One bound {@code from}/{@code join} source's field-lookup contract - either a plain named datasource
      * ({@link ScanSource}, resolved via {@link #fieldInfoSource}) or a Cypher sub-query's derived schema
-     * ({@link GraphSource}, docs/graphdb-stroomql-join-implementation-plan.md, Phase P2). {@code Scope} was
+     * ({@link GraphSource}). {@code Scope} was
      * previously keyed directly by {@link Scan}; generalised to this sealed choice so a graph join side's alias
      * resolves {@code alias.field} references the same way as any other source, without asking
      * {@link #fieldInfoSource} about a datasource name it has never heard of (a Cypher sub-query is not a
@@ -713,7 +713,7 @@ public final class Binder {
          * @return the query's only {@link BoundSource}.
          * @throws IllegalStateException if called when other than exactly one source is in scope. This is an
          *                                internal invariant, not a user-facing error: every caller guards the
-         *                                call with its own {@code sourcesByAlias.size() == 1} check first (a
+         *                                call with its own {@code sourcesByAlias.size == 1} check first (a
          *                                multi-source unqualified/param reference is handled without calling
          *                                this), so reaching the throw indicates a binder bug, not bad input.
          */

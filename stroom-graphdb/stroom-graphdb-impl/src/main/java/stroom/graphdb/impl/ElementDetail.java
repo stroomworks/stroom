@@ -27,14 +27,13 @@ import java.util.Objects;
 /**
  * Enough per-element detail, captured during a {@code RETURN GRAPH} traversal ({@link
  * GraphTraversalEngine#executeGraphBindings}/{@link GraphTraversalEngine#executeGraphBindingsAsOf}), to render one
- * element row (see {@code docs/temporal-cypher-diff-operator.md} &sect;4.4 / {@code
- * docs/graphdb-cytoscape-visualisation.html} &sect;3): the element's own label set (a node) or edge type (an edge),
+ * element row: the element's own label set (a node) or edge type (an edge),
  * its own raw property map, and - for an edge only - its endpoint node identities.
  *
- * <p>Deliberately holds the element's <b>own</b> unprefixed property map, unlike {@link DiffMatch#flatRow()}'s
+ * <p>Deliberately holds the element's <b>own</b> unprefixed property map, unlike {@link DiffMatch#flatRow}'s
  * {@code "variable.property"}-keyed path row: {@code properties} here is exactly what {@link
  * GraphElementExecutor} needs both to render the {@code properties} output column and - reused verbatim as a
- * {@link DiffMatch#flatRow()} with a singleton {@link ElementId} identity - to feed {@link DiffOperator#classify}
+ * {@link DiffMatch#flatRow} with a singleton {@link ElementId} identity - to feed {@link DiffOperator#classify}
  * for the annotated-subgraph mode's per-element {@code changeKind} (property-set equality is exactly what that
  * classification compares; labels/endpoints are deliberately excluded from it, matching &sect;5.3's "changed"
  * meaning "the property set differs", not "the label set or connectivity differs").</p>

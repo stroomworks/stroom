@@ -20,7 +20,7 @@ import java.util.Objects;
 
 /**
  * An ordinary {@code join <name>} source - a bare datasource name/UUID, exactly as every join source was before
- * Workstream C (docs/graphdb-stroomql-join-implementation-plan.md, Phase P1) introduced
+ * Workstream C introduced
  * {@link AstSubQueryJoinSource}.
  *
  * @param token never null.

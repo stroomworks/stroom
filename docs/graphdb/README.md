@@ -4,8 +4,8 @@
 **Audience:** everyone.
 **Scope:** the index for the Graph DB user documentation set. Canonical for the reading paths and the
 production-readiness assessment; every other fact lives in one of the files listed below.
-**Companion documents:** all of `docs/graphdb/`; engineering records remain in `docs/` and in
-[`archive/`](archive/).
+**Companion documents:** all of `docs/graphdb/`. This set is self-contained; earlier design and
+implementation records live only in git history.
 
 *Facts verified on 2026-07-28 against branch `sw-query-optimiser`.*
 
@@ -109,6 +109,7 @@ source streams still existing, and native typed property values. These are track
 | [11-operations.md](11-operations.md) | Storage, sizing, retention, rebuild, backup, permissions | Administrators |
 | [12-future-work.md](12-future-work.md) | Roadmap, with difficulty and risk per item | Stakeholders |
 | [13-developer-guide.md](13-developer-guide.md) | Code structure and how to extend Graph DB | Developers |
+| [14-testing.md](14-testing.md) | An acceptance protocol: dataset, cases and expected results | Developers, testers |
 
 ## Reading paths
 
@@ -121,7 +122,7 @@ source streams still existing, and native typed property values. These are track
 - **Running it** — [01](01-introduction.md) → [02](02-architecture.md) → [11](11-operations.md)
   → [10](10-limits.md).
 - **Extending it** — [02](02-architecture.md) → [13](13-developer-guide.md)
-  → [06](06-language-reference.md), then the engineering records.
+  → [06](06-language-reference.md) → [14](14-testing.md).
 
 ## Relationship to the engineering documents
 
@@ -130,6 +131,5 @@ proposals, implementation plans, review reports and test protocols written durin
 accurate about intent and design rationale, but they describe work in progress and are pinned to the branch
 and date they were written on. Where this set and an engineering record disagree, this set is correct.
 
-Documents whose content has been absorbed into this set have been moved to [`archive/`](archive/).
-[13-developer-guide.md](13-developer-guide.md) carries an annotated index of the engineering
-records that remain, for developers who need the design history behind a decision.
+Documents whose content has been absorbed into this set have been deleted; they remain in git history.
+[13-developer-guide.md](13-developer-guide.md#design-history) explains how to retrieve a specific one.

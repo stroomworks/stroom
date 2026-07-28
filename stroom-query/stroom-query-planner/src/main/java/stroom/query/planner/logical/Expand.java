@@ -28,7 +28,7 @@ import java.util.Objects;
  * A single-hop graph traversal: for each row of {@code input}, follow edges of {@code edgeType} in
  * {@code direction} and bind the neighbour node to {@code targetVariable} - the bound form of one
  * {@code -[:TYPE]->}/{@code <-[:TYPE]-}/{@code -[:TYPE]-} step in a Cypher path pattern (see
- * {@code docs/temporal-cypher-graph-implementation-plan.md}, Task PoC.2/PoC.3/P3.1).
+ * Task PoC.2/PoC.3/P3.1).
  *
  * <p>Physically an index-nested-loop join over the graph's adjacency store (design doc &sect;5.5's
  * {@code expand} operator) - "native traversal" and "join execution" are the same plan, but this node is
@@ -55,7 +55,7 @@ import java.util.Objects;
  * @param targetVariable never null; the Cypher pattern variable bound to the neighbour node reached by this hop.
  * @param targetLabels   never null; possibly empty (no label constraint on the target node); in source order.
  * @param targetPropertyPredicate the target node pattern's inline property map, lowered to an equality
- *                       predicate tree exactly as {@link NodeScan#propertyAnchor()} is, or {@code null} if the
+ *                       predicate tree exactly as {@link NodeScan#propertyAnchor} is, or {@code null} if the
  *                       target node pattern had no properties.
  * @param optional       {@code true} for a hop lowered from an {@code OPTIONAL MATCH} (left-outer): when the hop
  *                       finds no neighbour for an input row, the executor still emits that row (with this hop's

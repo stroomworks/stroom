@@ -34,13 +34,13 @@ import java.util.Objects;
 
 /**
  * Executes a {@code DIFF FROM t1 TO t2} query's delta-table mode (see
- * {@code docs/temporal-cypher-diff-operator.md} &sect;7.1 "Strategy A"): it runs the compiled pattern's bindings at
+ *  &sect;7.1 "Strategy A"): it runs the compiled pattern's bindings at
  * each instant via {@link GraphTraversalEngine#executeDiffBindings}, classifies the two match sets with the pure
  * {@link DiffOperator}, then builds one delta-table row per changed path and projects it through the engine's
  * ordinary {@code RETURN}/{@code ORDER BY}/{@code DISTINCT}/{@code LIMIT} pipeline
  * ({@link GraphTraversalEngine#projectDiffRows}).
  *
- * <p>{@code UNCHANGED} paths are suppressed by default in delta-table mode (&sect;4.2) - they are dropped here
+ * <p>{@code UNCHANGED} paths are suppressed by default in delta-table mode - they are dropped here
  * before projection. This class is stateless (only a static entry point) and does no I/O of its own beyond the two
  * engine traversals it delegates.</p>
  */

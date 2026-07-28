@@ -28,8 +28,8 @@ import java.util.List;
 
 /**
  * Replaces ANTLR's default behaviour (print to stderr and attempt error recovery) with an immediate, precise
- * {@link SyntaxException} - see {@code docs/query-optimiser-implementation-plan.md}, Task 1.3. Install on both
- * the lexer and the parser via {@code removeErrorListeners()} + {@code addErrorListener(INSTANCE)} before
+ * {@link SyntaxException}, Task 1.3. Install on both
+ * the lexer and the parser via {@code removeErrorListeners} + {@code addErrorListener(INSTANCE)} before
  * parsing (see {@link StroomQlParser}, which does this).
  */
 public final class ThrowingSyntaxErrorListener extends BaseErrorListener {
@@ -42,10 +42,10 @@ public final class ThrowingSyntaxErrorListener extends BaseErrorListener {
 
     /**
      * @param recognizer          never null (per the ANTLR contract); used to resolve
-     *                            {@code e.getExpectedTokens()} token types to display names, when available.
+     *                            {@code e.getExpectedTokens} token types to display names, when available.
      * @param offendingSymbol     nullable; unused (the message/position already describe the problem).
-     * @param line                1-based, matching {@link SyntaxException#getLine()}.
-     * @param charPositionInLine  0-based, matching {@link SyntaxException#getColumn()}.
+     * @param line                1-based, matching {@link SyntaxException#getLine}.
+     * @param charPositionInLine  0-based, matching {@link SyntaxException#getColumn}.
      * @param msg                 never null (per the ANTLR contract).
      * @param e                   nullable; absent for lexer-level errors, which have no parser state to
      *                            inspect for an expected-token set.
@@ -66,7 +66,7 @@ public final class ThrowingSyntaxErrorListener extends BaseErrorListener {
         if (e == null) {
             return List.of();
         }
-        // e.getExpectedTokens() consults the ATN and can itself throw (e.g. IllegalArgumentException "Invalid
+        // e.getExpectedTokens consults the ATN and can itself throw (e.g. IllegalArgumentException "Invalid
         // state number" for certain error states, observed for an unterminated quoted string). The whole point
         // of this listener is to always surface a clean SyntaxException, so a failure computing the *optional*
         // expected-token set must degrade to an empty set, never propagate a raw ANTLR exception to the caller.

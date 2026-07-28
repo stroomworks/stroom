@@ -16,7 +16,7 @@
 
 /**
  * The ANTLR4 StroomQL grammar and the typed AST built from its parse tree
- * (see {@code docs/query-optimiser-implementation-plan.md}, Phase 1).
+ * (Phase 1).
  */
 @NullMarked
 package stroom.query.grammar;

@@ -36,7 +36,7 @@ import java.util.regex.Pattern;
 
 /**
  * Fuzzes beyond {@code TestQueryCompilerParity}'s ~30 hand-picked queries (see
- * docs/query-optimiser-implementation-plan.md, Task 1.7): {@link StroomQlGenerator} produces random-but-valid
+ * .7): {@link StroomQlGenerator} produces random-but-valid
  * StroomQL, both compilers compile each one, and the results must match exactly - the same
  * byte-for-byte bar as the hand corpus, since every generated query is constructed to be valid (unlike the hand
  * corpus, which deliberately includes malformed queries too) - with one deliberate, documented exception (see
@@ -54,7 +54,7 @@ class TestQueryCompilerGenerativeParity {
 
     /**
      * Matches the one shape this generator produces that legacy rejects due to a confirmed legacy bug (not a
-     * deliberate rule) that this rewrite does NOT reproduce - see docs/query-optimiser-known-differences.md and
+     * deliberate rule) that this rewrite does NOT reproduce and
      * {@code TestLegacyBugFixes} for the dedicated, explicit demonstration of this divergence. Legacy's
      * regex-based tokeniser only tags "and"/"or"/"not" as keywords when immediately preceded by whitespace,
      * start-of-input, or ')' - never '(' with no space - so `(not <term>)` is rejected by legacy but correctly

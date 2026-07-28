@@ -22,7 +22,7 @@ import java.util.Objects;
 
 /**
  * {@code DIFF FROM <baseline> TO <comparison>} - Stroom's temporal <i>change</i> clause (see
- * {@code docs/temporal-cypher-diff-operator.md}). {@code baseline} is the "before" instant ({@code t1}),
+ * ). {@code baseline} is the "before" instant ({@code t1}),
  * {@code comparison} the "after" ({@code t2}); direction is what distinguishes an addition from a removal, so it
  * is syntactically explicit (never positional-by-accident). Both are still unresolved {@link AstValue}s here
  * (typically a {@code datetime('...')} literal); {@code CypherToLogicalPlan} resolves them to instants, enforces

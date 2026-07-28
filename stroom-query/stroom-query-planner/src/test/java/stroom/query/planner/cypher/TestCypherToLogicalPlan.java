@@ -302,7 +302,7 @@ class TestCypherToLogicalPlan {
     }
 
     // ------------------------------------------------------------------------------------------------------
-    // aggregation (Task 1.1 of docs/graphdb-analytic-functions-implementation-plan.md)
+    // aggregation (Task 1.1 of)
     // ------------------------------------------------------------------------------------------------------
 
     @Test
@@ -658,7 +658,7 @@ class TestCypherToLogicalPlan {
         assertThat(renderedReturnExpression(
                 "MATCH (a:Account) RETURN CASE a.status WHEN 1 THEN 'on' WHEN 0 THEN 'off' ELSE 'unknown' END"))
                 .isEqualTo("case(${a.status}, 1, 'on', 0, 'off', 'unknown')");
-        // A missing ELSE lowers to null().
+        // A missing ELSE lowers to null.
         assertThat(renderedReturnExpression(
                 "MATCH (a:Account) RETURN CASE a.status WHEN 1 THEN 'on' END"))
                 .isEqualTo("case(${a.status}, 1, 'on', null())");
@@ -670,7 +670,7 @@ class TestCypherToLogicalPlan {
         assertThat(renderedReturnExpression(
                 "MATCH (a:Account) RETURN CASE WHEN a.balance > 0 THEN 'credit' ELSE 'debit' END"))
                 .isEqualTo("if((${a.balance} > 0), 'credit', 'debit')");
-        // Multiple arms + a boolean-combined condition; missing ELSE -> null().
+        // Multiple arms + a boolean-combined condition; missing ELSE -> null.
         assertThat(renderedReturnExpression(
                 "MATCH (a:Account) RETURN CASE WHEN a.x > 0 AND a.y < 5 THEN 'a' WHEN a.z = 1 THEN 'b' END"))
                 .isEqualTo("if(and((${a.x} > 0), (${a.y} < 5)), 'a', if((${a.z} = 1), 'b', null()))");
@@ -775,7 +775,7 @@ class TestCypherToLogicalPlan {
     @Test
     void unaliasedCountStar_defaultsToACleanFunctionStarName() {
         // Code-review fix: previously an unaliased aggregate's default name was renderExpression's "${...}"-laden
-        // text (e.g. "count()"), unusable as a FieldIndex/column identifier - see defaultAggregateName's Javadoc.
+        // text (e.g. "count"), unusable as a FieldIndex/column identifier - see defaultAggregateName's Javadoc.
         final CompiledCypherPlan compiled = compile("MATCH (a:Account) RETURN count(*)");
 
         assertThat(((Project) compiled.plan()).fields().getFirst().name()).isEqualTo("count(*)");

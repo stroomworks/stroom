@@ -16,7 +16,7 @@
 
 /**
  * The typed, immutable AST built from a {@code Cypher.g4} parse tree by
- * {@link stroom.query.grammar.parse.CypherQueryParser} (see {@code docs/temporal-cypher-graph-implementation-plan.md},
+ * {@link stroom.query.grammar.parse.CypherQueryParser} (
  * Task PoC.1), decoupling downstream code (Task PoC.3's {@code CypherToLogicalPlan}) from ANTLR types entirely.
  * A separate sub-package from {@link stroom.query.grammar.ast} avoids record-name collisions with StroomQL's AST;
  * {@link stroom.query.grammar.ast.AstPosition} is reused directly since it is grammar-agnostic.

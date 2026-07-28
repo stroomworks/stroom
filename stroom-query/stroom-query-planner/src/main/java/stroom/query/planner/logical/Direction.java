@@ -19,7 +19,7 @@ package stroom.query.planner.logical;
 /**
  * The traversal direction of an {@link Expand}/{@link VarLengthExpand} hop, mirroring
  * {@code stroom.query.grammar.ast.cypher.AstEdgeDirection} (see
- * {@code docs/temporal-cypher-graph-implementation-plan.md}, Task PoC.2) - same values, same names, so
+ * Task PoC.2) - same values, same names, so
  * {@code CypherToLogicalPlan} (Task PoC.3) maps between them 1:1. Kept as a separate enum here rather than
  * reused directly: the logical IR is deliberately front-end-agnostic (both StroomQL and Cypher compile into it,
  * per {@link LogicalPlan}'s class Javadoc), so it must not reference a specific front-end's AST types even

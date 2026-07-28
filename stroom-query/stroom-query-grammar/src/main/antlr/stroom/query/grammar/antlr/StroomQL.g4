@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-// StroomQL grammar (see docs/query-optimiser-implementation-plan.md, Task 1.1).
+// StroomQL grammar (1).
 //
 // Design notes (why this grammar looks the way it does, vs. the legacy hand-coded
 // Tokeniser/StructureBuilder/SearchRequestFactory it must stay at parity with):
@@ -44,7 +44,7 @@
 //   real, corpus-exercised case; a field/variable literally NAMED "and"/"or"/"not" (not a
 //   function call) is an accepted, documented deviation - not exercised by the parity corpus.
 // - Join syntax (JOIN/ON/LEFT/INNER, qualified `alias.field` references) is bound by
-//   stroom.query.planner.bind.Binder (docs/query-optimiser-implementation-plan.md, Phase 6).
+//  stroom.query.planner.bind.Binder.
 //   `alias.field` is deliberately NOT a `NAME DOT NAME` token sequence - legacy's bareword
 //   character class already includes `.` (so unquoted dotted names, and decimal numbers,
 //   tokenize as ONE token) - splitting on `.` is a binder concern, not a lexer concern, to avoid
@@ -153,7 +153,7 @@ comparisonCond
     | LESS_THAN | LESS_THAN_OR_EQUAL_TO
     ;
 
-// One term value: legacy concatenates a run of tokens (e.g. `now() - 2d` = function,
+// One term value: legacy concatenates a run of tokens (e.g. `now - 2d` = function,
 // minus, duration) then classifies the WHOLE run as a date expression, a signed number,
 // or (otherwise) a single bare token - see DateExpressionParser / addValue in
 // SearchRequestFactory. That classification is a Task 1.4 concern, not a grammar concern;
@@ -167,7 +167,7 @@ valueToken
     | valueFunctionCall
     ;
 
-// A term value only ever needs to call date-point/param functions (`now()`, `day()`,
+// A term value only ever needs to call date-point/param functions (`now`, `day`,
 // `param(...)`) - never `and`/`or`/`not` (legacy's parseValueTokens rejects any function
 // there that isn't a recognised DatePoint or "param"; see SearchRequestFactory.addValue).
 // So this is deliberately FUNCTION_NAME-only, unlike the broader `functionCall` below:
@@ -325,7 +325,7 @@ IN       : I N ;
 // a whitespace-sensitivity artifact of its per-chunk regex tagging (see Tokeniser.tagKeyword),
 // not a deliberate rule. Found by the generative fuzzer (Task 1.7). Per the project's policy of
 // not reproducing legacy bugs, this grammar deliberately does NOT replicate it - AND/OR/NOT are
-// recognised regardless of what precedes them - see docs/query-optimiser-known-differences.md
+// recognised regardless of what precedes them
 // and TestLegacyBugFixes for the demonstrating test case.
 AND      : A N D ;
 OR       : O R ;
@@ -340,7 +340,7 @@ LEFT  : L E F T ;
 INNER : I N N E R ;
 
 // ----- function-call name: lowercase-start identifier immediately (no whitespace)
-// followed by '(' - matches legacy's `([a-z][a-zA-Z]*)(\()` tokeniser regex exactly,
+// followed by '(' - matches legacy's `([a-z][a-zA-Z]*)(\` tokeniser regex exactly,
 // including that an uppercase-starting identifier before '(' is NOT a function call. -----
 FUNCTION_NAME : [a-z][a-zA-Z]* {_input.LA(1) == '('}? ;
 

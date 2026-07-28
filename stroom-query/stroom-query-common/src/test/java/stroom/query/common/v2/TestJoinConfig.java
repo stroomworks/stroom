@@ -25,7 +25,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Proves the {@code stroom.query.join} memory guardrails (see
- * {@code docs/join-scalability-implementation-plan.md}, decision D1) default correctly, nest correctly under
+ * decision D1) default correctly, nest correctly under
  * {@link QueryConfig}, round-trip through JSON, and reject a negative configured value.
  */
 class TestJoinConfig {

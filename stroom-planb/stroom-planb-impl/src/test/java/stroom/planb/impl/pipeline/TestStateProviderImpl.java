@@ -49,7 +49,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * F1/SEC-1 regression (docs/query-graphdb-review-report.md): {@link StateProviderImpl#getState} must not catch
+ * F1/SEC-1 regression: {@link StateProviderImpl#getState} must not catch
  * every exception and downgrade it to a {@code ValErr} - {@code JoinExecutor.broadcastLookupProbe} would then
  * treat that {@code ValErr} as a matched row and embed the error text as the joined value, silently turning a
  * permission deny (or any other real lookup failure) into junk output. Only a confirmed absence may become
@@ -58,7 +58,7 @@ import static org.mockito.Mockito.when;
  * type) must propagate so the search fails cleanly instead.
  *
  * <p>Also covers F16's config wiring: the lookup cache's size/expiry come from {@link PlanBConfig#
- * getStateValueCache()} (via an injected {@link CacheManager}/{@code Provider<PlanBConfig>}) rather than a
+ * getStateValueCache} (via an injected {@link CacheManager}/{@code Provider<PlanBConfig>}) rather than a
  * hardcoded Caffeine {@code maximumSize(1000)}.</p>
  */
 @ExtendWith(MockitoExtension.class)
@@ -80,7 +80,7 @@ class TestStateProviderImpl {
     @BeforeEach
     void setUp() {
         // The behavioural tests below don't care about real caching/eviction, only that a lookup reaches
-        // planBQueryService - so the faked cache just delegates every get() straight through, matching what the
+        // planBQueryService - so the faked cache just delegates every get straight through, matching what the
         // real cache would do on a miss (every key here is looked up exactly once per test).
         final LoadingStroomCache<GetRequest, Val> cache = mock(LoadingStroomCache.class);
         lenient().when(cache.get(any()))

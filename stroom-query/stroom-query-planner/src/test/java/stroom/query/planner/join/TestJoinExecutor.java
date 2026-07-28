@@ -129,7 +129,7 @@ class TestJoinExecutor {
     @ParameterizedTest
     @EnumSource(value = JoinAlgorithm.class, names = {"HASH_JOIN", "NESTED_LOOP"})
     void nullKeyRows_neverMatchEachOther_forInnerJoin(final JoinAlgorithm algorithm) {
-        // SQL NULL != NULL: two rows whose join key is null must NOT join, even though ValNull.toString() is null
+        // SQL NULL != NULL: two rows whose join key is null must NOT join, even though ValNull.toString is null
         // (which previously made every null-keyed row collide into one bucket and cross-product with each other).
         final Val[] leftNull = new Val[]{ValNull.INSTANCE, ValString.create("a")};
         final Val[] rightNull = new Val[]{ValNull.INSTANCE, ValLong.create(200)};
@@ -246,16 +246,16 @@ class TestJoinExecutor {
     }
 
     // ------------------------------------------------------------------------------------------------------
-    // keyOf numeric canonicalisation (F5 - see docs/query-graphdb-review-report.md): a numeric-typed equi-key
+    // keyOf numeric canonicalisation (F5): a numeric-typed equi-key
     // component keys on its numeric value, so numerically-equal values of different numeric Val types now match,
-    // while non-numeric types (string in particular) keep their pre-existing toString() behaviour unchanged and
+    // while non-numeric types (string in particular) keep their pre-existing toString behaviour unchanged and
     // a large long is never lossily round-tripped through double.
     // ------------------------------------------------------------------------------------------------------
 
     @ParameterizedTest
     @EnumSource(value = JoinAlgorithm.class, names = {"HASH_JOIN", "NESTED_LOOP"})
     void crossTypeNumericKeys_valLongAndValDouble_nowMatch(final JoinAlgorithm algorithm) {
-        // Before the F5 fix, keyOf's per-component Val.toString() could diverge between numeric Val types that
+        // Before the F5 fix, keyOf's per-component Val.toString could diverge between numeric Val types that
         // hold the same numeric value; keyOf now canonicalises both ValLong(5) and ValDouble(5.0) to "5".
         final Val[] left = new Val[]{ValLong.create(5), ValString.create("a")};
         final Val[] right = new Val[]{ValDouble.create(5.0), ValLong.create(100)};
@@ -273,7 +273,7 @@ class TestJoinExecutor {
     @EnumSource(value = JoinAlgorithm.class, names = {"HASH_JOIN", "NESTED_LOOP"})
     void stringVsIntegerKey_stillMatches_unaffectedByNumericCanonicalisation(final JoinAlgorithm algorithm) {
         // A string key is never reinterpreted as a number - this pre-existing match (ValString "5" alongside
-        // ValLong(5)'s "5" toString()) must survive the fix exactly as before.
+        // ValLong(5)'s "5" toString) must survive the fix exactly as before.
         final Val[] left = new Val[]{ValString.create("5"), ValString.create("a")};
         final Val[] right = new Val[]{ValLong.create(5), ValLong.create(100)};
         final Side leftSide = new Side(List.<Val[]>of(left), new int[]{0}, 2);
@@ -325,7 +325,7 @@ class TestJoinExecutor {
     }
 
     // ------------------------------------------------------------------------------------------------------
-    // broadcastLookupJoin (Task B1 - see docs/join-scalability-implementation-plan.md, decisions D5/D7/D8):
+    // broadcastLookupJoin (Task B1, decisions D5/D7/D8):
     // the enrichment-join fast path, streaming a probe side against a keyed StateFetcher lookup instead of
     // materialising the lookup side.
     // ------------------------------------------------------------------------------------------------------
@@ -390,7 +390,7 @@ class TestJoinExecutor {
                 : ValNull.INSTANCE;
     }
 
-    // F1/SEC-1 regression (docs/query-graphdb-review-report.md): a ValErr lookup result must never be treated
+    // F1/SEC-1 regression: a ValErr lookup result must never be treated
     // as a match (and embedded as the joined Value) nor as a plain miss - it must abort the whole search.
 
     @Test
@@ -530,7 +530,7 @@ class TestJoinExecutor {
     }
 
     // ------------------------------------------------------------------------------------------------------
-    // streamingHashJoin + HeapBuildSideLookup (Task C1/C2 - see docs/join-scalability-implementation-plan.md):
+    // streamingHashJoin + HeapBuildSideLookup (Task C1/C2):
     // the streaming hash join with the build side behind a BuildSideLookup and the probe side consumed as an
     // Iterator with results pushed to a Consumer. Build side = right, probe side = left.
     // ------------------------------------------------------------------------------------------------------

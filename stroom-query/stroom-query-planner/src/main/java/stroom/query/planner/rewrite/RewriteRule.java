@@ -20,7 +20,7 @@ import stroom.query.planner.logical.LogicalPlan;
 
 /**
  * A pure {@code plan -> plan} transformation that improves physical placement without changing results (see
- * {@code docs/query-optimiser-implementation-plan.md}, Task 2.3). Implementations must be side-effect-free and
+ * Task 2.3). Implementations must be side-effect-free and
  * must not mutate their input (the {@link LogicalPlan} record tree is immutable, so this falls out naturally).
  */
 @FunctionalInterface

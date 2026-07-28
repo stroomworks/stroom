@@ -38,7 +38,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * no {@code Filter} - the {@code null} second argument throughout this class) into a perfectly ordinary, valid
  * single-source {@link SearchRequest} - reusing {@link AstToSearchRequestMapper} via a synthesised
  * {@code select <fields>} sub-query rather than hand-building wire types. Task A2 (see
- * {@code docs/join-scalability-implementation-plan.md}, decision D4) restricts that select list to exactly the
+ * decision D4) restricts that select list to exactly the
  * {@code selectFields} passed in, rather than {@code select *} as it did before A2 - see {@link
  * TestOptimisingQueryCompilerJoin} for the full join-query compilation this feeds into (Task 6.1x, and A1/A2's
  * end-to-end tests), and {@code compileJoinSide}'s own Javadoc for the {@code Filter}-present case this class

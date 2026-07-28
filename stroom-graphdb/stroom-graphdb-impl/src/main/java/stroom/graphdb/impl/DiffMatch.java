@@ -28,13 +28,13 @@ import java.util.Objects;
  * row. Two of these (one per instant) are compared by {@link DiffOperator} to classify the path.
  *
  * @param identity never null, never empty; the ordered tuple of bound element identities (anchor node, then each
- *                 hop's edge + target node - see {@code docs/temporal-cypher-diff-operator.md} &sect;5.2). This is
+ *  hop's edge + target node &sect;5.2). This is
  *                 the classification key: two paths at different instants are "the same path" iff their identities
  *                 are equal.
  * @param flatRow  never null; every bound variable's every property, keyed {@code "variable.property"} (exactly
  *                 the engine's internal row shape). Carries the full property set of every bound element, so a
  *                 by-value comparison of two instants' rows for the same identity is precisely the
- *                 {@code MODIFIED}-vs-{@code UNCHANGED} test (&sect;5.3), and any {@code variable.property} value is
+ *                 {@code MODIFIED}-vs-{@code UNCHANGED} test, and any {@code variable.property} value is
  *                 available for {@code before(...)}/{@code after(...)}/bare-reference projection.
  */
 public record DiffMatch(List<ElementId> identity, Map<String, Val> flatRow) {

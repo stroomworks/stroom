@@ -41,9 +41,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * F12: {@link SearchProviderRegistryImpl} must fail fast on a duplicate {@link SearchProvider#getDataSourceType()}
+ * F12: {@link SearchProviderRegistryImpl} must fail fast on a duplicate {@link SearchProvider#getDataSourceType}
  * rather than silently letting the second registration overwrite the first (see
- * {@code docs/query-graphdb-review-report.md} finding F12).
+ *  finding F12).
  */
 class TestSearchProviderRegistryImpl {
 

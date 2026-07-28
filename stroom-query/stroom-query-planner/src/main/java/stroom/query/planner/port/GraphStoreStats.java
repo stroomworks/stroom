@@ -20,7 +20,7 @@ import java.util.Optional;
 
 /**
  * The graph datasource row-count cost signal (implementation plan Task P5.1, {@code
- * docs/temporal-cypher-graph-implementation-plan.md}) - mirrors {@link StateStoreStats} exactly in shape, since a
+ * }) - mirrors {@link StateStoreStats} exactly in shape, since a
  * graph's anchor/adjacency access is also key-addressed point/prefix-lookup shaped, not a Lucene-style
  * partitioned scan.
  *

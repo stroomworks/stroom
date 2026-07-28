@@ -29,7 +29,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Table-driven {@code text -> AST} tests for {@link AstBuilder} (see
- * docs/query-optimiser-implementation-plan.md, Task 1.2). Complements the syntax-only smoke tests in
+ * .2). Complements the syntax-only smoke tests in
  * {@code TestStroomQLGrammar} by asserting the SHAPE of the resulting AST, not just that parsing succeeds.
  */
 class TestAstBuilder {
@@ -344,7 +344,7 @@ class TestAstBuilder {
     }
 
     // ------------------------------------------------------------------------------------------------------
-    // sub-query join source (docs/graphdb-stroomql-join-implementation-plan.md, Phase P1)
+    // sub-query join source
     // ------------------------------------------------------------------------------------------------------
 
     @Test

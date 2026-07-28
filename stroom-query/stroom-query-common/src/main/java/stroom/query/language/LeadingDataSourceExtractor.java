@@ -30,7 +30,7 @@ import java.util.Objects;
 import java.util.Optional;
 
 /**
- * Workstream A (docs/cypher-from-clause-implementation-plan.md, Phase 1): reads the leading {@code from "X"}
+ * Workstream A: reads the leading {@code from "X"}
  * data source name out of any query text - StroomQL or Cypher - grammar-agnostically, i.e. without a full parse
  * by either grammar. This lets {@code QueryServiceImpl.mapRequest} decide which grammar to hand a query to
  * <i>before</i> it commits to one, by resolving the name (via {@link DataSourceResolver}) and dispatching on the

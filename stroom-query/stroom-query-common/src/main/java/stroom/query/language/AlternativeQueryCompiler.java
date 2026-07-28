@@ -24,7 +24,7 @@ import org.jspecify.annotations.NullMarked;
 
 /**
  * A query-language compiler for a datasource that isn't addressed via StroomQL's own {@code from} clause
- * (implementation plan Task P6.1, {@code docs/temporal-cypher-graph-implementation-plan.md}) - e.g. Cypher, which
+ * (implementation plan Task P6.1) - e.g. Cypher, which
  * has no {@code FROM}-equivalent of its own (Decision D4), so its target datasource must instead be known from
  * context (a search's {@code SearchRequestSource.ownerDocRef}) before any compiler is chosen.
  *
@@ -51,7 +51,7 @@ public interface AlternativeQueryCompiler {
     /**
      * Compiles {@code query} into a full {@link SearchRequest}, exactly as {@link QueryCompiler#create} does -
      * see that method's Javadoc for the general contract. Only ever called after {@link #supports} has already
-     * returned true for {@code in.getQuery().getDataSource()}.
+     * returned true for {@code in.getQuery.getDataSource}.
      *
      * @param query             the source text to compile - in whatever language this compiler understands, not
      *                          necessarily StroomQL.

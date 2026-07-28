@@ -28,10 +28,10 @@ import java.util.Objects;
  * One classified {@code DIFF} path: its {@link ChangeKind} plus the baseline ({@code t1}) and comparison
  * ({@code t2}) rows that produced it. The delta-table projection reads values from these - {@code before(x)} from
  * {@link #baselineRow}, {@code after(x)} from {@link #comparisonRow}, and a bare reference from whichever side the
- * path is present in (see {@code docs/temporal-cypher-diff-operator.md} &sect;4.3).
+ * path is present in.
  *
  * @param changeKind    never null.
- * @param identity      never null; the shared classification identity (see {@link DiffMatch#identity()}).
+ * @param identity      never null; the shared classification identity (see {@link DiffMatch#identity}).
  * @param baselineRow   the {@code t1} bound-value row, or {@code null} for {@link ChangeKind#ADDED} (absent at
  *                      {@code t1}).
  * @param comparisonRow the {@code t2} bound-value row, or {@code null} for {@link ChangeKind#REMOVED} (absent at
@@ -51,7 +51,7 @@ public record ClassifiedMatch(
     /**
      * The row a <b>bare</b> property reference resolves against: the comparison ({@code t2}) side when the path is
      * present there ({@code ADDED}/{@code MODIFIED}/{@code UNCHANGED}), otherwise the baseline ({@code t1}) side
-     * ({@code REMOVED}) - the "value in whichever snapshot the element is present in" rule (&sect;4.3). Never null.
+     * ({@code REMOVED}) - the "value in whichever snapshot the element is present in" rule. Never null.
      */
     public Map<String, Val> presentRow() {
         return comparisonRow != null ? comparisonRow : Objects.requireNonNull(baselineRow, "baselineRow");

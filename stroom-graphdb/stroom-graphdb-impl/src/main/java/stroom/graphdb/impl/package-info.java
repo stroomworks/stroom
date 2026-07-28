@@ -16,7 +16,7 @@
 
 /**
  * The internal stores a {@link stroom.graphdb.shared.GraphDbDoc} owns and encapsulates (see
- * {@code docs/temporal-cypher-graph-implementation-plan.md}, Task PoC.0), plus the docstore/cache wiring for the
+ * Task PoC.0), plus the docstore/cache wiring for the
  * document itself. Nothing in this package is user-addressable except through the owning document.
  */
 @NullMarked

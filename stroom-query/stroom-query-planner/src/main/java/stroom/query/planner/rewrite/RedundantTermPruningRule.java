@@ -30,7 +30,7 @@ import java.util.stream.Collectors;
 
 /**
  * Drops an {@link ExpressionTerm} subsumed by an identical one in the same AND-conjunction (e.g. {@code x=1 AND
- * x=1}) - see {@code docs/query-optimiser-implementation-plan.md}, Task 2.3.
+ * x=1}), Task 2.3.
  *
  * <p>Scoped deliberately to "the same AND-conjunction": this rule flattens through nested {@code Op.AND} nodes
  * only (matching the binder's own left-nested pairwise fold - see {@code Binder}'s Javadoc) and de-duplicates

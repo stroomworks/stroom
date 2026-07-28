@@ -35,8 +35,8 @@ import java.util.List;
 /**
  * Extracts a time bound (and the remaining selectivity-relevant terms) for a {@code Scan} from the {@link Filter}
  * directly above it - shared by {@link LogicalPlanExplainer} (advisory cost estimate) and
- * {@link OptimisingQueryCompiler}'s {@code create()} enhancement (real shard/time-partition pruning) - see
- * {@code docs/query-optimiser-implementation-plan.md}, Task 5.1.
+ * {@link OptimisingQueryCompiler}'s {@code create} enhancement (real shard/time-partition pruning) - see
+ * Task 5.1.
  *
  * <p><b>Scope note</b>: only the common shape - a {@link Filter} directly above a {@code Scan} - is analysed.
  * A deeper/more complex shape isn't extracted from; callers just get no time bound in that case, not a wrong one.</p>

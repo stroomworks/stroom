@@ -30,10 +30,10 @@ import java.util.function.Consumer;
  * The on-heap {@link BuildSideLookup} - a plain {@link HashMap} of key to that key's rows, which is exactly the
  * structure the original {@link JoinExecutor#hashJoin} built inline over the right side. It is the fast default
  * for a build side that fits in memory; {@code stroom-query-common}'s spilling lookup falls back to it below its
- * threshold and swaps to a disk-backed store above it (see {@code docs/join-scalability-implementation-plan.md},
+ * threshold and swaps to a disk-backed store above it (
  * items C1/A6).
  *
- * <p>Pure JVM logic, no I/O - so {@link #close()} is a no-op. Not thread-safe: build then probe from one thread,
+ * <p>Pure JVM logic, no I/O - so {@link #close} is a no-op. Not thread-safe: build then probe from one thread,
  * matching the {@link BuildSideLookup} two-phase contract.</p>
  */
 public final class HeapBuildSideLookup implements BuildSideLookup {
@@ -47,7 +47,7 @@ public final class HeapBuildSideLookup implements BuildSideLookup {
      * so they are not probe targets (same rule as the original {@link JoinExecutor#hashJoin}).
      *
      * <p><b>Preconditions:</b> {@code side} must not be null.<br>
-     * <b>Postconditions:</b> never null; {@link #rowCount()} equals the number of non-null-keyed rows in
+     * <b>Postconditions:</b> never null; {@link #rowCount} equals the number of non-null-keyed rows in
      * {@code side}.</p>
      */
     public static HeapBuildSideLookup of(final Side side) {

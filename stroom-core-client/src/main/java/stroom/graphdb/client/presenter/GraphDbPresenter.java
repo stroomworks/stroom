@@ -43,7 +43,7 @@ import javax.inject.Provider;
  * tab a user happened to open last silently discarded the other tab's edit. That Settings tab was removed
  * entirely rather than left as a field-less placeholder.</p>
  *
- * <p>Task B2 (docs/graphdb-features-implementation-plan.md, Workstream B) reinstates a Settings tab - as the
+ * <p>Task B2 reinstates a Settings tab - as the
  * first tab, ahead of Data - but this time it owns exactly the three fields the removed tab did not:
  * {@link GraphDbSettingsPresenter} binds {@code temporalPrecision}, {@code retention} and
  * {@code nodeTypeMappings} only, and deliberately never touches {@code description}, so the failure mode above

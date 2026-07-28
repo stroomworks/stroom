@@ -208,7 +208,7 @@ class TestGraphFilter {
     @Test
     void propertyMissingNameAttribute_logsACleanErrorInsteadOfNpeing(@TempDir final Path root) {
         // Code-review fix: previously a <property> with no name attribute silently stored a null map key,
-        // which later threw an unhandled NullPointerException deep inside intern()/directBuffer() rather than
+        // which later threw an unhandled NullPointerException deep inside intern/directBuffer rather than
         // the class's own documented "logged and skipped" contract for a malformed record.
         try (GraphStores stores = GraphStores.provision(root.resolve("graph8"), DOC)) {
             final List<String> capturedErrors = new ArrayList<>();
@@ -291,8 +291,8 @@ class TestGraphFilter {
 
     @Test
     void partialEdgeWrite_isAbortedAtomically_precedingAndFollowingRecordsUnaffected(@TempDir final Path root) {
-        // Regression test for finding F4 (docs/query-graphdb-review-report.md; "Batch 1" write-up in
-        // docs/query-graphdb-review-findings.md): addEdge's dual out-edge/in-edge insert used to share one
+        // Regression test for finding F4 (; "Batch 1" write-up in
+        // ): addEdge's dual out-edge/in-edge insert used to share one
         // long-lived, batch-committed LmdbWriter with every other record - if the second of the two writes
         // threw after the first had already succeeded, the one-sided partial write was only logged, never
         // rolled back, so it rode along staged until the writer's next batch-commit threshold silently
@@ -427,7 +427,7 @@ class TestGraphFilter {
         assertThat(beforeRebuild).extracting(row -> row[0].toString())
                 .containsExactlyInAnyOrder("account-a", "account-b");
 
-        // rebuild() closes the original and re-provisions empty; re-ingesting the same XML must reproduce the
+        // rebuild closes the original and re-provisions empty; re-ingesting the same XML must reproduce the
         // same queryable state - proving the graph is genuinely a rebuildable materialized projection (design
         // doc &sect;5.2), not silently dependent on incremental state a rebuild would lose.
         currentStores.set(currentStores.get().rebuild(dir, DOC));
@@ -463,9 +463,9 @@ class TestGraphFilter {
     }
 
     /**
-     * Code-review fix: {@code capturedErrors} collects every message {@link GraphFilter}'s own {@code error()}
-     * logs (a malformed/mis-nested record) - a plain {@code new ErrorReceiverProxy()} (as this harness used
-     * unconditionally before) has no delegate {@link ErrorReceiver} set, so any {@code error()} call would throw
+     * Code-review fix: {@code capturedErrors} collects every message {@link GraphFilter}'s own {@code error}
+     * logs (a malformed/mis-nested record) - a plain {@code new ErrorReceiverProxy} (as this harness used
+     * unconditionally before) has no delegate {@link ErrorReceiver} set, so any {@code error} call would throw
      * a {@link NullPointerException} from inside {@code ErrorReceiverProxy.log} itself, masking whatever the test
      * actually meant to assert.
      */

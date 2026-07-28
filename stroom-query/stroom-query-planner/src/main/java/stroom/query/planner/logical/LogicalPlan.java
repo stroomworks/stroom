@@ -19,7 +19,7 @@ package stroom.query.planner.logical;
 import stroom.query.grammar.ast.AstPosition;
 
 /**
- * A node in the logical query plan tree (see {@code docs/query-optimiser-implementation-plan.md}, Task 2.1).
+ * A node in the logical query plan tree (Task 2.1).
  * Every node type mirrors a stage of the design doc's target compilation pipeline: {@link Scan} (a datasource
  * read), {@link Filter} (row-level {@code where}/{@code filter} predicates), {@link Project} (the {@code eval} +
  * {@code select} columns), {@link Join}, {@link Aggregate} ({@code group by}), {@link Having} (a post-aggregation
@@ -27,11 +27,11 @@ import stroom.query.grammar.ast.AstPosition;
  * final clause applied (typically {@link Limit} or {@link Project}), with {@link Scan} at the leaves.
  *
  * <p>{@link NodeScan}, {@link Expand}, and {@link VarLengthExpand} are the graph front-end's leaf/hop nodes (see
- * {@code docs/temporal-cypher-graph-implementation-plan.md}, Task PoC.2) - Cypher's analogue of {@link Scan} and
+ * Task PoC.2) - Cypher's analogue of {@link Scan} and
  * the graph's traversal operators, added to this same IR (rather than a forked one) so the graph reuses the
  * shared planner, rewrite rules, and cost model unchanged.</p>
  *
- * <p>{@link GraphJoinSource} is a further, narrower leaf (docs/graphdb-stroomql-join-implementation-plan.md,
+ * <p>{@link GraphJoinSource} is a further, narrower leaf (
  * Phase P1/P2): a Cypher sub-query used as one side of a {@link Join}, carried as opaque raw text rather than a
  * compiled {@link NodeScan}/{@link Expand} chain - see its own Javadoc for why.</p>
  */

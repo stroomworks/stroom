@@ -27,7 +27,7 @@ import java.util.stream.Collectors;
 /**
  * Structural simplification of {@code where}/{@code filter}/{@code having} predicates - purely mechanical, no
  * field metadata or legacy oracle needed (legacy does nothing like this today; see
- * {@code docs/query-optimiser-implementation-plan.md}, Task 2.3).
+ * Task 2.3).
  *
  * <p>StroomQL terms have no boolean-literal ({@code true}/{@code false}) equivalent, so this rule folds
  * structural redundancy rather than literal constants: double negation (<code>NOT(NOT(x))</code> &rarr;

@@ -73,9 +73,9 @@ public class SearchProviderRegistryImpl implements SearchProviderRegistry {
 
     /**
      * Registers {@code searchProvider} under {@code dataSourceType}, failing fast rather than silently
-     * overwriting a clash - see {@code docs/query-graphdb-review-report.md} finding F12. Two
+     * overwriting a clash finding F12. Two
      * {@link SearchProvider}s (or a {@link SearchProvider} and a {@link Searchable}-backed
-     * {@link SearchableSearchProvider}) declaring the same {@link SearchProvider#getDataSourceType()} is a
+     * {@link SearchableSearchProvider}) declaring the same {@link SearchProvider#getDataSourceType} is a
      * wiring bug: whichever was put second would previously win silently, and queries against the loser's
      * datasource type would be routed to the wrong provider with no indication anything was wrong.
      *

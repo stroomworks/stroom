@@ -7,7 +7,7 @@
         <xs:documentation>
             The v1 graph-mutation vocabulary (implementation plan Task P2.1): node/edge upserts and deletes,
             each carrying an explicit validFrom effective time (never defaulted from event/receipt time - see
-            docs/temporal-cypher-graph-implementation-plan.md, Task P2.1). Property values are string-only in
+            .1). Property values are string-only in
             v1; a typed value extension is a documented future escalation, not built here. Consumed by
             stroom.graphdb.impl.pipeline.GraphFilter via SAX local-name dispatch, not generated JAXB bindings -
             this schema is for validation and as documentation for XSLT authors, not a runtime dependency.

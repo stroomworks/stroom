@@ -15,7 +15,7 @@
  */
 
 /**
- * The {@code GraphDbDoc} document type (see {@code docs/temporal-cypher-graph-implementation-plan.md}, Task
+ * The {@code GraphDbDoc} document type (Task
  * PoC.0): the single document a user creates for a temporal Cypher graph, carrying only the genuine
  * user-configurable choices. Every physical store it owns is internal to {@code stroom-graphdb-impl}.
  */

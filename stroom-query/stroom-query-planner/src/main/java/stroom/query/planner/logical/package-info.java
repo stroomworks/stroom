@@ -15,7 +15,7 @@
  */
 
 /**
- * The logical plan IR (see {@code docs/query-optimiser-implementation-plan.md}, Task 2.1): a front-end-agnostic
+ * The logical plan IR (Task 2.1): a front-end-agnostic
  * tree of relational operators that {@code stroom.query.planner.bind.Binder} produces from a bound query, that
  * {@code stroom.query.planner.rewrite} rules transform, and that later phases cost and execute.
  */

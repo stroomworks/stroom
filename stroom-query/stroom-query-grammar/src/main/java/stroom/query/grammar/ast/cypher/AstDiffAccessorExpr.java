@@ -22,7 +22,7 @@ import java.util.Objects;
 
 /**
  * {@code before(a.prop)} / {@code after(a.prop)} - a {@code DIFF}-only accessor naming a property value in the
- * baseline ({@code t1}) or comparison ({@code t2}) snapshot (see {@code docs/temporal-cypher-diff-operator.md}
+ * baseline ({@code t1}) or comparison ({@code t2}) snapshot (
  * &sect;4.3). Only valid inside a {@code DIFF} query; {@code CypherToLogicalPlan} rejects it elsewhere. The
  * argument is always a {@link AstPropertyAccessExpr} (a whole-element form like {@code before(a)} is deferred with
  * {@code RETURN GRAPH}).

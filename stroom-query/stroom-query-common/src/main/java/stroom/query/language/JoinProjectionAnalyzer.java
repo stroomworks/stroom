@@ -37,12 +37,12 @@ import java.util.regex.Pattern;
 /**
  * Finds every field one side of a join needs fetched, so {@link OptimisingQueryCompiler#compileJoinSide} can
  * select exactly those columns instead of {@code select *} - see
- * {@code docs/join-scalability-implementation-plan.md}, decision D4 (Phase 1, item A2).
+ * decision D4 (Phase 1, item A2).
  *
  * <p><b>How field references are found</b>: {@link ExpressionOperator}/{@link ExpressionTerm} trees (the residual
  * {@code where}, and a compiled {@link TableSettings}'s {@code valueFilter}/{@code aggregateFilter}) are walked
- * structurally via {@link ExpressionTerm#getField()} - each term names exactly one field, so this part is exact.
- * A {@link Column#getExpression()}, however, is an arbitrary StroomQL expression - e.g. {@code "a.StreamId"},
+ * structurally via {@link ExpressionTerm#getField} - each term names exactly one field, so this part is exact.
+ * A {@link Column#getExpression}, however, is an arbitrary StroomQL expression - e.g. {@code "a.StreamId"},
  * {@code "sum(a.Amount)"}, or {@code "concat(a.Name, b.Name)"} - not just a single field, so this class instead
  * scans that expression text for every {@code alias.field}-shaped token with a regex. This is deliberately
  * conservative in the safe direction: it can only ever <i>over</i>-match (treat something that merely looks like
@@ -146,7 +146,7 @@ final class JoinProjectionAnalyzer {
         }
     }
 
-    /** Scans free-form expression text (a {@link Column#getExpression()}) for every {@code alias.field} token -
+    /** Scans free-form expression text (a {@link Column#getExpression}) for every {@code alias.field} token -
      * see this class's Javadoc for why a regex scan, not a parse. A null/blank expression contributes nothing. */
     private static void collectFromExpressionText(
             final @Nullable String expression, final String alias, final Set<String> out) {

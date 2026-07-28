@@ -24,7 +24,7 @@ import java.util.Objects;
 
 /**
  * Runs a fixed, ordered sequence of {@link RewriteRule}s over a {@link LogicalPlan} (see
- * {@code docs/query-optimiser-implementation-plan.md}, Task 2.3).
+ * Task 2.3).
  */
 public final class RewritePipeline {
 

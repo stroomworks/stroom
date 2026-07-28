@@ -40,7 +40,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /**
  * Task 6.1x: proves {@link OptimisingQueryCompiler#create} now compiles a two-source join query into a
  * {@link SearchRequest} whose {@code Query.dataSource} routes to the sentinel {@link JoinDataSourceType#TYPE}
- * with a populated {@code JoinSpec} - see {@code docs/query-optimiser-implementation-plan.md}, Phase 6, for the
+ * with a populated {@code JoinSpec}, Phase 6, for the
  * finding that made this task much smaller than originally scoped (the mapper's existing blind field-text
  * passthrough already handles alias-qualified references correctly, for explicitly-aliased fields).
  */
@@ -146,7 +146,7 @@ class TestOptimisingQueryCompilerJoin {
     }
 
     // ------------------------------------------------------------------------------------------------------
-    // Task A1 (see docs/join-scalability-implementation-plan.md): per-side predicate push-down, end-to-end.
+    // Task A1: per-side predicate push-down, end-to-end.
     // A separate, index-eligible field-info source is used here (rather than the plain FIELD_INFO_SOURCE above,
     // whose fields have no ConditionSet and are therefore never index-eligible) so these tests actually exercise
     // a push. See TestJoinPredicateSplitter for the split logic's own thorough unit coverage.
@@ -230,7 +230,7 @@ class TestOptimisingQueryCompilerJoin {
     }
 
     // ------------------------------------------------------------------------------------------------------
-    // Task A3 (see docs/join-scalability-implementation-plan.md, §3): a pushed time-bound predicate must prune
+    // Task A3: a pushed time-bound predicate must prune
     // shards on that side, not just filter rows after they're read - NodeSearchTaskCreator.getPartitionTimeRange
     // only ever reads Query.timeRange, never derives bounds from Query.expression, so createJoin must promote a
     // pushed time predicate into that side's Query.timeRange (reusing Task 5.2's applyTimeRange).
@@ -296,7 +296,7 @@ class TestOptimisingQueryCompilerJoin {
     }
 
     /**
-     * Task B5 (see {@code docs/join-scalability-implementation-plan.md}, decision D1's Phase 0): {@code RIGHT}
+     * Task B5 (decision D1's Phase 0): {@code RIGHT}
      * (and {@code FULL}) joins are not reserved keywords in the join clause's grammar rule at all
      * ({@code joinType=(LEFT | INNER)?} - only those two keywords are recognised there), so attempting one is a
      * plain parse failure - a clear {@link SyntaxException}, not a silently mis-executed or wrong-result join.

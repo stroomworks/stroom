@@ -23,7 +23,7 @@ import java.util.Optional;
 /**
  * The stream-store row-count cost signal {@code CostModel} (Task 3.2) tries first for a {@code Scan} - wraps
  * {@code MetaService.getSelectionSummary(FindMetaCriteria)} in the real adapter (see
- * {@code docs/query-optimiser-implementation-plan.md}, Task 3.1). The real adapter ({@code MetaStatsAdapter})
+ * Task 3.1). The real adapter ({@code MetaStatsAdapter})
  * lives in {@code stroom-query-common}, which can safely depend on {@code stroom-meta-api}; this interface
  * exists so {@code stroom-query-planner} never needs that dependency itself.
  */

@@ -45,7 +45,7 @@ import java.util.function.Consumer;
 
 /**
  * The disk-backed {@link BuildSideLookup} - the spill store for a hash join whose build side is too large for the
- * heap (see {@code docs/join-scalability-implementation-plan.md}, item C1). It reuses the same off-heap LMDB
+ * heap (item C1). It reuses the same off-heap LMDB
  * machinery ordinary searches use, but as a plain keyed multimap rather than {@code LmdbDataStore}'s grouping
  * store (which collapses rows in a group via {@code Generator.merge} - a join build side must instead preserve
  * every row), so it is built directly on the low-level {@code stroom.lmdb2} primitives, modelled on Plan B's

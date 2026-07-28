@@ -46,7 +46,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * The golden corpus for the locked v1 Cypher subset (see {@code Cypher.g4}'s file header and
- * {@code docs/temporal-cypher-graph-implementation-plan.md}, Task 0.2 outcome / Task PoC.1): every listed
+ * Task 0.2 outcome / Task PoC.1): every listed
  * in-subset construct must parse, and every listed out-of-subset construct must throw {@link SyntaxException} -
  * mirroring the parity-test discipline the query-optimiser project used for StroomQL (Task 1.6).
  */
@@ -191,7 +191,7 @@ class TestCypherQueryParser {
         assertThat(mixed.branches()).hasSize(3);
         assertThat(mixed.unionAll()).containsExactly(false, true);
 
-        // A plain query is a one-branch statement; the single-query parse() entry point unwraps it.
+        // A plain query is a one-branch statement; the single-query parse entry point unwraps it.
         assertThat(CypherQueryParser.parseStatement("MATCH (a:Account) RETURN a.id").isSingle()).isTrue();
     }
 
@@ -392,7 +392,7 @@ class TestCypherQueryParser {
     }
 
     // ------------------------------------------------------------------------------------------------------
-    // Workstream D (docs/graphdb-cytoscape-visualisation.html §3 / docs/temporal-cypher-diff-operator.md §4.4):
+    // Workstream D (.md §4.4):
     // the RETURN GRAPH element-row terminal form, plain and combined with DIFF.
     // ------------------------------------------------------------------------------------------------------
 
@@ -436,7 +436,7 @@ class TestCypherQueryParser {
     }
 
     // ------------------------------------------------------------------------------------------------------
-    // Workstream A (docs/cypher-from-clause-implementation-plan.md, Phase 3): the optional leading `from "X"`
+    // Workstream A: the optional leading `from "X"`
     // portability clause.
     // ------------------------------------------------------------------------------------------------------
 

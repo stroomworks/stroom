@@ -25,12 +25,12 @@ import java.util.Objects;
 
 /**
  * The root AST node for a whole Cypher query: an optional leading {@code from "X"} datasource selector (Workstream
- * A, docs/cypher-from-clause-implementation-plan.md), followed by one or more reading clauses ({@code MATCH}/
+ * A), followed by one or more reading clauses ({@code MATCH}/
  * {@code WITH}, in source order) and exactly one {@code RETURN} clause. The grammar accepts the full locked v1
  * subset (multiple stages, chains, variable-length paths); {@code CypherToLogicalPlan} compiles fixed-length
  * multi-hop chains and bounded variable-length paths within a single reading clause (Tasks P3.2/P3.3), but a query
  * with more than one reading clause is still rejected with a clear "not yet supported" error at compile time.
- * {@code CypherToLogicalPlan} does not read {@link #dataSourceName()} at all - it is purely a datasource selector,
+ * {@code CypherToLogicalPlan} does not read {@link #dataSourceName} at all - it is purely a datasource selector,
  * consumed instead by {@code CypherCompiler} when the target graph is not already pre-set on the incoming request.
  *
  * @param dataSourceName nullable; the unescaped name from an optional leading {@code from "X"} clause, or

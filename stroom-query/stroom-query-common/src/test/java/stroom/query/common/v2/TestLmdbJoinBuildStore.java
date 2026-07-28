@@ -38,7 +38,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Proves {@link LmdbJoinBuildStore} - the disk-backed join build side (see
- * {@code docs/join-scalability-implementation-plan.md}, item C1): keyed multi-value retrieval, duplicate-row
+ * item C1): keyed multi-value retrieval, duplicate-row
  * preservation, prefix-free key encoding, the build-to-probe commit boundary, and temp-dir cleanup on close.
  */
 class TestLmdbJoinBuildStore {

@@ -138,8 +138,10 @@ If the goal is a production-capable Graph DB:
 - [README.md](README.md) — the blockers in their user-facing form
 - [09-gql-and-neo4j.md](09-gql-and-neo4j.md) — how the gaps compare with Neo4j and GQL
 
-### Further reading (engineering)
+### Further reading
 
-[`archive/cypher-language-feature-roadmap.md`](archive/cypher-language-feature-roadmap.md) surveys the unsupported language features with its own value and
-cost estimates. `docs/query-graphdb-review-report.md` and `docs/query-graphdb-review-findings.md` record the
-pre-production review and its findings.
+[09-gql-and-neo4j.md](09-gql-and-neo4j.md) puts these gaps in the context of ISO GQL and Neo4j. The
+earlier feature roadmap and pre-production review that produced several entries above have been retired
+to git history — see [13-developer-guide.md](13-developer-guide.md#design-history). Their findings were
+either fixed, captured on this page, or recorded as behavioural caveats in
+[06-language-reference.md](06-language-reference.md) and [09-gql-and-neo4j.md](09-gql-and-neo4j.md).

@@ -384,10 +384,10 @@ class QueryServiceImpl implements QueryService, QueryFieldProvider {
                             .getData(resultRequest.getComponentId());
 
                     final TimeFilter timeFilter = null;
-//                    if (mappedRequest.getQuery() != null && mappedRequest.getQuery().getTimeRange() != null) {
+//                    if (mappedRequest.getQuery != null && mappedRequest.getQuery.getTimeRange != null) {
 //                        timeFilter = DateExpressionParser.getTimeFilter(
-//                                mappedRequest.getQuery().getTimeRange(),
-//                                mappedRequest.getDateTimeSettings());
+//                                mappedRequest.getQuery.getTimeRange,
+//                                mappedRequest.getDateTimeSettings);
 //                    }
 
                     final Predicate<Val> predicate = valPredicateFactory.createValPredicate(
@@ -593,7 +593,7 @@ class QueryServiceImpl implements QueryService, QueryFieldProvider {
 
 //    @Override
 //    public Boolean destroy(final DestroyQueryRequest request) {
-//        return searchResponseCreatorManager.destroy(request.getQueryKey());
+//        return searchResponseCreatorManager.destroy(request.getQueryKey);
 //    }
 
     private SearchRequest mapRequest(final QuerySearchRequest searchRequest) {
@@ -630,7 +630,7 @@ class QueryServiceImpl implements QueryService, QueryFieldProvider {
         // clause of its own. Every existing caller (which never populates ownerDocRef for this flow) is routed
         // through the unchanged queryCompiler.create(...) call below, exactly as before this task.
         //
-        // Workstream A (docs/cypher-from-clause-implementation-plan.md): when there is no ownerDocRef (a generic
+        // Workstream A: when there is no ownerDocRef (a generic
         // /csv/search, MCP, or embedded-dashboard caller), fall back to resolving the query text's own leading
         // `from "X"` name to a typed DocRef, so the dispatch below can still route by type without relying on
         // ownerDocRef at all. A name that cannot be resolved (unknown/ambiguous) - or no leading from at all - is
@@ -704,7 +704,7 @@ class QueryServiceImpl implements QueryService, QueryFieldProvider {
     }
 
     /**
-     * Workstream A (docs/cypher-from-clause-implementation-plan.md, Phase 2): resolves the query text's own
+     * Workstream A: resolves the query text's own
      * leading {@code from "X"} name (via {@link LeadingDataSourceExtractor}) to a typed {@link DocRef}, so
      * {@link #mapRequest} can dispatch to an {@link AlternativeQueryCompiler} by type even when there is no
      * {@code ownerDocRef} at all.
@@ -864,21 +864,21 @@ class QueryServiceImpl implements QueryService, QueryFieldProvider {
 
     private void storeSearchHistory(final QuerySearchRequest request) {
 //        // We only want to record search history for user initiated searches.
-//        if (request.isStoreHistory()) {
+//        if (request.isStoreHistory) {
 //            try {
 //                // Add this search to the history so the user can get back to
 //                // this search again.
-//                final Search search = request.getSearch();
+//                final Search search = request.getSearch;
 //                final Query query = new Query(
-//                        search.getDataSourceRef(),
-//                        search.getExpression(),
-//                        search.getParams(),
-//                        search.getTimeRange());
+//                        search.getDataSourceRef,
+//                        search.getExpression,
+//                        search.getParams,
+//                        search.getTimeRange);
 //
-//                final StoredQuery storedQuery = new StoredQuery();
+//                final StoredQuery storedQuery = new StoredQuery;
 //                storedQuery.setName("History");
-//                storedQuery.setDashboardUuid(request.getQueryDocUuid());
-//                storedQuery.setComponentId(request.getComponentId());
+//                storedQuery.setDashboardUuid(request.getQueryDocUuid);
+//                storedQuery.setComponentId(request.getComponentId);
 //                storedQuery.setQuery(query);
 //                queryService.create(storedQuery);
 //
@@ -1114,9 +1114,9 @@ class QueryServiceImpl implements QueryService, QueryFieldProvider {
             }
         } else {
             keywordsValidAfter = TokenType.getKeywordsValidAfter(lastKeyword);
-//            if (lastKeywordSequence.size() <= 3) {
+//            if (lastKeywordSequence.size <= 3) {
 //                // e.g. 'select xxx'
-//                keywordsValidAfter = Collections.emptySet();
+//                keywordsValidAfter = Collections.emptySet;
 //            } else {
 //                keywordsValidAfter = TokenType.getKeywordsValidAfter(lastKeyword);
 //            }

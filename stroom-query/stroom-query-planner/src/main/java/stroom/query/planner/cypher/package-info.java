@@ -17,7 +17,7 @@
 /**
  * Compiles a Cypher AST ({@code stroom.query.grammar.ast.cypher}) into the shared
  * {@link stroom.query.planner.logical.LogicalPlan} IR (see
- * {@code docs/temporal-cypher-graph-implementation-plan.md}, Task PoC.3) - Cypher's analogue of
+ * Task PoC.3) - Cypher's analogue of
  * {@link stroom.query.planner.bind.Binder}.
  */
 @NullMarked

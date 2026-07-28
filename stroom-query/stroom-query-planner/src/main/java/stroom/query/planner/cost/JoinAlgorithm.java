@@ -18,7 +18,7 @@ package stroom.query.planner.cost;
 
 /**
  * The physical join algorithm {@link JoinCostModel} chose (see
- * {@code docs/query-optimiser-implementation-plan.md}, Task 3.3). Exercised for real in Phase 6 - this task
+ * Task 3.3). Exercised for real in Phase 6 - this task
  * only costs and chooses, it doesn't execute anything.
  */
 public enum JoinAlgorithm {

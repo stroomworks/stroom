@@ -37,8 +37,7 @@ import java.util.Objects;
 import java.util.TreeMap;
 
 /**
- * Executes a {@code RETURN GRAPH} query (see {@code docs/temporal-cypher-diff-operator.md} &sect;4.4 / {@code
- * docs/graphdb-cytoscape-visualisation.html} &sect;3): the element-row output mode, plain or combined with {@code
+ * Executes a {@code RETURN GRAPH} query: the element-row output mode, plain or combined with {@code
  * DIFF} (the annotated-subgraph mode). Mirrors {@link DiffExecutor}'s role for the delta table - a small,
  * dependency-free static entry point over {@link GraphTraversalEngine} - but is kept as its own class rather than
  * folded into {@link DiffExecutor}, since a <em>plain</em> {@code RETURN GRAPH} has no diff/classification step at
@@ -51,7 +50,7 @@ import java.util.TreeMap;
  * <p><b>{@code DIFF ... RETURN GRAPH} form</b> ({@code diffContext != null}): collects the element union at each
  * instant ({@link GraphTraversalEngine#executeGraphBindingsAsOf}), converts each instant's {@code Map<ElementId,
  * ElementDetail>} to a {@code List<DiffMatch>} of <b>singleton-identity</b> matches (one {@link ElementId} per
- * identity, {@link ElementDetail#properties()} as the flat row), and feeds both to the existing, unchanged {@link
+ * identity, {@link ElementDetail#properties} as the flat row), and feeds both to the existing, unchanged {@link
  * DiffOperator#classify} - per-element classification (as &sect;5.6 requires: "each node/edge carries its own
  * changeKind, not a path roll-up") falls straight out of that generic path-identity machinery once identity is a
  * one-element list. {@code UNCHANGED} elements are <b>kept</b> here (unlike {@link DiffExecutor}, which suppresses
@@ -186,7 +185,7 @@ public final class GraphElementExecutor {
 
     /**
      * The {@code id} column: a node's external id string; an edge's {@code src|type|dst}, using the edge's own
-     * endpoints' external ids and its type name (already carried as {@code detail.labels()}'s single entry -
+     * endpoints' external ids and its type name (already carried as {@code detail.labels}'s single entry -
      * cheaper than a second {@code UidLookupDb} round trip for the edge-type namespace).
      */
     private static String renderElementId(final Txn<ByteBuffer> readTxn, final GraphStores stores,
@@ -214,7 +213,7 @@ public final class GraphElementExecutor {
      * {@link CypherToLogicalPlan#ELEMENT_ROW_COLUMNS}'s Javadoc for why one JSON column, not one column per
      * property key). Keys are sorted for a deterministic rendering (property insertion order is an LMDB storage
      * detail, not a meaningful ordering). Numeric/boolean values render unquoted; everything else (including
-     * dates/durations/xml/error) renders as a quoted, escaped string via {@link Val#toString()}.
+     * dates/durations/xml/error) renders as a quoted, escaped string via {@link Val#toString}.
      */
     private static String renderPropertiesAsJson(final Map<String, Val> properties) {
         final Map<String, Val> sorted = new TreeMap<>(properties);

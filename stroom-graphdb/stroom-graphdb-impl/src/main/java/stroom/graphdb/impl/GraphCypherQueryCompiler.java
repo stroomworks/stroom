@@ -37,7 +37,7 @@ public class GraphCypherQueryCompiler implements AlternativeQueryCompiler {
 
     /**
      * @param docFinder never null; passed straight through to {@link CypherCompiler} - see its Javadoc for why
-     *                  (Workstream A, docs/cypher-from-clause-implementation-plan.md).
+     *  (Workstream A).
      */
     @Inject
     public GraphCypherQueryCompiler(final DocFinder docFinder) {

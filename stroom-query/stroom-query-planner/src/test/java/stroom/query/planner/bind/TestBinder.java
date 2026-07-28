@@ -131,7 +131,7 @@ class TestBinder {
     @Test
     void paramTermFieldInMultiSourceQuery_bindsCleanly_notARawIllegalStateException() {
         // A PARAM used as a where-term field resolves to an unqualified (alias == null) reference. In a
-        // multi-source query this used to reach Scope.onlyScan() and throw a raw IllegalStateException; a param
+        // multi-source query this used to reach Scope.onlyScan and throw a raw IllegalStateException; a param
         // is a runtime value with no datasource field metadata, so it must simply bind without validation.
         final LogicalPlan plan = bind(
                 "from \"Events\" as e join \"Users\" as u on e.UserId = u.Id where ${p} = 1 select e.StreamId");
@@ -256,7 +256,7 @@ class TestBinder {
     }
 
     // ------------------------------------------------------------------------------------------------------
-    // Workstream C - a Cypher sub-query as a join source (docs/graphdb-stroomql-join-implementation-plan.md,
+    // Workstream C - a Cypher sub-query as a join source (
     // Phase P2). The graph side's schema is derived from its own RETURN ... AS list (CypherJoinSchema's C0
     // contract) - Events/Users' FieldInfoSource metadata plays no part in resolving it.
     // ------------------------------------------------------------------------------------------------------

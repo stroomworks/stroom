@@ -28,7 +28,7 @@ import java.util.Objects;
 
 /**
  * Feature flag for the grammar-driven parser and cost-based query optimiser
- * (see {@code docs/query-optimiser-implementation-plan.md}, Tasks 0.3 and 5.4). Resolves to the property path
+ * (Tasks 0.3 and 5.4). Resolves to the property path
  * {@code stroom.query.optimiser.mode}. Defaults to {@link QueryOptimiserMode#OFF}: the legacy
  * {@code SearchRequestFactory} compiler serves every query until this is explicitly changed. No shipped YAML has
  * ever set this (it has only ever run at this Java-side default), so the {@code enabled} (boolean) property name

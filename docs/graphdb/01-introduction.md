@@ -171,8 +171,8 @@ Terms are used consistently throughout this documentation set with these meaning
 - To understand the storage and temporal model: [02-architecture.md](02-architecture.md)
 - To write queries: [06-language-reference.md](06-language-reference.md)
 
-### Further reading (engineering)
+### Further reading
 
-Design rationale, written during development and pinned to the branches noted in each:
-`docs/temporal-cypher-graph.md` (the original design proposal and feasibility study) and
-`docs/temporal-cypher-diff-operator.md` (the design of `DIFF`).
+[13-developer-guide.md](13-developer-guide.md) covers the code structure and the design decisions behind
+it. The original design proposals and implementation plans have been retired; they remain in the
+repository's git history.

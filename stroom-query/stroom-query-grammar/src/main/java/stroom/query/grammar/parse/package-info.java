@@ -17,7 +17,7 @@
 /**
  * The single entry point ({@code StroomQlParser}) that wires the ANTLR lexer/parser, precise syntax-error
  * reporting, and {@link stroom.query.grammar.ast.AstBuilder} together into one {@code text -> AstQuery} call (see
- * {@code docs/query-optimiser-implementation-plan.md}, Task 1.3).
+ * Task 1.3).
  */
 @NullMarked
 package stroom.query.grammar.parse;

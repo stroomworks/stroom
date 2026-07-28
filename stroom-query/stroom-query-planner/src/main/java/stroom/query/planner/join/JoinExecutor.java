@@ -36,20 +36,20 @@ import java.util.function.Consumer;
 /**
  * Combines two already-realised row sets into joined {@code Val[]} rows - pure JVM logic, no I/O, following the
  * same "standalone, thoroughly unit-tested, not wired into anything yet" posture Phase 3's {@code
- * CostModel}/{@code JoinCostModel} used - see {@code docs/query-optimiser-implementation-plan.md}, Task 6.1c.
+ * CostModel}/{@code JoinCostModel} used, Task 6.1c.
  *
  * <p>Equi-key matching canonicalises each key {@link Val} via {@link #keyOf} - the <b>same</b> semantic for both
  * {@link JoinAlgorithm#HASH_JOIN} and {@link JoinAlgorithm#NESTED_LOOP} - so a different algorithm choice never
  * changes which rows match, only how fast the match is found (the design doc's "algorithm choice never changes
  * the result" invariant). A numeric-typed component (integer/long/short/byte, float/double) keys on its numeric
  * value, so e.g. {@code ValLong 5} and {@code ValDouble 5.0} match; every other type - in particular string and
- * date/duration - keys on its existing {@code toString()} unchanged (see {@link #keyOf}'s Javadoc for the exact
- * rule, and {@code docs/query-graphdb-review-report.md} finding F5 for the divergent-date residual this leaves).
+ * date/duration - keys on its existing {@code toString} unchanged (see {@link #keyOf}'s Javadoc for the exact
+ * rule, and finding F5 for the divergent-date residual this leaves).
  * </p>
  *
  * <p><b>SQL null semantics</b>: a row whose equi-key value is null ({@link ValNull}, or a {@code null} array
  * slot) never joins - SQL {@code NULL != NULL} - so it is excluded from a hash bucket and never equals another
- * null-keyed row. Without this, {@link ValNull#toString()} returning {@code null} would make every null-keyed
+ * null-keyed row. Without this, {@link ValNull#toString} returning {@code null} would make every null-keyed
  * left row collide with every null-keyed right row and fabricate a spurious cross-product. A null-keyed left row
  * is still emitted (null-padded) for a {@link JoinType#LEFT} join, exactly like any other unmatched left row.</p>
  *
@@ -67,7 +67,7 @@ import java.util.function.Consumer;
  * {@link HeapBuildSideLookup}, so both share one join loop.</p>
  *
  * <p>{@link JoinAlgorithm#BROADCAST_LOOKUP} - the enrichment-join fast path against a keyed Plan B/State store
- * (see {@code docs/join-scalability-implementation-plan.md}, decision D8, item B1) - is <b>not</b> reachable
+ * (decision D8, item B1) - is <b>not</b> reachable
  * through {@link #join(Side, Side, JoinType, JoinAlgorithm, long)}: that method's contract is "combine two
  * already-materialised row sets", and the whole point of broadcast lookup is to <i>never</i> materialise the
  * lookup side. It has its own entry point instead: {@link #broadcastLookupJoin}.</p>
@@ -112,7 +112,7 @@ public final class JoinExecutor {
      * Same contract as {@link #join(Side, Side, JoinType, JoinAlgorithm, long)}, with no output-row cap (equivalent
      * to passing {@link Long#MAX_VALUE}). Kept as a separate overload, rather than a default parameter, purely so
      * every pre-existing caller/test that doesn't care about the cap is unaffected by its addition (see
-     * {@code docs/join-scalability-implementation-plan.md}, decision D1).
+     * decision D1).
      *
      * @return never null; never throws {@link JoinLimitExceededException} (there is no cap to breach).
      */
@@ -123,7 +123,7 @@ public final class JoinExecutor {
 
     /**
      * Combines two already-realised row sets into joined rows, aborting once the joined output would exceed
-     * {@code maxOutputRows} - see {@code docs/join-scalability-implementation-plan.md}, decision D1 (Phase 0, item
+     * {@code maxOutputRows}, decision D1 (Phase 0, item
      * C4). The cap is checked as each output row is produced (not just once at the end), so a single left row
      * with a very large fan-out of matches on the right is still bounded rather than fully accumulated before the
      * check runs.
@@ -162,7 +162,7 @@ public final class JoinExecutor {
     /**
      * The enrichment-join fast path: streams {@code probeRows}, doing one keyed point-lookup per row against a
      * Plan B/State store via {@code stateFetcher} instead of materialising that store as a join side - see
-     * {@code docs/join-scalability-implementation-plan.md}, decisions D5/D7/D8 (item B1). Every combined row is
+     * decisions D5/D7/D8 (item B1). Every combined row is
      * handed to {@code out} as it is produced (never accumulated into a list here), so memory is bounded by the
      * probe side alone, not by the lookup store's size.
      *
@@ -181,7 +181,7 @@ public final class JoinExecutor {
      * miss - it is <b>not</b> null-padded/dropped like a genuine {@code ValNull} miss, and is never embedded as
      * the {@code Value} column. It aborts the whole probe by throwing {@link BroadcastLookupFailedException},
      * exactly like {@link JoinLimitExceededException} aborts on a breached cap (see
-     * {@code docs/query-graphdb-review-report.md}, findings F1/SEC-1).</p>
+     * findings F1/SEC-1).</p>
      *
      * <p><b>Preconditions:</b> {@code probeRows}, {@code stateFetcher}, {@code mapName}, {@code joinType}, and
      * {@code out} must not be null; {@code probeKeyPosition} must be a valid index into every row {@code
@@ -281,7 +281,7 @@ public final class JoinExecutor {
                     // type) is a real error, never "no match" - it must not be embedded as the joined
                     // Value column, nor counted as a matched row. Fail the whole search the same way a
                     // breached output cap does, rather than silently downgrading the failure to junk data
-                    // (see docs/query-graphdb-review-report.md, findings F1/SEC-1). A genuine miss is
+                    // (findings F1/SEC-1). A genuine miss is
                     // ValNull, handled unchanged below.
                     throw BroadcastLookupFailedException.forLookupError(mapName, probeKey.toString(), lookedUp);
                 }
@@ -336,7 +336,7 @@ public final class JoinExecutor {
     /**
      * Streams a probe side through an already-built {@link BuildSideLookup}, emitting each joined row to
      * {@code out} as it is produced rather than accumulating a list - the streaming/spilling hash join (see
-     * {@code docs/join-scalability-implementation-plan.md}, items C1/C2). Only the build side need be resident
+     * items C1/C2). Only the build side need be resident
      * (and it may itself spill to disk behind {@link BuildSideLookup}); the probe side is consumed one row at a
      * time and never materialised, so join memory is bounded by the build side alone.
      *
@@ -468,7 +468,7 @@ public final class JoinExecutor {
      * {@code maxOutputRows}, an exception is thrown instead and {@code result} is left with exactly
      * {@code maxOutputRows} rows (the breaching row is never added).</p>
      *
-     * @throws JoinLimitExceededException if appending a row would make {@code result.size() > maxOutputRows}.
+     * @throws JoinLimitExceededException if appending a row would make {@code result.size > maxOutputRows}.
      */
     private static void appendMatchesOrPad(
             final List<Val[]> result,
@@ -502,12 +502,12 @@ public final class JoinExecutor {
      * <p>Each non-null component is rendered by {@link #canonicalKeyComponent(Val)}: a <b>numeric-typed</b>
      * {@link Val} (integer/long/short/byte, float/double) is canonicalised so numerically-equal values of
      * different numeric types key identically - e.g. {@code ValLong 5} and {@code ValDouble 5.0} both render
-     * {@code "5"} - while every other type keeps its existing {@link Val#toString()} exactly, unchanged from
+     * {@code "5"} - while every other type keeps its existing {@link Val#toString} exactly, unchanged from
      * before this canonicalisation existed. In particular a {@code ValString "5"} still keys as {@code "5"} (so
      * the already-working string-vs-integer match is preserved) and a {@code ValString "5.0"} keys as the
      * literal {@code "5.0"} - a string is never reinterpreted as a number. Dates and durations are also left
      * un-canonicalised - a divergent date format across two sides is a documented residual, not fixed here (see
-     * {@code docs/query-graphdb-review-report.md}, finding F5).</p>
+     * finding F5).</p>
      *
      * <p>Public so every producer of a {@link BuildSideLookup} key derives it identically to how
      * {@link #streamingProbe} derives the probe key - e.g. {@code JoinSearchProvider} populating the build side
@@ -534,7 +534,7 @@ public final class JoinExecutor {
 
     /**
      * Renders one equi-key component: {@link #canonicalNumeric(Val)}'s result for a numeric-typed {@code value},
-     * or {@code value.toString()} unchanged for every other type - see {@link #keyOf}'s Javadoc for why
+     * or {@code value.toString} unchanged for every other type - see {@link #keyOf}'s Javadoc for why
      * non-numeric types (in particular strings and dates) are deliberately left as-is.
      */
     private static String canonicalKeyComponent(final Val value) {
@@ -548,16 +548,16 @@ public final class JoinExecutor {
      * A canonical numeric rendering of {@code value}, or {@code null} if its {@link Type} is not one of the
      * fixed-point/floating-point numeric types this method canonicalises: {@code BYTE}/{@code SHORT}/
      * {@code INTEGER}/{@code LONG} (fixed-point) and {@code FLOAT}/{@code DOUBLE} (floating-point). Every other
-     * type - including {@code DATE} and {@code DURATION}, deliberately excluded even though {@link Type#isNumber()}
-     * is {@code true} for them - returns {@code null} here and falls back to {@code toString()} in
+     * type - including {@code DATE} and {@code DURATION}, deliberately excluded even though {@link Type#isNumber}
+     * is {@code true} for them - returns {@code null} here and falls back to {@code toString} in
      * {@link #canonicalKeyComponent(Val)}.
      *
-     * <p>A fixed-point type renders via {@link Val#toLong()} directly - <b>never</b> round-tripped through a
+     * <p>A fixed-point type renders via {@link Val#toLong} directly - <b>never</b> round-tripped through a
      * {@code double} - so a {@code long} outside {@code double}'s exact-integer range still keys on its precise
      * value rather than a lossy approximation. A floating-point type renders in that same long form when the
      * value is integral and within {@code long} range (so {@code ValDouble 5.0} keys identically to
      * {@code ValLong 5}); a genuinely fractional value (or one too large for a {@code long}) falls back to
-     * {@link Val#toString()} unchanged (so {@code ValDouble 5.5} keys as {@code "5.5"}, exactly as before).</p>
+     * {@link Val#toString} unchanged (so {@code ValDouble 5.5} keys as {@code "5.5"}, exactly as before).</p>
      */
     private static @Nullable String canonicalNumeric(final Val value) {
         return switch (value.type()) {
@@ -569,8 +569,8 @@ public final class JoinExecutor {
 
     /**
      * Canonicalises a {@code FLOAT}/{@code DOUBLE} {@link Val}: the exact {@code long} form if the value is
-     * integral (per {@link Val#hasFractionalPart()}) and within {@code long} range, otherwise
-     * {@link Val#toString()} unchanged.
+     * integral (per {@link Val#hasFractionalPart}) and within {@code long} range, otherwise
+     * {@link Val#toString} unchanged.
      */
     private static String canonicalFloatingPoint(final Val value) {
         final double d = value.toDouble();

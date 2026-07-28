@@ -23,7 +23,7 @@ import java.util.Objects;
 /**
  * A precise semantic-binding error: a human-readable message plus the position of the offending clause - the
  * design doc's "fail fast with good messages" contract for {@link Binder}, replacing legacy's ad-hoc/absent
- * checks in {@code SearchRequestFactory} (see {@code docs/query-optimiser-implementation-plan.md}, Task 2.2).
+ * checks in {@code SearchRequestFactory} (Task 2.2).
  */
 public final class BindException extends RuntimeException {
 

@@ -15,7 +15,7 @@
  */
 
 /**
- * Rewrite rules (see {@code docs/query-optimiser-implementation-plan.md}, Task 2.3): pure
+ * Rewrite rules (Task 2.3): pure
  * {@code LogicalPlan -> LogicalPlan} transformations that improve physical placement without changing results,
  * composed by {@link stroom.query.planner.rewrite.RewritePipeline} in a fixed order.
  */

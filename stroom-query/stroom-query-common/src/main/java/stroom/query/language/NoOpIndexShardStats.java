@@ -27,10 +27,10 @@ import java.util.Optional;
 /**
  * A placeholder {@link IndexShardStats} that always answers empty - exists solely so
  * {@link OptimisingQueryCompiler}'s {@code CostModel} has something to inject (see
- * {@code docs/query-optimiser-implementation-plan.md}, Task 3.1: a real adapter can't live in
+ * Task 3.1: a real adapter can't live in
  * {@code stroom-query-common}/{@code stroom-query-planner} without closing a dependency cycle back through
  * {@code stroom-index-impl} - it must live inside that module instead). Every index-backed {@code Scan} shows
- * {@code confidence=0.0} and a "no cost signal available" note in {@code explain()} output until the real
+ * {@code confidence=0.0} and a "no cost signal available" note in {@code explain} output until the real
  * adapter lands there and replaces this binding in {@code QueryModule}.
  */
 public final class NoOpIndexShardStats implements IndexShardStats {

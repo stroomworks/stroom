@@ -293,7 +293,7 @@ public final class GraphTraversalEngine {
     /**
      * As {@link #execute(Txn, LogicalPlan, TemporalContext, DateTimeSettings, boolean)}, but additionally
      * honouring a compiled aggregation description (see
-     * {@code docs/graphdb-analytic-functions-implementation-plan.md}, Task 1.2/1.3): when {@code aggregation} is
+     * Task 1.2/1.3): when {@code aggregation} is
      * non-null, the traversal's matched rows are grouped by its {@link GroupKeyColumn}s and reduced by its
      * {@link AggregateColumn}s into one output row per group (see {@link #finalizeAggregatedRows}), instead of
      * the ordinary one-output-row-per-surviving-row projection {@link #finalizeRows} performs.
@@ -475,7 +475,7 @@ public final class GraphTraversalEngine {
     /**
      * Traverses {@code plan} at a single instant for a {@code DIFF} query, returning each matched path as a
      * {@link DiffMatch} - its bound-value row plus the ordered tuple of bound element identities that
-     * {@link DiffOperator} keys on (see {@code docs/temporal-cypher-diff-operator.md} &sect;5.2). This is the
+     * {@link DiffOperator} keys on. This is the
      * per-snapshot half of {@code DIFF}: the executor calls it twice (once with {@code baseline}, once with
      * {@code comparison}) and merges the two results.
      *
@@ -670,8 +670,8 @@ public final class GraphTraversalEngine {
     }
 
     // ------------------------------------------------------------------------------------------------------
-    // RETURN GRAPH element collection (docs/temporal-cypher-diff-operator.md §4.4/§5.6,
-    // docs/graphdb-cytoscape-visualisation.html §3)
+    // RETURN GRAPH element collection (.4/§5.6,
+    // )
     // ------------------------------------------------------------------------------------------------------
 
     /**
@@ -751,7 +751,7 @@ public final class GraphTraversalEngine {
      * walks the store rather than seeking the property index, so it is deliberately bounded.
      *
      * <p>Label filter: a label-only anchor has no property index to seek, so the required labels are applied as a
-     * post-read filter on each scanned node ({@link GraphNodeDb.NodeVersion#labelUids()}); an unknown label matches
+     * post-read filter on each scanned node ({@link GraphNodeDb.NodeVersion#labelUids}); an unknown label matches
      * nothing. Edges: there is no untyped adjacency index (the stores are per-edge-type keyed), so this enumerates
      * the interned edge types and reuses the ordinary as-of {@link TemporalAccess#expandOut} for each included node
      * - keeping the hardened temporal edge read as the single source of truth rather than re-decoding edge versions
@@ -1069,7 +1069,7 @@ public final class GraphTraversalEngine {
         }
 
         final Map<ElementId, ElementDetail> elements = new LinkedHashMap<>(from.elements());
-        // hop.edgeType() is guaranteed non-null here: resolveRequiredEdgeTypeUid (called by expandGraphHop before
+        // hop.edgeType is guaranteed non-null here: resolveRequiredEdgeTypeUid (called by expandGraphHop before
         // any neighbour is visited) throws for a null/untyped edge pattern, so this callback is only ever reached
         // for a hop that named a concrete edge type.
         elements.put(edgeId, new ElementDetail(
@@ -1146,7 +1146,7 @@ public final class GraphTraversalEngine {
      * #acceptChainNeighbour}, the var-length BFS via {@link #acceptVarLengthRow}) adds its matched rows into,
      * instead of a bare {@code List<Map<String, Val>>} - so {@link #execute} can swap in either an unbounded,
      * ceiling-guarded sink ({@link UnboundedRowSink}) or a size-bounded top-N heap ({@link TopNRowSink}) without
-     * any accumulation call site needing to know which is in play. {@code size()} is read by the existing
+     * any accumulation call site needing to know which is in play. {@code size} is read by the existing
      * {@code rowCap} early-exit checks (unchanged by this fix); each implementation enforces its own bound inside
      * {@code add}.
      */
@@ -1231,7 +1231,7 @@ public final class GraphTraversalEngine {
 
         private final int limit;
         private final Comparator<Map<String, Val>> comparator;
-        // A max-heap on `comparator`: worstFirst.peek() is always the current worst-ranked survivor (comparator's
+        // A max-heap on `comparator`: worstFirst.peek is always the current worst-ranked survivor (comparator's
         // reversed ordering makes the heap's "least" element the comparator's "greatest"), so a new candidate is
         // only kept once the heap is at capacity if it beats that worst survivor.
         private final PriorityQueue<Map<String, Val>> worstFirst;
@@ -1300,7 +1300,7 @@ public final class GraphTraversalEngine {
         if (isLastHop && rowSink.size() >= rowCap) {
             return;
         }
-        // Code-review fix: previously the wall-clock deadline was only checked once per hop (execute()'s outer
+        // Code-review fix: previously the wall-clock deadline was only checked once per hop (execute's outer
         // loop), so a single hop with a wide fan-out and no LIMIT - the exact scenario MAX_TRAVERSAL_DURATION's
         // own Javadoc cites as its reason for existing - was never actually bounded, since this callback runs
         // once per neighbour inside one uninterrupted cursor scan. Checking here, once per neighbour, closes
@@ -1419,9 +1419,9 @@ public final class GraphTraversalEngine {
             }
         }
         if (targetPropertyPredicate != null) {
-            // Mirrors resolveAnchors()'s own re-validation: targetPropertyPredicate's terms are unqualified
+            // Mirrors resolveAnchors's own re-validation: targetPropertyPredicate's terms are unqualified
             // (e.g. "status", not "b.status"), so test them directly against the node's bare-named properties,
-            // not the "variable.property"-keyed row rowFor() builds.
+            // not the "variable.property"-keyed row rowFor builds.
             final Predicate<Map<String, Val>> propertyPredicate = expressionPredicateFactory
                     .createOptional(targetPropertyPredicate, rowAccessors(), DateTimeSettings.builder().build())
                     .orElse(row -> true);
@@ -1645,9 +1645,9 @@ public final class GraphTraversalEngine {
         final List<Long> candidates = stores.getPropertyIndex().findAnchors(
                 readTxn, requiredLabelUids.getFirst(), propKeyUid.get(), seekValueBytes);
 
-        // NodeScan.propertyAnchor()'s terms are unqualified (e.g. field "id", not "d.id" - compileNodeScan never
+        // NodeScan.propertyAnchor's terms are unqualified (e.g. field "id", not "d.id" - compileNodeScan never
         // applies the variable prefix a WHERE clause's property accesses get), so re-validate it directly against
-        // the node's own bare-named properties, not the "variable.property"-keyed row rowFor() builds.
+        // the node's own bare-named properties, not the "variable.property"-keyed row rowFor builds.
         final Predicate<Map<String, Val>> propertyPredicate = expressionPredicateFactory
                 .createOptional(nodeScan.propertyAnchor(), rowAccessors(), DateTimeSettings.builder().build())
                 .orElse(row -> true);
@@ -1863,7 +1863,7 @@ public final class GraphTraversalEngine {
     }
 
     // ------------------------------------------------------------------------------------------------------
-    // aggregation (Task 1.3 of docs/graphdb-analytic-functions-implementation-plan.md)
+    // aggregation (Task 1.3 of)
     // ------------------------------------------------------------------------------------------------------
 
     /**
@@ -1878,9 +1878,9 @@ public final class GraphTraversalEngine {
      * report); a pure aggregate {@code RETURN} (no group keys at all, e.g. {@code RETURN count(*)}) always
      * produces exactly one output row, reducing over the empty set if {@code rows} is empty.</p>
      *
-     * <b>Preconditions:</b> {@code aggregation.columns()} has the same size as, and aligns 1:1 in order with,
-     * {@code shape.project().fields()} (a {@code CypherToLogicalPlan.compile} invariant - see
-     * {@link CypherAggregation}'s Javadoc); every {@code ORDER BY} key in {@code shape.sortKeys()} names a column
+     * <b>Preconditions:</b> {@code aggregation.columns} has the same size as, and aligns 1:1 in order with,
+     * {@code shape.project.fields} (a {@code CypherToLogicalPlan.compile} invariant - see
+     * {@link CypherAggregation}'s Javadoc); every {@code ORDER BY} key in {@code shape.sortKeys} names a column
      * {@code aggregation} actually produces (a {@code CypherToLogicalPlan.validateOrderByAgainstAggregation}
      * invariant, checked at compile time, not re-checked here - see {@link #outputColumnIndex}).
      * <b>Null status:</b> no parameter is nullable; never returns null.
@@ -2002,7 +2002,7 @@ public final class GraphTraversalEngine {
      * {@code collect(a.property)} gathers the group's non-null values at the property. v1 representation: a
      * comma-joined {@code ValString} (e.g. {@code "theft, fraud"}), not a true list value - a real list-valued
      * {@code Val} is a deferred, cross-cutting change (see
-     * {@code docs/cypher-subset-extension-implementation-plan.md}, Phase 4 / the analytic-functions plan's Phase 2
+     * Phase 4 / the analytic-functions plan's Phase 2
      * "ValList ripple" note). {@code collect(DISTINCT a.property)} de-duplicates by {@link Val} value first,
      * preserving first-appearance order. An empty group yields an empty string.
      */
@@ -2063,7 +2063,7 @@ public final class GraphTraversalEngine {
                 sum += numeric;
             }
         }
-        // PoC simplification (see docs/graphdb-analytic-functions-implementation-plan.md, Risks table): sum
+        // PoC simplification (Risks table): sum
         // always renders as a double, even over integral properties - integral-type preservation is a deferred
         // display-fidelity refinement, not a correctness gap (the numeric value itself is exact).
         return ValDouble.create(sum);
@@ -2250,7 +2250,7 @@ public final class GraphTraversalEngine {
     /**
      * Resolves an {@code ORDER BY} key to its position in the aggregated output tuple, by matching its
      * reconstructed {@code alias == null ? field : alias + "." + field} name against each {@link ProjectField}'s
-     * {@link ProjectField#name()} - the same reconstruction {@link #rowComparator} uses for the non-aggregated
+     * {@link ProjectField#name} - the same reconstruction {@link #rowComparator} uses for the non-aggregated
      * path, but matched against output column names rather than looked up in a row map, since no such map exists
      * once rows are aggregated.
      *
@@ -2336,7 +2336,7 @@ public final class GraphTraversalEngine {
                 }
                 // A dot-less reference is either a special row key the DIFF path populates (e.g. "changeKind") or a
                 // bare pattern variable (e.g. RETURN n). Which one is a per-row question (the DIFF key is present in
-                // the row; a whole matched node/edge has no single Val), so eval() decides: present -> value,
+                // the row; a whole matched node/edge has no single Val), so eval decides: present -> value,
                 // absent -> fail loud.
                 return new CompiledProjectField(null, reference, null, null, EMPTY_FIELDS);
             }
@@ -2424,7 +2424,7 @@ public final class GraphTraversalEngine {
     /**
      * The largest instant {@code MillisecondTimeSerde}'s 6-byte encoding can represent
      * ({@code (1L << 48) - 1} epoch millis, &asymp; year 10920) - used as the floor-lookup instant for "latest".
-     * {@link Instant#MAX} cannot be used here: {@code Instant.toEpochMilli()} overflows a {@code long} for it.
+     * {@link Instant#MAX} cannot be used here: {@code Instant.toEpochMilli} overflows a {@code long} for it.
      */
     private static final Instant LATEST = Instant.ofEpochMilli((1L << 48) - 1);
 
@@ -2449,7 +2449,7 @@ public final class GraphTraversalEngine {
      * {@code OUT} hop, the {@code src} for an {@code IN} hop) plus that edge's own stored property map. Surfacing
      * the edge properties (previously the DAO's {@code Neighbour} was flattened to just its neighbour UID) is what
      * lets a hop bind them to its relationship variable so {@code RETURN c.startTime} resolves - see
-     * {@link Expand#edgeVariable()} and {@link #acceptChainNeighbour}.
+     * {@link Expand#edgeVariable} and {@link #acceptChainNeighbour}.
      *
      * @param neighbourUid   the node reached by following the edge.
      * @param edgeProperties never null; the edge version's property map (may be empty).
@@ -2507,7 +2507,7 @@ public final class GraphTraversalEngine {
      * Task P4.2: resolves a plan's temporal clause to a {@link TemporalAccess} - {@code AS OF}/no-clause become
      * the as-of floor lookup at the resolved instant (no clause resolves to {@link #LATEST}, unchanged from
      * before this task); {@code AROUND}/{@code BETWEEN} become the window-intersection lookup over
-     * {@code [temporalContext.from(), temporalContext.to()]} (Task P4.1) - previously rejected outright.
+     * {@code [temporalContext.from, temporalContext.to]} (Task P4.1) - previously rejected outright.
      */
     private TemporalAccess resolveAccess(final @Nullable TemporalContext temporalContext) {
         if (temporalContext == null) {

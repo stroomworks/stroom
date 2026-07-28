@@ -205,9 +205,8 @@ Details and the operational procedure are in [11-operations.md](11-operations.md
 - [06-language-reference.md](06-language-reference.md) — the query language
 - [10-limits.md](10-limits.md) — the limits these mechanics impose, and how to work within them
 
-### Further reading (engineering)
+### Further reading
 
-`docs/temporal-cypher-graph.md` — the original architecture proposal, including the reasoning behind
-building on Plan B's LMDB layer. `docs/temporal-cypher-diff-operator.md` — the design of `DIFF`.
-[13-developer-guide.md](13-developer-guide.md) covers the physical key layouts and the class
-structure.
+[13-developer-guide.md](13-developer-guide.md) covers the physical key layouts and the class structure.
+The original architecture proposal — including why this was built on Plan B's LMDB layer — has been
+retired; it remains in the repository's git history.

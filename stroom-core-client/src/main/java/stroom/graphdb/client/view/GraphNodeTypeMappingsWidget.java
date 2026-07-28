@@ -31,9 +31,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Task B1 (docs/graphdb-features-implementation-plan.md, Workstream B): a minimal add/edit/remove list editor
- * for {@code GraphDbDoc.nodeTypeMappings} (see {@code docs/graphdb-settings-surface.html} &sect;6, "Node / edge
- * mapping ... needs a review/edit surface").
+ * Task B1: a minimal add/edit/remove list editor
+ * for {@code GraphDbDoc.nodeTypeMappings}.
  *
  * <p><b>Design choice.</b> This codebase's one existing full list-editor pattern for a {@code List<Pojo>} field
  * ({@code FieldListPresenter} + {@code FieldEditPresenter} in {@code stroom.receive.rules.client.presenter}, and
@@ -46,7 +45,7 @@ import java.util.List;
  * pure-Java widget composed directly into {@code GraphDbSettingsViewImpl}, matching
  * {@code stroom.planb.client.view.RetentionSettingsWidget}'s composition role rather than inventing a nested
  * presenter/popup-dialog subtree that has no precedent inside a single settings view. (It cannot literally
- * extend that package's {@code AbstractSettingsWidget} either way - its {@code asWidget()} is package-private
+ * extend that package's {@code AbstractSettingsWidget} either way - its {@code asWidget} is package-private
  * and this type lives in a different package.) Given the typically small number of mappings a graph needs, a
  * lightweight repeating text-box row (label / domain type / remove) with an "Add Mapping" button is a
  * proportionate read/edit surface for this Tier-1 field.</p>

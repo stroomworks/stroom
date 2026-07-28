@@ -28,7 +28,7 @@ import java.util.Objects;
  *
  * <p>Bound and validated from Phase 2 onward even though nothing executes a {@code Join} until Phase 6 - see
  * the design doc's instruction to make {@code Join} "shape-complete" from the start, and
- * {@code docs/temporal-cypher-graph.md}, which lowers a graph hop to an index-nested-loop join over this same
+ * which lowers a graph hop to an index-nested-loop join over this same
  * node.</p>
  *
  * @param left      never null.

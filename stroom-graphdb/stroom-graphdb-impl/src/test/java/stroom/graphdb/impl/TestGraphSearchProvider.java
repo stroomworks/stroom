@@ -150,8 +150,8 @@ class TestGraphSearchProvider {
     @Test
     void singleHopCypherQuery_withCompilerDerivedResultRequests_returnsRealRows(@TempDir final Path root) {
         // Proves CypherCompiler's own resultRequests (rather than this test class's hand-built one, see
-        // requestFor()) carry a real Cypher RETURN clause's columns all the way through to real rows - i.e. that
-        // a Cypher query submitted the way QueryServiceImpl.mapRequest() actually seeds one (with no
+        // requestFor) carry a real Cypher RETURN clause's columns all the way through to real rows - i.e. that
+        // a Cypher query submitted the way QueryServiceImpl.mapRequest actually seeds one (with no
         // resultRequests of its own) does not come back silently empty.
         try (GraphStores stores = GraphStores.provision(root, DOC)) {
             seedDeviceConnectedToAccounts(stores);
@@ -195,13 +195,13 @@ class TestGraphSearchProvider {
     }
 
     // ------------------------------------------------------------------------------------------------------
-    // aggregation (Task 1.4 of docs/graphdb-analytic-functions-implementation-plan.md)
+    // aggregation (Task 1.4 of)
     // ------------------------------------------------------------------------------------------------------
 
     @Test
     void unaliasedCountStarAggregate_resolvesThroughTheRealColumnPipeline(@TempDir final Path root) {
         // The guard task 1.4 exists to run: CypherCompiler.buildResultRequests builds every column's expression
-        // as "${" + field.name() + "}" - for an unaliased aggregate that name is now the "${}"-free "count(*)"
+        // as "${" + field.name + "}" - for an unaliased aggregate that name is now the "${}"-free "count(*)"
         // (see CypherToLogicalPlan.defaultAggregateName). Uses the real GraphCypherQueryCompiler (like
         // singleHopCypherQuery_withCompilerDerivedResultRequests_returnsRealRows above), so this proves
         // "${count(*)}" resolves end-to-end through the real column pipeline, not just at compile time.
@@ -274,11 +274,11 @@ class TestGraphSearchProvider {
 
     @Test
     void permissionException_fromDocResolution_propagatesOutOfCreateResultStore() {
-        // Task P7.1: GraphDbDocCacheImpl.get() already throws PermissionException when the caller lacks USE
+        // Task P7.1: GraphDbDocCacheImpl.get already throws PermissionException when the caller lacks USE
         // permission (TestGraphDbDocCacheImpl.get_throwsWhenCallerLacksUsePermission proves that directly). This
         // proves what happens to it one layer up: doc resolution (getGraphDbDoc, called before the ResultStore
         // is even constructed) is OUTSIDE createResultStore's own try/catch, so the exception propagates rather
-        // than being downgraded to a soft resultStore.addError() entry - exactly like
+        // than being downgraded to a soft resultStore.addError entry - exactly like
         // JoinSearchProvider.createResultStore, whose own per-side doc/datasource resolution (realiseSide) is
         // likewise called before its try block. There is no ResultStore yet for a pre-resolution failure to be
         // attached to, so propagating here (for a caller further up the stack to turn into a hard search
@@ -295,7 +295,7 @@ class TestGraphSearchProvider {
 
     @Test
     void malformedCypherAtExecutionTime_surfacesAsAResultStoreError_notAnUncaughtThrow() {
-        // Code-review fix: the execution-time compile (re-parsing/re-compiling GraphSpec.getCypher(), needed
+        // Code-review fix: the execution-time compile (re-parsing/re-compiling GraphSpec.getCypher, needed
         // since the compiled plan itself is never carried on the wire - see this class's own Javadoc) used to
         // run before the try block existed at all, so a malformed Cypher string reaching this method directly
         // (bypassing QueryServiceImpl's own upfront compile, e.g. a stored/replayed SearchRequest) propagated
@@ -310,7 +310,7 @@ class TestGraphSearchProvider {
     }
 
     // ------------------------------------------------------------------------------------------------------
-    // DIFF (docs/temporal-cypher-diff-operator.md)
+    // DIFF
     // ------------------------------------------------------------------------------------------------------
 
     @Test
@@ -513,7 +513,7 @@ class TestGraphSearchProvider {
 
     /**
      * Task P7.1: same shape as {@link #provider}, except doc resolution (the point
-     * {@code GraphDbDocCacheImpl.get()} does its real, explicit {@code DocumentPermission.USE} check) throws
+     * {@code GraphDbDocCacheImpl.get} does its real, explicit {@code DocumentPermission.USE} check) throws
      * {@code docResolutionError} instead of returning {@link #DOC} - proving what happens to that exception once
      * it reaches {@code createResultStore}.
      */

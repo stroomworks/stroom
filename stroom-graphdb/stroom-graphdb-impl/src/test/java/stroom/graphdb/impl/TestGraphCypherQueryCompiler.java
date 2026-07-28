@@ -108,7 +108,7 @@ class TestGraphCypherQueryCompiler {
     }
 
     // ------------------------------------------------------------------------------------------------------
-    // Workstream A (docs/cypher-from-clause-implementation-plan.md, Phase 4): resolving the target graph from
+    // Workstream A: resolving the target graph from
     // the Cypher text's own leading `from "X"` clause when no data source is pre-set on the incoming request.
     // ------------------------------------------------------------------------------------------------------
 

@@ -247,34 +247,47 @@ grep-verification.
 annotations on server code only. Graph DB follows them closely — the existing Javadoc explains *why* a
 design is as it is, which is where most of the reasoning behind the frozen key layouts is recorded.
 
-## The engineering records
+## Design history
 
-The files in `docs/` outside this directory are development-time records. They are pinned to the branch and
-date in their headers and describe intent as much as outcome, so treat this documentation set as correct
-where they disagree.
+Graph DB was built from a set of design proposals, implementation plans and review reports that lived in
+`docs/`. **Those have been retired** — their content is either absorbed into this documentation set or
+superseded by the code itself, and keeping them risked two sources of truth diverging.
 
-**Design and feasibility**
+They remain in the repository's git history. To find the reasoning behind a specific decision:
 
-| Document | Covers |
+```bash
+git log --diff-filter=D --name-only -- 'docs/*.md' 'docs/*.html'
+git show <commit>:docs/temporal-cypher-graph-implementation-plan.md
+```
+
+The documents most worth retrieving, by question:
+
+| Question | Retired document |
 |---|---|
-| `temporal-cypher-graph.md` / `.html` | The original architecture proposal: why Plan B's LMDB layer, the temporal model, UX sketches |
-| `temporal-cypher-diff-operator.md` | The `DIFF` clause design; §13 records what shipped |
-| `graphdb-stroomql-join.html` | Cypher as a StroomQL join side |
-| `cypher-language-feature-roadmap.md` *(archived)* | Survey of unsupported features with value/cost — the source for [12-future-work.md](12-future-work.md) |
-| `gql-mandatory-feature-comparison.md` | ISO GQL clause-by-clause conformance, and a Neo4j example-graph survey |
+| Why LMDB / Plan B, and why this key layout? | `temporal-cypher-graph.md` — the original architecture proposal |
+| Why does `DIFF` classify the way it does? | `temporal-cypher-diff-operator.md` |
+| Why is the language subset drawn where it is? | `cypher-subset-extension-implementation-plan.md` |
+| Why does `RETURN GRAPH` have that fixed column set? | `graphdb-cytoscape-visualisation.html` |
+| Why only three settings on the Settings tab? | `graphdb-settings-surface.html` |
+| What did the pre-production review find? | `query-graphdb-review-report.md`, `query-graphdb-review-findings.md` |
+| How was POLE reproduced, and what failed? | `pole-on-stroom-graphdb.md` — the live-verified tutorial run |
+| What was considered and rejected for the language? | `cypher-language-feature-roadmap.md` — value/cost per feature |
+| How did the temporal model compare to other graph DBs? | `temporal-cypher-features.html` |
 
-**Implementation plans** — the agent build plans, each verified on the branch named in its header:
-`temporal-cypher-graph-implementation-plan.md` (the original build),
-`cypher-subset-extension-implementation-plan.md` (Tiers 1–3 of the language),
-`graphdb-analytic-functions-implementation-plan.md` (aggregation),
-`graphdb-cytoscape-datatab-implementation-plan.md` (the graph view),
-`cypher-from-clause-implementation-plan.md` (the `from "X"` prefix),
-`graphdb-stroomql-join-implementation-plan.md`, `graphdb-features-implementation-plan.md` (the umbrella).
+Two of those reviews' findings are recorded as live caveats rather than history — the node-based cycle
+guard ([06-language-reference.md](06-language-reference.md)) and the string-only property storage
+([03-ingest.md](03-ingest.md)) — because they still affect what a query returns.
 
-**Review and test**: `query-graphdb-review-report.md` and `query-graphdb-review-findings.md` (pre-production
-review, "go with fixes", 17 findings); `query-graphdb-test-protocol.md` (the current end-to-end protocol).
+**Javadoc no longer cites any of these.** Comments were made self-contained when the documents were
+retired; if you find a reference to a markdown file in source, it is a leftover and should be inlined or
+removed rather than repaired.
 
-**Archived** — content absorbed into this set, kept for history in [`archive/`](archive/).
+There is no archive directory: git history is the archive. This documentation set is the whole of the
+current Graph DB documentation.
+
+**Still in `docs/`:** the query-optimiser and join-scalability material, which is a separate subsystem with
+its own records.
+
 
 ## Next
 

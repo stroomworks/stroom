@@ -24,7 +24,7 @@ import java.util.Optional;
  * The Lucene index cost signal {@code CostModel} (Task 3.2) tries for a {@code Scan} - wraps
  * {@code IndexShardService.find(FindIndexShardCriteria)} (summing {@code documentCount}/{@code fileSize} over
  * shards whose {@code partitionTimeRange} overlaps the query's time range - "partition pruning") in the real
- * adapter (see {@code docs/query-optimiser-implementation-plan.md}, Task 3.1).
+ * adapter (Task 3.1).
  *
  * <p><b>No adapter exists yet.</b> {@code stroom-index-impl} (home of {@code IndexShardService}) already
  * depends on {@code stroom-query-common}, which already depends on {@code stroom-query-planner} - so an

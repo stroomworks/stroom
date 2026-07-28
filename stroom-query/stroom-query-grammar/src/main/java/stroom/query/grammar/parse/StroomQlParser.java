@@ -29,7 +29,7 @@ import java.util.Objects;
 /**
  * The single entry point from StroomQL text to a decoupled {@link AstQuery}: wires the ANTLR lexer/parser, the
  * precise {@link ThrowingSyntaxErrorListener}, and {@link AstBuilder} together (see
- * {@code docs/query-optimiser-implementation-plan.md}, Task 1.3). Used directly by
+ * Task 1.3). Used directly by
  * {@code OptimisingQueryCompiler} (Task 1.4).
  */
 public final class StroomQlParser {

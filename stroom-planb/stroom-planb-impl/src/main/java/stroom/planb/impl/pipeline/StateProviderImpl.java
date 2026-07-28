@@ -57,7 +57,7 @@ public class StateProviderImpl implements StateProvider {
         // F16: the cache's maximumSize/expireAfterWrite were previously hardcoded (1000 entries, 10 minutes) -
         // now sourced from PlanBConfig#getStateValueCache (same 1000-entry default), so a broadcast-lookup join
         // whose probe side has a high-cardinality key set can be tuned without a code change - see
-        // docs/query-graphdb-review-report.md finding F16.
+        //  finding F16.
         cache = cacheManager.createLoadingCache(
                 CACHE_NAME,
                 () -> planBConfigProvider.get().getStateValueCache(),
@@ -79,7 +79,7 @@ public class StateProviderImpl implements StateProvider {
      * {@code ValErr} as a failed join it must abort, and a {@code ValNull} as an ordinary miss - silently
      * downgrading a real error (in particular a permission deny) to a {@code ValErr} would let it be embedded
      * as a matched row's value instead of failing the search (see
-     * {@code docs/query-graphdb-review-report.md}, findings F1/SEC-1).</p>
+     * findings F1/SEC-1).</p>
      *
      * <p><b>Preconditions:</b> {@code mapName} and {@code keyName} must not be null.<br>
      * <b>Postconditions:</b> returns {@link ValNull#INSTANCE} for a confirmed absence; returns a real

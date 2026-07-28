@@ -22,12 +22,12 @@ import java.util.OptionalDouble;
 /**
  * The cost signal {@link IndexShardStats} answers with - richer than a bare {@link RowCountSignal} because
  * index cost also depends on physical size and indexing throughput (see
- * {@code docs/query-optimiser-implementation-plan.md}, Task 3.1).
+ * Task 3.1).
  *
  * @param documentCount never negative; summed across whichever shards matched the query's time range.
- * @param byteSize      never negative; summed {@code IndexShard.getFileSize()} across the same shards.
+ * @param byteSize      never negative; summed {@code IndexShard.getFileSize} across the same shards.
  * @param documentsPerSecond empty when no matching shard has a usable
- *                           {@code IndexShard.getCommitDocumentCountPs()} (that method reflects only the most
+ *                           {@code IndexShard.getCommitDocumentCountPs} (that method reflects only the most
  *                           recent commit's rate and returns {@code null} when the shard has no commit-duration
  *                           data - this field surfaces that same absence rather than inventing a fallback rate).
  */

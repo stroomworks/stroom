@@ -16,7 +16,7 @@
 
 /**
  * The typed, immutable AST built from a {@code StroomQL.g4} parse tree by {@link AstBuilder}, decoupling
- * downstream code from ANTLR types entirely (see {@code docs/query-optimiser-implementation-plan.md}, Task 1.2).
+ * downstream code from ANTLR types entirely (Task 1.2).
  */
 @NullMarked
 package stroom.query.grammar.ast;

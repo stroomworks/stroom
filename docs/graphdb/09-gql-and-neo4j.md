@@ -4,8 +4,7 @@
 [production-readiness blockers](README.md#production-readiness--known-blockers).
 **Audience:** evaluators, and anyone porting queries from Neo4j.
 **Scope:** how Graph DB's language relates to the ISO GQL standard and to Neo4j's Cypher, and what that
-means in practice. Condensed from the engineering comparison — see
-[Further reading](#further-reading-engineering) for the clause-by-clause detail.
+means in practice. Canonical for the GQL conformance summary.
 **Companion documents:** [06-language-reference.md](06-language-reference.md) (what is supported),
 [12-future-work.md](12-future-work.md) (what may change).
 
@@ -19,19 +18,33 @@ Graph DB implements a **read-only subset of openCypher**, not ISO GQL. The two l
 GQL (ISO/IEC 39075:2024) was heavily influenced by Cypher — but they differ in syntax and Graph DB targets
 neither completely.
 
-Comparing by capability rather than syntax:
+## Conformance against GQL's mandatory areas
 
-| | Status |
+Comparing by capability rather than syntax, against the mandatory feature areas of ISO/IEC 39075:2024:
+
+| GQL mandatory area | Status |
 |---|---|
-| Pattern matching, traversal, projection | Supported |
-| Filtering, aggregation, ordering, limiting | Supported |
-| Set operations (`UNION`) | Supported |
-| Temporal querying | **Beyond both** — no GQL or Cypher equivalent |
-| Data modification | Not supported, by design |
-| Schema and catalogue statements | Not supported |
-| Path variables, path finding | Not supported |
-| Typed values beyond strings | Not supported |
-| Sessions, transactions, procedures | Not supported |
+| Pattern matching (`MATCH`, `OPTIONAL MATCH`) | Supported — `OPTIONAL MATCH` only as a single-hop continuation |
+| Pattern elements (nodes, edges, direction, labels, property maps) | Supported |
+| Variable-length paths | Supported, bounded only. The upper bound is mandatory |
+| `WHERE` filtering | Supported, including `IN`, `IS NULL`, string operators and `EXISTS { }` |
+| Result projection (`RETURN`, `DISTINCT`, aliases) | Supported — but not a bare node or `RETURN *` |
+| Ordering and paging (`ORDER BY`, `LIMIT`) | **Partial** — `ORDER BY` and `LIMIT` yes, **`SKIP` is rejected**, so there is no paging |
+| Comparison predicates, `IS NULL` / `IS NOT NULL` | Supported |
+| `CASE` value expressions | Supported, both simple and searched forms |
+| `EXISTS { pattern }` | Supported, for one correlated typed hop |
+| Aggregate functions | Supported — `count`, `sum`, `avg`, `min`, `max`, plus `collect` (which returns a string) |
+| Arithmetic expressions | Supported: `+ - * / ^`. Modulo `%` parses but does not render |
+| Scalar, string and date functions | Supported — 14 bare Cypher names plus 67 in the `stroom.` namespace ([07](07-functions.md)) |
+| Mandatory data types (string, boolean, integer, float) | **Partial** — available at the value level, but **all stored properties are strings** |
+| Set operations (`UNION`, `UNION ALL`) | Supported |
+| Graph selection / `CURRENT_GRAPH` | **Partial** — one implicit graph per query, chosen by a leading `from "Name"` clause; no in-query switching |
+| Path variables and path finding | Not supported |
+| `SELECT` (GQL's tabular statement form) | Not supported — this is Cypher, not GQL syntax |
+| Data modification (`INSERT` / `SET` / `DELETE`) | Not supported, by design |
+| Catalogue and schema statements | Not supported — the store is schemaless |
+| Sessions and transactions | Not supported — an embedded, read-only engine |
+| **Temporal querying** | **Beyond both standards** — no GQL or Cypher equivalent |
 
 The honest summary: **the traversal core is there, the analytics layer largely is not, and writes never
 will be from the query language.**
@@ -117,6 +130,7 @@ These are the dangerous ones, because the query runs and returns something plaus
 | **A node version replaces, it does not merge** | Re-loading a node without a property removes it, rather than leaving the old value |
 | **Deleted data stays visible to historical queries** | Correct behaviour, but surprising if you expect a delete to be final |
 | **The whole-graph preview caps at 100 nodes silently** | `MATCH (n) RETURN GRAPH` looks complete and is not |
+| **Variable-length cycles are guarded by node, not relationship** | Cypher forbids reusing a *relationship* within a path; Graph DB forbids revisiting a *node*. In cyclic or diamond-shaped subgraphs it returns fewer paths than Neo4j, silently ([06](06-language-reference.md)) |
 
 ### Structural differences
 
@@ -167,8 +181,8 @@ with a temporal dimension no general-purpose graph database offers.
 - [12-future-work.md](12-future-work.md) — which of these gaps may close
 - [06-language-reference.md](06-language-reference.md) — the supported language in full
 
-### Further reading (engineering)
+### A note on sources
 
-`docs/gql-mandatory-feature-comparison.md` walks the ISO GQL mandatory features clause by clause and
-surveys Neo4j's example-graph catalogue in detail. [`archive/cypher-language-feature-roadmap.md`](archive/cypher-language-feature-roadmap.md) estimates the
-value and cost of the unsupported features.
+This comparison was originally derived from a clause-by-clause engineering analysis against
+ISO/IEC 39075:2024, which also surveyed Neo4j's example-graph catalogue. That analysis has been absorbed
+here and retired; where it and this page differed, this page was corrected against the code.

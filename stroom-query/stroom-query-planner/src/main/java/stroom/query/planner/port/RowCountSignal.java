@@ -18,7 +18,7 @@ package stroom.query.planner.port;
 
 /**
  * A simple row-count cost signal - what {@link MetaStats} and {@link StateStoreStats} answer with (see
- * {@code docs/query-optimiser-implementation-plan.md}, Task 3.1).
+ * Task 3.1).
  *
  * @param rows never negative.
  */

@@ -20,7 +20,7 @@ package stroom.query.grammar.ast;
  * A {@link AstJoin}'s source: either a plain datasource name ({@link AstNamedJoinSource}, e.g.
  * {@code join "Users"}) or a bracketed sub-query ({@link AstSubQueryJoinSource}, e.g.
  * {@code join ( from "Graph" match ... return ... )}) - see
- * {@code docs/graphdb-stroomql-join-implementation-plan.md}, Phase P1. Today the only sub-query body the binder
+ * Phase P1. Today the only sub-query body the binder
  * knows how to interpret is a Cypher graph traversal (Workstream C's whole scope); the grammar itself stays
  * agnostic and simply preserves the bracketed body's raw source text for whichever later stage re-parses it.
  */

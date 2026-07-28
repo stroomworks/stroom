@@ -18,7 +18,7 @@ package stroom.graphdb.impl;
 
 /**
  * How a {@code DIFF} path changed between the baseline ({@code t1}) and comparison ({@code t2}) instants - the
- * value of the {@code changeKind} pseudo-column (see {@code docs/temporal-cypher-diff-operator.md} &sect;3).
+ * value of the {@code changeKind} pseudo-column.
  */
 public enum ChangeKind {
     /** Absent at {@code t1}, present at {@code t2}. */

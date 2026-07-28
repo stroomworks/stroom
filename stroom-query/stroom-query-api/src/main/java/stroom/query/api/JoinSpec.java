@@ -28,8 +28,8 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Carried on {@link Query#getJoinSpec()} when a compiled query is a join (see
- * {@code docs/query-optimiser-implementation-plan.md}, Task 6.1a) - the two sides' independently-compiled,
+ * Carried on {@link Query#getJoinSpec} when a compiled query is a join (see
+ * Task 6.1a) - the two sides' independently-compiled,
  * otherwise perfectly ordinary {@link SearchRequest}s plus the equi-keys/join type to combine them by.
  * {@code Query.dataSource} on the <b>outer</b> request carries the sentinel {@code "StroomQLJoin"} {@link
  * stroom.docref.DocRef} type that routes execution to a dedicated {@code SearchProvider} - this class is the

@@ -15,7 +15,7 @@
  */
 
 /**
- * Cost estimation (see {@code docs/query-optimiser-implementation-plan.md}, Phase 3): access-path costing for a
+ * Cost estimation (Phase 3): access-path costing for a
  * single {@code Scan} ({@link stroom.query.planner.cost.CostModel}) and join cardinality/algorithm selection
  * ({@link stroom.query.planner.cost.JoinCostModel}), built entirely from the ports in
  * {@link stroom.query.planner.port}.

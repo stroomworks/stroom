@@ -21,7 +21,7 @@ import java.util.Optional;
 /**
  * The Plan B / State store row-count cost signal {@code CostModel} (Task 3.2) tries last for a {@code Scan} -
  * wraps {@code ShardManager.get(mapName, Db::count)} in the real adapter (see
- * {@code docs/query-optimiser-implementation-plan.md}, Task 3.1). No time-range parameter: Plan B/State stores
+ * Task 3.1). No time-range parameter: Plan B/State stores
  * are key-addressed point-lookup stores (verified: {@code GetState}/{@code StateFetcher}/{@code StateProvider}
  * expose only a single-key {@code getState(map, key, effectiveTimeMs)} lookup, no scan/range path), not
  * partitioned scans like a Lucene index.

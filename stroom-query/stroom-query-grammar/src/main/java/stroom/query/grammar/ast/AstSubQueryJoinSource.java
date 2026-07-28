@@ -20,7 +20,7 @@ import java.util.Objects;
 
 /**
  * A bracketed sub-query join source, e.g. {@code join ( from "Graph" match (u:User) return u.id as userId ) as g}
- * - see {@code docs/graphdb-stroomql-join-implementation-plan.md}, Phase P1. {@code rawText} is the exact,
+ * Phase P1. {@code rawText} is the exact,
  * unparsed source text between the brackets (the grammar's {@code subQueryBody} rule only balances nested
  * parentheses - it does not, and cannot, know the body's own grammar), preserved for a later stage to re-parse:
  * today that is always Cypher (the whole of Workstream C's scope is a graph sub-query as a join side), resolved

@@ -28,7 +28,7 @@ import java.util.Objects;
  * A bounded variable-length graph traversal: for each row of {@code input}, follow between {@code minHops} and
  * {@code maxHops} edges of {@code edgeType} in {@code direction} and bind each reachable neighbour node to
  * {@code targetVariable} - the bound form of a Cypher {@code -[:TYPE*min..max]->} pattern (see
- * {@code docs/temporal-cypher-graph-implementation-plan.md}, Task PoC.2; {@code Cypher.g4} makes {@code maxHops}
+ * Task PoC.2; {@code Cypher.g4} makes {@code maxHops}
  * mandatory at parse time, so an unbounded path can never reach this node).
  *
  * <p>Task P3.3 is the first thing that actually produces/consumes this node - see this node's own history: it
@@ -50,7 +50,7 @@ import java.util.Objects;
  * @param targetVariable never null; the Cypher pattern variable bound to each neighbour node reached.
  * @param targetLabels   never null; possibly empty (no label constraint on a reached node); in source order.
  * @param targetPropertyPredicate a reached node's inline property map, lowered to an equality predicate tree
- *                       exactly as {@link Expand#targetPropertyPredicate()} is, or {@code null} if none.
+ *                       exactly as {@link Expand#targetPropertyPredicate} is, or {@code null} if none.
  * @param position       never null.
  */
 public record VarLengthExpand(

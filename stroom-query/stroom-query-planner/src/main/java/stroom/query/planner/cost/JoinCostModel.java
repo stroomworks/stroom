@@ -20,9 +20,9 @@ import java.util.Objects;
 
 /**
  * Join cardinality estimation and algorithm selection (see
- * {@code docs/query-optimiser-implementation-plan.md}, Task 3.3) - an interface defined and unit-tested here,
+ * Task 3.3) - an interface defined and unit-tested here,
  * exercised for real once Phase 6 adds a join executor. Distinct-key counts are supplied by the caller, not
- * estimated here - the design doc's domain-type-sharpened {@code distinct()} refinement is out of scope for v1
+ * estimated here - the design doc's domain-type-sharpened {@code distinct} refinement is out of scope for v1
  * (gated on stats collection, itself a post-v1 non-goal).
  */
 public final class JoinCostModel {
@@ -71,7 +71,7 @@ public final class JoinCostModel {
      *         capability, not a size threshold - preferring the right side if, unusually, both are lookup-
      *         capable); otherwise {@link JoinAlgorithm#HASH_JOIN} with the smaller-by-{@code rows} side as the
      *         build side; {@link JoinAlgorithm#NESTED_LOOP} only when neither side has a usable cost estimate
-     *         (both {@code confidence() == 0.0}) to compare.
+     *         (both {@code confidence == 0.0}) to compare.
      */
     public static JoinPlan chooseAlgorithm(final CostedAccessPath left, final CostedAccessPath right) {
         Objects.requireNonNull(left, "left");

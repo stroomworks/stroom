@@ -30,7 +30,7 @@ import java.util.Objects;
 /**
  * The single entry point from Cypher text to a decoupled {@link AstCypherQuery}: wires the ANTLR lexer/parser, the
  * precise {@link ThrowingSyntaxErrorListener}, and {@link AstCypherBuilder} together - mirrors
- * {@link StroomQlParser#parse(String)} exactly (see {@code docs/temporal-cypher-graph-implementation-plan.md},
+ * {@link StroomQlParser#parse(String)} exactly (
  * Task PoC.1). Named {@code CypherQueryParser}, not {@code CypherParser}, to avoid a collision with the
  * generated {@code stroom.query.grammar.antlr.CypherParser}.
  */

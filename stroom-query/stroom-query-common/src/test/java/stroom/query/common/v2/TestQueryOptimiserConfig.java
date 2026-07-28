@@ -24,7 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Proves the {@code stroom.query.optimiser.mode} feature flag (see
- * {@code docs/query-optimiser-implementation-plan.md}, Tasks 0.3 and 5.4) defaults to {@link
+ * Tasks 0.3 and 5.4) defaults to {@link
  * QueryOptimiserMode#OFF}, both as a bare object and when nested under {@link QueryConfig} the way
  * {@code AppConfig} nests it.
  */

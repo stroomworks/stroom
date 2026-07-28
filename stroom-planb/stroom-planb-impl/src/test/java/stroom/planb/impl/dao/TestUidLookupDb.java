@@ -37,7 +37,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /**
  * F15: {@link UidLookupDb#put} must roll back its in-memory {@code maxId} counter when the fixed-width encode
  * ({@code forValue}/{@code put}) of a newly-allocated id throws - see
- * {@code docs/query-graphdb-review-report.md} finding F15. Before the fix, {@code maxId} was advanced
+ *  finding F15. Before the fix, {@code maxId} was advanced
  * ({@code ++maxId}) before the encode ran and was only ever written back on success, so a failed encode left the
  * in-memory counter permanently one past where it should be, skipping an id for every subsequent {@code put} in
  * that namespace until process restart.

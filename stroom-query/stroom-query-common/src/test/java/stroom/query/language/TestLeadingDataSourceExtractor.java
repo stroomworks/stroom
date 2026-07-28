@@ -21,7 +21,7 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Workstream A, Phase 1 (docs/cypher-from-clause-implementation-plan.md): {@link LeadingDataSourceExtractor}
+ * Workstream A, Phase 1: {@link LeadingDataSourceExtractor}
  * tested in isolation - a pure function over query text, no grammar or resolver construction needed.
  */
 class TestLeadingDataSourceExtractor {

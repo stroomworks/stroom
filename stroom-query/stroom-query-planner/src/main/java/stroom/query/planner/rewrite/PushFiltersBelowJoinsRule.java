@@ -47,9 +47,9 @@ import java.util.Set;
  * For a {@link Filter} directly above a {@link Join} whose {@code where}/{@code filter} predicate only
  * references one side's fields, pushes that predicate below the {@link Join} onto that side - so each side
  * scans as little as possible before the join runs (see
- * {@code docs/query-optimiser-implementation-plan.md}, Task 2.3).
+ * Task 2.3).
  *
- * <p>{@link Filter#wherePredicate()} and {@link Filter#filterPredicate()} are considered independently - one
+ * <p>{@link Filter#wherePredicate} and {@link Filter#filterPredicate} are considered independently - one
  * may push while the other doesn't (or they push to different sides). A predicate is pushed only when
  * <b>every</b> field reference within it is {@code alias.field}-qualified and every alias belongs to the same
  * side; an unqualified field reference, or references spanning both sides, leaves that predicate exactly where

@@ -20,7 +20,7 @@ import stroom.query.api.ExpressionTerm.Condition;
 
 /**
  * The design doc's selectivity heuristic - <b>equality &lt; range &lt; unindexed-scan</b> (see
- * {@code docs/query-optimiser-implementation-plan.md}, Task 3.2): a multiplier applied to a base row count,
+ * Task 3.2): a multiplier applied to a base row count,
  * lower meaning "narrows the result down more". These are calibration constants with no live data behind them
  * yet (nothing executes this cost model against real query outcomes to tune them) - reasonable, documented
  * defaults, not measured values.

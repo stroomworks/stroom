@@ -59,13 +59,13 @@ public final class Query {
     private final TimeRange timeRange;
 
     @JsonPropertyDescription("Present only when dataSource is the sentinel join type - see " +
-            "docs/query-optimiser-implementation-plan.md, Task 6.1a. Never set for an ordinary, single-source " +
+            ".1a. Never set for an ordinary, single-source " +
             "query.")
     @JsonProperty
     private final JoinSpec joinSpec;
 
     @JsonPropertyDescription("Present only when dataSource is a GraphDbDoc and the query was compiled from " +
-            "Cypher - see docs/temporal-cypher-graph-implementation-plan.md, Task PoC.6. Never set for an " +
+            "Cypher.6. Never set for an " +
             "ordinary StroomQL query.")
     @JsonProperty
     private final GraphSpec graphSpec;
@@ -199,7 +199,7 @@ public final class Query {
 //         * @return this builder, with the completed datasource added.
 //         */
 //        public Builder dataSource(final String type, final String uuid, final String name) {
-//            return this.dataSource(DocRef.builder().type(type).uuid(uuid).name(name).build());
+//            return this.dataSource(DocRef.builder.type(type).uuid(uuid).name(name).build);
 //        }
 
         /**
@@ -245,7 +245,7 @@ public final class Query {
         }
 
         /**
-         * @param joinSpec see {@link Query#getJoinSpec()} - never set for an ordinary, single-source query.
+         * @param joinSpec see {@link Query#getJoinSpec} - never set for an ordinary, single-source query.
          * @return The {@link Builder}, enabling method chaining
          */
         public Builder joinSpec(final JoinSpec joinSpec) {
@@ -254,7 +254,7 @@ public final class Query {
         }
 
         /**
-         * @param graphSpec see {@link Query#getGraphSpec()} - never set for an ordinary StroomQL query.
+         * @param graphSpec see {@link Query#getGraphSpec} - never set for an ordinary StroomQL query.
          * @return The {@link Builder}, enabling method chaining
          */
         public Builder graphSpec(final GraphSpec graphSpec) {

@@ -26,7 +26,7 @@ import java.util.function.Consumer;
  * keyed multimap of build-side rows that the probe side is streamed against. Abstracting it behind this interface
  * lets the pure join algorithm ({@code stroom-query-planner}) stay ignorant of <i>where</i> the build side lives -
  * an on-heap {@link HeapBuildSideLookup}, or an off-heap disk-backed store in {@code stroom-query-common} that this
- * module deliberately does not depend on (see {@code docs/join-scalability-implementation-plan.md}, items C1/C2).
+ * module deliberately does not depend on (items C1/C2).
  *
  * <p>Lifecycle is strictly two-phase: a <b>build phase</b> of {@link #put} calls, then a <b>probe phase</b> of
  * {@link #get} calls. An implementation may commit/finalise its backing store lazily on the first {@link #get},
@@ -35,7 +35,7 @@ import java.util.function.Consumer;
  * temporary storage.</p>
  *
  * <p><b>Key semantics:</b> keys are the canonical string tuples produced by {@link JoinExecutor#keyOf} - a
- * non-null, non-empty {@link List} whose elements are each equi-key component's {@link Val#toString()}. SQL-null
+ * non-null, non-empty {@link List} whose elements are each equi-key component's {@link Val#toString}. SQL-null
  * key components never reach this interface: {@link JoinExecutor#keyOf} returns {@code null} for them (SQL
  * {@code NULL != NULL}), and the caller drops such rows before {@link #put} and treats them as an automatic miss
  * before {@link #get} - so no implementation ever has to represent a null key.</p>
@@ -58,7 +58,7 @@ public interface BuildSideLookup extends AutoCloseable {
      * {@code matchConsumer}, in insertion order, one row at a time. This is deliberately a <b>streaming</b>
      * primitive rather than a {@code List}-returning one: a highly skewed key can have an enormous number of rows,
      * and materialising them all into an in-heap list would reintroduce the very out-of-memory failure the
-     * disk-backed build side exists to prevent (see {@code docs/join-scalability-implementation-plan.md}, the
+     * disk-backed build side exists to prevent (the
      * OOM-reduction plan). A disk-backed implementation reads and hands over one row at a time; the consumer
      * (e.g. {@link JoinExecutor#streamingProbe}) can then apply the output-row cap <i>during</i> a hot key's
      * fan-out instead of after the whole group is resident.
@@ -73,7 +73,7 @@ public interface BuildSideLookup extends AutoCloseable {
 
     /**
      * The number of rows {@link #put} so far - the runtime build-side size signal (see
-     * {@code docs/join-scalability-implementation-plan.md}, item A6). Counts every {@link #put}, including
+     * item A6). Counts every {@link #put}, including
      * duplicate rows under the same key.
      *
      * <p><b>Postconditions:</b> {@code >= 0}; equals the number of successful {@link #put} calls.</p>

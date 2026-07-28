@@ -82,7 +82,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * Task #18 (see {@code docs/join-scalability-implementation-plan.md}, §8.3): the differential/parity gate A1
+ * Task #18: the differential/parity gate A1
  * (per-side predicate push-down) and A2 (projection pruning) call for. Every other join test in this package
  * proves correctness against a fake {@link SearchProvider} that <i>ignores</i> the sub-request it's handed (see
  * {@code fakeSideProvider} in {@link TestJoinSearchProvider}) - which proves {@link JoinExecutor}/
@@ -132,7 +132,7 @@ class TestJoinPushDownDifferential {
      * returns the same fixed rows regardless of what was asked for.
      *
      * <p><b>Preconditions:</b> {@code dataSource}, {@code allColumns}, {@code allRows} must not be null; every
-     * element of {@code allRows} must have length {@code allColumns.size()}.<br>
+     * element of {@code allRows} must have length {@code allColumns.size}.<br>
      * <b>Postconditions:</b> the returned provider's {@code createResultStore(sideRequest)} filters {@code
      * allRows} by {@code sideRequest}'s {@code where} clause (bare, unqualified field names - a compiled side
      * sub-query never carries an alias prefix) and projects down to the columns {@code sideRequest} actually
@@ -208,7 +208,7 @@ class TestJoinPushDownDifferential {
     private static ResultStore fakeResultStore(final List<Column> columns, final List<Val[]> rows) {
         final DataStore dataStore = mock(DataStore.class);
         when(dataStore.getColumns()).thenReturn(columns);
-        // A6 build-side selection reads getSize() to pick the smaller side; report the fixture's row count.
+        // A6 build-side selection reads getSize to pick the smaller side; report the fixture's row count.
         when(dataStore.getSize()).thenReturn((long) rows.size());
         org.mockito.Mockito.doAnswer(invocation -> {
             final Consumer<Item> resultConsumer = invocation.getArgument(5);
@@ -544,7 +544,7 @@ class TestJoinPushDownDifferential {
     @Test
     void buildSideSelection_swapProducesByteIdenticalRowsToNoSwap() {
         // A6 gate: for an INNER join the result must be independent of which side is built. Run the same logical
-        // join with data arranged so the smaller side (hence the built side, via getSize()) differs between the
+        // join with data arranged so the smaller side (hence the built side, via getSize) differs between the
         // two runs - run A builds LEFT (left smaller), run B builds RIGHT (right smaller) - and assert the joined
         // rows are byte-identical. The only matching key in both is UserId=2 => [2, "Bob"].
         final List<Column> outerSelect = List.of(column("a.UserId"), column("b.Name"));

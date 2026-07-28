@@ -27,7 +27,7 @@ import static org.assertj.core.api.Assertions.catchThrowableOfType;
 
 /**
  * Tests for {@link StroomQlParser} / {@link ThrowingSyntaxErrorListener} (see
- * docs/query-optimiser-implementation-plan.md, Task 1.3): precise, structured syntax errors for malformed
+ * .3): precise, structured syntax errors for malformed
  * queries, and that well-formed queries still parse cleanly end-to-end through the facade.
  */
 class TestStroomQlParser {
@@ -115,7 +115,7 @@ class TestStroomQlParser {
 
     @Test
     void errorWhoseExpectedTokenSetCannotBeComputed_stillYieldsACleanSyntaxException() {
-        // An unterminated quoted string drives ANTLR into an error state whose getExpectedTokens() itself throws
+        // An unterminated quoted string drives ANTLR into an error state whose getExpectedTokens itself throws
         // (IllegalArgumentException "Invalid state number"). The listener must still surface a clean
         // SyntaxException (with an empty expected-token set), never propagate the raw ANTLR exception.
         final SyntaxException e = catchThrowableOfType(

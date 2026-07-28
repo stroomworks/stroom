@@ -256,7 +256,7 @@ class TestLogicalPlan {
     }
 
     /**
-     * Workstream C (docs/graphdb-stroomql-join-implementation-plan.md, Phase P1/P2): {@link GraphJoinSource} is a
+     * Workstream C: {@link GraphJoinSource} is a
      * further, narrower leaf - a Cypher sub-query used as one side of a {@link Join} - builds a usable tree and
      * enforces the same null contracts as every other leaf above.
      */

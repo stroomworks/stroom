@@ -70,14 +70,14 @@ import java.util.function.Predicate;
 
 /**
  * Routes execution for a query compiled with a {@code join} clause - see
- * {@code docs/query-optimiser-implementation-plan.md}, Task 6.1. Registered under the sentinel
+ * Task 6.1. Registered under the sentinel
  * {@link JoinDataSourceType#TYPE}, the same way {@link SearchableSearchProvider} registers once per
- * {@code Searchable} - {@link SearchProviderRegistryImpl} resolves either purely by {@code DocRef.getType()}, no
+ * {@code Searchable} - {@link SearchProviderRegistryImpl} resolves either purely by {@code DocRef.getType}, no
  * special-casing needed there for this to work.
  *
  * <p>Depends on {@link SearchProviderRegistry} via a lazy {@link Provider} rather than directly: {@code
  * SearchProviderRegistryImpl} is itself constructed from {@code Set<SearchProvider>}, which this class is a
- * member of - injecting the registry directly would be a construction-time cycle; {@code Provider.get()} defers
+ * member of - injecting the registry directly would be a construction-time cycle; {@code Provider.get} defers
  * the lookup until {@link #createResultStore} actually runs, by which point both are fully constructed.</p>
  *
  * <p><b>Scope (Task 6.1d / 6.1x / where-across-joins - see the plan doc's Phase 6 section)</b>: a two-source
@@ -102,10 +102,10 @@ import java.util.function.Predicate;
  * the other (probe) side is streamed against it via {@link JoinExecutor#broadcastLookupJoin} instead
  * ({@link #joinAndFeedViaBroadcastLookup}), the enrichment-join fast path.</p>
  *
- * <p><b>Memory guardrails (see {@code docs/join-scalability-implementation-plan.md}, decision D1)</b>: because
+ * <p><b>Memory guardrails (decision D1)</b>: because
  * both sides and the joined output are fully materialised in memory (the simplification above), each side is
- * capped at {@link JoinConfig#getMaxSideRows()} rows and the joined output at
- * {@link JoinConfig#getMaxOutputRows()} rows. A breach throws {@code JoinLimitExceededException}, which
+ * capped at {@link JoinConfig#getMaxSideRows} rows and the joined output at
+ * {@link JoinConfig#getMaxOutputRows} rows. A breach throws {@code JoinLimitExceededException}, which
  * {@link #createResultStore} captures via {@link ResultStore#addError(Throwable)} - the same in-band error
  * reporting {@link SearchableSearchProvider#buildStore} uses - so an oversized join fails with a clear message
  * rather than exhausting heap or surfacing as an opaque 500.</p>
@@ -130,13 +130,13 @@ class JoinSearchProvider implements SearchProvider {
     /**
      * The Graph DB datasource type name - mirrors {@code stroom.graphdb.shared.GraphDbDoc.TYPE}. Duplicated as a
      * literal, rather than depending on {@code stroom-graphdb-impl} from this module, purely to apply the graph-
-     * side row-count guardrail (Task C4, docs/graphdb-stroomql-join-implementation-plan.md, Phase P4) - the same
+     * side row-count guardrail (Task C4) - the same
      * "detect a side's type structurally, without a new module dependency" convention {@link
      * #PLAN_B_DATA_SOURCE_TYPE} already uses above.
      */
     private static final String GRAPH_DATA_SOURCE_TYPE = "GraphDb";
 
-    /** The lookup side's synthetic output column names (decision D5) - see {@link #lookupSideSyntheticColumns()}. */
+    /** The lookup side's synthetic output column names (decision D5) - see {@link #lookupSideSyntheticColumns}. */
     private static final String LOOKUP_KEY_COLUMN = "Key";
     private static final String LOOKUP_VALUE_COLUMN = "Value";
 
@@ -155,7 +155,7 @@ class JoinSearchProvider implements SearchProvider {
      * @param expressionPredicateFactory      must not be null.
      * @param joinConfigProvider              must not be null; supplies the current {@code stroom.query.join}
      *                                        memory guardrails (see
-     *                                        {@code docs/join-scalability-implementation-plan.md}, decision D1)
+     * decision D1)
      *                                        - a live {@link Provider}, not a captured value, so a runtime config
      *                                        change is honoured by the next search rather than requiring a
      *                                        restart (the same convention {@code DispatchingQueryCompiler} uses
@@ -168,8 +168,8 @@ class JoinSearchProvider implements SearchProvider {
      *                                        already visible via {@code stroom-query-language}).
      * @param buildSideLookupFactory          must not be null; creates the {@code BuildSideLookup} the hash-join
      *                                        path realises its build (right) side into - on-heap while small,
-     *                                        spilling to disk past {@link JoinConfig#getMaxHeapBuildRows()} (see
-     *                                        {@code docs/join-scalability-implementation-plan.md}, items C1/C2).
+     *                                        spilling to disk past {@link JoinConfig#getMaxHeapBuildRows} (see
+     * items C1/C2).
      *                                        It owns the LMDB wiring so this module needs no LMDB dependency.
      */
     @Inject
@@ -231,7 +231,7 @@ class JoinSearchProvider implements SearchProvider {
      * having been realised), and every step after that is wrapped in a single try/catch that reports a failure via
      * {@link ResultStore#addError(Throwable)} rather than letting it propagate out of this method - including a
      * breach of either {@code stroom.query.join} memory guardrail (see
-     * {@code docs/join-scalability-implementation-plan.md}, decision D1), which surfaces as a
+     * decision D1), which surfaces as a
      * {@link JoinLimitExceededException} in-band, not an {@code OutOfMemoryError} or an opaque 500.</p>
      *
      * <p><b>Preconditions:</b> {@code searchRequest} must not be null and must carry a non-null
@@ -265,8 +265,8 @@ class JoinSearchProvider implements SearchProvider {
 
     /**
      * @param searchRequest must not be null.
-     * @return {@code searchRequest.getQuery().getJoinSpec()}, never null.
-     * @throws IllegalArgumentException if {@code searchRequest.getQuery()} or its {@code JoinSpec} is null.
+     * @return {@code searchRequest.getQuery.getJoinSpec}, never null.
+     * @throws IllegalArgumentException if {@code searchRequest.getQuery} or its {@code JoinSpec} is null.
      */
     private static JoinSpec requireJoinSpec(final SearchRequest searchRequest) {
         final JoinSpec joinSpec = searchRequest.getQuery() == null ? null : searchRequest.getQuery().getJoinSpec();
@@ -295,8 +295,8 @@ class JoinSearchProvider implements SearchProvider {
      * <b>Postconditions:</b> on normal return, every joined row surviving the outer {@code where} clause has been
      * passed to {@code coprocessors.accept(...)}; returns nothing.</p>
      *
-     * @throws JoinLimitExceededException if the build side exceeds {@code joinConfig.getMaxSideRows()} or the
-     *                                    joined output exceeds {@code joinConfig.getMaxOutputRows()}.
+     * @throws JoinLimitExceededException if the build side exceeds {@code joinConfig.getMaxSideRows} or the
+     *                                    joined output exceeds {@code joinConfig.getMaxOutputRows}.
      */
     private void joinAndFeed(
             final SearchRequest searchRequest, final JoinSpec joinSpec, final JoinConfig joinConfig,
@@ -310,12 +310,12 @@ class JoinSearchProvider implements SearchProvider {
     }
 
     /**
-     * The streaming/spilling hash-join strategy (see {@code docs/join-scalability-implementation-plan.md}, items
+     * The streaming/spilling hash-join strategy (items
      * C1/C2). Rather than realising both sides fully in memory, it:
      * <ol>
      *     <li>realises the <b>build (right)</b> side into a {@link BuildSideLookup} from
      *     {@link #buildSideLookupFactory} - an on-heap hash map while small, transparently spilling to a
-     *     disk-backed store once it grows past {@link JoinConfig#getMaxHeapBuildRows()}, so a large build side no
+     *     disk-backed store once it grows past {@link JoinConfig#getMaxHeapBuildRows}, so a large build side no
      *     longer exhausts heap;</li>
      *     <li>streams the <b>probe (left)</b> side out of its {@code DataStore} one row at a time, joining each
      *     against the build side and feeding survivors of the outer {@code where} clause straight to
@@ -323,15 +323,15 @@ class JoinSearchProvider implements SearchProvider {
      * </ol>
      *
      * <p><b>Build-side selection (A6).</b> For an {@code INNER} join the result is independent of which side is
-     * built, so the <b>smaller</b> side (by {@link DataStore#getSize()}) is chosen as the build side and the
+     * built, so the <b>smaller</b> side (by {@link DataStore#getSize}) is chosen as the build side and the
      * larger is streamed - cheaper, and never a larger build side than the old always-build-right behaviour. A
      * {@code LEFT} join <b>always</b> keeps build = right / probe = left: its preserved (left) side must be the
      * probe side so unmatched left rows are emitted inline (null-padded) by {@link JoinExecutor#streamingProbe}
      * with no outer-join bookkeeping. Ties keep the default (build = right).</p>
      *
-     * <p>The output-row cap ({@link JoinConfig#getMaxOutputRows()}) is enforced by
+     * <p>The output-row cap ({@link JoinConfig#getMaxOutputRows}) is enforced by
      * {@link JoinExecutor#streamingProbe} as rows are produced; the build-side cap
-     * ({@link JoinConfig#getMaxSideRows()}) is enforced as the build side is realised. The streaming probe side is
+     * ({@link JoinConfig#getMaxSideRows}) is enforced as the build side is realised. The streaming probe side is
      * deliberately not row-capped - it never accumulates.</p>
      *
      * <p><b>Preconditions:</b> all four parameters must be non-null.<br>
@@ -340,9 +340,9 @@ class JoinSearchProvider implements SearchProvider {
      * directory) and both sides' intermediate {@link ResultStore}s are always released before this method returns
      * or throws.</p>
      *
-     * @throws JoinLimitExceededException if the build side exceeds {@code joinConfig.getMaxSideRows()} while being
+     * @throws JoinLimitExceededException if the build side exceeds {@code joinConfig.getMaxSideRows} while being
      *                                    realised, or the joined output would exceed
-     *                                    {@code joinConfig.getMaxOutputRows()}.
+     *                                    {@code joinConfig.getMaxOutputRows}.
      */
     private void joinAndFeedViaStreamingHashJoin(
             final SearchRequest searchRequest, final JoinSpec joinSpec, final JoinConfig joinConfig,
@@ -360,7 +360,7 @@ class JoinSearchProvider implements SearchProvider {
             final OpenedSide right = openSide(joinSpec.getRight(), joinConfig);
             // A6 build-side selection: for an INNER join build the smaller side; a LEFT join must keep probe=left
             // (its unmatched rows emit inline) so it never swaps. Both sides' sub-searches have completed, so
-            // DataStore.getSize() is a final, O(1) size signal. "build" is realised into the lookup; "probe" is
+            // DataStore.getSize is a final, O(1) size signal. "build" is realised into the lookup; "probe" is
             // streamed. The combined row emitted downstream is always [probe columns..., build columns...].
             final boolean buildIsLeft = joinType == JoinType.INNER
                                         && left.dataStore.getSize() < right.dataStore.getSize();
@@ -461,7 +461,7 @@ class JoinSearchProvider implements SearchProvider {
      * in bounded memory; it is therefore not row-capped by {@code maxSideRows}. Only the joined output is bounded
      * (by {@code maxOutputRows}).</p>
      *
-     * @throws JoinLimitExceededException if the joined output would exceed {@code joinConfig.getMaxOutputRows()}.
+     * @throws JoinLimitExceededException if the joined output would exceed {@code joinConfig.getMaxOutputRows}.
      */
     private void joinAndFeedViaBroadcastLookup(
             final SearchRequest searchRequest, final JoinSpec joinSpec, final JoinConfig joinConfig,
@@ -573,7 +573,7 @@ class JoinSearchProvider implements SearchProvider {
     /**
      * Builds a predicate over the <i>combined</i> joined row (left columns then right columns) from the outer
      * query's {@code where} clause ({@code Query.expression}) - see
-     * {@code docs/query-optimiser-implementation-plan.md}, Phase 6 "where across joins". The where clause
+     * Phase 6 "where across joins". The where clause
      * references alias-qualified fields ({@code a.field}/{@code b.field}); each is resolved to its combined-row
      * position (left columns at their own index, right columns offset by the left width) and extracted via the
      * same {@link ValuesFunctionFactory} the coprocessor's own {@code valueFilter} uses, so numeric/date/text
@@ -633,7 +633,7 @@ class JoinSearchProvider implements SearchProvider {
      *                                                                docs/graphdb-stroomql-join-implementation-
      *                                                                plan.md, Phase P4) side whose realised row
      *                                                                count exceeds {@link
-     *                                                                JoinConfig#getMaxSideRows()} - see
+     *                                                                JoinConfig#getMaxSideRows} - see
      *                                                                {@link #checkGraphSideRowCap}.
      */
     private OpenedSide openSide(final SearchRequest sideRequest, final JoinConfig joinConfig) {
@@ -661,10 +661,10 @@ class JoinSearchProvider implements SearchProvider {
     }
 
     /**
-     * Task C4 (docs/graphdb-stroomql-join-implementation-plan.md, Phase P4): surfaces a clear, in-band error - via
+     * Task C4: surfaces a clear, in-band error - via
      * the same {@link JoinLimitExceededException} the build-side/output guardrails already throw, captured by
      * {@link #createResultStore}'s {@code ResultStore.addError} handling - when a graph join side's realised row
-     * count exceeds {@link JoinConfig#getMaxSideRows()}.
+     * count exceeds {@link JoinConfig#getMaxSideRows}.
      *
      * <p>Reuses that existing cap rather than introducing a new configuration property (per the design doc's
      * risk-mitigation note: "reuse the existing join guardrails"), but applies it differently: {@code
@@ -677,7 +677,7 @@ class JoinSearchProvider implements SearchProvider {
      * the memory cost has already been paid regardless of whether the row is ever streamed onward.</p>
      *
      * @param dataSourceRef the side's resolved datasource - only its {@code type} is inspected.
-     * @param dataStore     the side's just-realised {@link DataStore}; {@link DataStore#getSize()} is an O(1)
+     * @param dataStore     the side's just-realised {@link DataStore}; {@link DataStore#getSize} is an O(1)
      *                      signal at this point (the sub-search has already completed).
      * @param joinConfig    supplies the current {@code stroom.query.join.maxSideRows} guardrail.
      */
@@ -745,7 +745,7 @@ class JoinSearchProvider implements SearchProvider {
      * auto-added special {@code StreamId}/{@code EventId} navigation column) maps to {@code -1} - {@link
      * #assembleRow} fills those with {@link ValNull} rather than a wrong value.
      *
-     * @return an array of length {@code fieldIndex.size()}; entry {@code i} is the combined-row position feeding
+     * @return an array of length {@code fieldIndex.size}; entry {@code i} is the combined-row position feeding
      *         outer field position {@code i}, or {@code -1} for "no source".
      */
     static int[] buildFieldMapping(

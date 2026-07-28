@@ -18,7 +18,7 @@ package stroom.graphdb.impl;
 
 /**
  * The stable identity of one graph element bound by a pattern variable, used to classify a {@code DIFF}'s matches
- * across two instants (see {@code docs/temporal-cypher-diff-operator.md} &sect;5.1). Identity is the interned
+ * across two instants. Identity is the interned
  * graph UID(s) - never a projected property value - so a node whose property changed is still recognised as the
  * <i>same</i> node (that is exactly the {@code MODIFIED} case to detect, not hide).
  *

@@ -107,6 +107,13 @@ design. `*..3` is allowed and means `*1..3`.
 A variable-length hop must be the pattern's **only** hop; it cannot be chained with others. The maximum
 permitted range is 50, and exploration is budgeted per starting node — see [10-limits.md](10-limits.md).
 
+> **Cycles are guarded by node, not by relationship.** A single path will never visit the same node twice.
+> Cypher's own rule is weaker — it forbids reusing the same *relationship*, but allows a path to pass
+> through a node more than once. Graph DB is therefore stricter, and in a cyclic or diamond-shaped
+> subgraph it can return **fewer** paths than Neo4j would for the same pattern. Nothing reports this; the
+> results are simply narrower. Note that a node reached by two genuinely different paths is still two
+> results — the restriction is only within one path.
+
 ## Temporal clauses
 
 The Stroom extension. One clause per `MATCH`, written after the pattern and before any `WHERE`. With no
@@ -385,7 +392,7 @@ Those messages and how to avoid them are in [10-limits.md](10-limits.md).
 - [10-limits.md](10-limits.md) — runtime ceilings and query tuning
 - [08-analysis-examples.md](08-analysis-examples.md) — these constructs applied to real questions
 
-### Further reading (engineering)
+### Further reading
 
-`docs/gql-mandatory-feature-comparison.md` compares this subset against ISO GQL clause by clause.
-[`archive/cypher-language-feature-roadmap.md`](archive/cypher-language-feature-roadmap.md) surveys unsupported features with value/cost estimates.
+[09-gql-and-neo4j.md](09-gql-and-neo4j.md) compares this subset against ISO GQL and Neo4j clause by
+clause. [12-future-work.md](12-future-work.md) records which of the gaps above are likely to close.

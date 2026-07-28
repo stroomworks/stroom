@@ -29,7 +29,7 @@ import java.util.function.Consumer;
  * Compiles StroomQL text into a {@link SearchRequest}.
  *
  * <p>This is the single seam through which all StroomQL is turned into a {@link SearchRequest}, both for
- * validation and for execution (see {@code docs/query-optimiser-implementation-plan.md}, Task 0.2). Two
+ * validation and for execution (Task 0.2). Two
  * implementations exist: {@link LegacyQueryCompiler}, which delegates to the hand-coded
  * {@link SearchRequestFactory}, and (from Phase 1 onward) an ANTLR-grammar-driven implementation. Callers must
  * not depend on which implementation is bound - both are required to produce equivalent results for any given
@@ -67,7 +67,7 @@ public interface QueryCompiler {
 
     /**
      * Explains how {@code query} would be compiled/executed, with a cost estimate where one is available - see
-     * {@code docs/query-optimiser-implementation-plan.md}, Task 4.1. A genuinely new operation (not a changed
+     * Task 4.1. A genuinely new operation (not a changed
      * {@link #create}): never used to drive execution, only to inform a user before they run a query.
      *
      * @param query              the StroomQL text to explain. Same acceptance rules as {@link #create}.

@@ -32,7 +32,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Proves {@link JoinProjectionAnalyzer#fieldsNeededFor} gathers exactly the fields a join side needs - see
- * {@code docs/join-scalability-implementation-plan.md}, decision D4 (Phase 1, item A2).
+ * decision D4 (Phase 1, item A2).
  */
 class TestJoinProjectionAnalyzer {
 
@@ -78,7 +78,7 @@ class TestJoinProjectionAnalyzer {
 
     @Test
     void functionCallSelectExpression_stillFindsTheFieldReferenceInside() {
-        // Column.getExpression() is arbitrary StroomQL, not just a bare field - a regex scan (not a parse) must
+        // Column.getExpression is arbitrary StroomQL, not just a bare field - a regex scan (not a parse) must
         // still find "a.Amount" inside "sum(a.Amount)". See JoinProjectionAnalyzer's class Javadoc.
         final SearchRequest outer = withColumns(column("sum(a.Amount)"));
 

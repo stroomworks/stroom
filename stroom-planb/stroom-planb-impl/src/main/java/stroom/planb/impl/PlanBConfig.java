@@ -90,7 +90,7 @@ public class PlanBConfig extends AbstractConfig implements IsStroomConfig {
     @JsonProperty
     @JsonPropertyDescription("Cache of looked-up state/enrichment values keyed by (map, key, effective time) - " +
                              "see stroom.planb.impl.pipeline.StateProviderImpl. Default maximumSize matches this " +
-                             "cache's previous hardcoded size (see docs/query-graphdb-review-report.md finding " +
+                             "cache's previous hardcoded size (finding " +
                              "F16); raise it for a broadcast-lookup join whose probe side has a high-cardinality " +
                              "key set, to reduce cache thrash and repeated point-lookups.")
     public CacheConfig getStateValueCache() {

@@ -38,7 +38,7 @@ import static org.mockito.Mockito.when;
 
 /**
  * Proves {@link FieldInfoSourceAdapter} correctly wraps the real {@link DataSourceResolver}/
- * {@link DataSourceProviderRegistry} seam - see {@code docs/query-optimiser-implementation-plan.md}, Task 2.2
+ * {@link DataSourceProviderRegistry} seam, Task 2.2
  * (the adapter half of the port/adapter split; {@link TestBinder} in {@code stroom-query-planner} covers the
  * port's consumer, the {@code Binder}, against a fake).
  */

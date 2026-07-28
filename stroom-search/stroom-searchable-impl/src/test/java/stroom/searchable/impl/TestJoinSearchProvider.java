@@ -282,7 +282,7 @@ class TestJoinSearchProvider {
 
         final List<Val[]> rows = readTableRows(resultStore);
         assertThat(rows).hasSize(1);
-        // Outer select columns are [a.UserId, b.Name] - see outerRequest(). The one matching row is UserId=2.
+        // Outer select columns are [a.UserId, b.Name] - see outerRequest. The one matching row is UserId=2.
         assertThat(rows.getFirst()[0]).isEqualTo(ValLong.create(2));
         assertThat(rows.getFirst()[1]).isEqualTo(ValString.create("Bob"));
     }
@@ -429,7 +429,7 @@ class TestJoinSearchProvider {
     }
 
     // ------------------------------------------------------------------------------------------------------
-    // Memory guardrails (see docs/join-scalability-implementation-plan.md, decision D1)
+    // Memory guardrails
     // ------------------------------------------------------------------------------------------------------
 
     @Test
@@ -523,8 +523,8 @@ class TestJoinSearchProvider {
     }
 
     // ------------------------------------------------------------------------------------------------------
-    // Workstream C, Phase P4 (docs/graphdb-stroomql-join-implementation-plan.md): a graph-typed side ("GraphDb")
-    // needs no special-casing in JoinSearchProvider at all - openSide already routes purely by DocRef.getType(),
+    // Workstream C, Phase P4: a graph-typed side ("GraphDb")
+    // needs no special-casing in JoinSearchProvider at all - openSide already routes purely by DocRef.getType,
     // so a fake provider registered under that type is joined exactly like any other. Plus the graph-side row
     // cap guardrail (Task C4).
     // ------------------------------------------------------------------------------------------------------
@@ -754,9 +754,9 @@ class TestJoinSearchProvider {
     }
 
     // ------------------------------------------------------------------------------------------------------
-    // Task B1 (see docs/join-scalability-implementation-plan.md, decisions D5/D7/D8): the enrichment-join fast
+    // Task B1: the enrichment-join fast
     // path against a keyed Plan B/State store. PLAN_B_DATA_SOURCE mirrors what detectPlanBLookupSide looks for
-    // (DocRef.getType() == "PlanB"); an equi-key field of "Key" makes a side lookup-eligible.
+    // (DocRef.getType == "PlanB"); an equi-key field of "Key" makes a side lookup-eligible.
     // ------------------------------------------------------------------------------------------------------
 
     private static final DocRef PLAN_B_DATA_SOURCE = new DocRef("PlanB", "planb-uuid", "Users");
@@ -962,7 +962,7 @@ class TestJoinSearchProvider {
 
     @Test
     void broadcastLookup_lookupReturnsValErr_reportsAClearError_insteadOfEmbeddingItAsAMatchedRow() {
-        // F1/SEC-1 regression (docs/query-graphdb-review-report.md): a failed lookup (e.g. a permission deny,
+        // F1/SEC-1 regression: a failed lookup (e.g. a permission deny,
         // surfaced here as a ValErr, exactly as StateProviderImpl.getState used to swallow one into) must fail
         // the search via the normal ResultStore.addError path - never be embedded as the joined Value column.
         final SearchProvider probeProvider = fakeSideProvider(

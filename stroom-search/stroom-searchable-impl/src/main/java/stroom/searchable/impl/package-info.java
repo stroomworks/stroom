@@ -17,7 +17,7 @@
 /**
  * {@link stroom.query.common.v2.SearchProvider} implementations that resolve a datasource by looking it up as a
  * plain {@code Searchable} document, plus (see {@link stroom.searchable.impl.JoinSearchProvider}) the executor for
- * a {@code join}-clause search - see {@code docs/join-scalability-implementation-plan.md}.
+ * a {@code join}-clause search.
  */
 @NullMarked
 package stroom.searchable.impl;

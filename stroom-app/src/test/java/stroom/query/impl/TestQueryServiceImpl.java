@@ -132,7 +132,7 @@ class TestQueryServiceImpl {
     }
 
     // ------------------------------------------------------------------------------------------------------
-    // Workstream A (docs/cypher-from-clause-implementation-plan.md, Phase 2): mapRequest's text-driven
+    // Workstream A: mapRequest's text-driven
     // dispatch, exercised through the public getBestNode(String, QuerySearchRequest) entry point - the
     // narrowest public seam onto the private mapRequest(...) these route through, since it surfaces exactly
     // the resolved Query.dataSource (via a mocked QueryNodeResolver) that dispatch decided on.

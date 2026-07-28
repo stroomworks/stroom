@@ -37,14 +37,14 @@ import java.util.function.Consumer;
 /**
  * A {@link QueryCompiler} that selects {@link LegacyQueryCompiler} or {@link OptimisingQueryCompiler} on every
  * call based on the live value of {@code stroom.query.optimiser.mode} (see
- * {@code docs/query-optimiser-implementation-plan.md}, Tasks 1.5 and 5.4). The flag is re-read per call (not
+ * Tasks 1.5 and 5.4). The flag is re-read per call (not
  * cached at construction) so a config change takes effect immediately, without requiring a restart.
  *
  * <p>{@link QueryOptimiserMode#SHADOW} only changes {@link #create}'s behaviour: legacy still compiles and its
  * result is always what's returned/served (identical to {@link QueryOptimiserMode#OFF} from the caller's point
  * of view), but the optimising compiler also runs, best-effort and fail-open, purely to log any divergence.
  * {@link #extractDataSourceOnly}/{@link #explain} treat {@code SHADOW} the same as {@code OFF} - there's nothing
- * to shadow-diff for a datasource-only extraction or an already-advisory-only {@code explain()} call.</p>
+ * to shadow-diff for a datasource-only extraction or an already-advisory-only {@code explain} call.</p>
  */
 @NullMarked
 public class DispatchingQueryCompiler implements QueryCompiler {
@@ -106,7 +106,7 @@ public class DispatchingQueryCompiler implements QueryCompiler {
     /**
      * Best-effort, fail-open: compiles {@code query} with the optimising compiler purely to log any divergence
      * from {@code legacyResult} - the result actually served. Must never affect what's served in any way,
-     * including by throwing - see docs/query-optimiser-implementation-plan.md, Task 5.4.
+     * including by throwing.4.
      */
     private void shadowCompileAndLog(
             final String query,
@@ -131,7 +131,7 @@ public class DispatchingQueryCompiler implements QueryCompiler {
     }
 
     /**
-     * Task 5.5 (the estimate half only - see docs/query-optimiser-implementation-plan.md, Phase 5, for why the
+     * Task 5.5 (the estimate half only, for why the
      * "actual duration" half is deferred: it needs a completion-time hook in the shared, engine-agnostic
      * {@code ResultStoreManager}, and a way to correlate that back to this compile-time estimate given a
      * {@code QueryKey} doesn't exist yet at this point - a bigger, separately-planned change, not a same-day

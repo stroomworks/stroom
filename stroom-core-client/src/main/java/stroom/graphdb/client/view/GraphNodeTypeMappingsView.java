@@ -25,7 +25,7 @@ import com.gwtplatform.mvp.client.HasUiHandlers;
 import java.util.List;
 
 /**
- * Task B1 (docs/graphdb-features-implementation-plan.md, Workstream B): the get/set contract for editing
+ * Task B1: the get/set contract for editing
  * {@code GraphDbDoc.nodeTypeMappings}, following the same shape as the sibling {@code RetentionSettingsView}
  * in {@code stroom.planb.client.view} so {@link stroom.graphdb.client.presenter.GraphDbSettingsPresenter}'s own
  * view can compose it directly.

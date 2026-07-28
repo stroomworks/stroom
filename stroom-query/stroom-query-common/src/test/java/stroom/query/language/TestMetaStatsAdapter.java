@@ -37,7 +37,7 @@ import static org.mockito.Mockito.when;
 
 /**
  * Proves {@link MetaStatsAdapter} correctly wraps the real {@link MetaService} seam - see
- * {@code docs/query-optimiser-implementation-plan.md}, Task 3.1 (mirrors Phase 2's
+ * Task 3.1 (mirrors Phase 2's
  * {@code TestFieldInfoSourceAdapter} "test the real seam" style).
  */
 class TestMetaStatsAdapter {

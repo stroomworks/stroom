@@ -36,7 +36,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Task 5.3: proves {@link OptimisingQueryCompiler#create} routes the index-ineligible remainder of a bare {@code
  * where} clause to extraction-time filtering ({@code TableSettings.valueFilter}) instead of leaving it in the
- * scan-time {@code Query.expression} - see {@code docs/query-optimiser-implementation-plan.md}, Phase 5, and
+ * scan-time {@code Query.expression}, Phase 5, and
  * {@code query-optimiser-known-differences.md} for the legacy divergence this fixes.
  */
 class TestOptimisingQueryCompilerWhereFilterSplit {

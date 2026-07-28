@@ -73,9 +73,9 @@ public final class CypherCompiler {
     }
 
     /**
-     * <b>Preconditions:</b> none of the three parameters is null; {@code in.getQuery()} is not null.
+     * <b>Preconditions:</b> none of the three parameters is null; {@code in.getQuery} is not null.
      * <b>Postconditions:</b> the returned request's {@code Query.dataSource} names the target {@code GraphDbDoc}
-     * - Workstream A (docs/cypher-from-clause-implementation-plan.md): {@code in.getQuery().getDataSource()} wins
+     * - Workstream A: {@code in.getQuery.getDataSource} wins
      * when already set (the normal path, pre-resolved by {@code QueryServiceImpl.mapRequest} from either
      * {@code SearchRequestSource.ownerDocRef} or the query text's own leading {@code from "X"}); otherwise
      * {@code cypher}'s own leading {@code from "X"} clause is resolved here via {@link #docFinder} (a caller
@@ -127,7 +127,7 @@ public final class CypherCompiler {
     /**
      * <b>Preconditions:</b> {@code ast} is not null.
      * <b>Postconditions:</b> {@code preSetDataSource} always wins when present - see {@link #create}'s Javadoc for
-     * why. Throws {@link CypherCompileException} if neither it nor {@code ast.dataSourceName()} is present, or the
+     * why. Throws {@link CypherCompileException} if neither it nor {@code ast.dataSourceName} is present, or the
      * named graph cannot be resolved to exactly one {@code GraphDbDoc}.
      * <b>Null status:</b> {@code preSetDataSource} is nullable; neither {@code ast} nor the return value is
      * nullable.
@@ -175,7 +175,7 @@ public final class CypherCompiler {
      * Derives a single table {@link ResultRequest} from the {@code RETURN} clause's visible {@link ProjectField}s
      * - the Cypher analogue of {@code AstToSearchRequestMapper#addTableSettings}. Each column's expression is a
      * plain {@code ${name}} field reference rather than a re-parsed Cypher expression: {@link GraphSearchProvider}
-     * resolves a row's values by {@link ProjectField#name()} directly against the same {@code FieldIndex}, so a
+     * resolves a row's values by {@link ProjectField#name} directly against the same {@code FieldIndex}, so a
      * {@code ${name}} reference (which also resolves via {@code fieldIndex.create(name)}, see
      * {@code ParamFactory#createRef}) lines up with that mapping without needing to understand Cypher expression
      * syntax at all.

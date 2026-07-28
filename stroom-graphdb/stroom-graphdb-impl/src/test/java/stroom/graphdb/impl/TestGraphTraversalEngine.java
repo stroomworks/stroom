@@ -187,7 +187,7 @@ class TestGraphTraversalEngine {
             final GraphTraversalEngine engine = new GraphTraversalEngine(
                     stores, new ExpressionPredicateFactory());
 
-            // o-1 investigates crimes of types {theft, theft, fraud}. v1 collect() representation is a
+            // o-1 investigates crimes of types {theft, theft, fraud}. v1 collect representation is a
             // comma-joined ValString; collect(DISTINCT) de-duplicates.
             final CompiledCypherPlan compiled = compile(
                     "MATCH (o:Officer {id: 'o-1'})-[:INVESTIGATED]->(c:Crime) "
@@ -488,7 +488,7 @@ class TestGraphTraversalEngine {
 
             // stroom.formatDate(millis): epoch 0 formats to a 1970 timestamp (deterministic).
             assertThat(one(stores, engine, anchor + "stroom.formatDate(0)")).contains("1970");
-            // stroom.now() wires through and yields a non-blank value.
+            // stroom.now wires through and yields a non-blank value.
             assertThat(one(stores, engine, anchor + "stroom.now()")).isNotBlank();
         }
     }
@@ -648,8 +648,8 @@ class TestGraphTraversalEngine {
 
     @Test
     void bareVariableReturn_throwsRatherThanSilentlyReturningTheSameStringForEveryRow(@TempDir final Path root) {
-        // Code-review fix: rowFor() only ever populates "variable.property" keys, never a bare "variable" key,
-        // so RETURN of a bare pattern variable (no property access) previously fell through evaluate()'s
+        // Code-review fix: rowFor only ever populates "variable.property" keys, never a bare "variable" key,
+        // so RETURN of a bare pattern variable (no property access) previously fell through evaluate's
         // row.containsKey check and silently returned the literal string "d" for every single row - not a
         // per-row identifier, the same fixed value regardless of which node actually matched. Now throws
         // instead, matching this class's own stated "throw rather than a wrong result" philosophy.
@@ -1024,7 +1024,7 @@ class TestGraphTraversalEngine {
     }
 
     // ------------------------------------------------------------------------------------------------------
-    // review finding F3: accumulation ceiling / bounded top-N (docs/query-graphdb-review-findings.md, Batch 4)
+    // review finding F3: accumulation ceiling / bounded top-N (Batch 4)
     // ------------------------------------------------------------------------------------------------------
 
     @Test
@@ -1223,7 +1223,7 @@ class TestGraphTraversalEngine {
 
     @Test
     void limitClause_stopsAccumulatingRowsOnceSatisfied(@TempDir final Path root) {
-        // Task P7.2: before this, unwrap() walked past the compiled Limit node without ever reading its value -
+        // Task P7.2: before this, unwrap walked past the compiled Limit node without ever reading its value -
         // the traversal engine computed every matching row regardless of a query's own LIMIT.
         try (GraphStores stores = GraphStores.provision(root.resolve("graph16"), DOC)) {
             seedDeviceConnectedToAccounts(stores);
@@ -1307,7 +1307,7 @@ class TestGraphTraversalEngine {
     }
 
     // ------------------------------------------------------------------------------------------------------
-    // aggregation (Task 1.5 of docs/graphdb-analytic-functions-implementation-plan.md)
+    // aggregation (Task 1.5 of)
     // ------------------------------------------------------------------------------------------------------
 
     @Test
@@ -1410,7 +1410,7 @@ class TestGraphTraversalEngine {
 
     @Test
     void avgOverAGroupWithNoNumericValues_isNullNotZero(@TempDir final Path root) {
-        // Unlike sum's 0, Cypher's avg() of an empty/non-numeric set is null - the "Fraud" group has no crime
+        // Unlike sum's 0, Cypher's avg of an empty/non-numeric set is null - the "Fraud" group has no crime
         // with a severity property at all.
         try (GraphStores stores = GraphStores.provision(root.resolve("agg-avg-grouped"), DOC)) {
             seedOfficerInvestigatingCrimes(stores);
@@ -1504,7 +1504,7 @@ class TestGraphTraversalEngine {
         }
     }
 
-    /** Runs {@code compiled} with its own {@code distinct()}/{@code aggregation()} against {@code stores}. */
+    /** Runs {@code compiled} with its own {@code distinct}/{@code aggregation} against {@code stores}. */
     @Test
     void executeDiffBindings_classifiesAddedRemovedModifiedUnchanged_acrossTwoInstants(
             @TempDir final Path root) {
@@ -1646,8 +1646,8 @@ class TestGraphTraversalEngine {
     }
 
     // ------------------------------------------------------------------------------------------------------
-    // RETURN GRAPH (Workstream D): the element-row output mode (docs/temporal-cypher-diff-operator.md §4.4,
-    // docs/graphdb-cytoscape-visualisation.html §3).
+    // RETURN GRAPH (Workstream D): the element-row output mode (.4,
+    // ).
     // ------------------------------------------------------------------------------------------------------
 
     @Test
@@ -1930,7 +1930,7 @@ class TestGraphTraversalEngine {
 
     @Test
     void returnGraph_whereClause_onlyIncludesElementsFromFullyMatchingPaths(@TempDir final Path root) {
-        // Connectivity guarantee (§5.6): an element only appears if it is on a path that fully matches the
+        // Connectivity guarantee: an element only appears if it is on a path that fully matches the
         // pattern AND its WHERE - account-a's path fails "balance > 100", so neither account-a nor its edge
         // appear, but the device (shared by both paths) still appears via the surviving account-b path. Also
         // proves the "properties" column's JSON rendering: numeric values unquoted, keys sorted.
@@ -2039,7 +2039,7 @@ class TestGraphTraversalEngine {
     }
 
     /** A null-safe rendering of a projected value: {@code ValNull} (an absent before/after side) renders as a
-     * Java {@code null} rather than {@link ValNull#toString()}'s own {@code null} String. */
+     * Java {@code null} rather than {@link ValNull#toString}'s own {@code null} String. */
     private static String text(final Val value) {
         return value == null || value == ValNull.INSTANCE ? null : value.toString();
     }
@@ -2346,7 +2346,7 @@ class TestGraphTraversalEngine {
     }
 
     /**
-     * Task 1.5 (docs/graphdb-analytic-functions-implementation-plan.md): a single officer investigating four
+     * Task 1.5: a single officer investigating four
      * crimes - two "Drugs" (severity 3, 5), one "Burglary" (severity 2), and one "Fraud" with NO {@code severity}
      * property at all, so {@code count(c.severity)} can differ from {@code count(*)}, and {@code sum}/
      * {@code avg}/{@code min}/{@code max} can be tested against a group with no numeric values. The anchor is

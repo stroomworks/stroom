@@ -22,7 +22,7 @@ import java.util.Objects;
 /**
  * A precise query syntax error: a 1-based line, a 0-based column, a human-readable message, and (where known)
  * the set of token descriptions that would have been valid at that position - see
- * {@code docs/query-optimiser-implementation-plan.md}, Task 1.3. Shared by both ANTLR-driven grammars in this
+ * Task 1.3. Shared by both ANTLR-driven grammars in this
  * module: StroomQL (via {@code StroomQlParser}) and Cypher (via {@code CypherQueryParser}).
  *
  * <p>Unlike legacy's {@code stroom.query.api.token.TokenException} (which carries a legacy {@code AbstractToken}),
@@ -56,7 +56,7 @@ public final class SyntaxException extends RuntimeException {
         return line;
     }
 
-    /** @return 0-based column offset within {@link #getLine()}. */
+    /** @return 0-based column offset within {@link #getLine}. */
     public int getColumn() {
         return column;
     }

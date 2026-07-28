@@ -35,7 +35,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Proves {@link SpillingBuildSideLookup}'s hybrid behaviour (see
- * {@code docs/join-scalability-implementation-plan.md}, items C1/A6 and the OOM-reduction plan): it stays on the
+ * items C1/A6 and the OOM-reduction plan): it stays on the
  * heap below the row <b>and</b> byte thresholds, spills correctly (draining without loss) once either is crossed,
  * and serves probes identically either way.
  */

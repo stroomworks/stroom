@@ -36,7 +36,7 @@ import com.gwtplatform.mvp.client.ViewWithUiHandlers;
 import java.util.List;
 
 /**
- * Task B1 (docs/graphdb-features-implementation-plan.md, Workstream B): the view for
+ * Task B1: the view for
  * {@link stroom.graphdb.client.presenter.GraphDbSettingsPresenter}, mirroring
  * {@code stroom.planb.client.presenter.TemporalStateSettingsPresenter}'s composition of reusable
  * {@code stroom.planb.client.view} widgets. {@code temporalPrecision} is a single field specific to

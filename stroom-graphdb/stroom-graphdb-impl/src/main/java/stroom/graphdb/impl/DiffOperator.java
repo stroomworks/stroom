@@ -25,10 +25,10 @@ import java.util.Objects;
 /**
  * The pure classification core of the {@code DIFF} operator: a full-outer merge of the baseline ({@code t1}) and
  * comparison ({@code t2}) match sets, keyed on path identity, producing one {@link ClassifiedMatch} per distinct
- * path (see {@code docs/temporal-cypher-diff-operator.md} &sect;5). This class has no engine, storage, or query
+ * path. This class has no engine, storage, or query
  * dependency - it is exercised directly by unit tests.
  *
- * <p>Classification (&sect;3, &sect;5.3):</p>
+ * <p>Classification:</p>
  * <ul>
  *   <li>identity in {@code t2} only &rarr; {@link ChangeKind#ADDED}</li>
  *   <li>identity in {@code t1} only &rarr; {@link ChangeKind#REMOVED}</li>
@@ -37,7 +37,7 @@ import java.util.Objects;
  * </ul>
  *
  * <p>A topology move (an element re-bound to a different neighbour) changes the identity tuple, so it surfaces
- * naturally as a {@code REMOVED} of the old path plus an {@code ADDED} of the new one (&sect;5.2) - not as a
+ * naturally as a {@code REMOVED} of the old path plus an {@code ADDED} of the new one - not as a
  * single {@code MODIFIED}. Property-set equality is {@link Map#equals(Object)} over the flat rows, which - because
  * {@code Val} implementations compare by concrete type and value - is exactly the canonical equality of &sect;5.3.
  */

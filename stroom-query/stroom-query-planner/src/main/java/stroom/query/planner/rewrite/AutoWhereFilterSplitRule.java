@@ -45,16 +45,16 @@ import java.util.Optional;
 
 /**
  * Auto-derives the {@code where}/{@code filter} split: for a {@link Filter} node whose
- * {@link Filter#filterPredicate()} is {@code null} pre-rewrite (the query relied solely on {@code where}), splits
- * {@link Filter#wherePredicate()}'s top-level AND-conjuncts by index-eligibility into an index-pushed remainder
+ * {@link Filter#filterPredicate} is {@code null} pre-rewrite (the query relied solely on {@code where}), splits
+ * {@link Filter#wherePredicate}'s top-level AND-conjuncts by index-eligibility into an index-pushed remainder
  * (stays {@code wherePredicate}) and a non-eligible remainder (becomes {@code filterPredicate}) - see
- * {@code docs/query-optimiser-implementation-plan.md}, Task 2.3.
+ * Task 2.3.
  *
  * <p><b>Invariant</b>: if the query already has an explicit {@code filter} clause
  * ({@code filterPredicate != null} before this rule runs), it is a no-op - the query rewrites to itself.</p>
  *
- * <p>A term is index-eligible when its field is {@link QueryField#queryable()} <b>and</b> its condition is in
- * that field's {@link QueryField#getConditionSet()}. Anything this rule cannot resolve with confidence - an
+ * <p>A term is index-eligible when its field is {@link QueryField#queryable} <b>and</b> its condition is in
+ * that field's {@link QueryField#getConditionSet}. Anything this rule cannot resolve with confidence - an
  * unknown field, a missing {@code ConditionSet}, or a predicate whose top-level operator isn't {@code AND}
  * (an {@code OR}/{@code NOT} can't be partially pushed without evaluating all its branches at the datasource) -
  * is treated conservatively as <i>not</i> eligible, never as eligible: a wrong "leave it in {@code where}" guess

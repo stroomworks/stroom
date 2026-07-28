@@ -39,7 +39,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Demonstrates the two confirmed bugs in legacy's {@code SearchRequestFactory}/{@code Tokeniser} that the new
- * grammar-based compiler deliberately does <b>not</b> reproduce - see docs/query-optimiser-known-differences.md
+ * grammar-based compiler deliberately does <b>not</b> reproduce
  * for the full write-up (root cause, evidence, and rationale for classifying each as a bug rather than a
  * deliberate rule). {@link TestQueryCompilerParity} and {@link TestQueryCompilerGenerativeParity} both carve out
  * these exact shapes; this class is where the resulting behaviour is pinned down explicitly, one bug at a time,

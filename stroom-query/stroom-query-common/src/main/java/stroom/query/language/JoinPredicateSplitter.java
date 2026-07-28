@@ -35,7 +35,7 @@ import java.util.Optional;
 /**
  * Splits a join's outer {@code where} clause into the part(s) safe to pre-filter each side with, before the join
  * runs, and the residual that must still be evaluated on the combined row - see
- * {@code docs/join-scalability-implementation-plan.md}, decision D3 (Phase 1, item A1).
+ * decision D3 (Phase 1, item A1).
  *
  * <p>Deliberately conservative and deliberately independent of {@code PushFiltersBelowJoinsRule} (the existing
  * rewrite-pipeline rule that pushes a filter below a {@code Join} for {@code EXPLAIN}'s cost estimates): that rule
@@ -56,8 +56,8 @@ final class JoinPredicateSplitter {
     private final FieldInfoSource fieldInfoSource;
 
     /**
-     * @param fieldInfoSource must not be null; used to look up each candidate field's {@link QueryField#queryable()}
-     *                        and {@link QueryField#getConditionSet()} to decide index-eligibility (decision D2).
+     * @param fieldInfoSource must not be null; used to look up each candidate field's {@link QueryField#queryable}
+     *                        and {@link QueryField#getConditionSet} to decide index-eligibility (decision D2).
      */
     JoinPredicateSplitter(final FieldInfoSource fieldInfoSource) {
         this.fieldInfoSource = Objects.requireNonNull(fieldInfoSource, "fieldInfoSource");
@@ -150,7 +150,7 @@ final class JoinPredicateSplitter {
     }
 
     /**
-     * @param rawField an {@link ExpressionTerm#getField()} value, e.g. {@code "a.StreamId"} or {@code "StreamId"}.
+     * @param rawField an {@link ExpressionTerm#getField} value, e.g. {@code "a.StreamId"} or {@code "StreamId"}.
      * @return the alias prefix (text before the first {@code '.'}), or null if {@code rawField} has none.
      */
     private static @Nullable String aliasOf(final String rawField) {
@@ -160,8 +160,8 @@ final class JoinPredicateSplitter {
 
     /**
      * A term is index-eligible when its (alias-qualified) field resolves to a {@link QueryField} on
-     * {@code dataSourceName} that is {@link QueryField#queryable()} and whose {@link QueryField#getConditionSet()}
-     * supports the term's {@link ExpressionTerm#getCondition()} - mirroring {@code AutoWhereFilterSplitRule}'s own
+     * {@code dataSourceName} that is {@link QueryField#queryable} and whose {@link QueryField#getConditionSet}
+     * supports the term's {@link ExpressionTerm#getCondition} - mirroring {@code AutoWhereFilterSplitRule}'s own
      * eligibility test. An unknown field, or one with no condition set, is never eligible (decision D2's
      * conservative default) - pushing an unsupported field/condition into a side's own sub-query can otherwise
      * silently zero that side's results (an ANDed {@code MatchNoDocsQuery} at the datasource).

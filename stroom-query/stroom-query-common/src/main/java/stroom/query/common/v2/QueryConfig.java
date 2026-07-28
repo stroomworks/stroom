@@ -25,11 +25,11 @@ import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 
 /**
  * Root configuration node for query compilation, nested into {@code AppConfig} under the property path
- * {@code stroom.query} (see {@code docs/query-optimiser-implementation-plan.md}, Task 0.3).
+ * {@code stroom.query} (Task 0.3).
  *
  * <p>Both nested config objects are always non-null: the no-arg constructor and the {@link JsonCreator}
  * constructor below each default a null/absent nested section to that section's own no-arg default (see
- * {@link QueryOptimiserConfig#QueryOptimiserConfig()}, {@link JoinConfig#JoinConfig()}).</p>
+ * {@link QueryOptimiserConfig#QueryOptimiserConfig}, {@link JoinConfig#JoinConfig}).</p>
  */
 @JsonPropertyOrder(alphabetic = true)
 public class QueryConfig extends AbstractConfig implements IsStroomConfig {
@@ -43,11 +43,11 @@ public class QueryConfig extends AbstractConfig implements IsStroomConfig {
     }
 
     /**
-     * @param optimiserConfig nullable; a null value is replaced with {@code new QueryOptimiserConfig()} so
-     *                         {@link #getOptimiserConfig()} is never null.
-     * @param joinConfig       nullable; a null value is replaced with {@code new JoinConfig()} so
-     *                         {@link #getJoinConfig()} is never null - see {@code
-     *                         docs/join-scalability-implementation-plan.md}, decision D1.
+     * @param optimiserConfig nullable; a null value is replaced with {@code new QueryOptimiserConfig} so
+     *                         {@link #getOptimiserConfig} is never null.
+     * @param joinConfig       nullable; a null value is replaced with {@code new JoinConfig} so
+     *                         {@link #getJoinConfig} is never null - see {@code
+     *  }, decision D1.
      */
     @JsonCreator
     public QueryConfig(
@@ -63,7 +63,7 @@ public class QueryConfig extends AbstractConfig implements IsStroomConfig {
     }
 
     /**
-     * Join memory guardrails - see {@code docs/join-scalability-implementation-plan.md}, decision D1.
+     * Join memory guardrails, decision D1.
      *
      * @return never null.
      */

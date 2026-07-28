@@ -34,7 +34,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * Task B3 (docs/graphdb-features-implementation-plan.md, Workstream B): a round-trip test for
+ * Task B3: a round-trip test for
  * {@link GraphDbSettingsPresenter} - set each of the three Tier-1 fields via the view, save, reopen, and assert
  * the persisted values, while asserting that {@code description} is never touched by this presenter (see its
  * class javadoc, and {@link GraphDbPresenter}'s, for why that field must stay untouched).

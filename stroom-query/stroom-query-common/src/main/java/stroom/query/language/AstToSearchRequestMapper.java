@@ -116,7 +116,7 @@ import java.util.stream.Collectors;
 /**
  * Maps an {@code AstQuery} (see {@code stroom.query.grammar.ast}) to a {@link SearchRequest}, aiming for exact
  * parity with the legacy {@link SearchRequestFactory} for every construct exercised by the parity corpus (see
- * {@code docs/query-optimiser-implementation-plan.md}, Task 1.4).
+ * Task 1.4).
  *
  * <p>One instance is used per {@link #create}/{@link #extractDataSourceOnly} call - like
  * {@code SearchRequestFactory.Builder}, this class holds per-compile mutable state (the field index, param map,
@@ -180,7 +180,7 @@ final class AstToSearchRequestMapper {
      *
      * @param query             must not be null.
      * @param in                must not be null.
-     * @param expressionContext must not be null; {@link ExpressionContext#getDateTimeSettings()} must not be
+     * @param expressionContext must not be null; {@link ExpressionContext#getDateTimeSettings} must not be
      *                          null either.
      * @return never null.
      * @throws stroom.query.grammar.parse.SyntaxException if {@code query} does not parse.
@@ -193,7 +193,7 @@ final class AstToSearchRequestMapper {
     }
 
     /**
-     * Task 6.1x (see {@code docs/query-optimiser-implementation-plan.md}, Phase 6): same contract as {@link
+     * Task 6.1x (Phase 6): same contract as {@link
      * #create(String, SearchRequest, ExpressionContext)}, except when {@code allowJoins} is true, a query
      * containing join clauses is not rejected. This method still has no concept of a second datasource, though -
      * {@code Query.dataSource} resolves to the {@code from} clause's own (left) source only, which the caller
@@ -270,7 +270,7 @@ final class AstToSearchRequestMapper {
         final Map<String, Sort> sortMap = new HashMap<>();
         final Map<String, Integer> groupMap = new HashMap<>();
         final Map<String, IncludeExcludeFilter> filterMap = new HashMap<>();
-        // FROM is handled separately (it's a distinct AstQuery field, not part of ast.clauses()) but still
+        // FROM is handled separately (it's a distinct AstQuery field, not part of ast.clauses) but still
         // participates in the shared TokenType ordering maps, so it must be pre-seeded here.
         final List<TokenType> consumedTokens = new ArrayList<>(List.of(TokenType.FROM));
         final int[] groupDepth = {0};

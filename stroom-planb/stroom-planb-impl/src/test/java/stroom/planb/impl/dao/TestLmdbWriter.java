@@ -31,9 +31,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Direct unit tests of {@link LmdbWriter}'s commit/abort boundary - the mechanism {@code GraphFilter}
- * (pre-production review finding F4; see {@code docs/query-graphdb-review-report.md} and the "Batch 1"
- * write-up in {@code docs/query-graphdb-review-findings.md}) relies on to make each ingested record an
- * all-or-nothing unit, instead of {@link LmdbWriter}'s own batched {@link LmdbWriter#tryCommit()} auto-commit
+ * (pre-production review finding F4; and the "Batch 1"
+ * write-up in) relies on to make each ingested record an
+ * all-or-nothing unit, instead of {@link LmdbWriter}'s own batched {@link LmdbWriter#tryCommit} auto-commit
  * threshold - which would otherwise let one record's partial writes ride along with, and later be silently
  * committed alongside, every already-succeeded record ahead of it.
  */
@@ -112,7 +112,7 @@ class TestLmdbWriter {
 
     @Test
     void abort_doesNotInvokeTheCommitListener(@TempDir final Path tempDir) {
-        // Unlike commit(), abort() must not run the commit listener - its writes are being discarded, not
+        // Unlike commit, abort must not run the commit listener - its writes are being discarded, not
         // persisted, so any commit-time bookkeeping the listener performs (e.g. Plan B's hash-clash recording)
         // must not fire for data that was never actually committed.
         try (final PlanBEnv env = newEnv(tempDir)) {

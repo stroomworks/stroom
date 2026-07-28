@@ -16,7 +16,7 @@
 
 /**
  * The logical plan IR, binder, rewrite rules, cost model and physical planner
- * for the StroomQL query optimiser (see {@code docs/query-optimiser-implementation-plan.md}).
+ * for the StroomQL query optimiser.
  */
 @NullMarked
 package stroom.query.planner;

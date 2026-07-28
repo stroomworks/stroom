@@ -32,7 +32,7 @@ import java.util.Optional;
 
 /**
  * The real {@link FieldInfoSource}, wrapping {@link DataSourceResolver} (name/UUID -> {@link DocRef}) and
- * {@link DataSourceProviderRegistry} (field metadata) - see {@code docs/query-optimiser-implementation-plan.md},
+ * {@link DataSourceProviderRegistry} (field metadata),
  * Task 2.2. This is the adapter half of the port/adapter split: {@code stroom-query-planner}'s {@code Binder}
  * depends only on the {@link FieldInfoSource} interface, never on this class or the types it wraps.
  */

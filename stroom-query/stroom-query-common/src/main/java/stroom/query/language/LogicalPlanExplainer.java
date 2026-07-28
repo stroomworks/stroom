@@ -49,7 +49,7 @@ import java.util.stream.Collectors;
 
 /**
  * Turns a bound, rewritten {@link LogicalPlan} into an {@link ExplainPlan} wire-tree, costing each {@code Scan}
- * via {@link CostModel} - see {@code docs/query-optimiser-implementation-plan.md}, Task 4.1. Package-private:
+ * via {@link CostModel}, Task 4.1. Package-private:
  * an implementation detail of {@link OptimisingQueryCompiler#explain}, not part of this package's public API.
  *
  * <p><b>Scope note</b>: extracting a time range and selectivity-relevant terms for a {@code Scan}'s cost is
@@ -111,7 +111,7 @@ final class LogicalPlanExplainer {
                     "VarLengthExpand " + vle.direction() + " " + vle.edgeType()
                             + "*" + vle.minHops() + ".." + vle.maxHops() + " as " + vle.targetVariable(),
                     toNode(vle.input()));
-            // A graph join side (Phase P1/P2, docs/graphdb-stroomql-join-implementation-plan.md): no compile-time
+            // A graph join side (Phase P1/P2): no compile-time
             // cost estimate yet (Phase P5, deferrable - the graph engine's stats port isn't wired into CostModel
             // for a join side) - explainJoin's null-costedAccessPath "nested join" branch already handles that
             // gracefully.
@@ -150,9 +150,9 @@ final class LogicalPlanExplainer {
                     scan, filter, fieldInfoSource, expressionContext);
             final Node scanNode = costScan(scan, bounds.fromTimeMs(), bounds.toTimeMs(), bounds.selectivityTerms());
             // Propagate the inner Scan's costedAccessPath through this Filter-over-Scan wrapper (unlike the
-            // general wrap() below) so a parent Join sees a costed side rather than treating Join(Filter(Scan),
+            // general wrap below) so a parent Join sees a costed side rather than treating Join(Filter(Scan),
             // ...) - the shape produced for essentially every filtered join - as an un-annotated "nested join"
-            // (see the class Javadoc's scope note and docs/query-graphdb-review-report.md finding F10).
+            // (see the class Javadoc's scope note and finding F10).
             return new Node(
                     ExplainPlan.builder().description("Filter").children(List.of(scanNode.explainPlan())).build(),
                     scanNode.costedAccessPath());

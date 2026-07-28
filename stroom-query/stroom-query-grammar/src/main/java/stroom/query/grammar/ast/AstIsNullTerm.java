@@ -21,7 +21,7 @@ import java.util.Objects;
 /**
  * {@code field is [not] null}. Legacy's tokeniser emits {@code IS_NULL}/{@code IS_NOT_NULL} tokens but
  * {@code SearchRequestFactory.createTerm}'s 3-token minimum check always rejects them with "Incomplete term" -
- * an unimplemented-feature bug, not a deliberate rejection (see docs/query-optimiser-known-differences.md), so
+ * an unimplemented-feature bug, not a deliberate rejection, so
  * the binder (Task 1.4) implements this properly rather than reproducing legacy's rejection.
  *
  * @param field    never null.

@@ -24,7 +24,7 @@ import java.util.Objects;
 /**
  * A {@code [left|inner]? join <source> [as <alias>] on <cond> [and <cond>]*} clause, attached to the
  * {@code from} it follows. {@code source} is either a plain datasource name ({@link AstNamedJoinSource}) or, since
- * Workstream C ({@code docs/graphdb-stroomql-join-implementation-plan.md}, Phase P1), a bracketed sub-query
+ * Workstream C (Phase P1), a bracketed sub-query
  * ({@link AstSubQueryJoinSource}).
  *
  * @param joinType nullable; {@code null} means no explicit {@code left}/{@code inner} keyword was written

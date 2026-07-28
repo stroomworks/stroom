@@ -18,8 +18,8 @@ package stroom.query.common.v2;
 
 /**
  * The sentinel {@code DocRef} type a join query's outer {@code Query.dataSource} uses to route execution to the
- * join-handling {@code SearchProvider} - see {@code docs/query-optimiser-implementation-plan.md}, Task 6.1a.
- * {@link SearchProviderRegistry} resolves providers purely by {@code DocRef.getType()} (verified:
+ * join-handling {@code SearchProvider}, Task 6.1a.
+ * {@link SearchProviderRegistry} resolves providers purely by {@code DocRef.getType} (verified:
  * {@code SearchProviderRegistryImpl}), so this constant is the entire routing contract between the compiler
  * (which builds a join's outer {@code SearchRequest}) and the provider (which reads it back).
  */

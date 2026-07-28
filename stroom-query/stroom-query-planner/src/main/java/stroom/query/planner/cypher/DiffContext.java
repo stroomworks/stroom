@@ -21,7 +21,7 @@ import java.util.Objects;
 
 /**
  * The resolved two-instant context of a {@code DIFF FROM <baseline> TO <comparison>} query (see
- * {@code docs/temporal-cypher-diff-operator.md}). Carried on {@link CompiledCypherPlan} alongside (never instead
+ * ). Carried on {@link CompiledCypherPlan} alongside (never instead
  * of) {@link TemporalContext}: a query is either a state query (a {@code TemporalContext}, or neither for
  * "latest") or a diff (a {@code DiffContext}), never both.
  *

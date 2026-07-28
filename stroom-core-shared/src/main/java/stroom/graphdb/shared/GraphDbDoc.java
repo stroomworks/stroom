@@ -34,7 +34,7 @@ import java.util.Objects;
 
 /**
  * The single document a user creates for a temporal Cypher graph (see
- * {@code docs/temporal-cypher-graph-implementation-plan.md}, Task PoC.0; design doc &sect;2.1). It owns and
+ * Task PoC.0; design doc &sect;2.1). It owns and
  * encapsulates every internal store the graph needs; none of those stores has its own {@link DocRef}, explorer
  * node, or permissions — they are addressed only through this document.
  *
