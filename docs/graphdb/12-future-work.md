@@ -87,6 +87,18 @@ store that assigned them. Second, `Shard` did not need generalising: the merge e
 B's `MergeProcessor` as `PartMergeProcessor` and parameterised, leaving Plan B behind a façade.
 
 
+## Configuration changes that are silently unsafe
+
+Three settings can be changed in ways that produce wrong answers, and only one of them is enforced.
+
+| # | Item | Why | Difficulty | Risk |
+|---|---|---|---|---|
+| C1 | **Backfill a node joining `graphdb.nodeList`** | There is no mechanism, so a new node holds only fragments received since it joined. Because queries route to the first node in the list, adding one at the front makes every answer silently partial - the exact defect the fragment-and-merge design removed, reachable by a config edit | Medium | **High** — it is silent |
+| C2 | **Detect a `graphdb.path` change** | The store directory is created on write-open, so pointing at a new path provisions empty graphs rather than failing. A marker file recording the expected path, or refusing to provision when the document has data recorded elsewhere, would make it loud | Easy | Medium |
+| C3 | **Refuse to route to a node with no store** | `GraphQueryNodeResolverImpl` returns the first configured node without checking it holds anything. Even a health check on the target would turn C1 from silent into loud | Easy | Medium — a partial mitigation for C1 |
+
+C3 is the cheapest real safety net: it does not fix backfill, but it stops the worst outcome of forgetting it.
+
 ## Capacity and scale
 
 Distinct from [Correctness across a cluster](#correctness-across-a-cluster) above, which must come first.

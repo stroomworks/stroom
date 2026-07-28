@@ -41,6 +41,34 @@ is not a Plan B document — so sharing directories would let each feature silen
 > data must be named in `graphdb.nodeList` — see
 > [Scaling and clustering](#scaling-and-clustering) below.
 
+## Settings you must not change casually
+
+Some settings are safe to change at any time. Three are not, and only one of them stops you.
+
+| Setting | Changing it | Enforced? |
+|---|---|---|
+| **Temporal Precision** (per document) | Part of the key layout, so a store written at one precision **refuses to open** at another. You get a `Key schema mismatch` naming both | **Yes** — fails loudly |
+| **`graphdb.path`** | The old stores are not moved. A graph opened under a new path is **provisioned empty**, so every graph silently appears to have no data | **No** |
+| **`graphdb.nodeList`** — adding a node | The new node receives fragments from that point on and **is never backfilled**. If it sorts first in the list it becomes the query target, and answers are silently partial | **No** |
+| `graphdb.nodeList` — removing a node | That node keeps a stale copy which nothing updates or deletes | No, but harmless while it is not queried |
+| `graphdb.maxStoreSize` | Applies only to graphs opened after a restart; existing stores keep their original ceiling | Partially — needs a restart |
+| Data Retention, Node Type Mappings, description | Safe. Shortening a retention window deletes data on the next maintenance run, which is not reversible | n/a |
+
+> **Adding a node to `graphdb.nodeList` needs a deliberate procedure**, because there is no backfill and queries
+> go to the first node in the list. To add a node safely:
+>
+> 1. Add it to `graphdb.nodeList` on every node, positioned **last**, so it does not become the query target.
+> 2. Copy each `<graphdb.path>/shards/<uuid>` directory to the new node while nothing is writing, or reload the
+>    source streams so every graph is rebuilt everywhere.
+> 3. Only then move it earlier in the list if you want it serving queries.
+>
+> Skipping step 2 reintroduces exactly the defect the fragment-and-merge design removed: a node answering from
+> data it never received, with nothing reporting the shortfall.
+
+> **Changing `graphdb.path` needs the data moved with it.** Stop the node, move
+> `<old path>/shards` to `<new path>/shards`, then start it. Nothing checks, and an empty graph looks the same as
+> a graph you have not loaded yet.
+
 ## Sizing — the part that will catch you out
 
 Three facts combine badly, and an administrator needs all three:
