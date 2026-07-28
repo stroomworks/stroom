@@ -100,7 +100,7 @@ Detail: [03-ingest.md](03-ingest.md), [02-architecture.md](02-architecture.md),
 
 | Blocker | Consequence |
 |---|---|
-| **`collect()` returns a comma-joined string, not a list** | Silently wrong for anyone assuming Cypher list semantics. You cannot index it or take its size as a list |
+| **`collect()` is unavailable** | It is rejected at compile time rather than returning a comma-joined string, which was silently wrong for anyone assuming Cypher list semantics. Use `RETURN DISTINCT` or aggregate with `count`. Held back deliberately because a list value type touches the sealed `Val` hierarchy shared across the product — the full analysis is in [12a-list-value-type.md](12a-list-value-type.md) |
 | **Property values are strings unless typed, and only `long` and `boolean` are available** | `double` and dates cannot be typed, because the equality anchor index is keyed on rendered text and `42.0` renders as `42` — a query for `42.0` would silently find nothing. Encode those as sortable text ([03-ingest.md](03-ingest.md#property-value-types)). *Correction: this table previously said ordering was lexical (`"10" < "9"`). It was not — Stroom's string comparator is numeric-first. What typing fixes is the value's type on read-back, not its sort order* |
 | **Shortest path runs in the browser over the loaded subgraph only** | A genuinely shorter path through nodes not currently on the canvas will not be found. There is no `shortestPath()` in the query language |
 | **Temporal Precision is inert** — the Settings control is editable and persisted, but no implementation code reads it | Setting it has no effect of any kind |
@@ -121,10 +121,11 @@ Detail: [06-language-reference.md](06-language-reference.md),
 
 ### What would have to change
 
-Cluster correctness and the store format stamp are done. What remains, in rough priority order: loud rather
-than silent ingest failures with schema validation, native typed property values and a real `collect()` list,
-an honest Temporal Precision setting, then a fuller configuration surface (store size, retention defaults and
-the traversal guardrails) and a compaction path that does not depend on source streams still existing.
+Cluster correctness, the store format stamp, strict ingest and the shipped schema are done. What remains, in
+rough priority order: an honest Temporal Precision setting (it is currently inert), native typed `double` and
+date property values, a real `collect()` list, then a fuller configuration surface (store size, retention
+defaults and the traversal guardrails) and a compaction path that does not depend on source streams still
+existing.
 
 The remaining items are limitations you can work around once you know about them, which is why they now come
 after the two that could not be worked around at all. All of it is tracked in
@@ -149,6 +150,7 @@ after the two that could not be worked around at all. All of it is tracked in
 | [10-limits.md](10-limits.md) | Every limit, its exact value, and how to stay within it | Analysts, administrators |
 | [11-operations.md](11-operations.md) | Storage, sizing, retention, rebuild, backup, permissions | Administrators |
 | [12-future-work.md](12-future-work.md) | Roadmap, with difficulty and risk per item | Stakeholders |
+| [12a-list-value-type.md](12a-list-value-type.md) | Why `collect()` is rejected, and what a list value type would take | Developers |
 | [13-developer-guide.md](13-developer-guide.md) | Code structure and how to extend Graph DB | Developers |
 | [14-testing.md](14-testing.md) | An acceptance protocol: dataset, cases and expected results | Developers, testers |
 | [epoch0-development-plan.md](epoch0-development-plan.md) | **Plan, not description** — the programme to clear the blockers above | Developers, stakeholders |

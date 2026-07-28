@@ -33,7 +33,7 @@ implicit grouping key**.
 | `avg` | `avg(a.p)` | Number | `null` |
 | `min` | `min(a.p)` | Same type as input | `null` |
 | `max` | `max(a.p)` | Same type as input | `null` |
-| `collect` | `collect(a.p)`, `collect(DISTINCT a.p)` | **String** — see below | `""` |
+| ~~`collect`~~ | — | **Unavailable** — see below | — |
 
 ```cypher
 MATCH (c:Crime) RETURN c.type AS crime_type, count(c) AS total ORDER BY total DESC
@@ -42,20 +42,32 @@ MATCH (c:Crime) RETURN c.type AS crime_type, count(c) AS total ORDER BY total DE
 `count(*)` and `count(v)` count rows. `count(a.p)` counts rows where that property is present and
 non-null — so it is also a "how many of these have this property" test.
 
-`DISTINCT` is accepted on `count` and `collect` only.
+`DISTINCT` is accepted on `count` only.
 
 Aggregate arguments must be a **property access** (`c.type`). The one exception is `count`, which also
 accepts `*` or a bare variable. `sum(c)` over a whole node is rejected — a node has no single value to sum.
 
-> **`collect()` returns a comma-joined string, not a list.**
+> **`collect()` is not available.** A query using it fails to compile:
+>
+> ```
+> not supported in this version: collect(...) is unavailable because there is no list value type yet
+> ```
+>
+> It previously returned a comma-joined string — `"Drugs, Burglary"` — which is not a list: you could not index
+> it, take its `size()`, or unwind it, and a two-element list was indistinguishable from a one-element list whose
+> value contained a comma. That made it a **silently wrong** answer for anyone arriving from Neo4j, so it now
+> fails instead of misleading.
+>
+> **What to do instead:** aggregate with `count`/`sum`/`avg`/`min`/`max`, or return one row per value and group
+> in whatever consumes the results. For the POLE example above:
+>
 > ```cypher
 > MATCH (o:Officer {surname:'Larive'})<-[:INVESTIGATED_BY]-(c:Crime)
-> RETURN o.surname AS officer, collect(DISTINCT c.type) AS crime_types
+> RETURN o.surname AS officer, c.type AS crime_type, count(c) AS crimes
 > ```
-> returns the single string `Drugs`, and for a multi-value group something like `Drugs, Burglary`. It is
-> **not** a list: you cannot index it, take its `size()` as a list, or unwind it. This is the most likely
-> source of silently wrong results for anyone arriving from Neo4j. If you need list semantics, split the
-> string downstream. A real list type is on the roadmap ([12-future-work.md](12-future-work.md)).
+>
+> The analysis behind the deferral, and what re-enabling involves, is in
+> [12a-list-value-type.md](12a-list-value-type.md).
 
 ### Ordering aggregated results
 

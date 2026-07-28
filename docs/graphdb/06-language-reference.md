@@ -252,15 +252,17 @@ precedes `select`.) **`SKIP` is not supported at all.**
 
 ### Aggregation
 
-`count`, `sum`, `avg`, `min`, `max` and `collect` are available. Every non-aggregate return item becomes an
+`count`, `sum`, `avg`, `min` and `max` are available. Every non-aggregate return item becomes an
 implicit grouping key, as in Cypher:
 
 ```cypher
 MATCH (c:Crime) RETURN c.type AS crime_type, count(c) AS total ORDER BY total DESC
 ```
 
-> **`collect()` returns a comma-joined string, not a list.** This differs from Neo4j and is a common source
-> of silently wrong results. See [07-functions.md](07-functions.md).
+> **`collect()` is rejected**, not merely limited. It parses, but fails to compile because there is no list
+> value type yet - it previously returned a comma-joined string, which is a wrong answer rather than a partial
+> one. See [07-functions.md](07-functions.md) for what to use instead and
+> [12a-list-value-type.md](12a-list-value-type.md) for why.
 
 Aggregate arguments must be a property access — or, for `count` only, a bare variable or `*`.
 

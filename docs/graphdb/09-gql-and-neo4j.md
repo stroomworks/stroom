@@ -33,7 +33,7 @@ Comparing by capability rather than syntax, against the mandatory feature areas 
 | Comparison predicates, `IS NULL` / `IS NOT NULL` | Supported |
 | `CASE` value expressions | Supported, both simple and searched forms |
 | `EXISTS { pattern }` | Supported, for one correlated typed hop |
-| Aggregate functions | Supported — `count`, `sum`, `avg`, `min`, `max`, plus `collect` (which returns a string) |
+| Aggregate functions | Supported — `count`, `sum`, `avg`, `min`, `max`. No `collect` |
 | Arithmetic expressions | Supported: `+ - * / ^`. Modulo `%` parses but does not render |
 | Scalar, string and date functions | Supported — 14 bare Cypher names plus 67 in the `stroom.` namespace ([07](07-functions.md)) |
 | Mandatory data types (string, boolean, integer, float) | **Partial** — available at the value level, but **all stored properties are strings** |
@@ -105,7 +105,7 @@ MATCH (c:Crime) RETURN c.type AS crime_type, count(c) AS total ORDER BY total DE
 | `-->` as an access path | Rejected | Name the edge type |
 | `WHERE NOT (a)-[:R]->(b)` | Rejected | `EXISTS { … }` where the shape allows |
 | `labels(n)`, `keys(n)` | Rejected | Use `RETURN GRAPH` |
-| `collect(x)` as a list | Returns a string | Split downstream |
+| `collect(x)` as a list | **Rejected** — fails to compile | `RETURN DISTINCT` for one row per value, or aggregate with `count` |
 
 ### What has no equivalent
 
@@ -136,7 +136,7 @@ These are the dangerous ones, because the query runs and returns something plaus
 
 | Difference | Consequence |
 |---|---|
-| **`collect()` returns a comma-joined string** | Code expecting a list gets a string. No error |
+| **`collect()` is rejected** | A ported query using it fails to compile, with a message saying why. It used to return a comma-joined string and no error, which was worse |
 | **All property values are strings** | `WHERE n.count > 9` compares lexically — `"10"` is less than `"9"`. Use `toInteger()`, or store zero-padded |
 | **A node version replaces, it does not merge** | Re-loading a node without a property removes it, rather than leaving the old value |
 | **Deleted data stays visible to historical queries** | Correct behaviour, but surprising if you expect a delete to be final |
@@ -166,7 +166,7 @@ Once loaded, roughly:
 
 | Dataset | How it fares |
 |---|---|
-| **Movies** | Most queries port. Recommendation queries needing `collect()` as a list do not |
+| **Movies** | Most queries port. Recommendation queries needing `collect()` as a list do not — they now fail loudly rather than returning a string |
 | **POLE** | Structure and traversals port; counting ports with the alias edit. Spatial and path-finding queries do not — see [08-analysis-examples.md](08-analysis-examples.md) |
 | **Northwind** | Aggregation-heavy; ports with alias edits |
 | **Fraud detection** | Depends on path finding and shared-attribute rings — largely does not port |

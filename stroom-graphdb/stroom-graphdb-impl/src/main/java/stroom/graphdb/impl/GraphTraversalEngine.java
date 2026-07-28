@@ -1994,32 +1994,12 @@ public final class GraphTraversalEngine {
             case AVG -> reduceAvg(aggregateColumn, group);
             case MIN -> reduceMinOrMax(aggregateColumn, group, true);
             case MAX -> reduceMinOrMax(aggregateColumn, group, false);
-            case COLLECT -> reduceCollect(aggregateColumn, group);
+            // Unreachable: CypherToLogicalPlan rejects collect(...) because there is no list value type yet. The
+            // previous implementation returned a comma-joined string, which looked like a list without being one.
+            // Kept as a case rather than a default so that adding a list type makes the compiler point here.
+            case COLLECT -> throw new IllegalStateException(
+                    "collect(...) is rejected at compile time and should never reach the executor");
         };
-    }
-
-    /**
-     * {@code collect(a.property)} gathers the group's non-null values at the property. v1 representation: a
-     * comma-joined {@code ValString} (e.g. {@code "theft, fraud"}), not a true list value - a real list-valued
-     * {@code Val} is a deferred, cross-cutting change (see
-     * Phase 4 / the analytic-functions plan's Phase 2
-     * "ValList ripple" note). {@code collect(DISTINCT a.property)} de-duplicates by {@link Val} value first,
-     * preserving first-appearance order. An empty group yields an empty string.
-     */
-    private static Val reduceCollect(final AggregateColumn aggregateColumn, final List<Map<String, Val>> group) {
-        final List<String> values = new ArrayList<>();
-        final Set<Val> seen = aggregateColumn.distinct() ? new HashSet<>() : null;
-        for (final Map<String, Val> row : group) {
-            final Val value = row.get(aggregateColumn.argRowKey());
-            if (!isPresent(value)) {
-                continue;
-            }
-            if (seen != null && !seen.add(value)) {
-                continue;
-            }
-            values.add(value.toString());
-        }
-        return ValString.create(String.join(", ", values));
     }
 
     /**

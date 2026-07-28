@@ -183,9 +183,9 @@ The engine part is a `reduceX` method alongside `reduceCount`/`reduceSum`. Decid
 deliberately — the existing ones differ on purpose (`sum` → 0, `avg` → null), and that asymmetry is
 Cypher's, not an accident.
 
-If the aggregate returns anything other than a scalar `Val`, you need the list type first
-([12-future-work.md](12-future-work.md)) — this is exactly why `collect()` currently returns a joined
-string.
+If the aggregate returns anything other than a scalar `Val`, you need the list type first — this is exactly why
+`collect()` is currently rejected at compile time rather than shipping a joined string
+([12a-list-value-type.md](12a-list-value-type.md)).
 
 ### 3. Add a clause or pattern form
 

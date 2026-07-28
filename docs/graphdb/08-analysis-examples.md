@@ -181,17 +181,22 @@ MATCH (c:Crime) RETURN count(c) AS total_crimes
 
 ### Gathering values
 
+There is no `collect()` — it is rejected rather than returning a comma-joined string
+([07-functions.md](07-functions.md#aggregates)). Use `RETURN DISTINCT` to get the same information as one row per
+value:
+
 ```cypher
 MATCH (o:Officer {surname: 'Larive'})<-[:INVESTIGATED_BY]-(c:Crime)
-RETURN o.surname AS officer, collect(DISTINCT c.type) AS crime_types
+RETURN DISTINCT o.surname AS officer, c.type AS crime_type
 ```
 
-| `officer` | `crime_types` |
+| `officer` | `crime_type` |
 |---|---|
 | Larive | Drugs |
 
-> That value is the **string** `Drugs`, not a one-element list. With several distinct types it would read
-> `Drugs, Burglary` — still one string. See [07-functions.md](07-functions.md).
+> Larive investigated only drugs crimes, so there is one row. An officer spanning several crime types would
+> produce one row each — which is the shape you want anyway if the result is going into a table, a join, or
+> anything that would otherwise have to split a string back apart.
 
 ### Two-stage queries with WITH
 

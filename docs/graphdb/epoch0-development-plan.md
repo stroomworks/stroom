@@ -319,7 +319,19 @@ are therefore deliberately excluded**, with the two viable designs recorded in `
 A value that fails to parse as its declared type is reported as a bad record rather than falling back to text —
 a silent fallback would reintroduce the very surprise typing removes, but only for the rows that failed.
 
-### 3.2 A real list type for `collect()` — **not started**
+### 3.2 A real list type for `collect()` — **deferred; `collect()` disabled in the meantime**
+
+**Decision: held until closer to production.** Rather than leave `collect()` returning a comma-joined string,
+the keyword is now **rejected at compile time** with a message explaining why. It parses, and the grammar token
+and AST constant are retained, so re-enabling is a small, well-marked change. Tests that pinned the old
+behaviour were converted to assert the rejection rather than deleted, so re-enabling forces the executor
+behaviour to be re-specified instead of silently inherited.
+
+The full analysis — the ~6-file forced change set, the 279 files that need nothing and the evidence for that, the
+285-file exposure that is the actual risk, the `Type.XML` precedent sites, the inherited 255-element cap, and the
+step-by-step for picking it up — is in [12a-list-value-type.md](12a-list-value-type.md).
+
+The remainder of this section is the original sizing, retained because it proved accurate:
 
 Add a member to Stroom's sealed `Val` hierarchy: the `permits` clause
 and `@JsonSubTypes`, a `Type` constant (**id 8 is free**), the **two** exhaustive `ValSerdeUtil` switches (the
@@ -502,5 +514,6 @@ implementation plans that were retired to git history, leaving dangling links. I
 - The fixed-size statements in [10-limits.md](10-limits.md) and [11-operations.md](11-operations.md) — Phase 4.
 - The *Temporal Precision is inert* note in [11-operations.md](11-operations.md) and
   [README.md](README.md) — Phase 3.
-- The `collect()` and string-only-property entries under *Correctness surprises* in
-  [README.md](README.md) — Phase 3.
+- The string-only-property entry under *Correctness surprises* in [README.md](README.md) — remaining part is
+  typed `double`/dates, Phase 3. The `collect()` entry is done: it now records the rejection and links to
+  [12a-list-value-type.md](12a-list-value-type.md).

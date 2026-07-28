@@ -386,29 +386,37 @@ class TestCypherToLogicalPlan {
                 .hasMessageContaining("whole");
     }
 
+    /**
+     * {@code collect(...)} still parses - the token and AST constant are intentionally retained - but must not
+     * compile. Without a list value type its only representation was a comma-joined string, which answers a
+     * question about a list with something that merely resembles one.
+     */
     @Test
-    void collectOverProperty_compilesToCollectAggregateColumn() {
-        final CompiledCypherPlan compiled = compile(
-                "MATCH (o:Officer)-[:INVESTIGATED]->(c:Crime) RETURN o.id, collect(c.type) AS types");
-        assertThat(compiled.aggregation().columns()).containsExactly(
-                new GroupKeyColumn("o.id"),
-                new AggregateColumn(AstAggregateFunction.COLLECT, "c.type", false, false, false));
+    void collectOverProperty_isRejectedUntilAListValueTypeExists() {
+        assertThatThrownBy(() -> compile(
+                "MATCH (o:Officer)-[:INVESTIGATED]->(c:Crime) RETURN o.id, collect(c.type) AS types"))
+                .isInstanceOf(CypherCompileException.class)
+                .hasMessageContaining("no list value type");
     }
 
     @Test
-    void collectDistinct_setsTheDistinctFlag() {
-        final CompiledCypherPlan compiled = compile(
-                "MATCH (o:Officer)-[:INVESTIGATED]->(c:Crime) RETURN o.id, collect(DISTINCT c.type) AS types");
-        assertThat(compiled.aggregation().columns()).containsExactly(
-                new GroupKeyColumn("o.id"),
-                new AggregateColumn(AstAggregateFunction.COLLECT, "c.type", false, false, true));
+    void collectDistinct_isRejectedToo() {
+        assertThatThrownBy(() -> compile(
+                "MATCH (o:Officer)-[:INVESTIGATED]->(c:Crime) RETURN o.id, collect(DISTINCT c.type) AS types"))
+                .isInstanceOf(CypherCompileException.class)
+                .hasMessageContaining("no list value type");
     }
 
+    /**
+     * The blanket rejection is checked before the shape-specific ones, so these now report the list-type reason
+     * rather than "collect(*) is not supported". Asserted so that re-enabling collect() restores the more specific
+     * messages rather than silently losing them.
+     */
     @Test
     void collectStar_throwsCompileException() {
         assertThatThrownBy(() -> compile("MATCH (a:Account) RETURN collect(*)"))
                 .isInstanceOf(CypherCompileException.class)
-                .hasMessageContaining("collect(*)");
+                .hasMessageContaining("no list value type");
     }
 
     @Test
@@ -416,7 +424,7 @@ class TestCypherToLogicalPlan {
         assertThatThrownBy(() -> compile(
                 "MATCH (o:Officer)-[:INVESTIGATED]->(c:Crime) RETURN o.id, collect(c)"))
                 .isInstanceOf(CypherCompileException.class)
-                .hasMessageContaining("whole");
+                .hasMessageContaining("no list value type");
     }
 
     @Test

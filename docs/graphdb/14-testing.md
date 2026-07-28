@@ -142,7 +142,7 @@ Run from the `CorpGraph` **Data** tab, or from any surface with a leading `from 
 | B7 | `DISTINCT` + `ORDER BY` + `LIMIT` | `MATCH (u:User)-[:MEMBER_OF]->(g:Group) RETURN DISTINCT g.name ORDER BY g.name LIMIT 10` | `admins`, `users` |
 | B8 | Aggregation | `MATCH (u:User)-[:MEMBER_OF]->(g:Group) RETURN g.name AS grp, count(u) AS n ORDER BY grp` | `admins`:1, `users`:2 |
 | B9 | Label-only anchor | `MATCH (u:User) RETURN count(u) AS n` | `3` |
-| B10 | `collect()` | `MATCH (u:User)-[:MEMBER_OF]->(g:Group) RETURN g.name AS grp, collect(u.id) AS ids ORDER BY grp` | `users` → the **string** `U2, U3` |
+| B10 | `RETURN DISTINCT` in place of `collect()` | `MATCH (u:User)-[:MEMBER_OF]->(g:Group) RETURN DISTINCT g.name AS grp, u.id AS uid ORDER BY grp, uid` | one row per membership: `admins`/`U1`, `users`/`U2`, `users`/`U3` |
 | B11 | `WITH` | `MATCH (u:User)-[:OWNS]->(a:Account) WITH u.id AS uid RETURN uid` | one row per ownership |
 | B12 | Missing property | `MATCH (g:Group {name:'admins'}) RETURN g.name, g.nosuch` | `admins`, *(empty)* |
 | B13 | `RETURN GRAPH` | `MATCH (u:User {id:'U1'})-[:MEMBER_OF]->(g:Group) RETURN GRAPH` | 2 node rows + 1 edge row, six columns |
@@ -184,9 +184,15 @@ Each must produce a **clear compile error naming the construct** — never a 500
 | `MATCH (u:User)-[:OWNS]->(a) RETURN u.id, count(a) AS n ORDER BY count(a) DESC` | `ORDER BY` must name a property or alias |
 | `MATCH (n)-[:OWNS]->(a) RETURN a.number` | Anchor needs a label |
 
-> **`collect()` is no longer a rejection case.** Earlier protocols listed it as unsupported; it now
-> executes, returning a comma-joined string ([07-functions.md](07-functions.md)). If it fails, that is a
-> regression.
+> **`collect()` is a rejection case again.** It briefly executed, returning a comma-joined string; it is now
+> rejected at compile time because that was a wrong answer rather than a partial one
+> ([12a-list-value-type.md](12a-list-value-type.md)). Assert the failure, not a result:
+>
+> | Query | Expected |
+> |---|---|
+> | `MATCH (u:User)-[:MEMBER_OF]->(g:Group) RETURN g.name, collect(u.id)` | Compile error mentioning `no list value type` |
+>
+> If it succeeds, that is the regression.
 
 ## Guardrail cases
 

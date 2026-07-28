@@ -117,8 +117,8 @@ import java.util.Set;
  * {@link #buildAggregation}): every non-aggregate {@code RETURN} item becomes an implicit {@code GROUP BY} key
  * (Cypher's rule), carried on {@link CompiledCypherPlan#aggregation} for the graph executor to group and reduce
  * by - {@code null} when the {@code RETURN} has no aggregate item, so the executor's ordinary per-row projection
- * is unaffected. {@code collect} is not yet in the grammar (a separate, later phase - see
- * Phase 2).</p>
+ * is unaffected. {@code collect} parses but is rejected here: without a list value type its only representation
+ * would be a comma-joined string, which is a wrong answer rather than a partial one.</p>
  *
  * <p>A hop's target (non-anchor) node pattern's own labels/inline properties (Task P3.1) compile onto
  * {@link Expand#targetLabels}/{@link Expand#targetPropertyPredicate} (or the {@link VarLengthExpand}
@@ -1228,12 +1228,25 @@ public final class CypherToLogicalPlan {
         final AstAggregateFunction function = aggregate.function();
         final String functionName = function.name().toLowerCase(Locale.ROOT);
         final boolean distinct = aggregate.distinct();
-        // DISTINCT is supported on count(DISTINCT <property>) and collect(DISTINCT <property>). Reject it loudly
-        // on sum/avg/min/max (rather than silently ignoring it and returning a wrong result) - fail loud, never
-        // wrong.
-        if (distinct && function != AstAggregateFunction.COUNT && function != AstAggregateFunction.COLLECT) {
+
+        // collect(...) is parsed but deliberately not compiled. There is no list value type yet, so the only
+        // available representation was a comma-joined string - which answers a query about a list with something
+        // that merely looks like one, and cannot be indexed or have its size taken. Rejecting it is the honest
+        // position: a query that cannot be answered correctly should fail rather than return a plausible wrong
+        // shape. The grammar and AST still carry it so re-enabling is a small change once a list type exists.
+        if (function == AstAggregateFunction.COLLECT) {
             throw new CypherCompileException(
-                    "not supported in this version: DISTINCT is only supported on count(...) and collect(...), not "
+                    "not supported in this version: collect(...) is unavailable because there is no list value "
+                    + "type yet - it would return a comma-joined string rather than a list, which cannot be "
+                    + "indexed or sized. Aggregate with count/sum/avg/min/max, or return one row per value "
+                    + "without aggregating", aggregate.position());
+        }
+
+        // DISTINCT is supported on count(DISTINCT <property>). Reject it loudly on sum/avg/min/max (rather than
+        // silently ignoring it and returning a wrong result) - fail loud, never wrong.
+        if (distinct && function != AstAggregateFunction.COUNT) {
+            throw new CypherCompileException(
+                    "not supported in this version: DISTINCT is only supported on count(...), not "
                     + functionName + "(...)", aggregate.position());
         }
         if (aggregate.star()) {

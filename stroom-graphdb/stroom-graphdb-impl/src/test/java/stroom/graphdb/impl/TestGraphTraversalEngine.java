@@ -29,6 +29,7 @@ import stroom.query.language.functions.ValLong;
 import stroom.query.language.functions.ValNull;
 import stroom.query.language.functions.ValString;
 import stroom.query.planner.cypher.CompiledCypherPlan;
+import stroom.query.planner.cypher.CypherCompileException;
 import stroom.query.planner.cypher.CypherToLogicalPlan;
 import stroom.query.planner.cypher.TemporalContext;
 
@@ -180,28 +181,20 @@ class TestGraphTraversalEngine {
         }
     }
 
+    /**
+     * {@code collect(...)} never reaches the executor: it is rejected while compiling, because without a list value
+     * type the only representation available was a comma-joined string. This test used to assert that string.
+     *
+     * <p>Asserted at the compile step rather than deleted, so that re-enabling {@code collect} makes this fail and
+     * forces the executor behaviour to be re-specified rather than silently inherited.</p>
+     */
     @Test
-    void collect_gathersGroupValuesAsAJoinedString(@TempDir final Path root) {
-        try (GraphStores stores = GraphStores.provision(root.resolve("collect"), DOC)) {
-            seedOfficerWithRepeatedCrimeTypes(stores);
-            final GraphTraversalEngine engine = new GraphTraversalEngine(
-                    stores, new ExpressionPredicateFactory());
-
-            // o-1 investigates crimes of types {theft, theft, fraud}. v1 collect representation is a
-            // comma-joined ValString; collect(DISTINCT) de-duplicates.
-            final CompiledCypherPlan compiled = compile(
-                    "MATCH (o:Officer {id: 'o-1'})-[:INVESTIGATED]->(c:Crime) "
-                    + "RETURN o.id, collect(c.type) AS allTypes, collect(DISTINCT c.type) AS distinctTypes");
-            final List<Val[]> rows = stores.read(readTxn ->
-                    engine.execute(readTxn, compiled.plan(), compiled.temporalContext(),
-                            DateTimeSettings.builder().build(), compiled.distinct(), compiled.aggregation()));
-
-            assertThat(rows).hasSize(1);
-            assertThat(rows.getFirst()[1].toString().split(", "))
-                    .containsExactlyInAnyOrder("theft", "theft", "fraud");
-            assertThat(rows.getFirst()[2].toString().split(", "))
-                    .containsExactlyInAnyOrder("theft", "fraud");
-        }
+    void collect_isRejectedBeforeReachingTheExecutor() {
+        assertThatThrownBy(() -> compile(
+                "MATCH (o:Officer {id: 'o-1'})-[:INVESTIGATED]->(c:Crime) "
+                + "RETURN o.id, collect(c.type) AS allTypes"))
+                .isInstanceOf(CypherCompileException.class)
+                .hasMessageContaining("no list value type");
     }
 
     @Test
