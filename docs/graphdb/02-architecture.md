@@ -31,8 +31,44 @@ Plan B state stores. Two consequences follow immediately:
   deleting a document deletes its store outright.
 - **The store is local to the node.** It is a file tree, not a shared service.
 
-> **Not assessed:** how this behaves in a clustered Stroom deployment. This documentation was written from
-> single-node operation only.
+### Graph DB is single-node
+
+This is the most consequential thing on this page, so it is worth being precise about.
+
+Graph DB borrows Plan B's **storage primitives** — the LMDB environment wrapper, the write batching, the id
+interning tables and the value serialisers. It does **not** borrow Plan B's **clustering**. There is no
+sharding, no snapshotting, no cross-node file transfer, and no node-aware query routing. This is a
+deliberate, documented decision: `GraphStoreManager`'s own contract says it is "deliberately minimal next
+to `ShardManager` … no snapshotting, cross-node file transfer, or LRU eviction", deferred as hardening
+rather than treated as a PoC concern.
+
+Two consequences follow, and the second is the one that bites.
+
+**A query only ever reads the local node's files.** Stroom asks a resolver which node should serve a query,
+but the only implementation answers for Plan B documents and returns "no preference" for a `GraphDb`. So a
+graph query runs on whichever node received the request, against that node's own store.
+
+**In a multi-node cluster a graph is therefore fragmented, silently.** The Graph Filter writes to the local
+path on whichever node processed the stream, and stream processing is distributed across the cluster. Each
+node accumulates only the fragment it happened to build, and a query returns only that fragment. Nothing
+reports a problem — the results are simply incomplete.
+
+> **Treat Graph DB as single-node.** If you run a cluster, either pin graph processing and querying to one
+> node, or accept that results are partial. This is verified from the code paths involved, not from
+> observing a running cluster. See [11-operations.md](11-operations.md#scaling-and-clustering) for the
+> options and [12-future-work.md](12-future-work.md) for what would fix it.
+
+### For comparison, how Plan B does scale
+
+Useful context, because it is the template any future work would follow. Plan B is configured with a list
+of **writer nodes**. A node named in that list holds the authoritative store and accepts pipeline writes;
+any node *not* in the list becomes a **snapshot node**, pulling a point-in-time copy from a writer and
+querying that local copy. Queries either run against the local snapshot or are forwarded to the first
+writer node.
+
+Note what that is not: no hash partitioning of one store across nodes, and no replication for redundancy.
+It is one authoritative writer plus read-only snapshot fan-out — which is a read-scaling and locality
+mechanism, not a capacity one. Even fully adopted, it would not raise the per-graph size ceiling.
 
 Inside that environment sit several key/value tables, none of which appear in the explorer tree or have
 permissions of their own — they are private to the document:

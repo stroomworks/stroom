@@ -219,6 +219,14 @@ tombstoned in step with its counterpart, or backwards traversal silently disagre
 New stores should also participate in `deleteOldData()`. The property index does not, which is precisely
 why it grows without bound ([12-future-work.md](12-future-work.md)).
 
+> **If you are ever asked to make stores mergeable** — for cluster ingest, or to combine two graphs — read
+> [the architectural note in 12-future-work.md](12-future-work.md#architectural-note-how-far-up-the-plan-b-stack-should-graph-db-sit)
+> first. The non-obvious hazard is that UIDs come from a *local* sequential counter, so two independently
+> built stores assign the same UID to different node ids, and every key embeds UIDs. Plan B's
+> `SessionDb.merge` and `MetricDb.merge` already solve this: decode each key to its logical form through the
+> source store's serde, re-encode through the target's, and byte-copy only where no lookup is involved.
+> Do not write a byte-level merge.
+
 ## Testing
 
 | Test | Covers |

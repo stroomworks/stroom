@@ -27,8 +27,9 @@ Each `GraphDb` document owns one LMDB environment on local disk:
 Graphs are fully isolated: separate files, separate size budgets, no shared contention. Deleting the
 document deletes the store.
 
-> **Not assessed:** behaviour in a clustered Stroom deployment. Everything here was established on a single
-> node.
+> **Single-node.** The store is a local file tree, not a shared service, and Graph DB has no clustering of
+> its own. In a multi-node Stroom this matters a great deal — see
+> [Scaling and clustering](#scaling-and-clustering) below.
 
 ## Sizing — the part that will catch you out
 
@@ -67,6 +68,90 @@ In order of preference:
 4. **Rebuild** — with the caveat below.
 
 Monitor the directory size. Nothing warns you before `MDB_MAP_FULL`.
+
+## Scaling and clustering
+
+### Graph DB is single-node today
+
+Graph DB uses Plan B's storage primitives but **none of its clustering** — no sharding, no snapshots, no
+cross-node file transfer, no node-aware query routing. The mechanism, and why it is a deliberate decision
+rather than an oversight, is in
+[02-architecture.md](02-architecture.md#graph-db-is-single-node). Operationally, two things matter:
+
+- **A query reads only the local node's store.** Stroom's node-resolution hook exists and is generic, but
+  the only implementation answers for Plan B documents and expresses no preference for a `GraphDb`.
+- **In a cluster, a graph fragments silently.** The Graph Filter writes to the local node, and stream
+  processing is distributed. Each node holds only what it processed; each query returns only what is local.
+  Nothing reports the shortfall.
+
+If you run a multi-node Stroom, **pin both graph processing and graph querying to a single node**, or accept
+partial answers. There is no replication either, so a graph is only as durable as the node holding it and
+its backups — see [Backup and restore](#backup-and-restore).
+
+### What you can do today
+
+| Option | Buys you | Cost |
+|---|---|---|
+| **Split across several `GraphDb` documents** — by period, tenant, or subject area | Real capacity growth: each document has its own ceiling | No query spans two graphs. You partition the question by hand |
+| **Enable retention and shorten the window** | Bounds growth on a continuously fed graph | Loses the history that is the feature's main draw, and does not reclaim the property index |
+| **Pin graph work to one node** | Removes the fragmentation risk with no code change | Manual, easy to regress, no redundancy, and does not scale |
+| **Reduce what you load** | Slows growth | Modelling effort — see [04-event-logging-xslt.md](04-event-logging-xslt.md) |
+
+Splitting across documents is the only one that genuinely increases the data you can hold. Treat the others
+as ways of living within one graph's ceiling.
+
+### What would need building
+
+Each of these is a code change, sized in [12-future-work.md](12-future-work.md). Listed cheapest first,
+because the two cheapest are also the two most valuable:
+
+1. **Make the store size configurable.** `GraphStores` currently passes no size override, so every graph
+   silently takes the 10 GiB default. The parameter already exists — this is a small change that lifts the
+   hard ceiling.
+2. **Register a `GraphDb` node resolver.** The routing hook is already generic; only the resolver is
+   Plan-B-specific. Teaching it about graph documents would send every graph query to one designated node,
+   which fixes the silent fragmentation properly rather than by convention.
+3. **Implement condense and compact.** Plan B performs both as scheduled maintenance; Graph DB does
+   neither, which is why redundant versions accumulate forever. Plan B's implementations are a working
+   template.
+4. **Adopt Plan B's snapshot model.** Writer nodes plus read-only snapshot nodes, with file transfer
+   between them. This buys read scaling and locality — but note it would **not** raise the per-graph size
+   ceiling, because a snapshot is a whole copy of one store rather than a partition of it. Capacity still
+   comes from splitting across documents, or from a genuine partitioning scheme that does not exist in
+   either system today.
+
+### For comparison: how a Lucene index scales
+
+Administrators sizing a Stroom deployment will already know the index model, and the contrast explains what
+Graph DB is missing and why.
+
+| | Lucene index | Graph DB |
+|---|---|---|
+| **Capacity ceiling** | Sum of the volumes in its volume group — grow by adding volumes | Fixed 10 GiB per graph, not tunable |
+| **Splitting a dataset** | Automatic: `partitionBy`/`partitionSize` by time, then `shardsPerPartition`, with shards rolling at `maxDocsPerShard` | Manual — separate documents, and no query spans two |
+| **Placement** | Shards sit on volumes bound to named nodes, recorded in the database | Wherever the stream happened to be processed |
+| **Multi-node reads** | Shards grouped per node, dispatched to each, results merged | Local node only |
+| **Fragmentation risk** | None — placement is tracked, so a query knows every shard to visit | Silent and unreported |
+| **Administrator controls** | Volume groups, per-volume byte limits, partition and shard settings | None |
+
+This is why a Lucene index *requires* a volume group and a graph has no equivalent setting: the index has a
+placement model to configure, and Graph DB has nowhere to put one.
+
+Note that the index capability is not automatic either — a volume group whose volumes all sit on one node
+gives a single-node index. The difference is that an administrator gets to decide, and with Graph DB there is
+no decision to make.
+
+**The underlying reason is the data model, not maturity.** An inverted index partitions cleanly: a document
+belongs to exactly one shard, and a query searches each shard independently and merges. Graph traversal is
+cross-cutting — an edge can span two partitions, so a multi-hop pattern may need to cross partition
+boundaries mid-traversal. Sharding a graph is therefore a substantially harder problem than sharding an
+index, which is why it sits at the bottom of
+[12-future-work.md](12-future-work.md#scaling-and-clustering) rather than being a gap someone simply has not
+closed yet.
+
+Practical consequence when choosing between them: if the dataset needs to grow beyond what one node can
+hold, use an index and accept that relationship questions are awkward. Reach for a graph when the
+relationships are the point and the volume is modest.
 
 ## Retention
 

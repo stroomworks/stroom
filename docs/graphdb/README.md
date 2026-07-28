@@ -86,9 +86,13 @@ loud rather than silent ingest failures with schema validation, a compaction pat
 source streams still existing, and native typed property values. These are tracked in
 [12-future-work.md](12-future-work.md).
 
-> **Not assessed:** clustering and high-availability behaviour. This documentation was written from
-> single-node operation only. Nothing here should be read as a claim in either direction about how Graph DB
-> behaves in a clustered Stroom deployment.
+> **Graph DB is single-node.** It uses Plan B's storage primitives but none of its clustering — no
+> sharding, no snapshots, no node-aware query routing. In a multi-node cluster each node writes only the
+> fragment built from streams it processed, and a query returns only the local fragment, with nothing
+> reporting that the answer is partial. Either pin graph processing and querying to one node, or accept
+> incomplete results. There is also no replication, so a graph is only as durable as the node holding it.
+> See [02-architecture.md](02-architecture.md#graph-db-is-single-node) for the mechanism and
+> [11-operations.md](11-operations.md#scaling-and-clustering) for the options.
 
 ---
 

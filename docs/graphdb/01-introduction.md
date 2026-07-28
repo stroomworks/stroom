@@ -92,12 +92,16 @@ Being honest about this saves more time than any feature list.
 - **You need production reliability today.** See the
   [blockers](README.md#production-readiness--known-blockers). This is the overriding one.
 - **Your data will exceed roughly 10 GiB in one graph.** The store size is fixed and cannot be raised
-  ([10-limits.md](10-limits.md)).
+  ([10-limits.md](10-limits.md)). You can split across several graphs, but no query spans two of them.
+- **You need to scale across nodes.** Graph DB is single-node: it has no sharding and no cross-node query
+  fan-out, so in a cluster a graph fragments silently
+  ([02-architecture.md](02-architecture.md#graph-db-is-single-node)). A Lucene index has all of this and a
+  graph does not — see [why below](#a-note-on-scale-graph-db-versus-a-lucene-index).
 - **You need the query language to write data.** It is read-only; there is no `SET`, `CREATE`, `DELETE` or
   `MERGE`. All data arrives through pipelines.
 - **Your questions are lookups, not traversals.** "Find events where user = X and time in range" is a
-  Lucene index question and will be faster and more scalable there. A graph earns its cost when you are
-  following relationships.
+  Lucene index question and will be faster and far more scalable there. A graph earns its cost only when you
+  are following relationships.
 - **You need spatial or path-finding analytics.** No `point()`, no `distance()`, no server-side
   shortest-path or centrality. The Explore tab offers some of this client-side over whatever is currently
   drawn, which is not the same thing.
@@ -106,6 +110,27 @@ Being honest about this saves more time than any feature list.
 
 **Graph DB is a good fit when** the questions are about connections, the dataset is modest, the analysis is
 exploratory, and the ability to ask "what did this look like last month" is valuable.
+
+### A note on scale: Graph DB versus a Lucene index
+
+Because both store event-derived data, it is worth being explicit about why one scales and the other does
+not — the reason is the data model, not just implementation maturity.
+
+A **Lucene index** is embarrassingly partitionable. A document belongs to exactly one shard, so an index
+splits automatically by time period and shard size, shards are placed on volumes bound to named nodes, and a
+query fans out to every node holding a relevant shard and merges the results. Capacity grows by adding
+volumes. Nothing ever needs to cross a shard boundary.
+
+**Graph traversal is the opposite.** It is inherently cross-cutting: an edge can span two partitions, so a
+multi-hop pattern may need to follow a path out of one partition and into another, repeatedly, mid-traversal.
+That is why Graph DB has no sharding, and why adding it is genuinely hard rather than merely unfinished. It
+is the same reason Neo4j's own scale-out story is largely read replicas of a whole graph rather than
+sharding one.
+
+So Graph DB's fixed size ceiling and single-node behaviour are proof-of-concept shortcuts and fixable
+([12-future-work.md](12-future-work.md)) — but **even a mature implementation would not give
+Lucene-style linear scale-out.** If a dataset genuinely needs multi-terabyte scale, an index is the right
+tool and a graph is not, however interesting the relationships in it are.
 
 ## Where it fits in Stroom
 
