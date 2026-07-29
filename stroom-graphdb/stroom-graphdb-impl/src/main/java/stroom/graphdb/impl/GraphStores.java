@@ -417,8 +417,40 @@ public final class GraphStores implements AutoCloseable {
                                    final GraphDbDoc doc,
                                    final boolean readOnly,
                                    final Long maxStoreSize) {
+        return open(directory, doc, readOnly, maxStoreSize, VariableUsedLookupsRecorder::new);
+    }
+
+    /**
+     * Builds the property-value used-lookups recorder during {@link #open}. Package-private as a <b>test
+     * seam</b>: every collaborator is otherwise constructed inside {@code open} with no way to intercept it, and
+     * this recorder is invoked once per anchor during a property-index rebuild - so a test can inject one that
+     * throws part-way through and prove the rebuild's failure atomicity. Production code always passes
+     * {@code VariableUsedLookupsRecorder::new}.
+     */
+    @FunctionalInterface
+    interface PropertyValueRecorderFactory {
+
+        /**
+         * @param env       the store's environment.
+         * @param uidLookup the property-value UID-tier lookup.
+         * @param hashes    the property-value hash-tier lookup.
+         * @return the recorder {@link #reindexProperties} will report each anchor's lookup usage to; never null.
+         */
+        VariableUsedLookupsRecorder create(PlanBEnv env, UidLookupDb uidLookup, HashLookupDb hashes);
+    }
+
+    /**
+     * The {@link #open(Path, GraphDbDoc, boolean, Long)} implementation, with the property-value recorder
+     * injectable. Package-private for tests - see {@link PropertyValueRecorderFactory}.
+     */
+    static GraphStores open(final Path directory,
+                            final GraphDbDoc doc,
+                            final boolean readOnly,
+                            final Long maxStoreSize,
+                            final PropertyValueRecorderFactory propertyValueRecorderFactory) {
         Objects.requireNonNull(directory, "directory must not be null");
         Objects.requireNonNull(doc, "doc must not be null");
+        Objects.requireNonNull(propertyValueRecorderFactory, "propertyValueRecorderFactory must not be null");
 
         if (!readOnly) {
             try {
@@ -464,8 +496,9 @@ public final class GraphStores implements AutoCloseable {
             final HashFactory propertyValueHashFactory = HashFactoryFactory.create(HashLength.LONG);
             final HashLookupDb propertyValueHashes = new HashLookupDb(
                     env, byteBuffers, propertyValueHashFactory, hashClashCommitRunnable, "property-value-hash");
-            final VariableUsedLookupsRecorder propertyValueRecorder = new VariableUsedLookupsRecorder(
-                    env, propertyValueUids, propertyValueHashes);
+            final VariableUsedLookupsRecorder propertyValueRecorder = Objects.requireNonNull(
+                    propertyValueRecorderFactory.create(env, propertyValueUids, propertyValueHashes),
+                    "propertyValueRecorderFactory returned null");
 
             // Temporal Precision decides the width of every key's validFrom, so it has to be resolved before any
             // table opens rather than consulted per write.
@@ -529,14 +562,30 @@ public final class GraphStores implements AutoCloseable {
      * not merely slow. Rebuilding also reuses the same insert path ingest uses, so tiering and clash handling
      * cannot drift between the two.</p>
      *
+     * <p><b>Failure atomicity.</b> A fragment <em>refused</em> up front - a mismatched format stamp, or adjacency
+     * tables that disagree - is rejected before the first write, so it leaves no trace in this store regardless of
+     * its size. A merge that fails <em>mid-stream</em> (a row referencing a UID the fragment's own interning
+     * tables do not hold, an LMDB {@code MapFullException}, an out-of-memory error) aborts its in-flight
+     * transaction rather than committing it, so for a fragment that had staged fewer than
+     * {@link LmdbWriter#tryCommit()}'s batch threshold (~10,000 entities) this store is left byte-for-byte as it
+     * was. Beyond that threshold, earlier whole batches are already durable and are <b>not</b> rolled back - but
+     * every batch boundary falls after a complete per-entity unit (an interned name, a node version with its
+     * anchors, or an edge <em>pair</em>), so a half edge or a torn version is never durable, and because merge is
+     * idempotent the surviving prefix is byte-identical to what re-merging the fragment writes - so retrying it
+     * once the cause is fixed converges on exactly the successful-merge state.</p>
+     *
      * <p><b>Preconditions:</b> {@code sourceDir} holds a graph store written by this build for the same document,
      * and is not open elsewhere. This store is writable.
-     * <b>Postconditions:</b> every node version, edge version and derived property-index anchor in the fragment
-     * is present in this store. The fragment is left on disk for the caller to delete.
+     * <b>Postconditions:</b> on success, every node version, edge version and derived property-index anchor in
+     * the fragment is present in this store. On failure, this store is unchanged - except that a mid-stream
+     * failure past the batch threshold retains whole earlier batches, per the failure-atomicity note above; in
+     * every case the out-edge and in-edge tables remain exact mirrors. The fragment is left on disk for the
+     * caller to delete (or retain for retry).
      * <b>Null status:</b> {@code sourceDir} is not nullable.
      *
      * @param sourceDir the fragment to merge.
-     * @throws RuntimeException if the fragment's format stamp does not match this store's.
+     * @throws RuntimeException if the fragment's format stamp does not match this store's, or the fragment is
+     *                          corrupt.
      */
     public void merge(final Path sourceDir) {
         Objects.requireNonNull(sourceDir, "sourceDir must not be null");
@@ -546,23 +595,73 @@ public final class GraphStores implements AutoCloseable {
             validateForMerge(source.getSchemaInfo());
 
             write(writer -> {
-                source.read(sourceTxn -> {
-                    // Interning first: everything below translates through these.
-                    final Map<Long, Long> nodeUidMap =
-                            translateNamespace(source.nodeUids, nodeUids, sourceTxn, writer, NODE_UID_BYTES);
-                    final Map<Long, Long> labelUidMap =
-                            translateNamespace(source.labelUids, labelUids, sourceTxn, writer, TYPE_UID_BYTES);
-                    final Map<Long, Long> edgeTypeUidMap =
-                            translateNamespace(source.edgeTypeUids, edgeTypeUids, sourceTxn, writer, TYPE_UID_BYTES);
-                    final Map<Long, Long> propertyKeyUidMap = translateNamespace(
-                            source.propertyKeyUids, propertyKeyUids, sourceTxn, writer, TYPE_UID_BYTES);
+                try {
+                    source.read(sourceTxn -> {
+                        // Every check that does not need a pass over the fragment's rows runs here, BEFORE the
+                        // first write, so a refused fragment leaves nothing behind - not even interned names.
+                        validateAdjacencyMirror(source, sourceTxn);
 
-                    mergeNodes(source, sourceTxn, writer, nodeUidMap, labelUidMap, propertyKeyUidMap);
-                    mergeEdges(source, sourceTxn, writer, nodeUidMap, edgeTypeUidMap);
-                    return null;
-                });
+                        // Interning first: everything below translates through these.
+                        final Map<Long, Long> nodeUidMap =
+                                translateNamespace(source.nodeUids, nodeUids, sourceTxn, writer, NODE_UID_BYTES);
+                        final Map<Long, Long> labelUidMap =
+                                translateNamespace(source.labelUids, labelUids, sourceTxn, writer, TYPE_UID_BYTES);
+                        final Map<Long, Long> edgeTypeUidMap = translateNamespace(
+                                source.edgeTypeUids, edgeTypeUids, sourceTxn, writer, TYPE_UID_BYTES);
+                        final Map<Long, Long> propertyKeyUidMap = translateNamespace(
+                                source.propertyKeyUids, propertyKeyUids, sourceTxn, writer, TYPE_UID_BYTES);
+
+                        mergeNodes(source, sourceTxn, writer, nodeUidMap, labelUidMap, propertyKeyUidMap);
+                        mergeEdges(source, sourceTxn, writer, nodeUidMap, edgeTypeUidMap);
+                        return null;
+                    });
+                } catch (final Throwable e) {
+                    // A merge that reports failure must leave the store as it was: without this, the writer's
+                    // close() would COMMIT everything staged since the last batch commit - including, for the
+                    // half-edge case, an out-edge row whose in-edge mirror was never written. Throwable rather
+                    // than RuntimeException because an OutOfMemoryError must not commit either.
+                    writer.abort();
+                    throw e;
+                }
                 return null;
             });
+        }
+    }
+
+    /**
+     * Refuses a fragment whose two adjacency tables disagree, before anything has been written to this store.
+     *
+     * <p>A healthy fragment's out-edge and in-edge tables are exact mirrors - the ingest filter dual-writes them
+     * per record - so a count mismatch means the fragment is corrupt and no translation of its rows can be
+     * trusted. This check used to sit at the top of {@code mergeEdges}, i.e. after every node version and anchor
+     * had already been written; it now runs ahead of the first write (even the interning pass), because a
+     * <em>refused</em> fragment must leave nothing behind on any node of the cluster.</p>
+     *
+     * <p><b>What remains unvalidated until mid-merge:</b> a row referencing a UID absent from the fragment's own
+     * interning tables. Detecting that up front would need a full extra pass over every node and edge row, so it
+     * is left to {@link #translate}, which throws as the offending row is reached - and {@link #merge}'s
+     * abort-on-failure is what stops that later discovery from committing partial state.</p>
+     *
+     * <p><b>Preconditions:</b> neither parameter is null; {@code sourceTxn} is open on {@code source}'s
+     * environment.
+     * <b>Postconditions:</b> returns normally only when the two tables hold the same number of rows. Writes
+     * nothing.
+     * <b>Null status:</b> no parameter is nullable.
+     *
+     * @param source    the fragment being validated.
+     * @param sourceTxn an open read transaction on the fragment.
+     * @throws IllegalStateException if the fragment's adjacency tables disagree.
+     */
+    private void validateAdjacencyMirror(final GraphStores source, final Txn<ByteBuffer> sourceTxn) {
+        final long outCount = source.outEdges.count(sourceTxn);
+        final long inCount = source.inEdges.count(sourceTxn);
+        if (outCount != inCount) {
+            throw new IllegalStateException(LogUtil.message(
+                    "Fragment adjacency tables disagree for graph '{}': out-edges={}, in-edges={}. The fragment " +
+                    "is corrupt and cannot be merged.",
+                    doc.getName(),
+                    outCount,
+                    inCount));
         }
     }
 
@@ -642,18 +741,8 @@ public final class GraphStores implements AutoCloseable {
                             final Map<Long, Long> edgeTypeUidMap) {
         // The fragment's two adjacency tables are mirrors of each other, written together per record by the
         // ingest filter, so the in-edge row is derived here rather than iterated separately. That keeps a
-        // logical edge's two rows inside one commit batch.
-        final long outCount = source.outEdges.count(sourceTxn);
-        final long inCount = source.inEdges.count(sourceTxn);
-        if (outCount != inCount) {
-            throw new IllegalStateException(LogUtil.message(
-                    "Fragment adjacency tables disagree for graph '{}': out-edges={}, in-edges={}. The fragment " +
-                    "is corrupt and cannot be merged.",
-                    doc.getName(),
-                    outCount,
-                    inCount));
-        }
-
+        // logical edge's two rows inside one commit batch. That the tables really are mirrors was checked by
+        // validateAdjacencyMirror before the merge wrote anything.
         source.outEdges.forEachEdge(sourceTxn, (sourceSrcUid, sourceTypeUid, sourceDstUid, validFrom, properties) -> {
             final long srcUid = translate(nodeUidMap, sourceSrcUid, "node");
             final long dstUid = translate(nodeUidMap, sourceDstUid, "node");
@@ -954,18 +1043,27 @@ public final class GraphStores implements AutoCloseable {
      * finished recording, per that task's documented ordering contract). A no-op (returns 0) if retention is
      * absent or disabled - the graph keeps every version forever by default.
      *
-     * <p><b>Scope limit (documented, not a silent gap):</b> the property-value anchor index ({@link
-     * #getPropertyIndex()}) does not participate in this pass - it has no {@code validFrom} of its own to
-     * retain by, and a stale anchor left behind by a deleted node version is filtered out at query time (not a
-     * correctness issue - see {@link GraphPropertyIndex}'s Javadoc), so its own bloat and the
-     * {@code property-key-uid} namespace's sweep are deferred; {@link #rebuild} remains the operator-invoked
-     * compaction backstop for both. Condense (merging redundant same-value consecutive versions, as Plan B's own
-     * stores do) is likewise not built for v1 - a graph's properties change far less often than Plan B state
-     * typically does, so the benefit did not appear to justify the extra machinery; revisit if evidence from real
-     * usage says otherwise.</p>
+     * <p>Since the property index has no {@code validFrom} of its own to retain by, and its values cannot be
+     * decoded back out of a stored key, it is cleared and rebuilt from the surviving versions (see
+     * {@link #reindexProperties}) rather than pruned row by row - which is what makes the failure atomicity below
+     * essential rather than tidy.</p>
+     *
+     * <p><b>Failure atomicity.</b> If anything in this pass throws - realistically an LMDB
+     * {@code MapFullException} while rebuilding anchors on a large graph, or an out-of-memory error from the
+     * in-memory anchor list - the write transaction in flight is <b>aborted</b> rather than committed, and the
+     * failure rethrown. Nothing in the deletion, clear or rebuild steps performs an intermediate commit, so a
+     * failure anywhere up to and including the rebuild leaves the store byte-for-byte as it was; without the
+     * abort, the deletions plus an empty or half-rebuilt property index would be durably committed, and every
+     * property-anchored query would silently return no rows. The trailing unused-UID sweeps do batch-commit
+     * (every ~10,000 sweep deletions), so a failure there can leave whole earlier batches durable - but by then
+     * the deletions and the <em>complete</em> rebuilt index are part of those batches, and a partially-swept
+     * lookup namespace merely retains some unused entries for the next pass to reclaim. A cleared or partial
+     * index is never committed.</p>
      *
      * <p><b>Preconditions:</b> {@code doc} is not null. <b>Postconditions:</b> never corrupts a floor lookup for
-     * any instant at or after the retention cutoff.</p>
+     * any instant at or after the retention cutoff; on failure the store is unchanged, except that a failure
+     * during the final sweeps may retain the pass's whole earlier batches, per the failure-atomicity note
+     * above.</p>
      *
      * @param doc the owning document, read for its retention policy.
      * @return the total number of versions deleted across all three stores.
@@ -979,46 +1077,57 @@ public final class GraphStores implements AutoCloseable {
         final Instant deleteBefore = SimpleDurationUtil.minus(Instant.now(), retention.getDuration());
 
         return env.write(writer -> {
-            long count = 0;
-            count += nodes.deleteOldData(writer, deleteBefore, nodeUidRecorder, labelUidRecorder);
-            count += outEdges.deleteOldData(writer, deleteBefore, nodeUidRecorder, edgeTypeUidRecorder);
-            count += inEdges.deleteOldData(writer, deleteBefore, nodeUidRecorder, edgeTypeUidRecorder);
+            try {
+                long count = 0;
+                count += nodes.deleteOldData(writer, deleteBefore, nodeUidRecorder, labelUidRecorder);
+                count += outEdges.deleteOldData(writer, deleteBefore, nodeUidRecorder, edgeTypeUidRecorder);
+                count += inEdges.deleteOldData(writer, deleteBefore, nodeUidRecorder, edgeTypeUidRecorder);
 
-            // The property index cannot be aged by time - its keys carry no validFrom - and its values cannot be
-            // decoded back out of a stored key, so it cannot be pruned row by row either. It is rebuilt from the
-            // versions that survived above, which is the only thing that reclaims what this table actually
-            // accumulates: an anchor per distinct value each node has ever held. Retention keeps a node's last
-            // version at or before the cut-off, so nodes themselves rarely disappear - it is those per-version
-            // value anchors that grew without bound, which is why storage grew even with retention enabled.
-            //
-            // Only when the node sweep removed something: a rebuild costs a full pass over the surviving
-            // versions, and the retention job runs every ten minutes.
-            final boolean reindexed = count > 0 && !Thread.currentThread().isInterrupted();
-            if (reindexed) {
-                reindexProperties(writer);
-            }
+                // The property index cannot be aged by time - its keys carry no validFrom - and its values cannot
+                // be decoded back out of a stored key, so it cannot be pruned row by row either. It is rebuilt
+                // from the versions that survived above, which is the only thing that reclaims what this table
+                // actually accumulates: an anchor per distinct value each node has ever held. Retention keeps a
+                // node's last version at or before the cut-off, so nodes themselves rarely disappear - it is
+                // those per-version value anchors that grew without bound, which is why storage grew even with
+                // retention enabled.
+                //
+                // Only when the node sweep removed something: a rebuild costs a full pass over the surviving
+                // versions, and the retention job runs every ten minutes.
+                final boolean reindexed = count > 0 && !Thread.currentThread().isInterrupted();
+                if (reindexed) {
+                    reindexProperties(writer);
+                }
 
-            if (!Thread.currentThread().isInterrupted()) {
-                env.read(readTxn -> {
-                    nodeUidRecorder.deleteUnused(readTxn, writer);
-                    labelUidRecorder.deleteUnused(readTxn, writer);
-                    edgeTypeUidRecorder.deleteUnused(readTxn, writer);
+                if (!Thread.currentThread().isInterrupted()) {
+                    env.read(readTxn -> {
+                        nodeUidRecorder.deleteUnused(readTxn, writer);
+                        labelUidRecorder.deleteUnused(readTxn, writer);
+                        edgeTypeUidRecorder.deleteUnused(readTxn, writer);
 
-                    // Only sweepable when the rebuild ran, because that is what records which property keys the
-                    // surviving anchors use. Sweeping without having recorded usage deletes every entry, and the
-                    // anchors then reference key ids nothing resolves to - which does not waste space, it makes
-                    // every property-anchored query silently miss.
-                    if (reindexed) {
-                        propertyKeyUidRecorder.deleteUnused(readTxn, writer);
-                        propertyValueRecorder.deleteUnused(readTxn, writer);
-                    }
-                    return null;
-                });
+                        // Only sweepable when the rebuild ran, because that is what records which property keys
+                        // the surviving anchors use. Sweeping without having recorded usage deletes every entry,
+                        // and the anchors then reference key ids nothing resolves to - which does not waste
+                        // space, it makes every property-anchored query silently miss.
+                        if (reindexed) {
+                            propertyKeyUidRecorder.deleteUnused(readTxn, writer);
+                            propertyValueRecorder.deleteUnused(readTxn, writer);
+                        }
+                        return null;
+                    });
+                }
+                if (count > 0) {
+                    schemaDb.setFreedSpacePending(writer.getWriteTxn(), true);
+                }
+                return count;
+            } catch (final Throwable e) {
+                // A retention pass that reports failure must leave the store as it was: without this, the
+                // writer's close() would COMMIT everything staged so far - including a cleared or half-rebuilt
+                // property index, after which property-anchored queries silently return no rows. Throwable
+                // rather than RuntimeException because an OutOfMemoryError from the anchor list must not commit
+                // either.
+                writer.abort();
+                throw e;
             }
-            if (count > 0) {
-                schemaDb.setFreedSpacePending(writer.getWriteTxn(), true);
-            }
-            return count;
         });
     }
 }

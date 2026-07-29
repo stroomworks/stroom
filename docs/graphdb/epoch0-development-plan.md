@@ -481,6 +481,107 @@ passes no recorder, since bookkeeping outside a sweep is consumed by nothing.
 Verified by sabotage, and the test needs a value **longer than the 32-byte inline tier** or it exercises nothing:
 a short value references no lookup entry, so the case would pass whether or not the sweep worked.
 
+## Phase 5 — Transaction boundaries — **planned**
+
+Found by pre-merge review, after Phases 1–4 were complete. Four sites where a failure is **durably committed**
+rather than rolled back, so a rejected or failed write leaves partial state behind and the operator is told
+nothing was applied. Phase 2 covered data safety at the *record* level; this is the same concern one level down,
+at the transaction.
+
+**One root cause under three of the four.** `LmdbWriter.close()` is `try { commit(); } finally { unlock(); }`, and
+`PlanBEnv.write` runs the caller's function in try-with-resources over the writer — so when the function throws,
+`close()` **still commits** everything staged since the last `tryCommit()`. This is pre-existing Plan B behaviour
+(this branch only *added* `abort()`; `close()` is untouched), and it is safe for Plan B's own single-step writes.
+It is not safe for the multi-step functions the graph added on top of it. Note the fix is per call site, not in
+`LmdbWriter`: changing `close()` to roll back on an in-flight exception would change behaviour for every existing
+Plan B writer, which is a larger decision than this phase should take unilaterally.
+
+**Principle for all four**: a write that reports failure must leave the store as it was. "Reported and partly
+applied" is worse than either outcome alone, because the operator's next action is wrong either way.
+
+### 5.1 Retention must not commit a cleared property index
+
+`GraphStores.deleteOldData` runs version deletion → `propertyIndex.clear(writer)` → full anchor rebuild → UID
+sweeps, in one transaction with no abort path. Any throw after the `clear` — realistically `MDB_MAP_FULL` while
+writing anchors on a large graph, an OOM from the in-memory anchor list, or an interrupt from the nested
+`env.read` — commits the deletions *plus* an empty or half-rebuilt index.
+
+The consequence is the one this phase most needs to prevent: `findAnchors` returns nothing for values live nodes
+still hold, and the traversal engine's re-check **filters** candidates rather than adding them back, so
+`MATCH (n:Person {id: 'x'})` returns no rows and is indistinguishable from the node not existing. Nothing heals it
+until a later retention pass happens to reindex, which is gated on `count > 0` and may never run. The retention
+job runs every ten minutes, so the window is not narrow.
+
+**Fix**: catch, `writer.abort()`, rethrow. A rebuild-into-a-fresh-table-and-rename-swap would be stronger and is
+worth considering later; it is not needed to close the silent-wrong-answer hole. **Done when** a test that injects
+a failure part-way through the rebuild leaves a store whose property-anchored queries still return the right rows.
+
+### 5.2 A refused merge must leave nothing behind
+
+`GraphStores.merge` runs `translateNamespace → mergeNodes → mergeEdges` in one transaction, and two things go
+wrong:
+
+- The out-edge/in-edge count consistency check — the check that *refuses* a corrupt fragment — runs at the top of
+  `mergeEdges`, i.e. **after** `mergeNodes` has written and (through `tryCommit` batching) partly committed every
+  node version and anchor. So a fragment rejected as corrupt has all of its nodes committed, with no edges, on
+  every node in the cluster. Traversals then see nodes with no relationships, which is indistinguishable from real
+  data.
+- If `inEdges.insert` throws after `outEdges.insert` succeeded for the same edge, `close()` commits a **half
+  edge** — violating the edge-pair atomicity the method's own Javadoc promises. Traversal then answers differently
+  forwards and backwards.
+
+**Fix**: validate before writing — move the adjacency-count check (and ideally a full translate-map validation
+over both stores) ahead of the first write — and catch/`abort()`/rethrow around the whole merge. **Done when** a
+test merges a fragment whose adjacency tables disagree and asserts the store is byte-for-byte unchanged, and a
+test proves an edge is never present in one direction only.
+
+### 5.3 Fragments awaiting or failed merge must survive a restart
+
+`PartMergeProcessor.unzipPartFile` moves each fragment into the per-document `DirQueue` under `mergingDir` and
+then **deletes the source zip immediately**, without waiting for the merge on the async path. A failed merge
+leaves its directory in `mergingDir` — but nothing in-process re-reads it, and **the constructor deletes the
+entire contents of `mergingDir` at startup.**
+
+So the documented recovery procedure does not work. `11-operations.md` tells an operator a failed fragment "is
+retained deliberately so it can be merged once the cause is fixed"; they raise `maxStoreSize` and restart, and the
+restart deletes it. That node's graph is then permanently and silently short of that stream's data — the exact
+failure the whole fragment-and-merge design exists to remove. The constructor's own Javadoc ("in-flight work whose
+source zip has not yet been deleted, so it is safe to discard and will be redone") is false on both counts.
+
+**The recovery machinery already exists and is dead code**: `DirQueue` initialises its `readId` from the minimum
+id on disk, and `merge()` lists `mergingDir` to recreate queues. Both are defeated by the startup wipe.
+
+**Fix**: stop wiping `mergingDir` at startup — only `unzipDir` is genuinely scratch — and let `DirQueue`'s existing
+restart recovery requeue the survivors. Also stop the synchronous `merge(storeId)` path deleting the unzip
+directory when `mergeDir` failed, which contradicts even its own in-code comment.
+
+**This is the riskiest item in the phase**, and the only one outside `stroom-graphdb`. `PartMergeProcessor` is
+shared with Plan B's own state stores, so the change alters restart behaviour for both. Treat Plan B's merge tests
+as part of the gate, not just the graph's. **Done when** a fragment left in `mergingDir` is picked up and merged
+after a restart, for a Plan B store as well as a graph.
+
+### 5.4 A failed stream must not ship its partial fragment
+
+`AbstractProcessorTaskExecutor` calls `pipeline.endProcessing()` in a `finally`, after
+`handleProcessingException`. `GraphFilter.endProcessing` then unconditionally calls `shardWriter.close()`, and
+`close()` zips and sends the fragment whenever `dirty` is true. There is no abort or discard path on
+`GraphShardWriter` at all.
+
+So when strict mode throws on record N, records 1..N−1 are still shipped and merged into every node's
+authoritative store. `GraphShardWriters`' class Javadoc states "a failed or abandoned stream leaves nothing behind
+in the real store", and strict mode's whole contract is "rather have no data than quietly incomplete data" — both
+inverted: strict mode delivers a **prefix**. Worse, if the operator fixes the translation and reprocesses,
+mutations that existed only in the bad run stay in the graph forever, because idempotent merge heals an identical
+replay, not a corrected one.
+
+**Fix**: give `GraphShardWriter` a `markFailed()`/`discard()` path; have `GraphFilter` set it when a fatal error
+occurred, so `close()` cleans up without sending and the stream is reprocessed whole. **Done when** a strict-mode
+failure part-way through a stream ships no fragment, and a lenient-mode run with some bad records still ships one.
+
+**Phase 5 gate**: for each of the four sites, a test that forces the failure and asserts the store or the queue is
+left in a state the documented recovery procedure actually recovers from. No new silent path: every one of these
+failures is already reported — the bug is what it leaves behind, not whether it is noticed.
+
 ## Beyond the plan — backfill (item C1)
 
 Not in this plan, because the plan's cluster scope was "make ingest and query correct on the nodes that are

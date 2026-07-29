@@ -18,7 +18,9 @@ package stroom.graphdb.impl;
 
 import stroom.graphdb.shared.GraphDbDoc;
 import stroom.lmdb.serde.UnsignedBytesInstances;
+import stroom.planb.impl.dao.LmdbWriter;
 import stroom.planb.impl.dao.UidLookupDb;
+import stroom.planb.impl.dao.VariableUsedLookupsRecorder;
 import stroom.planb.shared.RetentionSettings;
 import stroom.query.language.functions.Val;
 import stroom.query.language.functions.ValString;
@@ -35,8 +37,11 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Covers what retention actually reclaims from the property index.
@@ -165,6 +170,60 @@ class TestGraphRetentionSweep {
             // The surviving long value must still resolve - which it can only do if its lookup entry was kept.
             assertThat(anchorsFor(stores, survivingLongValue)).as("surviving long value")
                     .containsExactly(nodeUid);
+        }
+    }
+
+    /**
+     * A failure part-way through the anchor rebuild must abort rather than commit. The rebuild clears the whole
+     * index before re-deriving it, so without the abort a mid-rebuild throw would durably commit the version
+     * deletions plus an empty or half-rebuilt index - and every property-anchored query would then silently
+     * return no rows, indistinguishable from the nodes not existing.
+     *
+     * <p>The failure is injected through {@code GraphStores.open}'s package-private recorder seam: the
+     * property-value recorder is invoked once per anchor as the rebuild writes it, so throwing on the second
+     * call fails the rebuild after the clear and after one anchor has been written - the exact window the abort
+     * exists to protect. Without the abort, the committed store would answer only for that one anchor.</p>
+     */
+    @Test
+    void failureMidRebuild_leavesPropertyQueriesAnswering(@TempDir final Path root) {
+        final GraphDbDoc doc = docWithRetention();
+        final AtomicBoolean failing = new AtomicBoolean(false);
+        final AtomicInteger rebuildAnchors = new AtomicInteger();
+        try (GraphStores stores = GraphStores.open(root.resolve("sweep6"), doc, false, null,
+                (env, uidLookup, hashes) -> new VariableUsedLookupsRecorder(env, uidLookup, hashes) {
+                    @Override
+                    public void recordUsed(final LmdbWriter writer, final ByteBuffer byteBuffer) {
+                        if (failing.get() && rebuildAnchors.incrementAndGet() == 2) {
+                            throw new IllegalStateException("Injected mid-rebuild failure");
+                        }
+                        super.recordUsed(writer, byteBuffer);
+                    }
+                })) {
+            final long first = writeNode(stores, "n1", OLDEST, "v1");
+            writeVersion(stores, first, OLD, "v2");
+            writeVersion(stores, first, RECENT, "v3");
+            final long second = writeNode(stores, "n2", RECENT, "other");
+
+            failing.set(true);
+            assertThatThrownBy(() -> stores.deleteOldData(doc))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("Injected mid-rebuild failure");
+            assertThat(rebuildAnchors).as("the failure really was mid-rebuild").hasValue(2);
+            failing.set(false);
+
+            // The failed pass aborted rather than committed, so every anchor still answers - including the
+            // superseded one the pass would have reclaimed had it succeeded.
+            assertThat(anchorsFor(stores, "v1")).as("pre-retention state intact").containsExactly(first);
+            assertThat(anchorsFor(stores, "v2")).containsExactly(first);
+            assertThat(anchorsFor(stores, "v3")).containsExactly(first);
+            assertThat(anchorsFor(stores, "other")).containsExactly(second);
+
+            // And the pass is retryable: with the cause gone it completes, converging on the swept state.
+            assertThat(stores.deleteOldData(doc)).isPositive();
+            assertThat(anchorsFor(stores, "v1")).as("superseded value reclaimed on retry").isEmpty();
+            assertThat(anchorsFor(stores, "v2")).as("retained floor version").containsExactly(first);
+            assertThat(anchorsFor(stores, "v3")).containsExactly(first);
+            assertThat(anchorsFor(stores, "other")).containsExactly(second);
         }
     }
 

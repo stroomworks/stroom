@@ -211,6 +211,93 @@ class TestGraphStoresMerge {
         }
     }
 
+    @Test
+    void fragmentWhoseAdjacencyTablesDisagree_isRefusedBeforeAnythingIsWritten(@TempDir final Path root) {
+        // The mirror-consistency check that refuses a corrupt fragment used to run only at the top of the edge
+        // merge - after every node version and anchor had already been written - so a rejected fragment left all
+        // of its nodes, with no edges, in the authoritative store on every node of the cluster. Validation now
+        // precedes the first write.
+        final Path targetDir = root.resolve("target");
+        final Path fragment = root.resolve("fragment");
+
+        try (GraphStores stores = GraphStores.provision(fragment, DOC)) {
+            writeNode(stores, "a", "Thing", T1, Map.of("state", ValString.create("fresh")));
+            writeNode(stores, "b", "Thing");
+            writeEdge(stores, "a", "LINKS", "b");
+            // Corrupt the fragment: one extra out-edge row with no in-edge mirror.
+            stores.write(writer -> {
+                final long srcUid = intern(writer, stores.getNodeUids(), "a", GraphStores.NODE_UID_WIDTH);
+                final long dstUid = intern(writer, stores.getNodeUids(), "b", GraphStores.NODE_UID_WIDTH);
+                final long typeUid = intern(writer, stores.getEdgeTypeUids(), "EXTRA", GraphStores.TYPE_UID_WIDTH);
+                stores.getOutEdges().insert(writer, srcUid, typeUid, dstUid, T1, Map.of());
+                return null;
+            });
+        }
+
+        try (GraphStores target = GraphStores.provision(targetDir, DOC)) {
+            writeNode(target, "existing", "Thing", T1, Map.of("state", ValString.create("kept")));
+            final Counts before = countsOf(target);
+
+            assertThatThrownBy(() -> target.merge(fragment))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("adjacency tables disagree");
+
+            // Nothing of the fragment arrived: not its nodes (the old defect), not even its interned names.
+            assertThat(countsOf(target)).isEqualTo(before);
+            assertThat(lookup(target, target.getNodeUids(), "a")).isEmpty();
+            // And what was already there still answers, anchors included.
+            final long existing = uidOf(target, "existing");
+            assertThat(anchorsFor(target, "state", "kept")).containsExactly(existing);
+        }
+    }
+
+    @Test
+    void mergeThatFailsMidStream_leavesTheStoreUnchangedAndNoHalfEdge(@TempDir final Path root) {
+        // A mirrored pair of edge rows referencing a node UID the fragment's own interning table does not hold:
+        // the adjacency counts agree, so up-front validation cannot catch it, and the failure surfaces from
+        // translate() only when the merge reaches the row - after the fragment's nodes, anchors and first
+        // (valid) edge pair have already been staged. The abort must roll all of that back; before it existed,
+        // the writer's close() committed everything staged - and the same close-commits-on-failure behaviour
+        // meant an insert failing between an edge's two rows durably kept the edge in one direction only,
+        // violating the edge-pair atomicity merge promises.
+        final Path targetDir = root.resolve("target");
+        final Path fragment = root.resolve("fragment");
+        final long danglingUid = 999_999L;
+
+        try (GraphStores stores = GraphStores.provision(fragment, DOC)) {
+            writeNode(stores, "a", "Thing");
+            writeNode(stores, "b", "Thing");
+            writeEdge(stores, "a", "LINKS", "b");
+            // Both rows written, so the mirror check passes; the src UID resolves to no interned node. The
+            // dangling UID sorts after the valid edge's src UID, so the merge fails mid-stream, not on row one.
+            stores.write(writer -> {
+                final long dstUid = intern(writer, stores.getNodeUids(), "b", GraphStores.NODE_UID_WIDTH);
+                final long typeUid = intern(writer, stores.getEdgeTypeUids(), "LINKS", GraphStores.TYPE_UID_WIDTH);
+                stores.getOutEdges().insert(writer, danglingUid, typeUid, dstUid, T1, Map.of());
+                stores.getInEdges().insert(writer, danglingUid, typeUid, dstUid, T1, Map.of());
+                return null;
+            });
+        }
+
+        try (GraphStores target = GraphStores.provision(targetDir, DOC)) {
+            writeNode(target, "existing", "Thing", T1, Map.of("state", ValString.create("kept")));
+            final Counts before = countsOf(target);
+
+            assertThatThrownBy(() -> target.merge(fragment))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("cannot be merged");
+
+            // The failed merge aborted: counts and anchors are exactly as before, and with the two adjacency
+            // tables equal-sized and empty of the fragment's rows, no edge exists in one direction only.
+            final Counts after = countsOf(target);
+            assertThat(after).isEqualTo(before);
+            assertThat(after.outEdges()).isEqualTo(after.inEdges());
+            assertThat(lookup(target, target.getNodeUids(), "a")).as("fragment nodes rolled back").isEmpty();
+            final long existing = uidOf(target, "existing");
+            assertThat(anchorsFor(target, "state", "kept")).containsExactly(existing);
+        }
+    }
+
     // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
@@ -279,6 +366,27 @@ class TestGraphStoresMerge {
                 writer.getWriteTxn(),
                 directBuffer(name),
                 uidBuffer -> UnsignedBytesInstances.ofLength(width).get(uidBuffer.duplicate()));
+    }
+
+    /** Resolves an already-interned name without interning it - unlike {@link #uidOf}, which writes. */
+    private static Optional<Long> lookup(final GraphStores stores,
+                                         final UidLookupDb db,
+                                         final String key) {
+        return stores.read(readTxn -> db.get(
+                readTxn,
+                directBuffer(key),
+                maybeUid -> maybeUid.map(uidBuffer ->
+                        UnsignedBytesInstances.ofLength(uidBuffer.remaining()).get(uidBuffer.duplicate()))));
+    }
+
+    /** Every node anchored under label "Thing" for {@code propertyKey} = {@code value}. */
+    private static List<Long> anchorsFor(final GraphStores stores,
+                                         final String propertyKey,
+                                         final String value) {
+        final long labelUid = lookup(stores, stores.getLabelUids(), "Thing").orElseThrow();
+        final long propKeyUid = lookup(stores, stores.getPropertyKeyUids(), propertyKey).orElseThrow();
+        return stores.read(txn -> stores.getPropertyIndex().findAnchors(
+                txn, labelUid, propKeyUid, GraphAnchorEncoding.anchorValueBytes(ValString.create(value))));
     }
 
     private static long uidOf(final GraphStores stores, final String externalId) {

@@ -227,7 +227,7 @@ comes from splitting across documents.
 | Option | Buys you | Cost |
 |---|---|---|
 | **Split across several `GraphDb` documents** — by period, tenant, or subject area | Real capacity growth: each document has its own ceiling | No query spans two graphs. You partition the question by hand |
-| **Enable retention and shorten the window** | Bounds growth on a continuously fed graph | Loses the history that is the feature's main draw, and does not reclaim the property index |
+| **Enable retention and shorten the window** | Bounds growth on a continuously fed graph, and reclaims the property index and both lookup tables with it | Loses the history that is the feature's main draw |
 | **Reduce what you load** | Slows growth | Modelling effort — see [04-event-logging-xslt.md](04-event-logging-xslt.md) |
 
 Splitting across documents is the only one that genuinely increases the data you can hold. Treat the others
@@ -400,8 +400,6 @@ Retention itself is configured **per document**, on the Settings tab, using the 
 
 The property-**value** lookup, for values too long to store inline, is now swept as well: the rebuild reports
 which entries the surviving anchors reference and the rest are removed.
-- **The property-value lookup is not swept.** Property values longer than the inline tier are interned into a
-  lookup table, and entries there are never removed - one per distinct long value ever seen.
 
 The **property index itself now does participate**: when the sweep deletes any version, it clears and re-derives
 the index from the versions that survived, so the anchors those superseded versions left behind are reclaimed. That
