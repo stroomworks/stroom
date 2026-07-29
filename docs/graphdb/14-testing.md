@@ -1,7 +1,7 @@
 # Testing a Graph DB
 
 **Status:** Evaluation / proof of concept — not production ready. See the
-[production-readiness blockers](README.md#production-readiness--known-blockers).
+[production-readiness blockers](README.md#production-readiness).
 **Audience:** developers changing Graph DB; anyone validating a deployment or an upgrade.
 **Scope:** a repeatable acceptance protocol — a dataset, the cases to run against it, and what each should
 return. Canonical for the test dataset.

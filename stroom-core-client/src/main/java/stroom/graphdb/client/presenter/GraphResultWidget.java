@@ -301,17 +301,17 @@ public class GraphResultWidget extends Composite implements SelectionUiHandlers 
     }
 
     private static JSONObject toPayload(final GraphElementTable table) {
-        if (table == null || table.rows().isEmpty()) {
+        if (table == null || table.getRows().isEmpty()) {
             return null;
         }
         final JSONArray columnArray = new JSONArray();
-        final List<String> columns = NullSafe.list(table.columns());
+        final List<String> columns = NullSafe.list(table.getColumns());
         for (int i = 0; i < columns.size(); i++) {
             columnArray.set(i, new JSONString(columns.get(i)));
         }
 
         final JSONArray rowArray = new JSONArray();
-        final List<List<String>> rows = NullSafe.list(table.rows());
+        final List<List<String>> rows = NullSafe.list(table.getRows());
         for (int r = 0; r < rows.size(); r++) {
             final List<String> values = NullSafe.list(rows.get(r));
             final JSONArray valueArray = new JSONArray();

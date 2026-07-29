@@ -1,7 +1,7 @@
 # Introduction to Stroom Graph DB
 
 **Status:** Evaluation / proof of concept — not production ready. See the
-[production-readiness blockers](README.md#production-readiness--known-blockers).
+[production-readiness blockers](README.md#production-readiness).
 **Audience:** analysts and evaluators. No prior graph-database experience assumed.
 **Scope:** what Graph DB is, what it is good and bad at, and the vocabulary used throughout this set.
 Canonical for the concept glossary.
@@ -90,7 +90,7 @@ Being honest about this saves more time than any feature list.
 **Do not use Graph DB if:**
 
 - **You need production reliability today.** See the
-  [blockers](README.md#production-readiness--known-blockers). This is the overriding one.
+  [blockers](README.md#production-readiness). This is the overriding one.
 - **Your data will exceed one node's disk in one graph.** `graphdb.maxStoreSize` raises the per-graph ceiling
   from its 10 GiB default, but it is fixed when a store is created and every node holds a whole replica, so a
   graph can never be larger than the smallest node holding it ([10-limits.md](10-limits.md)). You can split

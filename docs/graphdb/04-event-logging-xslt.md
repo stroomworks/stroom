@@ -1,7 +1,7 @@
 # Converting Stroom event logging to graph mutations
 
 **Status:** Evaluation / proof of concept — not production ready. See the
-[production-readiness blockers](README.md#production-readiness--known-blockers).
+[production-readiness blockers](README.md#production-readiness).
 The XSLT here was executed and its output schema-validated (see [Verification](#verification)); it is
 **not** covered by automated tests, so re-verify it if the schemas change.
 **Audience:** translation authors turning event-logging XML into a graph.

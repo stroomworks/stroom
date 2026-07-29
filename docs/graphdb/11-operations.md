@@ -1,7 +1,7 @@
 # Operating a Graph DB
 
 **Status:** Evaluation / proof of concept — not production ready. See the
-[production-readiness blockers](README.md#production-readiness--known-blockers); several of them are
+[production-readiness blockers](README.md#production-readiness); several of them are
 operational and this file is where they bite.
 **Audience:** Stroom administrators.
 **Scope:** storage, sizing, retention, recovery, permissions and the per-document settings.
@@ -12,7 +12,7 @@ operational and this file is where they bite.
 
 ---
 
-> Read the [blockers](README.md#production-readiness--known-blockers) before deploying this anywhere that
+> Read the [blockers](README.md#production-readiness) before deploying this anywhere that
 > matters. This file describes how to operate Graph DB as it is; it is not a claim that doing so is
 > currently advisable.
 
@@ -555,7 +555,7 @@ Before putting a graph into regular use:
 - [ ] Something watches the store directory's size
 - [ ] Something watches stream error counts on the graph's feeds
 - [ ] Document permissions reflect the sensitivity of *everything* in the graph, not its average
-- [ ] Somebody has read the [blockers](README.md#production-readiness--known-blockers)
+- [ ] Somebody has read the [blockers](README.md#production-readiness)
 
 ## Next
 

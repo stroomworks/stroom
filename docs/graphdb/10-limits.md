@@ -1,7 +1,7 @@
 # Limits and how to stay within them
 
 **Status:** Evaluation / proof of concept — not production ready. See the
-[production-readiness blockers](README.md#production-readiness--known-blockers).
+[production-readiness blockers](README.md#production-readiness).
 **Audience:** analysts writing queries; administrators sizing a deployment.
 **Scope:** every limit in Graph DB, its exact value, and how to work within it. **Canonical for all limit
 values** — other files link here rather than restating numbers.

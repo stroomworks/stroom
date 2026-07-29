@@ -1,7 +1,7 @@
 # Graph DB Cypher: language reference
 
 **Status:** Evaluation / proof of concept — not production ready. See the
-[production-readiness blockers](README.md#production-readiness--known-blockers).
+[production-readiness blockers](README.md#production-readiness).
 **Audience:** analysts writing queries.
 **Scope:** the complete supported query language, and every construct it rejects. Canonical for syntax and
 for compile-error messages. Functions have their own file.

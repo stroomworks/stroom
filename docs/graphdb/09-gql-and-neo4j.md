@@ -1,7 +1,7 @@
 # Comparison with ISO GQL and Neo4j
 
 **Status:** Evaluation / proof of concept — not production ready. See the
-[production-readiness blockers](README.md#production-readiness--known-blockers).
+[production-readiness blockers](README.md#production-readiness).
 **Audience:** evaluators, and anyone porting queries from Neo4j.
 **Scope:** how Graph DB's language relates to the ISO GQL standard and to Neo4j's Cypher, and what that
 means in practice. Canonical for the GQL conformance summary.
@@ -182,7 +182,7 @@ are modest, and your questions are traversal-shaped.
 
 **Neo4j (or another mature graph database) suits you if** you need writes from the query language, path
 finding or graph algorithms, spatial queries, large graphs, or production-grade operational guarantees —
-see the [blockers](README.md#production-readiness--known-blockers).
+see the [blockers](README.md#production-readiness).
 
 They are not really competitors. Graph DB adds a graph-shaped view of data that is already in Stroom,
 with a temporal dimension no general-purpose graph database offers.

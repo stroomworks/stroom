@@ -1,7 +1,7 @@
 # Loading data: the `graph-mutation:1` format and Graph Filter
 
 **Status:** Evaluation / proof of concept — not production ready. See the
-[production-readiness blockers](README.md#production-readiness--known-blockers).
+[production-readiness blockers](README.md#production-readiness).
 **Audience:** pipeline and translation authors.
 **Scope:** the only way data enters a graph. Canonical for the `graph-mutation:1` vocabulary, the Graph
 Filter's configuration and error behaviour, and data-modelling guidance.

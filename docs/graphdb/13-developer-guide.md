@@ -1,7 +1,7 @@
 # Code structure and extending Graph DB
 
 **Status:** Evaluation / proof of concept — not production ready. See the
-[production-readiness blockers](README.md#production-readiness--known-blockers).
+[production-readiness blockers](README.md#production-readiness).
 **Audience:** developers working on Graph DB itself.
 **Scope:** where the code lives, how a query flows through it, and recipes for the extensions people
 actually make. Also the index into the engineering records.

@@ -1,7 +1,7 @@
 # Running queries: the Explore and Data tabs
 
 **Status:** Evaluation / proof of concept — not production ready. See the
-[production-readiness blockers](README.md#production-readiness--known-blockers).
+[production-readiness blockers](README.md#production-readiness).
 **Audience:** analysts.
 **Scope:** where to type a query and what you get back. Canonical for the graph view's controls.
 **Companion documents:** [06-language-reference.md](06-language-reference.md) (what to type),

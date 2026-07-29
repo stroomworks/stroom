@@ -1,7 +1,7 @@
 # How Graph DB works
 
 **Status:** Evaluation / proof of concept — not production ready. See the
-[production-readiness blockers](README.md#production-readiness--known-blockers).
+[production-readiness blockers](README.md#production-readiness).
 **Audience:** analysts who want to know why queries behave as they do; administrators sizing a deployment.
 **Scope:** the storage and temporal models, and how a query is answered. Canonical for the temporal
 semantics. Physical byte layouts are out of scope — see the developer guide.

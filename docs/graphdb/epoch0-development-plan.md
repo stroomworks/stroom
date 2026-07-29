@@ -1,32 +1,35 @@
 # Epoch 0 development plan — removing the blockers to production use
 
-**Status:** **Plan, not description.** Nothing in this document exists yet. It describes work required to
-make Graph DB production-capable; every other file in this set describes only what is built. No other
-document may reference this one in the present tense.
-**Audience:** developers and stakeholders planning the work.
-**Scope:** the programme to clear the blockers in
-[README.md](README.md#production-readiness--known-blockers) — correctness, data safety and operability.
-Language-expressiveness gaps are deliberately out of scope.
+**Status:** **Delivered — a record, not a plan.** All four phases are complete, as is the follow-on work
+recorded under *Beyond the plan*. It is kept because the reasoning behind each decision constrains later
+changes, and because several premises turned out to be wrong in ways worth knowing. For what is *still*
+outstanding, see [12-future-work.md](12-future-work.md); this document is not a to-do list.
+**Audience:** developers changing this code, and anyone asking why something is shaped as it is.
+**Scope:** the programme that cleared the correctness, data-safety and operability blockers listed in
+[README.md](README.md#production-readiness). Language-expressiveness gaps were deliberately out of scope
+and remain so.
 **Companion documents:** [12-future-work.md](12-future-work.md) (the full roadmap this plan draws from),
 [02-architecture.md](02-architecture.md) (why the cluster problem exists),
 [14-testing.md](14-testing.md) (the acceptance protocol).
 
-*Research verified 2026-07-28 against branch `sw-query-optimiser`.*
+*Research verified 2026-07-28 against branch `sw-query-optimiser`; delivered on the same branch.*
 
 ---
 
-## Why this exists
+## Why this existed
 
-Graph DB is documented as **not production ready**. The most serious problem is that it is **only correct
-on one node**: `GraphFilter` writes directly into a live local LMDB environment on whichever node processed
-the stream, so a cluster silently accumulates fragments and every query returns an incomplete answer with
-nothing reporting it.
+*Written before the work; kept in its original tense below, because the analysis is what the design answers.*
+
+Graph DB was **only correct on one node**: `GraphFilter` wrote directly into a live local LMDB environment on
+whichever node processed the stream, so a cluster silently accumulated fragments and every query returned an
+incomplete answer with nothing reporting it. That was the most serious of the blockers this programme set out
+to clear.
 
 Fanning queries out cannot fix this. A traversal can cross a fragment boundary, so merging independent
 local traversals does not reconstruct paths — the reasoning is in
 [02-architecture.md](02-architecture.md#why-fanning-queries-out-would-not-have-fixed-it). Correctness therefore
 requires two things together: every mutation reaching **one authoritative store**, and every query running
-against a **complete copy** of it.
+against a **complete copy** of it. Both are now in place.
 
 ## Governing principles
 
@@ -286,9 +289,9 @@ source-stream retention is therefore part of a graph's recovery plan. Recorded i
 two configurations spelled out, and the in-place compaction path that would remove the coupling left in
 `12-future-work.md`.
 
-## Phase 3 — Correctness surprises — **partly complete**
+## Phase 3 — Correctness surprises — **complete**
 
-### 3.1 Typed property values — **done for `long` and `boolean`**
+### 3.1 Typed property values — **complete**, all five types
 
 `GraphPropsCodec` is **already typed** — it delegates to the type-tagged `ValSerdeUtil` — so nothing about the
 stored bytes changed. Two of this plan's predictions were wrong, and both matter:
@@ -397,7 +400,7 @@ Two consequences to handle:
   three fractional digits, so it is unreachable in any design. The control currently offers one impossible
   value and four no-ops.
 
-## Phase 4 — Operability
+## Phase 4 — Operability — **complete**
 
 **Traversal guardrails to config** — nearly free. `GraphTraversalEngine` already threads four of its five
 constants through package-private seam constructors into instance fields, and its own Javadoc anticipates the
@@ -738,7 +741,7 @@ fan-out. All remain in [12-future-work.md](12-future-work.md).
 | **Mirror invariant** | Out-edge and in-edge tables are exact mirrors after merge, tombstones included |
 | **Schema gate** | Doctor a source version; assert merge throws and the part directory is **retained** |
 
-~~**Simulated cluster in one JVM**~~ — **done**, as `TestGraphTwoNodeCluster`: two `GraphPaths` roots, two merge
+**Simulated cluster in one JVM** — done, as `TestGraphTwoNodeCluster`: two `GraphPaths` roots, two merge
 processors, and a transport that replicates every fragment to both nodes through the real `receiveRemotePart`, so
 the staging store's hash verification is exercised rather than stubbed past. Covers C1–C4 and C6, including the
 discriminating C3.
@@ -821,8 +824,8 @@ implementation plans that were retired to git history, leaving dangling links. I
   and is recorded in [12-future-work.md](12-future-work.md#anchor-encoding-for-typed-values), along with
   `approxEquals` — the explicit tolerant comparison that covers what no encoding can fix.
 
-### Still to do, with their phases
-- ~~The fixed-size statements in [10-limits.md](10-limits.md) and [11-operations.md](11-operations.md)~~ —
+### Done, later — corrections found after the phases closed
+- The fixed-size statements in [10-limits.md](10-limits.md) and [11-operations.md](11-operations.md) —
   **done.** Swept with backfill, because the sizing and scaling sections of
   [11-operations.md](11-operations.md) still said the store "cannot be enlarged" and listed making it
   configurable as future work, and [01-introduction.md](01-introduction.md) and
@@ -837,11 +840,11 @@ implementation plans that were retired to git history, leaving dangling links. I
 - **The store-lending rule added to [13-developer-guide.md](13-developer-guide.md)** — new, and load-bearing.
   Holding a `GraphStores` past the call that obtained it defeats compaction, and nothing in the type system
   stops it.
-- ~~The *Temporal Precision is inert* note~~ — **done.** [11-operations.md](11-operations.md) now documents the
+- The *Temporal Precision is inert* note — **done.** [11-operations.md](11-operations.md) now documents the
   per-precision key widths, savings and representable ceilings, plus the fixed-at-creation rule;
   [README.md](README.md), [10-limits.md](10-limits.md), [12-future-work.md](12-future-work.md) and
   [13-developer-guide.md](13-developer-guide.md) updated to match.
-- ~~The string-only-property entry under *Correctness surprises* in [README.md](README.md)~~ — **done.** All
+- The string-only-property entry under *Correctness surprises* in [README.md](README.md) — **done.** All
   five property types now exist, so the entry is struck through and records what remains true instead: equality
   on decimals is exact, so a value computed before ingest may not match a literal that looks the same. The
   `collect()` entry is done too: it records the rejection and links to

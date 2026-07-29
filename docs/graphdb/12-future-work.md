@@ -1,7 +1,7 @@
 # Roadmap and known gaps
 
 **Status:** Evaluation / proof of concept — not production ready. See the
-[production-readiness blockers](README.md#production-readiness--known-blockers).
+[production-readiness blockers](README.md#production-readiness).
 **Audience:** stakeholders planning work; users wondering whether a gap will close.
 **Scope:** everything the rest of this documentation set describes as missing, with an estimate of
 difficulty and risk. Canonical for roadmap status.
@@ -24,94 +24,29 @@ acted on, it should be this one.
 
 | # | Item | Why | Difficulty | Risk |
 |---|---|---|---|---|
-| ~~**0**~~ | ~~**Cluster-correct ingest**~~ — **done.** Ingest writes a per-stream fragment, which is replicated to every node in `graphdb.nodeList` and merged there | Was the only blocker that made answers wrong rather than merely constrained. See [Correctness across a cluster](#correctness-across-a-cluster) | Hard | — |
-| ~~1~~ | ~~**A fuller configuration surface**~~ — **done.** `GraphDbConfig` now covers the store size and all five traversal guardrails as well as `path` and `nodeList` | Retention defaults remain per-document rather than global, which is where they belong | Medium | — |
-| ~~2~~ | ~~**Tunable store size**~~ — **done** via `graphdb.maxStoreSize` | Still needs a restart, and applies only to graphs opened afterwards, because LMDB fixes an environment's size at creation | Easy | — |
-| ~~3~~ | ~~**Loud ingest failures**~~ — **done.** The Graph Filter's `strict` property fails the stream rather than skipping records, and the XSD is shipped so a `SchemaFilter` can validate in-pipeline | Lenient remains the default, because that is the less surprising behaviour for a feed — not because it is the safer one. Unrecognised elements are now reported either way | Medium | — |
-| ~~4~~ | ~~**Version condensing**~~ — **done.** Runs of consecutive identical node and edge versions are collapsed to the earliest of each run, unconditionally | Needs no cut-off or setting because it changes no answer at any instant | Medium | — |
-| ~~4a~~ | ~~**In-place compaction**~~ — **done.** A nightly `Graph DB Compaction` job rewrites each graph whose store has free pages to reclaim, returning them to the filesystem | It needed the store manager to **lend** stores for the duration of a call rather than hand out references, so replacing one under a live reader is impossible rather than merely unlikely. It is a **separate job from maintenance and far less frequent**, because it excludes every query on a graph while it rewrites it — tying it to the ten-minute maintenance cycle meant a continuously-fed graph was rewritten six times an hour. Needs room for a second copy; every failure path leaves the original store usable | Medium | — |
-| ~~5~~ | ~~**Retention for the property index**~~ — **done.** The sweep now clears and re-derives the index from the versions that survived, which reclaims the per-version value anchors that made storage grow monotonically | Two things shaped it: the table has no `validFrom` so cannot be aged, and a stored anchor's value cannot be decoded back out of its key so it cannot be pruned row by row. **The property-value lookup is still not swept** — values above the inline tier are interned inside `insert`, so the rebuild does not know which entries were used and cannot record them; sweeping blind would break every long-valued anchor | Medium | — |
-| ~~5a~~ | ~~**Sweep the property-value lookup**~~ — **done.** `GraphPropertyIndex.insert` now takes an optional recorder and reports which lookup entry each anchor references, so the rebuild can record usage and the sweep can delete the rest | Recording happens in `insert` because that is the only place that knows the tier: an inline value references no entry at all, and guessing which did would delete entries live anchors depend on. Ingest passes no recorder, since bookkeeping outside a sweep is consumed by nothing | Easy–Medium | — |
 | 6 | **Compaction without source streams** — an in-place rebuild that does not depend on reprocessing | Rebuild silently stops being possible once source streams age off | Hard | High |
-| ~~7~~ | ~~**A `GraphDb` node resolver**~~ — **done.** `QueryNodeResolver` is now a multibinder behind a composite, and `GraphQueryNodeResolverImpl` pins graph queries to a configured node | The second half of cluster correctness, shipped together with blocker 0 — alone it would only have made answers consistently incomplete | Medium | — |
-| ~~8~~ | ~~**Ship the XSD**~~ — **done.** It is packaged and served from `GET /api/graphDb/v1/mutationSchema`, to be pasted into an `XMLSchema` document | There is no prebuilt content pack, and `SchemaFilter` additionally needs the instance document to carry `xsi:schemaLocation` | Easy | — |
-
-## Correctness across a cluster
-
-**This was the highest priority item on this page and it has been done.** The section is kept because the
-reasoning it records is what constrains any future change here — in particular, why partitioning a graph across
-nodes is not a cheap follow-on.
-
-### What was wrong
-
-Graph DB wrote to the local node and read from the local node. In a multi-node Stroom, stream processing is
-distributed, so each node accumulated only the fragment built from the streams it happened to handle, and a
-query returned only that fragment. No error, no warning, no partial-result indicator. There was no
-configuration-level mitigation either: Stroom cannot pin a pipeline to a node.
-
-### What correctness required, and how it was met
-
-Two conditions, both necessary — the reasoning is in
-[02-architecture.md](02-architecture.md#why-fanning-queries-out-would-not-have-fixed-it):
-
-| | Requirement | How it was met |
-|---|---|---|
-| 1 | **Every mutation reaches one authoritative store** | Build-then-merge ingest: the Graph Filter writes a per-stream fragment, which is shipped to every node in `graphdb.nodeList` and merged into that node's store |
-| 2 | **Every query runs against a complete copy** | `GraphQueryNodeResolverImpl` pins a graph query to a configured node; because replication is full, any of them is a complete copy |
-
-Shipping (2) alone would not have been a fix: routing every query to one node while writes remained spread
-across the cluster converts a random wrong answer into a consistent wrong answer — more debuggable, equally
-incorrect. Both landed together for that reason.
-
-### Why fan-out is not an option
-
-Worth restating because it is the intuitive fix and it does not work. A Lucene index shards cleanly because a
-document belongs to exactly one shard and no document's evaluation depends on another shard. A graph traversal
-crosses boundaries by nature: an edge can span two fragments, so merging independent local traversals does not
-reconstruct paths that needed both. For a graph, **whole-copy replication preserves correctness and
-partitioning breaks it** — the inverse of the usual intuition.
-
-That is why Plan B's snapshot model is the right shape here despite buying no extra capacity, and why
-Lucene-style sharding is the one thing a graph cannot borrow.
-
-### What remains, and what it cost
-
-Not done, and deliberately: **snapshots** (a node either holds graph data or is routed away from),
-**partitioning** one graph across nodes, and **load-balanced routing** — the first configured node is always
-chosen, so a wrong answer is at least reproducible.
-
-Two findings worth keeping. First, the subtle part was merging stores whose keys embed locally-assigned ids;
-`SessionDb.merge` and `MetricDb.merge` showed the idiom, but graph keys have no byte-copy fast path at all, and
-the property index cannot be row-copied because its hash-tier keys carry clash-sequence suffixes local to the
-store that assigned them. Second, `Shard` did not need generalising: the merge engine was extracted from Plan
-B's `MergeProcessor` as `PartMergeProcessor` and parameterised, leaving Plan B behind a façade.
-
 
 ## Configuration changes that are silently unsafe
 
-Three settings could be changed in ways that produce wrong answers. Two now have an answer; one does not.
+Three settings could be changed in ways that produced wrong answers with nothing to show for it. **All three
+are now reported** — see [C1, C2 and C3 under Delivered](#delivered). None is *prevented*, so the procedures in
+[11-operations.md](11-operations.md#settings-you-must-not-change-casually) still matter.
+
+One residual is genuinely open, and it is not fixable from inside a query:
 
 | # | Item | Why | Difficulty | Risk |
 |---|---|---|---|---|
-| ~~C1~~ | ~~**Backfill a node joining `graphdb.nodeList`**~~ — **done.** `POST /api/graphDb/v1/<uuid>/backfill` copies a graph's whole store from the node it is run on and ships it to every configured node through the ordinary fragment transport | Almost no new machinery was needed: a fragment *is* a complete graph store, so a whole store can travel the same path, and merge idempotence means sending it to nodes that need nothing is harmless. Deliberately manual — nothing tracks cluster membership over time, so nothing can detect that a node has joined | Medium | — |
-| ~~C2~~ | ~~**Detect a `graphdb.path` change**~~ — **done.** The last-used root is recorded under `stroom.home`, and a startup check reports at ERROR when the path has changed and left graph stores where nothing will read them | **The marker cannot live under `graphdb.path`**, which is what made this less trivial than it looks: a marker in the root can only be found by looking in the root, and not looking at the old root is the entire failure. It reports only a change that *stranded* data — moving the store with the setting is the documented procedure and must not be told off — and it keeps reporting on every startup, because stranded data is not a transient condition | Easy | — |
-| ~~C3~~ | ~~**Refuse to route to a node with no store**~~ — **done**, as a report rather than a refusal. A query against a graph this node holds nothing for logs an ERROR naming both likely causes and increments a `missingStoreQueries` counter | It reports rather than refuses because an absent store is also what a graph nobody has loaded yet looks like, and failing that would be worse than answering empty. Only fires when a node list is configured, so a single-node deployment stays quiet. It does not detect a *partial* node - only one holding nothing | Easy | — |
-
-C1 and C3 complement each other rather than overlapping: C3 reports the case where a node holds *nothing*,
-which is the only case detectable from inside a query; C1 fixes the case where it holds *some*, which is not
-detectable at all and so has to be an operator action taken as part of the documented procedure.
+| C4 | **Detect a node holding only *part* of a graph** | A node holding *nothing* is reported at query time, and both risky settings warn. A partially-populated node is indistinguishable from a complete one without comparing against another node — there is no local evidence of absence. Would need a per-graph content digest exchanged between nodes, or a merged-fragment ledger | Hard | **Medium** — it is silent, but the two ways of reaching it are now both signposted |
 
 ## Capacity and scale
 
-Distinct from [Correctness across a cluster](#correctness-across-a-cluster) above, which must come first.
-This section is about how *much* a graph can hold and how fast it can be read once answers are trustworthy.
+Correctness across a cluster came first and is [delivered](#correctness-across-a-cluster). This section is
+about how *much* a graph can hold and how fast it can be read, now that answers are trustworthy.
 The operational workarounds available today are in
 [11-operations.md](11-operations.md#scaling-and-clustering).
 
 | Item | Why | Difficulty | Risk |
 |---|---|---|---|
-| ~~**Tunable store size**~~ — **done** via `graphdb.maxStoreSize` | Raises the per-graph ceiling, but only for stores created afterwards: LMDB fixes an environment's size at creation | Easy | — |
-| ~~**Condense and compact**~~ — **done.** | Condense collapses runs of identical versions and runs unconditionally, because no answer changes at any instant. Compaction then returns the freed pages to the filesystem, and runs only when something was removed | Medium | — |
 | **Snapshot fan-out** — read-only snapshot nodes on top of a correct writer | Read scaling and query locality. Presupposes correctness work item 1; a snapshot of a fragmented store is a complete copy of an incomplete graph | Hard | Medium |
 | **Genuine partitioning** — spread one logical graph across nodes by key | The only route to a graph larger than one node's disk. Neither Graph DB nor Plan B has this, and it is the one approach that would reintroduce the correctness problem deliberately, requiring distributed traversal to solve properly | Hard | High |
 
@@ -145,7 +80,7 @@ wrong seam; the `Shard`/merge level is the one worth considering.
    logical map. A graph is ten co-indexed tables with cross-table invariants, notably the out-edge/in-edge
    dual write. `Shard` would need generalising to a composite, or `GraphStores` implementing it as a facade
    over its tables.
-2. ~~**The write models are opposite.**~~ **No longer true.** Plan B ingests by *build-then-merge*, and Graph
+2. **The write models were opposite** - no longer true. Plan B ingests by *build-then-merge*, and Graph
    DB now does the same: the Graph Filter writes a per-stream fragment which is shipped and merged. This was
    the root cause of the cluster fragmentation described in
    [02-architecture.md](02-architecture.md#how-a-graph-spans-a-cluster) — writes went straight to local
@@ -185,12 +120,9 @@ extracted out of `MergeProcessor` into a parameterised `PartMergeProcessor` that
 Plan B behind a behaviour-preserving façade. Graph DB never adopts `Shard`, so the "one `Db` per document"
 mismatch simply does not arise.
 
-What remains from the original ordering:
-
-1. ~~**Tunable store size.**~~ Done — `graphdb.maxStoreSize`.
-2. ~~**Condense and compact.**~~ Done — both run as scheduled maintenance.
-3. **Snapshots**, and only if a node that holds no graph data needs to serve graph queries locally rather than
-   being routed away from. This is read scaling and locality, not correctness.
+What remains from the original ordering: **snapshots**, and only if a node that holds no graph data needs to
+serve graph queries locally rather than being routed away from. That is read scaling and locality, not
+correctness. Tunable store size, condensing and compaction have all been delivered.
 
 
 ## Integration with the rest of Stroom
@@ -239,56 +171,8 @@ behind it.
 
 | Item | Why | Difficulty | Risk |
 |---|---|---|---|
-| ~~**Typed property values**~~ — **done.** `string`, `long`, `double`, `boolean` and `dateTime` are available via `<property type="…">` | Every value's type used to be `STRING` regardless of what it held | Medium | — |
-| ~~**Typed `double` and date property values**~~ — **done**, once numbers stopped being indexed by their rendered text. See [Anchor encoding for typed values](#anchor-encoding-for-typed-values) | These two were blocked, not merely unimplemented: an index keyed on rendered text stores `42.0` under `42`, so a query for `42.0` found nothing and said nothing. Indexing numbers by value fixes that and makes `007`/`7` and every spelling of one instant agree as well | Medium | — |
 | **A real list type**, which would re-enable `collect()` | `collect()` is currently **rejected** rather than returning a comma-joined string. Deferred until closer to production | Medium | Medium — the edit is ~6 files and the compiler finds most of them; the risk is that 285 files can then receive a value type they have never seen. **Full analysis, including what re-enabling involves, in [12a-list-value-type.md](12a-list-value-type.md)** |
-| **Typed values in `graph-mutation`** — a version 1.1 or 2.0 of the ingest vocabulary | Prerequisite for typed properties | Medium | Medium |
 | **Per-property versioning** instead of whole-snapshot versions | Would cut storage growth substantially for wide, slowly-changing nodes | Hard | High |
-
-### Anchor encoding for typed values
-
-**Implemented.** Recorded here because the reasoning is what makes it safe, and because the rule it rests on
-constrains anything that touches the property index later.
-
-**The governing rule: the index must agree with the predicate.** A property anchor is only a *candidate*
-filter — every candidate it returns is re-checked against the node's real decoded properties before it
-becomes a row. So an anchor that returns too much is merely slower, while one that returns too little is
-silently wrong. Every choice below follows from that asymmetry.
-
-Stroom's `=` on numbers is exact — `NumericEquals` is `Objects.equals(Double, Double)`, and that is true of
-dashboards, StroomQL and Plan B as well as Graph DB. The index therefore has to be exact too. An index that
-matched more loosely than the predicate would return candidates the predicate then discards, which costs work
-and finds nothing extra; one that matched more tightly would lose rows.
-
-**Doubles: canonical numeric encoding, both sides.** Ingest, merge and the query seek all run a value through
-one encoder, so `42`, `42.0` and `4.2e1` produce identical anchor bytes. That is the whole fix for the false
-negative, and it is why `GraphAnchorEncoding` exists as a single shared definition rather than being inlined
-at its two call sites.
-
-**Numeric-looking strings: seek both forms.** The query side cannot know whether `score` holds a number or a
-string, and there is deliberately no per-`(label, property)` type registry to ask. So a numeric literal seeks
-the raw text *and* the canonical numeric form, and unions the candidates. Two seeks instead of one, no
-registry, and the predicate throws away whatever does not really match. This is the asymmetry above being
-spent on purpose.
-
-**Dates: epoch-based, not rendered text.** An instant is an integer, so exact equality is well defined — the
-date problem is spelling, not precision. `2026-01-01`, `2026-01-01T00:00:00.000Z` and
-`2026-01-01T00:00:00+00:00` are one instant with three renderings, and canonicalising to an epoch value
-collapses them.
-
-**Make both encodings order-preserving**, even though nothing reads them in order yet. It costs nothing at
-write time and is the difference between range anchors being a later feature and a later rewrite.
-
-Two things considered and rejected:
-
-- **Not indexing doubles at all**, on the grounds that float equality is fragile. It does not work. It leaves
-  a silent hole (an integer-form literal against a double property anchors, finds no entry, and returns zero
-  rows), it makes declaring `type="double"` turn a working query into a scan that can trip the
-  fail-loud row ceiling, and — decisively — it does not help. The predicate is still exact, so a computed
-  `0.30000000000000004` still fails to match `0.3`; it just fails after a full scan instead of a seek.
-- **Tolerant equality in the index.** Fragile float equality is a property of the predicate, not the index.
-  Fixing it here would make graph queries answer differently from every other Stroom surface over the same
-  data. The right shape is an explicit function — see `approxEquals` below.
 
 ## Query language
 
@@ -386,7 +270,6 @@ So that nobody waits for them:
 | Item | Why | Difficulty | Risk |
 |---|---|---|---|
 | **Cypher-carrying dashboards** — make Create Dashboard work by dispatching the query component through the Cypher seam | The button is disabled today because dashboards parse query text as StroomQL | Medium | Medium |
-| ~~**Implement Temporal Precision**~~ — **done.** It selects the `validFrom` encoding (6 bytes down to 2), is part of the schema stamp and so immutable after provisioning, and rejects `Nanosecond` | Was editable and persisted but read by no code — the worst of both | Medium | — |
 | **Warn on the silent 100-node preview cap** | Every other limit reports itself; this one truncates quietly | Easy | Low |
 | **Server-side layout for large graphs** | The 2,000-element render cap is a browser constraint | Hard | Medium |
 | **Saved queries / query history** on the graph tabs | Medium | Low |
@@ -404,34 +287,171 @@ defends. They are the highest value-per-effort items on the page.
 
 ## Suggested order
 
-If the goal is a production-capable Graph DB:
+What remains, if the goal is a production-capable Graph DB. Everything already delivered is
+[listed below](#delivered) and is not repeated here.
 
-1. ~~**Blocker 0 with blocker 7**~~ — **done.** Cluster-correct ingest and the node resolver, shipped
-   together, along with the store format stamp that guards every later layout change. The two halves were not
-   independently useful: merge without routing leaves queries reading the wrong store, routing without merge
-   makes wrong answers merely consistent. Everything below is a limitation you can document and work around;
-   that one was not.
-2. **Blockers 3 and 8, then 1 and 2** — loud ingest failures and the XSD first, because silent partial data
-   loss on the way in is the same class of problem as the silent omission on the way out that has just been
-   fixed. Then the fuller configuration surface and tunable store size: mostly easy at low risk, and together
-   they remove the "the operator has no controls and no warning" problem.
-3. **Documentation tests** — cheap, and they stop the rest of this set drifting.
-4. ~~**Blockers 4, 5**~~ — **done.** Condensing, compaction and index retention, so storage is bounded rather
-   than merely slowed.
-5. ~~**Typed `double` and date values**~~ — **done**, together with the
-   [anchor encoding](#anchor-encoding-for-typed-values) that blocked them. `approxEquals` was always
-   independent of this and remains outstanding.
-6. **Blocker 6** — a recovery path independent of source streams. Compaction reclaims free pages; it cannot
+1. **Documentation tests** — cheap, and they stop the rest of this set drifting.
+2. **`approxEquals`** — the one language gap that is a correctness aid rather than an expressiveness one, and
+   independent of everything else here.
+3. **Characterise behaviour under concurrent load** — not code, but it is the largest remaining unknown, and
+   it now has a second dimension in nightly compaction's exclusive lock.
+4. **Blocker 6** — a recovery path independent of source streams. Compaction reclaims free pages; it cannot
    reconstruct data, so rebuilding a corrupt store still means reprocessing the streams.
-7. **Stream provenance on mutations** (`streamId`/`eventId`) — easy, low risk, and the gate to extraction and
+5. **Stream provenance on mutations** (`streamId`/`eventId`) — easy, low risk, and the gate to extraction and
    the thin-graph model. Worth doing early even if the follow-on work is not scheduled, because retrofitting
    provenance onto an already-populated graph means a rebuild.
-8. Language and analytics features, driven by what users actually ask for.
+6. **A real list type**, re-enabling `collect()`. Its own change, because it modifies a sealed hierarchy shared
+   across the product.
+7. Language and analytics features, driven by what users actually ask for.
+8. **C4 — detecting a partially-populated node.** Hard, and the two ways of reaching that state are both
+   signposted now, so it is no longer the sharpest edge.
 9. **Snapshot fan-out, then partitioning** — only once correctness is settled. Partitioning is the
    largest item here and the only route to a graph bigger than one node's disk. See
    [the architectural note](#architectural-note-how-far-up-the-plan-b-stack-should-graph-db-sit) before
    starting: the merge-based write path is the expensive prerequisite, and the one thing genuinely awkward to
    retrofit once there is production data.
+
+---
+
+## Delivered
+
+Everything here **was** outstanding work on this page and is now built. It is kept for three reasons: the
+reasoning behind a fix often constrains the next change, several of the fixes altered how Graph DB must be
+deployed, and knowing what was wrong explains why some things are shaped as they are.
+
+**Nothing in this section is a gap.** If you are looking for what is left to do, it is all above.
+
+### Production blockers, delivered
+
+| # | Item | What it means now |
+|---|---|---|
+| **0** | **Cluster-correct ingest** — Ingest writes a per-stream fragment, which is replicated to every node in `graphdb.nodeList` and merged there | Was the only blocker that made answers wrong rather than merely constrained. See [Correctness across a cluster](#correctness-across-a-cluster) |
+| 1 | **A fuller configuration surface** — `GraphDbConfig` now covers the store size and all five traversal guardrails as well as `path` and `nodeList` | Retention defaults remain per-document rather than global, which is where they belong |
+| 2 | **Tunable store size** via `graphdb.maxStoreSize` | Still needs a restart, and applies only to graphs opened afterwards, because LMDB fixes an environment's size at creation |
+| 3 | **Loud ingest failures** — The Graph Filter's `strict` property fails the stream rather than skipping records, and the XSD is shipped so a `SchemaFilter` can validate in-pipeline | Lenient remains the default, because that is the less surprising behaviour for a feed — not because it is the safer one. Unrecognised elements are now reported either way |
+| 4 | **Version condensing** — Runs of consecutive identical node and edge versions are collapsed to the earliest of each run, unconditionally | Needs no cut-off or setting because it changes no answer at any instant |
+| 4a | **In-place compaction** — A nightly `Graph DB Compaction` job rewrites each graph whose store has free pages to reclaim, returning them to the filesystem | It needed the store manager to **lend** stores for the duration of a call rather than hand out references, so replacing one under a live reader is impossible rather than merely unlikely. It is a **separate job from maintenance and far less frequent**, because it excludes every query on a graph while it rewrites it — tying it to the ten-minute maintenance cycle meant a continuously-fed graph was rewritten six times an hour. Needs room for a second copy; every failure path leaves the original store usable |
+| 5 | **Retention for the property index** — The sweep now clears and re-derives the index from the versions that survived, which reclaims the per-version value anchors that made storage grow monotonically | Two things shaped it: the table has no `validFrom` so cannot be aged, and a stored anchor's value cannot be decoded back out of its key so it cannot be pruned row by row. **The property-value lookup is still not swept** — values above the inline tier are interned inside `insert`, so the rebuild does not know which entries were used and cannot record them; sweeping blind would break every long-valued anchor |
+| 5a | **Sweep the property-value lookup** — `GraphPropertyIndex.insert` now takes an optional recorder and reports which lookup entry each anchor references, so the rebuild can record usage and the sweep can delete the rest | Recording happens in `insert` because that is the only place that knows the tier: an inline value references no entry at all, and guessing which did would delete entries live anchors depend on. Ingest passes no recorder, since bookkeeping outside a sweep is consumed by nothing |
+| 7 | **A `GraphDb` node resolver** — `QueryNodeResolver` is now a multibinder behind a composite, and `GraphQueryNodeResolverImpl` pins graph queries to a configured node | The second half of cluster correctness, shipped together with blocker 0 — alone it would only have made answers consistently incomplete |
+| 8 | **Ship the XSD** — It is packaged and served from `GET /api/graphDb/v1/mutationSchema`, to be pasted into an `XMLSchema` document | There is no prebuilt content pack, and `SchemaFilter` additionally needs the instance document to carry `xsi:schemaLocation` |
+
+### Configuration changes, now reported
+
+None of the three is *prevented*; each is now loud instead of silent.
+
+| # | Item | What it means now |
+|---|---|---|
+| C1 | **Backfill a node joining `graphdb.nodeList`** — `POST /api/graphDb/v1/<uuid>/backfill` copies a graph's whole store from the node it is run on and ships it to every configured node through the ordinary fragment transport | Almost no new machinery was needed: a fragment *is* a complete graph store, so a whole store can travel the same path, and merge idempotence means sending it to nodes that need nothing is harmless. Deliberately manual — nothing tracks cluster membership over time, so nothing can detect that a node has joined |
+| C2 | **Detect a `graphdb.path` change** — The last-used root is recorded under `stroom.home`, and a startup check reports at ERROR when the path has changed and left graph stores where nothing will read them | **The marker cannot live under `graphdb.path`**, which is what made this less trivial than it looks: a marker in the root can only be found by looking in the root, and not looking at the old root is the entire failure. It reports only a change that *stranded* data — moving the store with the setting is the documented procedure and must not be told off — and it keeps reporting on every startup, because stranded data is not a transient condition |
+| C3 | **Refuse to route to a node with no store** , as a report rather than a refusal. A query against a graph this node holds nothing for logs an ERROR naming both likely causes and increments a `missingStoreQueries` counter | It reports rather than refuses because an absent store is also what a graph nobody has loaded yet looks like, and failing that would be worse than answering empty. Only fires when a node list is configured, so a single-node deployment stays quiet. It does not detect a *partial* node - only one holding nothing |
+
+### Capacity and data model, delivered
+
+| Item | What it means now |
+|---|---|
+| **Tunable store size** via `graphdb.maxStoreSize` | Raises the per-graph ceiling, but only for stores created afterwards: LMDB fixes an environment's size at creation |
+| **Condense and compact** | Condense collapses runs of identical versions and runs unconditionally, because no answer changes at any instant. Compaction then returns the freed pages to the filesystem, and runs only when something was removed |
+| **Typed property values** | `string`, `long`, `double`, `boolean` and `dateTime` are available via `<property type="…">`. Every value's type used to be `STRING` regardless of what it held |
+| **Typed `double` and date values** | Blocked rather than unimplemented, by the anchor encoding described below |
+| **Typed values in `graph-mutation`** | The `type` attribute is in the shipped v1.0 vocabulary. No version bump was needed, because an optional attribute is additive |
+| **Temporal Precision** | Selects the `validFrom` encoding, from 6 bytes per key down to 2. Part of the schema stamp, so it is immutable after provisioning - a store refuses to open under a different precision rather than misreading its keys |
+
+### Correctness across a cluster
+
+**This was the highest priority item on this page and it has been done.** The section is kept because the
+reasoning it records is what constrains any future change here — in particular, why partitioning a graph across
+nodes is not a cheap follow-on.
+
+#### What was wrong
+
+Graph DB wrote to the local node and read from the local node. In a multi-node Stroom, stream processing is
+distributed, so each node accumulated only the fragment built from the streams it happened to handle, and a
+query returned only that fragment. No error, no warning, no partial-result indicator. There was no
+configuration-level mitigation either: Stroom cannot pin a pipeline to a node.
+
+#### What correctness required, and how it was met
+
+Two conditions, both necessary — the reasoning is in
+[02-architecture.md](02-architecture.md#why-fanning-queries-out-would-not-have-fixed-it):
+
+| | Requirement | How it was met |
+|---|---|---|
+| 1 | **Every mutation reaches one authoritative store** | Build-then-merge ingest: the Graph Filter writes a per-stream fragment, which is shipped to every node in `graphdb.nodeList` and merged into that node's store |
+| 2 | **Every query runs against a complete copy** | `GraphQueryNodeResolverImpl` pins a graph query to a configured node; because replication is full, any of them is a complete copy |
+
+Shipping (2) alone would not have been a fix: routing every query to one node while writes remained spread
+across the cluster converts a random wrong answer into a consistent wrong answer — more debuggable, equally
+incorrect. Both landed together for that reason.
+
+#### Why fan-out is not an option
+
+Worth restating because it is the intuitive fix and it does not work. A Lucene index shards cleanly because a
+document belongs to exactly one shard and no document's evaluation depends on another shard. A graph traversal
+crosses boundaries by nature: an edge can span two fragments, so merging independent local traversals does not
+reconstruct paths that needed both. For a graph, **whole-copy replication preserves correctness and
+partitioning breaks it** — the inverse of the usual intuition.
+
+That is why Plan B's snapshot model is the right shape here despite buying no extra capacity, and why
+Lucene-style sharding is the one thing a graph cannot borrow.
+
+#### What remains, and what it cost
+
+Not done, and deliberately: **snapshots** (a node either holds graph data or is routed away from),
+**partitioning** one graph across nodes, and **load-balanced routing** — the first configured node is always
+chosen, so a wrong answer is at least reproducible.
+
+Two findings worth keeping. First, the subtle part was merging stores whose keys embed locally-assigned ids;
+`SessionDb.merge` and `MetricDb.merge` showed the idiom, but graph keys have no byte-copy fast path at all, and
+the property index cannot be row-copied because its hash-tier keys carry clash-sequence suffixes local to the
+store that assigned them. Second, `Shard` did not need generalising: the merge engine was extracted from Plan
+B's `MergeProcessor` as `PartMergeProcessor` and parameterised, leaving Plan B behind a façade.
+
+### Anchor encoding for typed values
+
+**Implemented.** Recorded here because the reasoning is what makes it safe, and because the rule it rests on
+constrains anything that touches the property index later.
+
+**The governing rule: the index must agree with the predicate.** A property anchor is only a *candidate*
+filter — every candidate it returns is re-checked against the node's real decoded properties before it
+becomes a row. So an anchor that returns too much is merely slower, while one that returns too little is
+silently wrong. Every choice below follows from that asymmetry.
+
+Stroom's `=` on numbers is exact — `NumericEquals` is `Objects.equals(Double, Double)`, and that is true of
+dashboards, StroomQL and Plan B as well as Graph DB. The index therefore has to be exact too. An index that
+matched more loosely than the predicate would return candidates the predicate then discards, which costs work
+and finds nothing extra; one that matched more tightly would lose rows.
+
+**Doubles: canonical numeric encoding, both sides.** Ingest, merge and the query seek all run a value through
+one encoder, so `42`, `42.0` and `4.2e1` produce identical anchor bytes. That is the whole fix for the false
+negative, and it is why `GraphAnchorEncoding` exists as a single shared definition rather than being inlined
+at its two call sites.
+
+**Numeric-looking strings: seek both forms.** The query side cannot know whether `score` holds a number or a
+string, and there is deliberately no per-`(label, property)` type registry to ask. So a numeric literal seeks
+the raw text *and* the canonical numeric form, and unions the candidates. Two seeks instead of one, no
+registry, and the predicate throws away whatever does not really match. This is the asymmetry above being
+spent on purpose.
+
+**Dates: epoch-based, not rendered text.** An instant is an integer, so exact equality is well defined — the
+date problem is spelling, not precision. `2026-01-01`, `2026-01-01T00:00:00.000Z` and
+`2026-01-01T00:00:00+00:00` are one instant with three renderings, and canonicalising to an epoch value
+collapses them.
+
+**Make both encodings order-preserving**, even though nothing reads them in order yet. It costs nothing at
+write time and is the difference between range anchors being a later feature and a later rewrite.
+
+Two things considered and rejected:
+
+- **Not indexing doubles at all**, on the grounds that float equality is fragile. It does not work. It leaves
+  a silent hole (an integer-form literal against a double property anchors, finds no entry, and returns zero
+  rows), it makes declaring `type="double"` turn a working query into a scan that can trip the
+  fail-loud row ceiling, and — decisively — it does not help. The predicate is still exact, so a computed
+  `0.30000000000000004` still fails to match `0.3`; it just fails after a full scan instead of a seek.
+- **Tolerant equality in the index.** Fragile float equality is a property of the predicate, not the index.
+  Fixing it here would make graph queries answer differently from every other Stroom surface over the same
+  data. The right shape is an explicit function — see `approxEquals` below.
+
 
 ## Next
 

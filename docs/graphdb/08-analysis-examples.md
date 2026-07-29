@@ -1,7 +1,7 @@
 # Worked analysis examples
 
 **Status:** Evaluation / proof of concept — not production ready. See the
-[production-readiness blockers](README.md#production-readiness--known-blockers).
+[production-readiness blockers](README.md#production-readiness).
 **Audience:** analysts.
 **Scope:** end-to-end examples over two datasets, in both the table and graph views.
 **Companion documents:** [06-language-reference.md](06-language-reference.md) (syntax),

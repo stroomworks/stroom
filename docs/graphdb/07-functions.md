@@ -1,7 +1,7 @@
 # Function reference
 
 **Status:** Evaluation / proof of concept — not production ready. See the
-[production-readiness blockers](README.md#production-readiness--known-blockers).
+[production-readiness blockers](README.md#production-readiness).
 **Audience:** analysts writing queries.
 **Scope:** every aggregate and scalar function callable from a Graph DB Cypher query. Canonical for
 function names and signatures.

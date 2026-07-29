@@ -121,7 +121,7 @@ public class GraphNodeTypeMappingsWidget implements GraphNodeTypeMappingsView {
         rows.clear();
         if (nodeTypeMappings != null) {
             for (final GraphNodeTypeMapping mapping : nodeTypeMappings) {
-                addRow(mapping.label(), mapping.domainType());
+                addRow(mapping.getLabel(), mapping.getDomainType());
             }
         }
     }

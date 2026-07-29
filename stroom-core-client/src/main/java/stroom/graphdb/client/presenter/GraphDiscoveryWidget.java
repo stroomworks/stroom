@@ -72,33 +72,33 @@ public class GraphDiscoveryWidget extends Composite {
         start.add(clickable("Show the whole graph", "MATCH (n) RETURN GRAPH LIMIT " + WHOLE_GRAPH_LIMIT));
         panel.add(start);
 
-        if (!schema.nodeLabels().isEmpty()) {
+        if (!schema.getNodeLabels().isEmpty()) {
             final FlowPanel labels = section("Node labels - click to preview");
-            for (final String label : schema.nodeLabels()) {
+            for (final String label : schema.getNodeLabels()) {
                 labels.add(clickable(label, "MATCH (n:" + label + ") RETURN GRAPH LIMIT " + LABEL_LIMIT));
             }
             panel.add(labels);
         }
 
-        if (!schema.edgeTypes().isEmpty()) {
+        if (!schema.getEdgeTypes().isEmpty()) {
             final FlowPanel edges = section("Relationship types - use in a pattern, e.g. -[:TYPE]->");
-            for (final String type : schema.edgeTypes()) {
+            for (final String type : schema.getEdgeTypes()) {
                 edges.add(reference(type));
             }
             panel.add(edges);
         }
 
-        if (!schema.propertyKeys().isEmpty()) {
+        if (!schema.getPropertyKeys().isEmpty()) {
             final FlowPanel keys = section("Property keys - use in RETURN or WHERE");
-            for (final String key : schema.propertyKeys()) {
+            for (final String key : schema.getPropertyKeys()) {
                 keys.add(reference(key));
             }
             panel.add(keys);
         }
 
-        if (!schema.sampleNodes().isEmpty()) {
+        if (!schema.getSampleNodes().isEmpty()) {
             final FlowPanel samples = section("Example nodes - click to focus on one");
-            for (final GraphDbSchema.SampleNode node : schema.sampleNodes()) {
+            for (final GraphDbSchema.SampleNode node : schema.getSampleNodes()) {
                 samples.add(sampleNode(node));
             }
             panel.add(samples);
@@ -107,12 +107,12 @@ public class GraphDiscoveryWidget extends Composite {
 
     private Widget sampleNode(final GraphDbSchema.SampleNode node) {
         final StringBuilder text = new StringBuilder();
-        if (!node.labels().isEmpty()) {
-            text.append(node.labels().get(0)).append("  ");
+        if (!node.getLabels().isEmpty()) {
+            text.append(node.getLabels().get(0)).append("  ");
         }
-        text.append(node.id());
+        text.append(node.getId());
         int shown = 0;
-        for (final Map.Entry<String, String> property : node.properties().entrySet()) {
+        for (final Map.Entry<String, String> property : node.getProperties().entrySet()) {
             text.append("   ").append(property.getKey()).append('=').append(property.getValue());
             if (++shown >= MAX_INLINE_PROPS) {
                 break;
@@ -120,8 +120,8 @@ public class GraphDiscoveryWidget extends Composite {
         }
         // Focus by id (identity-based, always resolves) - not a property-anchored query, which would return
         // nothing unless that (label, property) pair happens to be indexed.
-        return node.id() != null
-                ? focusChip(text.toString(), node.id())
+        return node.getId() != null
+                ? focusChip(text.toString(), node.getId())
                 : reference(text.toString());
     }
 
