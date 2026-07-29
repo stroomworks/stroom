@@ -29,16 +29,24 @@ import java.util.function.Consumer;
  * module deliberately does not depend on (items C1/C2).
  *
  * <p>Lifecycle is strictly two-phase: a <b>build phase</b> of {@link #put} calls, then a <b>probe phase</b> of
- * {@link #get} calls. An implementation may commit/finalise its backing store lazily on the first {@link #get},
- * so callers must not interleave {@link #put} and {@link #get}. {@link #close} must always be called (ideally via
- * try-with-resources) to release any backing resource - for a disk-backed implementation this deletes its
- * temporary storage.</p>
+ * {@link #forEachMatch} calls. An implementation may commit/finalise its backing store lazily on the first
+ * {@link #forEachMatch}, so callers must not interleave {@link #put} and {@link #forEachMatch}. {@link #close} must
+ * always be called (ideally via try-with-resources) to release any backing resource - for a disk-backed
+ * implementation this deletes its temporary storage.</p>
+ *
+ * <p><b>Threading:</b> an implementation is <b>not</b> required to be thread-safe, and none of the shipped ones is.
+ * A single thread must perform the whole build phase and then the whole probe phase, which is what
+ * {@code JoinSearchProvider}'s synchronous execution does.</p>
  *
  * <p><b>Key semantics:</b> keys are the canonical string tuples produced by {@link JoinExecutor#keyOf} - a
- * non-null, non-empty {@link List} whose elements are each equi-key component's {@link Val#toString}. SQL-null
- * key components never reach this interface: {@link JoinExecutor#keyOf} returns {@code null} for them (SQL
- * {@code NULL != NULL}), and the caller drops such rows before {@link #put} and treats them as an automatic miss
- * before {@link #get} - so no implementation ever has to represent a null key.</p>
+ * non-null, non-empty {@link List}. Each element is that equi-key component's <i>canonicalised</i> form, <b>not</b>
+ * its raw {@link Val#toString}: a numeric-typed component keys on its numeric value, so {@code ValLong 5} and
+ * {@code ValDouble 5.0} produce the same element, while every other type - in particular string and date/duration -
+ * keys on {@code toString} unchanged. Always derive keys with {@link JoinExecutor#keyOf} rather than building them
+ * by hand; a caller that keyed on plain {@code toString} would build a store whose numeric keys never match the
+ * probe's. SQL-null key components never reach this interface: {@link JoinExecutor#keyOf} returns {@code null} for
+ * them (SQL {@code NULL != NULL}), and the caller drops such rows before {@link #put} and treats them as an
+ * automatic miss instead of probing - so no implementation ever has to represent a null key.</p>
  */
 public interface BuildSideLookup extends AutoCloseable {
 
@@ -46,8 +54,10 @@ public interface BuildSideLookup extends AutoCloseable {
      * Adds one build-side row under its equi-key during the build phase.
      *
      * <p><b>Preconditions:</b> {@code key} must be non-null and non-empty (a {@link JoinExecutor#keyOf} result for
-     * a non-null-keyed row); {@code row} must be non-null. Must not be called after the first {@link #get}.<br>
-     * <b>Postconditions:</b> a subsequent {@link #get} with an equal key includes this row. Duplicate identical
+     * a non-null-keyed row); {@code row} must be non-null. Must not be called after the first
+     * {@link #forEachMatch}.<br>
+     * <b>Postconditions:</b> a subsequent {@link #forEachMatch} with an equal key includes this row. Duplicate
+     * identical
      * rows under the same key are all retained (never de-duplicated) - the join emits one output row per build
      * row, so collapsing duplicates would drop results.</p>
      */

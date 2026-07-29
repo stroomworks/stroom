@@ -61,14 +61,14 @@ import java.util.function.Consumer;
  * <p><b>Key encoding is prefix-free for a fixed key arity.</b> {@link #encodeKey} writes each equi-key component
  * length-prefixed ({@code [4-byte length][UTF-8 bytes]}). Every key in one store has the same arity (the join's
  * equi-key column count), which makes the encoding prefix-free: {@code encode(a)} is a byte-prefix of
- * {@code encode(b)} only when {@code a.equals(b)}. So {@link #get} can retrieve exactly one join key's rows with a
- * prefix scan over {@code encode(joinKey)} (every stored key for that join key starts with it and no other join
- * key's does), then skip past the 8-byte sequence suffix.</p>
+ * {@code encode(b)} only when {@code a.equals(b)}. So {@link #forEachMatch} can retrieve exactly one join key's
+ * rows with a prefix scan over {@code encode(joinKey)} (every stored key for that join key starts with it and no
+ * other join key's does), then skip past the 8-byte sequence suffix.</p>
  *
  * <p><b>Lifecycle</b> follows the two-phase {@link BuildSideLookup} contract: a build phase of {@link #put} calls
  * writing through one long-lived {@link WriteTxn} (committed every {@link #COMMIT_INTERVAL_ROWS} rows so
- * uncommitted dirty pages stay bounded - the point of spilling), then a probe phase of {@link #get} calls. The
- * first {@link #get} finalises the build (commits and closes the write txn). {@link #close} closes the
+ * uncommitted dirty pages stay bounded - the point of spilling), then a probe phase of {@link #forEachMatch} calls. The
+ * first {@link #forEachMatch} finalises the build (commits and closes the write txn). {@link #close} closes the
  * environment and deletes its temporary directory.</p>
  *
  * <p><b>Not thread-safe.</b> Build from one thread, then probe from one thread - matching the
@@ -101,7 +101,7 @@ public final class LmdbJoinBuildStore implements BuildSideLookup {
     private final LmdbEnv env;
     private final LmdbDb db;
 
-    /** Reused across {@link #put}/{@link #get} - direct, sized to LMDB's max key. Safe to reuse because build
+    /** Reused across {@link #put}/{@link #forEachMatch} - direct, sized to LMDB's max key. Safe to reuse because build
      * and probe are single-threaded and each call fully consumes it before returning. */
     private final ByteBuffer keyBuffer = ByteBuffer.allocateDirect(MAX_KEY_SIZE);
     /** Reused across {@link #put}; grown (reallocated) only when a row's serialised form needs more space. */

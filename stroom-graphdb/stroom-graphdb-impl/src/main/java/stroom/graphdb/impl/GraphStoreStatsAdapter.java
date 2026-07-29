@@ -29,8 +29,8 @@ import java.util.Optional;
 
 /**
  * The real {@link GraphStoreStats} adapter (Task P5.1) - resolves {@code graphName} the exact way
- * {@link GraphSearchProvider} already does (via {@link GraphDbDocCache#get}), opens its stores via
- * {@link GraphStoreManager#getOrOpen}, and answers with {@link GraphNodeDb#count}.
+ * {@link GraphSearchProvider} already does (via {@link GraphDbDocCache#get}), reads its stores via
+ * {@link GraphStoreManager#useForQuery}, and answers with {@link GraphNodeDb#count}.
  */
 public class GraphStoreStatsAdapter implements GraphStoreStats {
 

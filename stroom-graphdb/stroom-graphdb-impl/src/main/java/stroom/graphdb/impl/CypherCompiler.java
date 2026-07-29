@@ -207,9 +207,10 @@ public final class CypherCompiler {
     }
 
     /**
-     * Walks past any {@link Limit} then {@link Sort} wrapper to the plan's terminal {@link Project} node - kept as
-     * a small separate copy of {@link GraphSearchProvider#terminalProject} rather than sharing it, since exposing
-     * that private helper publicly would be the only reason to do so.
+     * Walks past any {@link Limit} then {@link Sort} wrapper to the plan's terminal {@link Project} node - the same
+     * unwrapping {@code CompiledCypherPlan#outputFields} and {@code CypherJoinSchema#terminalProjectFields}
+     * perform, kept as a small separate copy here rather than shared. Keep all three in step if what
+     * {@code CypherToLogicalPlan} emits changes.
      */
     private static Project terminalProject(final LogicalPlan plan) {
         LogicalPlan current = plan;
