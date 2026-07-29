@@ -191,7 +191,8 @@ public class ByteBufferPoolImpl7 implements ByteBufferPool {
 
     private static class NonPooledByteBuffer implements PooledByteBuffer {
 
-        private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(stroom.bytebuffer.impl6.NonPooledByteBuffer.class);
+        private static final LambdaLogger LOGGER =
+                LambdaLoggerFactory.getLogger(stroom.bytebuffer.impl6.NonPooledByteBuffer.class);
 
         private ByteBuffer byteBuffer;
 
