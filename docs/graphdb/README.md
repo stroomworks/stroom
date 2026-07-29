@@ -7,7 +7,7 @@ production-readiness assessment; every other fact lives in one of the files list
 **Companion documents:** all of `docs/graphdb/`. This set is self-contained; earlier design and
 implementation records live only in git history.
 
-*Facts verified on 2026-07-28 against branch `sw-query-optimiser`.*
+*Facts verified on 2026-07-28 against branch `sw-query-optimiser`; readiness assessed 2026-07-29.*
 
 ---
 
@@ -24,14 +24,59 @@ the **Graph Filter** element, and results can be read as a table or drawn as an 
 **Graph DB is not ready for production use.** It is suitable for evaluation, proof-of-concept work and
 non-critical analysis on data you can afford to reload.
 
-Read this section before anything else in this set. It has three parts, in the order they matter:
+**The reason has changed, and the change matters.** It used to be a list of defects: a cluster gave wrong
+answers, storage grew without bound, two configuration edits broke things silently, and three property types
+did not exist. Every one of those is now built and tested — they are listed under
+[Resolved issues](#resolved-issues). What stands in the way today is not a known defect but a **verification
+gap**: almost nothing has been exercised outside a single JVM, and the code is very new.
 
-1. [Before you deploy](#before-you-deploy) — obligations that will cost you data or correctness if missed.
-2. [Open issues](#open-issues) — what is still wrong or missing, and what it costs you.
-3. [Accepted limitations](#accepted-limitations) — deliberate choices that will not change.
+Read this section before anything else in this set:
 
-Everything that has been **fixed** is listed separately, [further down](#resolved-issues), so that this
-section reads as a list of live problems rather than a history.
+1. [Why the answer is still no](#why-the-answer-is-still-no) — what has not been verified.
+2. [What would make it ready](#what-would-make-it-ready) — the specific steps, mostly environment work.
+3. [Before you deploy](#before-you-deploy) — obligations that will cost you data or correctness if missed.
+4. [Open issues](#open-issues) — what is still wrong or missing, and what it costs you.
+5. [Accepted limitations](#accepted-limitations) — deliberate choices that will not change.
+
+### Why the answer is still no
+
+*Assessed 2026-07-29 against branch `sw-query-optimiser`.*
+
+| Gap | Why it matters |
+|---|---|
+| **Nothing has run on a real cluster** | Every cluster claim rests on a simulated two-node cluster in one JVM (`TestGraphTwoNodeCluster`). It caught real bugs, but it has no HTTP hop, no node enablement, no real processing-task distribution and no killed node. The manual cases C1–C10 in [14-testing.md](14-testing.md) have never been executed. **This is the largest single gap** |
+| **The acceptance protocol is unexecuted** | [14-testing.md](14-testing.md) says so in its own banner: the expectations are derived by construction rather than observed. Derived expectations are exactly the kind that can be self-consistently wrong |
+| **The worked analysis examples are stale** | [08-analysis-examples.md](08-analysis-examples.md) was verified before the store format moved to version 2. Every store must be rebuilt and those results re-observed before the published examples can be trusted |
+| **Concurrency is uncharacterised** | A query holds a request thread for up to the full traversal budget, and nightly compaction takes an exclusive per-graph lock. Nobody has measured how long compacting a multi-gigabyte store takes — and that number decides whether nightly is frequent enough or already too disruptive |
+| **Replica divergence on conflicting writes is untested** | Two streams asserting different payloads for the same `(node, validFrom)` resolve last-merge-wins, and merge order differs per node, so two replicas can legitimately disagree. Inherited from Plan B and documented as a data-authoring constraint, but nobody has checked whether it arises in practice or how it would be noticed |
+| **The code is new and has not had independent review** | The implementation and its tests were written in one sustained push over roughly two weeks, with the query path touched within days of this assessment. Deliberately breaking the implementation to confirm each test fails ("sabotage validation") was used throughout and raises confidence that the tests bite — but it is not a substitute for a second pair of eyes on `GraphStores.merge`, the anchor encoding and the store-lending refactor |
+
+### What would make it ready
+
+In order. Steps 1–4 are environment work rather than code, which is the honest summary of where this stands.
+
+1. **Run C1–C10 on a genuine two-or-more-node cluster**, including the killed-node and disabled-node cases
+   ([14-testing.md](14-testing.md#cluster-correctness-cases)).
+2. **Reload a real dataset and re-verify** the worked examples in [08-analysis-examples.md](08-analysis-examples.md)
+   against the version 2 store format.
+3. **Measure compaction wall-clock** on a realistically sized store, and confirm it fits the nightly window
+   without disrupting queries.
+4. **Characterise concurrent query load.** The traversal budget multiplied by the request-thread pool is the
+   number that matters.
+5. **Independent review** of merge, the anchor encoding and the store-lending refactor.
+6. **Shadow-run under production conditions**, watching `mergeFailures`, `missingStoreQueries` and the Graph
+   Filter's ingest error count.
+
+#### What it is ready for now
+
+Evaluation, proof-of-concept work and non-critical analysis on reloadable data — and, newly, **a serious
+cluster soak test**. That last one was pointless until recently, because the answers were wrong for
+structural reasons; it would now tell you something.
+
+Note also that several constraints are settled design positions rather than maturity gaps — the query
+language is a narrow read-only subset, one graph can never exceed one node's disk, and equality on computed
+decimals is exact. See [Accepted limitations](#accepted-limitations). Choose a deployment that suits them
+rather than waiting for them to change.
 
 ### Before you deploy
 
@@ -53,8 +98,7 @@ section reads as a list of live problems rather than a history.
 |---|---|
 | **A node holding only *part* of a graph cannot be detected** | A node holding *nothing* is reported, and both risky settings now warn. But a partially-populated node answers confidently and wrongly, and nothing can tell. This is why the add-a-node and change-path procedures matter |
 | **Query caps abort work in flight** — 30 s traversal budget, 200,000 path-states *per anchor*, 1,000,000 accumulated rows, 50 variable-length hops | A legitimate but broad query fails rather than running slowly. All are configurable ([10-limits.md](10-limits.md#query-and-traversal-limits)), though the better answer to a query that trips one is usually a tighter pattern |
-| **Queries execute synchronously on the calling thread** | Deliberate — the engine is an in-memory call over a single LMDB read transaction with no shard fan-out — but a slow query occupies a request thread for up to the full budget |
-| **Behaviour under concurrent load has not been characterised** | Nobody has measured what a handful of broad queries does to a shared node, nor what nightly compaction's exclusive lock does to queries arriving during it |
+| **Queries execute synchronously on the calling thread** | Deliberate — the engine is an in-memory call over a single LMDB read transaction with no shard fan-out — but a slow query occupies a request thread for up to the full budget, and nightly compaction excludes queries on its graph outright. What that costs under load is [not yet measured](#why-the-answer-is-still-no) |
 
 Detail: [10-limits.md](10-limits.md), [11-operations.md](11-operations.md).
 
@@ -98,11 +142,11 @@ Deliberate, and not on anyone's list to change. They are here because each will 
 | **Variable-length paths use node uniqueness, not relationship uniqueness** | A path may never revisit a node, so Graph DB returns **fewer paths than Cypher** and says nothing about it. `(a)-[:R*1..3]->(x)` will not return `a→b→a→c`, which Neo4j does. Node uniqueness bounds a path at N nodes; relationship uniqueness is combinatorial in a dense graph and would trip the path-state ceiling far more often. It cannot be detected at runtime, so a query ported from Neo4j must be re-checked ([06-language-reference.md](06-language-reference.md#variable-length-hops)) |
 | **Pipelines resolve a graph by UUID, queries by name** | A query fails visibly the moment you run it; a pipeline is long-lived configuration that would have failed silently on the next stream |
 
-### What is left
+### Where the rest is tracked
 
-Beyond the open issues above, the tracked work is: a real `collect()` list, `approxEquals`, and
-expressiveness. All of it is in [12-future-work.md](12-future-work.md); the sequenced plan is in
-[epoch0-development-plan.md](epoch0-development-plan.md).
+Everything above, plus the work nobody has asked for yet, is in [12-future-work.md](12-future-work.md).
+[epoch0-development-plan.md](epoch0-development-plan.md) is the record of the programme that cleared the
+original blockers, kept because the reasoning behind each decision constrains later changes.
 
 ---
 

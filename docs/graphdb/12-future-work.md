@@ -11,16 +11,18 @@ difficulty and risk. Canonical for roadmap status.
 
 ---
 
-**Nothing on this page exists.** The rest of the documentation set describes only what is built; this file
-is the counterpart, and no other file may describe any of it in the present tense.
+**Nothing above the [Delivered](#delivered) line exists.** The rest of the documentation set describes only
+what is built; the open sections of this file are its counterpart, and no other file may describe any of them
+in the present tense. Everything under *Delivered* does exist, and is kept there for the reasoning rather
+than the status.
 
 Difficulty is engineering effort. Risk is the chance of getting it subtly wrong, breaking something
 existing, or being unable to change it later.
 
 ## Production blockers
 
-The items that stand between Graph DB and a production deployment. If only one section of this page is
-acted on, it should be this one.
+One item remains here. That is not the same as being nearly ready: the constraint has moved from code to
+**verification**, and the steps are in [README.md](README.md#what-would-make-it-ready).
 
 | # | Item | Why | Difficulty | Risk |
 |---|---|---|---|---|
@@ -290,22 +292,24 @@ defends. They are the highest value-per-effort items on the page.
 What remains, if the goal is a production-capable Graph DB. Everything already delivered is
 [listed below](#delivered) and is not repeated here.
 
+> **Code is no longer the constraint.** What stands between Graph DB and production is mostly *verification*
+> — nothing has been exercised on a real cluster. Those steps are listed in
+> [README.md](README.md#what-would-make-it-ready) and come before anything on this page.
+
 1. **Documentation tests** — cheap, and they stop the rest of this set drifting.
 2. **`approxEquals`** — the one language gap that is a correctness aid rather than an expressiveness one, and
    independent of everything else here.
-3. **Characterise behaviour under concurrent load** — not code, but it is the largest remaining unknown, and
-   it now has a second dimension in nightly compaction's exclusive lock.
-4. **Blocker 6** — a recovery path independent of source streams. Compaction reclaims free pages; it cannot
+3. **Blocker 6** — a recovery path independent of source streams. Compaction reclaims free pages; it cannot
    reconstruct data, so rebuilding a corrupt store still means reprocessing the streams.
-5. **Stream provenance on mutations** (`streamId`/`eventId`) — easy, low risk, and the gate to extraction and
+4. **Stream provenance on mutations** (`streamId`/`eventId`) — easy, low risk, and the gate to extraction and
    the thin-graph model. Worth doing early even if the follow-on work is not scheduled, because retrofitting
    provenance onto an already-populated graph means a rebuild.
-6. **A real list type**, re-enabling `collect()`. Its own change, because it modifies a sealed hierarchy shared
+5. **A real list type**, re-enabling `collect()`. Its own change, because it modifies a sealed hierarchy shared
    across the product.
-7. Language and analytics features, driven by what users actually ask for.
-8. **C4 — detecting a partially-populated node.** Hard, and the two ways of reaching that state are both
+6. Language and analytics features, driven by what users actually ask for.
+7. **C4 — detecting a partially-populated node.** Hard, and the two ways of reaching that state are both
    signposted now, so it is no longer the sharpest edge.
-9. **Snapshot fan-out, then partitioning** — only once correctness is settled. Partitioning is the
+8. **Snapshot fan-out, then partitioning** — only once correctness is settled. Partitioning is the
    largest item here and the only route to a graph bigger than one node's disk. See
    [the architectural note](#architectural-note-how-far-up-the-plan-b-stack-should-graph-db-sit) before
    starting: the merge-based write path is the expensive prerequisite, and the one thing genuinely awkward to
