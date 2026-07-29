@@ -56,9 +56,22 @@ import java.util.function.Consumer;
  * <p><b>Scope note</b>: {@link JoinAlgorithm#HASH_JOIN} here always materialises the <i>right</i> side, regardless
  * of which side {@code JoinCostModel.chooseAlgorithm} would prefer as the build side - correct for both {@code
  * INNER} and {@code LEFT} (materialising the side that must appear unconditionally, i.e. the left side, would
- * need extra bookkeeping to still emit its unmatched rows). Honouring the cost model's build-side choice for
- * performance, when it disagrees with this default, is deferred - never a correctness gap, only a possible
- * missed optimisation.</p>
+ * need extra bookkeeping to still emit its unmatched rows). That is a property of the list-returning
+ * {@link #join(Side, Side, JoinType, JoinAlgorithm, long)} overloads, which are handed two already-realised
+ * {@link Side}s. On the streaming path this class selects nothing: the caller decides which side to build, fills
+ * a {@link BuildSideLookup} itself, and passes it to {@link #streamingProbe}/{@link #streamingHashJoin} together
+ * with the build width - so there is no build-side decision here for a cost model to inform.</p>
+ *
+ * <p><b>Two build-side selectors exist, and only one of them runs.</b> {@code JoinCostModel.chooseAlgorithm} is
+ * advisory: its only caller is {@code LogicalPlanExplainer}, feeding {@code EXPLAIN} output from row-count
+ * <i>estimates</i>. {@code JoinSearchProvider}'s A6 selection is the one that executes, choosing from each
+ * side's <i>measured</i> {@code DataStore.getSize()} - final and O(1), because both sides' sub-searches have
+ * completed - and then populating the lookup itself. This executor is therefore not missing anything by never
+ * consulting the cost model: a measurement beats an estimate, and {@code JoinPlan.buildSide()} is an
+ * {@code EXPLAIN} annotation, not an unread input. Consuming it at execution time would only be worthwhile as
+ * part of deciding <i>before</i> both sides materialise - a reshaping of {@code JoinSearchProvider}'s execution
+ * shape, not a matter of reading a field - and would then need the join-type and zero-confidence guards now
+ * built into {@code JoinCostModel.chooseAlgorithm}.</p>
  *
  * <p><b>Streaming variant</b>: {@link #streamingHashJoin} is the same hash join with the build side hidden behind
  * a {@link BuildSideLookup} (so it can spill to disk) and the probe side consumed as an {@link Iterator} with

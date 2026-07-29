@@ -21,11 +21,13 @@ import java.util.Objects;
 /**
  * {@link JoinCostModel#chooseAlgorithm}'s result: which algorithm, and which side is the build side (the one
  * materialised for {@link JoinAlgorithm#HASH_JOIN}, or the point-lookup-capable one for
- * {@link JoinAlgorithm#BROADCAST_LOOKUP}).
+ * {@link JoinAlgorithm#BROADCAST_LOOKUP}). Advisory only - consumed by {@code EXPLAIN} output, not by the
+ * execution path, which selects its own build side from measured sizes.
  *
  * @param algorithm never null.
- * @param buildSide never null. Arbitrary (always {@link JoinSide#LEFT}) when {@code algorithm} is
- *                  {@link JoinAlgorithm#NESTED_LOOP}, which has no build side.
+ * @param buildSide never null, because this record requires a side - but it carries <b>no meaning</b> when
+ *                  {@code algorithm} is {@link JoinAlgorithm#NESTED_LOOP}, which has no build side: the value
+ *                  is a filler (always {@link JoinSide#LEFT}), not a choice, and must not be read as one.
  */
 public record JoinPlan(JoinAlgorithm algorithm, JoinSide buildSide) {
 

@@ -145,6 +145,22 @@ class TestLogicalPlanExplainer {
     }
 
     @Test
+    void joinSideWithNoCostSignal_saysNoBuildSideWasChosen() {
+        // "Mystery" answers via no cost port at all, so its side's estimate is the no-signal fallback
+        // (confidence 0.0). Task 7.1: the cost model must not nominate a build side it has no basis for, and
+        // the explain note must say so rather than reading as a confident answer for an unknown side.
+        final LogicalPlan join = new Join(
+                new Scan("a", "Events", POS), new Scan("b", "Mystery", POS),
+                JoinType.INNER, List.of(equiKey()), POS);
+
+        final ExplainPlan plan = explain(join);
+
+        assertThat(plan.getDescription()).contains("NESTED_LOOP");
+        assertThat(plan.getNotes()).anySatisfy(note -> assertThat(note).contains("no cost signal"));
+        assertThat(plan.getNotes()).anySatisfy(note -> assertThat(note).contains("no build side was chosen"));
+    }
+
+    @Test
     void nestedJoin_isAnnotatedWithoutACardinalityEstimate() {
         // One side is a Limit(Scan), not a direct Scan, so it has no compile-time CostedAccessPath to combine.
         final LogicalPlan join = new Join(

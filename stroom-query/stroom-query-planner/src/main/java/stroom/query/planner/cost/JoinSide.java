@@ -17,7 +17,8 @@
 package stroom.query.planner.cost;
 
 /** Which side of a {@code Join} a {@link JoinPlan} designates as the build/probe side (matches
- *  {@code stroom.query.planner.logical.Join}'s own {@code left()}/{@code right()} - see {@link JoinCostModel}). */
+ *  {@code stroom.query.planner.logical.Join}'s own {@code left()}/{@code right()} - see {@link JoinCostModel}).
+ *  Advisory only: consumed by {@code EXPLAIN} output, not by the execution path. */
 public enum JoinSide {
     LEFT,
     RIGHT

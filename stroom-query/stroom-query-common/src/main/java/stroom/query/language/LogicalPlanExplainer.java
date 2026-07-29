@@ -21,6 +21,7 @@ import stroom.query.api.ExpressionTerm;
 import stroom.query.language.functions.ExpressionContext;
 import stroom.query.planner.cost.CostModel;
 import stroom.query.planner.cost.CostedAccessPath;
+import stroom.query.planner.cost.JoinAlgorithm;
 import stroom.query.planner.cost.JoinCostModel;
 import stroom.query.planner.cost.JoinPlan;
 import stroom.query.planner.cost.StateLookup;
@@ -179,7 +180,7 @@ final class LogicalPlanExplainer {
 
         final CostedAccessPath leftPath = left.costedAccessPath();
         final CostedAccessPath rightPath = right.costedAccessPath();
-        final JoinPlan joinPlan = JoinCostModel.chooseAlgorithm(leftPath, rightPath);
+        final JoinPlan joinPlan = JoinCostModel.chooseAlgorithm(join.joinType(), leftPath, rightPath);
 
         // Task 6.3: a StateLookup side is a keyed point-lookup, so its join key is unique by construction - use
         // its row count as its distinct-key count (an honest, structural signal, not an invented number). Any
@@ -192,10 +193,19 @@ final class LogicalPlanExplainer {
         final long rightDistinct = rightPath.accessPath() instanceof StateLookup ? rightPath.estimate().rows() : 0;
         final long cardinality = JoinCostModel.estimateCardinality(
                 leftPath.estimate().rows(), rightPath.estimate().rows(), leftDistinct, rightDistinct);
-        final String note = (leftDistinct > 0 || rightDistinct > 0)
-                ? "cardinality uses the keyed (State lookup) side's unique-key count; the other side's distinct "
-                  + "keys are unknown"
-                : "distinct-key counts unknown - cardinality is the pessimistic upper bound (full cross-product)";
+        final String note;
+        if (joinPlan.algorithm() == JoinAlgorithm.NESTED_LOOP) {
+            // Task 7.1: NESTED_LOOP is only chosen when a side has no cost signal (confidence 0.0), so the
+            // plan's build side is a filler, not a choice - say so rather than letting the output read as a
+            // confident answer for a side nothing is known about.
+            note = "a join side has no cost signal (confidence 0.0), so no build side was chosen - the build "
+                   + "side shown carries no meaning and the cardinality is the pessimistic upper bound";
+        } else if (leftDistinct > 0 || rightDistinct > 0) {
+            note = "cardinality uses the keyed (State lookup) side's unique-key count; the other side's distinct "
+                   + "keys are unknown";
+        } else {
+            note = "distinct-key counts unknown - cardinality is the pessimistic upper bound (full cross-product)";
+        }
         final ExplainPlan explainPlan = ExplainPlan.builder()
                 .description("Join (" + joinPlan.algorithm() + ", build side: " + joinPlan.buildSide() + ")")
                 .children(children)
