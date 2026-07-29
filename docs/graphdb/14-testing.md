@@ -277,6 +277,7 @@ codec apiece.
 | `TestGraphRootMarker` | That a `graphdb.path` change is reported when it strands data and accepted when the data moved with it — the discriminating pair |
 | `TestDocumentationQueries` | **Every Cypher query printed in this documentation set**, compiled through the real parser and planner. Found three examples that had been wrong for weeks, including one showing an aggregation the language cannot express. See [Documented queries](#documented-queries) |
 | `TestDocumentationReferences` | **Every source constant, code-map class and `graphdb.*` setting** the documentation cites — that it exists, **and that the value printed beside it is still the value in the code**. See [Documented references](#documented-references) |
+| `TestEventLoggingXslt` | **The documented event-logging translation**: the stylesheet in `docs/graphdb/examples/` transformed over its sample corpus, compared with the documented expected output, validated against the shipped XSD, and its snippets checked against the prose in [04-event-logging-xslt.md](04-event-logging-xslt.md). See [Documented examples](#documented-examples) |
 | `TestGraphQueryNodeResolverImpl` | Query routing, including that it claims only `GraphDb` documents |
 | `TestCompositeQueryNodeResolver` | That more than one feature can route, and that no resolvers means no constraint |
 | `TestGraphMutationSchema` | Sample documents against the XSD |
@@ -309,6 +310,36 @@ turn it into a silent no-op.
 
 **If this documentation moves to another repository, this test will fail** with a message saying so. That is
 deliberate: repoint it or delete it, but do not let it skip.
+
+### Documented examples
+
+`TestEventLoggingXslt` covers the worked translation in
+[04-event-logging-xslt.md](04-event-logging-xslt.md) — the only end-to-end example of getting real
+`event-logging:3` data into a graph, and so the thing anyone starting out copies. It lived entirely in a
+document and a directory of examples that nothing ran, which is how a stylesheet rots invisibly: it stays
+plausible while it stops working, and the first person to find out is a user whose feed silently produced
+nothing.
+
+| Check | Covers |
+|---|---|
+| The transform | `examples/event-logging-to-graph.xslt` over `examples/sample-events.xml` reproduces `examples/expected-output.xml` |
+| The vocabulary | The transform's **own** output validates against the shipped XSD — not the committed expected output, so this tracks what the stylesheet produces today |
+| The prose | Every fenced `xslt` block in the document is still part of the stylesheet |
+
+Three conventions to keep if you touch any of those files:
+
+- **The document comparison is structural.** Saxon writes the root element's two namespace declarations in the
+  opposite order to the committed file — the same document, a different writer. Namespace *declarations* are
+  excluded from the comparison; namespace *URIs* are compared on every element and attribute. Do not tighten
+  this into a string comparison: it will pass until the next Saxon upgrade.
+- **A snippet is matched as an ordered subsequence of the stylesheet's lines**, not as a substring, because the
+  document abbreviates in two legitimate ways — eliding with `…`, and omitting an intervening line that the
+  passage is not about. Comments are dropped from both sides and whitespace collapsed per line.
+- **The stylesheet must stay runnable with no pipeline context.** It uses standard XSLT 2.0 only. A `stroom:`
+  extension function would make the example untestable, and would also stop being copyable as a starting point.
+
+Landing this found one defect: the document printed the fall-through template as an empty
+`<xsl:template …/>` where the stylesheet declares an `xsl:param`.
 
 ### Documented references
 

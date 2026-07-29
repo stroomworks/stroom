@@ -2,15 +2,17 @@
 
 **Status:** Evaluation / proof of concept — not production ready. See the
 [production-readiness blockers](README.md#production-readiness).
-The XSLT here was executed and its output schema-validated (see [Verification](#verification)); it is
-**not** covered by automated tests, so re-verify it if the schemas change.
+The XSLT here is **covered by automated tests** — `TestEventLoggingXslt` runs the stylesheet over the sample
+corpus on every build, compares the result with the expected output, validates it against the shipped XSD, and
+checks that the snippets printed below are still lines of the stylesheet.
 **Audience:** translation authors turning event-logging XML into a graph.
 **Scope:** a complete worked translation from `event-logging:3` (v4.1.0) to `graph-mutation:1`, and the
 modelling decisions behind it.
 **Companion documents:** [03-ingest.md](03-ingest.md) (the target vocabulary),
 [08-analysis-examples.md](08-analysis-examples.md) (querying the result).
 
-*XSLT re-executed with Saxon-HE 9.9.1-8 on 2026-07-29; output byte-identical to `examples/expected-output.xml` and valid against the shipped XSD, branch `sw-query-optimiser`.*
+*Facts verified on 2026-07-29 against branch `sw-query-optimiser`. The stylesheet, its corpus and the snippets
+below are checked on every build by `TestEventLoggingXslt`.*
 
 ---
 
@@ -179,8 +181,16 @@ new template, not an edit to a growing `choose`:
 <xsl:template match="evt:EventDetail[evt:Network]" mode="edges"> … </xsl:template>
 
 <!-- Fall-through: an event type this translation does not model. -->
-<xsl:template match="evt:EventDetail" mode="edges"/>
+<xsl:template match="evt:EventDetail" mode="edges">
+  <xsl:param name="ts"/>
+</xsl:template>
 ```
+
+The fall-through still declares `<xsl:param name="ts"/>` even though it emits nothing, because every template
+in this mode is applied with a `ts` parameter. Writing it as an empty `<xsl:template …/>` would work — an
+unmatched `with-param` is ignored rather than an error — but it would leave the one template in the mode with a
+different signature from the rest, which is the kind of inconsistency that makes the next person adding an
+event type wonder which form is correct.
 
 The `priority="2"` matters: a `Create` event containing a `File` matches both the file template and any
 type-specific one, and priority resolves it. Without an explicit priority Saxon reports an ambiguous rule
@@ -273,8 +283,9 @@ action-specific edges were skipped.
 
 ## Verification
 
-The transform was executed and its output validated before this document was written. Re-run this if either
-schema changes.
+`TestEventLoggingXslt` does this on every build (see the note at the end of this section). The manual
+procedure below is still worth knowing, because it is how you narrow down a failure — and how you check a
+translation of your own, which no test in this repository will ever cover.
 
 **Use Saxon-HE 9.9.1-8** — the version Stroom itself runs (`gradle/libs.versions.toml`). A stylesheet that
 only works on a newer Saxon will fail inside the pipeline.
@@ -309,9 +320,23 @@ The dangling-edge check is the valuable one. An edge whose endpoint was never em
 Graph Filter without complaint — it interns the unknown id and creates an edge to a node that has no labels
 or properties. Queries then return partial results for reasons that are very hard to see.
 
-> **Not covered by automated tests.** This stylesheet lives in documentation, not in the build. Landing it
-> and its corpus as a test in `stroom-graphdb-impl` is proposed in
-> [12-future-work.md](12-future-work.md).
+> **Now covered by automated tests**, so the steps above are how to *investigate* a failure rather than a
+> routine you must remember to run. `TestEventLoggingXslt` in `stroom-graphdb-impl` transforms
+> `examples/sample-events.xml` with `examples/event-logging-to-graph.xslt`, compares the result with
+> `examples/expected-output.xml`, and validates the transform's own output against the shipped XSD.
+>
+> Two details of that test are worth knowing before you change any of the three files:
+>
+> - **The comparison is structural, not textual.** Saxon writes the root element's two namespace declarations
+>   in the opposite order to the committed `expected-output.xml` — the same document from a different writer.
+>   Namespace *declarations* are therefore excluded while namespace *URIs* are compared on every node.
+> - **The snippets in this document are checked against the stylesheet**, as an ordered subsequence of its
+>   lines. Eliding with `…` and skipping intervening lines are both fine; changing a line that is still printed
+>   here is what fails.
+>
+> The assertions in the table above that the schema cannot express — dangling edges especially — are still
+> manual. They are properties of *this corpus*, and a test asserting them would restate the expected output
+> rather than check it.
 
 ## Next
 
