@@ -45,6 +45,7 @@ public final class Fact {
     private final double[][] vertices;
     private final String fill;
     private final Double opacity;
+    private final String label;
 
     /**
      * @param key        the temporal-store key (fact identity within a map)
@@ -85,6 +86,36 @@ public final class Fact {
                 final double[][] vertices,
                 final String fill,
                 final Double opacity) {
+        this(key, type, image, worldToMap, position, vertices, fill, opacity, null);
+    }
+
+    /**
+     * @param key        the temporal-store key (fact identity within a map)
+     * @param type       the fact type ({@code ""} if unset); also drives z-order
+     * @param image      the Asset Store image URL, or {@code null} if none
+     * @param worldToMap the affine placing this fact into map space; never {@code null}
+     * @param position   world-space coordinates {@code [x, y]} for a point fact,
+     *                   or {@code null} (e.g. for a background)
+     * @param vertices   area polygon vertices {@code [[x,y], ...]} in the fact's
+     *                   local frame (placed by {@code worldToMap}), or {@code null}
+     *                   for a non-area fact
+     * @param fill       area fill colour (hex string), or {@code null} to use the
+     *                   type's default colour
+     * @param opacity    area fill opacity in {@code [0, 1]}, or {@code null} for
+     *                   the default
+     * @param label      the user-facing name from the {@code LABEL} role, or
+     *                   {@code null} when the schema does not map it (or the
+     *                   fact has no name)
+     */
+    public Fact(final String key,
+                final String type,
+                final String image,
+                final FloorMapTransformationMatrix worldToMap,
+                final double[] position,
+                final double[][] vertices,
+                final String fill,
+                final Double opacity,
+                final String label) {
         this.key = key;
         this.type = type != null ? type : "";
         this.image = image;
@@ -97,6 +128,7 @@ public final class Fact {
         this.vertices = copyVertices(vertices);
         this.fill = fill;
         this.opacity = opacity;
+        this.label = label;
     }
 
     public String getKey() {
@@ -150,6 +182,26 @@ public final class Fact {
     /** The area fill opacity in {@code [0, 1]}, or {@code null} for the default. */
     public Double getOpacity() {
         return opacity;
+    }
+
+    /**
+     * The user-facing name from the {@code LABEL} role, or {@code null} when the
+     * schema does not map it or the fact is unnamed. Editable via the object
+     * properties dialog's Name field; distinct from {@link #getKey()}, which is
+     * the fact's identity and never changes.
+     */
+    public String getLabel() {
+        return label;
+    }
+
+    /**
+     * The label if this fact has a non-blank one, otherwise {@code null} — the
+     * form callers want when falling back to a key-derived display name.
+     */
+    public String getLabelOrNull() {
+        return label != null && !label.trim().isEmpty()
+                ? label
+                : null;
     }
 
     /**
@@ -207,7 +259,7 @@ public final class Fact {
      * carried over unchanged.
      */
     public Fact withWorldToMap(final FloorMapTransformationMatrix newWorldToMap) {
-        return new Fact(key, type, image, newWorldToMap, position, vertices, fill, opacity);
+        return new Fact(key, type, image, newWorldToMap, position, vertices, fill, opacity, label);
     }
 
     /**
@@ -216,7 +268,7 @@ public final class Fact {
      * unchanged.
      */
     public Fact withVertices(final double[][] newVertices) {
-        return new Fact(key, type, image, worldToMap, position, newVertices, fill, opacity);
+        return new Fact(key, type, image, worldToMap, position, newVertices, fill, opacity, label);
     }
 
     private static double[][] copyVertices(final double[][] source) {

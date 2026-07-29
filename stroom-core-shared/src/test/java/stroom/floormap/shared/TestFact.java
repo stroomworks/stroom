@@ -134,4 +134,55 @@ class TestFact {
         assertThat(fact.mapAnchor(IMAGE_DISPLAY_WIDTH, 1.0))
                 .containsExactly(500, 500);
     }
+
+    // -----------------------------------------------------------------------
+    // label
+    // -----------------------------------------------------------------------
+
+    /** The narrower constructors leave the label unset. */
+    @Test
+    void testLabelDefaultsToNull() {
+        assertThat(new Fact("k", "gate", null,
+                FloorMapTransformationMatrix.identity(), null).getLabel()).isNull();
+        assertThat(new Fact("k", "gate", null,
+                FloorMapTransformationMatrix.identity(), null,
+                null, null, null).getLabel()).isNull();
+    }
+
+    @Test
+    void testLabelRoundTrips() {
+        final Fact fact = new Fact("k", "area", null,
+                FloorMapTransformationMatrix.identity(), null,
+                null, null, null, "Loading Bay");
+
+        assertThat(fact.getLabel()).isEqualTo("Loading Bay");
+        assertThat(fact.getLabelOrNull()).isEqualTo("Loading Bay");
+    }
+
+    /** A blank label is treated as absent, so callers fall back to the key. */
+    @Test
+    void testGetLabelOrNullTreatsBlankAsAbsent() {
+        assertThat(new Fact("k", "area", null,
+                FloorMapTransformationMatrix.identity(), null,
+                null, null, null, "   ").getLabelOrNull()).isNull();
+        assertThat(new Fact("k", "area", null,
+                FloorMapTransformationMatrix.identity(), null,
+                null, null, null, "").getLabelOrNull()).isNull();
+    }
+
+    /**
+     * The transform/vertex-preview copies carry the label — a live drag must not
+     * silently rename an area in the tracking panel.
+     */
+    @Test
+    void testLabelSurvivesCopies() {
+        final Fact fact = new Fact("k", "area", null,
+                FloorMapTransformationMatrix.identity(), null,
+                new double[][]{{-5, -5}, {5, -5}, {5, 5}}, null, null, "Loading Bay");
+
+        assertThat(fact.withWorldToMap(FloorMapTransformationMatrix.translate(10, 10))
+                .getLabel()).isEqualTo("Loading Bay");
+        assertThat(fact.withVertices(new double[][]{{-1, -1}, {1, -1}, {1, 1}})
+                .getLabel()).isEqualTo("Loading Bay");
+    }
 }

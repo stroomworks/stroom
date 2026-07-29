@@ -134,8 +134,8 @@ class TestFloorMapAreaMembership {
 
         assertThat(membership.getAreaKeys("alice")).containsExactly("bay", "warehouse");
         assertThat(membership.getInnermostAreaKey("alice")).isEqualTo("bay");
-        // The warehouse holds alice AND the nested bay; the bay holds only alice.
-        assertThat(membership.getOccupantCount("warehouse")).isEqualTo(2);
+        // Both hold alice and nothing else — the nested bay is not an occupant.
+        assertThat(membership.getOccupantCount("warehouse")).isEqualTo(1);
         assertThat(membership.getOccupantCount("bay")).isEqualTo(1);
     }
 
@@ -163,59 +163,55 @@ class TestFloorMapAreaMembership {
         assertThat(membership.getAreaKeys("alice")).containsExactly("warehouse");
     }
 
-    /** An area nested inside another is reported as being in it. */
+    /**
+     * Areas are never located inside anything — only objects and users are. An
+     * area drawn wholly within another reports no containing area, and does not
+     * count as an occupant of it.
+     */
     @Test
-    void testAreaInsideArea() {
+    void testAreaIsNeverInsideAnotherArea() {
         final List<Fact> facts = Arrays.asList(
                 area("warehouse", 100, 100, 100, 100),
                 area("bay", 100, 100, 20, 20));
         final FloorMapAreaMembership membership = FloorMapAreaMembership.compute(
                 facts, Collections.emptyList());
 
-        assertThat(membership.getAreaKeys("bay")).containsExactly("warehouse");
-        assertThat(membership.getOccupants("warehouse")).containsExactly("bay");
+        assertThat(membership.getAreaKeys("bay")).isEmpty();
+        assertThat(membership.getAreaKeys("warehouse")).isEmpty();
+        assertThat(membership.getOccupants("warehouse")).isEmpty();
+        assertThat(membership.getOccupants("bay")).isEmpty();
+        assertThat(membership.getEntityIds()).isEmpty();
+        // Both areas are still known as areas — only the nesting relation is gone.
+        assertThat(membership.getAreaKeys()).containsExactlyInAnyOrder("warehouse", "bay");
     }
 
     /**
-     * Nesting is one-directional. Two concentric areas each contain the other's
-     * centroid, so an unguarded test would report the warehouse as being inside
-     * the bay as well; only the smaller may nest in the larger.
+     * A nested area does not inflate the enclosing area's occupant count — the
+     * count is objects and users only, which is what the canvas badge shows.
      */
     @Test
-    void testNestingIsNotMutual() {
+    void testNestedAreaDoesNotCountAsOccupant() {
         final List<Fact> facts = Arrays.asList(
                 area("warehouse", 100, 100, 100, 100),
                 area("bay", 100, 100, 20, 20));
-        final FloorMapAreaMembership membership =
-                FloorMapAreaMembership.compute(facts, Collections.emptyList());
-
-        assertThat(membership.getAreaKeys("bay")).containsExactly("warehouse");
-        assertThat(membership.getAreaKeys("warehouse")).isEmpty();
-        assertThat(membership.getOccupants("bay")).isEmpty();
-    }
-
-    /** Equal-sized overlapping areas do not nest in each other either way. */
-    @Test
-    void testEqualSizedAreasDoNotNest() {
-        final List<Fact> facts = Arrays.asList(
-                area("left", 100, 100, 50, 50),
-                area("right", 120, 100, 50, 50));
-        final FloorMapAreaMembership membership =
-                FloorMapAreaMembership.compute(facts, Collections.emptyList());
-
-        assertThat(membership.getAreaKeys("left")).isEmpty();
-        assertThat(membership.getAreaKeys("right")).isEmpty();
-    }
-
-    /** An area is never inside itself. */
-    @Test
-    void testAreaNotInsideItself() {
         final FloorMapAreaMembership membership = FloorMapAreaMembership.compute(
-                Collections.singletonList(area("bay", 100, 100, 50, 50)),
-                Collections.emptyList());
+                facts, Collections.singletonList(event("alice", 100, 100)));
 
-        assertThat(membership.getAreaKeys("bay")).isEmpty();
-        assertThat(membership.getOccupants("bay")).isEmpty();
+        assertThat(membership.getOccupants("warehouse")).containsExactly("alice");
+        assertThat(membership.getOccupants("bay")).containsExactly("alice");
+    }
+
+    /** Objects and users near an area's edge are still located inside it. */
+    @Test
+    void testPointOccupantsNearEdgeAreLocated() {
+        final List<Fact> facts = Arrays.asList(
+                area("bay", 100, 100, 50, 50),
+                pointFact("gate1", "gate", 145, 145));
+        final FloorMapAreaMembership membership = FloorMapAreaMembership.compute(
+                facts, Collections.singletonList(event("alice", 149, 149)));
+
+        assertThat(membership.getInnermostAreaKey("gate1")).isEqualTo("bay");
+        assertThat(membership.getInnermostAreaKey("alice")).isEqualTo("bay");
     }
 
     // -----------------------------------------------------------------------

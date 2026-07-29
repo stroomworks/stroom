@@ -39,7 +39,11 @@ class TestFloorMapAreaOverlay {
         return new FloorMapObject(id, FloorMapJsonKeys.PERSON, x, y);
     }
 
-    /** Two nested areas at (100,100) with alice inside both and bob outside. */
+    /**
+     * Two concentric areas at (100,100) — a small "bay" drawn within a large
+     * "warehouse" — with alice inside both and bob outside both. The bay is not
+     * an occupant of the warehouse: areas are never located inside anything.
+     */
     private static FloorMapAreaMembership nestedMembership() {
         final List<Fact> facts = Arrays.asList(
                 area("warehouse", 100),
@@ -74,16 +78,16 @@ class TestFloorMapAreaOverlay {
     }
 
     /**
-     * Focusing the outer area flags both the person inside it and the nested
-     * area, since the nested area is itself an occupant.
+     * Focusing the outer area flags the person inside it but NOT the area drawn
+     * within it — areas are never occupants, so nesting is never highlighted.
      */
     @Test
-    void testFocusOuterAreaHighlightsNestedArea() {
+    void testFocusOuterAreaDoesNotHighlightEnclosedArea() {
         final FloorMapAreaOverlay overlay =
                 FloorMapAreaOverlay.of(nestedMembership(), "warehouse");
 
         assertThat(overlay.isRelated("alice")).isTrue();
-        assertThat(overlay.isRelated("bay")).isTrue();
+        assertThat(overlay.isRelated("bay")).isFalse();
     }
 
     /** The focused thing is never flagged as related to itself. */
@@ -101,8 +105,9 @@ class TestFloorMapAreaOverlay {
         final FloorMapAreaOverlay overlay = FloorMapAreaOverlay.of(nestedMembership(), null);
 
         assertThat(overlay.hasRelated()).isFalse();
+        // Alice only — the enclosed area does not count toward either badge.
         assertThat(overlay.getOccupantCount("bay")).isEqualTo(1);
-        assertThat(overlay.getOccupantCount("warehouse")).isEqualTo(2);
+        assertThat(overlay.getOccupantCount("warehouse")).isEqualTo(1);
     }
 
     /**

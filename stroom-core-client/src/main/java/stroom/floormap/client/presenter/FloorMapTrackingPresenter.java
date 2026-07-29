@@ -18,12 +18,14 @@ package stroom.floormap.client.presenter;
 
 import stroom.data.grid.client.MyDataGrid;
 import stroom.floormap.client.presenter.FloorMapTrackingPresenter.FloorMapTrackingView;
+import stroom.floormap.shared.FloorMapAreaCellText;
 import stroom.floormap.shared.FloorMapAreaMembership;
-import stroom.floormap.shared.FloorMapEntityList;
 import stroom.floormap.shared.FloorMapEntityList.EntityEntry;
 import stroom.svg.client.SvgPresets;
+import stroom.svg.shared.SvgImage;
 import stroom.widget.button.client.ButtonPanel;
 import stroom.widget.button.client.ButtonView;
+import stroom.widget.button.client.InlineSvgToggleButton;
 
 import com.google.gwt.cell.client.SafeHtmlCell;
 import com.google.gwt.safehtml.shared.SafeHtml;
@@ -39,6 +41,7 @@ import com.google.web.bindery.event.shared.EventBus;
 import com.gwtplatform.mvp.client.MyPresenterWidget;
 import com.gwtplatform.mvp.client.View;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -52,12 +55,23 @@ import java.util.function.Function;
  * (people, assets, vehicles, or any other typed event object) plus the
  * static facts from the facts query (objects, backgrounds and areas).
  *
- * <p>The <strong>Area</strong> column answers "what area is this in?" and is
- * deliberately polymorphic, because areas are themselves rows in this roster: an
- * entity row shows the innermost area containing it, while an area row shows how
- * many entities are currently inside it. Detail that will not fit — the full
- * nesting chain, the occupant list, or where an entity was last seen — goes in
- * the cell's tooltip.</p>
+ * <p>Tracking is about things that move, so the grid lists <strong>event
+ * entities only</strong> by default; the toolbar's <strong>Show Facts</strong>
+ * toggle folds the fact-only rows in. The toggle is view state — it is not
+ * persisted with the document, and the roster itself always holds everything so
+ * flipping it back costs no query.</p>
+ *
+ * <p>The <strong>Area</strong> column answers exactly one question: <em>which
+ * area is this object or user inside?</em> It names every containing area,
+ * innermost (most specific) first, or {@code —} when the row is inside none.
+ * <strong>Area rows always show {@code —}</strong> — area-inside-area is
+ * deliberately not computed (client decision, 2026-07-29). Occupancy (how many
+ * entities are in an area) lives on the canvas badge instead, so this column
+ * never means two different things.</p>
+ *
+ * <p>Detail that will not fit on the single-line cell — the containing areas
+ * one-per-line, or where an entity was last seen — goes in the cell's
+ * tooltip.</p>
  *
  * <p>Selecting a row tracks that entity: the parent presenter highlights it on
  * the canvas, centres the camera on it, and follows it as it moves. Because a
@@ -69,10 +83,8 @@ import java.util.function.Function;
  */
 public class FloorMapTrackingPresenter extends MyPresenterWidget<FloorMapTrackingView> {
 
-    /** Column text for an entity that currently has no known area. */
+    /** Column text for a row that is not inside any area. */
     private static final String NO_AREA = "—";
-    /** Cap on how many occupant names an area row's tooltip lists. */
-    private static final int MAX_TOOLTIP_OCCUPANTS = 20;
 
     private final MyDataGrid<EntityEntry> dataGrid;
     private final ListDataProvider<EntityEntry> dataProvider = new ListDataProvider<>();
@@ -80,6 +92,17 @@ public class FloorMapTrackingPresenter extends MyPresenterWidget<FloorMapTrackin
     private Consumer<EntityEntry> selectionConsumer;
 
     private final ButtonView stopTrackingButton;
+    private final InlineSvgToggleButton showFactsButton;
+
+    /**
+     * The whole roster as last pushed by the parent, filtered down to the
+     * visible rows by {@link #applyFilter()}. Held so the Show Facts toggle can
+     * re-filter without waiting for the next query refresh.
+     */
+    private final List<EntityEntry> allEntities = new ArrayList<>();
+
+    /** Whether fact-only rows are currently listed alongside event entities. */
+    private boolean showFacts;
 
     /**
      * The current area-containment snapshot backing the Area column. Empty until
@@ -89,10 +112,10 @@ public class FloorMapTrackingPresenter extends MyPresenterWidget<FloorMapTrackin
     private FloorMapAreaMembership areaMembership = FloorMapAreaMembership.EMPTY;
 
     /**
-     * Resolves an area's fact key to the name shown to the user. Supplied by the
-     * parent, which owns the fact list; falls back to the raw key.
+     * Resolves any entity id to the name shown to the user. Supplied by the
+     * parent, which owns the roster; falls back to the raw id.
      */
-    private Function<String, String> areaNameResolver;
+    private Function<String, String> nameResolver;
 
     /**
      * Last area an entity was seen in, by entity id. The roster is accumulating
@@ -117,6 +140,13 @@ public class FloorMapTrackingPresenter extends MyPresenterWidget<FloorMapTrackin
         final ButtonPanel buttonPanel = new ButtonPanel();
         stopTrackingButton = buttonPanel.addButton(SvgPresets.CLEAR);
         stopTrackingButton.setTitle("Stop Tracking");
+
+        showFactsButton = new InlineSvgToggleButton();
+        showFactsButton.setSvg(SvgImage.LOCATE);
+        showFactsButton.setState(showFacts);
+        showFactsButton.setTitle(showFactsTitle());
+        buttonPanel.addButton(showFactsButton);
+
         view.setToolbar(buttonPanel);
     }
 
@@ -149,6 +179,20 @@ public class FloorMapTrackingPresenter extends MyPresenterWidget<FloorMapTrackin
         //noinspection unused e
         registerHandler(stopTrackingButton.addClickHandler(e ->
                 selectionModel.clear()));
+
+        //noinspection unused e
+        registerHandler(showFactsButton.addClickHandler(e ->
+                setShowFacts(showFactsButton.getState())));
+    }
+
+    /**
+     * The Show Facts button's tooltip, worded for what a click will do next
+     * rather than for the state it is in.
+     */
+    private String showFactsTitle() {
+        return showFacts
+                ? "Hide Facts (objects, backgrounds and areas)"
+                : "Show Facts (objects, backgrounds and areas)";
     }
 
     private void initGridColumns() {
@@ -170,10 +214,10 @@ public class FloorMapTrackingPresenter extends MyPresenterWidget<FloorMapTrackin
         };
         dataGrid.addColumn(typeColumn, "Type");
 
-        // Area Column — polymorphic by row: an entity shows the area it is
-        // currently in, an area shows how many entities are inside it. That is
-        // what makes the column meaningful for every row, since areas are part
-        // of this roster too.
+        // Area Column — which area is this object/user inside? Area rows always
+        // show a dash. Wide enough for a couple of names before the cell
+        // ellipsises; resizable because area names are user-chosen and can be
+        // long.
         final Column<EntityEntry, SafeHtml> areaColumn =
                 new Column<>(new SafeHtmlCell()) {
                     @Override
@@ -181,7 +225,7 @@ public class FloorMapTrackingPresenter extends MyPresenterWidget<FloorMapTrackin
                         return areaCell(entry);
                     }
                 };
-        dataGrid.addResizableColumn(areaColumn, "Area", 150);
+        dataGrid.addResizableColumn(areaColumn, "Area", 200);
 
         // Id Column (the full entity id, e.g. an email address)
         final Column<EntityEntry, String> idColumn = new TextColumn<>() {
@@ -195,63 +239,55 @@ public class FloorMapTrackingPresenter extends MyPresenterWidget<FloorMapTrackin
 
     /**
      * Renders one Area cell, with a {@code title} tooltip carrying the detail
-     * that will not fit in the cell: the full innermost-to-outermost chain for a
-     * nested entity, the occupant list for an area, or where an entity without a
-     * current position was last seen.
+     * that will not fit on the cell's single line: the containing areas
+     * one-per-line for a nested entity, the occupant list for an area, or where
+     * an entity without a current position was last seen.
      */
     private SafeHtml areaCell(final EntityEntry entry) {
         final String id = entry.getId();
 
+        // An area is never located inside anything — only objects and users are.
+        // Stated explicitly rather than falling through to the empty-list branch
+        // below, so the column's behaviour for areas does not depend on how
+        // membership happens to be computed.
         if (areaMembership.isArea(id)) {
-            // An area row reports what is inside it, plus its own containing
-            // area (areas nest) in the tooltip.
-            final List<String> occupants = areaMembership.getOccupants(id);
-            final String text = occupants.isEmpty()
-                    ? "empty"
-                    : occupants.size() + " inside";
-            final StringBuilder tooltip = new StringBuilder();
-            final String containing = areaNameFor(areaMembership.getInnermostAreaKey(id));
-            if (containing != null) {
-                tooltip.append("Inside ").append(containing).append('\n');
-            }
-            if (occupants.isEmpty()) {
-                tooltip.append("Nothing is currently inside this area");
-            } else {
-                tooltip.append("Currently inside:");
-                for (int i = 0; i < occupants.size() && i < MAX_TOOLTIP_OCCUPANTS; i++) {
-                    tooltip.append("\n• ")
-                            .append(FloorMapEntityList.displayName(occupants.get(i)));
-                }
-                if (occupants.size() > MAX_TOOLTIP_OCCUPANTS) {
-                    tooltip.append("\n… and ")
-                            .append(occupants.size() - MAX_TOOLTIP_OCCUPANTS)
-                            .append(" more");
-                }
-            }
-            return cell(text, tooltip.toString());
+            return cell(NO_AREA, "Areas are not located inside other areas");
         }
 
         final List<String> containingKeys = areaMembership.getAreaKeys(id);
         if (containingKeys.isEmpty()) {
-            // No position at this instant — say so plainly, and offer the last
-            // known area in the tooltip rather than implying it is current.
-            final String lastKnown = areaNameFor(lastKnownAreaKey.get(id));
+            // Either genuinely outside every area, or with no position at this
+            // instant — worth distinguishing in the tooltip rather than implying
+            // "outside".
+            final String lastKnown = nameFor(lastKnownAreaKey.get(id));
             return cell(NO_AREA, lastKnown != null
                     ? "Not in a known area at this time (last seen in " + lastKnown + ")"
                     : "Not in a known area at this time");
         }
 
-        // Innermost first, so the head is the most specific answer; the tooltip
-        // carries the whole chain when areas nest.
-        final String innermost = areaNameFor(containingKeys.get(0));
+        // Every containing area is named, innermost (most specific) first. The
+        // cell is a single nowrap line that ellipsises when the column is too
+        // narrow, so the tooltip repeats the list in full, one per line.
+        final String joined = FloorMapAreaCellText.joinNames(namesFor(containingKeys));
         if (containingKeys.size() == 1) {
-            return cell(innermost, innermost);
+            return cell(joined, "Inside " + joined);
         }
-        final StringBuilder tooltip = new StringBuilder("Inside (innermost first):");
+        final StringBuilder tooltip = new StringBuilder("Inside ")
+                .append(containingKeys.size())
+                .append(" areas (innermost first):");
         for (final String key : containingKeys) {
-            tooltip.append("\n• ").append(areaNameFor(key));
+            tooltip.append("\n• ").append(nameFor(key));
         }
-        return cell(innermost + " +" + (containingKeys.size() - 1), tooltip.toString());
+        return cell(joined, tooltip.toString());
+    }
+
+    /** Resolves each id to its display name, preserving order. */
+    private List<String> namesFor(final List<String> ids) {
+        final List<String> names = new ArrayList<>(ids.size());
+        for (final String id : ids) {
+            names.add(nameFor(id));
+        }
+        return names;
     }
 
     /**
@@ -269,20 +305,21 @@ public class FloorMapTrackingPresenter extends MyPresenterWidget<FloorMapTrackin
     }
 
     /**
-     * The display name for an area key, or {@code null} when there is no key.
-     * Falls back to the raw key if the parent supplied no resolver.
+     * The display name for any entity id — an area, a person, an object — or
+     * {@code null} when there is no id. Falls back to the raw id if the parent
+     * supplied no resolver or does not know the id.
      */
-    private String areaNameFor(final String areaKey) {
-        if (areaKey == null) {
+    private String nameFor(final String id) {
+        if (id == null) {
             return null;
         }
-        if (areaNameResolver != null) {
-            final String name = areaNameResolver.apply(areaKey);
+        if (nameResolver != null) {
+            final String name = nameResolver.apply(id);
             if (name != null && !name.isEmpty()) {
                 return name;
             }
         }
-        return areaKey;
+        return id;
     }
 
     /**
@@ -292,16 +329,16 @@ public class FloorMapTrackingPresenter extends MyPresenterWidget<FloorMapTrackin
      * the grid is only redrawn when the containment actually changed — otherwise
      * playback would re-render the grid continuously.</p>
      *
-     * @param areaMembership   the new containment snapshot; may be {@code null}
-     * @param areaNameResolver resolves an area fact key to its display name; may
-     *                         be {@code null} to show raw keys
+     * @param areaMembership the new containment snapshot; may be {@code null}
+     * @param nameResolver   resolves any entity id (area, person, object) to its
+     *                       display name; may be {@code null} to show raw ids
      */
     public void setAreaMembership(final FloorMapAreaMembership areaMembership,
-                                  final Function<String, String> areaNameResolver) {
+                                  final Function<String, String> nameResolver) {
         final FloorMapAreaMembership next = areaMembership != null
                 ? areaMembership
                 : FloorMapAreaMembership.EMPTY;
-        this.areaNameResolver = areaNameResolver;
+        this.nameResolver = nameResolver;
 
         // Remember where each entity was last seen before overwriting, so a row
         // that loses its position can still say where it was.
@@ -319,6 +356,9 @@ public class FloorMapTrackingPresenter extends MyPresenterWidget<FloorMapTrackin
     /**
      * Replaces the entire grid data with the supplied list.
      *
+     * <p>Only the rows passing the current Show Facts filter reach the grid; the
+     * full list is kept so the toggle can re-filter without a query refresh.</p>
+     *
      * <p>The current selection is <em>not</em> automatically adjusted —
      * callers should follow up with {@link #setSelected(String)}. Because
      * {@link EntityEntry} equality is id-based, restoring the same id does not
@@ -327,8 +367,38 @@ public class FloorMapTrackingPresenter extends MyPresenterWidget<FloorMapTrackin
      * @param data the entities to display; must not be {@code null}
      */
     public void setData(final List<EntityEntry> data) {
-        dataProvider.setList(data);
-        dataGrid.setRowData(0, data);
+        allEntities.clear();
+        allEntities.addAll(data);
+        applyFilter();
+    }
+
+    /**
+     * Pushes the rows passing the current Show Facts filter into the grid.
+     *
+     * <p>Hiding the facts while a fact row is being tracked would leave the
+     * canvas following something the panel no longer lists, so that selection is
+     * cleared — which stops tracking through the usual selection handler.</p>
+     */
+    private void applyFilter() {
+        final List<EntityEntry> visible;
+        if (showFacts) {
+            visible = new ArrayList<>(allEntities);
+        } else {
+            visible = new ArrayList<>(allEntities.size());
+            for (final EntityEntry entry : allEntities) {
+                if (entry.isFromEvents()) {
+                    visible.add(entry);
+                }
+            }
+        }
+
+        dataProvider.setList(visible);
+        dataGrid.setRowData(0, visible);
+
+        final EntityEntry selected = selectionModel.getSelectedObject();
+        if (selected != null && !visible.contains(selected)) {
+            selectionModel.clear();
+        }
     }
 
     /**
@@ -344,22 +414,37 @@ public class FloorMapTrackingPresenter extends MyPresenterWidget<FloorMapTrackin
     /**
      * Selects the grid row whose entity id matches the given value.
      *
-     * <p>If {@code id} is {@code null} or no matching row is found, the
+     * <p>A fact hidden by the Show Facts toggle is <em>revealed</em> rather than
+     * skipped: the caller is usually the canvas, where clicking a static object
+     * starts tracking it, and a tracked entity the panel refuses to list would
+     * leave the two views disagreeing. The toggle stays on afterwards.</p>
+     *
+     * <p>If {@code id} is {@code null} or matches nothing in the roster, the
      * current selection is cleared.</p>
      *
      * @param id the entity id to look for; may be {@code null}
      */
     public void setSelected(final String id) {
-        final List<EntityEntry> list = dataProvider.getList();
-        if (list != null && id != null) {
-            for (final EntityEntry entry : list) {
+        if (id != null) {
+            for (final EntityEntry entry : allEntities) {
                 if (id.equals(entry.getId())) {
+                    if (!showFacts && !entry.isFromEvents()) {
+                        setShowFacts(true);
+                    }
                     selectionModel.setSelected(entry, true);
                     return;
                 }
             }
         }
         selectionModel.clear();
+    }
+
+    /** Flips the Show Facts state, its button and the visible rows together. */
+    private void setShowFacts(final boolean showFacts) {
+        this.showFacts = showFacts;
+        showFactsButton.setState(showFacts);
+        showFactsButton.setTitle(showFactsTitle());
+        applyFilter();
     }
 
     /**

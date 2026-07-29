@@ -71,7 +71,7 @@ public class FloorMapEntityList {
         boolean changed = false;
         for (final FloorMapObject object : objects) {
             if (object != null) {
-                changed |= admit(object.getId(), object.getType());
+                changed |= admit(object.getId(), object.getType(), null, true);
             }
         }
         return changed;
@@ -84,6 +84,11 @@ public class FloorMapEntityList {
      * deduplicated (first-seen type wins, including against an event entity
      * already holding the same id).
      *
+     * <p><strong>Areas</strong> are named by their {@code LABEL} rather than
+     * their key — see {@link #displayNameFor(Fact)}. Because admission is
+     * first-seen-wins, a rename only shows up once the roster is
+     * {@link #clear()}ed, which happens on every document (re-)read.</p>
+     *
      * @param facts the facts from the latest facts query; may be {@code null}
      * @return {@code true} only if the roster membership changed, so callers
      *         can skip re-pushing unchanged data to the grid
@@ -95,23 +100,71 @@ public class FloorMapEntityList {
         boolean changed = false;
         for (final Fact fact : facts) {
             if (fact != null) {
-                changed |= admit(fact.getKey(), fact.getType());
+                changed |= admit(fact.getKey(), fact.getType(), displayNameFor(fact), false);
             }
         }
         return changed;
     }
 
     /**
+     * The roster display name for a fact.
+     *
+     * <p><strong>Areas</strong> show their user-facing {@code LABEL} name when
+     * they have one — an area's key is an opaque generated id, so it reads as
+     * noise in the panel, and the name is what the user typed in the properties
+     * dialog. Every other fact keeps the key-derived name, so objects and
+     * backgrounds are unaffected.</p>
+     */
+    private static String displayNameFor(final Fact fact) {
+        if (FloorMapAreaMembership.isAreaFact(fact)) {
+            final String label = fact.getLabelOrNull();
+            if (label != null) {
+                return label.trim();
+            }
+        }
+        return displayName(fact.getKey());
+    }
+
+    /**
      * Admits one entity into the roster if its id is usable and not already
      * present.
      *
-     * @return {@code true} if the roster membership changed
+     * <p>An id already held as a fact-only entity is <em>promoted</em> when it
+     * later turns up in the events stream: it is a moving entity, and the
+     * tracking panel's default events-only view must show it whichever query
+     * happened to see it first. Only the flag changes — the first-seen name and
+     * type are kept, so an area promoted this way keeps its {@code LABEL}
+     * name. The reverse never happens: an event entity is not demoted by a fact
+     * carrying the same key.</p>
+     *
+     * @param displayName the name to show, or {@code null} to derive one from
+     *                    the id
+     * @param fromEvents  {@code true} when this sighting came from the events
+     *                    stream, {@code false} for a static fact
+     * @return {@code true} if the roster membership — or an entity's
+     *         fact/event classification — changed
      */
-    private boolean admit(final String id, final String type) {
-        if (id == null || id.isEmpty() || byId.containsKey(id)) {
+    private boolean admit(final String id,
+                          final String type,
+                          final String displayName,
+                          final boolean fromEvents) {
+        if (id == null || id.isEmpty()) {
             return false;
         }
-        byId.put(id, new EntityEntry(id, displayName(id), type != null ? type : ""));
+        final EntityEntry existing = byId.get(id);
+        if (existing != null) {
+            if (fromEvents && !existing.isFromEvents()) {
+                byId.put(id, new EntityEntry(
+                        id, existing.getDisplayName(), existing.getType(), true));
+                return true;
+            }
+            return false;
+        }
+        byId.put(id, new EntityEntry(
+                id,
+                displayName != null ? displayName : displayName(id),
+                type != null ? type : "",
+                fromEvents));
         return true;
     }
 
@@ -134,6 +187,24 @@ public class FloorMapEntityList {
         return id != null && byId.containsKey(id);
     }
 
+    /**
+     * The display name already resolved for an entity, or {@code null} if it is
+     * not in the roster.
+     *
+     * <p>Lets callers that need to name an entity <em>elsewhere</em> — the
+     * tracking panel's Area column naming an area — reuse the one naming rule
+     * rather than re-deriving it and drifting from what the entity's own row
+     * shows.</p>
+     */
+    public String getDisplayName(final String id) {
+        final EntityEntry entry = id != null
+                ? byId.get(id)
+                : null;
+        return entry != null
+                ? entry.getDisplayName()
+                : null;
+    }
+
     public void clear() {
         byId.clear();
     }
@@ -148,11 +219,16 @@ public class FloorMapEntityList {
         private final String id;
         private final String displayName;
         private final String type;
+        private final boolean fromEvents;
 
-        public EntityEntry(final String id, final String displayName, final String type) {
+        public EntityEntry(final String id,
+                           final String displayName,
+                           final String type,
+                           final boolean fromEvents) {
             this.id = id;
             this.displayName = displayName;
             this.type = type;
+            this.fromEvents = fromEvents;
         }
 
         public String getId() {
@@ -165,6 +241,18 @@ public class FloorMapEntityList {
 
         public String getType() {
             return type;
+        }
+
+        /**
+         * Whether this entity has been seen in the events stream — a moving
+         * person, vehicle or asset — as opposed to being a static fact only
+         * (an object, background or area).
+         *
+         * <p>The tracking panel shows event entities by default and folds the
+         * fact-only rows in behind its "Show Facts" toggle.</p>
+         */
+        public boolean isFromEvents() {
+            return fromEvents;
         }
 
         @Override

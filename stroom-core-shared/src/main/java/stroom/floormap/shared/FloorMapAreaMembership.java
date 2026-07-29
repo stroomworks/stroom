@@ -52,16 +52,17 @@ import java.util.Set;
  *       facts through theirs ({@link FloorMapGeometry#mapTestPoint}), and event
  *       entities use their {@code x}/{@code y} directly (events carry no
  *       matrix).</li>
- *   <li><strong>Membership is multi-valued</strong> — areas nest and overlap, so
- *       an entity can be in several. Lists are ordered <em>innermost first</em>
- *       (smallest map-space polygon area), so the head is the most specific
- *       answer.</li>
- *   <li><strong>Backgrounds are never occupants</strong> — a background's
- *       placement origin is arbitrary and would produce noise.</li>
- *   <li>An area is never inside itself, and nests only inside a
- *       <strong>strictly larger</strong> area. Two concentric areas each
- *       contain the other's centroid, so an unguarded test would report the
- *       warehouse as being inside the loading bay.</li>
+ *   <li><strong>Membership is multi-valued</strong> — areas overlap and can be
+ *       drawn one within another, so an entity can be in several. Lists are
+ *       ordered <em>innermost first</em> (smallest map-space polygon area), so
+ *       the head is the most specific answer.</li>
+ *   <li><strong>Only objects and users are located.</strong> Areas and
+ *       backgrounds are never occupants, so they always report no containing
+ *       area. Area-inside-area is deliberately <em>not</em> computed — the client
+ *       confirmed (2026-07-29) that the nesting relationship is not needed, and a
+ *       geometric test for it could not be made to match user expectation without
+ *       either an area-overlap threshold or a user-declared parent. A background's
+ *       placement origin is arbitrary and would only produce noise.</li>
  *   <li>When an id appears as both an event and a fact (an image-bearing fact
  *       twin), the <strong>event</strong> position wins — it is the live one.</li>
  * </ul>
@@ -127,8 +128,8 @@ public final class FloorMapAreaMembership {
         if (events != null) {
             for (final FloorMapObject event : events) {
                 if (event != null && isUsableId(event.getId()) && placed.add(event.getId())) {
-                    assign(event.getId(), event.getX(), event.getY(), Double.NaN, areas,
-                            areaKeysByEntity, occupantsByArea);
+                    assign(event.getId(), event.getX(), event.getY(),
+                            areas, areaKeysByEntity, occupantsByArea);
                 }
             }
         }
@@ -139,8 +140,8 @@ public final class FloorMapAreaMembership {
                         && canBeOccupant(fact)
                         && placed.add(fact.getKey())) {
                     final double[] point = FloorMapGeometry.mapTestPoint(fact);
-                    assign(fact.getKey(), point[0], point[1], sizeOf(fact, areas), areas,
-                            areaKeysByEntity, occupantsByArea);
+                    assign(fact.getKey(), point[0], point[1],
+                            areas, areaKeysByEntity, occupantsByArea);
                 }
             }
         }
@@ -151,42 +152,19 @@ public final class FloorMapAreaMembership {
                 Collections.unmodifiableSet(allAreaKeys));
     }
 
-    /** The polygon size of a fact that is itself an area, else {@code NaN}. */
-    private static double sizeOf(final Fact fact, final List<AreaShape> areas) {
-        if (isAreaFact(fact)) {
-            for (final AreaShape area : areas) {
-                if (area.key.equals(fact.getKey())) {
-                    return area.size;
-                }
-            }
-        }
-        return Double.NaN;
-    }
-
     /**
-     * Tests one entity point against every area, recording both directions of
-     * the relation. {@code areas} must already be sorted smallest-first.
-     *
-     * @param occupantSize the occupant's own polygon size when it is itself an
-     *                     area, else {@code NaN}. An area only nests inside a
-     *                     <em>strictly larger</em> one: two concentric areas
-     *                     each contain the other's centroid, and reporting that
-     *                     mutually ("the warehouse is in the bay") is wrong.
+     * Tests one occupant's map-space point against every area, recording both
+     * directions of the relation. {@code areas} must already be sorted
+     * smallest-first, so the resulting list is innermost-first.
      */
     private static void assign(final String id,
                                final double mapX,
                                final double mapY,
-                               final double occupantSize,
                                final List<AreaShape> areas,
                                final Map<String, List<String>> areaKeysByEntity,
                                final Map<String, List<String>> occupantsByArea) {
         List<String> containing = null;
         for (final AreaShape area : areas) {
-            // An area is never inside itself, nor inside one no bigger than it.
-            if (area.key.equals(id)
-                    || (!Double.isNaN(occupantSize) && area.size <= occupantSize)) {
-                continue;
-            }
             if (FloorMapGeometry.contains(area.mapVertices, mapX, mapY)) {
                 if (containing == null) {
                     containing = new ArrayList<>(2);
@@ -234,12 +212,21 @@ public final class FloorMapAreaMembership {
     }
 
     /**
-     * {@code true} if this fact can be <em>inside</em> an area. Backgrounds are
-     * excluded — their placement origin is arbitrary, so reporting a background
-     * as being in an area is noise.
+     * {@code true} if this fact can be <em>inside</em> an area.
+     *
+     * <p>Two exclusions:</p>
+     * <ul>
+     *   <li><strong>Areas</strong> — the client does not need to know that one
+     *       area sits inside another (confirmed 2026-07-29), so areas are never
+     *       occupants and always report no containing area. Only objects and
+     *       users are located.</li>
+     *   <li><strong>Backgrounds</strong> — a background's placement origin is
+     *       arbitrary, so reporting one as being in an area is noise.</li>
+     * </ul>
      */
     private static boolean canBeOccupant(final Fact fact) {
-        return !FloorMapJsonKeys.BACKGROUND.equalsIgnoreCase(fact.getType());
+        return !isAreaFact(fact)
+                && !FloorMapJsonKeys.BACKGROUND.equalsIgnoreCase(fact.getType());
     }
 
     private static boolean isUsableId(final String id) {

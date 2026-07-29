@@ -636,6 +636,7 @@ public class FloorMapMapPresenter
     private void parseFacts(final TableResult tableResult) {
         int keyIdx = -1;
         int typeIdx = -1;
+        int labelIdx = -1;
         int coordsIdx = -1;
         int imgIdx = -1;
         int worldToMapIdx = -1;
@@ -654,6 +655,9 @@ public class FloorMapMapPresenter
         final String geometryAlias = columnAliasForRole(Role.GEOMETRY, vf);
         final String fillAlias = columnAliasForRole(Role.FILL, vf);
         final String opacityAlias = columnAliasForRole(Role.OPACITY, vf);
+        // LABEL supplies the user-facing area name in the tracking panel. Like
+        // the area roles it may be unmapped, so the alias can be null.
+        final String labelAlias = columnAliasForRole(Role.LABEL, vf);
         for (int i = 0; i < columns.size(); i++) {
             final String colName = columns.get(i).getName();
             if (colName.equalsIgnoreCase("Key")) {
@@ -670,6 +674,8 @@ public class FloorMapMapPresenter
             } else if (colName.equalsIgnoreCase(FloorMapQueryBuilder.buildColumnAlias(
                     pathForRole(Role.WORLD_TO_MAP), vf))) {
                 worldToMapIdx = i;
+            } else if (colName.equalsIgnoreCase(labelAlias)) {
+                labelIdx = i;
             } else if (colName.equalsIgnoreCase(geometryAlias)) {
                 geometryIdx = i;
             } else if (colName.equalsIgnoreCase(fillAlias)) {
@@ -720,8 +726,12 @@ public class FloorMapMapPresenter
                         ? parseNullableDouble(values.get(opacityIdx))
                         : null;
 
+                final String label = labelIdx != -1 && values.size() > labelIdx
+                        ? values.get(labelIdx)
+                        : null;
+
                 factsByKey.put(key, new Fact(key, type, img, worldToMap,
-                        new double[]{worldX, worldY}, vertices, fill, opacity));
+                        new double[]{worldX, worldY}, vertices, fill, opacity, label));
             }
         }
 
@@ -757,16 +767,23 @@ public class FloorMapMapPresenter
         final FloorMapAreaMembership membership =
                 FloorMapAreaMembership.compute(lastFacts, lastEventObjects);
         floorMapCanvasPresenter.setAreaMembership(membership);
-        floorMapTrackingPresenter.setAreaMembership(membership, this::areaDisplayName);
+        floorMapTrackingPresenter.setAreaMembership(membership, this::entityDisplayName);
     }
 
     /**
-     * Resolves an area's fact key to the name shown in the tracking panel. The
-     * roster already holds the display name for every fact it has seen, so this
-     * matches what the area's own row is labelled with.
+     * Resolves any entity id to the name shown in the tracking panel — for an
+     * area, its user-facing {@code LABEL} name where it has one.
+     *
+     * <p>Reads it back out of the roster rather than re-deriving it, so an area
+     * named in the Area column always matches the name on its own row. Falls
+     * back to the id-derived name for an id the roster has not seen yet (a facts
+     * refresh admits every fact, so this is only the very first frame).</p>
      */
-    private String areaDisplayName(final String areaKey) {
-        return FloorMapEntityList.displayName(areaKey);
+    private String entityDisplayName(final String id) {
+        final String name = entityList.getDisplayName(id);
+        return name != null
+                ? name
+                : FloorMapEntityList.displayName(id);
     }
 
     /**

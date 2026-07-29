@@ -76,6 +76,7 @@ public final class FloorMapEntryParser {
 
         // Resolve the path for each role from the schema.
         final String typePath = findPath(schema, Role.TYPE);
+        final String labelPath = findPath(schema, Role.LABEL);
         final String positionPath = findPath(schema, Role.POSITION);
         final String imagePath = findPath(schema, Role.IMAGE);
         final String worldToMapPath = findPath(schema, Role.WORLD_TO_MAP);
@@ -106,6 +107,9 @@ public final class FloorMapEntryParser {
                 final String type = typePath != null
                         ? accessor.getString(parsed, typePath)
                         : null;
+                final String label = labelPath != null
+                        ? accessor.getString(parsed, labelPath)
+                        : null;
                 final String image = imagePath != null
                         ? accessor.getString(parsed, imagePath)
                         : null;
@@ -133,7 +137,7 @@ public final class FloorMapEntryParser {
                         : null;
 
                 facts.add(new Fact(entry.getKey(), type, image, worldToMap, position,
-                        vertices, fill, opacity));
+                        vertices, fill, opacity, label));
             } catch (final Exception ex) {
                 warn(warningConsumer, "Skipping malformed temporal entry (key='"
                         + entry.getKey() + "'): " + ex.getMessage());
