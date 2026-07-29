@@ -334,14 +334,14 @@
 <ul>
   <li><strong>Grammar/AST:</strong> <code>TestStroomQlParser</code>-style + <code>TestCypherQueryParser</code> (query-grammar).</li>
   <li><strong>Planner:</strong> <code>TestBinder</code>, <code>TestLogicalPlan</code>, <code>Test*Rule</code>, <code>TestJoinExecutor</code>, <code>TestCypherToLogicalPlan</code> (query-planner).</li>
-  <li><strong>Compiler parity:</strong> <code>TestQueryCompilerParity</code> (hand corpus) and <code>TestQueryCompilerGenerativeParity</code> (fuzz) assert the optimiser matches legacy; deliberate divergences are documented in <a href="query-optimiser-known-differences.md">known-differences</a>.</li>
+  <li><strong>Compiler parity:</strong> <code>TestQueryCompilerParity</code> (hand corpus) and <code>TestQueryCompilerGenerativeParity</code> (fuzz) assert the optimiser matches legacy; deliberate divergences are documented in <a href="query-optimiser/04-behaviour-changes.md">query-optimiser/04-behaviour-changes.md</a>.</li>
   <li><strong>Joins:</strong> <code>TestJoinSearchProvider</code>, <code>TestSpillingBuildSideLookup</code>, <code>TestLmdbJoinBuildStore</code> (common / searchable-impl).</li>
   <li><strong>Graph:</strong> <code>TestGraphTraversalEngine</code>, <code>TestDiffOperator</code>, <code>TestGraphSearchProvider</code> (graphdb-impl).</li>
   <li><strong>Turning the optimiser on for a test:</strong> the <code>stroom.query.optimiser.mode</code> flag (<code>QueryOptimiserMode</code>, default <span class="tag">OFF</span>). Run in <span class="tag">SHADOW</span> to diff against legacy without changing results; <span class="tag">ON</span> to execute the optimiser's plan.</li>
 </ul>
 
 <hr>
-<p class="foot">A map, not a spec — class names and shapes were accurate at the time of writing on <code>sw-query-optimiser</code>; when in doubt, the code wins. Companion docs: the <a href="graphdb/archive/graphdb-index.html">Graph DB index</a>, the <a href="query-optimiser-user-guide.md">optimiser user guide</a>, and the design docs it links.</p>
+<p class="foot">A map, not a spec — class names and shapes were accurate at the time of writing on <code>sw-query-optimiser</code>; when in doubt, the code wins. Companion docs: the <a href="graphdb/archive/graphdb-index.html">Graph DB index</a>, the <a href="query-optimiser/README.md">query optimiser documentation set</a>, and the design docs it links.</p>
 
 </div>
 </body>

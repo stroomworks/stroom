@@ -2,7 +2,7 @@
 
 *A guide to how StroomQL `join` executes today, what it can and can't do, whether it is memory-safe, and where it
 could go next. Origin analysis: [stroomql-join-scalability-report.md](stroomql-join-scalability-report.md);
-human-facing "why" write-up of the future work: [query-optimiser-joins-future.md](query-optimiser-joins-future.md).
+human-facing "why" write-up of the future work: [query-optimiser/12-future-work.md](query-optimiser/12-future-work.md).
 The detailed build-log, decisions, and coding standards are in the [Reference](#reference) section at the end.*
 
 **TL;DR** — A two-source `INNER`/`LEFT` join works end-to-end. The compiler shrinks each side (push-down,

@@ -555,8 +555,8 @@ public class OptimisingQueryCompiler implements QueryCompiler {
      * Task 5.3: routes the ineligible remainder of a bare {@code where} clause to extraction-time filtering
      * instead of leaving it in the scan-time expression, where an unsupported field/condition today silently
      * zeroes the whole result set (an ANDed {@code MatchNoDocsQuery} - see the finding in the plan doc's Phase 5
-     * section, and {@code query-optimiser-known-differences.md}). Only triggers when {@code
-     * AutoWhereFilterSplitRule} actually moved something: {@code boundFilter} (pre-rewrite) had no explicit
+     * section). Only triggers when {@code AutoWhereFilterSplitRule}
+     * actually moved something: {@code boundFilter} (pre-rewrite) had no explicit
      * {@code filter} clause of its own (that case is always a no-op - see the rule's own Javadoc invariant), and
      * {@code rewrittenFilter} (post-rewrite) now has a non-null {@code filterPredicate} that wasn't there before.
      */

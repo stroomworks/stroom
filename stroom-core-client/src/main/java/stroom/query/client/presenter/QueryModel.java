@@ -63,7 +63,7 @@ public class QueryModel implements HasTaskMonitorFactory, HasHandlers {
 
     private static final QueryResource QUERY_RESOURCE = GWT.create(QueryResource.class);
 
-    // Not yet backed by a configuration property - see Task 4.2 in query-optimiser-implementation-plan.md.
+    // Not yet backed by a configuration property - see Task 4.2 in the query optimiser implementation plan.
     private static final long SLOW_QUERY_WARNING_THRESHOLD_MS = 10_000;
 
     public static final String TABLE_COMPONENT_ID = "table";

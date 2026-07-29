@@ -155,7 +155,7 @@ Applies to all new/edited production code in this project (generated ANTLR sourc
 > them at parse — an unfinished-feature bug (`createTerm`'s 3-token minimum was never special-cased for these two
 > value-less conditions), not a deliberate rule. Per the project's policy of not reproducing legacy bugs, the new
 > path implements them properly instead — see Open Decision D2 (resolved) and
-> [query-optimiser-known-differences.md](query-optimiser-known-differences.md).
+> [query-optimiser/04-behaviour-changes.md](query-optimiser/04-behaviour-changes.md).
 
 ---
 
@@ -418,7 +418,7 @@ hard merge gate.
 - **Contract**: `create(query,in,ctx)` returns a `SearchRequest` equal (see §11 comparison) to the legacy output for
   every corpus query; **error cases must match too** (same rejection for limit-after-select etc.) — *except* where
   legacy's rejection is itself a confirmed bug rather than a deliberate rule (e.g. `is null`/`is not null`,
-  bracket-adjacent `not`/`and`/`or` — see [query-optimiser-known-differences.md](query-optimiser-known-differences.md)
+  bracket-adjacent `not`/`and`/`or` — see [query-optimiser/04-behaviour-changes.md](query-optimiser/04-behaviour-changes.md)
   and Open Decisions D2).
 - **Done-when**: the parity test (1.6) is green.
 - **Verify**: parity test.
@@ -505,7 +505,7 @@ hard merge gate.
 >   legacy's regex-based tokeniser, not a deliberate rule, and per the project's policy a confirmed legacy *bug* is
 >   not something the rewrite should carry forward. **Reverted**: the predicate was removed, so `AND`/`OR`/`NOT`
 >   are recognised unconditionally (like any other keyword) regardless of what precedes them — see
->   [query-optimiser-known-differences.md](query-optimiser-known-differences.md) and
+>   [query-optimiser/04-behaviour-changes.md](query-optimiser/04-behaviour-changes.md) and
 >   `TestLegacyBugFixes.bracketAdjacentNot_legacyRejectsButOptimisingAccepts` for the demonstrating test.
 >
 > The first bug (the `functionCall`/`valueFunctionCall` split) is a genuine parity fix — both sides must still
@@ -599,7 +599,7 @@ actually produce a `SearchRequest` — is Phase 5's job, once there's a physical
     (`BindException` "Condition X is not supported for field Y" otherwise). **This is new, stricter validation,
     not a parity requirement** — `SearchRequestFactory` today doesn't check this at all (unsupported conditions
     go straight to the provider); flag this explicitly in the PR as an intentional behaviour difference, not a bug
-    (compare/contrast with `docs/query-optimiser-known-differences.md`, though this one is a deliberate
+    (compare/contrast with `docs/query-optimiser/04-behaviour-changes.md`, though this one is a deliberate
     improvement rather than a bug fix, so it doesn't belong in that document).
   - Builds `ExpressionOperator`/`ExpressionTerm` for `where`/`filter`/`having` by walking the same
     `AstOrExpr`/`AstAndExpr`/`AstNotExpr`/`AstPrimary`/`AstTerm` shape `AstToSearchRequestMapper` already folds
@@ -1098,7 +1098,7 @@ any environment flips to `on`.
   index-eligible compiles to a byte-identical `Query.expression`/absent `valueFilter` as before (no behaviour
   change for the common case — the override is a no-op); (b) a bare `where` clause mixing an eligible term with a
   term on a field unknown to the index now routes the ineligible term into `TableSettings.valueFilter` instead of
-  `Query.expression`. Add the divergence to `query-optimiser-known-differences.md` (new entry alongside D2's
+  `Query.expression`. Add the divergence to `docs/query-optimiser/04-behaviour-changes.md` (new entry alongside D2's
   bracket/`is null` entries): "a bare `where` clause mixing index-eligible and -ineligible terms returns zero rows
   under legacy (an ANDed `MatchNoDocsQuery`) but the actually-matching rows under the optimising engine — a
   behaviour improvement, not a bug reproduction; queries that already use an explicit `filter` clause for
@@ -1207,7 +1207,7 @@ order/algorithm for real (not just the direct-`Scan`-sides case Phase 4 already 
 > into execution is a deferred Task 6.1 item (disclosed in the T6.1c status note as "a deferred optimisation, not
 > a correctness gap"). The remaining deferred/absent Phase 6 items (cost-driven execution, per-side push-down,
 > N-way joins, Task 6.2 enrichment joins, Task 6.3 real EXPLAIN cardinality, Task 6.4 domain relationships) are
-> catalogued in `docs/query-optimiser-code-review.md`.
+> catalogued in the code-review record, since deleted — see git history for `docs/query-optimiser-code-review.md`.
 
 **This phase is materially bigger than Phases 0–5.** Every prior phase either built standalone, unwired machinery
 (Phases 2–3) or *parameterised* an existing, unchanged execution path (Phase 5's `create()` enhancements only ever
@@ -1539,7 +1539,7 @@ verification - a real cross-provider `index ⋈ index` run against a live backen
 attempted and hit three bugs invisible to the in-module fake-backed tests above (a Guice circular-dependency
 failure building `DataSourceProviderRegistry` once a join-capable `SearchProvider` joined `Set<DataSourceProvider>`;
 a null `QueryKey` on the synthetic per-side seed request; a placeholder `TimeFilter` rejected by one
-`LmdbRowKeyFactory` shape) - all now fixed, see `docs/query-optimiser-code-review.md` §1a for detail. A join gets
+`LmdbRowKeyFactory` shape) - all now fixed; for detail see §1a of the deleted `docs/query-optimiser-code-review.md`, in git history. A join gets
 past compile/start/execute for the case tested; a full correct-rows confirmation on a live multi-provider
 deployment is still outstanding - re-run the testing protocol's Test D to close it out. **Still open**: the
 efficiency items (per-side filter push-down through the join, async feed) and N-way join chains - all documented
@@ -1630,7 +1630,7 @@ is the method; the concrete harness is:
   unfinished-feature bug (`createTerm`'s 3-token minimum was never special-cased for these value-less conditions),
   not a deliberate rule. Per the project's general policy (a legacy *bug* is not reproduced; a legacy *design
   choice* is), the new path implements them properly rather than replicating the rejection. See
-  [query-optimiser-known-differences.md](query-optimiser-known-differences.md) and `TestLegacyBugFixes` for the
+  [query-optimiser/04-behaviour-changes.md](query-optimiser/04-behaviour-changes.md) and `TestLegacyBugFixes` for the
   demonstrating test. The same policy applies to bracket-adjacent `not`/`and`/`or` (found in Task 1.7, also
   recorded there) — both are one-directional divergences (new path succeeds where legacy throws), so neither
   belongs in `TestQueryCompilerParity`'s `KNOWN_ERROR_TEXT_DEVIATIONS` (which is only for "both sides throw, text
