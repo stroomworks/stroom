@@ -46,10 +46,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-import static org.assertj.core.api.Assertions.as;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.assertj.core.api.InstanceOfAssertFactories.STRING;
 
 /**
  * Task PoC.5's Done-when: a single-hop {@code MATCH...RETURN} query, parsed and compiled by the real
@@ -1964,8 +1962,8 @@ class TestGraphTraversalEngine {
                     stores, new ExpressionPredicateFactory(), 200_000L, Duration.ofSeconds(30), 1_000_000L, 2);
             runWholeGraphPreview(stores, engine, "MATCH (n) RETURN GRAPH");
 
-            assertThat(engine.warnings().messages())
-                    .singleElement(as(STRING))
+            assertThat(engine.warnings().messages()).hasSize(1);
+            assertThat(engine.warnings().messages().getFirst())
                     .contains("stopped at the first 2 nodes")
                     // Names the setting, so an administrator can find it, and the way out, so an analyst can act.
                     .contains("graphdb.wholeGraphNodeCap")
