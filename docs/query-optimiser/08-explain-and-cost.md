@@ -185,9 +185,18 @@ Three things to know:
   appears.
 - **It requires `mode: ON`.** In `OFF` and `SHADOW`, `EXPLAIN` comes from the legacy compiler with no estimated
   duration at all, so nothing can fire.
-- **In practice it almost never fires.** With both cost adapters stubbed, the estimated duration is `0` for most
-  datasources, which is not greater than 10 seconds. The feature is wired end to end and effectively inert until
-  the real adapters land.
+- **It cannot currently fire at all**, and not for the reason you would expect. `LogicalPlanExplainer` sets
+  `estimatedDurationMs` **only on a leaf `Scan` node** (in `costScan`); every enclosing node it builds via `wrap` —
+  `Project`, `Filter`, `Sort`, `Group by`, `Having`, `Window`, `Limit` — and the `Join` node too, is constructed
+  without one. The editor (`QueryModel.estimateQuery`) reads the value off the **root** node only, and every query
+  with a `select` has at least a `Project` above its scan, so the root's estimate is always `null` and the
+  threshold comparison is never reached.
+
+  This is a defect in the client, **not** a consequence of the stubbed cost adapters: landing real adapters would
+  put real numbers on the `Scan` and the warning still would not fire. Either the client must walk the tree — the
+  server already does exactly that, in `DispatchingQueryCompiler.findEstimatedDurationMs`, for shadow-mode logging
+  — or the explainer must roll estimates up to the root. Tracked in
+  [12-future-work.md](12-future-work.md#make-the-pre-run-warning-able-to-fire).
 
 The threshold is a compiled-in constant, not a configuration property. Making it configurable, and rendering the
 full plan tree in the editor rather than only a warning, are both tracked in

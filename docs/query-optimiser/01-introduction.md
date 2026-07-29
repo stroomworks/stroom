@@ -95,6 +95,10 @@ where. The **numbers** are not yet. See [08-explain-and-cost.md](08-explain-and-
 compiles the same query alongside it purely to log any divergence. A bug in the optimiser cannot affect what a
 user sees. This is the recommended way to build confidence, and it is the step most likely to be skipped.
 
+Safe is not the same as free: the second compile and its cost estimate run synchronously on the thread submitting
+the search, so a soak adds submission latency and meta-store load. Run it on a non-production environment for a
+bounded period rather than leaving it on ([03-configuration.md](03-configuration.md#shadow-mode)).
+
 ## When not to use it
 
 - **On production traffic, today.** See [README.md](README.md#production-readiness). The blocker is missing

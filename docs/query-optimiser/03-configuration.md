@@ -52,7 +52,7 @@ No shipped YAML has ever set this property; it has only ever run at its Java-sid
 | Automatic `where`/`filter` split | no | no (logged as a divergence) | **yes** |
 | `join` queries | rejected | rejected | **run** |
 | `EXPLAIN` returns a cost estimate | no | no | **yes** |
-| Pre-run duration warning can fire | no | no | **yes** (in principle — see [08](08-explain-and-cost.md#the-pre-run-warning)) |
+| Pre-run duration warning can fire | no | no | no — a client defect stops it firing in any mode ([08](08-explain-and-cost.md#the-pre-run-warning)) |
 | Divergence logging | no | **yes** | no |
 
 Two entries deserve emphasis. **`SHADOW` does not enable joins** — legacy serves, and legacy cannot compile a
@@ -76,6 +76,27 @@ All of it is under the logger `stroom.query.language.DispatchingQueryCompiler`.
 
 Every divergence you see should trace to a case in [04-behaviour-changes.md](04-behaviour-changes.md). Anything
 else is a finding worth investigating before going further.
+
+**What a soak costs.** `SHADOW` is zero risk to *results*, but it is not free. Steps 2–4 above all run
+**synchronously, on the thread submitting the search**, and step 4 is the expensive one: the `EXPLAIN` estimate
+drives the cost model, and `MetaStatsAdapter` answers it with `MetaService.getFeeds()` plus a
+`getSelectionSummary(...)` — a **live aggregation query against the meta store** — for each scan in the plan. So
+every query submission in `SHADOW` costs, on top of the legacy compile it would have paid anyway: a second full
+compile, two canonical-JSON serialisations of complete `SearchRequest` objects (both are always produced — the
+string comparison *is* the divergence check), a third parse-bind-rewrite-cost pass, and at least one meta-store
+aggregation.
+
+None of that can change a result, and every step is individually cheap. It is the multiplication that matters: on a
+busy cluster with auto-refreshing dashboards, this is measurable extra submission latency and extra load on the
+same meta store the searches themselves depend on. Two practical consequences:
+
+- **Do not read performance numbers off a `SHADOW` environment.** Query submission is slower there than it will be
+  in either `OFF` or `ON`. Take timing baselines in `OFF`, and re-take them in `ON`.
+- **Watch the meta store** for the duration of the soak, not just the divergence log.
+
+Making a soak cheap enough to leave on indefinitely is tracked in
+[12-future-work.md](12-future-work.md#shadow-mode-overhead); the options are sampling and moving the work off the
+request thread, neither of which is built today.
 
 **What a soak cannot tell you.** Legacy compiles *first*, and if it throws, that exception is what the caller
 gets — the optimiser is never asked. So a query legacy **rejects** and the optimiser would accept never produces

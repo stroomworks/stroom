@@ -20,7 +20,10 @@ next query. There is no state to migrate, no data to rebuild, and nothing to cle
 2. **Record a baseline.** Run a handful of representative queries — the ones your users actually run — and save
    the results.
 3. **Set a non-production environment to `SHADOW`** and leave it under normal query load for long enough to be
-   representative. Days, not minutes.
+   representative. Days, not minutes. `SHADOW` cannot change a result, but it does add a second compile and a
+   meta-store aggregation to every query submission, synchronously — so watch the meta store alongside the
+   divergence log, and treat any timing you observe in this mode as unrepresentative of both `OFF` and `ON`
+   ([03-configuration.md](03-configuration.md#shadow-mode)).
 4. **Read the divergence log** (below). Account for every line against
    [04-behaviour-changes.md](04-behaviour-changes.md).
 5. **Flip to `ON`.** Re-run the baseline queries and compare.
@@ -162,7 +165,7 @@ Unchanged, and worth stating explicitly because a join reads two things at once:
 | `join` fails to compile | Mode is not `ON` | `SHADOW` serves legacy, and legacy cannot compile a join |
 | `EXPLAIN` returns one node and no numbers | Mode is not `ON` | Expected |
 | `EXPLAIN` returns `confidence: 0.0` everywhere | The index and state cost adapters are stubs | Expected today. [08-explain-and-cost.md](08-explain-and-cost.md#how-good-are-the-numbers) |
-| The pre-run warning never appears | The estimate is `0` for most datasources | Expected today |
+| The pre-run warning never appears | A client defect: the estimate is only ever set on a leaf `Scan` node, and the editor reads it off the plan root | Expected today, for **every** query and every mode. Not fixed by real cost adapters ([08-explain-and-cost.md](08-explain-and-cost.md#the-pre-run-warning)) |
 | *join build side row count* / *join output row count* | A guardrail | Narrow the query, or raise the cap ([03](03-configuration.md#join-guardrails)) |
 | *Join build side too large to spill to disk* | The LMDB spill environment filled | Raise `stroom.search.resultStore.lmdb.maxStoreSize`, or narrow the join |
 | *Join key too large to spill to disk* | An encoded key over 503 usable bytes | Use a shorter key, or narrow the join so it fits in heap |

@@ -56,8 +56,11 @@ public class QueryOptimiserConfig extends AbstractConfig implements IsStroomConf
                              "serves every query, the optimiser never runs. SHADOW: legacy compiles and serves " +
                              "every query exactly as in OFF, but the optimiser also compiles the same query, " +
                              "best-effort, purely to log any divergence and an actual-vs-estimated duration " +
-                             "comparison - zero risk to served results. ON: the optimiser compiles and serves " +
-                             "every query, legacy never runs.")
+                             "comparison - zero risk to served results, but NOT free: it adds a second compile, " +
+                             "two whole-request JSON serialisations and a cost estimate that queries the meta " +
+                             "store, all synchronously on the thread submitting the search, so expect added " +
+                             "submission latency and meta-store load on a busy cluster. ON: the optimiser " +
+                             "compiles and serves every query, legacy never runs.")
     public QueryOptimiserMode getMode() {
         return mode;
     }
