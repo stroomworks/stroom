@@ -8,7 +8,9 @@ means in practice. Canonical for the GQL conformance summary.
 **Companion documents:** [06-language-reference.md](06-language-reference.md) (what is supported),
 [12-future-work.md](12-future-work.md) (what may change).
 
-*Facts verified on 2026-07-28 against branch `sw-query-optimiser`; the replication and property-type claims re-checked 2026-07-29.*
+*Facts verified on 2026-07-29 against branch `sw-query-optimiser`. Every Cypher example here is compiled by
+`TestDocumentationQueries` on each build, which is what caught the `ORDER BY count(c)` example still being
+marked as rejected after it began working.*
 
 ---
 
@@ -104,7 +106,6 @@ rejected rather than silently sorting on nothing.
 |---|---|---|
 | `RETURN n` | Rejected | Name the properties, or use `RETURN GRAPH` |
 | `RETURN *` | Rejected | List the columns |
-| `ORDER BY count(x)` | **Supported**, provided the `RETURN` produces that aggregate | — |
 | `SKIP 10 LIMIT 10` | `SKIP` rejected | `LIMIT` only; no pagination |
 | `MATCH (a), (b)` | Rejected | One `MATCH`, one pattern |
 | `MATCH (a) MATCH (b)` | Rejected | Combine, or use `OPTIONAL MATCH`/`WITH` |
@@ -155,8 +156,10 @@ These are the dangerous ones, because the query runs and returns something plaus
 | **Equality on decimals is exact** | As it is everywhere in Stroom. A value computed before ingest may not match a literal that looks identical, and returns no rows rather than an error |
 | **A node version replaces, it does not merge** | Re-loading a node without a property removes it, rather than leaving the old value |
 | **Deleted data stays visible to historical queries** | Correct behaviour, but surprising if you expect a delete to be final |
-| **The whole-graph preview caps at 100 nodes silently** | `MATCH (n) RETURN GRAPH` looks complete and is not |
 | **Variable-length cycles are guarded by node, not relationship** | Cypher forbids reusing a *relationship* within a path; Graph DB forbids revisiting a *node*. So `a→b→a→c` is returned by Neo4j and not by Graph DB. It returns fewer paths, silently. **Deliberate** — relationship uniqueness is combinatorial in a dense subgraph and would trip the path-state ceiling far more often. Re-check any ported variable-length query rather than trusting it ([06](06-language-reference.md#variable-length-hops)) |
+
+**No longer on that list:** the whole-graph preview's 100-node cap. It still truncates — Neo4j has no such cap —
+but it now reports a warning alongside the rows rather than looking complete ([10-limits.md](10-limits.md)).
 
 ### Structural differences
 

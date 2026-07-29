@@ -7,7 +7,7 @@
 difficulty and risk. Canonical for roadmap status.
 **Companion documents:** every other file links here whenever it says "not supported".
 
-*Facts verified on 2026-07-28 against branch `sw-query-optimiser`.*
+*Facts verified on 2026-07-29 against branch `sw-query-optimiser`.*
 
 ---
 
@@ -185,11 +185,22 @@ Grouped by how likely you are to want them.
 | Item | Difficulty | Risk |
 |---|---|---|
 | **`approxEquals(a, b, tolerance)`** — explicit tolerant numeric comparison. See below | Medium | Low |
-| `SKIP` — needs an offset on the core's `Limit` node | Easy | Low |
-| `ORDER BY` an aggregate expression rather than only its alias | Easy | Low |
+| `SKIP` — needs an offset on the core's `Limit` node. **Rated Easy, but see the note below** | Easy | Low |
 | `ORDER BY` / `SKIP` / `LIMIT` on a `WITH` | Medium | Low |
 | Aggregation inside a `DIFF` query | Medium | Medium |
 | Filtering on `changeKind` / `before()` / `after()` in a `WHERE` | Medium | Low |
+
+#### `SKIP` is the least self-contained item in this table
+
+Worth stating, because its Easy/Low rating invites bundling it with other small language work and it does not
+belong there. Everything else in this section is confined to `CypherToLogicalPlan`. `SKIP` is not: it needs an
+offset slot on `stroom.query.planner.logical.Limit`, which is the **shared** relational core. That node has
+around fifteen consumers outside Graph DB — `Binder`, `PushFiltersBelowJoinsRule`, `AutoWhereFilterSplitRule`,
+`PlanRewriteUtil`, `LogicalPlanExplainer`, `OptimisingQueryCompiler` and StroomQL's own path — and it already
+carries legacy multi-value semantics that a second field has to be reconciled with.
+
+So the *edit* is easy and the *change* is not. It deserves its own change with a StroomQL regression run, not a
+seat alongside four Graph-DB-local fixes.
 
 #### `approxEquals` — why a function rather than a looser `=`
 
@@ -272,20 +283,16 @@ So that nobody waits for them:
 | Item | Why | Difficulty | Risk |
 |---|---|---|---|
 | **Cypher-carrying dashboards** — make Create Dashboard work by dispatching the query component through the Cypher seam | The button is disabled today because dashboards parse query text as StroomQL | Medium | Medium |
-| **Warn on the silent 100-node preview cap** | Every other limit reports itself; this one truncates quietly | Easy | Low |
 | **Server-side layout for large graphs** | The 2,000-element render cap is a browser constraint | Hard | Medium |
 | **Saved queries / query history** on the graph tabs | Medium | Low |
 
 ## Documentation and testing
 
-| Item | Why | Difficulty | Risk |
-|---|---|---|---|
-| **Land the event-logging XSLT as a test** in `stroom-graphdb-impl`, with its sample corpus | It currently lives only in [04-event-logging-xslt.md](04-event-logging-xslt.md) and is unexercised by CI, so it will rot silently | Easy | Low |
-| **Assert documented limits against the constants** in a test | [10-limits.md](10-limits.md) records ~15 values that a refactor can change with no doc-side signal | Easy | Low |
-| **Assert documented error strings** against `CypherToLogicalPlan` | Same problem for the messages quoted in [06-language-reference.md](06-language-reference.md) | Easy | Low |
-
-Those three are cheap and would convert a large part of this documentation set from prose into something CI
-defends. They are the highest value-per-effort items on the page.
+**Nothing outstanding.** The three items that were here — landing the event-logging XSLT as a test, asserting
+documented limit values, and asserting documented error strings — are [delivered](#documentation-and-testing-delivered),
+alongside the two that were already built. What is left uncovered is **prose**: a class named mid-sentence, or a
+behaviour described in a paragraph. A sweep wide enough to catch those needs a hand-kept stop list that would rot
+the same way the documentation does, so it stays hand-verified.
 
 ## Suggested order
 
@@ -296,24 +303,26 @@ What remains, if the goal is a production-capable Graph DB. Everything already d
 > — nothing has been exercised on a real cluster. Those steps are listed in
 > [README.md](README.md#what-would-make-it-ready) and come before anything on this page.
 
-1. **Documentation tests** — *largely done.* `TestDocumentationQueries` compiles every Cypher example;
-   `TestDocumentationReferences` checks every source constant, code-map class and `graphdb.*` setting. Between
-   them they found five defects. What remains unchecked is **prose** — a class named mid-sentence, or a
-   described behaviour — because a sweep wide enough to catch those needs a hand-kept stop list that would rot
-   in the same way. Verified by hand for now.
-2. **`approxEquals`** — the one language gap that is a correctness aid rather than an expressiveness one, and
+**Documentation tests are done** and are no longer on this list — see
+[Documentation and testing, delivered](#documentation-and-testing-delivered). What remains unchecked is
+**prose**, and deliberately so.
+
+1. **`approxEquals`** — the one language gap that is a correctness aid rather than an expressiveness one, and
    independent of everything else here.
-3. **Blocker 6** — a recovery path independent of source streams. Compaction reclaims free pages; it cannot
+2. **Blocker 6** — a recovery path independent of source streams. Compaction reclaims free pages; it cannot
    reconstruct data, so rebuilding a corrupt store still means reprocessing the streams.
-4. **Stream provenance on mutations** (`streamId`/`eventId`) — easy, low risk, and the gate to extraction and
+3. **Stream provenance on mutations** (`streamId`/`eventId`) — easy, low risk, and the gate to extraction and
    the thin-graph model. Worth doing early even if the follow-on work is not scheduled, because retrofitting
-   provenance onto an already-populated graph means a rebuild.
-5. **A real list type**, re-enabling `collect()`. Its own change, because it modifies a sealed hierarchy shared
+   provenance onto an already-populated graph means a rebuild. Note that "easy" describes the edit, not the
+   consequence: it changes the shipped `graph-mutation:1` vocabulary and the row encoding, so it belongs in its
+   own change rather than bundled with small language work.
+4. **A real list type**, re-enabling `collect()`. Its own change, because it modifies a sealed hierarchy shared
    across the product.
-6. Language and analytics features, driven by what users actually ask for.
-7. **C4 — detecting a partially-populated node.** Hard, and the two ways of reaching that state are both
+5. Language and analytics features, driven by what users actually ask for. **`SKIP` is not the cheap one it
+   looks like** — see [the note above](#skip-is-the-least-self-contained-item-in-this-table).
+6. **C4 — detecting a partially-populated node.** Hard, and the two ways of reaching that state are both
    signposted now, so it is no longer the sharpest edge.
-8. **Snapshot fan-out, then partitioning** — only once correctness is settled. Partitioning is the
+7. **Snapshot fan-out, then partitioning** — only once correctness is settled. Partitioning is the
    largest item here and the only route to a graph bigger than one node's disk. See
    [the architectural note](#architectural-note-how-far-up-the-plan-b-stack-should-graph-db-sit) before
    starting: the merge-based write path is the expensive prerequisite, and the one thing genuinely awkward to
@@ -343,6 +352,71 @@ deployed, and knowing what was wrong explains why some things are shaped as they
 | 5a | **Sweep the property-value lookup** — `GraphPropertyIndex.insert` now takes an optional recorder and reports which lookup entry each anchor references, so the rebuild can record usage and the sweep can delete the rest | Recording happens in `insert` because that is the only place that knows the tier: an inline value references no entry at all, and guessing which did would delete entries live anchors depend on. Ingest passes no recorder, since bookkeeping outside a sweep is consumed by nothing |
 | 7 | **A `GraphDb` node resolver** — `QueryNodeResolver` is now a multibinder behind a composite, and `GraphQueryNodeResolverImpl` pins graph queries to a configured node | The second half of cluster correctness, shipped together with blocker 0 — alone it would only have made answers consistently incomplete |
 | 8 | **Ship the XSD** — It is packaged and served from `GET /api/graphDb/v1/mutationSchema`, to be pasted into an `XMLSchema` document | There is no prebuilt content pack, and `SchemaFilter` additionally needs the instance document to carry `xsi:schemaLocation` |
+
+### Documentation and testing, delivered
+
+Five checks, which between them turn most of this documentation set from prose into something CI defends. They
+were the highest value-per-effort items on this page and they behaved like it: the five have found **nine**
+defects so far, six of them during the work that added them.
+
+| Item | What it means now |
+|---|---|
+| **Documented queries compile** | `TestDocumentationQueries` compiles every fenced `cypher` block, and honours the `-- rejected` / `-- rejected at runtime` annotations in both directions. Found three examples wrong for weeks, including an aggregation the language cannot express |
+| **Documented references exist** | `TestDocumentationReferences` checks every `Class.CONSTANT`, code-map class and `graphdb.*` setting |
+| **Documented values are correct** | The same class now compares the **number printed beside** each source constant, and every documented setting default against `new GraphDbConfig()`. All 15 constants and 6 defaults agreed on landing, so this is a regression guard rather than a fix — but it found `Db.MAX_KEY_LENGTH` unresolvable (an interface field, so `static final` is implicit and absent from the source) and one reference written as the shorthand `` `.LABEL_LIMIT` ``, which had been escaping the existence check too |
+| **Documented messages are still thrown** | `TestDocumentationMessages` checks every quoted rejection message against the class that throws it, and the rejection counts stated in [06-language-reference.md](06-language-reference.md) and [13-developer-guide.md](13-developer-guide.md). Found the two documents disagreeing: 64 against the compiler's 65 |
+| **The event-logging XSLT runs** | `TestEventLoggingXslt` transforms the documented corpus with the documented stylesheet, compares the result with the documented expected output, validates that output against the shipped XSD, and checks the snippets printed in the prose against the stylesheet. Found the fall-through template documented with a signature the file does not have |
+
+Four findings from building them, each of which constrains how the next such check should be written:
+
+**Compare structure, not text, when a serialiser is involved.** Saxon writes the root element's two namespace
+declarations in the opposite order to the committed expected output. Same document, different writer. A textual
+diff would have passed until the next Saxon upgrade and then failed for no reason anyone could act on.
+
+**Match documented excerpts as ordered subsequences.** Documentation legitimately abbreviates — eliding with `…`,
+and omitting an intervening line the passage is not about. Both defeat a substring check while changing nothing.
+The same treatment makes an interpolated rejection message checkable: a message is gathered per throw site and
+its fragments joined with the elision marker, which lines the reconstruction up with how the documentation
+already writes it.
+
+**An unparseable value must be *unchecked*, not a failure.** A new row with an unusual value should not break CI
+for whoever wrote it. Minimum-count floors are what stop that hollowing a check out, and they are cheaper than
+the alternative — a hand-kept exceptions list, which is the rot the checks exist to catch.
+
+**Landing the tests before the behaviour changes was worth more than it looked.** Both features below became
+uncommittable until their documentation caught up, and one of the three edits that forced — a `-- rejected`
+example in [09-gql-and-neo4j.md](09-gql-and-neo4j.md) that had started compiling — is one nobody would have
+thought to go looking for.
+
+### User interface and query language, delivered
+
+| Item | What it means now |
+|---|---|
+| **The whole-graph preview cap reports itself** | `MATCH (n) RETURN GRAPH` with no `LIMIT` still returns the first 100 nodes, and now says so, as a `WARNING` alongside the rows. It was the last guardrail that truncated in silence |
+| **`ORDER BY` accepts an aggregate expression** | `RETURN u.id, count(f) ORDER BY count(f) DESC` compiles, aliased or not. Only an aggregate the `RETURN` produces; `DISTINCT` is part of an aggregate's identity |
+
+**Why the cap warns rather than fails.** Every other guardrail throws. This one cannot: an absent `LIMIT` is the
+shape of the default query both graph tabs open with, so failing it would break the product out of the box. That
+left a case the code had no way to express — an answer that is usable, incomplete, and must say which — which is
+what `GraphQueryWarnings` is for.
+
+Two things about that warning are load-bearing. It reports that the scan **stopped** at the cap, not that more
+data exists: the scan halts the moment the cap fills, so it never looks at the rest of the store and cannot know
+whether anything there would have matched, and establishing that would mean paying the cost the cap avoids. And
+it must **not** fire when nothing was truncated — a graph holding exactly the cap is complete, and a warning that
+cries wolf on small graphs teaches people to ignore the surface it appears on.
+
+**No client change was needed**, which is worth knowing before anything else is reported this way. Both graph
+tabs extend `AbstractQueryDataPresenter`, which renders `ResultStore.getErrors()`, and that folds in the
+coprocessors' error consumer — which already carries a `Severity`. The one caveat: that surface renders every
+severity identically, so a warning must carry its whole meaning in its text.
+
+**Why `ORDER BY` on an aggregate was nearly free.** The grammar already parsed it (`orderItem : expression`
+reaches `aggregateCall`), the column name was already computed by `defaultAggregateName`, and the executor needed
+nothing — an aliased order key is already a `QualifiedField(null, <column>)`, which is exactly what an aggregate
+one now produces. The single risk was the compiler's two order-by paths disagreeing about an aggregate, which
+would validate and then sort on a column the `Project` never emitted; both go through one resolution helper for
+that reason.
 
 ### Configuration changes, now reported
 
