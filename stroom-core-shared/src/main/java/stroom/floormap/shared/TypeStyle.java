@@ -17,7 +17,6 @@
 package stroom.floormap.shared;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
-import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -110,8 +109,15 @@ public class TypeStyle {
         return graphic;
     }
 
-    /** True if this style draws an image rather than a shape. */
-    @JsonIgnore
+    /**
+     * True if this style draws an image rather than a shape.
+     *
+     * <p>Needs no {@code @JsonIgnore}: Jackson only auto-detects {@code getXxx}/
+     * {@code isXxx} as properties, so a {@code hasXxx} method is invisible to it —
+     * matching {@link Fact#hasImage()} and the other {@code has*} helpers.
+     * {@code TestJsonSerialisation} fails the build on a redundant
+     * {@code @JsonIgnore}.</p>
+     */
     public boolean hasGraphic() {
         return graphic != null && !graphic.isEmpty();
     }

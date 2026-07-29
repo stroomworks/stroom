@@ -73,6 +73,7 @@ import com.gwtplatform.mvp.client.View;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
@@ -137,7 +138,7 @@ public class FloorMapEditorPresenter
     /** Slot for the interactive map canvas. */
     public static final Object MAIN = new Object();
 
-    /** Slot for the right-hand dock (empty until the Layers panel lands). */
+    /** Slot for the right-hand dock, which holds the Layers panel. */
     public static final Object DOCK = new Object();
 
     /**
@@ -192,8 +193,8 @@ public class FloorMapEditorPresenter
     private final ButtonPanel helpToolbar;
 
     /**
-     * Toolbar toggle that shows/hides the right-hand dock. Off by default on the
-     * Editor tab, whose dock is empty until the Layers panel lands.
+     * Toolbar toggle that shows/hides the right-hand dock, which holds the Layers
+     * panel. On by default, matching the view, which starts the dock visible.
      */
     private final InlineSvgToggleButton dockToggleButton;
 
@@ -271,8 +272,8 @@ public class FloorMapEditorPresenter
         showGridButton.setTitle("Toggle Grid");
         showGridButton.setState(true);
 
-        // Show/hide the right-hand dock; off by default (the Editor dock is
-        // empty until the Layers panel lands). The view also starts it hidden.
+        // Show/hide the right-hand dock (the Layers panel). On by default, to
+        // match FloorMapEditorViewImpl, which starts the dock visible.
         dockToggleButton = new InlineSvgToggleButton();
         dockToggleButton.setSvg(SvgImage.SHOW_MENU);
         dockToggleButton.setTitle("Toggle Controls");
@@ -627,12 +628,13 @@ public class FloorMapEditorPresenter
      * in a single {@code applyChanges} call.</p>
      *
      * <ul>
-     *   <li><b>Success</b>: the buffer is cleared, all panels reload from the
-     *       server, and {@code callback} is invoked with the document.</li>
+     *   <li><b>Success</b>: the operations that were sent are discarded, all
+     *       panels reload from the server, and {@code callback} is invoked with
+     *       the document.</li>
      *   <li><b>Failure</b> (server-side error or HTTP error): the buffer is
-     *       cleared (the server rolled back), a top-level alert is shown, and
-     *       all panels reload. The {@code callback} is <em>not</em> invoked,
-     *       so the save chain stops here.</li>
+     *       <em>kept</em> so the user can retry, a top-level alert is shown, and
+     *       panels are not reloaded over in-progress edits. The {@code callback}
+     *       is <em>not</em> invoked, so the save chain stops here.</li>
      * </ul>
      *
      * @param document the saved document; passed through to the callback on
@@ -645,13 +647,18 @@ public class FloorMapEditorPresenter
             return;
         }
 
+        // Snapshot how many operations this flush is sending. The UI stays live
+        // during the round-trip, so anything the user stages meanwhile must not be
+        // discarded on success — it was never sent.
+        final int sentCount = model.getPendingChanges().getChanges().size();
+
         restFactory.create(SQL_TEMPORAL_STORE_RESOURCE)
                 .method(res -> res.applyChanges(buildApplyChangesRequest()))
                 .onSuccess(result -> {
                     if (result.isSuccess()) {
                         // Only discard the staged changes once the server has
-                        // confirmed they were applied.
-                        model.clearPendingChanges();
+                        // confirmed they were applied — and only the ones sent.
+                        model.getPendingChanges().clearSent(sentCount);
                         // Reload all panels so they reflect the newly-persisted data
                         reloadAllPanels();
                         callback.accept(document);
@@ -860,6 +867,13 @@ public class FloorMapEditorPresenter
         restFactory.create(SQL_TEMPORAL_STORE_RESOURCE)
                 .method(res -> res.find(mapKeyCriteria(mapName, key)))
                 .onSuccess(result -> {
+                    // Drop a late response for a fact that is no longer selected.
+                    // Storing it would leave the model holding another fact's
+                    // shards, which silently defeats the same-time overwrite
+                    // guards that read the merged time list.
+                    if (!Objects.equals(key, model.getSelectedFactKey())) {
+                        return;
+                    }
                     model.onTimeListFetched(
                             result != null ? result.getValues() : null);
                     refreshTimeListAtTime(model.getSelectedTime());
@@ -1117,10 +1131,26 @@ public class FloorMapEditorPresenter
                 "Edit Time Properties",
                 entry,
                 (saved, clone) -> {
+                    final boolean timeChanged = !Objects.equals(
+                            saved.getEffectiveTimeMs(), entry.getEffectiveTimeMs());
+
+                    // Refuse to land on a time that already has a version. The
+                    // store upserts by (key, effective-time), so both a move and
+                    // a clone would overwrite it — and a move would additionally
+                    // delete the original, collapsing two versions into one.
+                    if (timeChanged && model.selectedFactHasEntryAtTime(saved.getEffectiveTimeMs())) {
+                        AlertEvent.fireWarn(this,
+                                "A time version already exists at that time for '"
+                                + saved.getKey() + "'. Choose a different effective "
+                                + "time, or edit the existing version instead.",
+                                null);
+                        // Reject, so the dialog stays open with the user's input.
+                        return false;
+                    }
+
                     // When the effective time changed, a "move" deletes the
                     // original version; a "clone" keeps it alongside the new one.
-                    if (!clone
-                            && !Objects.equals(saved.getEffectiveTimeMs(), entry.getEffectiveTimeMs())) {
+                    if (!clone && timeChanged) {
                         model.getPendingChanges().recordDeletion(new TemporalEntryId(
                                 saved.getMap(), saved.getKey(),
                                 entry.getEffectiveTimeMs()));
@@ -1129,6 +1159,7 @@ public class FloorMapEditorPresenter
                     setDirty(true);
                     refreshTimeListAtTime(saved.getEffectiveTimeMs());
                     refreshCanvas();
+                    return true;
                 });
     }
 
@@ -1388,11 +1419,11 @@ public class FloorMapEditorPresenter
                     .icon(SvgImage.EDIT)
                     .text("Edit Properties")
                     .command(() -> {
-                        // Select the object and open the properties editor
-                        model.setSelectedFactKey(objectId);
-                        floorMapCanvasPresenter.setSelectedObjectId(objectId);
-                        floorMapFactListPresenter.setSelected(objectId);
-                        loadTimeListForSelectedFact();
+                        // Select through the one selection path so *every* side
+                        // effect happens. Hand-copying these steps previously
+                        // omitted FloorMapObjectEditPresenter.setObject, so the
+                        // dialog kept writing under the previously selected key.
+                        applySelection(Collections.singletonList(objectId));
 
                         // Edit the shard the canvas is showing (active at the
                         // scrubber), not the first key match (which could be a
@@ -1414,13 +1445,12 @@ public class FloorMapEditorPresenter
                         if (addMapName == null) {
                             return;
                         }
-                        // Select the object, then FETCH its time list before
+                        // Select through the one selection path (see Edit
+                        // Properties above), then FETCH its time list before
                         // adding — otherwise the model still holds the previous
                         // selection's shards, so the same-time overwrite guard is
                         // bypassed and the new version clones blank data.
-                        model.setSelectedFactKey(objectId);
-                        floorMapCanvasPresenter.setSelectedObjectId(objectId);
-                        floorMapFactListPresenter.setSelected(objectId);
+                        applySelection(Collections.singletonList(objectId));
                         fetchTimeList(addMapName, objectId, this::onAddTimeInTimeList);
                     })
                     .build());

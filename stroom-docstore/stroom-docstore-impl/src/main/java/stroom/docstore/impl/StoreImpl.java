@@ -36,7 +36,9 @@ import stroom.importexport.shared.ImportSettings.ImportMode;
 import stroom.importexport.shared.ImportState;
 import stroom.importexport.shared.ImportState.State;
 import stroom.security.api.SecurityContext;
+import stroom.security.api.UserIdentity;
 import stroom.security.shared.DocumentPermission;
+import stroom.security.shared.HasUserRef;
 import stroom.util.entityevent.EntityAction;
 import stroom.util.entityevent.EntityEvent;
 import stroom.util.entityevent.EntityEventBus;
@@ -49,6 +51,7 @@ import stroom.util.shared.Message;
 import stroom.util.shared.NullSafe;
 import stroom.util.shared.PermissionException;
 import stroom.util.shared.Severity;
+import stroom.util.shared.UserRef;
 
 import jakarta.inject.Inject;
 import jakarta.inject.Provider;
@@ -218,7 +221,8 @@ public class StoreImpl<D extends AbstractDoc, B extends AbstractBuilder<D, ?>> i
                     () -> "document: " + toDocRefDisplayString(docRef));
         }
 
-        persistence.delete(docRef, securityContext.getUserRef());
+        // STROOMWORKS-LOCAL: see getAuditUserRef(), prefer upstream on merge.
+        persistence.delete(docRef, getAuditUserRef());
         EntityEvent.fire(entityEventBus, docRef, EntityAction.DELETE);
 
         removeDocDependencies(docRef);
@@ -388,7 +392,8 @@ public class StoreImpl<D extends AbstractDoc, B extends AbstractBuilder<D, ?>> i
             // Convert the document back into a data map.
             final ImportExportDocument finalData = serialiser.write(builtDoc);
             // Write the data — import always succeeds, no version check.
-            persistence.write(docRef, AuditAction.IMPORT, securityContext.getUserRef(),
+            // STROOMWORKS-LOCAL: see getAuditUserRef(), prefer upstream on merge.
+            persistence.write(docRef, AuditAction.IMPORT, getAuditUserRef(),
                     finalData, null, builtDoc.getVersion());
 
             // Fire an entity event to alert other services of the change.
@@ -576,7 +581,8 @@ public class StoreImpl<D extends AbstractDoc, B extends AbstractBuilder<D, ?>> i
         try {
             final DocRef docRef = createDocRef(document);
             final ImportExportDocument importExportDocument = serialiser.write(document);
-            persistence.write(docRef, AuditAction.CREATE, securityContext.getUserRef(),
+            // STROOMWORKS-LOCAL: see getAuditUserRef(), prefer upstream on merge.
+            persistence.write(docRef, AuditAction.CREATE, getAuditUserRef(),
                     importExportDocument, null, document.getVersion());
             EntityEvent.fire(entityEventBus, docRef, EntityAction.CREATE);
 
@@ -648,6 +654,43 @@ public class StoreImpl<D extends AbstractDoc, B extends AbstractBuilder<D, ?>> i
         throw new PermissionException(securityContext.getUserRef(), msg);
     }
 
+    // --------------------------------------------------------------------------------
+    // TODO STROOMWORKS-LOCAL WORKAROUND - PREFER UPSTREAM ON MERGE FROM master.
+    //  #5582 (audit trail) made every doc write record the acting user via
+    //  SecurityContext.getUserRef(). No service user identity implements HasUserRef
+    //  (neither InternalIdpProcessingUserIdentity nor ServiceUserIdentity), so
+    //  getUserRef() throws AuthenticationException and any doc create/update/delete/
+    //  import run inside SecurityContext.asProcessingUser*(...) fails. That breaks e.g.
+    //  auto-creation of the singleton Data Retention doc, which in turn 500s
+    //  POST /api/meta/v1/find whenever the stream list is non-empty.
+    //  doc_audit.user_uuid/user_name are nullable and DBPersistence already null-guards
+    //  them, so we record a null user rather than failing the write.
+    //  When a proper upstream fix arrives (e.g. giving the service user a UserRef),
+    //  discard this method and restore securityContext.getUserRef() at the four
+    //  audit-write call sites that reference it.
+    // --------------------------------------------------------------------------------
+
+    /**
+     * @return The {@link UserRef} of the current user for recording in the audit trail, or null if
+     * the current identity has no associated stroom user, as is the case for the internal
+     * processing (service) user.
+     */
+    private UserRef getAuditUserRef() {
+        final UserIdentity userIdentity = securityContext.getUserIdentity();
+        if (userIdentity instanceof final HasUserRef hasUserRef) {
+            return hasUserRef.getUserRef();
+        } else if (userIdentity == null) {
+            // Having no user at all is still an error, so let SecurityContext raise it.
+            return securityContext.getUserRef();
+        } else {
+            LOGGER.debug(() -> LogUtil.message(
+                    "No stroom user account for identity '{}' ({}), auditing doc change with a null user",
+                    userIdentity.getUserIdentityForAudit(),
+                    userIdentity.getClass().getSimpleName()));
+            return null;
+        }
+    }
+
     private void checkType(final DocRef docRef) {
         try {
             Objects.requireNonNull(docRef);
@@ -695,7 +738,8 @@ public class StoreImpl<D extends AbstractDoc, B extends AbstractBuilder<D, ?>> i
             // Single atomic call — persistence layer handles version check.
             // For DB: UPDATE ... WHERE version = expectedVersion (optimistic lock).
             // For FS: StripedLockFactory in StoreImpl.readPersistence() serialises access.
-            persistence.write(docRef, AuditAction.UPDATE, securityContext.getUserRef(),
+            // STROOMWORKS-LOCAL: see getAuditUserRef(), prefer upstream on merge.
+            persistence.write(docRef, AuditAction.UPDATE, getAuditUserRef(),
                     newData, currentVersion, newVersion);
             EntityEvent.fire(entityEventBus, docRef, oldDocRef, EntityAction.UPDATE);
 

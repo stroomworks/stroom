@@ -68,6 +68,18 @@ public final class FloorMapSwatchHtml {
      * non-square image is not distorted — the same {@code contain} fit the canvas
      * gives a layer graphic.
      *
+     * <p><strong>Why there is no SVG scale compensation here.</strong> The canvas
+     * has to compensate for SVGs with no {@code viewBox} (see
+     * {@code FloorMapCanvasViewImpl.appendScaledImage}), because an SVG
+     * {@code <image>} scales its referent <em>through that referent's viewBox</em>
+     * and so cannot scale one that lacks it. An HTML {@code <img>} scales by a
+     * different route: the element's own box is the concrete object size and the SVG
+     * is scaled into it as an ordinary replaced element, viewBox or not. So sizing
+     * the element is sufficient here, and the two surfaces agree.</p>
+     *
+     * <p>The size is set as both attributes and inline style so a stylesheet rule on
+     * {@code img} cannot collapse the box and, with it, {@code object-fit}.</p>
+     *
      * <p>The URL is document-controlled data going into {@code innerHTML}, so it
      * is escaped; an unescaped value (a stray quote) would allow attribute
      * injection.</p>
@@ -76,7 +88,8 @@ public final class FloorMapSwatchHtml {
         return SafeHtmlUtils.fromTrustedString(
                 "<img src=\"" + SafeHtmlUtils.htmlEscape(url) + "\""
                 + " width=\"" + sizePx + "\" height=\"" + sizePx + "\""
-                + " style=\"object-fit:contain;\" alt=\"\"/>");
+                + " style=\"width:" + sizePx + "px;height:" + sizePx + "px;"
+                + "object-fit:contain;\" alt=\"\"/>");
     }
 
     /** An inline-SVG preview of {@code shape} filled with {@code colour}. */
@@ -137,6 +150,25 @@ public final class FloorMapSwatchHtml {
      * interpolated into trusted SVG.
      */
     private static boolean isValidColour(final String colour) {
-        return colour != null && colour.matches("^#[0-9a-fA-F]{3,8}$");
+        // Checked by hand rather than with a regex: this runs once per layer row on
+        // every Layers rebuild, and GWT does not emulate java.util.regex.Pattern,
+        // so a precompiled pattern is not an option here — String.matches would
+        // build a fresh JS RegExp on each call.
+        if (colour == null || colour.length() < 4 || colour.length() > 9) {
+            return false;
+        }
+        if (colour.charAt(0) != '#') {
+            return false;
+        }
+        for (int i = 1; i < colour.length(); i++) {
+            final char c = colour.charAt(i);
+            final boolean hex = (c >= '0' && c <= '9')
+                    || (c >= 'a' && c <= 'f')
+                    || (c >= 'A' && c <= 'F');
+            if (!hex) {
+                return false;
+            }
+        }
+        return true;
     }
 }

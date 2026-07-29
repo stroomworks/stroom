@@ -90,12 +90,6 @@ public class FloorMapCanvasViewImpl
      */
     private static final int OBJECT_SIZE = 60;
 
-    /**
-     * Longest edge a layer graphic may occupy, as a multiple of {@link #OBJECT_SIZE}
-     * — stops a banner-shaped image becoming an unreadably wide sliver when its box
-     * is area-matched to a shape glyph. See {@link #graphicBoxSize}.
-     */
-    private static final double MAX_GRAPHIC_EDGE_RATIO = 2.0;
 
     /** On-screen size (px) of a square scale handle. */
     private static final double HANDLE_SIZE_PX = 8;
@@ -150,7 +144,16 @@ public class FloorMapCanvasViewImpl
 
     private final Widget widget;
 
-    private final Map<String, Double> imageAspectRatioCache = new HashMap<>();
+    /**
+     * Natural {@code {width, height}} in pixels per image URL, as reported by the
+     * browser once loaded.
+     *
+     * <p>The intrinsic <em>size</em> is cached rather than just the aspect ratio
+     * because {@link #appendScaledImage} needs it to scale SVGs that cannot scale
+     * themselves. A present entry of {@code {0, 0}} records "loaded but the browser
+     * would not report a usable size", which stops the image being probed forever.</p>
+     */
+    private final Map<String, double[]> imageNaturalSizeCache = new HashMap<>();
     private final Set<String> loadingImages = new HashSet<>();
     private Runnable redrawListener;
     private Runnable resizeListener;
@@ -161,6 +164,13 @@ public class FloorMapCanvasViewImpl
     private double lastOffsetX;
     private double lastOffsetY;
     private List<Fact> lastFacts;
+
+    /**
+     * The type styles of the last draw. Held so {@link #geometry()} can measure a
+     * layer that draws an image at the box that image actually occupies, rather
+     * than assuming every imageless fact is a square glyph.
+     */
+    private List<TypeStyle> lastTypeStyles;
     private Set<String> lastSelectedIds;
 
     @UiField
@@ -295,6 +305,7 @@ public class FloorMapCanvasViewImpl
         this.lastOffsetY = y;
         this.lastFacts = facts;
         this.lastSelectedIds = selectedObjectIds;
+        this.lastTypeStyles = typeStyles;
 
         htmlBuilder.elem(svg -> {
 
@@ -445,6 +456,7 @@ public class FloorMapCanvasViewImpl
      * when the polygon can be closed (≥ 3 committed vertices and the cursor
      * within the close radius). Everything is non-interactive.
      *
+     * @param svg     the SVG root builder to append to
      * @param draftPx flat polyline {@code [x0, y0, ..., xn, yn]} in element
      *                pixels; the last point is the live cursor position
      */
@@ -695,7 +707,7 @@ public class FloorMapCanvasViewImpl
      */
     private FloorMapScreenGeometry geometry() {
         return new FloorMapScreenGeometry(lastScale, lastOffsetX, lastOffsetY,
-                IMAGE_DISPLAY_WIDTH, OBJECT_SIZE, imageAspectRatioCache::get);
+                IMAGE_DISPLAY_WIDTH, OBJECT_SIZE, this::cachedAspectRatio, lastTypeStyles);
     }
 
     @Override
@@ -711,7 +723,7 @@ public class FloorMapCanvasViewImpl
     @Override
     public double[] getFactMapAnchor(final Fact fact) {
         return fact.mapAnchor(IMAGE_DISPLAY_WIDTH,
-                imageAspectRatioCache.get(fact.getImage()));
+                cachedAspectRatio(fact.getImage()));
     }
 
     @Override
@@ -972,11 +984,10 @@ public class FloorMapCanvasViewImpl
                                   final boolean centred,
                                   final boolean isSelected,
                                   final String selectionColour) {
-        final Double cachedAspectRatio = imageAspectRatioCache.get(fact.getImage());
-        final double aspectRatio = cachedAspectRatio != null ? cachedAspectRatio : 1.0;
-        if (cachedAspectRatio == null) {
-            loadImageAspectRatio(fact.getImage());
-        }
+        final double[] natural = naturalSize(fact.getImage());
+        final double aspectRatio = natural != null
+                ? natural[0] / natural[1]
+                : 1.0;
         final double imgHeight = (double) IMAGE_DISPLAY_WIDTH / aspectRatio;
 
         FloorMapTransformationMatrix effective = placement;
@@ -992,19 +1003,10 @@ public class FloorMapCanvasViewImpl
         }
 
         parent.elem(imgGroup -> {
-            imgGroup.elem(SafeHtmlUtil.from("image"),
-                // Escape the image URL — it is document-controlled data going
-                // into innerHTML, so an unescaped value (a stray quote) allows
-                // markup/attribute injection (stored XSS). Attribute(String,
-                // String) escapes via SafeHtmlUtil.from; a normal URL is
-                // unaffected, and an SVG <image href> does not run javascript:.
-                new Attribute("href", fact.getImage()),
-                new Attribute("x", "0"),
-                new Attribute("y", "0"),
-                new Attribute("width", String.valueOf(IMAGE_DISPLAY_WIDTH)),
-                new Attribute("height", String.valueOf(imgHeight)),
-                new Attribute("preserveAspectRatio", "none"),
-                new Attribute("id", fact.getKey()));
+            // Drawn via appendScaledImage so an SVG icon that cannot scale itself
+            // still fills the box rather than rendering as a speck.
+            appendScaledImage(imgGroup, fact.getImage(), fact.getKey(), natural,
+                    0, 0, IMAGE_DISPLAY_WIDTH, imgHeight, "none");
 
             if (isSelected) {
                 imgGroup.elem(SafeHtmlUtil.from("rect"),
@@ -1168,19 +1170,11 @@ public class FloorMapCanvasViewImpl
                 final double[] box = graphicBoxSize(graphic);
                 final double gw = box[0];
                 final double gh = box[1];
-                objGroup.elem(SafeHtmlUtil.from("image"),
-                    // Escape the URL: it is document-controlled data going into
-                    // innerHTML, so an unescaped value allows attribute injection.
-                    new Attribute("href", graphic),
-                    new Attribute("x", String.valueOf(-gw / 2.0)),
-                    new Attribute("y", String.valueOf(-gh / 2.0)),
-                    new Attribute("width", String.valueOf(gw)),
-                    new Attribute("height", String.valueOf(gh)),
-                    // The box already matches the image's own aspect ratio, so this
-                    // fits exactly rather than letterboxing; it only matters while
-                    // the ratio is still being probed.
-                    new Attribute("preserveAspectRatio", "xMidYMid meet"),
-                    new Attribute("id", id));
+                // The box already matches the image's own aspect ratio, so the
+                // fallback "meet" fits exactly rather than letterboxing; it only
+                // applies while the natural size is still being probed.
+                appendScaledImage(objGroup, graphic, id, naturalSize(graphic),
+                        -gw / 2.0, -gh / 2.0, gw, gh, "xMidYMid meet");
                 if (bordered) {
                     objGroup.elem(SafeHtmlUtil.from("rect"),
                         new Attribute("x", String.valueOf(-gw / 2.0)),
@@ -1382,6 +1376,72 @@ public class FloorMapCanvasViewImpl
     }
 
     /**
+     * Appends an {@code <image>} filling the target box, compensating for SVGs that
+     * cannot scale themselves.
+     *
+     * <p>An SVG {@code <image>} maps the referenced file into the given
+     * width/height <em>via that file's {@code viewBox}</em>. An SVG declaring only
+     * {@code width}/{@code height} and no {@code viewBox} has no user coordinate
+     * system to map, so it ignores the box and renders at its own small intrinsic
+     * size — for a fact icon, inside a 1000-unit box, that is a barely visible
+     * speck. Setting the box <em>to</em> the intrinsic size and scaling the wrapping
+     * group instead sidesteps the problem: the file renders 1:1, and the group
+     * transform does the enlarging.</p>
+     *
+     * <p>This is a no-op in effect for raster images and for well-formed SVGs — the
+     * same pixels either way — so it is applied uniformly rather than trying to
+     * sniff which files need it. When the natural size is unknown (still loading, or
+     * the browser will not report one) it falls back to sizing the box directly.</p>
+     *
+     * @param naturalSize the image's intrinsic {@code {width, height}}, or
+     *                    {@code null} if unknown
+     * @param x           left edge of the target box, in the parent's coordinates
+     * @param y           top edge of the target box
+     * @param targetWidth  width to draw at; must share the natural aspect ratio with
+     *                     {@code targetHeight} so one uniform scale suffices
+     * @param targetHeight height to draw at
+     * @param preserveAspectRatio value for the attribute of the same name, used only
+     *                            on the unknown-size fallback path
+     */
+    private void appendScaledImage(final HtmlBuilder parent,
+                                   final String url,
+                                   final String id,
+                                   final double[] naturalSize,
+                                   final double x,
+                                   final double y,
+                                   final double targetWidth,
+                                   final double targetHeight,
+                                   final String preserveAspectRatio) {
+        if (naturalSize == null) {
+            // Escape the URL: it is document-controlled data going into innerHTML,
+            // so an unescaped value allows attribute injection.
+            parent.elem(SafeHtmlUtil.from("image"),
+                    new Attribute("href", url),
+                    new Attribute("x", String.valueOf(x)),
+                    new Attribute("y", String.valueOf(y)),
+                    new Attribute("width", String.valueOf(targetWidth)),
+                    new Attribute("height", String.valueOf(targetHeight)),
+                    new Attribute("preserveAspectRatio", preserveAspectRatio),
+                    new Attribute("id", id));
+            return;
+        }
+
+        final double scale = targetWidth / naturalSize[0];
+        parent.elem(scaled -> scaled.elem(SafeHtmlUtil.from("image"),
+                        new Attribute("href", url),
+                        new Attribute("x", "0"),
+                        new Attribute("y", "0"),
+                        new Attribute("width", String.valueOf(naturalSize[0])),
+                        new Attribute("height", String.valueOf(naturalSize[1])),
+                        // The box is the intrinsic size, so there is nothing to fit.
+                        new Attribute("preserveAspectRatio", "none"),
+                        new Attribute("id", id)),
+                SafeHtmlUtil.from("g"),
+                new Attribute("transform",
+                        "translate(" + x + "," + y + ") scale(" + scale + ")"));
+    }
+
+    /**
      * The on-screen {@code {width, height}} to draw a layer graphic at, sized so it
      * carries the <strong>same visual weight as a shape glyph</strong>.
      *
@@ -1394,39 +1454,20 @@ public class FloorMapCanvasViewImpl
      * {@code (S·√r, S/√r)}, which has area {@code S²} for every {@code r} and
      * gives a square image exactly the shape's {@code S × S}.</p>
      *
-     * <p>The ratio comes from {@link #imageAspectRatioCache}; until it resolves the
-     * graphic is drawn square, and {@link #onImageAspectRatioResolved} triggers a
-     * redraw at the true size.</p>
+     * <p>The ratio comes from {@link #naturalSize}; until it resolves the graphic is
+     * drawn square, and {@link #onImageSizeResolved} triggers a redraw at the true
+     * size.</p>
      *
      * @param url the graphic's asset URL
      * @return a two-element {@code {width, height}} in SVG user-units
      */
     private double[] graphicBoxSize(final String url) {
-        final Double cached = imageAspectRatioCache.get(url);
-        if (cached == null) {
-            loadImageAspectRatio(url);
-            return new double[]{OBJECT_SIZE, OBJECT_SIZE};
-        }
-        final double ratio = cached;
-        if (ratio <= 0 || Double.isNaN(ratio) || Double.isInfinite(ratio)) {
-            return new double[]{OBJECT_SIZE, OBJECT_SIZE};
-        }
-
-        final double root = Math.sqrt(ratio);
-        double width = OBJECT_SIZE * root;
-        double height = OBJECT_SIZE / root;
-
-        // An extreme ratio (a banner-shaped image) would otherwise become a very
-        // wide, very thin sliver, so cap the longest edge and scale both down
-        // together, keeping the aspect ratio.
-        final double longest = Math.max(width, height);
-        final double cap = OBJECT_SIZE * MAX_GRAPHIC_EDGE_RATIO;
-        if (longest > cap) {
-            final double shrink = cap / longest;
-            width = width * shrink;
-            height = height * shrink;
-        }
-        return new double[]{width, height};
+        final double[] natural = naturalSize(url);
+        // Delegate the arithmetic so the drawn box and the hit-test/selection box
+        // can never drift apart; this side only supplies the measured ratio.
+        return FloorMapScreenGeometry.graphicBox(OBJECT_SIZE, natural == null
+                ? null
+                : natural[0] / natural[1]);
     }
 
     /**
@@ -1447,19 +1488,56 @@ public class FloorMapCanvasViewImpl
     }
 
     /**
-     * Callback invoked (via JSNI) when the browser has finished loading a background image
-     * and its natural dimensions are known.
+     * Callback invoked (via JSNI) when the browser has finished loading an image and
+     * its natural dimensions are known.
      *
-     * @param url         the image URL that was loaded
-     * @param aspectRatio the image's natural width / height ratio
+     * @param url           the image URL that was loaded
+     * @param naturalWidth  the image's natural width in pixels, or {@code 0} if the
+     *                      browser would not report one
+     * @param naturalHeight the image's natural height in pixels, or {@code 0}
      */
     @SuppressWarnings("unused")
-    void onImageAspectRatioResolved(final String url, final double aspectRatio) {
-        imageAspectRatioCache.put(url, aspectRatio);
+    void onImageSizeResolved(final String url,
+                             final double naturalWidth,
+                             final double naturalHeight) {
+        imageNaturalSizeCache.put(url, new double[]{naturalWidth, naturalHeight});
         loadingImages.remove(url);
         if (redrawListener != null) {
             redrawListener.run();
         }
+    }
+
+    /**
+     * The image's natural {@code {width, height}}, starting a load if it is not yet
+     * known. Returns {@code null} while unknown, or if the browser reported no
+     * usable size — callers then fall back to letting the {@code <image>} box do
+     * the scaling.
+     *
+     * <p>Safe to call every frame: {@link #loadImageAspectRatio} de-duplicates
+     * in-flight loads, and a resolved entry (even an unusable one) is never probed
+     * again.</p>
+     */
+    private double[] naturalSize(final String url) {
+        final double[] size = imageNaturalSizeCache.get(url);
+        if (size == null) {
+            loadImageAspectRatio(url);
+            return null;
+        }
+        return size[0] > 0 && size[1] > 0
+                ? size
+                : null;
+    }
+
+    /**
+     * The image's natural width/height ratio if already known, otherwise
+     * {@code null}. Unlike {@link #naturalSize} this never starts a load, so it is
+     * safe to call from hit-testing and other non-drawing paths.
+     */
+    private Double cachedAspectRatio(final String url) {
+        final double[] size = imageNaturalSizeCache.get(url);
+        return size != null && size[0] > 0 && size[1] > 0
+                ? size[0] / size[1]
+                : null;
     }
 
     /**
@@ -1477,9 +1555,10 @@ public class FloorMapCanvasViewImpl
     }
 
     /**
-     * JSNI method that creates a browser {@code Image} element and starts loading the given URL.
-     * On success, calls back {@link #onImageAspectRatioResolved} with the computed aspect ratio;
-     * on error, falls back to an aspect ratio of {@code 1.0}.
+     * JSNI method that creates a browser {@code Image} element and starts loading the
+     * given URL, reporting the natural size to {@link #onImageSizeResolved}. A failed
+     * load, or one the browser will not size, reports {@code 0 x 0}, which callers
+     * treat as "unknown".
      */
     private native void startImageLoad(final String url) /*-{
         var self = this;
@@ -1487,16 +1566,12 @@ public class FloorMapCanvasViewImpl
         img.onload = function() {
             var width = img.naturalWidth || img.width || 0;
             var height = img.naturalHeight || img.height || 0;
-            var aspectRatio = 1.0;
-            if (width > 0 && height > 0) {
-                aspectRatio = width / height;
-            }
-            self.@stroom.floormap.client.view.FloorMapCanvasViewImpl::onImageAspectRatioResolved(Ljava/lang/String;D)
-                    (url, aspectRatio);
+            self.@stroom.floormap.client.view.FloorMapCanvasViewImpl::onImageSizeResolved(Ljava/lang/String;DD)
+                    (url, width, height);
         };
         img.onerror = function() {
-            self.@stroom.floormap.client.view.FloorMapCanvasViewImpl::onImageAspectRatioResolved(Ljava/lang/String;D)
-                    (url, 1.0);
+            self.@stroom.floormap.client.view.FloorMapCanvasViewImpl::onImageSizeResolved(Ljava/lang/String;DD)
+                    (url, 0, 0);
         };
         img.src = url;
     }-*/;

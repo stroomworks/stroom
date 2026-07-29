@@ -39,9 +39,11 @@ import java.util.Objects;
  * while the flush is still pending.</p>
  *
  * <h3>Save / error flow</h3>
- * <p>On a successful flush call {@link #clear()}. On a failed flush show a
- * top-level alert and reload all panels from the server, then {@link #clear()}
- * (the server transaction was rolled back so there are no partial changes).</p>
+ * <p>On a successful flush call {@link #clearSent(int)} with the number of
+ * operations that were sent — <em>not</em> {@link #clear()}, which would also
+ * discard anything the user staged while the request was in flight. On a failed
+ * flush keep the operations staged so the user can retry; the server transaction
+ * was rolled back, so replaying them is safe and idempotent.</p>
  */
 public class FloorMapPendingChanges {
 
@@ -153,11 +155,40 @@ public class FloorMapPendingChanges {
     /**
      * Clears all staged operations.
      *
-     * <p>Call this after a successful flush or after a failed flush (since the
-     * server rolled back, the staged operations are now stale).</p>
+     * <p>Only safe when nothing can have been staged since the flush was
+     * dispatched — otherwise use {@link #clearSent(int)}, which keeps the
+     * unsent tail.</p>
      */
     public void clear() {
         changes.clear();
+    }
+
+    /**
+     * Discards the first {@code sentCount} operations — the ones a flush actually
+     * sent — and keeps anything staged after it was dispatched.
+     *
+     * <p>A save is a round-trip and the UI is not blocked while it is in flight,
+     * so the user can drag, delete or edit in the meantime. Clearing the whole
+     * buffer on success would throw those edits away without ever having sent
+     * them, and the follow-up panel reload would make them visibly disappear.</p>
+     *
+     * <p>This is exact rather than approximate because {@link #changes} is
+     * append-only and never reordered (see the class javadoc), so the operations
+     * a flush sent are always a prefix of the list.</p>
+     *
+     * @param sentCount the number of operations that were sent, i.e. the size of
+     *                  {@link #getChanges()} at the moment the request was built;
+     *                  values outside the current range are clamped
+     */
+    public void clearSent(final int sentCount) {
+        if (sentCount <= 0) {
+            return;
+        }
+        if (sentCount >= changes.size()) {
+            changes.clear();
+            return;
+        }
+        changes.subList(0, sentCount).clear();
     }
 
     // -----------------------------------------------------------------------

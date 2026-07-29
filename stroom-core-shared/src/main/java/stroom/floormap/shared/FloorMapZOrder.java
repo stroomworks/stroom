@@ -18,7 +18,9 @@ package stroom.floormap.shared;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Applies the per-type paint order (see {@link TypeStyle} and the redesign §6
@@ -69,8 +71,39 @@ public final class FloorMapZOrder {
         if (facts != null) {
             result.addAll(facts);
         }
+        // Resolve type -> index ONCE. Comparator.comparingInt re-invokes its key
+        // extractor on every comparison, so scanning `order` inside the comparator
+        // made this O(n log n * types) rather than O(n log n + types) — and this
+        // runs on every redraw, including every animation frame.
+        final Map<String, Integer> indexByType = indexByType(order);
         // List.sort is stable, so facts of the same type keep their input order.
-        result.sort(Comparator.comparingInt(fact -> indexOf(fact.getType(), order)));
+        result.sort(Comparator.comparingInt(fact -> {
+            final Integer index = fact.getType() == null
+                    ? null
+                    : indexByType.get(fact.getType());
+            return index != null
+                    ? index
+                    : Integer.MAX_VALUE;
+        }));
         return result;
+    }
+
+    /**
+     * Maps each configured type to its position in {@code order}.
+     *
+     * <p>Uses the <em>first</em> occurrence of a duplicated type, matching
+     * {@link #indexOf}.</p>
+     */
+    private static Map<String, Integer> indexByType(final List<TypeStyle> order) {
+        final Map<String, Integer> indexByType = new HashMap<>();
+        if (order != null) {
+            for (int i = 0; i < order.size(); i++) {
+                final TypeStyle style = order.get(i);
+                if (style != null && style.getType() != null) {
+                    indexByType.putIfAbsent(style.getType(), i);
+                }
+            }
+        }
+        return indexByType;
     }
 }

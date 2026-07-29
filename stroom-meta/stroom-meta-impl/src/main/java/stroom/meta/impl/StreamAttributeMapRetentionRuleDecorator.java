@@ -49,6 +49,12 @@ class StreamAttributeMapRetentionRuleDecorator {
     private final ExpressionMatcher expressionMatcher;
     private final StreamAttributeMapConverter streamAttributeMapConverter;
 
+    /**
+     * Non-null if we failed to load the retention rules, in which case we report the failure in the
+     * retention columns rather than failing the whole request.
+     */
+    private final String rulesLoadFailureMessage;
+
     @Inject
     public StreamAttributeMapRetentionRuleDecorator(final ExpressionMatcherFactory expressionMatcherFactory,
                                                     final DataRetentionRulesProvider dataRetentionRulesProvider,
@@ -56,13 +62,30 @@ class StreamAttributeMapRetentionRuleDecorator {
         this.streamAttributeMapConverter = streamAttributeMapConverter;
         this.expressionMatcher = expressionMatcherFactory.create(MetaFields.getFieldMap());
 
-        this.rules = Optional.ofNullable(dataRetentionRulesProvider)
-                .map(DataRetentionRulesProvider::getOrCreate)
-                .map(DataRetentionRules::getRules)
-                .orElse(Collections.emptyList());
+        // Retention info is only decoration on the rows we have already found, so a failure to load the
+        // rules must not stop the caller seeing its data. Degrade to no rules and report it per row.
+        List<DataRetentionRule> rules = Collections.emptyList();
+        String rulesLoadFailureMessage = null;
+        try {
+            rules = Optional.ofNullable(dataRetentionRulesProvider)
+                    .map(DataRetentionRulesProvider::getOrCreate)
+                    .map(DataRetentionRules::getRules)
+                    .orElse(Collections.emptyList());
+        } catch (final RuntimeException e) {
+            rulesLoadFailureMessage = Objects.requireNonNullElseGet(
+                    e.getMessage(), () -> e.getClass().getSimpleName());
+            LOGGER.error("Error loading data retention rules, retention info will be unavailable: {}",
+                    rulesLoadFailureMessage, e);
+        }
+        this.rules = rules;
+        this.rulesLoadFailureMessage = rulesLoadFailureMessage;
     }
 
     void addMatchingRetentionRuleInfo(final Meta meta, final Map<String, String> attributeMap) {
+        if (rulesLoadFailureMessage != null) {
+            setErrorRetentionRuleInfo(attributeMap, rulesLoadFailureMessage);
+            return;
+        }
         try {
             int index = -1;
 
@@ -98,10 +121,14 @@ class StreamAttributeMapRetentionRuleDecorator {
             }
         } catch (final RuntimeException e) {
             final String msg = Objects.requireNonNullElseGet(e.getMessage(), () -> e.getClass().getSimpleName());
-            attributeMap.put(DataRetentionFields.RETENTION_AGE, DataRetentionRule.FOREVER);
-            attributeMap.put(DataRetentionFields.RETENTION_UNTIL, DataRetentionRule.FOREVER);
-            attributeMap.put(DataRetentionFields.RETENTION_RULE, "Error - " + msg);
+            setErrorRetentionRuleInfo(attributeMap, msg);
         }
+    }
+
+    private void setErrorRetentionRuleInfo(final Map<String, String> attributeMap, final String msg) {
+        attributeMap.put(DataRetentionFields.RETENTION_AGE, DataRetentionRule.FOREVER);
+        attributeMap.put(DataRetentionFields.RETENTION_UNTIL, DataRetentionRule.FOREVER);
+        attributeMap.put(DataRetentionFields.RETENTION_RULE, "Error - " + msg);
     }
 
     private int findMatchingRuleIndex(final Map<String, Object> attributeMap) {

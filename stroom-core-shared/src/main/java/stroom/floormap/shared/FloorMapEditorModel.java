@@ -416,6 +416,32 @@ public class FloorMapEditorModel {
     }
 
     /**
+     * The fact key that an edit of {@code entry} must be written under.
+     *
+     * <p>An edit of an existing entry <strong>always</strong> belongs to that
+     * entry's own key. Only when there is no entry — a brand-new object, where the
+     * form starts blank — does the caller's key apply.</p>
+     *
+     * <p>This exists as a named rule because getting it wrong is silent and
+     * destructive rather than obvious. The properties dialog used to take the key
+     * from whatever was last selected, so right-clicking fact B while fact A was
+     * selected wrote B's values under A's key and, if the effective time changed,
+     * deleted A's shard as well. Deriving the key from the entry makes that class
+     * of mistake unrepresentable.</p>
+     *
+     * @param entry       the entry being edited, or {@code null} when creating one
+     * @param fallbackKey the key to use only when {@code entry} is {@code null} or
+     *                    carries no key of its own
+     * @return the key to write under; may be {@code null} if neither source has one
+     */
+    public static String resolveEntryKey(final TemporalEntry entry, final String fallbackKey) {
+        if (entry != null && entry.getKey() != null && !entry.getKey().isEmpty()) {
+            return entry.getKey();
+        }
+        return fallbackKey;
+    }
+
+    /**
      * Returns the single merged (server + pending) entry for {@code key} that is
      * <em>active at {@link #selectedTime}</em> — i.e. the exact shard the canvas
      * is currently rendering (see {@link #parseForCanvas}). Edits must target

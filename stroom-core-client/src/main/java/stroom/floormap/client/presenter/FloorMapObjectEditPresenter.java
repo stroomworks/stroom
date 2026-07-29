@@ -22,6 +22,7 @@ import stroom.document.asset.client.presenter.DocumentAssetDropDownPresenter;
 import stroom.floormap.client.ValueAccessorFactory;
 import stroom.floormap.client.presenter.FloorMapObjectEditPresenter.FloorMapObjectEditView;
 import stroom.floormap.shared.FloorMapDoc;
+import stroom.floormap.shared.FloorMapEditorModel;
 import stroom.floormap.shared.FloorMapEntryParser;
 import stroom.floormap.shared.FloorMapFieldMapping.Role;
 import stroom.floormap.shared.FloorMapJsonKeys;
@@ -66,7 +67,7 @@ import javax.inject.Inject;
  *
  * <h3>Preconditions</h3>
  * <p>{@link #setMapName(String)} <strong>must</strong> be called before
- * {@link #buildEntry(long)} or {@link #show(String, TemporalEntry, Consumer)}
+ * {@link #buildEntry(long, String)} or {@link #show(String, TemporalEntry, Consumer)}
  * is invoked; otherwise an {@link IllegalStateException} is thrown.</p>
  */
 public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjectEditView> {
@@ -104,10 +105,10 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
     }
 
     /**
-     * Stores the map name for later use by {@link #buildEntry(long)}.
+     * Stores the map name for later use by {@link #buildEntry(long, String)}.
      *
      * <p>This method <strong>must</strong> be called at least once before
-     * any call to {@link #buildEntry(long)} or
+     * any call to {@link #buildEntry(long, String)} or
      * {@link #show(String, TemporalEntry, Consumer)}.</p>
      *
      * @param mapName the temporal-store map name; must not be {@code null}
@@ -187,13 +188,14 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
      * @param caption the dialog title — e.g. "Add Time Properties" or "Add Object"
      * @param entry   the entry to pre-populate the form with; may be {@code null} for a blank form
      * @param onSave  called with the built entry when the user clicks OK
-     *
-     * TODO 4092: Is this correct? When is it called?
      */
     public void show(final String caption,
                      final TemporalEntry entry,
                      final Consumer<TemporalEntry> onSave) {
-        doShow(caption, entry, false, (built, clone) -> onSave.accept(built));
+        doShow(caption, entry, false, (built, clone) -> {
+            onSave.accept(built);
+            return true;
+        });
     }
 
     /**
@@ -210,19 +212,55 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
      * @param entry   the entry to pre-populate the form with; must not be {@code null}
      * @param onSave  called with the built entry when the user clicks OK; the
      *                boolean is {@code true} when the user chose to clone
-     *                rather than move (only possible when the time changed)
+     *                rather than move (only possible when the time changed).
+     *                Return {@code false} to reject the save and leave the dialog
+     *                open with the user's input intact
      */
     public void showForEdit(final String caption,
                             final TemporalEntry entry,
-                            final BiConsumer<TemporalEntry, Boolean> onSave) {
+                            final SaveHandler onSave) {
         doShow(caption, entry, true, onSave);
     }
 
-    // TODO 4092: Is this correct? When is it called?
+    /**
+     * Save handler that can <em>reject</em> what the user entered.
+     *
+     * <p>Returning {@code false} keeps the dialog open, so a caller that rejects
+     * a save (for example because the chosen effective time is already occupied)
+     * does not also throw away everything the user typed.</p>
+     */
+    @FunctionalInterface
+    public interface SaveHandler {
+
+        /**
+         * @param entry the entry built from the current form state
+         * @param clone {@code true} when the user chose to clone rather than move
+         * @return {@code true} to accept and close, {@code false} to stay open
+         */
+        boolean onSave(TemporalEntry entry, boolean clone);
+    }
+
+    /**
+     * Shared implementation behind {@link #show} and {@link #showForEdit}.
+     *
+     * <p>The key the dialog will write under is resolved <strong>once, here</strong>
+     * and captured for the OK handler, so it cannot drift if the surrounding
+     * selection changes while the dialog is open, and cannot be left stale by a
+     * caller that forgot {@link #setObject}. For an existing entry it is that
+     * entry's own key; only a blank new-object form falls back to
+     * {@link #objectId}.</p>
+     *
+     * @param caption        the dialog title
+     * @param entry          the entry to pre-populate from, or {@code null} for a blank form
+     * @param askMoveOrClone whether to ask move-or-clone when the effective time changes
+     * @param onSave         called with the built entry and the clone flag on OK; the
+     *                       dialog stays open if it returns {@code false}
+     */
     private void doShow(final String caption,
                         final TemporalEntry entry,
                         final boolean askMoveOrClone,
-                        final BiConsumer<TemporalEntry, Boolean> onSave) {
+                        final SaveHandler onSave) {
+        final String key = FloorMapEditorModel.resolveEntryKey(entry, objectId);
         loadEntry(entry);
         //noinspection unused e
         ShowPopupEvent.builder(this)
@@ -254,12 +292,16 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
                                     + "Do you want to move the version to the new time? "
                                     + "(OK to move, Cancel to create a new cloned version at the new time)",
                                     move -> {
-                                        onSave.accept(buildEntry(time), !move);
-                                        e.hide();
+                                        // Keep the dialog open when the handler
+                                        // rejects, so the user's input survives.
+                                        if (onSave.onSave(buildEntry(time, key), !move)) {
+                                            e.hide();
+                                        }
                                     });
                         } else {
-                            onSave.accept(buildEntry(time), false);
-                            e.hide();
+                            if (onSave.onSave(buildEntry(time, key), false)) {
+                                e.hide();
+                            }
                         }
                     } else {
                         e.hide();
@@ -355,11 +397,16 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
      * Builds a {@link TemporalEntry} from the current view state without
      * making a REST call.
      *
+     * <p>The key is passed in rather than read from {@link #objectId} so that an
+     * edit is always written under the key of the entry actually being edited —
+     * see {@link FloorMapEditorModel#resolveEntryKey}.</p>
+     *
      * @param effectiveTimeMs the effective time for the new entry
+     * @param key             the fact key to write under
      * @return the constructed entry; never {@code null}
      */
-    private TemporalEntry buildEntry(final long effectiveTimeMs) {
-        return new TemporalEntry(requireMapName(), objectId, effectiveTimeMs, buildValue());
+    private TemporalEntry buildEntry(final long effectiveTimeMs, final String key) {
+        return new TemporalEntry(requireMapName(), key, effectiveTimeMs, buildValue());
     }
 
     /**
