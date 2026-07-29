@@ -707,7 +707,9 @@ implementation plans that were retired to git history, leaving dangling links. I
 - **A correction, not just an update:** [README.md](README.md) and [03-ingest.md](03-ingest.md) both claimed
   ordering was lexical (`"10" < "9"`). It never was. Both now say so explicitly rather than quietly changing.
 - [12-future-work.md](12-future-work.md) resized: typed `long`/`boolean` struck through, typed `double`/dates
-  split out as a separate item blocked on an anchor-encoding decision with both candidate designs written down.
+  split out as a separate item blocked on an anchor-encoding decision. **That decision has since been taken**
+  and is recorded in [12-future-work.md](12-future-work.md#anchor-encoding-for-typed-values), along with
+  `approxEquals` — the explicit tolerant comparison that covers what no encoding can fix.
 
 ### Still to do, with their phases
 - ~~The fixed-size statements in [10-limits.md](10-limits.md) and [11-operations.md](11-operations.md)~~ —

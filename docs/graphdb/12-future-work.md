@@ -240,10 +240,55 @@ behind it.
 | Item | Why | Difficulty | Risk |
 |---|---|---|---|
 | ~~**Typed property values**~~ — **partly done.** `long` and `boolean` are available via `<property type="…">` | Every value's type used to be `STRING` regardless of what it held | Medium | — |
-| **Typed `double` and date property values** | The two types the above deliberately left out. Blocked on anchor encoding, not on effort: the equality index is keyed on a value's rendered text and a query seeks the literal's own text, so a type whose canonical rendering differs from what an author would write silently finds nothing. `42.0` renders as `42` | Medium | **Medium — needs a design decision first.** Two viable routes: (a) a canonical encoder shared by the ingest, merge and query sides, so all three agree on `42.0` ≡ `42`; (b) index both the raw and canonical forms, which removes the false negative at the cost of extra index entries — but merge only sees decoded values, so the raw form would have to be stored to survive it. Route (a) is cleaner and the reason it was not simply done now |
+| **Typed `double` and date property values** | The two types the above deliberately left out, because the property index is keyed on a value's rendered text and a query seeks the literal's own text — so a type whose canonical rendering differs from what an author would write silently finds nothing (`42.0` renders as `42`). **The design is now settled** — see [Anchor encoding for typed values](#anchor-encoding-for-typed-values) below | Medium | Medium — the design decision is made; what remains is a store-format bump and a reload |
 | **A real list type**, which would re-enable `collect()` | `collect()` is currently **rejected** rather than returning a comma-joined string. Deferred until closer to production | Medium | Medium — the edit is ~6 files and the compiler finds most of them; the risk is that 285 files can then receive a value type they have never seen. **Full analysis, including what re-enabling involves, in [12a-list-value-type.md](12a-list-value-type.md)** |
 | **Typed values in `graph-mutation`** — a version 1.1 or 2.0 of the ingest vocabulary | Prerequisite for typed properties | Medium | Medium |
 | **Per-property versioning** instead of whole-snapshot versions | Would cut storage growth substantially for wide, slowly-changing nodes | Hard | High |
+
+### Anchor encoding for typed values
+
+The design settled for typed `double` and date values, recorded here because the reasoning is what makes it
+safe rather than the mechanism.
+
+**The governing rule: the index must agree with the predicate.** A property anchor is only a *candidate*
+filter — every candidate it returns is re-checked against the node's real decoded properties before it
+becomes a row. So an anchor that returns too much is merely slower, while one that returns too little is
+silently wrong. Every choice below follows from that asymmetry.
+
+Stroom's `=` on numbers is exact — `NumericEquals` is `Objects.equals(Double, Double)`, and that is true of
+dashboards, StroomQL and Plan B as well as Graph DB. The index therefore has to be exact too. An index that
+matched more loosely than the predicate would return candidates the predicate then discards, which costs work
+and finds nothing extra; one that matched more tightly would lose rows.
+
+**Doubles: canonical numeric encoding, both sides.** Ingest, merge and the query seek all run a value through
+one encoder, so `42`, `42.0` and `4.2e1` produce identical anchor bytes. That is the whole fix for the false
+negative, and it is why `GraphAnchorEncoding` exists as a single shared definition rather than being inlined
+at its two call sites.
+
+**Numeric-looking strings: seek both forms.** The query side cannot know whether `score` holds a number or a
+string, and there is deliberately no per-`(label, property)` type registry to ask. So a numeric literal seeks
+the raw text *and* the canonical numeric form, and unions the candidates. Two seeks instead of one, no
+registry, and the predicate throws away whatever does not really match. This is the asymmetry above being
+spent on purpose.
+
+**Dates: epoch-based, not rendered text.** An instant is an integer, so exact equality is well defined — the
+date problem is spelling, not precision. `2026-01-01`, `2026-01-01T00:00:00.000Z` and
+`2026-01-01T00:00:00+00:00` are one instant with three renderings, and canonicalising to an epoch value
+collapses them.
+
+**Make both encodings order-preserving**, even though nothing reads them in order yet. It costs nothing at
+write time and is the difference between range anchors being a later feature and a later rewrite.
+
+Two things considered and rejected:
+
+- **Not indexing doubles at all**, on the grounds that float equality is fragile. It does not work. It leaves
+  a silent hole (an integer-form literal against a double property anchors, finds no entry, and returns zero
+  rows), it makes declaring `type="double"` turn a working query into a scan that can trip the
+  fail-loud row ceiling, and — decisively — it does not help. The predicate is still exact, so a computed
+  `0.30000000000000004` still fails to match `0.3`; it just fails after a full scan instead of a seek.
+- **Tolerant equality in the index.** Fragile float equality is a property of the predicate, not the index.
+  Fixing it here would make graph queries answer differently from every other Stroom surface over the same
+  data. The right shape is an explicit function — see `approxEquals` below.
 
 ## Query language
 
@@ -253,11 +298,45 @@ Grouped by how likely you are to want them.
 
 | Item | Difficulty | Risk |
 |---|---|---|
+| **`approxEquals(a, b, tolerance)`** — explicit tolerant numeric comparison. See below | Medium | Low |
 | `SKIP` — needs an offset on the core's `Limit` node | Easy | Low |
 | `ORDER BY` an aggregate expression rather than only its alias | Easy | Low |
 | `ORDER BY` / `SKIP` / `LIMIT` on a `WITH` | Medium | Low |
 | Aggregation inside a `DIFF` query | Medium | Medium |
 | Filtering on `changeKind` / `before()` / `after()` in a `WHERE` | Medium | Low |
+
+#### `approxEquals` — why a function rather than a looser `=`
+
+`WHERE n.score = 42.7` compares doubles exactly, here and everywhere else in Stroom. That is a trap for values
+that were *computed* before they were ingested — XSLT arithmetic that produces `0.30000000000000004` will
+never match a query for `0.3`, and the query returns no rows rather than an error.
+
+No encoding fixes this, because the two values genuinely differ; see
+[Anchor encoding for typed values](#anchor-encoding-for-typed-values) for why it is not an index problem.
+The fix has to be a comparison the author asks for:
+
+```
+MATCH (m:Measurement) WHERE approxEquals(m.score, 0.3, 0.0001) RETURN m.id
+```
+
+**Three reasons it is a function and not a quietly tolerant `=`.**
+
+- **Silence cuts both ways.** An `=` that matches `42.70000001` surprises whoever wanted exactness just as
+  much as strict `=` surprises whoever wanted tolerance. A function makes the intent visible in the query
+  text, which is also where a reviewer looks.
+- **There is no defensible default tolerance.** Money wants exact, coordinates want metres, sensor readings
+  want whatever the sensor's error is. Nothing in the data says which, so the author must.
+- **It belongs to the whole product, not to Graph DB.** The right home is
+  `stroom.query.language.functions`, alongside `abs`, `round` and `isNumber`, so dashboards and StroomQL get
+  it too. Graph DB diverging on what `=` means over the same data would be worse than the gap.
+
+The name follows the existing lowerCamelCase convention in that package. Two-argument and three-argument forms
+are both reasonable — the two-argument form would need a default epsilon, which is the thing there is no
+defensible answer to, so a required tolerance is the safer signature.
+
+**It will not use the property index.** A tolerant match is a range, and the index is keyed for equality, so
+this is a predicate over a label scan until range anchors exist. Worth stating in its documentation: it is a
+correctness tool, not a fast path.
 
 ### Structural
 
@@ -339,8 +418,9 @@ If the goal is a production-capable Graph DB:
 3. **Documentation tests** — cheap, and they stop the rest of this set drifting.
 4. ~~**Blockers 4, 5**~~ — **done.** Condensing, compaction and index retention, so storage is bounded rather
    than merely slowed.
-5. **Typed `double` and date values** — needs the anchor-encoding decision above settled first. `long` and
-   `boolean` are already done.
+5. **Typed `double` and date values** — the anchor-encoding decision that blocked these is now
+   [settled](#anchor-encoding-for-typed-values), so this is implementation plus a store-format bump. `long`
+   and `boolean` are already done. `approxEquals` is independent of it and can go before or after.
 6. **Blocker 6** — a recovery path independent of source streams. Compaction reclaims free pages; it cannot
    reconstruct data, so rebuilding a corrupt store still means reprocessing the streams.
 7. **Stream provenance on mutations** (`streamId`/`eventId`) — easy, low risk, and the gate to extraction and
