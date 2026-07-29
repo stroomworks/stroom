@@ -4915,6 +4915,36 @@
         "tags" : [ "Explorer (v2)" ]
       }
     },
+    "/explorer/v2/fetchDeleteConfirmation" : {
+      "post" : {
+        "operationId" : "fetchExplorerDeleteConfirmation",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/DeleteConfirmationRequest"
+              }
+            }
+          },
+          "description" : "request",
+          "required" : true
+        },
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/DeleteConfirmation"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Fetch the information needed to confirm a delete (contained items and dependants)",
+        "tags" : [ "Explorer (v2)" ]
+      }
+    },
     "/explorer/v2/fetchDocRefs" : {
       "post" : {
         "operationId" : "fetchExplorerDocRefs",
@@ -5750,7 +5780,7 @@
             "description" : "default response"
           }
         },
-        "summary" : "Fetch an analytic rule doc by its UUID",
+        "summary" : "Fetch a floor map doc by its UUID",
         "tags" : [ "Queries" ]
       },
       "put" : {
@@ -5786,7 +5816,7 @@
             "description" : "default response"
           }
         },
-        "summary" : "Update an analytic rule doc",
+        "summary" : "Update a floor map doc",
         "tags" : [ "Queries" ]
       }
     },
@@ -6603,6 +6633,33 @@
           }
         },
         "summary" : "Update an index doc",
+        "tags" : [ "Indexes (v2)" ]
+      }
+    },
+    "/index/v2/{uuid}/reset" : {
+      "post" : {
+        "operationId" : "resetIndex",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "uuid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "type" : "boolean"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Reset index contents (delete all shards across all nodes)",
         "tags" : [ "Indexes (v2)" ]
       }
     },
@@ -10161,6 +10218,36 @@
         "tags" : [ "Queries" ]
       }
     },
+    "/query/v1/parseQuery" : {
+      "post" : {
+        "operationId" : "parseQuery",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "type" : "string"
+              }
+            }
+          },
+          "description" : "query",
+          "required" : true
+        },
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ExpressionOperator"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Parse a query string into an ExpressionOperator",
+        "tags" : [ "Queries" ]
+      }
+    },
     "/query/v1/search" : {
       "post" : {
         "operationId" : "querySearchLocal",
@@ -11609,10 +11696,41 @@
         "tags" : [ "Sql Statistics Query" ]
       }
     },
+    "/sqltemporalstore/v1/applyChanges" : {
+      "post" : {
+        "description" : "Applies an ordered list of upsert and delete operations within a single database transaction. A failure in any operation rolls back all changes. Returns success=false (not HTTP 500) on failure so the client can display the errorMessage and reload from the server.",
+        "operationId" : "applySqlTemporalStoreChanges",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ApplyChangesRequest"
+              }
+            }
+          },
+          "description" : "request",
+          "required" : true
+        },
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApplyChangesResult"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Apply staged changes atomically",
+        "tags" : [ "SqlTemporalStore" ]
+      }
+    },
     "/sqltemporalstore/v1/clear" : {
       "delete" : {
-        "description" : "Clears all entries for the specified store.",
-        "operationId" : "clear",
+        "description" : "Deletes all entries for the store identified by the supplied DocRef. Requires EDIT permission on the document.",
+        "operationId" : "clearSqlTemporalStore",
         "requestBody" : {
           "content" : {
             "application/json" : {
@@ -11642,8 +11760,8 @@
     },
     "/sqltemporalstore/v1/count" : {
       "post" : {
-        "description" : "Returns the number of entries in the specified store.",
-        "operationId" : "count",
+        "description" : "Returns the total number of entries (all keys, all effective times) in the store identified by the supplied DocRef.",
+        "operationId" : "countSqlTemporalStoreEntries",
         "requestBody" : {
           "content" : {
             "application/json" : {
@@ -11668,7 +11786,228 @@
             "description" : "default response"
           }
         },
-        "summary" : "Get store count",
+        "summary" : "Count store entries",
+        "tags" : [ "SqlTemporalStore" ]
+      }
+    },
+    "/sqltemporalstore/v1/entry" : {
+      "post" : {
+        "description" : "Creates a new temporal entry. If an entry already exists for the same (map, key, effectiveTimeMs) triple the value is overwritten (upsert).",
+        "operationId" : "createSqlTemporalStoreEntry",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/TemporalEntry"
+              }
+            }
+          },
+          "description" : "entry",
+          "required" : true
+        },
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/TemporalEntry"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Create an entry",
+        "tags" : [ "SqlTemporalStore" ]
+      },
+      "put" : {
+        "description" : "Updates an existing temporal entry. Uses upsert semantics — equivalent to create if the entry does not already exist.",
+        "operationId" : "updateSqlTemporalStoreEntry",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/TemporalEntry"
+              }
+            }
+          },
+          "description" : "entry",
+          "required" : true
+        },
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/TemporalEntry"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Update an entry",
+        "tags" : [ "SqlTemporalStore" ]
+      }
+    },
+    "/sqltemporalstore/v1/entry/delete" : {
+      "post" : {
+        "description" : "Deletes the entry identified by (map, key, effectiveTimeMs). Returns true if a row was deleted.",
+        "operationId" : "deleteSqlTemporalStoreEntry",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/TemporalEntryId"
+              }
+            }
+          },
+          "description" : "id",
+          "required" : true
+        },
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "type" : "boolean"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Delete a specific entry",
+        "tags" : [ "SqlTemporalStore" ]
+      }
+    },
+    "/sqltemporalstore/v1/fetchAll" : {
+      "post" : {
+        "description" : "Returns the most recent version of every key in the map with no upper-time bound. Use for the 'Show all' Fact List toggle. The server applies currentTimeMillis() + ONE_DAY_MS internally.",
+        "operationId" : "fetchAllSqlTemporalStoreEntries",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "type" : "string"
+              }
+            }
+          },
+          "description" : "mapName",
+          "required" : true
+        },
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "type" : "array",
+                  "items" : {
+                    "$ref" : "#/components/schemas/TemporalEntry"
+                  }
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Fetch absolute latest entry per key (no time constraint)",
+        "tags" : [ "SqlTemporalStore" ]
+      }
+    },
+    "/sqltemporalstore/v1/fetchAtTime" : {
+      "post" : {
+        "description" : "For each key in the specified map, returns the single entry whose effective_time is the greatest value at or before request.timeTo. Results are sorted by key ascending. Pass the timeline slider position exactly as timeTo.",
+        "operationId" : "fetchSqlTemporalStoreEntriesAtTime",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/FetchAtTimeRequest"
+              }
+            }
+          },
+          "description" : "request",
+          "required" : true
+        },
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "type" : "array",
+                  "items" : {
+                    "$ref" : "#/components/schemas/TemporalEntry"
+                  }
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Fetch entry per key at a point in time",
+        "tags" : [ "SqlTemporalStore" ]
+      }
+    },
+    "/sqltemporalstore/v1/find" : {
+      "post" : {
+        "description" : "Returns entries matching the supplied criteria. When an EffectiveTime <= T term is present, only the latest version of each key at or before T is returned (temporal deduplication). Without a time term, all historical versions are returned.",
+        "operationId" : "findSqlTemporalStoreEntries",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ExpressionCriteria"
+              }
+            }
+          },
+          "description" : "criteria",
+          "required" : true
+        },
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ResultPageTemporalEntry"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Find entries",
+        "tags" : [ "SqlTemporalStore" ]
+      }
+    },
+    "/sqltemporalstore/v1/timeRange" : {
+      "post" : {
+        "description" : "Returns MIN(effective_time) and MAX(effective_time) for all entries in the specified map. Used to initialise the timeline slider range in the Floor Map Editor. Both fields are null if the store is empty.",
+        "operationId" : "getSqlTemporalStoreTimeRange",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "type" : "string"
+              }
+            }
+          },
+          "description" : "mapName",
+          "required" : true
+        },
+        "responses" : {
+          "default" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/TemporalStoreTimeRange"
+                }
+              }
+            },
+            "description" : "default response"
+          }
+        },
+        "summary" : "Get effective-time range for a map",
         "tags" : [ "SqlTemporalStore" ]
       }
     },
@@ -15109,6 +15448,28 @@
           }
         }
       },
+      "ApplyChangesRequest" : {
+        "type" : "object",
+        "properties" : {
+          "operations" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/ChangeOperation"
+            }
+          }
+        }
+      },
+      "ApplyChangesResult" : {
+        "type" : "object",
+        "properties" : {
+          "errorMessage" : {
+            "type" : "string"
+          },
+          "success" : {
+            "type" : "boolean"
+          }
+        }
+      },
       "Arg" : {
         "type" : "object",
         "properties" : {
@@ -15757,6 +16118,21 @@
             }
           }
         } ]
+      },
+      "ChangeOperation" : {
+        "type" : "object",
+        "properties" : {
+          "entry" : {
+            "$ref" : "#/components/schemas/TemporalEntry"
+          },
+          "id" : {
+            "$ref" : "#/components/schemas/TemporalEntryId"
+          },
+          "type" : {
+            "type" : "string",
+            "enum" : [ "UPSERT", "DELETE" ]
+          }
+        }
       },
       "ChangePasswordRequest" : {
         "type" : "object",
@@ -17358,6 +17734,54 @@
           }
         }
       },
+      "DeleteConfirmation" : {
+        "type" : "object",
+        "properties" : {
+          "childItems" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/DocRef"
+            }
+          },
+          "childItemsTruncated" : {
+            "type" : "boolean"
+          },
+          "childTypeCounts" : {
+            "type" : "object",
+            "additionalProperties" : {
+              "type" : "integer",
+              "format" : "int32"
+            }
+          },
+          "hasHiddenChildItems" : {
+            "type" : "boolean"
+          },
+          "hasHiddenDependants" : {
+            "type" : "boolean"
+          },
+          "totalChildCount" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "visibleDependants" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/DocRef"
+            }
+          }
+        }
+      },
+      "DeleteConfirmationRequest" : {
+        "type" : "object",
+        "properties" : {
+          "docRefs" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/DocRef"
+            }
+          }
+        }
+      },
       "DeleteDuplicateCheckRequest" : {
         "type" : "object",
         "properties" : {
@@ -17771,7 +18195,7 @@
           },
           "icon" : {
             "type" : "string",
-            "enum" : [ "ADD", "ADD_ABOVE", "ADD_BELOW", "ADD_MULTIPLE", "AI", "ALERT", "ALERT_SIMPLE", "ARROW_DOWN", "ARROW_LEFT", "ARROW_RIGHT", "ARROW_UP", "AUTO_REFRESH", "BACKWARD", "BORDERED_CIRCLE", "CALENDAR", "CANCEL", "CASE_SENSITIVE", "CLEAR", "CLIPBOARD", "CLOSE", "CODE", "COLLAPSE_ALL", "COLLAPSE_UP", "CONTENT_STORE", "COPY", "DATABASE", "DELETE", "DEPENDENCIES", "DISABLE", "DOCUMENT_ANALYTIC_OUTPUT_STORE", "DOCUMENT_ANALYTIC_RULE", "DOCUMENT_ANNOTATIONS_INDEX", "DOCUMENT_DASHBOARD", "DOCUMENT_DATA_GEN", "DOCUMENT_FLOOR_MAP", "DOCUMENT_DICTIONARY", "DOCUMENT_DOCUMENTATION", "DOCUMENT_DOMAIN_TYPE", "DOCUMENT_ELASTIC_CLUSTER", "DOCUMENT_ELASTIC_INDEX", "DOCUMENT_FAVOURITES", "DOCUMENT_FEED", "DOCUMENT_FOLDER", "DOCUMENT_GIT_REPO", "DOCUMENT_GIT_REPO_FOLDER", "DOCUMENT_INDEX", "DOCUMENT_KAFKA_CONFIG", "DOCUMENT_OPEN_AI", "DOCUMENT_PATHWAYS", "DOCUMENT_PIPELINE", "DOCUMENT_PLAN_B", "DOCUMENT_QUERY", "DOCUMENT_RECEIVE_DATA_RULE_SET", "DOCUMENT_REPORT", "DOCUMENT_S3", "DOCUMENT_SCRIPT", "DOCUMENT_SEARCHABLE", "DOCUMENT_SELECT_ALL_OR_NONE", "DOCUMENT_SIGMA_RULE", "DOCUMENT_SOLR_INDEX", "DOCUMENT_STATISTIC_STORE", "DOCUMENT_SYSTEM", "DOCUMENT_TEXT_CONVERTER", "DOCUMENT_TRACES", "DOCUMENT_VIEW", "DOCUMENT_VISUALISATION", "DOCUMENT_XMLSCHEMA", "DOCUMENT_XSLT", "DOT", "DOUBLE_ARROW", "DOWN", "DOWNLOAD", "DROP_DOWN", "EDIT", "ELLIPSES_HORIZONTAL", "ELLIPSES_VERTICAL", "ERROR", "EXCLAMATION", "EXPAND_ALL", "EXPAND_DOWN", "EXPLORER", "EYE", "EYE_OFF", "FAST_BACKWARD", "FAST_FORWARD", "FATAL", "FATAL_DARK", "FAVOURITES", "FAVOURITES_OUTLINE", "FEED", "FIELD", "FIELDS_EXPRESSION", "FIELDS_FILTER", "FIELDS_FORMAT", "FIELDS_GROUP", "FIELDS_SORT_ASCENDING", "FIELDS_SORT_DESCENDING", "FIELDS_SORT_NONE", "FILE", "FILE_FORMATTED", "FILE_IMAGE", "FILE_RAW", "FILE_SCRIPT", "FILTER", "FIND", "FOLDER", "FOLDER_TREE", "FORMAT", "FORWARD", "FUNCTION", "GENERATE", "HELP", "HELP_OUTLINE", "HIDE", "HIDE_MENU", "HISTORY", "INFINITY_LOGO", "INFO", "INSERT", "JOBS", "KEY", "KEY_BLUE", "LINK", "LOCATE", "LOCKED", "LOGO", "LOGOUT", "MAXIMISE", "MENU", "MINIMISE", "MONITORING", "MOVE", "NODES", "OK", "OO", "OPEN", "OPERATOR", "PASSWORD", "PATHWAYS_CHOICE", "PATHWAYS_NODE", "PATHWAYS_SEQUENCE", "PAUSE", "PEN", "PIPELINE_ELASTIC_INDEX", "PIPELINE_FILE", "PIPELINE_FILES", "PIPELINE_HADOOP", "PIPELINE_ID", "PIPELINE_INDEX", "PIPELINE_JSON", "PIPELINE_KAFKA", "PIPELINE_MERGE", "PIPELINE_RECORD_COUNT", "PIPELINE_RECORD_OUTPUT", "PIPELINE_REFERENCE_DATA", "PIPELINE_SEARCH_OUTPUT", "PIPELINE_SOLR", "PIPELINE_SPLIT", "PIPELINE_STATISTICS", "PIPELINE_STREAM", "PIPELINE_STROOM_STATS", "PIPELINE_TEXT", "PIPELINE_XML", "PIPELINE_XML_SEARCH", "PIPELINE_XSD", "PIPELINE_XSLT", "PLAY", "PROCESS", "PROPERTIES", "QUESTION", "RAW", "REFRESH", "REGEX", "REMOVE", "RERUN", "RESIZE", "RESIZE_HANDLE", "SAVE", "SAVEAS", "SEARCH", "SELECTION", "SETTINGS", "SHARD_CLOSE", "SHARD_FLUSH", "SHARE", "SHIELD", "SHOW", "SHOW_MENU", "SPINNER_CIRCLE", "SPINNER_PAUSE", "SPINNER_SPINNING", "STAMP", "STEP", "STEPPING", "STEPPING_CIRCLE", "STEP_BACKWARD", "STEP_FORWARD", "STOP", "TABLE", "TABLE_NESTED", "TAB_CLOSE", "TAGS", "TEXT_WRAP", "TICK", "UNDO", "UNLINK", "UNLOCK", "UP", "UPLOAD", "USER", "USERS", "VALUE_FILTER", "VOLUMES", "WARNING" ]
+            "enum" : [ "ADD", "ADD_ABOVE", "ADD_BELOW", "ADD_MULTIPLE", "AI", "ALERT", "ALERT_SIMPLE", "ARROW_DOWN", "ARROW_LEFT", "ARROW_RIGHT", "ARROW_UP", "AUTO_REFRESH", "BACKWARD", "BORDERED_CIRCLE", "CALENDAR", "CANCEL", "CASE_SENSITIVE", "CLEAR", "CLIPBOARD", "CLOSE", "CODE", "COLLAPSE_ALL", "COLLAPSE_UP", "CONTENT_STORE", "COPY", "DATABASE", "DELETE", "DEPENDENCIES", "DISABLE", "DOCUMENT_ANALYTIC_OUTPUT_STORE", "DOCUMENT_ANALYTIC_RULE", "DOCUMENT_ANNOTATIONS_INDEX", "DOCUMENT_DASHBOARD", "DOCUMENT_DATA_GEN", "DOCUMENT_DICTIONARY", "DOCUMENT_DOCUMENTATION", "DOCUMENT_DOMAIN_TYPE", "DOCUMENT_ELASTIC_CLUSTER", "DOCUMENT_ELASTIC_INDEX", "DOCUMENT_FAVOURITES", "DOCUMENT_FEED", "DOCUMENT_FLOOR_MAP", "DOCUMENT_FOLDER", "DOCUMENT_GIT_REPO", "DOCUMENT_GIT_REPO_FOLDER", "DOCUMENT_INDEX", "DOCUMENT_KAFKA_CONFIG", "DOCUMENT_OPEN_AI", "DOCUMENT_PATHWAYS", "DOCUMENT_PIPELINE", "DOCUMENT_PLAN_B", "DOCUMENT_QUERY", "DOCUMENT_RECEIVE_DATA_RULE_SET", "DOCUMENT_REPORT", "DOCUMENT_S3", "DOCUMENT_SCRIPT", "DOCUMENT_SEARCHABLE", "DOCUMENT_SELECT_ALL_OR_NONE", "DOCUMENT_SIGMA_RULE", "DOCUMENT_SOLR_INDEX", "DOCUMENT_SQL_TEMPORAL_STORE", "DOCUMENT_STATISTIC_STORE", "DOCUMENT_SYSTEM", "DOCUMENT_TEXT_CONVERTER", "DOCUMENT_TRACES", "DOCUMENT_VIEW", "DOCUMENT_VISUALISATION", "DOCUMENT_XMLSCHEMA", "DOCUMENT_XSLT", "DOT", "DOUBLE_ARROW", "DOWN", "DOWNLOAD", "DROP_DOWN", "EDIT", "ELLIPSES_HORIZONTAL", "ELLIPSES_VERTICAL", "ERROR", "EXCLAMATION", "EXPAND_ALL", "EXPAND_DOWN", "EXPLORER", "EYE", "EYE_OFF", "FAST_BACKWARD", "FAST_FORWARD", "FATAL", "FATAL_DARK", "FAVOURITES", "FAVOURITES_OUTLINE", "FEED", "FIELD", "FIELDS_EXPRESSION", "FIELDS_FILTER", "FIELDS_FORMAT", "FIELDS_GROUP", "FIELDS_SORT_ASCENDING", "FIELDS_SORT_DESCENDING", "FIELDS_SORT_NONE", "FILE", "FILE_FORMATTED", "FILE_IMAGE", "FILE_RAW", "FILE_SCRIPT", "FILTER", "FIND", "FOLDER", "FOLDER_TREE", "FORMAT", "FORWARD", "FUNCTION", "GENERATE", "HELP", "HELP_OUTLINE", "HIDE", "HIDE_MENU", "HISTORY", "INFINITY_LOGO", "INFO", "INSERT", "JOBS", "KEY", "KEY_BLUE", "LINK", "LOCATE", "LOCKED", "LOCKED_DEFAULT_COLOUR", "LOGO", "LOGOUT", "MAXIMISE", "MENU", "MINIMISE", "MONITORING", "MOVE", "NODES", "OK", "OO", "OPEN", "OPERATOR", "PASSWORD", "PATHWAYS_CHOICE", "PATHWAYS_NODE", "PATHWAYS_SEQUENCE", "PAUSE", "PEN", "PIPELINE_ELASTIC_INDEX", "PIPELINE_FILE", "PIPELINE_FILES", "PIPELINE_HADOOP", "PIPELINE_ID", "PIPELINE_INDEX", "PIPELINE_JSON", "PIPELINE_KAFKA", "PIPELINE_MERGE", "PIPELINE_RECORD_COUNT", "PIPELINE_RECORD_OUTPUT", "PIPELINE_REFERENCE_DATA", "PIPELINE_SEARCH_OUTPUT", "PIPELINE_SOLR", "PIPELINE_SPLIT", "PIPELINE_STATISTICS", "PIPELINE_STREAM", "PIPELINE_STROOM_STATS", "PIPELINE_TEXT", "PIPELINE_XML", "PIPELINE_XML_SEARCH", "PIPELINE_XSD", "PIPELINE_XSLT", "PLAY", "PROCESS", "PROPERTIES", "QUESTION", "RAW", "REFRESH", "REGEX", "REMOVE", "RERUN", "RESIZE", "RESIZE_HANDLE", "SAVE", "SAVEAS", "SEARCH", "SELECTION", "SETTINGS", "SHARD_CLOSE", "SHARD_FLUSH", "SHARE", "SHIELD", "SHOW", "SHOW_MENU", "SPINNER_CIRCLE", "SPINNER_PAUSE", "SPINNER_SPINNING", "STAMP", "STEP", "STEPPING", "STEPPING_CIRCLE", "STEP_BACKWARD", "STEP_FORWARD", "STOP", "TABLE", "TABLE_NESTED", "TAB_CLOSE", "TAGS", "TEXT_WRAP", "TICK", "UNDO", "UNLINK", "UNLOCK", "UNLOCKED_DEFAULT_COLOUR", "UP", "UPLOAD", "USER", "USERS", "VALUE_FILTER", "VOLUMES", "WARNING" ]
           },
           "type" : {
             "type" : "string"
@@ -19185,6 +19609,18 @@
           }
         }
       },
+      "FetchAtTimeRequest" : {
+        "type" : "object",
+        "properties" : {
+          "mapName" : {
+            "type" : "string"
+          },
+          "timeTo" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        }
+      },
       "FetchColumnNamesResponse" : {
         "type" : "object",
         "properties" : {
@@ -20242,8 +20678,29 @@
           "description" : {
             "type" : "string"
           },
-          "feed" : {
+          "entityIdColumn" : {
+            "type" : "string"
+          },
+          "eventsQuery" : {
+            "type" : "string"
+          },
+          "eventsQueryTablePreferences" : {
+            "$ref" : "#/components/schemas/QueryTablePreferences"
+          },
+          "eventsQueryTimeRange" : {
+            "$ref" : "#/components/schemas/TimeRange"
+          },
+          "eventsStoreRef" : {
             "$ref" : "#/components/schemas/DocRef"
+          },
+          "factsStoreRef" : {
+            "$ref" : "#/components/schemas/DocRef"
+          },
+          "locationIdColumn" : {
+            "type" : "string"
+          },
+          "matrix" : {
+            "$ref" : "#/components/schemas/FloorMapTransformationMatrix"
           },
           "name" : {
             "type" : "string"
@@ -20253,6 +20710,12 @@
           },
           "type" : {
             "type" : "string"
+          },
+          "typeStyles" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/TypeStyle"
+            }
           },
           "updateTimeMs" : {
             "type" : "integer",
@@ -20264,8 +20727,65 @@
           "uuid" : {
             "type" : "string"
           },
+          "valueFormat" : {
+            "type" : "string",
+            "enum" : [ "JSON", "XML" ]
+          },
+          "valueSchema" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/FloorMapFieldMapping"
+            }
+          },
           "version" : {
             "type" : "string"
+          }
+        }
+      },
+      "FloorMapFieldMapping" : {
+        "type" : "object",
+        "properties" : {
+          "defaultValue" : {
+            "type" : "string"
+          },
+          "displayName" : {
+            "type" : "string"
+          },
+          "path" : {
+            "type" : "string"
+          },
+          "role" : {
+            "type" : "string",
+            "enum" : [ "TYPE", "LABEL", "POSITION", "IMAGE", "WORLD_TO_MAP", "MAP_TO_SCREEN", "GEOMETRY", "FILL", "OPACITY", "CUSTOM" ]
+          }
+        }
+      },
+      "FloorMapTransformationMatrix" : {
+        "type" : "object",
+        "properties" : {
+          "a" : {
+            "type" : "number",
+            "format" : "double"
+          },
+          "b" : {
+            "type" : "number",
+            "format" : "double"
+          },
+          "c" : {
+            "type" : "number",
+            "format" : "double"
+          },
+          "d" : {
+            "type" : "number",
+            "format" : "double"
+          },
+          "e" : {
+            "type" : "number",
+            "format" : "double"
+          },
+          "f" : {
+            "type" : "number",
+            "format" : "double"
           }
         }
       },
@@ -23050,7 +23570,7 @@
           },
           "icon" : {
             "type" : "string",
-            "enum" : [ "ADD", "ADD_ABOVE", "ADD_BELOW", "ADD_MULTIPLE", "AI", "ALERT", "ALERT_SIMPLE", "ARROW_DOWN", "ARROW_LEFT", "ARROW_RIGHT", "ARROW_UP", "AUTO_REFRESH", "BACKWARD", "BORDERED_CIRCLE", "CALENDAR", "CANCEL", "CASE_SENSITIVE", "CLEAR", "CLIPBOARD", "CLOSE", "CODE", "COLLAPSE_ALL", "COLLAPSE_UP", "CONTENT_STORE", "COPY", "DATABASE", "DELETE", "DEPENDENCIES", "DISABLE", "DOCUMENT_ANALYTIC_OUTPUT_STORE", "DOCUMENT_ANALYTIC_RULE", "DOCUMENT_ANNOTATIONS_INDEX", "DOCUMENT_DASHBOARD", "DOCUMENT_DATA_GEN", "DOCUMENT_FLOOR_MAP", "DOCUMENT_DICTIONARY", "DOCUMENT_DOCUMENTATION", "DOCUMENT_DOMAIN_TYPE", "DOCUMENT_ELASTIC_CLUSTER", "DOCUMENT_ELASTIC_INDEX", "DOCUMENT_FAVOURITES", "DOCUMENT_FEED", "DOCUMENT_FOLDER", "DOCUMENT_GIT_REPO", "DOCUMENT_GIT_REPO_FOLDER", "DOCUMENT_INDEX", "DOCUMENT_KAFKA_CONFIG", "DOCUMENT_OPEN_AI", "DOCUMENT_PATHWAYS", "DOCUMENT_PIPELINE", "DOCUMENT_PLAN_B", "DOCUMENT_QUERY", "DOCUMENT_RECEIVE_DATA_RULE_SET", "DOCUMENT_REPORT", "DOCUMENT_S3", "DOCUMENT_SCRIPT", "DOCUMENT_SEARCHABLE", "DOCUMENT_SELECT_ALL_OR_NONE", "DOCUMENT_SIGMA_RULE", "DOCUMENT_SOLR_INDEX", "DOCUMENT_STATISTIC_STORE", "DOCUMENT_SYSTEM", "DOCUMENT_TEXT_CONVERTER", "DOCUMENT_TRACES", "DOCUMENT_VIEW", "DOCUMENT_VISUALISATION", "DOCUMENT_XMLSCHEMA", "DOCUMENT_XSLT", "DOT", "DOUBLE_ARROW", "DOWN", "DOWNLOAD", "DROP_DOWN", "EDIT", "ELLIPSES_HORIZONTAL", "ELLIPSES_VERTICAL", "ERROR", "EXCLAMATION", "EXPAND_ALL", "EXPAND_DOWN", "EXPLORER", "EYE", "EYE_OFF", "FAST_BACKWARD", "FAST_FORWARD", "FATAL", "FATAL_DARK", "FAVOURITES", "FAVOURITES_OUTLINE", "FEED", "FIELD", "FIELDS_EXPRESSION", "FIELDS_FILTER", "FIELDS_FORMAT", "FIELDS_GROUP", "FIELDS_SORT_ASCENDING", "FIELDS_SORT_DESCENDING", "FIELDS_SORT_NONE", "FILE", "FILE_FORMATTED", "FILE_IMAGE", "FILE_RAW", "FILE_SCRIPT", "FILTER", "FIND", "FOLDER", "FOLDER_TREE", "FORMAT", "FORWARD", "FUNCTION", "GENERATE", "HELP", "HELP_OUTLINE", "HIDE", "HIDE_MENU", "HISTORY", "INFINITY_LOGO", "INFO", "INSERT", "JOBS", "KEY", "KEY_BLUE", "LINK", "LOCATE", "LOCKED", "LOGO", "LOGOUT", "MAXIMISE", "MENU", "MINIMISE", "MONITORING", "MOVE", "NODES", "OK", "OO", "OPEN", "OPERATOR", "PASSWORD", "PATHWAYS_CHOICE", "PATHWAYS_NODE", "PATHWAYS_SEQUENCE", "PAUSE", "PEN", "PIPELINE_ELASTIC_INDEX", "PIPELINE_FILE", "PIPELINE_FILES", "PIPELINE_HADOOP", "PIPELINE_ID", "PIPELINE_INDEX", "PIPELINE_JSON", "PIPELINE_KAFKA", "PIPELINE_MERGE", "PIPELINE_RECORD_COUNT", "PIPELINE_RECORD_OUTPUT", "PIPELINE_REFERENCE_DATA", "PIPELINE_SEARCH_OUTPUT", "PIPELINE_SOLR", "PIPELINE_SPLIT", "PIPELINE_STATISTICS", "PIPELINE_STREAM", "PIPELINE_STROOM_STATS", "PIPELINE_TEXT", "PIPELINE_XML", "PIPELINE_XML_SEARCH", "PIPELINE_XSD", "PIPELINE_XSLT", "PLAY", "PROCESS", "PROPERTIES", "QUESTION", "RAW", "REFRESH", "REGEX", "REMOVE", "RERUN", "RESIZE", "RESIZE_HANDLE", "SAVE", "SAVEAS", "SEARCH", "SELECTION", "SETTINGS", "SHARD_CLOSE", "SHARD_FLUSH", "SHARE", "SHIELD", "SHOW", "SHOW_MENU", "SPINNER_CIRCLE", "SPINNER_PAUSE", "SPINNER_SPINNING", "STAMP", "STEP", "STEPPING", "STEPPING_CIRCLE", "STEP_BACKWARD", "STEP_FORWARD", "STOP", "TABLE", "TABLE_NESTED", "TAB_CLOSE", "TAGS", "TEXT_WRAP", "TICK", "UNDO", "UNLINK", "UNLOCK", "UP", "UPLOAD", "USER", "USERS", "VALUE_FILTER", "VOLUMES", "WARNING" ]
+            "enum" : [ "ADD", "ADD_ABOVE", "ADD_BELOW", "ADD_MULTIPLE", "AI", "ALERT", "ALERT_SIMPLE", "ARROW_DOWN", "ARROW_LEFT", "ARROW_RIGHT", "ARROW_UP", "AUTO_REFRESH", "BACKWARD", "BORDERED_CIRCLE", "CALENDAR", "CANCEL", "CASE_SENSITIVE", "CLEAR", "CLIPBOARD", "CLOSE", "CODE", "COLLAPSE_ALL", "COLLAPSE_UP", "CONTENT_STORE", "COPY", "DATABASE", "DELETE", "DEPENDENCIES", "DISABLE", "DOCUMENT_ANALYTIC_OUTPUT_STORE", "DOCUMENT_ANALYTIC_RULE", "DOCUMENT_ANNOTATIONS_INDEX", "DOCUMENT_DASHBOARD", "DOCUMENT_DATA_GEN", "DOCUMENT_DICTIONARY", "DOCUMENT_DOCUMENTATION", "DOCUMENT_DOMAIN_TYPE", "DOCUMENT_ELASTIC_CLUSTER", "DOCUMENT_ELASTIC_INDEX", "DOCUMENT_FAVOURITES", "DOCUMENT_FEED", "DOCUMENT_FLOOR_MAP", "DOCUMENT_FOLDER", "DOCUMENT_GIT_REPO", "DOCUMENT_GIT_REPO_FOLDER", "DOCUMENT_INDEX", "DOCUMENT_KAFKA_CONFIG", "DOCUMENT_OPEN_AI", "DOCUMENT_PATHWAYS", "DOCUMENT_PIPELINE", "DOCUMENT_PLAN_B", "DOCUMENT_QUERY", "DOCUMENT_RECEIVE_DATA_RULE_SET", "DOCUMENT_REPORT", "DOCUMENT_S3", "DOCUMENT_SCRIPT", "DOCUMENT_SEARCHABLE", "DOCUMENT_SELECT_ALL_OR_NONE", "DOCUMENT_SIGMA_RULE", "DOCUMENT_SOLR_INDEX", "DOCUMENT_SQL_TEMPORAL_STORE", "DOCUMENT_STATISTIC_STORE", "DOCUMENT_SYSTEM", "DOCUMENT_TEXT_CONVERTER", "DOCUMENT_TRACES", "DOCUMENT_VIEW", "DOCUMENT_VISUALISATION", "DOCUMENT_XMLSCHEMA", "DOCUMENT_XSLT", "DOT", "DOUBLE_ARROW", "DOWN", "DOWNLOAD", "DROP_DOWN", "EDIT", "ELLIPSES_HORIZONTAL", "ELLIPSES_VERTICAL", "ERROR", "EXCLAMATION", "EXPAND_ALL", "EXPAND_DOWN", "EXPLORER", "EYE", "EYE_OFF", "FAST_BACKWARD", "FAST_FORWARD", "FATAL", "FATAL_DARK", "FAVOURITES", "FAVOURITES_OUTLINE", "FEED", "FIELD", "FIELDS_EXPRESSION", "FIELDS_FILTER", "FIELDS_FORMAT", "FIELDS_GROUP", "FIELDS_SORT_ASCENDING", "FIELDS_SORT_DESCENDING", "FIELDS_SORT_NONE", "FILE", "FILE_FORMATTED", "FILE_IMAGE", "FILE_RAW", "FILE_SCRIPT", "FILTER", "FIND", "FOLDER", "FOLDER_TREE", "FORMAT", "FORWARD", "FUNCTION", "GENERATE", "HELP", "HELP_OUTLINE", "HIDE", "HIDE_MENU", "HISTORY", "INFINITY_LOGO", "INFO", "INSERT", "JOBS", "KEY", "KEY_BLUE", "LINK", "LOCATE", "LOCKED", "LOCKED_DEFAULT_COLOUR", "LOGO", "LOGOUT", "MAXIMISE", "MENU", "MINIMISE", "MONITORING", "MOVE", "NODES", "OK", "OO", "OPEN", "OPERATOR", "PASSWORD", "PATHWAYS_CHOICE", "PATHWAYS_NODE", "PATHWAYS_SEQUENCE", "PAUSE", "PEN", "PIPELINE_ELASTIC_INDEX", "PIPELINE_FILE", "PIPELINE_FILES", "PIPELINE_HADOOP", "PIPELINE_ID", "PIPELINE_INDEX", "PIPELINE_JSON", "PIPELINE_KAFKA", "PIPELINE_MERGE", "PIPELINE_RECORD_COUNT", "PIPELINE_RECORD_OUTPUT", "PIPELINE_REFERENCE_DATA", "PIPELINE_SEARCH_OUTPUT", "PIPELINE_SOLR", "PIPELINE_SPLIT", "PIPELINE_STATISTICS", "PIPELINE_STREAM", "PIPELINE_STROOM_STATS", "PIPELINE_TEXT", "PIPELINE_XML", "PIPELINE_XML_SEARCH", "PIPELINE_XSD", "PIPELINE_XSLT", "PLAY", "PROCESS", "PROPERTIES", "QUESTION", "RAW", "REFRESH", "REGEX", "REMOVE", "RERUN", "RESIZE", "RESIZE_HANDLE", "SAVE", "SAVEAS", "SEARCH", "SELECTION", "SETTINGS", "SHARD_CLOSE", "SHARD_FLUSH", "SHARE", "SHIELD", "SHOW", "SHOW_MENU", "SPINNER_CIRCLE", "SPINNER_PAUSE", "SPINNER_SPINNING", "STAMP", "STEP", "STEPPING", "STEPPING_CIRCLE", "STEP_BACKWARD", "STEP_FORWARD", "STOP", "TABLE", "TABLE_NESTED", "TAB_CLOSE", "TAGS", "TEXT_WRAP", "TICK", "UNDO", "UNLINK", "UNLOCK", "UNLOCKED_DEFAULT_COLOUR", "UP", "UPLOAD", "USER", "USERS", "VALUE_FILTER", "VOLUMES", "WARNING" ]
           },
           "roles" : {
             "type" : "array",
@@ -25494,6 +26014,21 @@
             "type" : "array",
             "items" : {
               "$ref" : "#/components/schemas/StoredQuery"
+            }
+          }
+        }
+      },
+      "ResultPageTemporalEntry" : {
+        "type" : "object",
+        "description" : "A page of results.",
+        "properties" : {
+          "pageResponse" : {
+            "$ref" : "#/components/schemas/PageResponse"
+          },
+          "values" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/TemporalEntry"
             }
           }
         }
@@ -28190,6 +28725,39 @@
           }
         }
       },
+      "TemporalEntry" : {
+        "type" : "object",
+        "properties" : {
+          "effectiveTimeMs" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "key" : {
+            "type" : "string"
+          },
+          "map" : {
+            "type" : "string"
+          },
+          "value" : {
+            "type" : "string"
+          }
+        }
+      },
+      "TemporalEntryId" : {
+        "type" : "object",
+        "properties" : {
+          "effectiveTimeMs" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "key" : {
+            "type" : "string"
+          },
+          "map" : {
+            "type" : "string"
+          }
+        }
+      },
       "TemporalKey" : {
         "type" : "object",
         "properties" : {
@@ -28301,6 +28869,19 @@
             }
           }
         } ]
+      },
+      "TemporalStoreTimeRange" : {
+        "type" : "object",
+        "properties" : {
+          "maxEffectiveTimeMs" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "minEffectiveTimeMs" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        }
       },
       "TemporalValue" : {
         "type" : "object",
@@ -28619,6 +29200,24 @@
             "items" : {
               "$ref" : "#/components/schemas/TraceRoot"
             }
+          }
+        }
+      },
+      "TypeStyle" : {
+        "type" : "object",
+        "properties" : {
+          "colour" : {
+            "type" : "string"
+          },
+          "graphic" : {
+            "type" : "string"
+          },
+          "shape" : {
+            "type" : "string",
+            "enum" : [ "CIRCLE", "SQUARE", "TRIANGLE", "DIAMOND", "PIN" ]
+          },
+          "type" : {
+            "type" : "string"
           }
         }
       },
