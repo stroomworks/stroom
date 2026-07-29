@@ -89,6 +89,7 @@ rather than waiting for them to change.
 | **Keep the source streams** for as long as you keep the graph | A graph is rebuilt by reprocessing them. There is no other recovery path ([11-operations.md](11-operations.md#rebuild--and-its-trap)) |
 | **Size the volume for two copies** of your largest graph | Nightly compaction rewrites a store beside itself before swapping it in |
 | **Follow the procedures for changing `graphdb.nodeList` or `graphdb.path`** | Both are reported if you get them wrong, but neither is prevented ([11-operations.md](11-operations.md#settings-you-must-not-change-casually)) |
+| **Only if you need to join a graph to other Stroom data:** set `stroom.query.optimiser.mode` to `ON` | Joins exist only in the optimising compiler, and the default is `OFF`, so a query containing one fails to parse. Ordinary graph queries need nothing — they do not go through that compiler ([05-querying.md](05-querying.md#does-graph-db-need-the-query-optimiser)) |
 
 ### Open issues
 

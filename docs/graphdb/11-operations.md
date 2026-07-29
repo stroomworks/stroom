@@ -90,6 +90,13 @@ Three things worth knowing:
 If a backfill fails part-way, run it again — there is no partial state to clean up, because a node either
 receives a whole copy or none of it.
 
+> **`stroom.query.optimiser.mode` is not a Graph DB setting, but one Graph DB feature depends on it.**
+> Ordinary graph queries are unaffected — they never reach the compiler that flag selects. A StroomQL `join`
+> over a Cypher sub-query, however, exists only in the optimising compiler, so it needs `ON`; at the default
+> `OFF`, and at `SHADOW`, such a query fails to parse
+> ([05-querying.md](05-querying.md#does-graph-db-need-the-query-optimiser)). Turning the optimiser on affects
+> every query on the node, not just graph ones.
+
 > **Changing `graphdb.path` needs the data moved with it.** Stop the node, move
 > `<old path>/shards` to `<new path>/shards`, then start it.
 >

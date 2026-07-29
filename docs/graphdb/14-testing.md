@@ -276,6 +276,7 @@ codec apiece.
 | `TestGraphRetentionSweep` | That the property index and its lookups are reclaimed with the versions they belonged to, and that an unchanged node keeps its anchors |
 | `TestGraphRootMarker` | That a `graphdb.path` change is reported when it strands data and accepted when the data moved with it — the discriminating pair |
 | `TestDocumentationQueries` | **Every Cypher query printed in this documentation set**, compiled through the real parser and planner. Found three examples that had been wrong for weeks, including one showing an aggregation the language cannot express. See [Documented queries](#documented-queries) |
+| `TestDocumentationReferences` | **Every source constant, code-map class and `graphdb.*` setting** the documentation cites. See [Documented references](#documented-references) |
 | `TestGraphQueryNodeResolverImpl` | Query routing, including that it claims only `GraphDb` documents |
 | `TestCompositeQueryNodeResolver` | That more than one feature can route, and that no resolvers means no constraint |
 | `TestGraphMutationSchema` | Sample documents against the XSD |
@@ -308,6 +309,24 @@ turn it into a silent no-op.
 
 **If this documentation moves to another repository, this test will fail** with a message saying so. That is
 deliberate: repoint it or delete it, but do not let it skip.
+
+### Documented references
+
+`TestDocumentationReferences` checks that what the documentation cites still exists. It is deliberately narrow,
+covering only the places where a reference follows a convention:
+
+| Check | Covers |
+|---|---|
+| Source constants | Every `Class.CONSTANT` in a table with a **Source constant** column — the values an operator looks up when sizing a deployment |
+| The code map | Every class named in the first cell of a **Role** table in [13-developer-guide.md](13-developer-guide.md) |
+| Settings | Every `graphdb.*` reference anywhere, against `GraphDbConfig`'s getters |
+
+**A full sweep of every backticked identifier was tried and rejected.** It flagged 67 benign matches — Cypher
+keywords, edge labels, dataset ids, JDK types, enum constants, file names — for three real defects. Suppressing
+that needs a hand-kept stop list, and a stop list that quietly grows is the same rot the check exists to catch.
+So prose references — a class named mid-sentence, or a described behaviour — remain verified by hand.
+
+Each of the three checks asserts a floor on how much it found, for the same reason as the query test.
 
 ## Regression checklist
 

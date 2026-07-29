@@ -166,6 +166,10 @@ by CSRF protection.
 
 ## Joining a graph to other Stroom data
 
+> **This needs `stroom.query.optimiser.mode` set to `ON`, and the default is `OFF`.** Everything else in this
+> file works at the default; `join` does not exist at all until the optimiser is serving queries. See
+> [Does Graph DB need the query optimiser?](#does-graph-db-need-the-query-optimiser) below.
+
 A Cypher query can be used as a **join side inside a StroomQL query**, which is how you combine graph
 relationships with data that lives elsewhere — an index, a Plan B store, anything StroomQL can read.
 
@@ -196,6 +200,31 @@ Details worth knowing:
 The reverse direction is not available: a Cypher query cannot join to an index or state store from inside
 Cypher. The graph is always the joined side, never the driving one. If you want the graph to lead, put its
 sub-query first and join the other source to it.
+
+### Does Graph DB need the query optimiser?
+
+**For an ordinary graph query, no.** The Explore and Data tabs work with `stroom.query.optimiser.mode` at its
+default of `OFF`. A Cypher query is compiled by Graph DB's own compiler, which the query service resolves
+*before* and *instead of* the compiler the optimiser flag selects between — so the flag is not consulted on
+that path at all.
+
+**For a `join`, yes — `ON` is required.** Joins exist only in the optimising compiler. The legacy compiler's
+keyword set has no `join` at all, so at `OFF` a query containing one fails to parse rather than running
+without the join. It is a loud failure, not a wrong answer, but the error talks about an unexpected token
+rather than about a setting.
+
+| Mode | Ordinary graph query | Graph inside a StroomQL `join` |
+|---|---|---|
+| `OFF` *(default)* | Works | **Fails to parse** |
+| `SHADOW` | Works | **Fails to parse** — shadow mode still *serves* from the legacy compiler |
+| `ON` | Works | Works |
+
+`SHADOW` is the trap: it runs the optimiser alongside the legacy compiler to log divergences, but legacy is
+still what serves the query, so a join fails exactly as it does at `OFF`.
+
+The optimiser is a separate subsystem with its own maturity question; enabling it for the sake of graph joins
+means adopting it for every query on the node, not just graph ones. That is a bigger decision than a graph
+deployment, and not one this documentation set can make for you.
 
 ### When to use this instead of a plain graph query
 

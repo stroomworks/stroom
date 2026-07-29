@@ -356,8 +356,9 @@ grep-verification.
 annotations on server code only. Graph DB follows them closely — the existing Javadoc explains *why* a
 design is as it is, which is where most of the reasoning behind the frozen key layouts is recorded.
 
-**A Cypher example in the documentation is tested.** `TestDocumentationQueries` compiles every fenced `cypher`
-block in `docs/graphdb/`, so an example that stops compiling fails the build. Separate independent statements
+**The documentation is tested.** `TestDocumentationQueries` compiles every fenced `cypher` block in
+`docs/graphdb/`, and `TestDocumentationReferences` checks every source constant, code-map class and `graphdb.*`
+setting it cites — so renaming a constant this guide names, or a class in the tables above, fails the build. Separate independent statements
 with a blank line, and annotate a deliberately-invalid one `-- rejected`, or `-- rejected at runtime` for the
 shapes the grammar accepts and the engine refuses. If this documentation moves repositories that test fails
 deliberately rather than skipping — see [14-testing.md](14-testing.md#documented-queries).
