@@ -277,6 +277,7 @@ codec apiece.
 | `TestGraphRootMarker` | That a `graphdb.path` change is reported when it strands data and accepted when the data moved with it — the discriminating pair |
 | `TestDocumentationQueries` | **Every Cypher query printed in this documentation set**, compiled through the real parser and planner. Found three examples that had been wrong for weeks, including one showing an aggregation the language cannot express. See [Documented queries](#documented-queries) |
 | `TestDocumentationReferences` | **Every source constant, code-map class and `graphdb.*` setting** the documentation cites — that it exists, **and that the value printed beside it is still the value in the code**. See [Documented references](#documented-references) |
+| `TestDocumentationMessages` | **Every rejection message this documentation quotes**, against the source that throws it, plus the rejection counts it states. Found `13-developer-guide.md` claiming 64 rejections where the compiler holds 65. See [Documented messages](#documented-messages) |
 | `TestEventLoggingXslt` | **The documented event-logging translation**: the stylesheet in `docs/graphdb/examples/` transformed over its sample corpus, compared with the documented expected output, validated against the shipped XSD, and its snippets checked against the prose in [04-event-logging-xslt.md](04-event-logging-xslt.md). See [Documented examples](#documented-examples) |
 | `TestGraphQueryNodeResolverImpl` | Query routing, including that it claims only `GraphDb` documents |
 | `TestCompositeQueryNodeResolver` | That more than one feature can route, and that no resolvers means no constraint |
@@ -310,6 +311,45 @@ turn it into a silent no-op.
 
 **If this documentation moves to another repository, this test will fail** with a message saying so. That is
 deliberate: repoint it or delete it, but do not let it skip.
+
+### Documented messages
+
+`TestDocumentationMessages` checks the rejection messages quoted in
+[06-language-reference.md](06-language-reference.md) and [10-limits.md](10-limits.md) against the code that
+throws them.
+
+A rejection message is the whole of a user's experience of an unsupported construct: they write a query, they
+read a sentence, and that sentence has to tell them what to do instead. The language reference reproduces a
+dozen verbatim so an author can search for the one they hit — and a quoted message that has since been reworded
+sends them looking for a string that no longer exists. Documentation is the last place anyone thinks to check
+when they improve a message.
+
+| Check | Covers |
+|---|---|
+| Quoted messages | Every quoted message still appears in `CypherToLogicalPlan` (compiler) or `GraphTraversalEngine` (engine) |
+| Stated counts | The **65** compiler and **five** engine rejections stated in [06-language-reference.md](06-language-reference.md), and the count in [13-developer-guide.md](13-developer-guide.md) |
+
+**A message is recognised by its prefix**, which is the convention the language reference already states: a
+compiler message begins `not in PoC subset:` or `not supported in this version:`, an engine one begins
+`not yet supported:`. Quote a message in a table cell, an untagged fenced block, or a blockquote and it is
+checked. **If a fourth family of prefixes is ever introduced, add it to the test** — an unrecognised prefix is
+not a failure, it is silently unchecked.
+
+Two things the reconstruction has to cope with, both worth knowing before you reword a message:
+
+- **Wrapping.** Most messages are four source lines of `"…" + "…"`, and the documented text spans the joins.
+- **Interpolation.** Some splice a value in — `"not supported in this version: " + side + "(...) in a DIFF
+  WHERE clause …"`. Quote such a message with `…` where the value goes, as the reference already does: the
+  documented text is split on `…` and its segments matched **in order**, so an elision lines up with the gap.
+
+**Not covered:** the ingest-side message tables in [03-ingest.md](03-ingest.md) and
+[07-functions.md](07-functions.md) that quote `GraphFilter`'s per-record errors. Those are assembled from
+runtime values rather than fixed text, so they need a different technique. A known gap, stated so it is not
+mistaken for coverage.
+
+Landing this found one defect: [13-developer-guide.md](13-developer-guide.md) stated 64 explicit rejections
+where the compiler holds 65, while [06-language-reference.md](06-language-reference.md) had the same number
+right. Two documents disagreeing about a countable fact is what a build should not tolerate.
 
 ### Documented examples
 

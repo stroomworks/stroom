@@ -10,7 +10,9 @@ for compile-error messages. Functions have their own file.
 [10-limits.md](10-limits.md) (runtime ceilings), [09-gql-and-neo4j.md](09-gql-and-neo4j.md)
 (differences from Neo4j).
 
-*Rejection messages, element-row columns and clause constraints re-verified against the code on 2026-07-29, branch `sw-query-optimiser`.*
+*Rejection messages, element-row columns and clause constraints re-verified against the code on 2026-07-29,
+branch `sw-query-optimiser`. The quoted messages and the counts below are now asserted on every build by
+`TestDocumentationMessages` ([14-testing.md](14-testing.md#documented-messages)).*
 
 ---
 
