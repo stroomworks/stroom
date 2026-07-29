@@ -16,6 +16,8 @@
 
 package stroom.floormap.shared;
 
+import stroom.floormap.shared.FloorMapPendingChanges.Deletion;
+import stroom.floormap.shared.FloorMapPendingChanges.PendingChange;
 import stroom.util.shared.TemporalEntry;
 import stroom.util.shared.TemporalEntryId;
 
@@ -292,6 +294,68 @@ class TestFloorMapPendingChanges {
         pendingChanges.recordCreation(entry("k1", 100, "{}"));
         pendingChanges.recordDeletion(id("k2", 200));
         assertThat(pendingChanges.getChanges()).hasSize(2);
+    }
+
+    // -----------------------------------------------------------------------
+    // clearSent — a save must not discard edits it never sent
+    // -----------------------------------------------------------------------
+
+    @Test
+    void testClearSent_keepsOpsStagedDuringTheFlush() {
+        // Two ops are sent...
+        pendingChanges.recordCreation(entry("sent1", 100, "{}"));
+        pendingChanges.recordUpdate(entry("sent2", 200, "{}"));
+        final int sentCount = pendingChanges.getChanges().size();
+
+        // ...then the user edits again while the request is in flight.
+        pendingChanges.recordDeletion(id("stagedDuringFlush", 300));
+
+        pendingChanges.clearSent(sentCount);
+
+        // The unsent edit must survive, otherwise it silently disappears when the
+        // panels reload after a successful save.
+        assertThat(pendingChanges.getChanges()).hasSize(1);
+        assertThat(pendingChanges.isDirty()).isTrue();
+        final PendingChange remaining = pendingChanges.getChanges().get(0);
+        assertThat(remaining).isInstanceOf(Deletion.class);
+        assertThat(((Deletion) remaining).getId().getKey()).isEqualTo("stagedDuringFlush");
+    }
+
+    @Test
+    void testClearSent_emptiesBufferWhenNothingWasStagedMeanwhile() {
+        pendingChanges.recordCreation(entry("k1", 100, "{}"));
+        pendingChanges.recordUpdate(entry("k2", 200, "{}"));
+
+        pendingChanges.clearSent(2);
+
+        assertThat(pendingChanges.getChanges()).isEmpty();
+        assertThat(pendingChanges.isDirty()).isFalse();
+    }
+
+    @Test
+    void testClearSent_clampsOutOfRangeCounts() {
+        pendingChanges.recordCreation(entry("k1", 100, "{}"));
+
+        pendingChanges.clearSent(0);
+        assertThat(pendingChanges.getChanges()).hasSize(1);
+
+        pendingChanges.clearSent(-5);
+        assertThat(pendingChanges.getChanges()).hasSize(1);
+
+        // More than are present must not throw.
+        pendingChanges.clearSent(99);
+        assertThat(pendingChanges.getChanges()).isEmpty();
+    }
+
+    @Test
+    void testClearSent_removesAPrefixNotByEquality() {
+        // Two identical-looking ops: only the first (sent) one may be dropped.
+        pendingChanges.recordUpdate(entry("same", 100, "{}"));
+        pendingChanges.recordUpdate(entry("same", 100, "{}"));
+
+        pendingChanges.clearSent(1);
+
+        assertThat(pendingChanges.getChanges()).hasSize(1);
     }
 
     // -----------------------------------------------------------------------

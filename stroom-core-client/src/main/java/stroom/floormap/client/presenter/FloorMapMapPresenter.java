@@ -651,6 +651,13 @@ public class FloorMapMapPresenter
         final stroom.floormap.shared.ValueFormat vf = getEntity().getValueFormat();
         // Area roles are absent from pre-area schemas, so their aliases may be
         // null — matched columns simply stay at -1.
+        // All aliases are resolved once, before the loop. Each one costs a linear
+        // scan of the schema, so resolving them per column made this O(columns ×
+        // schema) for no benefit — the aliases do not vary by column.
+        final String typeAlias = columnAliasForRole(Role.TYPE, vf);
+        final String positionAlias = columnAliasForRole(Role.POSITION, vf);
+        final String imageAlias = columnAliasForRole(Role.IMAGE, vf);
+        final String worldToMapAlias = columnAliasForRole(Role.WORLD_TO_MAP, vf);
         final String geometryAlias = columnAliasForRole(Role.GEOMETRY, vf);
         final String fillAlias = columnAliasForRole(Role.FILL, vf);
         final String opacityAlias = columnAliasForRole(Role.OPACITY, vf);
@@ -658,17 +665,13 @@ public class FloorMapMapPresenter
             final String colName = columns.get(i).getName();
             if (colName.equalsIgnoreCase("Key")) {
                 keyIdx = i;
-            } else if (colName.equalsIgnoreCase(FloorMapQueryBuilder.buildColumnAlias(
-                    pathForRole(Role.TYPE), vf))) {
+            } else if (colName.equalsIgnoreCase(typeAlias)) {
                 typeIdx = i;
-            } else if (colName.equalsIgnoreCase(FloorMapQueryBuilder.buildColumnAlias(
-                    pathForRole(Role.POSITION), vf))) {
+            } else if (colName.equalsIgnoreCase(positionAlias)) {
                 coordsIdx = i;
-            } else if (colName.equalsIgnoreCase(FloorMapQueryBuilder.buildColumnAlias(
-                    pathForRole(Role.IMAGE), vf))) {
+            } else if (colName.equalsIgnoreCase(imageAlias)) {
                 imgIdx = i;
-            } else if (colName.equalsIgnoreCase(FloorMapQueryBuilder.buildColumnAlias(
-                    pathForRole(Role.WORLD_TO_MAP), vf))) {
+            } else if (colName.equalsIgnoreCase(worldToMapAlias)) {
                 worldToMapIdx = i;
             } else if (colName.equalsIgnoreCase(geometryAlias)) {
                 geometryIdx = i;

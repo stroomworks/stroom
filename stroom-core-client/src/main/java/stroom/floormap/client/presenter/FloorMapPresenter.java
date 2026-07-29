@@ -72,7 +72,7 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
 
     /**
      * Set when the Editor tab enables area support on this document, so a
-     * Settings tab created <em>afterwards</em> still gets its grids patched
+     * Settings tab created <em>afterwards</em> still gets its grid patched
      * (see {@link FloorMapSettingsPresenter#applyAreaPatch()}).
      */
     private boolean areaSupportEnabled;
@@ -120,7 +120,7 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
                 floorMapEditorPresenter.setInitialViewState(sharedInitialView);
             }
             // When the Editor enables area support (schema/type-style upgrade),
-            // the Settings tab's grids must be re-patched or its wholesale
+            // the Settings tab's grid must be re-patched or its wholesale
             // onWrite would silently revert the upgrade on save.
             floorMapEditorPresenter.setAreaSupportEnabledListener(() -> {
                 areaSupportEnabled = true;
@@ -171,7 +171,7 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
             floorMapSettingsPresenter = floorMapSettingsPresenterProvider.get();
             if (areaSupportEnabled) {
                 // Area support was enabled before this tab was first opened —
-                // keep its grids patched (idempotent; also re-applied on read).
+                // keep its grid patched (idempotent; also re-applied on read).
                 floorMapSettingsPresenter.applyAreaPatch();
             }
             return floorMapSettingsPresenter;

@@ -76,6 +76,12 @@ public class UpdatableSqlTemporalStore implements UpdatableTemporalStore {
 
     private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(UpdatableSqlTemporalStore.class);
 
+    /** Audit-log object type for a single temporal-store entry. */
+    private static final String LOGGED_ENTRY_TYPE = "Temporal store entry";
+
+    /** Audit-log object type for a whole temporal-store map. */
+    private static final String LOGGED_MAP_TYPE = "Temporal store";
+
     private final UpdatableTemporalStoreDao dao;
     private final SqlTemporalStoreDocStore sqlStoreDocStore;
     private final FieldInfoResultPageFactory fieldInfoResultPageFactory;
@@ -113,7 +119,10 @@ public class UpdatableSqlTemporalStore implements UpdatableTemporalStore {
         return eventLoggingServiceProvider.get().loggedWorkBuilder()
                 .withTypeId(StroomEventLoggingUtil.buildTypeId(this, "create"))
                 .withDescription("Create temporal entry")
-                .withDefaultEventAction(event.logging.CreateEventAction.builder().build())
+                .withDefaultEventAction(event.logging.CreateEventAction.builder()
+                        .addObject(entryAsLoggedObject(entry.getMap(), entry.getKey(),
+                                entry.getEffectiveTimeMs()))
+                        .build())
                 .withSimpleLoggedResult(() -> {
                     validateKey(entry.getKey());
                     return dao.create(entry);
@@ -138,7 +147,10 @@ public class UpdatableSqlTemporalStore implements UpdatableTemporalStore {
         return eventLoggingServiceProvider.get().loggedWorkBuilder()
                 .withTypeId(StroomEventLoggingUtil.buildTypeId(this, "delete"))
                 .withDescription("Delete temporal entry")
-                .withDefaultEventAction(event.logging.DeleteEventAction.builder().build())
+                .withDefaultEventAction(event.logging.DeleteEventAction.builder()
+                        .addObject(entryAsLoggedObject(id.getMap(), id.getKey(),
+                                id.getEffectiveTimeMs()))
+                        .build())
                 .withSimpleLoggedResult(() -> dao.delete(id))
                 .getResultAndLog();
     }
@@ -162,12 +174,45 @@ public class UpdatableSqlTemporalStore implements UpdatableTemporalStore {
         eventLoggingServiceProvider.get().loggedWorkBuilder()
                 .withTypeId(StroomEventLoggingUtil.buildTypeId(this, "clear"))
                 .withDescription("Clear temporal store: " + mapName)
-                .withDefaultEventAction(event.logging.DeleteEventAction.builder().build())
+                .withDefaultEventAction(event.logging.DeleteEventAction.builder()
+                        // The whole map is the subject here, not a single entry.
+                        .addObject(event.logging.OtherObject.builder()
+                                .withType(LOGGED_MAP_TYPE)
+                                .withId(mapName)
+                                .withName(mapName)
+                                .build())
+                        .build())
                 .withSimpleLoggedResult(() -> {
                     dao.clear(mapName);
                     return null;
                 })
                 .getResultAndLog();
+    }
+
+    /**
+     * Describes a single temporal-store entry as an audit-log object.
+     *
+     * <p>The {@code event-logging} schema requires every {@code Create}/{@code Delete}
+     * action to carry at least one object — an empty action fails schema validation
+     * with {@code cvc-complex-type.2.4.b} when the audit events are themselves
+     * ingested, which is how this was found. So the entry's natural key is recorded
+     * here, which is also what an audit trail actually needs: <em>which</em> entry
+     * changed, not merely that something did.</p>
+     *
+     * @param mapName         the temporal store (map) name
+     * @param key             the entry key
+     * @param effectiveTimeMs the entry's effective time
+     * @return the object to attach to the event action
+     */
+    private static event.logging.OtherObject entryAsLoggedObject(final String mapName,
+                                                                 final String key,
+                                                                 final Long effectiveTimeMs) {
+        return event.logging.OtherObject.builder()
+                .withType(LOGGED_ENTRY_TYPE)
+                .withId(key)
+                .withName(mapName + "/" + key)
+                .withDescription("Effective time " + effectiveTimeMs)
+                .build();
     }
 
     /**

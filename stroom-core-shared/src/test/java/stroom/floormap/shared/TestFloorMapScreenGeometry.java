@@ -34,7 +34,19 @@ class TestFloorMapScreenGeometry {
     private static final FloorMapScreenGeometry.AspectRatioSource NO_AR = url -> null;
 
     private FloorMapScreenGeometry geometry(final double scale, final double ox, final double oy) {
-        return new FloorMapScreenGeometry(scale, ox, oy, IMAGE_DISPLAY_WIDTH, OBJECT_SIZE, NO_AR);
+        return new FloorMapScreenGeometry(scale, ox, oy, IMAGE_DISPLAY_WIDTH, OBJECT_SIZE, NO_AR, null);
+    }
+
+    /**
+     * Geometry for a map whose {@code type} layer draws {@code graphicUrl} at the
+     * given aspect ratio.
+     */
+    private FloorMapScreenGeometry geometryWithLayerGraphic(final String type,
+                                                            final String graphicUrl,
+                                                            final double aspectRatio) {
+        return new FloorMapScreenGeometry(1, 0, 0, IMAGE_DISPLAY_WIDTH, OBJECT_SIZE,
+                url -> graphicUrl.equals(url) ? aspectRatio : null,
+                List.of(new TypeStyle(type, null, "#111111", graphicUrl)));
     }
 
     private static Fact pointFact(final String key, final double x, final double y) {
@@ -121,5 +133,87 @@ class TestFloorMapScreenGeometry {
         assertThat(b[0]).isCloseTo(0, within(TOL));
         assertThat(b[2]).isCloseTo(1000, within(TOL));
         assertThat(b[3] - b[1]).isCloseTo(1000, within(TOL));
+    }
+
+    // -----------------------------------------------------------------------
+    // Layer graphics — the drawn box and the measured box must agree
+    // -----------------------------------------------------------------------
+
+    /** A square graphic occupies exactly the shape glyph's box. */
+    @Test
+    void testGraphicBox_squareMatchesTheGlyphExactly() {
+        final double[] box = FloorMapScreenGeometry.graphicBox(OBJECT_SIZE, 1.0);
+        assertThat(box[0]).isCloseTo(OBJECT_SIZE, within(TOL));
+        assertThat(box[1]).isCloseTo(OBJECT_SIZE, within(TOL));
+    }
+
+    /** A non-square graphic keeps the glyph's AREA, so it reads at the same size. */
+    @Test
+    void testGraphicBox_matchesAreaNotBounds() {
+        final double[] box = FloorMapScreenGeometry.graphicBox(OBJECT_SIZE, 4.0);
+        // r=4 -> (S*2, S/2) = 120 x 30; area 3600 = 60*60.
+        assertThat(box[0]).isCloseTo(120, within(TOL));
+        assertThat(box[1]).isCloseTo(30, within(TOL));
+        assertThat(box[0] * box[1]).isCloseTo(OBJECT_SIZE * OBJECT_SIZE, within(1e-9));
+        // And it preserves the image's own ratio, so nothing is distorted.
+        assertThat(box[0] / box[1]).isCloseTo(4.0, within(TOL));
+    }
+
+    /** An extreme ratio is capped so a banner cannot become an unreadable sliver. */
+    @Test
+    void testGraphicBox_capsTheLongestEdge() {
+        final double[] box = FloorMapScreenGeometry.graphicBox(OBJECT_SIZE, 100.0);
+        final double cap = OBJECT_SIZE * FloorMapScreenGeometry.MAX_GRAPHIC_EDGE_RATIO;
+        assertThat(Math.max(box[0], box[1])).isCloseTo(cap, within(TOL));
+        // Capping scales both edges, so the aspect ratio still holds.
+        assertThat(box[0] / box[1]).isCloseTo(100.0, within(1e-6));
+    }
+
+    /** An unknown or nonsense ratio falls back to square, matching the renderer. */
+    @Test
+    void testGraphicBox_fallsBackToSquareWhenRatioUnusable() {
+        for (final Double bad : new Double[]{null, 0.0, -2.0, Double.NaN, Double.POSITIVE_INFINITY}) {
+            final double[] box = FloorMapScreenGeometry.graphicBox(OBJECT_SIZE, bad);
+            assertThat(box[0]).isCloseTo(OBJECT_SIZE, within(TOL));
+            assertThat(box[1]).isCloseTo(OBJECT_SIZE, within(TOL));
+        }
+    }
+
+    /**
+     * The regression this fixes: a fact on a layer that draws a wide image must
+     * measure as that wide box, not as a square, or a marquee over its outer edges
+     * misses it and the selection frame is drawn inside the glyph.
+     */
+    @Test
+    void testFactScreenBounds_usesTheLayerGraphicBox() {
+        final Fact fact = pointFact("f", 0, 0);
+        final double[] b = geometryWithLayerGraphic("t", "/assets/x/wide.png", 4.0)
+                .factScreenBounds(fact);
+        // 120 x 30 centred on the origin, rather than 60 x 60.
+        assertThat(b[2] - b[0]).isCloseTo(120, within(TOL));
+        assertThat(b[3] - b[1]).isCloseTo(30, within(TOL));
+    }
+
+    /** A layer with no graphic still measures as a square glyph. */
+    @Test
+    void testFactScreenBounds_squareWhenLayerHasNoGraphic() {
+        final FloorMapScreenGeometry g = new FloorMapScreenGeometry(
+                1, 0, 0, IMAGE_DISPLAY_WIDTH, OBJECT_SIZE, NO_AR,
+                List.of(new TypeStyle("t", TypeStyle.Shape.CIRCLE, "#111111")));
+        final double[] b = g.factScreenBounds(pointFact("f", 0, 0));
+        assertThat(b[2] - b[0]).isCloseTo(OBJECT_SIZE, within(TOL));
+        assertThat(b[3] - b[1]).isCloseTo(OBJECT_SIZE, within(TOL));
+    }
+
+    /** A wide graphic is now caught by a marquee that only overlaps its outer edge. */
+    @Test
+    void testHitTestRect_catchesTheWideGraphicsEdge() {
+        final Fact fact = pointFact("f", 0, 0);
+        final FloorMapScreenGeometry g =
+                geometryWithLayerGraphic("t", "/assets/x/wide.png", 4.0);
+        // A thin band from x=+40..+55: outside a 60x60 square (half-width 30) but
+        // inside the 120-wide graphic box (half-width 60).
+        assertThat(g.hitTestRect(List.of(fact), new double[]{40, -5, 55, 5}))
+                .containsExactly("f");
     }
 }

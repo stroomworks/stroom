@@ -99,7 +99,7 @@ public class FloorMapSettingsPresenter
 
     /**
      * Set once the Editor tab enables area support on this document; onRead
-     * then re-applies {@link #applyAreaPatch()} so the grids never revert the
+     * then re-applies {@link #applyAreaPatch()} so the grid never reverts the
      * upgrade before it is persisted.
      */
     private boolean areaPatchActive;

@@ -244,15 +244,15 @@ public class FloorMapFieldMapping {
         if (schema != null) {
             result.addAll(schema);
         }
-        if (hasRole(result, Role.GEOMETRY)) {
+        if (isRoleMissing(result, Role.GEOMETRY)) {
             result.add(new FloorMapFieldMapping(
                     siblingPath(result, format, "geometry"), Role.GEOMETRY, "Geometry", null));
         }
-        if (hasRole(result, Role.FILL)) {
+        if (isRoleMissing(result, Role.FILL)) {
             result.add(new FloorMapFieldMapping(
                     siblingPath(result, format, "fill"), Role.FILL, "Fill", null));
         }
-        if (hasRole(result, Role.OPACITY)) {
+        if (isRoleMissing(result, Role.OPACITY)) {
             result.add(new FloorMapFieldMapping(
                     siblingPath(result, format, "opacity"), Role.OPACITY, "Opacity", null));
         }
@@ -282,7 +282,15 @@ public class FloorMapFieldMapping {
         return format == ValueFormat.XML ? "/entry/" + name : "." + name;
     }
 
-    private static boolean hasRole(final List<FloorMapFieldMapping> schema, final Role role) {
+    /**
+     * True when {@code schema} has <strong>no</strong> mapping for {@code role}.
+     *
+     * <p>Named for the sense the callers actually use — "add a default mapping for
+     * this role if it is missing". It was previously called {@code hasRole}, which
+     * returned {@code false} when the role <em>was</em> present: the behaviour was
+     * right but every call site read as its own opposite.</p>
+     */
+    private static boolean isRoleMissing(final List<FloorMapFieldMapping> schema, final Role role) {
         for (final FloorMapFieldMapping mapping : schema) {
             if (mapping != null && mapping.getRole() == role) {
                 return false;

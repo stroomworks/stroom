@@ -44,12 +44,20 @@ public final class FloorMapScreenGeometry {
         Double aspectRatio(String imageUrl);
     }
 
+    /**
+     * Longest edge a layer graphic may occupy, as a multiple of the glyph size —
+     * stops a banner-shaped image becoming an unreadably wide sliver once its box
+     * is area-matched. See {@link #graphicBox}.
+     */
+    public static final double MAX_GRAPHIC_EDGE_RATIO = 2.0;
+
     private final double scale;
     private final double offsetX;
     private final double offsetY;
     private final double imageDisplayWidth;
     private final double objectSize;
     private final AspectRatioSource aspectRatioSource;
+    private final List<TypeStyle> typeStyles;
 
     /**
      * @param scale             the last-drawn zoom scale
@@ -58,19 +66,82 @@ public final class FloorMapScreenGeometry {
      * @param imageDisplayWidth the map-space width image facts render at
      * @param objectSize        the fixed on-screen size (px) of an imageless glyph
      * @param aspectRatioSource supplies image aspect ratios (may return {@code null})
+     * @param typeStyles        per-type styles, so a layer that draws an image is
+     *                          measured at the box that image actually occupies;
+     *                          may be {@code null}, in which case every imageless
+     *                          fact measures as a square glyph
      */
     public FloorMapScreenGeometry(final double scale,
                                   final double offsetX,
                                   final double offsetY,
                                   final double imageDisplayWidth,
                                   final double objectSize,
-                                  final AspectRatioSource aspectRatioSource) {
+                                  final AspectRatioSource aspectRatioSource,
+                                  final List<TypeStyle> typeStyles) {
         this.scale = scale;
         this.offsetX = offsetX;
         this.offsetY = offsetY;
         this.imageDisplayWidth = imageDisplayWidth;
         this.objectSize = objectSize;
         this.aspectRatioSource = aspectRatioSource;
+        this.typeStyles = typeStyles;
+    }
+
+    /**
+     * The on-screen {@code {width, height}} a layer graphic is drawn at, sized so it
+     * carries the <strong>same visual weight as a shape glyph</strong>.
+     *
+     * <p>Matching the shape's bounding box is not enough: a shape is solid ink out
+     * to its box edge, whereas an image preserving its aspect ratio inside a square
+     * box only reaches the edge on its longer side. So the box matches the shape
+     * box's <em>area</em> instead — for aspect ratio {@code r} that is
+     * {@code (S·√r, S/√r)}, which has area {@code S²} for every {@code r} and gives
+     * a square image exactly {@code S × S}.</p>
+     *
+     * <p>This lives here, rather than in the renderer, because hit-testing and the
+     * selection frame must use the identical box. When they disagreed, a wide icon
+     * drew 120×30 but hit-tested as 60×60, so a marquee over its outer edges missed
+     * it and the selection frame was drawn inside the glyph.</p>
+     *
+     * @param objectSize  the glyph size {@code S} in screen px
+     * @param aspectRatio the image's width/height, or {@code null} when not yet
+     *                    known (the caller then draws it square)
+     * @return a two-element {@code {width, height}} in screen px
+     */
+    public static double[] graphicBox(final double objectSize, final Double aspectRatio) {
+        if (aspectRatio == null
+                || aspectRatio <= 0
+                || Double.isNaN(aspectRatio)
+                || Double.isInfinite(aspectRatio)) {
+            return new double[]{objectSize, objectSize};
+        }
+        final double root = Math.sqrt(aspectRatio);
+        double width = objectSize * root;
+        double height = objectSize / root;
+
+        final double longest = Math.max(width, height);
+        final double cap = objectSize * MAX_GRAPHIC_EDGE_RATIO;
+        if (longest > cap) {
+            final double shrink = cap / longest;
+            width = width * shrink;
+            height = height * shrink;
+        }
+        return new double[]{width, height};
+    }
+
+    /**
+     * The asset URL of the image configured as {@code type}'s layer graphic, or
+     * {@code null} to draw a shape. Mirrors the renderer's lookup.
+     */
+    private String graphicForType(final String type) {
+        if (type != null && typeStyles != null) {
+            for (final TypeStyle style : typeStyles) {
+                if (style != null && type.equals(style.getType()) && style.hasGraphic()) {
+                    return style.getGraphic();
+                }
+            }
+        }
+        return null;
     }
 
     /**
@@ -103,8 +174,18 @@ public final class FloorMapScreenGeometry {
                 pos != null ? pos[0] : 0, pos != null ? pos[1] : 0);
         final double sx = offsetX + scale * mapPt[0];
         final double sy = offsetY - scale * mapPt[1];
-        final double half = objectSize / 2.0;
-        return new double[]{sx - half, sy - half, sx + half, sy + half};
+        // A layer that draws an image occupies the area-matched graphic box, which
+        // is not square; measuring it as a square would put the marquee hit area
+        // and the selection frame in the wrong place.
+        final String graphic = graphicForType(fact.getType());
+        final double[] box = graphic != null
+                ? graphicBox(objectSize, aspectRatioSource != null
+                        ? aspectRatioSource.aspectRatio(graphic)
+                        : null)
+                : new double[]{objectSize, objectSize};
+        final double halfW = box[0] / 2.0;
+        final double halfH = box[1] / 2.0;
+        return new double[]{sx - halfW, sy - halfH, sx + halfW, sy + halfH};
     }
 
     /**
