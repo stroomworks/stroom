@@ -152,14 +152,23 @@ Three families of seven, for grouping timestamps into intervals:
 | **round** | `roundSecond` | `roundMinute` | `roundHour` | `roundDay` | `roundWeek` | `roundMonth` | `roundYear` |
 | **ceiling** | `ceilingSecond` | `ceilingMinute` | `ceilingHour` | `ceilingDay` | `ceilingWeek` | `ceilingMonth` | `ceilingYear` |
 
-These are the most useful functions here, because "activity per hour" is the commonest analytic question
-and there is no other way to express it:
+They bucket a timestamp into an interval, one row at a time:
 
 ```cypher
 MATCH (u:User {id: 'alice'})-[r:ACCESSED]->(f:File)
-RETURN stroom.floorHour(stroom.parseDate(r.timestamp)) AS hour, count(f) AS accesses
+RETURN f.path AS path, stroom.floorHour(stroom.parseDate(r.timestamp)) AS hour
 ORDER BY hour
 ```
+
+> **You cannot group by a bucket.** `RETURN stroom.floorHour(…) AS hour, count(f) AS n` is **rejected**: when a
+> `RETURN` mixes an aggregate with anything else, every non-aggregate item must be a plain property access, to
+> serve as the implicit grouping key — and a function call is not one. Moving the function into a `WITH` does
+> not help either, because an aggregate is not permitted in the `RETURN` after a `WITH`.
+>
+> So "**accesses per hour**" cannot be expressed in this language today. What you can do is return the bucket
+> per row, as above, and count in whatever consumes the result — a dashboard, a spreadsheet, or the caller of
+> the API. Grouping by a computed value needs either function-valued grouping keys or an aggregate after a
+> `WITH`; both are in [12-future-work.md](12-future-work.md).
 
 Note this depends on `r.timestamp` having been stored in a parseable form at ingest — see
 [03-ingest.md](03-ingest.md).
@@ -178,17 +187,33 @@ so conversion functions still earn their keep. Declaring the type at ingest is t
 control the translation — it makes the value a number in the store, not just in one query.
 
 ```cypher
--- numeric comparison on an undeclared property
-MATCH (f:File {name: 'salaries.xlsx'}) WHERE toInteger(f.size) > 1000 RETURN f.path
-
--- a date stored as ISO-8601
+-- render a stored ISO-8601 timestamp as a date, per row
 MATCH (u:User {id: 'alice'})-[r:ACCESSED]->(f:File)
-RETURN stroom.formatDate(stroom.parseDate(r.when), 'yyyy-MM-dd') AS day, count(f) AS n
+RETURN f.path AS path, stroom.formatDate(stroom.parseDate(r.timestamp), 'yyyy-MM-dd') AS day
 ```
 
-One caveat worth internalising: **conversion happens per row, during evaluation.** It cannot help the
-anchor find its starting nodes, so `WHERE toInteger(n.id) = 42` still scans. If you need to filter on a
-value efficiently, store it in the form you will match on ([10-limits.md](10-limits.md)).
+> **A function cannot appear on the left of a `WHERE` comparison.** `WHERE toInteger(f.size) > 1000` is
+> rejected — *"the left side of a WHERE comparison must be a property access or variable reference"* — and the
+> right side accepts only literals. So conversion functions are for **projection**, not for filtering.
+>
+> To filter numerically, declare the type at ingest and compare directly: `WHERE f.size > 1000` on a property
+> ingested as `type="long"` works, and it is the better answer anyway — it makes the value a number in the
+> store rather than in one query.
+
+One caveat worth internalising: **conversion happens per row, during evaluation.** It cannot help the anchor
+find its starting nodes, which is the other reason to declare the type at ingest rather than convert at query
+time ([10-limits.md](10-limits.md)).
+
+## Property names that will not parse
+
+A handful of grammar keywords cannot be used as a property name — the parse fails before anything else is
+checked, with a raw message such as *"no viable alternative at input 'r.when'"*, which does not say why.
+
+**Confirmed unusable:** `when`, `count`, `end`, `match`, `case`.
+**Confirmed fine, despite looking risky:** `type`, `size`, `timestamp`, `id`, `name`, `path`.
+
+If you control the translation, avoid the first list at ingest. If you do not, the property is unreachable
+from a query — there is no quoting or escaping syntax for a property name.
 
 ## Errors you may see
 

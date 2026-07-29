@@ -9,7 +9,7 @@ semantics. Physical byte layouts are out of scope — see the developer guide.
 [10-limits.md](10-limits.md) (the limits these mechanics impose),
 [11-operations.md](11-operations.md) (running it).
 
-*Facts verified on 2026-07-28 against branch `sw-query-optimiser`.*
+*Store layout, interning and the retention/condense/compaction description re-verified against the code on 2026-07-29, branch `sw-query-optimiser`.*
 
 ---
 
@@ -40,7 +40,8 @@ permissions of their own — they are private to the document:
 | **Out-edge store** | Every version of every edge, keyed from the source node |
 | **In-edge store** | The same edges keyed from the destination node, so backwards traversal is as cheap as forwards |
 | **Property index** | Maps a (label, property key, value) triple to the nodes carrying it. This is what lets a query *find* its starting nodes |
-| **Interning tables** | Five small lookup tables mapping node ids, labels, edge types, property keys and long property values to compact numeric identifiers |
+| **Interning tables** | Five namespaces mapping node ids, labels, edge types, property keys and long property values to compact numeric identifiers. Long values need two of them — one interned by sequential id, one by hash, chosen by length |
+| **Format stamp** | A tiny `graph-info` table recording the on-disk layout this store was written with. A build expecting a different one **refuses to open it**, rather than reading old bytes as new ones |
 
 ### Why ids are interned
 
@@ -266,22 +267,34 @@ ceiling protects.
 
 Because nothing is ever overwritten, a graph fed continuously grows without bound unless you intervene.
 
-**Retention is configured per document and is off by default.** When enabled with a duration, a scheduled
-job (running every ten minutes) deletes versions older than the cutoff from the node and edge stores,
-always keeping at least one version per entity so that "as it was then" queries still resolve, and then
-sweeps interned ids that no longer appear anywhere.
+Three mechanisms bound growth, on two schedules.
 
-Two things retention does **not** do, both of which matter:
+**Retention is configured per document and is off by default.** When enabled with a duration, the
+`Graph DB Maintenance` job (every ten minutes) deletes versions older than the cutoff from the node and edge
+stores, always keeping at least one version per entity so that "as it was then" queries still resolve. It then
+**re-derives the property index from the versions that survived** and sweeps the interned ids and long values
+no surviving anchor references. That index is the part that used to grow without bound even with retention on:
+it holds an anchor per distinct value each node has ever had, it carries no `validFrom`, and a stored anchor's
+value cannot be decoded back out of its key — so it cannot be aged by time or pruned row by row, and is
+rebuilt instead.
 
-- **It does not condense redundant versions.** Ten identical daily snapshots of an unchanged node remain
-  ten versions. There is no merge or compaction pass.
-- **It does not clean the property index or the property-key table.** Stale index entries are filtered out
-  at query time rather than removed, so that portion of the store grows monotonically regardless.
+**Condensing runs on the same schedule and applies to every graph**, retention enabled or not. It collapses
+runs of consecutive identical node and edge versions to the earliest of each run — so ten identical daily
+snapshots of an unchanged node become one. It needs no cut-off and no setting because it changes no answer at
+any instant: a point-in-time lookup is a reverse floor scan, so it lands on the surviving earliest version,
+which holds the same value as the ones removed.
 
-The only full reclaim is **rebuild** — dropping the store and reprocessing the source streams. This carries
-a trap worth stating plainly: **it depends on those source streams still existing.** If Stroom's own data
-retention has aged them off, the graph cannot be rebuilt, and the only remaining option is to delete the
-document. Consider that relationship when setting retention on the feeds that supply a graph.
+**Compaction returns the freed space to the filesystem**, and is a separate `Graph DB Compaction` job running
+nightly. LMDB keeps freed pages for reuse rather than shrinking the file, so the two mechanisms above make a
+store stop growing without making it smaller; compaction is what makes the difference visible as free disk. It
+is nightly rather than every ten minutes because it rewrites the whole store and excludes queries on that graph
+while it does so.
+
+**Rebuild** — dropping the store and reprocessing the source streams — remains the only way back from a store
+that is corrupt or wrongly shaped, as opposed to merely large. It carries a trap worth stating plainly: **it
+depends on those source streams still existing.** If Stroom's own data retention has aged them off, the graph
+cannot be rebuilt, and the only remaining option is to delete the document. Consider that relationship when
+setting retention on the feeds that supply a graph.
 
 Details and the operational procedure are in [11-operations.md](11-operations.md).
 
@@ -290,7 +303,7 @@ Details and the operational procedure are in [11-operations.md](11-operations.md
 | Because… | …this follows |
 |---|---|
 | Every write is a new version | Storage grows with *change*, not with entity count. A small graph updated often can be larger than a big graph loaded once |
-| Deletes are tombstones | Deleting data never frees space, and deleted data stays visible to historical queries |
+| Deletes are tombstones | A delete *adds* a version rather than removing one, and deleted data stays visible to historical queries. Space comes back only via retention plus compaction |
 | `validFrom` is caller-supplied | The quality of your temporal queries is exactly the quality of the timestamps your XSLT emits |
 | Anchors resolve by property index | A property predicate on the first node pattern is the difference between a seek and a full scan |
 | Adjacency is keyed per edge type | Every hop must name its edge type; there is no wildcard traversal |

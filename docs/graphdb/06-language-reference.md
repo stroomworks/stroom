@@ -224,6 +224,11 @@ Comparisons are between a property (or variable) and a literal. Comparing **two 
 is supported only as a top-level `AND`-ed conjunct, with the six ordinary comparison operators — not nested
 inside `OR`/`NOT`, and not with the string operators.
 
+> **A function call cannot appear on either side.** `WHERE toInteger(f.size) > 1000` is rejected — *"the left
+> side of a WHERE comparison must be a property access or variable reference"* — and the right side accepts
+> only literals. Conversion functions are for `RETURN`, not for filtering; to filter numerically, declare the
+> property's type at ingest and compare it directly ([03-ingest.md](03-ingest.md#property-value-types)).
+
 ### `EXISTS { … }`
 
 Tests whether a relationship exists, without returning it:
@@ -364,6 +369,17 @@ RETURN CASE WHEN c.type = 'Drugs' THEN 'narcotics' ELSE 'other' END AS category
 ```
 
 `IN` and the string operators are not permitted inside a `WHEN` condition.
+
+## Property names that will not parse
+
+Some grammar keywords cannot be used as a property name. The parse fails before anything is checked, with a
+raw message like *"no viable alternative at input 'r.when'"* that does not explain itself.
+
+**Unusable:** `when`, `count`, `end`, `match`, `case`.
+**Fine, despite looking risky:** `type`, `size`, `timestamp`, `id`, `name`, `path`.
+
+There is no quoting syntax for a property name, so a property called `when` is unreachable from a query.
+Avoid these at ingest.
 
 ## What is not supported
 

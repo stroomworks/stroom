@@ -8,8 +8,7 @@ actually make. Also the index into the engineering records.
 **Companion documents:** [02-architecture.md](02-architecture.md) (the storage and temporal model in
 user terms), [12-future-work.md](12-future-work.md) (what is worth building).
 
-*Facts verified on 2026-07-28 against branch `sw-query-optimiser`. Class names and call order are more
-durable than line numbers; paths are given, line numbers only where a constant is the point.*
+*Class inventory re-verified against the code on 2026-07-29, branch `sw-query-optimiser`.*
 
 ---
 
@@ -39,6 +38,7 @@ self-contained.
 | `GraphStoreManager` | Per-UUID registry of open stores; resolves `<graphdb.path>/shards/<uuid>`. **Lends** a store for the duration of a call — see below |
 | `GraphSchemaDb` | The `graph-info` table: the store's format stamp, and the persisted hash-clash counter |
 | `GraphAnchorEncoding` | The single definition of how a property value becomes property-index key bytes, for both the write and the seek side. **Read it before touching the index** |
+| `GraphTimeSerdes` | Selects the `validFrom` encoding for a document's Temporal Precision, and rejects `NANOSECOND` |
 
 Key widths are fixed (`NODE_UID_WIDTH = 6`, `TYPE_UID_WIDTH = 4`) because prefix range scans depend on
 it — a variable-width key would break every traversal. Physical layouts are in each class's Javadoc.
@@ -92,7 +92,9 @@ The same applies to `delete`.
 | `GraphPartDestination` | Lands a fragment (local or remote) and hands it to the merge processor |
 | `GraphMergeProcessor` | Merges staged fragments into each graph's authoritative store |
 | `GraphQueryNodeResolverImpl` | Pins a graph query to a node that holds graph data |
-| `GraphPaths` / `GraphDbConfig` | The directory layout and the two settings that drive it |
+| `GraphBackfillService` | Copies a whole graph to every configured node, for one added after the data was loaded. Reuses the fragment transport, because a fragment and a store are the same shape |
+| `GraphRootMarker` | Startup check: reports a `graphdb.path` changed without the data being moved. Its marker lives under `stroom.home`, deliberately *outside* the graph root |
+| `GraphPaths` / `GraphDbConfig` | The directory layout, and the eight settings that drive it and the traversal guardrails |
 
 The receive-stage-unzip-merge loop itself is **not** here: it is
 `stroom.planb.impl.data.PartMergeProcessor`, shared with Plan B. It lives in Plan B's package because

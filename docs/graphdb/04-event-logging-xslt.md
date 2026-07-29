@@ -10,7 +10,7 @@ modelling decisions behind it.
 **Companion documents:** [03-ingest.md](03-ingest.md) (the target vocabulary),
 [08-analysis-examples.md](08-analysis-examples.md) (querying the result).
 
-*Facts verified on 2026-07-28 against branch `sw-query-optimiser`. Transform run with Saxon-HE 9.9.1-8.*
+*XSLT re-executed with Saxon-HE 9.9.1-8 on 2026-07-29; output byte-identical to `examples/expected-output.xml` and valid against the shipped XSD, branch `sw-query-optimiser`.*
 
 ---
 

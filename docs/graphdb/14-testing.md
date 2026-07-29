@@ -9,7 +9,7 @@ return. Canonical for the test dataset.
 [06-language-reference.md](06-language-reference.md) (the surface under test),
 [03-ingest.md](03-ingest.md) (loading the dataset).
 
-*Facts verified on 2026-07-28 against branch `sw-query-optimiser`.*
+*Test inventory re-verified against the module on 2026-07-29, branch `sw-query-optimiser`.*
 
 > **These cases have not been executed as written.** The dataset and the expected results are derived by
 > construction — each expectation follows deterministically from the data below — but this protocol has not
@@ -258,6 +258,9 @@ There is no migration path by design — the remedy for S1 is to wipe and rebuil
 
 ## Automated tests
 
+The load-bearing ones. Not exhaustive — the module has 27 test classes, and the rest cover a single DAO or
+codec apiece.
+
 | Test | Covers |
 |---|---|
 | `TestGraphFilter` | Ingest parsing and per-record error handling — end to end through fragment and merge, so it also exercises the write path a clustered node takes |
@@ -267,6 +270,11 @@ There is no migration path by design — the remedy for S1 is to wipe and rebuil
 | `TestGraphTemporalPrecision` | Every supported precision round-trips; key widths; the latest sentinel is encodable by its own serde; reopening at a different precision is refused |
 | `TestGraphTraversalLimits` | Configured guardrails reach the right field, defaults match the historical constants |
 | `TestGraphSchemaDb` | The format stamp: written on provision, validated on open, mismatch refused |
+| `TestGraphAnchorEncoding` | That every spelling of one number, and of one instant, reaches the same anchor — and that a literal's seek encodings always include the stored value's. Under-reaching loses rows silently, so it is asserted as reachability rather than as equality |
+| `TestGraphCondense` | That collapsing identical version runs changes **no answer at any instant**, asserted by querying every instant before and after — not by counting rows |
+| `TestGraphCompaction` | The copy-and-swap: data preserved, nothing copied when nothing was removed, no working directories left, and that a compaction waits for an in-flight reader rather than replacing the file under it |
+| `TestGraphRetentionSweep` | That the property index and its lookups are reclaimed with the versions they belonged to, and that an unchanged node keeps its anchors |
+| `TestGraphRootMarker` | That a `graphdb.path` change is reported when it strands data and accepted when the data moved with it — the discriminating pair |
 | `TestGraphQueryNodeResolverImpl` | Query routing, including that it claims only `GraphDb` documents |
 | `TestCompositeQueryNodeResolver` | That more than one feature can route, and that no resolvers means no constraint |
 | `TestGraphMutationSchema` | Sample documents against the XSD |

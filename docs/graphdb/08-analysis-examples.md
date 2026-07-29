@@ -10,7 +10,11 @@
 *Facts verified on 2026-07-28 against branch `sw-query-optimiser`.*
 
 > **Provenance of the results below.** Every query in [Part A](#part-a--the-pole-dataset) was **executed
-> against a live Stroom instance** on 2026-07-28, and the outputs shown are what came back. The queries in
+> against a live Stroom instance** on 2026-07-28, and the outputs shown are what came back. **They have not been
+> re-observed since the store format moved to version 2**, which requires every graph to be rebuilt — so treat
+> them as expected rather than confirmed until the dataset is reloaded. Every query on this page was
+> re-*compiled* against the current grammar and planner on 2026-07-29, which is a weaker check but catches a
+> query the language no longer accepts. The queries in
 > [Part B](#part-b--stroom-event-data) are written against the model produced by
 > [04-event-logging-xslt.md](04-event-logging-xslt.md) — that transform was verified, but these queries
 > have **not** been run against a populated graph, so treat them as worked patterns rather than confirmed
@@ -349,12 +353,18 @@ justifies a graph: the equivalent SQL is a self-join whose depth is fixed at aut
 
 ```cypher
 MATCH (u:User {id: 'alice'})-[r:ACCESSED]->(f:File)
-RETURN stroom.floorHour(stroom.parseDate(r.when)) AS hour, count(f) AS accesses
+RETURN f.path AS path, stroom.floorHour(stroom.parseDate(r.timestamp)) AS hour
 ORDER BY hour
 ```
 
 Requires the translation to have written a parseable timestamp property onto the edge. The bucketing
 functions are in [07-functions.md](07-functions.md).
+
+> **This returns a bucket per row, not a count per bucket.** Adding `count(f)` to that `RETURN` is rejected:
+> a non-aggregate item alongside an aggregate must be a plain property access, and a function call is not one.
+> Counting per hour has to happen in whatever consumes the rows — see
+> [07-functions.md](07-functions.md#time-bucketing). Note also that `when` cannot be used as a property name;
+> it is a grammar keyword.
 
 ### What changed this week?
 

@@ -9,7 +9,7 @@ Canonical for the concept glossary.
 [03-ingest.md](03-ingest.md) for loading data, [06-language-reference.md](06-language-reference.md) for
 querying.
 
-*Facts verified on 2026-07-28 against branch `sw-query-optimiser`.*
+*Scale, capacity and property-type claims re-verified against the code on 2026-07-29, branch `sw-query-optimiser`.*
 
 ---
 
@@ -91,15 +91,13 @@ Being honest about this saves more time than any feature list.
 
 - **You need production reliability today.** See the
   [blockers](README.md#production-readiness). This is the overriding one.
-- **Your data will exceed one node's disk in one graph.** `graphdb.maxStoreSize` raises the per-graph ceiling
-  from its 10 GiB default, but it is fixed when a store is created and every node holds a whole replica, so a
-  graph can never be larger than the smallest node holding it ([10-limits.md](10-limits.md)). You can split
-  across several graphs, but no query spans two of them.
-- **You need one graph bigger than one node's disk.** Graph DB now works correctly on a cluster — every node
-  named in `graphdb.nodeList` holds a full replica and queries are routed to one of them
-  ([02-architecture.md](02-architecture.md#how-a-graph-spans-a-cluster)) — but replication is not
-  partitioning, so it buys correctness and not capacity. A Lucene index can shard and a graph cannot; see
-  [why below](#a-note-on-scale-graph-db-versus-a-lucene-index).
+- **You need one graph bigger than one node's disk.** `graphdb.maxStoreSize` raises the per-graph ceiling from
+  its 10 GiB default, but it is fixed when a store is created — and because every node named in
+  `graphdb.nodeList` holds a *whole* replica, adding nodes makes a graph more available, never larger. Graph DB
+  is correct on a cluster ([02-architecture.md](02-architecture.md#how-a-graph-spans-a-cluster)); replication is
+  not partitioning, so it buys correctness and not capacity. A Lucene index can shard and a graph cannot; see
+  [why below](#a-note-on-scale-graph-db-versus-a-lucene-index). You can split across several graphs, but no
+  query spans two of them.
 - **You need the query language to write data.** It is read-only; there is no `SET`, `CREATE`, `DELETE` or
   `MERGE`. All data arrives through pipelines.
 - **Your questions are lookups, not traversals.** "Find events where user = X and time in range" is a
@@ -108,8 +106,10 @@ Being honest about this saves more time than any feature list.
 - **You need spatial or path-finding analytics.** No `point()`, no `distance()`, no server-side
   shortest-path or centrality. The Explore tab offers some of this client-side over whatever is currently
   drawn, which is not the same thing.
-- **You need numeric or date comparison without preparation.** Property values are strings; ordering is
-  lexical unless you encoded values for it at ingest ([03-ingest.md](03-ingest.md)).
+- **You need decimals compared with a tolerance.** Equality on numbers is exact, here as everywhere in
+  Stroom, so a value computed before ingest may not match a literal that looks identical. Numbers and
+  timestamps otherwise compare properly once you declare their type at ingest
+  ([03-ingest.md](03-ingest.md#property-value-types)).
 
 **Graph DB is a good fit when** the questions are about connections, the dataset is modest, the analysis is
 exploratory, and the ability to ask "what did this look like last month" is valuable.

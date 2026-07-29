@@ -8,7 +8,7 @@ operational and this file is where they bite.
 **Companion documents:** [02-architecture.md](02-architecture.md) (why storage behaves this way),
 [10-limits.md](10-limits.md) (the ceilings), [03-ingest.md](03-ingest.md) (what fills a graph).
 
-*Facts verified on 2026-07-28 against branch `sw-query-optimiser`.*
+*Job names, schedules, directory layout and metrics re-verified against the code on 2026-07-29, branch `sw-query-optimiser`.*
 
 ---
 
@@ -517,19 +517,25 @@ rejected rather than silently wrapped.
 
 ## Monitoring
 
-There is no dedicated instrumentation for Graph DB — no metrics, no health check, no size alarm. What you
-can watch:
+Two counters are registered, and there is no health check or size alarm. What you can watch:
 
 | What | Where | Why |
 |---|---|---|
+| **`mergeFailures`** counter, on `GraphMergeProcessor` | Metrics | **The one to alert on.** A fragment that fails to merge is retained and logged at ERROR, but that node's graph is then permanently short until someone intervenes — a silent, permanent data gap is exactly what this exists to make loud |
+| **`missingStoreQueries`** counter, on `GraphStoreManagerImpl` | Metrics | A query hit a graph this node holds nothing for. Non-zero means either a node was added to `graphdb.nodeList` without being backfilled, or `graphdb.path` changed. Only counts when a node list is configured |
 | Store directory size | The filesystem, under `<app path>/graphdb/shards/<uuid>` | The only warning before `graphdb.maxStoreSize` is reached |
 | Stream error counts on graph feeds | Stream processing | Skipped records mean silently missing data ([03-ingest.md](03-ingest.md)) |
 | "Graph DB Maintenance" job | Jobs screen | Confirms reclamation, retention and condensing are running |
 | "Graph DB Compaction" job | Jobs screen | Confirms freed space is being returned. Its last-run time is also what explains a nightly dip in query responsiveness on one graph |
 | Query failures | Query surfaces | Guardrail messages indicate queries that need rewriting ([10-limits.md](10-limits.md)) |
 
-The stream error count is the one to automate if you automate anything: a partially loaded graph is
-indistinguishable from a complete one by inspection.
+**Automate `mergeFailures` and the stream error count if you automate nothing else.** Both indicate data that
+should be in a graph and is not, and a partially loaded graph is indistinguishable from a complete one by
+inspection.
+
+The Graph Filter also reports an **ingest error count** at the end of each stream, naming how many records
+were skipped and that the graph is therefore incomplete. That is a per-stream error message rather than a
+metric, so it surfaces on the stream, not on the metrics endpoint.
 
 ## Capacity and concurrency
 
