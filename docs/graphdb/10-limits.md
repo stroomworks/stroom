@@ -59,9 +59,12 @@ budget — so it will not trip the path-state limit, but it will very likely hit
 | Internal tables per graph | **32** | Affects future extension only | `GraphStores.MAX_DBS` |
 | Concurrent readers per graph | **1,023** | Further readers wait | `PlanBEnv.CONCURRENT_READERS` |
 
-The 10 GiB ceiling is the one that will actually constrain you, and it interacts badly with two facts from
-[02-architecture.md](02-architecture.md): storage grows with every version written, and deletion does not
-reclaim space.
+The store-size ceiling is the one that will actually constrain you. It is configurable but **fixed once a
+store is created**, so raising it later applies only to graphs opened afterwards — set it before you need it.
+It also interacts with a fact from [02-architecture.md](02-architecture.md): storage grows with every version
+written, and a delete writes a tombstone rather than reclaiming space. Retention and condensing bound that
+growth, and nightly compaction returns the freed pages
+([11-operations.md](11-operations.md#retention-and-maintenance)).
 
 ## Interface limits
 
@@ -104,8 +107,10 @@ MATCH (c:Crime {type: 'Drugs'})<-[:PARTY_TO]-(p:Person) RETURN p.surname
 Both return the same rows. The second starts from an indexed value; the first does not. Traversal is
 equally cheap in either direction, so reversing a pattern to get a better anchor costs nothing.
 
-For a property predicate to seek, the value must be stored in the form you are matching on — which is a
-decision made at ingest, not at query time. See [03-ingest.md](03-ingest.md).
+**Numbers seek regardless of how they were written.** A property ingested with `type="long"` or
+`type="double"` is indexed by value, so `42`, `42.0` and `42.00` all reach it, as does every spelling of a
+`dateTime`. A **string** property still has to be matched on the text it was stored as — that part is a
+decision made at ingest, not at query time ([03-ingest.md](03-ingest.md#property-value-types)).
 
 ### By symptom
 

@@ -8,7 +8,7 @@ function names and signatures.
 **Companion documents:** [06-language-reference.md](06-language-reference.md) (the surrounding syntax),
 [08-analysis-examples.md](08-analysis-examples.md) (functions in use).
 
-*Facts verified on 2026-07-28 against branch `sw-query-optimiser`.*
+*Function names, counts and error messages verified against the code on 2026-07-29, branch `sw-query-optimiser`.*
 
 ---
 
@@ -88,7 +88,7 @@ Each maps onto a Stroom function of the same meaning.
 |---|---|
 | `toUpper(s)` / `toLower(s)` | Case conversion |
 | `toString(x)` | Convert to string |
-| `toInteger(x)` / `toFloat(x)` / `toBoolean(x)` | Type conversion — useful because properties are stored as strings |
+| `toInteger(x)` / `toFloat(x)` / `toBoolean(x)` | Type conversion — needed for a property that was ingested without a declared type, since an undeclared property is a string |
 | `abs(n)`, `sign(n)`, `sqrt(n)`, `exp(n)`, `log(n)` | Arithmetic |
 | `round(n)`, `floor(n)`, `ceil(n)` | Rounding |
 
@@ -171,13 +171,14 @@ lookups, file IO — are not exposed, because they have no meaning inside a grap
 bare `year`/`month`/`day` functions, which truncate the *current* time rather than extracting a component
 from a value, and would be badly misleading under those names.
 
-## Working with string properties
+## Working with undeclared properties
 
-Because all property values are strings ([03-ingest.md](03-ingest.md)), conversion functions do more work
-here than in Neo4j.
+A property ingested without a `type` attribute is a string ([03-ingest.md](03-ingest.md#property-value-types)),
+so conversion functions still earn their keep. Declaring the type at ingest is the better fix where you
+control the translation — it makes the value a number in the store, not just in one query.
 
 ```cypher
--- numeric comparison on a string property
+-- numeric comparison on an undeclared property
 MATCH (f:File {name: 'salaries.xlsx'}) WHERE toInteger(f.size) > 1000 RETURN f.path
 
 -- a date stored as ISO-8601

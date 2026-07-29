@@ -35,7 +35,7 @@ Comparing by capability rather than syntax, against the mandatory feature areas 
 | `EXISTS { pattern }` | Supported, for one correlated typed hop |
 | Aggregate functions | Supported — `count`, `sum`, `avg`, `min`, `max`. No `collect` |
 | Arithmetic expressions | Supported: `+ - * / ^`. Modulo `%` parses but does not render |
-| Scalar, string and date functions | Supported — 14 bare Cypher names plus 67 in the `stroom.` namespace ([07](07-functions.md)) |
+| Scalar, string and date functions | Supported — 21 bare Cypher names (14 mapped one-to-one, 7 signature-adapted) plus 67 in the `stroom.` namespace ([07](07-functions.md)) |
 | Mandatory data types (string, boolean, integer, float) | Supported — `string`, `long`, `double`, `boolean` and `dateTime` are declared per property at ingest ([03-ingest.md](03-ingest.md#property-value-types)). A property left undeclared is a string |
 | Set operations (`UNION`, `UNION ALL`) | Supported |
 | Graph selection / `CURRENT_GRAPH` | **Partial** — one implicit graph per query, chosen by a leading `from "Name"` clause; no in-query switching |

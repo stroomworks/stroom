@@ -10,7 +10,7 @@ for compile-error messages. Functions have their own file.
 [10-limits.md](10-limits.md) (runtime ceilings), [09-gql-and-neo4j.md](09-gql-and-neo4j.md)
 (differences from Neo4j).
 
-*Facts verified on 2026-07-28 against branch `sw-query-optimiser`.*
+*Rejection messages, element-row columns and clause constraints re-verified against the code on 2026-07-29, branch `sw-query-optimiser`.*
 
 ---
 
@@ -300,6 +300,10 @@ The result is a fixed six-column **element table**, one row per node or edge:
 | `target` | empty | target node id |
 | `properties` | a JSON object string | a JSON object string |
 
+Values inside that JSON carry their **declared type**: a `long`, `double` or `boolean` property renders
+unquoted, everything else quoted. So `{"qty":42,"active":true,"name":"widget"}`, not
+`{"qty":"42","active":"true","name":"widget"}`. A `dateTime` renders as a quoted ISO-8601 string.
+
 A `DIFF … RETURN GRAPH` adds a seventh column, `changeKind`.
 
 `LIMIT` here caps the number of **nodes**, and edges are included only where both endpoints survive, so you
@@ -363,8 +367,8 @@ RETURN CASE WHEN c.type = 'Drugs' THEN 'narcotics' ELSE 'other' END AS category
 
 ## What is not supported
 
-Every construct below is rejected at compile time with the message shown. This is the design: the language
-either understands a query or refuses it — it never guesses.
+Every construct below is rejected with the message shown — most at compile time, a few when the engine tries
+to run them. This is the design: the language either understands a query or refuses it, and never guesses.
 
 ### Not in the language at all
 
@@ -379,23 +383,28 @@ either understands a query or refuses it — it never guesses.
 
 ### Rejected with a message
 
+Two things reject a query, and it is worth knowing which is which. The **compiler** refuses before any work
+is done. The **engine** refuses a handful of shapes the grammar accepts, at the moment it tries to execute
+them — those are marked *(runtime)* below.
+
 | You wrote | Message | Instead |
 |---|---|---|
 | `SKIP n` | `not in PoC subset: SKIP is not yet compiled (the core's Limit node has no offset slot)` | Use `LIMIT` only |
-| `RETURN *` or `RETURN c` | `not yet supported: RETURN item names bare pattern variable …` | Name the properties, or use `RETURN GRAPH` |
+| `RETURN *` or `RETURN c` | *(runtime)* `not yet supported: RETURN item names bare pattern variable …` | Name the properties, or use `RETURN GRAPH` |
 | `ORDER BY count(c)` | `not in PoC subset: an ORDER BY item must be a property access or variable reference` | `ORDER BY` the alias |
 | Two `MATCH` clauses, or `MATCH a, b` | `not in PoC subset: only a single MATCH, optionally followed by one OPTIONAL MATCH or one WITH, is supported …` | Restructure as one pattern |
 | `WHERE NOT (a)-[:X]->(b)` | Syntax error at the pattern | Use `EXISTS { … }` under `NOT` |
 | A variable-length hop chained with others | `not in PoC subset: chaining a variable-length hop with other hops in the same pattern is not yet compiled …` | Make it the only hop |
-| An untyped hop — `(a)-->(b)` as an access path | `not yet supported: an untyped edge pattern (matching any edge type) has no access path …` | Name the edge type |
-| An anchor with no label — `MATCH (n) WHERE …` | `not yet supported: an anchor MATCH requires at least one label …` | Add a label |
+| An untyped hop — `(a)-->(b)` as an access path | *(runtime)* `not yet supported: an untyped edge pattern (matching any edge type) has no access path …` | Name the edge type |
+| An anchor with no label — `MATCH (n) WHERE …` | *(runtime)* `not yet supported: an anchor MATCH requires at least one label …` | Add a label |
 | `labels(n)`, `keys(n)`, `properties(n)` | `… returns a list/map, which needs the list-valued Val type (a later phase)` | — |
 | `SKIP`/`LIMIT`/`ORDER BY` on a `WITH` | `not supported in this version: ORDER BY / SKIP / LIMIT on a WITH` | Move to the final `RETURN` |
 | `before()`/`after()`/`changeKind` in a `WHERE` | `not supported in this version: … in a DIFF WHERE clause (filtering on it is a later phase); it is supported in RETURN` | Filter downstream |
 
-The compiler contains 64 such rejection messages; the table lists those you are most likely to meet. All
-begin `not in PoC subset:` or `not supported in this version:`, and all name the construct and usually the
-alternative.
+The compiler contains **65** such rejection messages and the engine a further **five**; the table lists those
+you are most likely to meet. A compiler message begins `not in PoC subset:` or
+`not supported in this version:`; an engine one begins `not yet supported:`. All name the construct, and
+usually the alternative.
 
 ### Runtime limits
 

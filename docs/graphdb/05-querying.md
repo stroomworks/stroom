@@ -8,7 +8,7 @@
 [08-analysis-examples.md](08-analysis-examples.md) (worked examples),
 [10-limits.md](10-limits.md) (display caps).
 
-*Facts verified on 2026-07-28 against branch `sw-query-optimiser`.*
+*Tabs, toolbar controls, menu actions, layouts and export options re-verified against the code on 2026-07-29, branch `sw-query-optimiser`.*
 
 ---
 
@@ -34,8 +34,9 @@ MATCH (c:Crime) RETURN c.type AS crime_type, count(c) AS total ORDER BY total DE
 ```
 
 **Create Dashboard is disabled here.** Building a dashboard parses the query text as StroomQL, and this tab's
-query is Cypher, so the resulting dashboard could not run it. The button is left visible but greyed to
-signal the intent rather than the capability ([12-future-work.md](12-future-work.md)).
+query is Cypher, so the resulting dashboard could not run it. The button is left visible but greyed to signal
+the intent rather than the capability ([12-future-work.md](12-future-work.md)). On the Explore tab it is
+hidden outright, there being no table to carry into a dashboard in the first place.
 
 ## The Explore tab — the graph view
 
