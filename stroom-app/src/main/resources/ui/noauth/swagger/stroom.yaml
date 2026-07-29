@@ -3347,6 +3347,27 @@ paths:
       summary: Delete explorer items
       tags:
       - Explorer (v2)
+  /explorer/v2/fetchDeleteConfirmation:
+    post:
+      operationId: fetchExplorerDeleteConfirmation
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeleteConfirmationRequest"
+        description: request
+        required: true
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteConfirmation"
+          description: default response
+      summary: Fetch the information needed to confirm a delete (contained items and
+        dependants)
+      tags:
+      - Explorer (v2)
   /explorer/v2/fetchDocRefs:
     post:
       operationId: fetchExplorerDocRefs
@@ -3918,7 +3939,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/FloorMapDoc"
           description: default response
-      summary: Fetch an analytic rule doc by its UUID
+      summary: Fetch a floor map doc by its UUID
       tags:
       - Queries
     put:
@@ -3943,7 +3964,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/FloorMapDoc"
           description: default response
-      summary: Update an analytic rule doc
+      summary: Update a floor map doc
       tags:
       - Queries
   /fsVolume/v1:
@@ -4502,6 +4523,25 @@ paths:
                 $ref: "#/components/schemas/LuceneIndexDoc"
           description: default response
       summary: Update an index doc
+      tags:
+      - Indexes (v2)
+  /index/v2/{uuid}/reset:
+    post:
+      operationId: resetIndex
+      parameters:
+      - in: path
+        name: uuid
+        required: true
+        schema:
+          type: string
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                type: boolean
+          description: default response
+      summary: Reset index contents (delete all shards across all nodes)
       tags:
       - Indexes (v2)
   /index/volume/v2:
@@ -6944,6 +6984,26 @@ paths:
       summary: Fetch all (optionally filtered) query help items
       tags:
       - Queries
+  /query/v1/parseQuery:
+    post:
+      operationId: parseQuery
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: string
+        description: query
+        required: true
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExpressionOperator"
+          description: default response
+      summary: Parse a query string into an ExpressionOperator
+      tags:
+      - Queries
   /query/v1/search:
     post:
       operationId: querySearchLocal
@@ -7950,10 +8010,35 @@ paths:
       summary: Submit a search request
       tags:
       - Sql Statistics Query
+  /sqltemporalstore/v1/applyChanges:
+    post:
+      description: Applies an ordered list of upsert and delete operations within
+        a single database transaction. A failure in any operation rolls back all changes.
+        Returns success=false (not HTTP 500) on failure so the client can display
+        the errorMessage and reload from the server.
+      operationId: applySqlTemporalStoreChanges
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApplyChangesRequest"
+        description: request
+        required: true
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApplyChangesResult"
+          description: default response
+      summary: Apply staged changes atomically
+      tags:
+      - SqlTemporalStore
   /sqltemporalstore/v1/clear:
     delete:
-      description: Clears all entries for the specified store.
-      operationId: clear
+      description: Deletes all entries for the store identified by the supplied DocRef.
+        Requires EDIT permission on the document.
+      operationId: clearSqlTemporalStore
       requestBody:
         content:
           application/json:
@@ -7973,8 +8058,9 @@ paths:
       - SqlTemporalStore
   /sqltemporalstore/v1/count:
     post:
-      description: Returns the number of entries in the specified store.
-      operationId: count
+      description: "Returns the total number of entries (all keys, all effective times)\
+        \ in the store identified by the supplied DocRef."
+      operationId: countSqlTemporalStoreEntries
       requestBody:
         content:
           application/json:
@@ -7990,7 +8076,170 @@ paths:
                 type: integer
                 format: int64
           description: default response
-      summary: Get store count
+      summary: Count store entries
+      tags:
+      - SqlTemporalStore
+  /sqltemporalstore/v1/entry:
+    post:
+      description: "Creates a new temporal entry. If an entry already exists for the\
+        \ same (map, key, effectiveTimeMs) triple the value is overwritten (upsert)."
+      operationId: createSqlTemporalStoreEntry
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TemporalEntry"
+        description: entry
+        required: true
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TemporalEntry"
+          description: default response
+      summary: Create an entry
+      tags:
+      - SqlTemporalStore
+    put:
+      description: Updates an existing temporal entry. Uses upsert semantics — equivalent
+        to create if the entry does not already exist.
+      operationId: updateSqlTemporalStoreEntry
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TemporalEntry"
+        description: entry
+        required: true
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TemporalEntry"
+          description: default response
+      summary: Update an entry
+      tags:
+      - SqlTemporalStore
+  /sqltemporalstore/v1/entry/delete:
+    post:
+      description: "Deletes the entry identified by (map, key, effectiveTimeMs). Returns\
+        \ true if a row was deleted."
+      operationId: deleteSqlTemporalStoreEntry
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TemporalEntryId"
+        description: id
+        required: true
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                type: boolean
+          description: default response
+      summary: Delete a specific entry
+      tags:
+      - SqlTemporalStore
+  /sqltemporalstore/v1/fetchAll:
+    post:
+      description: Returns the most recent version of every key in the map with no
+        upper-time bound. Use for the 'Show all' Fact List toggle. The server applies
+        currentTimeMillis() + ONE_DAY_MS internally.
+      operationId: fetchAllSqlTemporalStoreEntries
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: string
+        description: mapName
+        required: true
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TemporalEntry"
+          description: default response
+      summary: Fetch absolute latest entry per key (no time constraint)
+      tags:
+      - SqlTemporalStore
+  /sqltemporalstore/v1/fetchAtTime:
+    post:
+      description: "For each key in the specified map, returns the single entry whose\
+        \ effective_time is the greatest value at or before request.timeTo. Results\
+        \ are sorted by key ascending. Pass the timeline slider position exactly as\
+        \ timeTo."
+      operationId: fetchSqlTemporalStoreEntriesAtTime
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FetchAtTimeRequest"
+        description: request
+        required: true
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TemporalEntry"
+          description: default response
+      summary: Fetch entry per key at a point in time
+      tags:
+      - SqlTemporalStore
+  /sqltemporalstore/v1/find:
+    post:
+      description: "Returns entries matching the supplied criteria. When an EffectiveTime\
+        \ <= T term is present, only the latest version of each key at or before T\
+        \ is returned (temporal deduplication). Without a time term, all historical\
+        \ versions are returned."
+      operationId: findSqlTemporalStoreEntries
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExpressionCriteria"
+        description: criteria
+        required: true
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResultPageTemporalEntry"
+          description: default response
+      summary: Find entries
+      tags:
+      - SqlTemporalStore
+  /sqltemporalstore/v1/timeRange:
+    post:
+      description: Returns MIN(effective_time) and MAX(effective_time) for all entries
+        in the specified map. Used to initialise the timeline slider range in the
+        Floor Map Editor. Both fields are null if the store is empty.
+      operationId: getSqlTemporalStoreTimeRange
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: string
+        description: mapName
+        required: true
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TemporalStoreTimeRange"
+          description: default response
+      summary: Get effective-time range for a map
       tags:
       - SqlTemporalStore
   /statistic/v1/{uuid}:
@@ -10596,6 +10845,20 @@ components:
             type: array
             items:
               type: string
+    ApplyChangesRequest:
+      type: object
+      properties:
+        operations:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChangeOperation"
+    ApplyChangesResult:
+      type: object
+      properties:
+        errorMessage:
+          type: string
+        success:
+          type: boolean
     Arg:
       type: object
       properties:
@@ -11059,6 +11322,18 @@ components:
         properties:
           description:
             type: string
+    ChangeOperation:
+      type: object
+      properties:
+        entry:
+          $ref: "#/components/schemas/TemporalEntry"
+        id:
+          $ref: "#/components/schemas/TemporalEntryId"
+        type:
+          type: string
+          enum:
+          - UPSERT
+          - DELETE
     ChangePasswordRequest:
       type: object
       properties:
@@ -12278,6 +12553,38 @@ components:
           - DELETE
         annotationIdentity:
           $ref: "#/components/schemas/AnnotationIdentity"
+    DeleteConfirmation:
+      type: object
+      properties:
+        childItems:
+          type: array
+          items:
+            $ref: "#/components/schemas/DocRef"
+        childItemsTruncated:
+          type: boolean
+        childTypeCounts:
+          type: object
+          additionalProperties:
+            type: integer
+            format: int32
+        hasHiddenChildItems:
+          type: boolean
+        hasHiddenDependants:
+          type: boolean
+        totalChildCount:
+          type: integer
+          format: int32
+        visibleDependants:
+          type: array
+          items:
+            $ref: "#/components/schemas/DocRef"
+    DeleteConfirmationRequest:
+      type: object
+      properties:
+        docRefs:
+          type: array
+          items:
+            $ref: "#/components/schemas/DocRef"
     DeleteDuplicateCheckRequest:
       type: object
       properties:
@@ -12620,7 +12927,6 @@ components:
           - DOCUMENT_ANNOTATIONS_INDEX
           - DOCUMENT_DASHBOARD
           - DOCUMENT_DATA_GEN
-          - DOCUMENT_FLOOR_MAP
           - DOCUMENT_DICTIONARY
           - DOCUMENT_DOCUMENTATION
           - DOCUMENT_DOMAIN_TYPE
@@ -12628,6 +12934,7 @@ components:
           - DOCUMENT_ELASTIC_INDEX
           - DOCUMENT_FAVOURITES
           - DOCUMENT_FEED
+          - DOCUMENT_FLOOR_MAP
           - DOCUMENT_FOLDER
           - DOCUMENT_GIT_REPO
           - DOCUMENT_GIT_REPO_FOLDER
@@ -12646,6 +12953,7 @@ components:
           - DOCUMENT_SELECT_ALL_OR_NONE
           - DOCUMENT_SIGMA_RULE
           - DOCUMENT_SOLR_INDEX
+          - DOCUMENT_SQL_TEMPORAL_STORE
           - DOCUMENT_STATISTIC_STORE
           - DOCUMENT_SYSTEM
           - DOCUMENT_TEXT_CONVERTER
@@ -12711,6 +13019,7 @@ components:
           - LINK
           - LOCATE
           - LOCKED
+          - LOCKED_DEFAULT_COLOUR
           - LOGO
           - LOGOUT
           - MAXIMISE
@@ -12793,6 +13102,7 @@ components:
           - UNDO
           - UNLINK
           - UNLOCK
+          - UNLOCKED_DEFAULT_COLOUR
           - UP
           - UPLOAD
           - USER
@@ -13913,6 +14223,14 @@ components:
             $ref: "#/components/schemas/CriteriaFieldSort"
         userRef:
           $ref: "#/components/schemas/UserRef"
+    FetchAtTimeRequest:
+      type: object
+      properties:
+        mapName:
+          type: string
+        timeTo:
+          type: integer
+          format: int64
     FetchColumnNamesResponse:
       type: object
       properties:
@@ -14653,14 +14971,32 @@ components:
           type: string
         description:
           type: string
-        feed:
+        entityIdColumn:
+          type: string
+        eventsQuery:
+          type: string
+        eventsQueryTablePreferences:
+          $ref: "#/components/schemas/QueryTablePreferences"
+        eventsQueryTimeRange:
+          $ref: "#/components/schemas/TimeRange"
+        eventsStoreRef:
           $ref: "#/components/schemas/DocRef"
+        factsStoreRef:
+          $ref: "#/components/schemas/DocRef"
+        locationIdColumn:
+          type: string
+        matrix:
+          $ref: "#/components/schemas/FloorMapTransformationMatrix"
         name:
           type: string
         template:
           type: string
         type:
           type: string
+        typeStyles:
+          type: array
+          items:
+            $ref: "#/components/schemas/TypeStyle"
         updateTimeMs:
           type: integer
           format: int64
@@ -14668,8 +15004,60 @@ components:
           type: string
         uuid:
           type: string
+        valueFormat:
+          type: string
+          enum:
+          - JSON
+          - XML
+        valueSchema:
+          type: array
+          items:
+            $ref: "#/components/schemas/FloorMapFieldMapping"
         version:
           type: string
+    FloorMapFieldMapping:
+      type: object
+      properties:
+        defaultValue:
+          type: string
+        displayName:
+          type: string
+        path:
+          type: string
+        role:
+          type: string
+          enum:
+          - TYPE
+          - LABEL
+          - POSITION
+          - IMAGE
+          - WORLD_TO_MAP
+          - MAP_TO_SCREEN
+          - GEOMETRY
+          - FILL
+          - OPACITY
+          - CUSTOM
+    FloorMapTransformationMatrix:
+      type: object
+      properties:
+        a:
+          type: number
+          format: double
+        b:
+          type: number
+          format: double
+        c:
+          type: number
+          format: double
+        d:
+          type: number
+          format: double
+        e:
+          type: number
+          format: double
+        f:
+          type: number
+          format: double
     Format:
       type: object
       description: Describes the formatting that will be applied to values in a field
@@ -16827,7 +17215,6 @@ components:
           - DOCUMENT_ANNOTATIONS_INDEX
           - DOCUMENT_DASHBOARD
           - DOCUMENT_DATA_GEN
-          - DOCUMENT_FLOOR_MAP
           - DOCUMENT_DICTIONARY
           - DOCUMENT_DOCUMENTATION
           - DOCUMENT_DOMAIN_TYPE
@@ -16835,6 +17222,7 @@ components:
           - DOCUMENT_ELASTIC_INDEX
           - DOCUMENT_FAVOURITES
           - DOCUMENT_FEED
+          - DOCUMENT_FLOOR_MAP
           - DOCUMENT_FOLDER
           - DOCUMENT_GIT_REPO
           - DOCUMENT_GIT_REPO_FOLDER
@@ -16853,6 +17241,7 @@ components:
           - DOCUMENT_SELECT_ALL_OR_NONE
           - DOCUMENT_SIGMA_RULE
           - DOCUMENT_SOLR_INDEX
+          - DOCUMENT_SQL_TEMPORAL_STORE
           - DOCUMENT_STATISTIC_STORE
           - DOCUMENT_SYSTEM
           - DOCUMENT_TEXT_CONVERTER
@@ -16918,6 +17307,7 @@ components:
           - LINK
           - LOCATE
           - LOCKED
+          - LOCKED_DEFAULT_COLOUR
           - LOGO
           - LOGOUT
           - MAXIMISE
@@ -17000,6 +17390,7 @@ components:
           - UNDO
           - UNLINK
           - UNLOCK
+          - UNLOCKED_DEFAULT_COLOUR
           - UP
           - UPLOAD
           - USER
@@ -18827,6 +19218,16 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/StoredQuery"
+    ResultPageTemporalEntry:
+      type: object
+      description: A page of results.
+      properties:
+        pageResponse:
+          $ref: "#/components/schemas/PageResponse"
+        values:
+          type: array
+          items:
+            $ref: "#/components/schemas/TemporalEntry"
     ResultPageTraceRoot:
       type: object
       description: A page of results.
@@ -20911,6 +21312,28 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/TaskProgress"
+    TemporalEntry:
+      type: object
+      properties:
+        effectiveTimeMs:
+          type: integer
+          format: int64
+        key:
+          type: string
+        map:
+          type: string
+        value:
+          type: string
+    TemporalEntryId:
+      type: object
+      properties:
+        effectiveTimeMs:
+          type: integer
+          format: int64
+        key:
+          type: string
+        map:
+          type: string
     TemporalKey:
       type: object
       properties:
@@ -21014,6 +21437,15 @@ components:
             $ref: "#/components/schemas/TemporalStateKeySchema"
           valueSchema:
             $ref: "#/components/schemas/StateValueSchema"
+    TemporalStoreTimeRange:
+      type: object
+      properties:
+        maxEffectiveTimeMs:
+          type: integer
+          format: int64
+        minEffectiveTimeMs:
+          type: integer
+          format: int64
     TemporalValue:
       type: object
       allOf:
@@ -21265,6 +21697,23 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/TraceRoot"
+    TypeStyle:
+      type: object
+      properties:
+        colour:
+          type: string
+        graphic:
+          type: string
+        shape:
+          type: string
+          enum:
+          - CIRCLE
+          - SQUARE
+          - TRIANGLE
+          - DIAMOND
+          - PIN
+        type:
+          type: string
     UiConfig:
       type: object
       properties:

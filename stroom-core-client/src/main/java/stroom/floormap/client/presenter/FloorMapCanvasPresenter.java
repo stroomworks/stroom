@@ -665,6 +665,12 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                     && !backgroundKeys.contains(hitId)
                     && !areaKeys.contains(hitId)) {
                 MapObjectSelectedEvent.fire(this, hitId);
+                // Remember it so this same click's mouseup re-affirms the
+                // selection instead of clearing it. The parent responds to the
+                // event above by highlighting the object; without this the
+                // non-panning-click branch on mouseup treated the click as
+                // "clicked empty canvas" and immediately un-highlighted it.
+                pendingClickSelectId = hitId;
             }
             gesture = Gesture.PANNING;
             isDragging = true;
@@ -868,9 +874,12 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                         Math.min(marqueeStartY, marqueeCurY),
                         Math.max(marqueeStartX, marqueeCurX),
                         Math.max(marqueeStartY, marqueeCurY)};
-                // The marquee never selects items on a locked layer.
+                // The marquee never selects items on a locked layer, nor the
+                // background: its screen bounds cover the whole floor plan, so
+                // every marquee would silently include it and the following drag
+                // would translate the entire plan along with the real selection.
                 for (final String id : getView().hitTestScreenRect(rect)) {
-                    if (!lockedKeys.contains(id)) {
+                    if (!lockedKeys.contains(id) && !backgroundKeys.contains(id)) {
                         selectedObjectIds.add(id);
                     }
                 }
@@ -935,11 +944,11 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                 return;
             }
 
-            // Reset any drag state that may have leaked from a preceding
-            // mousedown (e.g. if the mouseup landed on a dialog or toolbar
-            // outside the canvas).
-            isDragging = false;
-            hasMoved = false;
+            // Abandon any in-flight gesture. The mouseup that would normally end
+            // it lands on the popup, not the canvas, so without this a
+            // right-click mid-drag leaves the gesture (and any working vertices)
+            // live indefinitely — see abortGesture().
+            abortGesture();
 
             final int clientX = event.getNativeEvent().getClientX();
             final int clientY = event.getNativeEvent().getClientY();
@@ -1359,6 +1368,32 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         workingVertices = null;
         editingVertexIndex = -1;
         vertexInserted = false;
+    }
+
+    /**
+     * Abandons any in-flight gesture <em>without persisting it</em>, returning the
+     * canvas to a neutral state.
+     *
+     * <p>Needed because a gesture is normally ended by the mouseup that completes
+     * it, and some interactions steal that mouseup — most obviously a right-click,
+     * whose mouseup lands on the popup rather than the canvas. Resetting only part
+     * of the state left the {@link #factsForDraw()} live preview substituting
+     * never-persisted working vertices indefinitely, so the canvas showed geometry
+     * that did not match what was stored.</p>
+     *
+     * <p>The current <strong>selection</strong> is deliberately left alone: it is
+     * not gesture state, and the vertex context menu resolves its target from the
+     * selection (see {@link #selectedAreaFact()}).</p>
+     */
+    private void abortGesture() {
+        isDragging = false;
+        hasMoved = false;
+        gesture = Gesture.NONE;
+        pendingTransform = null;
+        pendingClickSelectId = null;
+        dragDxMap = 0;
+        dragDyMap = 0;
+        clearVertexEditState();
     }
 
     /**

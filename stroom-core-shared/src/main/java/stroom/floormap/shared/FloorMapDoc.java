@@ -215,9 +215,8 @@ public class FloorMapDoc extends AbstractDoc {
      * May be {@code null} in the stored JSON; {@link #getValueFormat()}
      * defaults to {@link ValueFormat#JSON} in that case.
      *
-     * <p><strong>Note:</strong> only {@link ValueFormat#JSON} is currently
-     * implemented. {@link ValueFormat#XML} is defined but not yet supported
-     * by the parser or serialiser.</p>
+     * <p>Both {@link ValueFormat#JSON} and {@link ValueFormat#XML} are supported;
+     * {@code ValueAccessorFactory.forFormat} selects the reader/writer.</p>
      */
     @JsonProperty
     private final ValueFormat valueFormat;
@@ -296,6 +295,8 @@ public class FloorMapDoc extends AbstractDoc {
      *                                    (defaults to {@link ValueFormat#JSON} via getter)
      * @param valueSchema                 value field mappings; may be {@code null}
      *                                    for legacy documents
+     * @param typeStyles                  ordered per-type styles; list order is the
+     *                                    paint z-order. May be {@code null}
      */
     @JsonCreator
     public FloorMapDoc(@JsonProperty("uuid") final String uuid,

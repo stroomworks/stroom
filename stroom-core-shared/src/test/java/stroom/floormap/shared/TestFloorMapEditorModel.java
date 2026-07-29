@@ -1640,4 +1640,35 @@ class TestFloorMapEditorModel {
                                         final String value) {
         return new TemporalEntry(MAP, key, time, value);
     }
+
+    // ---- resolveEntryKey -------------------------------------------------
+    // The properties dialog used to take the key from whatever was last
+    // selected, so right-clicking fact B while fact A was selected wrote B's
+    // values under A's key. These pin the rule that fixed it.
+
+    @Test
+    void testResolveEntryKey_prefersTheEntrysOwnKey() {
+        // The whole point: a stale fallback must never win over a real entry.
+        assertThat(FloorMapEditorModel.resolveEntryKey(entry("factB", 1000, "{}"), "staleFactA"))
+                .isEqualTo("factB");
+    }
+
+    @Test
+    void testResolveEntryKey_fallsBackOnlyWhenThereIsNoEntry() {
+        // A blank new-object form has no entry, so the caller's key applies.
+        assertThat(FloorMapEditorModel.resolveEntryKey(null, "newFact")).isEqualTo("newFact");
+    }
+
+    @Test
+    void testResolveEntryKey_fallsBackWhenTheEntryHasNoKey() {
+        assertThat(FloorMapEditorModel.resolveEntryKey(entry(null, 1000, "{}"), "newFact"))
+                .isEqualTo("newFact");
+        assertThat(FloorMapEditorModel.resolveEntryKey(entry("", 1000, "{}"), "newFact"))
+                .isEqualTo("newFact");
+    }
+
+    @Test
+    void testResolveEntryKey_nullWhenNeitherSourceHasAKey() {
+        assertThat(FloorMapEditorModel.resolveEntryKey(null, null)).isNull();
+    }
 }

@@ -291,17 +291,12 @@ public class FloorMapTimeListPresenter extends MyPresenterWidget<FloorMapTimeLis
     // -----------------------------------------------------------------------
 
     private void initGridColumns() {
-        // TODO 4092 Take this out again when issues diagnosed
-        // Key column — every row in the time list should carry the selected
-        // fact's key; showing it makes any mismatch immediately visible.
-        final Column<TemporalEntry, String> keyColumn = new TextColumn<>() {
-            @Override
-            public String getValue(final TemporalEntry entry) {
-                return entry.getKey();
-            }
-        };
-        dataGrid.addColumn(keyColumn, "Key");
-
+        // A temporary "Key" column used to live here to diagnose rows carrying the
+        // wrong fact key. That turned out to be a real bug in the properties dialog
+        // (it wrote under whatever was last selected, not the entry being edited)
+        // and is now fixed and covered by FloorMapEditorModel.resolveEntryKey, so
+        // the diagnostic column has been removed — every row in this list belongs
+        // to the selected fact by construction.
         final Column<TemporalEntry, String> timeColumn = new TextColumn<>() {
             @Override
             public String getValue(final TemporalEntry entry) {

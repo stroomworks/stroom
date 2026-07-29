@@ -31,6 +31,7 @@ import stroom.util.shared.ResourceGeneration;
 import stroom.util.shared.ResourceKey;
 
 import event.logging.ComplexLoggedOutcome;
+import event.logging.Criteria;
 import event.logging.ExportEventAction;
 import event.logging.File;
 import event.logging.MultiObject;
@@ -66,11 +67,24 @@ public class DataDownloadResourceImpl implements DataDownloadResource {
     @Override
     public Response downloadZip(final FindMetaCriteria criteria) {
 
+        // Convert once and reuse for both the default and the enriched action.
+        final Criteria loggedCriteria = stroomEventLoggingServiceProvider.get()
+                .convertExpressionCriteria("Meta", criteria);
+
         return stroomEventLoggingServiceProvider.get()
                 .loggedWorkBuilder()
                 .withTypeId(StroomEventLoggingUtil.buildTypeId(this, "downloadZip"))
                 .withDescription("Downloading stream data as zip")
-                .withDefaultEventAction(ExportEventAction.builder().build())
+                // The default action already records WHAT was requested. It is used
+                // verbatim if the download throws before the file exists, and an
+                // empty Export would then say only that a download was attempted —
+                // valid against the schema (every Export child is optional) but
+                // useless for audit.
+                .withDefaultEventAction(ExportEventAction.builder()
+                        .withSource(MultiObject.builder()
+                                .addCriteria(loggedCriteria)
+                                .build())
+                        .build())
                 .withComplexLoggedResult(eventAction -> {
                     try {
                         final ResourceGeneration resourceGeneration = dataServiceProvider.get().download(criteria);
@@ -78,10 +92,10 @@ public class DataDownloadResourceImpl implements DataDownloadResource {
                         final ResourceKey resourceKey = resourceGeneration.getResourceKey();
                         final Path tempFile = resourceStore.getTempFile(resourceKey);
 
+                        // On success, add the resulting file to the same source.
                         final ExportEventAction exportEventAction = eventAction.newCopyBuilder()
                                 .withSource(MultiObject.builder()
-                                        .addCriteria(stroomEventLoggingServiceProvider.get()
-                                                .convertExpressionCriteria("Meta", criteria))
+                                        .addCriteria(loggedCriteria)
                                         .addFile(File.builder()
                                                 .withName(resourceKey.getName())
                                                 .withSize(BigInteger.valueOf(Files.size(tempFile)))
