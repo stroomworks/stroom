@@ -87,7 +87,7 @@ difference between this plan being executable and being optimistic.
 
 - **LMDB buffer lifetime is undocumented in this codebase.** A `ByteBuffer` handed to a cursor callback is
   valid only inside that callback, and target writes can move pages. The UID translation loop must copy the
-  name buffer before using it (`ByteBuffers.copyToDirectBuffer` exists for this). Nothing in the source tree
+  name buffer before using it (`ByteBufferUtils.copyToDirectBuffer` exists for this). Nothing in the source tree
   warns about it, and getting it wrong corrupts keys rather than throwing.
 - **Four translation maps must agree.** The same logical entity has to resolve to the same target UID across
   the node table, both adjacency tables and the property index. An error here produces a graph that queries
@@ -182,10 +182,15 @@ Supporting changes:
 
 - Extract a shared `anchorValueBytes(Val)` helper used by **both** `GraphFilter` and `merge`, so ingest and
   merge can never disagree on index key bytes.
-- Add `UidLookupDb.forEachEntry` — pairwise uid/name iteration. It has `forEachUid` and `forEachName` but
-  not both together.
-- Add package-private raw iterators and `mergeInsert`/`mergePut` seams to the graph DAOs so property blobs
-  copy verbatim rather than round-tripping through decode/encode.
+- ~~Add `UidLookupDb.forEachEntry` — pairwise uid/name iteration.~~ **Not done, and not needed.** Merge
+  collects the source uids with the existing `forEachUid`, then reads each name with `getValue(txn, uid)`. That
+  is one extra lookup per interned name and it removes the need to touch a shared Plan B class at all — a
+  better trade than the plan assumed.
+- ~~Add package-private raw iterators and `mergeInsert`/`mergePut` seams to the graph DAOs so property blobs
+  copy verbatim rather than round-tripping through decode/encode.~~ **Not done.** Merge decodes each version and
+  re-encodes it through the ordinary `insert`. A verbatim-blob fast path remains available as an optimisation,
+  and would be worth measuring before building: the property index has to be rebuilt from decoded values
+  anyway, so the decode is not avoidable for every table.
 
 **Merge is idempotent by construction** — get-or-create UID interning, no `Instant.now()` in
 `GraphNodeDb.insert`, verbatim value copies, same-key index puts. **Preserve this.** It is what makes the
@@ -438,10 +443,14 @@ storage grows monotonically even with retention enabled.
 **Evict idle stores — the template says don't, and that turned out to be the answer.** `ShardManager.cleanup`
 does have an idle branch, but only `SnapshotShard` reaches it: `StoreShard.isIdle()` returns `false` with the note
 that store shards are long-lived. Every graph store is authoritative, so the Plan B precedent is *not* to evict,
-and the hazard is concrete - `getOrOpen` hands back a reference the caller uses afterwards, so closing a store
-because it looked idle can close it under a traversal that already holds it. Doing it safely needs the manager to
-hand out a lease rather than a raw reference, which costs more than it saves: an idle store holds file descriptors
-and reserved address space, not heap.
+and the hazard was concrete - `getOrOpen`, as the manager's accessor was then called, handed back a reference the
+caller used afterwards, so closing a store because it looked idle could close it under a traversal that already
+held it. Doing it safely needs the manager to hand out a lease rather than a raw reference, which at this point
+looked to cost more than it saved: an idle store holds file descriptors and reserved address space, not heap.
+
+> That refactor was done later after all, because compaction needed it - see
+> [compaction](#beyond-the-plan--compaction-item-4a). There is no `getOrOpen` on the interface any more. Idle
+> eviction is now *safe* and still not implemented, on the narrower ground that it is not worth the reopen.
 
 What *was* implemented instead is the branch that genuinely leaks: `cleanupOrphanedStores()` reclaims graph data
 whose document no longer exists. A document delete normally reaches `delete(uuid)` via an entity event, but only
