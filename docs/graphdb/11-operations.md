@@ -316,8 +316,8 @@ copies), pushes it into a distributed storage layer and accepts cut-edge latency
 distributed traversal. That the industry term *cut edge* exists at all tells you how central the problem is.
 
 **Single-writer is the common case, not an aberration.** Neo4j and Neptune — two of the most widely deployed
-graph databases — both funnel writes through one node. Graph DB's roadmap item 1
-([12-future-work.md](12-future-work.md#correctness-across-a-cluster)) puts it in the same category as the
+graph databases — both funnel writes through one node. Graph DB's
+[whole-copy replication](12-future-work.md#correctness-across-a-cluster) puts it in the same category as the
 mainstream answer rather than at some unusual disadvantage.
 
 **Whole-copy replication first, partitioning much later, is the well-trodden path.** It is what Neo4j did for

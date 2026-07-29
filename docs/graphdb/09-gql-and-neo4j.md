@@ -8,7 +8,7 @@ means in practice. Canonical for the GQL conformance summary.
 **Companion documents:** [06-language-reference.md](06-language-reference.md) (what is supported),
 [12-future-work.md](12-future-work.md) (what may change).
 
-*Facts verified on 2026-07-28 against branch `sw-query-optimiser`.*
+*Facts verified on 2026-07-28 against branch `sw-query-optimiser`; the replication and property-type claims re-checked 2026-07-29.*
 
 ---
 
@@ -36,7 +36,7 @@ Comparing by capability rather than syntax, against the mandatory feature areas 
 | Aggregate functions | Supported — `count`, `sum`, `avg`, `min`, `max`. No `collect` |
 | Arithmetic expressions | Supported: `+ - * / ^`. Modulo `%` parses but does not render |
 | Scalar, string and date functions | Supported — 14 bare Cypher names plus 67 in the `stroom.` namespace ([07](07-functions.md)) |
-| Mandatory data types (string, boolean, integer, float) | **Partial** — available at the value level, but **all stored properties are strings** |
+| Mandatory data types (string, boolean, integer, float) | Supported — `string`, `long`, `double`, `boolean` and `dateTime` are declared per property at ingest ([03-ingest.md](03-ingest.md#property-value-types)). A property left undeclared is a string |
 | Set operations (`UNION`, `UNION ALL`) | Supported |
 | Graph selection / `CURRENT_GRAPH` | **Partial** — one implicit graph per query, chosen by a leading `from "Name"` clause; no in-query switching |
 | Path variables and path finding | Not supported |
@@ -126,9 +126,15 @@ On write scaling, less than expected: Neo4j's cluster architecture elects a **si
 writes, with read replicas adding read capacity only, so write throughput scales vertically there too.
 Sharding via Fabric exists but requires queries to be written with the shard layout in mind.
 
-The real differences are that Neo4j has mature *whole-copy replication* (which Graph DB lacks entirely, and
-which is roadmap item 1) and no fixed per-database size ceiling. A survey of how the wider market handles
-this is in [11-operations.md](11-operations.md#how-other-graph-databases-handle-this).
+**Graph DB also replicates whole copies now.** Every node named in `graphdb.nodeList` holds the entire graph
+and can complete any traversal locally ([02-architecture.md](02-architecture.md#how-a-graph-spans-a-cluster)).
+Neo4j's implementation is mature and Graph DB's is new, but the shape is the same, and for the same reason:
+a traversal crosses whatever boundary you draw, so replicating whole beats partitioning.
+
+The differences that remain are **maturity** and **capacity**. Neo4j has no fixed per-database size ceiling;
+a Graph DB store is capped at creation, and because every node holds a whole copy, one graph can never exceed
+one node's disk. A survey of how the wider market handles this is in
+[11-operations.md](11-operations.md#how-other-graph-databases-handle-this).
 
 ### Behavioural differences that will not raise an error
 
@@ -137,7 +143,8 @@ These are the dangerous ones, because the query runs and returns something plaus
 | Difference | Consequence |
 |---|---|
 | **`collect()` is rejected** | A ported query using it fails to compile, with a message saying why. It used to return a comma-joined string and no error, which was worse |
-| **All property values are strings** | `WHERE n.count > 9` compares lexically — `"10"` is less than `"9"`. Use `toInteger()`, or store zero-padded |
+| **An undeclared property is a string** | Declare `type="long"` or `type="double"` at ingest to get a number back. Ordering is *not* the hazard — Stroom compares strings numeric-first, so `"9"` already sorts before `"10"` — the hazard is that anything reading the value back sees text |
+| **Equality on decimals is exact** | As it is everywhere in Stroom. A value computed before ingest may not match a literal that looks identical, and returns no rows rather than an error |
 | **A node version replaces, it does not merge** | Re-loading a node without a property removes it, rather than leaving the old value |
 | **Deleted data stays visible to historical queries** | Correct behaviour, but surprising if you expect a delete to be final |
 | **The whole-graph preview caps at 100 nodes silently** | `MATCH (n) RETURN GRAPH` looks complete and is not |

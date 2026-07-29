@@ -49,7 +49,7 @@ The operational workarounds available today are in
 
 | Item | Why | Difficulty | Risk |
 |---|---|---|---|
-| **Snapshot fan-out** — read-only snapshot nodes on top of a correct writer | Read scaling and query locality. Presupposes correctness work item 1; a snapshot of a fragmented store is a complete copy of an incomplete graph | Hard | Medium |
+| **Snapshot fan-out** — read-only snapshot nodes on top of a correct writer | Read scaling and query locality. Presupposed cluster-correct ingest, which is [delivered](#correctness-across-a-cluster) — a snapshot of a fragmented store would have been a complete copy of an incomplete graph | Hard | Medium |
 | **Genuine partitioning** — spread one logical graph across nodes by key | The only route to a graph larger than one node's disk. Neither Graph DB nor Plan B has this, and it is the one approach that would reintroduce the correctness problem deliberately, requiring distributed traversal to solve properly | Hard | High |
 
 Two things worth being clear about when planning this:
