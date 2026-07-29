@@ -4387,6 +4387,26 @@ paths:
       summary: Update a graph db doc
       tags:
       - Graph DBs
+  /graphDb/v1/{uuid}/backfill:
+    post:
+      operationId: backfillGraphDb
+      parameters:
+      - in: path
+        name: uuid
+        required: true
+        schema:
+          type: string
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                type: boolean
+          description: default response
+      summary: "Send this node's whole copy of a graph to every node that holds graph\
+        \ data, so a node added to the cluster gains the history that predates it"
+      tags:
+      - Graph DBs
   /graphDb/v1/{uuid}/expand:
     get:
       operationId: expandGraphDbNode
@@ -15511,8 +15531,6 @@ components:
           type: array
           items:
             type: string
-        empty:
-          type: boolean
         nodeLabels:
           type: array
           items:
