@@ -275,6 +275,7 @@ codec apiece.
 | `TestGraphCompaction` | The copy-and-swap: data preserved, nothing copied when nothing was removed, no working directories left, and that a compaction waits for an in-flight reader rather than replacing the file under it |
 | `TestGraphRetentionSweep` | That the property index and its lookups are reclaimed with the versions they belonged to, and that an unchanged node keeps its anchors |
 | `TestGraphRootMarker` | That a `graphdb.path` change is reported when it strands data and accepted when the data moved with it — the discriminating pair |
+| `TestDocumentationQueries` | **Every Cypher query printed in this documentation set**, compiled through the real parser and planner. Found three examples that had been wrong for weeks, including one showing an aggregation the language cannot express. See [Documented queries](#documented-queries) |
 | `TestGraphQueryNodeResolverImpl` | Query routing, including that it claims only `GraphDb` documents |
 | `TestCompositeQueryNodeResolver` | That more than one feature can route, and that no resolvers means no constraint |
 | `TestGraphMutationSchema` | Sample documents against the XSD |
@@ -286,6 +287,27 @@ codec apiece.
 Guardrails are tested through the engine's package-private test-seam constructor, which takes limit
 overrides — never by lowering a production constant. See
 [13-developer-guide.md](13-developer-guide.md#the-test-seam-constructor).
+
+### Documented queries
+
+`TestDocumentationQueries` compiles every fenced `cypher` block in `docs/graphdb/`. It is a **compile** check,
+not an execution one: it proves the language still accepts what these files print, not that a query returns the
+rows shown.
+
+If you add an example, two conventions matter:
+
+- **Separate independent statements with a blank line.** A block is split on blank lines, so two statements run
+  together are compiled as one and fail.
+- **Annotate an example that is meant to fail.** `-- rejected` asserts it does not compile;
+  `-- rejected at runtime` asserts it *does* compile and is refused later by the engine. Both directions are
+  checked, so an example labelled rejected that quietly starts working also fails the test.
+
+Fragments — a bare `RETURN …`, or a pattern such as `(p:Person)` — are skipped, because neither compiles alone.
+The test asserts a **floor** on how many statements it finds, so a moved file or a changed fence label cannot
+turn it into a silent no-op.
+
+**If this documentation moves to another repository, this test will fail** with a message saying so. That is
+deliberate: repoint it or delete it, but do not let it skip.
 
 ## Regression checklist
 

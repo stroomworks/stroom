@@ -72,20 +72,26 @@ If temporal analysis is central to what you are doing, this is the trade the sub
 
 ### What ports unchanged
 
-Simple anchored traversals, which is more than it sounds:
+Simple anchored traversals, which is more than it sounds — **provided no label, edge type or property name
+collides with a grammar keyword**. `Order` as a label and `CONTAINS` as an edge type are the two that bite in practice, `ORDER BY` and `CONTAINS` both being part of the language; see
+[06-language-reference.md](06-language-reference.md#names-that-will-not-parse).
 
 ```cypher
 MATCH (p:Person {name: 'Alice'})-[:KNOWS]->(f:Person) RETURN f.name
+
 MATCH (a:Account {id: '123'})<-[:OWNS]-(c:Customer) RETURN c.name, c.email
+
 MATCH (u:User {id: 'x'})-[:MEMBER_OF*1..3]->(g:Group) RETURN DISTINCT g.name
-MATCH (o:Order {id: '9'})-[:CONTAINS]->(i:Item)-[:MADE_BY]->(m:Maker) RETURN m.name
+
+MATCH (b:Basket {id: '9'})-[:HOLDS]->(i:Item)-[:MADE_BY]->(m:Maker) RETURN m.name
 ```
 
 Aggregation ports too, with one edit:
 
 ```cypher
--- Neo4j
+-- Neo4j — rejected here
 MATCH (c:Crime) RETURN c.type, count(c) AS total ORDER BY count(c) DESC
+
 -- Graph DB: order by the alias
 MATCH (c:Crime) RETURN c.type AS crime_type, count(c) AS total ORDER BY total DESC
 ```

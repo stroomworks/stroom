@@ -206,14 +206,11 @@ time ([10-limits.md](10-limits.md)).
 
 ## Property names that will not parse
 
-A handful of grammar keywords cannot be used as a property name — the parse fails before anything else is
-checked, with a raw message such as *"no viable alternative at input 'r.when'"*, which does not say why.
-
-**Confirmed unusable:** `when`, `count`, `end`, `match`, `case`.
-**Confirmed fine, despite looking risky:** `type`, `size`, `timestamp`, `id`, `name`, `path`.
-
-If you control the translation, avoid the first list at ingest. If you do not, the property is unreachable
-from a query — there is no quoting or escaping syntax for a property name.
+A grammar keyword cannot be used as a property name — `when`, `count`, `end`, `match` and `case` are the ones
+you are most likely to reach for. The parse fails with a raw message such as *"no viable alternative at input
+'r.when'"*, which does not say why, and there is no quoting syntax, so such a property is unreachable from a
+query. The same applies to labels and edge types; the full list and the reasoning are in
+[06-language-reference.md](06-language-reference.md#names-that-will-not-parse).
 
 ## Errors you may see
 

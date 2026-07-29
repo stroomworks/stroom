@@ -88,9 +88,14 @@ Nearly every avoidable performance problem is an anchor problem. The first node 
 decides how the query finds its starting points, and there are only three possibilities:
 
 ```cypher
-MATCH (p:Person {nhs_no: 'NHS001'})-[:KNOWS]->(f)    -- index seek: fast, size-independent
-MATCH (p:Person)-[:KNOWS]->(f)                        -- full scan, filtered by label
-MATCH (n)-[:KNOWS]->(f)                               -- rejected
+-- index seek: fast, size-independent
+MATCH (p:Person {nhs_no: 'NHS001'})-[:KNOWS]->(f:Person) RETURN f.surname
+
+-- full scan, filtered by label
+MATCH (p:Person)-[:KNOWS]->(f:Person) RETURN f.surname
+
+-- rejected at runtime: an anchor needs a label
+MATCH (n)-[:KNOWS]->(f:Person) RETURN f.surname
 ```
 
 **Adding a property predicate to the anchor turns a whole-graph scan into a direct seek.** If you only have

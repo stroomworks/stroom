@@ -370,16 +370,28 @@ RETURN CASE WHEN c.type = 'Drugs' THEN 'narcotics' ELSE 'other' END AS category
 
 `IN` and the string operators are not permitted inside a `WHEN` condition.
 
-## Property names that will not parse
+## Names that will not parse
 
-Some grammar keywords cannot be used as a property name. The parse fails before anything is checked, with a
-raw message like *"no viable alternative at input 'r.when'"* that does not explain itself.
+**A grammar keyword cannot be used as a label, an edge type or a property name** — matched
+case-insensitively, so `Order`, `order` and `ORDER` are equally unusable. The parse fails before anything else
+is checked, with a raw message that does not explain itself: *"mismatched input 'Order' expecting NAME"*, or
+*"no viable alternative at input 'r.when'"*.
 
-**Unusable:** `when`, `count`, `end`, `match`, `case`.
-**Fine, despite looking risky:** `type`, `size`, `timestamp`, `id`, `name`, `path`.
+The keywords are the clause and operator words of the language:
 
-There is no quoting syntax for a property name, so a property called `when` is unreachable from a query.
-Avoid these at ingest.
+```
+AFTER ALL AND AROUND AS ASC AVG BEFORE BETWEEN BY CASE COLLECT CONTAINS COUNT DESC DIFF
+DISTINCT ELSE END ENDS EXISTS FALSE FROM GRAPH IN IS LIMIT MATCH MAX MIN NOT NULL OF
+OPTIONAL OR ORDER RETURN SKIP STARTS SUM THEN TO TRUE UNION WHEN WHERE WITH
+```
+
+**`Order` is the one that bites in practice** — a natural label in any commerce model, and `ORDER BY` is a
+clause. `when` and `count` are the common property-name casualties. Names that look risky but are fine
+include `type`, `size`, `timestamp`, `id`, `name`, `path`, `node`, `edge` and `user`.
+
+**There is no quoting or escaping syntax**, so a name in that list is unreachable from a query: the data is
+stored, and nothing can ask for it. Choose names at ingest with this list to hand — renaming later means
+re-ingesting.
 
 ## What is not supported
 

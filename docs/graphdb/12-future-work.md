@@ -296,7 +296,10 @@ What remains, if the goal is a production-capable Graph DB. Everything already d
 > — nothing has been exercised on a real cluster. Those steps are listed in
 > [README.md](README.md#what-would-make-it-ready) and come before anything on this page.
 
-1. **Documentation tests** — cheap, and they stop the rest of this set drifting.
+1. **Documentation tests** — *partly done.* Every Cypher example is now compiled by
+   `TestDocumentationQueries`, which found three that had been wrong for weeks. What is still unchecked is the
+   prose: limit values, class names and setting names are verified by hand, and drift the moment something is
+   renamed.
 2. **`approxEquals`** — the one language gap that is a correctness aid rather than an expressiveness one, and
    independent of everything else here.
 3. **Blocker 6** — a recovery path independent of source streams. Compaction reclaims free pages; it cannot
