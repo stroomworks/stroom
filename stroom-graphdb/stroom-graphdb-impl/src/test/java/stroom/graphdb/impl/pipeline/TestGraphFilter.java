@@ -41,6 +41,7 @@ import stroom.query.common.v2.ExpressionPredicateFactory;
 import stroom.query.grammar.parse.CypherQueryParser;
 import stroom.query.language.functions.Type;
 import stroom.query.language.functions.Val;
+import stroom.query.language.functions.ValDouble;
 import stroom.query.language.functions.ValLong;
 import stroom.query.language.functions.ValString;
 import stroom.query.planner.cypher.CompiledCypherPlan;
@@ -220,10 +221,15 @@ class TestGraphFilter {
         // happens to be anchored under some other, pre-existing label.
         assertThat(GraphFilter.anchorNeedsReindexing(
                 false, ValString.create("active"), ValString.create("active"))).isTrue();
-        // Retyping a property from string "42" to long 42 keys the same anchor bytes, so no rewrite is needed.
-        // The decision is about the anchor key, not about the value's type.
+        // Retyping a property from string "42" to long 42 DOES need a rewrite: numbers are keyed by value under
+        // a distinct tag, so the two spell the same but key differently. The decision is about the anchor key,
+        // and asking the encoder is the only way to be right about it.
         assertThat(GraphFilter.anchorNeedsReindexing(
-                true, ValString.create("42"), ValLong.create(42L))).isFalse();
+                true, ValString.create("42"), ValLong.create(42L))).isTrue();
+        // The converse, and the case that makes this more than a type comparison: 42 and 42.0 are different
+        // types that render differently and key identically, so retyping between them needs no rewrite.
+        assertThat(GraphFilter.anchorNeedsReindexing(
+                true, ValLong.create(42L), ValDouble.create(42.0))).isFalse();
     }
 
     @Test
@@ -634,8 +640,8 @@ class TestGraphFilter {
 
     /**
      * A typed value must still be findable through the property index. This is the case the design is most exposed
-     * on: the anchor is keyed on a value's rendered text and the query seeks the literal's text, so if the two
-     * disagree the node is silently not found rather than an error being raised.
+     * on: if the encoding a value is anchored under and the encodings a literal seeks do not overlap, the node is
+     * silently not found rather than an error being raised.
      *
      * <p>This also covers the harder half by construction. Every test in this class ingests into a fragment and
      * <b>merges</b> it before asserting, and merge only ever sees decoded values - so a pass here means ingest and
@@ -684,6 +690,140 @@ class TestGraphFilter {
 
             assertThat(query(stores, "MATCH (n:Item {qty: 7}) RETURN n.qty"))
                     .extracting(row -> row[0].toString()).containsExactly("7");
+        }
+    }
+
+    /**
+     * The headline case for typed doubles, and the one that used to be impossible. A value ingested as
+     * {@code 42.0} renders as {@code 42}, so an anchor keyed on rendered text could never be found by a query
+     * for {@code 42.0}. Anchoring numbers by value rather than by text is what closes that, and all four
+     * spellings below must reach the same node.
+     *
+     * <p>Like every test here this ingests into a fragment and merges it, so a pass also means ingest and merge
+     * derived identical anchors from the decoded value.</p>
+     */
+    @Test
+    void typedDouble_isFoundByEverySpellingOfTheSameNumber(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("typed5"), DOC)) {
+            ingest(stores, """
+                    <graph xmlns="graph-mutation:1" version="1.0">
+                        <node id="n1" validFrom="2026-01-01T00:00:00.000Z">
+                            <label>Item</label>
+                            <property name="score" type="double">42.0</property>
+                            <property name="name">widget</property>
+                        </node>
+                    </graph>
+                    """);
+
+            // Exponent form is deliberately absent: the Cypher grammar's NUMBER rule has no exponent, so
+            // 4.2e1 is not a literal a query can contain. The encoder accepts one anyway, which
+            // TestGraphAnchorEncoding covers, so the grammar can gain exponents without touching the index.
+            for (final String literal : List.of("42.0", "42", "42.00")) {
+                assertThat(query(stores, "MATCH (n:Item {score: " + literal + "}) RETURN n.name"))
+                        .as("anchored on " + literal)
+                        .extracting(row -> row[0].toString()).containsExactly("widget");
+            }
+        }
+    }
+
+    /**
+     * A double keeps its fractional part, and a query for a nearby but different value must not match it. Pinned
+     * because the encoding buckets numbers, and a bucket too coarse would turn a wrong answer into a plausible
+     * one.
+     */
+    @Test
+    void typedDouble_doesNotMatchANeighbouringValue(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("typed6"), DOC)) {
+            ingest(stores, """
+                    <graph xmlns="graph-mutation:1" version="1.0">
+                        <node id="n1" validFrom="2026-01-01T00:00:00.000Z">
+                            <label>Item</label>
+                            <property name="score" type="double">42.5</property>
+                        </node>
+                    </graph>
+                    """);
+
+            assertThat(query(stores, "MATCH (n:Item {score: 42.5}) RETURN n.score"))
+                    .extracting(row -> row[0].toString()).containsExactly("42.5");
+            assertThat(query(stores, "MATCH (n:Item {score: 42.6}) RETURN n.score")).isEmpty();
+            assertThat(query(stores, "MATCH (n:Item {score: 42}) RETURN n.score")).isEmpty();
+        }
+    }
+
+    /**
+     * A timestamp is one instant however it is spelled, so an ingested value must be found by its epoch form as
+     * well as its rendered one. This is the date half of the same bug doubles had.
+     */
+    @Test
+    void typedDateTime_isFoundBySpellingAndByEpoch(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("typed7"), DOC)) {
+            ingest(stores, """
+                    <graph xmlns="graph-mutation:1" version="1.0">
+                        <node id="n1" validFrom="2026-01-01T00:00:00.000Z">
+                            <label>Event</label>
+                            <property name="occurred" type="dateTime">2026-03-04T05:06:07.008Z</property>
+                            <property name="name">login</property>
+                        </node>
+                    </graph>
+                    """);
+
+            final long epochMs = Instant.parse("2026-03-04T05:06:07.008Z").toEpochMilli();
+            assertThat(query(stores, "MATCH (n:Event {occurred: '2026-03-04T05:06:07.008Z'}) RETURN n.name"))
+                    .extracting(row -> row[0].toString()).containsExactly("login");
+            assertThat(query(stores, "MATCH (n:Event {occurred: " + epochMs + "}) RETURN n.name"))
+                    .as("the same instant, written as an epoch")
+                    .extracting(row -> row[0].toString()).containsExactly("login");
+        }
+    }
+
+    /**
+     * A string property whose text happens to look like a number must still be found by that text. Numbers and
+     * text are keyed under different tags, so this is the case where a seek that only tried the numeric encoding
+     * would return nothing at all.
+     */
+    @Test
+    void stringPropertyThatLooksNumeric_isStillFound(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("typed8"), DOC)) {
+            ingest(stores, """
+                    <graph xmlns="graph-mutation:1" version="1.0">
+                        <node id="n1" validFrom="2026-01-01T00:00:00.000Z">
+                            <label>Item</label>
+                            <property name="ref">42</property>
+                            <property name="name">widget</property>
+                        </node>
+                    </graph>
+                    """);
+
+            assertThat(query(stores, "MATCH (n:Item {ref: '42'}) RETURN n.name"))
+                    .extracting(row -> row[0].toString()).containsExactly("widget");
+            assertThat(query(stores, "MATCH (n:Item {ref: 42}) RETURN n.name"))
+                    .as("an unquoted literal must reach a string property too")
+                    .extracting(row -> row[0].toString()).containsExactly("widget");
+        }
+    }
+
+    /**
+     * A double that does not parse is a bad record, like every other declared type that does not parse.
+     */
+    @Test
+    void typedDoubleAndDateThatDoNotParse_areReported(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("typed9"), DOC)) {
+            final List<String> capturedErrors = new ArrayList<>();
+            ingest(stores, """
+                    <graph xmlns="graph-mutation:1" version="1.0">
+                        <node id="n1" validFrom="2026-01-01T00:00:00.000Z">
+                            <label>Item</label>
+                            <property name="score" type="double">not-a-number</property>
+                        </node>
+                        <node id="n2" validFrom="2026-01-01T00:00:00.000Z">
+                            <label>Item</label>
+                            <property name="occurred" type="dateTime">last Tuesday</property>
+                        </node>
+                    </graph>
+                    """, new AtomicReference<>(stores), capturedErrors);
+
+            assertThat(capturedErrors.getFirst()).contains("score", "not a number");
+            assertThat(capturedErrors.get(1)).contains("occurred", "not a timestamp");
         }
     }
 

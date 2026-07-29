@@ -239,16 +239,16 @@ behind it.
 
 | Item | Why | Difficulty | Risk |
 |---|---|---|---|
-| ~~**Typed property values**~~ — **partly done.** `long` and `boolean` are available via `<property type="…">` | Every value's type used to be `STRING` regardless of what it held | Medium | — |
-| **Typed `double` and date property values** | The two types the above deliberately left out, because the property index is keyed on a value's rendered text and a query seeks the literal's own text — so a type whose canonical rendering differs from what an author would write silently finds nothing (`42.0` renders as `42`). **The design is now settled** — see [Anchor encoding for typed values](#anchor-encoding-for-typed-values) below | Medium | Medium — the design decision is made; what remains is a store-format bump and a reload |
+| ~~**Typed property values**~~ — **done.** `string`, `long`, `double`, `boolean` and `dateTime` are available via `<property type="…">` | Every value's type used to be `STRING` regardless of what it held | Medium | — |
+| ~~**Typed `double` and date property values**~~ — **done**, once numbers stopped being indexed by their rendered text. See [Anchor encoding for typed values](#anchor-encoding-for-typed-values) | These two were blocked, not merely unimplemented: an index keyed on rendered text stores `42.0` under `42`, so a query for `42.0` found nothing and said nothing. Indexing numbers by value fixes that and makes `007`/`7` and every spelling of one instant agree as well | Medium | — |
 | **A real list type**, which would re-enable `collect()` | `collect()` is currently **rejected** rather than returning a comma-joined string. Deferred until closer to production | Medium | Medium — the edit is ~6 files and the compiler finds most of them; the risk is that 285 files can then receive a value type they have never seen. **Full analysis, including what re-enabling involves, in [12a-list-value-type.md](12a-list-value-type.md)** |
 | **Typed values in `graph-mutation`** — a version 1.1 or 2.0 of the ingest vocabulary | Prerequisite for typed properties | Medium | Medium |
 | **Per-property versioning** instead of whole-snapshot versions | Would cut storage growth substantially for wide, slowly-changing nodes | Hard | High |
 
 ### Anchor encoding for typed values
 
-The design settled for typed `double` and date values, recorded here because the reasoning is what makes it
-safe rather than the mechanism.
+**Implemented.** Recorded here because the reasoning is what makes it safe, and because the rule it rests on
+constrains anything that touches the property index later.
 
 **The governing rule: the index must agree with the predicate.** A property anchor is only a *candidate*
 filter — every candidate it returns is re-checked against the node's real decoded properties before it
@@ -418,9 +418,9 @@ If the goal is a production-capable Graph DB:
 3. **Documentation tests** — cheap, and they stop the rest of this set drifting.
 4. ~~**Blockers 4, 5**~~ — **done.** Condensing, compaction and index retention, so storage is bounded rather
    than merely slowed.
-5. **Typed `double` and date values** — the anchor-encoding decision that blocked these is now
-   [settled](#anchor-encoding-for-typed-values), so this is implementation plus a store-format bump. `long`
-   and `boolean` are already done. `approxEquals` is independent of it and can go before or after.
+5. ~~**Typed `double` and date values**~~ — **done**, together with the
+   [anchor encoding](#anchor-encoding-for-typed-values) that blocked them. `approxEquals` was always
+   independent of this and remains outstanding.
 6. **Blocker 6** — a recovery path independent of source streams. Compaction reclaims free pages; it cannot
    reconstruct data, so rebuilding a corrupt store still means reprocessing the streams.
 7. **Stream provenance on mutations** (`streamId`/`eventId`) — easy, low risk, and the gate to extraction and

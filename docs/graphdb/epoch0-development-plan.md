@@ -547,6 +547,59 @@ no-leftover-directories test.
 not worth it. An idle store holds file descriptors and reserved address space rather than heap, and reopening it
 costs a real query.
 
+## Beyond the plan — typed `double` and `dateTime` (Phase 3.1's remainder)
+
+Phase 3.1 shipped typed `long` and `boolean` and deliberately left these two out. The plan's own note said the
+index should stay keyed on lexical text "not for compatibility, but for correctness", because ingest indexed raw
+XML text and the seek used the query literal's raw text, so the two agreed. That was accurate, and it is exactly
+why `double` could not be added: `ValDouble(42.0).toString()` is `"42"`, so a query for `42.0` would find nothing
+and report nothing.
+
+**The plan's two candidate routes were (a) a canonical encoder and (b) index both forms.** Neither was quite
+right, and the resolution came from a question asked during review - shouldn't doubles compare with a tolerance?
+The answer is no, but working out why produced the rule the design now rests on.
+
+**The rule: the index must agree with the predicate, and where it cannot, err towards matching too much.** An
+anchor is only a candidate filter; the engine re-checks every candidate against the node's decoded properties.
+So an over-broad anchor costs a little work and an under-broad one silently loses rows. Stroom's `=` on numbers
+is exact everywhere (`NumericEquals` is `Objects.equals(Double, Double)`), so the index is exact too.
+
+What that gives:
+
+- **Numbers key by value**, through a canonical order-preserving eight-byte encoding, under a type tag. `42`,
+  `42.0` and `42.00` agree; so does `007` with `7`. Dates fold into the same numeric space, since an instant is a
+  count of milliseconds - so every spelling of one instant agrees as well.
+- **A numeric literal seeks twice**, the text encoding and the number encoding, and unions. That removes the need
+  for a per-`(label, property)` type registry, which was the awkward part of route (a). A string property holding
+  `"42"` and a numeric one holding 42 are both reachable from the literal `42`.
+- **Longs above 2^53 share an encoding.** A collision, not a loss - each still reaches its own anchor, and the
+  predicate separates the neighbours. Erring towards matching too much, as the rule requires.
+- **Booleans stay text**, because a literal carries `true`, not 1.
+
+**A route considered and withdrawn during design:** not indexing doubles at all, on the grounds that float
+equality is fragile. It leaves a silent hole (an integer-form literal against a double property anchors, finds no
+entry, returns nothing), it penalises the very type annotation you want people to use, and decisively it does not
+help - the predicate is still exact, so a computed `0.30000000000000004` still fails to match `0.3`, just after a
+full scan instead of a seek. Fragile float equality is a property of the *predicate*. `approxEquals` is recorded
+in [12-future-work.md](12-future-work.md) as the explicit fix.
+
+**Three things testing found that the design did not anticipate.**
+
+- `anchorNeedsReindexing` compared rendered forms, and that is no longer the anchor key. String `"42"` and long
+  42 render identically and key differently; long 42 and double 42.0 render differently and key identically. It
+  now asks the encoder, and the existing unit test's assertion **inverted** - recorded rather than quietly
+  changed, because a reader of that test would otherwise reasonably assume it had always said this.
+- The Cypher grammar's `NUMBER` rule has no exponent, so `4.2e1` is not a literal a query can contain. The
+  encoder accepts one anyway, so the grammar can gain exponents later without touching the index; the end-to-end
+  test says so rather than silently dropping the case.
+- Twenty-four test fixtures seeded anchors with raw UTF-8 rather than through the encoder. They all failed, which
+  is the right outcome - they were simulating ingest without doing what ingest does - but it is worth knowing that
+  the encoder is the only correct way to construct an anchor, in tests as much as in production.
+
+Store format bumped to **version 2**; existing stores refuse to open and must be rebuilt. Validated by sabotage
+four times: text-only seek, number-only seek, dropping the order-preserving transform, and keying booleans
+numerically each fail a distinct and appropriate set.
+
 ---
 
 ## Coding standards and housekeeping
@@ -731,6 +784,13 @@ implementation plans that were retired to git history, leaving dangling links. I
   per-precision key widths, savings and representable ceilings, plus the fixed-at-creation rule;
   [README.md](README.md), [10-limits.md](10-limits.md), [12-future-work.md](12-future-work.md) and
   [13-developer-guide.md](13-developer-guide.md) updated to match.
-- The string-only-property entry under *Correctness surprises* in [README.md](README.md) — remaining part is
-  typed `double`/dates, Phase 3. The `collect()` entry is done: it now records the rejection and links to
+- ~~The string-only-property entry under *Correctness surprises* in [README.md](README.md)~~ — **done.** All
+  five property types now exist, so the entry is struck through and records what remains true instead: equality
+  on decimals is exact, so a value computed before ingest may not match a literal that looks the same. The
+  `collect()` entry is done too: it records the rejection and links to
   [12a-list-value-type.md](12a-list-value-type.md).
+- **The property-index rule added to [13-developer-guide.md](13-developer-guide.md)** — that an anchor is a
+  candidate filter, so an over-broad one costs work and an under-broad one loses rows silently. It is the
+  constraint on anything that touches that index later, and nothing in the code states it.
+- [03-ingest.md](03-ingest.md) — the *`double` and dates are not available, and why* section replaced by how
+  value-based matching behaves, plus the honest caveat about exact decimal equality.

@@ -172,7 +172,7 @@ class TestGraphRetentionSweep {
         final long labelUid = uidOf(stores, stores.getLabelUids(), "Thing");
         final long propKeyUid = uidOf(stores, stores.getPropertyKeyUids(), "status");
         return stores.read(txn -> stores.getPropertyIndex().findAnchors(
-                txn, labelUid, propKeyUid, value.getBytes(StandardCharsets.UTF_8)));
+                txn, labelUid, propKeyUid, GraphAnchorEncoding.anchorValueBytes(ValString.create(value))));
     }
 
     private static GraphDbDoc docWithRetention() {

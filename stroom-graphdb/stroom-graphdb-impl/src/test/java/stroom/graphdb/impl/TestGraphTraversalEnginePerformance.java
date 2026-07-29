@@ -118,7 +118,7 @@ class TestGraphTraversalEnginePerformance {
             stores.getNodes().insert(
                     writer, hubUid, T1, List.of(deviceLabel), Map.of("id", ValString.create("hub")));
             stores.getPropertyIndex().insert(
-                    writer, deviceLabel, idKey, "hub".getBytes(StandardCharsets.UTF_8), hubUid);
+                    writer, deviceLabel, idKey, anchorBytes("hub"), hubUid);
             return null;
         });
 
@@ -158,7 +158,7 @@ class TestGraphTraversalEnginePerformance {
             if (i == 0) {
                 stores.write(writer -> {
                     stores.getPropertyIndex().insert(
-                            writer, nodeLabel, idKey, "n0".getBytes(StandardCharsets.UTF_8), uid);
+                            writer, nodeLabel, idKey, anchorBytes("n0"), uid);
                     return null;
                 });
             }
@@ -169,6 +169,15 @@ class TestGraphTraversalEnginePerformance {
     private static long intern(final GraphStores stores, final UidLookupDb db, final String key) {
         return stores.write(writer -> db.put(writer.getWriteTxn(), directBuffer(key), uidBuffer ->
                 UnsignedBytesInstances.ofLength(uidBuffer.remaining()).get(uidBuffer.duplicate())));
+    }
+
+    /**
+     * The bytes a string property's anchor is keyed on. Goes through the encoder rather than taking the raw
+     * UTF-8, because that is what ingest does - and since numbers are keyed by value rather than by text, the
+     * two are no longer the same thing even for a string.
+     */
+    private static byte[] anchorBytes(final String value) {
+        return GraphAnchorEncoding.anchorValueBytes(ValString.create(value));
     }
 
     private static ByteBuffer directBuffer(final String value) {

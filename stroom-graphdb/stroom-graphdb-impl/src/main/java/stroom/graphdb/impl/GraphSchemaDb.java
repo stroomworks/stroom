@@ -64,8 +64,12 @@ final class GraphSchemaDb {
     /**
      * Bump whenever any key layout, UID width, time encoding or value encoding below changes. A store stamped
      * with a different version refuses to open.
+     *
+     * <p>Version 2: property-index anchors gained a type tag and numbers became order-preserving eight-byte
+     * values rather than their rendered text, so every anchor a version 1 store holds is keyed on bytes this
+     * build would never write. See {@code GraphAnchorEncoding}.</p>
      */
-    static final int CURRENT_SCHEMA_VERSION = 1;
+    static final int CURRENT_SCHEMA_VERSION = 2;
 
     private final Dbi<ByteBuffer> dbi;
     private final ByteBuffers byteBuffers;

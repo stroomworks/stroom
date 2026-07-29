@@ -38,10 +38,30 @@ self-contained.
 | `GraphPropsCodec` | Property map ↔ blob |
 | `GraphStoreManager` | Per-UUID registry of open stores; resolves `<graphdb.path>/shards/<uuid>`. **Lends** a store for the duration of a call — see below |
 | `GraphSchemaDb` | The `graph-info` table: the store's format stamp, and the persisted hash-clash counter |
-| `GraphAnchorEncoding` | The single definition of how a property value becomes property-index key bytes |
+| `GraphAnchorEncoding` | The single definition of how a property value becomes property-index key bytes, for both the write and the seek side. **Read it before touching the index** |
 
 Key widths are fixed (`NODE_UID_WIDTH = 6`, `TYPE_UID_WIDTH = 4`) because prefix range scans depend on
 it — a variable-width key would break every traversal. Physical layouts are in each class's Javadoc.
+
+#### The property index must agree with the predicate
+
+An anchor is only a **candidate** filter: `GraphTraversalEngine` re-checks every candidate it returns against
+the node's real decoded properties before it becomes a row. The two failure directions are therefore not
+symmetric.
+
+- An anchor that returns **too much** costs a little wasted work.
+- An anchor that returns **too little** silently loses rows, and nothing distinguishes that from a node that
+  is genuinely absent.
+
+So when a change makes it unclear whether some value should match, **make it match** and let the predicate
+decide. That is why numbers are keyed by value rather than text, why a numeric literal seeks both the text and
+the number encoding rather than consulting a type registry, and why longs above 2<sup>53</sup> are allowed to
+share an encoding.
+
+The corollary is that the index must never be *looser* than the predicate either. Stroom's `=` on numbers is
+exact (`Objects.equals(Double, Double)`), so the index is exact. If you are tempted to make the index tolerant
+of floating-point error, that belongs in the predicate — and the predicate is product-wide, not Graph DB's to
+change unilaterally.
 
 #### Never hold a `GraphStores` past the call that got it
 
@@ -87,7 +107,11 @@ a `graph-info` table. It is validated when a store is opened for writing and aga
 mismatch **refuses the operation** rather than proceeding.
 
 **If you change any of the following, bump `CURRENT_SCHEMA_VERSION`:** either UID width, the time serde, any
-of the four key layouts, the property-index tier format or its DIRECT length limit, or the props codec.
+of the four key layouts, the property-index tier format or its DIRECT length limit, the **anchor value
+encoding** (`GraphAnchorEncoding`), or the props codec.
+
+Version 2 was the anchor encoding gaining a type tag and numbers being keyed by value rather than by their
+rendered text.
 
 There is deliberately **no migration path**. Existing graph data is treated as reproducible — a store written
 by a different build is wiped and rebuilt (`GraphStores.rebuild()`, or by reprocessing the source streams).
@@ -220,16 +244,18 @@ Two rules worth respecting:
 
 ### 4. Extend `graph-mutation`
 
-**Files:** `graph_mutation_v1_0.xsd` (test resources), `GraphFilter`, the store write path, and
-[03-ingest.md](03-ingest.md).
+**Files:** `src/main/resources/stroom/graphdb/graph-mutation-v1.0.xsd`, `GraphFilter`, the store write path,
+and [03-ingest.md](03-ingest.md).
 
 `GraphFilter` dispatches on **lower-cased element local names** and does no schema validation, so a new
 element is a new case in `startElement`/`endElement`. Bump the schema `version` enumeration for anything
 that is not purely additive, and keep the two in step — the XSD is documentation for XSLT authors, so a
 drift between it and the filter is a silent trap for them.
 
-Typed property values, the most likely next change, need the codec (`GraphPropsCodec`), the property index
-tiering, and the query-side value handling — not just the schema.
+**Adding a property type** is more than a new `case` in `GraphFilter.toVal`. Ask what a query literal for
+that type looks like, and make sure `GraphAnchorEncoding` maps both the stored value and that literal to the
+same bytes — see the rule below. A type whose anchor no literal can reach is not a broken query, it is an
+empty result with no error.
 
 ### 5. Add a Cytoscape toolbar control
 

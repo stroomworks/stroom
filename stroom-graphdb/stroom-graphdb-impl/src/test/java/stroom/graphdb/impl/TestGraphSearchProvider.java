@@ -335,7 +335,7 @@ class TestGraphSearchProvider {
                 stores.getNodes().insert(writer, deviceUid, T1, List.of(deviceLabel),
                         Map.of("id", ValString.create("d-42")));
                 stores.getPropertyIndex().insert(
-                        writer, deviceLabel, idKey, "d-42".getBytes(StandardCharsets.UTF_8), deviceUid);
+                        writer, deviceLabel, idKey, anchorBytes("d-42"), deviceUid);
                 stores.getNodes().insert(writer, aUid, T1, List.of(accountLabel),
                         Map.of("id", ValString.create("account-a"), "balance", ValLong.create(50)));
                 stores.getNodes().insert(writer, aUid, T2, List.of(accountLabel),
@@ -425,7 +425,7 @@ class TestGraphSearchProvider {
                 stores.getNodes().insert(writer, deviceUid, T1, List.of(deviceLabel),
                         Map.of("id", ValString.create("d-42")));
                 stores.getPropertyIndex().insert(
-                        writer, deviceLabel, idKey, "d-42".getBytes(StandardCharsets.UTF_8), deviceUid);
+                        writer, deviceLabel, idKey, anchorBytes("d-42"), deviceUid);
                 stores.getNodes().insert(writer, aUid, T1, List.of(accountLabel),
                         Map.of("id", ValString.create("account-a")));
                 stores.getNodes().insert(writer, bUid, T1, List.of(accountLabel),
@@ -648,7 +648,7 @@ class TestGraphSearchProvider {
                     Map.of("id", ValString.create("account-b"), "balance", ValLong.create(200)));
 
             stores.getPropertyIndex().insert(
-                    writer, deviceLabel, idKey, "d-42".getBytes(StandardCharsets.UTF_8), deviceUid);
+                    writer, deviceLabel, idKey, anchorBytes("d-42"), deviceUid);
 
             stores.getOutEdges().insert(writer, deviceUid, connectedTo, accountAUid, T1, Map.of());
             stores.getOutEdges().insert(writer, deviceUid, connectedTo, accountBUid, T2, Map.of());
@@ -660,6 +660,15 @@ class TestGraphSearchProvider {
         return stores.write(writer -> db.put(writer.getWriteTxn(), directBuffer(key), uidBuffer ->
                 UnsignedBytesInstances.ofLength(uidBuffer.remaining())
                         .get(uidBuffer.duplicate())));
+    }
+
+    /**
+     * The bytes a string property's anchor is keyed on. Goes through the encoder rather than taking the raw
+     * UTF-8, because that is what ingest does - and since numbers are keyed by value rather than by text, the
+     * two are no longer the same thing even for a string.
+     */
+    private static byte[] anchorBytes(final String value) {
+        return GraphAnchorEncoding.anchorValueBytes(ValString.create(value));
     }
 
     private static ByteBuffer directBuffer(final String value) {

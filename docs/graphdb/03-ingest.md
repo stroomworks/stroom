@@ -147,13 +147,18 @@ template in your XSLT.
 A property is a string unless you declare otherwise:
 
 ```xml
-<property name="surname">Powell</property>              <!-- string, the default -->
-<property name="age" type="long">42</property>          <!-- whole number -->
-<property name="active" type="boolean">true</property>  <!-- true / false -->
+<property name="surname">Powell</property>                 <!-- string, the default -->
+<property name="age" type="long">42</property>             <!-- whole number -->
+<property name="score" type="double">42.5</property>       <!-- decimal -->
+<property name="active" type="boolean">true</property>     <!-- true / false -->
+<property name="occurred" type="dateTime">2026-07-28T14:03:00.000Z</property>
 ```
 
-Only `string`, `long` and `boolean` are available. A value that does not parse as its declared type is a bad
-record, reported like any other — it is not quietly kept as text.
+The five types are `string`, `long`, `double`, `boolean` and `dateTime`. A value that does not parse as its
+declared type is a bad record, reported like any other — it is not quietly kept as text.
+
+A `dateTime` must be written as `yyyy-MM-ddTHH:mm:ss.sssZ`, the same form `validFrom` takes. Other spellings
+are rejected rather than guessed at.
 
 ### What declaring a type actually gets you
 
@@ -163,7 +168,7 @@ It is worth being precise, because this is easy to over-sell:
 |---|---|---|
 | **Value's type when read back** | always `STRING` | the declared type — so JSON output renders `42` and `true` unquoted rather than as `"42"` and `"true"`, and type-aware code paths see a number |
 | **`ORDER BY`** | already numeric for numeric-looking text (see below) | numeric | 
-| **Equality anchor lookup** | on the text as written | on the value's canonical form, so `007` and `7` are the same value |
+| **Equality anchor lookup** | on the text as written | on the value itself, so `007`, `7`, `7.0` and `7.00` are all the same value |
 | **Functions like `toInteger()`** | needed | unnecessary |
 
 > **Ordering was already numeric, contrary to what this document previously said.** Stroom compares
@@ -171,28 +176,35 @@ It is worth being precise, because this is easy to over-sell:
 > `"10"`. What was genuinely wrong is that *every* value's type was `STRING` regardless of what it held, so
 > anything reading a value back saw text. That — not sort order — is what declaring a type fixes.
 
-### `double` and dates are not available, and why
+### Numbers are matched by value, not by how they were written
 
-Both are deliberately absent rather than merely unimplemented.
+A number is indexed by **what it is**, not by the characters it arrived as. So a property ingested as `42.0`
+is found by a query for `42`, `42.0` or `42.00`, and one ingested as `007` is found by a query for `7`. A
+`dateTime` is one instant however it is spelled, so it is found by its ISO form and by its epoch value alike.
 
-The equality anchor index is keyed on a value's **rendered text**, and a query seeks it using the query
-literal's **own text**. Those must agree or the node is silently not found. A double breaks the agreement:
-`42.0` renders canonically as `42`, so a query for `42.0` would find nothing and report no error. Dates have
-the same problem in a worse form, since one instant has many valid renderings.
+This matters more than it sounds. Before it was true, `double` and `dateTime` could not be offered at all: an
+index keyed on rendered text would have stored `42.0` under `42` — the canonical rendering — and answered a
+query for `42.0` with nothing, silently, because a lookup that finds no anchor is indistinguishable from a
+node that genuinely is not there.
 
-Making them safe needs a canonical encoder shared by the ingest, merge and query sides — tracked in
-[12-future-work.md](12-future-work.md).
+A string is still matched as text, so a property holding the *text* `"42"` is found by `'42'`. If you are not
+sure which a property holds, either query works — both are tried.
 
-### Encoding advice for what is not typed
+**Equality on decimals is still exact.** Two values that differ in their last bit are different values, here
+as everywhere else in Stroom. If your source computes a value before emitting it — XSLT arithmetic, say —
+`0.1 + 0.2` will not match a query for `0.3`. Store what you will query on, or compare with a tolerance in
+the query.
 
-For dates and decimals, encode so that text order is the order you want:
+### Encoding advice for untyped values
+
+If you leave a value untyped, it is text, and text order is what you get:
 
 | Kind of value | Emit as | Why |
 |---|---|---|
-| Timestamps and dates | ISO-8601, zero-padded, UTC — `2026-07-28T14:03:00.000Z` | Text order equals chronological order |
-| Decimals you will sort or range-filter | Zero-padded to a fixed width — `000042.50` | Text order equals numeric order |
-| Booleans | `type="boolean"` | Now a real type; no encoding needed |
-| Whole numbers | `type="long"` | Now a real type; no zero-padding needed |
+| Timestamps and dates | `type="dateTime"` | A real type. Falling back to ISO-8601 text also sorts correctly, but only if every value is zero-padded UTC |
+| Decimals | `type="double"` | A real type. Untyped, zero-pad to a fixed width — `000042.50` — so text order matches numeric order |
+| Booleans | `type="boolean"` | A real type; no encoding needed |
+| Whole numbers | `type="long"` | A real type; no zero-padding needed |
 
 At query time you can still convert with `toInteger()`, `toFloat()`, `toBoolean()` and parse dates with
 `stroom.parseDate()` — see [07-functions.md](07-functions.md). Conversion happens per row during evaluation,

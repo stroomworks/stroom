@@ -37,8 +37,11 @@ import stroom.pipeline.shared.data.PipelineElementType.Category;
 import stroom.pipeline.state.MetaHolder;
 import stroom.planb.impl.dao.LmdbWriter;
 import stroom.planb.impl.dao.UidLookupDb;
+import stroom.query.language.functions.DateUtil;
 import stroom.query.language.functions.Val;
 import stroom.query.language.functions.ValBoolean;
+import stroom.query.language.functions.ValDate;
+import stroom.query.language.functions.ValDouble;
 import stroom.query.language.functions.ValLong;
 import stroom.query.language.functions.ValString;
 import stroom.svg.shared.SvgImage;
@@ -56,6 +59,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -150,6 +154,8 @@ public class GraphFilter extends AbstractXMLFilter {
     private static final String TYPE_STRING = "string";
     private static final String TYPE_LONG = "long";
     private static final String TYPE_BOOLEAN = "boolean";
+    private static final String TYPE_DOUBLE = "double";
+    private static final String TYPE_DATE_TIME = "datetime";
 
     private static final String ID_ATTRIBUTE = "id";
     private static final String TYPE_ATTRIBUTE = "type";
@@ -479,9 +485,13 @@ public class GraphFilter extends AbstractXMLFilter {
         if (!labelCarriedByPreviousVersion) {
             return true;
         }
-        // Compared on rendered form because that - not the value's type - is what the anchor key is made of. A
-        // property retyped from string "42" to long 42 keys the same anchor, so it genuinely needs no rewrite.
-        return previousValue == null || !previousValue.toString().equals(newValue.toString());
+        // Compared on the anchor bytes themselves rather than on the rendered form, because those are no longer
+        // the same thing: numbers are keyed by value, so 42 and 42.0 render differently but key identically,
+        // while the string "42" and the number 42 render identically and key differently. Asking the encoder is
+        // the only way to be right about both.
+        return previousValue == null || !Arrays.equals(
+                GraphAnchorEncoding.anchorValueBytes(previousValue),
+                GraphAnchorEncoding.anchorValueBytes(newValue));
     }
 
     private void deleteNode() {
@@ -559,6 +569,24 @@ public class GraphFilter extends AbstractXMLFilter {
                 } catch (final NumberFormatException e) {
                     error("<property name=\"" + name + "\" type=\"long\"> value \"" + text
                           + "\" is not a whole number");
+                    return ValString.create(text);
+                }
+            }
+            case TYPE_DOUBLE -> {
+                try {
+                    return ValDouble.create(Double.parseDouble(text.trim()));
+                } catch (final NumberFormatException e) {
+                    error("<property name=\"" + name + "\" type=\"double\"> value \"" + text
+                          + "\" is not a number");
+                    return ValString.create(text);
+                }
+            }
+            case TYPE_DATE_TIME -> {
+                try {
+                    return ValDate.create(DateUtil.parseNormalDateTimeString(text.trim()));
+                } catch (final RuntimeException e) {
+                    error("<property name=\"" + name + "\" type=\"dateTime\"> value \"" + text
+                          + "\" is not a timestamp of the form yyyy-MM-ddTHH:mm:ss.SSSZ");
                     return ValString.create(text);
                 }
             }

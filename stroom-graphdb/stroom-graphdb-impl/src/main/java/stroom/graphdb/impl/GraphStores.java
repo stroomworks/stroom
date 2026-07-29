@@ -104,7 +104,8 @@ public final class GraphStores implements AutoCloseable {
             "outEdge":"[srcUid][edgeTypeUid][dstUid][validFrom]",\
             "inEdge":"[dstUid][edgeTypeUid][srcUid][validFrom]",\
             "propertyIndex":"[labelUid][propertyKeyUid][tierTag][tieredValue][nodeUid]",\
-            "propertyIndexDirectMaxLength":32,"propertyValueHashLength":"LONG"}""";
+            "propertyIndexDirectMaxLength":32,"propertyValueHashLength":"LONG",\
+            "anchorValue":"[typeTag][utf8|orderPreservingDouble]"}""";
 
     /**
      * The key layout this build writes for {@code precision}.

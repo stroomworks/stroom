@@ -76,6 +76,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -1615,9 +1616,14 @@ public final class GraphTraversalEngine {
         if (propKeyUid.isEmpty()) {
             return List.of();
         }
-        final byte[] seekValueBytes = seekTerm.getValue().getBytes(StandardCharsets.UTF_8);
-        final List<Long> candidates = stores.getPropertyIndex().findAnchors(
-                readTxn, requiredLabelUids.getFirst(), propKeyUid.get(), seekValueBytes);
+        // The literal may match a value stored as text or as a number, and nothing here knows which - see
+        // GraphAnchorEncoding. Seek every plausible encoding and union; the predicate below discards whatever
+        // does not really match, so over-seeking is safe and under-seeking would silently lose rows.
+        final Set<Long> candidates = new LinkedHashSet<>();
+        for (final byte[] seekValueBytes : GraphAnchorEncoding.seekValueBytes(seekTerm.getValue())) {
+            candidates.addAll(stores.getPropertyIndex().findAnchors(
+                    readTxn, requiredLabelUids.getFirst(), propKeyUid.get(), seekValueBytes));
+        }
 
         // NodeScan.propertyAnchor's terms are unqualified (e.g. field "id", not "d.id" - compileNodeScan never
         // applies the variable prefix a WHERE clause's property accesses get), so re-validate it directly against

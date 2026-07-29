@@ -243,7 +243,7 @@ class TestGraphTraversalEngine {
             stores.getNodes().insert(writer, a3, T1, List.of(accountLabel),
                     Map.of("id", ValString.create("a3"), "balance", ValLong.create(200)));
             stores.getPropertyIndex().insert(
-                    writer, accountLabel, idKey, "a1".getBytes(StandardCharsets.UTF_8), a1);
+                    writer, accountLabel, idKey, anchorBytes("a1"), a1);
             stores.getOutEdges().insert(writer, a1, transfer, a2, T1, Map.of());
             stores.getInEdges().insert(writer, a1, transfer, a2, T1, Map.of());
             stores.getOutEdges().insert(writer, a1, transfer, a3, T1, Map.of());
@@ -571,9 +571,9 @@ class TestGraphTraversalEngine {
             stores.getNodes().insert(writer, cr2, T1, List.of(crimeLabel),
                     Map.of("id", ValString.create("cr2"), "type", ValString.create("fraud")));
             stores.getPropertyIndex().insert(
-                    writer, personLabel, idKey, "p1".getBytes(StandardCharsets.UTF_8), p1);
+                    writer, personLabel, idKey, anchorBytes("p1"), p1);
             stores.getPropertyIndex().insert(
-                    writer, personLabel, idKey, "p2".getBytes(StandardCharsets.UTF_8), p2);
+                    writer, personLabel, idKey, anchorBytes("p2"), p2);
             for (final long crime : List.of(cr1, cr2)) {
                 stores.getOutEdges().insert(writer, p1, partyTo, crime, T1, Map.of());
                 stores.getInEdges().insert(writer, p1, partyTo, crime, T1, Map.of());
@@ -603,7 +603,7 @@ class TestGraphTraversalEngine {
             stores.getNodes().insert(writer, c3, T1, List.of(crimeLabel),
                     Map.of("id", ValString.create("c-3"), "type", ValString.create("fraud")));
             stores.getPropertyIndex().insert(
-                    writer, officerLabel, idKey, "o-1".getBytes(StandardCharsets.UTF_8), officerUid);
+                    writer, officerLabel, idKey, anchorBytes("o-1"), officerUid);
             for (final long crime : List.of(c1, c2, c3)) {
                 stores.getOutEdges().insert(writer, officerUid, investigated, crime, T1, Map.of());
                 stores.getInEdges().insert(writer, officerUid, investigated, crime, T1, Map.of());
@@ -785,7 +785,7 @@ class TestGraphTraversalEngine {
                 stores.getNodes().insert(writer, accountUid, T1, List.of(accountLabel),
                         Map.of("id", ValString.create("account-a")));
                 stores.getPropertyIndex().insert(
-                        writer, deviceLabel, idKey, "d-42".getBytes(StandardCharsets.UTF_8), deviceUid);
+                        writer, deviceLabel, idKey, anchorBytes("d-42"), deviceUid);
                 stores.getOutEdges().insert(writer, deviceUid, connectedTo, accountUid, T1,
                         Map.of("startTime", ValString.create("2026-07-05T14:02:11Z")));
                 stores.getInEdges().insert(writer, deviceUid, connectedTo, accountUid, T1,
@@ -1523,7 +1523,7 @@ class TestGraphTraversalEngine {
                 stores.getNodes().insert(writer, deviceUid, T1, List.of(deviceLabel),
                         Map.of("id", ValString.create("d-42")));
                 stores.getPropertyIndex().insert(
-                        writer, deviceLabel, idKey, "d-42".getBytes(StandardCharsets.UTF_8), deviceUid);
+                        writer, deviceLabel, idKey, anchorBytes("d-42"), deviceUid);
 
                 // account-a: balance changes between the two instants (MODIFIED via full property-set inequality).
                 stores.getNodes().insert(writer, aUid, T1, List.of(accountLabel),
@@ -1591,7 +1591,7 @@ class TestGraphTraversalEngine {
                 stores.getNodes().insert(writer, deviceUid, T1, List.of(deviceLabel),
                         Map.of("id", ValString.create("d-42")));
                 stores.getPropertyIndex().insert(
-                        writer, deviceLabel, idKey, "d-42".getBytes(StandardCharsets.UTF_8), deviceUid);
+                        writer, deviceLabel, idKey, anchorBytes("d-42"), deviceUid);
                 stores.getNodes().insert(writer, aUid, T1, List.of(accountLabel),
                         Map.of("id", ValString.create("account-a"), "balance", ValLong.create(50)));
                 stores.getNodes().insert(writer, aUid, T2, List.of(accountLabel),
@@ -1979,7 +1979,7 @@ class TestGraphTraversalEngine {
                 stores.getNodes().insert(writer, deviceUid, T1, List.of(deviceLabel),
                         Map.of("id", ValString.create("d-42")));
                 stores.getPropertyIndex().insert(
-                        writer, deviceLabel, idKey, "d-42".getBytes(StandardCharsets.UTF_8), deviceUid);
+                        writer, deviceLabel, idKey, anchorBytes("d-42"), deviceUid);
 
                 stores.getNodes().insert(writer, aUid, T1, List.of(accountLabel),
                         Map.of("id", ValString.create("account-a"), "balance", ValLong.create(50)));
@@ -2078,9 +2078,9 @@ class TestGraphTraversalEngine {
                     writer, gatewayUid, T1, List.of(deviceLabel), Map.of("id", ValString.create("gw-1")));
 
             stores.getPropertyIndex().insert(
-                    writer, deviceLabel, idKey, "d-42".getBytes(StandardCharsets.UTF_8), deviceUid);
+                    writer, deviceLabel, idKey, anchorBytes("d-42"), deviceUid);
             stores.getPropertyIndex().insert(
-                    writer, accountLabel, idKey, "account-a".getBytes(StandardCharsets.UTF_8), accountAUid);
+                    writer, accountLabel, idKey, anchorBytes("account-a"), accountAUid);
 
             // d-42 -> account-a/account-b: written to both directions (P1.1's dual-write contract - callers
             // writing a logical edge must write both GraphAdjacencyDb and GraphInEdgeDb).
@@ -2135,7 +2135,7 @@ class TestGraphTraversalEngine {
                     writer, companyUid, T1, List.of(companyLabel), Map.of("id", ValString.create("company-1")));
 
             stores.getPropertyIndex().insert(
-                    writer, deviceLabel, idKey, "d-42".getBytes(StandardCharsets.UTF_8), deviceUid);
+                    writer, deviceLabel, idKey, anchorBytes("d-42"), deviceUid);
 
             // Every edge is written to both GraphAdjacencyDb and GraphInEdgeDb (P1.1's dual-write contract).
             stores.getOutEdges().insert(writer, deviceUid, connectedTo, accountAUid, T1, Map.of());
@@ -2172,7 +2172,7 @@ class TestGraphTraversalEngine {
             stores.getNodes().insert(writer, n3Uid, T1, List.of(nodeLabel), Map.of("id", ValString.create("n3")));
 
             stores.getPropertyIndex().insert(
-                    writer, nodeLabel, idKey, "n1".getBytes(StandardCharsets.UTF_8), n1Uid);
+                    writer, nodeLabel, idKey, anchorBytes("n1"), n1Uid);
 
             stores.getOutEdges().insert(writer, n1Uid, next, n2Uid, T1, Map.of());
             stores.getInEdges().insert(writer, n1Uid, next, n2Uid, T1, Map.of());
@@ -2202,7 +2202,7 @@ class TestGraphTraversalEngine {
             stores.getNodes().insert(writer, xUid, T1, List.of(nodeLabel), Map.of("id", ValString.create("x")));
             stores.getNodes().insert(writer, yUid, T1, List.of(nodeLabel), Map.of("id", ValString.create("y")));
 
-            stores.getPropertyIndex().insert(writer, nodeLabel, idKey, "a".getBytes(StandardCharsets.UTF_8), aUid);
+            stores.getPropertyIndex().insert(writer, nodeLabel, idKey, anchorBytes("a"), aUid);
 
             stores.getOutEdges().insert(writer, aUid, edgeType, xUid, T1, Map.of());
             stores.getInEdges().insert(writer, aUid, edgeType, xUid, T1, Map.of());
@@ -2234,7 +2234,7 @@ class TestGraphTraversalEngine {
                     writer, otherUid, T1, List.of(nodeLabel), Map.of("id", ValString.create("other")));
 
             stores.getPropertyIndex().insert(
-                    writer, nodeLabel, idKey, "self-loop".getBytes(StandardCharsets.UTF_8), selfUid);
+                    writer, nodeLabel, idKey, anchorBytes("self-loop"), selfUid);
 
             // The self-loop edge: src == dst == selfUid.
             stores.getOutEdges().insert(writer, selfUid, edgeType, selfUid, T1, Map.of());
@@ -2283,7 +2283,7 @@ class TestGraphTraversalEngine {
                     Map.of("id", ValString.create("account-after")));
 
             stores.getPropertyIndex().insert(
-                    writer, deviceLabel, idKey, "d-42".getBytes(StandardCharsets.UTF_8), deviceUid);
+                    writer, deviceLabel, idKey, anchorBytes("d-42"), deviceUid);
 
             stores.getOutEdges().insert(writer, deviceUid, connectedTo, beforeUid, beforeStart, Map.of());
             stores.getInEdges().insert(writer, deviceUid, connectedTo, beforeUid, beforeStart, Map.of());
@@ -2330,7 +2330,7 @@ class TestGraphTraversalEngine {
             // property has ever held, so this seek still finds deviceUid even though 'd-42' isn't its current
             // identity; the interesting behaviour under test is entirely in getNodeWindow's re-validation.
             stores.getPropertyIndex().insert(
-                    writer, deviceLabel, idKey, "d-42".getBytes(StandardCharsets.UTF_8), deviceUid);
+                    writer, deviceLabel, idKey, anchorBytes("d-42"), deviceUid);
 
             stores.getOutEdges().insert(writer, deviceUid, connectedTo, accountUid, oldIdentityStart, Map.of());
             stores.getInEdges().insert(writer, deviceUid, connectedTo, accountUid, oldIdentityStart, Map.of());
@@ -2376,7 +2376,7 @@ class TestGraphTraversalEngine {
                     Map.of("id", ValString.create("c4"), "type", ValString.create("Fraud")));
 
             stores.getPropertyIndex().insert(
-                    writer, officerLabel, idKey, "o-larive".getBytes(StandardCharsets.UTF_8), officerUid);
+                    writer, officerLabel, idKey, anchorBytes("o-larive"), officerUid);
 
             // Every edge is written to both GraphAdjacencyDb and GraphInEdgeDb (P1.1's dual-write contract).
             // Written crime -> officer (matching the POLE report's own (c:Crime)-[:INVESTIGATED_BY]->(o:Officer)
@@ -2411,7 +2411,7 @@ class TestGraphTraversalEngine {
             stores.getNodes().insert(
                     writer, hubUid, T1, List.of(hubLabel), Map.of("id", ValString.create("hub")));
             stores.getPropertyIndex().insert(
-                    writer, hubLabel, idKey, "hub".getBytes(StandardCharsets.UTF_8), hubUid);
+                    writer, hubLabel, idKey, anchorBytes("hub"), hubUid);
 
             for (int i = 0; i < count; i++) {
                 stores.getNodes().insert(writer, leafUids[i], T1, List.of(leafLabel),
@@ -2428,6 +2428,15 @@ class TestGraphTraversalEngine {
         return stores.write(writer -> db.put(writer.getWriteTxn(), directBuffer(key), uidBuffer ->
                 UnsignedBytesInstances.ofLength(uidBuffer.remaining())
                         .get(uidBuffer.duplicate())));
+    }
+
+    /**
+     * The bytes a string property's anchor is keyed on. Goes through the encoder rather than taking the raw
+     * UTF-8, because that is what ingest does - and since numbers are keyed by value rather than by text, the
+     * two are no longer the same thing even for a string.
+     */
+    private static byte[] anchorBytes(final String value) {
+        return GraphAnchorEncoding.anchorValueBytes(ValString.create(value));
     }
 
     private static ByteBuffer directBuffer(final String value) {

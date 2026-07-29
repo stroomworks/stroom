@@ -10,8 +10,8 @@
             time, because the time a fact became true is a property of the data and not of when Stroom happened
             to see it.
 
-            Property values are strings unless a property declares a type. See the Property type below for which
-            types are supported and why the set is limited.
+            Property values are strings unless a property declares a type. See the Property type below for the
+            set of types and how each is compared.
 
             This schema is for validation and for documenting the vocabulary to XSLT authors. It is not a runtime
             dependency: stroom.graphdb.impl.pipeline.GraphFilter dispatches on SAX local names rather than
@@ -126,17 +126,21 @@
             <xs:documentation>
                 The property types v1 supports.
 
-                double and dateTime are deliberately absent. The property index is keyed on a value's rendered
-                text and a query seeks it using the query literal's own text, so a type whose canonical rendering
-                differs from the text an author would naturally write breaks that match: 42.0 is stored and
-                rendered as 42, so a query for 42.0 would silently find nothing. Adding those types needs a
-                canonical encoder shared by the ingest, merge and query sides.
+                A dateTime value must be written as yyyy-MM-ddTHH:mm:ss.sssZ, the same form validFrom takes.
+                Other spellings of the same instant are rejected rather than guessed at, because a timestamp
+                that parsed one way on ingest and another way in a query would match nothing and say nothing.
+
+                Numbers - long, double and dateTime - are indexed by value rather than by the text they were
+                written as, so a property ingested as 42 is found by a query for 42.0 and vice versa, and an
+                instant is found however it is spelled in the query.
             </xs:documentation>
         </xs:annotation>
         <xs:restriction base="xs:string">
             <xs:enumeration value="string" />
             <xs:enumeration value="long" />
+            <xs:enumeration value="double" />
             <xs:enumeration value="boolean" />
+            <xs:enumeration value="dateTime" />
         </xs:restriction>
     </xs:simpleType>
 
