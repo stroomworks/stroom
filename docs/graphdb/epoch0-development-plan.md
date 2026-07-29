@@ -801,6 +801,55 @@ The essentials an implementer needs at hand:
 > specific. If `docs/` migrates to another repository, that link needs repointing — the standards themselves
 > are repository-level and should follow the code, not the documentation.
 
+### To expand later — restore Javadoc validation
+
+**Not yet planned in enough detail to execute. This is a placeholder with the findings, not a task.** Recorded
+here rather than in a feature plan because it is repository-level, like `coding-standards.md` itself: it affects
+every module, and neither the Graph DB nor the query optimiser owns it.
+
+**What was lost.** Commit `d8e38498c0` ("Fix javadoc for the full build (Gradle 9)") removed
+`options.addStringOption('Xdoclint:all,-missing', '-html5')` from the `subprojects` javadoc block in
+`build.gradle`, leaving only the `allprojects` setting `Xdoclint:none`. Before that, modular subprojects
+validated Javadoc syntax, HTML, and `@link`/`@param`/`@return` **references** — only "missing comment" warnings
+were suppressed. Javadoc is now unvalidated everywhere.
+
+**The two halves were separable.** The Gradle 9 `ClassCastException` that motivated the commit came from the
+adjacent `options.addStringOption('-module-path', classpath.asPath)` line (module-path is a typed list option, not
+a string one). Removing that line fixes the build; removing `Xdoclint` was not required, and was not called out
+as a behaviour change.
+
+**Why it matters here.** The bullet list above mandates Javadoc in the Preconditions / Postconditions /
+Null-status style, and the section opens by asserting the build enforces these standards. For Javadoc, it no
+longer does. A broken `{@link NoSuchMethod}` or a `@param` naming a deleted parameter builds clean. That is not
+hypothetical: pre-merge review found four such references across this branch — `BuildSideLookup` and
+`LmdbJoinBuildStore` documenting a `get` method that has never existed (five references between them),
+`GraphStoreStatsAdapter` citing `GraphStoreManager#getOrOpen`, and `CypherCompiler` citing
+`GraphSearchProvider#terminalProject`. All are now fixed, but nothing would have caught them and nothing will
+catch the next one.
+
+**Why this is not a one-line revert.** `:stroom-query:stroom-query-planner:javadoc` alone emits **29 warnings**
+today (e.g. `TemporalContext.java:29: warning: reference not found: LogicalPlan`). Under doclint those become
+errors, so restoring it repo-wide fails the build until every module is cleaned. The scale across all modules is
+unmeasured.
+
+**The decision to settle before planning this.** Two shapes, and it should be a deliberate choice rather than
+whichever is discovered mid-task:
+
+- **Repo-wide at once** — one cleanup sweep, then `Xdoclint:all,-missing` back in `allprojects`, replacing
+  `Xdoclint:none`. Highest assurance, largest and least divisible piece of work, and it blocks on modules this
+  programme never touched.
+- **Per-module ratchet** — enable it module by module as each is cleaned, starting with the modules this branch
+  added (`stroom-query-planner`, `stroom-query-grammar`, `stroom-graphdb-impl`), where the Javadoc contracts are
+  newest and the density of `{@link}`s highest. Lands value immediately and never blocks on unrelated code, at
+  the cost of a per-module opt-in list to maintain until it is universal.
+
+A narrower third option, if the cleanup cost proves prohibitive: enable only
+`Xdoclint:reference,syntax,html` (dropping `accessibility`), which catches the class of defect actually found
+above while ignoring the presentational warnings that likely make up most of the 29.
+
+**Do not fold this into an unrelated commit.** Whichever shape is chosen, the cleanup and the build-config change
+should land together and alone, so a bisect over a Javadoc-caused build failure lands somewhere informative.
+
 ## Decisions taken during implementation
 
 Two questions the plan left open were settled deliberately rather than by default, and both are recorded here
