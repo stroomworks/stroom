@@ -988,6 +988,71 @@ class TestGraphFilter {
         }
     }
 
+    // ------------------------------------------------------------------------------------------------------
+    // Phase 5.4: a failed stream must not ship its partial fragment. GraphFilter commits each record into the
+    // fragment as it goes, and endProcessing runs from the stream task's finally whether the stream failed or
+    // not - so these drive that exact shape (the plain harness below cannot: ProcessorUtil has no finally, so
+    // a strict throw used to skip endProcessing entirely and the shipping path was never exercised).
+    // ------------------------------------------------------------------------------------------------------
+
+    private static final String GOOD_RECORD_THEN_BAD_RECORD_XML = """
+            <graph xmlns="graph-mutation:1" version="1.0">
+                <node id="good" validFrom="2026-01-01T00:00:00.000Z">
+                    <label>Thing</label>
+                    <property name="id">good</property>
+                </node>
+                <node id="bad" validFrom="not-a-timestamp">
+                    <label>Thing</label>
+                </node>
+            </graph>
+            """;
+
+    /**
+     * A strict-mode failure part-way through a stream ships <b>no</b> fragment. By the time record two fails,
+     * record one is already committed into the fragment - and {@code endProcessing} still runs from the task's
+     * {@code finally}. Its close used to zip and send that prefix, inverting strict mode's contract ("rather
+     * have no data than quietly incomplete data"); worse, merge is a union of versions, so the prefix would
+     * have survived the operator's corrected reprocess forever.
+     */
+    @Test
+    void strict_failurePartWayThroughAStream_shipsNoFragment_andLeavesNoDirectoryBehind(
+            @TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("failship1"), DOC)) {
+            final List<String> capturedErrors = new ArrayList<>();
+            final ExecutorStyleIngestOutcome outcome =
+                    ingestAsTheExecutorDoes(stores, GOOD_RECORD_THEN_BAD_RECORD_XML, capturedErrors, true);
+
+            assertThat(outcome.streamFailed()).as("the strict throw reached the executor").isTrue();
+            assertThat(capturedErrors).anyMatch(message -> message.contains("Unable to parse validFrom"));
+            assertThat(outcome.shippedFragmentCount()).as("a failed stream must ship nothing").isZero();
+            assertThat(outcome.leftoverWriterDirs())
+                    .as("the discarded fragment's directory must be deleted").isEmpty();
+            // The already-committed prefix (record one) must not have reached the authoritative store.
+            assertThat(query(stores, "MATCH (g:Thing {id: 'good'}) RETURN g.id")).isEmpty();
+        }
+    }
+
+    /**
+     * The boundary the discard path must not cross: lenient mode's record-level errors are not stream failure,
+     * so the same input still ships one fragment, minus the skipped record - the documented and intended
+     * behaviour ("one bad record cannot cost a whole stream").
+     */
+    @Test
+    void lenient_runWithBadRecords_stillShipsItsFragment(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("failship2"), DOC)) {
+            final List<String> capturedErrors = new ArrayList<>();
+            final ExecutorStyleIngestOutcome outcome =
+                    ingestAsTheExecutorDoes(stores, GOOD_RECORD_THEN_BAD_RECORD_XML, capturedErrors, false);
+
+            assertThat(outcome.streamFailed()).isFalse();
+            assertThat(capturedErrors).anyMatch(message -> message.contains("Unable to parse validFrom"));
+            assertThat(outcome.shippedFragmentCount()).as("lenient mode still ships its fragment").isEqualTo(1);
+            assertThat(outcome.leftoverWriterDirs()).isEmpty();
+            assertThat(query(stores, "MATCH (g:Thing {id: 'good'}) RETURN g.id"))
+                    .extracting(row -> row[0].toString()).containsExactly("good");
+        }
+    }
+
     private static void ingestStrict(final GraphStores stores,
                                      final String xml,
                                      final List<String> capturedErrors) {
@@ -1033,7 +1098,11 @@ class TestGraphFilter {
                                final AtomicReference<GraphStores> currentStores,
                                final List<String> capturedErrors,
                                final boolean strict) {
-        ingest(stores, xml, currentStores, capturedErrors, strict, new GraphDbDocCache() {
+        ingest(stores, xml, currentStores, capturedErrors, strict, stubDocCache());
+    }
+
+    private static GraphDbDocCache stubDocCache() {
+        return new GraphDbDocCache() {
             @Override
             public GraphDbDoc get(final String name) {
                 return DOC;
@@ -1048,7 +1117,7 @@ class TestGraphFilter {
             public void remove(final String name) {
                 // Not needed by this test harness.
             }
-        });
+        };
     }
 
     private static void ingest(final GraphStores stores, final String xml,
@@ -1099,6 +1168,89 @@ class TestGraphFilter {
                 new LocationFactoryProxy());
 
         mergeShippedFragments(shippedFragments, fragmentRoot, currentStores.get());
+    }
+
+    /**
+     * Drives ingest the way {@code AbstractProcessorTaskExecutor} does when the pipeline throws: the exception
+     * from processing is handled (a {@link LoggedException} is already reported, so the executor swallows it)
+     * and {@code endProcessing} <b>still runs</b>, from a {@code finally}, with no exception passed to it. The
+     * plain {@link #ingest} harness cannot reach that path - {@code ProcessorUtil} has no {@code finally} of
+     * its own, so a strict throw skips {@code endProcessing} entirely - and that path is exactly where a failed
+     * stream used to ship its partial fragment (item 5.4).
+     *
+     * @return what the run shipped, whether it failed, and anything left in the writer directory.
+     */
+    private static ExecutorStyleIngestOutcome ingestAsTheExecutorDoes(final GraphStores stores,
+                                                                      final String xml,
+                                                                      final List<String> capturedErrors,
+                                                                      final boolean strict) {
+        final List<Path> shippedFragments = new ArrayList<>();
+        final Path fragmentRoot;
+        try {
+            fragmentRoot = Files.createTempDirectory("graph-filter-fragments");
+        } catch (final IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        final GraphFileTransferClient fileTransferClient = (fileDescriptor, path, synchroniseMerge) -> {
+            try {
+                final Path kept = fragmentRoot.resolve("shipped-" + shippedFragments.size() + ".zip");
+                Files.copy(path, kept);
+                shippedFragments.add(kept);
+            } catch (final IOException e) {
+                throw new UncheckedIOException(e);
+            }
+        };
+        final GraphPaths graphPaths = new GraphPaths(fragmentRoot.resolve("paths"));
+        final GraphShardWriters graphShardWriters =
+                new GraphShardWriters(graphPaths, fileTransferClient, GraphDbConfig::new);
+        final MetaHolder metaHolder = new MetaHolder();
+        metaHolder.setMeta(Meta.builder().id(1L).build());
+
+        final GraphFilter graphFilter = new GraphFilter(
+                new ErrorReceiverProxy((severity, location, elementId, message, errorType, e) ->
+                        capturedErrors.add(message)),
+                new LocationFactoryProxy(),
+                stubDocCache(),
+                graphShardWriters,
+                metaHolder);
+        graphFilter.setGraphDb(DOC_REF);
+        graphFilter.setStrict(strict);
+
+        final ByteArrayInputStream input = new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8));
+        boolean streamFailed = false;
+        try {
+            ProcessorUtil.processXml(input, new ErrorReceiverProxy(new FatalErrorReceiver()), graphFilter,
+                    new LocationFactoryProxy());
+        } catch (final LoggedException e) {
+            // AbstractProcessorTaskExecutor.handleProcessingException: already logged, so ignored...
+            streamFailed = true;
+            // ...and then its finally still ends processing, exception or not.
+            graphFilter.endProcessing();
+        }
+        mergeShippedFragments(shippedFragments, fragmentRoot, stores);
+
+        final List<Path> leftoverWriterDirs = new ArrayList<>();
+        if (Files.isDirectory(graphPaths.getWriterDir())) {
+            try (final Stream<Path> leftovers = Files.list(graphPaths.getWriterDir())) {
+                leftoverWriterDirs.addAll(leftovers.toList());
+            } catch (final IOException e) {
+                throw new UncheckedIOException(e);
+            }
+        }
+        return new ExecutorStyleIngestOutcome(streamFailed, shippedFragments.size(), leftoverWriterDirs);
+    }
+
+    /**
+     * What one {@link #ingestAsTheExecutorDoes} run left behind.
+     *
+     * @param streamFailed          whether the pipeline threw (and the executor-style harness swallowed it).
+     * @param shippedFragmentCount  how many fragment zips reached the transfer client.
+     * @param leftoverWriterDirs    whatever the run left in the shard writers' directory; must be empty.
+     */
+    private record ExecutorStyleIngestOutcome(boolean streamFailed,
+                                              int shippedFragmentCount,
+                                              List<Path> leftoverWriterDirs) {
+
     }
 
     /**

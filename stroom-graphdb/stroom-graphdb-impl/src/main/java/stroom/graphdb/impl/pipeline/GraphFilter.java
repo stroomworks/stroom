@@ -27,6 +27,7 @@ import stroom.graphdb.shared.GraphDbDoc;
 import stroom.lmdb.serde.UnsignedBytesInstances;
 import stroom.pipeline.LocationFactoryProxy;
 import stroom.pipeline.errorhandler.ErrorReceiverProxy;
+import stroom.pipeline.errorhandler.ErrorStatistics;
 import stroom.pipeline.errorhandler.LoggedException;
 import stroom.pipeline.factory.ConfigurableElement;
 import stroom.pipeline.factory.PipelineProperty;
@@ -80,6 +81,15 @@ import java.util.Set;
  * merged. Writing directly into the live store, as this filter originally did, made the graph on each node
  * consist only of the streams that node happened to process, so every query silently returned a partial answer;
  * routing through a fragment is what removes that.</p>
+ *
+ * <p>A stream that fails fatally ships nothing. {@link #endProcessing()} runs from the stream task's
+ * {@code finally} whether the stream succeeded or not (see {@code AbstractProcessorTaskExecutor}), and with no
+ * exception in hand - so before closing the fragment it checks {@link #streamFailedFatally()} and, if so,
+ * {@link GraphShardWriter#markFailed() marks it failed} so the close discards it instead of sending it. Without
+ * this, a strict-mode failure on record N shipped records 1..N-1 anyway - and because merge is a union of
+ * versions, mutations from the bad run would survive the operator's corrected reprocess forever. Record-level
+ * errors in lenient mode are not fatal: that fragment still ships, minus the skipped records, exactly as
+ * documented.</p>
  *
  * <p>Holds one {@link LmdbWriter} open across the whole stream (obtained in {@link #startProcessing()}, closed in
  * {@link #endProcessing()}), but - unlike {@link LmdbWriter}'s other callers - does <b>not</b> rely on its
@@ -173,6 +183,13 @@ public class GraphFilter extends AbstractXMLFilter {
     private DocRef graphDbRef;
     private boolean strict;
     private long ingestErrors;
+    /**
+     * Whether this filter itself raised (or observed) a stream-fatal failure - the strict-mode throw from
+     * {@link #error}, {@link #perRecord}'s strict rethrow, or a JVM {@link Error} mid-record. Kept as our own
+     * flag because {@link #endProcessing()} is reached from a {@code finally} with no exception in hand, and
+     * the error receiver is not guaranteed to expose statistics; see {@link #streamFailedFatally()}.
+     */
+    private boolean fatalErrors;
     private GraphShardWriter shardWriter;
     private GraphStores stores;
     private LmdbWriter writer;
@@ -241,6 +258,7 @@ public class GraphFilter extends AbstractXMLFilter {
             // Write into a fragment of this stream's own rather than into the live store, so the mutations can be
             // shipped to every node that holds graph data and merged there.
             ingestErrors = 0;
+            fatalErrors = false;
             shardWriter = graphShardWriters.createWriter(metaHolder.getMeta(), doc);
             stores = shardWriter.getStores();
             writer = shardWriter.getWriter();
@@ -263,12 +281,44 @@ public class GraphFilter extends AbstractXMLFilter {
                         null);
             }
             if (shardWriter != null) {
-                // Closes the writer and environment, then sends the fragment for merging.
+                if (streamFailedFatally()) {
+                    // A failed stream must not ship its partial fragment: the stream is reported failed and
+                    // will be reprocessed whole, and merge is a union of versions, so a shipped prefix from
+                    // the bad run would survive the corrected replay forever.
+                    shardWriter.markFailed();
+                }
+                // Closes the writer and environment, then sends the fragment for merging - or, for a failed
+                // stream, discards it.
                 shardWriter.close();
             }
         } finally {
             super.endProcessing();
         }
+    }
+
+    /**
+     * Whether this stream failed fatally, as opposed to merely losing records in lenient mode - the distinction
+     * {@link #endProcessing()} needs, since it runs from the stream task's {@code finally} with no exception
+     * passed to it whether the stream succeeded or not.
+     *
+     * <p>Two signals, belt and braces. {@link #fatalErrors} covers every fatal failure this filter itself raised
+     * or observed (the strict-mode throws, a JVM {@link Error} mid-record) and works under any error receiver.
+     * The error receiver's statistics cover fatal failures this filter never saw - an upstream element throwing
+     * mid-parse simply stops the SAX events, and the exception is caught by the task executor, which logs it at
+     * {@link Severity#FATAL_ERROR} <i>before</i> its {@code finally} reaches {@code endProcessing} (as does
+     * {@link #error} before its own strict throw). {@code RecordErrorReceiver}'s per-part {@code reset()} clears
+     * record- and stream-scoped state but not totals, so the total is still visible here. Lenient-mode record
+     * errors are logged at {@link Severity#ERROR}, so they trip neither signal and the fragment still ships.</p>
+     *
+     * <p><b>Postconditions:</b> returns {@code true} if a fatal error was raised by this filter or reported to
+     * an {@link ErrorStatistics}-capable error receiver; {@code false} otherwise. Never throws.</p>
+     */
+    private boolean streamFailedFatally() {
+        if (fatalErrors) {
+            return true;
+        }
+        return errorReceiverProxy.getErrorReceiver() instanceof final ErrorStatistics errorStatistics
+               && errorStatistics.getTotal(Severity.FATAL_ERROR) > 0;
     }
 
     @Override
@@ -386,7 +436,9 @@ public class GraphFilter extends AbstractXMLFilter {
      * failed record is logged and skipped rather than aborting the whole stream, exactly as
      * {@code stroom.planb.impl.pipeline.PlanBFilter.catchLmdbError} does for its own store writes. The handlers'
      * own up-front validation ({@code "<node> requires ..."}) returns normally without writing anything and never
-     * reaches the catch; the subsequent no-op {@link LmdbWriter#commit()} is harmless in that case.
+     * reaches the catch; the subsequent no-op {@link LmdbWriter#commit()} is harmless in that case. A JVM
+     * {@link Error} is never a record-level failure in either mode: the record is rolled back, the stream's
+     * fragment is marked so it can never ship, and the error is rethrown.
      */
     private void perRecord(final String element, final Runnable handler) {
         try {
@@ -395,7 +447,8 @@ public class GraphFilter extends AbstractXMLFilter {
             shardWriter.markDirty();
         } catch (final LoggedException e) {
             // Strict mode: a handler's own validation has already reported this at FATAL_ERROR. Roll back the
-            // record's partial writes, then let it fail the stream.
+            // record's partial writes, then let it fail the stream - whose fragment must now never ship.
+            fatalErrors = true;
             writer.abort();
             throw e;
         } catch (final RuntimeException e) {
@@ -403,11 +456,27 @@ public class GraphFilter extends AbstractXMLFilter {
             final String message =
                     "Failed to write <" + element + ">: " + e.getClass().getSimpleName() + " - " + e.getMessage();
             if (strict) {
+                fatalErrors = true;
                 log(Severity.FATAL_ERROR, message, e);
                 throw LoggedException.create(message);
             }
             log(Severity.ERROR, message, e);
             ingestErrors++;
+        } catch (final Error e) {
+            // Deliberately narrower than the RuntimeException catch above: an OOM or StackOverflow mid-handler
+            // is never a record-level, log-and-carry-on failure in either mode, so it always propagates. But
+            // without this catch it would bypass the abort - leaving this record's partial writes staged in the
+            // long-lived transaction for the writer's own close() to commit - and bypass the failed flag, while
+            // still reaching endProcessing (the task executor rethrows JVM errors only after its finally). Roll
+            // the record back, make sure the fragment can never ship, and rethrow.
+            fatalErrors = true;
+            try {
+                writer.abort();
+            } catch (final RuntimeException abortFailure) {
+                // Aborting is best-effort here - nothing may mask the original JVM error.
+                e.addSuppressed(abortFailure);
+            }
+            throw e;
         }
     }
 
@@ -679,6 +748,8 @@ public class GraphFilter extends AbstractXMLFilter {
      */
     private void error(final String message) {
         if (strict) {
+            // The stream is about to fail: its fragment must be discarded, not shipped, by endProcessing.
+            fatalErrors = true;
             log(Severity.FATAL_ERROR, message, null);
             throw LoggedException.create(message);
         }

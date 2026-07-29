@@ -31,14 +31,18 @@ import stroom.test.common.MockMetrics;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executor;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -103,6 +107,31 @@ class TestGraphMergePipeline {
     }
 
     /**
+     * Phase 5.4: a stream that failed after some records were durably committed into its fragment ships nothing
+     * on close, and leaves no directory behind - the fragment is discarded so the whole stream can be
+     * reprocessed from nothing. This is {@link GraphShardWriter}'s half of the contract;
+     * {@code TestGraphFilter} proves the filter marks the writer failed at the right times.
+     */
+    @Test
+    void failedStream_shipsNoFragment_andLeavesNoDirectoryBehind(@TempDir final Path root) {
+        final Fixture fixture = new Fixture(root);
+        try {
+            final GraphShardWriter writer = fixture.shardWriters.createWriter(meta(1L), DOC);
+            // A record is written, committed and marked dirty first: the discard must cover a fragment that
+            // already holds durable content, not just an empty one.
+            Fixture.writeNode(writer, "alice");
+            writer.markFailed();
+            writer.close();
+
+            assertThat(fixture.shipped).as("a failed stream must ship nothing").isEmpty();
+            assertThat(listEntries(fixture.graphPaths.getWriterDir()))
+                    .as("the discarded fragment's directory must be deleted").isEmpty();
+        } finally {
+            fixture.close();
+        }
+    }
+
+    /**
      * A fragment whose graph has been deleted is discarded. Retaining it would leave the merge queue permanently
      * blocked behind data that can never be merged.
      */
@@ -132,6 +161,21 @@ class TestGraphMergePipeline {
 
     private static Meta meta(final long id) {
         return Meta.builder().id(id).build();
+    }
+
+    /**
+     * Lists a directory's entries, or returns nothing if it does not exist - the shard writer deletes its own
+     * fragment directory, not the writer root it sits in, so either state counts as "nothing left behind".
+     */
+    private static List<Path> listEntries(final Path dir) {
+        if (!Files.isDirectory(dir)) {
+            return List.of();
+        }
+        try (final Stream<Path> entries = Files.list(dir)) {
+            return entries.toList();
+        } catch (final IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 
     /**
@@ -193,18 +237,26 @@ class TestGraphMergePipeline {
          */
         private void writeFragment(final long streamId, final String nodeId) {
             try (final GraphShardWriter writer = shardWriters.createWriter(meta(streamId), DOC)) {
-                final GraphStores stores = writer.getStores();
-                final long nodeUid = stores.getNodeUids().put(
-                        writer.getWriter().getWriteTxn(),
-                        directBuffer(nodeId),
-                        uidBuffer -> UnsignedBytesInstances
-                                .ofLength(GraphStores.NODE_UID_WIDTH)
-                                .get(uidBuffer.duplicate()));
-                stores.getNodes().insert(
-                        writer.getWriter(), nodeUid, Instant.parse("2026-01-01T00:00:00Z"), List.of(), Map.of());
-                writer.getWriter().commit();
-                writer.markDirty();
+                writeNode(writer, nodeId);
             }
+        }
+
+        /**
+         * Writes and commits one node into {@code writer}'s fragment and marks it dirty, without closing it -
+         * so a test can decide what happens to the fragment afterwards.
+         */
+        private static void writeNode(final GraphShardWriter writer, final String nodeId) {
+            final GraphStores stores = writer.getStores();
+            final long nodeUid = stores.getNodeUids().put(
+                    writer.getWriter().getWriteTxn(),
+                    directBuffer(nodeId),
+                    uidBuffer -> UnsignedBytesInstances
+                            .ofLength(GraphStores.NODE_UID_WIDTH)
+                            .get(uidBuffer.duplicate()));
+            stores.getNodes().insert(
+                    writer.getWriter(), nodeUid, Instant.parse("2026-01-01T00:00:00Z"), List.of(), Map.of());
+            writer.getWriter().commit();
+            writer.markDirty();
         }
 
         private void close() {

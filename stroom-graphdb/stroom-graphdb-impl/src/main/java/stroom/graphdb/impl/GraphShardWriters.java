@@ -46,7 +46,12 @@ import java.util.UUID;
  * <p>This indirection is the whole point of the cluster work. A fragment is a complete, self-contained graph store
  * holding only one stream's mutations; because it is separate from the authoritative store it can be shipped to
  * whichever nodes hold graph data and merged there, so no node's answer depends on which node happened to run the
- * pipeline. It also means a failed or abandoned stream leaves nothing behind in the real store.</p>
+ * pipeline. It also means a failed or abandoned stream leaves nothing behind in the real store: an abandoned
+ * fragment (a crash mid-stream) is wiped from the writer directory at startup and was never sent, and a stream
+ * that fails is {@link GraphShardWriter#markFailed() marked failed} so {@link GraphShardWriter#close()} discards
+ * its fragment instead of sending it. Both leave the stream to be reprocessed whole - which is only safe
+ * <i>because</i> nothing partial was merged: idempotent merge heals an identical replay, not a corrected one, so
+ * a shipped prefix from a failed run would stay in the graph forever.</p>
  *
  * <p>Mirrors {@code stroom.planb.impl.dao.ShardWriters}, with one simplification: a graph pipeline names its
  * target graph in a pipeline property rather than per record, so a writer serves exactly one {@link GraphDbDoc}
@@ -82,7 +87,8 @@ public class GraphShardWriters {
      *
      * <p><b>Preconditions:</b> neither parameter is null.
      * <b>Postconditions:</b> an empty fragment store has been provisioned on disk and is open for writing. The
-     * caller must close the returned writer, which sends the fragment and cleans up.
+     * caller must close the returned writer, which sends the fragment - unless the stream has been
+     * {@link GraphShardWriter#markFailed() marked failed}, in which case it is discarded - and cleans up.
      * <b>Null status:</b> no parameter, nor the return value, is nullable.
      *
      * @param meta the stream being processed.
@@ -120,6 +126,7 @@ public class GraphShardWriters {
         private final GraphStores stores;
         private final LmdbWriter writer;
         private boolean dirty;
+        private boolean failed;
 
         GraphShardWriter(final GraphFileTransferClient fileTransferClient,
                          final Path dir,
@@ -162,7 +169,26 @@ public class GraphShardWriters {
         }
 
         /**
-         * Closes the fragment and, if anything was written to it, sends it for merging.
+         * Records that the stream this fragment belongs to has failed fatally, so {@link #close()} must discard
+         * the fragment rather than send it.
+         *
+         * <p>Without this, {@code close()} - which runs from the stream task's {@code finally}, failure or not -
+         * shipped whatever prefix of the stream had already been committed before the failure. A prefix from a
+         * failed run is worse than nothing: the stream is reported failed and will be reprocessed, but merge is a
+         * union of versions, so mutations that existed only in the bad run would survive the corrected replay
+         * forever.</p>
+         *
+         * <p><b>Postconditions:</b> a subsequent {@link #close()} releases the fragment's resources and deletes
+         * its directory without zipping or sending anything, regardless of {@link #markDirty()}.</p>
+         */
+        public void markFailed() {
+            failed = true;
+        }
+
+        /**
+         * Closes the fragment and, if anything was written to it and the stream did not
+         * {@link #markFailed() fail}, sends it for merging. A failed stream's fragment is discarded - resources
+         * released, directory deleted, nothing sent - so reprocessing the stream starts from nothing.
          *
          * <p><b>Postconditions:</b> the fragment's environment is closed and its working directory and zip are
          * deleted, whether or not sending succeeded. A send failure propagates so the stream task fails rather
@@ -178,12 +204,19 @@ public class GraphShardWriters {
                 // The environment must be closed even if closing the writer fails, or a failed stream leaks an
                 // LMDB environment per attempt.
                 try {
+                    if (failed) {
+                        // LmdbWriter.close() commits whatever is staged, and a fatal error that bypassed the
+                        // per-record abort (an OOM or StackOverflow mid-handler) can leave a record's partial
+                        // writes staged. They would only be committed into a fragment that is about to be
+                        // deleted, but aborting first keeps the failed path from doing any further store work.
+                        writer.abort();
+                    }
                     writer.close();
                 } finally {
                     stores.close();
                 }
 
-                if (dirty) {
+                if (dirty && !failed) {
                     LOGGER.debug(() -> LogUtil.message("Graph DB zipping data for {}", meta));
                     ZipUtil.zip(zipFile, dir);
                     final String fileHash = FileHashUtil.hash(zipFile);
