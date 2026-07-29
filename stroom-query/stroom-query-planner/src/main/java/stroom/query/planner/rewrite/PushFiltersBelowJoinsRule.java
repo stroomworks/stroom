@@ -79,7 +79,7 @@ public final class PushFiltersBelowJoinsRule implements RewriteRule {
             case final Window w -> new Window(
                     apply(w.input()), w.field(), w.windowSize(), w.advanceSize(), w.usingFunction(), w.position());
             case final Sort s -> new Sort(apply(s.input()), s.keys(), s.position());
-            case final Limit l -> new Limit(apply(l.input()), l.values(), l.position());
+            case final Limit l -> new Limit(apply(l.input()), l.offset(), l.values(), l.position());
             // Graph nodes (Task PoC.2): this rule only ever pushes a Filter directly above a Join; a graph plan
             // has no Join to push onto, so leave these unchanged, recursing through the wrappers.
             case final NodeScan ns -> ns;

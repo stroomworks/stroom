@@ -26,7 +26,7 @@ time with a clear message, never silently misinterpreted.
 [ from "GraphName" ]
 MATCH pattern [ temporal-clause ] [ WHERE predicate ]
 [ OPTIONAL MATCH pattern | WITH items [ WHERE predicate ] ]
-RETURN [ DISTINCT ] items [ ORDER BY … ] [ LIMIT n ]
+RETURN [ DISTINCT ] items [ ORDER BY … ] [ SKIP n ] [ LIMIT n ]
 ```
 
 Or, for a graph-shaped result:
@@ -260,16 +260,32 @@ function calls are permitted.
 > **Returning a whole node is not supported.** `RETURN c` or `RETURN *` is rejected — return the properties
 > you want, or use `RETURN GRAPH`.
 
-`ORDER BY` takes a property access or an alias. Note that when a query aggregates, you must order by the
-**alias**, not by repeating the aggregate call:
+`ORDER BY` takes a property access, an alias, or an aggregate the `RETURN` produces:
 
 ```cypher
-RETURN c.type AS crime_type, count(c) AS total ORDER BY total DESC      -- works
-RETURN c.type AS crime_type, count(c) AS total ORDER BY count(c) DESC   -- rejected
+MATCH (c:Crime) RETURN c.type AS crime_type, count(c) AS total ORDER BY total DESC
+
+MATCH (c:Crime) RETURN c.type AS crime_type, count(c) AS total ORDER BY count(c) DESC
 ```
 
-`LIMIT` follows the return items, as in standard Cypher. (This differs from StroomQL, where `limit`
-precedes `select`.) **`SKIP` is not supported at all.**
+`SKIP` and `LIMIT` follow the return items, as in standard Cypher, and either may be used without the other.
+(This differs from StroomQL, where `limit` precedes `select` and there is no `SKIP`.)
+
+```cypher
+MATCH (c:Crime) RETURN c.type ORDER BY c.type LIMIT 20
+
+MATCH (c:Crime) RETURN c.type ORDER BY c.type SKIP 20 LIMIT 20
+
+MATCH (c:Crime) RETURN c.type ORDER BY c.type SKIP 20
+```
+
+> **Page with an `ORDER BY`, always.** `SKIP` and `LIMIT` select a window of the result, and without an
+> `ORDER BY` the result has no defined order — so which rows land in a given window is arbitrary and two
+> requests for "page 2" need not agree. Nothing reports this: the rows come back looking fine. Order by
+> something unique, or accept that the pages are a sample rather than a partition.
+>
+> Note also that paging **re-runs the whole query**. `SKIP 10000 LIMIT 10` traverses ten thousand and ten rows
+> to return ten, so deep paging costs more the deeper it goes — there is no cursor.
 
 ### Aggregation
 
@@ -419,7 +435,6 @@ them — those are marked *(runtime)* below.
 
 | You wrote | Message | Instead |
 |---|---|---|
-| `SKIP n` | `not in PoC subset: SKIP is not yet compiled (the core's Limit node has no offset slot)` | Use `LIMIT` only |
 | `RETURN *` or `RETURN c` | *(runtime)* `not yet supported: RETURN item names bare pattern variable …` | Name the properties, or use `RETURN GRAPH` |
 | `ORDER BY` an aggregate the `RETURN` does not produce | `not in PoC subset: ORDER BY '…' is not a returned column - an aggregate in ORDER BY must be one the RETURN also produces` | `ORDER BY` an aggregate you returned, or its alias |
 | `ORDER BY` anything else that is not a column — e.g. `ORDER BY c.value * 2` | `not in PoC subset: an ORDER BY item must be a property access, variable reference, or an aggregate the RETURN also produces` | Return the expression with an `AS` alias, then order by that |
@@ -432,7 +447,7 @@ them — those are marked *(runtime)* below.
 | `SKIP`/`LIMIT`/`ORDER BY` on a `WITH` | `not supported in this version: ORDER BY / SKIP / LIMIT on a WITH` | Move to the final `RETURN` |
 | `before()`/`after()`/`changeKind` in a `WHERE` | `not supported in this version: … in a DIFF WHERE clause (filtering on it is a later phase); it is supported in RETURN` | Filter downstream |
 
-The compiler contains **66** such rejection messages and the engine a further **five**; the table lists those
+The compiler contains **65** such rejection messages and the engine a further **five**; the table lists those
 you are most likely to meet. A compiler message begins `not in PoC subset:` or
 `not supported in this version:`; an engine one begins `not yet supported:`. All name the construct, and
 usually the alternative.

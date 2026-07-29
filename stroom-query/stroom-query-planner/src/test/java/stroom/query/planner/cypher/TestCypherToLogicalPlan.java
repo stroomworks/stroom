@@ -1160,12 +1160,68 @@ class TestCypherToLogicalPlan {
     }
 
     @Test
-    void skipClause_throwsNotInPoCSubset() {
-        final AstCypherQuery ast = CypherQueryParser.parse("MATCH (a:Account) RETURN a.id SKIP 5");
+    void skipWithoutLimit_compilesToAnOffsetWithNoMaximum() {
+        // Legal Cypher: the window runs from the offset to the end of the result. So the Limit node carries an
+        // offset and no values, which is why its "values must not be empty" invariant had to be relaxed to "must
+        // bound something".
+        final CompiledCypherPlan compiled = compile("MATCH (a:Account) RETURN a.id SKIP 5");
 
-        assertThatThrownBy(() -> new CypherToLogicalPlan().compile(ast))
-                .isInstanceOf(CypherCompileException.class)
-                .hasMessageContaining("SKIP");
+        assertThat(compiled.plan()).isInstanceOf(Limit.class);
+        final Limit limit = (Limit) compiled.plan();
+        assertThat(limit.offset()).isEqualTo(5L);
+        assertThat(limit.values()).isEmpty();
+        assertThat(limit.input()).isInstanceOf(Project.class);
+    }
+
+    @Test
+    void skipWithLimit_compilesToOneNodeCarryingBothHalvesOfTheWindow() {
+        final CompiledCypherPlan compiled = compile("MATCH (a:Account) RETURN a.id SKIP 5 LIMIT 10");
+
+        final Limit limit = (Limit) compiled.plan();
+        assertThat(limit.offset()).isEqualTo(5L);
+        assertThat(limit.values()).containsExactly(10L);
+    }
+
+    @Test
+    void limitWithoutSkip_compilesToAZeroOffset() {
+        // The overwhelmingly common shape, and the one that must be unchanged by adding SKIP.
+        final Limit limit = (Limit) compile("MATCH (a:Account) RETURN a.id LIMIT 10").plan();
+
+        assertThat(limit.offset()).isZero();
+        assertThat(limit.values()).containsExactly(10L);
+    }
+
+    @Test
+    void skipZero_compilesToAZeroOffset() {
+        // SKIP 0 is legal and means "no skip". It must not be mistaken for "no LIMIT either" - the node still
+        // needs its limit value, and a Limit bounding neither is rejected.
+        final Limit limit = (Limit) compile("MATCH (a:Account) RETURN a.id SKIP 0 LIMIT 10").plan();
+
+        assertThat(limit.offset()).isZero();
+        assertThat(limit.values()).containsExactly(10L);
+    }
+
+    @Test
+    void skipCombinedWithOrderBy_wrapsTheSortWithTheWindow() {
+        // ORDER BY ... SKIP ... LIMIT is the paging shape that actually matters: the window has to be applied to
+        // the sorted rows, so Limit must sit outside Sort.
+        final CompiledCypherPlan compiled = compile(
+                "MATCH (a:Account) RETURN a.id ORDER BY a.id DESC SKIP 2 LIMIT 3");
+
+        assertThat(compiled.plan()).isInstanceOf(Limit.class);
+        final Limit limit = (Limit) compiled.plan();
+        assertThat(limit.offset()).isEqualTo(2L);
+        assertThat(limit.values()).containsExactly(3L);
+        assertThat(limit.input()).isInstanceOf(Sort.class);
+        assertThat(((Sort) limit.input()).input()).isInstanceOf(Project.class);
+    }
+
+    @Test
+    void skipOnAReturnGraph_isRejectedByTheAst() {
+        // RETURN GRAPH takes no SKIP: AstReturnClause forbids it, so this never reaches the compiler. Asserted
+        // because the graph path reads a limit off the same node and would otherwise silently ignore an offset.
+        assertThatThrownBy(() -> CypherQueryParser.parse("MATCH (n) RETURN GRAPH SKIP 5"))
+                .isInstanceOf(RuntimeException.class);
     }
 
     @Test

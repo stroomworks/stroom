@@ -42,6 +42,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -1118,6 +1119,197 @@ class TestGraphTraversalEngine {
                     .containsExactlyElementsOf(expectedTop5ByRankDesc);
             assertThat(bounded).extracting(row -> row[0].toString())
                     .containsExactlyElementsOf(expectedTop5ByRankDesc);
+        }
+    }
+
+    // ------------------------------------------------------------------------------------------------------
+    // SKIP: the row window's lower bound
+    // ------------------------------------------------------------------------------------------------------
+
+    @Test
+    void orderByWithSkipAndLimit_returnsThatPageInOrder(@TempDir final Path root) {
+        // The shape SKIP exists for. 20 ranked leaves, so the page is unambiguous and a wrong offset cannot
+        // coincidentally produce the right answer.
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph-skip-page"), DOC)) {
+            seedHubWithRankedLeaves(stores, 20);
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory());
+
+            assertThat(execute(stores, engine, compile(
+                    "MATCH (h:Hub {id: 'hub'})-[:LINKS]->(l:Leaf) RETURN l.id ORDER BY l.rank SKIP 5 LIMIT 3")))
+                    .extracting(row -> row[0].toString())
+                    .containsExactly("leaf-05", "leaf-06", "leaf-07");
+        }
+    }
+
+    @Test
+    void orderByWithSkipAndLimit_pagesConcatenateToTheWholeOrderedResult(@TempDir final Path root) {
+        // The property that makes paging trustworthy, and the one a wrong offset breaks in a way a single-page
+        // assertion can miss: consecutive pages must tile the result exactly - no gap, no repeat.
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph-skip-tiles"), DOC)) {
+            seedHubWithRankedLeaves(stores, 20);
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory());
+
+            final List<String> paged = new ArrayList<>();
+            for (int offset = 0; offset < 20; offset += 6) {
+                execute(stores, engine, compile(
+                        "MATCH (h:Hub {id: 'hub'})-[:LINKS]->(l:Leaf) RETURN l.id ORDER BY l.rank "
+                        + "SKIP " + offset + " LIMIT 6"))
+                        .forEach(row -> paged.add(row[0].toString()));
+            }
+
+            final List<String> whole = execute(stores, engine, compile(
+                    "MATCH (h:Hub {id: 'hub'})-[:LINKS]->(l:Leaf) RETURN l.id ORDER BY l.rank"))
+                    .stream().map(row -> row[0].toString()).toList();
+            assertThat(paged).containsExactlyElementsOf(whole);
+        }
+    }
+
+    @Test
+    void skipWithoutLimit_returnsTheRemainderOfTheResult(@TempDir final Path root) {
+        // SKIP with no LIMIT is legal Cypher and compiles to a Limit node carrying no maximum, so this is also the
+        // execution-side proof that an empty values list means "to the end" rather than "no rows".
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph-skip-only"), DOC)) {
+            seedHubWithRankedLeaves(stores, 5);
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory());
+
+            assertThat(execute(stores, engine, compile(
+                    "MATCH (h:Hub {id: 'hub'})-[:LINKS]->(l:Leaf) RETURN l.id ORDER BY l.rank SKIP 3")))
+                    .extracting(row -> row[0].toString())
+                    .containsExactly("leaf-03", "leaf-04");
+        }
+    }
+
+    @Test
+    void skipPastTheEnd_returnsEmptyRatherThanThrowing(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph-skip-past-end"), DOC)) {
+            seedHubWithRankedLeaves(stores, 5);
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory());
+
+            assertThat(execute(stores, engine, compile(
+                    "MATCH (h:Hub {id: 'hub'})-[:LINKS]->(l:Leaf) RETURN l.id ORDER BY l.rank SKIP 99 LIMIT 5")))
+                    .isEmpty();
+            // Also with no LIMIT, which takes the other branch through the window.
+            assertThat(execute(stores, engine, compile(
+                    "MATCH (h:Hub {id: 'hub'})-[:LINKS]->(l:Leaf) RETURN l.id ORDER BY l.rank SKIP 99")))
+                    .isEmpty();
+        }
+    }
+
+    @Test
+    void skipWithNoOrderBy_stillTraversesEnoughRowsToReachThePage(@TempDir final Path root) {
+        // The bug this guards is the easy one to write: an early-exit cap of `limit` rather than `offset + limit`
+        // stops the traversal before the requested page has been reached, returning fewer rows than asked for -
+        // or none. Unordered, so only the count is asserted; which rows come back is not defined.
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph-skip-nosort"), DOC)) {
+            seedHubWithRankedLeaves(stores, 20);
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory());
+
+            assertThat(execute(stores, engine, compile(
+                    "MATCH (h:Hub {id: 'hub'})-[:LINKS]->(l:Leaf) RETURN l.id SKIP 5 LIMIT 3")))
+                    .hasSize(3);
+        }
+    }
+
+    @Test
+    void skipWithOrderByAndLimit_boundedTopNHeap_matchesTheUnboundedResult(@TempDir final Path root) {
+        // The top-N heap has to hold offset + limit rows, because the page returned is the LAST limit of them by
+        // sort order. A heap sized at limit alone keeps the wrong rows and returns a wrong page with no error.
+        // The tiny ceiling is set to offset + limit, so an unbounded accumulation of all 20 leaves would throw -
+        // a clean result therefore proves the heap was used and was sized correctly.
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph-skip-topn"), DOC)) {
+            seedHubWithRankedLeaves(stores, 20);
+            final GraphTraversalEngine unboundedEngine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory());
+            final GraphTraversalEngine tinyCeilingEngine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory(), Long.MAX_VALUE, Duration.ofSeconds(30), 8);
+            final CompiledCypherPlan compiled = compile(
+                    "MATCH (h:Hub {id: 'hub'})-[:LINKS]->(l:Leaf) RETURN l.id ORDER BY l.rank SKIP 5 LIMIT 3");
+
+            final List<String> expected = List.of("leaf-05", "leaf-06", "leaf-07");
+            assertThat(execute(stores, unboundedEngine, compiled)).extracting(row -> row[0].toString())
+                    .containsExactlyElementsOf(expected);
+            assertThat(execute(stores, tinyCeilingEngine, compiled)).extracting(row -> row[0].toString())
+                    .containsExactlyElementsOf(expected);
+        }
+    }
+
+    @Test
+    void skipWithDistinct_countsDistinctRowsNotRawOnes(@TempDir final Path root) {
+        // seedConvergingPaths reaches x by two paths, so the raw rows contain a duplicate. SKIP must pass over
+        // *distinct* tuples: skipping raw rows first would consume a duplicate that was never going to be
+        // returned, and the page would start one row early.
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph-skip-distinct"), DOC)) {
+            seedConvergingPaths(stores);
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory());
+
+            final List<String> allDistinct = execute(stores, engine, compile(
+                    "MATCH (a:Node {id: 'a'})-[:T*1..3]->(b:Node) RETURN DISTINCT b.id ORDER BY b.id"))
+                    .stream().map(row -> row[0].toString()).toList();
+            assertThat(allDistinct).hasSizeGreaterThan(1);
+
+            assertThat(execute(stores, engine, compile(
+                    "MATCH (a:Node {id: 'a'})-[:T*1..3]->(b:Node) RETURN DISTINCT b.id ORDER BY b.id SKIP 1")))
+                    .extracting(row -> row[0].toString())
+                    .containsExactlyElementsOf(allDistinct.subList(1, allDistinct.size()));
+        }
+    }
+
+    @Test
+    void skipWithAggregation_appliesToTheAggregatedRows(@TempDir final Path root) {
+        // Aggregation produces one row per group, and the window applies to those rows - not to the traversal rows
+        // that were reduced into them. A separate code path from finalizeRows, so it needs its own case.
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph-skip-aggregate"), DOC)) {
+            seedHubWithRankedLeaves(stores, 5);
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory());
+
+            // One group per leaf id, each counting 1, ordered by id: skipping 2 leaves the last three.
+            assertThat(execute(stores, engine, compile(
+                    "MATCH (h:Hub {id: 'hub'})-[:LINKS]->(l:Leaf) "
+                    + "RETURN l.id, count(l) AS n ORDER BY l.id SKIP 2")))
+                    .extracting(row -> row[0].toString())
+                    .containsExactly("leaf-02", "leaf-03", "leaf-04");
+        }
+    }
+
+    @Test
+    void skipZero_behavesExactlyAsNoSkip(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph-skip-zero"), DOC)) {
+            seedHubWithRankedLeaves(stores, 5);
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory());
+
+            final List<Val[]> withSkipZero = execute(stores, engine, compile(
+                    "MATCH (h:Hub {id: 'hub'})-[:LINKS]->(l:Leaf) RETURN l.id ORDER BY l.rank SKIP 0 LIMIT 3"));
+            final List<Val[]> withoutSkip = execute(stores, engine, compile(
+                    "MATCH (h:Hub {id: 'hub'})-[:LINKS]->(l:Leaf) RETURN l.id ORDER BY l.rank LIMIT 3"));
+
+            assertThat(withSkipZero).extracting(row -> row[0].toString())
+                    .containsExactlyElementsOf(withoutSkip.stream().map(row -> row[0].toString()).toList());
+        }
+    }
+
+    @Test
+    void hugeSkip_degradesToTraversingEverythingRatherThanOverflowing(@TempDir final Path root) {
+        // offset + limit saturates instead of wrapping. Left to overflow, the row cap would go negative, the
+        // traversal would stop immediately and the query would return nothing - a wrong answer, silently. The
+        // correct answer here is empty too, so this asserts the mechanism: a huge SKIP must still traverse (and so
+        // must still be bounded by the accumulation ceiling, which is what makes it observable).
+        try (GraphStores stores = GraphStores.provision(root.resolve("graph-skip-overflow"), DOC)) {
+            seedHubWithRankedLeaves(stores, 5);
+            final GraphTraversalEngine tinyCeilingEngine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory(), Long.MAX_VALUE, Duration.ofSeconds(30), 3);
+
+            assertThatThrownBy(() -> execute(stores, tinyCeilingEngine, compile(
+                    "MATCH (h:Hub {id: 'hub'})-[:LINKS]->(l:Leaf) RETURN l.id "
+                    + "SKIP " + Long.MAX_VALUE + " LIMIT 10")))
+                    .isInstanceOf(GraphTraversalLimitExceededException.class);
         }
     }
 

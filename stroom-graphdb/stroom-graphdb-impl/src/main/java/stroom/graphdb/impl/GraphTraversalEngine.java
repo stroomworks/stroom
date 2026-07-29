@@ -394,10 +394,11 @@ public final class GraphTraversalEngine {
         // with DISTINCT the first N raw rows may collapse to fewer than N distinct ones, and with aggregation
         // every matching row must be seen before rows can be grouped/reduced correctly - so in every case we must
         // traverse everything and apply the LIMIT afterwards (see finalizeRows/finalizeAggregatedRows).
+        //
+        // SKIP: the cap is offset + limit, not limit (PlanShape.rowsNeeded) - the skipped rows have to be
+        // traversed before the returned ones can be reached.
         final boolean postProcess = !shape.sortKeys().isEmpty() || distinct || aggregation != null;
-        final long rowCap = postProcess || shape.limit() == null
-                ? Long.MAX_VALUE
-                : Math.max(0L, shape.limit());
+        final long rowCap = postProcess ? Long.MAX_VALUE : shape.rowsNeeded();
         final Instant deadline = Instant.now().plus(limits.maxTraversalDuration());
 
         // Review finding F3 fix: rowCap alone is not a memory guardrail - it is Long.MAX_VALUE for exactly the
@@ -410,10 +411,17 @@ public final class GraphTraversalEngine {
         // on the ORDER BY comparator cannot answer that. A LIMIT larger than the ceiling itself is also excluded
         // (a heap that size would defeat the point), so that case degrades to the ceiling-guarded unbounded sink
         // rather than allocating an equally unbounded heap.
+        //
+        // SKIP: the heap must hold offset + limit rows, because the page being returned is the *last* limit of
+        // them by sort order. Sizing it at limit alone would keep the wrong rows - the top n, when the query asked
+        // for the n after the first offset - and return a wrongly-ordered page with no error. The eligibility
+        // ceiling is applied to that same total, so a large SKIP degrades to the guarded unbounded sink rather
+        // than allocating an oversized heap.
+        final long topNSize = shape.rowsNeeded();
         final boolean topNEligible = !shape.sortKeys().isEmpty() && !distinct && aggregation == null
-                && shape.limit() != null && shape.limit() > 0 && shape.limit() <= limits.maxAccumulatedRows();
+                && shape.limit() != null && shape.limit() > 0 && topNSize <= limits.maxAccumulatedRows();
         final RowSink rowSink = topNEligible
-                ? new TopNRowSink((int) (long) shape.limit(), rowComparator(shape.sortKeys()))
+                ? new TopNRowSink((int) topNSize, rowComparator(shape.sortKeys()))
                 : new UnboundedRowSink(limits.maxAccumulatedRows());
 
         if (shape.varLengthExpand != null) {
@@ -1798,9 +1806,35 @@ public final class GraphTraversalEngine {
     // plan shape / projection
     // ------------------------------------------------------------------------------------------------------
 
+    /**
+     * @param offset the {@code SKIP} - rows to discard before the answer starts; zero when absent.
+     * @param limit  the {@code LIMIT} - maximum rows to return; null when absent, in which case the window runs
+     *               from {@code offset} to the end.
+     */
     private record PlanShape(NodeScan nodeScan, List<Expand> hops,
                              @Nullable VarLengthExpand varLengthExpand, @Nullable ExpressionOperator where,
-                             Project project, List<SortKey> sortKeys, @Nullable Long limit) {
+                             Project project, List<SortKey> sortKeys, long offset, @Nullable Long limit) {
+
+        /**
+         * How many rows the traversal must produce for this window to be satisfiable: {@code offset + limit},
+         * saturating rather than overflowing.
+         *
+         * <p><b>The offset has to be included</b>, which is the whole subtlety of executing a {@code SKIP}. A
+         * traversal that stopped at {@code limit} rows would have discarded the very rows the window asks for -
+         * {@code SKIP 10 LIMIT 5} needs fifteen rows to be able to return five. Saturating because
+         * {@code SKIP 9223372036854775807 LIMIT 10} is expressible and must degrade to "traverse everything"
+         * rather than wrapping to a negative cap, which would return nothing at all.</p>
+         *
+         * @return {@link Long#MAX_VALUE} when there is no {@code LIMIT} (nothing bounds the traversal), otherwise
+         *         the saturated sum.
+         */
+        long rowsNeeded() {
+            if (limit == null) {
+                return Long.MAX_VALUE;
+            }
+            final long needed = offset + Math.max(0L, limit);
+            return needed < 0 ? Long.MAX_VALUE : needed;
+        }
     }
 
     private static PlanShape unwrap(final LogicalPlan plan) {
@@ -1811,10 +1845,16 @@ public final class GraphTraversalEngine {
         // on top and fail the Project check below. Task P7.2: the Limit's value bounds row accumulation itself,
         // not just a post-hoc trim.
         Long limit = null;
+        long offset = 0L;
         while (current instanceof final Limit limitNode) {
+            // values() is empty for a SKIP with no LIMIT, which leaves limit null - the window then runs to the
+            // end. Nested Limits cannot arise from CypherToLogicalPlan (one RETURN, one window); the innermost
+            // winning is the pre-existing convention for that impossible shape and is kept rather than replaced
+            // with invented semantics.
             if (!limitNode.values().isEmpty()) {
                 limit = limitNode.values().getFirst();
             }
+            offset = limitNode.offset();
             current = limitNode.input();
         }
         List<SortKey> sortKeys = List.of();
@@ -1856,16 +1896,22 @@ public final class GraphTraversalEngine {
                     "Unsupported compiled plan shape for graph traversal: expected a NodeScan leaf, found "
                     + below.getClass().getSimpleName());
         }
-        return new PlanShape(nodeScan, hops, varLengthExpand, where, project, sortKeys, limit);
+        return new PlanShape(nodeScan, hops, varLengthExpand, where, project, sortKeys, offset, limit);
     }
 
     /**
      * The post-traversal pipeline, in Cypher's order: sort the matched rows by any {@code ORDER BY} keys, project
-     * each to an output tuple, de-duplicate when {@code RETURN DISTINCT}, then cap by any {@code LIMIT}. The
-     * {@code LIMIT} is applied here (not during traversal) whenever ordering or de-duplication is in play, so it
-     * bounds the correct rows - the smallest by sort order, or the count of <em>distinct</em> tuples - rather than
-     * an arbitrary first-N of the raw traversal (see {@link #execute}'s rowCap note). When neither is present the
-     * traversal already stopped at {@code LIMIT} rows, so the cap here is a no-op.
+     * each to an output tuple, de-duplicate when {@code RETURN DISTINCT}, discard the first {@code SKIP} of what
+     * survives, then cap by any {@code LIMIT}. The window is applied here (not during traversal) whenever ordering
+     * or de-duplication is in play, so it bounds the correct rows - the smallest by sort order, or the count of
+     * <em>distinct</em> tuples - rather than an arbitrary first-N of the raw traversal (see {@link #execute}'s
+     * rowCap note). When neither is present the traversal already stopped at {@code offset + LIMIT} rows, so only
+     * the skip is left to do.
+     *
+     * <p><b>{@code SKIP} counts surviving rows, not raw ones.</b> It is applied after projection and
+     * de-duplication for the same reason {@code LIMIT} is: under {@code RETURN DISTINCT}, {@code SKIP 2} must pass
+     * over two <em>distinct</em> tuples. Skipping raw rows first would consume duplicates that were never going to
+     * be returned, and the page would start in the wrong place.</p>
      */
     private static List<Val[]> finalizeRows(final List<Map<String, Val>> rows, final PlanShape shape,
                                             final boolean distinct) {
@@ -1877,6 +1923,7 @@ public final class GraphTraversalEngine {
         final long limit = shape.limit() == null ? Long.MAX_VALUE : shape.limit();
         final Set<List<Val>> seen = distinct ? new HashSet<>() : null;
         final List<Val[]> out = new ArrayList<>();
+        long surviving = 0L;
         for (final Map<String, Val> row : rows) {
             if (out.size() >= limit) {
                 break;
@@ -1886,6 +1933,10 @@ public final class GraphTraversalEngine {
             // the first appearance in the already-sorted order. A duplicate is skipped WITHOUT counting toward
             // the LIMIT, so `RETURN DISTINCT ... LIMIT n` yields n distinct rows, not n raw rows deduped.
             if (seen != null && !seen.add(Arrays.asList(tuple))) {
+                continue;
+            }
+            // A row that survived de-duplication is one the window counts, whether or not it is returned.
+            if (surviving++ < shape.offset()) {
                 continue;
             }
             out.add(tuple);
@@ -1980,11 +2031,15 @@ public final class GraphTraversalEngine {
             deduped = reduced;
         }
 
+        // The row window, over the aggregated output rows: discard the first SKIP, then take at most LIMIT. Clamped
+        // to the list's own bounds, so a SKIP past the end returns empty rather than throwing.
         final long limit = shape.limit() == null ? Long.MAX_VALUE : shape.limit();
-        if (deduped.size() <= limit) {
+        final int from = (int) Math.min(shape.offset(), deduped.size());
+        final int to = (int) Math.min(from + Math.min(limit, Integer.MAX_VALUE), deduped.size());
+        if (from == 0 && to == deduped.size()) {
             return deduped;
         }
-        return new ArrayList<>(deduped.subList(0, (int) Math.min(limit, deduped.size())));
+        return new ArrayList<>(deduped.subList(from, to));
     }
 
     private static boolean hasGroupKey(final List<OutputColumn> columns) {

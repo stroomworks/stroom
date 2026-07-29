@@ -164,7 +164,7 @@ GraphTraversalEngine         executes against one document's LMDB
 The grammar is deliberately narrow: anything absent from `Cypher.g4` is a parse error rather than a
 semantic check. Writes are unsupported because `SET`/`CREATE`/`MERGE`/`DELETE` are simply not keywords.
 
-`CypherToLogicalPlan` holds 66 explicit rejections, all prefixed `not in PoC subset:` or
+`CypherToLogicalPlan` holds 65 explicit rejections, all prefixed `not in PoC subset:` or
 `not supported in this version:`. When adding a feature you are usually **removing** one of those and
 implementing the path behind it. That count, and the messages quoted in
 [06-language-reference.md](06-language-reference.md), are asserted against the source by

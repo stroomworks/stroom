@@ -108,10 +108,11 @@ import java.util.Set;
  * folds left-to-right, anchor-first, in exactly the pattern's source order (a bare anchor with no hop skips
  * {@link Expand} entirely; never re-ordered by any selectivity heuristic, since only the anchor has a
  * property-index-seekable access path in this v1 subset - see {@link Expand}'s Javadoc). {@code RETURN}'s
- * {@code ORDER BY} wraps the {@link Project} with a {@link Sort} and its {@code LIMIT} with a {@link Limit},
- * exactly as the relational core's own binder does; {@code RETURN DISTINCT} is carried on the
- * {@code CompiledCypherPlan} (the sealed shared IR has no Distinct node) - the graph executor honours all three
- * (sort, de-duplicate, cap). {@code SKIP} is still rejected (the core's {@link Limit} node has no offset slot).
+ * {@code ORDER BY} wraps the {@link Project} with a {@link Sort} and its {@code SKIP}/{@code LIMIT} with a
+ * {@link Limit}, exactly as the relational core's own binder does; {@code RETURN DISTINCT} is carried on the
+ * {@code CompiledCypherPlan} (the sealed shared IR has no Distinct node) - the graph executor honours all four
+ * (sort, de-duplicate, skip, cap). {@code SKIP} and {@code LIMIT} are one node because they are one row window;
+ * either half may be absent.
  * Aggregate functions ({@code count}/{@code sum}/{@code avg}/{@code min}/{@code max}) compile to
  * {@link ProjectField} expressions <em>and</em> to a {@link CypherAggregation} description (see
  * {@link #buildAggregation}): every non-aggregate {@code RETURN} item becomes an implicit {@code GROUP BY} key
@@ -140,9 +141,8 @@ import java.util.Set;
  * <p><b>What this class deliberately does NOT lower</b> (throws {@link CypherCompileException} instead of
  * guessing): more than one {@link AstMatch}/{@link AstWith} reading clause; a variable-length hop chained
  * alongside other hops in the same pattern; a {@code WHERE} comparison between two field references (only
- * field-vs-literal comparisons compile); {@code SKIP} (the core's {@link Limit} node has no offset slot yet). All
- * of the above are accepted by {@code Cypher.g4} (per the P0.2-locked v1 subset) but are out of this class's
- * compiled shape; they are progressively tightened across P3's tasks.</p>
+ * field-vs-literal comparisons compile). All of the above are accepted by {@code Cypher.g4} (per the P0.2-locked
+ * v1 subset) but are out of this class's compiled shape; they are progressively tightened across P3's tasks.</p>
  */
 public final class CypherToLogicalPlan {
 
@@ -558,7 +558,10 @@ public final class CypherToLogicalPlan {
                 throw new CypherCompileException(
                         "not supported in this version: LIMIT on a DIFF ... RETURN GRAPH", graphLimit.position());
             }
-            plan = new Limit(plan, List.of(graphLimit.value()), graphLimit.position());
+            // Offset zero: AstReturnClause forbids SKIP alongside RETURN GRAPH, so a graph result has no page to
+            // start from. It would not mean anything if it did - the LIMIT here bounds a node set, and skipping
+            // into a subgraph would return edges whose endpoints had been skipped away.
+            plan = new Limit(plan, 0L, List.of(graphLimit.value()), graphLimit.position());
         }
 
         return new CompiledCypherPlan(
@@ -1089,14 +1092,18 @@ public final class CypherToLogicalPlan {
                     returnClause.orderBy().position());
         }
         if (returnClause.skip() != null || returnClause.limit() != null) {
-            // The relational core's Limit models only a maximum row count (see Limit's Javadoc); Cypher's SKIP
-            // has no equivalent slot here yet, so a query using SKIP is rejected rather than silently ignored.
-            if (returnClause.skip() != null) {
-                throw new CypherCompileException(
-                        "not in PoC subset: SKIP is not yet compiled (the core's Limit node has no offset "
-                        + "slot)", returnClause.skip().position());
-            }
-            plan = new Limit(plan, List.of(returnClause.limit().value()), returnClause.limit().position());
+            // SKIP and LIMIT are two halves of one row window, and the core's Limit node carries both (see its
+            // Javadoc). Either may be absent: SKIP with no LIMIT runs to the end of the result, LIMIT with no SKIP
+            // starts at the first row. The position is the LIMIT's when there is one, since that is the clause a
+            // reader associates with a row-count problem, and the SKIP's otherwise.
+            final long offset = returnClause.skip() == null ? 0L : returnClause.skip().value();
+            final List<Long> values = returnClause.limit() == null
+                    ? List.of()
+                    : List.of(returnClause.limit().value());
+            final AstPosition position = returnClause.limit() != null
+                    ? returnClause.limit().position()
+                    : returnClause.skip().position();
+            plan = new Limit(plan, offset, values, position);
         }
         return plan;
     }

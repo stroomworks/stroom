@@ -49,7 +49,6 @@ property that produces a `MODIFIED` in a diff.
 | G-admin | `Group` | `name=admins` | |
 | G-users | `Group` | `name=users` | |
 | R-vel | `Rule` | `name=velocity` | |
-
 | Edge | From → To | `validFrom` | Purpose |
 |---|---|---|---|
 | `OWNS` | U1 → A100 | 2026-01-01 | Superseded by the transfer below |
@@ -146,6 +145,14 @@ Run from the `CorpGraph` **Data** tab, or from any surface with a leading `from 
 | B11 | `WITH` | `MATCH (u:User)-[:OWNS]->(a:Account) WITH u.id AS uid RETURN uid` | one row per ownership |
 | B12 | Missing property | `MATCH (g:Group {name:'admins'}) RETURN g.name, g.nosuch` | `admins`, *(empty)* |
 | B13 | `RETURN GRAPH` | `MATCH (u:User {id:'U1'})-[:MEMBER_OF]->(g:Group) RETURN GRAPH` | 2 node rows + 1 edge row, six columns |
+| B14 | Paging: `SKIP` + `LIMIT` | `MATCH (u:User) RETURN u.id ORDER BY u.id SKIP 1 LIMIT 1` | `U2` |
+| B15 | `SKIP` with no `LIMIT` | `MATCH (u:User) RETURN u.id ORDER BY u.id SKIP 1` | `U2`, `U3` |
+| B16 | `SKIP` past the end | `MATCH (u:User) RETURN u.id ORDER BY u.id SKIP 99` | *(no rows)* |
+
+**B14–B16 are worth running as a set**, and worth checking that the pages *tile*: B14 plus its neighbours
+(`SKIP 0 LIMIT 1`, `SKIP 2 LIMIT 1`) must reproduce B9's three users exactly once each, in order. A wrong
+offset most often shows up as a repeated or missing row at a page boundary rather than as an obviously
+wrong page.
 
 ### Temporal cases
 
@@ -176,7 +183,6 @@ Each must produce a **clear compile error naming the construct** — never a 500
 | `MATCH (n) RETURN *` | `RETURN *` unsupported |
 | `MATCH (u:User {id:'U1'}) RETURN u` | Bare pattern variable |
 | `MATCH (u:User {id:'U1'}) MATCH (g:Group) RETURN u.id, g.name` | Only a single `MATCH` |
-| `MATCH (u:User)-[:OWNS]->(a) RETURN a.number SKIP 1 LIMIT 1` | `SKIP` not compiled |
 | `MATCH (u:User)-[:OWNS\|MEMBER_OF]->(x) RETURN u.id` | Type alternation — token error at `\|` |
 | `MATCH (u:User)-[:OWNS*]->(a) RETURN a.number` | Unbounded `*` — parse error |
 | `MATCH (u:User {id:'U1'}) SET u.name = 'x'` | `SET` is not a keyword |

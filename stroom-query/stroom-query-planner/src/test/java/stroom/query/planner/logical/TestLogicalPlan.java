@@ -90,7 +90,7 @@ class TestLogicalPlan {
         final Sort sorted = new Sort(
                 windowed, List.of(new SortKey(new QualifiedField(null, "UserName"), false)), POS);
 
-        final Limit limited = new Limit(sorted, List.of(100L), POS);
+        final Limit limited = new Limit(sorted, 0L, List.of(100L), POS);
 
         assertThat(limited.input()).isSameAs(sorted);
         assertThat(sorted.input()).isSameAs(windowed);
@@ -143,7 +143,29 @@ class TestLogicalPlan {
                 scan, scan, JoinType.INNER, List.of(), POS));
         assertThatIllegalArgumentException().isThrownBy(() -> new Aggregate(scan, List.of(), POS));
         assertThatIllegalArgumentException().isThrownBy(() -> new Sort(scan, List.of(), POS));
-        assertThatIllegalArgumentException().isThrownBy(() -> new Limit(scan, List.of(), POS));
+        // A Limit with no values AND no offset bounds nothing, so it is still rejected.
+        assertThatIllegalArgumentException().isThrownBy(() -> new Limit(scan, 0L, List.of(), POS));
+    }
+
+    @Test
+    void limitWithAnOffsetAndNoValuesIsAllowed() {
+        // Cypher's `SKIP n` with no `LIMIT`: the window runs from the offset to the end of the result. This is the
+        // one shape that made the old "values must never be empty" invariant too strong.
+        final Scan scan = new Scan("e", "Events", POS);
+
+        final Limit limit = new Limit(scan, 5L, List.of(), POS);
+
+        assertThat(limit.offset()).isEqualTo(5L);
+        assertThat(limit.values()).isEmpty();
+    }
+
+    @Test
+    void limitRejectsANegativeOffset() {
+        final Scan scan = new Scan("e", "Events", POS);
+
+        assertThatIllegalArgumentException()
+                .isThrownBy(() -> new Limit(scan, -1L, List.of(10L), POS))
+                .withMessageContaining("offset");
     }
 
     @Test
@@ -151,7 +173,7 @@ class TestLogicalPlan {
         final Scan scan = new Scan("e", "Events", POS);
         final List<Long> mutableValues = new ArrayList<>(List.of(1L, 2L));
 
-        final Limit limit = new Limit(scan, mutableValues, POS);
+        final Limit limit = new Limit(scan, 0L, mutableValues, POS);
         mutableValues.add(3L);
 
         assertThat(limit.values()).containsExactly(1L, 2L);

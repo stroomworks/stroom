@@ -185,22 +185,9 @@ Grouped by how likely you are to want them.
 | Item | Difficulty | Risk |
 |---|---|---|
 | **`approxEquals(a, b, tolerance)`** — explicit tolerant numeric comparison. See below | Medium | Low |
-| `SKIP` — needs an offset on the core's `Limit` node. **Rated Easy, but see the note below** | Easy | Low |
 | `ORDER BY` / `SKIP` / `LIMIT` on a `WITH` | Medium | Low |
 | Aggregation inside a `DIFF` query | Medium | Medium |
 | Filtering on `changeKind` / `before()` / `after()` in a `WHERE` | Medium | Low |
-
-#### `SKIP` is the least self-contained item in this table
-
-Worth stating, because its Easy/Low rating invites bundling it with other small language work and it does not
-belong there. Everything else in this section is confined to `CypherToLogicalPlan`. `SKIP` is not: it needs an
-offset slot on `stroom.query.planner.logical.Limit`, which is the **shared** relational core. That node has
-around fifteen consumers outside Graph DB — `Binder`, `PushFiltersBelowJoinsRule`, `AutoWhereFilterSplitRule`,
-`PlanRewriteUtil`, `LogicalPlanExplainer`, `OptimisingQueryCompiler` and StroomQL's own path — and it already
-carries legacy multi-value semantics that a second field has to be reconciled with.
-
-So the *edit* is easy and the *change* is not. It deserves its own change with a StroomQL regression run, not a
-seat alongside four Graph-DB-local fixes.
 
 #### `approxEquals` — why a function rather than a looser `=`
 
@@ -318,8 +305,7 @@ What remains, if the goal is a production-capable Graph DB. Everything already d
    own change rather than bundled with small language work.
 4. **A real list type**, re-enabling `collect()`. Its own change, because it modifies a sealed hierarchy shared
    across the product.
-5. Language and analytics features, driven by what users actually ask for. **`SKIP` is not the cheap one it
-   looks like** — see [the note above](#skip-is-the-least-self-contained-item-in-this-table).
+5. Language and analytics features, driven by what users actually ask for.
 6. **C4 — detecting a partially-populated node.** Hard, and the two ways of reaching that state are both
    signposted now, so it is no longer the sharpest edge.
 7. **Snapshot fan-out, then partitioning** — only once correctness is settled. Partitioning is the
@@ -394,6 +380,39 @@ thought to go looking for.
 |---|---|
 | **The whole-graph preview cap reports itself** | `MATCH (n) RETURN GRAPH` with no `LIMIT` still returns the first 100 nodes, and now says so, as a `WARNING` alongside the rows. It was the last guardrail that truncated in silence |
 | **`ORDER BY` accepts an aggregate expression** | `RETURN u.id, count(f) ORDER BY count(f) DESC` compiles, aliased or not. Only an aggregate the `RETURN` produces; `DISTINCT` is part of an aggregate's identity |
+| **`SKIP`, so there is paging** | `ORDER BY … SKIP n LIMIT m` returns that page; `SKIP` without `LIMIT` runs to the end. The core's `Limit` node carries both halves of the row window |
+
+#### `SKIP`: the risk was not where this page said it was
+
+This page previously argued that `SKIP` deserved its own change because the shared `Limit` node has "around
+fifteen consumers outside Graph DB". That was half right, and the half it got wrong is the more useful half.
+
+**Nothing outside Graph DB *executes* a `Limit`.** The `Binder`'s own Javadoc records that it "is not yet wired
+into any executor": StroomQL compiles through `AstToSearchRequestMapper` to a `SearchRequest`, and its row cap
+travels as `TableSettings`, never as this node. The other consumers use it *structurally* — they descend through
+it, or rebuild it around a transformed input. And StroomQL's grammar has no `SKIP` at all, so no StroomQL query
+can produce a non-zero offset. **StroomQL behaviour could not change, and did not.**
+
+The real risk is narrower and sharper: **a rewrite rule that rebuilds a `Limit` and forgets the offset** returns
+the wrong page with nothing to indicate it. Three rules do exactly that rebuild. The mitigation was to put
+`offset` second in the canonical constructor so that adding it **broke every construction site**, forcing each of
+the six to be looked at rather than defaulting quietly. There is deliberately no convenience overload that
+defaults the offset — it would reintroduce precisely that failure mode.
+
+Two further findings worth keeping:
+
+- **`offset + limit`, not `limit`, is what bounds the traversal** — and the top-N heap. A query asking for
+  `SKIP 5 LIMIT 3` needs eight rows to be able to return three, and the page it wants is the *last* three of
+  those eight by sort order. Both the early-exit cap and the heap size had to change; sizing either at `limit`
+  alone returns a wrong page silently. The sum saturates, because a wrapped negative cap stops the traversal
+  immediately and returns nothing.
+- **`SKIP` counts surviving rows, not raw ones.** Under `RETURN DISTINCT` it must pass over that many
+  *distinct* tuples, so it applies after projection and de-duplication — the same reasoning that already put
+  `LIMIT` there.
+
+The one thing genuinely ruled out: `SKIP` on `RETURN GRAPH`. The AST already forbids it, and it would not mean
+anything — the limit there bounds a node set, and skipping into a subgraph would return edges whose endpoints
+had been skipped away.
 
 **Why the cap warns rather than fails.** Every other guardrail throws. This one cannot: an absent `LIMIT` is the
 shape of the default query both graph tabs open with, so failing it would break the product out of the box. That

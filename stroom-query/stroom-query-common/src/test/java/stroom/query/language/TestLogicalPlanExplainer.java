@@ -148,7 +148,7 @@ class TestLogicalPlanExplainer {
     void nestedJoin_isAnnotatedWithoutACardinalityEstimate() {
         // One side is a Limit(Scan), not a direct Scan, so it has no compile-time CostedAccessPath to combine.
         final LogicalPlan join = new Join(
-                new Limit(new Scan("a", "Events", POS), List.of(10L), POS),
+                new Limit(new Scan("a", "Events", POS), 0L, List.of(10L), POS),
                 new Scan("b", "Other", POS),
                 JoinType.INNER, List.of(equiKey()), POS);
 

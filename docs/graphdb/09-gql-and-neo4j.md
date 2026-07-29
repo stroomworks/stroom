@@ -31,7 +31,7 @@ Comparing by capability rather than syntax, against the mandatory feature areas 
 | Variable-length paths | Supported, bounded only. The upper bound is mandatory |
 | `WHERE` filtering | Supported, including `IN`, `IS NULL`, string operators and `EXISTS { }` |
 | Result projection (`RETURN`, `DISTINCT`, aliases) | Supported — but not a bare node or `RETURN *` |
-| Ordering and paging (`ORDER BY`, `LIMIT`) | **Partial** — `ORDER BY` and `LIMIT` yes, **`SKIP` is rejected**, so there is no paging |
+| Ordering and paging (`ORDER BY`, `SKIP`, `LIMIT`) | Supported. Paging re-runs the query rather than holding a cursor, so deep paging costs more the deeper it goes |
 | Comparison predicates, `IS NULL` / `IS NOT NULL` | Supported |
 | `CASE` value expressions | Supported, both simple and searched forms |
 | `EXISTS { pattern }` | Supported, for one correlated typed hop |
@@ -106,7 +106,6 @@ rejected rather than silently sorting on nothing.
 |---|---|---|
 | `RETURN n` | Rejected | Name the properties, or use `RETURN GRAPH` |
 | `RETURN *` | Rejected | List the columns |
-| `SKIP 10 LIMIT 10` | `SKIP` rejected | `LIMIT` only; no pagination |
 | `MATCH (a), (b)` | Rejected | One `MATCH`, one pattern |
 | `MATCH (a) MATCH (b)` | Rejected | Combine, or use `OPTIONAL MATCH`/`WITH` |
 | `-[:A\|B]->` | Rejected | Separate queries plus `UNION` |

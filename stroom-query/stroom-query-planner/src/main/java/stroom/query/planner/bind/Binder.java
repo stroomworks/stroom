@@ -231,7 +231,10 @@ public final class Binder {
             plan = new Sort(plan, keys, sortPosition);
         }
         if (limitValues != null) {
-            plan = new Limit(plan, limitValues, limitPosition);
+            // Offset zero, always: StroomQL's grammar has no SKIP clause, so there is nothing on this path that
+            // could set one. Written as a literal rather than routed through a variable so that grep for a
+            // non-zero offset finds only the Cypher compiler, which is the sole producer of one.
+            plan = new Limit(plan, 0L, limitValues, limitPosition);
         }
         return plan;
     }

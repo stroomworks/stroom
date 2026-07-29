@@ -290,6 +290,29 @@ class TestGraphSearchProvider {
     }
 
     @Test
+    void skipAndLimit_pageThroughRealRows_throughRealCoprocessors(@TempDir final Path root) {
+        // Paging end to end, through the real compiler, coprocessors and result store rather than only the engine.
+        // This fixture has two accounts under d-42, ordered by balance: 50 then 200.
+        try (GraphStores stores = GraphStores.provision(root, DOC)) {
+            seedDeviceConnectedToAccounts(stores);
+            final GraphSearchProvider provider = provider(stores);
+
+            final String pattern = "MATCH (d:Device {id: 'd-42'})-[:CONNECTED_TO]->(a:Account) "
+                                   + "RETURN a.id ORDER BY a.balance ";
+
+            assertThat(readTableRows(provider.createResultStore(compilerDerivedRequest(pattern + "LIMIT 1"))))
+                    .extracting(row -> row[0].toString()).containsExactly("account-a");
+            assertThat(readTableRows(provider.createResultStore(
+                    compilerDerivedRequest(pattern + "SKIP 1 LIMIT 1"))))
+                    .extracting(row -> row[0].toString()).containsExactly("account-b");
+            assertThat(readTableRows(provider.createResultStore(compilerDerivedRequest(pattern + "SKIP 1"))))
+                    .extracting(row -> row[0].toString()).containsExactly("account-b");
+            assertThat(readTableRows(provider.createResultStore(compilerDerivedRequest(pattern + "SKIP 2"))))
+                    .isEmpty();
+        }
+    }
+
+    @Test
     void withHavingPipe_returnsRealRows_throughRealCoprocessors(@TempDir final Path root) {
         try (GraphStores stores = GraphStores.provision(root, DOC)) {
             seedDeviceConnectedToAccounts(stores);

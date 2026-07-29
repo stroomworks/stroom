@@ -97,7 +97,7 @@ final class LogicalPlanExplainer {
             case final Having h -> wrap("Having", toNode(h.input()));
             case final Window w -> wrap("Window by " + describeField(w.field()), toNode(w.input()));
             case final Sort s -> wrap("Sort", toNode(s.input()));
-            case final Limit l -> wrap("Limit " + l.values(), toNode(l.input()));
+            case final Limit l -> wrap(describeLimit(l), toNode(l.input()));
             case final NodeScan ns -> new Node(
                     ExplainPlan.builder()
                             .description("NodeScan " + ns.variable()
@@ -210,5 +210,24 @@ final class LogicalPlanExplainer {
 
     private String describeField(final QualifiedField field) {
         return field.alias() == null ? field.field() : field.alias() + "." + field.field();
+    }
+
+    /**
+     * Describes a row window: {@code "Limit [10]"}, {@code "Limit [10] offset 5"}, or {@code "Limit offset 5"} for
+     * a {@code SKIP} with no {@code LIMIT}.
+     *
+     * <p>The offset is only shown when it is set, so the overwhelmingly common no-offset plan explains exactly as
+     * it did before. An explain that silently omitted a non-zero offset would be worse than one that never
+     * mentioned offsets at all: it would show a plan returning rows it does not return.</p>
+     */
+    private String describeLimit(final Limit limit) {
+        final StringBuilder description = new StringBuilder("Limit");
+        if (!limit.values().isEmpty()) {
+            description.append(' ').append(limit.values());
+        }
+        if (limit.offset() > 0) {
+            description.append(" offset ").append(limit.offset());
+        }
+        return description.toString();
     }
 }

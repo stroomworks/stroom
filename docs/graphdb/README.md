@@ -123,7 +123,7 @@ Detail: [06-language-reference.md](06-language-reference.md), [03-ingest.md](03-
 #### Expressiveness
 
 The query language is a deliberately narrow read-only subset. There are **no writes** (`SET`, `CREATE`,
-`DELETE`, `MERGE` are not in the grammar), no `SKIP`, no path variables or server-side path finding, no
+`DELETE`, `MERGE` are not in the grammar), no path variables or server-side path finding, no
 relationship-type alternation (`[:A|B]`), and a query is limited to one `MATCH` plus at most one
 `OPTIONAL MATCH` or one `WITH`. Many real-world graph queries cannot yet be expressed, and queries ported
 from Neo4j will usually need rewriting. This is the largest remaining category and the one users notice most.

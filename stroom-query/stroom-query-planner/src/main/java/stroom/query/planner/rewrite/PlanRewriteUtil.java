@@ -77,7 +77,10 @@ final class PlanRewriteUtil {
                     mapPredicates(w.input(), transform), w.field(), w.windowSize(), w.advanceSize(),
                     w.usingFunction(), w.position());
             case final Sort s -> new Sort(mapPredicates(s.input(), transform), s.keys(), s.position());
-            case final Limit l -> new Limit(mapPredicates(l.input(), transform), l.values(), l.position());
+            // Both halves of the row window are carried through unchanged: rewriting predicates below a Limit must
+            // not change which page of the result comes back.
+            case final Limit l -> new Limit(
+                    mapPredicates(l.input(), transform), l.offset(), l.values(), l.position());
             // Graph nodes (Task PoC.2/P3.1): a NodeScan's property anchor, and an Expand/VarLengthExpand's
             // target property predicate, ARE predicates in this sense, so transform them like any other
             // optional predicate slot.
