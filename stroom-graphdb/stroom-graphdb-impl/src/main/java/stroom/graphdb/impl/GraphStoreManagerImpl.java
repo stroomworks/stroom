@@ -168,6 +168,15 @@ public class GraphStoreManagerImpl implements GraphStoreManager {
                 return 0;
             }
 
+            // Checked before the copy, not after. The size comparison below can also abandon a pointless
+            // compaction, but only once the whole store has already been rewritten - which is the expensive part
+            // and the part that blocks every query on this graph.
+            if (!getOrOpenUnguarded(doc).isCompactionPending()) {
+                LOGGER.debug(() -> LogUtil.message(
+                        "Nothing has been removed from graph '{}' since it was last compacted", doc.getName()));
+                return 0;
+            }
+
             final Path working = live.resolveSibling(uuid + COMPACTING_SUFFIX);
             final Path previous = live.resolveSibling(uuid + SUPERSEDED_SUFFIX);
             // Anything left by an interrupted earlier run, which would otherwise make the copy below fail.
@@ -190,6 +199,8 @@ public class GraphStoreManagerImpl implements GraphStoreManager {
                 }
 
                 swapIn(uuid, live, working, previous);
+                // On the reopened store, so it lands in the file that survived rather than the one just deleted.
+                getOrOpenUnguarded(doc).clearCompactionPending();
 
                 LOGGER.info(() -> LogUtil.message("Compacted graph '{}', reclaiming {} bytes",
                         doc.getName(), sizeBefore - sizeAfter));

@@ -61,7 +61,7 @@ hard-coded, so an existing deployment behaves identically until something is cha
 
 | Blocker | Consequence |
 |---|---|
-| **Two settings can be changed in ways that silently produce wrong answers** | Adding a node to `graphdb.nodeList` does not backfill it *automatically*, and queries route to the first node in the list — so adding one at the front makes every answer partial. **Mitigated:** backfill is now a supported operation, so the add-a-node procedure has a real step rather than a hand-copy. Changing `graphdb.path` provisions empty graphs rather than failing, and is not mitigated. Neither is prevented, but a query against a graph the node holds nothing for logs an error and increments `missingStoreQueries`; a node holding only *part* of a graph still cannot be detected, which is why both have a procedure in [11-operations.md](11-operations.md#settings-you-must-not-change-casually). Temporal Precision, by contrast, *is* enforced — the store refuses to open |
+| ~~**Two settings can be changed in ways that silently produce wrong answers**~~ — **both now reported.** Neither is *prevented*, but neither is silent | Adding a node to `graphdb.nodeList` does not backfill it automatically, and queries route to the first node in the list — so adding one at the front makes every answer partial. Backfill is now a supported operation, so the add-a-node procedure has a real step rather than a hand-copy. Changing `graphdb.path` provisions empty graphs rather than failing; a startup check now reports that at ERROR, naming both paths and the graphs left behind, and repeats until they are dealt with. A query against a graph the node holds nothing for also logs an error and increments `missingStoreQueries`. **What still cannot be detected is a node holding only *part* of a graph**, which is why both have a procedure in [11-operations.md](11-operations.md#settings-you-must-not-change-casually). Temporal Precision, by contrast, is enforced outright — the store refuses to open |
 | **Store size still needs a restart to change, and only for new graphs** | LMDB fixes an environment's size at creation, so raising `graphdb.maxStoreSize` applies to graphs opened afterwards. An existing store must be rebuilt to grow past its original ceiling |
 | **Retention is off by default** — every version is kept forever | Combined with the fixed size cap, any sustained feed will eventually fill the store. Retention must be switched on deliberately, per document |
 | **Query caps abort work in flight** — 30 s traversal budget, 200,000 path-states *per anchor*, 1,000,000 accumulated rows, 50 maximum variable-length hops | A legitimate but broad query fails rather than running slowly. **Mitigated:** every one of these is now configurable ([10-limits.md](10-limits.md#query-and-traversal-limits)), though the better answer to a query that trips one is usually a tighter pattern |
@@ -75,7 +75,7 @@ Detail: [10-limits.md](10-limits.md), [11-operations.md](11-operations.md).
 |---|---|
 | **Bad records are skipped by default** — a malformed record is logged at `ERROR` and dropped, and the stream carries on | Partial data loss is quiet. **Mitigated:** set the Graph Filter's `strict` property to fail the stream instead. It defaults to off because that is the less surprising behaviour for a feed, not because it is the safer one |
 | **`rebuild()` is the only compaction backstop, and it reprocesses source streams** | If those streams have been aged off by a retention policy, the graph cannot be rebuilt. **Accepted, not pending:** graph data is treated as reproducible from its sources, so source-stream retention is part of a graph's recovery plan ([11-operations.md](11-operations.md#rebuild--and-its-trap)) |
-| ~~**Redundant versions are never condensed, and a store never shrinks**~~ — **fixed, both parts.** Runs of consecutive identical node and edge versions are collapsed to the earliest of each run, unconditionally, because doing so changes no answer at any instant; and a maintenance run that removed anything then compacts the store, returning the freed pages to the filesystem | Condensing is what bounds a graph reloaded on a schedule: a week of unchanged data used to cost seven versions of everything, and retention could not touch them. Compaction is what makes that visible as free disk, since LMDB otherwise keeps freed pages for reuse. Compaction excludes queries on that graph while it runs and needs room for a second copy, so it is deliberately tied to having actually removed something ([11-operations.md](11-operations.md#retention-and-maintenance)) |
+| ~~**Redundant versions are never condensed, and a store never shrinks**~~ — **fixed, both parts.** Runs of consecutive identical node and edge versions are collapsed to the earliest of each run, unconditionally, because doing so changes no answer at any instant; and a nightly `Graph DB Compaction` job rewrites each store that has free pages to reclaim, returning them to the filesystem | Condensing is what bounds a graph reloaded on a schedule: a week of unchanged data used to cost seven versions of everything, and retention could not touch them. Compaction is what makes that visible as free disk, since LMDB otherwise keeps freed pages for reuse. It is nightly and separate from maintenance because it excludes queries on a graph while it rewrites it, and needs room for a second copy ([11-operations.md](11-operations.md#retention-and-maintenance)) |
 | ~~**The Graph Filter resolves its target graph by name**~~ — **fixed.** It resolves by UUID, so a rename no longer breaks a pipeline and two graphs sharing a name no longer matter | Queries still resolve by name, deliberately: a query fails visibly at the moment you run it, whereas a pipeline is long-lived configuration that would have failed silently on the next stream |
 
 Three data-safety gaps have been closed:
@@ -122,13 +122,23 @@ Detail: [06-language-reference.md](06-language-reference.md),
 
 ### What would have to change
 
-Cluster correctness, the store format stamp, strict ingest, the shipped schema, Temporal Precision, the
-configuration surface, backfill, condensing and compaction are all done. What remains, in rough priority order:
-native typed `double` and date property values, then a real `collect()` list.
+Every item that once stood in this section's blocker tables as *pending* has now been done: cluster
+correctness, the store format stamp, strict ingest, the shipped schema, Temporal Precision, the configuration
+surface, backfill, condensing, compaction, all five property types, and reporting for both of the config edits
+that used to be silent.
 
-The remaining items are limitations you can work around once you know about them, which is why they now come
-after the two that could not be worked around at all. All of it is tracked in
-[12-future-work.md](12-future-work.md), and the sequenced plan is in
+What is left is of a different kind:
+
+- **A real `collect()` list**, held back deliberately — it touches the sealed `Val` hierarchy shared across the
+  product ([12a-list-value-type.md](12a-list-value-type.md)).
+- **`approxEquals`**, for comparing decimals computed before ingest.
+- **Recovery without source streams** — accepted rather than pending; a graph is treated as reproducible from
+  its sources, so source-stream retention is its recovery plan.
+- **Expressiveness**, the largest remaining category and the one users will notice most.
+- **Behaviour under concurrent load**, which has not been characterised and needs a real deployment rather than
+  code.
+
+All of it is tracked in [12-future-work.md](12-future-work.md), and the sequenced plan is in
 [epoch0-development-plan.md](epoch0-development-plan.md).
 
 ---

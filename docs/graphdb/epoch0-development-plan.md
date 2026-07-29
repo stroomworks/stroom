@@ -547,6 +547,63 @@ no-leftover-directories test.
 not worth it. An idle store holds file descriptors and reserved address space rather than heap, and reopening it
 costs a real query.
 
+## Beyond the plan — compaction cadence, and item C2
+
+Two items found by asking, after the fact, what was still between this and production.
+
+### The compaction cadence was wrong, and it was a regression
+
+Compaction shipped gated on "did retention or condense remove anything", described at the time as leaving an
+unchanged graph alone. That holds for a **static** graph. It does not hold for the workload condensing exists
+to serve: a graph reloaded on a schedule produces identical versions constantly, so condense removes something
+on essentially every cycle - and maintenance runs every ten minutes. On exactly the large, actively-fed graph
+that motivated condensing, compaction was therefore running six times an hour, each run a full copy of the
+whole store holding the lock that excludes every query on that graph. The gate approximated "always" precisely
+where it needed to bite.
+
+**Two changes.** Compaction moved to its own `Graph DB Compaction` job on a nightly off-peak cron, so the
+blocking is bounded and the cadence is operator-visible and adjustable without a code change. And the gate
+became durable: a `FREED_SPACE_PENDING` flag in `graph-info`, set when retention or condense removes anything
+and cleared when a compaction reclaims it. On disk rather than in memory because removal and compaction now run
+a day apart, and a restart in between is ordinary - a graph that shed a lot of data and then went quiet is the
+one most worth compacting and the one an in-memory flag would forget.
+
+The flag is also checked **before** the copy rather than after. The pre-existing size comparison could already
+abandon a pointless compaction, but only once the store had been rewritten, which is the cost being avoided.
+That comparison is now unreachable through the public API and stands as a backstop; the test class says so
+rather than pretending to cover it.
+
+One consequence worth recording because it surfaced as a test failure: clearing the flag reopens the store, and
+opening an LMDB environment writes to it. So the file after a compaction is larger than
+`before - reclaimed`. The reclaimed figure is real; a later `du` shows that plus the next open's cost. The test
+asserted exact equality and had to be corrected, along with a comment claiming nothing reopened the store.
+
+### C2 — detecting a `graphdb.path` change
+
+The last of the config edits that silently produce wrong answers. The plan's suggestion was "a marker file
+recording the expected path", and the reason this took thought is that **the obvious placement cannot work**: a
+marker inside `graphdb.path` can only be found by looking inside `graphdb.path`, and not looking at the old
+root any more is the entire failure. There is nothing at the new path to distinguish a moved setting from a
+deployment nobody has loaded a graph into.
+
+So the last-used root is recorded in `<stroom.home>/graphdb-root.txt` - node-local state that survives a
+`graphdb.path` edit - and checked at startup. The check is deliberately not "did the path change", which would
+fire on the documented procedure for changing it, but "did the path change **and leave graphs where nothing
+will look for them**". A move that took the data with it is logged at INFO and accepted; a move that stranded
+data is an ERROR naming both paths and the graphs left behind, and it repeats on every startup, because
+stranded data is not a transient condition and reporting it once lets the next restart bury it.
+
+`check()` returns its conclusion as well as logging it. The first version of the test inferred the outcome from
+the marker's state afterwards, which meant it would have passed had the class logged nothing at all - a test
+asserting against a string the test itself had built. Making the result observable was the fix.
+
+Two limits, both documented: it cannot detect a change made at the same time as `stroom.home` moving, and a
+lost marker reads as a fresh install.
+
+Validated by sabotage three times: removing the compaction gate fails the two gate tests; never detecting
+stranded data fails the two stranded tests; advancing the marker despite stranded data fails only the
+report-on-every-startup test.
+
 ## Beyond the plan — typed `double` and `dateTime` (Phase 3.1's remainder)
 
 Phase 3.1 shipped typed `long` and `boolean` and deliberately left these two out. The plan's own note said the

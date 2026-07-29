@@ -239,8 +239,40 @@ public final class GraphStores implements AutoCloseable {
             count += nodes.condense(writer);
             count += outEdges.condense(writer);
             count += inEdges.condense(writer);
+            if (count > 0) {
+                schemaDb.setFreedSpacePending(writer.getWriteTxn(), true);
+            }
             writer.commit();
             return count;
+        });
+    }
+
+    /**
+     * Whether anything has freed pages that compaction has not yet returned to the filesystem.
+     *
+     * <p>Read before compacting, so a graph nothing has removed from is not rewritten wholesale to reclaim
+     * nothing. The flag survives a restart, because removal and compaction run on schedules far enough apart
+     * that an in-memory one would routinely be lost between them.</p>
+     *
+     * <p><b>Postconditions:</b> false for a store nothing has ever been removed from.
+     *
+     * @return whether a compaction would have anything to do.
+     */
+    public boolean isCompactionPending() {
+        return env.read(schemaDb::isFreedSpacePending);
+    }
+
+    /**
+     * Records that a compaction has reclaimed whatever was outstanding.
+     *
+     * <p>Called by the store manager after a successful swap, and <b>not</b> after one that was abandoned for
+     * being no smaller - the latter means the flag was set by a removal too small to matter, and clearing it
+     * would be harmless, but leaving it set costs one more attempt and keeps the flag's meaning exact.</p>
+     */
+    public void clearCompactionPending() {
+        env.write(writer -> {
+            schemaDb.setFreedSpacePending(writer.getWriteTxn(), false);
+            writer.commit();
         });
     }
 
@@ -982,6 +1014,9 @@ public final class GraphStores implements AutoCloseable {
                     }
                     return null;
                 });
+            }
+            if (count > 0) {
+                schemaDb.setFreedSpacePending(writer.getWriteTxn(), true);
             }
             return count;
         });

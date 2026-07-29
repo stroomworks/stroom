@@ -133,6 +133,38 @@ final class GraphSchemaDb {
     }
 
     /**
+     * Whether retention or condensing has freed pages that compaction has not yet returned to the filesystem.
+     *
+     * <p>Recorded here, on disk, rather than held in memory, because the two operations run on very different
+     * schedules - removal every few minutes, compaction daily - and a restart in between would otherwise lose
+     * the fact that there is anything to reclaim. A graph that shed a lot of data once and then went quiet is
+     * exactly the graph most worth compacting, and exactly the one an in-memory flag would forget.</p>
+     *
+     * <p><b>Postconditions:</b> returns false for a store that has never had anything removed.
+     *
+     * @param txn the transaction to read under.
+     * @return whether a compaction is owed.
+     */
+    boolean isFreedSpacePending(final Txn<ByteBuffer> txn) {
+        return readInt(txn, InfoKey.FREED_SPACE_PENDING).orElse(0) != 0;
+    }
+
+    /**
+     * Records whether a compaction is owed.
+     *
+     * <p><b>Preconditions:</b> {@code txn} is a write transaction.
+     * <b>Postconditions:</b> the flag is staged; the caller commits.
+     *
+     * @param txn     the write transaction.
+     * @param pending true when something has just been removed, false when compaction has just reclaimed it.
+     */
+    void setFreedSpacePending(final Txn<ByteBuffer> txn, final boolean pending) {
+        writeInt(txn, InfoKey.FREED_SPACE_PENDING, pending
+                ? 1
+                : 0);
+    }
+
+    /**
      * Validates a fragment's stamp against this store's before merging it.
      *
      * <p><b>Preconditions:</b> {@code source} is not null.
@@ -235,7 +267,8 @@ final class GraphSchemaDb {
         SCHEMA_VERSION(0),
         HASH_CLASHES(1),
         KEY_SCHEMA(2),
-        VALUE_SCHEMA(3);
+        VALUE_SCHEMA(3),
+        FREED_SPACE_PENDING(4);
 
         private final byte primitiveValue;
         private final ByteBuffer byteBuffer;

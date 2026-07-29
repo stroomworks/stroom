@@ -21,6 +21,7 @@ import stroom.docstore.api.DocumentStoreBinder;
 import stroom.graphdb.impl.pipeline.GraphElementModule;
 import stroom.graphdb.shared.GraphDbDoc;
 import stroom.job.api.ScheduledJobsBinder;
+import stroom.lifecycle.api.LifecycleBinder;
 import stroom.planb.shared.RetentionSettings;
 import stroom.query.api.QueryNodeResolver;
 import stroom.query.api.datasource.DataSourceProvider;
@@ -91,6 +92,11 @@ public class GraphDbModule extends AbstractModule {
         GuiceUtil.buildMultiBinder(binder(), IndexFieldProvider.class)
                 .addBinding(GraphSearchProvider.class);
 
+        // At startup rather than on first use: the point is to tell an operator their data is stranded before
+        // they discover it through empty query results.
+        LifecycleBinder.create(binder())
+                .bindStartupTaskTo(GraphRootMarkerCheck.class);
+
         ScheduledJobsBinder.create(binder())
                 .bindJobTo(GraphMaintenanceRunnable.class, builder -> builder
                         .name(GraphMaintenanceRunnable.TASK_NAME)
@@ -98,6 +104,16 @@ public class GraphDbModule extends AbstractModule {
                                      + "applies retention where it is enabled, and condenses redundant versions "
                                      + "for every graph")
                         .cronSchedule(CronExpressions.EVERY_10_MINUTES.getExpression())
+                        .advanced(true));
+
+        ScheduledJobsBinder.create(binder())
+                .bindJobTo(GraphCompactionRunnable.class, builder -> builder
+                        .name(GraphCompactionRunnable.TASK_NAME)
+                        .description("Graph DB compaction: rewrites each graph whose store has free pages to "
+                                     + "reclaim, returning the space to the filesystem. Excludes queries on a "
+                                     + "graph while that graph is being rewritten, and needs room for a second "
+                                     + "copy of it")
+                        .cronSchedule(GraphCompactionRunnable.CRON_SCHEDULE)
                         .advanced(true));
 
         // Starts the merge loops if they are not already running, so a restart resumes any queued fragments. The
@@ -108,6 +124,14 @@ public class GraphDbModule extends AbstractModule {
                         .description("Graph DB fragment merge")
                         .cronSchedule(CronExpressions.EVERY_MINUTE.getExpression())
                         .advanced(true));
+    }
+
+    private static class GraphRootMarkerCheck extends RunnableWrapper {
+
+        @Inject
+        GraphRootMarkerCheck(final GraphRootMarker graphRootMarker) {
+            super(graphRootMarker::check);
+        }
     }
 
     private static class GraphMergeRunnable extends RunnableWrapper {
@@ -161,20 +185,12 @@ public class GraphDbModule extends AbstractModule {
                             // Condensing is unconditional: it changes no query result and benefits any graph
                             // reloaded on a schedule, whether or not retention is enabled. Retention still is
                             // conditional - and checked first, so condense works on the smaller surviving set.
-                            final long removed = graphStoreManager.use(doc, stores -> {
+                            graphStoreManager.use(doc, stores -> {
                                 final long aged = retentionEnabled(doc)
                                         ? stores.deleteOldData(doc)
                                         : 0L;
                                 return aged + stores.condense();
                             });
-
-                            // Compaction only when something was actually removed. It rewrites the whole store
-                            // and needs room for a second copy, so running it on an unchanged graph would spend
-                            // that on nothing - and on a graph nothing writes to, the free pages this reclaims
-                            // are created only by the two operations above.
-                            if (removed > 0) {
-                                graphStoreManager.compact(doc);
-                            }
                         }
                     } catch (final RuntimeException e) {
                         LOGGER.error("Error running retention for {}", docRef, e);
@@ -186,6 +202,49 @@ public class GraphDbModule extends AbstractModule {
         private static boolean retentionEnabled(final GraphDbDoc doc) {
             final RetentionSettings retention = doc.getRetention();
             return retention != null && retention.isEnabled();
+        }
+    }
+
+    /**
+     * Returns the space retention and condensing freed to the filesystem.
+     *
+     * <p><b>A separate job from maintenance, and on a far slower schedule, because the two differ in cost by
+     * orders of magnitude.</b> Removing data is proportional to what is removed; compacting rewrites the entire
+     * store and holds a lock that excludes every query on that graph while it runs. Running the two together
+     * meant a graph reloaded on a schedule - which condenses something on essentially every cycle, that being
+     * the workload condensing exists for - was fully rewritten every ten minutes. The gate was "did anything get
+     * removed", which on that workload is always true.</p>
+     *
+     * <p>Daily and off-peak, and adjustable: it is an ordinary scheduled job, so an operator who needs it hourly
+     * or weekly can say so without a code change. The per-graph gate is still there and is now durable, so a
+     * graph nothing has been removed from is skipped before anything is copied rather than after.</p>
+     */
+    private static class GraphCompactionRunnable extends RunnableWrapper {
+
+        private static final Logger LOGGER = LoggerFactory.getLogger(GraphCompactionRunnable.class);
+
+        static final String TASK_NAME = "Graph DB Compaction";
+
+        /** Off-peak, and late enough that a nightly reload has finished producing the versions to condense. */
+        static final String CRON_SCHEDULE = CronExpressions.EVERY_DAY_AT_3AM.getExpression();
+
+        @Inject
+        GraphCompactionRunnable(final GraphDbDocStore graphDbDocStore,
+                                final GraphStoreManager graphStoreManager) {
+            super(() -> {
+                for (final DocRef docRef : graphDbDocStore.list()) {
+                    // Per-graph, like the maintenance loop: one graph that cannot be compacted must not stop
+                    // every other graph from reclaiming its space until tomorrow.
+                    try {
+                        final GraphDbDoc doc = graphDbDocStore.readDocument(docRef);
+                        if (doc != null) {
+                            graphStoreManager.compact(doc);
+                        }
+                    } catch (final RuntimeException e) {
+                        LOGGER.error("Error compacting {}", docRef, e);
+                    }
+                }
+            });
         }
     }
 }

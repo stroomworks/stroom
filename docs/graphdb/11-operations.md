@@ -48,7 +48,7 @@ Some settings are safe to change at any time. Three are not, and only one of the
 | Setting | Changing it | Enforced? |
 |---|---|---|
 | **Temporal Precision** (per document) | Part of the key layout, so a store written at one precision **refuses to open** at another. You get a `Key schema mismatch` naming both | **Yes** — fails loudly |
-| **`graphdb.path`** | The old stores are not moved. A graph opened under a new path is **provisioned empty**, so every graph silently appears to have no data | **No** |
+| **`graphdb.path`** | The old stores are not moved. A graph opened under a new path is **provisioned empty**, so every graph appears to have no data | **Reported.** A startup check logs an ERROR naming both paths and the stranded graphs, and repeats it on every startup until they are moved or removed |
 | **`graphdb.nodeList`** — adding a node | The new node receives fragments from that point on but holds nothing from before it joined, so if it sorts first in the list it becomes the query target and answers are silently partial. **Backfill it** (below) as part of adding it | **No** — but there is now a supported fix |
 | `graphdb.nodeList` — removing a node | That node keeps a stale copy which nothing updates or deletes | No, but harmless while it is not queried |
 | `graphdb.maxStoreSize` | Applies only to graphs opened after a restart; existing stores keep their original ceiling | Partially — needs a restart |
@@ -91,8 +91,23 @@ If a backfill fails part-way, run it again — there is no partial state to clea
 receives a whole copy or none of it.
 
 > **Changing `graphdb.path` needs the data moved with it.** Stop the node, move
-> `<old path>/shards` to `<new path>/shards`, then start it. Nothing checks, and an empty graph looks the same as
-> a graph you have not loaded yet.
+> `<old path>/shards` to `<new path>/shards`, then start it.
+>
+> If you forget, the node says so at startup:
+>
+> ```
+> graphdb.path has changed from '/old/graphdb' to '/new/graphdb', but 3 graph store(s) are still at
+> the old path and nothing will read them: [uuid-a, uuid-b, uuid-c]. Every graph on this node will
+> answer as though it holds no data.
+> ```
+>
+> It knows because the last-used root is recorded in `<stroom.home>/graphdb-root.txt` — deliberately *outside*
+> `graphdb.path`, since a marker inside it could only be found by looking in the old root, which is precisely
+> what nothing does any more. Moving the data with the setting is recognised and logged at INFO instead.
+>
+> Two things this cannot do. It cannot detect a change made at the same time as `stroom.home` moving, and it
+> cannot help a node whose marker file has been lost — that reads as a fresh install. Neither is a reason to
+> skip the procedure.
 
 ## Sizing — the part that will catch you out
 
@@ -326,13 +341,18 @@ product specific:
 
 ## Retention and maintenance
 
-A single scheduled job, **"Graph DB Maintenance"**, runs every ten minutes and does three things:
+Two scheduled jobs, on deliberately different schedules.
+
+**"Graph DB Maintenance"** runs every ten minutes and does three things:
 
 | Step | Applies to | What it does |
 |---|---|---|
 | Reclaim | graphs whose document has been deleted | Removes the store. Catches a delete that happened while this node was down, which no entity event reached |
 | Retention | graphs with retention enabled | Deletes versions older than the cutoff, then rebuilds the property index and sweeps interned identifiers no surviving anchor uses. Always keeps at least one version per entity, so historical queries still resolve |
 | Condense | **every** graph | Collapses runs of consecutive identical versions |
+
+**"Graph DB Compaction"** runs nightly and returns the space those two freed to the filesystem. It is separate
+because it is orders of magnitude more expensive — see below.
 
 > **Do not think of this as only the retention job.** It was called that when retention was all it did.
 > Condensing applies to every graph including those with retention switched off, so disabling this job stops
@@ -350,12 +370,13 @@ Retention itself is configured **per document**, on the Settings tab, using the 
   runs on every maintenance cycle for **every** graph, whether or not retention is enabled, because it changes no
   answer at any instant: a point-in-time lookup is a floor scan, so it lands on the surviving earliest version,
   which holds the same value as the ones removed.
-- **Freed space is now returned to the filesystem.** LMDB reuses freed pages for new writes rather than
-  shrinking the file, so retention and condensing on their own make a store stop growing, not get smaller. A
-  maintenance run that actually removed something now follows it with a compaction, which rewrites the store
-  without its free pages. Three consequences worth knowing:
-  - **It only runs when something was removed.** A graph nothing changed in is left alone, because compacting it
-    would rewrite the whole store to reclaim nothing.
+- **Freed space is returned to the filesystem by a separate, nightly job.** LMDB reuses freed pages for new
+  writes rather than shrinking the file, so retention and condensing on their own make a store stop growing, not
+  get smaller. The **`Graph DB Compaction`** job rewrites the store without its free pages. Four things to know:
+  - **It runs nightly, not with maintenance.** It is a separate scheduled job, at 3am by default, and adjustable
+    like any other. Ten minutes was far too often — see the warning below.
+  - **It only runs on a graph that has had something removed** since it was last compacted. That is recorded in
+    the store itself, so it survives a restart.
   - **It excludes queries on that graph while it runs**, since the file underneath them is being replaced. Other
     graphs are unaffected.
   - **It needs room for a second copy** of the graph while it runs. On a volume sized to hold exactly one copy
@@ -363,6 +384,12 @@ Retention itself is configured **per document**, on the Settings tab, using the 
 
   A compaction that fails for any reason leaves the original store in place and usable; there is no half-swapped
   state to recover from.
+
+> **Do not move compaction onto a short schedule.** It rewrites the whole store, and a graph reloaded on a
+> schedule has something to condense on essentially every cycle — so an hourly or ten-minutely compaction means
+> a large graph is rewritten, and its queries blocked, over and over to reclaim space that would be reused
+> anyway. If disk is tight, the answers are retention and a coarser Temporal Precision, not more frequent
+> compaction.
 
 The property-**value** lookup, for values too long to store inline, is now swept as well: the rebuild reports
 which entries the surviving anchors reference and the rest are removed.
@@ -498,6 +525,7 @@ can watch:
 | Store directory size | The filesystem, under `<app path>/graphdb/shards/<uuid>` | The only warning before `graphdb.maxStoreSize` is reached |
 | Stream error counts on graph feeds | Stream processing | Skipped records mean silently missing data ([03-ingest.md](03-ingest.md)) |
 | "Graph DB Maintenance" job | Jobs screen | Confirms reclamation, retention and condensing are running |
+| "Graph DB Compaction" job | Jobs screen | Confirms freed space is being returned. Its last-run time is also what explains a nightly dip in query responsiveness on one graph |
 | Query failures | Query surfaces | Guardrail messages indicate queries that need rewriting ([10-limits.md](10-limits.md)) |
 
 The stream error count is the one to automate if you automate anything: a partially loaded graph is

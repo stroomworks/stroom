@@ -55,6 +55,14 @@ import static org.mockito.Mockito.mock;
  * <p>Compaction is a copy-and-swap, so what these tests mostly guard is the swap. <b>Every failure must leave a
  * usable store</b>, because the thing being risked is a whole graph. The size assertion is almost the least
  * interesting one here.</p>
+ *
+ * <p>The other thing they guard is <b>how often it runs</b>, which is not a performance concern but an
+ * availability one: a compaction excludes every query on its graph for as long as it takes to rewrite the
+ * store.</p>
+ *
+ * <p>One branch is deliberately uncovered: the size comparison that abandons a copy which came out no smaller.
+ * It is unreachable through the public API now that the pending-work flag gates the copy - only a removal too
+ * small to change the file could reach it - so it stands as a backstop rather than a tested path.</p>
  */
 class TestGraphCompaction {
 
@@ -93,9 +101,10 @@ class TestGraphCompaction {
             final long reclaimed = fixture.manager.compact(DOC);
 
             assertThat(reclaimed).as("bytes reclaimed").isPositive();
-            // Measured before anything reopens the store: opening one writes to it, so the file grows again as
-            // soon as it is used. What compaction returns is real, not what a later `du` will show.
-            assertThat(fixture.storeSize()).as("file size").isEqualTo(sizeAfterCondensing - reclaimed);
+            // Not asserted as exactly (sizeAfterCondensing - reclaimed): compaction reopens the store to record
+            // that it has nothing left to reclaim, and opening an LMDB environment writes to it. The reclaimed
+            // figure is what the copy saved; what a later `du` shows is that, plus whatever the next open costs.
+            assertThat(fixture.storeSize()).as("file size").isLessThan(sizeAfterCondensing / 2);
             assertThat(fixture.storeSize()).isLessThan(sizeAfterWriting / 2);
         } finally {
             fixture.close();
@@ -110,12 +119,16 @@ class TestGraphCompaction {
     void compacting_preservesEveryRow(@TempDir final Path root) {
         final Fixture fixture = new Fixture(root);
         try {
+            // A run to collapse and a distinct value either side of it, so condensing genuinely removes
+            // something - without which compaction is skipped and this test would assert nothing.
             fixture.writeVersions(DAY_1, 3, "a");
             fixture.writeVersions(DAY_1.plusSeconds(300), 3, "b");
+            assertThat(fixture.use(GraphStores::condense)).isPositive();
+
             final List<String> before = fixture.statuses();
             final long countBefore = fixture.nodeVersionCount();
 
-            fixture.manager.compact(DOC);
+            assertThat(fixture.manager.compact(DOC)).isPositive();
 
             assertThat(fixture.statuses()).isEqualTo(before);
             assertThat(fixture.nodeVersionCount()).isEqualTo(countBefore);
@@ -125,25 +138,74 @@ class TestGraphCompaction {
     }
 
     /**
-     * A store with nothing to reclaim must be left alone rather than pointlessly rewritten. LMDB's copy always
-     * writes at least a meta and root page, so an already-compact store copies to about its own size; swapping
-     * that in would cost a reopen for nothing, and on a big graph a full rewrite for nothing.
+     * A store nothing has been removed from must not be copied <b>at all</b>.
+     *
+     * <p>This is the gate that matters operationally. Compaction rewrites the whole store and holds a lock that
+     * excludes every query on that graph, so deciding it was pointless <em>after</em> the copy - which the size
+     * comparison does - has already spent the cost this exists to avoid.</p>
      *
      * <p>Asserted on the data file's identity rather than its size, because size does not hold still: opening an
      * environment writes to it, so the file is bigger after any use regardless of what compaction did. The
-     * question here is whether the file was <b>replaced</b>, and an inode answers that directly.</p>
+     * question is whether the file was <b>replaced</b>, and an inode answers that directly.</p>
      */
     @Test
-    void anAlreadyCompactStore_isNotRewritten(@TempDir final Path root) throws IOException {
+    void storeWithNothingToReclaim_isNotCopiedAtAll(@TempDir final Path root) throws IOException {
         final Fixture fixture = new Fixture(root);
         try {
             fixture.writeVersions(DAY_1, 3, "a");
-            fixture.manager.compact(DOC);
+            final Object fileKeyBefore = fixture.dataFileKey();
+
+            assertThat(fixture.manager.compact(DOC)).as("nothing removed, so nothing to reclaim").isZero();
+
+            assertThat(fixture.dataFileKey()).as("data file identity").isEqualTo(fileKeyBefore);
+        } finally {
+            fixture.close();
+        }
+    }
+
+    /**
+     * A second compaction with nothing removed in between must do nothing, which means the first one cleared the
+     * flag. Without that, every scheduled run would rewrite every graph that had ever had anything removed.
+     */
+    @Test
+    void compactingTwice_reclaimsNothingTheSecondTime(@TempDir final Path root) throws IOException {
+        final Fixture fixture = new Fixture(root);
+        try {
+            fixture.writeManyIdenticalVersions();
+            fixture.use(GraphStores::condense);
+            assertThat(fixture.manager.compact(DOC)).isPositive();
             final Object fileKeyAfterFirst = fixture.dataFileKey();
 
             assertThat(fixture.manager.compact(DOC)).as("second compaction").isZero();
 
             assertThat(fixture.dataFileKey()).as("data file identity").isEqualTo(fileKeyAfterFirst);
+        } finally {
+            fixture.close();
+        }
+    }
+
+    /**
+     * The flag lives in the store rather than in memory, and these are the transitions the schedule depends on.
+     *
+     * <p>It has to be durable because the two operations run days apart: removal every few minutes, compaction
+     * nightly. A restart in between is ordinary, and an in-memory flag would forget that a graph which shed a
+     * lot of data and then went quiet is owed a compaction - which is precisely the graph most worth
+     * compacting.</p>
+     */
+    @Test
+    void theCompactionFlag_isSetByRemovalAndClearedByCompaction(@TempDir final Path root) {
+        final Fixture fixture = new Fixture(root);
+        try {
+            assertThat(fixture.use(GraphStores::isCompactionPending)).as("a fresh store").isFalse();
+
+            fixture.writeManyIdenticalVersions();
+            assertThat(fixture.use(GraphStores::isCompactionPending)).as("writing alone").isFalse();
+
+            fixture.use(GraphStores::condense);
+            assertThat(fixture.use(GraphStores::isCompactionPending)).as("after condensing").isTrue();
+
+            fixture.manager.compact(DOC);
+            assertThat(fixture.use(GraphStores::isCompactionPending)).as("after compacting").isFalse();
         } finally {
             fixture.close();
         }
