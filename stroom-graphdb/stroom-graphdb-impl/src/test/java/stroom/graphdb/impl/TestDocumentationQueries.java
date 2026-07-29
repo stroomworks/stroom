@@ -21,15 +21,11 @@ import stroom.query.planner.cypher.CypherToLogicalPlan;
 
 import org.junit.jupiter.api.Test;
 
-import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -93,7 +89,7 @@ class TestDocumentationQueries {
         final List<String> failures = new ArrayList<>();
         int checked = 0;
 
-        for (final Path file : documentationFiles()) {
+        for (final Path file : DocumentationSources.documentationFiles()) {
             for (final Statement statement : statementsIn(file)) {
                 checked++;
                 final String outcome = compile(statement.query());
@@ -130,17 +126,9 @@ class TestDocumentationQueries {
         }
     }
 
-    private static String read(final Path file) {
-        try {
-            return Files.readString(file);
-        } catch (final IOException e) {
-            throw new UncheckedIOException("Unable to read " + file, e);
-        }
-    }
-
     private static List<Statement> statementsIn(final Path file) {
         final List<Statement> statements = new ArrayList<>();
-        final Matcher block = CYPHER_BLOCK.matcher(read(file));
+        final Matcher block = CYPHER_BLOCK.matcher(DocumentationSources.read(file));
         while (block.find()) {
             for (final String raw : STATEMENT_BREAK.split(block.group(1))) {
                 // Strip the blockquote prefix first: several examples sit inside a callout.
@@ -160,35 +148,6 @@ class TestDocumentationQueries {
             }
         }
         return statements;
-    }
-
-    /**
-     * The documentation directory.
-     *
-     * <p>Found by walking up from the working directory rather than hard-coded, because Gradle runs a test from
-     * its own module. <b>If the documentation moves to another repository this test fails</b>, deliberately and
-     * with an actionable message: someone must then decide whether to repoint it at the new location or delete
-     * it. Skipping quietly would leave a test that reports success while checking nothing, which is the failure
-     * mode {@link #MINIMUM_EXPECTED_STATEMENTS} also exists to prevent.</p>
-     */
-    private static List<Path> documentationFiles() {
-        Path candidate = Path.of("").toAbsolutePath();
-        while (candidate != null) {
-            final Path docs = candidate.resolve("docs/graphdb");
-            if (Files.isDirectory(docs)) {
-                try (Stream<Path> files = Files.list(docs)) {
-                    return files.filter(p -> p.getFileName().toString().endsWith(".md")).sorted().toList();
-                } catch (final IOException e) {
-                    throw new UncheckedIOException(e);
-                }
-            }
-            candidate = candidate.getParent();
-        }
-        throw new IllegalStateException(
-                "Could not find a 'docs/graphdb' directory above " + Path.of("").toAbsolutePath()
-                + ". If the Graph DB documentation has moved to another repository, either repoint this test "
-                + "at its new location or delete it - do not let it skip, because a documented query that no "
-                + "longer compiles is read as a promise.");
     }
 
     /**

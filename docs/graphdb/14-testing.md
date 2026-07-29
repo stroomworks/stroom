@@ -276,7 +276,7 @@ codec apiece.
 | `TestGraphRetentionSweep` | That the property index and its lookups are reclaimed with the versions they belonged to, and that an unchanged node keeps its anchors |
 | `TestGraphRootMarker` | That a `graphdb.path` change is reported when it strands data and accepted when the data moved with it — the discriminating pair |
 | `TestDocumentationQueries` | **Every Cypher query printed in this documentation set**, compiled through the real parser and planner. Found three examples that had been wrong for weeks, including one showing an aggregation the language cannot express. See [Documented queries](#documented-queries) |
-| `TestDocumentationReferences` | **Every source constant, code-map class and `graphdb.*` setting** the documentation cites. See [Documented references](#documented-references) |
+| `TestDocumentationReferences` | **Every source constant, code-map class and `graphdb.*` setting** the documentation cites — that it exists, **and that the value printed beside it is still the value in the code**. See [Documented references](#documented-references) |
 | `TestGraphQueryNodeResolverImpl` | Query routing, including that it claims only `GraphDb` documents |
 | `TestCompositeQueryNodeResolver` | That more than one feature can route, and that no resolvers means no constraint |
 | `TestGraphMutationSchema` | Sample documents against the XSD |
@@ -317,16 +317,41 @@ covering only the places where a reference follows a convention:
 
 | Check | Covers |
 |---|---|
-| Source constants | Every `Class.CONSTANT` in a table with a **Source constant** column — the values an operator looks up when sizing a deployment |
+| Source constants exist | Every `Class.CONSTANT` in a table with a **Source constant** column — the values an operator looks up when sizing a deployment |
+| **Source constant values** | That the number printed in the same row is the constant's actual value, read from its declaration |
 | The code map | Every class named in the first cell of a **Role** table in [13-developer-guide.md](13-developer-guide.md) |
-| Settings | Every `graphdb.*` reference anywhere, against `GraphDbConfig`'s getters |
+| Settings exist | Every `graphdb.*` reference anywhere, against `GraphDbConfig`'s getters |
+| **Setting defaults** | That every documented default is what `new GraphDbConfig()` applies |
 
 **A full sweep of every backticked identifier was tried and rejected.** It flagged 67 benign matches — Cypher
 keywords, edge labels, dataset ids, JDK types, enum constants, file names — for three real defects. Suppressing
 that needs a hand-kept stop list, and a stop list that quietly grows is the same rot the check exists to catch.
 So prose references — a class named mid-sentence, or a described behaviour — remain verified by hand.
 
-Each of the three checks asserts a floor on how much it found, for the same reason as the query test.
+Each check asserts a floor on how much it found, for the same reason as the query test.
+
+**The value checks read the code two different ways, on purpose.** Setting defaults come from a real
+`new GraphDbConfig()`, because the config object is on the test classpath and a getter cannot misread an
+initialiser. Constants are read from their **source declaration** instead, because they are not all reachable:
+`Db.MAX_KEY_LENGTH` and `PlanBEnv.CONCURRENT_READERS` are in another module, several are `private`, and the
+interface limits live in `stroom-core-client`, which is GWT-compiled and not on this module's test classpath at
+all. Reading the source treats all of them alike, and beats widening a production constant's visibility to suit
+a test.
+
+Three conventions govern how a documented value is read, and each is one an author should keep to:
+
+- **A value cell may carry markdown, separators and a unit** — `**1,000,000**`, `10 GiB`, `30 seconds`,
+  `7 days` all compare correctly.
+- **A cell beginning `~` is approximate and is not compared** — `~2.8 × 10¹⁴` is arithmetic over a byte width,
+  not a stored number. Such a row is instead checked on the width its **Source constant** cell annotates, as in
+  `` `GraphStores.NODE_UID_WIDTH` (6 bytes) ``.
+- **Write a constant reference in full.** `` `GraphDiscoveryWidget.LABEL_LIMIT` ``, not the shorthand
+  `` `.LABEL_LIMIT` `` — the shorthand matches no `Class.MEMBER` pattern, so it silently escapes both checks.
+  One row was written that way and was going unchecked.
+
+A row whose value or initialiser cannot be interpreted is counted as **unchecked**, listed in the assertion
+message, and does not fail the build — a new row with an unusual value should not break CI for whoever wrote it.
+The floor is what stops that hollowing the check out.
 
 ## Regression checklist
 
