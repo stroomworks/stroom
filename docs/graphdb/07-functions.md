@@ -71,12 +71,32 @@ accepts `*` or a bare variable. `sum(c)` over a whole node is rejected — a nod
 
 ### Ordering aggregated results
 
-`ORDER BY` must name the **alias**, not repeat the aggregate call:
+`ORDER BY` may name the aggregate's **alias** or **repeat the aggregate call**. Both mean the same thing and
+compile to the same sort:
 
 ```cypher
-RETURN c.type AS crime_type, count(c) AS total ORDER BY total DESC      -- works
-RETURN c.type AS crime_type, count(c) AS total ORDER BY count(c) DESC   -- rejected
+MATCH (c:Crime) RETURN c.type AS crime_type, count(c) AS total ORDER BY total DESC
+
+MATCH (c:Crime) RETURN c.type AS crime_type, count(c) AS total ORDER BY count(c) DESC
 ```
+
+It also works without an alias, where the column is named after the aggregate itself:
+
+```cypher
+MATCH (c:Crime) RETURN c.type, count(c) ORDER BY count(c) DESC
+```
+
+The aggregate must be one the `RETURN` produces. Ordering by a different one is rejected rather than silently
+sorting on nothing, and `DISTINCT` is part of the aggregate's identity — `count(distinct c.type)` and
+`count(c.type)` are different columns:
+
+```cypher
+-- rejected: the RETURN counts, so there is no sum(c.value) column to order by
+MATCH (c:Crime) RETURN c.type, count(c) AS total ORDER BY sum(c.value) DESC
+```
+
+An `ORDER BY` item that is neither a column nor a returned aggregate — an arithmetic expression, say — is
+rejected. Return it with an `AS` alias and order by that.
 
 ## Bare Cypher functions
 

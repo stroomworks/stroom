@@ -86,15 +86,17 @@ MATCH (u:User {id: 'x'})-[:MEMBER_OF*1..3]->(g:Group) RETURN DISTINCT g.name
 MATCH (b:Basket {id: '9'})-[:HOLDS]->(i:Item)-[:MADE_BY]->(m:Maker) RETURN m.name
 ```
 
-Aggregation ports too, with one edit:
+Aggregation ports unchanged, including ordering by the aggregate call itself:
 
 ```cypher
--- Neo4j — rejected here
 MATCH (c:Crime) RETURN c.type, count(c) AS total ORDER BY count(c) DESC
 
--- Graph DB: order by the alias
+-- Ordering by the alias works too, and means the same thing
 MATCH (c:Crime) RETURN c.type AS crime_type, count(c) AS total ORDER BY total DESC
 ```
+
+The aggregate must be one the `RETURN` produces — `ORDER BY sum(c.value)` over a `RETURN` that counts is
+rejected rather than silently sorting on nothing.
 
 ### What needs rewriting
 
@@ -102,7 +104,7 @@ MATCH (c:Crime) RETURN c.type AS crime_type, count(c) AS total ORDER BY total DE
 |---|---|---|
 | `RETURN n` | Rejected | Name the properties, or use `RETURN GRAPH` |
 | `RETURN *` | Rejected | List the columns |
-| `ORDER BY count(x)` | Rejected | Order by the `AS` alias |
+| `ORDER BY count(x)` | **Supported**, provided the `RETURN` produces that aggregate | — |
 | `SKIP 10 LIMIT 10` | `SKIP` rejected | `LIMIT` only; no pagination |
 | `MATCH (a), (b)` | Rejected | One `MATCH`, one pattern |
 | `MATCH (a) MATCH (b)` | Rejected | Combine, or use `OPTIONAL MATCH`/`WITH` |

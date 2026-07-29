@@ -421,7 +421,8 @@ them — those are marked *(runtime)* below.
 |---|---|---|
 | `SKIP n` | `not in PoC subset: SKIP is not yet compiled (the core's Limit node has no offset slot)` | Use `LIMIT` only |
 | `RETURN *` or `RETURN c` | *(runtime)* `not yet supported: RETURN item names bare pattern variable …` | Name the properties, or use `RETURN GRAPH` |
-| `ORDER BY count(c)` | `not in PoC subset: an ORDER BY item must be a property access or variable reference` | `ORDER BY` the alias |
+| `ORDER BY` an aggregate the `RETURN` does not produce | `not in PoC subset: ORDER BY '…' is not a returned column - an aggregate in ORDER BY must be one the RETURN also produces` | `ORDER BY` an aggregate you returned, or its alias |
+| `ORDER BY` anything else that is not a column — e.g. `ORDER BY c.value * 2` | `not in PoC subset: an ORDER BY item must be a property access, variable reference, or an aggregate the RETURN also produces` | Return the expression with an `AS` alias, then order by that |
 | Two `MATCH` clauses, or `MATCH a, b` | `not in PoC subset: only a single MATCH, optionally followed by one OPTIONAL MATCH or one WITH, is supported …` | Restructure as one pattern |
 | `WHERE NOT (a)-[:X]->(b)` | Syntax error at the pattern | Use `EXISTS { … }` under `NOT` |
 | A variable-length hop chained with others | `not in PoC subset: chaining a variable-length hop with other hops in the same pattern is not yet compiled …` | Make it the only hop |
@@ -431,7 +432,7 @@ them — those are marked *(runtime)* below.
 | `SKIP`/`LIMIT`/`ORDER BY` on a `WITH` | `not supported in this version: ORDER BY / SKIP / LIMIT on a WITH` | Move to the final `RETURN` |
 | `before()`/`after()`/`changeKind` in a `WHERE` | `not supported in this version: … in a DIFF WHERE clause (filtering on it is a later phase); it is supported in RETURN` | Filter downstream |
 
-The compiler contains **65** such rejection messages and the engine a further **five**; the table lists those
+The compiler contains **66** such rejection messages and the engine a further **five**; the table lists those
 you are most likely to meet. A compiler message begins `not in PoC subset:` or
 `not supported in this version:`; an engine one begins `not yet supported:`. All name the construct, and
 usually the alternative.

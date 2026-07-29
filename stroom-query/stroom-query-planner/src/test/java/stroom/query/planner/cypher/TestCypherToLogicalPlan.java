@@ -843,6 +843,82 @@ class TestCypherToLogicalPlan {
     }
 
     @Test
+    void orderByAggregateExpression_sortsOnTheAliasThatAggregateProduces() {
+        // ORDER BY count(c) rather than ORDER BY caseload. It is how a Cypher author naturally writes it, and it
+        // resolves to the same output column, so the executor cannot tell the two spellings apart.
+        final CompiledCypherPlan compiled = compile(
+                "MATCH (c:Crime)-[:INVESTIGATED_BY]->(o:Officer) "
+                + "RETURN o.surname, count(c) AS caseload ORDER BY count(c) DESC");
+
+        assertThat(compiled.aggregation()).isNotNull();
+        assertThat(compiled.plan()).isInstanceOf(Sort.class);
+        final Sort sort = (Sort) compiled.plan();
+        assertThat(sort.keys()).hasSize(1);
+        assertThat(sort.keys().getFirst().field().alias()).isNull();
+        assertThat(sort.keys().getFirst().field().field()).isEqualTo("caseload");
+        assertThat(sort.keys().getFirst().descending()).isTrue();
+    }
+
+    @Test
+    void orderByAggregateExpression_unaliasedReturn_sortsOnTheDefaultColumnName() {
+        // With no AS, the column is named by defaultAggregateName - the same text the ORDER BY names it by.
+        final CompiledCypherPlan compiled = compile(
+                "MATCH (c:Crime)-[:INVESTIGATED_BY]->(o:Officer) "
+                + "RETURN o.surname, count(c) ORDER BY count(c)");
+
+        final Sort sort = (Sort) compiled.plan();
+        assertThat(sort.keys().getFirst().field().alias()).isNull();
+        assertThat(sort.keys().getFirst().field().field()).isEqualTo("count(c)");
+    }
+
+    @Test
+    void orderByAggregateExpression_distinctIsPartOfTheAggregatesIdentity() {
+        // count(distinct c.type) and count(c.type) are different columns, so ORDER BY must not conflate them.
+        // (DISTINCT needs a property rather than a whole node - a separate, pre-existing restriction.)
+        final Sort distinctSort = (Sort) compile(
+                "MATCH (c:Crime)-[:INVESTIGATED_BY]->(o:Officer) "
+                + "RETURN o.surname, count(distinct c.type) ORDER BY count(distinct c.type)").plan();
+        assertThat(distinctSort.keys().getFirst().field().field()).isEqualTo("count(distinct c.type)");
+
+        assertThatThrownBy(() -> new CypherToLogicalPlan().compile(CypherQueryParser.parse(
+                "MATCH (c:Crime)-[:INVESTIGATED_BY]->(o:Officer) "
+                + "RETURN o.surname, count(distinct c.type) ORDER BY count(c.type)")))
+                .isInstanceOf(CypherCompileException.class)
+                .hasMessageContaining("not a returned column");
+    }
+
+    @Test
+    void orderByAggregateExpression_sumOverAProperty_resolves() {
+        final Sort sort = (Sort) compile(
+                "MATCH (c:Crime)-[:INVESTIGATED_BY]->(o:Officer) "
+                + "RETURN o.surname, sum(c.value) AS total ORDER BY sum(c.value) DESC").plan();
+
+        assertThat(sort.keys().getFirst().field().field()).isEqualTo("total");
+        assertThat(sort.keys().getFirst().descending()).isTrue();
+    }
+
+    @Test
+    void orderByAggregateNotReturned_isRejected() {
+        // Sorting by an aggregate the RETURN does not produce would sort on an absent column. Rejected, not
+        // silently ignored.
+        assertThatThrownBy(() -> new CypherToLogicalPlan().compile(CypherQueryParser.parse(
+                "MATCH (c:Crime)-[:INVESTIGATED_BY]->(o:Officer) "
+                + "RETURN o.surname, count(c) AS caseload ORDER BY sum(c.value)")))
+                .isInstanceOf(CypherCompileException.class)
+                .hasMessageContaining("not a returned column");
+    }
+
+    @Test
+    void orderByAggregate_onANonAggregatedReturn_isRejected() {
+        // The case validateOrderByAggregation never sees: with no aggregate in the RETURN there is no aggregation,
+        // so that check does not run at all and the resolution itself has to be the guard.
+        assertThatThrownBy(() -> new CypherToLogicalPlan().compile(CypherQueryParser.parse(
+                "MATCH (a:Account) RETURN a.id ORDER BY count(a)")))
+                .isInstanceOf(CypherCompileException.class)
+                .hasMessageContaining("not a returned column");
+    }
+
+    @Test
     void orderByNonReturnedColumn_throwsNotInPoCSubsetOnceAggregated() {
         final AstCypherQuery ast = CypherQueryParser.parse(
                 "MATCH (c:Crime)-[:INVESTIGATED_BY]->(o:Officer) "

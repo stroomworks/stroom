@@ -117,7 +117,10 @@ import java.util.Set;
  * {@link #buildAggregation}): every non-aggregate {@code RETURN} item becomes an implicit {@code GROUP BY} key
  * (Cypher's rule), carried on {@link CompiledCypherPlan#aggregation} for the graph executor to group and reduce
  * by - {@code null} when the {@code RETURN} has no aggregate item, so the executor's ordinary per-row projection
- * is unaffected. {@code collect} parses but is rejected here: without a list value type its only representation
+ * is unaffected. An {@code ORDER BY} may name an aggregate the {@code RETURN} produces
+ * ({@code RETURN u.id, count(f) ORDER BY count(f) DESC}) as well as its {@code AS} alias; both resolve to the
+ * same output column, so the executor sees no difference (see {@link #resolveAggregateOrderItem}).
+ * {@code collect} parses but is rejected here: without a list value type its only representation
  * would be a comma-joined string, which is a wrong answer rather than a partial one.</p>
  *
  * <p>A hop's target (non-anchor) node pattern's own labels/inline properties (Task P3.1) compile onto
@@ -334,7 +337,7 @@ public final class CypherToLogicalPlan {
             // one-row-per-group output tuple. Checked here, not in GraphTraversalEngine, so the rejection carries
             // the precise AST position of the offending ORDER BY item, matching this class's "fail fast with a
             // clear position" contract used throughout (see e.g. the SKIP rejection below).
-            validateOrderByAgainstAggregation(query.returnClause().orderBy(), fields);
+            validateOrderByAgainstAggregation(query.returnClause().orderBy(), query.returnClause(), fields);
         }
 
         plan = compileReturn(plan, query.returnClause(), fields);
@@ -1082,7 +1085,8 @@ public final class CypherToLogicalPlan {
         // RETURN DISTINCT is carried on the CompiledCypherPlan (see compile), not lowered to a plan node, since
         // the sealed shared IR has no Distinct node; the graph executor de-duplicates the projected rows.
         if (returnClause.orderBy() != null) {
-            plan = new Sort(plan, compileOrderBy(returnClause.orderBy()), returnClause.orderBy().position());
+            plan = new Sort(plan, compileOrderBy(returnClause.orderBy(), returnClause, fields),
+                    returnClause.orderBy().position());
         }
         if (returnClause.skip() != null || returnClause.limit() != null) {
             // The relational core's Limit models only a maximum row count (see Limit's Javadoc); Cypher's SKIP
@@ -1301,22 +1305,29 @@ public final class CypherToLogicalPlan {
      * Rejects an {@code ORDER BY} item that does not reference any column the (aggregated) {@code RETURN}
      * actually produces - once rows are grouped/reduced there is no traversal row map left at execution time
      * (only the final, one-row-per-group output tuple), so, unlike the non-aggregated path, an {@code ORDER BY}
-     * item here must name a returned column by its property access or {@code AS} alias, not an arbitrary bound
-     * variable/property. Reuses {@link #toQualifiedField}'s {@code (alias, field)} split and the same
-     * {@code alias == null ? field : alias + "." + field} reconstruction the graph executor's row lookups use, so
-     * a match here is exactly a match against a {@link ProjectField#name}.
+     * item here must name a returned column by its property access, {@code AS} alias, or the aggregate call
+     * itself, not an arbitrary bound variable/property. Reuses {@link #toQualifiedField}'s {@code (alias, field)}
+     * split and the same {@code alias == null ? field : alias + "." + field} reconstruction the graph executor's
+     * row lookups use, so a match here is exactly a match against a {@link ProjectField#name}.
      *
-     * @param fields {@link #buildProjectFields}'s result for the same {@code RETURN} clause {@code orderBy}
-     *               belongs to.
+     * <p><b>It must resolve items the same way {@link #compileOrderBy} does</b>, which is why both go through
+     * {@link #toQualifiedField} rather than each interpreting an item themselves. If they disagreed about an
+     * aggregate, a query would validate here and then sort on a column the {@code Project} never emitted -
+     * the failure mode is an empty or arbitrarily-ordered result, not an error.</p>
+     *
+     * @param returnClause the {@code RETURN} clause {@code orderBy} belongs to.
+     * @param fields       {@link #buildProjectFields}'s result for that same {@code RETURN} clause.
      * @throws CypherCompileException if any {@code orderBy} item does not name a column in {@code fields}.
      */
-    private void validateOrderByAgainstAggregation(final AstOrderBy orderBy, final List<ProjectField> fields) {
+    private void validateOrderByAgainstAggregation(final AstOrderBy orderBy, final AstReturnClause returnClause,
+                                                   final List<ProjectField> fields) {
         final Set<String> outputNames = new HashSet<>();
         for (final ProjectField field : fields) {
             outputNames.add(field.name());
         }
         for (final AstOrderItem item : orderBy.items()) {
-            final QualifiedField qualified = toQualifiedField(item.expression(), item.position());
+            final QualifiedField qualified =
+                    toQualifiedField(item.expression(), item.position(), returnClause, fields);
             final String reconstructed = qualified.alias() == null
                     ? qualified.field()
                     : qualified.alias() + "." + qualified.field();
@@ -1329,10 +1340,12 @@ public final class CypherToLogicalPlan {
         }
     }
 
-    private List<SortKey> compileOrderBy(final AstOrderBy orderBy) {
+    private List<SortKey> compileOrderBy(final AstOrderBy orderBy, final AstReturnClause returnClause,
+                                         final List<ProjectField> fields) {
         final List<SortKey> keys = new ArrayList<>(orderBy.items().size());
         for (final AstOrderItem item : orderBy.items()) {
-            keys.add(new SortKey(toQualifiedField(item.expression(), item.position()), item.descending()));
+            keys.add(new SortKey(toQualifiedField(item.expression(), item.position(), returnClause, fields),
+                    item.descending()));
         }
         return keys;
     }
@@ -1345,16 +1358,72 @@ public final class CypherToLogicalPlan {
      * {@code Scan} alias {@link QualifiedField} expects; a bare variable reference has no separate field component
      * of its own, so it is carried as an unqualified field name ({@code alias} null). The graph executor rebuilds
      * the row-map key from this pair as {@code alias == null ? field : alias + "." + field}.
+     *
+     * <p>An <b>aggregate</b> item ({@code ORDER BY count(f)}) is resolved through {@code returnClause} to the
+     * output column that same aggregate produces - see {@link #resolveAggregateOrderItem}.</p>
      */
-    private static QualifiedField toQualifiedField(final AstExpression expression, final AstPosition position) {
+    private static QualifiedField toQualifiedField(final AstExpression expression, final AstPosition position,
+                                                  final AstReturnClause returnClause,
+                                                  final List<ProjectField> fields) {
         if (expression instanceof final AstPropertyAccessExpr propertyAccess) {
             return new QualifiedField(propertyAccess.variable(), propertyAccess.property());
         }
         if (expression instanceof final AstVariableExpr variable) {
             return new QualifiedField(null, variable.name());
         }
+        if (expression instanceof final AstAggregateExpr aggregate) {
+            return resolveAggregateOrderItem(aggregate, position, returnClause, fields);
+        }
         throw new CypherCompileException(
-                "not in PoC subset: an ORDER BY item must be a property access or variable reference", position);
+                "not in PoC subset: an ORDER BY item must be a property access, variable reference, or an "
+                + "aggregate the RETURN also produces", position);
+    }
+
+    /**
+     * Resolves {@code ORDER BY <aggregate>} to the output column that aggregate produces in {@code returnClause}.
+     *
+     * <p>Sorting by an aggregate has always been possible via its alias - {@code RETURN count(f) AS n … ORDER BY
+     * n} - and the executor needs nothing new here: an aliased order key is already a
+     * {@code QualifiedField(null, <column name>)}, and this produces exactly that shape. All that was missing was
+     * naming the aggregate the way a Cypher author naturally writes it. So the resolution is by
+     * <b>expression</b>, matching each {@code RETURN} item's own rendered aggregate name, which makes it work
+     * whether or not the item was aliased:</p>
+     *
+     * <ul>
+     *   <li>{@code RETURN u.id, count(f) AS friends … ORDER BY count(f)} sorts on {@code friends}.</li>
+     *   <li>{@code RETURN u.id, count(f) … ORDER BY count(f)} sorts on {@code count(f)}, the default column
+     *       name {@link #defaultAggregateName} gives it.</li>
+     * </ul>
+     *
+     * <p><b>An aggregate the {@code RETURN} does not produce is still rejected</b>, and that matters in two
+     * cases this method is the only guard for. Sorting by {@code count(x)} when the query aggregates something
+     * else would silently sort on an absent column; and an aggregate in the {@code ORDER BY} of a
+     * <em>non</em>-aggregated {@code RETURN} never reaches
+     * {@link #validateOrderByAgainstAggregation} at all, because that check only runs when an aggregation
+     * exists.</p>
+     *
+     * @param aggregate    the {@code ORDER BY} item's aggregate call; never null.
+     * @param position     the item's position, for the rejection message; never null.
+     * @param returnClause the {@code RETURN} the {@code ORDER BY} belongs to; never null.
+     * @param fields       {@link #buildProjectFields}'s result for {@code returnClause}, aligned with its items.
+     * @return the output column to sort on, never null.
+     * @throws CypherCompileException if no {@code RETURN} item is that same aggregate.
+     */
+    private static QualifiedField resolveAggregateOrderItem(final AstAggregateExpr aggregate,
+                                                            final AstPosition position,
+                                                            final AstReturnClause returnClause,
+                                                            final List<ProjectField> fields) {
+        final String wanted = defaultAggregateName(aggregate);
+        for (int i = 0; i < returnClause.items().size() && i < fields.size(); i++) {
+            final AstExpression returned = returnClause.items().get(i).expression();
+            if (returned instanceof final AstAggregateExpr returnedAggregate
+                && defaultAggregateName(returnedAggregate).equals(wanted)) {
+                return new QualifiedField(null, fields.get(i).name());
+            }
+        }
+        throw new CypherCompileException(
+                "not in PoC subset: ORDER BY '" + wanted + "' is not a returned column - an aggregate in "
+                + "ORDER BY must be one the RETURN also produces", position);
     }
 
 

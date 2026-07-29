@@ -245,6 +245,51 @@ class TestGraphSearchProvider {
     }
 
     @Test
+    void orderByAggregateExpression_ordersRealRows_throughRealCoprocessors(@TempDir final Path root) {
+        // ORDER BY sum(a.balance) rather than ORDER BY its alias. The compiler resolves both to the same output
+        // column, so the executor should need nothing new - and the only way to be sure of that is to run it and
+        // check the row order, rather than to inspect the plan. account-b (200) must precede account-a (50).
+        try (GraphStores stores = GraphStores.provision(root, DOC)) {
+            seedDeviceConnectedToAccounts(stores);
+
+            final GraphSearchProvider provider = provider(stores);
+            final SearchRequest request = compilerDerivedRequest(
+                    "MATCH (d:Device {id: 'd-42'})-[:CONNECTED_TO]->(a:Account) "
+                    + "RETURN a.id, sum(a.balance) AS total ORDER BY sum(a.balance) DESC");
+
+            final ResultStore resultStore = provider.createResultStore(request);
+
+            assertThat(readTableRows(resultStore))
+                    .extracting(row -> row[0].toString(), row -> row[1].toDouble())
+                    .containsExactly(
+                            Tuple.tuple("account-b", 200.0),
+                            Tuple.tuple("account-a", 50.0));
+        }
+    }
+
+    @Test
+    void orderByUnaliasedAggregateExpression_ordersRealRows_throughRealCoprocessors(@TempDir final Path root) {
+        // The unaliased form, where the column name is the rendered aggregate itself - so this also exercises
+        // "${sum(a.balance)}" surviving the real column pipeline, as the count(*) case above does.
+        try (GraphStores stores = GraphStores.provision(root, DOC)) {
+            seedDeviceConnectedToAccounts(stores);
+
+            final GraphSearchProvider provider = provider(stores);
+            final SearchRequest request = compilerDerivedRequest(
+                    "MATCH (d:Device {id: 'd-42'})-[:CONNECTED_TO]->(a:Account) "
+                    + "RETURN a.id, sum(a.balance) ORDER BY sum(a.balance)");
+
+            final ResultStore resultStore = provider.createResultStore(request);
+
+            assertThat(readTableRows(resultStore))
+                    .extracting(row -> row[0].toString(), row -> row[1].toDouble())
+                    .containsExactly(
+                            Tuple.tuple("account-a", 50.0),
+                            Tuple.tuple("account-b", 200.0));
+        }
+    }
+
+    @Test
     void withHavingPipe_returnsRealRows_throughRealCoprocessors(@TempDir final Path root) {
         try (GraphStores stores = GraphStores.provision(root, DOC)) {
             seedDeviceConnectedToAccounts(stores);
