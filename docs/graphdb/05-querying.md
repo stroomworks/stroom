@@ -8,7 +8,8 @@
 [08-analysis-examples.md](08-analysis-examples.md) (worked examples),
 [10-limits.md](10-limits.md) (display caps).
 
-*Tabs, toolbar controls, menu actions, layouts and export options re-verified against the code on 2026-07-29, branch `sw-query-optimiser`.*
+*Tabs, toolbar controls, menu actions, layouts and export options re-verified against the code on 2026-07-29,
+branch `sw-query-optimiser`. The whole-graph preview cap now reports itself rather than truncating silently.*
 
 ---
 
@@ -51,8 +52,11 @@ MATCH (p:Person {surname: 'Powell'})-[:PARTY_TO]->(c:Crime) RETURN GRAPH
 The default query when you open the tab is `MATCH (n) RETURN GRAPH LIMIT 100` — a whole-graph preview, so
 you can see immediately whether a graph holds data and what shape it takes.
 
-> Without an explicit `LIMIT`, that unanchored preview form caps at **100 nodes** silently. Every other
-> limit reports itself; this one does not ([10-limits.md](10-limits.md)).
+> Without an explicit `LIMIT`, that unanchored preview form caps at **100 nodes** — and tells you so, with a
+> warning above the results naming the `graphdb.wholeGraphNodeCap` setting. You still get the rows: a truncated
+> preview is a usable answer, and failing it would break this very default query. The warning appears only when
+> the scan was actually cut short, so a graph smaller than the cap shows nothing
+> ([10-limits.md](10-limits.md)).
 
 ### Toolbar
 

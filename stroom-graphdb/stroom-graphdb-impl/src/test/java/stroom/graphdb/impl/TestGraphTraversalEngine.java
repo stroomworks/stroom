@@ -45,8 +45,10 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
+import static org.assertj.core.api.Assertions.as;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.InstanceOfAssertFactories.STRING;
 
 /**
  * Task PoC.5's Done-when: a single-hop {@code MATCH...RETURN} query, parsed and compiled by the real
@@ -1756,6 +1758,97 @@ class TestGraphTraversalEngine {
                         assertThat(nodeIds).contains(text(r[4]));
                     });
         }
+    }
+
+    @Test
+    void wholeGraphDump_scanCutShortByTheCap_reportsAWarning(@TempDir final Path root) {
+        // The cap is the one guardrail that truncates instead of failing, because failing it would break the
+        // default query both graph tabs open with. It must therefore say so: every other limit reports itself.
+        // 4 nodes seeded, cap of 2 - the scan stops with nodes left unlooked-at.
+        try (GraphStores stores = GraphStores.provision(root.resolve("capwarns"), DOC)) {
+            seedDeviceConnectedToAccounts(stores);
+
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory(), 200_000L, Duration.ofSeconds(30), 1_000_000L, 2);
+            runWholeGraphPreview(stores, engine, "MATCH (n) RETURN GRAPH");
+
+            assertThat(engine.warnings().messages())
+                    .singleElement(as(STRING))
+                    .contains("stopped at the first 2 nodes")
+                    // Names the setting, so an administrator can find it, and the way out, so an analyst can act.
+                    .contains("graphdb.wholeGraphNodeCap")
+                    .contains("Add a LIMIT");
+        }
+    }
+
+    @Test
+    void wholeGraphDump_asManyNodesAsTheCap_reportsNothing(@TempDir final Path root) {
+        // The discriminating case. A graph holding exactly the cap is complete, and reporting it as truncated
+        // would be a false alarm on every small graph - which is how a warning teaches people to ignore it.
+        // 4 nodes seeded, cap of 4: the scan ends because it ran out of nodes, not because it was stopped.
+        try (GraphStores stores = GraphStores.provision(root.resolve("capexact"), DOC)) {
+            seedDeviceConnectedToAccounts(stores);
+
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory(), 200_000L, Duration.ofSeconds(30), 1_000_000L, 4);
+            final List<Val[]> rows = runWholeGraphPreview(stores, engine, "MATCH (n) RETURN GRAPH");
+
+            assertThat(rows).filteredOn(r -> "NODE".equals(text(r[0]))).hasSize(4);
+            assertThat(engine.warnings().messages()).isEmpty();
+        }
+    }
+
+    @Test
+    void wholeGraphDump_fewerNodesThanTheCap_reportsNothing(@TempDir final Path root) {
+        try (GraphStores stores = GraphStores.provision(root.resolve("capunder"), DOC)) {
+            seedDeviceConnectedToAccounts(stores);
+
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory(), 200_000L, Duration.ofSeconds(30), 1_000_000L, 50);
+            runWholeGraphPreview(stores, engine, "MATCH (n) RETURN GRAPH");
+
+            assertThat(engine.warnings().messages()).isEmpty();
+        }
+    }
+
+    @Test
+    void wholeGraphPreview_withItsOwnLimit_reportsNothing(@TempDir final Path root) {
+        // A query that asked for 2 nodes got 2 nodes. Telling the author their own LIMIT truncated the result is
+        // noise, and it would fire on the tabs' own default query (MATCH (n) RETURN GRAPH LIMIT 100) forever.
+        try (GraphStores stores = GraphStores.provision(root.resolve("ownlimit"), DOC)) {
+            seedDeviceConnectedToAccounts(stores);
+
+            final GraphTraversalEngine engine = new GraphTraversalEngine(stores, new ExpressionPredicateFactory());
+            final List<Val[]> rows = runWholeGraphPreview(stores, engine, "MATCH (n) RETURN GRAPH LIMIT 2");
+
+            assertThat(rows).filteredOn(r -> "NODE".equals(text(r[0]))).hasSize(2);
+            assertThat(engine.warnings().messages()).isEmpty();
+        }
+    }
+
+    @Test
+    void anchoredReturnGraph_reportsNothing(@TempDir final Path root) {
+        // The cap belongs to the unanchored preview scan alone. An anchored pattern walks the index and is bounded
+        // by what matches, so it has nothing to report even with a cap smaller than the result.
+        try (GraphStores stores = GraphStores.provision(root.resolve("anchorednowarn"), DOC)) {
+            seedDeviceConnectedToAccounts(stores);
+
+            final GraphTraversalEngine engine = new GraphTraversalEngine(
+                    stores, new ExpressionPredicateFactory(), 200_000L, Duration.ofSeconds(30), 1_000_000L, 1);
+            runWholeGraphPreview(stores, engine,
+                    "MATCH (d:Device {id: 'd-42'})-[:CONNECTED_TO]->(a:Account) RETURN GRAPH");
+
+            assertThat(engine.warnings().messages()).isEmpty();
+        }
+    }
+
+    /** Compiles and runs a {@code RETURN GRAPH} query through the element executor, as the search provider does. */
+    private static List<Val[]> runWholeGraphPreview(final GraphStores stores, final GraphTraversalEngine engine,
+                                                    final String cypher) {
+        final CompiledCypherPlan compiled = compile(cypher);
+        return stores.read(readTxn ->
+                GraphElementExecutor.execute(readTxn, engine, stores, compiled.plan(),
+                        compiled.temporalContext(), compiled.diffContext(), DateTimeSettings.builder().build()));
     }
 
     @Test

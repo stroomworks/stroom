@@ -55,8 +55,10 @@ import stroom.query.language.functions.ValLong;
 import stroom.query.language.functions.ValString;
 import stroom.security.api.SecurityContext;
 import stroom.util.shared.PermissionException;
+import stroom.util.shared.Severity;
 import stroom.util.shared.UserRef;
 
+import jakarta.inject.Provider;
 import org.assertj.core.groups.Tuple;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -409,6 +411,51 @@ class TestGraphSearchProvider {
     }
 
     @Test
+    void wholeGraphPreview_cutShortByTheCap_reachesTheResultStoreAsAWarning(@TempDir final Path root) {
+        // The cap is the one guardrail that truncates rather than failing, so the only way a user learns of it is
+        // this message. Asserted on the result store rather than only on the engine because the severity is what
+        // makes it a warning rather than a failed search - and because that is the whole delivery mechanism: both
+        // graph tabs render ResultStore.getErrors(), so nothing client-side had to change.
+        try (GraphStores stores = GraphStores.provision(root, DOC)) {
+            seedDeviceConnectedToAccounts(stores);
+
+            // 4 nodes seeded; a configured cap of 2 cuts the preview scan short.
+            final GraphSearchProvider provider = provider(stores,
+                    () -> new GraphDbConfig(null, null, null, null, null, null, null, 2));
+            final ResultStore resultStore =
+                    provider.createResultStore(compilerDerivedRequest("MATCH (n) RETURN GRAPH"));
+
+            assertThat(readTableRows(resultStore)).filteredOn(r -> "NODE".equals(r[0].toString())).hasSize(2);
+            assertThat(resultStore.getErrors())
+                    .singleElement()
+                    .satisfies(error -> {
+                        assertThat(error.getSeverity()).isEqualTo(Severity.WARNING);
+                        assertThat(error.getMessage())
+                                .contains("stopped at the first 2 nodes")
+                                .contains("graphdb.wholeGraphNodeCap");
+                    });
+        }
+    }
+
+    @Test
+    void wholeGraphPreview_notCutShort_reportsNothingToTheResultStore(@TempDir final Path root) {
+        // The companion assertion, at the discriminating boundary: this fixture holds exactly 3 nodes, and a cap of
+        // 3 must not report it as truncated. A warning that also appears when nothing was truncated is worse than
+        // no warning, because it trains people to ignore the surface it appears on.
+        try (GraphStores stores = GraphStores.provision(root, DOC)) {
+            seedDeviceConnectedToAccounts(stores);
+
+            final GraphSearchProvider provider = provider(stores,
+                    () -> new GraphDbConfig(null, null, null, null, null, null, null, 3));
+            final ResultStore resultStore =
+                    provider.createResultStore(compilerDerivedRequest("MATCH (n) RETURN GRAPH"));
+
+            assertThat(readTableRows(resultStore)).filteredOn(r -> "NODE".equals(r[0].toString())).hasSize(3);
+            assertThat(resultStore.getErrors()).isEmpty();
+        }
+    }
+
+    @Test
     void diffReturnGraphCypherQuery_advertisesChangeKindAsA7thColumn_andReturnsRealRows(
             @TempDir final Path root) {
         final Instant tMid = Instant.parse("2026-03-01T00:00:00.000Z");
@@ -470,6 +517,16 @@ class TestGraphSearchProvider {
      * genuine {@link ResultStore} - mirrors {@code TestJoinSearchProvider.provider}.
      */
     private static GraphSearchProvider provider(final GraphStores stores) {
+        return provider(stores, GraphDbConfig::new);
+    }
+
+    /**
+     * As {@link #provider(GraphStores)}, with the deployment configuration under the test's control - so a
+     * guardrail can be exercised at a value a small fixture reaches, rather than by seeding to a production
+     * default.
+     */
+    private static GraphSearchProvider provider(final GraphStores stores,
+                                                final Provider<GraphDbConfig> configProvider) {
         final CoprocessorsFactory coprocessorsFactory = new CoprocessorsFactory(
                 new MapDataStoreFactory(SearchResultStoreConfig::new),
                 new ExpressionContextFactory(),
@@ -514,7 +571,7 @@ class TestGraphSearchProvider {
                 securityContext,
                 mock(FieldInfoResultPageFactory.class),
                 mock(DocFinder.class),
-                GraphDbConfig::new);
+                configProvider);
     }
 
     /**

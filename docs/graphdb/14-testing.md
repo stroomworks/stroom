@@ -282,8 +282,8 @@ codec apiece.
 | `TestGraphQueryNodeResolverImpl` | Query routing, including that it claims only `GraphDb` documents |
 | `TestCompositeQueryNodeResolver` | That more than one feature can route, and that no resolvers means no constraint |
 | `TestGraphMutationSchema` | Sample documents against the XSD |
-| `TestGraphTraversalEngine` | Traversal, temporal semantics, guardrails |
-| `TestGraphSearchProvider` | End-to-end execution, including `UNION` |
+| `TestGraphTraversalEngine` | Traversal, temporal semantics, guardrails — including that the whole-graph preview reports being cut short by the node cap, and **stays quiet at exactly the cap**, below it, and under an explicit `LIMIT` |
+| `TestGraphSearchProvider` | End-to-end execution, including `UNION`, and that the preview cap's warning reaches the result store at `WARNING` severity rather than failing the search |
 | `TestCypherQueryParser` | Grammar and AST |
 | `TestGraphDbSettingsPresenter` | Settings UI |
 

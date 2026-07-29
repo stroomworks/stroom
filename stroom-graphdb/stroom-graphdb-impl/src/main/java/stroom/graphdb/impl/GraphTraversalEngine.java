@@ -131,6 +131,12 @@ public final class GraphTraversalEngine {
     private final GraphTraversalLimits limits;
 
     /**
+     * What this traversal needs to tell the user without failing them. Per-engine, and an engine is per-query -
+     * see {@link GraphQueryWarnings}.
+     */
+    private final GraphQueryWarnings warnings;
+
+    /**
      * Uses the built-in default limits. Retained for callers with no configuration to hand - chiefly the tests,
      * which exercise the ceilings themselves and so must not depend on a deployment's settings.
      */
@@ -140,7 +146,8 @@ public final class GraphTraversalEngine {
     }
 
     /**
-     * The production constructor: uses the limits an administrator has configured.
+     * Uses the limits an administrator has configured, and collects any warnings into an instance of its own -
+     * readable afterwards through {@link #warnings()}.
      *
      * <p><b>Preconditions:</b> no parameter is null.
      * <b>Null status:</b> no parameter is nullable.
@@ -152,11 +159,45 @@ public final class GraphTraversalEngine {
     public GraphTraversalEngine(final GraphStores stores,
                                 final ExpressionPredicateFactory expressionPredicateFactory,
                                 final GraphTraversalLimits limits) {
+        this(stores, expressionPredicateFactory, limits, new GraphQueryWarnings());
+    }
+
+    /**
+     * The production constructor: uses the configured limits, and reports non-fatal findings into a collector the
+     * caller already holds.
+     *
+     * <p>The collector is passed in rather than only read back out because the caller
+     * ({@link GraphSearchProvider}) builds the engine inside a borrowed-store callback and drains the warnings
+     * after it returns, by which point the engine is out of scope.</p>
+     *
+     * <p><b>Preconditions:</b> no parameter is null.
+     * <b>Null status:</b> no parameter is nullable.
+     *
+     * @param stores                     the graph to traverse.
+     * @param expressionPredicateFactory builds the predicates a {@code WHERE} compiles to.
+     * @param limits                     the ceilings a traversal fails at.
+     * @param warnings                   collects what the caller must report but must not fail on. Must be fresh
+     *                                   for this query.
+     */
+    public GraphTraversalEngine(final GraphStores stores,
+                                final ExpressionPredicateFactory expressionPredicateFactory,
+                                final GraphTraversalLimits limits,
+                                final GraphQueryWarnings warnings) {
         this.stores = Objects.requireNonNull(stores, "stores");
         this.expressionPredicateFactory =
                 Objects.requireNonNull(expressionPredicateFactory, "expressionPredicateFactory");
         this.limits = Objects.requireNonNull(limits, "limits");
+        this.warnings = Objects.requireNonNull(warnings, "warnings");
         this.latest = stores.getLatestRepresentableInstant();
+    }
+
+    /**
+     * What this traversal has reported without failing - see {@link GraphQueryWarnings}.
+     *
+     * @return never null; empty for almost every query.
+     */
+    public GraphQueryWarnings warnings() {
+        return warnings;
     }
 
     /**
@@ -737,9 +778,7 @@ public final class GraphTraversalEngine {
                                                          final DateTimeSettings dateTimeSettings) {
         final Instant asOf = resolveDumpInstant(temporalContext);
         final TemporalAccess access = asOfAccess(asOf);
-        final long nodeCap = shape.limit() != null && shape.limit() > 0
-                ? shape.limit()
-                : limits.wholeGraphNodeCap();
+        final long nodeCap = hasOwnLimit(shape) ? shape.limit() : limits.wholeGraphNodeCap();
 
         final Predicate<Map<String, Val>> wherePredicate = shape.where() == null
                 ? row -> true
@@ -763,8 +802,13 @@ public final class GraphTraversalEngine {
         // 1. Nodes: distinct nodes present at the instant that carry the required label(s) and pass any WHERE,
         //    capped at nodeCap. Streaming lets the scan stop once nodeCap matches are collected.
         final Set<Long> includedNodeUids = new HashSet<>();
+        // Whether the scan was cut short, as opposed to running out of nodes. The callback below is reached once
+        // more after the cap fills, and only if a further node existed - so this flag distinguishes a graph with
+        // more nodes than the cap from one holding exactly the cap, which must not be reported as truncated.
+        final boolean[] stoppedAtCap = {false};
         stores.getNodes().forEachDistinctNodeUid(readTxn, nodeUid -> {
             if (includedNodeUids.size() >= nodeCap) {
+                stoppedAtCap[0] = true;
                 return false;
             }
             checkDeadline(deadline);
@@ -777,6 +821,12 @@ public final class GraphTraversalEngine {
             }
             return true;
         });
+
+        // Report a preview the configured cap cut short. Only when the cap did the cutting: a query that asked
+        // for its own LIMIT got the number it asked for and has nothing to be told.
+        if (stoppedAtCap[0] && !hasOwnLimit(shape)) {
+            warnings.add(wholeGraphCapMessage(nodeCap));
+        }
 
         // 2. Edges strictly between two included nodes, per interned edge type.
         for (final long edgeTypeUid : enumerateEdgeTypeUids(readTxn)) {
@@ -798,6 +848,30 @@ public final class GraphTraversalEngine {
             }
         }
         return elements;
+    }
+
+    /** Whether the query stated its own {@code LIMIT}, in which case {@code nodeCap} is the author's number. */
+    private static boolean hasOwnLimit(final PlanShape shape) {
+        return shape.limit() != null && shape.limit() > 0;
+    }
+
+    /**
+     * What a user is told when the whole-graph preview stopped at the cap.
+     *
+     * <p><b>It has to carry its whole meaning in its text.</b> Both graph tabs render every severity through the
+     * same "error" surface ({@code AbstractQueryDataPresenter}), so nothing else marks this as advisory - it must
+     * read as an explanation, name the setting so an administrator can find it, and say what to do instead.</p>
+     *
+     * <p>It says the scan <em>stopped</em> at the cap rather than that more data exists, because that is the
+     * claim the code can actually support. The scan halts as soon as the cap fills, so it does not know whether
+     * the nodes it never looked at would have matched the pattern; establishing that would mean completing the
+     * scan, which is the cost the cap exists to avoid. "Not necessarily the whole graph" is honest, and enough -
+     * the user's next move is the same either way.</p>
+     */
+    private static String wholeGraphCapMessage(final long nodeCap) {
+        return "the whole-graph preview stopped at the first " + nodeCap + " nodes and the edges between them, "
+               + "which is the graphdb.wholeGraphNodeCap limit - so this is not necessarily the whole graph. "
+               + "Add a LIMIT to ask for a different number, or an anchored MATCH to choose what you see.";
     }
 
     private Instant resolveDumpInstant(final @Nullable TemporalContext temporalContext) {

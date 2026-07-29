@@ -44,6 +44,7 @@ import stroom.query.planner.cypher.CypherToLogicalPlan;
 import stroom.query.planner.logical.ProjectField;
 import stroom.security.api.SecurityContext;
 import stroom.util.shared.ResultPage;
+import stroom.util.shared.Severity;
 
 import jakarta.inject.Inject;
 import jakarta.inject.Provider;
@@ -183,22 +184,46 @@ public class GraphSearchProvider implements SearchProvider, IndexFieldProvider {
             // CompiledCypherPlan.outputFields().
             final int[] mapping = buildFieldMapping(fieldIndex, statement.first().outputFields());
 
+            // Fresh per query, and held here rather than inside the callback below because the engine goes out of
+            // scope when the borrowed store is returned, while the warnings still have to be reported.
+            final GraphQueryWarnings warnings = new GraphQueryWarnings();
             final List<Val[]> rows = graphStoreManager.useForQuery(doc, stores -> {
                 final GraphTraversalEngine engine = new GraphTraversalEngine(
                         stores, expressionPredicateFactory,
-                        GraphTraversalLimits.from(configProvider.get()));
+                        GraphTraversalLimits.from(configProvider.get()), warnings);
                 return stores.read(readTxn ->
                         executeStatement(readTxn, engine, stores, statement, searchRequest));
             });
             for (final Val[] row : rows) {
                 coprocessors.accept(assembleRow(row, mapping, fieldIndex.size()));
             }
+            reportWarnings(warnings, coprocessors);
         } catch (final RuntimeException e) {
             resultStore.addError(e);
         } finally {
             resultStore.signalComplete();
         }
         return resultStore;
+    }
+
+    /**
+     * Publishes anything the traversal reported but did not fail on, at {@code Severity.WARNING}.
+     *
+     * <p>Onto the coprocessors' error consumer rather than {@link ResultStore#addError}, because that method
+     * takes a {@code Throwable} and so can only produce an {@code ERROR}: a truncated preview is a usable answer,
+     * and reporting it as a failure would be a worse lie than saying nothing. {@code ResultStore.getErrors()}
+     * folds this consumer in, so a warning reaches the client by the same route an error does - which is what
+     * puts it in front of the user on both graph tabs with no client-side change at all.</p>
+     *
+     * <p><b>Preconditions:</b> neither parameter is null. Does nothing when there is nothing to report, which is
+     * almost every query.</p>
+     */
+    private static void reportWarnings(final GraphQueryWarnings warnings, final CoprocessorsImpl coprocessors) {
+        Objects.requireNonNull(warnings, "warnings");
+        Objects.requireNonNull(coprocessors, "coprocessors");
+        for (final String message : warnings.messages()) {
+            coprocessors.getErrorConsumer().add(Severity.WARNING, () -> message);
+        }
     }
 
     /**

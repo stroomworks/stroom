@@ -31,7 +31,9 @@ per graph rather than per deployment, and none of them affects the limits below.
 
 ## Query and traversal limits
 
-These stop a running query. They fail loudly with an explanatory message rather than silently truncating.
+These bound a running query, and **every one of them says so**. All but the last fail loudly with an explanatory
+message rather than silently truncating; the whole-graph preview cap truncates by design — failing it would break
+the default query both graph tabs open with — and reports a warning alongside the rows it did return.
 
 | Limit | Default | Scope | What you see | Setting |
 |---|---|---|---|---|
@@ -40,11 +42,17 @@ These stop a running query. They fail loudly with an explanatory message rather 
 | Traversal wall-clock | **30 seconds** | Per query | `graph traversal exceeded the maximum allowed duration of PT30S` | `graphdb.maxTraversalDuration` |
 | Rows held in memory | **1,000,000** | Per query | `graph traversal accumulated more than the maximum allowed 1000000 rows in memory; narrow the pattern's … or add a WHERE filter` | `graphdb.maxAccumulatedRows` |
 | Anchor nodes from a label-only `MATCH` | **1,000,000** | Per query | `a label-only MATCH matched more than the maximum allowed 1000000 anchor nodes; add a property constraint …` | `graphdb.maxAccumulatedRows` |
-| Whole-graph preview nodes | **100** | `MATCH (n) RETURN GRAPH` with no `LIMIT` | Silently capped — this is the one limit that truncates without telling you | `graphdb.wholeGraphNodeCap` |
+| Whole-graph preview nodes | **100** | `MATCH (n) RETURN GRAPH` with no `LIMIT` | `the whole-graph preview stopped at the first 100 nodes and the edges between them, which is the graphdb.wholeGraphNodeCap limit …` — a **warning**, not a failure: the rows are returned as well | `graphdb.wholeGraphNodeCap` |
 
 **Per anchor, not per query** deserves emphasis. A variable-length query starting from one node gets a
 200,000-state budget. The same query starting from 500 nodes runs 500 explorations, each with its own
 budget — so it will not trip the path-state limit, but it will very likely hit the 30-second wall instead.
+
+**The preview warning says the scan *stopped*, not that more data exists**, and the distinction is deliberate.
+The scan halts the moment the cap fills, so it never looks at the rest of the store and cannot know whether
+anything there would have matched — establishing that would mean completing the scan, which is the cost the cap
+exists to avoid. It also does not fire when the graph holds exactly the cap, or when you supplied your own
+`LIMIT`: you asked for that number and got it.
 
 ## Storage limits
 
