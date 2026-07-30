@@ -18,10 +18,13 @@ package stroom.floormap.impl;
 
 import stroom.docref.DocRef;
 import stroom.floormap.shared.FloorMapDoc;
+import stroom.floormap.shared.FloorMapGroup;
 import stroom.query.api.TimeRange;
 import stroom.util.json.JsonUtil;
 
 import org.junit.jupiter.api.Test;
+
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -83,5 +86,40 @@ class TestFloorMapSerialisation {
         // Legacy 'query' field is no longer migrated; eventsQuery should be null.
         assertThat(deserialized.getEventsQuery()).isNull();
         assertThat(deserialized.getFactsStoreRef()).isNull();
+        // A document written before groups existed simply has none.
+        assertThat(deserialized.getGroups()).isNull();
+    }
+
+    /**
+     * Groups are configuration stored on the document, so they must survive a
+     * write/read cycle intact — ids included, since a lost id would orphan the
+     * group's identity.
+     */
+    @Test
+    void testGroupsRoundTrip() {
+        final FloorMapGroup maintenance = new FloorMapGroup(
+                "group-40213", "Maintenance", "#8e24aa",
+                List.of("bob@x.com", "gate-3"));
+        final FloorMapGroup security = new FloorMapGroup(
+                "group-11902", "Security", null, List.of());
+
+        final FloorMapDoc original = FloorMapDoc.builder()
+                .uuid("map-uuid-456")
+                .name("MyFloorMap")
+                .groups(List.of(maintenance, security))
+                .build();
+
+        final FloorMapDoc deserialized = JsonUtil.readValue(
+                JsonUtil.writeValueAsString(original), FloorMapDoc.class);
+
+        assertThat(deserialized.getGroups()).containsExactly(maintenance, security);
+        final FloorMapGroup readBack = deserialized.getGroups().get(0);
+        assertThat(readBack.getId()).isEqualTo("group-40213");
+        assertThat(readBack.getName()).isEqualTo("Maintenance");
+        assertThat(readBack.getColour()).isEqualTo("#8e24aa");
+        assertThat(readBack.getMemberIds()).containsExactly("bob@x.com", "gate-3");
+        // A colourless group still renders: the default fills in at read time.
+        assertThat(deserialized.getGroups().get(1).getColourOrDefault())
+                .isEqualTo(FloorMapGroup.DEFAULT_COLOUR);
     }
 }

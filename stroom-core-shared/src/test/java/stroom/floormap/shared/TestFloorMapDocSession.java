@@ -43,13 +43,12 @@ class TestFloorMapDocSession {
         session = new FloorMapDocSession();
     }
 
-    private static FloorMapDoc doc(final List<FloorMapFieldMapping> schema,
-                                   final List<TypeStyle> typeStyles) {
+    private static FloorMapDoc doc(final List<TypeStyle> typeStyles) {
         return FloorMapDoc.builder()
                 .uuid("test-uuid")
                 .name("test-map")
                 .valueFormat(ValueFormat.JSON)
-                .valueSchema(schema)
+                .valueSchema(TestFloorMapDocSession.PRE_AREA_SCHEMA)
                 .typeStyles(typeStyles)
                 .build();
     }
@@ -59,7 +58,7 @@ class TestFloorMapDocSession {
     /** With nothing staged, the effective lists are the entity's and write is a no-op. */
     @Test
     void testNoPendingEdits() {
-        final FloorMapDoc d = doc(PRE_AREA_SCHEMA, List.of(GATE));
+        final FloorMapDoc d = doc(List.of(GATE));
         assertThat(session.hasPendingDocEdits()).isFalse();
         assertThat(session.valueSchema(d.getValueSchema())).isEqualTo(PRE_AREA_SCHEMA);
         assertThat(session.typeStyles(d.getTypeStyles())).containsExactly(GATE);
@@ -69,7 +68,7 @@ class TestFloorMapDocSession {
     /** A Layers-panel edit becomes the effective + written type styles. */
     @Test
     void testStageTypeStyles() {
-        final FloorMapDoc d = doc(PRE_AREA_SCHEMA, List.of(GATE));
+        final FloorMapDoc d = doc(List.of(GATE));
         final TypeStyle door = new TypeStyle("door", Shape.SQUARE, "#00ff00");
         session.stageTypeStyles(List.of(GATE, door));
 
@@ -80,7 +79,7 @@ class TestFloorMapDocSession {
     /** Staging the area upgrade adds the area schema roles and the "area" style. */
     @Test
     void testStageAreaUpgrade() {
-        final FloorMapDoc d = doc(PRE_AREA_SCHEMA, List.of(GATE));
+        final FloorMapDoc d = doc(List.of(GATE));
         session.stageAreaUpgrade(d.getValueSchema(), d.getValueFormat(), d.getTypeStyles());
 
         assertThat(FloorMapDocSession.hasAreaSupport(session.valueSchema(d.getValueSchema()))).isTrue();
@@ -97,7 +96,7 @@ class TestFloorMapDocSession {
      */
     @Test
     void testLayersEditAroundAreaUpgradeKeepsAreaStyle() {
-        final FloorMapDoc d = doc(PRE_AREA_SCHEMA, List.of(GATE));
+        final FloorMapDoc d = doc(List.of(GATE));
         session.stageAreaUpgrade(d.getValueSchema(), d.getValueFormat(), d.getTypeStyles());
         // Layers panel then reorders/edits, producing a list WITHOUT the area style.
         session.stageTypeStyles(List.of(GATE));
@@ -110,7 +109,7 @@ class TestFloorMapDocSession {
     /** The area upgrade is dropped after read only once schema AND style are present. */
     @Test
     void testReconcileDropsAreaUpgradeWhenPersisted() {
-        final FloorMapDoc d = doc(PRE_AREA_SCHEMA, List.of(GATE));
+        final FloorMapDoc d = doc(List.of(GATE));
         session.stageAreaUpgrade(d.getValueSchema(), d.getValueFormat(), d.getTypeStyles());
 
         // Re-read of the still-old doc: upgrade stays pending.
@@ -125,11 +124,141 @@ class TestFloorMapDocSession {
     /** sessionEntity applies pending edits to the returned document. */
     @Test
     void testSessionEntityAppliesPending() {
-        final FloorMapDoc d = doc(PRE_AREA_SCHEMA, List.of(GATE));
+        final FloorMapDoc d = doc(List.of(GATE));
         session.stageAreaUpgrade(d.getValueSchema(), d.getValueFormat(), d.getTypeStyles());
 
         final FloorMapDoc effective = session.sessionEntity(d);
         assertThat(FloorMapDocSession.hasAreaSupport(effective.getValueSchema())).isTrue();
         assertThat(FloorMapDocSession.hasAreaStyle(effective.getTypeStyles())).isTrue();
+    }
+
+    // -----------------------------------------------------------------------
+    // Groups (Map tab)
+    // -----------------------------------------------------------------------
+
+    private static final FloorMapGroup MAINTENANCE =
+            new FloorMapGroup("g1", "Maintenance", "#8e24aa", List.of("bob@x.com"));
+
+    /** A Groups-panel edit becomes the effective + written groups. */
+    @Test
+    void testStageGroups() {
+        final FloorMapDoc d = doc(List.of(GATE));
+        session.stageGroups(List.of(MAINTENANCE));
+
+        assertThat(session.hasPendingDocEdits()).isTrue();
+        assertThat(session.groups(d.getGroups())).containsExactly(MAINTENANCE);
+        assertThat(session.applyToWrite(d).getGroups()).containsExactly(MAINTENANCE);
+    }
+
+    /** With nothing staged, the document's own groups stand and write is a no-op. */
+    @Test
+    void testGroupsWithoutPendingEdit() {
+        final FloorMapDoc d = doc(List.of(GATE))
+                .copy().groups(List.of(MAINTENANCE)).build();
+
+        assertThat(session.groups(d.getGroups())).containsExactly(MAINTENANCE);
+        assertThat(session.applyToWrite(d)).isSameAs(d);
+    }
+
+    /**
+     * The Editor's schema/type-style staging and the Map's group staging touch
+     * disjoint fields, so one tab's pending edit can never clobber the other's.
+     */
+    @Test
+    void testGroupsAndTypeStylesDoNotInterfere() {
+        final FloorMapDoc d = doc(List.of(GATE));
+        final TypeStyle door = new TypeStyle("door", Shape.SQUARE, "#00ff00");
+        session.stageTypeStyles(List.of(GATE, door));
+        session.stageGroups(List.of(MAINTENANCE));
+
+        final FloorMapDoc written = session.applyToWrite(d);
+        assertThat(written.getTypeStyles()).containsExactly(GATE, door);
+        assertThat(written.getGroups()).containsExactly(MAINTENANCE);
+    }
+
+    /** The groups edit is dropped once a re-read shows it persisted. */
+    @Test
+    void testReconcileDropsGroupsWhenPersisted() {
+        final FloorMapDoc d = doc(List.of(GATE));
+        session.stageGroups(List.of(MAINTENANCE));
+
+        // Re-read of the doc without the groups: the edit stays pending.
+        session.reconcileAfterRead(d);
+        assertThat(session.hasPendingDocEdits()).isTrue();
+
+        // Re-read of the saved doc: dropped.
+        session.reconcileAfterRead(session.applyToWrite(d));
+        assertThat(session.hasPendingDocEdits()).isFalse();
+    }
+
+    /**
+     * Deleting the last group stages an empty list; a document carrying either
+     * {@code null} or {@code []} counts as having persisted it. Left pending, the
+     * document would stay dirty forever.
+     */
+    @Test
+    void testReconcileTreatsEmptyAndNullGroupsAsEqual() {
+        final FloorMapDoc noGroups = doc(List.of(GATE));
+        session.stageGroups(List.of());
+        session.reconcileAfterRead(noGroups);
+
+        assertThat(session.hasPendingDocEdits()).isFalse();
+    }
+
+    /** A rename is staged and written like any other group edit. */
+    @Test
+    void testStageRenamedGroup() {
+        final FloorMapDoc d = doc(List.of(GATE))
+                .copy().groups(List.of(MAINTENANCE)).build();
+        session.stageGroups(FloorMapGroup.replace(
+                d.getGroups(), MAINTENANCE.withName("Night Maintenance")));
+
+        final List<FloorMapGroup> written = session.applyToWrite(d).getGroups();
+        assertThat(written).hasSize(1);
+        assertThat(written.get(0).getId()).isEqualTo("g1");
+        assertThat(written.get(0).getName()).isEqualTo("Night Maintenance");
+        assertThat(written.get(0).getMemberIds()).containsExactly("bob@x.com");
+    }
+
+    // -----------------------------------------------------------------------
+    // The copy-builder trap
+    // -----------------------------------------------------------------------
+
+    /**
+     * Every FloorMap tab's {@code onWrite} returns {@code doc.copy()…build()}, so
+     * a field the copy-builder forgets is silently deleted when the user saves
+     * from a tab that does not itself write it. This is the one-line test that
+     * catches "saving from the Settings tab wiped all my groups".
+     */
+    @Test
+    void testCopyBuilderPreservesGroups() {
+        final FloorMapDoc d = doc(List.of(GATE))
+                .copy().groups(List.of(MAINTENANCE)).build();
+
+        // Stand-in for another tab's onWrite, which touches only its own fields.
+        final FloorMapDoc rewritten = d.copy().eventsQuery("from x select y").build();
+
+        assertThat(rewritten.getGroups()).containsExactly(MAINTENANCE);
+    }
+
+    /**
+     * The document's dirty check diffs the written doc against the read one, so a
+     * group edit has to make the two unequal or the save button never lights up.
+     */
+    @Test
+    void testGroupEditMakesDocumentUnequal() {
+        final FloorMapDoc before = doc(List.of(GATE))
+                .copy().groups(List.of(MAINTENANCE)).build();
+        final FloorMapDoc afterRename = before.copy()
+                .groups(List.of(MAINTENANCE.withName("Night Maintenance"))).build();
+        final FloorMapDoc afterMemberAdd = before.copy()
+                .groups(List.of(MAINTENANCE.withMember("sue@x.com"))).build();
+        final FloorMapDoc afterDelete = before.copy().groups(List.of()).build();
+
+        assertThat(afterRename).isNotEqualTo(before);
+        assertThat(afterMemberAdd).isNotEqualTo(before);
+        assertThat(afterDelete).isNotEqualTo(before);
+        // ...and an unchanged rewrite must NOT read as dirty.
+        assertThat(before.copy().build()).isEqualTo(before);
     }
 }

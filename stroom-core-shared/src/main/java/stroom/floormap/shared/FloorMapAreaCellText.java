@@ -19,11 +19,13 @@ package stroom.floormap.shared;
 import java.util.List;
 
 /**
- * The wording used in the tracking panel's <strong>Area</strong> column.
+ * The wording used in the area columns of the tracking and groups panels.
  *
- * <p>That column has a single meaning on every row — <em>which area is this
- * inside?</em> — so there is one form of words, and it lives here where it can be
- * unit-tested without a GWT presenter.</p>
+ * <p>The tracking panel's <strong>Area</strong> column has a single meaning on
+ * every row — <em>which area is this inside?</em> — so there is one form of words,
+ * and it lives here where it can be unit-tested without a GWT presenter. The
+ * Groups panel's <strong>Areas</strong> column answers the same question for a
+ * whole group, and so shares the wording with a member count appended.</p>
  *
  * <p>Holds no GWT or DOM types so it can be unit-tested on the JVM.</p>
  */
@@ -64,6 +66,47 @@ public final class FloorMapAreaCellText {
                 joined.append(NAME_SEPARATOR);
             }
             joined.append(name);
+        }
+        return joined.toString();
+    }
+
+    /**
+     * Every area named with how many of a group's members are in it —
+     * {@code "Loading Bay (2), Office (1)"}.
+     *
+     * <p>Every area is named rather than summarised, for the same reason
+     * {@link #joinNames} does: a {@code "+2"} would hide exactly the names the
+     * user is looking for. The two lists are parallel; a name with no matching
+     * count renders bare, and a blank name is skipped along with its count.</p>
+     *
+     * @param names  the resolved area display names, in display order; may be
+     *               {@code null} or empty
+     * @param counts the member count for each name, positionally matched; may be
+     *               {@code null}
+     * @return the comma-separated names with counts, or {@code ""} when there are
+     *         none
+     */
+    public static String joinNamesWithCounts(final List<String> names,
+                                             final List<Integer> counts) {
+        if (names == null || names.isEmpty()) {
+            return "";
+        }
+        final StringBuilder joined = new StringBuilder();
+        for (int i = 0; i < names.size(); i++) {
+            final String name = names.get(i);
+            if (name == null || name.isEmpty()) {
+                continue;
+            }
+            if (!joined.isEmpty()) {
+                joined.append(NAME_SEPARATOR);
+            }
+            joined.append(name);
+            final Integer count = counts != null && i < counts.size()
+                    ? counts.get(i)
+                    : null;
+            if (count != null) {
+                joined.append(" (").append(count).append(')');
+            }
         }
         return joined.toString();
     }

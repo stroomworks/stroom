@@ -246,6 +246,23 @@ public class FloorMapDoc extends AbstractDoc {
     private final List<TypeStyle> typeStyles;
 
     /**
+     * User-created groups of map entities (see {@link FloorMapGroup}), in display
+     * order — "Maintenance", "Security". Each holds member ids drawn from the one
+     * id namespace the map uses, so a group can mix event-stream entities with
+     * static facts.
+     *
+     * <p>Groups are <em>configuration</em>, not floor-plan content: they live on
+     * the document rather than in the facts store, and carry no temporal
+     * versioning. {@code null}/empty for any document with no groups defined.</p>
+     *
+     * <p>Whether a group is currently <em>highlighted</em> on the canvas is
+     * transient view state and is deliberately not stored here — the same
+     * treatment layer visibility gets.</p>
+     */
+    @JsonProperty
+    private final List<FloorMapGroup> groups;
+
+    /**
      * Constructs a {@code FloorMapDoc} from its constituent fields.
      *
      * <p>This constructor is invoked by Jackson during deserialisation and
@@ -297,6 +314,8 @@ public class FloorMapDoc extends AbstractDoc {
      *                                    for legacy documents
      * @param typeStyles                  ordered per-type styles; list order is the
      *                                    paint z-order. May be {@code null}
+     * @param groups                      user-created entity groups in display order;
+     *                                    may be {@code null}
      */
     @JsonCreator
     public FloorMapDoc(@JsonProperty("uuid") final String uuid,
@@ -322,7 +341,8 @@ public class FloorMapDoc extends AbstractDoc {
                            final QueryTablePreferences eventsQueryTablePreferences,
                        @JsonProperty("valueFormat") final ValueFormat valueFormat,
                        @JsonProperty("valueSchema") final List<FloorMapFieldMapping> valueSchema,
-                       @JsonProperty("typeStyles") final List<TypeStyle> typeStyles) {
+                       @JsonProperty("typeStyles") final List<TypeStyle> typeStyles,
+                       @JsonProperty("groups") final List<FloorMapGroup> groups) {
         super(TYPE, uuid,
                 name,
                 version,
@@ -347,6 +367,7 @@ public class FloorMapDoc extends AbstractDoc {
         this.valueFormat = valueFormat;
         this.valueSchema = valueSchema;
         this.typeStyles = typeStyles;
+        this.groups = groups;
     }
 
     /**
@@ -510,6 +531,15 @@ public class FloorMapDoc extends AbstractDoc {
     }
 
     /**
+     * Returns the user-created entity groups, in display order.
+     *
+     * @return the groups, or {@code null} if none have been defined
+     */
+    public List<FloorMapGroup> getGroups() {
+        return groups;
+    }
+
+    /**
      * Returns a new {@link DocRef.TypedBuilder} pre-configured with this
      * document's {@link #TYPE}.
      *
@@ -564,7 +594,11 @@ public class FloorMapDoc extends AbstractDoc {
                Objects.equals(eventsQueryTablePreferences, that.eventsQueryTablePreferences) &&
                Objects.equals(valueFormat, that.valueFormat) &&
                Objects.equals(valueSchema, that.valueSchema) &&
-               Objects.equals(typeStyles, that.typeStyles);
+               Objects.equals(typeStyles, that.typeStyles) &&
+               // Must be compared: the client decides whether the document is
+               // dirty by diffing the written doc against the read one, so a
+               // group edit would never light up the save button without this.
+               Objects.equals(groups, that.groups);
     }
 
     /** {@inheritDoc} */
@@ -584,7 +618,8 @@ public class FloorMapDoc extends AbstractDoc {
                 eventsQueryTablePreferences,
                 valueFormat,
                 valueSchema,
-                typeStyles);
+                typeStyles,
+                groups);
     }
 
     /**
@@ -634,6 +669,7 @@ public class FloorMapDoc extends AbstractDoc {
         private ValueFormat valueFormat;
         private List<FloorMapFieldMapping> valueSchema;
         private List<TypeStyle> typeStyles;
+        private List<FloorMapGroup> groups;
 
         /**
          * Creates an empty builder. All fields default to {@code null}.
@@ -662,6 +698,10 @@ public class FloorMapDoc extends AbstractDoc {
             this.valueFormat = doc.valueFormat;
             this.valueSchema = doc.valueSchema;
             this.typeStyles = doc.typeStyles;
+            // Every tab's onWrite returns doc.copy()...build(), so a field missed
+            // here is silently deleted whenever the user saves from any tab that
+            // does not itself write it.
+            this.groups = doc.groups;
         }
 
         /**
@@ -825,6 +865,17 @@ public class FloorMapDoc extends AbstractDoc {
             return self();
         }
 
+        /**
+         * Sets the user-created entity groups, in display order.
+         *
+         * @param groups the {@link FloorMapGroup} list, or {@code null} to clear
+         * @return this builder
+         */
+        public Builder groups(final List<FloorMapGroup> groups) {
+            this.groups = groups;
+            return self();
+        }
+
         @Override
         protected Builder self() {
             return this;
@@ -858,7 +909,8 @@ public class FloorMapDoc extends AbstractDoc {
                     eventsQueryTablePreferences,
                     valueFormat,
                     valueSchema,
-                    typeStyles);
+                    typeStyles,
+                    groups);
         }
     }
 }

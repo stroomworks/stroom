@@ -24,6 +24,8 @@ import stroom.floormap.shared.Fact;
 import stroom.floormap.shared.FloorMapAreaMembership;
 import stroom.floormap.shared.FloorMapAreaOverlay;
 import stroom.floormap.shared.FloorMapEntityAnimator;
+import stroom.floormap.shared.FloorMapGroupOverlay;
+import stroom.floormap.shared.FloorMapHighlight;
 import stroom.floormap.shared.FloorMapJsonKeys;
 import stroom.floormap.shared.FloorMapObject;
 import stroom.floormap.shared.FloorMapTransformationMatrix;
@@ -305,6 +307,17 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
      * until the tab pushes a snapshot, so nothing is decorated by default.
      */
     private FloorMapAreaMembership areaMembership = FloorMapAreaMembership.EMPTY;
+
+    /**
+     * Which entities belong to a group the user has switched on in the Groups
+     * panel, and in what colour (see {@link #setGroupOverlay}). Empty until the tab
+     * pushes one, and empty again whenever no group is highlighted — which is the
+     * default for every group.
+     *
+     * <p>Purely a decoration: group highlight never affects the camera, so nothing
+     * here touches {@link #trackedObjectId}.</p>
+     */
+    private FloorMapGroupOverlay groupOverlay = FloorMapGroupOverlay.EMPTY;
 
     /**
      * {@code true} after a deliberate manual pan while tracking — the highlight
@@ -1098,6 +1111,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     private void redraw() {
         final List<FloorMapObject> overlay =
                 buildAnimatedDrawList(/* nowMs — irrelevant when no animations */ 0.0);
+        final FloorMapAreaOverlay areas = areaOverlay();
         getView().draw(scale, offsetX, offsetY,
                 FloorMapZOrder.sort(visibleFacts(factsExcludingOverlay(overlay)), typeStyles),
                 visibleEvents(overlay), selectedObjectIds, typeStyles, showGrid, dimmedTypes,
@@ -1105,7 +1119,8 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                 editMode && !selectedObjectIds.isEmpty() && gesture != Gesture.MARQUEE,
                 selectionTransformable(),
                 gesture == Gesture.DRAWING_AREA ? currentAreaDraftPx() : null,
-                areaOverlay());
+                areas,
+                FloorMapHighlight.of(groupOverlay, areas));
     }
 
     /**
@@ -1540,10 +1555,15 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
                     // Draw the current frame. No marquee/handles/draft during playback.
                     final List<FloorMapObject> overlay = buildAnimatedDrawList(timestamp);
+                    final FloorMapAreaOverlay areas = areaOverlay();
                     getView().draw(scale, offsetX, offsetY,
                             FloorMapZOrder.sort(visibleFacts(factsExcludingOverlay(overlay)), typeStyles),
                             visibleEvents(overlay), selectedObjectIds, typeStyles, showGrid, dimmedTypes,
-                            null, false, false, null, areaOverlay());
+                            null, false, false, null, areas,
+                            // Group highlight has to be resolved on animated frames
+                            // too, or a highlighted entity would lose its ring for
+                            // exactly as long as it is moving.
+                            FloorMapHighlight.of(groupOverlay, areas));
 
                     // Keep looping.
                     AnimationScheduler.get().requestAnimationFrame(this);
@@ -1582,6 +1602,29 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                 : FloorMapAreaMembership.EMPTY;
         if (!next.equals(this.areaMembership)) {
             this.areaMembership = next;
+            redraw();
+        }
+    }
+
+    /**
+     * Sets which entities carry a group highlight, and in what colour.
+     *
+     * <p>Pushed by the owning tab when the user switches a group's highlight on or
+     * off, or edits a highlighted group's membership — not on query refreshes,
+     * since group membership does not move with the data.</p>
+     *
+     * <p>This is a decoration only: it never moves the camera and never changes the
+     * tracked entity, so highlighting a group leaves an in-progress follow
+     * undisturbed.</p>
+     *
+     * @param groupOverlay the highlight, or {@code null} to clear it
+     */
+    public void setGroupOverlay(final FloorMapGroupOverlay groupOverlay) {
+        final FloorMapGroupOverlay next = groupOverlay != null
+                ? groupOverlay
+                : FloorMapGroupOverlay.EMPTY;
+        if (!next.equals(this.groupOverlay)) {
+            this.groupOverlay = next;
             redraw();
         }
     }
@@ -2259,7 +2302,8 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                 List<FloorMapObject> events, Set<String> selectedObjectIds,
                 List<TypeStyle> typeStyles, boolean showGrid, Set<String> dimmedTypes,
                 double[] marqueeRectPx, boolean drawSelectionHandles, boolean scaleRotateEnabled,
-                double[] areaDraftPx, FloorMapAreaOverlay areaOverlay);
+                double[] areaDraftPx, FloorMapAreaOverlay areaOverlay,
+                FloorMapHighlight highlight);
 
         /**
          * Returns the keys of facts whose on-screen bounds intersect the given

@@ -17,19 +17,27 @@
 package stroom.floormap.client.presenter;
 
 import stroom.data.grid.client.MyDataGrid;
+import stroom.floormap.client.FloorMapCellHtml;
 import stroom.floormap.client.presenter.FloorMapTrackingPresenter.FloorMapTrackingView;
 import stroom.floormap.shared.FloorMapAreaCellText;
 import stroom.floormap.shared.FloorMapAreaMembership;
 import stroom.floormap.shared.FloorMapEntityList.EntityEntry;
+import stroom.floormap.shared.FloorMapGroup;
 import stroom.svg.client.SvgPresets;
 import stroom.svg.shared.SvgImage;
 import stroom.widget.button.client.ButtonPanel;
 import stroom.widget.button.client.ButtonView;
 import stroom.widget.button.client.InlineSvgToggleButton;
+import stroom.widget.menu.client.presenter.IconMenuItem;
+import stroom.widget.menu.client.presenter.Item;
+import stroom.widget.menu.client.presenter.Separator;
+import stroom.widget.menu.client.presenter.ShowMenuEvent;
+import stroom.widget.popup.client.presenter.PopupPosition;
+import stroom.widget.popup.client.presenter.PopupPosition.PopupLocation;
+import stroom.widget.util.client.Rect;
 
 import com.google.gwt.cell.client.SafeHtmlCell;
 import com.google.gwt.safehtml.shared.SafeHtml;
-import com.google.gwt.safehtml.shared.SafeHtmlBuilder;
 import com.google.gwt.user.cellview.client.Column;
 import com.google.gwt.user.cellview.client.TextColumn;
 import com.google.gwt.user.client.ui.Widget;
@@ -46,8 +54,10 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 /**
  * Presenter for the Tracking panel on the Map tab — a grid listing every
@@ -92,7 +102,17 @@ public class FloorMapTrackingPresenter extends MyPresenterWidget<FloorMapTrackin
     private Consumer<EntityEntry> selectionConsumer;
 
     private final ButtonView stopTrackingButton;
+    private final ButtonView addToGroupButton;
     private final InlineSvgToggleButton showFactsButton;
+
+    /** Supplies the current groups for the "Add to Group" menu; may be {@code null}. */
+    private Supplier<List<FloorMapGroup>> groupsSupplier;
+
+    /** Adds an entity (second argument) to a group (first argument). */
+    private BiConsumer<String, String> addToGroup;
+
+    /** Creates a new group containing the given entity. */
+    private Consumer<String> createGroupWith;
 
     /**
      * The whole roster as last pushed by the parent, filtered down to the
@@ -141,6 +161,12 @@ public class FloorMapTrackingPresenter extends MyPresenterWidget<FloorMapTrackin
         stopTrackingButton = buttonPanel.addButton(SvgPresets.CLEAR);
         stopTrackingButton.setTitle("Stop Tracking");
 
+        // Puts the selected row into a group without leaving this panel. Group
+        // membership is otherwise edited from the Groups tab.
+        addToGroupButton = buttonPanel.addButton(SvgPresets.ADD);
+        addToGroupButton.setTitle("Add to Group");
+        addToGroupButton.setEnabled(false);
+
         showFactsButton = new InlineSvgToggleButton();
         showFactsButton.setSvg(SvgImage.LOCATE);
         showFactsButton.setState(showFacts);
@@ -157,6 +183,7 @@ public class FloorMapTrackingPresenter extends MyPresenterWidget<FloorMapTrackin
         registerHandler(selectionModel.addSelectionChangeHandler(e -> {
             final EntityEntry selected = selectionModel.getSelectedObject();
             stopTrackingButton.setEnabled(selected != null);
+            addToGroupButton.setEnabled(selected != null && groupsSupplier != null);
             if (selectionConsumer != null) {
                 selectionConsumer.accept(selected);
             }
@@ -183,6 +210,92 @@ public class FloorMapTrackingPresenter extends MyPresenterWidget<FloorMapTrackin
         //noinspection unused e
         registerHandler(showFactsButton.addClickHandler(e ->
                 setShowFacts(showFactsButton.getState())));
+
+        //noinspection unused e
+        registerHandler(addToGroupButton.addClickHandler(e -> showAddToGroupMenu()));
+    }
+
+    /**
+     * Wires up the "Add to Group" action. Without this the button stays disabled,
+     * so a host that has no Groups panel (the Editor tab) simply does not offer it.
+     *
+     * @param groupsSupplier   supplies the current groups, in display order
+     * @param addToGroup       adds an entity (second argument) to a group by id
+     *                         (first argument)
+     * @param createGroupWith  creates a new group containing the given entity
+     */
+    public void setAddToGroupSupport(final Supplier<List<FloorMapGroup>> groupsSupplier,
+                                     final BiConsumer<String, String> addToGroup,
+                                     final Consumer<String> createGroupWith) {
+        this.groupsSupplier = groupsSupplier;
+        this.addToGroup = addToGroup;
+        this.createGroupWith = createGroupWith;
+        addToGroupButton.setEnabled(
+                selectionModel.getSelectedObject() != null && groupsSupplier != null);
+    }
+
+    /**
+     * Shows the group menu for the selected row: every existing group, then "New
+     * group with this entity".
+     *
+     * <p>A group the entity is <em>already</em> in is listed with a tick and
+     * disabled, rather than hidden — hiding it would leave the user wondering
+     * whether the group still exists.</p>
+     */
+    private void showAddToGroupMenu() {
+        final EntityEntry selected = selectionModel.getSelectedObject();
+        if (selected == null || groupsSupplier == null) {
+            return;
+        }
+        final String entityId = selected.getId();
+        final List<FloorMapGroup> groups = groupsSupplier.get();
+
+        final List<Item> items = new ArrayList<>();
+        int priority = 0;
+        if (groups != null) {
+            for (final FloorMapGroup group : groups) {
+                final boolean alreadyIn = group.contains(entityId);
+                final IconMenuItem.Builder builder = new IconMenuItem.Builder()
+                        .priority(priority++)
+                        // The member count is spelled out so the user can tell a
+                        // populated group from an empty one before adding to it.
+                        .text(group.getName() + " (" + group.getMemberCount()
+                              + (group.getMemberCount() == 1 ? " member)" : " members)"))
+                        .enabled(!alreadyIn);
+                if (alreadyIn) {
+                    builder.icon(SvgImage.TICK)
+                            .tooltip(selected.getDisplayName() + " is already in this group");
+                } else {
+                    builder.command(() -> {
+                        if (addToGroup != null) {
+                            addToGroup.accept(group.getId(), entityId);
+                        }
+                    });
+                }
+                items.add(builder.build());
+            }
+            if (!groups.isEmpty()) {
+                items.add(new Separator(priority++));
+            }
+        }
+
+        items.add(new IconMenuItem.Builder()
+                .priority(priority)
+                .icon(SvgImage.ADD)
+                .text("New group with " + selected.getDisplayName())
+                .command(() -> {
+                    if (createGroupWith != null) {
+                        createGroupWith.accept(entityId);
+                    }
+                })
+                .build());
+
+        final Rect relativeRect = new Rect(
+                addToGroupButton.asWidget().getElement()).grow(3);
+        ShowMenuEvent.builder()
+                .items(items)
+                .popupPosition(new PopupPosition(relativeRect, PopupLocation.BELOW))
+                .fire(this);
     }
 
     /**
@@ -291,17 +404,11 @@ public class FloorMapTrackingPresenter extends MyPresenterWidget<FloorMapTrackin
     }
 
     /**
-     * Wraps cell text in a span carrying a {@code title} tooltip. Both are
-     * escaped — entity ids and area names are document/query data.
+     * Wraps cell text in a span carrying a {@code title} tooltip, via the shared
+     * helper the Groups panel's cells also use.
      */
     private static SafeHtml cell(final String text, final String tooltip) {
-        final SafeHtmlBuilder builder = new SafeHtmlBuilder();
-        builder.appendHtmlConstant("<span title=\"");
-        builder.appendEscaped(tooltip != null ? tooltip : "");
-        builder.appendHtmlConstant("\">");
-        builder.appendEscaped(text);
-        builder.appendHtmlConstant("</span>");
-        return builder.toSafeHtml();
+        return FloorMapCellHtml.cell(text, tooltip);
     }
 
     /**

@@ -27,10 +27,15 @@ import stroom.floormap.client.presenter.FloorMapMapPresenter.FloorMapMapView;
 import stroom.floormap.shared.Fact;
 import stroom.floormap.shared.FloorMapAreaMembership;
 import stroom.floormap.shared.FloorMapDoc;
+import stroom.floormap.shared.FloorMapDocSession;
 import stroom.floormap.shared.FloorMapEntityList;
+import stroom.floormap.shared.FloorMapEntityList.EntityEntry;
 import stroom.floormap.shared.FloorMapEntryParser;
 import stroom.floormap.shared.FloorMapFieldMapping;
 import stroom.floormap.shared.FloorMapFieldMapping.Role;
+import stroom.floormap.shared.FloorMapGroup;
+import stroom.floormap.shared.FloorMapGroupOverlay;
+import stroom.floormap.shared.FloorMapGroupSnapshot;
 import stroom.floormap.shared.FloorMapObject;
 import stroom.floormap.shared.FloorMapTransformationMatrix;
 import stroom.query.api.Column;
@@ -78,7 +83,8 @@ import java.util.Map;
  * <ul>
  *     <li>{@link #MAP} – the {@link FloorMapCanvasPresenter} (canvas / visualisation)</li>
  *     <li>{@link #DOCK} – the {@link FloorMapDockPresenter} (right-hand dock; hosts the
- *     {@link FloorMapTrackingPresenter} tracking panel as its first tab)</li>
+ *     {@link FloorMapTrackingPresenter} tracking panel as its first tab, then
+ *     {@link FloorMapLayersPresenter} and {@link FloorMapGroupsPresenter})</li>
  *     <li>{@link #TIMELINE} – the {@link FloorMapTimelinePresenter} (timeline scrubber)</li>
  * </ul>
  *
@@ -100,6 +106,16 @@ public class FloorMapMapPresenter
     private final FloorMapObjectEditPresenter floorMapObjectEditPresenter;
     private final FloorMapTrackingPresenter floorMapTrackingPresenter;
     private final FloorMapLayersPresenter floorMapLayersPresenter;
+    private final FloorMapGroupsPresenter floorMapGroupsPresenter;
+
+    /**
+     * The Map tab's staged document-level edits — just the Groups panel's edits.
+     * The tab does not otherwise write the document, so a group edit is staged
+     * here, merged in by {@link #onWrite}, and dropped once a post-save re-read
+     * shows it landed. The Editor tab has its own instance for schema/type-styles;
+     * the two stage disjoint fields and so cannot clobber each other.
+     */
+    private final FloorMapDocSession docSession = new FloorMapDocSession();
 
     /** Roster of every entity seen on the map, feeding the tracking panel. */
     private final FloorMapEntityList entityList = new FloorMapEntityList();
@@ -111,6 +127,13 @@ public class FloorMapMapPresenter
      */
     private List<Fact> lastFacts;
     private List<FloorMapObject> lastEventObjects;
+
+    /**
+     * The latest area containment, kept so the Groups panel's counts can be
+     * recomputed on a group edit — which can happen with the timeline paused, when
+     * no query refresh is coming.
+     */
+    private FloorMapAreaMembership lastAreaMembership = FloorMapAreaMembership.EMPTY;
 
     private final QueryModel queryModel;
 
@@ -195,6 +218,7 @@ public class FloorMapMapPresenter
                                 final Provider<FloorMapObjectEditPresenter> floorMapObjectEditPresenterProvider,
                                 final Provider<FloorMapTrackingPresenter> floorMapEntityListPresenterProvider,
                                 final Provider<FloorMapLayersPresenter> floorMapLayersPresenterProvider,
+                                final Provider<FloorMapGroupsPresenter> floorMapGroupsPresenterProvider,
                                 final Provider<FloorMapDockPresenter> floorMapDockPresenterProvider) {
         super(eventBus, view);
 
@@ -203,20 +227,35 @@ public class FloorMapMapPresenter
         this.floorMapObjectEditPresenter = floorMapObjectEditPresenterProvider.get();
         this.floorMapTrackingPresenter = floorMapEntityListPresenterProvider.get();
         this.floorMapLayersPresenter = floorMapLayersPresenterProvider.get();
+        this.floorMapGroupsPresenter = floorMapGroupsPresenterProvider.get();
         final FloorMapDockPresenter floorMapDockPresenter = floorMapDockPresenterProvider.get();
 
         // Default initial time
         this.selectedTime = System.currentTimeMillis();
 
-        // The Tracking and Layers panels live as tabs of the right-hand dock.
+        // The Tracking, Layers and Groups panels live as tabs of the right-hand dock.
         floorMapDockPresenter.addTab("Tracking", floorMapTrackingPresenter);
         floorMapDockPresenter.addTab("Layers", floorMapLayersPresenter);
+        floorMapDockPresenter.addTab("Groups", floorMapGroupsPresenter);
         // Layer visibility is a transient view control on the Map tab; push
         // changes to the canvas as hidden / dimmed type sets.
         floorMapLayersPresenter.setChangeHandler(() ->
                 floorMapCanvasPresenter.setLayerVisibility(
                         floorMapLayersPresenter.getHiddenTypes(),
                         floorMapLayersPresenter.getDimmedTypes()));
+
+        // Group membership IS persisted (it is document configuration), so an edit
+        // is staged and marks the document dirty. Which groups are *highlighted* is
+        // not — that is transient view state pushed straight to the canvas.
+        floorMapGroupsPresenter.setGroupsEditHandler(this::onGroupsEdited);
+        floorMapGroupsPresenter.setHighlightChangeHandler(this::pushGroupOverlay);
+
+        // Let the Tracking panel put its selected row into a group without the
+        // user having to switch tabs and find the entity again in the picker.
+        floorMapTrackingPresenter.setAddToGroupSupport(
+                floorMapGroupsPresenter::getGroups,
+                floorMapGroupsPresenter::addMember,
+                floorMapGroupsPresenter::createGroupWith);
 
         setInSlot(MAP, floorMapCanvasPresenter);
         setInSlot(DOCK, floorMapDockPresenter);
@@ -468,8 +507,16 @@ public class FloorMapMapPresenter
         floorMapTrackingPresenter.setData(Collections.emptyList());
         lastFacts = null;
         lastEventObjects = null;
+        lastAreaMembership = FloorMapAreaMembership.EMPTY;
         floorMapTrackingPresenter.clearAreaState();
         floorMapCanvasPresenter.setAreaMembership(FloorMapAreaMembership.EMPTY);
+
+        // Drop any staged group edit this read has persisted, then show the groups
+        // as the session sees them (the staged list if the save has not happened
+        // yet, else the document's). setGroups also clears the transient highlight
+        // state, so a (re-)opened document starts with nothing highlighted.
+        docSession.reconcileAfterRead(document);
+        floorMapGroupsPresenter.setGroups(docSession.groups(document.getGroups()));
 
         // Populate the Layers panel from the document's type styles and sync the
         // canvas with the current (transient) layer visibility.
@@ -496,19 +543,55 @@ public class FloorMapMapPresenter
     /**
      * {@inheritDoc}
      *
-     * <p>Returns the document unchanged. All map edits (object moves, additions) are
-     * persisted directly to the temporal store via REST calls rather than through the
-     * document save lifecycle.</p>
+     * <p>Merges any staged Groups-panel edit into the document. Everything else the
+     * Map tab can change (object moves, additions) is persisted directly to the
+     * temporal store via REST calls rather than through the document save
+     * lifecycle, so with no group edit staged the document is returned
+     * unchanged.</p>
      */
     @Override
     protected FloorMapDoc onWrite(final FloorMapDoc document) {
-        return document;
+        return docSession.applyToWrite(document);
     }
 
-    /** Always returns {@code false} — the Map tab has no associated dirty state. */
+    /**
+     * Always returns {@code false} — the Map tab has no <em>associated</em> dirty
+     * state (that flag is about pending temporal-store changes, which the Editor
+     * tab owns). A staged group edit is ordinary document dirt: it reaches the save
+     * button through {@link #onChange()} and {@link #onWrite}.
+     */
     @Override
     public boolean hasAssociatedDirty() {
         return false;
+    }
+
+    /**
+     * Stages an edited group list for save and lights the save button.
+     *
+     * <p>{@code onChange()} re-runs {@link #onWrite} and diffs the result against
+     * the loaded document, so staging first is what makes the change visible to
+     * it.</p>
+     */
+    private void onGroupsEdited(final List<FloorMapGroup> groups) {
+        docSession.stageGroups(groups);
+        onChange();
+        // Recompute the live counts now rather than waiting for the next query
+        // refresh: with the timeline paused there may not BE a next refresh, so a
+        // member just added would sit at "0 of 1" until the user scrubbed.
+        refreshGroupSnapshot();
+    }
+
+    /**
+     * Pushes the current group highlight to the canvas — the transient
+     * "which groups are shown" state, never persisted.
+     *
+     * <p>Deliberately does not touch the tracked entity: groups highlight, they do
+     * not move the camera.</p>
+     */
+    private void pushGroupOverlay() {
+        floorMapCanvasPresenter.setGroupOverlay(FloorMapGroupOverlay.of(
+                floorMapGroupsPresenter.getGroups(),
+                floorMapGroupsPresenter.getShownGroupIds()));
     }
 
     /**
@@ -771,6 +854,28 @@ public class FloorMapMapPresenter
                 FloorMapAreaMembership.compute(lastFacts, lastEventObjects);
         floorMapCanvasPresenter.setAreaMembership(membership);
         floorMapTrackingPresenter.setAreaMembership(membership, this::entityDisplayName);
+
+        // The Groups panel's live counts move with the same data, so they are
+        // recomputed on the same trigger.
+        this.lastAreaMembership = membership;
+        refreshGroupSnapshot();
+    }
+
+    /**
+     * Recomputes the Groups panel's live counts from the latest facts, events and
+     * area containment.
+     *
+     * <p>Positioned-ness comes from the facts and events lists, <strong>not</strong>
+     * from the membership snapshot — that is empty on a map with no areas and lists
+     * only entities that are inside one. The membership is used purely for the area
+     * breakdown.</p>
+     */
+    private void refreshGroupSnapshot() {
+        floorMapGroupsPresenter.setSnapshot(FloorMapGroupSnapshot.compute(
+                floorMapGroupsPresenter.getGroups(),
+                lastFacts,
+                lastEventObjects,
+                lastAreaMembership));
     }
 
     /**
@@ -796,8 +901,12 @@ public class FloorMapMapPresenter
      */
     private void refreshEntityGrid() {
         final String selectedId = floorMapTrackingPresenter.getSelectedId();
-        floorMapTrackingPresenter.setData(entityList.getEntities());
+        final List<EntityEntry> entities = entityList.getEntities();
+        floorMapTrackingPresenter.setData(entities);
         floorMapTrackingPresenter.setSelected(selectedId);
+        // The Groups panel's member picker offers the same roster, and names its
+        // members and areas through the same resolver.
+        floorMapGroupsPresenter.setRoster(entities, this::entityDisplayName);
     }
 
     /**

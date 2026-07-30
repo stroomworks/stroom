@@ -766,3 +766,137 @@
     color: var(--text-color--low-emphasis);
     cursor: pointer;
 }
+
+/* ==========================================================================
+   Groups panel (Map tab dock) and its edit dialog
+   ========================================================================== */
+
+/* Grid cell carrying a leading swatch: keeps the swatch and the text on one
+   line so the cell still ellipsises rather than wrapping. */
+.floormap-cell-with-swatch {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.floormap-cell-swatch {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+}
+
+/* --- Group edit dialog --------------------------------------------------- */
+
+.floormap-group-edit {
+    display: flex;
+    flex-direction: column;
+    width: 420px;
+    padding: 4px;
+}
+
+.floormap-group-edit-fields {
+    border-spacing: 8px 10px;
+}
+
+.floormap-group-edit-fields td {
+    vertical-align: middle;
+}
+
+.floormap-group-edit-fields td:first-child {
+    color: var(--text-color--low-emphasis);
+    white-space: nowrap;
+}
+
+.floormap-group-edit-fields input[type="text"] {
+    width: 300px;
+}
+
+.floormap-group-edit-label {
+    margin: 6px 0 4px 8px;
+    color: var(--text-color--low-emphasis);
+}
+
+.floormap-group-edit-filter {
+    margin: 0 8px 6px;
+}
+
+.floormap-group-edit-scroll {
+    height: 240px;
+    margin: 0 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+}
+
+.floormap-group-edit-members {
+    padding: 4px;
+}
+
+/* One candidate row: [checkbox + name] type */
+.floormap-group-edit-member {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 24px;
+    padding: 0 4px;
+    border-radius: 4px;
+}
+
+.floormap-group-edit-member:hover {
+    background-color: rgba(128, 128, 128, 0.12);
+}
+
+/* GWT renders a CheckBox as <span><input><label>, and those two align on the
+   text baseline rather than on their centres — so the label reads a couple of
+   pixels high against the box, which Stroom's global input rules make taller
+   still by giving it a border and vertical padding. Centre them with flex
+   instead of leaning on baseline alignment. */
+.floormap-group-edit-member .gwt-CheckBox {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: inline-flex;
+    align-items: center;
+}
+
+.floormap-group-edit-member .gwt-CheckBox input[type="checkbox"] {
+    flex: 0 0 auto;
+    /* Breathing room between the box and the name it labels. */
+    margin: 0 6px 0 0;
+}
+
+/* min-width:0 is what lets a long name ellipsise inside the flex line rather
+   than pushing the type label out of the row. */
+.floormap-group-edit-member .gwt-CheckBox label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.floormap-group-edit-member-detail {
+    flex: 0 0 auto;
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--text-color--low-emphasis);
+}
+
+/* A member the roster has not seen this session — kept, but flagged. */
+.floormap-group-edit-member-detail--absent {
+    font-style: italic;
+}
+
+.floormap-group-edit-empty {
+    padding: 8px;
+    font-style: italic;
+    color: var(--text-color--low-emphasis);
+}
+
+.floormap-group-edit-summary {
+    margin: 6px 8px 2px;
+    font-size: 11px;
+    color: var(--text-color--low-emphasis);
+}

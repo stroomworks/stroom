@@ -74,4 +74,51 @@ class TestFloorMapAreaCellText {
         assertThat(FloorMapAreaCellText.joinNames(null)).isEmpty();
         assertThat(FloorMapAreaCellText.joinNames(Arrays.asList(null, null))).isEmpty();
     }
+
+    // -----------------------------------------------------------------------
+    // joinNamesWithCounts — the Groups panel's Areas column
+    // -----------------------------------------------------------------------
+
+    @Test
+    void testJoinWithCounts() {
+        assertThat(FloorMapAreaCellText.joinNamesWithCounts(
+                Arrays.asList("Loading Bay", "Office"), Arrays.asList(2, 1)))
+                .isEqualTo("Loading Bay (2), Office (1)");
+    }
+
+    @Test
+    void testJoinWithCountsSingle() {
+        assertThat(FloorMapAreaCellText.joinNamesWithCounts(
+                Collections.singletonList("Loading Bay"), Collections.singletonList(3)))
+                .isEqualTo("Loading Bay (3)");
+    }
+
+    /** A name with no matching count still reads, just without one. */
+    @Test
+    void testJoinWithCountsToleratesShortCountList() {
+        assertThat(FloorMapAreaCellText.joinNamesWithCounts(
+                Arrays.asList("Loading Bay", "Office"), Collections.singletonList(2)))
+                .isEqualTo("Loading Bay (2), Office");
+        assertThat(FloorMapAreaCellText.joinNamesWithCounts(
+                Arrays.asList("Loading Bay", "Office"), null))
+                .isEqualTo("Loading Bay, Office");
+    }
+
+    /** A blank name drops its count with it, leaving no dangling separator. */
+    @Test
+    void testJoinWithCountsSkipsBlanks() {
+        assertThat(FloorMapAreaCellText.joinNamesWithCounts(
+                Arrays.asList("Loading Bay", null, "Office"), Arrays.asList(2, 9, 1)))
+                .isEqualTo("Loading Bay (2), Office (1)");
+        assertThat(FloorMapAreaCellText.joinNamesWithCounts(
+                Arrays.asList(null, "Office"), Arrays.asList(9, 1)))
+                .isEqualTo("Office (1)");
+    }
+
+    @Test
+    void testJoinWithCountsEmptyAndNull() {
+        assertThat(FloorMapAreaCellText.joinNamesWithCounts(null, null)).isEmpty();
+        assertThat(FloorMapAreaCellText.joinNamesWithCounts(
+                Collections.emptyList(), Collections.emptyList())).isEmpty();
+    }
 }

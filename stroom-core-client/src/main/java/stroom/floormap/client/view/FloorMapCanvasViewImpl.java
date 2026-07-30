@@ -24,6 +24,7 @@ import stroom.floormap.shared.Fact;
 import stroom.floormap.shared.FloorMapAreaMembership;
 import stroom.floormap.shared.FloorMapAreaOverlay;
 import stroom.floormap.shared.FloorMapGeometry;
+import stroom.floormap.shared.FloorMapHighlight;
 import stroom.floormap.shared.FloorMapJsonKeys;
 import stroom.floormap.shared.FloorMapObject;
 import stroom.floormap.shared.FloorMapScreenGeometry;
@@ -107,16 +108,8 @@ public class FloorMapCanvasViewImpl
     private static final String ACCENT_BLUE = "#1e88e5";
     /** Selection highlight (orange) drawn around a selected fact. */
     private static final String SELECTION_STROKE = "#ff9800";
-    /**
-     * Containment highlight (green) marking a fact <em>related to</em> the
-     * focused one by area containment — the area(s) holding the tracked entity,
-     * or the entities inside the tracked area.
-     *
-     * <p>Deliberately a third colour: orange already means "selected" and blue
-     * means "handle/draft", so reusing either would make "contains the thing you
-     * are tracking" indistinguishable from "is the thing you are tracking".</p>
-     */
-    private static final String RELATED_STROKE = "#00c853";
+    // The containment-highlight green lives in FloorMapHighlight, which resolves
+    // every non-selection highlight colour (group vs containment) in one place.
     /** Opacity applied to a dimmed (0.3) layer group. */
     private static final String DIMMED_LAYER_OPACITY = "0.3";
     private static final String HANDLE_STROKE = ACCENT_BLUE;
@@ -277,8 +270,11 @@ public class FloorMapCanvasViewImpl
      * @param selectedObjectIds IDs of the currently selected objects (all highlighted)
      * @param typeStyles       per-type presentation settings (default graphic shape/colour)
      * @param showGrid         {@code true} to draw the (non-interactive) grid overlay
-     * @param areaOverlay      area-containment decorations (related highlight and
-     *                         occupant-count badges); never {@code null}
+     * @param areaOverlay      area-containment decorations, used here for the
+     *                         occupant-count badges; never {@code null}
+     * @param highlight        resolves the non-selection highlight for each entity —
+     *                         group colour or area-containment green, whichever wins;
+     *                         never {@code null}
      */
     @Override
     public void draw(final double scale,
@@ -294,7 +290,8 @@ public class FloorMapCanvasViewImpl
                      final boolean drawSelectionHandles,
                      final boolean scaleRotateEnabled,
                      final double[] areaDraftPx,
-                     final FloorMapAreaOverlay areaOverlay) {
+                     final FloorMapAreaOverlay areaOverlay,
+                     final FloorMapHighlight highlight) {
         final HtmlBuilder htmlBuilder = new HtmlBuilder();
 
         // Cache this frame's geometry so hitTestScreenRect()/getSelectionFrame()
@@ -331,10 +328,10 @@ public class FloorMapCanvasViewImpl
                             // opacity; otherwise the fact is drawn directly.
                             if (dimmedTypes != null && dimmedTypes.contains(fact.getType())) {
                                 flipGroup.elem(g -> renderFact(
-                                                g, fact, isSelected, typeStyles, scale, areaOverlay),
+                                                g, fact, isSelected, typeStyles, scale, highlight),
                                         SafeHtmlUtil.from("g"), new Attribute("opacity", DIMMED_LAYER_OPACITY));
                             } else {
-                                renderFact(flipGroup, fact, isSelected, typeStyles, scale, areaOverlay);
+                                renderFact(flipGroup, fact, isSelected, typeStyles, scale, highlight);
                             }
                         }
                     }
@@ -343,13 +340,13 @@ public class FloorMapCanvasViewImpl
                     if (events != null) {
                         for (final FloorMapObject ev : events) {
                             final boolean evSelected = selectedObjectIds.contains(ev.getId());
-                            final boolean evRelated = areaOverlay.isRelated(ev.getId());
+                            final String evHighlight = highlight.colourFor(ev.getId());
                             if (dimmedTypes != null && dimmedTypes.contains(ev.getType())) {
                                 flipGroup.elem(g -> appendEvent(
-                                                g, ev, evSelected, evRelated, typeStyles, scale),
+                                                g, ev, evSelected, evHighlight, typeStyles, scale),
                                         SafeHtmlUtil.from("g"), new Attribute("opacity", DIMMED_LAYER_OPACITY));
                             } else {
-                                appendEvent(flipGroup, ev, evSelected, evRelated, typeStyles, scale);
+                                appendEvent(flipGroup, ev, evSelected, evHighlight, typeStyles, scale);
                             }
                         }
                     }
@@ -538,14 +535,17 @@ public class FloorMapCanvasViewImpl
                             final boolean isSelected,
                             final List<TypeStyle> typeStyles,
                             final double scale,
-                            final FloorMapAreaOverlay areaOverlay) {
-        final boolean isRelated = areaOverlay.isRelated(fact.getKey());
+                            final FloorMapHighlight highlight) {
+        // One resolved colour per fact — group membership or area containment,
+        // whichever the highlight resolver says wins. Null means no highlight.
+        final String highlightColour = highlight.colourFor(fact.getKey());
         if (fact.hasImage()) {
-            appendImageFact(builder, fact, isSelected, isRelated);
+            appendImageFact(builder, fact, isSelected, highlightColour);
         } else if (fact.hasVertices()) {
-            appendAreaFact(builder, fact, isSelected, isRelated, typeStyles);
+            appendAreaFact(builder, fact, isSelected, highlightColour,
+                    highlight.isDashed(fact.getKey()), typeStyles);
         } else {
-            appendDefaultGraphic(builder, fact, isSelected, isRelated, typeStyles, scale);
+            appendDefaultGraphic(builder, fact, isSelected, highlightColour, typeStyles, scale);
         }
     }
 
@@ -561,18 +561,23 @@ public class FloorMapCanvasViewImpl
      * stroke that carries the fact key as its id (the same click-detection
      * convention as every other object shape).</p>
      *
-     * <p>A green dashed border marks an area that holds the entity being tracked
-     * ({@code isRelated}). Selection styling still wins over it — being
-     * <em>the</em> selection is more specific than being related to it. The
-     * occupant-count badge is drawn separately, after every fact and event, by
+     * <p>A coloured border marks a highlighted area — green and dashed when it
+     * holds the entity being tracked, or a group's own colour (solid) when the area
+     * is a member of a highlighted group. Selection styling still wins over both —
+     * being <em>the</em> selection is more specific. The occupant-count badge is
+     * drawn separately, after every fact and event, by
      * {@link #appendOccupantBadge}.</p>
      *
-     * @param isRelated {@code true} when this area contains the focused entity
+     * @param highlightColour the non-selection highlight colour, or {@code null}
+     *                        when this area carries no highlight
+     * @param highlightDashed {@code true} to dash the highlight border, which
+     *                        distinguishes area containment from group membership
      */
     private void appendAreaFact(final HtmlBuilder parent,
                                 final Fact fact,
                                 final boolean isSelected,
-                                final boolean isRelated,
+                                final String highlightColour,
+                                final boolean highlightDashed,
                                 final List<TypeStyle> typeStyles) {
         final double[][] vertices = fact.getVertices();
         final StringBuilder points = new StringBuilder();
@@ -587,19 +592,21 @@ public class FloorMapCanvasViewImpl
         final double opacity = fact.getOpacity() != null
                 ? Math.max(0.0, Math.min(1.0, fact.getOpacity()))
                 : DEFAULT_AREA_FILL_OPACITY;
-        // Selection is more specific than relatedness, so it wins the border.
+        final boolean highlighted = highlightColour != null;
+        // Selection is more specific than any highlight, so it wins the border.
         final String stroke = isSelected
                 ? SELECTION_STROKE
-                : isRelated
-                        ? RELATED_STROKE
+                : highlighted
+                        ? highlightColour
                         : colour;
-        final String strokeWidth = isSelected || isRelated ? "4" : "2";
-        // A dash distinguishes "holds what you're tracking" from "is selected"
-        // for anyone who can't rely on the colour difference alone.
-        final String dashArray = !isSelected && isRelated ? "8,4" : "none";
-        // Relatedness also lifts the fill a little, so the area reads as
+        final String strokeWidth = isSelected || highlighted ? "4" : "2";
+        // A dash distinguishes "holds what you're tracking" from "is selected" and
+        // from "is in a highlighted group", for anyone who can't rely on the colour
+        // difference alone.
+        final String dashArray = !isSelected && highlightDashed ? "8,4" : "none";
+        // A highlight also lifts the fill a little, so the area reads as
         // highlighted when zoomed out too far to see the border clearly.
-        final double effectiveOpacity = !isSelected && isRelated
+        final double effectiveOpacity = !isSelected && highlighted
                 ? Math.min(1.0, opacity + 0.15)
                 : opacity;
 
@@ -953,12 +960,12 @@ public class FloorMapCanvasViewImpl
     private void appendImageFact(final HtmlBuilder parent,
                                  final Fact fact,
                                  final boolean isSelected,
-                                 final boolean isRelated) {
-        // A related-but-unselected fact borrows the selection border machinery,
-        // drawn in the containment green instead of the Editor blue.
+                                 final String highlightColour) {
+        // A highlighted-but-unselected fact borrows the selection border machinery,
+        // drawn in the highlight colour instead of the Editor blue.
         appendImageGlyph(parent, fact, fact.getWorldToMap(), false,
-                isSelected || isRelated,
-                isSelected ? ACCENT_BLUE : RELATED_STROKE);
+                isSelected || highlightColour != null,
+                isSelected ? ACCENT_BLUE : highlightColour);
     }
 
     /**
@@ -1041,7 +1048,7 @@ public class FloorMapCanvasViewImpl
     private void appendDefaultGraphic(final HtmlBuilder parent,
                                       final Fact fact,
                                       final boolean isSelected,
-                                      final boolean isRelated,
+                                      final String highlightColour,
                                       final List<TypeStyle> typeStyles,
                                       final double scale) {
         final double[] pos = fact.getPosition();
@@ -1052,7 +1059,7 @@ public class FloorMapCanvasViewImpl
         final double mapY = w2m.getB() * worldX + w2m.getD() * worldY + w2m.getF();
 
         appendStyledGlyph(parent, fact.getKey(), fact.getType(), mapX, mapY,
-                isSelected, isRelated, typeStyles, scale);
+                isSelected, highlightColour, typeStyles, scale);
     }
 
     /**
@@ -1066,7 +1073,7 @@ public class FloorMapCanvasViewImpl
     private void appendEvent(final HtmlBuilder parent,
                              final FloorMapObject obj,
                              final boolean isSelected,
-                             final boolean isRelated,
+                             final String highlightColour,
                              final List<TypeStyle> typeStyles,
                              final double scale) {
         // Movement trail — rendered before the glyph so it sits behind.
@@ -1109,13 +1116,13 @@ public class FloorMapCanvasViewImpl
                     w2m.getA(), w2m.getB(), w2m.getC(), w2m.getD(),
                     obj.getX(), obj.getY());
             appendImageGlyph(parent, imageFact, placement, true,
-                    isSelected || isRelated,
-                    isSelected ? SELECTION_STROKE : RELATED_STROKE);
+                    isSelected || highlightColour != null,
+                    isSelected ? SELECTION_STROKE : highlightColour);
         } else {
             // The trail above stays in map space so it scales with the map;
             // the glyph itself is fixed screen size.
             appendStyledGlyph(parent, obj.getId(), obj.getType(), obj.getX(), obj.getY(),
-                    isSelected, isRelated, typeStyles, scale);
+                    isSelected, highlightColour, typeStyles, scale);
         }
     }
 
@@ -1141,19 +1148,20 @@ public class FloorMapCanvasViewImpl
                                    final double mapX,
                                    final double mapY,
                                    final boolean isSelected,
-                                   final boolean isRelated,
+                                   final String highlightColour,
                                    final List<TypeStyle> typeStyles,
                                    final double scale) {
         final String fillColour = colourForType(type, typeStyles);
         final TypeStyle.Shape shape = shapeForType(type, typeStyles);
         final String graphic = graphicForType(type, typeStyles);
-        // Selection (orange) beats relatedness (green): the glyph border shows
-        // the most specific state, and the type colour still owns the fill.
-        final boolean bordered = isSelected || isRelated;
+        // Selection (orange) beats any highlight — group colour or containment
+        // green: the glyph border shows the most specific state, and the type
+        // colour still owns the fill.
+        final boolean bordered = isSelected || highlightColour != null;
         final String stroke = isSelected
                 ? SELECTION_STROKE
-                : isRelated
-                        ? RELATED_STROKE
+                : highlightColour != null
+                        ? highlightColour
                         : "none";
         final String strokeWidth = bordered ? "4" : "0";
         final String vectorEffect = bordered ? "non-scaling-stroke" : "none";
