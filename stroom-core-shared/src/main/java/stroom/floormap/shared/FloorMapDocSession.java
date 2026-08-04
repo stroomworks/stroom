@@ -19,11 +19,12 @@ package stroom.floormap.shared;
 import stroom.floormap.shared.FloorMapFieldMapping.Role;
 
 import java.util.List;
+import java.util.Objects;
 
 /**
- * A tab's pending document-level edits — the Editor's area-support upgrade and
- * Layers type-styles list, and the Map tab's groups — with the invariants that
- * keep them consistent across read/write.
+ * A tab's pending document-level edits — the Editor's area-support upgrade,
+ * Layers type-styles list and Set Scale calibration, and the Map tab's groups —
+ * with the invariants that keep them consistent across read/write.
  *
  * <p>Neither tab normally writes the {@link FloorMapDoc} itself (temporal store
  * edits flush separately), so these edits are staged here and merged into the
@@ -67,9 +68,23 @@ public final class FloorMapDocSession {
      */
     private List<FloorMapGroup> pendingGroups;
 
+    /**
+     * A Set Scale calibration made on the Editor tab and not yet saved, with
+     * {@link #pendingUnitsStaged} recording that it was staged at all.
+     *
+     * <p>The flag is needed because {@code null} is a meaningful staged value —
+     * "this map has no scale" — and must be distinguishable from "nothing
+     * staged".</p>
+     */
+    private FloorMapMeasurementUnits pendingMeasurementUnits;
+    private boolean pendingUnitsStaged;
+
     /** {@code true} if any document-level edit is staged. */
     public boolean hasPendingDocEdits() {
-        return pendingAreaSchema != null || pendingTypeStyles != null || pendingGroups != null;
+        return pendingAreaSchema != null
+               || pendingTypeStyles != null
+               || pendingGroups != null
+               || pendingUnitsStaged;
     }
 
     /** The value schema in effect this session: the pending upgrade, else the entity's. */
@@ -98,6 +113,24 @@ public final class FloorMapDocSession {
     /** Stages a Groups-panel edit (create, rename, recolour, membership, delete). */
     public void stageGroups(final List<FloorMapGroup> groups) {
         this.pendingGroups = groups;
+    }
+
+    /** The measurement units in effect this session: the calibration, else the entity's. */
+    public FloorMapMeasurementUnits measurementUnits(final FloorMapMeasurementUnits entityUnits) {
+        return pendingUnitsStaged
+                ? pendingMeasurementUnits
+                : entityUnits;
+    }
+
+    /**
+     * Stages a Set Scale calibration.
+     *
+     * @param units the calibrated units; {@code null} stages "this map has no
+     *              scale", which is not the same as staging nothing
+     */
+    public void stageMeasurementUnits(final FloorMapMeasurementUnits units) {
+        this.pendingMeasurementUnits = units;
+        this.pendingUnitsStaged = true;
     }
 
     /**
@@ -130,6 +163,7 @@ public final class FloorMapDocSession {
                 .valueSchema(valueSchema(entity.getValueSchema()))
                 .typeStyles(typeStyles(entity.getTypeStyles()))
                 .groups(groups(entity.getGroups()))
+                .measurementUnits(measurementUnits(entity.getMeasurementUnits()))
                 .build();
     }
 
@@ -159,6 +193,9 @@ public final class FloorMapDocSession {
         if (pendingGroups != null) {
             builder.groups(pendingGroups);
         }
+        if (pendingUnitsStaged) {
+            builder.measurementUnits(pendingMeasurementUnits);
+        }
         return builder.build();
     }
 
@@ -184,6 +221,11 @@ public final class FloorMapDocSession {
         }
         if (pendingGroups != null && sameGroups(pendingGroups, document.getGroups())) {
             pendingGroups = null;
+        }
+        if (pendingUnitsStaged
+                && Objects.equals(pendingMeasurementUnits, document.getMeasurementUnits())) {
+            pendingMeasurementUnits = null;
+            pendingUnitsStaged = false;
         }
     }
 

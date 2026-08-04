@@ -163,13 +163,15 @@ public class FloorMapEditorPresenter
     private final FloorMapFactListPresenter floorMapFactListPresenter;
     private final FloorMapTimeListPresenter floorMapTimeListPresenter;
     private final FloorMapObjectEditPresenter floorMapObjectEditPresenter;
-    private final FloorMapDockPresenter floorMapDockPresenter;
+
+    /** The dialog that turns a measured line into the map's scale. */
+    private final FloorMapSetScalePresenter floorMapSetScalePresenter;
     private final FloorMapLayersPresenter floorMapLayersPresenter;
     private final FloorMapLayerStylePresenter floorMapLayerStylePresenter;
 
     /**
      * Cumulative set of types observed this document session — fact types from
-     * the canvas plus event (PlanB) types seen via {@link FloorMapDataEvent}
+     * the canvas plus event types seen via {@link FloorMapDataEvent}
      * (which fires from the Map tab's events query on the shared event bus).
      * Fed to the Layers panel so unsaved types appear as provisional layers.
      */
@@ -243,7 +245,8 @@ public class FloorMapEditorPresenter
                                    final Provider<FloorMapObjectEditPresenter> propertiesProvider,
                                    final Provider<FloorMapDockPresenter> dockProvider,
                                    final Provider<FloorMapLayersPresenter> layersProvider,
-                                   final Provider<FloorMapLayerStylePresenter> layerStyleProvider) {
+                                   final Provider<FloorMapLayerStylePresenter> layerStyleProvider,
+                                   final Provider<FloorMapSetScalePresenter> setScaleProvider) {
         super(eventBus, view);
         this.restFactory = restFactory;
         this.model = new FloorMapEditorModel(
@@ -256,7 +259,13 @@ public class FloorMapEditorPresenter
         this.floorMapFactListPresenter = factListProvider.get();
         this.floorMapTimeListPresenter = timeListProvider.get();
         this.floorMapObjectEditPresenter = propertiesProvider.get();
-        this.floorMapDockPresenter = dockProvider.get();
+        // Let the properties dialog state an image's real-world size: the canvas
+        // has already measured any image it has drawn, so this needs no second
+        // load.
+        this.floorMapObjectEditPresenter.setAspectRatioResolver(
+                floorMapCanvasPresenter::getImageAspectRatio);
+        final FloorMapDockPresenter floorMapDockPresenter = dockProvider.get();
+        this.floorMapSetScalePresenter = setScaleProvider.get();
         this.floorMapLayersPresenter = layersProvider.get();
         this.floorMapLayersPresenter.setEditorMode(true);
         this.floorMapLayerStylePresenter = layerStyleProvider.get();
@@ -283,6 +292,7 @@ public class FloorMapEditorPresenter
         floorMapCanvasPresenter.setGeometryHandler(this::onFactGeometryEdited);
         floorMapCanvasPresenter.setSelectionHandler(this::onCanvasSelectionChanged);
         floorMapCanvasPresenter.setAreaHandler(this::onAreaDrawn);
+        floorMapCanvasPresenter.setScaleHandler(this::onScaleMeasured);
 
         // Contextual help. The map-interaction help sits on the document toolbar
         // (Save / Save As …) at the right-hand end, contributed via HasToolbar so
@@ -330,7 +340,7 @@ public class FloorMapEditorPresenter
         registerHandler(dockToggleButton.addClickHandler(e ->
                 getView().setDockVisible(dockToggleButton.getState())));
 
-        // Event (PlanB) objects are produced by the events query and broadcast
+        // Event objects are produced by the events query and broadcast
         // on the shared event bus (driven by the Map tab). Listen here too so
         // their types surface as provisional layers in the Editor's Layers panel.
         registerHandler(getEventBus().addHandler(FloorMapDataEvent.getType(), event -> {
@@ -445,6 +455,11 @@ public class FloorMapEditorPresenter
                 floorMapLayersPresenter.getHiddenTypes(),
                 floorMapLayersPresenter.getDimmedTypes());
         floorMapCanvasPresenter.setLockedTypes(floorMapLayersPresenter.getLockedTypes());
+
+        // Measurement units as this session sees them: a Set Scale calibration
+        // is staged in the doc session until save, so read it from there rather
+        // than from the just-read document.
+        floorMapCanvasPresenter.setMeasurementUnits(sessionEntity().getMeasurementUnits());
 
         final String mapName = getMapName();
         if (mapName == null) {
@@ -1393,6 +1408,12 @@ public class FloorMapEditorPresenter
                     .command(() -> ensureAreaSupport(
                             floorMapCanvasPresenter::startAreaDrawing))
                     .build());
+            menuItems.add(new IconMenuItem.Builder()
+                    .priority(3)
+                    .icon(SvgImage.DOUBLE_ARROW)
+                    .text("Set Scale")
+                    .command(floorMapCanvasPresenter::startScaleMeasurement)
+                    .build());
         } else if (model.getSelectedFactKeys().size() > 1
                 && model.getSelectedFactKeys().contains(objectId)) {
             // ---- Right-clicked within a multi-selection: group actions ----
@@ -1480,6 +1501,17 @@ public class FloorMapEditorPresenter
                     .text("Draw Area Here")
                     .command(() -> ensureAreaSupport(
                             floorMapCanvasPresenter::startAreaDrawing))
+                    .build());
+
+            // Set Scale — offered here for the same reason area drawing is: a
+            // map is usually covered edge-to-edge by its background image, so an
+            // action only on the empty-canvas branch is one most users can never
+            // right-click their way to.
+            menuItems.add(new IconMenuItem.Builder()
+                    .priority(6)
+                    .icon(SvgImage.DOUBLE_ARROW)
+                    .text("Set Scale")
+                    .command(floorMapCanvasPresenter::startScaleMeasurement)
                     .build());
         }
 
@@ -1604,6 +1636,29 @@ public class FloorMapEditorPresenter
                         areaSupportEnabledListener.run();
                     }
                     onReady.run();
+                });
+    }
+
+    /**
+     * Handles a finished Set Scale measurement: asks what the measured line
+     * really spans, and calibrates the document from the answer.
+     *
+     * <p>The calibration is staged in the doc session rather than written
+     * straight to the entity — this tab does not normally write the document at
+     * all — and pushed to the canvas so the grid, scale bar and gesture readouts
+     * relabel immediately. No other tab reads or writes the field, so
+     * {@code copy()} carries it safely through a save from anywhere.</p>
+     *
+     * @param mapLength the measured length in map units
+     */
+    private void onScaleMeasured(final double mapLength) {
+        floorMapSetScalePresenter.show(
+                mapLength,
+                sessionEntity().getMeasurementUnits(),
+                units -> {
+                    docSession.stageMeasurementUnits(units);
+                    floorMapCanvasPresenter.setMeasurementUnits(units);
+                    setDirty(true);
                 });
     }
 

@@ -2,15 +2,16 @@
 <ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
              xmlns:g="urn:import:com.google.gwt.user.client.ui"
              xmlns:form="urn:import:stroom.widget.form.client">
+
     <g:FlowPanel styleName="max dock-container-vertical form-padding form">
-        <!-- Events Store (PlanB Temporal State) Reference Selection -->
+        <!-- Events Store (SQL Temporal Store) Reference Selection -->
         <form:FormGroup label="Events Store">
             <form:HelpHTML>
                 <p>The temporal store supplying the map's time-varying <strong>events</strong> —
                     for example people or vehicles whose position changes over time. Events are
                     drawn as the overlay that moves (and leaves a fading trail) as the timeline
                     plays.</p>
-                <p>Must be a <strong>PlanB</strong> temporal-state store. Leave blank if the map
+                <p>Must be an <strong>SQL Temporal Store</strong>. Leave blank if the map
                     has no moving events.</p>
             </form:HelpHTML>
             <g:SimplePanel ui:field="eventsStoreRefContainer" />

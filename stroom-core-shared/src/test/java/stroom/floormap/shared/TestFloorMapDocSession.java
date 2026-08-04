@@ -17,6 +17,7 @@
 package stroom.floormap.shared;
 
 import stroom.floormap.shared.FloorMapFieldMapping.Role;
+import stroom.floormap.shared.FloorMapMeasurementUnits.Unit;
 import stroom.floormap.shared.TypeStyle.Shape;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -260,5 +261,86 @@ class TestFloorMapDocSession {
         assertThat(afterDelete).isNotEqualTo(before);
         // ...and an unchanged rewrite must NOT read as dirty.
         assertThat(before.copy().build()).isEqualTo(before);
+    }
+
+    // -----------------------------------------------------------------------
+    // Measurement units (Set Scale)
+    // -----------------------------------------------------------------------
+
+    /** A calibration becomes the session's effective units and is written on save. */
+    @Test
+    void testStageMeasurementUnits() {
+        final FloorMapDoc d = doc(List.of(GATE));
+        final FloorMapMeasurementUnits units = new FloorMapMeasurementUnits(Unit.METRE, 0.187);
+        session.stageMeasurementUnits(units);
+
+        assertThat(session.hasPendingDocEdits()).isTrue();
+        assertThat(session.measurementUnits(d.getMeasurementUnits())).isEqualTo(units);
+        assertThat(session.applyToWrite(d).getMeasurementUnits()).isEqualTo(units);
+        assertThat(session.sessionEntity(d).getMeasurementUnits()).isEqualTo(units);
+    }
+
+    /** With nothing staged the entity's own units show through untouched. */
+    @Test
+    void testUnstagedUnitsComeFromTheEntity() {
+        final FloorMapMeasurementUnits stored = new FloorMapMeasurementUnits(Unit.FOOT, 2.0);
+        final FloorMapDoc d = doc(List.of(GATE)).copy().measurementUnits(stored).build();
+
+        assertThat(session.measurementUnits(d.getMeasurementUnits())).isEqualTo(stored);
+        assertThat(session.applyToWrite(d)).isSameAs(d);
+    }
+
+    /**
+     * Staging null — "this map has no scale" — is a real edit, and must be
+     * distinguishable from having staged nothing at all.
+     */
+    @Test
+    void testStagingNullUnitsClearsTheScale() {
+        final FloorMapMeasurementUnits stored = new FloorMapMeasurementUnits(Unit.METRE, 1.0);
+        final FloorMapDoc d = doc(List.of(GATE)).copy().measurementUnits(stored).build();
+        session.stageMeasurementUnits(null);
+
+        assertThat(session.hasPendingDocEdits()).isTrue();
+        assertThat(session.measurementUnits(d.getMeasurementUnits())).isNull();
+        assertThat(session.applyToWrite(d).getMeasurementUnits()).isNull();
+    }
+
+    /** Once the document comes back carrying the calibration, the staged copy is dropped. */
+    @Test
+    void testReconcileDropsPersistedUnits() {
+        final FloorMapMeasurementUnits units = new FloorMapMeasurementUnits(Unit.METRE, 0.187);
+        final FloorMapDoc saved = doc(List.of(GATE)).copy().measurementUnits(units).build();
+        session.stageMeasurementUnits(units);
+
+        session.reconcileAfterRead(saved);
+
+        assertThat(session.hasPendingDocEdits()).isFalse();
+    }
+
+    /** A read that does NOT carry the calibration must keep it staged. */
+    @Test
+    void testReconcileKeepsUnsavedUnits() {
+        final FloorMapDoc unsaved = doc(List.of(GATE));
+        session.stageMeasurementUnits(new FloorMapMeasurementUnits(Unit.METRE, 0.187));
+
+        session.reconcileAfterRead(unsaved);
+
+        assertThat(session.hasPendingDocEdits()).isTrue();
+        assertThat(session.applyToWrite(unsaved).getMeasurementUnits())
+                .isEqualTo(new FloorMapMeasurementUnits(Unit.METRE, 0.187));
+    }
+
+    /** Staged units must not disturb the other staged edits, nor they it. */
+    @Test
+    void testUnitsComposeWithOtherStagedEdits() {
+        final FloorMapDoc d = doc(List.of(GATE));
+        final FloorMapMeasurementUnits units = new FloorMapMeasurementUnits(Unit.METRE, 0.5);
+        session.stageAreaUpgrade(d.getValueSchema(), d.getValueFormat(), d.getTypeStyles());
+        session.stageMeasurementUnits(units);
+
+        final FloorMapDoc written = session.applyToWrite(d);
+        assertThat(written.getMeasurementUnits()).isEqualTo(units);
+        assertThat(FloorMapDocSession.hasAreaSupport(written.getValueSchema())).isTrue();
+        assertThat(FloorMapDocSession.hasAreaStyle(written.getTypeStyles())).isTrue();
     }
 }

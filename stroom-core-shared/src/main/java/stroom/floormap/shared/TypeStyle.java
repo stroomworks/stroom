@@ -54,6 +54,15 @@ public class TypeStyle {
         PIN
     }
 
+    /**
+     * Built-in colour for an unconfigured {@code person} layer — people keep their
+     * traditional blue on maps that have never configured a person style.
+     */
+    public static final String DEFAULT_PERSON_COLOUR = "#1f77b4";
+
+    /** Built-in colour for any other unconfigured layer. */
+    public static final String DEFAULT_COLOUR = "#607d8b";
+
     @JsonProperty
     private final String type;
     @JsonProperty
@@ -120,6 +129,35 @@ public class TypeStyle {
      */
     public boolean hasGraphic() {
         return graphic != null && !graphic.isEmpty();
+    }
+
+    /**
+     * The colour a fact of the given type is actually drawn in when it carries no
+     * colour of its own: the colour configured for that type on the Settings tab
+     * if there is one, otherwise the built-in default.
+     *
+     * <p>This is the single authority for "what colour does this type resolve to",
+     * so the canvas, the layer-appearance dialog and the object-edit dialog's
+     * <em>Default</em> fill cannot drift apart — a picker that showed anything
+     * else would be advertising a colour the map does not use.</p>
+     *
+     * @param type   the fact type (e.g. {@code "gate"}); {@code null} yields the
+     *               built-in default
+     * @param styles the document's per-type styles, or {@code null}
+     * @return a 7-character hex colour; never {@code null}
+     */
+    public static String colourForType(final String type, final List<TypeStyle> styles) {
+        if (type != null && styles != null) {
+            for (final TypeStyle style : styles) {
+                if (style != null && type.equals(style.getType())
+                        && style.getColour() != null && !style.getColour().isEmpty()) {
+                    return style.getColour();
+                }
+            }
+        }
+        return FloorMapJsonKeys.PERSON.equalsIgnoreCase(type)
+                ? DEFAULT_PERSON_COLOUR
+                : DEFAULT_COLOUR;
     }
 
     /**

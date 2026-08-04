@@ -189,8 +189,15 @@ public final class FloorMapEntryParser {
      * Folds a flat {@code [x0, y0, x1, y1, ...]} geometry array into vertex
      * pairs. Returns {@code null} for a missing or too-short array (fewer
      * than 3 vertices). A trailing odd value is ignored.
+     *
+     * <p>Public because the stored form is flat wherever geometry is read — the
+     * properties dialog measures an area's outline from the same array this
+     * parser folds.</p>
+     *
+     * @param flat the stored geometry array; may be {@code null}
+     * @return the vertex pairs, or {@code null} if there are fewer than three
      */
-    private static double[][] parseVertices(final double[] flat) {
+    public static double[][] parseVertices(final double[] flat) {
         if (flat == null || flat.length < 6) {
             return null;
         }

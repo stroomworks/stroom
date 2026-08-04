@@ -16,11 +16,18 @@
 
 package stroom.floormap.client.view;
 
+import stroom.floormap.shared.FloorMapMeasurementUnits;
+import stroom.floormap.shared.FloorMapMeasurementUnits.Unit;
+
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 class TestFloorMapGrid {
+
+    private static FloorMapMeasurementUnits metres(final double unitsPerMapUnit) {
+        return new FloorMapMeasurementUnits(Unit.METRE, unitsPerMapUnit);
+    }
 
 
     @Test
@@ -186,23 +193,6 @@ class TestFloorMapGrid {
     }
 
     @Test
-    void formatScaleLabelIntegerPowersOf10() {
-        // Powers of 10 >= 1 should render as integers (no ".0")
-        assertThat(FloorMapGrid.formatScaleLabel(1.0)).isEqualTo("1");
-        assertThat(FloorMapGrid.formatScaleLabel(10.0)).isEqualTo("10");
-        assertThat(FloorMapGrid.formatScaleLabel(100.0)).isEqualTo("100");
-        assertThat(FloorMapGrid.formatScaleLabel(1000.0)).isEqualTo("1000");
-    }
-
-    @Test
-    void formatScaleLabelSubUnitPowersOf10() {
-        // Powers of 10 < 1 should render as clean decimals
-        assertThat(FloorMapGrid.formatScaleLabel(0.1)).isEqualTo("0.1");
-        assertThat(FloorMapGrid.formatScaleLabel(0.01)).isEqualTo("0.01");
-        assertThat(FloorMapGrid.formatScaleLabel(0.001)).isEqualTo("0.001");
-    }
-
-    @Test
     void minorWorldSpacingIsOneTenthOfMajor() {
         // Minor spacing is always 1/10th of the adaptive major spacing.
         for (final double effectiveScale : new double[]{0.001, 0.3, 1, 2, 5, 30, 1000}) {
@@ -222,6 +212,155 @@ class TestFloorMapGrid {
         // now derived so it adapts to zoom.
         assertThat(FloorMapGrid.minorWorldSpacing(1.0)).isEqualTo(10.0);
         assertThat(5.0 * FloorMapGrid.minorWorldSpacing(1.0)).isEqualTo(50.0);
+    }
+
+    // ------------------------------------------------------------------------
+    // Decade selection in display units
+    // ------------------------------------------------------------------------
+
+    /**
+     * The decade is chosen so the label is a round number of *display* units.
+     * At 0.5 m per map unit and 100 % zoom, a 100-map-unit division would be
+     * "50 m" — so the grid instead picks a 200-unit division, which is 100 m.
+     */
+    @Test
+    void decadeIsAPowerOfTenInDisplayUnits() {
+        for (final double unitsPerMapUnit : new double[]{0.5, 0.187, 2.5, 1000}) {
+            for (final double effectiveScale : new double[]{0.05, 1, 7, 250}) {
+                final double majorWorldSpacing =
+                        FloorMapGrid.computeGridParams(effectiveScale, unitsPerMapUnit)[0];
+                final double displaySpacing = majorWorldSpacing * unitsPerMapUnit;
+                final double log = Math.log10(displaySpacing);
+
+                assertThat(Math.abs(log - Math.round(log)))
+                        .as("displaySpacing=%s (scale=%s, factor=%s) should be a power of 10",
+                                displaySpacing, effectiveScale, unitsPerMapUnit)
+                        .isLessThan(1e-9);
+            }
+        }
+    }
+
+    /** Whatever the scale factor, the grid stays a comfortable size on screen. */
+    @Test
+    void displayUnitDecadesStayInComfortableRange() {
+        for (final double unitsPerMapUnit : new double[]{0.001, 0.187, 1, 3.7, 5280}) {
+            for (final double effectiveScale : new double[]{0.5, 1, 5, 200, 1000}) {
+                final double majorWorldSpacing =
+                        FloorMapGrid.computeGridParams(effectiveScale, unitsPerMapUnit)[0];
+                final double screenPx = majorWorldSpacing * effectiveScale;
+
+                assertThat(screenPx)
+                        .as("screenPx at scale=%s, factor=%s", effectiveScale, unitsPerMapUnit)
+                        .isGreaterThanOrEqualTo(FloorMapGrid.TARGET_MIN_PX)
+                        .isLessThanOrEqualTo(FloorMapGrid.TARGET_MAX_PX);
+            }
+        }
+    }
+
+    /** An uncalibrated map's grid must be bit-for-bit what it always was. */
+    @Test
+    void factorOfOneChangesNothing() {
+        for (final double effectiveScale : new double[]{0.001, 0.3, 1, 2, 5, 30, 1000}) {
+            assertThat(FloorMapGrid.computeGridParams(effectiveScale, 1.0))
+                    .as("effectiveScale=%s", effectiveScale)
+                    .isEqualTo(FloorMapGrid.computeGridParams(effectiveScale));
+        }
+    }
+
+    /**
+     * A zero or non-finite factor would put NaN in every pattern coordinate, and
+     * an SVG with NaN coordinates renders nothing at all.
+     */
+    @Test
+    void unusableScaleFactorsFallBackToUnscaled() {
+        for (final double factor : new double[]{0, -2, Double.NaN, Double.POSITIVE_INFINITY}) {
+            assertThat(FloorMapGrid.computeGridParams(1.0, factor))
+                    .as("factor=%s", factor)
+                    .isEqualTo(FloorMapGrid.computeGridParams(1.0));
+        }
+    }
+
+    /**
+     * The grid-relative helpers must agree with the drawn grid, or the initial
+     * pan inset and the duplicate-object nudge drift away from the lines.
+     */
+    @Test
+    void gridRelativeHelpersFollowTheSameDecade() {
+        final FloorMapMeasurementUnits units = metres(0.5);
+        for (final double effectiveScale : new double[]{0.3, 1, 5, 200}) {
+            final double majorWorldSpacing =
+                    FloorMapGrid.computeGridParams(effectiveScale, 0.5)[0];
+
+            assertThat(FloorMapGrid.majorDivisionScreenPx(effectiveScale, units))
+                    .as("majorDivisionScreenPx at effectiveScale=%s", effectiveScale)
+                    .isEqualTo(majorWorldSpacing * effectiveScale);
+            assertThat(FloorMapGrid.minorWorldSpacing(effectiveScale, units))
+                    .as("minorWorldSpacing at effectiveScale=%s", effectiveScale)
+                    .isEqualTo(majorWorldSpacing / 10.0);
+        }
+    }
+
+    /** Passing no units is the same as the single-argument form. */
+    @Test
+    void gridRelativeHelpersDefaultToUnscaled() {
+        assertThat(FloorMapGrid.majorDivisionScreenPx(1.0, null))
+                .isEqualTo(FloorMapGrid.majorDivisionScreenPx(1.0));
+        assertThat(FloorMapGrid.minorWorldSpacing(1.0, null))
+                .isEqualTo(FloorMapGrid.minorWorldSpacing(1.0));
+    }
+
+    // ------------------------------------------------------------------------
+    // Scale bar
+    // ------------------------------------------------------------------------
+
+    /** The bar never exceeds the width it is given, and is never zero-length. */
+    @Test
+    void scaleBarFitsTheSpaceAvailable() {
+        for (final double effectiveScale : new double[]{0.01, 0.3, 1, 7, 250, 5000}) {
+            for (final FloorMapMeasurementUnits units :
+                    new FloorMapMeasurementUnits[]{null, metres(1), metres(0.187), metres(1000)}) {
+                final double[] bar = FloorMapGrid.scaleBar(effectiveScale, 120, units);
+
+                assertThat(bar[1])
+                        .as("width at scale=%s, units=%s", effectiveScale, units)
+                        .isGreaterThan(0)
+                        .isLessThanOrEqualTo(120);
+                assertThat(bar[0])
+                        .as("map length at scale=%s, units=%s", effectiveScale, units)
+                        .isGreaterThan(0);
+            }
+        }
+    }
+
+    /** The width drawn must be exactly what the labelled distance is worth. */
+    @Test
+    void scaleBarWidthMatchesItsLabelledDistance() {
+        final double[] bar = FloorMapGrid.scaleBar(2.0, 120, metres(0.5));
+
+        // 120 px at 2 px per map unit is 60 map units, which is 30 m; the largest
+        // 1-2-5 value that fits is 20 m — 40 units of map space, 80 px.
+        assertThat(bar[0]).isEqualTo(40.0);
+        assertThat(bar[1]).isEqualTo(80.0);
+        assertThat(FloorMapMeasurementUnits.format(metres(0.5), bar[0])).isEqualTo("20 m");
+    }
+
+    /** An uncalibrated map's bar measures in the default scale, never in map units. */
+    @Test
+    void scaleBarWithoutUnitsUsesTheDefaultScale() {
+        final double[] bar = FloorMapGrid.scaleBar(1.0, 120, null);
+
+        assertThat(bar[0]).isEqualTo(100.0);
+        assertThat(bar[1]).isEqualTo(100.0);
+        assertThat(FloorMapMeasurementUnits.format(null, bar[0])).isEqualTo("1 m");
+    }
+
+    @Test
+    void scaleBarRejectsUnusableInput() {
+        assertThat(FloorMapGrid.scaleBar(0, 120, null)).containsExactly(0.0, 0.0);
+        assertThat(FloorMapGrid.scaleBar(1, 0, null)).containsExactly(0.0, 0.0);
+        assertThat(FloorMapGrid.scaleBar(Double.NaN, 120, null)).containsExactly(0.0, 0.0);
+        assertThat(FloorMapGrid.scaleBar(1, Double.POSITIVE_INFINITY, null))
+                .containsExactly(0.0, 0.0);
     }
 
     @Test

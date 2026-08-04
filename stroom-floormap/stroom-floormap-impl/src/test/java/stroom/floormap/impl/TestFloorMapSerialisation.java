@@ -19,6 +19,8 @@ package stroom.floormap.impl;
 import stroom.docref.DocRef;
 import stroom.floormap.shared.FloorMapDoc;
 import stroom.floormap.shared.FloorMapGroup;
+import stroom.floormap.shared.FloorMapMeasurementUnits;
+import stroom.floormap.shared.FloorMapMeasurementUnits.Unit;
 import stroom.query.api.TimeRange;
 import stroom.util.json.JsonUtil;
 
@@ -73,12 +75,12 @@ class TestFloorMapSerialisation {
         // Old FloorMapDoc JSON that contains the removed 'query' / 'queryTimeRange' fields.
         // Jackson should silently ignore unknown fields; deserialisation must not throw.
         final String oldJson = "{"
-                + "\"uuid\":\"map-uuid-456\","
-                + "\"name\":\"MyFloorMap\","
-                + "\"description\":\"Floor map description\","
-                + "\"query\":\"from StoreName select old_query\","
-                + "\"queryTimeRange\":{\"name\":\"LAST_24_HOURS\"}"
-                + "}";
+                               + "\"uuid\":\"map-uuid-456\","
+                               + "\"name\":\"MyFloorMap\","
+                               + "\"description\":\"Floor map description\","
+                               + "\"query\":\"from StoreName select old_query\","
+                               + "\"queryTimeRange\":{\"name\":\"LAST_24_HOURS\"}"
+                               + "}";
 
         final FloorMapDoc deserialized = JsonUtil.readValue(oldJson, FloorMapDoc.class);
         assertThat(deserialized).isNotNull();
@@ -88,6 +90,8 @@ class TestFloorMapSerialisation {
         assertThat(deserialized.getFactsStoreRef()).isNull();
         // A document written before groups existed simply has none.
         assertThat(deserialized.getGroups()).isNull();
+        // Likewise units: an uncalibrated map has no scale, and that is normal.
+        assertThat(deserialized.getMeasurementUnits()).isNull();
     }
 
     /**
@@ -121,5 +125,77 @@ class TestFloorMapSerialisation {
         // A colourless group still renders: the default fills in at read time.
         assertThat(deserialized.getGroups().get(1).getColourOrDefault())
                 .isEqualTo(FloorMapGroup.DEFAULT_COLOUR);
+    }
+
+    /**
+     * A calibrated scale must survive a write/read cycle: losing it would silently
+     * revert every size on the map to "map units".
+     */
+    @Test
+    void testMeasurementUnitsRoundTrip() {
+        final FloorMapMeasurementUnits units =
+                new FloorMapMeasurementUnits(Unit.METRE, 0.187);
+
+        final FloorMapDoc original = FloorMapDoc.builder()
+                .uuid("map-uuid-456")
+                .name("MyFloorMap")
+                .measurementUnits(units)
+                .build();
+
+        final FloorMapDoc deserialized = JsonUtil.readValue(
+                JsonUtil.writeValueAsString(original), FloorMapDoc.class);
+
+        assertThat(deserialized.getMeasurementUnits()).isEqualTo(units);
+        assertThat(deserialized.getMeasurementUnits().getUnit()).isEqualTo(Unit.METRE);
+        assertThat(deserialized.getMeasurementUnits().getUnitsPerMapUnit()).isEqualTo(0.187);
+    }
+
+    /**
+     * Every tab's {@code onWrite} returns {@code doc.copy()…build()}, so a field
+     * missing from the copy constructor is silently deleted whenever the user
+     * saves from a tab that does not itself write it.
+     */
+    @Test
+    void testMeasurementUnitsSurviveACopy() {
+        final FloorMapMeasurementUnits units =
+                new FloorMapMeasurementUnits(Unit.FOOT, 2.5);
+
+        final FloorMapDoc original = FloorMapDoc.builder()
+                .uuid("map-uuid-456")
+                .name("MyFloorMap")
+                .measurementUnits(units)
+                .build();
+
+        // A copy that changes something else entirely — as the Settings,
+        // Query and Documentation tabs all do.
+        final FloorMapDoc copied = original.copy().description("edited elsewhere").build();
+
+        assertThat(copied.getMeasurementUnits()).isEqualTo(units);
+    }
+
+    /**
+     * The client decides the document is dirty by diffing the written doc against
+     * the read one, so calibrating the map must change equality — otherwise the
+     * save button never lights up and the user's work is lost on close.
+     */
+    @Test
+    void testMeasurementUnitsAffectEquality() {
+        final FloorMapDoc uncalibrated = FloorMapDoc.builder()
+                .uuid("map-uuid-456")
+                .name("MyFloorMap")
+                .build();
+        final FloorMapDoc calibrated = uncalibrated.copy()
+                .measurementUnits(new FloorMapMeasurementUnits(Unit.METRE, 0.187))
+                .build();
+        final FloorMapDoc rescaled = calibrated.copy()
+                .measurementUnits(new FloorMapMeasurementUnits(Unit.METRE, 0.25))
+                .build();
+
+        assertThat(calibrated).isNotEqualTo(uncalibrated);
+        assertThat(rescaled).isNotEqualTo(calibrated);
+        assertThat(calibrated.hashCode()).isNotEqualTo(uncalibrated.hashCode());
+        assertThat(calibrated).isEqualTo(uncalibrated.copy()
+                .measurementUnits(new FloorMapMeasurementUnits(Unit.METRE, 0.187))
+                .build());
     }
 }

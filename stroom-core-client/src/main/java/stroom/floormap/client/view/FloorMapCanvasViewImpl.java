@@ -26,6 +26,7 @@ import stroom.floormap.shared.FloorMapAreaOverlay;
 import stroom.floormap.shared.FloorMapGeometry;
 import stroom.floormap.shared.FloorMapHighlight;
 import stroom.floormap.shared.FloorMapJsonKeys;
+import stroom.floormap.shared.FloorMapMeasurementUnits;
 import stroom.floormap.shared.FloorMapObject;
 import stroom.floormap.shared.FloorMapScreenGeometry;
 import stroom.floormap.shared.FloorMapShapes;
@@ -37,14 +38,17 @@ import stroom.widget.util.client.SafeHtmlUtil;
 
 import com.google.gwt.core.client.Scheduler;
 import com.google.gwt.dom.client.Element;
+import com.google.gwt.dom.client.Style.Unit;
 import com.google.gwt.event.dom.client.HasMouseMoveHandlers;
 import com.google.gwt.event.dom.client.HasMouseUpHandlers;
 import com.google.gwt.event.dom.client.HasMouseWheelHandlers;
 import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
+import com.google.gwt.user.client.ui.FlowPanel;
 import com.google.gwt.user.client.ui.FocusPanel;
 import com.google.gwt.user.client.ui.HTML;
 import com.google.gwt.user.client.ui.Label;
+import com.google.gwt.user.client.ui.SimplePanel;
 import com.google.gwt.user.client.ui.Widget;
 import com.google.inject.Inject;
 import com.gwtplatform.mvp.client.ViewWithUiHandlers;
@@ -82,7 +86,8 @@ public class FloorMapCanvasViewImpl
      * derived from this and the image's aspect ratio; the fact's world-to-map
      * matrix then places and scales the image in map space.
      */
-    private static final int IMAGE_DISPLAY_WIDTH = 1000;
+    private static final double IMAGE_DISPLAY_WIDTH =
+            FloorMapScreenGeometry.DEFAULT_IMAGE_DISPLAY_WIDTH;
 
     /**
      * On-screen size (SVG user-units, i.e. pixels at the fixed-size transform) of
@@ -166,6 +171,13 @@ public class FloorMapCanvasViewImpl
     private List<TypeStyle> lastTypeStyles;
     private Set<String> lastSelectedIds;
 
+    /**
+     * What one map unit means in the real world, or {@code null} on a map with
+     * no scale set. Set from the presenter rather than passed per draw: it
+     * changes only when the document is read or recalibrated.
+     */
+    private FloorMapMeasurementUnits measurementUnits;
+
     @UiField
     HTML svgContainer;
 
@@ -183,6 +195,64 @@ public class FloorMapCanvasViewImpl
 
     private static final String AREA_DRAW_HINT_VISIBLE =
             "stroom-floormap-area-draw-hint--visible";
+
+    /**
+     * Pill that follows the cursor while an object is moved or resized, showing
+     * its position or size in real-world units.
+     */
+    @UiField
+    Label gestureReadout;
+
+    private static final String GESTURE_READOUT_VISIBLE =
+            "stroom-floormap-gesture-readout--visible";
+
+    /** Offset of the readout from the cursor, so the pointer never covers it. */
+    private static final int READOUT_OFFSET_X_PX = 16;
+    private static final int READOUT_OFFSET_Y_PX = 18;
+
+    /**
+     * Room left for the readout when deciding whether it fits to the right of,
+     * or below, the cursor. Its real size is not known until it has been laid
+     * out, and reading that back mid-drag would force a synchronous reflow on
+     * every mouse move.
+     */
+    private static final int READOUT_ASSUMED_WIDTH_PX = 150;
+    private static final int READOUT_ASSUMED_HEIGHT_PX = 24;
+
+    /**
+     * The scale bar: a labelled rule fixed in the canvas corner, showing what a
+     * given on-screen distance is worth in real units.
+     *
+     * <p>It is the canvas's only standing statement of scale: the grid draws no
+     * text, so without this bar the size of a grid square — and therefore of
+     * anything on the map — would be unknowable without starting a drag.</p>
+     */
+    @UiField
+    FlowPanel scaleBar;
+
+    @UiField
+    Label scaleBarLabel;
+
+    @UiField
+    SimplePanel scaleBarLine;
+
+    /**
+     * The widest the scale bar may be drawn. The chosen distance is the largest
+     * 1-2-5 value that fits within this, so the bar is typically 40–120 px.
+     */
+    private static final double SCALE_BAR_MAX_WIDTH_PX = 120;
+
+    /** Half-length of the tick drawn across each end of the measuring line. */
+    private static final double MEASURE_TICK_PX = 6;
+    /** Gap between the measuring line and its running length readout. */
+    private static final double MEASURE_LABEL_GAP_PX = 8;
+
+    /**
+     * Whether the Set Scale mode is active, so the hint pill can announce it
+     * before the first press — at which point there is no line to infer it from,
+     * and the mode would otherwise look like nothing having happened.
+     */
+    private boolean measuringScale;
 
     /**
      * Constructs the canvas view, inflating the UiBinder template.
@@ -291,7 +361,8 @@ public class FloorMapCanvasViewImpl
                      final boolean scaleRotateEnabled,
                      final double[] areaDraftPx,
                      final FloorMapAreaOverlay areaOverlay,
-                     final FloorMapHighlight highlight) {
+                     final FloorMapHighlight highlight,
+                     final double[] measureLinePx) {
         final HtmlBuilder htmlBuilder = new HtmlBuilder();
 
         // Cache this frame's geometry so hitTestScreenRect()/getSelectionFrame()
@@ -309,7 +380,8 @@ public class FloorMapCanvasViewImpl
             // Grid overlay — a non-interactive UI aid, drawn at the SVG root.
             if (showGrid) {
                 FloorMapGrid.appendGrid(
-                        svg, FloorMapTransformationMatrix.identity(), scale, x, y);
+                        svg, FloorMapTransformationMatrix.identity(), scale, x, y,
+                        measurementUnits);
             }
 
             // Pan/zoom group.
@@ -381,6 +453,11 @@ public class FloorMapCanvasViewImpl
                 appendAreaDraft(svg, areaDraftPx);
             }
 
+            // In-progress Set Scale measuring line — screen space, on top.
+            if (measureLinePx != null && measureLinePx.length >= 4) {
+                appendMeasureLine(svg, measureLinePx, scale);
+            }
+
             // Selection frame + scale/rotate handles — screen space, on top.
             if (drawSelectionHandles) {
                 final Fact areaFact = singleSelectedArea();
@@ -399,30 +476,215 @@ public class FloorMapCanvasViewImpl
         );
 
         svgContainer.setHTML(htmlBuilder.toSafeHtml());
-        updateAreaDrawHint(areaDraftPx);
+        updateCanvasHint(areaDraftPx, measureLinePx);
+        updateScaleBar(scale);
     }
 
     /**
-     * Shows, hides and words the area-drawing instruction pill. It is an HTML
-     * overlay (see the ui.xml) rather than part of the rebuilt SVG, styled via
-     * {@code stroom-floormap-area-draw-hint} to match the timeline scrub
-     * tooltip.
+     * Draws the in-progress Set Scale measuring line at the SVG root in screen
+     * space: the line itself, a tick across each end, and a running readout of
+     * what it currently measures.
      *
-     * @param areaDraftPx the draft passed to this draw, or {@code null} when
-     *                    the drawing mode is not active
+     * <p>The readout is in whatever units the map already has — the default
+     * scale if it has never been calibrated — so the user can see the very
+     * quantity they are about to correct.</p>
+     *
+     * @param svg     the SVG root builder to append to
+     * @param linePx  {@code {x0, y0, x1, y1}} in element pixels
+     * @param scale   the current zoom factor, i.e. pixels per map unit
      */
-    private void updateAreaDrawHint(final double[] areaDraftPx) {
-        if (areaDraftPx == null) {
-            areaDrawHint.removeStyleName(AREA_DRAW_HINT_VISIBLE);
+    private void appendMeasureLine(final HtmlBuilder svg,
+                                   final double[] linePx,
+                                   final double scale) {
+        final double x0 = linePx[0];
+        final double y0 = linePx[1];
+        final double x1 = linePx[2];
+        final double y1 = linePx[3];
+        final double dx = x1 - x0;
+        final double dy = y1 - y0;
+        final double lengthPx = Math.sqrt(dx * dx + dy * dy);
+
+        svg.elem(SafeHtmlUtil.from("line"),
+                new Attribute("x1", String.valueOf(x0)),
+                new Attribute("y1", String.valueOf(y0)),
+                new Attribute("x2", String.valueOf(x1)),
+                new Attribute("y2", String.valueOf(y1)),
+                new Attribute("stroke", ACCENT_BLUE),
+                new Attribute("stroke-width", "2"),
+                new Attribute("pointer-events", "none"));
+
+        // End ticks, perpendicular to the line, so both ends read as deliberate
+        // endpoints rather than as somewhere the line happens to stop.
+        if (lengthPx > 0) {
+            final double nx = -dy / lengthPx * MEASURE_TICK_PX;
+            final double ny = dx / lengthPx * MEASURE_TICK_PX;
+            appendMeasureTick(svg, x0, y0, nx, ny);
+            appendMeasureTick(svg, x1, y1, nx, ny);
+        }
+
+        // Running readout, offset above the midpoint so the cursor never sits on
+        // top of it.
+        if (scale > 0) {
+            final String text = FloorMapMeasurementUnits.format(
+                    measurementUnits, lengthPx / scale);
+            svg.elem(text,
+                    SafeHtmlUtil.from("text"),
+                    new Attribute("x", String.valueOf((x0 + x1) / 2)),
+                    new Attribute("y", String.valueOf((y0 + y1) / 2 - MEASURE_LABEL_GAP_PX)),
+                    new Attribute("text-anchor", "middle"),
+                    new Attribute("fill", ACCENT_BLUE),
+                    new Attribute("font-size", "12"),
+                    new Attribute("font-family", "sans-serif"),
+                    new Attribute("font-weight", "600"),
+                    new Attribute("paint-order", "stroke"),
+                    new Attribute("stroke", "var(--page__background-color)"),
+                    new Attribute("stroke-width", "3"),
+                    new Attribute("pointer-events", "none"));
+        }
+    }
+
+    /** One end tick of the measuring line, centred on {@code (x, y)}. */
+    private void appendMeasureTick(final HtmlBuilder svg,
+                                   final double x,
+                                   final double y,
+                                   final double nx,
+                                   final double ny) {
+        svg.elem(SafeHtmlUtil.from("line"),
+                new Attribute("x1", String.valueOf(x - nx)),
+                new Attribute("y1", String.valueOf(y - ny)),
+                new Attribute("x2", String.valueOf(x + nx)),
+                new Attribute("y2", String.valueOf(y + ny)),
+                new Attribute("stroke", ACCENT_BLUE),
+                new Attribute("stroke-width", "2"),
+                new Attribute("pointer-events", "none"));
+    }
+
+    /**
+     * Sizes and labels the scale bar for this frame.
+     *
+     * <p>Drawn on every map, calibrated or not: an uncalibrated map measures in
+     * the default scale (one centimetre per map unit), so the bar always states
+     * a real-world distance.</p>
+     *
+     * <p>Lives here rather than in the rebuilt SVG so it can use the theme's CSS
+     * variables, and so it never moves with pan or zoom. Being inside
+     * {@code draw} covers both of the presenter's redraw paths — the static one
+     * and the animation-frame loop — so it cannot go stale while entities
+     * move.</p>
+     *
+     * @param scale the current zoom factor; the grid is drawn with an identity
+     *              matrix, so this is also pixels-per-map-unit
+     */
+    private void updateScaleBar(final double scale) {
+        final double[] bar =
+                FloorMapGrid.scaleBar(scale, SCALE_BAR_MAX_WIDTH_PX, measurementUnits);
+        if (bar[1] <= 0) {
+            scaleBar.setVisible(false);
             return;
         }
-        final int committed = areaDraftPx.length / 2 - 1;
-        areaDrawHint.setText(committed >= 3
-                ? "Drawing area — click the first point, double-click or press Enter"
-                + " to finish · Esc cancels · right-click undoes the last point"
-                : "Drawing area — click to add points (at least 3)"
-                + " · Esc cancels · right-click undoes the last point");
+        scaleBar.setVisible(true);
+        scaleBarLabel.setText(FloorMapMeasurementUnits.format(measurementUnits, bar[0]));
+        scaleBarLine.setWidth(bar[1] + "px");
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public void setMeasurementUnits(final FloorMapMeasurementUnits measurementUnits) {
+        this.measurementUnits = measurementUnits;
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public void setGestureReadout(final String text, final double cursorXPx, final double cursorYPx) {
+        if (text == null) {
+            gestureReadout.removeStyleName(GESTURE_READOUT_VISIBLE);
+            return;
+        }
+        gestureReadout.setText(text);
+
+        // Sit below-right of the cursor by default, flipping to the other side
+        // near an edge so the pill is never clipped by the canvas.
+        final Element panel = focusPanel.getElement();
+        final int width = panel.getOffsetWidth();
+        final int height = panel.getOffsetHeight();
+
+        double x = cursorXPx + READOUT_OFFSET_X_PX;
+        if (width > 0 && x + READOUT_ASSUMED_WIDTH_PX > width) {
+            x = cursorXPx - READOUT_OFFSET_X_PX - READOUT_ASSUMED_WIDTH_PX;
+        }
+        double y = cursorYPx + READOUT_OFFSET_Y_PX;
+        if (height > 0 && y + READOUT_ASSUMED_HEIGHT_PX > height) {
+            y = cursorYPx - READOUT_OFFSET_Y_PX - READOUT_ASSUMED_HEIGHT_PX;
+        }
+
+        gestureReadout.getElement().getStyle().setLeft(Math.max(0, x), Unit.PX);
+        gestureReadout.getElement().getStyle().setTop(Math.max(0, y), Unit.PX);
+        gestureReadout.addStyleName(GESTURE_READOUT_VISIBLE);
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public Double getImageAspectRatio(final String imageUrl) {
+        // Deliberately does not start a load: this answers "do we already know?"
+        // for a dialog, and must not queue work from a non-drawing path.
+        return cachedAspectRatio(imageUrl);
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public double[] getSelectionBoundsPx() {
+        // Unpadded, unlike the selection frame: that pads small selections out
+        // to a minimum size so the drag handles stay separable, which would
+        // report a small object as bigger than it is.
+        return geometry().selectionFrame(lastFacts, lastSelectedIds, 0);
+    }
+
+    /**
+     * Shows, hides and words the instruction pill for whichever modal canvas
+     * mode is active. It is an HTML overlay (see the ui.xml) rather than part of
+     * the rebuilt SVG, styled via {@code stroom-floormap-area-draw-hint} to match
+     * the timeline scrub tooltip.
+     *
+     * <p>A modal mode must be visibly announced from the instant it starts, or
+     * it is indistinguishable from nothing having happened — which is exactly
+     * how area drawing was first reported as broken.</p>
+     *
+     * @param areaDraftPx   the area draft passed to this draw, or {@code null}
+     *                      when the drawing mode is not active
+     * @param measureLinePx the Set Scale line passed to this draw; only
+     *                      non-null once the press has landed, so the mode is
+     *                      announced by {@link #setMeasuringScale} instead
+     */
+    private void updateCanvasHint(final double[] areaDraftPx, final double[] measureLinePx) {
+        if (areaDraftPx != null) {
+            final int committed = areaDraftPx.length / 2 - 1;
+            showHint(committed >= 3
+                    ? "Drawing area — click the first point, double-click or press Enter"
+                      + " to finish · Esc cancels · right-click undoes the last point"
+                    : "Drawing area — click to add points (at least 3)"
+                      + " · Esc cancels · right-click undoes the last point");
+            return;
+        }
+        if (measuringScale) {
+            showHint(measureLinePx != null
+                    ? "Set scale — release at the far end of the distance you know"
+                      + " · Esc cancels"
+                    : "Set scale — drag a line across something whose real length"
+                      + " you know · Esc cancels · right-click leaves this mode");
+            return;
+        }
+        areaDrawHint.removeStyleName(AREA_DRAW_HINT_VISIBLE);
+    }
+
+    private void showHint(final String text) {
+        areaDrawHint.setText(text);
         areaDrawHint.addStyleName(AREA_DRAW_HINT_VISIBLE);
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public void setMeasuringScale(final boolean measuringScale) {
+        this.measuringScale = measuringScale;
     }
 
     /**
@@ -652,7 +914,7 @@ public class FloorMapCanvasViewImpl
     private static String areaColour(final Fact fact, final List<TypeStyle> typeStyles) {
         return fact.getFill() != null && !fact.getFill().isEmpty()
                 ? fact.getFill()
-                : colourForType(fact.getType(), typeStyles);
+                : TypeStyle.colourForType(fact.getType(), typeStyles);
     }
 
     /**
@@ -764,7 +1026,7 @@ public class FloorMapCanvasViewImpl
         // For a single-area selection, push the frame outward by ~0.5 minor
         // grid units so the scale/rotate handles clear the vertex handles.
         final double off = areaOffset
-                ? FloorMapGrid.majorDivisionScreenPx(lastScale) / 20
+                ? FloorMapGrid.majorDivisionScreenPx(lastScale, measurementUnits) / 20
                 : 0;
         final double minX = f[0] - off;
         final double minY = f[1] - off;
@@ -995,7 +1257,7 @@ public class FloorMapCanvasViewImpl
         final double aspectRatio = natural != null
                 ? natural[0] / natural[1]
                 : 1.0;
-        final double imgHeight = (double) IMAGE_DISPLAY_WIDTH / aspectRatio;
+        final double imgHeight = IMAGE_DISPLAY_WIDTH / aspectRatio;
 
         FloorMapTransformationMatrix effective = placement;
         if (centred) {
@@ -1096,7 +1358,7 @@ public class FloorMapCanvasViewImpl
                 parent.elem(SafeHtmlUtil.from("path"),
                     new Attribute("d", pathD.toString()),
                     new Attribute("fill", "none"),
-                    new Attribute("stroke", colourForType(obj.getType(), typeStyles)),
+                    new Attribute("stroke", TypeStyle.colourForType(obj.getType(), typeStyles)),
                     new Attribute("stroke-width", "6"),
                     new Attribute("stroke-linecap", "round"),
                     new Attribute("stroke-linejoin", "round"),
@@ -1151,7 +1413,7 @@ public class FloorMapCanvasViewImpl
                                    final String highlightColour,
                                    final List<TypeStyle> typeStyles,
                                    final double scale) {
-        final String fillColour = colourForType(type, typeStyles);
+        final String fillColour = TypeStyle.colourForType(type, typeStyles);
         final TypeStyle.Shape shape = shapeForType(type, typeStyles);
         final String graphic = graphicForType(type, typeStyles);
         // Selection (orange) beats any highlight — group colour or containment
@@ -1314,33 +1576,6 @@ public class FloorMapCanvasViewImpl
         final String rawId = id != null ? id : "";
         final int atIdx = rawId.indexOf('@');
         return atIdx > 0 ? rawId.substring(0, atIdx) : rawId;
-    }
-
-    /**
-     * Returns a fill colour for the given type: the colour configured on the
-     * Settings tab if present, otherwise a built-in default per type.
-     *
-     * @param type       the object type string (e.g. "gate"), case-insensitive
-     * @param typeStyles per-type settings, or {@code null}
-     * @return a CSS hex colour string
-     */
-    private static String colourForType(final String type, final List<TypeStyle> typeStyles) {
-        // Prefer the colour configured for this type on the Settings tab.
-        if (type != null && typeStyles != null) {
-            for (final TypeStyle style : typeStyles) {
-                if (style != null && type.equals(style.getType())
-                        && style.getColour() != null && !style.getColour().isEmpty()) {
-                    return style.getColour();
-                }
-            }
-        }
-
-        // Built-in defaults: people keep their traditional blue on maps that
-        // haven't configured a person TypeStyle yet.
-        if (FloorMapJsonKeys.PERSON.equalsIgnoreCase(type)) {
-            return "#1f77b4"; // blue
-        }
-        return "#607d8b"; // blue-grey
     }
 
     /**

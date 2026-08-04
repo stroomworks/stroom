@@ -16,6 +16,7 @@
 
 package stroom.floormap.client.view;
 
+import stroom.floormap.shared.FloorMapMeasurementUnits;
 import stroom.floormap.shared.FloorMapTransformationMatrix;
 import stroom.widget.util.client.HtmlBuilder;
 import stroom.widget.util.client.HtmlBuilder.Attribute;
@@ -33,11 +34,17 @@ import stroom.widget.util.client.SafeHtmlUtil;
  * grid squares on screen.</p>
  *
  * <h3>Grid levels</h3>
- * <p>Major grid lines are drawn at power-of-10 intervals in world-space
- * units. Each major square contains 10 subdivisions (minor grid). As the
- * user zooms in, minor lines fade in; once they are large enough on screen
- * they promote to become the next major level and a finer set of
+ * <p>Major grid lines are drawn at power-of-10 intervals in
+ * <em>display</em> units. Each major square contains 10 subdivisions (minor
+ * grid). As the user zooms in, minor lines fade in; once they are large enough
+ * on screen they promote to become the next major level and a finer set of
  * subdivisions appears. Zooming out reverses this.</p>
+ *
+ * <p>The decade is chosen in the unit the map is <em>displayed</em> in rather
+ * than in map units, so one grid square is a round real-world distance — 1 m,
+ * 10 m, 100 m — rather than whatever a power of ten in map units happens to
+ * convert to. The grid draws no text of its own; the corner scale bar states
+ * what a square is worth.</p>
  *
  * <h3>Rendering</h3>
  * <p>Uses SVG {@code <pattern>} elements with a {@code patternTransform}
@@ -82,21 +89,6 @@ public final class FloorMapGrid {
      */
     private static final String MINOR_STROKE = "var(--floormap-grid__minor-stroke)";
 
-    /**
-     * Stroom highlight colour — references the CSS variable
-     * {@code --floormap-grid__highlight-color} (defaults to
-     * Material Design Blue 600).
-     */
-    private static final String HIGHLIGHT_COLOUR = "var(--floormap-grid__highlight-color)";
-    /** Screen-pixel stroke width for origin axis lines. */
-    private static final double AXIS_SCREEN_PX = 2.5;
-    /** Arrowhead length expressed as a number of minor grid divisions. */
-    private static final double ARROW_MINOR_DIVISIONS = 1.0;
-    /** Screen-pixel font size for the origin scale labels. */
-    private static final double LABEL_FONT_SCREEN_PX = 12.0;
-    /** Screen-pixel gap between the arrowhead tip and the label. */
-    private static final double LABEL_GAP_SCREEN_PX = 4.0;
-
     // -- Zoom range constants ------------------------------------------------
 
     /**
@@ -111,9 +103,8 @@ public final class FloorMapGrid {
      */
     static final double TARGET_MAX_PX = 400.0;
 
-    // -- Pattern / marker IDs (unique within a single SVG document) --------
+    // -- Pattern ID (unique within a single SVG document) ------------------
     private static final String MAJOR_PATTERN_ID = "grid-major";
-    private static final String ARROW_MARKER_ID = "origin-arrow";
 
     private FloorMapGrid() {
         // utility class
@@ -129,10 +120,6 @@ public final class FloorMapGrid {
      * with the map coordinate system. This means the grid always extends
      * to the edges of the screen regardless of pan or zoom.</p>
      *
-     * <p>An origin indicator is drawn at world-space (0,0) showing the
-     * X and Y axes, each one major grid division long, in the Stroom
-     * highlight colour with arrowheads and scale labels.</p>
-     *
      * @param builder    the HtmlBuilder to append into (at SVG root level)
      * @param matrix     the map-to-screen transformation matrix
      * @param userZoom   the current user zoom level (the {@code scale} in
@@ -141,12 +128,17 @@ public final class FloorMapGrid {
      *                   translation in the pan group)
      * @param panY       the current vertical pan offset (the {@code y}
      *                   translation in the pan group)
+     * @param units      what one map unit means in the real world, or
+     *                   {@code null} on a map with no scale set — in which case
+     *                   the default scale (one centimetre per map unit) applies.
+     *                   Sizes the grid decade; the grid itself carries no text
      */
     public static void appendGrid(final HtmlBuilder builder,
                                   final FloorMapTransformationMatrix matrix,
                                   final double userZoom,
                                   final double panX,
-                                  final double panY) {
+                                  final double panY,
+                                  final FloorMapMeasurementUnits units) {
 
         // -- 1. Compute effective pixels-per-world-unit ----------------------
         //    matrixScale = scale factor of the map-to-screen affine matrix
@@ -157,7 +149,7 @@ public final class FloorMapGrid {
         final double effectiveScale = matrixScale * userZoom;
 
         // -- 2. Pick the major grid decade -----------------------------------
-        final double[] params = computeGridParams(effectiveScale);
+        final double[] params = computeGridParams(effectiveScale, unitsPerMapUnit(units));
         final double majorWorldSpacing = params[0];
         final double minorOpacity = params[1];
 
@@ -242,11 +234,6 @@ public final class FloorMapGrid {
                     new Attribute("patternUnits", "userSpaceOnUse"),
                     new Attribute("patternTransform", patternTransform));
 
-            // Arrowhead marker definition for origin axis lines.
-            // Uses a simple filled triangle pointing right; the marker
-            // auto-rotates to match the line direction via orient="auto".
-            appendArrowMarker(defs, majorWorldSpacing);
-
         }, SafeHtmlUtil.from("defs"));
 
         // -- 4. Background fill (dark) — fills entire viewport --------------
@@ -262,156 +249,6 @@ public final class FloorMapGrid {
                 new Attribute("width", "100%"),
                 new Attribute("height", "100%"),
                 new Attribute("fill", "url(#" + MAJOR_PATTERN_ID + ")"),
-                new Attribute("pointer-events", "none"));
-
-        // -- 6. Origin indicator — X and Y axes at (0,0) --------------------
-        appendOriginIndicator(builder, matrix, userZoom, panX, panY,
-                majorWorldSpacing, effectiveScale);
-    }
-
-    /**
-     * Appends an arrowhead {@code <marker>} definition into the given
-     * {@code <defs>} builder. The marker is a filled triangle in the
-     * Stroom highlight colour, sized proportionally to the grid so it
-     * always spans {@link #ARROW_MINOR_DIVISIONS} minor divisions.
-     */
-    private static void appendArrowMarker(final HtmlBuilder defs,
-                                          final double majorWorldSpacing) {
-        // Arrow length = ARROW_MINOR_DIVISIONS minor grid cells.
-        // One minor cell = majorWorldSpacing / 10.
-        final double arrowLen = majorWorldSpacing * ARROW_MINOR_DIVISIONS / 10.0;
-        final double arrowHalfWidth = arrowLen * 0.4;
-
-        // The marker viewBox is 0 0 arrowLen arrowLen, with refX at the
-        // tip so the arrow abuts exactly at the line endpoint.
-        final String viewBox = "0 0 " + formatDouble(arrowLen) + " " + formatDouble(arrowLen);
-        final String halfStr = formatDouble(arrowLen / 2.0);
-        final String lenStr = formatDouble(arrowLen);
-
-        defs.elem(marker -> {
-            // Triangle path: from (0, centre-halfWidth) to (arrowLen, centre) to (0, centre+halfWidth)
-            final String pathD = "M0," + formatDouble(arrowLen / 2.0 - arrowHalfWidth)
-                    + " L" + lenStr + "," + halfStr
-                    + " L0," + formatDouble(arrowLen / 2.0 + arrowHalfWidth) + " Z";
-            marker.elem(SafeHtmlUtil.from("path"),
-                    new Attribute("d", pathD),
-                    new Attribute("fill", HIGHLIGHT_COLOUR));
-        },
-                SafeHtmlUtil.from("marker"),
-                new Attribute("id", ARROW_MARKER_ID),
-                new Attribute("viewBox", viewBox),
-                new Attribute("refX", lenStr),
-                new Attribute("refY", halfStr),
-                new Attribute("markerWidth", lenStr),
-                new Attribute("markerHeight", lenStr),
-                new Attribute("markerUnits", "userSpaceOnUse"),
-                new Attribute("orient", "auto"));
-    }
-
-    /**
-     * Appends the origin indicator at world-space (0,0). Draws two axis
-     * lines (X rightward, Y upward — map space is Y-up), each one major grid division long,
-     * with arrowheads at the far end and a text label showing the world-
-     * space distance (the major grid spacing) in map units.
-     *
-     * <p>The indicator is rendered in a {@code <g>} group with the same
-     * combined pan/zoom/matrix transform used by the grid pattern, so it
-     * aligns exactly with the grid lines.</p>
-     */
-    private static void appendOriginIndicator(final HtmlBuilder builder,
-                                              final FloorMapTransformationMatrix matrix,
-                                              final double userZoom,
-                                              final double panX,
-                                              final double panY,
-                                              final double majorWorldSpacing,
-                                              final double effectiveScale) {
-
-        // Axis stroke width in world-space units (renders at AXIS_SCREEN_PX on screen).
-        final String axisStrokeWidth = formatDouble(AXIS_SCREEN_PX / effectiveScale);
-
-        // Font size in world-space units (renders at LABEL_FONT_SCREEN_PX on screen).
-        final String fontSize = formatDouble(LABEL_FONT_SCREEN_PX / effectiveScale);
-
-        // Gap between the arrowhead and the label in world-space units.
-        final double labelGap = LABEL_GAP_SCREEN_PX / effectiveScale;
-
-        final String spacing = formatDouble(majorWorldSpacing);
-        final String markerUrl = "url(#" + ARROW_MARKER_ID + ")";
-
-        // Human-readable label for the axis length.
-        final String label = formatScaleLabel(majorWorldSpacing);
-
-        // Counter-rotation angle so labels remain horizontal on screen.
-        // The world-to-map matrix may include rotation; we undo it for
-        // text readability.
-        final double radians = Math.atan2(matrix.getB(), matrix.getA());
-        final double counterRotDeg = -Math.toDegrees(radians);
-
-        // Combined transform: user pan/zoom then world-to-map matrix.
-        final String groupTransform = "translate(" + formatDouble(panX)
-                + "," + formatDouble(panY) + ") scale(" + formatDouble(userZoom)
-                + ") " + matrix.toSvgMatrix();
-
-        builder.elem(originGroup -> {
-
-            // --- X axis: from (0,0) to (majorWorldSpacing, 0) ---
-            originGroup.elem(SafeHtmlUtil.from("line"),
-                    new Attribute("x1", "0"),
-                    new Attribute("y1", "0"),
-                    new Attribute("x2", spacing),
-                    new Attribute("y2", "0"),
-                    new Attribute("stroke", HIGHLIGHT_COLOUR),
-                    new Attribute("stroke-width", axisStrokeWidth),
-                    new Attribute("marker-end", markerUrl));
-
-            // X axis label — positioned just past the arrowhead.
-            final String xLabelX = formatDouble(majorWorldSpacing + labelGap);
-            originGroup.elem(label,
-                    SafeHtmlUtil.from("text"),
-                    new Attribute("x", xLabelX),
-                    new Attribute("y", "0"),
-                    new Attribute("dy", "0.35em"),
-                    new Attribute("text-anchor", "start"),
-                    new Attribute("fill", HIGHLIGHT_COLOUR),
-                    new Attribute("font-size", fontSize),
-                    new Attribute("font-family", "sans-serif"),
-                    new Attribute("font-weight", "600"),
-                    new Attribute("pointer-events", "none"),
-                    new Attribute("transform",
-                            "rotate(" + formatDouble(counterRotDeg)
-                            + "," + xLabelX + ",0)"));
-
-            // --- Y axis: from (0,0) to (0, -majorWorldSpacing) ---
-            // Map space is Y-up, so the Y axis points up the screen (negative SVG Y).
-            originGroup.elem(SafeHtmlUtil.from("line"),
-                    new Attribute("x1", "0"),
-                    new Attribute("y1", "0"),
-                    new Attribute("x2", "0"),
-                    new Attribute("y2", "-" + spacing),
-                    new Attribute("stroke", HIGHLIGHT_COLOUR),
-                    new Attribute("stroke-width", axisStrokeWidth),
-                    new Attribute("marker-end", markerUrl));
-
-            // Y axis label — positioned just past the (upward) arrowhead.
-            final String yLabelY = formatDouble(-(majorWorldSpacing + labelGap));
-            originGroup.elem(label,
-                    SafeHtmlUtil.from("text"),
-                    new Attribute("x", "0"),
-                    new Attribute("y", yLabelY),
-                    new Attribute("dy", "-0.35em"),
-                    new Attribute("text-anchor", "middle"),
-                    new Attribute("fill", HIGHLIGHT_COLOUR),
-                    new Attribute("font-size", fontSize),
-                    new Attribute("font-family", "sans-serif"),
-                    new Attribute("font-weight", "600"),
-                    new Attribute("pointer-events", "none"),
-                    new Attribute("transform",
-                            "rotate(" + formatDouble(counterRotDeg)
-                            + ",0," + yLabelY + ")"));
-
-        },
-                SafeHtmlUtil.from("g"),
-                new Attribute("transform", groupTransform),
                 new Attribute("pointer-events", "none"));
     }
 
@@ -434,15 +271,47 @@ public final class FloorMapGrid {
      * @return {@code [majorWorldSpacing, minorOpacity]}
      */
     static double[] computeGridParams(final double effectiveScale) {
+        return computeGridParams(effectiveScale, 1.0);
+    }
+
+    /**
+     * As {@link #computeGridParams(double)}, but choosing the decade in
+     * <em>display</em> units so a calibrated map's grid lands on round real-world
+     * distances.
+     *
+     * <p>The returned spacing is still in <strong>map</strong> units — that is
+     * what the pattern is drawn in — but it is a power of ten once multiplied by
+     * {@code unitsPerMapUnit}. A factor of 1 (an uncalibrated map) makes this
+     * identical to the single-argument form.</p>
+     *
+     * @param effectiveScale  combined pixels-per-map-unit
+     *                        ({@code matrixScale × userZoom})
+     * @param unitsPerMapUnit how many display units one map unit spans; a
+     *                        non-positive or non-finite value is treated as 1
+     * @return {@code [majorWorldSpacing, minorOpacity]}
+     */
+    static double[] computeGridParams(final double effectiveScale,
+                                      final double unitsPerMapUnit) {
         // Guard against non-positive or non-finite values that would
         // produce NaN/Infinity in the log calculations.
         if (!(effectiveScale > 0) || !Double.isFinite(effectiveScale)) {
             return new double[]{1.0, 0.0};
         }
+        // A zero or non-finite factor would put NaN into every pattern
+        // coordinate, and an SVG with NaN coordinates renders nothing at all —
+        // a blank canvas with no error. Fall back to "unscaled" instead.
+        final double factor = unitsPerMapUnit > 0 && Double.isFinite(unitsPerMapUnit)
+                ? unitsPerMapUnit
+                : 1.0;
 
-        final double rawLogSpacing = Math.log10(TARGET_MIN_PX / effectiveScale);
+        // Pixels per *display* unit, so the decade below is chosen in the unit
+        // the user reads, not in map units.
+        final double displayScale = effectiveScale / factor;
+
+        final double rawLogSpacing = Math.log10(TARGET_MIN_PX / displayScale);
         final double decadeExponent = Math.ceil(rawLogSpacing);
-        final double majorWorldSpacing = Math.pow(10, decadeExponent);
+        final double majorDisplaySpacing = Math.pow(10, decadeExponent);
+        final double majorWorldSpacing = majorDisplaySpacing / factor;
 
         final double screenPx = majorWorldSpacing * effectiveScale;
         final double t = Math.log10(screenPx / TARGET_MIN_PX)
@@ -450,6 +319,56 @@ public final class FloorMapGrid {
         final double minorOpacity = clampZeroToOne(t) * MINOR_MAX_OPACITY;
 
         return new double[]{majorWorldSpacing, minorOpacity};
+    }
+
+    /**
+     * Sizes the on-screen scale bar: the longest "nice" distance that fits in
+     * {@code maxWidthPx}, and how wide that is on screen.
+     *
+     * <p>Unlike the grid, the bar walks the 1-2-5 series rather than powers of
+     * ten alone ({@link FloorMapMeasurementUnits#niceRoundLength}) — restricted
+     * to decades it would spend most of the zoom range at a tenth of the width
+     * available to it. The "nice" value is chosen in <em>display</em> units so
+     * the bar reads {@code 50 m}, not {@code 47.3 m}.</p>
+     *
+     * @param effectiveScale combined pixels-per-map-unit
+     * @param maxWidthPx     the widest the bar may be drawn
+     * @param units          the document's measurement units, or {@code null} —
+     *                       in which case the bar is measured in map units
+     * @return {@code [mapLength, widthPx]}, or {@code [0, 0]} when no usable bar
+     * can be drawn (pass the map length to
+     * {@link FloorMapMeasurementUnits#format(FloorMapMeasurementUnits, double)}
+     * for the label)
+     */
+    public static double[] scaleBar(final double effectiveScale,
+                                    final double maxWidthPx,
+                                    final FloorMapMeasurementUnits units) {
+        if (!(effectiveScale > 0) || !Double.isFinite(effectiveScale)
+            || !(maxWidthPx > 0) || !Double.isFinite(maxWidthPx)) {
+            return new double[]{0, 0};
+        }
+        final double factor = unitsPerMapUnit(units);
+
+        // The longest distance that fits, expressed in display units, rounded
+        // down to something worth printing.
+        final double maxDisplayLength = maxWidthPx / effectiveScale * factor;
+        final double displayLength = FloorMapMeasurementUnits.niceRoundLength(maxDisplayLength);
+        if (!(displayLength > 0)) {
+            return new double[]{0, 0};
+        }
+
+        final double mapLength = displayLength / factor;
+        return new double[]{mapLength, mapLength * effectiveScale};
+    }
+
+    /**
+     * The scale factor to compute with, defaulting to 1 for a map that has no
+     * scale set (or one whose scale is unusable).
+     */
+    private static double unitsPerMapUnit(final FloorMapMeasurementUnits units) {
+        return units != null && units.isValid()
+                ? units.getUnitsPerMapUnit()
+                : 1.0;
     }
 
     /**
@@ -467,7 +386,24 @@ public final class FloorMapGrid {
      * @return the major grid division size in screen pixels
      */
     public static double majorDivisionScreenPx(final double effectiveScale) {
-        return computeGridParams(effectiveScale)[0] * effectiveScale;
+        return majorDivisionScreenPx(effectiveScale, null);
+    }
+
+    /**
+     * As {@link #majorDivisionScreenPx(double)}, for a map with a scale set.
+     *
+     * <p>Callers <strong>must</strong> pass the same units the grid is drawn
+     * with. This method exists so the view that positions content relative to
+     * the grid stays aligned with it; given different units it would quietly
+     * stop matching the lines on screen.</p>
+     *
+     * @param effectiveScale combined pixels-per-map-unit
+     * @param units          the document's measurement units, or {@code null}
+     * @return the major grid division size in screen pixels
+     */
+    public static double majorDivisionScreenPx(final double effectiveScale,
+                                               final FloorMapMeasurementUnits units) {
+        return computeGridParams(effectiveScale, unitsPerMapUnit(units))[0] * effectiveScale;
     }
 
     /**
@@ -485,27 +421,20 @@ public final class FloorMapGrid {
      * @return the minor grid spacing in world-space units
      */
     public static double minorWorldSpacing(final double effectiveScale) {
-        return computeGridParams(effectiveScale)[0] / 10.0;
+        return minorWorldSpacing(effectiveScale, null);
     }
 
     /**
-     * Formats the major grid spacing as a clean, human-readable label in
-     * map units (e.g. "1", "10", "100", "0.1", "0.01"). Since the
-     * spacing is always a power of 10, the result is always a short,
-     * unambiguous number.
+     * As {@link #minorWorldSpacing(double)}, for a map with a scale set. The
+     * same alignment caveat applies: pass the units the grid is drawn with.
      *
-     * @param majorWorldSpacing the world-space distance (a power of 10)
-     * @return a formatted label string
+     * @param effectiveScale combined pixels-per-map-unit
+     * @param units          the document's measurement units, or {@code null}
+     * @return the minor grid spacing in map-space units
      */
-    static String formatScaleLabel(final double majorWorldSpacing) {
-        // Powers of 10 ≥ 1 are displayed as integers; < 1 as decimals.
-        if (majorWorldSpacing >= 1.0 && majorWorldSpacing == (long) majorWorldSpacing) {
-            return String.valueOf((long) majorWorldSpacing);
-        }
-        // For sub-unit values (0.1, 0.01, etc.), strip trailing zeros.
-        // Double.toString for powers of 10 < 1 will produce e.g. "0.1", "0.01"
-        // which is already clean — no trailing zeros to strip.
-        return String.valueOf(majorWorldSpacing);
+    public static double minorWorldSpacing(final double effectiveScale,
+                                           final FloorMapMeasurementUnits units) {
+        return computeGridParams(effectiveScale, unitsPerMapUnit(units))[0] / 10.0;
     }
 
     private static double clampZeroToOne(final double value) {

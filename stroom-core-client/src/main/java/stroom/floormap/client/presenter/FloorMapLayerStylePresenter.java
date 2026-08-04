@@ -33,6 +33,7 @@ import com.google.web.bindery.event.shared.EventBus;
 import com.gwtplatform.mvp.client.MyPresenterWidget;
 import com.gwtplatform.mvp.client.View;
 
+import java.util.Collections;
 import java.util.function.Consumer;
 
 /**
@@ -152,7 +153,10 @@ public class FloorMapLayerStylePresenter extends MyPresenterWidget<FloorMapLayer
         getView().setShape(style.getShape() == null
                 ? FloorMapLayerStyleView.DEFAULT_SHAPE_LABEL
                 : style.getShape().name());
-        getView().setColour(style.getColour());
+        // A layer with no stored colour is drawn in the built-in default for its
+        // type, so that is what the picker must show — offering black instead both
+        // misstated the current appearance and turned the layer black on OK.
+        getView().setColour(TypeStyle.colourForType(type, Collections.singletonList(style)));
         assetDropDownPresenter.setSelectedAssetPath(style.getGraphic());
         getView().setImageMode(style.hasGraphic());
         refreshPreview();

@@ -34,9 +34,6 @@ import com.google.gwt.safehtml.shared.SafeHtmlUtils;
  */
 public final class FloorMapSwatchHtml {
 
-    /** Fallback fill when a layer has no configured colour. */
-    private static final String DEFAULT_SWATCH_COLOUR = "#90a4ae";
-
     /**
      * Shape extent as a fraction of the swatch box, leaving a little breathing
      * room around the edge.
@@ -60,6 +57,7 @@ public final class FloorMapSwatchHtml {
         }
         return shapeSwatch(style == null ? null : style.getShape(),
                 style == null ? null : style.getColour(),
+                style == null ? null : style.getType(),
                 sizePx);
     }
 
@@ -92,11 +90,20 @@ public final class FloorMapSwatchHtml {
                 + "object-fit:contain;\" alt=\"\"/>");
     }
 
-    /** An inline-SVG preview of {@code shape} filled with {@code colour}. */
-    private static SafeHtml shapeSwatch(final Shape shape, final String colour, final int sizePx) {
+    /**
+     * An inline-SVG preview of {@code shape} filled with {@code colour}.
+     *
+     * <p>A layer with no colour of its own previews in the colour the canvas will
+     * actually draw it in ({@link TypeStyle#colourForType}) rather than a swatch-only
+     * grey, so the legend states the map's appearance.</p>
+     */
+    private static SafeHtml shapeSwatch(final Shape shape,
+                                        final String colour,
+                                        final String type,
+                                        final int sizePx) {
         final String fill = isValidColour(colour)
                 ? colour
-                : DEFAULT_SWATCH_COLOUR;
+                : TypeStyle.colourForType(type, null);
         final double half = sizePx / 2.0;
         final double extent = sizePx * SHAPE_EXTENT_RATIO;
         return SafeHtmlUtils.fromTrustedString(

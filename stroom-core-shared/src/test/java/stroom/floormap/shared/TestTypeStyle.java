@@ -153,6 +153,61 @@ class TestTypeStyle {
                 new TypeStyle("van", null, "#111111", "/assets/abc/van.png").hashCode());
     }
 
+    /** A configured colour wins — this is what the map paints, so it is what pickers show. */
+    @Test
+    void testColourForType_configuredColourWins() {
+        final List<TypeStyle> styles = List.of(
+                new TypeStyle("gate", null, "#abcdef"),
+                new TypeStyle("area", null, "#1e88e5"));
+
+        assertThat(TypeStyle.colourForType("gate", styles)).isEqualTo("#abcdef");
+        assertThat(TypeStyle.colourForType("area", styles)).isEqualTo("#1e88e5");
+    }
+
+    /** A style with no colour of its own falls through to the built-in default. */
+    @Test
+    void testColourForType_blankConfiguredColourFallsBack() {
+        final List<TypeStyle> styles = java.util.Arrays.asList(
+                null,
+                new TypeStyle("gate", Shape.SQUARE, null),
+                new TypeStyle("desk", Shape.SQUARE, ""));
+
+        assertThat(TypeStyle.colourForType("gate", styles)).isEqualTo(TypeStyle.DEFAULT_COLOUR);
+        assertThat(TypeStyle.colourForType("desk", styles)).isEqualTo(TypeStyle.DEFAULT_COLOUR);
+    }
+
+    /** People keep their traditional blue until a person layer is configured. */
+    @Test
+    void testColourForType_personDefaultsToBlue() {
+        assertThat(TypeStyle.colourForType("person", null))
+                .isEqualTo(TypeStyle.DEFAULT_PERSON_COLOUR);
+        // Case-insensitive, matching the renderer's long-standing behaviour.
+        assertThat(TypeStyle.colourForType("Person", null))
+                .isEqualTo(TypeStyle.DEFAULT_PERSON_COLOUR);
+        // ...and a configured person layer still overrides it.
+        assertThat(TypeStyle.colourForType("person", List.of(new TypeStyle("person", null, "#101010"))))
+                .isEqualTo("#101010");
+    }
+
+    /** An unknown or absent type still resolves to a usable colour. */
+    @Test
+    void testColourForType_unknownType() {
+        assertThat(TypeStyle.colourForType("camera", List.of(new TypeStyle("gate", null, "#abcdef"))))
+                .isEqualTo(TypeStyle.DEFAULT_COLOUR);
+        assertThat(TypeStyle.colourForType(null, null)).isEqualTo(TypeStyle.DEFAULT_COLOUR);
+    }
+
+    /** The default an area inherits is the "area" layer's colour, not a hard-coded one. */
+    @Test
+    void testColourForType_areaDefaultComesFromTheAreaLayer() {
+        final List<TypeStyle> styles = TypeStyle.withAreaStyle(null);
+        assertThat(TypeStyle.colourForType("area", styles)).isEqualTo("#1e88e5");
+
+        // Recolouring the area layer moves the default the fill picker shows with it.
+        final List<TypeStyle> recoloured = List.of(new TypeStyle("area", null, "#ff9800"));
+        assertThat(TypeStyle.colourForType("area", recoloured)).isEqualTo("#ff9800");
+    }
+
     @Test
     void testMerge_discoveredTypesHaveNoGraphic() {
         final List<TypeStyle> result = TypeStyle.merge(null, List.of("van"));

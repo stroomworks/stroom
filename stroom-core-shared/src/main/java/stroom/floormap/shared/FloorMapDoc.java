@@ -37,11 +37,9 @@ import java.util.Objects;
 /**
  * Immutable document describing a floor map visualisation.
  *
- * <p>A {@code FloorMapDoc} ties together a <em>facts store</em> (a
- * {@code SqlTemporalStoreDoc}) and
- * an <em>events store</em> (a
- * {@code PlanBDoc} with
- * {@code stateType == TEMPORAL_STATE}), along with the queries, display
+ * <p>A {@code FloorMapDoc} ties together a <em>facts store</em> and an
+ * <em>events store</em> (each a
+ * {@code SqlTemporalStoreDoc}), along with the queries, display
  * preferences, and value-schema metadata the floor map UI needs to parse
  * and render temporal entries on a 2-D canvas.</p>
  *
@@ -72,8 +70,8 @@ import java.util.Objects;
  * <ul>
  *   <li><strong>Facts store</strong> ({@link #factsStoreRef}) — a SQL Temporal Store
  *       containing the spatial data (objects, positions, background image, matrices).</li>
- *   <li><strong>Events store</strong> ({@link #eventsStoreRef}) — a PlanB Temporal State
- *       store containing status / event records keyed by entity ID.
+ *   <li><strong>Events store</strong> ({@link #eventsStoreRef}) — a SQL Temporal Store
+ *       containing status / event records keyed by entity ID.
  *       Queried via {@link #eventsQuery}.</li>
  * </ul>
  *
@@ -177,9 +175,13 @@ public class FloorMapDoc extends AbstractDoc {
     private final DocRef factsStoreRef;
 
     /**
-     * Reference to the PlanB document (with {@code stateType == TEMPORAL_STATE})
-     * used as the events store. The events store contains status / event
-     * records keyed by entity ID.
+     * Reference to the temporal store document used as the events store. The
+     * events store contains status / event records keyed by entity ID.
+     *
+     * <p>Only the referenced document's <em>name</em> is used at query time —
+     * it is substituted into the {@code param('EventStore')} placeholder of
+     * {@link #eventsQuery} — so any queryable temporal store will serve.</p>
+     *
      * May be {@code null} if not yet configured.
      */
     @JsonProperty
@@ -263,6 +265,20 @@ public class FloorMapDoc extends AbstractDoc {
     private final List<FloorMapGroup> groups;
 
     /**
+     * What one map unit means in the real world (see
+     * {@link FloorMapMeasurementUnits}) — the unit to display distances in, and
+     * how many of it a map unit spans.
+     *
+     * <p>{@code null} for any document that has not been calibrated, which is
+     * the normal state and not an error: display then falls back to
+     * {@link FloorMapMeasurementUnits#DEFAULT}, one centimetre per map unit, so
+     * every size on screen is still a real-world measurement. The map's true
+     * scale is set with the Editor tab's Set Scale tool.</p>
+     */
+    @JsonProperty
+    private final FloorMapMeasurementUnits measurementUnits;
+
+    /**
      * Constructs a {@code FloorMapDoc} from its constituent fields.
      *
      * <p>This constructor is invoked by Jackson during deserialisation and
@@ -316,6 +332,8 @@ public class FloorMapDoc extends AbstractDoc {
      *                                    paint z-order. May be {@code null}
      * @param groups                      user-created entity groups in display order;
      *                                    may be {@code null}
+     * @param measurementUnits            what one map unit means in the real world;
+     *                                    {@code null} when the map has no scale set
      */
     @JsonCreator
     public FloorMapDoc(@JsonProperty("uuid") final String uuid,
@@ -342,7 +360,9 @@ public class FloorMapDoc extends AbstractDoc {
                        @JsonProperty("valueFormat") final ValueFormat valueFormat,
                        @JsonProperty("valueSchema") final List<FloorMapFieldMapping> valueSchema,
                        @JsonProperty("typeStyles") final List<TypeStyle> typeStyles,
-                       @JsonProperty("groups") final List<FloorMapGroup> groups) {
+                       @JsonProperty("groups") final List<FloorMapGroup> groups,
+                       @JsonProperty("measurementUnits")
+                           final FloorMapMeasurementUnits measurementUnits) {
         super(TYPE, uuid,
                 name,
                 version,
@@ -368,6 +388,7 @@ public class FloorMapDoc extends AbstractDoc {
         this.valueSchema = valueSchema;
         this.typeStyles = typeStyles;
         this.groups = groups;
+        this.measurementUnits = measurementUnits;
     }
 
     /**
@@ -423,8 +444,7 @@ public class FloorMapDoc extends AbstractDoc {
     }
 
     /**
-     * Returns the reference to the events store (PlanB Temporal State
-     * Store).
+     * Returns the reference to the events store.
      *
      * <p>The events store contains status / event records keyed by
      * entity ID.</p>
@@ -540,6 +560,20 @@ public class FloorMapDoc extends AbstractDoc {
     }
 
     /**
+     * Returns what one map unit means in the real world.
+     *
+     * <p>Callers should not branch on {@code null} themselves — pass the result
+     * straight to
+     * {@link FloorMapMeasurementUnits#format(FloorMapMeasurementUnits, double)},
+     * which resolves an uncalibrated document to the default scale.</p>
+     *
+     * @return the measurement units, or {@code null} if no scale has been set
+     */
+    public FloorMapMeasurementUnits getMeasurementUnits() {
+        return measurementUnits;
+    }
+
+    /**
      * Returns a new {@link DocRef.TypedBuilder} pre-configured with this
      * document's {@link #TYPE}.
      *
@@ -554,7 +588,7 @@ public class FloorMapDoc extends AbstractDoc {
      *
      * <p>Two {@code FloorMapDoc} instances are equal if they have the same
      * superclass identity (UUID, name, version, timestamps, users) and
-     * all 11 document-specific fields are equal. {@code null} fields are
+     * every document-specific field is equal. {@code null} fields are
      * handled safely via {@link Objects#equals(Object, Object)}.</p>
      *
      * <p><strong>Note:</strong> equality is based on the <em>raw</em>
@@ -598,7 +632,9 @@ public class FloorMapDoc extends AbstractDoc {
                // Must be compared: the client decides whether the document is
                // dirty by diffing the written doc against the read one, so a
                // group edit would never light up the save button without this.
-               Objects.equals(groups, that.groups);
+               Objects.equals(groups, that.groups) &&
+               // Likewise: calibrating the map must light up the save button.
+               Objects.equals(measurementUnits, that.measurementUnits);
     }
 
     /** {@inheritDoc} */
@@ -619,7 +655,8 @@ public class FloorMapDoc extends AbstractDoc {
                 valueFormat,
                 valueSchema,
                 typeStyles,
-                groups);
+                groups,
+                measurementUnits);
     }
 
     /**
@@ -670,6 +707,7 @@ public class FloorMapDoc extends AbstractDoc {
         private List<FloorMapFieldMapping> valueSchema;
         private List<TypeStyle> typeStyles;
         private List<FloorMapGroup> groups;
+        private FloorMapMeasurementUnits measurementUnits;
 
         /**
          * Creates an empty builder. All fields default to {@code null}.
@@ -702,6 +740,7 @@ public class FloorMapDoc extends AbstractDoc {
             // here is silently deleted whenever the user saves from any tab that
             // does not itself write it.
             this.groups = doc.groups;
+            this.measurementUnits = doc.measurementUnits;
         }
 
         /**
@@ -777,8 +816,8 @@ public class FloorMapDoc extends AbstractDoc {
         /**
          * Sets the events store reference.
          *
-         * @param eventsStoreRef the {@link DocRef} to the PlanB Temporal
-         *                       State Store, or {@code null} to clear
+         * @param eventsStoreRef the {@link DocRef} to the events store, or
+         *                       {@code null} to clear
          * @return this builder
          */
         public Builder eventsStoreRef(final DocRef eventsStoreRef) {
@@ -876,6 +915,18 @@ public class FloorMapDoc extends AbstractDoc {
             return self();
         }
 
+        /**
+         * Sets what one map unit means in the real world.
+         *
+         * @param measurementUnits the {@link FloorMapMeasurementUnits}, or
+         *                         {@code null} to leave the map without a scale
+         * @return this builder
+         */
+        public Builder measurementUnits(final FloorMapMeasurementUnits measurementUnits) {
+            this.measurementUnits = measurementUnits;
+            return self();
+        }
+
         @Override
         protected Builder self() {
             return this;
@@ -910,7 +961,8 @@ public class FloorMapDoc extends AbstractDoc {
                     valueFormat,
                     valueSchema,
                     typeStyles,
-                    groups);
+                    groups,
+                    measurementUnits);
         }
     }
 }

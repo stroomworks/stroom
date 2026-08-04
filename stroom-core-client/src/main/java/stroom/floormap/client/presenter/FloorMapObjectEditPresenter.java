@@ -25,8 +25,12 @@ import stroom.floormap.shared.FloorMapDoc;
 import stroom.floormap.shared.FloorMapEditorModel;
 import stroom.floormap.shared.FloorMapEntryParser;
 import stroom.floormap.shared.FloorMapFieldMapping.Role;
+import stroom.floormap.shared.FloorMapGeometry;
 import stroom.floormap.shared.FloorMapJsonKeys;
+import stroom.floormap.shared.FloorMapMeasurementUnits;
+import stroom.floormap.shared.FloorMapScreenGeometry;
 import stroom.floormap.shared.ParsedValue;
+import stroom.floormap.shared.TypeStyle;
 import stroom.floormap.shared.ValueAccessor;
 import stroom.util.shared.TemporalEntry;
 import stroom.widget.popup.client.event.ShowPopupEvent;
@@ -37,8 +41,8 @@ import com.google.web.bindery.event.shared.EventBus;
 import com.gwtplatform.mvp.client.MyPresenterWidget;
 import com.gwtplatform.mvp.client.View;
 
-import java.util.function.BiConsumer;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import javax.inject.Inject;
 
 /**
@@ -76,6 +80,9 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
     private String objectId;
     private String mapName;
     private FloorMapDoc floorMapDoc;
+
+    /** Supplies image aspect ratios; see {@link #setAspectRatioResolver}. */
+    private Function<String, Double> aspectRatioResolver;
 
     /**
      * The entry the form was last populated from. {@link #buildValue()} starts
@@ -130,6 +137,56 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
     }
 
     /**
+     * Supplies image aspect ratios, so an image fact's real-world size can be
+     * stated and edited. Wired by the hosting tab to its canvas, which has
+     * already measured any image it has drawn.
+     *
+     * @param aspectRatioResolver returns width/height for an image URL, or
+     *                            {@code null} when it is not known
+     */
+    public void setAspectRatioResolver(final Function<String, Double> aspectRatioResolver) {
+        this.aspectRatioResolver = aspectRatioResolver;
+    }
+
+    /**
+     * The fact's size in map units at scale 1 — what the form multiplies by the
+     * placement matrix's scale to state a real-world size, and divides a typed
+     * size by to set that scale.
+     *
+     * <p>{@code null} when the fact has no measurable extent, which hides the
+     * size fields: a shape glyph is drawn at a fixed screen size and does not
+     * scale at all, and an image whose proportions the canvas has not measured
+     * yet has a width but no knowable height.</p>
+     *
+     * @param image    the fact's image path, if any
+     * @param vertices the fact's outline in its own frame, if any
+     * @return {@code {width, height}} in map units, or {@code null}
+     */
+    private double[] baseSize(final String image, final double[][] vertices) {
+        if (image != null && !image.isEmpty()) {
+            final Double aspect = aspectRatioResolver != null
+                    ? aspectRatioResolver.apply(image)
+                    : null;
+            if (aspect == null || aspect <= 0 || Double.isNaN(aspect) || Double.isInfinite(aspect)) {
+                return null;
+            }
+            final double width = FloorMapScreenGeometry.DEFAULT_IMAGE_DISPLAY_WIDTH;
+            return new double[]{width, width / aspect};
+        }
+        // An area is measured across its outline; the vertices are stored in the
+        // fact's own frame, so this is its size before the matrix scales it.
+        final double[] bounds = FloorMapGeometry.aabb(vertices);
+        if (bounds == null) {
+            return null;
+        }
+        final double width = bounds[2] - bounds[0];
+        final double height = bounds[3] - bounds[1];
+        return width > 0 && height > 0
+                ? new double[]{width, height}
+                : null;
+    }
+
+    /**
      * Sets the floor-map document and configures the asset dropdown to list
      * assets belonging to that document.
      *
@@ -142,6 +199,11 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
     public void setFloorMapDoc(final FloorMapDoc floorMapDoc) {
         this.floorMapDoc = floorMapDoc;
         documentAssetDropDownPresenter.setDocument(floorMapDoc);
+        // Always called before the form is populated, so the position boxes know
+        // their scale by the time they are filled in.
+        getView().setMeasurementUnits(floorMapDoc != null
+                ? floorMapDoc.getMeasurementUnits()
+                : null);
     }
 
     @Inject
@@ -157,7 +219,16 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
         super.onBind();
         getView().setChooseImgView(documentAssetDropDownPresenter.getView().asWidget());
         // Typing "area" into a fresh Add-Object dialog reveals the area fields.
-        getView().setTypeChangedHandler(this::updateAreaFieldsVisibility);
+        getView().setTypeChangedHandler(this::onTypeChanged);
+    }
+
+    /**
+     * Re-applies everything the object's type decides: whether the area-only
+     * fields are shown, and which default fill the swatch advertises.
+     */
+    private void onTypeChanged(final String type) {
+        updateAreaFieldsVisibility(type);
+        getView().setDefaultFill(defaultFillForType(type));
     }
 
     /**
@@ -168,6 +239,16 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
     private void updateAreaFieldsVisibility(final String type) {
         final boolean isArea = isArea(type);
         getView().setAreaFieldsVisible(isArea);
+    }
+
+    /**
+     * The colour the canvas fills an area of this type with when it carries no
+     * fill of its own — resolved against the document's type styles by the same
+     * shared rule the renderer uses, so the picker and the map agree.
+     */
+    private String defaultFillForType(final String type) {
+        return TypeStyle.colourForType(type == null ? null : type.trim(),
+                floorMapDoc != null ? floorMapDoc.getTypeStyles() : null);
     }
 
     private boolean isArea(final String type) {
@@ -439,6 +520,7 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
             String fill = "";
             Double opacity = null;
             Integer vertexCount = null;
+            double[][] vertices = null;
             final double[] w2m = new double[]{1.0, 0.0, 0.0, 1.0, 0.0, 0.0};
 
             try {
@@ -475,6 +557,7 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
                         if (geometry != null && geometry.length >= 6) {
                             loadedHasGeometry = true;
                             vertexCount = geometry.length / 2;
+                            vertices = FloorMapEntryParser.parseVertices(geometry);
                         }
                     }
                     final String fillPath = pathForRole(Role.FILL);
@@ -498,26 +581,33 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
             getView().setType(type);
             documentAssetDropDownPresenter.setSelectedAssetPath(img);
             getView().setWorldToMapMatrix(w2m);
+            // Before setFill: the swatch shows the default while Default is ticked.
+            getView().setDefaultFill(defaultFillForType(type));
             getView().setFill(fill);
             getView().setOpacity(opacity);
             getView().setVertexCount(vertexCount);
+            getView().setBaseSize(baseSize(img, vertices));
             updateAreaFieldsVisibility(type);
         } else {
             getView().setEffectiveTime(0L);
             getView().setX(0.0);
             getView().setY(0.0);
-            if (FloorMapJsonKeys.BACKGROUND.equals(objectId)) {
-                getView().setName(FloorMapJsonKeys.BACKGROUND_DISPLAY_NAME);
-                getView().setType(FloorMapJsonKeys.BACKGROUND);
-            } else {
-                getView().setName("");
-                getView().setType("");
-            }
+            final boolean background = FloorMapJsonKeys.BACKGROUND.equals(objectId);
+            getView().setName(background
+                    ? FloorMapJsonKeys.BACKGROUND_DISPLAY_NAME
+                    : "");
+            getView().setType(background
+                    ? FloorMapJsonKeys.BACKGROUND
+                    : "");
             documentAssetDropDownPresenter.setSelectedAssetPath("");
             getView().setWorldToMapMatrix(new double[]{1.0, 0.0, 0.0, 1.0, 0.0, 0.0});
+            getView().setDefaultFill(defaultFillForType(background
+                    ? FloorMapJsonKeys.BACKGROUND
+                    : null));
             getView().setFill("");
             getView().setOpacity(null);
             getView().setVertexCount(null);
+            getView().setBaseSize(null);
             updateAreaFieldsVisibility(null);
         }
     }
@@ -539,17 +629,44 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
         /** Sets the effective-time field to the given epoch-millisecond value. */
         void setEffectiveTime(long timeMS);
 
-        /** Returns the current X-coordinate value from the form. */
+        /**
+         * Returns the fact's stored coordinates, unchanged.
+         *
+         * <p>These are a pre-transform offset in the fact's own frame, not a
+         * position on the map, so the form neither shows nor edits them: the
+         * position boxes carry the resolved map position and write it into the
+         * placement matrix. The value round-trips so an edit cannot disturb
+         * it.</p>
+         */
         double getX();
 
-        /** Sets the X-coordinate display field. */
+        /** Supplies the fact's stored X coordinate. */
         void setX(double x);
 
-        /** Returns the current Y-coordinate value from the form. */
+        /** Returns the fact's stored Y coordinate, unchanged. */
         double getY();
 
-        /** Sets the Y-coordinate display field. */
+        /** Supplies the fact's stored Y coordinate. */
         void setY(double y);
+
+        /**
+         * Sets what one map unit means in the real world, so the position boxes
+         * can be shown in metres.
+         *
+         * @param measurementUnits the document's units; {@code null} uses the
+         *                         default scale
+         */
+        void setMeasurementUnits(FloorMapMeasurementUnits measurementUnits);
+
+        /**
+         * Sets the fact's size in map units at scale 1, so the form can state
+         * and edit its real-world size.
+         *
+         * @param baseSize {@code {width, height}}, or {@code null} when the fact
+         *                 has no measurable extent — the size fields are then
+         *                 hidden and the raw scale factors shown instead
+         */
+        void setBaseSize(double[] baseSize);
 
         /** Returns the object display name entered by the user. */
         String getName();
@@ -578,6 +695,16 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
 
         /** Sets the area fill colour; {@code null}/empty selects the type default. */
         void setFill(String hexColour);
+
+        /**
+         * Tells the view which colour the map draws an area of this type in when
+         * it has no fill of its own, so the swatch can show it while
+         * <em>Default</em> is ticked instead of a colour that would not be used.
+         *
+         * @param hexColour the resolved default (7-char hex); {@code null}/empty
+         *                  falls back to {@link TypeStyle#DEFAULT_COLOUR}
+         */
+        void setDefaultFill(String hexColour);
 
         /**
          * {@code true} once the user has touched the fill controls since the

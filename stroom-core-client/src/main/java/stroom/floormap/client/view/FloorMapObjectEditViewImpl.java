@@ -17,6 +17,10 @@
 package stroom.floormap.client.view;
 
 import stroom.floormap.client.presenter.FloorMapObjectEditPresenter.FloorMapObjectEditView;
+import stroom.floormap.shared.FloorMapMeasurementUnits;
+import stroom.floormap.shared.FloorMapMeasurementUnits.Unit;
+import stroom.floormap.shared.FloorMapTransformationMatrix;
+import stroom.floormap.shared.TypeStyle;
 import stroom.widget.colour.client.ColourBox;
 import stroom.widget.datepicker.client.DateTimeBox;
 import stroom.widget.datepicker.client.DateTimePopup;
@@ -39,21 +43,29 @@ import java.util.function.Consumer;
 /**
  * View implementation for the floor map object (fact) edit dialog.
  *
- * <p>Renders form fields for the object's name, type, effective time, position (x/y),
- * an image chooser, and the world→map affine-transform matrix fields. Every fact —
- * backgrounds included — is placed by its world→map matrix, so there is a single set
- * of matrix fields.</p>
+ * <p>Renders form fields for the object's name, type, effective time, position,
+ * an image chooser, and the scale/rotation of its world→map transform. Every
+ * fact — backgrounds included — is placed by that matrix.</p>
+ *
+ * <p><strong>Position is shown resolved and in metres</strong>, not as the raw
+ * matrix translation: a fact's place on the map is {@code worldToMap · coords},
+ * and the two components mean nothing separately. Editing it solves the
+ * translation back out ({@link FloorMapTransformationMatrix#placing}), leaving
+ * the stored coordinates untouched — the same thing a canvas drag does.</p>
  */
 public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObjectEditView {
+
+    /**
+     * The unit the position and size boxes are typed in. Fixed rather than
+     * best-fitting: a field that changed between mm and km as you typed would be
+     * unusable.
+     */
+    private static final Unit INPUT_UNIT = Unit.METRE;
 
     private final Widget widget;
 
     @UiField
     DateTimeBox effectiveTimeBox;
-    @UiField
-    TextBox xBox;
-    @UiField
-    TextBox yBox;
     @UiField
     TextBox nameBox;
     @UiField
@@ -62,9 +74,17 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
     SimplePanel chooseImgContainer;
 
     @UiField
-    TextBox w2mTx;
+    TextBox posX;
     @UiField
-    TextBox w2mTy;
+    TextBox posY;
+    @UiField
+    FormGroup sizeGroup;
+    @UiField
+    TextBox sizeW;
+    @UiField
+    TextBox sizeH;
+    @UiField
+    FormGroup scaleGroup;
     @UiField
     TextBox w2mSx;
     @UiField
@@ -88,14 +108,46 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
     @UiField
     Label vertexCountLabel;
 
-    // Point-position fields, hidden for areas (an area is placed purely by its
-    // world-to-map matrix; its anchor is its centroid).
-    @UiField
-    FormGroup xGroup;
-    @UiField
-    FormGroup yGroup;
-
     private boolean enabled = true;
+
+    /**
+     * The fact's stored coordinates, exactly as loaded.
+     *
+     * <p>Not shown: they are a <em>pre-transform</em> offset in the fact's own
+     * frame, so they are a real-world distance only while the placement matrix
+     * has unit scale. The dialog shows the resolved map position instead —
+     * {@code worldToMap · coords}, which is where the fact actually is — and
+     * carries these through an edit untouched, exactly as a canvas drag does.</p>
+     */
+    private final double[] loadedCoords = {0, 0};
+
+    /** The placement matrix as loaded, used to resolve and re-derive the position. */
+    private double[] loadedMatrix = {1, 0, 0, 1, 0, 0};
+
+    /**
+     * The text last written into the position boxes. If a box still holds it, the
+     * loaded translation is reused verbatim rather than being recomputed from a
+     * rounded display value — so opening a dialog and pressing OK cannot nudge an
+     * object.
+     */
+    private String shownPosX = "";
+    private String shownPosY = "";
+
+    /** What one map unit means in the real world; never {@code null} in practice. */
+    private FloorMapMeasurementUnits measurementUnits;
+
+    /**
+     * The fact's size in map units at scale 1, or {@code null} when it has no
+     * measurable extent — a shape marker is drawn at a fixed screen size, and an
+     * image whose proportions are not yet known has no knowable height. When
+     * null the size fields are hidden and the raw scale factors shown instead,
+     * so the stored value is still visible and editable.
+     */
+    private double[] baseSize;
+
+    /** The text last written into the size boxes; see {@link #shownPosX}. */
+    private String shownSizeW = "";
+    private String shownSizeH = "";
 
     /**
      * Whether the user has touched the fill controls since the form was last
@@ -106,6 +158,16 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
      */
     private boolean fillDirty;
 
+    /**
+     * The colour the map actually paints an area of this type when it has no fill
+     * of its own, as resolved by the presenter from the document's type styles.
+     *
+     * <p>The swatch shows this whenever <em>Default</em> is ticked, so the picker
+     * never advertises a colour that pressing OK would not produce — previously it
+     * kept whatever the user last picked (or black on a fresh dialog).</p>
+     */
+    private String defaultFill = TypeStyle.DEFAULT_COLOUR;
+
     @Inject
     public FloorMapObjectEditViewImpl(final Binder binder,
                                       final Provider<DateTimePopup> dateTimePopupProvider) {
@@ -113,8 +175,13 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
         effectiveTimeBox.setPopupProvider(dateTimePopupProvider);
         setAreaFieldsVisible(false);
         fillDefaultCheck.setValue(true);
-        //noinspection unused e
-        fillDefaultCheck.addValueChangeHandler(e -> fillDirty = true);
+        fillDefaultCheck.addValueChangeHandler(e -> {
+            fillDirty = true;
+            if (Boolean.TRUE.equals(e.getValue())) {
+                // Back to Default — show the colour that will actually be used.
+                fillBox.setValue(defaultFill);
+            }
+        });
         //noinspection unused e
         fillBox.addValueChangeHandler(e -> fillDirty = true);
         // The colour swatch stays clickable even while "Default" is ticked;
@@ -145,30 +212,43 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
 
     @Override
     public double getX() {
-        try {
-            return Double.parseDouble(xBox.getText());
-        } catch (final NumberFormatException e) {
-            return 0.0;
-        }
+        return loadedCoords[0];
     }
 
     @Override
     public void setX(final double x) {
-        xBox.setText(String.valueOf(x));
+        loadedCoords[0] = x;
+        showPosition();
     }
 
     @Override
     public double getY() {
-        try {
-            return Double.parseDouble(yBox.getText());
-        } catch (final NumberFormatException e) {
-            return 0.0;
-        }
+        return loadedCoords[1];
     }
 
     @Override
     public void setY(final double y) {
-        yBox.setText(String.valueOf(y));
+        loadedCoords[1] = y;
+        showPosition();
+    }
+
+    @Override
+    public void setMeasurementUnits(final FloorMapMeasurementUnits measurementUnits) {
+        this.measurementUnits = measurementUnits;
+        showPosition();
+        showSize();
+    }
+
+    @Override
+    public void setBaseSize(final double[] baseSize) {
+        this.baseSize = baseSize != null && baseSize.length >= 2
+                        && baseSize[0] > 0 && baseSize[1] > 0
+                ? new double[]{baseSize[0], baseSize[1]}
+                : null;
+        // Size and scale are two statements of one thing, so only ever offer one.
+        sizeGroup.setVisible(this.baseSize != null);
+        scaleGroup.setVisible(this.baseSize == null);
+        showSize();
     }
 
     @Override
@@ -207,12 +287,24 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
     }
 
     @Override
+    public void setDefaultFill(final String hexColour) {
+        defaultFill = hexColour == null || hexColour.isEmpty()
+                ? TypeStyle.DEFAULT_COLOUR
+                : hexColour;
+        // Retyping an object (or a fresh dialog) can change which default applies,
+        // so a ticked Default must follow it.
+        if (Boolean.TRUE.equals(fillDefaultCheck.getValue())) {
+            fillBox.setValue(defaultFill);
+        }
+    }
+
+    @Override
     public void setFill(final String hexColour) {
         final boolean isDefault = hexColour == null || hexColour.isEmpty();
         fillDefaultCheck.setValue(isDefault);
-        if (!isDefault) {
-            fillBox.setValue(hexColour);
-        }
+        // Either way the swatch shows the colour this area will be drawn in: its
+        // own fill, or the type default it is inheriting.
+        fillBox.setValue(isDefault ? defaultFill : hexColour);
         // The swatch stays clickable regardless of Default (clicking it unticks
         // Default); only the form's enabled state gates it.
         fillBox.setEnabled(enabled);
@@ -266,10 +358,8 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
         fillGroup.setVisible(visible);
         opacityGroup.setVisible(visible);
         verticesGroup.setVisible(visible);
-        // An area has no meaningful point position — its anchor is the local
-        // origin (the centroid), placed by the matrix.
-        xGroup.setVisible(!visible);
-        yGroup.setVisible(!visible);
+        // The position boxes stay visible for every fact type: an area has a
+        // position too — the centre its outline is stored around.
     }
 
     @Override
@@ -279,36 +369,161 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
 
     @Override
     public double[] getWorldToMapMatrix() {
-        return parseMatrixFields(w2mTx, w2mTy, w2mSx, w2mSy, w2mRot);
+        final double[] scale = typedScale();
+        final double sX = scale[0];
+        final double sY = scale[1];
+        final double rRad = Math.toRadians(parseDouble(w2mRot.getText(), 0.0));
+
+        final double cos = Math.cos(rRad);
+        final double sin = Math.sin(rRad);
+        final double a = sX * cos;
+        final double b = sX * sin;
+        final double c = -sY * sin;
+        final double d = sY * cos;
+
+        // Solve the translation so the fact's stored coords land on the typed
+        // position, keeping the scale and rotation just read from the form.
+        final double[] target = typedPositionMapUnits();
+        final FloorMapTransformationMatrix placed =
+                new FloorMapTransformationMatrix(a, b, c, d, 0, 0)
+                        .placing(loadedCoords[0], loadedCoords[1], target[0], target[1]);
+        return new double[]{
+                placed.getA(), placed.getB(), placed.getC(),
+                placed.getD(), placed.getE(), placed.getF()
+        };
     }
 
     @Override
     public void setWorldToMapMatrix(final double[] m) {
-        populateMatrixFields(m, w2mTx, w2mTy, w2mSx, w2mSy, w2mRot);
+        if (m != null && m.length >= 6) {
+            System.arraycopy(m, 0, loadedMatrix, 0, 6);
+        } else {
+            loadedMatrix = new double[]{1, 0, 0, 1, 0, 0};
+        }
+        populateMatrixFields(loadedMatrix, w2mSx, w2mSy, w2mRot);
+        showPosition();
+        showSize();
     }
 
     /**
-     * Reads the five decomposed transform fields (translate-X/Y, scale-X/Y, rotation)
-     * and recomposes them into a 6-element affine matrix {@code [a, b, c, d, tx, ty]}.
+     * The position the user has typed, in map units — or, where a box is
+     * untouched, the exact position the fact was loaded at.
+     *
+     * <p>The fallback matters: the boxes show metres rounded for legibility, so
+     * recomputing from the displayed text would quietly shift every object that
+     * passed through the dialog.</p>
      */
-    private double[] parseMatrixFields(final TextBox tx,
-                                       final TextBox ty,
-                                       final TextBox sx,
-                                       final TextBox sy,
-                                       final TextBox rot) {
-        final double tX = parseDouble(tx.getText(), 0.0);
-        final double tY = parseDouble(ty.getText(), 0.0);
-        final double sX = parseDouble(sx.getText(), 1.0);
-        final double sY = parseDouble(sy.getText(), 1.0);
-        final double rRad = Math.toRadians(parseDouble(rot.getText(), 0.0));
-
-        final double cos = Math.cos(rRad);
-        final double sin = Math.sin(rRad);
+    private double[] typedPositionMapUnits() {
+        final double[] loaded = resolvedPositionMapUnits();
         return new double[]{
-                sX * cos, sX * sin,
-                -sY * sin, sY * cos,
-                tX, tY
+                axisPositionMapUnits(posX, shownPosX, loaded[0]),
+                axisPositionMapUnits(posY, shownPosY, loaded[1])
         };
+    }
+
+    private double axisPositionMapUnits(final TextBox box,
+                                        final String shownText,
+                                        final double loadedMapValue) {
+        final String text = box.getText() == null
+                ? ""
+                : box.getText().trim();
+        if (text.equals(shownText)) {
+            return loadedMapValue;
+        }
+        return units().toMapUnits(parseDouble(text, 0.0), INPUT_UNIT);
+    }
+
+    /**
+     * The scale factors to build the matrix from: derived from the typed size
+     * where the fact has a measurable extent, otherwise read from the scale
+     * boxes directly.
+     *
+     * <p>An untouched size box yields the loaded scale exactly, so passing
+     * through the dialog cannot nudge an object's size — the same guard the
+     * position boxes use.</p>
+     */
+    private double[] typedScale() {
+        final double[] loaded = loadedScale();
+        if (baseSize == null) {
+            return new double[]{
+                    parseDouble(w2mSx.getText(), 1.0),
+                    parseDouble(w2mSy.getText(), 1.0)};
+        }
+        return new double[]{
+                axisScale(sizeW, shownSizeW, baseSize[0], loaded[0]),
+                axisScale(sizeH, shownSizeH, baseSize[1], loaded[1])};
+    }
+
+    private double axisScale(final TextBox box,
+                             final String shownText,
+                             final double baseMapUnits,
+                             final double loadedScale) {
+        final String text = box.getText() == null
+                ? ""
+                : box.getText().trim();
+        if (text.equals(shownText)) {
+            return loadedScale;
+        }
+        final double sizeMapUnits = units().toMapUnits(parseDouble(text, 0.0), INPUT_UNIT);
+        if (sizeMapUnits <= 0 || baseMapUnits <= 0) {
+            // A zero or negative size would collapse the matrix and make the
+            // object unselectable, with no way back short of editing the store.
+            return loadedScale;
+        }
+        // Keep the sign: a negative scale is how a flipped image is stored.
+        return loadedScale < 0
+                ? -sizeMapUnits / baseMapUnits
+                : sizeMapUnits / baseMapUnits;
+    }
+
+    /** The scale factors of the matrix as loaded, sign preserved. */
+    private double[] loadedScale() {
+        final double sX = Math.sqrt(loadedMatrix[0] * loadedMatrix[0]
+                                    + loadedMatrix[1] * loadedMatrix[1]);
+        final double det = loadedMatrix[0] * loadedMatrix[3] - loadedMatrix[1] * loadedMatrix[2];
+        final double sY = (det >= 0 ? 1.0 : -1.0)
+                          * Math.sqrt(loadedMatrix[2] * loadedMatrix[2]
+                                      + loadedMatrix[3] * loadedMatrix[3]);
+        return new double[]{sX, sY};
+    }
+
+    /** Writes the fact's size into the boxes, in metres. */
+    private void showSize() {
+        if (baseSize == null) {
+            shownSizeW = "";
+            shownSizeH = "";
+            return;
+        }
+        final double[] scale = loadedScale();
+        shownSizeW = FloorMapMeasurementUnits.formatForInput(
+                units().toUnit(baseSize[0] * Math.abs(scale[0]), INPUT_UNIT));
+        shownSizeH = FloorMapMeasurementUnits.formatForInput(
+                units().toUnit(baseSize[1] * Math.abs(scale[1]), INPUT_UNIT));
+        sizeW.setText(shownSizeW);
+        sizeH.setText(shownSizeH);
+    }
+
+    /** Where the fact actually is in map space: {@code worldToMap · coords}. */
+    private double[] resolvedPositionMapUnits() {
+        return new FloorMapTransformationMatrix(
+                loadedMatrix[0], loadedMatrix[1], loadedMatrix[2],
+                loadedMatrix[3], loadedMatrix[4], loadedMatrix[5])
+                .transformPoint(loadedCoords[0], loadedCoords[1]);
+    }
+
+    /** Writes the resolved position into the boxes, in metres. */
+    private void showPosition() {
+        final double[] map = resolvedPositionMapUnits();
+        shownPosX = FloorMapMeasurementUnits.formatForInput(
+                units().toUnit(map[0], INPUT_UNIT));
+        shownPosY = FloorMapMeasurementUnits.formatForInput(
+                units().toUnit(map[1], INPUT_UNIT));
+        posX.setText(shownPosX);
+        posY.setText(shownPosY);
+    }
+
+    private FloorMapMeasurementUnits units() {
+        return FloorMapMeasurementUnits.orDefault(measurementUnits);
     }
 
     /**
@@ -323,13 +538,12 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
     }
 
     /**
-     * Decomposes a 6-element affine matrix {@code [a, b, c, d, tx, ty]} into translation,
-     * scale, and rotation fields. Falls back to identity values if the matrix is null or
-     * too short.
+     * Decomposes a 6-element affine matrix {@code [a, b, c, d, tx, ty]} into its
+     * scale and rotation fields. Falls back to identity values if the matrix is
+     * null or too short. The translation is not shown as such — it is carried by
+     * the position boxes, resolved through the fact's coordinates.
      */
     private void populateMatrixFields(final double[] m,
-                                      final TextBox tx,
-                                      final TextBox ty,
                                       final TextBox sx,
                                       final TextBox sy,
                                       final TextBox rot) {
@@ -343,14 +557,10 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
             final double sY = (det >= 0 ? 1.0 : -1.0) * Math.sqrt(m[2] * m[2] + m[3] * m[3]);
             final double rotationDeg = Math.round(Math.toDegrees(Math.atan2(m[1], m[0])) * 100.0) / 100.0;
 
-            tx.setText(String.valueOf(m[4]));
-            ty.setText(String.valueOf(m[5]));
             sx.setText(String.valueOf(Math.round(sX * 100.0) / 100.0));
             sy.setText(String.valueOf(Math.round(sY * 100.0) / 100.0));
             rot.setText(String.valueOf(rotationDeg));
         } else {
-            tx.setText("0.0");
-            ty.setText("0.0");
             sx.setText("1.0");
             sy.setText("1.0");
             rot.setText("0.0");
@@ -362,8 +572,8 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
         this.enabled = enabled;
         effectiveTimeBox.setEnabled(enabled);
         setTextBoxesEnabled(enabled,
-                xBox, yBox, nameBox, typeBox,
-                w2mTx, w2mTy, w2mSx, w2mSy, w2mRot,
+                nameBox, typeBox,
+                posX, posY, sizeW, sizeH, w2mSx, w2mSy, w2mRot,
                 opacityBox);
         fillDefaultCheck.setEnabled(enabled);
         fillBox.setEnabled(enabled);

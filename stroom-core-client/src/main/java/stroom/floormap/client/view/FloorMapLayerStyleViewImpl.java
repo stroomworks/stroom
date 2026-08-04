@@ -53,9 +53,6 @@ import com.gwtplatform.mvp.client.ViewImpl;
  */
 public class FloorMapLayerStyleViewImpl extends ViewImpl implements FloorMapLayerStyleView {
 
-    /** Default hex handed to the colour input when a layer has no stored colour. */
-    private static final String DEFAULT_COLOUR = "#000000";
-
     /** Size of the preview graphic in pixels. */
     private static final int PREVIEW_SIZE_PX = 32;
 
@@ -206,11 +203,14 @@ public class FloorMapLayerStyleViewImpl extends ViewImpl implements FloorMapLaye
         return shapeBox.getValue();
     }
 
+    /**
+     * The presenter resolves the layer's effective colour before calling this, so
+     * the input is simply shown as given (a non-hex value normalises to black
+     * inside {@link ColourBox} — the native control has no empty state).
+     */
     @Override
     public void setColour(final String colour) {
-        colourBox.setValue(colour == null
-                ? DEFAULT_COLOUR
-                : colour);
+        colourBox.setValue(colour);
     }
 
     @Override

@@ -27,6 +27,7 @@ import stroom.floormap.shared.FloorMapEntityAnimator;
 import stroom.floormap.shared.FloorMapGroupOverlay;
 import stroom.floormap.shared.FloorMapHighlight;
 import stroom.floormap.shared.FloorMapJsonKeys;
+import stroom.floormap.shared.FloorMapMeasurementUnits;
 import stroom.floormap.shared.FloorMapObject;
 import stroom.floormap.shared.FloorMapTransformationMatrix;
 import stroom.floormap.shared.FloorMapViewport;
@@ -157,7 +158,8 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
     /** The kind of pointer gesture currently in progress. */
     private enum Gesture {
-        NONE, PANNING, MOVING, MARQUEE, SCALING, ROTATING, DRAWING_AREA, MOVING_VERTEX
+        NONE, PANNING, MOVING, MARQUEE, SCALING, ROTATING, DRAWING_AREA, MOVING_VERTEX,
+        MEASURING_SCALE
     }
 
     private Gesture gesture = Gesture.NONE;
@@ -198,7 +200,24 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     /** Live cursor position in element pixels (valid while DRAWING_AREA). */
     private double areaCursorX;
     private double areaCursorY;
+
+    /**
+     * The anchor of the in-progress Set Scale measurement, in map space (so a
+     * mid-measure zoom cannot stretch it), or {@code null} before the press.
+     */
+    private double[] measureStartMap;
+    /** Live cursor position in element pixels (valid while MEASURING_SCALE). */
+    private double measureCursorX;
+    private double measureCursorY;
+
+    /**
+     * Shortest measurement worth acting on, in screen pixels. Below this the
+     * derived scale would be dominated by where the pointer happened to land, so
+     * the gesture stays live and the user can simply drag again.
+     */
+    private static final double MIN_MEASURE_PX = 8;
     private AreaHandler areaHandler;
+    private ScaleHandler scaleHandler;
 
     /**
      * On a plain press over the background fact or empty canvas, the fact key to
@@ -265,6 +284,12 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
     /** Per-type presentation settings (z-order + default graphic); may be null. */
     private List<TypeStyle> typeStyles;
+
+    /**
+     * What one map unit means in the real world; {@code null} on a map with no
+     * scale set, which is the normal state.
+     */
+    private FloorMapMeasurementUnits measurementUnits;
 
     /** The facts to render (backgrounds + static facts), from the parser. */
     private List<Fact> facts = new ArrayList<>();
@@ -483,7 +508,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         // The grid is drawn with an identity world-to-map matrix, so its
         // effective scale is simply the user zoom (DEFAULT_SCALE).
         final double insetPx = ORIGIN_INSET_MAJOR_DIVISIONS
-                * FloorMapGrid.majorDivisionScreenPx(DEFAULT_SCALE);
+                * FloorMapGrid.majorDivisionScreenPx(DEFAULT_SCALE, measurementUnits);
 
         // The origin (0,0) renders at screen pixel (offsetX, offsetY). Inset it
         // from the left and up from the bottom (SVG Y grows downward), so the
@@ -575,6 +600,21 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                     return;
                 }
 
+                // Set Scale is modal too: a LEFT press anchors the measuring
+                // line, which is then dragged out and released over the far end
+                // of the known distance. Panning is suspended for the duration —
+                // the whole gesture is one press-drag.
+                if (gesture == Gesture.MEASURING_SCALE) {
+                    if (event.getNativeEvent().getButton() == NativeEvent.BUTTON_LEFT) {
+                        measureStartMap = screenToMapCoords(event.getX(), event.getY());
+                        measureCursorX = event.getX();
+                        measureCursorY = event.getY();
+                        isDragging = true;
+                        redraw();
+                    }
+                    return;
+                }
+
                 // (1) A transform handle takes priority over object/background
                 // hit-testing so a handle drag starts a scale/rotate gesture.
                 // Point glyphs (no image, no area geometry) are fixed screen-size
@@ -641,6 +681,9 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                     dragDyMap = 0;
                     lastMouseX = event.getX();
                     lastMouseY = event.getY();
+                    // Report from the press, so the object's current position is
+                    // visible before it has been dragged anywhere.
+                    updateGestureReadout(event.getX(), event.getY());
                     return;
                 }
 
@@ -700,6 +743,14 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
             // The DOM 'buttons' property returns a bitmask of currently held
             // buttons (W3C spec); 0 means nothing is pressed.
             if (isDragging && nativeButtons(event.getNativeEvent()) == 0) {
+                if (gesture == Gesture.MEASURING_SCALE) {
+                    // The release landed off-canvas, so this measurement is lost —
+                    // but the mode stays live so the user can simply drag again.
+                    isDragging = false;
+                    measureStartMap = null;
+                    redraw();
+                    return;
+                }
                 if (gesture == Gesture.DRAWING_AREA) {
                     // Only the mid-draw pan is stale — the modal drawing gesture
                     // and its draft survive (no button is held between vertex
@@ -709,6 +760,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                 } else {
                     isDragging = false;
                     hasMoved = false;
+                    hideGestureReadout();
                     // A vertex drag whose mouseup was lost off-canvas must clear
                     // its editing state too, else factsForDraw() keeps rendering
                     // the never-persisted working vertices forever.
@@ -719,6 +771,17 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                     pendingTransform = null;
                     return;
                 }
+            }
+
+            // Track the live cursor for the measuring line, and keep the map
+            // still: dragging here draws the line rather than panning.
+            if (gesture == Gesture.MEASURING_SCALE) {
+                measureCursorX = event.getX();
+                measureCursorY = event.getY();
+                if (measureStartMap != null) {
+                    redraw();
+                }
+                return;
             }
 
             // Track the live cursor for the area-draft rubber band (both while
@@ -752,6 +815,9 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                                 dragDxMap, dragDyMap);
                         hasMoved = true;
                         redraw();
+                        // After the redraw: the readout measures the geometry the
+                        // view has just laid out.
+                        updateGestureReadout(event.getX(), event.getY());
                         break;
                     case MARQUEE:
                         marqueeCurX = event.getX();
@@ -763,6 +829,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                         pendingTransform = computeScaleTransform(event.getX(), event.getY());
                         hasMoved = true;
                         redraw();
+                        updateGestureReadout(event.getX(), event.getY());
                         break;
                     case MOVING_VERTEX:
                         if (workingVertices != null && editingWorldToMap != null
@@ -817,6 +884,16 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
         //noinspection unused event
         registerHandler(getView().getMouseUpHandlers().addMouseUpHandler(event -> {
+            // Set Scale: the release ends the measurement and hands its map-space
+            // length to the handler, which asks what that distance really is.
+            if (gesture == Gesture.MEASURING_SCALE) {
+                isDragging = false;
+                if (measureStartMap != null) {
+                    finishScaleMeasurement(event.getX(), event.getY());
+                }
+                return;
+            }
+
             // Area drawing is modal: resolve this press as vertex-click vs pan
             // and keep the gesture alive (the generic reset below must not run).
             if (gesture == Gesture.DRAWING_AREA) {
@@ -835,6 +912,8 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                 }
                 return;
             }
+
+            hideGestureReadout();
 
             final Gesture finished = gesture;
             final FloorMapTransformationMatrix transform = pendingTransform;
@@ -944,6 +1023,14 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
             // While drawing an area, right-click undoes the last vertex
             // (misclicks are the dominant error when tracing) — or cancels an
             // empty draft. The context menu never opens mid-draw.
+            // Right-click leaves the Set Scale mode: it is the natural "get me
+            // out of this" gesture, and a context menu opening mid-measure would
+            // strand the mode with no obvious way back.
+            if (gesture == Gesture.MEASURING_SCALE) {
+                cancelScaleMeasurement();
+                return;
+            }
+
             if (gesture == Gesture.DRAWING_AREA) {
                 isDragging = false;
                 hasMoved = false;
@@ -1018,6 +1105,11 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
             // While drawing an area: Escape discards the draft, Enter closes
             // the polygon. (No clash with Escape-clears-selection — starting a
             // draw clears the selection.)
+            if (editMode && gesture == Gesture.MEASURING_SCALE
+                    && event.getNativeKeyCode() == KeyCodes.KEY_ESCAPE) {
+                cancelScaleMeasurement();
+                return;
+            }
             if (editMode && gesture == Gesture.DRAWING_AREA) {
                 if (event.getNativeKeyCode() == KeyCodes.KEY_ESCAPE) {
                     cancelAreaDrawing();
@@ -1120,7 +1212,95 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                 selectionTransformable(),
                 gesture == Gesture.DRAWING_AREA ? currentAreaDraftPx() : null,
                 areas,
-                FloorMapHighlight.of(groupOverlay, areas));
+                FloorMapHighlight.of(groupOverlay, areas),
+                currentMeasureLinePx());
+    }
+
+    /**
+     * Updates the readout pill that follows the cursor during a move or resize.
+     *
+     * <p>Answers the question the gesture raises — "how big is this?" while
+     * scaling, "where is it?" while moving — in real-world units, which is
+     * otherwise unknowable from a canvas whose only other scale cues are the
+     * grid and the corner bar.</p>
+     *
+     * <p><strong>Call after {@link #redraw()}</strong>: the size is read back
+     * from the geometry the view just laid out, which is where the in-progress
+     * transform has been applied.</p>
+     *
+     * @param cursorXPx the cursor position in element pixels
+     * @param cursorYPx the cursor position in element pixels
+     */
+    private void updateGestureReadout(final double cursorXPx, final double cursorYPx) {
+        final String text;
+        if (gesture == Gesture.SCALING) {
+            text = selectionSizeText();
+        } else if (gesture == Gesture.MOVING) {
+            text = selectionPositionText();
+        } else {
+            text = null;
+        }
+        getView().setGestureReadout(text, cursorXPx, cursorYPx);
+    }
+
+    /** Clears the gesture readout, if one is showing. */
+    private void hideGestureReadout() {
+        getView().setGestureReadout(null, 0, 0);
+    }
+
+    /**
+     * The selection's size as {@code "2.4 m × 1.1 m"}, or {@code null} if it
+     * cannot be measured.
+     *
+     * <p>Read from the drawn bounds rather than from the pending transform, so
+     * it reports what is actually on screen — including an image's aspect ratio,
+     * which only the view knows.</p>
+     */
+    private String selectionSizeText() {
+        final double[] bounds = getView().getSelectionBoundsPx();
+        if (bounds == null || scale <= 0) {
+            return null;
+        }
+        return FloorMapMeasurementUnits.formatSize(
+                measurementUnits,
+                (bounds[2] - bounds[0]) / scale,
+                (bounds[3] - bounds[1]) / scale);
+    }
+
+    /**
+     * The selection's position as {@code "X 4.5 m, Y 2.1 m"}, or {@code null} if
+     * it cannot be measured.
+     *
+     * <p>The centre of the selection, which is the point that visibly tracks the
+     * pointer — and the only meaningful single position for a multi-selection.
+     * Axes are named because a bare pair of numbers on a Y-up map is exactly the
+     * kind of cell that gets queried.</p>
+     */
+    private String selectionPositionText() {
+        final double[] bounds = getView().getSelectionBoundsPx();
+        if (bounds == null) {
+            return null;
+        }
+        final double[] centreMap = screenToMapCoords(
+                (bounds[0] + bounds[2]) / 2,
+                (bounds[1] + bounds[3]) / 2);
+        return FloorMapMeasurementUnits.formatPosition(
+                measurementUnits, centreMap[0], centreMap[1]);
+    }
+
+    /**
+     * The in-progress Set Scale line as {@code {x0, y0, x1, y1}} in element
+     * pixels, or {@code null} when not measuring or before the press.
+     *
+     * <p>The anchor is held in map space and projected here, so a mid-measure
+     * zoom moves the line with the floor plan rather than stretching it.</p>
+     */
+    private double[] currentMeasureLinePx() {
+        if (gesture != Gesture.MEASURING_SCALE || measureStartMap == null) {
+            return null;
+        }
+        final double[] startPx = mapToScreen(measureStartMap);
+        return new double[]{startPx[0], startPx[1], measureCursorX, measureCursorY};
     }
 
     /**
@@ -1217,6 +1397,10 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         pendingTransform = null;
         lastMouseX = px;
         lastMouseY = py;
+
+        // The readout is wanted from the press: the size before the drag is
+        // exactly what the user is about to change.
+        updateGestureReadout(px, py);
 
         // Area vertex editing takes priority over the scale/rotate frame.
         if (role.startsWith("vertex-")) {
@@ -1403,6 +1587,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     private void abortGesture() {
         isDragging = false;
         hasMoved = false;
+        hideGestureReadout();
         gesture = Gesture.NONE;
         pendingTransform = null;
         pendingClickSelectId = null;
@@ -1563,7 +1748,12 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                             // Group highlight has to be resolved on animated frames
                             // too, or a highlighted entity would lose its ring for
                             // exactly as long as it is moving.
-                            FloorMapHighlight.of(groupOverlay, areas));
+                            FloorMapHighlight.of(groupOverlay, areas),
+                            // Likewise the measuring line: playback can be running
+                            // while the user measures, and a decoration passed on
+                            // only one of the two draw paths flickers out for
+                            // exactly as long as anything is moving.
+                            currentMeasureLinePx());
 
                     // Keep looping.
                     AnimationScheduler.get().requestAnimationFrame(this);
@@ -1819,7 +2009,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
      * @return the equivalent distance in map-space units
      */
     public double minorGridDivisionsToMapUnits(final double minorDivisions) {
-        return minorDivisions * FloorMapGrid.minorWorldSpacing(scale);
+        return minorDivisions * FloorMapGrid.minorWorldSpacing(scale, measurementUnits);
     }
 
     /**
@@ -1853,8 +2043,12 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         this.editMode = editMode;
         if (!editMode) {
             selectedObjectIds.clear();
+            hideGestureReadout();
             if (gesture == Gesture.DRAWING_AREA) {
                 cancelAreaDrawing();
+            }
+            if (gesture == Gesture.MEASURING_SCALE) {
+                cancelScaleMeasurement();
             }
         }
         redraw();
@@ -1881,6 +2075,75 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         // without this, Enter/Escape are dead until the first canvas click.
         getView().getFocusPanel().setFocus(true);
         redraw();
+    }
+
+    /**
+     * Enters the modal Set Scale gesture: the user presses at one end of a
+     * distance they know, drags to the other, and releases. The measured
+     * map-space length is delivered to the {@link ScaleHandler}, which asks what
+     * that distance really is and calibrates the map from the answer.
+     *
+     * <p>Escape and right-click both leave the mode; a drag shorter than
+     * {@link #MIN_MEASURE_PX} is ignored and the mode stays live.</p>
+     */
+    public void startScaleMeasurement() {
+        selectedObjectIds.clear();
+        fireSelectionChanged();
+        measureStartMap = null;
+        gesture = Gesture.MEASURING_SCALE;
+        getView().setMeasuringScale(true);
+        // Make the modal mode visible the instant it starts — a mode with no
+        // cursor or banner is indistinguishable from nothing having happened.
+        getView().getFocusPanel().getElement().getStyle()
+                .setProperty("cursor", "crosshair");
+        // The triggering context-menu click leaves keyboard focus on the popup;
+        // without this, Escape is dead until the first canvas click.
+        getView().getFocusPanel().setFocus(true);
+        redraw();
+    }
+
+    /** Discards any in-progress measurement and leaves the Set Scale gesture. */
+    public void cancelScaleMeasurement() {
+        measureStartMap = null;
+        isDragging = false;
+        hasMoved = false;
+        gesture = Gesture.NONE;
+        getView().setMeasuringScale(false);
+        getView().getFocusPanel().getElement().getStyle().clearProperty("cursor");
+        redraw();
+    }
+
+    /**
+     * Ends a measurement at the given element-pixel position, delivering its
+     * map-space length to the {@link ScaleHandler}.
+     *
+     * <p>A drag too short to be meaningful leaves the gesture live rather than
+     * opening a dialog about a distance the user did not mean to measure.</p>
+     */
+    private void finishScaleMeasurement(final double screenX, final double screenY) {
+        final double[] startPx = mapToScreen(measureStartMap);
+        final double dx = screenX - startPx[0];
+        final double dy = screenY - startPx[1];
+        if (Math.sqrt(dx * dx + dy * dy) < MIN_MEASURE_PX) {
+            measureStartMap = null;
+            redraw();
+            return;
+        }
+
+        final double[] endMap = screenToMapCoords(screenX, screenY);
+        final double mapDx = endMap[0] - measureStartMap[0];
+        final double mapDy = endMap[1] - measureStartMap[1];
+        final double mapLength = Math.sqrt(mapDx * mapDx + mapDy * mapDy);
+
+        measureStartMap = null;
+        gesture = Gesture.NONE;
+        getView().setMeasuringScale(false);
+        getView().getFocusPanel().getElement().getStyle().clearProperty("cursor");
+        redraw();
+
+        if (scaleHandler != null && mapLength > 0) {
+            scaleHandler.onScaleMeasured(mapLength);
+        }
     }
 
     /** Discards any in-progress area draft and leaves the drawing gesture. */
@@ -1975,6 +2238,39 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     public void setTypeStyles(final List<TypeStyle> typeStyles) {
         this.typeStyles = typeStyles;
         redraw();
+    }
+
+    /**
+     * Sets what one map unit means in the real world, so the grid labels, the
+     * scale bar and any distance the canvas reports carry real units.
+     *
+     * <p>Held here as well as pushed to the view because the presenter sizes
+     * offsets in grid divisions ({@link #minorGridDivisionsToMapUnits}), and the
+     * grid's decade now depends on the scale — given different units the two
+     * would disagree about where the lines are.</p>
+     *
+     * @param measurementUnits the document's units, or {@code null} when the map
+     *                         has no scale set
+     */
+    public void setMeasurementUnits(final FloorMapMeasurementUnits measurementUnits) {
+        this.measurementUnits = measurementUnits;
+        getView().setMeasurementUnits(measurementUnits);
+        redraw();
+    }
+
+    /**
+     * The width/height ratio of an image this canvas has already loaded, or
+     * {@code null} if it has not.
+     *
+     * <p>Exposed so the properties dialog can state an image's real-world size
+     * without probing the image a second time — by the time a fact is being
+     * edited the canvas has almost always drawn it.</p>
+     *
+     * @param imageUrl the image URL
+     * @return the aspect ratio, or {@code null} when unknown
+     */
+    public Double getImageAspectRatio(final String imageUrl) {
+        return getView().getImageAspectRatio(imageUrl);
     }
 
     /**
@@ -2133,6 +2429,15 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     }
 
     /**
+     * Sets the handler that receives a finished Set Scale measurement.
+     *
+     * @param scaleHandler the callback, or {@code null} to remove
+     */
+    public void setScaleHandler(final ScaleHandler scaleHandler) {
+        this.scaleHandler = scaleHandler;
+    }
+
+    /**
      * Sets the handler notified when the selection changes as a result of a
      * canvas interaction (click, Shift-click toggle, or rubber-band marquee).
      *
@@ -2200,6 +2505,20 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
          *                    always at least 3
          */
         void onAreaDrawn(List<double[]> mapVertices);
+    }
+
+    /**
+     * Callback invoked when the user finishes measuring a distance with the Set
+     * Scale tool (see {@link #startScaleMeasurement()}).
+     */
+    public interface ScaleHandler {
+
+        /**
+         * @param mapLength the measured length in map units; always {@code > 0}.
+         *                  The handler asks the user what that distance really is
+         *                  and derives the scale from the two.
+         */
+        void onScaleMeasured(double mapLength);
     }
 
     /**
@@ -2297,13 +2616,69 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
          *                        carry the "related to the focused entity" highlight
          *                        and what each area's occupant-count badge reads;
          *                        never {@code null}
+         * @param measureLinePx   the in-progress Set Scale line
+         *                        {@code {x0, y0, x1, y1}} in element pixels, or
+         *                        {@code null} when not measuring
          */
         void draw(double scale, double x, double y, List<Fact> facts,
                 List<FloorMapObject> events, Set<String> selectedObjectIds,
                 List<TypeStyle> typeStyles, boolean showGrid, Set<String> dimmedTypes,
                 double[] marqueeRectPx, boolean drawSelectionHandles, boolean scaleRotateEnabled,
                 double[] areaDraftPx, FloorMapAreaOverlay areaOverlay,
-                FloorMapHighlight highlight);
+                FloorMapHighlight highlight, double[] measureLinePx);
+
+        /**
+         * Sets what one map unit means in the real world, used to label the grid
+         * and size the scale bar. {@code null} on a map that has never been
+         * calibrated, which measures in the default scale.
+         *
+         * <p>A setter rather than a {@link #draw} parameter: it changes only when
+         * the document is read or recalibrated, not per frame.</p>
+         *
+         * @param measurementUnits the document's units, or {@code null}
+         */
+        void setMeasurementUnits(FloorMapMeasurementUnits measurementUnits);
+
+        /**
+         * Tells the view the Set Scale mode is active, so its instruction pill
+         * can announce the mode before the first press — at which point there is
+         * no measuring line for the view to infer it from.
+         *
+         * @param measuringScale {@code true} while the mode is active
+         */
+        void setMeasuringScale(boolean measuringScale);
+
+        /**
+         * Shows a readout pill at the cursor during a move or resize, or hides
+         * it.
+         *
+         * @param text      what to show, or {@code null} to hide
+         * @param cursorXPx cursor position in element pixels
+         * @param cursorYPx cursor position in element pixels
+         */
+        void setGestureReadout(String text, double cursorXPx, double cursorYPx);
+
+        /**
+         * Returns the screen-space bounding box {@code {minX, minY, maxX, maxY}}
+         * of the selected facts, <strong>without</strong> the minimum-size
+         * padding {@link #getSelectionFrame()} applies — that padding exists to
+         * keep drag handles separable and would overstate a small object's size.
+         *
+         * <p>Reflects the last {@link #draw}, so during a gesture it already
+         * includes the live transform.</p>
+         *
+         * @return the bounds, or {@code null} when nothing is selected or laid out
+         */
+        double[] getSelectionBoundsPx();
+
+        /**
+         * The width/height ratio of an image the canvas has already loaded, or
+         * {@code null} if it has not. Never starts a load.
+         *
+         * @param imageUrl the image URL
+         * @return the aspect ratio, or {@code null} when unknown
+         */
+        Double getImageAspectRatio(String imageUrl);
 
         /**
          * Returns the keys of facts whose on-screen bounds intersect the given

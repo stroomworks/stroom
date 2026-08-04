@@ -5,6 +5,17 @@
         <g:FlowPanel addStyleNames="max stroom-floormap-canvas-container">
             <g:HTML ui:field="svgContainer" addStyleNames="max"/>
             <g:Label ui:field="areaDrawHint" addStyleNames="stroom-floormap-area-draw-hint"/>
+            <!-- Follows the cursor during a move or resize, reporting the
+                 position or size being dragged out in real-world units. -->
+            <g:Label ui:field="gestureReadout" addStyleNames="stroom-floormap-gesture-readout"/>
+            <!-- Always-on scale bar: the origin indicator only helps while (0,0)
+                 is on screen, which is not the normal state of a map being read. -->
+            <g:FlowPanel ui:field="scaleBar" addStyleNames="stroom-floormap-scale-bar">
+                <g:Label ui:field="scaleBarLabel"
+                         addStyleNames="stroom-floormap-scale-bar__label"/>
+                <g:SimplePanel ui:field="scaleBarLine"
+                               addStyleNames="stroom-floormap-scale-bar__line"/>
+            </g:FlowPanel>
         </g:FlowPanel>
     </g:FocusPanel>
 </ui:UiBinder>

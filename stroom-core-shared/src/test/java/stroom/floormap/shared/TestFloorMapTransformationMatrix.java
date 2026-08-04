@@ -325,4 +325,46 @@ class TestFloorMapTransformationMatrix {
         assertThat(actual.getE()).isCloseTo(expected.getE(), within(TOLERANCE));
         assertThat(actual.getF()).isCloseTo(expected.getF(), within(TOLERANCE));
     }
+
+    /**
+     * Repositioning must leave scale and rotation alone and put the fact's own
+     * point exactly where it was asked for — the arithmetic shared by a canvas
+     * drag and a typed position.
+     */
+    @Test
+    void testPlacingPutsTheStoredPointAtTheGivenMapPosition() {
+        final FloorMapTransformationMatrix m =
+                FloorMapTransformationMatrix.scale(2, 2)
+                        .multiply(FloorMapTransformationMatrix.rotate(30));
+
+        final FloorMapTransformationMatrix placed = m.placing(3, 4, 100, 50);
+
+        assertThat(placed.transformPoint(3, 4)[0]).isCloseTo(100, within(1e-9));
+        assertThat(placed.transformPoint(3, 4)[1]).isCloseTo(50, within(1e-9));
+        // Scale and rotation are untouched.
+        assertThat(placed.getA()).isCloseTo(m.getA(), within(1e-9));
+        assertThat(placed.getB()).isCloseTo(m.getB(), within(1e-9));
+        assertThat(placed.getC()).isCloseTo(m.getC(), within(1e-9));
+        assertThat(placed.getD()).isCloseTo(m.getD(), within(1e-9));
+    }
+
+    /** With coordinates at the origin the translation simply is the position. */
+    @Test
+    void testPlacingAtOriginCoordsSetsTheTranslation() {
+        final FloorMapTransformationMatrix placed =
+                FloorMapTransformationMatrix.identity().placing(0, 0, 12, -7);
+
+        assertThat(placed.getE()).isCloseTo(12, within(1e-9));
+        assertThat(placed.getF()).isCloseTo(-7, within(1e-9));
+    }
+
+    /** Placing a fact where it already is must change nothing. */
+    @Test
+    void testPlacingAtTheCurrentPositionIsANoOp() {
+        final FloorMapTransformationMatrix m =
+                new FloorMapTransformationMatrix(1.5, 0.2, -0.2, 1.5, 40, 60);
+        final double[] where = m.transformPoint(5, 6);
+
+        assertThat(m.placing(5, 6, where[0], where[1])).isEqualTo(m);
+    }
 }

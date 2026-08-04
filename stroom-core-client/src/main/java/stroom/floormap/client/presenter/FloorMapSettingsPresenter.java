@@ -27,7 +27,6 @@ import stroom.floormap.shared.FloorMapDoc;
 import stroom.floormap.shared.FloorMapFieldMapping;
 import stroom.floormap.shared.FloorMapFieldMapping.Role;
 import stroom.floormap.shared.ValueFormat;
-import stroom.planb.shared.PlanBDoc;
 import stroom.security.shared.DocumentPermission;
 import stroom.sqlstore.shared.SqlTemporalStoreDoc;
 import stroom.svg.client.SvgPresets;
@@ -57,8 +56,8 @@ import java.util.stream.Collectors;
  *
  * <p>This presenter lets users configure:</p>
  * <ul>
- *   <li>The <strong>Events Store</strong> reference – a {@link PlanBDoc} used to persist
- *       floor-map event data.</li>
+ *   <li>The <strong>Events Store</strong> reference – a {@link SqlTemporalStoreDoc} used to
+ *       persist floor-map event data.</li>
  *   <li>The <strong>Facts Store</strong> reference – a {@link SqlTemporalStoreDoc} used to
  *       persist floor-map fact data.</li>
  *   <li>The <strong>Value Format</strong> – the serialisation format for map values
@@ -113,7 +112,7 @@ public class FloorMapSettingsPresenter
         view.setUiHandlers(this);
 
         this.eventsStoreRefPresenter = docSelectionBoxPresenterProvider.get();
-        this.eventsStoreRefPresenter.setIncludedTypes(PlanBDoc.TYPE);
+        this.eventsStoreRefPresenter.setIncludedTypes(SqlTemporalStoreDoc.TYPE);
         this.eventsStoreRefPresenter.setRequiredPermissions(DocumentPermission.USE);
         view.setEventsStoreRefView(this.eventsStoreRefPresenter.getView());
 
@@ -370,6 +369,11 @@ public class FloorMapSettingsPresenter
         if (areaPatchActive) {
             applyAreaPatch();
         }
+
+        // Note: measurementUnits is deliberately NOT read or written by this tab.
+        // A map's scale is set with the Editor's Set Scale tool and staged in its
+        // doc session; because nothing here touches the field, copy() carries it
+        // through untouched and no cross-tab patching is needed.
     }
 
     /**

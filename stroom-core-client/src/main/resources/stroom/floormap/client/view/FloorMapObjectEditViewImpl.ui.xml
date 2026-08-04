@@ -31,6 +31,10 @@
         .fillDefault {
             margin-right: 12px;
         }
+
+        .unitSuffix {
+            white-space: nowrap;
+        }
     </ui:style>
 
     <g:FlowPanel addStyleNames="max dock-container-vertical form overflow-y-auto">
@@ -71,7 +75,8 @@
                         <p>The colour used to fill this area on the map. Leave
                             <em>Default</em> ticked to use the colour configured for the
                             <code>area</code> type on the Settings tab (see <em>Type
-                            Styles</em>); untick it to give this area its own colour.</p>
+                            Styles</em>) — the swatch shows that colour; untick it to give
+                            this area its own colour.</p>
                     </form:HelpHTML>
                     <g:FlowPanel addStyleNames="dock-container-horizontal align-center">
                         <g:CheckBox ui:field="fillDefaultCheck" text="Default" addStyleNames="{style.fillDefault}" />
@@ -110,45 +115,62 @@
                     <datetimebox:DateTimeBox ui:field="effectiveTimeBox" addStyleNames="timeline-date-box wide-control" />
                 </form:FormGroup>
 
-                <form:FormGroup ui:field="xGroup" label="World X Coordinate">
+                <form:FormGroup label="Position (X, Y) in metres">
                     <form:HelpHTML>
-                        <p>The object's X position in world coordinates, before the
-                            World&#8209;to&#8209;Map transform below is applied.</p>
-                    </form:HelpHTML>
-                    <g:TextBox ui:field="xBox" addStyleNames="stroom-control wide-control" />
-                </form:FormGroup>
-
-                <form:FormGroup ui:field="yGroup" label="World Y Coordinate">
-                    <form:HelpHTML>
-                        <p>The object's Y position in world coordinates, before the
-                            World&#8209;to&#8209;Map transform below is applied.</p>
-                    </form:HelpHTML>
-                    <g:TextBox ui:field="yBox" addStyleNames="stroom-control wide-control" />
-                </form:FormGroup>
-
-                <form:FormGroup label="World-to-Map Translation (X, Y)">
-                    <form:HelpHTML>
-                        <p>The <strong>translation</strong> part of the transform that places the
-                            object on the map — it shifts the object across map space.</p>
-                        <p>Dragging the object on the map edits this for you, so you rarely need to
-                            type it by hand.</p>
+                        <p>Where the object sits on the map, in <strong>metres</strong>, measured
+                            from the map's origin. X increases to the right and Y upwards.</p>
+                        <p>This is the same position you set by dragging the object on the map —
+                            which shows the identical figures in a label beside the cursor — so
+                            you only need to type here when you know the exact coordinates.</p>
+                        <p>For an <em>area</em> this is the centre of its outline; for a
+                            background or other image, the point the image is placed from.</p>
                     </form:HelpHTML>
                     <g:FlowPanel addStyleNames="dock-container-horizontal align-center">
-                        <g:TextBox ui:field="w2mTx" addStyleNames="stroom-control {style.matrixBox}" />
-                        <g:TextBox ui:field="w2mTy" addStyleNames="stroom-control {style.matrixBox}" />
+                        <g:TextBox ui:field="posX" addStyleNames="stroom-control {style.matrixBox}" />
+                        <g:TextBox ui:field="posY" addStyleNames="stroom-control {style.matrixBox}" />
+                        <g:Label text="m" addStyleNames="{style.unitSuffix}" />
                     </g:FlowPanel>
                 </form:FormGroup>
-                <form:FormGroup label="World-to-Map Scale (X, Y) &amp; Rotation (deg)">
+                <form:FormGroup ui:field="sizeGroup" label="Size (Width, Height) in metres">
                     <form:HelpHTML>
-                        <p>The <strong>scale</strong> and <strong>rotation</strong> parts of the
-                            transform that places the object on the map. Together with the
-                            translation above they position, size and rotate the object.</p>
-                        <p>Scaling and rotating the object on the map (using its selection handles)
-                            edits these for you, so you rarely need to type them by hand.</p>
+                        <p>How big the object is on the map, in <strong>metres</strong>: its own
+                            width and height, measured along its own axes rather than across the
+                            box it occupies once rotated.</p>
+                        <p>Width and height are set independently here, so typing them can stretch
+                            an object out of proportion; dragging a corner handle on the map always
+                            keeps its proportions.</p>
+                        <p>Shown for anything with a real extent — background and other images,
+                            measured across the image, and areas, measured across their outline.
+                            A plain shape marker is drawn at a fixed size on screen and has no
+                            size to set.</p>
+                    </form:HelpHTML>
+                    <g:FlowPanel addStyleNames="dock-container-horizontal align-center">
+                        <g:TextBox ui:field="sizeW" addStyleNames="stroom-control {style.matrixBox}" />
+                        <g:TextBox ui:field="sizeH" addStyleNames="stroom-control {style.matrixBox}" />
+                        <g:Label text="m" addStyleNames="{style.unitSuffix}" />
+                    </g:FlowPanel>
+                </form:FormGroup>
+                <form:FormGroup ui:field="scaleGroup" label="Scale (X, Y)">
+                    <form:HelpHTML>
+                        <p>The <strong>scale</strong> part of the transform that places the object
+                            on the map, as a multiplier of its natural size.</p>
+                        <p>Shown only for objects whose size cannot be stated in metres — anything
+                            with a real extent offers a <em>Size</em> in metres above instead.</p>
                     </form:HelpHTML>
                     <g:FlowPanel addStyleNames="dock-container-horizontal align-center">
                         <g:TextBox ui:field="w2mSx" addStyleNames="stroom-control {style.matrixBox}" />
                         <g:TextBox ui:field="w2mSy" addStyleNames="stroom-control {style.matrixBox}" />
+                    </g:FlowPanel>
+                </form:FormGroup>
+
+                <form:FormGroup label="Rotation (degrees)">
+                    <form:HelpHTML>
+                        <p>How far the object is turned on the map, in degrees, counter-clockwise
+                            about its own centre.</p>
+                        <p>Dragging the round handle above the object's selection frame sets this
+                            for you, holding <strong>Shift</strong> to snap to 15&#176; steps.</p>
+                    </form:HelpHTML>
+                    <g:FlowPanel addStyleNames="dock-container-horizontal align-center">
                         <g:TextBox ui:field="w2mRot" addStyleNames="stroom-control {style.matrixBox}" />
                     </g:FlowPanel>
                 </form:FormGroup>

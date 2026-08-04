@@ -580,6 +580,81 @@
 }
 
 /* -----------------------------------------------------------------------
+   Gesture readout
+
+   Follows the cursor while an object is being moved or resized, showing its
+   position or size in real-world units. Same visual language as the timeline
+   scrub tooltip (blue text/border pill on the page background), because it
+   answers the same kind of question about the thing under the pointer.
+
+   Positioned from the left/top by the view, which offsets it clear of the
+   cursor and keeps it inside the canvas.
+   ----------------------------------------------------------------------- */
+
+.stroom-floormap-gesture-readout {
+    position: absolute;
+    background-color: var(--page__background-color);
+    color: var(--blue-500);
+    font-size: 11px;
+    font-weight: 500;
+    white-space: nowrap;
+    padding: 3px 7px;
+    border: 1px solid var(--blue-500);
+    border-radius: 4px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+    pointer-events: none;
+    z-index: 25;
+    display: none;
+}
+
+.stroom-floormap-gesture-readout--visible {
+    display: block;
+}
+
+/* -----------------------------------------------------------------------
+   Scale bar
+
+   A conventional map scale bar pinned to the bottom-left of the canvas —
+   clear of the area-drawing hint pill (top centre) and of the dock (right).
+   Fixed to the viewport rather than to map space, so it answers "how big is
+   this?" wherever the map has been panned to. The grid draws no text of its
+   own, so this is the canvas's only standing statement of scale.
+   ----------------------------------------------------------------------- */
+
+.stroom-floormap-scale-bar {
+    position: absolute;
+    bottom: 10px;
+    left: 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    pointer-events: none;
+    z-index: 15;
+}
+
+.stroom-floormap-scale-bar__label {
+    color: var(--floormap-grid__highlight-color);
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+    margin-bottom: 2px;
+    /* The bar sits over whatever the floor plan happens to be; a soft halo keeps
+       the text legible on light and dark imagery alike without a solid panel. */
+    text-shadow: 0 0 3px var(--page__background-color),
+                 0 0 3px var(--page__background-color);
+}
+
+/* The rule itself: a baseline with an end tick at each end (├────┤). Its width
+   is set per frame from the chosen distance. */
+.stroom-floormap-scale-bar__line {
+    height: 6px;
+    border-left: 2px solid var(--floormap-grid__highlight-color);
+    border-right: 2px solid var(--floormap-grid__highlight-color);
+    border-bottom: 2px solid var(--floormap-grid__highlight-color);
+    box-sizing: border-box;
+}
+
+/* -----------------------------------------------------------------------
    Layers panel (dock tab)
    ----------------------------------------------------------------------- */
 
@@ -787,6 +862,38 @@
     flex: 0 0 auto;
     display: inline-flex;
     align-items: center;
+}
+
+/* --- Set Scale dialog ----------------------------------------------------- */
+
+.floormap-set-scale {
+    display: flex;
+    flex-direction: column;
+    width: 420px;
+    padding: 4px;
+}
+
+.floormap-set-scale-fields {
+    border-spacing: 8px 10px;
+}
+
+.floormap-set-scale-fields td {
+    vertical-align: middle;
+}
+
+.floormap-set-scale-fields td:first-child {
+    color: var(--text-color--low-emphasis);
+    white-space: nowrap;
+}
+
+.floormap-set-scale-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.floormap-set-scale-distance {
+    width: 110px;
 }
 
 /* --- Group edit dialog --------------------------------------------------- */

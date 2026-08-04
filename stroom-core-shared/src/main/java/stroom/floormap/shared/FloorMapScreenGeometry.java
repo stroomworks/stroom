@@ -51,6 +51,16 @@ public final class FloorMapScreenGeometry {
      */
     public static final double MAX_GRAPHIC_EDGE_RATIO = 2.0;
 
+    /**
+     * The map-space width an image fact is rendered at before its placement
+     * matrix scales it — so an image's size on the map is this times the
+     * matrix's scale, and its height that divided by the image's aspect ratio.
+     *
+     * <p>Lives here so the renderer and anything that needs to state or set an
+     * image's real-world size agree on the same base.</p>
+     */
+    public static final double DEFAULT_IMAGE_DISPLAY_WIDTH = 1000;
+
     private final double scale;
     private final double offsetX;
     private final double offsetY;

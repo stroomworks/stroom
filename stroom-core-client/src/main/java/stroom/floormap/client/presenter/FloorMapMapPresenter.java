@@ -225,6 +225,11 @@ public class FloorMapMapPresenter
         this.floorMapCanvasPresenter = floorMapCanvasPresenterProvider.get();
         this.floorMapTimelinePresenter = floorMapTimelinePresenterProvider.get();
         this.floorMapObjectEditPresenter = floorMapObjectEditPresenterProvider.get();
+        // Let the properties dialog state an image's real-world size: the canvas
+        // has already measured any image it has drawn, so this needs no second
+        // load.
+        this.floorMapObjectEditPresenter.setAspectRatioResolver(
+                floorMapCanvasPresenter::getImageAspectRatio);
         this.floorMapTrackingPresenter = floorMapEntityListPresenterProvider.get();
         this.floorMapLayersPresenter = floorMapLayersPresenterProvider.get();
         this.floorMapGroupsPresenter = floorMapGroupsPresenterProvider.get();
@@ -510,6 +515,11 @@ public class FloorMapMapPresenter
         lastAreaMembership = FloorMapAreaMembership.EMPTY;
         floorMapTrackingPresenter.clearAreaState();
         floorMapCanvasPresenter.setAreaMembership(FloorMapAreaMembership.EMPTY);
+
+        // What one map unit means in the real world — labels the grid and the
+        // scale bar. Null on an uncalibrated map, which measures in the default
+        // scale of one centimetre per map unit.
+        floorMapCanvasPresenter.setMeasurementUnits(document.getMeasurementUnits());
 
         // Drop any staged group edit this read has persisted, then show the groups
         // as the session sees them (the staged list if the save has not happened

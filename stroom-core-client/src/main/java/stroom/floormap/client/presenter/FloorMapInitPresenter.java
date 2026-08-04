@@ -16,7 +16,6 @@
 
 package stroom.floormap.client.presenter;
 
-import stroom.alert.client.event.AlertEvent;
 import stroom.dispatch.client.RestFactory;
 import stroom.docref.DocRef;
 import stroom.document.client.DocInitialisationHandler;
@@ -28,9 +27,6 @@ import stroom.floormap.shared.FloorMapDoc;
 import stroom.floormap.shared.FloorMapFieldMapping;
 import stroom.floormap.shared.FloorMapResource;
 import stroom.floormap.shared.ValueFormat;
-import stroom.planb.shared.PlanBDoc;
-import stroom.planb.shared.PlanBDocResource;
-import stroom.planb.shared.StateType;
 import stroom.security.shared.DocumentPermission;
 import stroom.sqlstore.shared.SqlTemporalStoreDoc;
 import stroom.task.client.TaskMonitorFactory;
@@ -58,10 +54,14 @@ import java.util.function.Consumer;
  * Initialisation handler for new {@link FloorMapDoc} documents.
  *
  * <p>Displays a modal dialog requiring the user to select both a
- * <strong>Facts Store</strong> ({@link SqlTemporalStoreDoc}) and an
- * <strong>Events Store</strong> ({@link PlanBDoc} with
- * {@link StateType#TEMPORAL_STATE}). The OK button remains disabled
- * until both selections are valid.</p>
+ * <strong>Facts Store</strong> and an <strong>Events Store</strong>, each a
+ * {@link SqlTemporalStoreDoc}. The OK button remains disabled until both are
+ * selected.</p>
+ *
+ * <p>The floor map references each store by <em>name</em> only — the name is
+ * substituted into the {@code param('FactStore')} / {@code param('EventStore')}
+ * placeholders of the stored queries — so neither store is coupled to a
+ * particular store implementation beyond what this picker allows.</p>
  *
  * <p>On OK: the new document is patched with the selected store
  * references and saved. On Cancel: the document is deleted from
@@ -75,8 +75,6 @@ public class FloorMapInitPresenter
 
     private static final FloorMapResource FLOOR_MAP_RESOURCE =
             GWT.create(FloorMapResource.class);
-    private static final PlanBDocResource PLAN_B_RESOURCE =
-            GWT.create(PlanBDocResource.class);
     private static final ExplorerResource EXPLORER_RESOURCE =
             GWT.create(ExplorerResource.class);
 
@@ -88,12 +86,6 @@ public class FloorMapInitPresenter
     private final DocSelectionBoxPresenter factsStorePresenter;
     private final DocSelectionBoxPresenter eventsStorePresenter;
     private final RestFactory restFactory;
-
-    /**
-     * Tracks whether the currently selected PlanB doc has been
-     * validated as a {@link StateType#TEMPORAL_STATE} store.
-     */
-    private boolean eventsStoreValid = false;
 
     /** The DocRef of the newly created document being initialised. May be null when dialog is not showing. */
     private DocRef docRef;
@@ -125,9 +117,9 @@ public class FloorMapInitPresenter
         factsStorePresenter.setRequiredPermissions(DocumentPermission.USE);
         view.setFactsStoreView(factsStorePresenter.getView());
 
-        // Events Store = PlanB (validated as TEMPORAL_STATE)
+        // Events Store = SqlTemporalStore
         eventsStorePresenter = docSelectionBoxPresenterProvider.get();
-        eventsStorePresenter.setIncludedTypes(PlanBDoc.TYPE);
+        eventsStorePresenter.setIncludedTypes(SqlTemporalStoreDoc.TYPE);
         eventsStorePresenter.setRequiredPermissions(DocumentPermission.USE);
         view.setEventsStoreView(eventsStorePresenter.getView());
     }
@@ -138,75 +130,24 @@ public class FloorMapInitPresenter
         //noinspection unused e
         registerHandler(factsStorePresenter.addDataSelectionHandler(e -> validate()));
         //noinspection unused e
-        registerHandler(eventsStorePresenter.addDataSelectionHandler(e -> {
-            eventsStoreValid = false;
-            validateEventsStore();
-        }));
+        registerHandler(eventsStorePresenter.addDataSelectionHandler(e -> validate()));
     }
 
     // -- Validation --
 
     /**
-     * Asynchronously validates that the selected Events Store is a
-     * PlanB document with {@link StateType#TEMPORAL_STATE}.
-     *
-     * <p>Fetches the {@link PlanBDoc} via REST and inspects its
-     * {@code stateType}. If the type is wrong, a warning is shown
-     * and the OK button remains disabled.</p>
-     *
-     * <p>Precondition: called only when the Events Store picker
-     * selection changes.</p>
-     *
-     * <p>Postcondition: {@link #eventsStoreValid} is set, and
-     * {@link #validate()} is called to update the OK button state.</p>
-     */
-    private void validateEventsStore() {
-        final DocRef selected = eventsStorePresenter.getSelectedEntityReference();
-        if (selected == null) {
-            eventsStoreValid = false;
-            validate();
-            return;
-        }
-        // Async fetch the PlanBDoc to check stateType
-        //noinspection unused error
-        restFactory
-                .create(PLAN_B_RESOURCE)
-                .method(res -> res.fetch(selected.getUuid()))
-                .onSuccess(planBDoc -> {
-                    if (planBDoc.getStateType() == StateType.TEMPORAL_STATE) {
-                        eventsStoreValid = true;
-                    } else {
-                        eventsStoreValid = false;
-                        AlertEvent.fireWarn(this,
-                                "The selected Plan B store '"
-                                        + selected.getName()
-                                        + "' is a "
-                                        + planBDoc.getStateType().getDisplayValue()
-                                        + ", not a Temporal State store. "
-                                        + "Please select a Temporal State store.",
-                                null);
-                    }
-                    validate();
-                })
-                .onFailure(error -> {
-                    eventsStoreValid = false;
-                    validate();
-                })
-                .taskMonitorFactory(this)
-                .exec();
-    }
-
-    /**
      * Updates the OK button enabled state based on current validity.
      *
-     * <p>The OK button is enabled only when both the Facts Store has
-     * a non-null selection and the Events Store has been validated as
-     * a {@link StateType#TEMPORAL_STATE} PlanB store.</p>
+     * <p>The OK button is enabled only when both the Facts Store and the
+     * Events Store have a non-null selection. The picker itself constrains
+     * each selection to a valid store type, so no further check is needed.</p>
      */
     private void validate() {
         final boolean factsOk =
                 factsStorePresenter.getSelectedEntityReference() != null;
-        final boolean valid = factsOk && eventsStoreValid;
+        final boolean eventsOk =
+                eventsStorePresenter.getSelectedEntityReference() != null;
+        final boolean valid = factsOk && eventsOk;
         if (valid) {
             EnablePopupEvent.builder(this)
                     .action(DialogAction.OK).fire();
@@ -252,7 +193,6 @@ public class FloorMapInitPresenter
 
         this.docRef = docRef;
         this.completionCallback = onComplete;
-        this.eventsStoreValid = false;
 
         factsStorePresenter.setSelectedEntityReference(null, false);
         eventsStorePresenter.setSelectedEntityReference(null, false);
@@ -388,7 +328,7 @@ public class FloorMapInitPresenter
          * Sets the view for the Events Store selector.
          *
          * @param view the DocSelectionBox view for selecting a
-         *             {@link PlanBDoc}; never null
+         *             {@link SqlTemporalStoreDoc}; never null
          */
         void setEventsStoreView(View view);
     }

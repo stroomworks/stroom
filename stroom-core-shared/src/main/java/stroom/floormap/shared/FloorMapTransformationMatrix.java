@@ -206,6 +206,33 @@ public class FloorMapTransformationMatrix {
     }
 
     /**
+     * Returns a copy whose translation places the fact's own point
+     * {@code (worldX, worldY)} at map position {@code (mapX, mapY)}, keeping the
+     * scale and rotation ({@code a, b, c, d}) untouched.
+     *
+     * <p>The inverse of {@link #transformPoint}: solving
+     * {@code mapX = a·worldX + c·worldY + e} for the translation. This is how a
+     * fact is repositioned without disturbing how it is sized or turned — the
+     * arithmetic behind both a canvas drag and a typed position, which is why
+     * the two agree.</p>
+     *
+     * @param worldX the fact's stored x coordinate, in its own frame
+     * @param worldY the fact's stored y coordinate, in its own frame
+     * @param mapX   where that point should land, in map space
+     * @param mapY   where that point should land, in map space
+     * @return the repositioned matrix
+     */
+    public FloorMapTransformationMatrix placing(final double worldX,
+                                                final double worldY,
+                                                final double mapX,
+                                                final double mapY) {
+        return new FloorMapTransformationMatrix(
+                a, b, c, d,
+                mapX - (a * worldX + c * worldY),
+                mapY - (b * worldX + d * worldY));
+    }
+
+    /**
      * Returns a rotation about an arbitrary pivot {@code (px, py)} — i.e.
      * {@code translate(px,py) · rotate(degrees) · translate(-px,-py)}. The pivot
      * is left fixed by the resulting transform.
