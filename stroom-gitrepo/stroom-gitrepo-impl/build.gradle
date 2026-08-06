@@ -35,6 +35,8 @@ dependencies {
 
     implementation libs.guice
     implementation libs.jakarta.validation.api
+    implementation libs.http.client
+    implementation libs.jgit
     implementation libs.jgitssh
     implementation libs.jooq
     implementation libs.restygwt

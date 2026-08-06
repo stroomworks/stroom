@@ -39,6 +39,7 @@ public class PlanBConfig extends AbstractConfig implements IsStroomConfig {
     private final StroomDuration minTimeToKeepSnapshots;
     private final StroomDuration minTimeToKeepSnapshotEnv;
     private final StroomDuration snapshotRetryFetchInterval;
+    private final StroomDuration mergeStatusRetention;
 
     public PlanBConfig() {
         this("planb");
@@ -54,7 +55,8 @@ public class PlanBConfig extends AbstractConfig implements IsStroomConfig {
                 path,
                 StroomDuration.ofMinutes(10),
                 StroomDuration.ofMinutes(20),
-                StroomDuration.ofMinutes(1));
+                StroomDuration.ofMinutes(1),
+                StroomDuration.ofDays(30));
     }
 
     @SuppressWarnings("unused")
@@ -64,13 +66,15 @@ public class PlanBConfig extends AbstractConfig implements IsStroomConfig {
                        @JsonProperty("path") final String path,
                        @JsonProperty("minTimeToKeepSnapshots") final StroomDuration minTimeToKeepSnapshots,
                        @JsonProperty("minTimeToKeepSnapshotEnv") final StroomDuration minTimeToKeepSnapshotEnv,
-                       @JsonProperty("snapshotRetryFetchInterval") final StroomDuration snapshotRetryFetchInterval) {
+                       @JsonProperty("snapshotRetryFetchInterval") final StroomDuration snapshotRetryFetchInterval,
+                       @JsonProperty("mergeStatusRetention") final StroomDuration mergeStatusRetention) {
         this.stateDocCache = stateDocCache;
         this.nodeList = nodeList;
         this.path = path;
         this.minTimeToKeepSnapshots = minTimeToKeepSnapshots;
         this.minTimeToKeepSnapshotEnv = minTimeToKeepSnapshotEnv;
         this.snapshotRetryFetchInterval = snapshotRetryFetchInterval;
+        this.mergeStatusRetention = mergeStatusRetention;
     }
 
     @JsonProperty
@@ -100,8 +104,10 @@ public class PlanBConfig extends AbstractConfig implements IsStroomConfig {
     }
 
     @JsonProperty
-    @JsonPropertyDescription("How long should we keep a snapshot shard before cleaning it up " +
-                             "due to inactivity. Should be at least twice minTimeToKeepSnapshots.")
+    @JsonPropertyDescription("How long snapshot data remains useful. This bounds both how stale a snapshot " +
+                             "may be and still be served, measured from when the store node last confirmed " +
+                             "it was current, and how long an inactive snapshot shard is kept before being " +
+                             "cleaned up. Should be at least twice minTimeToKeepSnapshots.")
     public StroomDuration getMinTimeToKeepSnapshotEnv() {
         return minTimeToKeepSnapshotEnv;
     }
@@ -110,6 +116,15 @@ public class PlanBConfig extends AbstractConfig implements IsStroomConfig {
     @JsonPropertyDescription("How often should we retry to fetch snapshots when we fail to get a snapshot.")
     public StroomDuration getSnapshotRetryFetchInterval() {
         return snapshotRetryFetchInterval;
+    }
+
+    @JsonProperty
+    @JsonPropertyDescription("How long to keep the per source merge status records that stop additive " +
+                             "stores (histogram and metric) double counting when a merge is rerun after " +
+                             "interruption. Records are only pruned once no replayable copy of the source " +
+                             "data remains, so this only needs to exceed any realistic replay delay.")
+    public StroomDuration getMergeStatusRetention() {
+        return mergeStatusRetention;
     }
 
     @Override
@@ -121,6 +136,7 @@ public class PlanBConfig extends AbstractConfig implements IsStroomConfig {
                ", minTimeToKeepSnapshots=" + minTimeToKeepSnapshots +
                ", minTimeToKeepSnapshotEnv=" + minTimeToKeepSnapshotEnv +
                ", snapshotRetryFetchInterval=" + snapshotRetryFetchInterval +
+               ", mergeStatusRetention=" + mergeStatusRetention +
                '}';
     }
 
@@ -138,7 +154,8 @@ public class PlanBConfig extends AbstractConfig implements IsStroomConfig {
                Objects.equals(path, that.path) &&
                Objects.equals(minTimeToKeepSnapshots, that.minTimeToKeepSnapshots) &&
                Objects.equals(minTimeToKeepSnapshotEnv, that.minTimeToKeepSnapshotEnv) &&
-               Objects.equals(snapshotRetryFetchInterval, that.snapshotRetryFetchInterval);
+               Objects.equals(snapshotRetryFetchInterval, that.snapshotRetryFetchInterval) &&
+               Objects.equals(mergeStatusRetention, that.mergeStatusRetention);
     }
 
     @Override
@@ -149,7 +166,8 @@ public class PlanBConfig extends AbstractConfig implements IsStroomConfig {
                 path,
                 minTimeToKeepSnapshots,
                 minTimeToKeepSnapshotEnv,
-                snapshotRetryFetchInterval);
+                snapshotRetryFetchInterval,
+                mergeStatusRetention);
     }
 
     public static Builder builder() {
@@ -168,6 +186,7 @@ public class PlanBConfig extends AbstractConfig implements IsStroomConfig {
         private StroomDuration minTimeToKeepSnapshots;
         private StroomDuration minTimeToKeepSnapshotEnv;
         private StroomDuration snapshotRetryFetchInterval;
+        private StroomDuration mergeStatusRetention;
 
         public Builder() {
             // Set defaults
@@ -181,6 +200,7 @@ public class PlanBConfig extends AbstractConfig implements IsStroomConfig {
             this.minTimeToKeepSnapshots = StroomDuration.ofMinutes(10);
             this.minTimeToKeepSnapshotEnv = StroomDuration.ofMinutes(20);
             this.snapshotRetryFetchInterval = StroomDuration.ofMinutes(1);
+            this.mergeStatusRetention = StroomDuration.ofDays(30);
         }
 
         public Builder(final PlanBConfig config) {
@@ -190,6 +210,7 @@ public class PlanBConfig extends AbstractConfig implements IsStroomConfig {
             this.minTimeToKeepSnapshots = config.minTimeToKeepSnapshots;
             this.minTimeToKeepSnapshotEnv = config.minTimeToKeepSnapshotEnv;
             this.snapshotRetryFetchInterval = config.snapshotRetryFetchInterval;
+            this.mergeStatusRetention = config.mergeStatusRetention;
         }
 
         public Builder stateDocCache(final CacheConfig stateDocCache) {
@@ -222,6 +243,11 @@ public class PlanBConfig extends AbstractConfig implements IsStroomConfig {
             return this;
         }
 
+        public Builder mergeStatusRetention(final StroomDuration mergeStatusRetention) {
+            this.mergeStatusRetention = mergeStatusRetention;
+            return this;
+        }
+
         public PlanBConfig build() {
             return new PlanBConfig(
                     stateDocCache,
@@ -229,7 +255,8 @@ public class PlanBConfig extends AbstractConfig implements IsStroomConfig {
                     path,
                     minTimeToKeepSnapshots,
                     minTimeToKeepSnapshotEnv,
-                    snapshotRetryFetchInterval);
+                    snapshotRetryFetchInterval,
+                    mergeStatusRetention);
         }
     }
 }
