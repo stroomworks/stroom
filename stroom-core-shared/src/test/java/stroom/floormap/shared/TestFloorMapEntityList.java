@@ -272,6 +272,26 @@ class TestFloorMapEntityList {
                 .containsExactly("area-7f2a3c");
     }
 
+    /**
+     * A keyed type lookup, the companion to {@link FloorMapEntityList#getDisplayName}.
+     * Callers naming many entities at once — the cluster member list, which can
+     * hold hundreds — need this rather than scanning {@code getEntities()}, which
+     * allocates and sorts the whole roster on every call.
+     */
+    @Test
+    void testGetType() {
+        entityList.update(Arrays.asList(
+                entity("alice@example.com", "person"),
+                entity("forklift-1", "vehicle")));
+        entityList.updateFacts(Collections.singletonList(fact("desk-3", "object")));
+
+        assertThat(entityList.getType("alice@example.com")).isEqualTo("person");
+        assertThat(entityList.getType("forklift-1")).isEqualTo("vehicle");
+        assertThat(entityList.getType("desk-3")).isEqualTo("object");
+        assertThat(entityList.getType("never-seen")).isNull();
+        assertThat(entityList.getType(null)).isNull();
+    }
+
     /** An unnamed or blank-named area falls back to its key. */
     @Test
     void testAreaWithoutLabelFallsBackToKey() {

@@ -21,6 +21,7 @@ import stroom.docref.DocRef;
 import stroom.entity.client.presenter.DocPresenter;
 import stroom.entity.client.presenter.HasToolbar;
 import stroom.floormap.client.event.FloorMapDataEvent;
+import stroom.floormap.client.event.MapClusterSelectedEvent;
 import stroom.floormap.client.event.MapObjectSelectedEvent;
 import stroom.floormap.client.event.TimeChangeEvent;
 import stroom.floormap.client.presenter.FloorMapMapPresenter.FloorMapMapView;
@@ -149,6 +150,12 @@ public class FloorMapMapPresenter
      */
     private final QueryModel eventsQueryModel;
 
+    /**
+     * Builds the cluster member list on demand. Left as a provider rather than
+     * resolved up front: a map whose entities never crowd never opens it.
+     */
+    private final Provider<FloorMapClusterPresenter> floorMapClusterPresenter;
+
     private final HistogramQueryHelper histogramQueryHelper;
     private final HistogramQueryHelper factsHistogramQueryHelper;
     private final HistogramDataModel histogramDataModel;
@@ -166,6 +173,18 @@ public class FloorMapMapPresenter
      * Map tab, which always has the Tracking panel to show.
      */
     private final InlineSvgToggleButton dockToggleButton;
+
+    /**
+     * Toolbar toggle controlling whether entities too close together on screen are
+     * merged into one summary glyph. <strong>On</strong> by default: the state it
+     * prevents — a stack of glyphs where only the top one is visible and the rest
+     * are unreachable — is worse than the state it creates.
+     *
+     * <p>It has to be switchable, though. Zooming in separates entities that are
+     * merely close, but nothing separates entities at the same position, so this
+     * button is the only way to look underneath a cluster on the canvas.</p>
+     */
+    private final InlineSvgToggleButton clusterToggleButton;
 
     private long selectedTime;
 
@@ -219,9 +238,11 @@ public class FloorMapMapPresenter
                                 final Provider<FloorMapTrackingPresenter> floorMapEntityListPresenterProvider,
                                 final Provider<FloorMapLayersPresenter> floorMapLayersPresenterProvider,
                                 final Provider<FloorMapGroupsPresenter> floorMapGroupsPresenterProvider,
-                                final Provider<FloorMapDockPresenter> floorMapDockPresenterProvider) {
+                                final Provider<FloorMapDockPresenter> floorMapDockPresenterProvider,
+                                final Provider<FloorMapClusterPresenter> floorMapClusterPresenter) {
         super(eventBus, view);
 
+        this.floorMapClusterPresenter = floorMapClusterPresenter;
         this.floorMapCanvasPresenter = floorMapCanvasPresenterProvider.get();
         this.floorMapTimelinePresenter = floorMapTimelinePresenterProvider.get();
         this.floorMapObjectEditPresenter = floorMapObjectEditPresenterProvider.get();
@@ -278,6 +299,19 @@ public class FloorMapMapPresenter
         dockToggleButton.setSvg(SvgImage.SHOW_MENU);
         dockToggleButton.setTitle("Toggle Controls");
         dockToggleButton.setState(true);
+
+        // Merge crowded entities into summary glyphs. On by default; the canvas
+        // is told explicitly below rather than relying on its field default, so
+        // the button and the canvas cannot start out disagreeing.
+        clusterToggleButton = new InlineSvgToggleButton();
+        clusterToggleButton.setSvg(SvgImage.FIELDS_GROUP);
+        clusterToggleButton.setTitle("Toggle Clustering of Nearby Entities");
+        clusterToggleButton.setState(true);
+        floorMapCanvasPresenter.setClusterNearbyEntities(true);
+        // Cluster tooltips name their members through the same resolver the
+        // Tracking and Groups panels use, so one entity reads the same way
+        // wherever it is named.
+        floorMapCanvasPresenter.setEntityNameResolver(this::entityDisplayName);
 
         // Result component to parse and handle Facts query results
         final ResultComponent resultConsumer = new ResultComponent() {
@@ -389,6 +423,10 @@ public class FloorMapMapPresenter
         registerHandler(dockToggleButton.addClickHandler(e ->
                 getView().setDockVisible(dockToggleButton.getState())));
 
+        registerHandler(clusterToggleButton.addClickHandler(e ->
+                floorMapCanvasPresenter.setClusterNearbyEntities(
+                        clusterToggleButton.getState())));
+
         // Only react to this tab's own timeline — the Editor tab has its own
         // timeline firing the same event type, and the tabs must not time-sync.
         registerHandler(getEventBus().addHandler(TimeChangeEvent.getType(), e -> {
@@ -441,6 +479,26 @@ public class FloorMapMapPresenter
             }
         }));
 
+        // Clicking a cluster lists its members, which is what makes entities
+        // merged into one glyph reachable at all — until this, the nine users
+        // under the tenth could be counted and named but never got at. Same
+        // source guard as above: the bus is shared by every open canvas.
+        registerHandler(getEventBus().addHandler(MapClusterSelectedEvent.getType(), e -> {
+            if (e.getSource() == floorMapCanvasPresenter && e.getCluster() != null) {
+                floorMapClusterPresenter.get().show(
+                        e.getCluster(),
+                        this::entityDisplayName,
+                        lastAreaMembership,
+                        this::entityType,
+                        // Picking a member does exactly what picking its row in the
+                        // Tracking panel does, so the two cannot diverge.
+                        memberId -> {
+                            floorMapTrackingPresenter.setSelected(memberId);
+                            floorMapCanvasPresenter.setTrackedObjectId(memberId);
+                        });
+            }
+        }));
+
 
         // Drag-editing is performed on the Editor tab; the Map tab is view-focused,
         // so no drag handler is installed here.
@@ -475,6 +533,7 @@ public class FloorMapMapPresenter
     public List<Widget> getToolbars() {
         final ButtonPanel toolbar = new ButtonPanel();
         toolbar.addButton(showGridButton);
+        toolbar.addButton(clusterToggleButton);
         toolbar.addButton(dockToggleButton);
         return Collections.singletonList(toolbar);
     }
@@ -902,6 +961,20 @@ public class FloorMapMapPresenter
         return name != null
                 ? name
                 : FloorMapEntityList.displayName(id);
+    }
+
+    /**
+     * Resolves an entity id to its type, from the same roster the names come
+     * from. {@code null} for an id the roster has not seen, which leaves the
+     * caller to fall back.
+     *
+     * <p>Goes through the roster's own keyed lookup, not {@link
+     * FloorMapEntityList#getEntities()} — that allocates and sorts the whole
+     * roster per call, which a cluster of hundreds of members would pay for once
+     * per member.</p>
+     */
+    private String entityType(final String id) {
+        return entityList.getType(id);
     }
 
     /**

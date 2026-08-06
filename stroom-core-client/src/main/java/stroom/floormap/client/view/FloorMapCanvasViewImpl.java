@@ -23,14 +23,19 @@ import stroom.floormap.client.presenter.FloorMapCanvasPresenter.FloorMapCanvasVi
 import stroom.floormap.shared.Fact;
 import stroom.floormap.shared.FloorMapAreaMembership;
 import stroom.floormap.shared.FloorMapAreaOverlay;
+import stroom.floormap.shared.FloorMapCluster;
+import stroom.floormap.shared.FloorMapClusterLabel;
+import stroom.floormap.shared.FloorMapClusterOverlay;
 import stroom.floormap.shared.FloorMapGeometry;
 import stroom.floormap.shared.FloorMapHighlight;
 import stroom.floormap.shared.FloorMapJsonKeys;
+import stroom.floormap.shared.FloorMapLabelPlacement;
 import stroom.floormap.shared.FloorMapMeasurementUnits;
 import stroom.floormap.shared.FloorMapObject;
 import stroom.floormap.shared.FloorMapScreenGeometry;
 import stroom.floormap.shared.FloorMapShapes;
 import stroom.floormap.shared.FloorMapTransformationMatrix;
+import stroom.floormap.shared.FloorMapZOrder;
 import stroom.floormap.shared.TypeStyle;
 import stroom.widget.util.client.HtmlBuilder;
 import stroom.widget.util.client.HtmlBuilder.Attribute;
@@ -53,11 +58,14 @@ import com.google.gwt.user.client.ui.Widget;
 import com.google.inject.Inject;
 import com.gwtplatform.mvp.client.ViewWithUiHandlers;
 
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 
 /**
  * GWT view implementation for the interactive SVG floor-map canvas.
@@ -132,6 +140,54 @@ public class FloorMapCanvasViewImpl
     private static final double DEFAULT_AREA_FILL_OPACITY = 0.3;
     /** On-screen radius (px) of an area's occupant-count badge. */
     private static final double OCCUPANT_BADGE_RADIUS_PX = 10;
+
+    /**
+     * Gap (screen px) between the bottom of a glyph and its caption, so the text
+     * does not touch the thing it names.
+     */
+    private static final double GLYPH_CAPTION_GAP_PX = 4;
+
+    /**
+     * Style hook for the caption under a glyph — an entity's name, or a cluster's
+     * "10 users". A CSS class rather than baked-in attributes because this text is
+     * drawn <em>outside</em> the glyph, over whatever floor plan is beneath it: it
+     * needs the theme's text colour and a halo to stay legible in both light and
+     * dark themes, and neither can be hard-coded here.
+     */
+    private static final String GLYPH_CAPTION_CLASS = "stroom-floormap-glyph-caption";
+
+    /**
+     * Average glyph advance (px) used to estimate a caption's width for collision
+     * testing, at the caption's 11px font. Deliberately a little generous:
+     * underestimating lets two captions touch, which is the thing being prevented,
+     * whereas overestimating only drops a caption that would just have fitted.
+     *
+     * <p>An estimate rather than a measurement because measuring text means
+     * inserting it in the DOM and reading it back — a synchronous reflow per
+     * caption, per frame.</p>
+     */
+    private static final double CAPTION_CHAR_WIDTH_PX = 6.0;
+
+    /** Line box (px) a caption occupies vertically, for collision testing. */
+    private static final double CAPTION_HEIGHT_PX = 14;
+
+    /**
+     * Caption priorities — <strong>lower is placed first</strong> and so survives
+     * crowding. Clusters sit between the tracked entity and lone entities, and a
+     * bigger cluster outranks a smaller one because its caption speaks for more
+     * entities (see {@link #clusterCaptionPriority}).
+     */
+    private static final int CAPTION_PRIORITY_FOCUSED = 0;
+    private static final int CAPTION_PRIORITY_CLUSTER_BASE = 1000;
+    private static final int CAPTION_PRIORITY_EVENT = 2000;
+    private static final int CAPTION_PRIORITY_FACT = 3000;
+
+    /**
+     * Added to a caption's priority when its layer is dimmed, so every undimmed
+     * caption is placed first. Larger than the whole undimmed range, so a dimmed
+     * cluster can never outrank an undimmed fact.
+     */
+    private static final int CAPTION_PRIORITY_DIMMED_PENALTY = 10000;
     /**
      * On-screen radius (px) of the vertex-0 close-target ring in the area
      * drawing draft — shares the presenter's single constant so the drawn ring
@@ -178,6 +234,23 @@ public class FloorMapCanvasViewImpl
      */
     private FloorMapMeasurementUnits measurementUnits;
 
+    /**
+     * Resolves an entity id to its display name, for captioning a cluster drawn
+     * around the tracked entity. Supplied by the presenter; {@code null} until
+     * then, which falls the caption back to the id.
+     */
+    private Function<String, String> entityNameResolver;
+
+    /**
+     * Captions collected during the current frame's draw, resolved together at the
+     * end so no two are written on top of each other.
+     *
+     * <p>Collected rather than drawn in place because whether a caption fits can
+     * only be known once every other caption's position is known — and because a
+     * caption drawn with its own glyph can be painted over by a later one.</p>
+     */
+    private final List<PendingCaption> pendingCaptions = new ArrayList<>();
+
     @UiField
     HTML svgContainer;
 
@@ -218,6 +291,23 @@ public class FloorMapCanvasViewImpl
      */
     private static final int READOUT_ASSUMED_WIDTH_PX = 150;
     private static final int READOUT_ASSUMED_HEIGHT_PX = 24;
+
+    /**
+     * Panel naming the members of the cluster under the pointer — what the count
+     * on the glyph cannot say.
+     */
+    @UiField
+    FlowPanel clusterTooltip;
+
+    private static final String CLUSTER_TOOLTIP_VISIBLE =
+            "stroom-floormap-cluster-tooltip--visible";
+    private static final String CLUSTER_TOOLTIP_CAPTION_CLASS =
+            "stroom-floormap-cluster-tooltip__caption";
+    private static final String CLUSTER_TOOLTIP_NAME_CLASS =
+            "stroom-floormap-cluster-tooltip__name";
+
+    /** Gap between the cluster's glyph centre and the tooltip's near corner. */
+    private static final int CLUSTER_TOOLTIP_OFFSET_PX = 34;
 
     /**
      * The scale bar: a labelled rule fixed in the canvas corner, showing what a
@@ -342,6 +432,9 @@ public class FloorMapCanvasViewImpl
      * @param showGrid         {@code true} to draw the (non-interactive) grid overlay
      * @param areaOverlay      area-containment decorations, used here for the
      *                         occupant-count badges; never {@code null}
+     * @param clusterOverlay   which entities are merged into summary glyphs;
+     *                         members are skipped and the cluster drawn in their
+     *                         place; never {@code null}
      * @param highlight        resolves the non-selection highlight for each entity —
      *                         group colour or area-containment green, whichever wins;
      *                         never {@code null}
@@ -361,6 +454,7 @@ public class FloorMapCanvasViewImpl
                      final boolean scaleRotateEnabled,
                      final double[] areaDraftPx,
                      final FloorMapAreaOverlay areaOverlay,
+                     final FloorMapClusterOverlay clusterOverlay,
                      final FloorMapHighlight highlight,
                      final double[] measureLinePx) {
         final HtmlBuilder htmlBuilder = new HtmlBuilder();
@@ -374,6 +468,9 @@ public class FloorMapCanvasViewImpl
         this.lastFacts = facts;
         this.lastSelectedIds = selectedObjectIds;
         this.lastTypeStyles = typeStyles;
+        // Per-frame, and cleared here rather than at the end so an exception part
+        // way through a draw cannot leave last frame's captions to be re-placed.
+        pendingCaptions.clear();
 
         htmlBuilder.elem(svg -> {
 
@@ -395,6 +492,11 @@ public class FloorMapCanvasViewImpl
                     // ---- Facts (paint order = z-order supplied by the presenter) ----
                     if (facts != null) {
                         for (final Fact fact : facts) {
+                            // Merged into a cluster: the cluster glyph stands in
+                            // for it, so drawing it too would put the crowd back.
+                            if (clusterOverlay.isClustered(fact.getKey())) {
+                                continue;
+                            }
                             final boolean isSelected = selectedObjectIds.contains(fact.getKey());
                             // A dimmed layer wraps its facts in a group at 30%
                             // opacity; otherwise the fact is drawn directly.
@@ -411,6 +513,20 @@ public class FloorMapCanvasViewImpl
                     // ---- Event entities drawn on top ----
                     if (events != null) {
                         for (final FloorMapObject ev : events) {
+                            // A clustered entity's glyph is replaced by the
+                            // cluster's — and so is its trail, deliberately: ten
+                            // trails converging on one spot is the mess the cluster
+                            // is replacing. The exception is the tracked entity,
+                            // whose trail is the reason the user is watching, and
+                            // whose glyph the cluster is standing in for anyway.
+                            if (clusterOverlay.isClustered(ev.getId())) {
+                                final FloorMapCluster owner =
+                                        clusterOverlay.getClusterFor(ev.getId());
+                                if (ev.getId().equals(owner.getFocusedMemberId())) {
+                                    appendEventTrail(flipGroup, ev, typeStyles);
+                                }
+                                continue;
+                            }
                             final boolean evSelected = selectedObjectIds.contains(ev.getId());
                             final String evHighlight = highlight.colourFor(ev.getId());
                             if (dimmedTypes != null && dimmedTypes.contains(ev.getType())) {
@@ -420,6 +536,19 @@ public class FloorMapCanvasViewImpl
                             } else {
                                 appendEvent(flipGroup, ev, evSelected, evHighlight, typeStyles, scale);
                             }
+                        }
+                    }
+
+                    // ---- Cluster glyphs, over the entities they stand in for ----
+                    final List<FloorMapCluster> clusters =
+                            paintOrdered(clusterOverlay.getClusters(), typeStyles);
+                    for (final FloorMapCluster cluster : clusters) {
+                        if (dimmedTypes != null && dimmedTypes.contains(cluster.getType())) {
+                            flipGroup.elem(g -> appendClusterGlyph(
+                                            g, cluster, typeStyles, scale, highlight),
+                                    SafeHtmlUtil.from("g"), new Attribute("opacity", DIMMED_LAYER_OPACITY));
+                        } else {
+                            appendClusterGlyph(flipGroup, cluster, typeStyles, scale, highlight);
                         }
                     }
 
@@ -438,6 +567,24 @@ public class FloorMapCanvasViewImpl
                             }
                         }
                     }
+
+                    // ---- Cluster counts and captions, after every badge ----
+                    // Same reason the occupant badges come late, one step further:
+                    // a cluster's own count must not end up under an area badge
+                    // drawn at a centroid the crowd is sitting on. Dimming is not
+                    // applied to these: a count that says "10 users" at 30 %
+                    // opacity over a floor plan is unreadable, and the number is
+                    // the whole point of the glyph.
+                    for (final FloorMapCluster cluster : clusters) {
+                        appendClusterCount(flipGroup, cluster, typeStyles, scale);
+                    }
+
+                    // ---- Captions, last of all ----
+                    // Every glyph, badge and pill is now placed, so this can both
+                    // paint over them and know where every caption wants to go —
+                    // which is what lets overlapping ones be resolved rather than
+                    // written on top of each other.
+                    appendPlacedCaptions(flipGroup, scale, x, y, dimmedTypes);
                 }, SafeHtmlUtil.from("g"), new Attribute("transform", "scale(1,-1)")),
                 SafeHtmlUtil.from("g"),
                     new Attribute("transform", "translate(" + x + "," + y + ") scale(" + scale + ")"));
@@ -620,6 +767,60 @@ public class FloorMapCanvasViewImpl
         gestureReadout.getElement().getStyle().setLeft(Math.max(0, x), Unit.PX);
         gestureReadout.getElement().getStyle().setTop(Math.max(0, y), Unit.PX);
         gestureReadout.addStyleName(GESTURE_READOUT_VISIBLE);
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public void setEntityNameResolver(final Function<String, String> entityNameResolver) {
+        this.entityNameResolver = entityNameResolver;
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public void setClusterTooltip(final String caption,
+                                  final List<String> names,
+                                  final double anchorXPx,
+                                  final double anchorYPx) {
+        if (caption == null) {
+            clusterTooltip.removeStyleName(CLUSTER_TOOLTIP_VISIBLE);
+            return;
+        }
+
+        clusterTooltip.clear();
+        final Label captionLabel = new Label(caption);
+        captionLabel.addStyleName(CLUSTER_TOOLTIP_CAPTION_CLASS);
+        clusterTooltip.add(captionLabel);
+        if (names != null) {
+            for (final String name : names) {
+                final Label nameLabel = new Label(name);
+                nameLabel.addStyleName(CLUSTER_TOOLTIP_NAME_CLASS);
+                clusterTooltip.add(nameLabel);
+            }
+        }
+
+        // Sit below-right of the glyph by default, flipping near an edge so the
+        // panel is never clipped by the canvas. Unlike the gesture readout the
+        // height is not roughly fixed — it grows with the member count — so it is
+        // measured rather than assumed. That costs a reflow, but this runs when
+        // the hovered cluster changes, not on every mouse move.
+        final Element panel = focusPanel.getElement();
+        final int panelWidth = panel.getOffsetWidth();
+        final int panelHeight = panel.getOffsetHeight();
+        clusterTooltip.addStyleName(CLUSTER_TOOLTIP_VISIBLE);
+        final int tooltipWidth = clusterTooltip.getOffsetWidth();
+        final int tooltipHeight = clusterTooltip.getOffsetHeight();
+
+        double x = anchorXPx + CLUSTER_TOOLTIP_OFFSET_PX;
+        if (panelWidth > 0 && x + tooltipWidth > panelWidth) {
+            x = anchorXPx - CLUSTER_TOOLTIP_OFFSET_PX - tooltipWidth;
+        }
+        double y = anchorYPx + CLUSTER_TOOLTIP_OFFSET_PX;
+        if (panelHeight > 0 && y + tooltipHeight > panelHeight) {
+            y = anchorYPx - CLUSTER_TOOLTIP_OFFSET_PX - tooltipHeight;
+        }
+
+        clusterTooltip.getElement().getStyle().setLeft(Math.max(0, x), Unit.PX);
+        clusterTooltip.getElement().getStyle().setTop(Math.max(0, y), Unit.PX);
     }
 
     /** {@inheritDoc} */
@@ -934,18 +1135,48 @@ public class FloorMapCanvasViewImpl
                                      final String colour,
                                      final double scale) {
         final double[] centroid = FloorMapGeometry.mapTestPoint(fact);
-        final String count = String.valueOf(occupantCount);
+        appendCountPill(parent, occupantCount, colour,
+                centroid[0], centroid[1], 0, 0, scale);
+    }
+
+    /**
+     * Draws a count pill at fixed screen size, anchored at a map-space point and
+     * offset from it in screen pixels.
+     *
+     * <p>Shared by the area occupant badge (centred on the area) and the cluster
+     * count (offset to the glyph's corner), so the two read as the same kind of
+     * statement — a number this canvas is telling you about the thing underneath
+     * it.</p>
+     *
+     * @param parent    the builder to append to, inside the Y-up flip group
+     * @param count     the number to show
+     * @param colour    the pill's fill, normally the type's own colour
+     * @param mapX      the anchor point in map space
+     * @param mapY      the anchor point in map space
+     * @param offsetXPx screen-pixel offset from the anchor, positive right
+     * @param offsetYPx screen-pixel offset from the anchor, positive down
+     * @param scale     the current zoom factor
+     */
+    private void appendCountPill(final HtmlBuilder parent,
+                                 final int count,
+                                 final String colour,
+                                 final double mapX,
+                                 final double mapY,
+                                 final double offsetXPx,
+                                 final double offsetYPx,
+                                 final double scale) {
+        final String text = String.valueOf(count);
         // Widen the disc into a pill for 2+ digits so the text keeps clear of
         // the edge.
         final double radius = OCCUPANT_BADGE_RADIUS_PX;
-        final double halfWidth = count.length() > 1
-                ? radius + (count.length() - 1) * 4.0
+        final double halfWidth = text.length() > 1
+                ? radius + (text.length() - 1) * 4.0
                 : radius;
 
         parent.elem(badgeGroup -> {
             badgeGroup.elem(SafeHtmlUtil.from("rect"),
-                    new Attribute("x", String.valueOf(-halfWidth)),
-                    new Attribute("y", String.valueOf(-radius)),
+                    new Attribute("x", String.valueOf(offsetXPx - halfWidth)),
+                    new Attribute("y", String.valueOf(offsetYPx - radius)),
                     new Attribute("width", String.valueOf(halfWidth * 2)),
                     new Attribute("height", String.valueOf(radius * 2)),
                     new Attribute("rx", String.valueOf(radius)),
@@ -954,10 +1185,10 @@ public class FloorMapCanvasViewImpl
                     new Attribute("stroke", "#ffffff"),
                     new Attribute("stroke-width", "1.5"),
                     new Attribute("pointer-events", "none"));
-            badgeGroup.elem(count,
+            badgeGroup.elem(text,
                     SafeHtmlUtil.from("text"),
-                    new Attribute("x", "0"),
-                    new Attribute("y", "0"),
+                    new Attribute("x", String.valueOf(offsetXPx)),
+                    new Attribute("y", String.valueOf(offsetYPx)),
                     new Attribute("dy", "0.35em"),
                     new Attribute("text-anchor", "middle"),
                     new Attribute("fill", "#ffffff"),
@@ -966,7 +1197,110 @@ public class FloorMapCanvasViewImpl
                     new Attribute("font-family", "sans-serif"),
                     new Attribute("pointer-events", "none"));
         }, SafeHtmlUtil.from("g"),
-                new Attribute("transform", fixedSizeTransform(centroid[0], centroid[1], scale)));
+                new Attribute("transform", fixedSizeTransform(mapX, mapY, scale)));
+    }
+
+    /**
+     * Orders clusters back-to-front by their type's configured paint order, so a
+     * merged crowd sits in the same layer its members would have.
+     *
+     * <p>The overlay produces clusters in type-<em>name</em> order, which is only
+     * a determinism guarantee and says nothing about which layer belongs on
+     * top.</p>
+     */
+    private static List<FloorMapCluster> paintOrdered(final List<FloorMapCluster> clusters,
+                                                      final List<TypeStyle> typeStyles) {
+        final List<FloorMapCluster> ordered = new ArrayList<>(clusters);
+        // Stable, so clusters of one type keep the overlay's deterministic order.
+        ordered.sort(Comparator.comparingInt(
+                cluster -> FloorMapZOrder.indexOf(cluster.getType(), typeStyles)));
+        return ordered;
+    }
+
+    /**
+     * Draws the summary glyph standing in for a cluster's members: the type's own
+     * graphic, so a merged crowd of users still reads as users in the user
+     * colour.
+     *
+     * <p>Carries {@link FloorMapJsonKeys#CLUSTER_PREFIX} on its id rather than a
+     * member's id, because a cluster is not an entity — the object hit-test must
+     * not report it as one.</p>
+     *
+     * <p>The glyph takes the highlight of any highlighted member, so switching a
+     * group's highlight on still shows where its members are when they are too
+     * crowded to draw individually. It is never drawn as selected: the selection
+     * is excluded from clustering upstream, so a selected entity is always its own
+     * glyph.</p>
+     */
+    private void appendClusterGlyph(final HtmlBuilder parent,
+                                    final FloorMapCluster cluster,
+                                    final List<TypeStyle> typeStyles,
+                                    final double scale,
+                                    final FloorMapHighlight highlight) {
+        String highlightColour = null;
+        for (final String memberId : cluster.getMemberIds()) {
+            highlightColour = highlight.colourFor(memberId);
+            if (highlightColour != null) {
+                break;
+            }
+        }
+        appendStyledGlyph(parent,
+                FloorMapJsonKeys.CLUSTER_PREFIX + cluster.getKey(),
+                cluster.getType(),
+                cluster.getMapX(), cluster.getMapY(),
+                // A cluster drawn around the tracked entity carries that entity's
+                // selection ring: this glyph IS them as far as the user is
+                // concerned, and following someone into a crowd must not look like
+                // losing them.
+                cluster.hasFocusedMember(), highlightColour, typeStyles, scale);
+    }
+
+    /**
+     * Draws a cluster's count pill and its caption — the pill at the glyph's
+     * top-right corner, the caption centred underneath.
+     *
+     * <p>The caption spells the count out ("10 users") rather than leaving a bare
+     * number to be decoded. It is drawn with a halo (a white stroke painted under
+     * the fill) because it sits outside the glyph, over whatever floor plan
+     * happens to be beneath it.</p>
+     */
+    private void appendClusterCount(final HtmlBuilder parent,
+                                    final FloorMapCluster cluster,
+                                    final List<TypeStyle> typeStyles,
+                                    final double scale) {
+        // The glyph's real box, not an assumed square: a layer drawing an image
+        // gets an area-matched box up to twice as tall, and a pill or caption
+        // placed at OBJECT_SIZE/2 would sit inside it.
+        final double[] box = glyphBoxPx(cluster.getType(), typeStyles);
+        final double halfWidth = box[0] / 2.0;
+        final double halfHeight = box[1] / 2.0;
+
+        appendCountPill(parent, cluster.size(),
+                TypeStyle.colourForType(cluster.getType(), typeStyles),
+                cluster.getMapX(), cluster.getMapY(),
+                halfWidth, -halfHeight, scale);
+
+        // The pill is drawn unconditionally — it is small, sits on the glyph's own
+        // corner, and is the count that justifies the glyph. Only the caption
+        // competes for space.
+        collectCaption(cluster.getKey(),
+                FloorMapClusterLabel.captionFor(cluster, entityNameResolver),
+                cluster.getType(),
+                cluster.getMapX(), cluster.getMapY(), typeStyles,
+                clusterCaptionPriority(cluster));
+    }
+
+    /**
+     * A cluster's caption priority: above every lone entity, and — among clusters —
+     * bigger first, because a bigger cluster's caption speaks for more entities. A
+     * cluster drawn around the tracked entity outranks all of them.
+     */
+    private static int clusterCaptionPriority(final FloorMapCluster cluster) {
+        if (cluster.hasFocusedMember()) {
+            return CAPTION_PRIORITY_FOCUSED;
+        }
+        // Bounded so a huge cluster cannot reach into the focused tier.
+        return CAPTION_PRIORITY_CLUSTER_BASE - Math.min(cluster.size(), 999);
     }
 
     /**
@@ -1322,6 +1656,8 @@ public class FloorMapCanvasViewImpl
 
         appendStyledGlyph(parent, fact.getKey(), fact.getType(), mapX, mapY,
                 isSelected, highlightColour, typeStyles, scale);
+        collectCaption(fact.getKey(), shortLabel(fact.getKey()), fact.getType(),
+                mapX, mapY, typeStyles, CAPTION_PRIORITY_FACT);
     }
 
     /**
@@ -1338,7 +1674,46 @@ public class FloorMapCanvasViewImpl
                              final String highlightColour,
                              final List<TypeStyle> typeStyles,
                              final double scale) {
-        // Movement trail — rendered before the glyph so it sits behind.
+        appendEventTrail(parent, obj, typeStyles);
+
+        final Fact imageFact = obj.getImageFact();
+        if (imageFact != null) {
+            // The entity has an attached icon: keep the icon's configured
+            // scale/rotation (a,b,c,d) but centre it on the entity's live
+            // position, so the icon follows the events and animates.
+            final FloorMapTransformationMatrix w2m = imageFact.getWorldToMap();
+            final FloorMapTransformationMatrix placement = new FloorMapTransformationMatrix(
+                    w2m.getA(), w2m.getB(), w2m.getC(), w2m.getD(),
+                    obj.getX(), obj.getY());
+            appendImageGlyph(parent, imageFact, placement, true,
+                    isSelected || highlightColour != null,
+                    isSelected ? SELECTION_STROKE : highlightColour);
+        } else {
+            // The trail above stays in map space so it scales with the map;
+            // the glyph itself is fixed screen size.
+            appendStyledGlyph(parent, obj.getId(), obj.getType(), obj.getX(), obj.getY(),
+                    isSelected, highlightColour, typeStyles, scale);
+            collectCaption(obj.getId(), shortLabel(obj.getId()), obj.getType(),
+                    obj.getX(), obj.getY(), typeStyles,
+                    isSelected
+                            ? CAPTION_PRIORITY_FOCUSED
+                            : CAPTION_PRIORITY_EVENT);
+        }
+    }
+
+    /**
+     * Draws an event entity's movement trail — a fading path tinted with its type
+     * colour — in map space, so it scales with the map.
+     *
+     * <p>Separate from {@link #appendEvent} because the two are wanted apart in one
+     * case: an entity merged into a cluster has its glyph replaced by the cluster's,
+     * but if it is the <em>tracked</em> one its trail is still worth drawing. Ten
+     * trails converging on a spot is the mess clustering removes; the one belonging
+     * to the entity the user is following is the reason they are watching.</p>
+     */
+    private void appendEventTrail(final HtmlBuilder parent,
+                                  final FloorMapObject obj,
+                                  final List<TypeStyle> typeStyles) {
         if (obj.getTrail() != null && obj.getTrail().size() >= 2) {
             final List<double[]> trail = obj.getTrail();
             final StringBuilder pathD = new StringBuilder();
@@ -1367,25 +1742,6 @@ public class FloorMapCanvasViewImpl
                     new Attribute("pointer-events", "none"));
             }
         }
-
-        final Fact imageFact = obj.getImageFact();
-        if (imageFact != null) {
-            // The entity has an attached icon: keep the icon's configured
-            // scale/rotation (a,b,c,d) but centre it on the entity's live
-            // position, so the icon follows the events and animates.
-            final FloorMapTransformationMatrix w2m = imageFact.getWorldToMap();
-            final FloorMapTransformationMatrix placement = new FloorMapTransformationMatrix(
-                    w2m.getA(), w2m.getB(), w2m.getC(), w2m.getD(),
-                    obj.getX(), obj.getY());
-            appendImageGlyph(parent, imageFact, placement, true,
-                    isSelected || highlightColour != null,
-                    isSelected ? SELECTION_STROKE : highlightColour);
-        } else {
-            // The trail above stays in map space so it scales with the map;
-            // the glyph itself is fixed screen size.
-            appendStyledGlyph(parent, obj.getId(), obj.getType(), obj.getX(), obj.getY(),
-                    isSelected, highlightColour, typeStyles, scale);
-        }
     }
 
     /**
@@ -1400,9 +1756,10 @@ public class FloorMapCanvasViewImpl
      * between a shape and an image does not change how much room it takes; an
      * image is letterboxed into that box rather than stretched.</p>
      *
-     * <p>The graphic element carries {@code id} so click-detection works. A short
-     * label is drawn on top of a shape, but not over an image or inside a pin's
-     * hole, where it would be unreadable.</p>
+     * <p>The graphic element carries {@code id} so click-detection works. The
+     * glyph's <strong>name is not drawn here</strong>: captions are collected during
+     * the draw and placed together at the end, so that two of them can never be
+     * written on top of each other (see {@link #collectCaption}).</p>
      */
     private void appendStyledGlyph(final HtmlBuilder parent,
                                    final String id,
@@ -1428,15 +1785,14 @@ public class FloorMapCanvasViewImpl
         final String strokeWidth = bordered ? "4" : "0";
         final String vectorEffect = bordered ? "non-scaling-stroke" : "none";
         final String polygon = FloorMapShapes.polygonPoints(shape, OBJECT_SIZE / 2.0);
-        final String label = shortLabel(id);
         final double half = OBJECT_SIZE / 2.0;
 
         parent.elem(objGroup -> {
             if (graphic != null) {
                 // The layer's own image, drawn in a box of the same AREA as a shape
                 // glyph's box so the two read at the same size (see
-                // graphicBoxSize). No label is drawn over it — the image is the
-                // identity.
+                // graphicBoxSize). The image identifies the entity's TYPE, not the
+                // entity, so its name is still drawn — underneath, clear of it.
                 final double[] box = graphicBoxSize(graphic);
                 final double gw = box[0];
                 final double gh = box[1];
@@ -1522,26 +1878,177 @@ public class FloorMapCanvasViewImpl
                     new Attribute("id", id));
             }
 
-            // A centred label would sit on top of the image, or in the pin's hole,
-            // so those two carry no label — the graphic itself is the identity.
-            if (graphic == null && shape != TypeStyle.Shape.PIN) {
-                objGroup.elem(label,
-                        SafeHtmlUtil.from("text"),
-                        new Attribute("x", "0"),
-                        new Attribute("y", "0"),
-                        new Attribute("dy", "0.35em"),
-                        new Attribute("text-anchor", "middle"),
-                        new Attribute("fill", "white"),
-                        new Attribute("font-size", "14px"),
-                        new Attribute("font-family", "sans-serif"),
-                        new Attribute("pointer-events", "none"));
-            }
         },
                 SafeHtmlUtil.from("g"),
                 // Counter-flip + counter-scale so the graphic + label stay
                 // upright and a fixed screen size inside the Y-up flip / zoom group.
                 new Attribute("transform", fixedSizeTransform(mapX, mapY, scale)),
                 new Attribute("id", FloorMapJsonKeys.SVG_GROUP_PREFIX + id));
+    }
+
+    /**
+     * Queues a glyph's caption for placement at the end of the frame.
+     *
+     * <p>Nothing is drawn here: the caption's position depends on where every other
+     * caption ends up, so the decision is deferred to
+     * {@link #appendPlacedCaptions}.</p>
+     *
+     * @param key        the entity id or cluster key — identifies the caption and
+     *                   breaks ties between equal priorities, so it must be stable
+     *                   between frames
+     * @param text       the caption, or {@code null}/blank to queue nothing
+     * @param type       the entity type, for sizing the glyph the caption clears
+     * @param mapX       the glyph's anchor in map space
+     * @param mapY       the glyph's anchor in map space
+     * @param typeStyles the layer styles, for the same sizing
+     * @param priority   lower is placed first; see the {@code CAPTION_PRIORITY_*}
+     *                   constants
+     */
+    private void collectCaption(final String key,
+                                final String text,
+                                final String type,
+                                final double mapX,
+                                final double mapY,
+                                final List<TypeStyle> typeStyles,
+                                final int priority) {
+        if (key != null && text != null && !text.isEmpty()) {
+            pendingCaptions.add(new PendingCaption(key, text, type, mapX, mapY,
+                    glyphBoxPx(type, typeStyles)[1] / 2.0, priority));
+        }
+    }
+
+    /**
+     * Resolves the frame's queued captions and draws the ones that fit.
+     *
+     * <p>Runs last, for two reasons: a caption must not be painted over by a glyph
+     * drawn after it, and which captions fit can only be decided once they are all
+     * known. Crowding drops the least important names — never the most important —
+     * and zooming in brings them back as the glyphs separate.</p>
+     *
+     * <p>A dimmed layer's captions are dimmed with it and yield space to undimmed
+     * ones — dimming means "push this into the background", which a crisp name
+     * hanging off a ghosted glyph would contradict. The count pills stay crisp:
+     * they are drawn with their glyph, and a number nobody can read is no use.</p>
+     *
+     * @param parent      the flip group, so captions share the glyphs' coordinate space
+     * @param scale       the current zoom
+     * @param offsetX     the current pan, for projecting anchors to screen space
+     * @param offsetY     the current pan
+     * @param dimmedTypes the layers the user has pushed into the background
+     */
+    private void appendPlacedCaptions(final HtmlBuilder parent,
+                                      final double scale,
+                                      final double offsetX,
+                                      final double offsetY,
+                                      final Set<String> dimmedTypes) {
+        if (pendingCaptions.isEmpty()) {
+            return;
+        }
+        final List<FloorMapLabelPlacement.Label> candidates =
+                new ArrayList<>(pendingCaptions.size());
+        for (final PendingCaption caption : pendingCaptions) {
+            // Map anchor to screen, matching the draw transform: map space is Y-up,
+            // the SVG is Y-down.
+            final double screenX = offsetX + scale * caption.mapX;
+            final double screenY = offsetY - scale * caption.mapY;
+            candidates.add(new FloorMapLabelPlacement.Label(
+                    caption.key,
+                    screenX,
+                    screenY + caption.halfHeightPx + GLYPH_CAPTION_GAP_PX,
+                    caption.text.length() * CAPTION_CHAR_WIDTH_PX,
+                    CAPTION_HEIGHT_PX,
+                    isDimmed(caption, dimmedTypes)
+                            ? caption.priority + CAPTION_PRIORITY_DIMMED_PENALTY
+                            : caption.priority));
+        }
+
+        final Element panel = focusPanel.getElement();
+        final Set<String> visible = FloorMapLabelPlacement.place(
+                candidates, panel.getOffsetWidth(), panel.getOffsetHeight());
+
+        for (final PendingCaption caption : pendingCaptions) {
+            if (visible.contains(caption.key)) {
+                final HtmlBuilder.Attribute[] attributes = isDimmed(caption, dimmedTypes)
+                        ? new Attribute[]{
+                                new Attribute("transform",
+                                        fixedSizeTransform(caption.mapX, caption.mapY, scale)),
+                                new Attribute("opacity", DIMMED_LAYER_OPACITY)}
+                        : new Attribute[]{
+                                new Attribute("transform",
+                                        fixedSizeTransform(caption.mapX, caption.mapY, scale))};
+                parent.elem(captionGroup -> appendGlyphCaption(
+                                captionGroup, caption.text, caption.halfHeightPx),
+                        SafeHtmlUtil.from("g"),
+                        attributes);
+            }
+        }
+    }
+
+    private static boolean isDimmed(final PendingCaption caption,
+                                    final Set<String> dimmedTypes) {
+        return dimmedTypes != null && dimmedTypes.contains(caption.type);
+    }
+
+    /** One queued caption, before it is known whether it fits. */
+    private static final class PendingCaption {
+
+        private final String key;
+        private final String text;
+        private final String type;
+        private final double mapX;
+        private final double mapY;
+        private final double halfHeightPx;
+        private final int priority;
+
+        private PendingCaption(final String key,
+                               final String text,
+                               final String type,
+                               final double mapX,
+                               final double mapY,
+                               final double halfHeightPx,
+                               final int priority) {
+            this.key = key;
+            this.text = text;
+            this.type = type;
+            this.mapX = mapX;
+            this.mapY = mapY;
+            this.halfHeightPx = halfHeightPx;
+            this.priority = priority;
+        }
+    }
+
+    /**
+     * Draws a caption centred under a fixed-size glyph, in the theme-aware style
+     * shared by entity names and cluster captions.
+     *
+     * <p>Must be called from inside a {@link #fixedSizeTransform} group, whose
+     * local space is screen pixels with Y increasing downward — so the positive
+     * offset here puts the text below the glyph.</p>
+     *
+     * <p>Styled by CSS class rather than attributes because this text sits
+     * <em>outside</em> the glyph, over whatever floor plan is beneath it: it needs
+     * the theme's text colour and a halo, and neither can be hard-coded here.</p>
+     *
+     * @param parent       the glyph's own group builder
+     * @param text         the caption; escaped by the text-content overload, since
+     *                     it carries entity and type names from the data
+     * @param halfHeightPx half the height of the glyph being named — from
+     *                     {@link #glyphBoxPx}, <strong>not</strong> assumed to be
+     *                     {@code OBJECT_SIZE / 2}: a layer drawing an image gets an
+     *                     area-matched box that can be twice as tall, and a caption
+     *                     placed for a square glyph would land on top of it
+     */
+    private void appendGlyphCaption(final HtmlBuilder parent,
+                                    final String text,
+                                    final double halfHeightPx) {
+        parent.elem(text,
+                SafeHtmlUtil.from("text"),
+                new Attribute("x", "0"),
+                new Attribute("y", String.valueOf(halfHeightPx + GLYPH_CAPTION_GAP_PX)),
+                new Attribute("dy", "0.71em"),
+                new Attribute("text-anchor", "middle"),
+                new Attribute("class", GLYPH_CAPTION_CLASS),
+                new Attribute("pointer-events", "none"));
     }
 
     /**
@@ -1682,6 +2189,23 @@ public class FloorMapCanvasViewImpl
                 SafeHtmlUtil.from("g"),
                 new Attribute("transform",
                         "translate(" + x + "," + y + ") scale(" + scale + ")"));
+    }
+
+    /**
+     * The on-screen {@code {width, height}} a type's point glyph occupies: the
+     * area-matched box of its layer graphic, or the plain square when it draws a
+     * shape.
+     *
+     * <p>Exists so anything positioned <em>relative to</em> a glyph — its caption,
+     * a cluster's count pill — is placed against the box the glyph really has.
+     * Assuming a square silently misplaces both on any layer configured with an
+     * image, which is not visible until such a layer exists.</p>
+     */
+    private double[] glyphBoxPx(final String type, final List<TypeStyle> typeStyles) {
+        final String graphic = graphicForType(type, typeStyles);
+        return graphic != null
+                ? graphicBoxSize(graphic)
+                : new double[]{OBJECT_SIZE, OBJECT_SIZE};
     }
 
     /**

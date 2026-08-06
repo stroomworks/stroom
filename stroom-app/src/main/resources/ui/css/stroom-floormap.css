@@ -612,6 +612,79 @@
 }
 
 /* -----------------------------------------------------------------------
+   Cluster tooltip
+
+   Names the members of the cluster under the pointer — the answer to "who
+   are those ten?", which the count alone cannot give. Same visual language
+   as the gesture readout and the timeline scrub tooltip, because it answers
+   the same kind of question about the thing under the pointer.
+
+   Anchored to the cluster's glyph by the view, not to the cursor, so it
+   holds still while the pointer moves across the glyph.
+   ----------------------------------------------------------------------- */
+
+.stroom-floormap-cluster-tooltip {
+    position: absolute;
+    background-color: var(--page__background-color);
+    color: var(--text-color);
+    font-size: 11px;
+    padding: 5px 9px;
+    border: 1px solid var(--blue-500);
+    border-radius: 4px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+    /* The pointer must never enter it: this is driven by mousemove over the
+       canvas, and a panel that could take the pointer would hide the very
+       glyph it describes and then never receive a leave event. */
+    pointer-events: none;
+    z-index: 26;
+    display: none;
+    max-width: 260px;
+}
+
+.stroom-floormap-cluster-tooltip--visible {
+    display: block;
+}
+
+.stroom-floormap-cluster-tooltip__caption {
+    color: var(--blue-500);
+    font-weight: 600;
+    margin-bottom: 3px;
+}
+
+.stroom-floormap-cluster-tooltip__name {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* -----------------------------------------------------------------------
+   Glyph caption
+
+   The text under a point glyph: an entity's name, or a cluster's "10 users"
+   / "Alice + 9 others". One style for both, because naming one entity and
+   naming ten are the same job.
+
+   It is drawn OUTSIDE the glyph, so it has no controlled backdrop the way
+   text on top of a coloured shape would: it sits over whatever floor plan
+   happens to be beneath it, in either theme.
+
+   Hence the halo: paint-order puts the stroke under the fill, so the outline
+   is drawn behind the letterforms rather than eating into them. The fill
+   follows the theme's text colour and the halo is the page background, so
+   the pair inverts correctly in dark mode.
+   ----------------------------------------------------------------------- */
+
+.stroom-floormap-glyph-caption {
+    fill: var(--text-color);
+    stroke: var(--page__background-color);
+    stroke-width: 3px;
+    paint-order: stroke;
+    font-size: 11px;
+    font-weight: 500;
+    font-family: sans-serif;
+}
+
+/* -----------------------------------------------------------------------
    Scale bar
 
    A conventional map scale bar pinned to the bottom-left of the canvas —

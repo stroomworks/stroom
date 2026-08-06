@@ -205,6 +205,24 @@ public class FloorMapEntityList {
                 : null;
     }
 
+    /**
+     * The type already recorded for an entity, or {@code null} if it is not in the
+     * roster.
+     *
+     * <p>The companion to {@link #getDisplayName}, and a map lookup for the same
+     * reason: callers naming many entities at once — the cluster member list, which
+     * can hold hundreds — must not go through {@link #getEntities()}, which
+     * allocates and sorts the whole roster on every call.</p>
+     */
+    public String getType(final String id) {
+        final EntityEntry entry = id != null
+                ? byId.get(id)
+                : null;
+        return entry != null
+                ? entry.getType()
+                : null;
+    }
+
     public void clear() {
         byId.clear();
     }

@@ -8,6 +8,13 @@
             <!-- Follows the cursor during a move or resize, reporting the
                  position or size being dragged out in real-world units. -->
             <g:Label ui:field="gestureReadout" addStyleNames="stroom-floormap-gesture-readout"/>
+            <!-- Names the members of the cluster under the pointer. Anchored to
+                 the cluster's glyph rather than the cursor: a panel that slid
+                 about while the pointer moved across a single glyph would read
+                 as unstable, and a fixed anchor lets the contents be rebuilt
+                 only when the hovered cluster changes. -->
+            <g:FlowPanel ui:field="clusterTooltip"
+                         addStyleNames="stroom-floormap-cluster-tooltip"/>
             <!-- Always-on scale bar: the origin indicator only helps while (0,0)
                  is on screen, which is not the normal state of a map being read. -->
             <g:FlowPanel ui:field="scaleBar" addStyleNames="stroom-floormap-scale-bar">

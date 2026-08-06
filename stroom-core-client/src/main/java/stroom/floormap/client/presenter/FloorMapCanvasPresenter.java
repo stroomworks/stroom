@@ -16,6 +16,7 @@
 
 package stroom.floormap.client.presenter;
 
+import stroom.floormap.client.event.MapClusterSelectedEvent;
 import stroom.floormap.client.event.MapContextMenuEvent;
 import stroom.floormap.client.event.MapObjectSelectedEvent;
 import stroom.floormap.client.presenter.FloorMapCanvasPresenter.FloorMapCanvasView;
@@ -23,6 +24,9 @@ import stroom.floormap.client.view.FloorMapGrid;
 import stroom.floormap.shared.Fact;
 import stroom.floormap.shared.FloorMapAreaMembership;
 import stroom.floormap.shared.FloorMapAreaOverlay;
+import stroom.floormap.shared.FloorMapCluster;
+import stroom.floormap.shared.FloorMapClusterLabel;
+import stroom.floormap.shared.FloorMapClusterOverlay;
 import stroom.floormap.shared.FloorMapEntityAnimator;
 import stroom.floormap.shared.FloorMapGroupOverlay;
 import stroom.floormap.shared.FloorMapHighlight;
@@ -58,6 +62,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import javax.inject.Inject;
 
 /**
@@ -115,6 +120,31 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
      * initial view is zoomed to fit all content.
      */
     private static final double FIT_MARGIN = 0.08;
+
+    /**
+     * How close together (screen px) two entities must be before they are merged
+     * into one summary glyph.
+     *
+     * <p>Derived from the glyph, not picked freely: point glyphs occupy a 60 px
+     * box, so their ink starts overlapping at 60 px apart. Merging within
+     * three-quarters of that catches the pairs that genuinely obscure each other
+     * while leaving visibly separate ones alone. Being a <em>screen</em> distance
+     * is what makes one constant serve every zoom level and every document.</p>
+     */
+    private static final double CLUSTER_RADIUS_PX = 45;
+
+    /**
+     * How close (screen px) the pointer must be to a cluster's centre to count as
+     * hovering it — the glyph's own half-width, so the hit area is the glyph.
+     */
+    private static final double CLUSTER_HIT_RADIUS_PX = 30;
+
+    /**
+     * The most member names listed in a hover tooltip before it summarises the
+     * rest. A cluster can hold hundreds; a tooltip taller than the canvas helps
+     * nobody, and the full list is a click away.
+     */
+    private static final int CLUSTER_TOOLTIP_MAX_NAMES = 20;
 
     // Zoom and pan state
     private double scale = DEFAULT_SCALE;
@@ -281,6 +311,48 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
      * tabs (e.g. the Map tab) can opt in via {@link #setShowGrid(boolean)}.
      */
     private boolean showGrid = false;
+
+    /**
+     * Whether entities too close together on screen are merged into one summary
+     * glyph. Enabled by the Map tab; never applied in edit mode (see
+     * {@link #clusterOverlay}).
+     *
+     * <p>Transient view state, like {@link #showGrid} — not a document field, so
+     * it neither dirties the document nor needs carrying through
+     * {@code FloorMapDoc.copy()}.</p>
+     */
+    private boolean clusterNearbyEntities = false;
+
+    /**
+     * The clusters drawn by the most recent frame, retained so a hover can ask
+     * what the pointer is over.
+     *
+     * <p>Assigned inside {@link #clusterOverlay}, which is the one place both
+     * draw paths go through — the static redraw and the animation loop. Setting
+     * it at the call sites instead would leave it stale for exactly as long as
+     * anything was moving.</p>
+     */
+    private FloorMapClusterOverlay lastClusterOverlay = FloorMapClusterOverlay.EMPTY;
+
+    /**
+     * The cluster key pressed on mousedown, resolved on mouseup by the same
+     * click-versus-pan test the background press uses — so a drag that starts on
+     * a cluster still pans the map rather than opening a dialog.
+     */
+    private String pendingClickClusterKey;
+
+    /**
+     * The key of the cluster the pointer is currently over, or {@code null}.
+     * Tracked so the tooltip's contents are rebuilt when the hovered cluster
+     * changes rather than on every mouse move.
+     */
+    private String hoveredClusterKey;
+
+    /**
+     * Resolves an entity id to the name shown to users. Supplied by the owning
+     * tab, which owns the roster; without one the tooltip falls back to ids.
+     */
+    private Function<String, String> entityNameResolver;
 
     /** Per-type presentation settings (z-order + default graphic); may be null. */
     private List<TypeStyle> typeStyles;
@@ -584,6 +656,9 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                     || event.getNativeEvent().getMetaKey();
             final String hitId = hitObjectId(event.getNativeEvent().getEventTarget());
 
+            // Whatever this press turns out to be, it is not hovering.
+            hideClusterTooltip();
+
             if (editMode) {
                 // Area drawing is modal: every LEFT press is either a vertex
                 // click or a pan, resolved on mouseup by the PANNING
@@ -711,6 +786,11 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                 return;
             }
 
+            // A press on a cluster glyph opens its member list — but only if it
+            // turns out to be a click. Recorded here and resolved on mouseup, so
+            // dragging away from a cluster still pans.
+            pendingClickClusterKey = clusterKey(event.getNativeEvent().getEventTarget());
+
             // Read-only (Map tab) mode: pressing an object shape announces it so
             // the parent presenter can select/track it (the parent filters to
             // its roster). Backgrounds and areas are excluded — their clickable
@@ -733,6 +813,25 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
             manualPanPx = 0;
             lastMouseX = event.getX();
             lastMouseY = event.getY();
+        }));
+
+        // The pointer can leave the canvas without a final mousemove inside it
+        // (straight onto the dock, or off the window), which would strand the
+        // tooltip over a canvas the user is no longer pointing at.
+        registerHandler(getView().getFocusPanel().addMouseOutHandler(event -> {
+            // mouseout bubbles from every descendant, so it also fires when the
+            // pointer merely crosses between elements INSIDE the canvas — the SVG
+            // root to a glyph's shape and back. Those are not exits, and treating
+            // them as such would tear the tooltip down and rebuild it repeatedly
+            // while the pointer sat on one glyph. A real exit is one where the
+            // pointer has gone somewhere outside this panel (or nowhere at all,
+            // which is what leaving the window reports).
+            final EventTarget related = event.getRelatedTarget();
+            final Element panel = getView().getFocusPanel().getElement();
+            if (!Element.is(related)
+                || !panel.isOrHasChild(Element.as(related))) {
+                hideClusterTooltip();
+            }
         }));
 
         registerHandler(getView().getMouseMoveHandlers().addMouseMoveHandler(event -> {
@@ -771,6 +870,16 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                     pendingTransform = null;
                     return;
                 }
+            }
+
+            // Hovering a cluster names its members — the question the count on
+            // the glyph raises but cannot answer. Only while nothing else is in
+            // progress: during a drag the pointer is committed to something
+            // else, and a panel trailing the gesture would be in the way.
+            if (!isDragging && gesture == Gesture.NONE) {
+                updateClusterHover(event.getX(), event.getY());
+            } else {
+                hideClusterTooltip();
             }
 
             // Track the live cursor for the measuring line, and keep the map
@@ -920,6 +1029,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
             final boolean moved = hasMoved;
             final double panned = manualPanPx;
             final String clickSelectId = pendingClickSelectId;
+            final String clickClusterKey = pendingClickClusterKey;
 
             dragDxMap = 0;
             dragDyMap = 0;
@@ -928,6 +1038,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
             gesture = Gesture.NONE;
             pendingTransform = null;
             pendingClickSelectId = null;
+            pendingClickClusterKey = null;
 
             if (finished == Gesture.MOVING
                     || finished == Gesture.SCALING
@@ -979,9 +1090,17 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                 redraw();
             } else if (finished == Gesture.PANNING
                     && panned <= PAN_INTENT_THRESHOLD_PX) {
-                // A press that didn't pan is a click: select the background fact
-                // under the cursor, or clear the selection on empty canvas.
-                if (clickSelectId != null) {
+                // A press that didn't pan is a click. A cluster is not an entity,
+                // so clicking one lists its members and deliberately leaves the
+                // selection and any tracking alone — it is a request to look
+                // inside, not to change what is being followed.
+                if (clickClusterKey != null) {
+                    final FloorMapCluster clicked =
+                            lastClusterOverlay.getCluster(clickClusterKey);
+                    if (clicked != null) {
+                        MapClusterSelectedEvent.fire(this, clicked);
+                    }
+                } else if (clickSelectId != null) {
                     selectedObjectIds.clear();
                     selectedObjectIds.add(clickSelectId);
                     fireSelectionChanged();
@@ -995,6 +1114,9 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         // Mouse Wheel (Zoom toward cursor)
         registerHandler(getView().getMouseWheelHandlers().addMouseWheelHandler(event -> {
             event.preventDefault();
+            // The zoom moves the map out from under the tooltip's anchor, and
+            // re-clusters at the new scale, so what it names may not survive.
+            hideClusterTooltip();
 
             // Note: zooming deliberately does NOT pause following — zooming in
             // on a tracked entity is the natural way to watch it, and the
@@ -1077,21 +1199,13 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
             final double elementX = clientX - panelElement.getAbsoluteLeft();
             final double elementY = clientY - panelElement.getAbsoluteTop();
 
-            // Determine whether an object was right-clicked
-            String objectId = null;
-            final EventTarget target = event.getNativeEvent().getEventTarget();
-            if (Element.is(target)) {
-                final Element element = Element.as(target);
-                final String id = element.getId();
-                if (id != null && !id.isEmpty()
-                        && !id.startsWith(FloorMapJsonKeys.SVG_GROUP_PREFIX)
-                        && !id.startsWith(FloorMapJsonKeys.HANDLE_PREFIX)) {
-                    // Selection handles (scale/rotate) carry a HANDLE_PREFIX id
-                    // and are not objects — right-clicking one must not open an
-                    // object menu targeting a nonexistent key.
-                    objectId = id;
-                }
-            }
+            // Determine whether an object was right-clicked. Shares the
+            // mousedown hit-test rather than repeating its prefix rules: a
+            // wrapper group, a selection handle and a cluster glyph all carry
+            // ids that are not object keys, and right-clicking one must not open
+            // an object menu targeting a key that does not exist. (The rules were
+            // duplicated here and drifted — the cluster prefix was missing.)
+            final String objectId = hitObjectId(event.getNativeEvent().getEventTarget());
 
             // Convert element-relative position to map-space coordinates
             final double[] mapCoords = screenToMapCoords(elementX, elementY);
@@ -1203,17 +1317,125 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     private void redraw() {
         final List<FloorMapObject> overlay =
                 buildAnimatedDrawList(/* nowMs — irrelevant when no animations */ 0.0);
+        final List<Fact> drawFacts =
+                FloorMapZOrder.sort(visibleFacts(factsExcludingOverlay(overlay)), typeStyles);
+        final List<FloorMapObject> drawEvents = visibleEvents(overlay);
         final FloorMapAreaOverlay areas = areaOverlay();
         getView().draw(scale, offsetX, offsetY,
-                FloorMapZOrder.sort(visibleFacts(factsExcludingOverlay(overlay)), typeStyles),
-                visibleEvents(overlay), selectedObjectIds, typeStyles, showGrid, dimmedTypes,
+                drawFacts,
+                drawEvents, selectedObjectIds, typeStyles, showGrid, dimmedTypes,
                 gesture == Gesture.MARQUEE ? currentMarqueeRect() : null,
                 editMode && !selectedObjectIds.isEmpty() && gesture != Gesture.MARQUEE,
                 selectionTransformable(),
                 gesture == Gesture.DRAWING_AREA ? currentAreaDraftPx() : null,
                 areas,
+                clusterOverlay(drawFacts, drawEvents),
                 FloorMapHighlight.of(groupOverlay, areas),
                 currentMeasureLinePx());
+    }
+
+    /**
+     * Which entities this frame merges into summary glyphs, because they are
+     * closer together on screen than a glyph is wide.
+     *
+     * <p>Computed from the <strong>already-filtered</strong> draw lists, so a
+     * hidden layer's entities are not counted, and from the live {@code scale},
+     * so the merge distance tracks the zoom without any per-document
+     * configuration.</p>
+     *
+     * <p>Off in edit mode regardless of the toggle: the Editor tab's whole job is
+     * placing individual objects, and an object merged into a cluster cannot be
+     * dragged.</p>
+     *
+     * @param drawFacts  the facts about to be drawn
+     * @param drawEvents the event entities about to be drawn
+     * @return the overlay; never {@code null}
+     */
+    private FloorMapClusterOverlay clusterOverlay(final List<Fact> drawFacts,
+                                                  final List<FloorMapObject> drawEvents) {
+        final FloorMapClusterOverlay computed;
+        if (!clusterNearbyEntities || editMode) {
+            computed = FloorMapClusterOverlay.EMPTY;
+        } else {
+            // The focused entity is clustered along with everything else; its
+            // cluster is then anchored on it and drawn as it (ring, name), which
+            // is what keeps one glyph on screen instead of two overlapping ones.
+            final Set<String> focused = new HashSet<>(selectedObjectIds);
+            if (trackedObjectId != null) {
+                focused.add(trackedObjectId);
+            }
+            computed = FloorMapClusterOverlay.compute(drawFacts, drawEvents,
+                    FloorMapClusterOverlay.mapThreshold(CLUSTER_RADIUS_PX, scale),
+                    focused);
+        }
+        lastClusterOverlay = computed;
+        // A tooltip naming a cluster that this frame dissolved is stale, and no
+        // mouse movement is needed to reach that state — a data refresh alone
+        // can.
+        if (hoveredClusterKey != null && computed.getCluster(hoveredClusterKey) == null) {
+            hideClusterTooltip();
+        }
+        return computed;
+    }
+
+    /**
+     * Shows, moves or hides the cluster tooltip for the pointer's position.
+     *
+     * <p>Only the <em>change</em> of hovered cluster does any work: the panel is
+     * anchored to the glyph, not the cursor, so moving within one glyph needs no
+     * update, and rebuilding a list of names on every mouse move would be real
+     * DOM churn for no visible difference.</p>
+     *
+     * @param cursorXPx the cursor position in element pixels
+     * @param cursorYPx the cursor position in element pixels
+     */
+    private void updateClusterHover(final double cursorXPx, final double cursorYPx) {
+        if (lastClusterOverlay.isEmpty()) {
+            hideClusterTooltip();
+            return;
+        }
+        final double[] mapPoint = screenToMapCoords(cursorXPx, cursorYPx);
+        // The glyph's own half-width, converted by the same route the merge
+        // distance takes, so the hit area tracks the zoom exactly as the glyph
+        // does.
+        final FloorMapCluster cluster = lastClusterOverlay.clusterNear(
+                mapPoint[0], mapPoint[1],
+                FloorMapClusterOverlay.mapThreshold(CLUSTER_HIT_RADIUS_PX, scale));
+
+        if (cluster == null) {
+            hideClusterTooltip();
+            return;
+        }
+        if (cluster.getKey().equals(hoveredClusterKey)) {
+            return;
+        }
+
+        hoveredClusterKey = cluster.getKey();
+        final List<String> names = new ArrayList<>(cluster.size());
+        for (final String memberId : cluster.getMemberIds()) {
+            final String name = entityNameResolver != null
+                    ? entityNameResolver.apply(memberId)
+                    : null;
+            names.add(name != null
+                    ? name
+                    : memberId);
+        }
+        // Names are resolved before capping, so the cap counts what the user
+        // would have read rather than what the roster happened to know.
+        final double[] anchorPx = mapToScreen(
+                new double[]{cluster.getMapX(), cluster.getMapY()});
+        getView().setClusterTooltip(
+                FloorMapClusterLabel.captionFor(cluster, entityNameResolver),
+                FloorMapClusterLabel.hoverNames(names, CLUSTER_TOOLTIP_MAX_NAMES),
+                anchorPx[0], anchorPx[1]);
+    }
+
+    /** Hides the cluster tooltip, if one is showing. */
+    private void hideClusterTooltip() {
+        if (hoveredClusterKey != null) {
+            hoveredClusterKey = null;
+            getView().setClusterTooltip(null, null, 0, 0);
+        }
     }
 
     /**
@@ -1337,16 +1559,45 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     /**
      * Resolves the id of the map object under an event target, or {@code null}
      * if the target is not a real object shape. Wrapper {@code <g>} groups
-     * (prefixed {@link FloorMapJsonKeys#SVG_GROUP_PREFIX}) and transform handles
-     * (prefixed {@link FloorMapJsonKeys#HANDLE_PREFIX}) are not objects.
+     * (prefixed {@link FloorMapJsonKeys#SVG_GROUP_PREFIX}), transform handles
+     * (prefixed {@link FloorMapJsonKeys#HANDLE_PREFIX}) and cluster glyphs
+     * (prefixed {@link FloorMapJsonKeys#CLUSTER_PREFIX}) are not objects.
+     *
+     * <p>The cluster exclusion is load-bearing: a cluster's key is one of its
+     * members' ids, so without it a press on a cluster would announce that member
+     * as the thing that was clicked — selecting an entity the user cannot see and
+     * did not aim at.</p>
      */
     private String hitObjectId(final EventTarget target) {
         if (Element.is(target)) {
             final String id = Element.as(target).getId();
             if (id != null && !id.isEmpty()
                     && !id.startsWith(FloorMapJsonKeys.SVG_GROUP_PREFIX)
-                    && !id.startsWith(FloorMapJsonKeys.HANDLE_PREFIX)) {
+                    && !id.startsWith(FloorMapJsonKeys.HANDLE_PREFIX)
+                    && !id.startsWith(FloorMapJsonKeys.CLUSTER_PREFIX)) {
                 return id;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Returns the key of the cluster glyph under an event target, or {@code null}
+     * if the target is not one. Mirrors {@link #handleRole}: the prefix both
+     * excludes the glyph from the object hit-test and identifies it here.
+     */
+    private String clusterKey(final EventTarget target) {
+        if (Element.is(target)) {
+            final String id = Element.as(target).getId();
+            if (id != null && id.startsWith(FloorMapJsonKeys.CLUSTER_PREFIX)) {
+                return id.substring(FloorMapJsonKeys.CLUSTER_PREFIX.length());
+            }
+            // The glyph's wrapper group is the prefixed id again behind the
+            // group prefix, and a press can land on either.
+            final String groupPrefixed = FloorMapJsonKeys.SVG_GROUP_PREFIX
+                    + FloorMapJsonKeys.CLUSTER_PREFIX;
+            if (id != null && id.startsWith(groupPrefixed)) {
+                return id.substring(groupPrefixed.length());
             }
         }
         return null;
@@ -1588,9 +1839,11 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         isDragging = false;
         hasMoved = false;
         hideGestureReadout();
+        hideClusterTooltip();
         gesture = Gesture.NONE;
         pendingTransform = null;
         pendingClickSelectId = null;
+        pendingClickClusterKey = null;
         dragDxMap = 0;
         dragDyMap = 0;
         clearVertexEditState();
@@ -1740,11 +1993,19 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
                     // Draw the current frame. No marquee/handles/draft during playback.
                     final List<FloorMapObject> overlay = buildAnimatedDrawList(timestamp);
+                    final List<Fact> drawFacts = FloorMapZOrder.sort(
+                            visibleFacts(factsExcludingOverlay(overlay)), typeStyles);
+                    final List<FloorMapObject> drawEvents = visibleEvents(overlay);
                     final FloorMapAreaOverlay areas = areaOverlay();
                     getView().draw(scale, offsetX, offsetY,
-                            FloorMapZOrder.sort(visibleFacts(factsExcludingOverlay(overlay)), typeStyles),
-                            visibleEvents(overlay), selectedObjectIds, typeStyles, showGrid, dimmedTypes,
+                            drawFacts,
+                            drawEvents, selectedObjectIds, typeStyles, showGrid, dimmedTypes,
                             null, false, false, null, areas,
+                            // Recomputed per frame, like everything else here: as
+                            // entities move they cross the merge distance, so a
+                            // cluster computed once would be wrong the moment
+                            // anything moved — which is exactly when it matters.
+                            clusterOverlay(drawFacts, drawEvents),
                             // Group highlight has to be resolved on animated frames
                             // too, or a highlighted entity would lose its ring for
                             // exactly as long as it is moving.
@@ -1754,6 +2015,12 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                             // only one of the two draw paths flickers out for
                             // exactly as long as anything is moving.
                             currentMeasureLinePx());
+
+                    // A tooltip is anchored to a glyph and only re-anchored when
+                    // the pointer moves, so anything that moves the scene — entity
+                    // playback or a camera glide — would strand it beside a
+                    // cluster that is no longer there.
+                    hideClusterTooltip();
 
                     // Keep looping.
                     AnimationScheduler.get().requestAnimationFrame(this);
@@ -2230,6 +2497,38 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     }
 
     /**
+     * Turns the merging of crowded entities on or off.
+     *
+     * <p>Worth being able to switch off, not just polish: zooming in separates
+     * entities that are merely close, but nothing separates entities at the
+     * <em>same</em> position, so without this there would be no way to confirm
+     * how many are really there — or to reach one of them on the canvas.</p>
+     *
+     * @param clusterNearbyEntities {@code true} to merge crowded entities
+     */
+    public void setClusterNearbyEntities(final boolean clusterNearbyEntities) {
+        this.clusterNearbyEntities = clusterNearbyEntities;
+        redraw();
+    }
+
+    /**
+     * Supplies the resolver that turns an entity id into the name shown to
+     * users, for the cluster hover tooltip.
+     *
+     * <p>Comes from the owning tab because the roster lives there — the same
+     * resolver the tracking panel and the Groups panel name entities through, so
+     * a name in a tooltip matches the name in every grid.</p>
+     *
+     * @param entityNameResolver the resolver, or {@code null} to fall back to ids
+     */
+    public void setEntityNameResolver(final Function<String, String> entityNameResolver) {
+        this.entityNameResolver = entityNameResolver;
+        // The canvas caption needs it too, and must not word a cluster differently
+        // from the tooltip describing the same cluster.
+        getView().setEntityNameResolver(entityNameResolver);
+    }
+
+    /**
      * Sets the per-type presentation settings (z-order + default graphic shape
      * and colour). Used by the view to render imageless facts.
      *
@@ -2616,6 +2915,11 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
          *                        carry the "related to the focused entity" highlight
          *                        and what each area's occupant-count badge reads;
          *                        never {@code null}
+         * @param clusterOverlay  which entities are merged into summary glyphs
+         *                        because they are too close together on screen to
+         *                        tell apart. Members must <strong>not</strong> be
+         *                        drawn individually — the cluster glyph stands in
+         *                        for them. Never {@code null}
          * @param measureLinePx   the in-progress Set Scale line
          *                        {@code {x0, y0, x1, y1}} in element pixels, or
          *                        {@code null} when not measuring
@@ -2625,6 +2929,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                 List<TypeStyle> typeStyles, boolean showGrid, Set<String> dimmedTypes,
                 double[] marqueeRectPx, boolean drawSelectionHandles, boolean scaleRotateEnabled,
                 double[] areaDraftPx, FloorMapAreaOverlay areaOverlay,
+                FloorMapClusterOverlay clusterOverlay,
                 FloorMapHighlight highlight, double[] measureLinePx);
 
         /**
@@ -2657,6 +2962,37 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
          * @param cursorYPx cursor position in element pixels
          */
         void setGestureReadout(String text, double cursorXPx, double cursorYPx);
+
+        /**
+         * Shows the panel naming the members of the cluster under the pointer,
+         * or hides it.
+         *
+         * <p>Anchored to the cluster's glyph rather than to the cursor, so it
+         * holds still while the pointer moves across the glyph — which also
+         * means the presenter only needs to call this when the hovered cluster
+         * changes, not on every mouse move.</p>
+         *
+         * @param caption   the cluster's caption, e.g. {@code "10 users"}, or
+         *                  {@code null} to hide
+         * @param names     the member names to list, already capped
+         * @param anchorXPx the cluster glyph's centre in element pixels
+         * @param anchorYPx the cluster glyph's centre in element pixels
+         */
+        void setClusterTooltip(String caption, List<String> names,
+                double anchorXPx, double anchorYPx);
+
+        /**
+         * Supplies the resolver used to caption a cluster drawn around the tracked
+         * entity, which needs that entity's display name.
+         *
+         * <p>A setter rather than a {@link #draw} parameter, for the same reason
+         * as the measurement units: it is wired once by the owning tab and never
+         * changes per frame.</p>
+         *
+         * @param entityNameResolver resolves an entity id to its display name, or
+         *                           {@code null} to fall back to ids
+         */
+        void setEntityNameResolver(Function<String, String> entityNameResolver);
 
         /**
          * Returns the screen-space bounding box {@code {minX, minY, maxX, maxY}}

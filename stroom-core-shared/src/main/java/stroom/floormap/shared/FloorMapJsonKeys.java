@@ -85,6 +85,19 @@ public final class FloorMapJsonKeys {
      */
     public static final String HANDLE_PREFIX = "__handle_";
 
+    /**
+     * ID prefix applied to a cluster's summary glyph — the single glyph drawn in
+     * place of entities too close together on screen to be told apart (see
+     * {@link FloorMapClusterOverlay}). The id format is
+     * {@code CLUSTER_PREFIX + FloorMapCluster#getKey()}.
+     *
+     * <p>A cluster is <strong>not</strong> an entity: it has no row in the
+     * tracking roster and no fact behind it, so the mousedown hit-test must not
+     * report it as an object. It carries its own prefix for exactly that reason —
+     * the object hit-test skips it, and a separate resolver recognises it.</p>
+     */
+    public static final String CLUSTER_PREFIX = "__cluster_";
+
     private FloorMapJsonKeys() {
         // Utility class
     }

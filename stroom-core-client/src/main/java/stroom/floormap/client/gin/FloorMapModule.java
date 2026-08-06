@@ -20,6 +20,7 @@ import stroom.core.client.gin.PluginModule;
 import stroom.floormap.client.FloorMapPlugin;
 import stroom.floormap.client.presenter.FloorMapCanvasPresenter;
 import stroom.floormap.client.presenter.FloorMapCanvasPresenter.FloorMapCanvasView;
+import stroom.floormap.client.presenter.FloorMapClusterPresenter;
 import stroom.floormap.client.presenter.FloorMapDockPresenter;
 import stroom.floormap.client.presenter.FloorMapDockPresenter.FloorMapDockView;
 import stroom.floormap.client.presenter.FloorMapEditorPresenter;
@@ -85,6 +86,10 @@ public class FloorMapModule extends PluginModule {
         bindPlugin(FloorMapPlugin.class);
 
         bind(FloorMapPresenter.class);
+
+        // Lists a cluster's members. Hosted by the app-wide PagerView, so it
+        // needs no view of its own.
+        bind(FloorMapClusterPresenter.class);
 
         bindPresenterWidget(FloorMapEditorPresenter.class,
                 FloorMapEditorView.class,
