@@ -575,11 +575,10 @@ class TestFloorMapEditorModel {
     // -----------------------------------------------------------------------
     // Background translation via WORLD_TO_MAP
     //
-    // A background is no longer moved through a separate map-to-screen write
-    // path (buildUpdatedBackgroundEntry is gone). It is translated like any
-    // other fact, by shifting its WORLD_TO_MAP matrix translation. These tests
-    // preserve the original intents — translation-only, rotation/scale
-    // preserved, identity default — re-pointed at translateFacts / WORLD_TO_MAP.
+    // A background has no separate write path: it is translated like any other
+    // fact, by shifting its WORLD_TO_MAP matrix translation. These cover
+    // translation-only movement, rotation/scale being preserved, and the identity
+    // default.
     // -----------------------------------------------------------------------
 
     /**
@@ -1642,9 +1641,10 @@ class TestFloorMapEditorModel {
     }
 
     // ---- resolveEntryKey -------------------------------------------------
-    // The properties dialog used to take the key from whatever was last
-    // selected, so right-clicking fact B while fact A was selected wrote B's
-    // values under A's key. These pin the rule that fixed it.
+    // An edit belongs to the key of the entry being edited, never to whatever is
+    // currently selected: taking it from the selection means right-clicking fact B
+    // while fact A is selected writes B's values under A's key. These pin that
+    // rule down.
 
     @Test
     void testResolveEntryKey_prefersTheEntrysOwnKey() {

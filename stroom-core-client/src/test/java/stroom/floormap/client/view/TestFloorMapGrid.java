@@ -207,9 +207,9 @@ class TestFloorMapGrid {
     @Test
     void fiveMinorDivisionsEqualsFiftyAtDefaultZoom() {
         // At the default zoom (effectiveScale = 1) the major division is 100
-        // world units, so a minor division is 10 and five of them is 50 — i.e.
-        // the value the duplicate-object offset was previously hard-coded to,
-        // now derived so it adapts to zoom.
+        // world units, so a minor division is 10 and five of them is 50 — the
+        // duplicate-object offset, derived from the grid so it adapts to zoom
+        // rather than being a fixed distance.
         assertThat(FloorMapGrid.minorWorldSpacing(1.0)).isEqualTo(10.0);
         assertThat(5.0 * FloorMapGrid.minorWorldSpacing(1.0)).isEqualTo(50.0);
     }

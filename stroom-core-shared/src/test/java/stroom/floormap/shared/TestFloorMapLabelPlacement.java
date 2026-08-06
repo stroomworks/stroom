@@ -134,7 +134,10 @@ class TestFloorMapLabelPlacement {
             }
         }
 
-        assertThat(rects).isNotEmpty();
+        // The field must actually be crowded, or "nothing overlaps" is vacuous —
+        // a fixture that happened to spread the labels out would pass while
+        // testing nothing.
+        assertThat(visible).isNotEmpty().hasSizeLessThan(labels.size());
         for (int i = 0; i < rects.size(); i++) {
             for (int j = i + 1; j < rects.size(); j++) {
                 assertThat(overlaps(rects.get(i), rects.get(j)))

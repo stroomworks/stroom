@@ -58,11 +58,11 @@ import java.util.Set;
  *       the head is the most specific answer.</li>
  *   <li><strong>Only objects and users are located.</strong> Areas and
  *       backgrounds are never occupants, so they always report no containing
- *       area. Area-inside-area is deliberately <em>not</em> computed — the client
- *       confirmed (2026-07-29) that the nesting relationship is not needed, and a
- *       geometric test for it could not be made to match user expectation without
- *       either an area-overlap threshold or a user-declared parent. A background's
- *       placement origin is arbitrary and would only produce noise.</li>
+ *       area. Area-inside-area is deliberately <em>not</em> computed: the nesting
+ *       relationship is not needed, and a geometric test for it cannot be made to
+ *       match user expectation without either an area-overlap threshold or a
+ *       user-declared parent. A background's placement origin is arbitrary and
+ *       would only produce noise.</li>
  *   <li>When an id appears as both an event and a fact (an image-bearing fact
  *       twin), the <strong>event</strong> position wins — it is the live one.</li>
  * </ul>
@@ -216,10 +216,9 @@ public final class FloorMapAreaMembership {
      *
      * <p>Two exclusions:</p>
      * <ul>
-     *   <li><strong>Areas</strong> — the client does not need to know that one
-     *       area sits inside another (confirmed 2026-07-29), so areas are never
-     *       occupants and always report no containing area. Only objects and
-     *       users are located.</li>
+     *   <li><strong>Areas</strong> — whether one area sits inside another is not
+     *       needed, so areas are never occupants and always report no containing
+     *       area. Only objects and users are located.</li>
      *   <li><strong>Backgrounds</strong> — a background's placement origin is
      *       arbitrary, so reporting one as being in an area is noise.</li>
      * </ul>

@@ -34,7 +34,7 @@ import java.util.Objects;
  * group mid-session cannot silently drop its highlight. It is transient view
  * state and is never persisted with the document — the same treatment layer
  * visibility gets — and it starts <em>off</em> for every group, including one just
- * created (client decision, 2026-07-29): nothing lights up unasked.</p>
+ * created: nothing lights up unasked.</p>
  *
  * <p>Holds no GWT or DOM types so it can be unit-tested on the JVM.</p>
  */

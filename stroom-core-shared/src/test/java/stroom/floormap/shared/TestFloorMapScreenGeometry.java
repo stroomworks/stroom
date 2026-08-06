@@ -16,6 +16,7 @@
 
 package stroom.floormap.shared;
 
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -41,12 +42,11 @@ class TestFloorMapScreenGeometry {
      * Geometry for a map whose {@code type} layer draws {@code graphicUrl} at the
      * given aspect ratio.
      */
-    private FloorMapScreenGeometry geometryWithLayerGraphic(final String type,
-                                                            final String graphicUrl,
-                                                            final double aspectRatio) {
+    private FloorMapScreenGeometry geometryWithLayerGraphic() {
         return new FloorMapScreenGeometry(1, 0, 0, IMAGE_DISPLAY_WIDTH, OBJECT_SIZE,
-                url -> graphicUrl.equals(url) ? aspectRatio : null,
-                List.of(new TypeStyle(type, null, "#111111", graphicUrl)));
+                url -> "/assets/x/wide.png".equals(url) ? 4.0
+                        : null,
+                List.of(new TypeStyle("t", null, "#111111", "/assets/x/wide.png")));
     }
 
     private static Fact pointFact(final String key, final double x, final double y) {
@@ -66,6 +66,7 @@ class TestFloorMapScreenGeometry {
     void testPointGlyphBounds() {
         // scale 2, offset (100, 200); map (10, 5) → screen (100+2*10, 200-2*5) = (120, 190).
         final double[] b = geometry(2, 100, 200).factScreenBounds(pointFact("p", 10, 5));
+        Assertions.assertNotNull(b);
         assertThat(b[0]).isCloseTo(120 - 30, within(TOL));
         assertThat(b[1]).isCloseTo(190 - 30, within(TOL));
         assertThat(b[2]).isCloseTo(120 + 30, within(TOL));
@@ -78,6 +79,7 @@ class TestFloorMapScreenGeometry {
         final Fact area = areaFact("a", new double[][]{{0, 0}, {10, 0}, {10, 10}});
         final double[] b = geometry(1, 0, 0).factScreenBounds(area);
         // Y-flip: map y=0 → screen 0, map y=10 → screen -10.
+        Assertions.assertNotNull(b);
         assertThat(b[0]).isCloseTo(0, within(TOL));    // minX
         assertThat(b[1]).isCloseTo(-10, within(TOL));  // minY (from y=10)
         assertThat(b[2]).isCloseTo(10, within(TOL));   // maxX
@@ -130,6 +132,7 @@ class TestFloorMapScreenGeometry {
         final double[] b = geometry(1, 0, 0).factScreenBounds(img);
         // Wrapper places the image in the first quadrant up-and-right of origin;
         // width = 1000, height = 1000/1 = 1000. Screen Y-flip maps the top to -1000.
+        Assertions.assertNotNull(b);
         assertThat(b[0]).isCloseTo(0, within(TOL));
         assertThat(b[2]).isCloseTo(1000, within(TOL));
         assertThat(b[3] - b[1]).isCloseTo(1000, within(TOL));
@@ -187,9 +190,10 @@ class TestFloorMapScreenGeometry {
     @Test
     void testFactScreenBounds_usesTheLayerGraphicBox() {
         final Fact fact = pointFact("f", 0, 0);
-        final double[] b = geometryWithLayerGraphic("t", "/assets/x/wide.png", 4.0)
+        final double[] b = geometryWithLayerGraphic()
                 .factScreenBounds(fact);
         // 120 x 30 centred on the origin, rather than 60 x 60.
+        Assertions.assertNotNull(b);
         assertThat(b[2] - b[0]).isCloseTo(120, within(TOL));
         assertThat(b[3] - b[1]).isCloseTo(30, within(TOL));
     }
@@ -201,16 +205,17 @@ class TestFloorMapScreenGeometry {
                 1, 0, 0, IMAGE_DISPLAY_WIDTH, OBJECT_SIZE, NO_AR,
                 List.of(new TypeStyle("t", TypeStyle.Shape.CIRCLE, "#111111")));
         final double[] b = g.factScreenBounds(pointFact("f", 0, 0));
+        Assertions.assertNotNull(b);
         assertThat(b[2] - b[0]).isCloseTo(OBJECT_SIZE, within(TOL));
         assertThat(b[3] - b[1]).isCloseTo(OBJECT_SIZE, within(TOL));
     }
 
-    /** A wide graphic is now caught by a marquee that only overlaps its outer edge. */
+    /** A wide graphic is caught by a marquee that overlaps only its outer edge. */
     @Test
     void testHitTestRect_catchesTheWideGraphicsEdge() {
         final Fact fact = pointFact("f", 0, 0);
         final FloorMapScreenGeometry g =
-                geometryWithLayerGraphic("t", "/assets/x/wide.png", 4.0);
+                geometryWithLayerGraphic();
         // A thin band from x=+40..+55: outside a 60x60 square (half-width 30) but
         // inside the 120-wide graphic box (half-width 60).
         assertThat(g.hitTestRect(List.of(fact), new double[]{40, -5, 55, 5}))

@@ -75,9 +75,8 @@ import java.util.function.Supplier;
  * area is this object or user inside?</em> It names every containing area,
  * innermost (most specific) first, or {@code —} when the row is inside none.
  * <strong>Area rows always show {@code —}</strong> — area-inside-area is
- * deliberately not computed (client decision, 2026-07-29). Occupancy (how many
- * entities are in an area) lives on the canvas badge instead, so this column
- * never means two different things.</p>
+ * deliberately not computed. Occupancy (how many entities are in an area) lives on
+ * the canvas badge instead, so this column never means two different things.</p>
  *
  * <p>Detail that will not fit on the single-line cell — the containing areas
  * one-per-line, or where an entity was last seen — goes in the cell's

@@ -23,10 +23,10 @@ import stroom.floormap.shared.ValueFormat;
  * GWT client-side factory for obtaining {@link ValueAccessor} implementations
  * based on the configured {@link ValueFormat}.
  *
- * <p>This replaces the static {@code forFormat()} method that was previously
- * on the {@link ValueAccessor} interface. The factory lives in the client
- * package because the concrete implementations ({@link JsonValueAccessor},
- * {@link XmlValueAccessor}) depend on GWT libraries.</p>
+ * <p>A factory rather than a method on the {@link ValueAccessor} interface itself:
+ * it lives in the client package because the concrete implementations
+ * ({@link JsonValueAccessor}, {@link XmlValueAccessor}) depend on GWT libraries,
+ * which the shared interface must not.</p>
  */
 public final class ValueAccessorFactory {
 

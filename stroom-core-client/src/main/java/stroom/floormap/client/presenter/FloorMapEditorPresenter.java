@@ -1441,9 +1441,9 @@ public class FloorMapEditorPresenter
                     .text("Edit Properties")
                     .command(() -> {
                         // Select through the one selection path so *every* side
-                        // effect happens. Hand-copying these steps previously
-                        // omitted FloorMapObjectEditPresenter.setObject, so the
-                        // dialog kept writing under the previously selected key.
+                        // effect happens — notably
+                        // FloorMapObjectEditPresenter.setObject, without which the
+                        // dialog writes under whatever key it was last given.
                         applySelection(Collections.singletonList(objectId));
 
                         // Edit the shard the canvas is showing (active at the

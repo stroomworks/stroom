@@ -163,8 +163,9 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
      * of its own, as resolved by the presenter from the document's type styles.
      *
      * <p>The swatch shows this whenever <em>Default</em> is ticked, so the picker
-     * never advertises a colour that pressing OK would not produce — previously it
-     * kept whatever the user last picked (or black on a fresh dialog).</p>
+     * never advertises a colour that pressing OK would not produce. Leaving the
+     * last-picked colour showing (or black on a fresh dialog) would promise a fill
+     * that ticking Default does not deliver.</p>
      */
     private String defaultFill = TypeStyle.DEFAULT_COLOUR;
 

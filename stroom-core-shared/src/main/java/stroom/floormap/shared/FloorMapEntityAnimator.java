@@ -28,9 +28,9 @@ import java.util.Set;
  * move over time, interpolating between positions, recording fading movement
  * trails, and teleporting on discontinuous time jumps.
  *
- * <p>Extracted from the GWT canvas presenter so this (previously untested) logic
- * — the animate-vs-teleport decision, the return-to-previous-target case, trail
- * capping and fade timing — is unit-testable on the JVM. It holds no GWT/DOM
+ * <p>Kept out of the GWT canvas presenter so this logic — the animate-vs-teleport
+ * decision, the return-to-previous-target case, trail capping and fade timing — is
+ * unit-testable on the JVM. It holds no GWT/DOM
  * types and knows nothing about rendering or scheduling: the presenter owns the
  * {@code AnimationScheduler} loop, camera-follow and the SVG draw, and drives
  * this class one frame at a time via {@link #advanceFrame}.</p>

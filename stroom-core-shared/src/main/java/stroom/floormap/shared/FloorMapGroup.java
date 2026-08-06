@@ -43,10 +43,9 @@ import java.util.Set;
  * string.</p>
  *
  * <p><strong>Identity is {@link #getId()}, never the name.</strong> The name is
- * display-only and freely renamable, and two groups may legitimately share one
- * (client decision, 2026-07-29): an id keeps them distinct, so a rename can
- * never orphan membership, drop a canvas highlight, or confuse a future
- * reference to a group. This differs from {@link TypeStyle}, whose identity
+ * display-only and freely renamable, and two groups may legitimately share one:
+ * an id keeps them distinct, so a rename can never orphan membership, drop a
+ * canvas highlight, or confuse a future reference to a group. This differs from {@link TypeStyle}, whose identity
  * <em>is</em> its {@code type} — a type name already exists in the data, whereas
  * a group is invented in the UI and has no natural key.</p>
  *

@@ -132,7 +132,7 @@ class TestFloorMapHighlight {
     // Empty / null behaviour — the no-groups path must be exactly as before
     // ------------------------------------------------------------------------
 
-    /** With no groups anywhere, resolution reduces to the old area behaviour. */
+    /** With no groups anywhere, resolution reduces to plain area containment. */
     @Test
     void testWithoutGroupsBehavesAsAreaOverlayAlone() {
         final FloorMapAreaOverlay areas = areaOverlayFocusedOnBay();

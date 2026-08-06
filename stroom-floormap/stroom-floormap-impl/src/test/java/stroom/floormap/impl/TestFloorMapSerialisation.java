@@ -85,7 +85,7 @@ class TestFloorMapSerialisation {
         final FloorMapDoc deserialized = JsonUtil.readValue(oldJson, FloorMapDoc.class);
         assertThat(deserialized).isNotNull();
 
-        // Legacy 'query' field is no longer migrated; eventsQuery should be null.
+        // The legacy 'query' field is not migrated, so eventsQuery stays null.
         assertThat(deserialized.getEventsQuery()).isNull();
         assertThat(deserialized.getFactsStoreRef()).isNull();
         // A document written before groups existed simply has none.

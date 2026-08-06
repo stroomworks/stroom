@@ -93,8 +93,8 @@ class TestFloorMapEntryParserXml {
     /**
      * A background entry (declared via {@code <type>} and carrying an image)
      * yields a single fact with that image and its world-to-map placement
-     * matrix. A background is no longer special-cased: it is just an image
-     * fact placed by {@code WORLD_TO_MAP}.
+     * matrix. A background is not special-cased: it is just an image fact placed
+     * by {@code WORLD_TO_MAP}.
      */
     @Test
     void testParse_backgroundEntry() {

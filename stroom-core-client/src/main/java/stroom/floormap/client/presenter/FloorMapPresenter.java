@@ -129,8 +129,8 @@ public class FloorMapPresenter extends DocTabPresenter<LinkTabPanelView, FloorMa
                 }
             });
             // Type styles are owned by the Editor's Layers panel and persisted
-            // via the Editor's own onWrite; the Settings tab no longer manages
-            // them, so no cross-tab sync is needed.
+            // via the Editor's own onWrite. The Settings tab does not manage them,
+            // so no cross-tab sync is needed.
             return floorMapEditorPresenter;
         }));
 

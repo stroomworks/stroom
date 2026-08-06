@@ -36,10 +36,9 @@ import java.util.function.Consumer;
 /**
  * GWT-free model for the FloorMap Editor tab.
  *
- * <p>This class encapsulates all shared selection state and pure business
- * logic that was previously embedded in the GWT presenter. It has no
- * dependencies on GWT, GWTP, or any client-side framework, making it
- * fully testable with standard JUnit.</p>
+ * <p>Holds the Editor's shared selection state and its pure business logic, kept
+ * out of the GWT presenter. It has no dependencies on GWT, GWTP, or any
+ * client-side framework, making it fully testable with standard JUnit.</p>
  *
  * <h3>Shared selection model (single source of truth)</h3>
  * <ul>
@@ -423,11 +422,11 @@ public class FloorMapEditorModel {
      * form starts blank — does the caller's key apply.</p>
      *
      * <p>This exists as a named rule because getting it wrong is silent and
-     * destructive rather than obvious. The properties dialog used to take the key
-     * from whatever was last selected, so right-clicking fact B while fact A was
-     * selected wrote B's values under A's key and, if the effective time changed,
-     * deleted A's shard as well. Deriving the key from the entry makes that class
-     * of mistake unrepresentable.</p>
+     * destructive rather than obvious. Taking the key from whatever happens to be
+     * selected means right-clicking fact B while fact A is selected writes B's
+     * values under A's key and, if the effective time changed, deletes A's shard as
+     * well. Deriving the key from the entry makes that class of mistake
+     * unrepresentable.</p>
      *
      * @param entry       the entry being edited, or {@code null} when creating one
      * @param fallbackKey the key to use only when {@code entry} is {@code null} or

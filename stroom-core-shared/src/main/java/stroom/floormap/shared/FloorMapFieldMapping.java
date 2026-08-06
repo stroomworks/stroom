@@ -286,9 +286,9 @@ public class FloorMapFieldMapping {
      * True when {@code schema} has <strong>no</strong> mapping for {@code role}.
      *
      * <p>Named for the sense the callers actually use — "add a default mapping for
-     * this role if it is missing". It was previously called {@code hasRole}, which
-     * returned {@code false} when the role <em>was</em> present: the behaviour was
-     * right but every call site read as its own opposite.</p>
+     * this role if it is missing" — so that a call site reads as what it does. The
+     * inverse sense ({@code hasRole} returning {@code false} when the role is
+     * present) makes every call site read as its own opposite.</p>
      */
     private static boolean isRoleMissing(final List<FloorMapFieldMapping> schema, final Role role) {
         for (final FloorMapFieldMapping mapping : schema) {

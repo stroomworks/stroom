@@ -78,9 +78,9 @@ import java.util.function.Function;
  * <h3>Highlight is transient and starts off</h3>
  * <p>Which groups are highlighted is view state — never persisted, exactly like
  * layer visibility — and <em>every</em> group starts hidden, including one just
- * created (client decision, 2026-07-29). A consequence worth knowing: creating a
- * group and adding members produces no canvas change at all, so the confirmation
- * that membership landed is the Members / Positioned columns updating.</p>
+ * created. A consequence worth knowing: creating a group and adding members
+ * produces no canvas change at all, so the confirmation that membership landed is
+ * the Members / Positioned columns updating.</p>
  *
  * <p>"Starts hidden" is a property of a newly created presenter, not something
  * re-imposed on every document read — see {@link #setGroups(List)} for why that

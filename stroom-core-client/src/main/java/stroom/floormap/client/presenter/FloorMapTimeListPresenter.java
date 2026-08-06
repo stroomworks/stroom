@@ -291,12 +291,9 @@ public class FloorMapTimeListPresenter extends MyPresenterWidget<FloorMapTimeLis
     // -----------------------------------------------------------------------
 
     private void initGridColumns() {
-        // A temporary "Key" column used to live here to diagnose rows carrying the
-        // wrong fact key. That turned out to be a real bug in the properties dialog
-        // (it wrote under whatever was last selected, not the entry being edited)
-        // and is now fixed and covered by FloorMapEditorModel.resolveEntryKey, so
-        // the diagnostic column has been removed — every row in this list belongs
-        // to the selected fact by construction.
+        // No key column: every row in this list belongs to the selected fact by
+        // construction, since FloorMapEditorModel.resolveEntryKey derives an edit's
+        // key from the entry being edited rather than from the current selection.
         final Column<TemporalEntry, String> timeColumn = new TextColumn<>() {
             @Override
             public String getValue(final TemporalEntry entry) {
