@@ -121,8 +121,16 @@ select EventTime, User, Status
 - **Optimiser:** derives `from = 2024-01-15T00:00:00.000Z`, and shards whose partition window ends before that are
   skipped entirely.
 
-**Same rows either way.** The expression is left untouched, so the bound is still evaluated on every row that is
-read. The time range is purely a pruning hint. This is why a derived time range shows up as a `SHADOW` divergence
+**Same rows either way — because the hint only ever widens.** The expression is left untouched, so the bound is
+still evaluated on every row that is read; the time range is a pruning hint. But a hint is only harmless if it is
+**at least as wide** as the user's bound: the range's upper end is applied at search time as a strict `<` on the
+partition time field, so an inclusive user bound (`<=`, or the upper end of `between`) is emitted as
+`bound + 1 ms`. Time values are whole milliseconds, so that is the exact exclusive equivalent, not an
+approximation. Widening is the only acceptable direction — a too-wide range just reads extra rows the retained
+`where` filters out; a too-narrow range silently drops rows the `where` matches (the row at exactly a `<=` bound,
+before Task 8.3). The lower end is asymmetric on purpose: it is applied as `>=`, so both `>` and `>=` map to the
+same millisecond — exact for `>=`, one millisecond *wider* than `>`, and safe either way because the retained
+`where` still excludes the boundary row. This is why a derived time range shows up as a `SHADOW` divergence
 without being a difference in results.
 
 **What is recognised.** A term on the datasource's declared **time field**, with a condition of `>`, `>=`, `<`,
@@ -139,6 +147,9 @@ expressions like `now() - 1d` work.
   never a wrong one.
 - The value will not parse. An unparseable value is treated as an ordinary predicate rather than failing the
   query.
+- The term (or the whole predicate) is disabled. A disabled item is ignored at evaluation, so deriving a bound
+  from it could only *narrow* the scan below what the evaluated predicate matches — the one direction a pruning
+  hint must never take.
 
 **In a join**, a time bound that was pushed onto one side is promoted into *that side's* time range, so the side's
 own scan prunes shards exactly as a single-source query would.

@@ -153,4 +153,89 @@ class TestRedundantTermPruningRule {
 
         assertThat(((Filter) result).wherePredicate()).isNull();
     }
+
+    // ------------------------------------------------------------------------------------------------------
+    // Task 8.4: a disabled item is opaque - never flattened into an enabled parent, never deduped, never
+    // hoisted by the single-survivor collapse.
+    // ------------------------------------------------------------------------------------------------------
+
+    private static ExpressionTerm disabledTerm(final String field, final String value) {
+        return ExpressionTerm.builder()
+                .field(field).condition(Condition.EQUALS).value(value).enabled(false).build();
+    }
+
+    @Test
+    void disabledNestedAnd_childrenAreNotHoistedIntoTheEnabledParent() {
+        // AND(x=1, AND'(x=1, y=2)) with AND' disabled. Flattening through AND' would hoist x=1 and y=2 into the
+        // enabled parent - silently re-enabling predicates the caller switched off (and then deduping the
+        // hoisted x=1 against the real one). The disabled sub-tree must survive byte-identical.
+        final ExpressionOperator disabledAnd = ExpressionOperator.builder()
+                .op(Op.AND)
+                .enabled(false)
+                .children(List.of(term("x", "1"), term("y", "2")))
+                .build();
+        final ExpressionOperator input = ExpressionOperator.builder()
+                .op(Op.AND)
+                .children(List.of(term("x", "1"), disabledAnd))
+                .build();
+
+        final LogicalPlan result = rule.apply(withWhere(input));
+
+        assertThat(((Filter) result).wherePredicate()).isEqualTo(input);
+    }
+
+    @Test
+    void disabledDuplicateTerms_areNotDeduped() {
+        // Two identical disabled x=1 terms: the evaluator ignores both, so neither is "redundant" in any way
+        // this rule is entitled to act on - a disabled item is opaque, not inspected for duplication.
+        final ExpressionOperator input = ExpressionOperator.builder()
+                .op(Op.AND)
+                .children(List.of(disabledTerm("x", "1"), disabledTerm("x", "1"), term("y", "2")))
+                .build();
+
+        final LogicalPlan result = rule.apply(withWhere(input));
+
+        assertThat(((Filter) result).wherePredicate()).isEqualTo(input);
+    }
+
+    @Test
+    void disabledTerm_doesNotDedupeAgainstAnIdenticalEnabledTerm() {
+        // x=1 (enabled) alongside x=1 (disabled): distinct to the evaluator, so both must survive.
+        final ExpressionOperator input = ExpressionOperator.builder()
+                .op(Op.AND)
+                .children(List.of(term("x", "1"), disabledTerm("x", "1")))
+                .build();
+
+        final LogicalPlan result = rule.apply(withWhere(input));
+
+        assertThat(((Filter) result).wherePredicate()).isEqualTo(input);
+    }
+
+    @Test
+    void singleSurvivorCollapse_doesNotHoistADisabledItem() {
+        // AND(x') with x' disabled: unwrapping would swap "an enabled AND whose only child is ignored" for a
+        // bare disabled item - the caller's structure (and flag) must survive.
+        final ExpressionOperator input = ExpressionOperator.builder()
+                .op(Op.AND)
+                .children(List.of(disabledTerm("x", "1")))
+                .build();
+
+        final LogicalPlan result = rule.apply(withWhere(input));
+
+        assertThat(((Filter) result).wherePredicate()).isEqualTo(input);
+    }
+
+    @Test
+    void disabledTopLevelOperator_isOpaque_itsInternalDuplicatesAreLeftAlone() {
+        // The whole predicate disabled: nothing in it is evaluated, so nothing in it may be rewritten.
+        final ExpressionOperator input = ExpressionOperator.builder()
+                .op(Op.AND)
+                .enabled(false)
+                .children(List.of(term("x", "1"), term("x", "1")))
+                .build();
+
+        final LogicalPlan result = rule.apply(withWhere(input));
+
+        assertThat(((Filter) result).wherePredicate()).isEqualTo(input);
+    }
 }

@@ -159,4 +159,99 @@ class TestConstantFoldingRule {
 
         assertThat(((Filter) result).wherePredicate()).isEqualTo(input);
     }
+
+    // ------------------------------------------------------------------------------------------------------
+    // Task 8.4: a disabled item is opaque - never recursed into, never collapsed through, never hoisted.
+    // ------------------------------------------------------------------------------------------------------
+
+    @Test
+    void disabledSubTree_isOpaque_notRecursedInto() {
+        // A disabled AND containing a foldable NOT(NOT(x)) must come back byte-identical - the evaluator
+        // ignores the whole sub-tree, so there is nothing in it the fold's equivalences apply to.
+        final ExpressionOperator disabledSubTree = ExpressionOperator.builder()
+                .op(Op.AND)
+                .enabled(false)
+                .children(List.of(
+                        ExpressionOperator.builder().op(Op.NOT).children(List.of(
+                                ExpressionOperator.builder().op(Op.NOT).children(List.of(term("a", "1"))).build()
+                        )).build()))
+                .build();
+        final ExpressionOperator input = ExpressionOperator.builder()
+                .op(Op.AND)
+                .children(List.of(disabledSubTree, term("b", "2")))
+                .build();
+
+        final LogicalPlan result = rule.apply(withWhere(input));
+
+        assertThat(((Filter) result).wherePredicate()).isEqualTo(input);
+    }
+
+    @Test
+    void disabledSingleChildAnd_isNotCollapsed_theCollapseWouldDropTheDisabledFlag() {
+        // AND(AND'(x), y) where AND' is disabled: collapsing AND'(x) -> x would silently re-enable x.
+        final ExpressionOperator disabledWrapper = ExpressionOperator.builder()
+                .op(Op.AND)
+                .enabled(false)
+                .children(List.of(term("a", "1")))
+                .build();
+        final ExpressionOperator input = ExpressionOperator.builder()
+                .op(Op.AND)
+                .children(List.of(disabledWrapper, term("b", "2")))
+                .build();
+
+        final LogicalPlan result = rule.apply(withWhere(input));
+
+        assertThat(((Filter) result).wherePredicate()).isEqualTo(input);
+    }
+
+    @Test
+    void enabledNotOverDisabledNot_isNotCollapsed() {
+        // NOT(NOT'(x)) with the inner NOT disabled is not a double negation to the evaluator (it sees NOT with
+        // no effective children) - collapsing to x would both change the logic and re-enable x's sub-tree.
+        final ExpressionOperator input = ExpressionOperator.builder()
+                .op(Op.NOT)
+                .children(List.of(
+                        ExpressionOperator.builder().op(Op.NOT).enabled(false)
+                                .children(List.of(term("a", "1"))).build()))
+                .build();
+
+        final LogicalPlan result = rule.apply(withWhere(input));
+
+        assertThat(((Filter) result).wherePredicate()).isEqualTo(input);
+    }
+
+    @Test
+    void doubleNegation_overADisabledInnermostItem_isNotCollapsed() {
+        // NOT(NOT(x')) with x' disabled: the evaluator sees an inner NOT with no effective children, which is
+        // not equivalent to a bare disabled x' - the hoist must not happen.
+        final ExpressionTerm disabledTerm = ExpressionTerm.builder()
+                .field("a").condition(Condition.EQUALS).value("1").enabled(false).build();
+        final ExpressionOperator input = ExpressionOperator.builder()
+                .op(Op.NOT)
+                .children(List.of(
+                        ExpressionOperator.builder().op(Op.NOT).children(List.of(disabledTerm)).build()))
+                .build();
+
+        final LogicalPlan result = rule.apply(withWhere(input));
+
+        assertThat(((Filter) result).wherePredicate()).isEqualTo(input);
+    }
+
+    @Test
+    void singleChildCollapse_doesNotHoistADisabledChild() {
+        // AND(OR(x'), y) with x' disabled: OR(x') -> x' would splice a disabled item into the parent AND,
+        // erasing the caller's "an enabled OR wrapper around a switched-off predicate" structure.
+        final ExpressionTerm disabledTerm = ExpressionTerm.builder()
+                .field("a").condition(Condition.EQUALS).value("1").enabled(false).build();
+        final ExpressionOperator input = ExpressionOperator.builder()
+                .op(Op.AND)
+                .children(List.of(
+                        ExpressionOperator.builder().op(Op.OR).children(List.of(disabledTerm)).build(),
+                        term("b", "2")))
+                .build();
+
+        final LogicalPlan result = rule.apply(withWhere(input));
+
+        assertThat(((Filter) result).wherePredicate()).isEqualTo(input);
+    }
 }

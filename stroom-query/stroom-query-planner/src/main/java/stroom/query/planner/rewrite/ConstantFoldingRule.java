@@ -34,6 +34,13 @@ import java.util.stream.Collectors;
  * {@code x}) and single-child {@code AND}/{@code OR} wrapping (<code>AND(x)</code>/<code>OR(x)</code> &rarr;
  * {@code x}) - both provably equivalent rewrites of the {@link ExpressionOperator} tree the binder built,
  * independent of what any term actually tests.</p>
+ *
+ * <p><b>A disabled item is opaque</b> (Task 8.4): {@link ExpressionItem#enabled()} marks an item the evaluator
+ * ignores, so the equivalences above only hold between <i>enabled</i> items. A disabled sub-tree is returned
+ * unchanged (never recursed into), and a collapse is only performed when the operator being removed <i>and</i>
+ * the child being hoisted are both enabled - collapsing through a disabled operator, or hoisting a disabled
+ * child into its grandparent, would change which items the evaluator consults and could silently re-enable a
+ * predicate the caller switched off.</p>
  */
 public final class ConstantFoldingRule implements RewriteRule {
 
@@ -50,6 +57,11 @@ public final class ConstantFoldingRule implements RewriteRule {
         if (!(item instanceof final ExpressionOperator operator)) {
             return item;
         }
+        if (!operator.enabled()) {
+            // A disabled sub-tree is opaque (Task 8.4) - the evaluator ignores it, so there is nothing here the
+            // structural equivalences apply to. Returned untouched, children and all.
+            return operator;
+        }
 
         final Op op = operator.getOp() == null ? Op.AND : operator.getOp();
         final List<ExpressionItem> rawChildren = operator.getChildren() == null
@@ -62,19 +74,24 @@ public final class ConstantFoldingRule implements RewriteRule {
         if (op == Op.NOT && foldedChildren.size() == 1) {
             final ExpressionItem inner = foldedChildren.getFirst();
             if (inner instanceof final ExpressionOperator innerOperator
+                    && innerOperator.enabled()
                     && (innerOperator.getOp() == null ? Op.AND : innerOperator.getOp()) == Op.NOT) {
                 final List<ExpressionItem> innerChildren = innerOperator.getChildren() == null
                         ? List.of()
                         : innerOperator.getChildren();
-                if (innerChildren.size() == 1) {
-                    // NOT(NOT(x)) -> x
+                if (innerChildren.size() == 1 && innerChildren.getFirst().enabled()) {
+                    // NOT(NOT(x)) -> x, only when both NOTs and x itself are enabled: a disabled inner NOT or a
+                    // disabled x means the evaluator does not see a double negation at all, so hoisting x would
+                    // change (or re-enable) what is evaluated.
                     return innerChildren.getFirst();
                 }
             }
         }
 
-        if ((op == Op.AND || op == Op.OR) && foldedChildren.size() == 1) {
-            // AND(x) -> x, OR(x) -> x
+        if ((op == Op.AND || op == Op.OR) && foldedChildren.size() == 1 && foldedChildren.getFirst().enabled()) {
+            // AND(x) -> x, OR(x) -> x - only for an enabled x; hoisting a disabled child would splice an item
+            // the evaluator ignores into a position where the caller's intent (a disabled predicate inside an
+            // enabled wrapper) is no longer represented.
             return foldedChildren.getFirst();
         }
 

@@ -104,7 +104,9 @@ class TestOptimisingQueryCompilerTimeRangeParameterisation {
         final TimeRange timeRange = result.getQuery().getTimeRange();
         assertThat(timeRange).isNotNull();
         assertThat(timeRange.getFrom()).isEqualTo("2020-01-01T00:00:00.000Z");
-        assertThat(timeRange.getTo()).isEqualTo("2020-02-01T00:00:00.000Z");
+        // Task 8.3: `between` is inclusive at both ends but TimeRange.to is applied as a strict < at search
+        // time, so the derived upper bound is widened by exactly 1ms to keep the boundary row in range.
+        assertThat(timeRange.getTo()).isEqualTo("2020-02-01T00:00:00.001Z");
     }
 
     @Test

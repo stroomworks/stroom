@@ -150,8 +150,13 @@ Worth stating plainly, because the list above can read as larger than it is:
 - **Permissions** are resolved identically — the same registry, the same security context.
 
 The optimiser's *additions* — a derived time range, a `where`/`filter` split — are visible in the compiled request
-and therefore in a `SHADOW` diff, but a derived time range does not change which rows match. It only narrows which
-shards are searched; the original predicate is still evaluated on every row that comes back. See
+and therefore in a `SHADOW` diff. The derived time range is a pruning hint that is deliberately **widened to be
+safe**: `Query.timeRange.to` is applied at search time as a strict `<`, so an inclusive user bound (`<=`, or
+`between`'s upper end) is emitted as `bound + 1 ms` — exact, since time values are whole milliseconds. Widening is
+the only acceptable direction for a hint: a too-wide range merely reads extra rows that the original predicate
+(still evaluated on every row that comes back) filters out, whereas a too-narrow range would silently drop rows
+the user's `where` matches — the boundary row of a `<=` was exactly such a case before Task 8.3. So the hint
+narrows which shards are *searched*, never which rows *match*. See
 [05-optimisations.md](05-optimisations.md#time-range-pruning).
 
 ---
