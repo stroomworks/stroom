@@ -250,6 +250,38 @@ public final class FloorMapEntityAnimator {
         return null;
     }
 
+    /**
+     * Returns the entity's type, looked up the same way — and in the same order
+     * — as {@link #positionOf}, so a caller describing an entity cannot end up
+     * reporting one source's type beside another source's position.
+     *
+     * <p>Needed because an event entity's type is not recorded anywhere else on
+     * the client: it arrives with the events query and is then held only here.</p>
+     *
+     * @param id the entity id
+     * @return the type, or {@code null} if the animator doesn't know the entity
+     *         (the caller may fall back to a static fact)
+     */
+    public String typeOf(final String id) {
+        if (id == null) {
+            return null;
+        }
+        final EntityAnimation animation = activeAnimations.get(id);
+        if (animation != null) {
+            return animation.type;
+        }
+        final FloorMapObject last = lastEntityPositions.get(id);
+        if (last != null) {
+            return last.getType();
+        }
+        for (final FloorMapObject obj : eventObjects) {
+            if (id.equals(obj.getId())) {
+                return obj.getType();
+            }
+        }
+        return null;
+    }
+
     /** {@code true} if any animation is in flight or any trail is still fading. */
     public boolean isActive() {
         return !activeAnimations.isEmpty() || !trailFadeStartTimes.isEmpty();

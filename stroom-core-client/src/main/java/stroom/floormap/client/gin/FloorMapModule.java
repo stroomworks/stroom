@@ -21,6 +21,7 @@ import stroom.floormap.client.FloorMapPlugin;
 import stroom.floormap.client.presenter.FloorMapCanvasPresenter;
 import stroom.floormap.client.presenter.FloorMapCanvasPresenter.FloorMapCanvasView;
 import stroom.floormap.client.presenter.FloorMapClusterPresenter;
+import stroom.floormap.client.presenter.FloorMapClusterPresenter.FloorMapClusterView;
 import stroom.floormap.client.presenter.FloorMapDockPresenter;
 import stroom.floormap.client.presenter.FloorMapDockPresenter.FloorMapDockView;
 import stroom.floormap.client.presenter.FloorMapEditorPresenter;
@@ -57,6 +58,7 @@ import stroom.floormap.client.presenter.FloorMapTimelineSettingsPresenter.FloorM
 import stroom.floormap.client.presenter.FloorMapTrackingPresenter;
 import stroom.floormap.client.presenter.FloorMapTrackingPresenter.FloorMapTrackingView;
 import stroom.floormap.client.view.FloorMapCanvasViewImpl;
+import stroom.floormap.client.view.FloorMapClusterViewImpl;
 import stroom.floormap.client.view.FloorMapDockViewImpl;
 import stroom.floormap.client.view.FloorMapEditorViewImpl;
 import stroom.floormap.client.view.FloorMapFactListViewImpl;
@@ -87,9 +89,11 @@ public class FloorMapModule extends PluginModule {
 
         bind(FloorMapPresenter.class);
 
-        // Lists a cluster's members. Hosted by the app-wide PagerView, so it
-        // needs no view of its own.
-        bind(FloorMapClusterPresenter.class);
+        // Lists a cluster's members, with a search box and filters over the
+        // app-wide PagerView that holds the grid.
+        bindPresenterWidget(FloorMapClusterPresenter.class,
+                FloorMapClusterView.class,
+                FloorMapClusterViewImpl.class);
 
         bindPresenterWidget(FloorMapEditorPresenter.class,
                 FloorMapEditorView.class,

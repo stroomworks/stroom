@@ -17,21 +17,23 @@
 package stroom.floormap.client.presenter;
 
 import stroom.docref.DocRef;
+import stroom.entity.client.presenter.HasClose;
 import stroom.entity.client.presenter.HasToolbar;
 import stroom.floormap.client.event.FloorMapDataEvent;
 import stroom.floormap.client.presenter.FloorMapQueryPresenter.FloorMapQueryView;
 import stroom.floormap.shared.FloorMapDoc;
 import stroom.floormap.shared.FloorMapJsonKeys;
+import stroom.floormap.shared.FloorMapLocationResolver;
 import stroom.floormap.shared.FloorMapObject;
 import stroom.query.api.Column;
 import stroom.query.api.Row;
 import stroom.query.api.TableResult;
 import stroom.query.api.TimeRange;
 import stroom.query.client.presenter.QueryEditPresenter;
+import stroom.query.client.presenter.QueryResultTablePresenter;
 import stroom.query.shared.QueryTablePreferences;
 import stroom.task.client.TaskMonitorFactory;
 
-import com.google.gwt.core.client.GWT;
 import com.google.gwt.user.client.ui.Widget;
 import com.google.web.bindery.event.shared.EventBus;
 import com.gwtplatform.mvp.client.MyPresenterWidget;
@@ -53,13 +55,17 @@ import javax.inject.Inject;
  * dropdowns that let the user choose which result columns contain the entity
  * ID, location, and type.</p>
  */
-public class FloorMapQueryPresenter extends MyPresenterWidget<FloorMapQueryView> implements HasToolbar {
+public class FloorMapQueryPresenter
+        extends MyPresenterWidget<FloorMapQueryView>
+        implements HasToolbar, HasClose {
 
     private final QueryEditPresenter queryEditPresenter;
     private String currentEntityColumn;
     private String currentLocationColumn;
     /** UUID of the document being queried, stamped onto {@link FloorMapDataEvent}. */
     private String docUuid;
+    /** {@code true} while this tab's query is running — see {@link #onBind()}. */
+    private boolean searching;
 
     @Inject
     public FloorMapQueryPresenter(final EventBus eventBus,
@@ -77,21 +83,45 @@ public class FloorMapQueryPresenter extends MyPresenterWidget<FloorMapQueryView>
         // Listen to column updates inside the table so we can update the dropdown lists dynamically.
         registerHandler(queryEditPresenter.addChangeHandler(this::updateColumnSelections));
 
-        // Listen to table data updates and fire FloorMapDataEvent
-        //noinspection unused e
-        registerHandler(queryEditPresenter.getQueryResultPresenter().getTablePresenter().addUpdateHandler(e -> {
-            // Refresh available columns in the dropdowns as soon as the query finishes.
+        // Listen to table data updates and fire FloorMapDataEvent.
+        //
+        // TableUpdateEvent is fired on the shared event bus by every query result
+        // table in the application, so the source guard is what keeps an unrelated
+        // table's update (a Dashboard, another Query document) from republishing
+        // this tab's last result set as the map overlay.
+        final QueryResultTablePresenter tablePresenter =
+                queryEditPresenter.getQueryResultPresenter().getTablePresenter();
+        registerHandler(tablePresenter.addUpdateHandler(e -> {
+            if (e.getSource() != tablePresenter) {
+                return;
+            }
+            // The dropdowns track whatever columns the table currently has, so
+            // they follow every update, partial result set or not.
             updateColumnSelections();
 
-            // Refresh map objects.
-            final TableResult tableResult = queryEditPresenter.getQueryResultPresenter()
-                    .getTablePresenter()
-                    .getCurrentTableResult();
+            // The overlay does not — see the search-state listener below.
+            if (!searching) {
+                publishMapObjects();
+            }
+        }));
 
-            if (tableResult != null) {
-                final List<FloorMapObject> objects = parseRows(
-                        tableResult, currentEntityColumn, currentLocationColumn);
-                FloorMapDataEvent.fire(FloorMapQueryPresenter.this, docUuid, objects);
+        // Queries here run incrementally: the result table is updated on every
+        // poll of a still-filling store, and at high row counts those partial
+        // result sets differ from one poll to the next. Publishing each of them
+        // walked the map's entities across the floor for as long as the search
+        // ran — visibly so with the timeline paused, which places entities
+        // instantly. The searching-to-idle transition is the only point at which
+        // the rows are the answer to the query rather than a snapshot of
+        // progress, so that is when the overlay is published.
+        registerHandler(queryEditPresenter.addSearchStateListener(searching -> {
+            // Only the running-to-idle transition, so that the reset at the start
+            // of the next run — which also reports "not searching" — does not
+            // republish the result set the previous run left behind.
+            final boolean finished = this.searching && !searching;
+            this.searching = searching;
+            if (finished) {
+                updateColumnSelections();
+                publishMapObjects();
             }
         }));
 
@@ -100,6 +130,39 @@ public class FloorMapQueryPresenter extends MyPresenterWidget<FloorMapQueryView>
         // lazily (only when its tab is first opened) and the Map tab's animated
         // entity overlay must not depend on that. Running it here as well would
         // fire a second, identical query per playback tick.
+    }
+
+    /**
+     * Stops this tab's query when the document is closed.
+     *
+     * <p>Without this the search outlives the document: the result store is left
+     * on the server, the client keeps polling it, and each response still fires a
+     * {@link FloorMapDataEvent} stamped with this document's UUID — which a
+     * <em>reopened</em> copy of the same document accepts as live entity data.
+     * Reachable only because this presenter declares {@link HasClose}; {@code
+     * AbstractTabProvider} forwards the close hook to nothing else.</p>
+     */
+    @Override
+    public void onClose() {
+        queryEditPresenter.onClose();
+    }
+
+    /**
+     * Parses the current result table into map objects and publishes them as the
+     * canvas entity overlay.
+     *
+     * <p>Only ever called for a finished result set (see {@link #onBind()}).</p>
+     */
+    private void publishMapObjects() {
+        final TableResult tableResult = queryEditPresenter.getQueryResultPresenter()
+                .getTablePresenter()
+                .getCurrentTableResult();
+
+        if (tableResult != null) {
+            final List<FloorMapObject> objects = parseRows(
+                    tableResult, currentEntityColumn, currentLocationColumn);
+            FloorMapDataEvent.fire(FloorMapQueryPresenter.this, docUuid, objects);
+        }
     }
 
     /**
@@ -148,9 +211,17 @@ public class FloorMapQueryPresenter extends MyPresenterWidget<FloorMapQueryView>
      * query: this editor tab, and {@link FloorMapMapPresenter}, which owns the
      * timeline-driven playback query feeding the animated entity overlay.</p>
      *
+     * <p>The location column may hold either literal {@code map, x, y}
+     * coordinates or a reference to the fact the event happened at; the
+     * returned objects are only <em>positioned</em> in the first case. The
+     * referencing ones carry a {@link FloorMapObject#getLocationRef()} and must
+     * be run through {@link FloorMapLocationResolver#resolve} against the
+     * current facts before they are drawn.</p>
+     *
      * @param tableResult    the query result to parse
      * @param entityColumn   the column name holding the entity id
-     * @param locationColumn the column name holding the {@code map, x, y} location
+     * @param locationColumn the column name holding the location — {@code map,
+     *                       x, y} coordinates or a fact key
      * @return a list of map objects; never {@code null}
      */
     static List<FloorMapObject> parseRows(final TableResult tableResult,
@@ -191,26 +262,29 @@ public class FloorMapQueryPresenter extends MyPresenterWidget<FloorMapQueryView>
                 final String locationStr = values.get(locationColIndex);
 
                 if (entityId != null && locationStr != null) {
-                    try {
-                        // Location coordinates from lookups are formatted as: mapA, x, y".
-                        final String[] parts = locationStr.split(",");
+                    String type = "object";
+                    if (typeColIndex != -1 && values.size() > typeColIndex) {
+                        type = values.get(typeColIndex);
+                    } else if (entityId.contains("@")) {
+                        type = FloorMapJsonKeys.PERSON; // Fallback: email contains "@" = person.
+                    }
 
-                        if (parts.length >= 3) {
-                            final double x = Double.parseDouble(parts[1].trim());
-                            final double y = Double.parseDouble(parts[2].trim());
-
-                            String type = "object";
-                            if (typeColIndex != -1 && values.size() > typeColIndex) {
-                                type = values.get(typeColIndex);
-                            } else if (entityId.contains("@")) {
-                                type = FloorMapJsonKeys.PERSON; // Fallback: email contains "@" = person.
-                            }
-
-                            list.add(new FloorMapObject(entityId, type, x, y));
+                    // The location is either coordinates baked into the event at
+                    // ingest ("mapA, x, y") or a reference to the fact the event
+                    // happened at. A reference is left for
+                    // FloorMapLocationResolver to place against the current
+                    // facts, which is what lets a moved object take its visitors
+                    // with it — baked coordinates cannot.
+                    final double[] coords = FloorMapLocationResolver.parseCoordinates(locationStr);
+                    if (coords != null) {
+                        list.add(new FloorMapObject(entityId, type, coords[0], coords[1]));
+                    } else {
+                        final String ref = FloorMapLocationResolver.parseReference(locationStr);
+                        if (ref != null) {
+                            final FloorMapObject object = new FloorMapObject(entityId, type, 0, 0);
+                            object.setLocationRef(ref);
+                            list.add(object);
                         }
-                    } catch (final NumberFormatException e) {
-                        GWT.log("Skipping malformed floor-map row for entity '"
-                                + entityId + "': " + e.getMessage());
                     }
                 }
             }

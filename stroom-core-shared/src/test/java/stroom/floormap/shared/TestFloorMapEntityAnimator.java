@@ -52,6 +52,29 @@ class TestFloorMapEntityAnimator {
         assertThat(animator.positionOf("b")).containsExactly(3.0, 4.0);
     }
 
+    /**
+     * The type is answerable for any entity the animator knows — including one
+     * mid-animation, which is when the hover panel most needs it — and null for
+     * one it has never seen.
+     */
+    @Test
+    void testTypeOfMatchesPositionOf() {
+        assertThat(animator.typeOf("a")).isNull();
+
+        animator.onEventObjects(List.of(obj("a", 1, 2)));
+        assertThat(animator.typeOf("a")).isEqualTo("person");
+        assertThat(animator.typeOf("nobody")).isNull();
+        assertThat(animator.typeOf(null)).isNull();
+
+        // Mid-animation the position comes from the in-flight animation, so the
+        // type must come from there too.
+        animator.setPlaying(true);
+        animator.onEventObjects(List.of(new FloorMapObject("a", "vehicle", 9, 9)));
+        animator.advanceFrame(DURATION_MS / 2, DURATION_MS / 2);
+        assertThat(animator.isActive()).isTrue();
+        assertThat(animator.typeOf("a")).isEqualTo("vehicle");
+    }
+
     /** A teleport prunes state for entities that are no longer present. */
     @Test
     void testTeleportPrunesVanishedEntities() {
@@ -72,7 +95,7 @@ class TestFloorMapEntityAnimator {
 
         // Halfway through the animation the entity is at the midpoint.
         animator.advanceFrame(DURATION_MS / 2, DURATION_MS / 2);
-        final FloorMapObject mid = drawn(animator.buildDrawList(0), "a");
+        final FloorMapObject mid = drawn(animator.buildDrawList(0));
         assertThat(mid.getX()).isCloseTo(5.0, within(0.001));
 
         // Completing the animation lands it on the target.
@@ -106,7 +129,7 @@ class TestFloorMapEntityAnimator {
     @Test
     void testBuildDrawListIncludesStationary() {
         animator.onEventObjects(List.of(obj("a", 2, 3)));
-        final FloorMapObject a = drawn(animator.buildDrawList(0), "a");
+        final FloorMapObject a = drawn(animator.buildDrawList(0));
         assertThat(a.getX()).isCloseTo(2.0, within(TOL));
         assertThat(a.getY()).isCloseTo(3.0, within(TOL));
     }
@@ -122,7 +145,7 @@ class TestFloorMapEntityAnimator {
         assertThat(animator.positionOf("a")).containsExactly(99.0, 99.0);
     }
 
-    private static FloorMapObject drawn(final List<FloorMapObject> list, final String id) {
-        return list.stream().filter(o -> o.getId().equals(id)).findFirst().orElseThrow();
+    private static FloorMapObject drawn(final List<FloorMapObject> list) {
+        return list.stream().filter(o -> o.getId().equals("a")).findFirst().orElseThrow();
     }
 }

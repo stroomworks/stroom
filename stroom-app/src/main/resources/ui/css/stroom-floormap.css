@@ -612,18 +612,20 @@
 }
 
 /* -----------------------------------------------------------------------
-   Cluster tooltip
+   Hover tooltip
 
-   Names the members of the cluster under the pointer — the answer to "who
-   are those ten?", which the count alone cannot give. Same visual language
-   as the gesture readout and the timeline scrub tooltip, because it answers
-   the same kind of question about the thing under the pointer.
+   Describes the glyph under the pointer: the members of a cluster — the
+   answer to "who are those ten?", which the count alone cannot give — or a
+   single entity's name, type, containing areas and position. One panel for
+   both, because only one thing can be under the pointer. Same visual
+   language as the gesture readout and the timeline scrub tooltip, because
+   it answers the same kind of question about the thing under the pointer.
 
-   Anchored to the cluster's glyph by the view, not to the cursor, so it
-   holds still while the pointer moves across the glyph.
+   Anchored to the glyph by the view, not to the cursor, so it holds still
+   while the pointer moves across the glyph.
    ----------------------------------------------------------------------- */
 
-.stroom-floormap-cluster-tooltip {
+.stroom-floormap-hover-tooltip {
     position: absolute;
     background-color: var(--page__background-color);
     color: var(--text-color);
@@ -641,20 +643,57 @@
     max-width: 260px;
 }
 
-.stroom-floormap-cluster-tooltip--visible {
+.stroom-floormap-hover-tooltip--visible {
     display: block;
 }
 
-.stroom-floormap-cluster-tooltip__caption {
+.stroom-floormap-hover-tooltip__caption {
     color: var(--blue-500);
     font-weight: 600;
     margin-bottom: 3px;
 }
 
-.stroom-floormap-cluster-tooltip__name {
+/* One member name, or one line of detail. Kept to a single line: the panel
+   is capped in width, and a name or an area list that wrapped would push the
+   lines below it away from the glyph being described. */
+.stroom-floormap-hover-tooltip__line {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+/* -----------------------------------------------------------------------
+   Cluster dialog filter bar
+
+   The search box and the two dropdowns on one line, above the member grid.
+
+   Its own class rather than the usual `dock-container-horizontal form` pair:
+   `.form` sets flex-direction: column and, sitting on the same element, wins —
+   which stacks the controls. Declaring the direction here states the intent
+   once and cannot be undone by a class added beside it.
+   ----------------------------------------------------------------------- */
+
+.stroom-floormap-cluster-filters {
+    display: flex;
+    flex-direction: row;
+    /* Each control sits under its own label, so aligning the bottom edges is
+       what actually lines the inputs up with each other. */
+    align-items: flex-end;
+    gap: var(--control__gap--horizontal);
+}
+
+/* Takes the slack: what is typed here is the only unbounded value on the bar.
+   min-width lets it yield to the dropdowns on a narrowed dialog rather than
+   pushing them off the end — a flex item's floor is its content otherwise. */
+.stroom-floormap-cluster-filters__search {
+    flex: 1 1 auto;
+    min-width: 8rem;
+}
+
+/* Fixed width, so choosing a long area name does not resize the bar and move
+   the other controls out from under the pointer. */
+.stroom-floormap-cluster-filters__filter {
+    flex: 0 0 12rem;
 }
 
 /* -----------------------------------------------------------------------

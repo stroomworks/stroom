@@ -8,7 +8,8 @@
             <form:FormGroup identity="entityColumn" label="Entity ID Column" addStyleNames="margin-right-10 flex-grow-1">
                 <l:SelectionBox ui:field="entityIdColumn" addStyleNames="w-100"/>
             </form:FormGroup>
-            <form:FormGroup identity="locationColumn" label="Location ID Column" addStyleNames="flex-grow-1">
+            <form:FormGroup identity="locationColumn" label="Location ID Column" addStyleNames="flex-grow-1"
+                            helpText="The column holding where each event happened. Either the key of the object the event happened at, in which case the entity is drawn wherever that object currently is, or literal coordinates in the form 'map, x, y', which are fixed and will not follow the object if it is moved.">
                 <l:SelectionBox ui:field="locationIdColumn" addStyleNames="w-100"/>
             </form:FormGroup>
         </g:FlowPanel>

@@ -636,6 +636,19 @@ public class FloorMapEditorPresenter
     }
 
     /**
+     * Stops the clock when the document is closed.
+     *
+     * <p>Closing a document tab does not unbind its presenters, so a timeline
+     * left playing keeps its animation loop — and the per-tick fetches it drives
+     * — running for the rest of the session.</p>
+     */
+    @Override
+    public void onClose() {
+        super.onClose();
+        floorMapTimelinePresenter.pause();
+    }
+
+    /**
      * Flushes pending changes to the server as part of the Stroom save chain.
      *
      * <p>Called by {@link FloorMapPresenter} via {@code getPostSaveCallback()}

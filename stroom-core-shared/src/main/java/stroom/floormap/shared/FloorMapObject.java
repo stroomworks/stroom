@@ -56,6 +56,19 @@ public class FloorMapObject {
      */
     private Fact imageFact;
 
+    /**
+     * Optional key of the fact this entity's event named as its location — the
+     * desk, gate or camera the event happened at.
+     * <p>
+     * Set when the events query's location column holds a reference rather than
+     * literal coordinates; {@link FloorMapLocationResolver} then places the
+     * entity at that fact's current position, so moving the fact moves the
+     * entity. {@code null} for an entity that carries its own coordinates.
+     * <p>
+     * Client-side only; never serialised to the server.
+     */
+    private String locationRef;
+
     public FloorMapObject(final String id,
                           final String type,
                           final double x,
@@ -122,5 +135,21 @@ public class FloorMapObject {
      */
     public void setImageFact(final Fact imageFact) {
         this.imageFact = imageFact;
+    }
+
+    /**
+     * Returns the key of the fact this entity is located at, or {@code null}
+     * when it carries its own coordinates.
+     */
+    public String getLocationRef() {
+        return locationRef;
+    }
+
+    /**
+     * Records the fact key this entity's event named as its location. Set by
+     * the events-query parser; read by {@link FloorMapLocationResolver}.
+     */
+    public void setLocationRef(final String locationRef) {
+        this.locationRef = locationRef;
     }
 }

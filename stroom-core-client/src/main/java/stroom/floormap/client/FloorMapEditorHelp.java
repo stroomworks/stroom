@@ -64,6 +64,9 @@ public final class FloorMapEditorHelp {
                 + "every object it touches is <em>added</em> to the selection.</li>"
                 + "<li>Click an empty area with no object (or press <strong>Esc</strong>) to "
                 + "deselect everything.</li>"
+                + "<li><strong>Hover</strong> an object — without clicking — for a panel giving "
+                + "its name, type and position (and, on the Map tab, the areas it is inside). "
+                + "Hovering a merged group of entities lists the entities in it instead.</li>"
                 + "</ul>"
 
                 + "<h4>Moving, rotating &amp; scaling</h4>"

@@ -37,6 +37,7 @@ import stroom.floormap.shared.FloorMapFieldMapping.Role;
 import stroom.floormap.shared.FloorMapGroup;
 import stroom.floormap.shared.FloorMapGroupOverlay;
 import stroom.floormap.shared.FloorMapGroupSnapshot;
+import stroom.floormap.shared.FloorMapLocationResolver;
 import stroom.floormap.shared.FloorMapObject;
 import stroom.floormap.shared.FloorMapTransformationMatrix;
 import stroom.query.api.Column;
@@ -130,6 +131,19 @@ public class FloorMapMapPresenter
     private List<FloorMapObject> lastEventObjects;
 
     /**
+     * The event entities exactly as the events query produced them, before
+     * {@link FloorMapLocationResolver} placed the ones that reference a fact
+     * rather than carrying coordinates.
+     *
+     * <p>Kept because that placement depends on the facts, which refresh
+     * independently: an object moved on the Editor tab changes only the facts,
+     * so without re-placing the <em>same</em> events against them the entities
+     * would keep visiting where the object used to be until the next events
+     * refresh — and on a paused timeline there is no next refresh.</p>
+     */
+    private List<FloorMapObject> lastRawEventObjects;
+
+    /**
      * The latest area containment, kept so the Groups panel's counts can be
      * recomputed on a group edit — which can happen with the timeline paused, when
      * no query refresh is coming.
@@ -202,6 +216,14 @@ public class FloorMapMapPresenter
      * shared event bus (which would otherwise render another doc's entities here).
      */
     private String docUuid;
+
+    /**
+     * True once the document tab has been closed. Closing does not unbind this
+     * presenter, so its event-bus handlers stay registered for the lifetime of
+     * the session; this stops a closed tab from taking any further part in the
+     * document's data flow. See {@link #onClose()}.
+     */
+    private boolean closed;
 
     private static final long ONE_DAY_MS = 24L * 60 * 60 * 1000;
 
@@ -437,19 +459,16 @@ public class FloorMapMapPresenter
         registerHandler(getEventBus().addHandler(FloorMapDataEvent.getType(), e -> {
             // Fired by this tab's own events query (see publishEventEntities) and,
             // while it is open, by the Events Query tab as the user edits/runs the
-            // query. Ignore events from other open FloorMap documents (shared bus).
-            if (!java.util.Objects.equals(docUuid, e.getDocUuid())) {
+            // query. Ignore events from other open FloorMap documents (shared bus),
+            // and anything at all once this tab has been closed.
+            if (closed || !java.util.Objects.equals(docUuid, e.getDocUuid())) {
                 return;
             }
-            floorMapCanvasPresenter.setEventObjects(e.getObjects());
-            // Keep the tracking panel's roster up to date. Only re-push grid
-            // data when membership actually changed so playback refreshes
-            // (~300ms apart) don't churn the grid.
-            if (entityList.update(e.getObjects())) {
-                refreshEntityGrid();
-            }
+            // Held raw so the placement can be redone against fresher facts —
+            // see reanchorEventEntities().
+            lastRawEventObjects = e.getObjects();
+            pushEventEntities(placeEventEntities());
             // Entities have moved, so which areas they are in may have changed.
-            lastEventObjects = e.getObjects();
             updateAreaMembership();
         }));
 
@@ -490,6 +509,7 @@ public class FloorMapMapPresenter
                         this::entityDisplayName,
                         lastAreaMembership,
                         this::entityType,
+                        this::entityGroupNames,
                         // Picking a member does exactly what picking its row in the
                         // Tracking panel does, so the two cannot diverge.
                         memberId -> {
@@ -571,6 +591,7 @@ public class FloorMapMapPresenter
         floorMapTrackingPresenter.setData(Collections.emptyList());
         lastFacts = null;
         lastEventObjects = null;
+        lastRawEventObjects = null;
         lastAreaMembership = FloorMapAreaMembership.EMPTY;
         floorMapTrackingPresenter.clearAreaState();
         floorMapCanvasPresenter.setAreaMembership(FloorMapAreaMembership.EMPTY);
@@ -765,13 +786,56 @@ public class FloorMapMapPresenter
      * @param tableResult the events query result to parse
      */
     private void publishEventEntities(final TableResult tableResult) {
-        if (getEntity() == null) {
+        // A result already in flight when the tab was closed must not reach the
+        // bus: it carries this document's UUID, so a reopened copy would take it.
+        if (closed || getEntity() == null) {
             return;
         }
-        FloorMapDataEvent.fire(this, docUuid, FloorMapQueryPresenter.parseRows(
+        final List<FloorMapObject> entities = FloorMapQueryPresenter.parseRows(
                 tableResult,
                 getEntity().getEntityIdColumn(),
-                getEntity().getLocationIdColumn()));
+                getEntity().getLocationIdColumn());
+        reportUnparsedEvents(tableResult, entities);
+        FloorMapDataEvent.fire(this, docUuid, entities);
+    }
+
+    /**
+     * Reports an events query that returned rows but no entities.
+     *
+     * <p>Every reason a row is discarded — an unmapped column, an entity id or
+     * location the query did not select, a location value that is neither
+     * coordinates nor an object key — presents identically on the canvas: the
+     * entities simply stop appearing, and the map looks as though animation has
+     * been switched off. Naming the columns and showing a sample value turns
+     * that into something inspectable.</p>
+     */
+    private void reportUnparsedEvents(final TableResult tableResult,
+                                      final List<FloorMapObject> entities) {
+        if (!entities.isEmpty()
+            || tableResult == null
+            || tableResult.getRows() == null
+            || tableResult.getRows().isEmpty()) {
+            return;
+        }
+        final StringBuilder columns = new StringBuilder();
+        if (tableResult.getColumns() != null) {
+            for (final Column column : tableResult.getColumns()) {
+                if (!columns.isEmpty()) {
+                    columns.append(", ");
+                }
+                columns.append(column.getName());
+            }
+        }
+        Console.error("Floor map events query returned "
+                      + tableResult.getRows().size()
+                      + " rows but no entities. Entity ID Column is '"
+                      + getEntity().getEntityIdColumn()
+                      + "', Location ID Column is '"
+                      + getEntity().getLocationIdColumn()
+                      + "'; the result has columns: " + columns
+                      + ". Both must name a column the query selects, and the location must hold"
+                      + " either 'map, x, y' coordinates or the key of the object the event"
+                      + " happened at.");
     }
 
     /**
@@ -906,7 +970,73 @@ public class FloorMapMapPresenter
         // Areas and static placements may have changed (a new timeline shard),
         // so recompute containment.
         lastFacts = facts;
+        // An entity anchored to a fact is wherever that fact now is, so a facts
+        // refresh re-places the entities before containment is recomputed from
+        // their positions.
+        reanchorEventEntities();
         updateAreaMembership();
+    }
+
+    /**
+     * Re-places the last event entities against the current facts and pushes
+     * them on if that moved anything.
+     *
+     * <p>Guarded on the result rather than on the trigger: the facts query
+     * re-runs on every playback tick, and re-pushing an unchanged overlay would
+     * feed the canvas animator a fresh update ~3 times a second for no
+     * movement.</p>
+     */
+    private void reanchorEventEntities() {
+        if (lastRawEventObjects == null) {
+            return;
+        }
+        final List<FloorMapObject> placed = placeEventEntities();
+        if (!FloorMapLocationResolver.samePositions(placed, lastEventObjects)) {
+            pushEventEntities(placed);
+        }
+    }
+
+    /**
+     * Places the last raw event entities against the current facts, reporting
+     * the case where the facts are loaded and <em>nothing</em> matched.
+     *
+     * @return the placed entities; never {@code null}
+     */
+    private List<FloorMapObject> placeEventEntities() {
+        final List<FloorMapObject> placed =
+                FloorMapLocationResolver.resolve(lastRawEventObjects, lastFacts);
+        // Facts arriving after the events is normal and self-corrects on the
+        // next facts refresh, so only a full miss against facts we actually
+        // have says the two sides do not agree on what an object is called.
+        if (placed.isEmpty()
+            && lastRawEventObjects != null
+            && !lastRawEventObjects.isEmpty()
+            && lastFacts != null
+            && !lastFacts.isEmpty()) {
+            Console.error("Floor map: none of the " + lastRawEventObjects.size()
+                          + " event entities could be placed. Their location column names objects"
+                          + " like '" + lastRawEventObjects.get(0).getLocationRef()
+                          + "', which matches no fact key at this time — the facts query returned"
+                          + " keys like '" + lastFacts.get(0).getKey() + "'.");
+        }
+        return placed;
+    }
+
+    /**
+     * Pushes a placed entity overlay to the canvas and the tracking roster, and
+     * records it as the current one for area containment and the group counts.
+     *
+     * @param placed the entities, already resolved to map positions
+     */
+    private void pushEventEntities(final List<FloorMapObject> placed) {
+        floorMapCanvasPresenter.setEventObjects(placed);
+        // Keep the tracking panel's roster up to date. Only re-push grid
+        // data when membership actually changed so playback refreshes
+        // (~300ms apart) don't churn the grid.
+        if (entityList.update(placed)) {
+            refreshEntityGrid();
+        }
+        lastEventObjects = placed;
     }
 
     /**
@@ -975,6 +1105,29 @@ public class FloorMapMapPresenter
      */
     private String entityType(final String id) {
         return entityList.getType(id);
+    }
+
+    /**
+     * The names of the groups an entity belongs to, in the Groups panel's own
+     * display order, so the cluster dialog's Group column and filter read the
+     * same way as that panel.
+     *
+     * <p>Membership comes from the groups themselves rather than from the canvas
+     * overlay: the overlay holds only the groups the user has switched
+     * <em>on</em>, and which groups an entity is in does not depend on whether
+     * they are currently highlighted.</p>
+     *
+     * @param id the entity id
+     * @return the group names; empty when the entity is in none
+     */
+    private List<String> entityGroupNames(final String id) {
+        final List<String> names = new ArrayList<>();
+        for (final FloorMapGroup group : floorMapGroupsPresenter.getGroups()) {
+            if (group.contains(id)) {
+                names.add(group.getName());
+            }
+        }
+        return names;
     }
 
     /**
@@ -1211,6 +1364,27 @@ public class FloorMapMapPresenter
      */
     public void pauseTimeline() {
         floorMapTimelinePresenter.pause();
+    }
+
+    /**
+     * Stops the clock and every search this tab owns when the document is closed.
+     *
+     * <p>Closing a document tab does not unbind its presenters, so without this a
+     * closed Map tab keeps a paused-but-live pipeline: the timeline's playback
+     * loop, four result stores on the server, and an event-bus handler that still
+     * accepts entity data for this document's UUID. A reopened copy of the
+     * document shares that UUID, so the dead tab's query results land on the live
+     * tab's canvas.</p>
+     */
+    @Override
+    public void onClose() {
+        super.onClose();
+        closed = true;
+        floorMapTimelinePresenter.pause();
+        queryModel.reset(DestroyReason.TAB_CLOSE);
+        eventsQueryModel.reset(DestroyReason.TAB_CLOSE);
+        histogramQueryHelper.reset();
+        factsHistogramQueryHelper.reset();
     }
 
     /**

@@ -27,6 +27,10 @@ import java.util.List;
  * Groups panel's <strong>Areas</strong> column answers the same question for a
  * whole group, and so shares the wording with a member count appended.</p>
  *
+ * <p>{@link #joinNames} is the plain name-list join and is used beyond the area
+ * columns — the cluster dialog's <strong>Group</strong> column lists group names
+ * with it — so that a list of names reads the same wherever one is shown.</p>
+ *
  * <p>Holds no GWT or DOM types so it can be unit-tested on the JVM.</p>
  */
 public final class FloorMapAreaCellText {

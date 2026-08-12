@@ -298,7 +298,7 @@ public class QueryEditPresenter
         registerHandler(queryToolbarPresenter.addStartQueryHandler(e -> toggleStart()));
         //noinspection unused e
         registerHandler(queryToolbarPresenter.addTimeRangeChangeHandler(e -> {
-            run(true, true);
+            run();
             onChange();
         }));
         queryHelpPresenter.linkToEditor(editorPresenter);
@@ -357,7 +357,7 @@ public class QueryEditPresenter
         if (queryModel.isSearching()) {
             queryModel.stop();
         } else {
-            run(true, true);
+            run();
         }
     }
 
@@ -365,24 +365,39 @@ public class QueryEditPresenter
         if (queryModel.isSearching()) {
             queryModel.stop();
         }
-        run(true, true);
+        run();
     }
 
     public void stop() {
         queryModel.stop();
     }
 
-    private void run(final boolean incremental,
-                     final boolean storeHistory) {
+    /**
+     * Registers a listener notified whenever this query starts or stops searching.
+     *
+     * <p>Needed by consumers that must act only on a <em>finished</em> result set.
+     * Searches here run incrementally, so the result table is updated on every
+     * poll with whatever the store holds at that moment; a consumer that treats
+     * each of those updates as a result set acts on a half-filled store. The
+     * searching-to-idle transition is the only signal that the rows are final.</p>
+     *
+     * @param listener called with {@code true} when a search starts and
+     *                 {@code false} when it completes, is stopped or is reset
+     * @return the registration, to be removed when the caller unbinds
+     */
+    public HandlerRegistration addSearchStateListener(final SearchStateListener listener) {
+        queryModel.addSearchStateListener(listener);
+        return () -> queryModel.removeSearchStateListener(listener);
+    }
+
+    private void run() {
         // No point running the search if there is no query
         if (!NullSafe.isBlankString(editorPresenter.getText())) {
-            queryInfo.prompt(() -> run(incremental, storeHistory, Function.identity()), this);
+            queryInfo.prompt(() -> run(Function.identity()), this);
         }
     }
 
-    private void run(final boolean incremental,
-                     final boolean storeHistory,
-                     final Function<ExpressionOperator, ExpressionOperator> expressionDecorator) {
+    private void run(final Function<ExpressionOperator, ExpressionOperator> expressionDecorator) {
         // Clear the table selection and any markers.
         queryResultPresenter.clear();
         editorPresenter.setMarkers(Collections.emptyList());
@@ -412,8 +427,8 @@ public class QueryEditPresenter
                 queryText,
                 params,
                 queryToolbarPresenter.getTimeRange(),
-                incremental,
-                storeHistory,
+                true,
+                true,
                 queryInfo.getMessage(),
                 null);
     }

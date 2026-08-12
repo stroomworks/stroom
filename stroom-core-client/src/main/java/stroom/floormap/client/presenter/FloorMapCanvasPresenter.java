@@ -30,6 +30,7 @@ import stroom.floormap.shared.FloorMapClusterOverlay;
 import stroom.floormap.shared.FloorMapEntityAnimator;
 import stroom.floormap.shared.FloorMapGroupOverlay;
 import stroom.floormap.shared.FloorMapHighlight;
+import stroom.floormap.shared.FloorMapHoverDetail;
 import stroom.floormap.shared.FloorMapJsonKeys;
 import stroom.floormap.shared.FloorMapMeasurementUnits;
 import stroom.floormap.shared.FloorMapObject;
@@ -349,6 +350,13 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     private String hoveredClusterKey;
 
     /**
+     * The id of the single entity the pointer is currently over, or {@code null}.
+     * Tracked for the same reason as {@link #hoveredClusterKey}, and mutually
+     * exclusive with it: one panel, describing whatever is under the pointer.
+     */
+    private String hoveredObjectId;
+
+    /**
      * Resolves an entity id to the name shown to users. Supplied by the owning
      * tab, which owns the roster; without one the tooltip falls back to ids.
      */
@@ -657,7 +665,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
             final String hitId = hitObjectId(event.getNativeEvent().getEventTarget());
 
             // Whatever this press turns out to be, it is not hovering.
-            hideClusterTooltip();
+            hideHoverTooltip();
 
             if (editMode) {
                 // Area drawing is modal: every LEFT press is either a vertex
@@ -830,7 +838,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
             final Element panel = getView().getFocusPanel().getElement();
             if (!Element.is(related)
                 || !panel.isOrHasChild(Element.as(related))) {
-                hideClusterTooltip();
+                hideHoverTooltip();
             }
         }));
 
@@ -872,14 +880,16 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                 }
             }
 
-            // Hovering a cluster names its members — the question the count on
-            // the glyph raises but cannot answer. Only while nothing else is in
-            // progress: during a drag the pointer is committed to something
-            // else, and a panel trailing the gesture would be in the way.
+            // Hovering describes what is under the pointer — a cluster's members,
+            // the question the count on the glyph raises but cannot answer, or a
+            // single entity's details. Only while nothing else is in progress:
+            // during a drag the pointer is committed to something else, and a
+            // panel trailing the gesture would be in the way.
             if (!isDragging && gesture == Gesture.NONE) {
-                updateClusterHover(event.getX(), event.getY());
+                updateHover(event.getNativeEvent().getEventTarget(),
+                        event.getX(), event.getY());
             } else {
-                hideClusterTooltip();
+                hideHoverTooltip();
             }
 
             // Track the live cursor for the measuring line, and keep the map
@@ -1116,7 +1126,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
             event.preventDefault();
             // The zoom moves the map out from under the tooltip's anchor, and
             // re-clusters at the new scale, so what it names may not survive.
-            hideClusterTooltip();
+            hideHoverTooltip();
 
             // Note: zooming deliberately does NOT pause following — zooming in
             // on a tracked entity is the natural way to watch it, and the
@@ -1373,9 +1383,29 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         // mouse movement is needed to reach that state — a data refresh alone
         // can.
         if (hoveredClusterKey != null && computed.getCluster(hoveredClusterKey) == null) {
-            hideClusterTooltip();
+            hideHoverTooltip();
         }
         return computed;
+    }
+
+    /**
+     * Describes whatever the pointer is over: a cluster, a single entity, or
+     * nothing.
+     *
+     * <p>Clusters are asked first because they are drawn on top and stand in for
+     * the entities beneath them — a glyph the user can see must win over one they
+     * cannot.</p>
+     *
+     * @param target    the event target under the pointer, for the object hit test
+     * @param cursorXPx the cursor position in element pixels
+     * @param cursorYPx the cursor position in element pixels
+     */
+    private void updateHover(final EventTarget target,
+                             final double cursorXPx,
+                             final double cursorYPx) {
+        if (!updateClusterHover(cursorXPx, cursorYPx)) {
+            updateObjectHover(target);
+        }
     }
 
     /**
@@ -1386,13 +1416,18 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
      * update, and rebuilding a list of names on every mouse move would be real
      * DOM churn for no visible difference.</p>
      *
+     * <p>Does <strong>not</strong> hide the panel when the pointer is over no
+     * cluster — a single entity may be under it, and tearing the panel down here
+     * only to rebuild it in {@link #updateObjectHover} would flicker.</p>
+     *
      * @param cursorXPx the cursor position in element pixels
      * @param cursorYPx the cursor position in element pixels
+     * @return {@code true} if the pointer is over a cluster, which has now been
+     *         described
      */
-    private void updateClusterHover(final double cursorXPx, final double cursorYPx) {
+    private boolean updateClusterHover(final double cursorXPx, final double cursorYPx) {
         if (lastClusterOverlay.isEmpty()) {
-            hideClusterTooltip();
-            return;
+            return false;
         }
         final double[] mapPoint = screenToMapCoords(cursorXPx, cursorYPx);
         // The glyph's own half-width, converted by the same route the merge
@@ -1403,39 +1438,164 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                 FloorMapClusterOverlay.mapThreshold(CLUSTER_HIT_RADIUS_PX, scale));
 
         if (cluster == null) {
-            hideClusterTooltip();
-            return;
+            return false;
         }
         if (cluster.getKey().equals(hoveredClusterKey)) {
-            return;
+            return true;
         }
 
         hoveredClusterKey = cluster.getKey();
+        hoveredObjectId = null;
         final List<String> names = new ArrayList<>(cluster.size());
         for (final String memberId : cluster.getMemberIds()) {
-            final String name = entityNameResolver != null
-                    ? entityNameResolver.apply(memberId)
-                    : null;
-            names.add(name != null
-                    ? name
-                    : memberId);
+            names.add(displayNameOrId(memberId));
         }
         // Names are resolved before capping, so the cap counts what the user
         // would have read rather than what the roster happened to know.
         final double[] anchorPx = mapToScreen(
                 new double[]{cluster.getMapX(), cluster.getMapY()});
-        getView().setClusterTooltip(
+        getView().setHoverTooltip(
                 FloorMapClusterLabel.captionFor(cluster, entityNameResolver),
                 FloorMapClusterLabel.hoverNames(names, CLUSTER_TOOLTIP_MAX_NAMES),
                 anchorPx[0], anchorPx[1]);
+        return true;
     }
 
-    /** Hides the cluster tooltip, if one is showing. */
-    private void hideClusterTooltip() {
-        if (hoveredClusterKey != null) {
-            hoveredClusterKey = null;
-            getView().setClusterTooltip(null, null, 0, 0);
+    /**
+     * Shows, moves or hides the tooltip describing the single entity under the
+     * pointer — the same question the cluster tooltip answers for a crowd, asked
+     * of one glyph: what is this, and where is it standing?
+     *
+     * <p>Hit-tested through the DOM rather than geometrically, so the pointer has
+     * to be over the drawn shape itself — exactly the surface a click acts on.
+     * Backgrounds and areas are excluded for the reason the read-only click
+     * handler excludes them: their clickable surface can cover most of the map,
+     * so a tooltip on them would appear almost wherever the pointer rested.</p>
+     *
+     * <p>Like the cluster tooltip, only a <em>change</em> of hovered entity
+     * rebuilds anything.</p>
+     *
+     * @param target the event target under the pointer
+     */
+    private void updateObjectHover(final EventTarget target) {
+        final String id = hitObjectId(target);
+        if (id == null
+                || backgroundKeys.contains(id)
+                || areaKeys.contains(id)) {
+            hideHoverTooltip();
+            return;
         }
+        if (id.equals(hoveredObjectId)) {
+            return;
+        }
+        // Anchored on the entity's own position, so the panel holds still while
+        // the pointer moves across the glyph. No position means nothing to
+        // describe or anchor to.
+        final double[] anchorMap = entityMapPosition(id);
+        if (anchorMap == null) {
+            hideHoverTooltip();
+            return;
+        }
+
+        hoveredObjectId = id;
+        hoveredClusterKey = null;
+        final String caption = FloorMapHoverDetail.caption(id, displayName(id));
+        final double[] anchorPx = mapToScreen(anchorMap);
+        getView().setHoverTooltip(
+                caption,
+                FloorMapHoverDetail.lines(
+                        entityType(id),
+                        containingAreaNames(id),
+                        FloorMapMeasurementUnits.formatPosition(
+                                measurementUnits, anchorMap[0], anchorMap[1]),
+                        id,
+                        caption),
+                anchorPx[0], anchorPx[1]);
+    }
+
+    /** Hides the hover tooltip — cluster or single entity — if one is showing. */
+    private void hideHoverTooltip() {
+        if (hoveredClusterKey != null || hoveredObjectId != null) {
+            hoveredClusterKey = null;
+            hoveredObjectId = null;
+            getView().setHoverTooltip(null, null, 0, 0);
+        }
+    }
+
+    /**
+     * The name shown for an entity: the owning tab's resolver first (so a name
+     * here matches the name in every grid), then a fact's own label — which is
+     * all the Editor tab has, since it wires no resolver. {@code null} when the
+     * entity has no name at all.
+     */
+    private String displayName(final String id) {
+        final String resolved = entityNameResolver != null
+                ? entityNameResolver.apply(id)
+                : null;
+        if (resolved != null && !resolved.trim().isEmpty()) {
+            return resolved;
+        }
+        final Fact fact = factFor(id);
+        return fact != null
+                ? fact.getLabelOrNull()
+                : null;
+    }
+
+    /** {@link #displayName} with the id as the last resort, for use in a list. */
+    private String displayNameOrId(final String id) {
+        final String name = displayName(id);
+        return name != null
+                ? name
+                : id;
+    }
+
+    /**
+     * An entity's type: the live event entity's, else the static fact's. Same
+     * precedence as {@link #entityMapPosition}, so the type and the position
+     * describing one entity cannot come from two different sources.
+     */
+    private String entityType(final String id) {
+        final String eventType = animator.typeOf(id);
+        if (eventType != null) {
+            return eventType;
+        }
+        final Fact fact = factFor(id);
+        return fact != null
+                ? fact.getType()
+                : null;
+    }
+
+    /**
+     * The names of every area containing an entity, innermost (most specific)
+     * first — the same order and the same names the Tracking panel and the
+     * cluster dialog use.
+     *
+     * @param id the entity id
+     * @return the names, empty when the entity is in no area, or {@code null}
+     *         when the map has no areas at all (see {@link FloorMapHoverDetail})
+     */
+    private List<String> containingAreaNames(final String id) {
+        if (areaMembership.getAreaKeys().isEmpty()) {
+            return null;
+        }
+        final List<String> keys = areaMembership.getAreaKeys(id);
+        final List<String> names = new ArrayList<>(keys.size());
+        for (final String key : keys) {
+            names.add(displayNameOrId(key));
+        }
+        return names;
+    }
+
+    /** The static fact with this key, or {@code null} if there is none. */
+    private Fact factFor(final String id) {
+        if (id != null) {
+            for (final Fact fact : facts) {
+                if (id.equals(fact.getKey())) {
+                    return fact;
+                }
+            }
+        }
+        return null;
     }
 
     /**
@@ -1839,7 +1999,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         isDragging = false;
         hasMoved = false;
         hideGestureReadout();
-        hideClusterTooltip();
+        hideHoverTooltip();
         gesture = Gesture.NONE;
         pendingTransform = null;
         pendingClickSelectId = null;
@@ -2018,9 +2178,9 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
                     // A tooltip is anchored to a glyph and only re-anchored when
                     // the pointer moves, so anything that moves the scene — entity
-                    // playback or a camera glide — would strand it beside a
-                    // cluster that is no longer there.
-                    hideClusterTooltip();
+                    // playback or a camera glide — would strand it beside a glyph
+                    // that is no longer there.
+                    hideHoverTooltip();
 
                     // Keep looping.
                     AnimationScheduler.get().requestAnimationFrame(this);
@@ -2193,27 +2353,35 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
     }
 
     /**
-     * Resolves the tracked entity's current map-space position, preferring the
-     * live interpolated animation position, then the last known rendered
-     * position, then the event draw list, then — for static facts (objects,
-     * backgrounds, areas), which never move — the fact's placement anchor.
+     * Resolves the tracked entity's current map-space position.
      *
      * @return {@code {mapX, mapY}}, or {@code null} if the entity is unknown
      */
     private double[] trackedPosition() {
+        return entityMapPosition(trackedObjectId);
+    }
+
+    /**
+     * Resolves an entity's current map-space position, preferring the live
+     * interpolated animation position, then the last known rendered position,
+     * then the event draw list, then — for static facts (objects, backgrounds,
+     * areas), which never move — the fact's placement anchor.
+     *
+     * @param id the entity id
+     * @return {@code {mapX, mapY}}, or {@code null} if the entity is unknown
+     */
+    private double[] entityMapPosition(final String id) {
         // The animator knows live/animated/last-known and current-overlay positions.
-        final double[] pos = animator.positionOf(trackedObjectId);
+        final double[] pos = animator.positionOf(id);
         if (pos != null) {
             return pos;
         }
         // Fall back to a static fact placed in the facts store.
-        for (final Fact fact : facts) {
-            if (trackedObjectId != null && trackedObjectId.equals(fact.getKey())) {
-                // Image anchors need the aspect ratio, known only to the view.
-                return getView().getFactMapAnchor(fact);
-            }
-        }
-        return null;
+        final Fact fact = factFor(id);
+        // Image anchors need the aspect ratio, known only to the view.
+        return fact != null
+                ? getView().getFactMapAnchor(fact)
+                : null;
     }
 
     /**
@@ -2289,6 +2457,10 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
      * last known position to the new one, regardless of type.
      */
     public void setEventObjects(final List<FloorMapObject> objects) {
+        // Entities move on a refresh, and the tooltip is anchored to where one
+        // was and describes where it was — both stale the moment this lands, and
+        // no mouse movement is needed to reach that state.
+        hideHoverTooltip();
         final boolean teleported = animator.onEventObjects(objects);
         // Run the loop for the animate path (it advances animations + glides the
         // camera and repaints); on the teleport path only if tracking, so the
@@ -2654,6 +2826,9 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
      * @param facts the facts; {@code null} is treated as empty
      */
     public void setFacts(final List<Fact> facts) {
+        // A tooltip describing a fact this load may have moved, renamed or
+        // dropped altogether cannot survive it.
+        hideHoverTooltip();
         this.facts = facts != null ? facts : new ArrayList<>();
         // Recompute which facts act as the background (plain drag over them
         // pans rather than moving them), keyed by the BACKGROUND key or type,
@@ -2964,21 +3139,25 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         void setGestureReadout(String text, double cursorXPx, double cursorYPx);
 
         /**
-         * Shows the panel naming the members of the cluster under the pointer,
-         * or hides it.
+         * Shows the panel describing whatever is under the pointer — a cluster's
+         * members, or one entity's details — or hides it.
          *
-         * <p>Anchored to the cluster's glyph rather than to the cursor, so it
-         * holds still while the pointer moves across the glyph — which also
-         * means the presenter only needs to call this when the hovered cluster
-         * changes, not on every mouse move.</p>
+         * <p>One panel serves both: only one thing can be under the pointer, and
+         * naming ten entities and describing one are the same job.</p>
          *
-         * @param caption   the cluster's caption, e.g. {@code "10 users"}, or
-         *                  {@code null} to hide
-         * @param names     the member names to list, already capped
-         * @param anchorXPx the cluster glyph's centre in element pixels
-         * @param anchorYPx the cluster glyph's centre in element pixels
+         * <p>Anchored to the glyph rather than to the cursor, so it holds still
+         * while the pointer moves across the glyph — which also means the
+         * presenter only needs to call this when the hovered glyph changes, not
+         * on every mouse move.</p>
+         *
+         * @param caption   the heading — a cluster's {@code "10 users"} or an
+         *                  entity's name — or {@code null} to hide
+         * @param lines     the lines to list under it: member names (already
+         *                  capped) or an entity's details
+         * @param anchorXPx the glyph's centre in element pixels
+         * @param anchorYPx the glyph's centre in element pixels
          */
-        void setClusterTooltip(String caption, List<String> names,
+        void setHoverTooltip(String caption, List<String> lines,
                 double anchorXPx, double anchorYPx);
 
         /**

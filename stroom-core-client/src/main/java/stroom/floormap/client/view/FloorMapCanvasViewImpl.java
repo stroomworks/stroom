@@ -293,21 +293,21 @@ public class FloorMapCanvasViewImpl
     private static final int READOUT_ASSUMED_HEIGHT_PX = 24;
 
     /**
-     * Panel naming the members of the cluster under the pointer — what the count
-     * on the glyph cannot say.
+     * Panel describing the glyph under the pointer — the members of a cluster,
+     * or the details of a single entity. What the glyph itself cannot say.
      */
     @UiField
-    FlowPanel clusterTooltip;
+    FlowPanel hoverTooltip;
 
-    private static final String CLUSTER_TOOLTIP_VISIBLE =
-            "stroom-floormap-cluster-tooltip--visible";
-    private static final String CLUSTER_TOOLTIP_CAPTION_CLASS =
-            "stroom-floormap-cluster-tooltip__caption";
-    private static final String CLUSTER_TOOLTIP_NAME_CLASS =
-            "stroom-floormap-cluster-tooltip__name";
+    private static final String HOVER_TOOLTIP_VISIBLE =
+            "stroom-floormap-hover-tooltip--visible";
+    private static final String HOVER_TOOLTIP_CAPTION_CLASS =
+            "stroom-floormap-hover-tooltip__caption";
+    private static final String HOVER_TOOLTIP_LINE_CLASS =
+            "stroom-floormap-hover-tooltip__line";
 
-    /** Gap between the cluster's glyph centre and the tooltip's near corner. */
-    private static final int CLUSTER_TOOLTIP_OFFSET_PX = 34;
+    /** Gap between the glyph's centre and the tooltip's near corner. */
+    private static final int HOVER_TOOLTIP_OFFSET_PX = 34;
 
     /**
      * The scale bar: a labelled rule fixed in the canvas corner, showing what a
@@ -777,50 +777,50 @@ public class FloorMapCanvasViewImpl
 
     /** {@inheritDoc} */
     @Override
-    public void setClusterTooltip(final String caption,
-                                  final List<String> names,
-                                  final double anchorXPx,
-                                  final double anchorYPx) {
+    public void setHoverTooltip(final String caption,
+                                final List<String> lines,
+                                final double anchorXPx,
+                                final double anchorYPx) {
         if (caption == null) {
-            clusterTooltip.removeStyleName(CLUSTER_TOOLTIP_VISIBLE);
+            hoverTooltip.removeStyleName(HOVER_TOOLTIP_VISIBLE);
             return;
         }
 
-        clusterTooltip.clear();
+        hoverTooltip.clear();
         final Label captionLabel = new Label(caption);
-        captionLabel.addStyleName(CLUSTER_TOOLTIP_CAPTION_CLASS);
-        clusterTooltip.add(captionLabel);
-        if (names != null) {
-            for (final String name : names) {
-                final Label nameLabel = new Label(name);
-                nameLabel.addStyleName(CLUSTER_TOOLTIP_NAME_CLASS);
-                clusterTooltip.add(nameLabel);
+        captionLabel.addStyleName(HOVER_TOOLTIP_CAPTION_CLASS);
+        hoverTooltip.add(captionLabel);
+        if (lines != null) {
+            for (final String line : lines) {
+                final Label lineLabel = new Label(line);
+                lineLabel.addStyleName(HOVER_TOOLTIP_LINE_CLASS);
+                hoverTooltip.add(lineLabel);
             }
         }
 
         // Sit below-right of the glyph by default, flipping near an edge so the
         // panel is never clipped by the canvas. Unlike the gesture readout the
-        // height is not roughly fixed — it grows with the member count — so it is
-        // measured rather than assumed. That costs a reflow, but this runs when
-        // the hovered cluster changes, not on every mouse move.
+        // height is not roughly fixed — it grows with the member or detail count
+        // — so it is measured rather than assumed. That costs a reflow, but this
+        // runs when the hovered glyph changes, not on every mouse move.
         final Element panel = focusPanel.getElement();
         final int panelWidth = panel.getOffsetWidth();
         final int panelHeight = panel.getOffsetHeight();
-        clusterTooltip.addStyleName(CLUSTER_TOOLTIP_VISIBLE);
-        final int tooltipWidth = clusterTooltip.getOffsetWidth();
-        final int tooltipHeight = clusterTooltip.getOffsetHeight();
+        hoverTooltip.addStyleName(HOVER_TOOLTIP_VISIBLE);
+        final int tooltipWidth = hoverTooltip.getOffsetWidth();
+        final int tooltipHeight = hoverTooltip.getOffsetHeight();
 
-        double x = anchorXPx + CLUSTER_TOOLTIP_OFFSET_PX;
+        double x = anchorXPx + HOVER_TOOLTIP_OFFSET_PX;
         if (panelWidth > 0 && x + tooltipWidth > panelWidth) {
-            x = anchorXPx - CLUSTER_TOOLTIP_OFFSET_PX - tooltipWidth;
+            x = anchorXPx - HOVER_TOOLTIP_OFFSET_PX - tooltipWidth;
         }
-        double y = anchorYPx + CLUSTER_TOOLTIP_OFFSET_PX;
+        double y = anchorYPx + HOVER_TOOLTIP_OFFSET_PX;
         if (panelHeight > 0 && y + tooltipHeight > panelHeight) {
-            y = anchorYPx - CLUSTER_TOOLTIP_OFFSET_PX - tooltipHeight;
+            y = anchorYPx - HOVER_TOOLTIP_OFFSET_PX - tooltipHeight;
         }
 
-        clusterTooltip.getElement().getStyle().setLeft(Math.max(0, x), Unit.PX);
-        clusterTooltip.getElement().getStyle().setTop(Math.max(0, y), Unit.PX);
+        hoverTooltip.getElement().getStyle().setLeft(Math.max(0, x), Unit.PX);
+        hoverTooltip.getElement().getStyle().setTop(Math.max(0, y), Unit.PX);
     }
 
     /** {@inheritDoc} */
