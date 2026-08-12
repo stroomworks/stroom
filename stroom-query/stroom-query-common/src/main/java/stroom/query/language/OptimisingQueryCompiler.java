@@ -20,7 +20,9 @@ import stroom.docref.DocRef;
 import stroom.graphdb.shared.GraphDbDoc;
 import stroom.query.api.Column;
 import stroom.query.api.ExplainPlan;
+import stroom.query.api.ExpressionItem;
 import stroom.query.api.ExpressionOperator;
+import stroom.query.api.ExpressionOperator.Op;
 import stroom.query.api.GraphSpec;
 import stroom.query.api.GroupSelection;
 import stroom.query.api.JoinSpec;
@@ -33,6 +35,7 @@ import stroom.query.api.TimeRange;
 import stroom.query.api.datasource.QueryFieldProvider;
 import stroom.query.api.token.TokenException;
 import stroom.query.common.v2.JoinDataSourceType;
+import stroom.query.grammar.ast.AstFilterClause;
 import stroom.query.grammar.ast.AstQuery;
 import stroom.query.grammar.ast.cypher.AstCypherQuery;
 import stroom.query.grammar.parse.CypherQueryParser;
@@ -63,6 +66,7 @@ import stroom.query.planner.port.FieldInfoSource;
 import stroom.query.planner.port.IndexShardStats;
 import stroom.query.planner.port.MetaStats;
 import stroom.query.planner.port.StateStoreStats;
+import stroom.query.planner.rewrite.AutoWhereFilterSplitRule;
 import stroom.query.planner.rewrite.RewritePipeline;
 import stroom.security.api.SecurityContext;
 import stroom.util.date.DateUtil;
@@ -74,6 +78,7 @@ import jakarta.inject.Provider;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
@@ -515,7 +520,7 @@ public class OptimisingQueryCompiler implements QueryCompiler {
                 return searchRequest;
             }
             SearchRequest result = applyTimeRange(searchRequest, rewrittenScanAndFilter, expressionContext);
-            result = applyWhereFilterSplit(result, boundScanAndFilter.filter(), rewrittenScanAndFilter.filter());
+            result = applyWhereFilterSplit(result, ast, rewrittenScanAndFilter.scan());
             return result;
         } catch (final RuntimeException e) {
             LOGGER.debug(() -> "Unable to enhance compiled SearchRequest for query [" + query + "]: "
@@ -552,23 +557,49 @@ public class OptimisingQueryCompiler implements QueryCompiler {
     }
 
     /**
-     * Task 5.3: routes the ineligible remainder of a bare {@code where} clause to extraction-time filtering
-     * instead of leaving it in the scan-time expression, where an unsupported field/condition today silently
-     * zeroes the whole result set (an ANDed {@code MatchNoDocsQuery} - see the finding in the plan doc's Phase 5
-     * section). Only triggers when {@code AutoWhereFilterSplitRule}
-     * actually moved something: {@code boundFilter} (pre-rewrite) had no explicit
-     * {@code filter} clause of its own (that case is always a no-op - see the rule's own Javadoc invariant), and
-     * {@code rewrittenFilter} (post-rewrite) now has a non-null {@code filterPredicate} that wasn't there before.
+     * Task 5.3, reworked by Task 8.1: routes the index-ineligible remainder of a bare {@code where} clause to
+     * extraction-time filtering instead of leaving it in the scan-time expression, where an unsupported
+     * field/condition today silently zeroes the whole result set (an ANDed {@code MatchNoDocsQuery} - see the
+     * finding in the plan doc's Phase 5 section).
+     *
+     * <p><b>The executed predicate is partitioned from the legacy-compiled expression itself</b> (Task 8.1):
+     * every term this method places in {@code Query.expression} or a {@code valueFilter} is the exact
+     * {@link stroom.query.api.ExpressionTerm} the {@link AstToSearchRequestMapper} built - same
+     * unescaped/validated value, same resolved dictionary {@code DocRef} - never a {@code Binder}-built
+     * rendering of it. The Binder's term values are raw source text (quotes included) and are for
+     * EXPLAIN/classification only; adopting them here is exactly the executed-values defect Task 8.1 removed,
+     * and partitioning the legacy tree removes the whole class - there is no second representation left that
+     * has to agree with the executed one. Classification is delegated to {@link AutoWhereFilterSplitRule}
+     * itself, by wrapping the legacy expression in a synthetic {@link Filter} over {@code scan}, so the
+     * executed split can never disagree with the planner rule's notion of index-eligibility.</p>
+     *
+     * <p>Only splits when {@code ast} has no explicit {@code filter} clause (the rule's own documented no-op
+     * invariant) and the expression is enabled. Nested <b>enabled</b> {@code AND}s are flattened first (a
+     * semantic identity for conjunction) so a three-plus-conjunct {@code where} - which both compilers fold
+     * into nested pairwise {@code AND}s - is classified per term, the same granularity the rewrite pipeline
+     * achieves on the bound plan; see {@link #flattenEnabledAnds}. When nothing is ineligible the request is
+     * returned completely unmodified, original expression tree intact.</p>
      */
     private SearchRequest applyWhereFilterSplit(
-            final SearchRequest searchRequest, final Filter boundFilter, final Filter rewrittenFilter) {
-        if (boundFilter.filterPredicate() != null || rewrittenFilter.filterPredicate() == null) {
+            final SearchRequest searchRequest, final AstQuery ast, final Scan scan) {
+        final boolean hasExplicitFilterClause = ast.clauses().stream()
+                .anyMatch(clause -> clause instanceof AstFilterClause);
+        final ExpressionOperator legacyWhere = searchRequest.getQuery() == null
+                ? null
+                : searchRequest.getQuery().getExpression();
+        if (hasExplicitFilterClause || legacyWhere == null || !legacyWhere.enabled()) {
             return searchRequest;
         }
-        final ExpressionOperator newExpression = rewrittenFilter.wherePredicate() == null
+        // AutoWhereFilterSplitRule.apply on a Filter always yields a Filter, so the cast cannot fail.
+        final Filter split = (Filter) new AutoWhereFilterSplitRule(fieldInfoSource)
+                .apply(new Filter(scan, flattenEnabledAnds(legacyWhere), null, scan.position()));
+        if (split.filterPredicate() == null) {
+            return searchRequest;
+        }
+        final ExpressionOperator newExpression = split.wherePredicate() == null
                 ? ExpressionOperator.builder().build()
-                : rewrittenFilter.wherePredicate();
-        final ExpressionOperator newValueFilter = rewrittenFilter.filterPredicate();
+                : split.wherePredicate();
+        final ExpressionOperator newValueFilter = split.filterPredicate();
 
         final List<ResultRequest> resultRequests = searchRequest.getResultRequests();
         final List<ResultRequest> updatedResultRequests = resultRequests == null
@@ -581,6 +612,53 @@ public class OptimisingQueryCompiler implements QueryCompiler {
                 .query(searchRequest.getQuery().copy().expression(newExpression).build())
                 .resultRequests(updatedResultRequests)
                 .build();
+    }
+
+    /**
+     * Flattens {@code where}'s nested <b>enabled</b> {@code AND}s into one flat conjunct list - a semantic
+     * identity for conjunction ({@code AND(AND(a,b),c) = AND(a,b,c)}) that lets {@link AutoWhereFilterSplitRule}
+     * classify each term individually instead of treating a nested pairwise {@code AND} (the shape both
+     * compilers' left-associative folds produce for three-plus conjuncts) as one opaque, never-eligible unit.
+     * A disabled operator is never flattened through - hoisting a disabled sub-tree's children into an enabled
+     * parent would silently re-enable a predicate the caller switched off (the Task 8.4 principle) - so it is
+     * passed to the rule whole, as a single conjunct.
+     *
+     * @param where never null; must itself be enabled (the caller checks).
+     * @return never null; {@code where} unchanged when its top-level operator is not {@code AND} (the rule
+     *         declines to split a non-{@code AND} predicate anyway) or it has no children.
+     */
+    private static ExpressionOperator flattenEnabledAnds(final ExpressionOperator where) {
+        if (effectiveOp(where) != Op.AND || where.getChildren() == null) {
+            return where;
+        }
+        final List<ExpressionItem> conjuncts = new ArrayList<>();
+        collectConjuncts(where, conjuncts);
+        return ExpressionOperator.builder().op(Op.AND).children(conjuncts).build();
+    }
+
+    /**
+     * Depth-first helper for {@link #flattenEnabledAnds}: appends {@code andOperator}'s conjuncts to {@code out},
+     * recursing only through children that are themselves enabled {@code AND}s with children.
+     */
+    private static void collectConjuncts(final ExpressionOperator andOperator, final List<ExpressionItem> out) {
+        for (final ExpressionItem child : andOperator.getChildren()) {
+            if (child instanceof final ExpressionOperator childOperator
+                && childOperator.enabled()
+                && effectiveOp(childOperator) == Op.AND
+                && childOperator.getChildren() != null) {
+                collectConjuncts(childOperator, out);
+            } else {
+                out.add(child);
+            }
+        }
+    }
+
+    /**
+     * @return {@code operator}'s op, defaulting null to {@link Op#AND} - the same reading
+     *         {@link AutoWhereFilterSplitRule} applies to an op-less operator.
+     */
+    private static Op effectiveOp(final ExpressionOperator operator) {
+        return operator.getOp() == null ? Op.AND : operator.getOp();
     }
 
     /**

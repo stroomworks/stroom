@@ -38,11 +38,14 @@ public class MockDataSourceResolver extends DataSourceResolver {
                         Mockito.anyBoolean()))
                 .thenAnswer(i -> {
                     final String name = i.getArgument(1, String.class);
-                    if (name.equals("my_dictionary")) {
+                    // dict_a/dict_b exist so a query can reference two *different* dictionaries - see
+                    // TestOptimisingQueryCompilerWhereFilterSplit's Task 8.2 gate. Any other name still
+                    // fails to resolve, exactly as before.
+                    if (name.equals("my_dictionary") || name.equals("dict_a") || name.equals("dict_b")) {
                         return List.of(DocRef.builder()
                                 .type("Dictionary")
-                                .uuid("my_dictionary")
-                                .name("my_dictionary")
+                                .uuid(name)
+                                .name(name)
                                 .build());
                     }
                     return Collections.emptyList();

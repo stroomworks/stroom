@@ -51,7 +51,9 @@ class TestBinder {
             "Events", List.of(
                     QueryField.builder().fldName("StreamId").fldType(FieldType.LONG).build(),
                     QueryField.builder().fldName("EventTime").fldType(FieldType.DATE).build(),
-                    QueryField.builder().fldName("UserId").fldType(FieldType.LONG).domainType("User.id").build()),
+                    QueryField.builder().fldName("UserId").fldType(FieldType.LONG).domainType("User.id").build(),
+                    // TEXT: DEFAULT_TEXT's ConditionSet includes IN_DICTIONARY - see the Task 8.2 tests.
+                    QueryField.builder().fldName("UserName").fldType(FieldType.TEXT).build()),
             "Users", List.of(
                     QueryField.builder().fldName("Id").fldType(FieldType.LONG).domainType("User.id").build(),
                     QueryField.builder().fldName("Name").fldType(FieldType.TEXT).domainType("Person.name").build())));
@@ -146,6 +148,41 @@ class TestBinder {
         assertThatThrownBy(() -> bind("from \"Events\" where StreamId in (1, 2) select StreamId"))
                 .isInstanceOf(BindException.class)
                 .hasMessageContaining("Condition IN is not supported for field 'StreamId'");
+    }
+
+    @Test
+    void inDictionaryTerm_carriesTheDictionaryName() {
+        // Task 8.2: the bound term must not discard the dictionary name the user wrote - it is the only thing
+        // that keeps the term distinguishable and later resolvable (no dictionary-lookup port exists yet, so
+        // the DocRef itself stays unresolved).
+        final LogicalPlan plan = bind(
+                "from \"Events\" where UserName in dictionary \"my_dict\" select StreamId");
+
+        final Filter filter = (Filter) ((Project) plan).input();
+        final ExpressionTerm term = (ExpressionTerm) filter.wherePredicate().getChildren().getFirst();
+        assertThat(term.getCondition()).isEqualTo(Condition.IN_DICTIONARY);
+        assertThat(term.getValue()).isEqualTo("my_dict");
+        assertThat(term.getDocRef()).isNull();
+    }
+
+    @Test
+    void twoDifferentDictionaries_bindToDistinguishableTerms() {
+        // Task 8.2's first failure mode, asserted at its root cause: with no value and no docRef, these two
+        // terms used to bind structurally EQUAL (ExpressionTerm.equals covers field/condition/value/docRef,
+        // all equal when all are absent), so RedundantTermPruningRule deduped them - silently deleting a
+        // predicate the user wrote.
+        final LogicalPlan plan = bind(
+                "from \"Events\" where UserName in dictionary \"DictA\" and UserName in dictionary \"DictB\" "
+                + "select StreamId");
+
+        final Filter filter = (Filter) ((Project) plan).input();
+        final ExpressionOperator where = filter.wherePredicate();
+        assertThat(where.getChildren()).hasSize(2);
+        final ExpressionTerm first = (ExpressionTerm) where.getChildren().get(0);
+        final ExpressionTerm second = (ExpressionTerm) where.getChildren().get(1);
+        assertThat(first).isNotEqualTo(second);
+        assertThat(first.getValue()).isEqualTo("DictA");
+        assertThat(second.getValue()).isEqualTo("DictB");
     }
 
     @Test

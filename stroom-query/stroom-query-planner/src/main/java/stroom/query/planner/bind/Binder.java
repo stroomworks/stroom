@@ -114,6 +114,10 @@ import java.util.stream.Collectors;
  * take the last clause seen. None of this is asserted against legacy behaviour - the corpus has no such queries -
  * it exists so an unusual-but-syntactically-valid query gets a sensible bound plan rather than a silently dropped
  * clause.</p>
+ *
+ * <p><b>Bound predicates describe, they do not execute</b>: term values are the raw source text, not the
+ * unescaped/validated values the legacy compiler executes - see {@link #bindTerm}'s Javadoc for the full
+ * contract and what an executing consumer must do instead.</p>
  */
 public final class Binder {
 
@@ -420,6 +424,22 @@ public final class Binder {
         return ExpressionOperator.builder().op(Op.AND).children(List.of(a, b)).build();
     }
 
+    /**
+     * Binds one {@code where}/{@code filter}/{@code having} term to a wire {@link ExpressionTerm}.
+     *
+     * <p><b>Bound term values are raw source text, for EXPLAIN and plan classification only - they must never
+     * be executed</b> (Task 8.1). A comparison/{@code between}/{@code in} value is {@link AstValue#sourceText}
+     * verbatim, quotes and escapes included, whereas the value the legacy compiler executes is unescaped and
+     * date/numeric-validated ({@code AstToSearchRequestMapper.resolveValue}); the two are deliberately not
+     * reconciled here. The one consumer that promotes optimiser output into an executed request
+     * ({@code OptimisingQueryCompiler.applyWhereFilterSplit}) therefore partitions the legacy-compiled
+     * expression itself and never adopts a term this method built. Anything new that wants to execute a bound
+     * predicate must do the same, or first route values through the legacy resolution.</p>
+     *
+     * @return never null.
+     * @throws BindException if the term's field cannot be resolved or its condition is unsupported for that
+     *                        field.
+     */
     private ExpressionTerm bindTerm(final AstTerm term, final Scope scope, final boolean allowEvalFields) {
         final QualifiedField field = resolveField(term.field(), scope, allowEvalFields);
         final Condition condition = conditionOf(term);
@@ -435,10 +455,15 @@ public final class Binder {
         } else if (term instanceof final AstInTerm t) {
             return builder.value(t.values().stream().map(AstValue::sourceText)
                     .collect(Collectors.joining(", "))).build();
-        } else if (term instanceof AstInDictionaryTerm) {
-            // Dictionary DocRef resolution is deferred - out of scope for this pass (no dictionary-lookup port
-            // has been defined yet; see the implementation plan's Task 2.2 scope note).
-            return builder.build();
+        } else if (term instanceof final AstInDictionaryTerm t) {
+            // Task 8.2: carry the dictionary name (normalised exactly as AstToSearchRequestMapper does before
+            // resolving it - unescaped, then trimmed) so the bound term neither loses part of the user's query
+            // nor collapses: with no value and no docRef, `x in dictionary A and x in dictionary B` used to bind
+            // to two structurally equal terms (ExpressionTerm.equals covers field/condition/value/docRef), which
+            // RedundantTermPruningRule would dedupe - silently deleting a predicate the user wrote. Resolution
+            // to a DocRef is still deferred (no dictionary-lookup port exists yet), so like every bound value
+            // this is for EXPLAIN/classification, not execution - see this method's Javadoc.
+            return builder.value(t.dictionaryName().unescapedText().trim()).build();
         } else if (term instanceof AstIsNullTerm) {
             return builder.build();
         }
