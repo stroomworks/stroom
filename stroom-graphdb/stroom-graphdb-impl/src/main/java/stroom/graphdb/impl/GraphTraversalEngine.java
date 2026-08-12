@@ -350,7 +350,7 @@ public final class GraphTraversalEngine {
     /**
      * As {@link #execute(Txn, LogicalPlan, TemporalContext, DateTimeSettings, boolean, CypherAggregation)}, but
      * additionally AND-combining a list of field-vs-field {@link FieldComparison}s (e.g. {@code a.x > b.y}) into
-     * the {@code WHERE} predicate. These are carried on {@link CompiledCypherPlan} rather than the plan's {@code
+     * the {@code WHERE} predicate. These are carried on {@code CompiledCypherPlan} rather than the plan's {@code
      * Filter} because the shared {@code ExpressionTerm} IR has no second-field slot (see {@link FieldComparison}).
      *
      * @param fieldComparisons never null; empty for the ordinary (no field-vs-field) case.

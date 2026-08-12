@@ -26,7 +26,7 @@ import java.util.Objects;
  * The resolved form of a Cypher {@code AS OF}/{@code AROUND}/{@code BETWEEN} clause - the compiled,
  * ready-to-execute counterpart of {@code stroom.query.grammar.ast.cypher.AstTemporal} (function-call literals
  * like {@code datetime(...)}/{@code duration(...)} already evaluated to real {@link Instant}/{@link Duration}
- * values). Threaded alongside the {@link LogicalPlan} a {@link CypherToLogicalPlan#compile} call produces (see
+ * values). Threaded alongside the {@code LogicalPlan} a {@link CypherToLogicalPlan#compile} call produces (see
  * {@code CompiledCypherPlan}), since temporal execution is a per-query context, not a plan node in its own
  * right.
  *

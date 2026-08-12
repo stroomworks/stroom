@@ -77,7 +77,7 @@ public @interface FunctionDef {
 
     /**
      * All the overloaded function signatures for the method,
-     * e.g. parseDate(dateStr) & parseDate(dateStr, format).
+     * e.g. parseDate(dateStr) &amp; parseDate(dateStr, format).
      * Must have at least one signature.
      */
     FunctionSignature[] signatures();

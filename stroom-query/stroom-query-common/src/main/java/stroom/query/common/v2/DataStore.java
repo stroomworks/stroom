@@ -36,11 +36,11 @@ public interface DataStore extends ValuesConsumer {
     List<Column> getColumns();
 
     /**
-     * Get child items from the data for the provided parent key and time filter.
+     * Get child items from the data for the currently open groups and time filter, passing each to
+     * {@code resultConsumer}.
      *
-     * @param key        The parent key to get child items for.
+     * @param openGroups The open groups to get child items for.
      * @param timeFilter The time filter to use to limit the data returned.
-     * @return The filtered child items for the parent key.
      */
     void fetch(List<Column> columns,
                OffsetRange range,
@@ -67,7 +67,6 @@ public interface DataStore extends ValuesConsumer {
      * Read items from the supplied input and transfer them to the data store.
      *
      * @param input The input to read.
-     * @return True if we still happy to keep on receiving data, false otherwise.
      */
     void readPayload(Input input);
 
@@ -95,7 +94,7 @@ public interface DataStore extends ValuesConsumer {
      * {@code ResultStore.awaitCompletion()}); called mid-population it returns a partial, monotonically
      * non-decreasing count.</p>
      *
-     * <p><b>Relationship to what {@link #fetch} yields:</b> it counts rows <i>received</i>, so:
+     * <p><b>Relationship to what {@link #fetch} yields:</b> it counts rows <i>received</i>, so:</p>
      * <ul>
      *   <li>for a <b>flat</b> store (no grouping, no result trimming) - which is exactly what a compiled join side
      *   is - it equals the number of rows an unbounded {@link #fetch} yields;</li>
@@ -104,7 +103,7 @@ public interface DataStore extends ValuesConsumer {
      *   <li>it is <b>not</b> reduced by result <b>trimming</b>/{@code maxResults} - a trimmed store may fetch fewer
      *   rows than it received.</li>
      * </ul>
-     * Treat it as an exact fetch-row count only for the flat, un-trimmed case.</p>
+     * <p>Treat it as an exact fetch-row count only for the flat, un-trimmed case.</p>
      *
      * <p><b>Comparability &amp; intended use:</b> only compare values from stores of the <b>same implementation
      * and configuration</b> (a single query's join sides always are). Because it is a relative sizing hint for

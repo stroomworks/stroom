@@ -35,7 +35,6 @@ public interface Coprocessor extends ValuesConsumer {
      * Read items from the supplied input and transfer them to the data store.
      *
      * @param input The input to read.
-     * @return True if we still happy to keep on receiving data, false otherwise.
      */
     void readPayload(Input input);
 

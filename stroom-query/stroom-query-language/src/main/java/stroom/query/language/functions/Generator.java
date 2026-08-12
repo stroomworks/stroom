@@ -44,7 +44,8 @@ public interface Generator {
      * min generator take the min value from the supplied min generator and
      * compute a new min for this generator.
      *
-     * @param generator The generator to merge with this one.
+     * @param existingValues The values to merge into.
+     * @param newValues      The values to merge in.
      */
     void merge(StoredValues existingValues, StoredValues newValues);
 }

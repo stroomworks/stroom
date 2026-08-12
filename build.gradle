@@ -160,10 +160,36 @@ def projectsToBePublished = subprojects.findAll { project ->
 def failedTestReportFiles = []
 
 //Configuration applicable to all projects
+// Modules whose Javadoc is validated by doclint, so a broken {@link}, a @param naming a parameter that does not
+// exist, or malformed HTML fails the build instead of being silently ignored.
+//
+// This is a ratchet, not a permanent exclusion list: doclint was enabled repo-wide until it was dropped along with
+// an unrelated Gradle 9 module-path fix, and turning it straight back on fails ~200 checks across ~28 modules, most
+// of them long predating the modules listed here. So it is re-enabled per module as each is cleaned. **Add a module
+// here once its `javadoc` task passes** - and do not remove one to make a build go green, because that silently
+// reopens the gap this list exists to close.
+//
+// Remaining offenders, worst first, as a guide to what cleaning the rest costs: stroom-pipeline (95), stroom-util
+// (24), stroom-bytebuffer (12), stroom-util-shared (7), stroom-document-asset (7), stroom-db-util (7),
+// stroom-core-shared (7), stroom-test-common (4), stroom-statistics (4), stroom-lmdb (3), stroom-analytics (3).
+def doclintValidatedProjects = [
+        ':stroom-graphdb:stroom-graphdb-impl',
+        ':stroom-query:stroom-query-api',
+        ':stroom-query:stroom-query-common',
+        ':stroom-query:stroom-query-grammar',
+        ':stroom-query:stroom-query-language',
+        ':stroom-query:stroom-query-planner',
+]
+
 allprojects {
-    // Make doclint be quiet - we don't care about JavaDoc warnings.
     tasks.withType(Javadoc) {
-        options.addStringOption('Xdoclint:none', '-quiet')
+        if (doclintValidatedProjects.contains(project.path)) {
+            // 'missing' stays off: this enforces that what is documented is correct, not that everything is
+            // documented. Turning it on would add thousands of findings and drown the ones that matter.
+            options.addStringOption('Xdoclint:all,-missing', '-quiet')
+        } else {
+            options.addStringOption('Xdoclint:none', '-quiet')
+        }
         options.addBooleanOption('html5', true)
         // Skip javadoc for modules that pull in the GWT client/dev jars (gwt-user / gwt-dev): javadoc reads
         // those jars' own bundled .java sources and fails on their unresolved GWT-internal references. Such

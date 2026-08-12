@@ -34,7 +34,7 @@ public interface KeyFactory extends UniqueIdProvider {
     /**
      * Read a key from an input.
      *
-     * @param input The input to read the key from.
+     * @param reader The reader to read the key from.
      * @return The key read from the input.
      */
     Key read(DataReader reader);

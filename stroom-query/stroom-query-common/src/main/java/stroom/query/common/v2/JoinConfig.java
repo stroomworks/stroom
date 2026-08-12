@@ -40,7 +40,7 @@ import com.fasterxml.jackson.annotation.JsonPropertyOrder;
  *
  * <p>This class is immutable: every field is set once, either by {@link #JoinConfig} (JSON-absent defaults) or
  * by the {@link JsonCreator} constructor (explicit YAML/JSON values, with a JSON {@code null} for any property
- * falling back to that same default - see the {@link #JoinConfig(Long, Long, Long)} Javadoc).</p>
+ * falling back to that same default - see the {@link #JoinConfig(Long, Long, Long, Long)} Javadoc).</p>
  */
 @JsonPropertyOrder(alphabetic = true)
 public class JoinConfig extends AbstractConfig implements IsStroomConfig {

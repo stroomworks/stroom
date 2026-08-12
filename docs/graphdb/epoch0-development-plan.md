@@ -801,11 +801,35 @@ The essentials an implementer needs at hand:
 > specific. If `docs/` migrates to another repository, that link needs repointing — the standards themselves
 > are repository-level and should follow the code, not the documentation.
 
-### To expand later — restore Javadoc validation
+### Javadoc validation — **partly restored**, as a ratchet
 
-**Not yet planned in enough detail to execute. This is a placeholder with the findings, not a task.** Recorded
-here rather than in a feature plan because it is repository-level, like `coding-standards.md` itself: it affects
-every module, and neither the Graph DB nor the query optimiser owns it.
+**Done for the modules this programme owns; the rest of the repository is still unvalidated.** Recorded here
+rather than in a feature plan because it is repository-level, like `coding-standards.md` itself: it affects every
+module, and neither the Graph DB nor the query optimiser owns it.
+
+**What was done.** Measuring first settled the shape: with doclint on, the repository fails **~200 checks across
+~28 modules**, but only **12 of them are in the modules this programme added or reworked**. A repo-wide sweep
+would therefore have meant rewriting Javadoc in `stroom-pipeline` (95), `stroom-util` (24), `stroom-bytebuffer`
+(12) and twenty more — none of it this work's concern, and all of it churn in a diff already large enough. So the
+**per-module ratchet** below was taken instead: a `doclintValidatedProjects` list in `build.gradle` naming the six
+clean modules (`stroom-graphdb-impl`, and the five `stroom-query` modules), which get the original
+`Xdoclint:all,-missing`; everything else keeps `Xdoclint:none` until it is cleaned and added.
+
+`missing` stays off deliberately. This enforces that what *is* documented is correct — the failure mode actually
+observed — not that everything is documented, which would add thousands of findings and bury the ones that matter.
+
+The 12 defects it surfaced were all real: four `{@link}`s to methods that do not exist (including
+`GraphStoreManagerImpl` citing `#getOrOpen`, which the review had already found the twin of in
+`GraphStoreStatsAdapter`), a constructor reference with the wrong arity, three `@param`s naming parameters that
+had been renamed or removed, three `@return`s on `void` methods, and one unescaped `&`. **Validated by sabotage**:
+a deliberately broken `{@link}` in `JoinPlan` fails `:stroom-query-planner:javadoc`, and the build goes green again
+when it is restored — so the gate is real, not merely configured.
+
+**What remains**, in the order the counts suggest: `stroom-pipeline` (95), `stroom-util` (24), `stroom-bytebuffer`
+(12), `stroom-util-shared` (7), `stroom-document-asset` (7), `stroom-db-util` (7), `stroom-core-shared` (7),
+`stroom-test-common` (4), `stroom-statistics` (4), `stroom-lmdb` (3), `stroom-analytics` (3), then the tail. Each
+is a self-contained piece of work: clean the module, add it to the list, done. The list is a ratchet — a module
+should never be removed from it to make a build go green.
 
 **What was lost.** Commit `d8e38498c0` ("Fix javadoc for the full build (Gradle 9)") removed
 `options.addStringOption('Xdoclint:all,-missing', '-html5')` from the `subprojects` javadoc block in

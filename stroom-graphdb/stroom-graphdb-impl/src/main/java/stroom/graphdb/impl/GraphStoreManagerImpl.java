@@ -240,7 +240,7 @@ public class GraphStoreManagerImpl implements GraphStoreManager {
 
     /**
      * Code-review fix: previously {@code remove(uuid)} then the physical {@link GraphStores#delete} ran as two
-     * separate steps with no lock between them - a concurrent {@link #getOrOpen} for the same UUID could
+     * separate steps with no lock between them - a concurrent {@link #getOrOpenUnguarded} for the same UUID could
      * repopulate {@code openStores} via {@code computeIfAbsent} in the gap, and the pending physical delete would
      * then remove that directory's files out from under the freshly-opened, live instance. Using
      * {@link ConcurrentMap#compute} instead makes "close the old instance, then physically delete" atomic with
