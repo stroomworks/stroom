@@ -211,7 +211,7 @@ on answering queries.
 
 | Symptom | Meaning |
 |---|---|
-| `graphdb` merge-failure metric above zero | At least one fragment could not be merged. The fragment directory under `merging/` is **retained** deliberately so it can be merged once the cause is fixed. Check the ERROR log |
+| `graphdb` merge-failure metric above zero | At least one fragment could not be merged. The fragment directory under `merging/` is **retained** deliberately — it survives restarts, and each restart retries it once — so it merges once the cause is fixed. A fragment that can never merge (e.g. corrupt) must be removed from `merging/` by hand after investigation. Check the ERROR log |
 | Fragments accumulating under `staging/` or `merging/` | The merge loops are not running. Check the `Graph DB Merge Processor` job is enabled |
 | A stream task failing with a send error | A target node was unreachable, not enabled, or running a build without the `/graphFileTransfer/v1/sendPart` endpoint. The stream will be reprocessed |
 
