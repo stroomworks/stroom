@@ -16,6 +16,7 @@
 
 package stroom.floormap.client.view;
 
+import stroom.floormap.client.FloorMapAria;
 import stroom.floormap.client.FloorMapSwatchHtml;
 import stroom.floormap.client.presenter.FloorMapLayerStylePresenter.FloorMapLayerStyleView;
 import stroom.floormap.shared.TypeStyle;
@@ -89,6 +90,7 @@ public class FloorMapLayerStyleViewImpl extends ViewImpl implements FloorMapLaye
 
         uploadButton.setText("Upload");
         uploadButton.setTitle("Upload a new image into this document's assets");
+        //noinspection unused event
         uploadButton.addClickHandler(event -> {
             if (uploadHandler != null) {
                 uploadHandler.run();
@@ -115,7 +117,23 @@ public class FloorMapLayerStyleViewImpl extends ViewImpl implements FloorMapLaye
         grid.setText(ROW_PREVIEW, 0, "Preview");
         grid.setWidget(ROW_PREVIEW, 1, buildPreviewPanel());
 
+        // Each row's label is <td> text, which names nothing — see
+        // FloorMapAria.labelledByCell. The Graphic row is exempt: its two radios
+        // carry their own visible labels, and the radio group is named by the
+        // fieldset-less grouping below.
+        FloorMapAria.labelledByCell(grid, ROW_SHAPE, 0, shapeBox);
+        FloorMapAria.labelledByCell(grid, ROW_COLOUR, 0, colourBox);
+        FloorMapAria.labelledByCell(grid, ROW_IMAGE, 0, assetPickerPanel);
+        // The picker is an injected view rather than a control of its own, so the
+        // name has to hang off the container as a group.
+        FloorMapAria.group(assetPickerPanel, "Image");
+        // "Upload" alone does not say what is being uploaded or where it goes.
+        uploadButton.getElement().setAttribute("aria-label",
+                "Upload a new image into this document's assets");
+
+        //noinspection unused event
         shapeBox.addValueChangeHandler(event -> fireChange());
+        //noinspection unused event
         colourBox.addValueChangeHandler(event -> fireChange());
 
         shapeMode.setValue(true);
@@ -127,7 +145,9 @@ public class FloorMapLayerStyleViewImpl extends ViewImpl implements FloorMapLaye
         panel.addStyleName("floormap-layer-style-modes");
         shapeMode.setTitle("Draw a coloured shape for facts of this type");
         imageMode.setTitle("Draw an image from this document's assets");
+        //noinspection unused event
         shapeMode.addValueChangeHandler(event -> onModeChanged());
+        //noinspection unused event
         imageMode.addValueChangeHandler(event -> onModeChanged());
         panel.add(shapeMode);
         panel.add(imageMode);

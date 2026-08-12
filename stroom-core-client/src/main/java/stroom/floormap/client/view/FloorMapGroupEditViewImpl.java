@@ -16,6 +16,7 @@
 
 package stroom.floormap.client.view;
 
+import stroom.floormap.client.FloorMapAria;
 import stroom.floormap.client.presenter.FloorMapGroupEditPresenter.FloorMapGroupEditView;
 import stroom.floormap.client.presenter.FloorMapGroupEditPresenter.MemberCandidate;
 import stroom.widget.colour.client.ColourBox;
@@ -93,6 +94,11 @@ public class FloorMapGroupEditViewImpl extends ViewImpl implements FloorMapGroup
         grid.setWidget(ROW_COLOUR, 1, colourBox);
         root.add(grid);
 
+        // The Name and Colour labels are <td> text, which names nothing — see
+        // FloorMapAria.labelledByCell.
+        FloorMapAria.labelledByCell(grid, ROW_NAME, 0, nameBox);
+        FloorMapAria.labelledByCell(grid, ROW_COLOUR, 0, colourBox);
+
         final Label membersLabel = new Label("Members");
         membersLabel.addStyleName("floormap-group-edit-label");
         root.add(membersLabel);
@@ -100,11 +106,19 @@ public class FloorMapGroupEditViewImpl extends ViewImpl implements FloorMapGroup
         filterBox.addStyleName("floormap-group-edit-filter");
         filterBox.getElement().setPropertyString("placeholder", "Filter by name, type or id");
         filterBox.addKeyUpHandler(this::onFilterChanged);
+        // A placeholder is not an accessible name: it is not exposed by every
+        // screen reader and it disappears as soon as anything is typed.
+        FloorMapAria.label(filterBox, "Filter members by name, type or id");
         root.add(filterBox);
 
         memberList.addStyleName("floormap-group-edit-members");
         final ScrollPanel scrollPanel = new ScrollPanel(memberList);
         scrollPanel.addStyleName("floormap-group-edit-scroll");
+        // Ties the scrolling tick-list to the "Members" heading above it, so
+        // arriving in the list says what the list is.
+        final String membersLabelId = FloorMapAria.uniqueId("floormap-members");
+        membersLabel.getElement().setId(membersLabelId);
+        FloorMapAria.labelledBy(scrollPanel, membersLabelId);
         root.add(scrollPanel);
 
         summary.addStyleName("floormap-group-edit-summary");

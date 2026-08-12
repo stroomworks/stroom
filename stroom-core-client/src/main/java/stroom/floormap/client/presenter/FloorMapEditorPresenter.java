@@ -325,6 +325,12 @@ public class FloorMapEditorPresenter
         setInSlot(TIMELINE, floorMapTimelinePresenter);
         setInSlot(FACT_LIST, floorMapFactListPresenter);
         setInSlot(TIME_LIST, floorMapTimeListPresenter);
+
+        // Name the Fact List as this canvas's text alternative. The Map tab uses
+        // its Tracking grid for the same purpose; on the Editor tab the Fact List
+        // is the navigable row-per-object view of what the canvas is drawing.
+        floorMapCanvasPresenter.setTextAlternativeId(
+                FloorMapFactListPresenter.getGridElementId());
         // Properties are shown as a modal dialog — no slot needed.
     }
 
@@ -763,6 +769,11 @@ public class FloorMapEditorPresenter
      */
     private void onTimeChange(final long timeMs) {
         model.setSelectedTime(timeMs);
+        // Keep this canvas's accessible summary and live region on the same clock
+        // as its timeline's labels. The Editor tab has its own canvas and timeline
+        // pair, so it needs this wiring independently of the Map tab's.
+        floorMapCanvasPresenter.setCurrentTimeText(
+                floorMapTimelinePresenter.formatTime(timeMs));
         loadAtTime(timeMs);
         if (model.getSelectedFactKey() != null) {
             refreshTimeListAtTime(timeMs);

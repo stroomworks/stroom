@@ -39,7 +39,7 @@
 
     <g:FlowPanel addStyleNames="max dock-container-vertical form overflow-y-auto">
 
-                <form:FormGroup label="Name">
+                <form:FormGroup label="Name" identity="floorMapObjectName">
                     <form:HelpHTML>
                         <p>The object's display name. It appears in the <em>Fact List</em> (the
                             Name column) and the <em>Time List</em> summary. It is not drawn on
@@ -49,7 +49,7 @@
                     <g:TextBox ui:field="nameBox" addStyleNames="stroom-control wide-control" />
                 </form:FormGroup>
 
-                <form:FormGroup label="Type">
+                <form:FormGroup label="Type" identity="floorMapObjectType">
                     <form:HelpHTML>
                         <p>The object's <strong>type</strong> — for example <code>gate</code>,
                             <code>camera</code> or <code>person</code>. The type drives the paint
@@ -78,13 +78,13 @@
                             Styles</em>) — the swatch shows that colour; untick it to give
                             this area its own colour.</p>
                     </form:HelpHTML>
-                    <g:FlowPanel addStyleNames="dock-container-horizontal align-center">
+                    <g:FlowPanel ui:field="fillRow" addStyleNames="dock-container-horizontal align-center">
                         <g:CheckBox ui:field="fillDefaultCheck" text="Default" addStyleNames="{style.fillDefault}" />
                         <colour:ColourBox ui:field="fillBox" />
                     </g:FlowPanel>
                 </form:FormGroup>
 
-                <form:FormGroup ui:field="opacityGroup" label="Area Fill Opacity">
+                <form:FormGroup ui:field="opacityGroup" label="Area Fill Opacity" identity="floorMapObjectOpacity">
                     <form:HelpHTML>
                         <p>How translucent the area's fill is, from <code>0</code>
                             (invisible) to <code>1</code> (opaque). Leave empty for the
@@ -125,10 +125,10 @@
                         <p>For an <em>area</em> this is the centre of its outline; for a
                             background or other image, the point the image is placed from.</p>
                     </form:HelpHTML>
-                    <g:FlowPanel addStyleNames="dock-container-horizontal align-center">
+                    <g:FlowPanel ui:field="positionRow" addStyleNames="dock-container-horizontal align-center">
                         <g:TextBox ui:field="posX" addStyleNames="stroom-control {style.matrixBox}" />
                         <g:TextBox ui:field="posY" addStyleNames="stroom-control {style.matrixBox}" />
-                        <g:Label text="m" addStyleNames="{style.unitSuffix}" />
+                        <g:Label ui:field="posUnit" text="m" addStyleNames="{style.unitSuffix}" />
                     </g:FlowPanel>
                 </form:FormGroup>
                 <form:FormGroup ui:field="sizeGroup" label="Size (Width, Height) in metres">
@@ -144,10 +144,10 @@
                             A plain shape marker is drawn at a fixed size on screen and has no
                             size to set.</p>
                     </form:HelpHTML>
-                    <g:FlowPanel addStyleNames="dock-container-horizontal align-center">
+                    <g:FlowPanel ui:field="sizeRow" addStyleNames="dock-container-horizontal align-center">
                         <g:TextBox ui:field="sizeW" addStyleNames="stroom-control {style.matrixBox}" />
                         <g:TextBox ui:field="sizeH" addStyleNames="stroom-control {style.matrixBox}" />
-                        <g:Label text="m" addStyleNames="{style.unitSuffix}" />
+                        <g:Label ui:field="sizeUnit" text="m" addStyleNames="{style.unitSuffix}" />
                     </g:FlowPanel>
                 </form:FormGroup>
                 <form:FormGroup ui:field="scaleGroup" label="Scale (X, Y)">
@@ -157,7 +157,7 @@
                         <p>Shown only for objects whose size cannot be stated in metres — anything
                             with a real extent offers a <em>Size</em> in metres above instead.</p>
                     </form:HelpHTML>
-                    <g:FlowPanel addStyleNames="dock-container-horizontal align-center">
+                    <g:FlowPanel ui:field="scaleRow" addStyleNames="dock-container-horizontal align-center">
                         <g:TextBox ui:field="w2mSx" addStyleNames="stroom-control {style.matrixBox}" />
                         <g:TextBox ui:field="w2mSy" addStyleNames="stroom-control {style.matrixBox}" />
                     </g:FlowPanel>
@@ -170,7 +170,7 @@
                         <p>Dragging the round handle above the object's selection frame sets this
                             for you, holding <strong>Shift</strong> to snap to 15&#176; steps.</p>
                     </form:HelpHTML>
-                    <g:FlowPanel addStyleNames="dock-container-horizontal align-center">
+                    <g:FlowPanel ui:field="rotationRow" addStyleNames="dock-container-horizontal align-center">
                         <g:TextBox ui:field="w2mRot" addStyleNames="stroom-control {style.matrixBox}" />
                     </g:FlowPanel>
                 </form:FormGroup>

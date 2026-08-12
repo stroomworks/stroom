@@ -25,7 +25,9 @@ import stroom.widget.histogram.client.HistogramWidget;
 import com.google.gwt.dom.client.Element;
 import com.google.gwt.dom.client.NativeEvent;
 import com.google.gwt.dom.client.Style.Unit;
+import com.google.gwt.event.dom.client.BlurEvent;
 import com.google.gwt.event.dom.client.ClickEvent;
+import com.google.gwt.event.dom.client.FocusEvent;
 import com.google.gwt.event.dom.client.KeyCodes;
 import com.google.gwt.event.dom.client.KeyDownEvent;
 import com.google.gwt.event.dom.client.MouseDownEvent;
@@ -74,8 +76,22 @@ public class FloorMapTimelineViewImpl extends ViewImpl implements FloorMapTimeli
     private Runnable settingsHandler;
     /** Called when the speed badge is clicked (or activated from the keyboard). */
     private Runnable speedBadgeHandler;
+    /**
+     * Called with a signed number of histogram bins when the focused bar is
+     * scrubbed from the keyboard.
+     */
+    private Consumer<Integer> nudgeHandler;
     private boolean dragging;
+    /**
+     * Set when the user dismisses the datetime pill with Escape, so it stays
+     * dismissed until the bar is focused again.
+     */
+    private boolean scrubTooltipSuppressed;
     private final HistogramWidget histogramWidget;
+
+    /** Class that makes the datetime pill visible. */
+    private static final String SCRUB_TOOLTIP_VISIBLE =
+            "stroom-floormap-timeline-scrub-tooltip--visible";
 
     @UiField
     SimplePanel histogramContainer;
@@ -107,6 +123,9 @@ public class FloorMapTimelineViewImpl extends ViewImpl implements FloorMapTimeli
     Label outOfRangeLeftLabel;
     @UiField
     Label outOfRangeRightLabel;
+    /** Visually-hidden live region announcing the out-of-range state. */
+    @UiField
+    Label timelineStatus;
 
     @Inject
     public FloorMapTimelineViewImpl(final Binder binder) {
@@ -155,6 +174,12 @@ public class FloorMapTimelineViewImpl extends ViewImpl implements FloorMapTimeli
         final Element badgeEl = speedBadge.getElement();
         badgeEl.setAttribute("role", "button");
         badgeEl.setAttribute("tabindex", "0");
+        // The title above is a mouse tooltip only. An element's accessible name
+        // comes from its content when it has any, so this badge would announce as
+        // bare "×1, button" — which does not say what the ×1 is — and the title
+        // would never be read. setSpeedBadge() therefore maintains an explicit
+        // aria-label carrying both the purpose and the value.
+        applySpeedBadgeLabel();
         //noinspection unused e
         speedBadge.addClickHandler(e -> {
             if (speedBadgeHandler != null) {
@@ -178,6 +203,34 @@ public class FloorMapTimelineViewImpl extends ViewImpl implements FloorMapTimeli
         barEl.setAttribute("aria-valuenow", "0");
         barEl.setAttribute("tabindex", "0");
 
+        // Keyboard scrubbing, in the key bindings the ARIA slider pattern
+        // specifies. Without these the bar is worse than an unfocusable div: it
+        // takes a tab stop and announces itself as a slider, then does nothing.
+        //
+        // Arrow and Page keys nudge by whole histogram bins rather than by a
+        // percentage, so a keypress lands on the same times the step buttons
+        // reach — a percentage step would drift off the bin grid and make the
+        // step buttons and the keyboard disagree about "one step". Bin width is
+        // the presenter's business, hence the signed-bin handler.
+        outerBar.addDomHandler(this::onBarKeyDown, KeyDownEvent.getType());
+
+        // WCAG 1.4.13: the datetime pill was reachable only by holding the mouse
+        // down on the bar, so the one piece of information that says *when* the
+        // map is showing was unavailable to anyone not using a pointer. Showing it
+        // while the bar holds focus makes it available on the keyboard, and gives
+        // a sighted keyboard user the same readout a dragger gets.
+        //
+        // Escape dismisses it without moving focus — also 1.4.13 — and the
+        // suppressed flag makes that stick, so it does not immediately return on
+        // the next arrow key.
+        //noinspection unused e
+        outerBar.addDomHandler(e -> {
+            scrubTooltipSuppressed = false;
+            showScrubTooltip(true);
+        }, FocusEvent.getType());
+        //noinspection unused e
+        outerBar.addDomHandler(e -> showScrubTooltip(false), BlurEvent.getType());
+
         // Build the histogram widget and place it inside the container.
         histogramWidget = new HistogramWidget();
         // Histogram click-to-seek — treat it like releasing the scrubber.
@@ -195,6 +248,19 @@ public class FloorMapTimelineViewImpl extends ViewImpl implements FloorMapTimeli
         //noinspection UnnecessaryUnicodeEscape
         outOfRangeRightLabel.setText("\u00BB"); // »
         outOfRangeRightLabel.setTitle("Object out of range. Extend timeline range to view object.");
+        // The chevrons are decoration: they are guillemets, which a screen reader
+        // renders as punctuation or skips entirely, and setOutOfRangeIndicator()
+        // states the same thing in words through the live region below. Hiding them
+        // keeps the meaning from being offered twice, once uselessly.
+        outOfRangeLeftLabel.getElement().setAttribute("aria-hidden", "true");
+        outOfRangeRightLabel.getElement().setAttribute("aria-hidden", "true");
+
+        // role="status" implies aria-live="polite"; both are set because some
+        // screen readers honour only one.
+        final Element statusEl = timelineStatus.getElement();
+        statusEl.setAttribute("role", "status");
+        statusEl.setAttribute("aria-live", "polite");
+        statusEl.setAttribute("aria-atomic", "true");
     }
 
     @Override
@@ -231,6 +297,11 @@ public class FloorMapTimelineViewImpl extends ViewImpl implements FloorMapTimeli
     @Override
     public void setCommitHandler(final Consumer<Double> commitHandler) {
         this.commitHandler = commitHandler;
+    }
+
+    @Override
+    public void setNudgeHandler(final Consumer<Integer> nudgeHandler) {
+        this.nudgeHandler = nudgeHandler;
     }
 
     // -----------------------------------------------------------------------
@@ -324,6 +395,21 @@ public class FloorMapTimelineViewImpl extends ViewImpl implements FloorMapTimeli
     @Override
     public void setSpeedBadge(final String text) {
         speedBadge.setText(text);
+        applySpeedBadgeLabel();
+    }
+
+    /**
+     * Names the speed badge for assistive technology as purpose plus current
+     * value, e.g. {@code "Playback speed ×1, opens the speed menu"}.
+     *
+     * <p>Kept in step with the visible text, which is the whole accessible name
+     * otherwise: {@code ×1} on its own is unintelligible out of visual context,
+     * and the {@code title} attribute that explains it is not used for the name
+     * of an element that has content.</p>
+     */
+    private void applySpeedBadgeLabel() {
+        speedBadge.getElement().setAttribute("aria-label",
+                "Playback speed " + speedBadge.getText() + ", opens the speed menu");
     }
 
     @Override
@@ -344,19 +430,140 @@ public class FloorMapTimelineViewImpl extends ViewImpl implements FloorMapTimeli
     }
 
     @Override
+    public void redrawHistogram() {
+        if (histogramWidget != null) {
+            histogramWidget.redraw();
+        }
+    }
+
+    @Override
     public void setOutOfRangeIndicator(final OutOfRange direction) {
         outOfRangeLeftLabel.setVisible(direction == OutOfRange.BEFORE);
         outOfRangeRightLabel.setVisible(direction == OutOfRange.AFTER);
+
+        // The chevrons are «/» glyphs — read aloud they are punctuation, or
+        // nothing at all. Say what the state actually means, and say it through
+        // the live region so it is heard when it happens rather than only if the
+        // user thinks to go looking.
+        final String message;
+        //noinspection EnhancedSwitchMigration
+        switch (direction) {
+            case BEFORE:
+                message = "Tracked object is before the start of the timeline range."
+                        + " Extend the range to see it.";
+                break;
+            case AFTER:
+                message = "Tracked object is after the end of the timeline range."
+                        + " Extend the range to see it.";
+                break;
+            default:
+                message = "";
+                break;
+        }
+        timelineStatus.setText(message);
     }
 
     // -----------------------------------------------------------------------
     // Mouse / drag handling on the scrubber bar
     // -----------------------------------------------------------------------
 
+    /**
+     * Number of histogram bins a Page Up / Page Down moves — the ARIA slider
+     * pattern's "larger step". Ten bins crosses a visible fraction of the bar
+     * without skipping so far that the user loses their place.
+     */
+    private static final int PAGE_BINS = 10;
+
+    /**
+     * Handles keyboard scrubbing on the focused bar.
+     *
+     * <p>Every handled key calls {@code preventDefault}: left unhandled, the
+     * arrows and Page keys scroll the surrounding panel instead, which moves the
+     * timeline out from under the user rather than moving the time.</p>
+     */
+    private void onBarKeyDown(final KeyDownEvent event) {
+        switch (event.getNativeKeyCode()) {
+            // Right/Up increase, Left/Down decrease — the ARIA slider convention,
+            // and the reason Down is grouped with Left rather than with Up.
+            case KeyCodes.KEY_RIGHT:
+            case KeyCodes.KEY_UP:
+                nudge(event, 1);
+                break;
+            case KeyCodes.KEY_LEFT:
+            case KeyCodes.KEY_DOWN:
+                nudge(event, -1);
+                break;
+            case KeyCodes.KEY_PAGEUP:
+                nudge(event, PAGE_BINS);
+                break;
+            case KeyCodes.KEY_PAGEDOWN:
+                nudge(event, -PAGE_BINS);
+                break;
+            case KeyCodes.KEY_HOME:
+                seekTo(event, 0.0);
+                break;
+            case KeyCodes.KEY_END:
+                seekTo(event, 100.0);
+                break;
+            case KeyCodes.KEY_ESCAPE:
+                // Dismiss the pill without moving focus (WCAG 1.4.13). Not
+                // preventDefault-ed: Escape may also mean "close the dialog I am
+                // in", and swallowing it here would trap the user.
+                scrubTooltipSuppressed = true;
+                showScrubTooltip(false);
+                break;
+            default:
+                // Anything else belongs to the browser (Tab, shortcuts, …).
+                break;
+        }
+    }
+
+    /**
+     * Shows or hides the datetime pill, honouring an Escape dismissal.
+     *
+     * <p>A dismissal that un-did itself on the next keystroke would not be a
+     * dismissal, so {@code scrubTooltipSuppressed} outranks a request to show;
+     * it is cleared when the bar is focused afresh.</p>
+     */
+    private void showScrubTooltip(final boolean visible) {
+        if (visible && !scrubTooltipSuppressed) {
+            scrubTooltip.addStyleName(SCRUB_TOOLTIP_VISIBLE);
+        } else {
+            scrubTooltip.removeStyleName(SCRUB_TOOLTIP_VISIBLE);
+        }
+    }
+
+    /** Moves the time by {@code bins} histogram bins and swallows the keystroke. */
+    private void nudge(final KeyDownEvent event, final int bins) {
+        event.preventDefault();
+        event.stopPropagation();
+        showScrubTooltip(true);
+        if (nudgeHandler != null) {
+            nudgeHandler.accept(bins);
+        }
+    }
+
+    /**
+     * Jumps to an absolute position on the bar and swallows the keystroke. Goes
+     * through the commit handler — the same path as releasing a drag — because
+     * Home/End are a finished movement, not an in-progress one, and so should
+     * fire the data query rather than only move the handle.
+     */
+    private void seekTo(final KeyDownEvent event, final double pct) {
+        event.preventDefault();
+        event.stopPropagation();
+        showScrubTooltip(true);
+        if (commitHandler != null) {
+            commitHandler.accept(pct);
+        }
+    }
+
     private void onBarMouseDown(final MouseDownEvent event) {
         if (event.getNativeButton() == NativeEvent.BUTTON_LEFT) {
             dragging = true;
-            scrubTooltip.addStyleName("stroom-floormap-timeline-scrub-tooltip--visible");
+            // A fresh pointer interaction overrides an earlier Escape dismissal.
+            scrubTooltipSuppressed = false;
+            showScrubTooltip(true);
             // Move the handle immediately on click but do not yet fire a data query.
             notifyScrub(event.getClientX());
             DOM.setCapture(outerBar.getElement());
@@ -374,7 +581,10 @@ public class FloorMapTimelineViewImpl extends ViewImpl implements FloorMapTimeli
     private void onBarMouseUp(final MouseUpEvent event) {
         if (dragging) {
             dragging = false;
-            scrubTooltip.removeStyleName("stroom-floormap-timeline-scrub-tooltip--visible");
+            // Unchanged pointer behaviour: the pill goes away on release. Keyboard
+            // scrubbing brings it back (see nudge/seekTo), so a click followed by
+            // arrow keys still shows the readout.
+            showScrubTooltip(false);
             // Commit the final position: this is the single point at which we fire a data query.
             notifyCommit(event.getClientX());
             DOM.releaseCapture(outerBar.getElement());
