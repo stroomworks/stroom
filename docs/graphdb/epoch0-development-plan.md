@@ -481,7 +481,7 @@ passes no recorder, since bookkeeping outside a sweep is consumed by nothing.
 Verified by sabotage, and the test needs a value **longer than the 32-byte inline tier** or it exercises nothing:
 a short value references no lookup entry, so the case would pass whether or not the sweep worked.
 
-## Phase 5 — Transaction boundaries — **planned**
+## Phase 5 — Transaction boundaries — **complete**
 
 Found by pre-merge review, after Phases 1–4 were complete. Four sites where a failure is **durably committed**
 rather than rolled back, so a rejected or failed write leaves partial state behind and the operator is told
@@ -581,6 +581,144 @@ failure part-way through a stream ships no fragment, and a lenient-mode run with
 **Phase 5 gate**: for each of the four sites, a test that forces the failure and asserts the store or the queue is
 left in a state the documented recovery procedure actually recovers from. No new silent path: every one of these
 failures is already reported — the bug is what it leaves behind, not whether it is noticed.
+
+**Delivered.** All four, each sabotage-validated — the fix removed, the new test confirmed failing, the fix
+restored. Two things the implementation settled that the plan had left open:
+
+- **`merge`'s guarantee is narrower than "unchanged", and the Javadoc now says so rather than overstating it.**
+  `tryCommit` batches per interned name and per edge *pair*, so "leaves the store byte-for-byte unchanged" holds
+  absolutely for a fragment refused up front and for any failure under the batch threshold — but past it, whole
+  earlier batches are durable. What is guaranteed unconditionally is that every batch boundary falls after a
+  complete per-entity unit, so **a half edge or torn version is never durable**, and idempotent merge makes the
+  surviving prefix converge on retry. Retention has no such caveat: it performs no intermediate commits before the
+  rebuild completes, so a cleared or partial index is never committed.
+- **A permanently-failing fragment is retained and retried once per process start**, never in a loop — within a
+  run `DirQueue.readId` has already moved past it, so only a new processor re-reads from the on-disk minimum. Each
+  attempt logs an ERROR naming the fragment and document and fires the merge-failure metric, so it is never
+  silent; removing a corrupt fragment is a documented operator action rather than new on-disk quarantine state.
+  `11-operations.md` now describes this, replacing the retention claim that was previously false.
+
+## Phase 6 — Language fidelity: what the user wrote is what runs — **planned**
+
+Found by pre-merge review, which audited **~150 AST accessors across all 38 StroomQL and 52 Cypher node types**
+and traced each to its consumers. Six constructs are accepted by the grammar, carried in the AST, and then
+**silently dropped** — the query runs, returns plausible rows, and reports success. One of the six is advertised
+in the language reference as working.
+
+**Why this is its own phase, and not a list of small bugs.** Phase 5 was about data already accepted being
+destroyed; this is about a query being answered as though the user had written something else. The failure has no
+signal at all: no error, no warning, no log line — and the wrong answer is usually a *superset* or a
+*plausible-looking subset*, which is exactly the shape an analyst will not question. That makes these worse than a
+crash, and it is why the phase gate below matters as much as the individual fixes.
+
+**Two of the six are cheaper than they look**, because the machinery already exists and is simply not wired up —
+the same shape as Phase 5.3's dead `DirQueue` recovery:
+- `toQualifiedField` already receives the `List<ProjectField>` it would need to resolve an alias (it passes it to
+  `resolveAggregateOrderItem` on the aggregate path); the non-aggregate path just doesn't use it.
+- `validateExpressionInScope`/`validateBooleanInScope` already exist and already take a `Set<String> scope`; they
+  are only called from the `WITH` stage (`CypherToLogicalPlan.java:422,426`). What is missing is collecting the
+  *pattern's* bound variables and calling them on the main path.
+
+**Rejection is an acceptable fix throughout this phase.** For anything not worth compiling yet, a positioned
+`CypherCompileException` is a complete fix — it converts a silent wrong answer into a clear message, which is the
+whole point. Compiling the construct properly is better where it is cheap, but it is not required to close the
+defect. Say which was chosen for each, and update `06-language-reference.md` to match.
+
+### 6.1 `ORDER BY <alias>` is silently a no-op on every non-aggregated query
+
+`toQualifiedField` compiles an `AstVariableExpr` order item to `new QualifiedField(null, variable.name())` with no
+attempt to resolve it — and `validateOrderByAgainstAggregation` only runs when an aggregation is present
+(`CypherToLogicalPlan.java:340`; the code comment at `:1409` says so outright). The executor then sorts
+pre-projection traversal rows keyed `"variable.property"`, and a `RETURN` alias is never such a key
+(`GraphTraversalEngine.rowComparator`), so every comparison is null-vs-null.
+
+`MATCH (a:Account) RETURN a.name AS n ORDER BY n DESC LIMIT 10` therefore returns **ten arbitrary rows in
+arbitrary order** — worse than unsorted, because `topNEligible` is true and the top-N heap evicts on an all-ties
+comparator, so two "page 2" requests need not even agree. `06-language-reference.md:263` says `ORDER BY` takes an
+alias, and line 440 recommends aliasing as *the workaround* for unsupported `ORDER BY` expressions.
+
+**Fix**: resolve an unqualified order item against the projection's field names — the `fields` parameter is
+already in hand — or reject it. `rowComparator`'s Javadoc currently rationalises the bug ("a bare pattern variable
+… sorts last"); correct that too. **Done when** a test asserts the rows are actually ordered, and a second asserts
+the `LIMIT` case returns the *right* ten, since that is the path that silently corrupts.
+
+### 6.2 Inline edge property predicates are parsed and discarded
+
+`Cypher.g4`'s `edgeDetail` accepts a property map and `AstCypherBuilder` populates `AstEdgePattern.properties` —
+and a repo-wide grep for any read of that component returns **zero hits**. It is the only AST accessor in either
+grammar with no consumer anywhere. So `MATCH (a:Person)-[:KNOWS {since: '2020'}]->(b) RETURN b.id` matches every
+`KNOWS` edge and returns a superset, with no error. The same silent drop applies inside `EXISTS { }`.
+
+`06-language-reference.md:84` advertises this exact form as "with a property predicate".
+
+**Fix**: the executor already carries `edgeProperties` per `EdgeStep`, so lowering it onto `Expand` is feasible
+and is the better outcome; rejecting at `hop.edge().position()` is acceptable. **Either way the doc line must
+change** — it is currently a promise the code does not keep.
+
+### 6.3 A reference to an unbound variable silently yields nothing
+
+Outside the `WITH` pipe the compiler never checks that a `variable.property` reference names a variable the
+pattern binds. `MATCH (p:Person {surname:'Powell'}) RETURN q.surname` — a one-character typo — returns an
+**all-null column**; the same typo in a `WHERE` returns **silently zero rows**, because the missing row key makes
+the term false for every row. openCypher makes an unbound variable a compile error.
+
+**This is the highest-leverage fix in the phase**: it closes an entire class of typo-becomes-wrong-answer, and
+every input it needs is available at compile time. Two related shapes fall out of the same registry and should be
+covered: a mandatory-`MATCH` `WHERE` referencing an `OPTIONAL MATCH`-only variable (which silently converts
+left-outer semantics into a filter over optional bindings, because the `WHERE` is compiled after the optional
+fold), and `ORDER BY zzz.x`, which sorts by nothing.
+
+**Fix**: collect the pattern's bound variables — anchor, hop targets, edge variables, marking optional ones — and
+run the existing `validateExpressionInScope`/`validateBooleanInScope` over `WHERE`, `RETURN` and `ORDER BY`.
+**Done when** each of the three shapes above is a positioned compile error with a message naming the unknown
+variable.
+
+### 6.4 A `UNION` branch's own `from` is ignored, including for permissions
+
+The grammar allows a `fromClause` on every `singleQuery`, and `AstCypherQuery.dataSourceName` is populated per
+branch — but `CypherCompiler.create` reads only `statement.branches().getFirst()` (`CypherCompiler.java:112,139`)
+and a comment *asserts* the branches share a datasource, with nothing enforcing it. Cross-branch column agreement
+**is** enforced (`compileStatement`); the datasource claim is not.
+
+So `from "GraphA" MATCH (n:X) RETURN n.id UNION from "GraphB" MATCH (n:X) RETURN n.id` runs **both branches
+against GraphA** — and, the part that makes this more than a wrong-rows bug, **the USE permission was only ever
+checked against GraphA**. A user with rights to A and not B gets A's rows either way, but the query reads as
+though B was consulted.
+
+**Fix**: reject a multi-branch statement whose non-first branch declares a differing (or any) `from`, positioned
+at the offending branch. Cross-graph `UNION` is a real feature request; this task is to stop pretending to
+support it. **Done when** the permission path is covered by a test, not just the row path.
+
+### 6.5 Constructs that parse but can never work — reject them
+
+Three shapes are accepted and then fail confusingly or silently. All three should be positioned compile errors;
+none is worth compiling now.
+
+- **Edge variable on a variable-length hop.** `compileVarLengthExpand` never reads `edge.variable()` (verified:
+  its only `variable()` calls are `hop.node().variable()`, the target node), and `VarLengthExpand` has no slot for
+  one. `MATCH (a)-[r:T*1..3]->(b) RETURN r.since` compiles and yields a silently all-null column; `type(r)` on the
+  same variable throws an error blaming a "bare pattern variable". `compileExists` drops it too.
+- **`$param`.** Parses in every value position and is supported nowhere — its only consumer renders `${name}`, a
+  row-map reference. In `WHERE` it fails with a message about literals that never mentions parameters; in `RETURN`
+  it compiles and dies at execution with *"RETURN item names bare pattern variable 'p'"*, naming a construct the
+  user did not write. Nothing in the docs mentions parameters at all.
+- **Inverted variable-length range.** `-[:R*5..3]->` reaches `AstVarLength`'s constructor and throws a raw,
+  **positionless** `IllegalArgumentException` out of `CypherQueryParser.parse`, whose Javadoc promises
+  `SyntaxException` is its only thrown error — the same defect class commit `25afb48811` fixed for oversized
+  literals. Validate in `buildVarLength` and throw a positioned `SyntaxException`.
+
+**Phase 6 gate — prove a construct is not dropped, mechanically.** Fixing six instances without closing the hole
+leaves the next one just as invisible, and the audit that found these was manual. The mechanical form is cheap:
+**a construct that is silently dropped is one whose presence does not change the compiled plan.** So for each
+construct, compile the query with it and without it and assert the two plans **differ** (or that the version with
+it is rejected). `MATCH (a:P)-[:K {since:'2020'}]->(b) RETURN b.id` versus the same query without the property
+map; `RETURN a.name AS n ORDER BY n` versus without the `ORDER BY`; and so on for every construct in this phase,
+plus the ones already known good, so the corpus doubles as a regression net. A new construct added later gets one
+line in the corpus and cannot be silently ignored.
+
+**Phase 6 exit**: every construct in the corpus either changes the plan or is rejected with a positioned message;
+`06-language-reference.md` describes only what the compiler actually does; and no rejection message names a
+construct the user did not write.
 
 ## Beyond the plan — backfill (item C1)
 
