@@ -48,7 +48,6 @@ import stroom.dashboard.shared.TableResultRequest;
 import stroom.data.client.event.AskStroomAiEvent;
 import stroom.data.grid.client.MessagePanel;
 import stroom.data.grid.client.MyDataGrid;
-import stroom.data.grid.client.MyDataGridDomainTypeSupportImpl;
 import stroom.data.grid.client.PagerView;
 import stroom.dispatch.client.ExportFileCompleteUtil;
 import stroom.dispatch.client.RestFactory;
@@ -234,11 +233,6 @@ public class TablePresenter extends AbstractComponentPresenter<TableView>
         annotationManager.setTaskMonitorFactory(this);
 
         dataGrid = new MyDataGrid<>(this);
-        dataGrid.setDomainTypeSupport(new MyDataGridDomainTypeSupportImpl<>(restFactory,
-                this,
-                this,
-                dataGrid,
-                this::getDashboardContext));
         dataGrid.addStyleName("TablePresenter");
         dataGrid.setRowStyles(rowStyles);
         selectionModel = dataGrid.addDefaultSelectionModel(true);
@@ -309,7 +303,7 @@ public class TablePresenter extends AbstractComponentPresenter<TableView>
                 return row.getExpander();
             }
         };
-        expanderColumn.setFieldUpdater((final int index, final TableRow row, final Expander value) -> {
+        expanderColumn.setFieldUpdater((index, row, value) -> {
             toggle(row);
             tableResultRequest = tableResultRequest
                     .copy()
@@ -943,7 +937,7 @@ public class TablePresenter extends AbstractComponentPresenter<TableView>
                 new com.google.gwt.user.cellview.client.IdentityColumn<TableRow>(
                         new TableRowCell(annotationManager, column));
         final ColumnHeader columnHeader = new ColumnHeader(column, columnsManager);
-        dataGrid.addResizableColumn(col, columnHeader, column.getWidth(), column.getDomainType());
+        dataGrid.addResizableColumn(col, columnHeader, column.getWidth());
         existingColumns.add(col);
     }
 

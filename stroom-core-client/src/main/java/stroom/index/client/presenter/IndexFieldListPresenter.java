@@ -174,7 +174,6 @@ public class IndexFieldListPresenter
         addTermVectorColumn();
         addAnalyzerColumn();
         addCaseSensitiveColumn();
-        addDomainTypeColumn();
         dataGrid.addEndColumn(new EndColumn<>());
     }
 
@@ -242,15 +241,6 @@ public class IndexFieldListPresenter
                 100);
     }
 
-    private void addDomainTypeColumn() {
-        dataGrid.addResizableColumn(
-                DataGridUtil.textColumnBuilder(IndexFieldImpl::getDomainType)
-                        .withSorting(IndexFieldFields.DOMAIN_TYPE)
-                        .build(),
-                "Type",
-                100);
-    }
-
     private String getYesNoString(final boolean bool) {
         if (bool) {
             return "Yes";
@@ -314,7 +304,7 @@ public class IndexFieldListPresenter
 
     private void onRemove() {
         final List<IndexFieldImpl> list = selectionModel.getSelectedItems();
-        if (list != null && !list.isEmpty()) {
+        if (list != null && list.size() > 0) {
             String message = "Are you sure you want to delete the selected field?";
             if (list.size() > 1) {
                 message = "Are you sure you want to delete the selected fields?";

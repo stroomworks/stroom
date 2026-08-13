@@ -5,7 +5,7 @@
              xmlns:l="urn:import:stroom.item.client"
              xmlns:form="urn:import:stroom.widget.form.client">
     <g:FlowPanel styleName="max form">
-        <form:FormGroup identity="indexFieldType" label="Field Type">
+        <form:FormGroup identity="indexFieldType" label="Type">
             <l:SelectionBox ui:field="type" addStyleNames="w-100"/>
         </form:FormGroup>
         <form:FormGroup identity="indexFieldName" label="Name">
@@ -26,13 +26,6 @@
         <form:FormGroup>
             <tickbox:CustomCheckBox ui:field="caseSensitive" identity="indexFieldCaseSensitive" label="Case Sensitive"/>
         </form:FormGroup>
-        <form:FormGroup identity="indexFieldDomainType" label="Type">
-            <g:FlowPanel addStyleNames="dock-container-horizontal w-100">
-                <l:SelectionBox ui:field="domainTypeClassPart" addStyleNames="dock-max w-50"/>
-                <l:SelectionBox ui:field="domainTypeAttributePart" addStyleNames="dock-max w-50"/>
-            </g:FlowPanel>
-        </form:FormGroup>
         <g:SimplePanel ui:field="denseVectorOptions"/>
-
     </g:FlowPanel>
 </ui:UiBinder> 

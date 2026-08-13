@@ -572,20 +572,6 @@
     white-space: nowrap;
 }
 
-.domainTypeListView-header {
-    background-color: var(--control__background-color);
-    border-bottom: 1px solid var(--control__border-color);
-}
-
-.domainTypeListView-label {
-    padding-left: 5px;
-    margin-bottom: 0;
-}
-
-.hide-grid-header > div > table > thead {
-    display: none;
-}
-
 .pipelineStructureViewImpl-bar {
 	display: flex;
 	align-items: top;
@@ -2856,9 +2842,4 @@ button.main-menu svg {
 
 .visualisation-asset-tree .gwt-TreeItem-selected {
     background-color: var(--row__background-color--selected);
-}
-
-/* Dashboard settings */
-.dashboard-settings .dock-container-horizontal {
-    width: 400px;
 }

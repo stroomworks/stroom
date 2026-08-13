@@ -713,14 +713,6 @@ class DashboardServiceImpl implements DashboardService {
     }
 
     @Override
-    public List<DocRef> findByType(final String domainType) {
-        return dashboardStore.findByType(domainType)
-                .stream()
-                .filter(docRef -> securityContext.hasDocumentPermission(docRef, DocumentPermission.VIEW))
-                .toList();
-    }
-
-    @Override
     public String getBestNode(final String nodeName, final DashboardSearchRequest request) {
         if (nodeName == null || nodeName.equals("null")) {
             if (queryNodeResolver == null) {
