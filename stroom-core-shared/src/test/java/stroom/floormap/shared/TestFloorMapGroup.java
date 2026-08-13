@@ -87,7 +87,7 @@ class TestFloorMapGroup {
                 .withMember("");
 
         assertThat(g.getMemberIds()).isEmpty();
-        assertThat(g.getMemberCount()).isZero();
+        assertThat(g.countMembers()).isZero();
     }
 
     @Test
@@ -159,6 +159,7 @@ class TestFloorMapGroup {
         final List<FloorMapGroup> after = FloorMapGroup.without(groups, "g1");
 
         assertThat(after).hasSize(1);
+        //noinspection SequencedCollectionMethodCanBeUsed
         assertThat(after.get(0).getId()).isEqualTo("g2");
     }
 
@@ -260,11 +261,11 @@ class TestFloorMapGroup {
 
     @Test
     void testColourOrDefaultFillsBlanks() {
-        assertThat(new FloorMapGroup("g1", "A", null, null).getColourOrDefault())
+        assertThat(new FloorMapGroup("g1", "A", null, null).findColourOrDefault())
                 .isEqualTo(FloorMapGroup.DEFAULT_COLOUR);
-        assertThat(new FloorMapGroup("g1", "A", "", null).getColourOrDefault())
+        assertThat(new FloorMapGroup("g1", "A", "", null).findColourOrDefault())
                 .isEqualTo(FloorMapGroup.DEFAULT_COLOUR);
-        assertThat(new FloorMapGroup("g1", "A", "#123456", null).getColourOrDefault())
+        assertThat(new FloorMapGroup("g1", "A", "#123456", null).findColourOrDefault())
                 .isEqualTo("#123456");
     }
 

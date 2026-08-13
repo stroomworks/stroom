@@ -198,8 +198,10 @@ public class FloorMapMeasurementUnits {
      * grid's decade calculation, where it produces NaN spacing, NaN pattern
      * coordinates and a canvas that renders <em>nothing</em> — no error, just a
      * blank map. Every consumer checks this first.</p>
+     *
+     * <p>Cannot be named 'isValid' as this would trigger TestJsonSerialisation.testNoExtraProps()</p>
      */
-    public boolean isValid() {
+    public boolean checkUnitIsValid() {
         return unit != null
                && !Double.isNaN(unitsPerMapUnit)
                && !Double.isInfinite(unitsPerMapUnit)
@@ -324,7 +326,7 @@ public class FloorMapMeasurementUnits {
      * @return usable units; never {@code null}
      */
     public static FloorMapMeasurementUnits orDefault(final FloorMapMeasurementUnits units) {
-        return units != null && units.isValid()
+        return units != null && units.checkUnitIsValid()
                 ? units
                 : DEFAULT;
     }
@@ -337,7 +339,7 @@ public class FloorMapMeasurementUnits {
      * @return e.g. {@code "850 m"}, {@code "1.2 km"}
      */
     public String format(final double mapDistance) {
-        if (!isValid()) {
+        if (!checkUnitIsValid()) {
             return DEFAULT.format(mapDistance);
         }
         if (Double.isNaN(mapDistance) || Double.isInfinite(mapDistance)) {
@@ -505,7 +507,7 @@ public class FloorMapMeasurementUnits {
         final double realInDisplayUnit = displayIn.fromMetres(enteredIn.toMetres(realLength));
         final FloorMapMeasurementUnits calibrated =
                 new FloorMapMeasurementUnits(displayIn, realInDisplayUnit / mapLength);
-        return calibrated.isValid()
+        return calibrated.checkUnitIsValid()
                 ? calibrated
                 : null;
     }

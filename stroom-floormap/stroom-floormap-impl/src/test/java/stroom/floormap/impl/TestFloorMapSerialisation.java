@@ -117,13 +117,14 @@ class TestFloorMapSerialisation {
                 JsonUtil.writeValueAsString(original), FloorMapDoc.class);
 
         assertThat(deserialized.getGroups()).containsExactly(maintenance, security);
+        //noinspection SequencedCollectionMethodCanBeUsed
         final FloorMapGroup readBack = deserialized.getGroups().get(0);
         assertThat(readBack.getId()).isEqualTo("group-40213");
         assertThat(readBack.getName()).isEqualTo("Maintenance");
         assertThat(readBack.getColour()).isEqualTo("#8e24aa");
         assertThat(readBack.getMemberIds()).containsExactly("bob@x.com", "gate-3");
         // A colourless group still renders: the default fills in at read time.
-        assertThat(deserialized.getGroups().get(1).getColourOrDefault())
+        assertThat(deserialized.getGroups().get(1).findColourOrDefault())
                 .isEqualTo(FloorMapGroup.DEFAULT_COLOUR);
     }
 

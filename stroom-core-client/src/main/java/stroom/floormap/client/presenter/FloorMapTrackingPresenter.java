@@ -273,8 +273,8 @@ public class FloorMapTrackingPresenter extends MyPresenterWidget<FloorMapTrackin
                         .priority(priority++)
                         // The member count is spelled out so the user can tell a
                         // populated group from an empty one before adding to it.
-                        .text(group.getName() + " (" + group.getMemberCount()
-                              + (group.getMemberCount() == 1 ? " member)" : " members)"))
+                        .text(group.getName() + " (" + group.countMembers()
+                              + (group.countMembers() == 1 ? " member)" : " members)"))
                         .enabled(!alreadyIn);
                 if (alreadyIn) {
                     builder.icon(SvgImage.TICK)

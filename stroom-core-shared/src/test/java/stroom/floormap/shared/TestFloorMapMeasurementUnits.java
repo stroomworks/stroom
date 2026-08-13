@@ -227,12 +227,12 @@ class TestFloorMapMeasurementUnits {
      */
     @Test
     void testRejectsUnusableScaleFactors() {
-        assertThat(metres(0).isValid()).isFalse();
-        assertThat(metres(-1).isValid()).isFalse();
-        assertThat(metres(Double.NaN).isValid()).isFalse();
-        assertThat(metres(Double.POSITIVE_INFINITY).isValid()).isFalse();
-        assertThat(new FloorMapMeasurementUnits(null, 1).isValid()).isFalse();
-        assertThat(metres(0.187).isValid()).isTrue();
+        assertThat(metres(0).checkUnitIsValid()).isFalse();
+        assertThat(metres(-1).checkUnitIsValid()).isFalse();
+        assertThat(metres(Double.NaN).checkUnitIsValid()).isFalse();
+        assertThat(metres(Double.POSITIVE_INFINITY).checkUnitIsValid()).isFalse();
+        assertThat(new FloorMapMeasurementUnits(null, 1).checkUnitIsValid()).isFalse();
+        assertThat(metres(0.187).checkUnitIsValid()).isTrue();
     }
 
     // ------------------------------------------------------------------------

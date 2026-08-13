@@ -75,9 +75,10 @@ public class FloorMapGroupEditPresenter extends MyPresenterWidget<FloorMapGroupE
                      final Consumer<FloorMapGroup> onOk) {
 
         getView().setName(group.getName());
-        getView().setColour(group.getColourOrDefault());
+        getView().setColour(group.findColourOrDefault());
         getView().setCandidates(candidates(group, roster, nameResolver), group.getMemberIds());
 
+        //noinspection unused e
         ShowPopupEvent.builder(this)
                 .popupType(PopupType.OK_CANCEL_DIALOG)
                 .caption(isNew
