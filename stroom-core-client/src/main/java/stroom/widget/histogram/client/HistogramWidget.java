@@ -19,8 +19,11 @@ package stroom.widget.histogram.client;
 import com.google.gwt.canvas.client.Canvas;
 import com.google.gwt.canvas.dom.client.Context2d;
 import com.google.gwt.core.client.Scheduler;
+import com.google.gwt.dom.client.Element;
 import com.google.gwt.dom.client.Style.Unit;
 import com.google.gwt.event.dom.client.ClickEvent;
+import com.google.gwt.event.dom.client.KeyCodes;
+import com.google.gwt.event.dom.client.KeyDownEvent;
 import com.google.gwt.event.dom.client.MouseMoveEvent;
 import com.google.gwt.event.dom.client.MouseOutEvent;
 import com.google.gwt.user.client.ui.Composite;
@@ -44,7 +47,34 @@ import java.util.function.Consumer;
  */
 public class HistogramWidget extends Composite {
 
-    private static final int DEFAULT_HEIGHT = 48;
+    /**
+     * Height of the widget in pixels.
+     *
+     * <p>Must stay in step with the {@code height: 48px} in
+     * {@code stroom-histogram.css}: CSS lays the canvas element out, while this
+     * sizes its coordinate space. If the two disagree the browser scales the
+     * drawing to fit, so the bars stretch or squash rather than looking wrong in
+     * an obvious way.</p>
+     */
+    private static final int HEIGHT_PX = 48;
+
+    /** Shown in place of bars when every bin is zero. */
+    private static final String EMPTY_MESSAGE = "No events in this time range";
+
+    /**
+     * CSS custom properties holding the bar colours, defined per theme in
+     * {@code stroom-histogram.css} and resolved at draw time by
+     * {@link #themeColour}.
+     */
+    private static final String BAR_COLOUR_PROPERTY = "--histogram-bar__color";
+    private static final String PEAK_COLOUR_PROPERTY = "--histogram-peak__color";
+
+    /**
+     * Used when the CSS custom property cannot be resolved — an unstyled test
+     * harness, or a consumer whose page has not loaded {@code stroom-histogram.css}.
+     * Matches the light theme's value, so a missing stylesheet degrades to the
+     * previous appearance rather than to invisible bars.
+     */
     private static final String DEFAULT_BAR_COLOUR = "rgba(30,136,229,0.7)";
     private static final String DEFAULT_PEAK_COLOUR = "rgba(30,136,229,1.0)";
     private static final String TICK_COLOUR = "rgba(128,128,128,0.25)";
@@ -54,10 +84,6 @@ public class HistogramWidget extends Composite {
     private final Canvas canvas;
     private final Label tooltip;
     private int[] bins;
-    private int height = DEFAULT_HEIGHT;
-    private String barColour = DEFAULT_BAR_COLOUR;
-    private String peakColour = DEFAULT_PEAK_COLOUR;
-    private String emptyMessage = "No events in this time range";
 
     // Called when the user clicks, with the fractional position [0..1]
     private Consumer<Double> clickHandler;
@@ -69,6 +95,14 @@ public class HistogramWidget extends Composite {
         canvas = Canvas.createIfSupported();
         if (canvas != null) {
             canvas.addStyleName("stroom-histogram-canvas");
+            // Canvas pixels are opaque to assistive technology: without a role and
+            // a name the whole distribution — and the per-bin counts the hover
+            // tooltip reveals — simply do not exist for a screen-reader user.
+            // role="img" plus a generated aria-label is the standard text
+            // alternative for a chart that is a picture of its data rather than a
+            // set of controls; updateTextAlternative() keeps the label current.
+            canvas.getElement().setAttribute("role", "img");
+            updateTextAlternative();
 
             tooltip = new Label();
             tooltip.addStyleName("stroom-histogram-tooltip");
@@ -80,8 +114,14 @@ public class HistogramWidget extends Composite {
             container.add(wrapper);
 
             canvas.addDomHandler(this::onMouseMove, MouseMoveEvent.getType());
-            canvas.addDomHandler(e -> hideTooltip(), MouseOutEvent.getType());
+            //noinspection unused event
+            canvas.addDomHandler(event -> hideTooltip(), MouseOutEvent.getType());
             canvas.addDomHandler(this::onClick, ClickEvent.getType());
+            // WCAG 1.4.13 requires hover content to be dismissible without moving
+            // the pointer. Bound on the container rather than the canvas because
+            // the canvas is not focusable, so it never receives a key event; the
+            // container sees it bubble up from whatever does have focus.
+            container.addDomHandler(this::onKeyDown, KeyDownEvent.getType());
         } else {
             tooltip = null;
         }
@@ -96,6 +136,7 @@ public class HistogramWidget extends Composite {
     /** Sets the bin data and triggers a redraw. */
     public void setData(final int[] binCounts) {
         this.bins = binCounts;
+        updateTextAlternative();
         Scheduler.get().scheduleDeferred(this::draw);
     }
 
@@ -104,24 +145,116 @@ public class HistogramWidget extends Composite {
         this.clickHandler = handler;
     }
 
-    /** Customise the bar colour (CSS colour string). */
-    public void setBarColour(final String colour) {
-        this.barColour = colour;
+    /**
+     * Redraws with the current data, picking up any theme change.
+     *
+     * <p>Needed because the bar colours are baked into canvas pixels at draw time:
+     * unlike the rest of this widget, which is styled by CSS and re-styles itself
+     * when the theme class changes, the bars keep whatever colour they were painted
+     * until something repaints them. Callers that live long enough to see a theme
+     * change should call this from a
+     * {@code ChangeCurrentPreferencesEvent} handler.</p>
+     */
+    public void redraw() {
+        // Deferred for the same reason setData() defers: draw() needs the container
+        // to have been laid out before it can read a width.
+        Scheduler.get().scheduleDeferred(this::draw);
     }
 
-    /** Customise the peak bar colour. */
-    public void setPeakColour(final String colour) {
-        this.peakColour = colour;
+    /**
+     * Resolves a CSS custom property to a concrete colour for the canvas context.
+     *
+     * <p>A canvas {@code fillStyle} takes a colour <em>value</em>; {@code var()} and
+     * {@code currentColor} are CSS-level constructs and mean nothing to it. So the
+     * property has to be read off the computed style — from the canvas element
+     * itself, so that custom properties inherit down from whichever ancestor
+     * carries the theme class.</p>
+     *
+     * @param property the custom property name, e.g. {@code --histogram-bar__color}
+     * @param fallback returned when the property is absent or empty
+     */
+    private String themeColour(final String property, final String fallback) {
+        if (canvas == null) {
+            return fallback;
+        }
+        final String value = computedPropertyValue(canvas.getElement(), property);
+        return value != null && !value.trim().isEmpty()
+                ? value.trim()
+                : fallback;
     }
 
-    /** Customise the height in pixels. */
-    public void setHeight(final int px) {
-        this.height = px;
+    /**
+     * Reads one computed CSS property (custom properties included) off an element.
+     *
+     * <p>Native because GWT's {@code Style} exposes only inline styles, and a custom
+     * property set in a stylesheet is never inline. Guarded rather than trusting the
+     * environment: {@code getComputedStyle} returns null for a detached element in
+     * some browsers, which would otherwise throw during an early draw.</p>
+     */
+    private static native String computedPropertyValue(final Element element,
+                                                       final String property) /*-{
+        var view = element.ownerDocument && element.ownerDocument.defaultView;
+        if (!view || !view.getComputedStyle) {
+            return null;
+        }
+        var computed = view.getComputedStyle(element, null);
+        return computed ? computed.getPropertyValue(property) : null;
+    }-*/;
+
+
+    /**
+     * Names the canvas after what it is currently showing.
+     *
+     * <p>Describes the <em>shape</em> of the distribution — total, peak, and where
+     * the peak falls — rather than reading out every bin. A bin-by-bin list would
+     * be a faithful transcription and useless to listen to; "busiest around 60%
+     * of the way through" is the thing the picture actually communicates at a
+     * glance, and it is what a sighted user takes from it before deciding where
+     * to seek.</p>
+     *
+     * <p>Position is given as a percentage rather than a time because this widget
+     * is deliberately time-agnostic: it is handed bare bin counts and has no idea
+     * what range they span. The timeline's own start/end labels supply that.</p>
+     */
+    private void updateTextAlternative() {
+        if (canvas == null) {
+            return;
+        }
+        canvas.getElement().setAttribute("aria-label", describeDistribution());
     }
 
-    /** Customise the text shown when all bins are zero. */
-    public void setEmptyMessage(final String msg) {
-        this.emptyMessage = msg;
+    /** Builds the summary used as the canvas's accessible name. */
+    private String describeDistribution() {
+        if (bins == null || bins.length == 0) {
+            // Not "no events" — nothing has been loaded yet, which is a different
+            // statement and one a user should not be told is an empty result.
+            return "Event distribution over time: no data loaded";
+        }
+
+        int total = 0;
+        int max = 0;
+        int peakIndex = 0;
+        for (int i = 0; i < bins.length; i++) {
+            total += bins[i];
+            if (bins[i] > max) {
+                max = bins[i];
+                peakIndex = i;
+            }
+        }
+
+        if (max == 0) {
+            return "Event distribution over time: " + EMPTY_MESSAGE;
+        }
+
+        // Midpoint of the peak bin, so a single-bin histogram reads as 50% rather
+        // than 0% — the bar spans the whole width, and its left edge is not where
+        // the events are.
+        final int peakPct = (int) Math.round(
+                ((peakIndex + 0.5) / bins.length) * 100.0);
+
+        return "Event distribution over time: " + total + " events in "
+                + bins.length + " intervals, busiest interval has " + max
+                + ", about " + peakPct + "% of the way through the range";
     }
 
     // -----------------------------------------------------------------------
@@ -141,10 +274,10 @@ public class HistogramWidget extends Composite {
         }
 
         canvas.setCoordinateSpaceWidth(width);
-        canvas.setCoordinateSpaceHeight(height);
+        canvas.setCoordinateSpaceHeight(HEIGHT_PX);
 
         final Context2d ctx = canvas.getContext2d();
-        ctx.clearRect(0, 0, width, height);
+        ctx.clearRect(0, 0, width, HEIGHT_PX);
 
         // Find peak count for normalisation.
         int max = 0;
@@ -161,7 +294,7 @@ public class HistogramWidget extends Composite {
             ctx.setTextAlign(Context2d.TextAlign.CENTER);
             ctx.setTextBaseline(Context2d.TextBaseline.MIDDLE);
             ctx.setFillStyle("rgba(128,128,128,0.45)");
-            ctx.fillText(emptyMessage, width / 2.0, height / 2.0);
+            ctx.fillText(EMPTY_MESSAGE, width / 2.0, HEIGHT_PX / 2.0);
             ctx.restore();
             return;
         }
@@ -170,16 +303,22 @@ public class HistogramWidget extends Composite {
         final int n = bins.length;
         final double barW = (double) width / n;
 
+        // Resolved once per draw rather than per bar: reading a computed style
+        // forces the browser to flush pending style work, so doing it inside the
+        // loop would pay that cost on every bar of every frame.
+        final String barFill = themeColour(BAR_COLOUR_PROPERTY, DEFAULT_BAR_COLOUR);
+        final String peakFill = themeColour(PEAK_COLOUR_PROPERTY, DEFAULT_PEAK_COLOUR);
+
         for (int i = 0; i < n; i++) {
-            final double barH = ((double) bins[i] / max) * (height - 2);
+            final double barH = ((double) bins[i] / max) * (HEIGHT_PX - 2);
             if (barH < 1) {
                 continue;
             }
             final double x = i * barW;
-            final double y = height - barH;
+            final double y = HEIGHT_PX - barH;
 
             // Use a brighter colour for the peak bin.
-            ctx.setFillStyle(bins[i] == max ? peakColour : barColour);
+            ctx.setFillStyle(bins[i] == max ? peakFill : barFill);
             ctx.fillRect(x, y, Math.max(1, barW - 1), barH);
         }
 
@@ -189,7 +328,7 @@ public class HistogramWidget extends Composite {
         ctx.setFillStyle(TICK_COLOUR);
         for (int i = tickInterval; i < n; i += tickInterval) {
             final double x = i * barW;
-            ctx.fillRect(x, 0, 1, height);
+            ctx.fillRect(x, 0, 1, HEIGHT_PX);
         }
     }
 
@@ -239,6 +378,19 @@ public class HistogramWidget extends Composite {
     private void hideTooltip() {
         if (tooltip != null) {
             tooltip.removeStyleName("stroom-histogram-tooltip--visible");
+        }
+    }
+
+    /**
+     * Dismisses the hover tooltip on Escape.
+     *
+     * <p>Deliberately does not consume the event: Escape usually also means
+     * "close the dialog or popup I am in", and swallowing it here would strand a
+     * user inside whatever contains the histogram.</p>
+     */
+    private void onKeyDown(final KeyDownEvent event) {
+        if (event.getNativeKeyCode() == KeyCodes.KEY_ESCAPE) {
+            hideTooltip();
         }
     }
 

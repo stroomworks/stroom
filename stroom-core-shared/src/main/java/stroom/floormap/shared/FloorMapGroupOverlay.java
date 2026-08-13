@@ -75,7 +75,7 @@ public final class FloorMapGroupOverlay {
             if (group == null || !shownGroupIds.contains(group.getId())) {
                 continue;
             }
-            final String colour = group.getColourOrDefault();
+            final String colour = group.findColourOrDefault();
             for (final String memberId : group.getMemberIds()) {
                 if (memberId != null && !memberId.isEmpty()) {
                     // First shown group in list order wins.

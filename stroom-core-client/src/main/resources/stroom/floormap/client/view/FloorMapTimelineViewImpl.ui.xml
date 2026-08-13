@@ -46,5 +46,12 @@
                 <g:Label ui:field="outOfRangeRightLabel" addStyleNames="stroom-floormap-timeline-out-of-range stroom-floormap-timeline-out-of-range--right" visible="false" />
             </g:FlowPanel>
         </g:FlowPanel>
+
+        <!-- Announces the out-of-range state, which is otherwise conveyed only by a
+             pulsing orange chevron appearing. Absolutely positioned by the
+             visually-hidden class, so grid auto-placement does not apply to it and
+             it cannot disturb the layout above. -->
+        <g:Label ui:field="timelineStatus"
+                 addStyleNames="stroom-floormap-visually-hidden"/>
     </g:FlowPanel>
 </ui:UiBinder>

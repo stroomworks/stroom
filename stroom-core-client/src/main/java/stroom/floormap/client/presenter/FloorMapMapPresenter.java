@@ -422,7 +422,7 @@ public class FloorMapMapPresenter
         //noinspection unused e
         registerHandler(dockToggleButton.addClickHandler(e ->
                 getView().setDockVisible(dockToggleButton.getState())));
-
+        //noinspection unused e
         registerHandler(clusterToggleButton.addClickHandler(e ->
                 floorMapCanvasPresenter.setClusterNearbyEntities(
                         clusterToggleButton.getState())));
@@ -522,6 +522,12 @@ public class FloorMapMapPresenter
         // (scrub, step-back/forward, loop-around, stop-at-end).
         floorMapTimelinePresenter.setClearAnimationStateHandler(
                 floorMapCanvasPresenter::clearAnimationState);
+
+        // Name the Tracking grid as the map's text alternative. The canvas is
+        // exposed as a single summarised image; this is what tells a screen-reader
+        // user that the row-by-row detail behind that summary exists, and where.
+        floorMapCanvasPresenter.setTextAlternativeId(
+                FloorMapTrackingPresenter.getGridElementId());
     }
 
     /**
@@ -687,6 +693,12 @@ public class FloorMapMapPresenter
      */
     private void onTimeChange(final long time) {
         this.selectedTime = time;
+        // Keep the canvas's accessible summary and its live region on the same
+        // clock as the timeline's own labels — hence the timeline's formatter
+        // rather than a second one here. The canvas suppresses the announcement
+        // itself while playing.
+        floorMapCanvasPresenter.setCurrentTimeText(
+                floorMapTimelinePresenter.formatTime(time));
         runQueryAtSelectedTime(queryModel, getFactsQueryToUse(),
                 "factsTable", "Facts Query Playback");
         runQueryAtSelectedTime(eventsQueryModel, getEventsQueryToUse(),

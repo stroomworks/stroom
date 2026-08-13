@@ -16,6 +16,7 @@
 
 package stroom.floormap.client.view;
 
+import stroom.floormap.client.FloorMapAria;
 import stroom.floormap.client.presenter.FloorMapSetScalePresenter.FloorMapSetScaleView;
 import stroom.floormap.shared.FloorMapMeasurementUnits.Family;
 import stroom.floormap.shared.FloorMapMeasurementUnits.Unit;
@@ -82,6 +83,14 @@ public class FloorMapSetScaleViewImpl extends ViewImpl implements FloorMapSetSca
         grid.setText(ROW_DISTANCE, 0, "It is really");
         grid.setWidget(ROW_DISTANCE, 1, distanceRow);
         root.add(grid);
+
+        // The label text lives in a <td>, which names nothing on its own — see
+        // FloorMapAria.labelledByCell. Without this the dialog's only input is
+        // announced as an unnamed edit box.
+        FloorMapAria.labelledByCell(grid, ROW_DISTANCE, 0, distanceBox);
+        // The unit list shares the row, so the row label alone would not say what
+        // it selects.
+        FloorMapAria.label(unitListBox, "Unit of the distance you typed");
     }
 
     @Override

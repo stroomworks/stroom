@@ -22,6 +22,7 @@ import stroom.floormap.shared.TypeStyle;
 import stroom.svg.shared.SvgImage;
 import stroom.widget.button.client.InlineSvgButton;
 
+import com.google.gwt.core.client.Scheduler;
 import com.google.gwt.dom.client.DataTransfer.DropEffect;
 import com.google.gwt.dom.client.Element;
 import com.google.gwt.event.dom.client.ClickEvent;
@@ -30,8 +31,9 @@ import com.google.gwt.event.dom.client.DragLeaveEvent;
 import com.google.gwt.event.dom.client.DragOverEvent;
 import com.google.gwt.event.dom.client.DragStartEvent;
 import com.google.gwt.event.dom.client.DropEvent;
+import com.google.gwt.event.dom.client.KeyCodes;
+import com.google.gwt.user.client.ui.Button;
 import com.google.gwt.user.client.ui.FlowPanel;
-import com.google.gwt.user.client.ui.HTML;
 import com.google.gwt.user.client.ui.Label;
 import com.google.gwt.user.client.ui.Widget;
 import com.google.inject.Inject;
@@ -94,6 +96,16 @@ public class FloorMapLayersPresenter extends MyPresenterWidget<FloorMapLayersVie
     private static final String DROP_INDICATOR = "#2196f3";
     /** Source row index during a drag-reorder, or -1 when not dragging. */
     private int dragFromIndex = -1;
+
+    /**
+     * The layer whose reorder grip should take focus after the next
+     * {@link #rebuild()}, or {@code null}.
+     *
+     * <p>Keyboard reordering rebuilds the whole list, which destroys the button
+     * the keystroke came from. Without handing focus back, a keyboard user gets
+     * exactly one move per visit to the panel.</p>
+     */
+    private String focusGripForType;
 
     @Inject
     public FloorMapLayersPresenter(final EventBus eventBus,
@@ -274,11 +286,19 @@ public class FloorMapLayersPresenter extends MyPresenterWidget<FloorMapLayersVie
         final InlineSvgButton discover = new InlineSvgButton();
         discover.setSvg(SvgImage.REFRESH);
         discover.setTitle("Discover types from the facts store");
+        //noinspection unused event
         discover.addClickHandler(event -> discoverHandler.run());
         footer.add(discover);
 
         final Label label = new Label("Discover types");
         label.addStyleName("floormap-layers-footer-label");
+        // Kept clickable as a larger pointer target for the button beside it. That
+        // is allowed — the action itself is fully keyboard-operable via that
+        // button — but the label must not be announced, or a screen reader reads
+        // "Discover types" twice: once as the button's name, once as loose text
+        // that looks interactive and is not focusable.
+        label.getElement().setAttribute("aria-hidden", "true");
+        //noinspection unused event
         label.addClickHandler(event -> discoverHandler.run());
         footer.add(label);
         return footer;
@@ -298,7 +318,8 @@ public class FloorMapLayersPresenter extends MyPresenterWidget<FloorMapLayersVie
         final InlineSvgButton add = new InlineSvgButton();
         add.addStyleName("floormap-layer-add");
         add.setSvg(SvgImage.ADD);
-        add.setTitle("Add this discovered type as a layer");
+        add.setTitle("Add the discovered type " + type + " as a layer");
+        //noinspection unused event
         add.addClickHandler(event -> promote(type));
         row.add(add);
         return row;
@@ -349,8 +370,39 @@ public class FloorMapLayersPresenter extends MyPresenterWidget<FloorMapLayersVie
                 : insertionIndex;
         insert = Math.max(0, Math.min(insert, newList.size()));
         newList.add(insert, moved);
+        commitOrder(newList);
+    }
+
+    /**
+     * Moves the layer at {@code from} by {@code delta} positions — the keyboard
+     * equivalent of a drag-reorder, bound to the arrow keys on a row's grip.
+     *
+     * <p>Stated as a signed step rather than reusing {@link #reorderTo}'s
+     * insertion index because the two speak different languages: an insertion
+     * index has to account for the moved item's own removal (hence the
+     * {@code -1} adjustment there), and threading "move down one" through that
+     * conversion reads as an off-by-one waiting to happen. A move that would
+     * leave the list is a no-op, so holding the key at either end does
+     * nothing.</p>
+     */
+    private void moveBy(final int from, final int delta) {
+        final int to = from + delta;
+        if (from < 0 || from >= layers.size() || to < 0 || to >= layers.size()) {
+            return;
+        }
+        final List<TypeStyle> newList = new ArrayList<>(layers);
+        newList.add(to, newList.remove(from));
+        commitOrder(newList);
+    }
+
+    /**
+     * Adopts {@code newList} as the layer order, redraws and persists — the one
+     * path out of both the drag and the keyboard reorder, so they cannot drift.
+     * A no-change reorder (dropped back where it started) returns without
+     * touching the document.
+     */
+    private void commitOrder(final List<TypeStyle> newList) {
         if (newList.equals(layers)) {
-            // Dropped back in the same place — nothing changed.
             return;
         }
         layers = newList;
@@ -374,9 +426,41 @@ public class FloorMapLayersPresenter extends MyPresenterWidget<FloorMapLayersVie
         // the z-order — earlier = painted behind, later = painted in front.
         if (editorMode) {
             // Visible drag handle so the row reads as grabbable.
-            final Label grip = new Label();
-            grip.addStyleName("floormap-layer-grip");
-            grip.setTitle("Drag to reorder");
+            //
+            // A real <button> rather than a Label, because dragging cannot be the
+            // only way to reorder (WCAG 2.1.1, and 2.5.7 for the dragging
+            // movement itself). Focus the grip and the arrow keys move the layer;
+            // the mouse drag below is the same operation by another route.
+            //
+            // setStyleName (not addStyleName) drops GWT's "gwt-Button" primary
+            // style, so the app's button chrome cannot fight the dot-grid
+            // background this class paints.
+            final Button grip = new Button();
+            grip.setStyleName("floormap-layer-grip");
+            grip.setTitle("Reorder the " + type
+                    + " layer — drag, or use the up and down arrow keys");
+            grip.addKeyDownHandler(event -> {
+                final int key = event.getNativeKeyCode();
+                if (key == KeyCodes.KEY_UP || key == KeyCodes.KEY_DOWN) {
+                    // Otherwise the arrow scrolls the Layers panel instead.
+                    event.preventDefault();
+                    event.stopPropagation();
+                    // Rebuilding the list destroys this button, so ask rebuild()
+                    // to restore focus to the moved layer's grip — without it,
+                    // one keypress moves the layer and focus falls back to the
+                    // document, making a second press impossible.
+                    focusGripForType = type;
+                    moveBy(index, key == KeyCodes.KEY_UP
+                            ? -1
+                            : 1);
+                }
+            });
+            if (Objects.equals(type, focusGripForType)) {
+                focusGripForType = null;
+                // Deferred: the widget is not attached to the DOM yet, and
+                // setFocus() on a detached element is a no-op.
+                Scheduler.get().scheduleDeferred(() -> grip.setFocus(true));
+            }
             row.add(grip);
 
             row.getElement().setDraggable(Element.DRAGGABLE_TRUE);
@@ -395,6 +479,7 @@ public class FloorMapLayersPresenter extends MyPresenterWidget<FloorMapLayersVie
                         ? "inset 0 -2px 0 0 " + DROP_INDICATOR
                         : "inset 0 2px 0 0 " + DROP_INDICATOR);
             }, DragOverEvent.getType());
+            //noinspection unused event
             row.addDomHandler(event ->
                     row.getElement().getStyle().clearProperty("boxShadow"), DragLeaveEvent.getType());
             row.addDomHandler(event -> {
@@ -404,6 +489,7 @@ public class FloorMapLayersPresenter extends MyPresenterWidget<FloorMapLayersVie
                         event.getNativeEvent().getClientY(), row.getElement());
                 reorderTo(dragFromIndex, index + (below ? 1 : 0));
             }, DropEvent.getType());
+            //noinspection unused event
             row.addDomHandler(event -> {
                 row.getElement().getStyle().clearOpacity();
                 dragFromIndex = -1;
@@ -418,12 +504,13 @@ public class FloorMapLayersPresenter extends MyPresenterWidget<FloorMapLayersVie
 
         final InlineSvgButton eye = new InlineSvgButton();
         eye.addStyleName("floormap-layer-eye");
-        applyEyeState(eye, state);
+        applyEyeState(eye, type, state);
+        //noinspection unused event
         eye.addClickHandler(event -> {
             // Cycle full → 30% → off → full.
             final int next = (visibilityByType.getOrDefault(type, FULL) + 2) % 3;
             visibilityByType.put(type, next);
-            applyEyeState(eye, next);
+            applyEyeState(eye, type, next);
             applyNameState(name, next);
             if (changeHandler != null) {
                 changeHandler.run();
@@ -437,7 +524,8 @@ public class FloorMapLayersPresenter extends MyPresenterWidget<FloorMapLayersVie
         if (editorMode) {
             final InlineSvgButton lock = new InlineSvgButton();
             lock.addStyleName("floormap-layer-lock");
-            applyLockState(lock, lockedTypes.contains(type));
+            applyLockState(lock, type, lockedTypes.contains(type));
+            //noinspection unused event
             lock.addClickHandler(event -> {
                 final boolean nowLocked = !lockedTypes.contains(type);
                 if (nowLocked) {
@@ -445,7 +533,7 @@ public class FloorMapLayersPresenter extends MyPresenterWidget<FloorMapLayersVie
                 } else {
                     lockedTypes.remove(type);
                 }
-                applyLockState(lock, nowLocked);
+                applyLockState(lock, type, nowLocked);
                 if (changeHandler != null) {
                     changeHandler.run();
                 }
@@ -459,11 +547,22 @@ public class FloorMapLayersPresenter extends MyPresenterWidget<FloorMapLayersVie
         // has one, otherwise its shape in its colour — which opens the appearance
         // dialog for this layer.
         if (editorMode) {
-            final HTML swatch = new HTML(FloorMapSwatchHtml.swatch(ts, SWATCH_SIZE_PX));
-            swatch.addStyleName("floormap-layer-swatch");
-            swatch.setTitle(ts.hasGraphic()
-                    ? "Edit appearance (image & colour)"
-                    : "Edit appearance (shape & colour)");
+            // A <button>, not a clickable div: it opens a dialog, so it has to be
+            // reachable and activatable from the keyboard. setStyleName drops
+            // GWT's "gwt-Button" primary style so the app's button chrome does not
+            // box in the preview graphic; the CSS resets what remains.
+            final Button swatch = new Button();
+            swatch.setStyleName("floormap-layer-swatch");
+            swatch.setHTML(FloorMapSwatchHtml.swatch(ts, SWATCH_SIZE_PX));
+            // Names the layer: a panel of identically-titled "Edit appearance"
+            // buttons tells a screen-reader user nothing about which one they are
+            // on. The preview graphic itself is alt="" (decorative), so this
+            // title is the button's whole accessible name.
+            swatch.setTitle("Edit the appearance of the " + type + " layer ("
+                    + (ts.hasGraphic()
+                            ? "image & colour)"
+                            : "shape & colour)"));
+            //noinspection unused event
             swatch.addDomHandler(event -> {
                 if (styleEditor != null) {
                     styleEditor.accept(ts, this::applyStyle);
@@ -478,39 +577,66 @@ public class FloorMapLayersPresenter extends MyPresenterWidget<FloorMapLayersVie
     /** Size of each row's graphic preview in pixels. */
     private static final int SWATCH_SIZE_PX = 16;
 
-    private void applyLockState(final InlineSvgButton lock, final boolean locked) {
+    /**
+     * The lowest opacity an <em>enabled</em> control's graphic may be drawn at
+     * here and still clear 3:1 against the panel background (WCAG 1.4.11).
+     *
+     * <p>Body text at 0.45 over the light theme's white composites to about
+     * #969696 — 2.96:1, just under. These icons are the only indication of a
+     * layer's visibility and lock state, so they are exactly the "meaningful
+     * non-text content" the rule is about, and cannot be treated as decoration.
+     * Disabled controls are exempt, but none of these are disabled.</p>
+     */
+    private static final double MIN_ENABLED_ICON_OPACITY = 0.7;
+
+    private void applyLockState(final InlineSvgButton lock,
+                                final String type,
+                                final boolean locked) {
         lock.setSvg(locked
                 ? SvgImage.LOCKED_DEFAULT_COLOUR
                 : SvgImage.UNLOCKED_DEFAULT_COLOUR);
+        // Names the layer as well as the state, so the accessible name is
+        // unambiguous in a panel of otherwise identical lock buttons.
         lock.setTitle(locked
-                ? "Locked — items can’t be moved (click to unlock)"
-                : "Unlocked — items can be moved (click to lock)");
-        lock.getElement().getStyle().setOpacity(locked ? 0.95 : 0.5);
+                ? type + " layer is locked — items can’t be moved (click to unlock)"
+                : type + " layer is unlocked — items can be moved (click to lock)");
+        lock.getElement().getStyle().setOpacity(locked
+                ? 0.95
+                : MIN_ENABLED_ICON_OPACITY);
     }
 
-    private void applyEyeState(final InlineSvgButton eye, final int state) {
+    private void applyEyeState(final InlineSvgButton eye,
+                               final String type,
+                               final int state) {
         switch (state) {
             case OFF:
                 eye.setSvg(SvgImage.EYE_OFF);
-                eye.setTitle("Hidden — click to show");
-                eye.getElement().getStyle().setOpacity(0.6);
+                eye.setTitle(type + " layer is hidden — click to show");
+                eye.getElement().getStyle().setOpacity(MIN_ENABLED_ICON_OPACITY);
                 break;
             case DIM:
                 eye.setSvg(SvgImage.EYE);
-                eye.setTitle("Dimmed to 30% — click to hide");
-                eye.getElement().getStyle().setOpacity(0.45);
+                eye.setTitle(type + " layer is dimmed to 30% — click to hide");
+                eye.getElement().getStyle().setOpacity(MIN_ENABLED_ICON_OPACITY);
                 break;
             default:
                 eye.setSvg(SvgImage.EYE);
-                eye.setTitle("Visible — click to dim to 30%");
+                eye.setTitle(type + " layer is visible — click to dim to 30%");
                 eye.getElement().getStyle().setOpacity(1.0);
                 break;
         }
     }
 
+    /**
+     * Dims a layer's name in step with its visibility state.
+     *
+     * <p>The hidden state's floor is 0.65 rather than the icons' 0.7 because this
+     * is text, which needs 4.5:1 rather than 3:1: 0.55 over white composites to
+     * about #7e7e7e — 4.06:1, short of the mark.</p>
+     */
     private void applyNameState(final Label name, final int state) {
         final double opacity = state == OFF
-                ? 0.55
+                ? 0.65
                 : state == DIM
                         ? 0.75
                         : 1.0;

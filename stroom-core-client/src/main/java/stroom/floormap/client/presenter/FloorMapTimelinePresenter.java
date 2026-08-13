@@ -16,6 +16,7 @@
 
 package stroom.floormap.client.presenter;
 
+import stroom.editor.client.presenter.ChangeCurrentPreferencesEvent;
 import stroom.floormap.client.event.TimeChangeEvent;
 import stroom.floormap.client.presenter.FloorMapTimelinePresenter.FloorMapTimelineView;
 import stroom.svg.client.Preset;
@@ -129,8 +130,9 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
             final long duration = endTime - startTime;
             final long newTime = startTime + (long) (duration * (percentage / 100.0));
             clearOutOfRange();
+            // setCurrentTime -> updateProgress refreshes the scrub text (and with
+            // it aria-valuetext), so there is nothing to set here.
             setCurrentTime(newTime);
-            view.setScrubTooltip(formatTime(newTime));
         });
 
         view.setCommitHandler(percentage -> {
@@ -150,6 +152,14 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
     @Override
     protected void onBind() {
         super.onBind();
+
+        // The histogram's bars are painted into a canvas, so they do not re-style
+        // themselves when the theme class changes the way the rest of the strip
+        // does — they hold the colour they were painted with until something
+        // repaints them. Same pattern the dashboard's visualisations use.
+        //noinspection unused e
+        registerHandler(getEventBus().addHandler(ChangeCurrentPreferencesEvent.getType(),
+                e -> getView().redrawHistogram()));
 
         // Forward date changes from the settings popup back to the timeline.
         //noinspection unused e
@@ -192,6 +202,17 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
                 clearAnimationStateHandler.run();
             }
             stepBy(-1);
+        });
+
+        // Keyboard scrubbing on the focused bar. Same path as the step buttons —
+        // arrow keys and the buttons are the same operation, so they must not be
+        // able to disagree about where "one step" lands.
+        getView().setNudgeHandler(bins -> {
+            if (clearAnimationStateHandler != null) {
+                clearAnimationStateHandler.run();
+            }
+            clearOutOfRange();
+            stepBy(bins);
         });
 
         // Step-forward: jump one histogram bin forward.
@@ -381,6 +402,13 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
             // Defence-in-depth clamp — setCurrentTime should already keep us in bounds,
             // but guard against any future caller that bypasses it.
             getView().setProgressPct(Math.max(0.0, Math.min(100.0, percentage)));
+            // The scrub text is also the bar's aria-valuetext, so it has to be
+            // refreshed on *every* path that moves the time — keyboard, playback
+            // and external seeks, not just a mouse drag. Setting it only while
+            // dragging left a screen reader announcing the position from the last
+            // drag, or "0" on a bar that had never been dragged, while reporting a
+            // correct aria-valuenow beside it.
+            getView().setScrubTooltip(formatTime(currentTime));
         }
     }
 
@@ -431,8 +459,13 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
 
     /**
      * Formats a millisecond timestamp as a short display string for the timeline labels.
+     *
+     * <p>Public because it is the canonical rendering of a timeline instant: the
+     * canvas's accessible summary and its spoken time announcements have to read
+     * the same as the labels under the bar, or a screen-reader user and a sighted
+     * user comparing notes are looking at two different clocks.</p>
      */
-    private String formatTime(final long millis) {
+    public String formatTime(final long millis) {
         if (millis <= 0) {
             return "";
         }
@@ -606,6 +639,25 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
          * This is the point at which a data query should be fired.
          */
         void setCommitHandler(Consumer<Double> commitHandler);
+
+        /**
+         * Sets the handler called when the bar is scrubbed from the keyboard, with
+         * a signed number of histogram bins to move by.
+         *
+         * <p>Stated in bins rather than as a percentage so a keypress lands on the
+         * same instants the step buttons reach; the view does not know the bin
+         * width, and a percentage step would drift off the bin grid.</p>
+         */
+        void setNudgeHandler(Consumer<Integer> nudgeHandler);
+
+        /**
+         * Repaints the histogram with the data it already has.
+         *
+         * <p>Needed on a theme change: the bars are canvas pixels, so unlike the
+         * CSS-styled parts of the strip they keep the colour they were painted with
+         * until something repaints them.</p>
+         */
+        void redrawHistogram();
 
         /**
          * Updates the text of the scrub tooltip shown above the handle during dragging.

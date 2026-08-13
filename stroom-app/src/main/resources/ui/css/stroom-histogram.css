@@ -7,6 +7,32 @@
  *  apply their own layout via the parent container.
  * ============================================================ */
 
+/* ------------------------------------------------------------
+ *  Bar colours
+ *
+ *  Read by HistogramWidget at draw time and passed to the canvas
+ *  2D context. They have to be resolved in JavaScript because a
+ *  canvas fillStyle takes a colour value, not a CSS declaration:
+ *  var() and currentColor mean nothing to it. Everything else in
+ *  this file can and does use var() directly.
+ *
+ *  Keep both in sync with --blue-500 / --blue-600: the peak bar
+ *  is the same hue at full opacity, which is what makes the peak
+ *  read as "more of the same" rather than as a different series.
+ * ------------------------------------------------------------ */
+:root {
+    --histogram-bar__color:  rgba(30, 136, 229, 0.7);
+    --histogram-peak__color: rgba(30, 136, 229, 1.0);
+}
+
+/* Lifted on the dark theme: the same blue at 0.7 alpha over a near-black
+   background loses most of its contrast against the panel, so the bars flatten
+   into the background instead of reading as a distribution. */
+.stroom-theme-dark {
+    --histogram-bar__color:  rgba(100, 181, 246, 0.75);
+    --histogram-peak__color: rgba(144, 202, 249, 1.0);
+}
+
 .stroom-histogram-container {
     height: 48px;
     overflow: hidden;

@@ -95,6 +95,17 @@ public class FloorMapTrackingPresenter extends MyPresenterWidget<FloorMapTrackin
     /** Column text for a row that is not inside any area. */
     private static final String NO_AREA = "—";
 
+    /**
+     * Element id of the entity grid, so the canvas can name it as the map's text
+     * alternative via {@code aria-describedby}.
+     *
+     * <p>A fixed id rather than a generated one because the reference crosses
+     * presenters: the canvas has no handle on this object, and threading one
+     * through purely to learn a string would couple the two for nothing. The Map
+     * tab has a single Tracking panel, so the id cannot collide with itself.</p>
+     */
+    private static final String GRID_ELEMENT_ID = "floormap-tracking-grid";
+
     private final MyDataGrid<EntityEntry> dataGrid;
     private final ListDataProvider<EntityEntry> dataProvider = new ListDataProvider<>();
     private final SingleSelectionModel<EntityEntry> selectionModel = new SingleSelectionModel<>();
@@ -151,6 +162,10 @@ public class FloorMapTrackingPresenter extends MyPresenterWidget<FloorMapTrackin
 
         dataGrid = new MyDataGrid<>(this);
         dataGrid.setSelectionModel(selectionModel);
+        // The grid is the map's text equivalent — a navigable row per entity with
+        // its type and containing area — so it needs a stable id for the canvas to
+        // point aria-describedby at. See getGridElementId().
+        dataGrid.getElement().setId(GRID_ELEMENT_ID);
         view.setGridView(dataGrid);
         initGridColumns();
         dataProvider.addDataDisplay(dataGrid);
@@ -258,8 +273,8 @@ public class FloorMapTrackingPresenter extends MyPresenterWidget<FloorMapTrackin
                         .priority(priority++)
                         // The member count is spelled out so the user can tell a
                         // populated group from an empty one before adding to it.
-                        .text(group.getName() + " (" + group.getMemberCount()
-                              + (group.getMemberCount() == 1 ? " member)" : " members)"))
+                        .text(group.getName() + " (" + group.countMembers()
+                              + (group.countMembers() == 1 ? " member)" : " members)"))
                         .enabled(!alreadyIn);
                 if (alreadyIn) {
                     builder.icon(SvgImage.TICK)
@@ -295,6 +310,16 @@ public class FloorMapTrackingPresenter extends MyPresenterWidget<FloorMapTrackin
                 .items(items)
                 .popupPosition(new PopupPosition(relativeRect, PopupLocation.BELOW))
                 .fire(this);
+    }
+
+    /**
+     * The entity grid's element id, for the canvas to point
+     * {@code aria-describedby} at.
+     *
+     * @return the grid's element id
+     */
+    public static String getGridElementId() {
+        return GRID_ELEMENT_ID;
     }
 
     /**

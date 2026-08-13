@@ -16,6 +16,7 @@
 
 package stroom.floormap.client.view;
 
+import stroom.floormap.client.FloorMapAria;
 import stroom.floormap.client.presenter.FloorMapInitPresenter.FloorMapInitView;
 
 import com.google.gwt.uibinder.client.UiBinder;
@@ -52,6 +53,12 @@ public class FloorMapInitViewImpl
     @Inject
     public FloorMapInitViewImpl(final Binder binder) {
         widget = binder.createAndBindUi(this);
+
+        // Both rows hold an injected picker view, not a control of their own, so
+        // the FormGroup label has nothing to associate with; name the containers
+        // as groups instead. See FloorMapAria.
+        FloorMapAria.group(factsStoreContainer, "Facts Store");
+        FloorMapAria.group(eventsStoreContainer, "Events Store");
     }
 
     @Override
@@ -78,12 +85,17 @@ public class FloorMapInitViewImpl
     /**
      * {@inheritDoc}
      *
-     * <p>Focuses the facts store container as the first interactive
-     * element in the dialog.</p>
+     * <p>Focuses the first control inside the Facts Store row.</p>
+     *
+     * <p>Focusing the container itself does not work: it is a plain
+     * {@code SimplePanel} div with no tabindex, so {@code focus()} on it is a
+     * silent no-op and the dialog opens with focus still on whatever the user was
+     * last on — outside the dialog. Reaching for the first real control inside is
+     * what actually moves focus.</p>
      */
     @Override
     public void focus() {
-        factsStoreContainer.getElement().focus();
+        FloorMapAria.focusFirstFocusable(factsStoreContainer.getElement());
     }
 
     // --------------------------------------------------------------------------------
