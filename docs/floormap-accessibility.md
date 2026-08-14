@@ -8,9 +8,10 @@ tab (canvas, Fact List, Time List, Layers, dialogs), and the shared
 **Target:** WCAG 2.2 Level AA.
 
 **Assessed by:** code review of the branch diff against `master`, plus a build-level
-verification pass. **Not** yet verified in a browser or with a screen reader — §6
-records exactly what is still unproven, and that distinction matters when reading
-everything below.
+verification pass. **A browser pass was added on 2026-08-14** — method in §8, findings in
+§9, and the five previously unassessed tabs in §10. Screen-reader behaviour is still
+unverified. §2 and §3 below are the original code-review conclusions and have been left
+as written; where the browser contradicted them, §9 says so and §1 has been corrected.
 
 ---
 
@@ -18,18 +19,21 @@ everything below.
 
 | Area | Status |
 |---|---|
-| Timeline transport controls (play, step, settings) | **Good** |
-| Timeline scrubber (keyboard + ARIA slider) | **Good** — fixed on this branch |
-| Speed badge | **Good** |
-| Histogram | **Adequate** — summarised, not explorable |
-| Tabular panels (Tracking, Fact List, Time List, Groups) | **Good** |
-| Layers panel | **Good** — fixed on this branch |
-| Dialogs (Object Edit, Settings, Init, Set Scale, Group Edit, Layer Style) | **Good** — fixed on this branch |
-| Map canvas — text alternative | **Adequate** — summary + linked grid |
-| Map canvas — keyboard operation | **Adequate** — view yes, per-entity no |
+| Timeline transport controls (play, step, settings) | **Good** — confirmed in browser |
+| Timeline scrubber (keyboard + ARIA slider) | **Good** — confirmed in browser |
+| Speed badge | **Fail** — contrast 3.93:1 dark, 2.62:1 light (§9.7) |
+| Histogram | **Unverified** — no event data on the test document (§8.2) |
+| Tabular panels (Tracking, Fact List, Time List, Groups) | **Adequate** — headers split from cells, no roles (§9.9) |
+| Layers panel | **Mixed** — labels good, keyboard reorder drops focus (§9.1) |
+| Dialogs (Object Edit, Settings, Init, Set Scale, Group Edit, Layer Style) | **Fail** — no dialog role, focus not moved in, labels on wrappers (§9.3, §9.4) |
+| Map canvas — text alternative | **Fail in practice** — summary is on a child of the focus target (§9.2); omits static facts (§9.8) |
+| Map canvas — keyboard operation | **Adequate** — pan/zoom/menu confirmed working; per-entity still no |
 | Cluster membership detail | **Gap** — pointer-only |
-| Reduced motion | **Good** — fixed on this branch |
-| Colour contrast | **Good** for text and indicators; **unmanaged** over user imagery |
+| Reduced motion | **Good** — implemented and reasoned; not triggerable in test env (§8.1) |
+| Colour contrast | **Good** except the speed badge; **unmanaged** over user imagery |
+| Document tab bars | **Fail** — keyboard works, but no tab/tablist roles (§10.4) |
+| Events Query / Settings tabs | **Fail** — unnamed controls; Value Schema keyboard-inoperable (§9.5, §10.1) |
+| Assets / Documentation / Permissions tabs | **Fail** — shared-component issues (§10.3) |
 
 The single largest change is that the map is no longer opaque. It was previously an
 unlabelled SVG that a screen reader walked as a stream of disconnected captions, and
@@ -328,28 +332,42 @@ prove nothing about whether a screen reader says the right thing.
 
 ## 6. What remains unverified
 
-**No browser or screen-reader testing has been done.** The claims in §2 are derived from
-the code. The following in particular need a real check, because they are the ones code
-review cannot settle:
+A browser pass has now been run — see §8 for method and §9 for what it found. The seven
+items below were the open questions; this is how each resolved.
 
-1. That the live region announces at the right moments and is not chatty — especially
-   that suppressing time during playback is sufficient.
-2. That `role="img"` plus `aria-hidden` on the SVG really stops screen readers walking
-   the captions, across NVDA, JAWS and VoiceOver.
-3. That focus is visible in both themes on the slider, canvas, grip and swatch.
-4. That keyboard reordering in the Layers panel keeps focus in practice, and that the
-   arrow keys do not also scroll the panel.
-5. That `Enter` opens the *object* context menu, beside the object, on the Editor tab —
-   and is not swallowed on the Map tab.
-6. That the enlarged scrubber hit area has not disturbed histogram click-to-seek.
-7. That the histogram bars change colour when the theme is switched **without**
-   reloading — the repaint is driven by an event, so this is the one place a missed
-   handler would show as bars stuck in the old theme's blue.
+| # | Question | Outcome |
+|---|---|---|
+| 1 | Live region announces at the right moments, not chatty | **Pass** |
+| 2 | `role="img"` + `aria-hidden` stops NVDA/JAWS/VoiceOver walking captions | **Still unverified** — needs a human |
+| 3 | Focus visible in both themes on slider, canvas, grip, swatch | **Pass** (canvas + slider confirmed; grip/swatch by computed style only) |
+| 4 | Layers keyboard reorder keeps focus; arrows don't scroll the panel | **Fail** — see §9.1 |
+| 5 | `Enter` opens the context menu on the Editor tab | **Pass** functionally — but the menu has no ARIA roles (§9.6) |
+| 6 | Enlarged scrubber hit area hasn't broken histogram click-to-seek | **Untestable** — no event data (§8.2) |
+| 7 | Histogram bars repaint on theme switch without reload | **Untestable** — no event data (§8.2) |
 
-[§9 of the manual test plan](floormap-test-plan.md) is written for exactly this: a
-keyboard-only pass, a screen-reader pass, and a reduced-motion/contrast pass, with the
-likely regressions called out. **The status in this document should be read as
-"implemented and building" rather than "verified accessible" until that has been run.**
+**Item 1 — passed, measurably.** A `MutationObserver` on both floormap live regions
+recorded exactly **one** announcement across six seconds of playback (`Playing`). Time is
+not announced while playing, as designed. Discrete actions do announce, once each:
+`Zoom 73%` on `=`, `Following guest.user.742` on selecting an entity, `Stopped following`
+on clearing it. Keyboard panning announces nothing, which is a defensible choice — 40px
+per arrow press would otherwise flood the region — but it does mean a non-sighted user
+gets no confirmation that a pan happened.
+
+**Item 2 — cannot be closed here.** Chrome's tree confirms the `<svg>` carries
+`aria-hidden="true"` and `focusable="false"`, and that the captions do not surface as
+separate nodes. Whether all three screen readers honour that is a separate question and
+still needs a real one. Note §9.2, which makes this moot on the Map tab for a different
+reason.
+
+**Item 3 — passed.** The canvas draws a clear blue focus border in dark theme (confirmed
+by screenshot). The scrubber uses a blue `box-shadow` ring rather than an `outline`,
+present in both themes by computed style. Not every control was visually confirmed in
+light theme.
+
+**Item 4 — failed.** See §9.1. Arrow keys do **not** scroll the panel (`scrollTop`
+stayed at 0), so that half of the question is fine.
+
+**Items 6 and 7 — blocked on data, not on code.** See §8.2.
 
 ---
 
@@ -364,3 +382,265 @@ likely regressions called out. **The status in this document should be read as
 4. Give the cluster tooltip a keyboard path (§3.1), or accept the Tracking grid as the
    route to that information and document it in the UI help.
 5. Consider a glyph halo for contrast over arbitrary backgrounds (§3.7).
+
+---
+
+## 8. Browser pass — method and limits
+
+Run 2026-08-14 against a local instance (`https://localhost`, GWT super dev mode) on
+branch `enterprise-floor-mapping-domain-types`, which carries this accessibility work,
+using the `System/Enterprise Floor Mapping/FLOOR_MAP` document.
+
+**Method.** axe-core 4.12.1 injected into the live page and run per tab, per dock panel
+and per dialog, against tags `wcag2a/aa`, `wcag21a/aa`, `wcag22a/aa`. Every axe run was
+**scoped to `.stroom-main-content-container`** so that app chrome and the explorer tree
+did not contaminate floormap results; the unscoped numbers are in §10.4. Alongside that:
+Chrome's own accessibility tree, keyboard-only passes recorded with a `focusin` logger,
+live-region announcements recorded with a `MutationObserver`, and computed-style contrast.
+
+**What this pass covers that code review could not:** actual accessible names as Chrome
+computes them, actual tab order, actual announcement counts, actual contrast ratios.
+
+### 8.1 What was not covered
+
+* **Screen readers.** No NVDA, JAWS or VoiceOver. Everything below is the accessibility
+  tree and the DOM, which is where a screen reader reads from, but is not the same as
+  hearing it.
+* **Light-theme visual confirmation.** Light theme was reached by swapping the
+  `stroom-theme-dark` class on `<html>`, which exercises the CSS but not the app's
+  preference-change event path. No user preference was altered.
+* **Reduced motion.** The OS running the browser does not set
+  `prefers-reduced-motion: reduce`, so the rule block could not be triggered live. It is
+  present and deliberate in `stroom-floormap.css:440`, with a documented rationale for
+  what it does *not* disable (entity movement and playback, on the grounds that they are
+  information rather than decoration and playback never autostarts). That reasoning holds
+  up against 2.2.2 and 2.3.3.
+
+### 8.2 Why items 6 and 7 could not be tested
+
+This document has **`Events Store: None`** (Settings tab). The timeline reports "No events
+in this time range" and the histogram draws no bars. Histogram click-to-seek and the
+theme-switch bar repaint therefore have nothing to act on.
+
+To close those two, the pass needs re-running against a Floor Map document whose Events
+Store points at a store with data inside the timeline's range. Everything else in this
+document was exercisable with facts alone.
+
+---
+
+## 9. Browser pass — findings
+
+Ownership matters for triage: **[FM]** is floormap code, **[shared]** is a Stroom widget
+used by every document type, where a fix is an upstream change with much wider blast
+radius. See §10.4 for the shared ones found outside floormap.
+
+### 9.1 Layers keyboard reorder drops focus to `<body>` — [FM]
+
+*Serious. WCAG 2.4.3, and 4.1.3 for the missing announcement.*
+
+Focus a row's reorder grip and press `Down`. The row moves — and focus lands on
+`<body>`. A second `Down` does nothing, because nothing relevant has focus any more. To
+make a second move the user must Tab all the way back into the panel.
+
+Verified with focus asserted on the grip before the keypress (`document.activeElement ===
+grip` was true), order captured either side, and `document.activeElement.tagName ===
+'BODY'` after. The move is also silent — the panel has no live region, so there is no
+confirmation that anything happened, or of the item's new position.
+
+The rows are rebuilt on reorder, which destroys the focused element. The fix is to
+restore focus to the moved row's grip after the rebuild and announce the new position.
+
+### 9.2 The map's focus target is an unnamed generic — [FM]
+
+*Serious. WCAG 4.1.2. This one undercuts §2.1.*
+
+The generated summary works — the live label reads
+`Floor map at 2026-08-14 08:11. 8 persons. Following guest.user.742. Zoom 73%` and
+updates correctly. But it is on the wrong element.
+
+```
+div.stroom-floormap-canvas-focus     ← tabindex="0"  ← this is what focus lands on
+  div.gwt-HTML.max                   ← role="img", aria-label="Floor map at…",
+                                        aria-describedby="floormap-tracking-grid"
+    svg                              ← aria-hidden="true", focusable="false"
+```
+
+The focusable ancestor has no role, no `aria-label` and no `aria-labelledby`. Chrome
+exposes it as `generic` with **no name**. A roleless container does not take a name from
+its descendants, so tabbing to the map announces nothing useful — the summary, and the
+`aria-describedby` link to the Tracking grid, are both attached one level too deep to be
+announced on focus.
+
+Moving `role="img"`, `aria-label` and `aria-describedby` onto
+`.stroom-floormap-canvas-focus` would fix it. (`aria-describedby` does resolve — the
+target `#floormap-tracking-grid` exists.)
+
+### 9.3 `aria-label` on wrapper `<div>`s, where ARIA prohibits it — [FM]
+
+*Critical. WCAG 4.1.2.* The same authoring mistake as §9.2, and the more instructive one,
+because the labels were written and are good — they are just ignored.
+
+In the Timeline Settings dialog, axe reports `aria-prohibited-attr` on `div.SimpleTickBox`
+and `label` violations on three controls:
+
+| Element | What it has | Why it's unnamed |
+|---|---|---|
+| Loop Playback checkbox | `aria-label` on the wrapping `div.SimpleTickBox` | `div` computes to `generic`; ARIA prohibits naming it, so the label is dropped |
+| Start Date input | `aria-label="Timeline start date and time"` on the wrapper `div` | same — the inner `<input>` has nothing |
+| End Date input | `aria-label="Timeline end date and time"` on the wrapper `div` | same |
+
+Move each `aria-label` onto the control itself. Worth grepping the feature for the
+pattern — three instances in one dialog plus §9.2 suggests it is habitual rather than
+isolated.
+
+### 9.4 Timeline Settings dialog is not a dialog — [FM]/[shared]
+
+*Serious. WCAG 4.1.2, 2.4.3.* The popup (`.simplePopup-popup`) has no `role="dialog"`, no
+`aria-modal` and no accessible name, and **focus is not moved into it** when it opens —
+`activeElement` stays on the gear button that opened it. It contains four focusable
+controls that a screen-reader user has no notification of.
+
+`Escape` does close it and return focus to the trigger, which is correct and worth
+keeping. The `simplePopup` widget itself is shared, so the role/focus part is likely an
+upstream fix; the unlabelled contents (§9.3) are floormap's.
+
+### 9.5 Value Schema editor is unreachable by keyboard — [FM]
+
+*Critical. WCAG 2.1.1.* On the Settings tab, the six **Role** dropdowns
+(`TYPE`, `LABEL`, `POSITION`, `IMAGE`, `WORLD_TO_MAP`, `MAP_TO_SCREEN`) are visible
+`<select>` elements carrying `tabindex="-1"`. They are not in the tab order.
+
+The grid has a single container focus stop, and from it neither `Down` nor `Enter` moves
+focus inward — after both, `activeElement` is still the container and only one `<select>`
+on the whole tab is focusable (the Value Format box). So the primary editing controls of
+the Value Schema cannot be reached or operated by keyboard at all. The same seven selects
+also have no accessible name (`select-name`, critical).
+
+### 9.6 Popups and menus carry no ARIA roles — [FM]/[shared]
+
+*Moderate. WCAG 4.1.2.* `Enter` on the Editor canvas opens the expected menu
+(`Add Object Here`, `Draw Area Here`, `Set Scale`), arrow keys move into and through it,
+and `Escape` closes it and restores focus to the canvas. Functionally this is good.
+
+But the popup has no `role="menu"`, the items have no `role="menuitem"`, and the canvas
+carries no `aria-expanded`. To assistive tech, a set of unnamed generic divs appears with
+no announcement.
+
+### 9.7 Speed badge fails contrast in both themes — [FM]
+
+*Serious. WCAG 1.4.3.* Measured, not estimated:
+
+| Theme | Foreground | Background | Ratio | Required |
+|---|---|---|---|---|
+| Dark | `#2185d5` | `#22252c` | **3.93:1** | 4.5:1 |
+| Light | `#42a6f5` | `#ffffff` | **2.62:1** | 4.5:1 |
+
+At 10px it cannot use the large-text allowance. This is the **only** WCAG AA violation
+axe reports inside floormap scope on the Map and Editor tabs — those two tabs are
+otherwise clean, which is a genuinely good result. §1 currently rates the badge "Good";
+that rating is wrong.
+
+### 9.8 The map's text alternative omits everything that isn't a tracked person — [FM]
+
+*Moderate. WCAG 1.1.1.* The summary counts `8 persons`. The map also draws roughly
+fifteen labelled glyphs — `C-office-1`, `P-L1-CAFETERIA`, `P-L2-CORRIDOR`, `P-L3-RM4`,
+`LOBBY`, `G-SOUTH-22`, `G-EAST-04` and so on, across the `computers` and `gates` layers.
+
+None of them appear in the summary, and none appear in the Tracking grid that
+`aria-describedby` points at — that grid lists only the eight persons. So on the Map tab
+the static facts are invisible to assistive tech, both in the summary and in its stated
+text alternative. The Editor tab's Fact List does list them, so the information exists;
+it just is not reachable from the Map tab.
+
+### 9.9 Grids split header from body, with no roles — [FM]/[shared]
+
+*Moderate. WCAG 1.3.1.* This is why axe returns `th-has-data-cells` as *incomplete* on
+every tab with a grid. The Tracking, Fact List and Time List panels render as the GWT
+`DataGrid` two-table pattern: one `<table>` holding the header row (`Name`, `Type`,
+`Area`, `Id`) and a **separate** `<table>` holding the data rows. Neither has a `role` or
+an `aria-label`, and rows are roleless `<div>`s.
+
+Because the headers live in a different table element from the cells, a screen reader
+cannot associate a cell with its column. That matters more here than usual: §2.1 nominates
+this grid as the map's text alternative. The panels' own view code contains no ARIA at
+all, so the "Good" rating in §1 was inherited from the shared widget rather than verified.
+
+---
+
+## 10. The other five tabs
+
+§1's scope covered Map and Editor. The document actually has **seven** tabs
+([`FloorMapPresenter.java:52`](../stroom-core-client/src/main/java/stroom/floormap/client/presenter/FloorMapPresenter.java)),
+and the other five had never been assessed. Scoped axe results:
+
+| Tab | Violations | Owner |
+|---|---|---|
+| Map | `color-contrast` ×1 (§9.7) | FM |
+| Editor | `color-contrast` ×1 (§9.7) | FM |
+| Events Query | `label` ×3 **critical**, `target-size` ×3 | FM + shared |
+| Settings | `select-name` ×7 **critical**, `target-size` ×2 | FM |
+| Assets | `aria-required-parent` ×3 **critical**, `image-alt` ×3 **critical** | shared |
+| Documentation | `label` ×1 **critical**, `frame-title` ×1 | shared |
+| Permissions | `label` ×1 **critical**, `target-size` ×1 | shared |
+
+### 10.1 Events Query — [FM]
+
+The **Entity ID Column** and **Location ID Column** selection boxes have no accessible
+name: no `aria-label`, no `id`, no `title`, and no `<label for>` — the visible text beside
+them is not associated with them in any way. The third `label` violation is the Ace
+editor's hidden `textarea` (shared, and the same one that appears on the Documentation
+tab).
+
+### 10.2 Settings — [FM]
+
+`select-name` ×7 covers the Value Format `<select>` (focusable, unnamed) and the six Role
+selects from §9.5 (unnamed *and* unreachable).
+
+### 10.3 Assets, Documentation, Permissions — [shared]
+
+These are generic Stroom components, so findings here affect every document type:
+
+* **Assets** — three `<img>` elements with no `alt`, and three elements whose `role`
+  requires a parent that is absent (`aria-required-parent`), plus
+  `aria-required-children` incomplete. `DocumentAssetPresenter`.
+* **Documentation** — `#markdown-preview-frame` has no `title`, and the Ace `textarea` has
+  no label. `MarkdownEditPresenter`.
+* **Permissions** — one unlabelled control and one undersized target.
+
+### 10.4 Tab bars, and the app chrome — [shared]
+
+Both tab bars — the document's (`Map … Permissions`) and the dock's
+(`Tracking | Groups | Layers`) — are built from roleless `<div class="linkTab">`.
+
+The keyboard behaviour is **better than the markup suggests, and was worth checking
+before writing it up as broken**: only the selected tab is in the tab order (correct
+roving-tabindex), arrow keys move along the bar, and `Enter` activates. Switching tabs by
+keyboard works.
+
+What is missing is the semantics: no `role="tablist"`, no `role="tab"`, no
+`aria-selected`, and each tab's text is duplicated in the DOM (`"MapMap"`). Assistive tech
+is told nothing about there being a tab set, which tab is current, or that six siblings
+exist. Adding the roles to the shared `linkTab` widget would fix it everywhere at once.
+
+For completeness, unscoped runs also surface app-chrome issues outside floormap:
+`button-name` ×2 (the Stroom logo and the menu button, both unnamed), a missing `lang` on
+`<html>`, and `target-size` on the explorer-tree icon buttons.
+
+---
+
+## 11. Revised priorities after the browser pass
+
+1. **§9.5** — Value Schema is keyboard-inoperable. Nothing else here locks a user out of
+   a feature outright.
+2. **§9.3 and §9.2** — the `aria-label`-on-a-wrapper pattern. One cheap fix each, and it
+   is what makes the map summary inaudible and three dialog controls unnamed. Grep for
+   others.
+3. **§9.1** — Layers reorder focus loss. Small fix, and it makes a working feature usable.
+4. **§10.1 / §10.2** — unnamed selection boxes and selects on Events Query and Settings.
+5. **§9.7** — speed badge contrast. A colour change, failing in both themes.
+6. **§9.4 / §9.6 / §10.4** — dialog and tab-bar roles. Mostly shared-widget work; larger
+   blast radius, so worth doing deliberately rather than quickly.
+7. **§9.8** — decide whether the Map tab's text alternative should include static facts.
+   A design question, not a bug to fix blind.
+8. Re-run against a document with event data to close §6 items 6 and 7, and get a screen
+   reader onto §6 item 2.
