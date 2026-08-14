@@ -1664,6 +1664,26 @@ paths:
       summary: "Fetch a property by its name, e.g. 'stroom.path.home'"
       tags:
       - Global Config
+  /config/v1/setConfigValue:
+    post:
+      operationId: setConfigValue
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetConfigValueRequest"
+        description: request
+        required: true
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                type: boolean
+          description: default response
+      summary: Set a single config property for all users
+      tags:
+      - Global Config
   /content/v1/abortImport:
     post:
       operationId: abortImport
@@ -10612,6 +10632,8 @@ components:
             $ref: "#/components/schemas/Param"
         query:
           type: string
+        queryTablePreferences:
+          $ref: "#/components/schemas/QueryTablePreferences"
         rememberNotifications:
           type: boolean
         status:
@@ -18944,6 +18966,8 @@ components:
             $ref: "#/components/schemas/Param"
         query:
           type: string
+        queryTablePreferences:
+          $ref: "#/components/schemas/QueryTablePreferences"
         rememberNotifications:
           type: boolean
         reportSettings:
@@ -20152,6 +20176,20 @@ components:
         properties:
           sourceDocRef:
             $ref: "#/components/schemas/DocRef"
+    SetConfigValueRequest:
+      type: object
+      properties:
+        docRefValue:
+          $ref: "#/components/schemas/DocRef"
+        propertyName:
+          type: string
+        stringValue:
+          type: string
+        target:
+          type: string
+          enum:
+          - ANALYTIC_UI_DEFAULT
+          - REPORT_UI_DEFAULT
     SetDocumentUserCreatePermissions:
       type: object
       allOf:
