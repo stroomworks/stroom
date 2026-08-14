@@ -49,7 +49,7 @@ public final class FloorMapAreaCellText {
      * <p>Applies to any row — an entity or a nested area — because the column
      * treats them identically.</p>
      *
-     * <p>The grid cell is a single {@code nowrap} line that ellipsises when the
+     * <p>The grid cell is a single {@code nowrap} line that ellipses when the
      * column is too narrow, so the full list is safe to emit here — the caller
      * repeats it in the cell's tooltip for when it is clipped.</p>
      *
