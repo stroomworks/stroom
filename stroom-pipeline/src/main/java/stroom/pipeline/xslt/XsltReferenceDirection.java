@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2025 Crown Copyright
+ * Copyright 2016-2026 Crown Copyright
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,17 +14,23 @@
  * limitations under the License.
  */
 
-ext.moduleName = 'stroom.docstore.api'
+package stroom.pipeline.xslt;
 
-dependencies {
-    implementation project(':stroom-core-shared')
-    implementation project(':stroom-explorer:stroom-explorer-api')
-    implementation project(':stroom-importexport:stroom-importexport-api')
-    implementation project(':stroom-query:stroom-query-api')
-    implementation project(':stroom-util-shared')
+/**
+ * Which way data flows over an external endpoint, from Stroom's point of view.
+ * <p>
+ * Determined by the function, not by the URL: {@code stroom:http-call} issues a POST with a body and
+ * so is {@link #OUT}, while {@code stroom:fetch-json} issues a GET and so is {@link #IN}.
+ */
+public enum XsltReferenceDirection {
 
-    implementation libs.guice
-    implementation libs.jspecify
-    implementation project(':stroom-docref')
+    /**
+     * Data leaves Stroom, e.g. {@code stroom:http-call}.
+     */
+    OUT,
+
+    /**
+     * Data enters Stroom, e.g. {@code stroom:fetch-json}.
+     */
+    IN,
 }
-

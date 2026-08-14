@@ -36,6 +36,7 @@ dependencies {
     implementation libs.fast.infoset
     implementation libs.guice.assistedinject
     implementation libs.jackson.databind
+    implementation libs.jspecify
     implementation libs.kryo
     implementation libs.langchain4j
     implementation libs.lmdbjava

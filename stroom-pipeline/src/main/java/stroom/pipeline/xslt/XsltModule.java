@@ -30,6 +30,11 @@ public class XsltModule extends AbstractModule {
     protected void configure() {
         bind(URIResolver.class).to(CustomURIResolver.class);
 
+        // Injected rather than constructed, so it can be substituted in tests and reused from a
+        // migration. Nothing calls it yet - recording what it finds is a separate change.
+        bind(XsltReferenceParser.class).to(XsltReferenceParserImpl.class);
+        bind(XsltReferenceLookup.class).to(XsltReferenceLookupImpl.class);
+
         DocumentStoreBinder.create(binder())
                 .bind(XsltDoc.TYPE, XsltStore.class, XsltStoreImpl.class);
 
