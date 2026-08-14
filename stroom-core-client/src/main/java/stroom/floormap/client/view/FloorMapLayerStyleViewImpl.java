@@ -18,6 +18,7 @@ package stroom.floormap.client.view;
 
 import stroom.floormap.client.FloorMapSwatchHtml;
 import stroom.floormap.client.presenter.FloorMapLayerStylePresenter.FloorMapLayerStyleView;
+import stroom.floormap.shared.FloorMapIcon;
 import stroom.floormap.shared.TypeStyle;
 import stroom.floormap.shared.TypeStyle.Shape;
 import stroom.item.client.SelectionBox;
@@ -38,40 +39,45 @@ import com.gwtplatform.mvp.client.ViewImpl;
  * View for the layer appearance dialog.
  *
  * <pre>
- * Graphic   (•) Shape   ( ) Image
+ * Graphic   (•) Shape   ( ) Icon   ( ) Image
  * Shape     [ Circle            ▾ ]
+ * Icon      [ ▦ grid of built-in icons ]
  * Image     [ /assets/…/van.svg   ] [Upload]
  * Colour    [ ■ ]
  * ─────────────────────────────────
  * Preview   [▣]  fixed size on the map
  * </pre>
  *
- * <p>The Shape and Image rows are mutually exclusive — the {@code Graphic} radios
- * disable whichever is not in use, so it is always clear which one the layer will
- * actually draw. Colour stays enabled in image mode: it still colours areas of the
- * type and the glyph label.</p>
+ * <p>The Shape, Icon and Image rows are mutually exclusive — the {@code Graphic}
+ * radios disable the two the mode does not use, so it is always clear which one
+ * the layer will actually draw. Colour stays enabled throughout: a shape and an
+ * icon are both filled with it, and even in image mode it still colours areas of
+ * the type and the glyph label.</p>
  */
 public class FloorMapLayerStyleViewImpl extends ViewImpl implements FloorMapLayerStyleView {
 
     /** Size of the preview graphic in pixels. */
     private static final int PREVIEW_SIZE_PX = 32;
 
-    /** Shared name grouping the two mode radios into one selection. */
+    /** Shared name grouping the mode radios into one selection. */
     private static final String MODE_GROUP = "floormap-layer-graphic-mode";
 
-    /** Applied to whichever of the Shape / Image rows the current mode ignores. */
+    /** Applied to whichever of the Shape / Icon / Image rows the mode ignores. */
     private static final String DIMMED_ROW_STYLE = "floormap-layer-style-row-dimmed";
 
     private static final int ROW_GRAPHIC = 0;
     private static final int ROW_SHAPE = 1;
-    private static final int ROW_IMAGE = 2;
-    private static final int ROW_COLOUR = 3;
-    private static final int ROW_PREVIEW = 4;
+    private static final int ROW_ICON = 2;
+    private static final int ROW_IMAGE = 3;
+    private static final int ROW_COLOUR = 4;
+    private static final int ROW_PREVIEW = 5;
 
     private final Grid grid;
     private final RadioButton shapeMode = new RadioButton(MODE_GROUP, "Shape");
+    private final RadioButton iconMode = new RadioButton(MODE_GROUP, "Icon");
     private final RadioButton imageMode = new RadioButton(MODE_GROUP, "Image");
     private final SelectionBox<String> shapeBox = new SelectionBox<>();
+    private final FloorMapIconPicker iconPicker = new FloorMapIconPicker();
     private final ColourBox colourBox = new ColourBox();
     private final SimplePanel assetPickerPanel = new SimplePanel();
     private final Button uploadButton = new Button();
@@ -97,7 +103,7 @@ public class FloorMapLayerStyleViewImpl extends ViewImpl implements FloorMapLaye
 
         previewPanel.addStyleName("floormap-layer-style-preview");
 
-        grid = new Grid(5, 2);
+        grid = new Grid(6, 2);
         grid.addStyleName("floormap-layer-style-dialog");
 
         grid.setText(ROW_GRAPHIC, 0, "Graphic");
@@ -105,6 +111,9 @@ public class FloorMapLayerStyleViewImpl extends ViewImpl implements FloorMapLaye
 
         grid.setText(ROW_SHAPE, 0, "Shape");
         grid.setWidget(ROW_SHAPE, 1, shapeBox);
+
+        grid.setText(ROW_ICON, 0, "Icon");
+        grid.setWidget(ROW_ICON, 1, iconPicker);
 
         grid.setText(ROW_IMAGE, 0, "Image");
         grid.setWidget(ROW_IMAGE, 1, buildImagePanel());
@@ -116,7 +125,12 @@ public class FloorMapLayerStyleViewImpl extends ViewImpl implements FloorMapLaye
         grid.setWidget(ROW_PREVIEW, 1, buildPreviewPanel());
 
         shapeBox.addValueChangeHandler(event -> fireChange());
-        colourBox.addValueChangeHandler(event -> fireChange());
+        iconPicker.setChangeHandler(this::fireChange);
+        colourBox.addValueChangeHandler(event -> {
+            // The icons preview in the layer's colour, so they follow the picker.
+            iconPicker.setColour(colourBox.getValue());
+            fireChange();
+        });
 
         shapeMode.setValue(true);
         applyModeEnablement();
@@ -126,10 +140,13 @@ public class FloorMapLayerStyleViewImpl extends ViewImpl implements FloorMapLaye
         final FlowPanel panel = new FlowPanel();
         panel.addStyleName("floormap-layer-style-modes");
         shapeMode.setTitle("Draw a coloured shape for facts of this type");
+        iconMode.setTitle("Draw one of the built-in icons, in this layer's colour");
         imageMode.setTitle("Draw an image from this document's assets");
         shapeMode.addValueChangeHandler(event -> onModeChanged());
+        iconMode.addValueChangeHandler(event -> onModeChanged());
         imageMode.addValueChangeHandler(event -> onModeChanged());
         panel.add(shapeMode);
+        panel.add(iconMode);
         panel.add(imageMode);
         return panel;
     }
@@ -166,11 +183,13 @@ public class FloorMapLayerStyleViewImpl extends ViewImpl implements FloorMapLaye
     }
 
     private void applyModeEnablement() {
-        final boolean image = imageMode.getValue();
-        shapeBox.setEnabled(!image);
-        uploadButton.setEnabled(image);
-        setRowDimmed(ROW_SHAPE, image);
-        setRowDimmed(ROW_IMAGE, !image);
+        final GraphicMode mode = getMode();
+        shapeBox.setEnabled(mode == GraphicMode.SHAPE);
+        iconPicker.setEnabled(mode == GraphicMode.ICON);
+        uploadButton.setEnabled(mode == GraphicMode.IMAGE);
+        setRowDimmed(ROW_SHAPE, mode != GraphicMode.SHAPE);
+        setRowDimmed(ROW_ICON, mode != GraphicMode.ICON);
+        setRowDimmed(ROW_IMAGE, mode != GraphicMode.IMAGE);
     }
 
     /** Dims the row that the current mode does not use. */
@@ -211,6 +230,7 @@ public class FloorMapLayerStyleViewImpl extends ViewImpl implements FloorMapLaye
     @Override
     public void setColour(final String colour) {
         colourBox.setValue(colour);
+        iconPicker.setColour(colourBox.getValue());
     }
 
     @Override
@@ -219,15 +239,31 @@ public class FloorMapLayerStyleViewImpl extends ViewImpl implements FloorMapLaye
     }
 
     @Override
-    public void setImageMode(final boolean image) {
-        imageMode.setValue(image);
-        shapeMode.setValue(!image);
+    public void setMode(final GraphicMode mode) {
+        shapeMode.setValue(mode == GraphicMode.SHAPE);
+        iconMode.setValue(mode == GraphicMode.ICON);
+        imageMode.setValue(mode == GraphicMode.IMAGE);
         applyModeEnablement();
     }
 
     @Override
-    public boolean isImageMode() {
-        return imageMode.getValue();
+    public GraphicMode getMode() {
+        if (imageMode.getValue()) {
+            return GraphicMode.IMAGE;
+        }
+        return iconMode.getValue()
+                ? GraphicMode.ICON
+                : GraphicMode.SHAPE;
+    }
+
+    @Override
+    public void setIcon(final FloorMapIcon icon) {
+        iconPicker.setValue(icon);
+    }
+
+    @Override
+    public FloorMapIcon getIcon() {
+        return iconPicker.getValue();
     }
 
     @Override
@@ -247,6 +283,6 @@ public class FloorMapLayerStyleViewImpl extends ViewImpl implements FloorMapLaye
 
     @Override
     public void setPreview(final TypeStyle style) {
-        previewPanel.setWidget(new HTML(FloorMapSwatchHtml.swatch(style, PREVIEW_SIZE_PX)));
+        previewPanel.setWidget(new HTML(FloorMapSwatchHtml.mapPreview(style, PREVIEW_SIZE_PX)));
     }
 }

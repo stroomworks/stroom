@@ -34,6 +34,7 @@ import stroom.floormap.shared.FloorMapHoverDetail;
 import stroom.floormap.shared.FloorMapJsonKeys;
 import stroom.floormap.shared.FloorMapMeasurementUnits;
 import stroom.floormap.shared.FloorMapObject;
+import stroom.floormap.shared.FloorMapScreenGeometry;
 import stroom.floormap.shared.FloorMapTransformationMatrix;
 import stroom.floormap.shared.FloorMapViewport;
 import stroom.floormap.shared.FloorMapZOrder;
@@ -126,19 +127,30 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
      * How close together (screen px) two entities must be before they are merged
      * into one summary glyph.
      *
-     * <p>Derived from the glyph, not picked freely: point glyphs occupy a 60 px
-     * box, so their ink starts overlapping at 60 px apart. Merging within
-     * three-quarters of that catches the pairs that genuinely obscure each other
-     * while leaving visibly separate ones alone. Being a <em>screen</em> distance
-     * is what makes one constant serve every zoom level and every document.</p>
+     * <p>Computed from the glyph rather than picked: point glyphs occupy a
+     * {@link FloorMapScreenGeometry#POINT_GLYPH_SIZE_PX} box, so their ink starts
+     * overlapping the moment they are closer than that. It was previously
+     * three-quarters of the box on the reasoning that only badly-obscured pairs
+     * needed merging — which guaranteed the survivors overlapped, since the
+     * merged glyph is a full box wide and its neighbour could sit at 45 px. The
+     * clearance above the box gives the count pill and the caption somewhere to
+     * go. Being a <em>screen</em> distance is what makes one constant serve every
+     * zoom level and every document.</p>
      */
-    private static final double CLUSTER_RADIUS_PX = 45;
+    private static final double CLUSTER_RADIUS_PX =
+            FloorMapScreenGeometry.POINT_GLYPH_SIZE_PX * 1.2;
 
     /**
      * How close (screen px) the pointer must be to a cluster's centre to count as
      * hovering it — the glyph's own half-width, so the hit area is the glyph.
+     *
+     * <p>This is the radius for a cluster drawn at the base size;
+     * {@link FloorMapClusterOverlay#clusterNear} scales it by each cluster's own
+     * {@link FloorMapCluster#getSizeFactor()}, so a badge that has grown stays
+     * hoverable right to its edge.</p>
      */
-    private static final double CLUSTER_HIT_RADIUS_PX = 30;
+    private static final double CLUSTER_HIT_RADIUS_PX =
+            FloorMapScreenGeometry.POINT_GLYPH_SIZE_PX / 2.0;
 
     /**
      * The most member names listed in a hover tooltip before it summarises the

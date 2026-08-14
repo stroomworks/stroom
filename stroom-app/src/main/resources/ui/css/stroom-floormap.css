@@ -893,6 +893,27 @@
     align-items: center;
 }
 
+/*
+ * The two wide rows — the icon grid and the picker-plus-Upload pair — share one
+ * width, so the dialog has a single edge down its right-hand side rather than a
+ * ragged one.
+ *
+ * It has to be a *definite* width, not 100%. These sit in an auto-layout table,
+ * where a column stretches to its content: sized to fit, the drop-down's label
+ * pulled the whole dialog past 1200px on a deeply nested asset path. A definite
+ * width caps the column, and the label truncates instead, which is what its own
+ * `overflow: hidden` was always for.
+ */
+.floormap-layer-style-dialog {
+    /* Five icon columns plus the gaps between them. */
+    --floormap-style-control-width: 388px;
+}
+
+.floormap-layer-style-dialog td:last-child > .floormap-layer-style-image,
+.floormap-layer-style-dialog td:last-child > .floormap-icon-picker {
+    width: var(--floormap-style-control-width);
+}
+
 .floormap-layer-style-image > :first-child {
     flex: 1 1 auto;
     min-width: 0;
@@ -900,6 +921,39 @@
 
 .floormap-layer-style-image > :last-child {
     flex: 0 0 auto;
+}
+
+/*
+ * The platform's drop-down carries a hard width and hangs its ellipsis button
+ * off the right edge with absolute positioning, so when the row is narrower than
+ * that width the button does not travel with the shrinking box — it sits on top
+ * of whatever follows, which here was Upload. Letting the drop-down fill its
+ * flex slot keeps the ellipsis inside the control at any row width, and hands it
+ * the leftover space rather than a fixed 200px, so longer asset paths stay
+ * readable.
+ */
+.floormap-layer-style-image .dropDownView-container {
+    width: 100%;
+    min-width: 0;
+}
+
+/*
+ * Lets the path truncate instead of pushing the control open. A flex item's
+ * default `min-width: auto` is its content size, so without this the label
+ * refuses to shrink below the full path and overflows the drop-down it is meant
+ * to sit inside — the `overflow: hidden` it already carries never gets to bite.
+ * (The dialog's overall width is capped by the definite width above, not here.)
+ */
+.floormap-layer-style-image .dropDownView-label {
+    flex: 1 1 0;
+    min-width: 0;
+    /*
+     * The control's own ellipsis button is pinned inside its right edge, so the
+     * path has to stop before it rather than run underneath. The reserved strip
+     * is the button's 15px plus its 4px offset.
+     */
+    padding-right: 22px;
+    text-overflow: ellipsis;
 }
 
 /* Preview graphic beside its explanatory hint */
@@ -926,6 +980,59 @@
     line-height: 1.3;
     color: var(--text-color--low-emphasis);
     white-space: normal;
+}
+
+/*
+ * Built-in icon grid. Wider than the 260px the dialog gives its single-control
+ * rows — five columns is what lets every icon's name sit under it unabbreviated,
+ * and a grid of unlabelled pictograms would make the user guess which is which.
+ * Its width comes from --floormap-style-control-width above.
+ */
+.floormap-icon-picker {
+    display: grid;
+    grid-template-columns: repeat(5, 76px);
+    gap: 2px;
+    max-height: 340px;
+    overflow-y: auto;
+}
+
+.floormap-icon-picker--disabled {
+    pointer-events: none;
+}
+
+.floormap-icon-picker__cell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    padding: 6px 3px 5px;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    cursor: pointer;
+}
+
+.floormap-icon-picker__cell:hover {
+    background-color: rgba(128, 128, 128, 0.14);
+}
+
+.floormap-icon-picker__cell--selected {
+    border-color: var(--focus-border);
+    background-color: rgba(128, 128, 128, 0.2);
+}
+
+.floormap-icon-picker__glyph {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 30px;
+}
+
+.floormap-icon-picker__label {
+    font-size: 0.72rem;
+    line-height: 1.15;
+    text-align: center;
+    white-space: normal;
+    color: var(--text-color--low-emphasis);
 }
 
 /* Discovered-but-unsaved type: muted + italic, with an add button */

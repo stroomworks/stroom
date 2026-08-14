@@ -52,6 +52,19 @@ public final class FloorMapScreenGeometry {
     public static final double MAX_GRAPHIC_EDGE_RATIO = 2.0;
 
     /**
+     * The screen size, in pixels, of the square box a point glyph occupies —
+     * an event entity or an imageless, vertex-less fact, drawn at a fixed screen
+     * size whatever the zoom.
+     *
+     * <p>Lives here, rather than only in the renderer, because it is not just a
+     * drawing detail: clustering merges entities whose glyphs would overlap, so
+     * the merge distance is a function of this. Two independent constants that
+     * had to agree by hand is exactly how the merge distance ended up smaller
+     * than the glyph it was meant to keep clear.</p>
+     */
+    public static final int POINT_GLYPH_SIZE_PX = 60;
+
+    /**
      * The map-space width an image fact is rendered at before its placement
      * matrix scales it — so an image's size on the map is this times the
      * matrix's scale, and its height that divided by the image's aspect ratio.

@@ -21,6 +21,8 @@ import stroom.docstore.shared.AbstractDoc;
 import stroom.document.asset.client.presenter.DocumentAssetDropDownPresenter;
 import stroom.document.asset.client.presenter.DocumentAssetQuickUploadPresenter;
 import stroom.floormap.client.presenter.FloorMapLayerStylePresenter.FloorMapLayerStyleView;
+import stroom.floormap.client.presenter.FloorMapLayerStylePresenter.FloorMapLayerStyleView.GraphicMode;
+import stroom.floormap.shared.FloorMapIcon;
 import stroom.floormap.shared.TypeStyle;
 import stroom.floormap.shared.TypeStyle.Shape;
 import stroom.widget.popup.client.event.ShowPopupEvent;
@@ -40,11 +42,17 @@ import java.util.function.Consumer;
  * Modal dialog for editing a single layer's appearance — the graphic drawn for
  * facts of that type, held on its {@link TypeStyle}.
  *
- * <p>A layer draws either a <strong>shape</strong> ({@link TypeStyle#getShape()}
- * filled with {@link TypeStyle#getColour()}) or an <strong>image</strong>
- * ({@link TypeStyle#getGraphic()}) picked from the document's asset store — the
- * {@code Graphic} radio pair chooses which. The colour stays editable in image
- * mode because it is still used for areas of the type and for the glyph label.</p>
+ * <p>A layer draws one of three things, chosen by the {@code Graphic} radios: a
+ * <strong>shape</strong> ({@link TypeStyle#getShape()} filled with
+ * {@link TypeStyle#getColour()}), one of the built-in <strong>icons</strong>
+ * ({@link FloorMapIcon}, filled with the same colour), or an
+ * <strong>image</strong> ({@link TypeStyle#getGraphic()}) picked from the
+ * document's asset store. The colour stays editable in image mode too, because it
+ * is still used for areas of the type and for the glyph label.</p>
+ *
+ * <p>Only the chosen mode's graphic is stored, so the renderer's precedence —
+ * image, then icon, then shape — never has to arbitrate between a live choice and
+ * an abandoned one.</p>
  *
  * <p>Opened from the Editor Layers panel's per-row swatch. On OK it calls back
  * with a replacement {@code TypeStyle}, which the panel persists via the
@@ -106,21 +114,39 @@ public class FloorMapLayerStylePresenter extends MyPresenterWidget<FloorMapLayer
                 return;
             }
             assetDropDownPresenter.setSelectedAssetPath(url);
-            getView().setImageMode(true);
+            getView().setMode(GraphicMode.IMAGE);
             refreshPreview();
         });
     }
 
     /**
-     * Pushes the current dialog state into the preview and keeps the asset picker
-     * browsable only in image mode.
+     * Pushes the current dialog state into the preview and keeps each chooser
+     * live only in the mode that uses it.
      */
     private void refreshPreview() {
-        final boolean imageMode = getView().isImageMode();
-        assetDropDownPresenter.setEnabled(imageMode);
-        getView().setPreview(imageMode
-                ? new TypeStyle(null, null, getView().getColour(), selectedGraphic())
-                : new TypeStyle(null, chosenShape(), getView().getColour()));
+        final GraphicMode mode = getView().getMode();
+        assetDropDownPresenter.setEnabled(mode == GraphicMode.IMAGE);
+        getView().setPreview(styleFrom(null, mode));
+    }
+
+    /**
+     * The style the dialog currently describes, for {@code type}.
+     *
+     * <p>Only the chosen mode's graphic is carried, so switching mode and
+     * confirming genuinely replaces the graphic rather than leaving a stale value
+     * behind to win later — the renderer's precedence is image, then icon, then
+     * shape, so a leftover image would silently outrank a newly-picked icon.</p>
+     */
+    private TypeStyle styleFrom(final String type, final GraphicMode mode) {
+        switch (mode) {
+            case IMAGE:
+                return new TypeStyle(type, null, getView().getColour(), selectedGraphic());
+            case ICON:
+                return TypeStyle.ofIcon(type, getView().getIcon(), getView().getColour());
+            case SHAPE:
+            default:
+                return new TypeStyle(type, chosenShape(), getView().getColour());
+        }
     }
 
     /** The picked asset URL, or {@code null} when nothing is selected. */
@@ -158,7 +184,12 @@ public class FloorMapLayerStylePresenter extends MyPresenterWidget<FloorMapLayer
         // misstated the current appearance and turned the layer black on OK.
         getView().setColour(TypeStyle.colourForType(type, Collections.singletonList(style)));
         assetDropDownPresenter.setSelectedAssetPath(style.getGraphic());
-        getView().setImageMode(style.hasGraphic());
+        getView().setIcon(style.iconOrNull());
+        getView().setMode(style.hasGraphic()
+                ? GraphicMode.IMAGE
+                : style.hasIcon()
+                        ? GraphicMode.ICON
+                        : GraphicMode.SHAPE);
         refreshPreview();
 
         ShowPopupEvent.builder(this)
@@ -168,24 +199,23 @@ public class FloorMapLayerStylePresenter extends MyPresenterWidget<FloorMapLayer
                         : "Appearance")
                 .onHideRequest(e -> {
                     if (e.isOk()) {
-                        final boolean imageMode = getView().isImageMode();
-                        if (imageMode && selectedGraphic() == null) {
-                            // Confirming image mode with nothing picked would drop
-                            // the layer's shape and put no image in its place,
-                            // silently reducing it to the fallback glyph.
+                        final GraphicMode mode = getView().getMode();
+                        // Confirming a mode with nothing chosen would drop the
+                        // layer's graphic and put nothing in its place, silently
+                        // reducing it to the fallback glyph.
+                        if (mode == GraphicMode.IMAGE && selectedGraphic() == null) {
                             AlertEvent.fireWarn(FloorMapLayerStylePresenter.this,
                                     "Choose an image, or switch back to Shape.",
                                     e::reset);
                             return;
                         }
-                        // Only one of shape / graphic is kept, so switching mode
-                        // and confirming genuinely replaces the graphic rather
-                        // than leaving a stale value behind to win later.
-                        onOk.accept(new TypeStyle(
-                                type,
-                                imageMode ? null : chosenShape(),
-                                getView().getColour(),
-                                imageMode ? selectedGraphic() : null));
+                        if (mode == GraphicMode.ICON && getView().getIcon() == null) {
+                            AlertEvent.fireWarn(FloorMapLayerStylePresenter.this,
+                                    "Choose an icon, or switch back to Shape.",
+                                    e::reset);
+                            return;
+                        }
+                        onOk.accept(styleFrom(type, mode));
                     }
                     e.hide();
                 })
@@ -193,13 +223,23 @@ public class FloorMapLayerStylePresenter extends MyPresenterWidget<FloorMapLayer
     }
 
     /**
-     * View contract: a shape-or-image mode toggle, a shape chooser, the asset
-     * picker for the image, a colour chooser and a preview.
+     * View contract: a shape / icon / image mode toggle, a chooser for each, a
+     * colour chooser and a preview.
      */
     public interface FloorMapLayerStyleView extends View {
 
         /** Dropdown label for "no configured shape" (the default rectangle glyph). */
         String DEFAULT_SHAPE_LABEL = "(default)";
+
+        /** What a layer draws for facts of its type. */
+        enum GraphicMode {
+            /** A coloured {@link Shape}. */
+            SHAPE,
+            /** A built-in {@link FloorMapIcon}, filled with the layer's colour. */
+            ICON,
+            /** An image uploaded to the document's asset store. */
+            IMAGE
+        }
 
         void setShape(String shape);
 
@@ -209,10 +249,15 @@ public class FloorMapLayerStylePresenter extends MyPresenterWidget<FloorMapLayer
 
         String getColour();
 
-        /** {@code true} to draw an image for this layer, {@code false} for a shape. */
-        void setImageMode(boolean imageMode);
+        /** Which of the three graphics the layer draws. */
+        void setMode(GraphicMode mode);
 
-        boolean isImageMode();
+        GraphicMode getMode();
+
+        /** Selects a built-in icon, or {@code null} for none. */
+        void setIcon(FloorMapIcon icon);
+
+        FloorMapIcon getIcon();
 
         /** Installs the asset picker widget the presenter owns. */
         void setAssetPickerView(Widget assetPickerView);

@@ -33,6 +33,20 @@ import java.util.Objects;
  */
 public final class FloorMapCluster {
 
+    /**
+     * How much wider a cluster's glyph gets per ten-fold increase in its member
+     * count. A pair is barely bigger than a lone entity; ten are noticeably
+     * bigger; a hundred bigger again.
+     */
+    private static final double GROWTH_PER_DECADE = 0.35;
+
+    /**
+     * The widest a cluster glyph may get, as a multiple of a lone entity's. Past
+     * this the badge starts hiding more of the floor plan than the count is
+     * worth, and the number in the pill carries the magnitude anyway.
+     */
+    private static final double MAX_SIZE_FACTOR = 1.8;
+
     private final String key;
     private final String type;
     private final List<String> memberIds;
@@ -65,13 +79,19 @@ public final class FloorMapCluster {
     }
 
     /**
-     * The cluster's identity: the id of the member that seeded it.
+     * The cluster's identity: its <strong>lowest member id</strong>.
      *
      * <p>Used as the suffix of the glyph's SVG element id, and as the lookup key
-     * when a hover or a click has to find the cluster again. It is stable from
-     * frame to frame only while the cluster's <em>membership</em> is — a cluster
-     * that gains or loses a member may be keyed on a different seed, so callers
-     * must treat a key that no longer resolves as "the cluster went away".</p>
+     * when a hover or a click has to find the cluster again. The lowest member
+     * rather than the one that seeded the merge, so a cluster keeps its identity
+     * when it merely gains a member — that decides whether an open hover panel
+     * survives the next frame, and the seed cannot promise it, since which member
+     * seeds a cluster changes with the membership.</p>
+     *
+     * <p>It is still only as stable as the membership's <em>floor</em>: a cluster
+     * that loses its lowest member, or absorbs one lower, is keyed differently
+     * afterwards. Callers must treat a key that no longer resolves as "the cluster
+     * went away".</p>
      */
     public String getKey() {
         return key;
@@ -139,6 +159,47 @@ public final class FloorMapCluster {
     /** How many entities this cluster stands for; always at least two. */
     public int size() {
         return memberIds.size();
+    }
+
+    /**
+     * How much bigger this cluster's glyph is drawn than a lone entity's — a
+     * multiplier on the glyph box, never below {@code 1}.
+     *
+     * @see #sizeFactor(int)
+     */
+    public double getSizeFactor() {
+        return sizeFactor(size());
+    }
+
+    /**
+     * How much bigger a glyph standing for {@code memberCount} entities is drawn
+     * than a lone entity's.
+     *
+     * <p>Growth is logarithmic and capped: the difference between 2 and 20 should
+     * be visible at a glance, but a crowd of 500 cannot be allowed to blot out the
+     * floor plan, and it does not need to — the count pill states the number
+     * exactly. This is the same curve every map clusterer uses, for the same
+     * reason.</p>
+     *
+     * <p>Lives here rather than in the renderer because
+     * {@link FloorMapClusterOverlay} needs it too: a bigger glyph covers more
+     * ground, so it has to merge anything within <em>its</em> reach rather than a
+     * lone entity's, or the badge is drawn over entities it does not speak
+     * for.</p>
+     *
+     * @param memberCount how many entities the glyph stands for
+     * @return the multiplier, in {@code [1, }{@value #MAX_SIZE_FACTOR}{@code ]}
+     */
+    public static double sizeFactor(final int memberCount) {
+        if (memberCount < 2) {
+            return 1.0;
+        }
+        return Math.min(1.0 + GROWTH_PER_DECADE * Math.log10(memberCount), MAX_SIZE_FACTOR);
+    }
+
+    /** The widest any cluster glyph can be drawn, as a multiple of a lone entity's. */
+    public static double maxSizeFactor() {
+        return MAX_SIZE_FACTOR;
     }
 
     /**

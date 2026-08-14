@@ -72,18 +72,48 @@ import java.util.TreeMap;
  *       the live position.</li>
  * </ul>
  *
+ * <h2>The merge pass, and why it runs more than once</h2>
+ * <p>One pass works like this: items are bucketed into a lattice anchored at the
+ * map origin with cells the size of the threshold, cells are visited row-major,
+ * and items within a cell are visited by id. The first unassigned item seeds a
+ * cluster and absorbs every unassigned item within reach <em>of the seed</em>,
+ * searching only the neighbouring cells — enough, because a cell is one threshold
+ * wide. Absorbing around the seed rather than a moving centroid is what prevents
+ * the long chains single-linkage clustering produces across a crowded floor.</p>
+ *
+ * <p>A single pass is not enough, and that was the substance of the complaint
+ * that clustering "only works when entities are in the same position". It leaves
+ * two kinds of residue. A later seed is always more than a threshold from every
+ * earlier one, but what gets <em>drawn</em> is the centroid, which drifts — so two
+ * clusters end up with their badges overlapping. And an entity just outside the
+ * reach of every seed stays a lone glyph even when it is sitting on top of a
+ * cluster's badge, because nothing ever offers it a second chance. Measured on a
+ * screenful of 150 entities, one pass left 85 glyphs, a third of them overlapping
+ * something.</p>
+ *
+ * <p>So the pass is <strong>repeated over the clusters it produced</strong>, each
+ * standing at its members' centroid, until a round merges nothing or
+ * {@link #MAX_MERGE_ROUNDS} is reached — the same coarsening a slippy map gets by
+ * clustering each zoom level from the level below, applied within one level.
+ * Colliding clusters merge; stragglers are adopted. Rounds are capped because
+ * this runs on every animation frame, and in practice a crowd settles in two or
+ * three.</p>
+ *
+ * <p>Two things bound what a round may do. A cluster's glyph grows with its count
+ * ({@link FloorMapCluster#sizeFactor}), so the merge distance is the average of
+ * the two glyphs' reach rather than a flat threshold: a big badge covers more
+ * ground and must speak for what it covers. And a merge is refused when it would
+ * put a member further than {@link #SPREAD_LIMIT} thresholds from the seed, which
+ * is what stops a corridor of desks chaining into one badge whose members are off
+ * screen. Every member of a cluster is therefore within {@code 2 × SPREAD_LIMIT}
+ * thresholds of every other, at every round.</p>
+ *
  * <h2>Determinism</h2>
  * <p>This is recomputed on every frame, including every animation frame, so an
  * order-dependent result would make badges flicker while entities move. The
- * partition is fixed by geometry alone: items are bucketed into a lattice
- * anchored at the map origin with cells the size of the threshold, cells are
- * visited row-major, and items within a cell are visited by id. The first
- * unassigned item seeds a cluster and absorbs every unassigned item within the
- * threshold <em>of the seed</em> — searching only the 3×3 neighbouring cells,
- * which is sufficient because a cell is exactly one threshold wide. Absorbing
- * around the seed rather than a moving centroid caps each cluster's diameter at
- * twice the threshold and prevents the long chains single-linkage clustering
- * produces across a crowded floor.</p>
+ * partition is fixed by geometry alone — the lattice order above, with ids only
+ * breaking ties inside a cell, and each round's clusters carrying their lowest
+ * member id so the next round's tie-breaks are equally fixed.</p>
  *
  * <p>Two consequences worth knowing, neither of which a user action can trigger:
  * an entity sitting exactly at the threshold during playback flips in and out of
@@ -92,7 +122,7 @@ import java.util.TreeMap;
  * here); and because the lattice is anchored at the map origin, where the cell
  * boundaries fall relative to a crowd can decide which of its members seeds it,
  * so the same relative arrangement of entities elsewhere on the map may partition
- * differently. Both outcomes are always valid partitions — bounded diameter, no
+ * differently. Both outcomes are always valid partitions — bounded spread, no
  * entity in two clusters — and panning cannot cause either, because the pan is
  * not an input here.</p>
  *
@@ -117,6 +147,34 @@ public final class FloorMapClusterOverlay {
      * a null one. Converted back to {@code null} on the way out.
      */
     private static final String NO_TYPE = "";
+
+    /**
+     * How many times the merge pass is repeated over its own output before the
+     * frame is drawn as it stands.
+     *
+     * <p>A cap rather than "until nothing changes" because this runs on every
+     * animation frame: a pathological arrangement must not be able to spend an
+     * unbounded number of passes. Crowds converge in two or three rounds — a
+     * screenful of 150 entities settles by the third and is unchanged by a
+     * tenth — so the cap is a backstop rather than a limit that normally
+     * bites.</p>
+     */
+    private static final int MAX_MERGE_ROUNDS = 4;
+
+    /**
+     * How far, in thresholds, a member may end up from the seed of the cluster
+     * that absorbed it.
+     *
+     * <p>Repeating the merge pass is what makes clustering actually clear the
+     * screen, but left unchecked it would also let a dense corridor chain
+     * together round after round into one badge standing for entities nowhere
+     * near it. This is the leash. Tuned by simulation over real-shaped layouts:
+     * at 1.5 a tight desk grid still leaves overlapping badges, and at 2.5 a
+     * whole grid of 48 collapses into a single badge spanning 215px, which is
+     * over-merging. At 2 the same layouts come out with no overlapping badges
+     * and no cluster wider than about 180px.</p>
+     */
+    private static final double SPREAD_LIMIT = 2.0;
 
     private final List<FloorMapCluster> clusters;
     private final Map<String, FloorMapCluster> byMemberId;
@@ -251,8 +309,8 @@ public final class FloorMapClusterOverlay {
 
     /**
      * Clusters one type's entities, appending any cluster of two or more to
-     * {@code out}. See the class javadoc for why the traversal order is what it
-     * is.
+     * {@code out}: one merge pass, then the same pass over its own output until a
+     * round merges nothing. See the class javadoc for why once is not enough.
      */
     private static void clusterOneType(final String type,
                                        final List<Item> items,
@@ -265,22 +323,58 @@ public final class FloorMapClusterOverlay {
             // a lone member takes this path on every frame.
             return;
         }
-        // Bucket into a lattice anchored at the map origin, one threshold per
-        // cell — so everything within the threshold of a point is in one of the
-        // nine cells around it.
-        final Map<String, List<Item>> cells = new HashMap<>();
-        final List<int[]> occupied = new ArrayList<>();
+
+        List<Node> nodes = new ArrayList<>(items.size());
         for (final Item item : items) {
-            final int cx = cellIndex(item.mapX, thresholdMap);
-            final int cy = cellIndex(item.mapY, thresholdMap);
+            nodes.add(new Node(item));
+        }
+        for (int round = 0; round < MAX_MERGE_ROUNDS; round++) {
+            final List<Node> merged = mergeRound(nodes, thresholdMap);
+            final boolean settled = merged.size() == nodes.size();
+            nodes = merged;
+            if (settled) {
+                // Nothing merged, so the next round would be handed exactly this
+                // input and reach exactly this answer.
+                break;
+            }
+        }
+
+        for (final Node node : nodes) {
+            if (node.members.size() >= 2) {
+                out.add(node.toCluster(type, focusedIds));
+            }
+        }
+    }
+
+    /**
+     * One merge pass over the given nodes — entities on the first round, clusters
+     * on the rest.
+     *
+     * <p>Nodes are bucketed into a lattice anchored at the map origin, one
+     * threshold per cell, then visited row-major with ids breaking ties inside a
+     * cell. Each unclaimed node seeds a merge and absorbs the unclaimed nodes
+     * within reach of it.</p>
+     *
+     * @return the nodes after merging: one entry per seed, in traversal order
+     */
+    private static List<Node> mergeRound(final List<Node> nodes, final double thresholdMap) {
+        final Map<String, List<Node>> cells = new HashMap<>();
+        final List<int[]> occupied = new ArrayList<>();
+        // The widest glyph on the map decides how far a seed has to look to be
+        // sure it has seen everything that could reach it.
+        double widestFactor = 1;
+        for (final Node node : nodes) {
+            final int cx = cellIndex(node.mapX, thresholdMap);
+            final int cy = cellIndex(node.mapY, thresholdMap);
             final String cellKey = cellKey(cx, cy);
-            List<Item> cell = cells.get(cellKey);
+            List<Node> cell = cells.get(cellKey);
             if (cell == null) {
                 cell = new ArrayList<>();
                 cells.put(cellKey, cell);
                 occupied.add(new int[]{cx, cy});
             }
-            cell.add(item);
+            cell.add(node);
+            widestFactor = Math.max(widestFactor, node.sizeFactor());
         }
 
         // Row-major cell order, and id order within a cell: a total order fixed
@@ -288,96 +382,97 @@ public final class FloorMapClusterOverlay {
         occupied.sort((a, b) -> a[1] != b[1]
                 ? Integer.compare(a[1], b[1])
                 : Integer.compare(a[0], b[0]));
-        for (final List<Item> cell : cells.values()) {
+        for (final List<Node> cell : cells.values()) {
             cell.sort((a, b) -> a.id.compareTo(b.id));
         }
 
-        final double thresholdSquared = thresholdMap * thresholdMap;
+        final List<Node> out = new ArrayList<>();
         final Set<String> assigned = new HashSet<>();
         for (final int[] cell : occupied) {
-            for (final Item seed : cells.get(cellKey(cell[0], cell[1]))) {
+            for (final Node seed : cells.get(cellKey(cell[0], cell[1]))) {
                 if (assigned.contains(seed.id)) {
                     continue;
                 }
                 assigned.add(seed.id);
-                final List<Item> members = absorb(seed, cell, cells, assigned, thresholdSquared);
-                if (members.size() >= 2) {
-                    out.add(build(type, seed, members, focusedIds));
-                }
+                out.add(absorb(seed, cell, cells, assigned, thresholdMap, widestFactor));
                 // A seed that absorbed nobody stays marked. That is safe rather
                 // than wasteful: it had already offered itself to every
-                // unassigned neighbour within range, and distance is symmetric,
-                // so no later seed can be close enough to want it.
+                // unassigned neighbour within range, and reach is symmetric, so
+                // no later seed can be close enough to want it.
             }
         }
+        return out;
     }
 
     /**
-     * Collects the seed plus every unassigned entity within the threshold of it,
-     * marking each as assigned. Only the 3×3 cells around the seed are searched.
+     * Merges into the seed every unclaimed node within reach of it, marking each
+     * as claimed.
+     *
+     * <p>Reach is {@link #mergeDistance}, so it depends on how big the two glyphs
+     * are drawn; the search therefore covers as many rings of cells as the widest
+     * possible partner could need, which is one for lone entities and two once a
+     * grown cluster glyph is involved.</p>
+     *
+     * @return the merged node, or the seed itself when nothing was in reach
      */
-    private static List<Item> absorb(final Item seed,
-                                     final int[] seedCell,
-                                     final Map<String, List<Item>> cells,
-                                     final Set<String> assigned,
-                                     final double thresholdSquared) {
-        final List<Item> members = new ArrayList<>();
-        members.add(seed);
-        for (int dy = -1; dy <= 1; dy++) {
-            for (int dx = -1; dx <= 1; dx++) {
-                final List<Item> neighbours = cells.get(cellKey(seedCell[0] + dx, seedCell[1] + dy));
+    private static Node absorb(final Node seed,
+                               final int[] seedCell,
+                               final Map<String, List<Node>> cells,
+                               final Set<String> assigned,
+                               final double thresholdMap,
+                               final double widestFactor) {
+        final double reach = thresholdMap * 0.5 * (seed.sizeFactor() + widestFactor);
+        final int rings = (int) Math.ceil(reach / thresholdMap);
+        final double spreadLimit = SPREAD_LIMIT * thresholdMap;
+
+        List<Node> absorbed = null;
+        for (int dy = -rings; dy <= rings; dy++) {
+            for (int dx = -rings; dx <= rings; dx++) {
+                final List<Node> neighbours = cells.get(cellKey(seedCell[0] + dx, seedCell[1] + dy));
                 if (neighbours == null) {
                     continue;
                 }
-                for (final Item candidate : neighbours) {
-                    if (!assigned.contains(candidate.id)
-                            && withinThreshold(seed, candidate, thresholdSquared)) {
-                        members.add(candidate);
+                for (final Node candidate : neighbours) {
+                    if (assigned.contains(candidate.id)) {
+                        continue;
+                    }
+                    final double distance = distance(seed, candidate);
+                    // The candidate's own members trail behind it by its spread,
+                    // so that is what has to clear the leash — checking only the
+                    // gap between the two anchors would let a cluster drag its
+                    // far side along without ever being asked.
+                    if (distance <= mergeDistance(seed, candidate, thresholdMap)
+                            && distance + candidate.spread <= spreadLimit) {
+                        if (absorbed == null) {
+                            absorbed = new ArrayList<>();
+                        }
+                        absorbed.add(candidate);
                         assigned.add(candidate.id);
                     }
                 }
             }
         }
-        return members;
+        return absorbed == null
+                ? seed
+                : new Node(seed, absorbed);
     }
 
     /**
-     * Builds the cluster: id-sorted members, keyed on the seed, anchored at the
-     * centroid — or, when one member is focused, at that member's own position.
+     * How close two nodes must be to merge: the average of the two glyphs' reach.
+     *
+     * <p>For two lone entities that is exactly the threshold — a glyph's width —
+     * which is the rule the whole class is built on. A cluster whose glyph has
+     * grown reaches proportionally further, because the badge it draws covers
+     * proportionally more of the map and must speak for what it covers.</p>
      */
-    private static FloorMapCluster build(final String type,
-                                         final Item seed,
-                                         final List<Item> members,
-                                         final Set<String> focusedIds) {
-        final List<String> ids = new ArrayList<>(members.size());
-        double sumX = 0;
-        double sumY = 0;
-        for (final Item member : members) {
-            ids.add(member.id);
-            sumX += member.mapX;
-            sumY += member.mapY;
-        }
-        Collections.sort(ids);
+    private static double mergeDistance(final Node a, final Node b, final double thresholdMap) {
+        return thresholdMap * 0.5 * (a.sizeFactor() + b.sizeFactor());
+    }
 
-        // The representative focused member, chosen in sorted member order so it
-        // does not depend on the traversal. Only reachable as more than one on a
-        // tab with multi-select, which is a tab where clustering is off.
-        final Item focused = firstFocused(ids, members, focusedIds);
-        if (focused != null) {
-            // Anchored on the focused member, not the crowd's average: this glyph
-            // IS that entity as far as the user is concerned — it carries their
-            // selection ring and their name — so it has to sit where they are.
-            return new FloorMapCluster(seed.id, type,
-                    Collections.unmodifiableList(ids),
-                    focused.mapX, focused.mapY, focused.id);
-        }
-        // The centroid, not the seed's own position, so the glyph drifts smoothly
-        // as members move rather than jumping when the seed changes.
-        return new FloorMapCluster(seed.id, type,
-                Collections.unmodifiableList(ids),
-                sumX / members.size(),
-                sumY / members.size(),
-                null);
+    private static double distance(final Node a, final Node b) {
+        final double dx = a.mapX - b.mapX;
+        final double dy = a.mapY - b.mapY;
+        return Math.sqrt((dx * dx) + (dy * dy));
     }
 
     /**
@@ -400,14 +495,6 @@ public final class FloorMapClusterOverlay {
             }
         }
         return null;
-    }
-
-    private static boolean withinThreshold(final Item a,
-                                           final Item b,
-                                           final double thresholdSquared) {
-        final double dx = a.mapX - b.mapX;
-        final double dy = a.mapY - b.mapY;
-        return (dx * dx) + (dy * dy) <= thresholdSquared;
     }
 
     private static String cellKey(final int cx, final int cy) {
@@ -519,10 +606,15 @@ public final class FloorMapClusterOverlay {
      * overlap on screen, and the pointer should resolve to the one whose glyph is
      * actually under it.</p>
      *
+     * <p>Each cluster's own hit radius is scaled by
+     * {@link FloorMapCluster#getSizeFactor()}, because that is what its glyph is
+     * scaled by. A fixed radius would leave the outer ring of a big badge inert —
+     * visibly part of the glyph, but not hoverable.</p>
+     *
      * @param mapX      the test point in map space
      * @param mapY      the test point in map space
-     * @param radiusMap the hit radius in map units; {@code 0} or invalid matches
-     *                  nothing
+     * @param radiusMap the hit radius in map units for a glyph drawn at its base
+     *                  size; {@code 0} or invalid matches nothing
      * @return the cluster, or {@code null}
      */
     public FloorMapCluster clusterNear(final double mapX,
@@ -531,14 +623,14 @@ public final class FloorMapClusterOverlay {
         if (isUsableNumber(radiusMap) || radiusMap <= 0) {
             return null;
         }
-        final double radiusSquared = radiusMap * radiusMap;
         FloorMapCluster nearest = null;
         double nearestSquared = Double.MAX_VALUE;
         for (final FloorMapCluster cluster : clusters) {
             final double dx = cluster.getMapX() - mapX;
             final double dy = cluster.getMapY() - mapY;
             final double distanceSquared = (dx * dx) + (dy * dy);
-            if (distanceSquared <= radiusSquared && distanceSquared < nearestSquared) {
+            final double radius = radiusMap * cluster.getSizeFactor();
+            if (distanceSquared <= radius * radius && distanceSquared < nearestSquared) {
                 nearest = cluster;
                 nearestSquared = distanceSquared;
             }
@@ -594,6 +686,112 @@ public final class FloorMapClusterOverlay {
             this.type = type;
             this.mapX = mapX;
             this.mapY = mapY;
+        }
+    }
+
+    /**
+     * A cluster part-way through being formed: one entity on the first round, a
+     * merged group on the rounds after it.
+     *
+     * <p>Carrying the members between rounds rather than just a count and a
+     * position is what lets the next round place the node at its true centroid
+     * and know how far its members really trail behind it.</p>
+     */
+    private static final class Node {
+
+        /**
+         * The node's identity: its <em>lowest</em> member id.
+         *
+         * <p>The lowest rather than the seed's, so that a cluster keeps its
+         * identity when it gains a member — which decides whether an open hover
+         * panel survives the next frame, and which is not something the seed's id
+         * can promise, since the seed changes with the membership.</p>
+         */
+        private final String id;
+        private final List<Item> members;
+        /** The members' centroid — where the glyph is drawn. */
+        private final double mapX;
+        private final double mapY;
+        /** How far the furthest member sits from the centroid. */
+        private final double spread;
+
+        /** A lone entity: its own centroid, with nothing trailing behind it. */
+        private Node(final Item item) {
+            this.id = item.id;
+            this.members = Collections.singletonList(item);
+            this.mapX = item.mapX;
+            this.mapY = item.mapY;
+            this.spread = 0;
+        }
+
+        /** The union of a seed and everything it absorbed this round. */
+        private Node(final Node seed, final List<Node> absorbed) {
+            final List<Item> all = new ArrayList<>(seed.members);
+            String lowestId = seed.id;
+            for (final Node node : absorbed) {
+                all.addAll(node.members);
+                if (node.id.compareTo(lowestId) < 0) {
+                    lowestId = node.id;
+                }
+            }
+
+            double sumX = 0;
+            double sumY = 0;
+            for (final Item member : all) {
+                sumX += member.mapX;
+                sumY += member.mapY;
+            }
+            final double centroidX = sumX / all.size();
+            final double centroidY = sumY / all.size();
+
+            double furthest = 0;
+            for (final Item member : all) {
+                final double dx = member.mapX - centroidX;
+                final double dy = member.mapY - centroidY;
+                furthest = Math.max(furthest, Math.sqrt((dx * dx) + (dy * dy)));
+            }
+
+            this.id = lowestId;
+            this.members = all;
+            this.mapX = centroidX;
+            this.mapY = centroidY;
+            this.spread = furthest;
+        }
+
+        /** How much bigger than a lone entity's this node's glyph is drawn. */
+        private double sizeFactor() {
+            return FloorMapCluster.sizeFactor(members.size());
+        }
+
+        /**
+         * Builds the finished cluster: id-sorted members, anchored at the centroid
+         * — or, when one member is focused, at that member's own position.
+         */
+        private FloorMapCluster toCluster(final String type, final Set<String> focusedIds) {
+            final List<String> ids = new ArrayList<>(members.size());
+            for (final Item member : members) {
+                ids.add(member.id);
+            }
+            Collections.sort(ids);
+
+            // The representative focused member, chosen in sorted member order so
+            // it does not depend on the traversal. Only reachable as more than one
+            // on a tab with multi-select, which is a tab where clustering is off.
+            final Item focused = firstFocused(ids, members, focusedIds);
+            if (focused != null) {
+                // Anchored on the focused member, not the crowd's average: this
+                // glyph IS that entity as far as the user is concerned — it carries
+                // their selection ring and their name — so it has to sit where they
+                // are.
+                return new FloorMapCluster(id, type,
+                        Collections.unmodifiableList(ids),
+                        focused.mapX, focused.mapY, focused.id);
+            }
+            // The centroid, not any one member's position, so the glyph drifts
+            // smoothly as members move rather than jumping when the seed changes.
+            return new FloorMapCluster(id, type,
+                    Collections.unmodifiableList(ids),
+                    mapX, mapY, null);
         }
     }
 }

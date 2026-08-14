@@ -28,8 +28,10 @@ import stroom.floormap.shared.FloorMapClusterLabel;
 import stroom.floormap.shared.FloorMapClusterOverlay;
 import stroom.floormap.shared.FloorMapGeometry;
 import stroom.floormap.shared.FloorMapHighlight;
+import stroom.floormap.shared.FloorMapIcon;
 import stroom.floormap.shared.FloorMapJsonKeys;
 import stroom.floormap.shared.FloorMapLabelPlacement;
+import stroom.floormap.shared.FloorMapMarker;
 import stroom.floormap.shared.FloorMapMeasurementUnits;
 import stroom.floormap.shared.FloorMapObject;
 import stroom.floormap.shared.FloorMapScreenGeometry;
@@ -102,7 +104,7 @@ public class FloorMapCanvasViewImpl
      * an imageless default graphic and of an event marker. 0.6&times; the original
      * 100 — the label {@code font-size} is deliberately left unchanged.
      */
-    private static final int OBJECT_SIZE = 60;
+    private static final int OBJECT_SIZE = FloorMapScreenGeometry.POINT_GLYPH_SIZE_PX;
 
 
     /** On-screen size (px) of a square scale handle. */
@@ -121,6 +123,16 @@ public class FloorMapCanvasViewImpl
     private static final String ACCENT_BLUE = "#1e88e5";
     /** Selection highlight (orange) drawn around a selected fact. */
     private static final String SELECTION_STROKE = "#ff9800";
+
+    /**
+     * The outline round a marker, and the fill of the icon inside it.
+     *
+     * <p>A literal white rather than a theme colour, in both themes: the marker's
+     * job is to separate itself from an arbitrary floor plan underneath, and that
+     * plan is an uploaded image whose colours no theme knows about. A dark
+     * outline would vanish against a dark plan.</p>
+     */
+    private static final String MARKER_OUTLINE = "#ffffff";
     // The containment-highlight green lives in FloorMapHighlight, which resolves
     // every non-selection highlight colour (group vs containment) in one place.
     /** Opacity applied to a dimmed (0.3) layer group. */
@@ -1231,6 +1243,10 @@ public class FloorMapCanvasViewImpl
      * crowded to draw individually. It is never drawn as selected: the selection
      * is excluded from clustering upstream, so a selected entity is always its own
      * glyph.</p>
+     *
+     * <p>It is drawn <strong>bigger the more it stands for</strong> — see
+     * {@link FloorMapCluster#getSizeFactor()} — so the difference between a pair
+     * and a crowd reads before the count pill is examined.</p>
      */
     private void appendClusterGlyph(final HtmlBuilder parent,
                                     final FloorMapCluster cluster,
@@ -1252,7 +1268,8 @@ public class FloorMapCanvasViewImpl
                 // selection ring: this glyph IS them as far as the user is
                 // concerned, and following someone into a crowd must not look like
                 // losing them.
-                cluster.hasFocusedMember(), highlightColour, typeStyles, scale);
+                cluster.hasFocusedMember(), highlightColour, typeStyles, scale,
+                cluster.getSizeFactor());
     }
 
     /**
@@ -1270,10 +1287,13 @@ public class FloorMapCanvasViewImpl
                                     final double scale) {
         // The glyph's real box, not an assumed square: a layer drawing an image
         // gets an area-matched box up to twice as tall, and a pill or caption
-        // placed at OBJECT_SIZE/2 would sit inside it.
+        // placed at OBJECT_SIZE/2 would sit inside it. Scaled by the same factor
+        // the glyph is, or a big cluster's pill sits on its face instead of its
+        // corner.
         final double[] box = glyphBoxPx(cluster.getType(), typeStyles);
-        final double halfWidth = box[0] / 2.0;
-        final double halfHeight = box[1] / 2.0;
+        final double sizeFactor = cluster.getSizeFactor();
+        final double halfWidth = box[0] * sizeFactor / 2.0;
+        final double halfHeight = box[1] * sizeFactor / 2.0;
 
         appendCountPill(parent, cluster.size(),
                 TypeStyle.colourForType(cluster.getType(), typeStyles),
@@ -1286,7 +1306,7 @@ public class FloorMapCanvasViewImpl
         collectCaption(cluster.getKey(),
                 FloorMapClusterLabel.captionFor(cluster, entityNameResolver),
                 cluster.getType(),
-                cluster.getMapX(), cluster.getMapY(), typeStyles,
+                cluster.getMapX(), cluster.getMapY(), halfHeight,
                 clusterCaptionPriority(cluster));
     }
 
@@ -1770,9 +1790,40 @@ public class FloorMapCanvasViewImpl
                                    final String highlightColour,
                                    final List<TypeStyle> typeStyles,
                                    final double scale) {
+        appendStyledGlyph(parent, id, type, mapX, mapY, isSelected, highlightColour,
+                typeStyles, scale, 1.0);
+    }
+
+    /**
+     * {@link #appendStyledGlyph(HtmlBuilder, String, String, double, double,
+     * boolean, String, List, double) As above}, drawn {@code sizeFactor} times its
+     * normal size.
+     *
+     * <p>The factor is applied to the counter-scale of the fixed-size transform
+     * rather than to each shape's own geometry, so every glyph kind — shape, pin,
+     * layer image — grows by construction, and a future one cannot forget to. A
+     * selection or highlight border is unaffected: it is drawn with
+     * {@code non-scaling-stroke}, so it stays the same weight round a bigger
+     * glyph, which is what keeps a ring reading as a ring rather than as a
+     * band.</p>
+     *
+     * @param sizeFactor the multiplier on the glyph box; {@code 1} for an entity,
+     *                   more for a cluster standing for several
+     */
+    private void appendStyledGlyph(final HtmlBuilder parent,
+                                   final String id,
+                                   final String type,
+                                   final double mapX,
+                                   final double mapY,
+                                   final boolean isSelected,
+                                   final String highlightColour,
+                                   final List<TypeStyle> typeStyles,
+                                   final double scale,
+                                   final double sizeFactor) {
         final String fillColour = TypeStyle.colourForType(type, typeStyles);
         final TypeStyle.Shape shape = shapeForType(type, typeStyles);
         final String graphic = graphicForType(type, typeStyles);
+        final FloorMapIcon icon = iconForType(type, typeStyles);
         // Selection (orange) beats any highlight — group colour or containment
         // green: the glyph border shows the most specific state, and the type
         // colour still owns the fill.
@@ -1815,6 +1866,13 @@ public class FloorMapCanvasViewImpl
                         new Attribute("vector-effect", vectorEffect),
                         new Attribute("pointer-events", "none"));
                 }
+            } else if (icon != null) {
+                // A built-in icon, drawn as a map marker: the type's colour fills
+                // a white-outlined teardrop and the icon is knocked out of it in
+                // white. Both are authored on the same grid, so one transform
+                // places the pair into the glyph box.
+                appendIconMarker(objGroup, icon, id, fillColour, half,
+                        bordered ? stroke : null);
             } else if (shape == TypeStyle.Shape.PIN) {
                 objGroup.elem(SafeHtmlUtil.from("path"),
                     new Attribute("d", FloorMapShapes.pinPath(half)),
@@ -1882,7 +1940,9 @@ public class FloorMapCanvasViewImpl
                 SafeHtmlUtil.from("g"),
                 // Counter-flip + counter-scale so the graphic + label stay
                 // upright and a fixed screen size inside the Y-up flip / zoom group.
-                new Attribute("transform", fixedSizeTransform(mapX, mapY, scale)),
+                // Dividing the zoom by the size factor leaves the counter-scale
+                // that much larger, which is what grows the whole glyph.
+                new Attribute("transform", fixedSizeTransform(mapX, mapY, scale / sizeFactor)),
                 new Attribute("id", FloorMapJsonKeys.SVG_GROUP_PREFIX + id));
     }
 
@@ -1911,9 +1971,28 @@ public class FloorMapCanvasViewImpl
                                 final double mapY,
                                 final List<TypeStyle> typeStyles,
                                 final int priority) {
+        collectCaption(key, text, type, mapX, mapY,
+                glyphBoxPx(type, typeStyles)[1] / 2.0, priority);
+    }
+
+    /**
+     * {@link #collectCaption(String, String, String, double, double, List, int) As
+     * above}, for a glyph that is not drawn at its type's normal size — a cluster
+     * badge grown by its member count. Passing the type's box for one of those
+     * would tuck the caption under the glyph it is naming.
+     *
+     * @param halfHeightPx half the height of the glyph the caption must clear
+     */
+    private void collectCaption(final String key,
+                                final String text,
+                                final String type,
+                                final double mapX,
+                                final double mapY,
+                                final double halfHeightPx,
+                                final int priority) {
         if (key != null && text != null && !text.isEmpty()) {
             pendingCaptions.add(new PendingCaption(key, text, type, mapX, mapY,
-                    glyphBoxPx(type, typeStyles)[1] / 2.0, priority));
+                    halfHeightPx, priority));
         }
     }
 
@@ -2119,6 +2198,71 @@ public class FloorMapCanvasViewImpl
             for (final TypeStyle style : typeStyles) {
                 if (style != null && type.equals(style.getType()) && style.hasGraphic()) {
                     return style.getGraphic();
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Draws an icon as a map marker: a coloured teardrop with a white outline,
+     * the icon knocked out of it in white.
+     *
+     * <p>Three layers, back to front. A selection or highlight ring first, so it
+     * shows outside the white outline rather than replacing it. Then the marker
+     * itself, which carries the {@code id} — it is the solid shape the pointer
+     * will actually be over, and the only part of the glyph that should answer a
+     * hit-test. Then the icon, explicitly {@code pointer-events="none"} so it
+     * cannot become the event target and hide the marker's id from the hit-test
+     * beneath it.</p>
+     *
+     * @param stroke the ring colour, or {@code null} for no ring
+     */
+    private void appendIconMarker(final HtmlBuilder parent,
+                                  final FloorMapIcon icon,
+                                  final String id,
+                                  final String fillColour,
+                                  final double half,
+                                  final String stroke) {
+        parent.elem(markerGroup -> {
+            if (stroke != null) {
+                markerGroup.elem(SafeHtmlUtil.from("path"),
+                    new Attribute("d", FloorMapMarker.getPath()),
+                    new Attribute("fill", "none"),
+                    new Attribute("stroke", stroke),
+                    new Attribute("stroke-width", String.valueOf(FloorMapMarker.SELECTION_WIDTH)),
+                    new Attribute("stroke-linejoin", "round"),
+                    new Attribute("pointer-events", "none"));
+            }
+            markerGroup.elem(SafeHtmlUtil.from("path"),
+                new Attribute("d", FloorMapMarker.getPath()),
+                new Attribute("fill", fillColour),
+                new Attribute("stroke", MARKER_OUTLINE),
+                new Attribute("stroke-width", String.valueOf(FloorMapMarker.OUTLINE_WIDTH)),
+                new Attribute("stroke-linejoin", "round"),
+                new Attribute("id", id));
+            markerGroup.elem(iconGroup -> iconGroup.elem(SafeHtmlUtil.from("path"),
+                    new Attribute("d", icon.getPath()),
+                    new Attribute("fill", MARKER_OUTLINE),
+                    new Attribute("pointer-events", "none")),
+                SafeHtmlUtil.from("g"),
+                new Attribute("transform", FloorMapMarker.iconTransform()));
+        }, SafeHtmlUtil.from("g"),
+                new Attribute("transform", FloorMapIcon.transform(half)));
+    }
+
+    /**
+     * Returns the built-in icon configured as the given type's layer graphic, or
+     * {@code null} to draw a shape instead.
+     *
+     * <p>An icon is filled with the layer's colour, exactly as a shape is, so
+     * unlike an uploaded image it does not retire the colour control.</p>
+     */
+    private static FloorMapIcon iconForType(final String type, final List<TypeStyle> typeStyles) {
+        if (type != null && typeStyles != null) {
+            for (final TypeStyle style : typeStyles) {
+                if (style != null && type.equals(style.getType())) {
+                    return style.iconOrNull();
                 }
             }
         }

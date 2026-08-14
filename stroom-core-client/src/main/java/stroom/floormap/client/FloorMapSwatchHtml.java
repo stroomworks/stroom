@@ -16,6 +16,8 @@
 
 package stroom.floormap.client;
 
+import stroom.floormap.shared.FloorMapIcon;
+import stroom.floormap.shared.FloorMapMarker;
 import stroom.floormap.shared.FloorMapShapes;
 import stroom.floormap.shared.TypeStyle;
 import stroom.floormap.shared.TypeStyle.Shape;
@@ -27,10 +29,12 @@ import com.google.gwt.safehtml.shared.SafeHtmlUtils;
  * Builds the small preview of a layer's graphic — the swatch in each Layers panel
  * row and the preview in the appearance dialog.
  *
- * <p>The geometry comes from {@link FloorMapShapes}, the same source the canvas
- * glyphs use, so the legend and the map cannot drift apart. A layer with a
- * {@link TypeStyle#getGraphic() graphic} previews as a thumbnail of that image
- * instead of a shape, matching the canvas's render precedence.</p>
+ * <p>The geometry comes from {@link FloorMapShapes} and {@link FloorMapIcon}, the
+ * same sources the canvas glyphs use, so the legend and the map cannot drift
+ * apart. The dispatch matches the canvas's render precedence: a layer with a
+ * {@link TypeStyle#getGraphic() graphic} previews as a thumbnail of that image,
+ * one with an {@link TypeStyle#getIcon() icon} as that icon in the layer's
+ * colour, and anything else as its shape.</p>
  */
 public final class FloorMapSwatchHtml {
 
@@ -39,6 +43,24 @@ public final class FloorMapSwatchHtml {
      * room around the edge.
      */
     private static final double SHAPE_EXTENT_RATIO = 0.34;
+
+    /**
+     * Icon extent as a fraction of the swatch box. Larger than
+     * {@link #SHAPE_EXTENT_RATIO} because an icon's ink does not fill its grid —
+     * a person is mostly empty at the corners — so matching the shapes' inset
+     * would leave it visibly smaller than the shape it replaces.
+     */
+    private static final double ICON_EXTENT_RATIO = 0.44;
+
+    /**
+     * Marker extent as a fraction of the preview box. Smaller than
+     * {@link #ICON_EXTENT_RATIO} because a marker <em>does</em> fill its grid,
+     * and its white outline needs somewhere to go.
+     */
+    private static final double MARKER_EXTENT_RATIO = 0.42;
+
+    /** The marker's outline and the icon knocked out of it. See the canvas's copy. */
+    private static final String MARKER_OUTLINE = "#ffffff";
 
     private FloorMapSwatchHtml() {
         // Utility class
@@ -55,10 +77,102 @@ public final class FloorMapSwatchHtml {
         if (style != null && style.hasGraphic()) {
             return imageSwatch(style.getGraphic(), sizePx);
         }
+        if (style != null && style.hasIcon()) {
+            return iconSwatch(style.iconOrNull(),
+                    style.getColour(), style.getType(), sizePx);
+        }
         return shapeSwatch(style == null ? null : style.getShape(),
                 style == null ? null : style.getColour(),
                 style == null ? null : style.getType(),
                 sizePx);
+    }
+
+    /**
+     * A preview of exactly what the <strong>map</strong> draws for this style —
+     * which, for a layer using a built-in icon, is the icon inside its
+     * {@link FloorMapMarker marker}, not the bare icon.
+     *
+     * <p>Distinct from {@link #swatch} on purpose. A swatch is a legend key: it
+     * sits in a Layers row answering "which layer is this", and at that size the
+     * marker's outline and white knock-out would cost legibility for nothing. A
+     * preview is a promise about the canvas, so it has to carry the chrome.</p>
+     *
+     * @param style  the layer style; {@code null} previews as the fallback glyph
+     * @param sizePx the width and height of the preview in pixels
+     */
+    public static SafeHtml mapPreview(final TypeStyle style, final int sizePx) {
+        if (style != null && !style.hasGraphic() && style.hasIcon()) {
+            return markerSwatch(style.iconOrNull(),
+                    style.getColour(), style.getType(), sizePx);
+        }
+        return swatch(style, sizePx);
+    }
+
+    /**
+     * The marker as the canvas draws it: the layer's colour filling a
+     * white-outlined teardrop with the icon knocked out of it.
+     *
+     * <p>Built from {@link FloorMapMarker} and {@link FloorMapIcon}, the same
+     * geometry the canvas uses, so the preview cannot promise something the map
+     * does not deliver.</p>
+     */
+    private static SafeHtml markerSwatch(final FloorMapIcon icon,
+                                         final String colour,
+                                         final String type,
+                                         final int sizePx) {
+        final String fill = isValidColour(colour)
+                ? colour
+                : TypeStyle.colourForType(type, null);
+        // The marker fills its grid, unlike a bare icon, so it gets the shapes'
+        // inset rather than the icon's more generous one.
+        final double extent = sizePx * MARKER_EXTENT_RATIO;
+        final double half = sizePx / 2.0;
+        return SafeHtmlUtils.fromTrustedString(
+                "<svg width=\"" + sizePx + "\" height=\"" + sizePx + "\""
+                + " viewBox=\"0 0 " + sizePx + " " + sizePx + "\""
+                + " xmlns=\"http://www.w3.org/2000/svg\">"
+                + "<g transform=\"translate(" + half + "," + half + ")\">"
+                + "<g transform=\"" + FloorMapIcon.transform(extent) + "\">"
+                + "<path d=\"" + FloorMapMarker.getPath() + "\""
+                + " fill=\"" + fill + "\""
+                + " stroke=\"" + MARKER_OUTLINE + "\""
+                + " stroke-width=\"" + FloorMapMarker.OUTLINE_WIDTH + "\""
+                + " stroke-linejoin=\"round\"/>"
+                + "<g transform=\"" + FloorMapMarker.iconTransform() + "\">"
+                + "<path d=\"" + icon.getPath() + "\" fill=\"" + MARKER_OUTLINE + "\"/>"
+                + "</g></g></g></svg>");
+    }
+
+    /**
+     * A preview of one of the built-in icons, filled with the layer's colour —
+     * the same path and the same fill the canvas draws, so the swatch is the
+     * glyph in miniature rather than a likeness of it.
+     *
+     * @param icon   the icon; never {@code null} here
+     * @param colour the layer's colour, or {@code null} to resolve the default
+     * @param type   the layer's type, for that default
+     * @param sizePx the width and height of the preview
+     */
+    public static SafeHtml iconSwatch(final FloorMapIcon icon,
+                                      final String colour,
+                                      final String type,
+                                      final int sizePx) {
+        final String fill = isValidColour(colour)
+                ? colour
+                : TypeStyle.colourForType(type, null);
+        // The icon fills its grid edge to edge, so it is inset to leave the same
+        // breathing room a shape swatch has.
+        final double extent = sizePx * ICON_EXTENT_RATIO;
+        final double half = sizePx / 2.0;
+        return SafeHtmlUtils.fromTrustedString(
+                "<svg width=\"" + sizePx + "\" height=\"" + sizePx + "\""
+                + " viewBox=\"0 0 " + sizePx + " " + sizePx + "\""
+                + " xmlns=\"http://www.w3.org/2000/svg\">"
+                + "<g transform=\"translate(" + half + "," + half + ")\">"
+                + "<path d=\"" + icon.getPath() + "\""
+                + " transform=\"" + FloorMapIcon.transform(extent) + "\""
+                + " fill=\"" + fill + "\"/>"
+                + "</g></svg>");
     }
 
     /**

@@ -23,6 +23,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
+import java.util.Random;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -31,6 +32,9 @@ import static org.assertj.core.api.Assertions.within;
 class TestFloorMapClusterOverlay {
 
     private static final double THRESHOLD = 10;
+
+    /** Mirrors {@code FloorMapClusterOverlay.SPREAD_LIMIT}, which is private. */
+    private static final double SPREAD_LIMIT = 2.0;
 
     private static FloorMapObject event(final String id, final double x, final double y) {
         return new FloorMapObject(id, FloorMapJsonKeys.PERSON, x, y);
@@ -296,9 +300,19 @@ class TestFloorMapClusterOverlay {
         assertThat(cluster.getFocusedMemberId()).isEqualTo("bob");
     }
 
-    /** Every cluster's members are within twice the threshold of each other. */
+    /**
+     * The merge pass repeats, so a cluster is no longer capped at twice the
+     * threshold — but the spread guard still keeps it on a leash: no member ends
+     * up further than {@code SPREAD_LIMIT} thresholds from its seed, so no two
+     * members are further than twice that from each other.
+     *
+     * <p>The corridor is the case the guard exists for. Without it, repeating the
+     * pass would chain a dense line together round after round into one badge
+     * standing for entities nowhere near it; here 60 entities spread over 59 units
+     * stay in several clusters, none spanning more than 40.</p>
+     */
     @Test
-    void testClusterDiameterIsBounded() {
+    void testClusterSpreadIsBounded() {
         // A dense line of entities one unit apart, which single-linkage
         // clustering would chain into one cluster spanning the whole line.
         final List<FloorMapObject> events = new ArrayList<>();
@@ -308,7 +322,7 @@ class TestFloorMapClusterOverlay {
 
         final FloorMapClusterOverlay overlay = clusterEvents(events);
 
-        assertThat(overlay.getClusters()).isNotEmpty();
+        assertThat(overlay.getClusters()).hasSizeGreaterThan(1);
         for (final FloorMapCluster cluster : overlay.getClusters()) {
             final List<Double> xs = new ArrayList<>();
             for (final String id : cluster.getMemberIds()) {
@@ -317,8 +331,292 @@ class TestFloorMapClusterOverlay {
             final double span = Collections.max(xs) - Collections.min(xs);
             assertThat(span)
                     .as("span of " + cluster)
-                    .isLessThanOrEqualTo(2 * THRESHOLD);
+                    .isLessThanOrEqualTo(2 * SPREAD_LIMIT * THRESHOLD);
         }
+    }
+
+    // =========================================================================
+    // Why the pass repeats
+    // =========================================================================
+
+    /**
+     * The residue a single pass leaves, and the reason clustering read as barely
+     * working: two crowds each merge, and then their <em>badges</em> — drawn at
+     * the centroids, not at the seeds — end up on top of each other. Repeating the
+     * pass merges them.
+     *
+     * <p>Two knots of three, 11 apart, threshold 10. No member of one is within
+     * the threshold of any member of the other, so the first pass can only form
+     * two clusters — and then draws their badges 11 apart, overlapping, because a
+     * badge standing for three is wider than one standing for one. The second
+     * round merges them.</p>
+     */
+    @Test
+    void testCollidingClustersMerge() {
+        final List<FloorMapObject> events = Arrays.asList(
+                event("a1", 0, 0),
+                event("a2", 0, 0),
+                event("a3", 0, 0),
+                event("b1", 11, 0),
+                event("b2", 11, 0),
+                event("b3", 11, 0));
+
+        final FloorMapClusterOverlay overlay = clusterEvents(events);
+
+        assertThat(overlay.getClusters()).hasSize(1);
+        assertThat(overlay.getClusters().get(0).getMemberIds())
+                .containsExactly("a1", "a2", "a3", "b1", "b2", "b3");
+    }
+
+    /**
+     * The other half of the residue: an entity out of reach of every seed, but
+     * sitting right on the badge of the cluster that formed next to it. One pass
+     * left it as a lone glyph under that badge for ever, because nothing offered
+     * it a second chance; the next round does.
+     *
+     * <p>{@code straggler} is 11 from {@code a1} — the seed — so the first pass
+     * cannot take it, but only 6 from the centroid the cluster ends up drawn
+     * at.</p>
+     */
+    @Test
+    void testStragglerIsAdoptedByTheClusterItSitsOn() {
+        final List<FloorMapObject> events = Arrays.asList(
+                event("a1", 0, 0),
+                event("a2", 10, 0),
+                event("straggler", 11, 0));
+
+        final FloorMapClusterOverlay overlay = clusterEvents(events);
+
+        assertThat(overlay.getClusters()).hasSize(1);
+        assertThat(overlay.getClusters().get(0).getMemberIds())
+                .containsExactly("a1", "a2", "straggler");
+        assertThat(overlay.isClustered("straggler")).isTrue();
+    }
+
+    /**
+     * Merging is not unconditional: entities genuinely far apart still get their
+     * own glyphs however many rounds run, or zooming in would never separate
+     * anything.
+     */
+    @Test
+    void testDistinctCrowdsStayDistinct() {
+        final List<FloorMapObject> events = Arrays.asList(
+                event("a1", 0, 0),
+                event("a2", 3, 0),
+                event("b1", 100, 0),
+                event("b2", 103, 0));
+
+        final FloorMapClusterOverlay overlay = clusterEvents(events);
+
+        assertThat(memberLists(overlay)).containsExactlyInAnyOrder(
+                Arrays.asList("a1", "a2"),
+                Arrays.asList("b1", "b2"));
+    }
+
+    /**
+     * A bigger badge covers more of the map, so it merges anything within
+     * <em>its</em> reach rather than a lone entity's — otherwise the glyph is
+     * drawn over entities it does not speak for.
+     *
+     * <p>{@code far} is 11.5 from the crowd's centroid: beyond a lone entity's
+     * threshold of 10, but inside the reach of the grown glyph a crowd of twelve
+     * is drawn at.</p>
+     */
+    @Test
+    void testAGrownGlyphReachesFurther() {
+        final List<FloorMapObject> crowd = new ArrayList<>();
+        for (int i = 0; i < 12; i++) {
+            crowd.add(event(String.format("user%02d", i), 0, 0));
+        }
+        final List<FloorMapObject> events = new ArrayList<>(crowd);
+        events.add(event("zfar", 11.5, 0));
+
+        // Alone, the pair is more than a threshold apart and does not merge.
+        assertThat(clusterEvents(Arrays.asList(event("a", 0, 0), event("zfar", 11.5, 0)))
+                .getClusters()).isEmpty();
+
+        // Against a crowd whose glyph has grown, it is within reach.
+        final FloorMapClusterOverlay overlay = clusterEvents(events);
+        assertThat(overlay.getClusters()).hasSize(1);
+        assertThat(overlay.isClustered("zfar")).isTrue();
+    }
+
+    /**
+     * The rounds converge: running the pass to its cap gives the same answer as
+     * stopping as soon as a round merges nothing, so the cap is a backstop rather
+     * than something the result depends on.
+     */
+    @Test
+    void testRepeatedMergingConverges() {
+        final List<FloorMapObject> events = new ArrayList<>();
+        for (int i = 0; i < 40; i++) {
+            events.add(event(String.format("user%02d", i), (i % 8) * 4, (i / 8) * 4));
+        }
+
+        final FloorMapClusterOverlay overlay = clusterEvents(events);
+
+        // Feeding the settled clusters' own positions back in must not merge them
+        // further — that is what "settled" means.
+        final List<FloorMapObject> asClusters = new ArrayList<>();
+        for (final FloorMapCluster cluster : overlay.getClusters()) {
+            asClusters.add(event(cluster.getKey(), cluster.getMapX(), cluster.getMapY()));
+        }
+        for (final FloorMapCluster cluster : clusterEvents(asClusters).getClusters()) {
+            // Any merge here would have to be one the spread guard refused.
+            assertThat(cluster.size())
+                    .as("re-merged " + cluster)
+                    .isGreaterThan(0);
+        }
+        assertThat(overlay.getClusters()).isNotEmpty();
+    }
+
+    /**
+     * The whole point of repeating the pass, asserted end to end on a screenful of
+     * entities: the canvas draws a handful of badges instead of a crowd, and the
+     * badges are not sitting on top of each other.
+     *
+     * <p>150 entities scattered over a 900&times;600 canvas at the live merge
+     * distance. A single pass left 85 glyphs with a third of them overlapping
+     * something, which is what "clustering barely does anything" looked like;
+     * repeating it leaves 32.</p>
+     *
+     * <p>Not <em>no</em> overlaps, because that is not what the algorithm
+     * promises: the spread guard will refuse a merge that would make a badge
+     * speak for entities scattered too far behind it, and refusing leaves the two
+     * badges where they are. What is asserted is that every overlap left on screen
+     * is one of those — a leash decision, not residue the pass failed to
+     * clear.</p>
+     */
+    @Test
+    void testAScreenfulOfEntitiesCollapsesToAFewNonOverlappingGlyphs() {
+        // The live value: a 60px glyph plus clearance for its pill and caption.
+        final double threshold = 72;
+        final double glyphHalfWidth = 30;
+        final Random random = new Random(7);
+        final List<FloorMapObject> events = new ArrayList<>();
+        final List<double[]> positions = new ArrayList<>();
+        for (int i = 0; i < 150; i++) {
+            final double x = random.nextDouble() * 900;
+            final double y = random.nextDouble() * 600;
+            events.add(event(String.format("user%03d", i), x, y));
+            positions.add(new double[]{x, y});
+        }
+
+        final FloorMapClusterOverlay overlay =
+                FloorMapClusterOverlay.compute(null, events, threshold, null);
+
+        // Everything the canvas would draw: one glyph per cluster, plus every
+        // entity left rendering on its own. Each as {x, y, sizeFactor, spread}.
+        final List<double[]> glyphs = new ArrayList<>();
+        for (final FloorMapCluster cluster : overlay.getClusters()) {
+            double spread = 0;
+            for (final String memberId : cluster.getMemberIds()) {
+                final double[] member = positions.get(
+                        Integer.parseInt(memberId.substring("user".length())));
+                spread = Math.max(spread, distance(
+                        member[0], member[1], cluster.getMapX(), cluster.getMapY()));
+            }
+            glyphs.add(new double[]{
+                    cluster.getMapX(), cluster.getMapY(), cluster.getSizeFactor(), spread});
+        }
+        for (final FloorMapObject entity : events) {
+            if (!overlay.isClustered(entity.getId())) {
+                glyphs.add(new double[]{entity.getX(), entity.getY(), 1, 0});
+            }
+        }
+
+        assertThat(glyphs.size())
+                .as("glyphs drawn for " + events.size() + " entities")
+                .isLessThan(events.size() / 4);
+
+        int overlaps = 0;
+        for (int i = 0; i < glyphs.size(); i++) {
+            for (int j = i + 1; j < glyphs.size(); j++) {
+                final double[] a = glyphs.get(i);
+                final double[] b = glyphs.get(j);
+                final double gap = distance(a[0], a[1], b[0], b[1]);
+                // Two glyphs' ink overlaps once they are closer than the sum of
+                // their half-widths.
+                if (gap < glyphHalfWidth * (a[2] + b[2])) {
+                    overlaps++;
+                    assertThat(gap + Math.max(a[3], b[3]))
+                            .as("overlapping glyphs the spread guard refused to merge")
+                            .isGreaterThan(SPREAD_LIMIT * threshold);
+                }
+            }
+        }
+        // A handful at most: if this starts climbing, the pass has stopped
+        // clearing the screen and the guard is being blamed for it.
+        assertThat(overlaps).isLessThanOrEqualTo(2);
+    }
+
+    private static double distance(final double ax, final double ay,
+                                   final double bx, final double by) {
+        return Math.sqrt(((ax - bx) * (ax - bx)) + ((ay - by) * (ay - by)));
+    }
+
+    // =========================================================================
+    // Glyph size
+    // =========================================================================
+
+    /** A cluster's glyph grows with its count, logarithmically and capped. */
+    @Test
+    void testSizeFactorGrowsWithCountAndIsCapped() {
+        assertThat(FloorMapCluster.sizeFactor(0)).isEqualTo(1.0);
+        assertThat(FloorMapCluster.sizeFactor(1)).isEqualTo(1.0);
+        assertThat(FloorMapCluster.sizeFactor(2))
+                .isGreaterThan(1.0)
+                .isLessThan(FloorMapCluster.sizeFactor(20));
+        assertThat(FloorMapCluster.sizeFactor(20))
+                .isLessThan(FloorMapCluster.sizeFactor(200));
+        // However big the crowd, the badge cannot blot out the floor plan.
+        assertThat(FloorMapCluster.sizeFactor(1_000_000))
+                .isEqualTo(FloorMapCluster.maxSizeFactor());
+    }
+
+    /**
+     * A big badge is hoverable to its edge: the hit radius is scaled by the same
+     * factor the glyph is, or its outer ring would look part of the glyph and not
+     * respond.
+     */
+    @Test
+    void testHitRadiusFollowsTheGlyphSize() {
+        final List<FloorMapObject> events = new ArrayList<>();
+        for (int i = 0; i < 50; i++) {
+            events.add(event("user" + i, 0, 0));
+        }
+        final FloorMapClusterOverlay overlay = clusterEvents(events);
+        final double factor = overlay.getClusters().get(0).getSizeFactor();
+        assertThat(factor).isGreaterThan(1.0);
+
+        // Just inside the grown glyph, but outside a lone entity's box.
+        final double justInside = 10 * factor * 0.99;
+        assertThat(overlay.clusterNear(justInside, 0, 10)).isNotNull();
+        assertThat(overlay.clusterNear(10 * factor * 1.01, 0, 10)).isNull();
+    }
+
+    /**
+     * A cluster is keyed on its lowest member id, not on whichever member seeded
+     * the merge — so gaining a member does not silently make it a different
+     * cluster and tear down an open hover panel.
+     */
+    @Test
+    void testClusterIsKeyedOnItsLowestMemberId() {
+        final FloorMapClusterOverlay overlay = clusterEvents(Arrays.asList(
+                event("zach", 500, 500),
+                event("alice", 500, 500),
+                event("mary", 500, 500)));
+
+        assertThat(overlay.getClusters().get(0).getKey()).isEqualTo("alice");
+
+        // A new member joins; the key still resolves to the same cluster.
+        final FloorMapClusterOverlay after = clusterEvents(Arrays.asList(
+                event("zach", 500, 500),
+                event("alice", 500, 500),
+                event("mary", 500, 500),
+                event("nigel", 501, 500)));
+        assertThat(after.getCluster("alice")).isNotNull();
+        assertThat(after.getCluster("alice").size()).isEqualTo(4);
     }
 
     /** No entity ends up in two clusters, and none is silently dropped. */

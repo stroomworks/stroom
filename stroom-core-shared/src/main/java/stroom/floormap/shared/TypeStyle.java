@@ -71,23 +71,49 @@ public class TypeStyle {
     private final String colour;
     @JsonProperty
     private final String graphic;
+    @JsonProperty
+    private final String icon;
 
     @JsonCreator
     public TypeStyle(@JsonProperty("type") final String type,
                      @JsonProperty("shape") final Shape shape,
                      @JsonProperty("colour") final String colour,
-                     @JsonProperty("graphic") final String graphic) {
+                     @JsonProperty("graphic") final String graphic,
+                     @JsonProperty("icon") final String icon) {
         this.type = type;
         this.shape = shape;
         this.colour = colour;
         this.graphic = graphic;
+        this.icon = icon;
+    }
+
+    /** Convenience for a style drawing a shape or an uploaded image, with no icon. */
+    public TypeStyle(final String type,
+                     final Shape shape,
+                     final String colour,
+                     final String graphic) {
+        this(type, shape, colour, graphic, null);
     }
 
     /** Convenience for a shape-and-colour style with no image graphic. */
     public TypeStyle(final String type,
                      final Shape shape,
                      final String colour) {
-        this(type, shape, colour, null);
+        this(type, shape, colour, null, null);
+    }
+
+    /**
+     * A style drawing one of the built-in icons, filled with {@code colour}.
+     *
+     * @param icon the icon; {@code null} falls back to the shape
+     */
+    public static TypeStyle ofIcon(final String type,
+                                   final FloorMapIcon icon,
+                                   final String colour) {
+        return new TypeStyle(type, null, colour, null,
+                icon == null
+                        ? null
+                        : icon.name());
     }
 
     /** The fact type this style applies to. */
@@ -116,6 +142,43 @@ public class TypeStyle {
      */
     public String getGraphic() {
         return graphic;
+    }
+
+    /**
+     * The name of the built-in {@link FloorMapIcon} to draw instead of
+     * {@link #shape}, or {@code null} to draw the shape.
+     *
+     * <p>Stored as the enum's name rather than the enum itself so a document
+     * written by a version that knows an icon this one does not still
+     * deserialises — {@link #iconOrNull()} resolves it, and an unrecognised
+     * name simply draws the shape.</p>
+     *
+     * <p>Ranks <em>below</em> {@link #getGraphic() an uploaded image} and above
+     * the shape, matching the order the renderer checks them in. Choosing one in
+     * the appearance dialog clears the other two, so only one can ever be set.</p>
+     */
+    public String getIcon() {
+        return icon;
+    }
+
+    /**
+     * The built-in icon this layer draws, or {@code null} if it draws a shape or
+     * an image. Resolves {@link #getIcon()}, so an unknown name reads as
+     * {@code null}.
+     */
+    public FloorMapIcon iconOrNull() {
+        return FloorMapIcon.fromName(icon);
+    }
+
+    /**
+     * True if this style draws a built-in icon.
+     *
+     * <p>An unrecognised icon name is <strong>not</strong> "has an icon": the
+     * layer cannot draw one, so every surface must treat it as having none. See
+     * {@link #hasGraphic()} on why this needs no {@code @JsonIgnore}.</p>
+     */
+    public boolean hasIcon() {
+        return iconOrNull() != null;
     }
 
     /**
@@ -248,17 +311,18 @@ public class TypeStyle {
         return Objects.equals(type, that.type)
                 && shape == that.shape
                 && Objects.equals(colour, that.colour)
-                && Objects.equals(graphic, that.graphic);
+                && Objects.equals(graphic, that.graphic)
+                && Objects.equals(icon, that.icon);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(type, shape, colour, graphic);
+        return Objects.hash(type, shape, colour, graphic, icon);
     }
 
     @Override
     public String toString() {
         return "TypeStyle{type='" + type + "', shape=" + shape + ", colour='" + colour
-                + "', graphic='" + graphic + "'}";
+                + "', graphic='" + graphic + "', icon='" + icon + "'}";
     }
 }
