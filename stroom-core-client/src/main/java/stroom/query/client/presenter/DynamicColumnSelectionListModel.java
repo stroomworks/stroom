@@ -327,7 +327,6 @@ public class DynamicColumnSelectionListModel
             final Builder columnBuilder = Column.builder();
             columnBuilder.id(UniqueUtil.generateUUID());
             columnBuilder.name(indexFieldName);
-            columnBuilder.domainType(queryField.getDomainType());
             columnBuilder.format(Format.GENERAL);
 
             final FieldType fieldType = queryField.getFldType();

@@ -18,6 +18,7 @@ package stroom.floormap.client.view;
 
 import stroom.document.client.event.DirtyUiHandlers;
 import stroom.entity.client.presenter.ReadOnlyChangeHandler;
+import stroom.floormap.client.FloorMapAria;
 import stroom.floormap.client.presenter.FloorMapSettingsPresenter.FloorMapSettingsView;
 
 import com.google.gwt.uibinder.client.UiBinder;
@@ -63,6 +64,16 @@ public class FloorMapSettingsViewImpl
     @Inject
     public FloorMapSettingsViewImpl(final Binder binder) {
         widget = binder.createAndBindUi(this);
+
+        // Every row on this tab holds an injected view rather than a control of
+        // its own, so the FormGroup's visible <label> has no labelable element to
+        // point `for` at and identity= in the ui.xml would associate nothing.
+        // Naming the container as a group is what carries the label across.
+        FloorMapAria.group(eventsStoreRefContainer, "Events Store");
+        FloorMapAria.group(factsStoreRefContainer, "Facts Store");
+        FloorMapAria.group(valueFormatContainer, "Value Format");
+        FloorMapAria.group(schemaGridContainer, "Value Schema");
+        FloorMapAria.group(schemaToolbarContainer, "Value Schema actions");
     }
 
     @Override

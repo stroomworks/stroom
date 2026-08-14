@@ -814,6 +814,8 @@ appConfig:
     minTimeToKeepSnapshots: "PT10M"
     nodeList: []
     path: "planb"
+    sendPartAttempts: 3
+    sendPartRetryDelay: "PT10S"
     snapshotRetryFetchInterval: "PT1M"
     stateDocCache:
       expireAfterAccess: null
@@ -995,8 +997,8 @@ appConfig:
     dataFeedIdentitiesDir: "data_feed_identities"
     dataFeedOwnerMetaKey: "AccountId"
     enabledAuthenticationTypes:
-    - "AuthenticationType{displayValue='OAuth Token'}"
-    - "AuthenticationType{displayValue='Client certificate'}"
+    - "TOKEN"
+    - "CERTIFICATE"
     fallbackReceiveAction: "RECEIVE"
     feedNameGenerationEnabled: false
     feedNameGenerationMandatoryHeaders:
@@ -1080,11 +1082,19 @@ appConfig:
         maximumSize: 1000
         refreshAfterWrite: null
         statisticsMode: "INTERNAL"
+      csrf:
+        protectBrowserOriginatedRequests: true
+      edgeAuthentication:
+        enabled: false
+        logout:
+          cookiesToExpire: []
+          signOutUrl: null
       maxApiKeyExpiryAge: "P365D"
       openId:
         allowedAudiences: []
         audienceClaimRequired: true
         authEndpoint: null
+        authenticationRequestExtraParams: {}
         clientCredentialsScopes:
         - "openid"
         clientId: null

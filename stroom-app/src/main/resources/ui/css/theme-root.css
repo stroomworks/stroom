@@ -36,6 +36,11 @@
     --text-color: #151515;
     --text-color--hover: #111;
     --text-color--selected: #000;
+    /* De-emphasised body text — secondary labels, hints, captions. Quieter than
+       --text-color but still a normal-contrast text colour, so unlike
+       --text-color--disabled it must meet WCAG 1.4.3 (4.5:1) against
+       --page__background-color. 6.0:1 on white. */
+    --text-color--low-emphasis: #5f6368;
     --text-color--disabled: #777;
     --text-color--disabled--selected: #555;
     --text-color--red: var(--red-600);

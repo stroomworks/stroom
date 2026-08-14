@@ -122,14 +122,17 @@ public class FloorMapGroup {
     /**
      * The highlight colour for this group's members, or {@code null} when unset.
      * Callers wanting a colour to actually draw with should use
-     * {@link #getColourOrDefault()}.
+     * {@link #findColourOrDefault()}.
      */
     public String getColour() {
         return colour;
     }
 
-    /** The group's colour, or {@link #DEFAULT_COLOUR} when it has none. */
-    public String getColourOrDefault() {
+    /** The group's colour, or {@link #DEFAULT_COLOUR} when it has none.
+     *
+     * <p>Name structured to avoid triggering TestJsonSerialisation.testNoExtraProps() </p>
+     */
+    public String findColourOrDefault() {
         return colour != null && !colour.isEmpty()
                 ? colour
                 : DEFAULT_COLOUR;
@@ -144,8 +147,12 @@ public class FloorMapGroup {
         return memberId != null && memberIds.contains(memberId);
     }
 
-    /** The number of members, however many of them are currently on the map. */
-    public int getMemberCount() {
+    /**
+     * The number of members, however many of them are currently on the map.
+     *
+     * <p>Name structured to avoid triggering TestJsonSerialisation.testNoExtraProps() </p>
+     */
+    public int countMembers() {
         return memberIds.size();
     }
 

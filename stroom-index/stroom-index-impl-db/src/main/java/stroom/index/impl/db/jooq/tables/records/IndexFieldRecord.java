@@ -62,101 +62,87 @@ public class IndexFieldRecord extends UpdatableRecordImpl<IndexFieldRecord> {
     }
 
     /**
-     * Setter for <code>stroom.index_field.dashboard_type</code>.
-     */
-    public void setDomainType(String value) {
-        set(3, value);
-    }
-
-    /**
-     * Getter for <code>stroom.index_field.dashboard_type</code>.
-     */
-    public String getDomainType() {
-        return (String) get(3);
-    }
-
-    /**
      * Setter for <code>stroom.index_field.analyzer</code>.
      */
     public void setAnalyzer(String value) {
-        set(4, value);
+        set(3, value);
     }
 
     /**
      * Getter for <code>stroom.index_field.analyzer</code>.
      */
     public String getAnalyzer() {
-        return (String) get(4);
+        return (String) get(3);
     }
 
     /**
      * Setter for <code>stroom.index_field.indexed</code>.
      */
     public void setIndexed(Boolean value) {
-        set(5, value);
+        set(4, value);
     }
 
     /**
      * Getter for <code>stroom.index_field.indexed</code>.
      */
     public Boolean getIndexed() {
-        return (Boolean) get(5);
+        return (Boolean) get(4);
     }
 
     /**
      * Setter for <code>stroom.index_field.stored</code>.
      */
     public void setStored(Boolean value) {
-        set(6, value);
+        set(5, value);
     }
 
     /**
      * Getter for <code>stroom.index_field.stored</code>.
      */
     public Boolean getStored() {
-        return (Boolean) get(6);
+        return (Boolean) get(5);
     }
 
     /**
      * Setter for <code>stroom.index_field.term_positions</code>.
      */
     public void setTermPositions(Boolean value) {
-        set(7, value);
+        set(6, value);
     }
 
     /**
      * Getter for <code>stroom.index_field.term_positions</code>.
      */
     public Boolean getTermPositions() {
-        return (Boolean) get(7);
+        return (Boolean) get(6);
     }
 
     /**
      * Setter for <code>stroom.index_field.case_sensitive</code>.
      */
     public void setCaseSensitive(Boolean value) {
-        set(8, value);
+        set(7, value);
     }
 
     /**
      * Getter for <code>stroom.index_field.case_sensitive</code>.
      */
     public Boolean getCaseSensitive() {
-        return (Boolean) get(8);
+        return (Boolean) get(7);
     }
 
     /**
      * Setter for <code>stroom.index_field.dense_vector</code>.
      */
     public void setDenseVector(JSON value) {
-        set(9, value);
+        set(8, value);
     }
 
     /**
      * Getter for <code>stroom.index_field.dense_vector</code>.
      */
     public JSON getDenseVector() {
-        return (JSON) get(9);
+        return (JSON) get(8);
     }
 
     // -------------------------------------------------------------------------
@@ -182,22 +168,12 @@ public class IndexFieldRecord extends UpdatableRecordImpl<IndexFieldRecord> {
     /**
      * Create a detached, initialised IndexFieldRecord
      */
-    public IndexFieldRecord(Integer fkIndexFieldSourceId,
-                            Byte type,
-                            String name,
-                            String domainType,
-                            String analyzer,
-                            Boolean indexed,
-                            Boolean stored,
-                            Boolean termPositions,
-                            Boolean caseSensitive,
-                            JSON denseVector) {
+    public IndexFieldRecord(Integer fkIndexFieldSourceId, Byte type, String name, String analyzer, Boolean indexed, Boolean stored, Boolean termPositions, Boolean caseSensitive, JSON denseVector) {
         super(IndexField.INDEX_FIELD);
 
         setFkIndexFieldSourceId(fkIndexFieldSourceId);
         setType(type);
         setName(name);
-        setDomainType(domainType);
         setAnalyzer(analyzer);
         setIndexed(indexed);
         setStored(stored);

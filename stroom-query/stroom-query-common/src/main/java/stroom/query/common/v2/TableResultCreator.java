@@ -160,5 +160,4 @@ public class TableResultCreator implements ResultCreator {
         LOGGER.debug("Delivering {} for {}", result, resultRequest.getComponentId());
         return result;
     }
-
 }

@@ -339,6 +339,22 @@ public class FloorMapCanvasViewImpl
     SimplePanel scaleBarLine;
 
     /**
+     * Visually-hidden live region carrying the map's spoken commentary. See
+     * {@link #announce(String)}.
+     */
+    @UiField
+    Label statusRegion;
+
+    /**
+     * The last thing announced, so an unchanged message can be skipped.
+     *
+     * <p>Writing the same text into a live region twice may or may not re-announce
+     * depending on the screen reader, and the repeat is never what the user wants:
+     * the point of an announcement is that something changed.</p>
+     */
+    private String lastAnnouncement = "";
+
+    /**
      * The widest the scale bar may be drawn. The chosen distance is the largest
      * 1-2-5 value that fits within this, so the bar is typically 40–120 px.
      */
@@ -364,12 +380,57 @@ public class FloorMapCanvasViewImpl
     @Inject
     public FloorMapCanvasViewImpl(final Binder binder) {
         widget = binder.createAndBindUi(this);
+
+        // The map is a picture of its data, so it is named and summarised as one
+        // image rather than exposed as a tree of shapes.
+        //
+        // The role and label go on the container, not on the <svg>: draw() replaces
+        // the SVG wholesale on every frame, so anything written onto that element
+        // is destroyed up to 60 times a second, whereas the container is stable for
+        // the life of the view. setMapSummary() then costs one attribute write.
+        //
+        // role="img" also makes the subtree presentational, which is the point: the
+        // SVG is full of <text> captions positioned for the eye, and read in DOM
+        // (paint) order they are a stream of disconnected names and numbers. The
+        // summary and the Tracking grid say the same thing usefully.
+        svgContainer.getElement().setAttribute("role", "img");
+        setMapSummary("Floor map");
+
+        // role="status" carries an implicit aria-live="polite"; both are set
+        // because some screen readers honour only one. atomic so the region is
+        // re-read as a whole sentence rather than diffed word by word.
+        final Element status = statusRegion.getElement();
+        status.setAttribute("role", "status");
+        status.setAttribute("aria-live", "polite");
+        status.setAttribute("aria-atomic", "true");
     }
 
     /** {@inheritDoc} */
     @Override
     public Widget asWidget() {
         return widget;
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public void setMapSummary(final String summary) {
+        svgContainer.getElement().setAttribute("aria-label", summary);
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public void setMapDescribedBy(final String elementId) {
+        svgContainer.getElement().setAttribute("aria-describedby", elementId);
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public void announce(final String message) {
+        if (message == null || message.isEmpty() || message.equals(lastAnnouncement)) {
+            return;
+        }
+        lastAnnouncement = message;
+        statusRegion.setText(message);
     }
 
     /** {@inheritDoc} — no read-only visual changes required for the canvas. */
@@ -631,7 +692,16 @@ public class FloorMapCanvasViewImpl
             SafeHtmlUtil.from("svg"),
             new Attribute("width", "100%"),
             new Attribute("height", "100%"),
-            new Attribute("xmlns", "http://www.w3.org/2000/svg")
+            new Attribute("xmlns", "http://www.w3.org/2000/svg"),
+            // The container above is the accessible image (role="img" plus the
+            // generated summary), so this subtree is decoration. Hiding it stops a
+            // screen reader walking hundreds of <text> captions in paint order,
+            // which is neither the reading order nor a description of anything.
+            new Attribute("aria-hidden", "true"),
+            // Keeps the SVG and its shapes out of the tab sequence in the browsers
+            // that make SVG focusable by default (legacy IE/Edge behaviour), so
+            // Tab continues to leave the map in one press.
+            new Attribute("focusable", "false")
         );
 
         svgContainer.setHTML(htmlBuilder.toSafeHtml());

@@ -27,6 +27,18 @@
     --floormap-grid__major-stroke:     var(--vis-axis__color);
     --floormap-grid__minor-stroke:     var(--vis-text__color--faint);
     --floormap-grid__highlight-color:  var(--blue-600);
+
+    /* Out-of-range chevron. This is a meaningful non-text indicator — it is the
+       only thing that says the tracked object is outside the timeline range — so
+       it has to clear 3:1 against the page background (WCAG 1.4.11). The obvious
+       Material Orange 700 (#f57c00) is only 2.7:1 on white, so the light theme
+       needs the darker 900; the dark theme needs a *lighter* orange for the same
+       reason, hence the per-theme value rather than one shared constant. */
+    --floormap-out-of-range__color: #e65100; /* 3.8:1 on white */
+}
+
+.stroom-theme-dark {
+    --floormap-out-of-range__color: #ffa726; /* 8.4:1 on the dark page background */
 }
 
 /* ============================================================
@@ -71,11 +83,14 @@
     justify-content: center;
 }
 
-/* Step-back / step-forward buttons — compact, flanking the play button */
+/* Step-back / step-forward buttons — compact, flanking the play button.
+   24px is the floor rather than a design choice: WCAG 2.5.8 minimum target
+   size. If you shrink these, the out-of-range chevron offsets below must be
+   recomputed — they are measured from the same run of controls. */
 .stroom-floormap-timeline-step-button {
     flex-shrink: 0;
-    width: 22px;
-    height: 22px;
+    width: 24px;
+    height: 24px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -229,6 +244,37 @@
     border-radius: 3px;
 }
 
+/* The bar is a role="slider" with tabindex="0", so it takes a tab stop and must
+   show one. stroom.css sets `outline: none` on every div app-wide, so the UA
+   default focus ring is gone and this has to be drawn explicitly; a class
+   selector out-specifies that element-list rule without needing !important.
+   Matches the .icon-button:focus-visible treatment in stroom-button.css so
+   keyboard focus looks the same across the whole timeline strip. */
+.stroom-floormap-timeline-outer-bar:focus-visible {
+    border-color: var(--focus-border);
+    box-shadow: var(--focus-shadow);
+}
+
+/* Grows the 7px-tall track (5px + 2 × 1px border) to a 24px pointer/touch
+   target — WCAG 2.5.8 — without changing how it looks. The extra height is
+   transparent, and because a pseudo-element is not its own event target the
+   mousedown still reports the bar itself, so computeBarPct() (which reads only
+   the bar's own left edge and width) is unaffected.
+
+   Biased downward: below the bar is the date-labels row, which is
+   `pointer-events: none`, so those 11px are free. Above the bar is the
+   histogram, whose bottom few pixels are already faded out by its mask — and
+   both a histogram click and a bar press seek to the same place, so the small
+   overlap changes nothing the user can perceive. */
+.stroom-floormap-timeline-outer-bar::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: -6px;
+    bottom: -11px;
+}
+
 /* The filled portion of the bar */
 .stroom-floormap-timeline-inner-bar {
     position: absolute;
@@ -308,23 +354,26 @@
 .stroom-floormap-timeline-out-of-range {
     position: absolute;
     bottom: 4px; /* sit in the date-labels row at the foot of the container */
-    color: #f57c00; /* Material Orange 700 — warning colour */
+    color: var(--floormap-out-of-range__color);
     font-size: 30px;
     font-weight: 700;
     line-height: 1;
     cursor: help;
     pointer-events: auto;
     user-select: none;
-    /* Resting glow — kept for reduced-motion users where the pulse is disabled. */
-    text-shadow: 0 0 4px rgba(245, 124, 0, 0.5);
+    /* Resting glow — kept for reduced-motion users where the pulse is disabled.
+       currentColor so the glow follows the per-theme chevron colour rather than
+       being pinned to one orange. */
+    text-shadow: 0 0 4px currentColor;
 }
 
 /* Left chevron: centred under the Step-Forward button.
-   12px container padding + 58px (step-back + play + gaps) + 22px/2 (half the button) = 81px.
+   12px container padding + 60px (step-back 24 + gap 4 + play 28 + gap 4)
+   + 24px/2 (half the step-forward button) = 84px.
    The pulse keyframes carry the same translateX so the chevron stays centred while it scales;
    the static transform below is the fallback when animation is disabled. */
 .stroom-floormap-timeline-out-of-range--left {
-    left: 81px;
+    left: 84px;
     transform: translateX(-50%);
     animation:
         floormap-chevron-fade-in 0.3s ease-out both,
@@ -352,22 +401,55 @@
 @keyframes floormap-chevron-pulse-left {
     0%, 100% {
         transform: translateX(-50%) scale(1);
-        text-shadow: 0 0 3px rgba(245, 124, 0, 0.4);
+        text-shadow: 0 0 3px currentColor;
     }
     50% {
         transform: translateX(-50%) scale(1.18);
-        text-shadow: 0 0 11px rgba(245, 124, 0, 0.9);
+        text-shadow: 0 0 11px currentColor;
     }
 }
 
 @keyframes floormap-chevron-pulse-right {
     0%, 100% {
         transform: translateX(50%) scale(1);
-        text-shadow: 0 0 3px rgba(245, 124, 0, 0.4);
+        text-shadow: 0 0 3px currentColor;
     }
     50% {
         transform: translateX(50%) scale(1.18);
-        text-shadow: 0 0 11px rgba(245, 124, 0, 0.9);
+        text-shadow: 0 0 11px currentColor;
+    }
+}
+
+/* -----------------------------------------------------------------------
+   Reduced motion
+
+   The chevron pulse is indefinite (`infinite`), so without this it is
+   moving content the user cannot stop — WCAG 2.2.2, not merely the AAA
+   2.3.3. Dropping the animation falls the chevrons back to the static
+   translateX and resting text-shadow declared on the rules above, which is
+   exactly what those declarations are there for.
+
+   The remaining transitions are opacity/background-colour only (no
+   movement), but they are all purely decorative, so they go too: a user
+   asking for less motion gains nothing from a 150ms cross-fade.
+
+   Deliberately NOT disabled: entity movement on the canvas and timeline
+   playback. Those are the information the map exists to convey rather than
+   decoration, and both are already fully under user control — playback
+   never autostarts and the pause button is always available.
+   ----------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+    .stroom-floormap-timeline-out-of-range--left,
+    .stroom-floormap-timeline-out-of-range--right {
+        animation: none;
+    }
+
+    .stroom-floormap-timeline-speed-badge,
+    .stroom-floormap-timeline-step-button,
+    .stroom-floormap-timeline-settings-button,
+    .stroom-floormap-timeline-scrub-tooltip,
+    .stroom-floormap-timeline-histogram-tooltip {
+        transition: none;
     }
 }
 
@@ -542,6 +624,44 @@
     padding: 3px 14px;
     height: 26px;
     white-space: nowrap;
+}
+
+/* -----------------------------------------------------------------------
+   Canvas keyboard focus
+
+   The map's FocusPanel is a div, so stroom.css's app-wide `outline: none`
+   strips its focus ring. Without this, tabbing into the map — where arrow
+   keys pan, +/- zoom and Tab walks the entities — gives no indication that
+   the map is now listening, which is the difference between "the keys do
+   nothing" and "the keys do nothing *yet*".
+
+   Drawn inset so it reads as a border around the map rather than a ring
+   around a control, and so it cannot be clipped by the panel's own edge.
+   ----------------------------------------------------------------------- */
+.stroom-floormap-canvas-focus:focus-visible {
+    box-shadow: inset 0 0 0 2px var(--focus-border);
+}
+
+/* -----------------------------------------------------------------------
+   Visually-hidden live region
+
+   Carries the map's spoken commentary (time changes, selection, tracking,
+   entities leaving the timeline range). Must stay in the accessibility tree,
+   so it cannot use `display: none` or `visibility: hidden` — hence the
+   clip-rect technique. 1px rather than 0px because some screen readers skip
+   zero-area nodes.
+   ----------------------------------------------------------------------- */
+.stroom-floormap-visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
 }
 
 /* -----------------------------------------------------------------------
@@ -811,25 +931,50 @@
 
 /* The eye / lock icon buttons keep the standard icon-button sizing; nudge
    spacing so they sit tightly at the start of the row */
+/* The eye / lock / add icon buttons. `.icon-button` in stroom-button.css sizes
+   every icon button in the app at 22 × 22, which is under the WCAG 2.5.8 minimum
+   of 24. Widening it there would move every toolbar in Stroom, so it is raised
+   locally for the layer panel's buttons — the row is 28px tall, so there is room
+   without disturbing the layout. */
 .floormap-layer-eye,
-.floormap-layer-lock {
+.floormap-layer-lock,
+.floormap-layer-add {
     flex: 0 0 auto;
+    width: 24px;
+    height: 24px;
 }
 
 /* Drag handle (Editor): the classic six-dot grip, drawn with a tiled radial
    gradient so no icon asset is needed. Signals the row can be grabbed to
-   reorder; the whole row is the drag source. */
+   reorder; the whole row is the drag source, and focusing the grip lets the
+   arrow keys do the same job without a pointer.
+
+   It is a real <button> (see FloorMapLayersPresenter), so the first block
+   strips the UA button chrome — border, background, font — that would
+   otherwise draw a box around the dots.
+
+   Sized 24 × 24 for WCAG 2.5.8 while the dot grid itself stays 10 × 16: the
+   padding supplies the extra target area, and background-origin/-clip:
+   content-box keep the `background-repeat: round` tiling inside that 10 × 16
+   box so the larger button does not simply grow more dots. */
 .floormap-layer-grip {
     flex: 0 0 auto;
-    width: 10px;
-    height: 16px;
+    box-sizing: border-box;
+    width: 24px;
+    height: 24px;
+    padding: 4px 7px;
+    border: 0;
     margin-right: 2px;
+    font: inherit;
     color: var(--text-color--low-emphasis);
-    opacity: 0.65;
+    opacity: 0.75;
+    background-color: transparent;
     background-image: radial-gradient(circle, currentColor 1px, transparent 1.5px);
     background-size: 4px 5px;
     background-position: center;
     background-repeat: round;
+    background-origin: content-box;
+    background-clip: content-box;
     cursor: grab;
 }
 
@@ -837,18 +982,43 @@
     opacity: 1;
 }
 
+/* stroom.css removes the outline from every element, so the grip needs its own
+   focus ring — and it needs it more than most, because "which layer will the
+   arrow keys move?" is answerable only from where focus is. */
+.floormap-layer-grip:focus-visible {
+    opacity: 1;
+    box-shadow: var(--focus-shadow);
+    outline: thin solid var(--focus-border);
+}
+
 /* Appearance swatch (Editor): previews the layer's shape in its colour and
-   opens the style dialog. */
+   opens the style dialog. A real <button> (see FloorMapLayersPresenter), so it
+   is focusable and Enter/Space-activatable; these rules strip the UA button
+   chrome that would otherwise box the preview in.
+
+   24 × 24 is the WCAG 2.5.8 minimum target size, not a visual choice — the
+   graphic inside stays SWATCH_SIZE_PX and is centred in the larger box. */
 .floormap-layer-swatch {
     flex: 0 0 auto;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 20px;
-    height: 18px;
+    width: 24px;
+    height: 24px;
     margin-left: 4px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
     border-radius: 3px;
     cursor: pointer;
+}
+
+/* stroom.css kills the outline on every element, so the swatch needs its own
+   focus ring — same treatment as .icon-button in stroom-button.css. */
+.floormap-layer-swatch:focus-visible {
+    box-shadow: var(--focus-shadow);
+    outline: thin solid var(--focus-border);
 }
 
 .floormap-layer-swatch:hover {
@@ -858,6 +1028,8 @@
 /* Layer appearance dialog — align the graphic/shape/image/colour rows */
 .floormap-layer-style-dialog {
     border-spacing: 8px 10px;
+    /* Shared by the two wide rows below — five icon columns plus their gaps. */
+    --floormap-style-control-width: 388px;
 }
 
 .floormap-layer-style-dialog td {
@@ -904,11 +1076,6 @@
  * width caps the column, and the label truncates instead, which is what its own
  * `overflow: hidden` was always for.
  */
-.floormap-layer-style-dialog {
-    /* Five icon columns plus the gaps between them. */
-    --floormap-style-control-width: 388px;
-}
-
 .floormap-layer-style-dialog td:last-child > .floormap-layer-style-image,
 .floormap-layer-style-dialog td:last-child > .floormap-icon-picker {
     width: var(--floormap-style-control-width);
@@ -1041,9 +1208,9 @@
     color: var(--text-color--low-emphasis);
 }
 
-.floormap-layer-add {
-    flex: 0 0 auto;
-}
+/* .floormap-layer-add is sized with the other layer-row icon buttons above; a
+   second rule here would win on source order and silently undo the 24px target
+   size. */
 
 /* Discover action footer at the foot of the layer list */
 .floormap-layers-footer {
@@ -1053,6 +1220,13 @@
     margin-top: 4px;
     padding: 4px 4px 0;
     border-top: 1px solid var(--border-color);
+}
+
+/* Same 24px minimum target size as the layer-row buttons — the Discover button
+   carries no class of its own, so it is reached through the footer. */
+.floormap-layers-footer .icon-button {
+    width: 24px;
+    height: 24px;
 }
 
 .floormap-layers-footer-label {

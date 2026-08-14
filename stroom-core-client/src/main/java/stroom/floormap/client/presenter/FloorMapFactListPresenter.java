@@ -92,6 +92,23 @@ public class FloorMapFactListPresenter extends MyPresenterWidget<FloorMapFactLis
     private Runnable addConsumer;
     private Consumer<String> deleteConsumer;
 
+    /**
+     * Element id of the fact grid, so the Editor tab's canvas can name it as its
+     * text alternative via {@code aria-describedby}. A fixed id because the
+     * reference crosses presenters and the Editor tab has a single Fact List.
+     */
+    private static final String GRID_ELEMENT_ID = "floormap-fact-list-grid";
+
+    /**
+     * The fact grid's element id, for the canvas to point
+     * {@code aria-describedby} at.
+     *
+     * @return the grid's element id
+     */
+    public static String getGridElementId() {
+        return GRID_ELEMENT_ID;
+    }
+
     @Inject
     public FloorMapFactListPresenter(final EventBus eventBus,
                                      final FloorMapFactListView view) {
@@ -101,6 +118,10 @@ public class FloorMapFactListPresenter extends MyPresenterWidget<FloorMapFactLis
         // Multi-select: ctrl/shift-click extends the selection natively via the
         // grid's selection event manager.
         selectionModel = dataGrid.addDefaultSelectionModel(true);
+        // This grid is the Editor canvas's text equivalent — a navigable row per
+        // fact — so it needs a stable id for the canvas to point aria-describedby
+        // at. See getGridElementId().
+        dataGrid.getElement().setId(GRID_ELEMENT_ID);
         view.setGridView(dataGrid);
         initGridColumns();
         dataProvider.addDataDisplay(dataGrid);

@@ -49,6 +49,7 @@ import com.google.gwt.event.dom.client.HasMouseMoveHandlers;
 import com.google.gwt.event.dom.client.HasMouseUpHandlers;
 import com.google.gwt.event.dom.client.HasMouseWheelHandlers;
 import com.google.gwt.event.dom.client.KeyCodes;
+import com.google.gwt.event.dom.client.KeyDownEvent;
 import com.google.gwt.user.client.ui.FocusPanel;
 import com.google.gwt.user.client.ui.RequiresResize;
 import com.google.web.bindery.event.shared.EventBus;
@@ -63,6 +64,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import javax.inject.Inject;
@@ -623,7 +625,13 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
      * @param playing {@code true} when playback starts, {@code false} when it stops.
      */
     public void setPlaying(final boolean playing) {
+        this.playing = playing;
         animator.setPlaying(playing);
+        // Playback state is otherwise visible only as the play button's icon
+        // changing, over on the timeline.
+        getView().announce(playing
+                ? "Playing"
+                : "Paused");
     }
 
     /**
@@ -1262,7 +1270,14 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                     && !selectedObjectIds.isEmpty()) {
                 selectedObjectIds.clear();
                 fireSelectionChanged();
+                return;
             }
+
+            // Everything above is edit-mode gesture handling. Below is the map's
+            // general keyboard operation, which applies on both tabs — panning and
+            // zooming were previously reachable only by mouse drag and scroll
+            // wheel, so a keyboard user could focus the map and then not move it.
+            handleViewKeys(event);
         }));
 
         // Double-click closes the in-progress area polygon. The dblclick's two
@@ -1293,6 +1308,235 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                 redraw();
             }
         }));
+    }
+
+    /** On-screen distance one arrow key pans the map. */
+    private static final double KEY_PAN_PX = 40;
+
+    /**
+     * Multiplier applied to {@link #KEY_PAN_PX} when Shift is held, so crossing a
+     * large floor plan does not take fifty keypresses.
+     */
+    private static final double KEY_PAN_FAST_FACTOR = 5;
+
+    /**
+     * Keyboard operation of the view: pan, zoom, reset, clear selection, and open
+     * the context menu.
+     *
+     * <p>Bindings deliberately mirror every mouse capability the canvas has, since
+     * a map you can focus but not move is no more usable than one you cannot focus
+     * at all:</p>
+     * <ul>
+     *   <li><strong>Arrows</strong> pan; with <strong>Shift</strong>, five times as
+     *       far.</li>
+     *   <li><strong>+</strong> / <strong>-</strong> (main row or numeric keypad)
+     *       zoom about the centre of the viewport. The wheel zooms toward the
+     *       cursor, but a keyboard user has no cursor to zoom toward, and the
+     *       viewport centre is the one point they can be sure of.</li>
+     *   <li><strong>0</strong> resets to the fit-everything view — the escape hatch
+     *       from having panned or zoomed into empty space, which is easy to do
+     *       without a visible scrollbar to say where you are.</li>
+     * </ul>
+     *
+     * <p>Escape is deliberately <em>not</em> handled here. In edit mode the caller
+     * has already dealt with it (cancel gesture, else clear selection). On the Map
+     * tab, where selection is the tracking highlight, clearing it here would leave
+     * {@code trackedObjectId} set and the Tracking panel's row still selected —
+     * tracking with no highlight, and a grid disagreeing with the map. Stopping a
+     * follow has to go through the Tracking panel, whose Stop Tracking button is
+     * already keyboard-reachable and keeps both ends in step.</p>
+     *
+     * <ul>
+     *   <li><strong>Enter</strong> / <strong>Space</strong> opens the context menu
+     *       for the selection — see {@link #openKeyboardContextMenu()}. Edit mode
+     *       only, and only when no gesture is in progress, matching the mouse
+     *       path: {@code MapContextMenuEvent} is handled by the Editor tab alone,
+     *       and a menu must never open mid-draw.</li>
+     * </ul>
+     *
+     * <p>Tab is untouched, so it always leaves the map: entity-by-entity traversal
+     * lives in the Tracking panel's grid, which is a real navigable list and is
+     * named as this map's text alternative. Spending the map's own arrow keys on
+     * walking entities would have cost panning and gained a worse version of a
+     * control that already exists.</p>
+     */
+    private void handleViewKeys(final KeyDownEvent event) {
+        final double step = event.isShiftKeyDown()
+                ? KEY_PAN_PX * KEY_PAN_FAST_FACTOR
+                : KEY_PAN_PX;
+
+        switch (event.getNativeKeyCode()) {
+            case KeyCodes.KEY_LEFT:
+                panByKeyboard(event, step, 0);
+                break;
+            case KeyCodes.KEY_RIGHT:
+                panByKeyboard(event, -step, 0);
+                break;
+            case KeyCodes.KEY_UP:
+                panByKeyboard(event, 0, step);
+                break;
+            case KeyCodes.KEY_DOWN:
+                panByKeyboard(event, 0, -step);
+                break;
+            case KeyCodes.KEY_ENTER:
+            case KeyCodes.KEY_SPACE:
+                // Same guards as the mouse contextmenu handler: only the Editor tab
+                // handles MapContextMenuEvent, and no menu opens mid-gesture. Note
+                // the preventDefault sits *inside* the guard — swallowing Enter on
+                // the Map tab, where nothing would open, would be taking a key away
+                // for nothing.
+                if (editMode && gesture == Gesture.NONE) {
+                    event.preventDefault();
+                    openKeyboardContextMenu();
+                }
+                break;
+            default:
+                handleZoomKeys(event);
+                break;
+        }
+    }
+
+    /**
+     * {@code keyCode} for the main-row {@code =}/{@code +} key in Chrome, Safari
+     * and Edge.
+     *
+     * <p>These have to be spelled out because {@link KeyCodes} has no constants for
+     * the punctuation keys, and because a {@code keydown} carries a key code rather
+     * than a character: there is no {@code '+'} to compare against, only the code
+     * of the physical key that produces {@code +} when shifted. Firefox
+     * historically reports different values for exactly these two keys, so both
+     * sets are accepted.</p>
+     */
+    private static final int KEY_EQUALS = 187;
+    private static final int KEY_EQUALS_FIREFOX = 61;
+    /** {@code keyCode} for the main-row {@code -}/{@code _} key. */
+    private static final int KEY_DASH = 189;
+    private static final int KEY_DASH_FIREFOX = 173;
+
+    /** Handles the zoom and reset-view keys. */
+    private void handleZoomKeys(final KeyDownEvent event) {
+        switch (event.getNativeKeyCode()) {
+            case KEY_EQUALS:
+            case KEY_EQUALS_FIREFOX:
+            case KeyCodes.KEY_NUM_PLUS:
+                zoomByKeyboard(event, true);
+                break;
+            case KEY_DASH:
+            case KEY_DASH_FIREFOX:
+            case KeyCodes.KEY_NUM_MINUS:
+                zoomByKeyboard(event, false);
+                break;
+            case KeyCodes.KEY_ZERO:
+            case KeyCodes.KEY_NUM_ZERO:
+                event.preventDefault();
+                // Re-arm the one-shot initial view and let the normal path apply
+                // it, so "reset" lands on exactly the view the map opened with
+                // rather than a second, subtly different idea of "fit".
+                initialViewApplied = false;
+                maybeApplyInitialView();
+                getView().announce("View reset. Zoom " + zoomPercentText());
+                refreshAccessibleSummary();
+                redraw();
+                break;
+            default:
+                // Not ours — leave it to the browser.
+                break;
+        }
+    }
+
+    /**
+     * Pans the view by a keyboard step.
+     *
+     * <p>A deliberate pan pauses camera-follow, exactly as a mouse drag does: the
+     * user has just said where they want to look, and having the camera drag them
+     * back to the tracked entity would override that. This is why the pan goes
+     * through the same {@code followPaused} flag rather than only moving the
+     * offsets.</p>
+     */
+    private void panByKeyboard(final KeyDownEvent event,
+                               final double dxPx,
+                               final double dyPx) {
+        event.preventDefault();
+        // Otherwise the arrow also scrolls whatever the map sits inside, moving the
+        // map twice for one keypress.
+        event.stopPropagation();
+
+        hideHoverTooltip();
+        if (trackedObjectId != null) {
+            followPaused = true;
+        }
+
+        final FloorMapViewport vp = new FloorMapViewport(scale, offsetX, offsetY);
+        vp.pan(dxPx, dyPx);
+        offsetX = vp.getOffsetX();
+        offsetY = vp.getOffsetY();
+        redraw();
+    }
+
+    /** Zooms one step about the centre of the viewport. */
+    private void zoomByKeyboard(final KeyDownEvent event, final boolean zoomIn) {
+        event.preventDefault();
+        event.stopPropagation();
+
+        hideHoverTooltip();
+
+        final Element panel = getView().getFocusPanel().getElement();
+        final FloorMapViewport vp = new FloorMapViewport(scale, offsetX, offsetY);
+        // Zoom about the viewport centre: the wheel path uses the cursor position,
+        // which does not exist here.
+        vp.zoom(panel.getOffsetWidth() / 2.0, panel.getOffsetHeight() / 2.0, zoomIn);
+        scale = vp.getScale();
+        offsetX = vp.getOffsetX();
+        offsetY = vp.getOffsetY();
+
+        getView().announce("Zoom " + zoomPercentText());
+        refreshAccessibleSummary();
+        redraw();
+    }
+
+    /**
+     * Opens the context menu from the keyboard, anchored to the selection.
+     *
+     * <p>The mouse path takes its target and its position from the pointer. A
+     * keyboard-triggered menu has neither, so the selection supplies both: the
+     * selected object is the target, and its on-screen frame is where the menu
+     * opens. Previously a keyboard {@code contextmenu} (Shift+F10 or the Menu key)
+     * hit-tested the focus panel itself, found no object id, and so could only ever
+     * open the canvas menu — the per-object actions were unreachable without a
+     * mouse.</p>
+     *
+     * <p>With nothing selected this opens the canvas menu at the viewport centre,
+     * which is the keyboard equivalent of right-clicking empty space.</p>
+     *
+     * <p>Callers must have checked {@code editMode} and that no gesture is in
+     * progress — see {@link #handleViewKeys}.</p>
+     */
+    private void openKeyboardContextMenu() {
+        final Element panel = getView().getFocusPanel().getElement();
+        final String objectId = selectedObjectIds.isEmpty()
+                ? null
+                : selectedObjectIds.iterator().next();
+
+        // Anchor on the selection frame's centre when there is one, so the menu
+        // opens beside the thing it acts on rather than in the middle of the map.
+        final double[] frame = objectId != null
+                ? getView().getSelectionFrame()
+                : null;
+        final double elementX = frame != null
+                ? (frame[0] + frame[2]) / 2
+                : panel.getOffsetWidth() / 2.0;
+        final double elementY = frame != null
+                ? (frame[1] + frame[3]) / 2
+                : panel.getOffsetHeight() / 2.0;
+
+        final double[] mapCoords = screenToMapCoords(elementX, elementY);
+        // MapContextMenuEvent positions the popup in viewport coordinates, so the
+        // element-relative anchor has to be offset by the panel's own position.
+        final int clientX = (int) Math.round(elementX + panel.getAbsoluteLeft());
+        final int clientY = (int) Math.round(elementY + panel.getAbsoluteTop());
+
+        MapContextMenuEvent.fire(this, objectId, mapCoords[0], mapCoords[1],
+                clientX, clientY);
     }
 
     /**
@@ -2231,6 +2475,9 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                 : FloorMapAreaMembership.EMPTY;
         if (!next.equals(this.areaMembership)) {
             this.areaMembership = next;
+            // The summary names the area a followed entity is in, and counts the
+            // areas, so both move with this.
+            refreshAccessibleSummary();
             redraw();
         }
     }
@@ -2307,6 +2554,9 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         this.centreOnNextFollow = trackedObjectId != null;
         followStep(0);
         setSelectedObjectId(trackedObjectId);
+        // Tracking is otherwise announced only by the camera moving, which is
+        // nothing at all if you cannot see it.
+        announceTracking();
     }
 
     /**
@@ -2473,6 +2723,12 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         // was and describes where it was — both stale the moment this lands, and
         // no mouse movement is needed to reach that state.
         hideHoverTooltip();
+        lastEventObjects = objects != null
+                ? objects
+                : new ArrayList<>();
+        // Content change, so the summary is now stale. Here rather than in
+        // redraw(), which runs per animation frame.
+        refreshAccessibleSummary();
         final boolean teleported = animator.onEventObjects(objects);
         // Run the loop for the animate path (it advances animations + glides the
         // camera and repaints); on the teleport path only if tracking, so the
@@ -2712,6 +2968,188 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         getView().setEntityNameResolver(entityNameResolver);
     }
 
+    // -----------------------------------------------------------------------
+    // Accessibility: the map's text equivalent and spoken commentary
+    //
+    // Everything the canvas communicates it communicates by painting, which
+    // reaches exactly one kind of user. These two mechanisms carry the same
+    // information by other means:
+    //
+    //   * a standing summary, exposed as the map image's accessible name, which
+    //     answers "what is on this map right now?" on demand; and
+    //   * a live region, which answers "what just changed?" as it happens.
+    //
+    // Both are deliberately kept out of redraw(): that runs once per animation
+    // frame, and rewriting the accessibility tree at 60 Hz would flood a screen
+    // reader with announcements while burning time on strings nobody reads. They
+    // are refreshed from the handful of methods where the map's *content* changes
+    // instead.
+    // -----------------------------------------------------------------------
+
+    /**
+     * The event objects last handed to {@link #setEventObjects}, kept for the
+     * accessible summary's entity counts.
+     *
+     * <p>Read from here rather than from the animator's draw list because the
+     * draw list is a per-frame interpolation: asking it "how many people are
+     * there?" mid-animation can answer differently on consecutive frames.</p>
+     */
+    private List<FloorMapObject> lastEventObjects = new ArrayList<>();
+
+    /** The time currently shown, as already-formatted text, or {@code null}. */
+    private String currentTimeText;
+
+    /**
+     * Whether the timeline is playing. Held here so time announcements can be
+     * suppressed during playback — see {@link #setCurrentTimeText(String)}.
+     */
+    private boolean playing;
+
+    /**
+     * Rebuilds the map's accessible name.
+     *
+     * <p>Summarises rather than enumerates. A list of every entity and its
+     * coordinates would be a faithful transcription of the canvas and no use to
+     * anybody: it is unlistenable, and it duplicates the Tracking grid, which is
+     * already a navigable row-per-entity view of the same data (and is wired up as
+     * this element's {@code aria-describedby}). What a sighted user takes from a
+     * glance at the map is the population, roughly where the interest is, and what
+     * is being followed — so that is what this says.</p>
+     */
+    private void refreshAccessibleSummary() {
+        final StringBuilder sb = new StringBuilder("Floor map");
+
+        if (currentTimeText != null && !currentTimeText.isEmpty()) {
+            sb.append(" at ").append(currentTimeText);
+        }
+
+        // Entity counts by type, alphabetical so the sentence does not reshuffle
+        // between updates — a summary whose word order changes on every refresh is
+        // hard to re-read and hard to diff by ear.
+        final Map<String, Integer> countsByType = new TreeMap<>();
+        for (final FloorMapObject object : lastEventObjects) {
+            final String type = object.getType();
+            if (type != null && !hiddenTypes.contains(type)) {
+                countsByType.merge(type, 1, Integer::sum);
+            }
+        }
+
+        if (countsByType.isEmpty()) {
+            sb.append(". No moving entities");
+        } else {
+            sb.append(". ");
+            boolean first = true;
+            for (final Map.Entry<String, Integer> entry : countsByType.entrySet()) {
+                if (!first) {
+                    sb.append(", ");
+                }
+                first = false;
+                sb.append(entry.getValue()).append(' ').append(entry.getKey());
+                // Bare pluralisation: types are user-chosen strings, so anything
+                // cleverer would be guessing at their grammar.
+                if (entry.getValue() != 1) {
+                    sb.append('s');
+                }
+            }
+        }
+
+        final int areaCount = areaMembership.getAreaKeys().size();
+        if (areaCount > 0) {
+            sb.append(". ").append(areaCount)
+                    .append(areaCount == 1
+                            ? " area"
+                            : " areas");
+        }
+
+        if (trackedObjectId != null) {
+            sb.append(". Following ").append(describeEntity(trackedObjectId));
+        } else if (!selectedObjectIds.isEmpty()) {
+            sb.append(". ");
+            if (selectedObjectIds.size() == 1) {
+                sb.append(describeEntity(selectedObjectIds.iterator().next()))
+                        .append(" selected");
+            } else {
+                sb.append(selectedObjectIds.size()).append(" objects selected");
+            }
+        }
+
+        sb.append(". Zoom ").append(zoomPercentText());
+        getView().setMapSummary(sb.toString());
+    }
+
+    /**
+     * Names an entity for speech, adding the area it is in when that is known.
+     *
+     * <p>"Alice, in Meeting Room A" rather than "Alice at 12.4, 8.1": map
+     * coordinates are meaningless read aloud, whereas the containing area is the
+     * same answer a sighted user reads off the map.</p>
+     */
+    private String describeEntity(final String id) {
+        final String name = entityNameResolver != null
+                ? entityNameResolver.apply(id)
+                : id;
+        final String displayName = name != null
+                ? name
+                : id;
+        final String areaKey = areaMembership.getInnermostAreaKey(id);
+        return areaKey != null
+                ? displayName + ", in " + areaKey
+                : displayName;
+    }
+
+    /** The current zoom as a rounded percentage, e.g. {@code "150%"}. */
+    private String zoomPercentText() {
+        return Math.round(scale * 100) + "%";
+    }
+
+    /**
+     * Sets the time the map is showing, for the summary and the live region.
+     *
+     * <p>Announced only when the map is <em>not</em> playing. During playback the
+     * time changes several times a second, and announcing each one would make the
+     * live region useless — a screen reader would do nothing but read timestamps,
+     * drowning out selection and tracking messages that actually need to be heard.
+     * The summary still carries the current time, so "where am I now?" remains
+     * answerable on demand throughout playback.</p>
+     *
+     * <p>Whether playback is running is read from {@link #playing} rather than
+     * taken as an argument, so no caller can get the distinction wrong.</p>
+     *
+     * @param timeText the formatted time now shown
+     */
+    public void setCurrentTimeText(final String timeText) {
+        this.currentTimeText = timeText;
+        refreshAccessibleSummary();
+        if (!playing) {
+            getView().announce("Showing " + timeText);
+        }
+    }
+
+    /** Announces, and re-summarises after, a change of tracked entity. */
+    private void announceTracking() {
+        if (trackedObjectId != null) {
+            getView().announce("Following " + describeEntity(trackedObjectId));
+        } else {
+            getView().announce("Stopped following");
+        }
+        refreshAccessibleSummary();
+    }
+
+    /**
+     * Points the map's accessible description at the Tracking panel's grid, which
+     * lists one row per entity with its type and containing area.
+     *
+     * <p>The grid is the map's real text equivalent — it is navigable, it updates
+     * with the timeline, and selecting a row tracks that entity. Naming it as the
+     * map's description is what tells a screen-reader user that the detail behind
+     * the summary exists and where to find it.</p>
+     *
+     * @param elementId the grid's element id
+     */
+    public void setTextAlternativeId(final String elementId) {
+        getView().setMapDescribedBy(elementId);
+    }
+
     /**
      * Sets the per-type presentation settings (z-order + default graphic shape
      * and colour). Used by the view to render imageless facts.
@@ -2945,6 +3383,26 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
             selectionHandler.onSelectionChanged(
                     new ArrayList<>(selectedObjectIds), primary);
         }
+        announceSelection();
+    }
+
+    /**
+     * Announces what is now selected.
+     *
+     * <p>Selection is otherwise shown only as an orange stroke around a shape,
+     * which conveys nothing without sight — and, being colour alone, little to
+     * some users who do have it.</p>
+     */
+    private void announceSelection() {
+        if (selectedObjectIds.isEmpty()) {
+            getView().announce("Selection cleared");
+        } else if (selectedObjectIds.size() == 1) {
+            getView().announce(
+                    describeEntity(selectedObjectIds.iterator().next()) + " selected");
+        } else {
+            getView().announce(selectedObjectIds.size() + " objects selected");
+        }
+        refreshAccessibleSummary();
     }
 
     /**
@@ -3268,6 +3726,39 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
          *                       {@code FloorMapCanvasPresenter::maybeApplyInitialView}
          */
         void setResizeListener(Runnable resizeListener);
+
+        /**
+         * Sets the map's accessible name — a one-line summary of what is currently
+         * drawn, for a user who cannot see it.
+         *
+         * <p>The canvas is exposed to assistive technology as a single image with a
+         * generated description, not as a tree of shapes. Read in DOM order the
+         * SVG's own text captions are a stream of disconnected names and numbers:
+         * they are positioned for the eye, and their paint order is a z-order, not
+         * a reading order.</p>
+         *
+         * @param summary the summary; replaces any previous one
+         */
+        void setMapSummary(String summary);
+
+        /**
+         * Points the map's accessible description at another element — in practice
+         * the Tracking panel's grid, which is the map's row-by-row text equivalent.
+         *
+         * @param elementId the id of the describing element
+         */
+        void setMapDescribedBy(String elementId);
+
+        /**
+         * Announces a change through the canvas's live region.
+         *
+         * <p>For things the map says only by redrawing itself: what is selected,
+         * what is being followed, that the followed entity has left the timeline
+         * range. Repeats of the current message are dropped.</p>
+         *
+         * @param message the message to announce
+         */
+        void announce(String message);
     }
 
 }

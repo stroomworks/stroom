@@ -16,6 +16,7 @@
 
 package stroom.floormap.client.view;
 
+import stroom.floormap.client.FloorMapAria;
 import stroom.floormap.client.presenter.FloorMapObjectEditPresenter.FloorMapObjectEditView;
 import stroom.floormap.shared.FloorMapMeasurementUnits;
 import stroom.floormap.shared.FloorMapMeasurementUnits.Unit;
@@ -30,6 +31,7 @@ import com.google.gwt.event.dom.client.MouseDownEvent;
 import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
 import com.google.gwt.user.client.ui.CheckBox;
+import com.google.gwt.user.client.ui.FlowPanel;
 import com.google.gwt.user.client.ui.Label;
 import com.google.gwt.user.client.ui.SimplePanel;
 import com.google.gwt.user.client.ui.TextBox;
@@ -107,6 +109,22 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
     FormGroup verticesGroup;
     @UiField
     Label vertexCountLabel;
+    // Wrapper rows and unit suffixes, held only so their ARIA can be set up in
+    // the constructor — see nameControlsForScreenReaders().
+    @UiField
+    FlowPanel fillRow;
+    @UiField
+    FlowPanel positionRow;
+    @UiField
+    FlowPanel sizeRow;
+    @UiField
+    FlowPanel scaleRow;
+    @UiField
+    FlowPanel rotationRow;
+    @UiField
+    Label posUnit;
+    @UiField
+    Label sizeUnit;
 
     private boolean enabled = true;
 
@@ -174,6 +192,7 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
                                       final Provider<DateTimePopup> dateTimePopupProvider) {
         widget = binder.createAndBindUi(this);
         effectiveTimeBox.setPopupProvider(dateTimePopupProvider);
+        nameControlsForScreenReaders();
         setAreaFieldsVisible(false);
         fillDefaultCheck.setValue(true);
         fillDefaultCheck.addValueChangeHandler(e -> {
@@ -194,6 +213,52 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
                 fillDefaultCheck.setValue(false, true);
             }
         }, MouseDownEvent.getType());
+    }
+
+    /**
+     * Gives every control in this form an accessible name.
+     *
+     * <p>The three rows holding a single plain input — Name, Type and Area Fill
+     * Opacity — are named by {@code identity} in the ui.xml, which produces a
+     * real {@code <label for>}. The rest cannot be: a {@code for} attribute only
+     * reaches a labelable element, and these rows hold either a composite widget
+     * (whose root is a wrapper {@code div} with the input nested inside), an
+     * injected picker view, or two inputs under one label. Each of those is named
+     * here instead — as a group for the row, plus an individual name per input so
+     * "X" and "Y" are distinguishable.</p>
+     *
+     * <p>The trailing "m" suffixes are hidden: every measurement input already
+     * says "in metres" in its own name, so announcing the unit again after each
+     * pair is noise.</p>
+     */
+    private void nameControlsForScreenReaders() {
+        FloorMapAria.group(chooseImgContainer, "Image");
+
+        FloorMapAria.group(fillRow, "Area Fill Colour");
+        // The checkbox brings its own "Default" label; only the swatch is unnamed.
+        FloorMapAria.label(fillBox, "Area fill colour");
+
+        // DateTimeBox is a composite, so its root is a div and identity= would put
+        // the id somewhere <label for> cannot follow.
+        FloorMapAria.group(effectiveTimeBox, "Effective From Time");
+
+        FloorMapAria.group(positionRow, "Position in metres");
+        FloorMapAria.label(posX, "Position X in metres");
+        FloorMapAria.label(posY, "Position Y in metres");
+
+        FloorMapAria.group(sizeRow, "Size in metres");
+        FloorMapAria.label(sizeW, "Width in metres");
+        FloorMapAria.label(sizeH, "Height in metres");
+
+        FloorMapAria.group(scaleRow, "Scale");
+        FloorMapAria.label(w2mSx, "Scale X, as a multiple of natural size");
+        FloorMapAria.label(w2mSy, "Scale Y, as a multiple of natural size");
+
+        FloorMapAria.group(rotationRow, "Rotation");
+        FloorMapAria.label(w2mRot, "Rotation in degrees, counter-clockwise");
+
+        FloorMapAria.hide(posUnit);
+        FloorMapAria.hide(sizeUnit);
     }
 
     @Override

@@ -26,8 +26,6 @@ import stroom.dashboard.shared.ValidateExpressionResult;
 import stroom.docref.DocRef;
 import stroom.util.shared.ResourceGeneration;
 
-import java.util.List;
-
 public interface DashboardService {
 
     DashboardDoc read(DocRef docRef);
@@ -45,8 +43,6 @@ public interface DashboardService {
 //    Boolean destroy(DestroySearchRequest request);
 
     ColumnValues getColumnValues(ColumnValuesRequest request);
-
-    List<DocRef> findByType(String domainType);
 
     String getBestNode(String nodeName, DashboardSearchRequest request);
 }

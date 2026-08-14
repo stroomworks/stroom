@@ -192,7 +192,8 @@ public class FloorMapGroupsPresenter extends MyPresenterWidget<FloorMapGroupsVie
                         return highlightPreset(isShown(group));
                     }
                 };
-        highlightColumn.setFieldUpdater((index, group, value) -> toggleHighlight(group));
+        //noinspection unused index, val
+        highlightColumn.setFieldUpdater((index, group, val) -> toggleHighlight(group));
         dataGrid.addColumn(highlightColumn, "", ColumnSizeConstants.ICON_COL);
 
         // Name, led by a swatch in the group's highlight colour.
@@ -209,7 +210,7 @@ public class FloorMapGroupsPresenter extends MyPresenterWidget<FloorMapGroupsVie
         final Column<FloorMapGroup, String> membersColumn = new TextColumn<>() {
             @Override
             public String getValue(final FloorMapGroup group) {
-                return String.valueOf(group.getMemberCount());
+                return String.valueOf(group.countMembers());
             }
         };
         dataGrid.addColumn(membersColumn, "Members", ColumnSizeConstants.SMALL_COL);
@@ -255,7 +256,7 @@ public class FloorMapGroupsPresenter extends MyPresenterWidget<FloorMapGroupsVie
      */
     private SafeHtml nameCell(final FloorMapGroup group) {
         final SafeHtml swatch = FloorMapSwatchHtml.swatch(
-                new TypeStyle(null, Shape.CIRCLE, group.getColourOrDefault()), SWATCH_SIZE_PX);
+                new TypeStyle(null, Shape.CIRCLE, group.findColourOrDefault()), SWATCH_SIZE_PX);
         return FloorMapCellHtml.cellWithSwatch(swatch, group.getName(), membersTooltip(group));
     }
 
@@ -264,13 +265,13 @@ public class FloorMapGroupsPresenter extends MyPresenterWidget<FloorMapGroupsVie
      * exactly the names the user is looking for.
      */
     private String membersTooltip(final FloorMapGroup group) {
-        if (group.getMemberCount() == 0) {
+        if (group.countMembers() == 0) {
             return "No members yet — use Edit Group to add some";
         }
         final StringBuilder tooltip = new StringBuilder();
-        tooltip.append(group.getMemberCount() == 1
+        tooltip.append(group.countMembers() == 1
                 ? "1 member:"
-                : group.getMemberCount() + " members:");
+                : group.countMembers() + " members:");
         for (final String memberId : group.getMemberIds()) {
             tooltip.append("\n• ").append(nameFor(memberId));
             if (!snapshot.getPositionedIds(group.getId()).contains(memberId)) {
@@ -288,7 +289,7 @@ public class FloorMapGroupsPresenter extends MyPresenterWidget<FloorMapGroupsVie
      */
     private SafeHtml positionedCell(final FloorMapGroup group) {
         final int positioned = snapshot.getPositionedCount(group.getId());
-        final int total = group.getMemberCount();
+        final int total = group.countMembers();
         if (total == 0) {
             return FloorMapCellHtml.cell(NONE, "No members yet");
         }

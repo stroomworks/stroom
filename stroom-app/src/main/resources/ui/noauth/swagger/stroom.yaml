@@ -1664,6 +1664,26 @@ paths:
       summary: "Fetch a property by its name, e.g. 'stroom.path.home'"
       tags:
       - Global Config
+  /config/v1/setConfigValue:
+    post:
+      operationId: setConfigValue
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetConfigValueRequest"
+        description: request
+        required: true
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                type: boolean
+          description: default response
+      summary: Set a single config property for all users
+      tags:
+      - Global Config
   /content/v1/abortImport:
     post:
       operationId: abortImport
@@ -2115,26 +2135,6 @@ paths:
                 $ref: "#/components/schemas/ResourceGeneration"
           description: default response
       summary: Download search results
-      tags:
-      - Dashboards
-  /dashboard/v1/findByType:
-    get:
-      operationId: findDashboardsByType
-      parameters:
-      - in: query
-        name: domainType
-        schema:
-          type: string
-      responses:
-        default:
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/DocRef"
-          description: default response
-      summary: Find dashboards by dashboard type
       tags:
       - Dashboards
   /dashboard/v1/search:
@@ -2727,88 +2727,6 @@ paths:
       summary: Update a documentation doc
       tags:
       - Documentation (v1)
-  /domainType/v1/attributeParts/{classPart}:
-    get:
-      operationId: fetchAttributeParts
-      parameters:
-      - in: path
-        name: classPart
-        required: true
-        schema:
-          type: string
-      responses:
-        default:
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  type: string
-          description: default response
-      summary: Fetch a list of available AttributeParts for a given ClassPart across
-        all DomainTypeDocs
-      tags:
-      - DomainTypes (v1)
-  /domainType/v1/classParts:
-    get:
-      operationId: fetchClassParts
-      responses:
-        default:
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  type: string
-          description: default response
-      summary: Fetch a list of available ClassParts across all DomainTypeDocs in the
-        document store
-      tags:
-      - DomainTypes (v1)
-  /domainType/v1/{uuid}:
-    get:
-      operationId: fetchDomainType
-      parameters:
-      - in: path
-        name: uuid
-        required: true
-        schema:
-          type: string
-      responses:
-        default:
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/DomainTypeDoc"
-          description: default response
-      summary: Fetch a domain type doc by its UUID
-      tags:
-      - DomainTypes (v1)
-    put:
-      operationId: updateDomainType
-      parameters:
-      - in: path
-        name: uuid
-        required: true
-        schema:
-          type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/DomainTypeDoc"
-        description: doc
-        required: true
-      responses:
-        default:
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/DomainTypeDoc"
-          description: default response
-      summary: Update a domain type doc
-      tags:
-      - DomainTypes (v1)
   /duplicateCheck/v1/delete:
     post:
       operationId: deleteDuplicateCheckRows
@@ -6844,6 +6762,12 @@ paths:
       - Queries
   /query/v1/csv/search:
     get:
+      description: "Returns the results as CSV. Sets the 'X-Stroom-Search-Incremental'\
+        \ header to say whether the search ran incrementally, and the 'X-Stroom-Search-Complete'\
+        \ header to say whether it finished. An incremental search returns whatever\
+        \ results it has when the timeout expires, so those may be partial; a non\
+        \ incremental search waits for the search to finish, which risks the request\
+        \ itself timing out."
       operationId: queryCsv
       parameters:
       - in: query
@@ -6861,13 +6785,20 @@ paths:
           type: integer
           format: int32
           default: 100
+      - in: query
+        name: incremental
+        schema:
+          type: boolean
+          default: true
+      - in: query
+        name: timeout
+        schema:
+          type: integer
+          format: int64
       responses:
         default:
-          content:
-            text/plain:
-              schema:
-                type: string
-          description: default response
+          description: "Returns the matching rows as CSV, which may be a subset of\
+            \ the matching data if the search had not finished"
       summary: Perform a csv query
       tags:
       - Queries
@@ -10701,6 +10632,8 @@ components:
             $ref: "#/components/schemas/Param"
         query:
           type: string
+        queryTablePreferences:
+          $ref: "#/components/schemas/QueryTablePreferences"
         rememberNotifications:
           type: boolean
         status:
@@ -11724,8 +11657,6 @@ components:
           $ref: "#/components/schemas/ColumnFilter"
         columnValueSelection:
           $ref: "#/components/schemas/ColumnValueSelection"
-        domainType:
-          type: string
         expression:
           type: string
           description: The expression to use to generate the value for this field
@@ -12491,10 +12422,6 @@ components:
           $ref: "#/components/schemas/DashboardConfig"
         description:
           type: string
-        domainTypes:
-          type: array
-          items:
-            $ref: "#/components/schemas/DomainType"
         name:
           type: string
         type:
@@ -13212,7 +13139,6 @@ components:
           - DOCUMENT_DATA_GEN
           - DOCUMENT_DICTIONARY
           - DOCUMENT_DOCUMENTATION
-          - DOCUMENT_DOMAIN_TYPE
           - DOCUMENT_ELASTIC_CLUSTER
           - DOCUMENT_ELASTIC_INDEX
           - DOCUMENT_FAVOURITES
@@ -13502,40 +13428,6 @@ components:
           type: string
         version:
           type: string
-    DomainType:
-      type: object
-      properties:
-        attributePart:
-          type: string
-        classPart:
-          type: string
-    DomainTypeDoc:
-      type: object
-      properties:
-        createTimeMs:
-          type: integer
-          format: int64
-        createUser:
-          type: string
-        description:
-          type: string
-        domainTypes:
-          type: array
-          items:
-            $ref: "#/components/schemas/DomainType"
-        name:
-          type: string
-        type:
-          type: string
-        updateTimeMs:
-          type: integer
-          format: int64
-        updateUser:
-          type: string
-        uuid:
-          type: string
-        version:
-          type: string
     DoubleRange:
       type: object
       allOf:
@@ -13761,8 +13653,6 @@ components:
       properties:
         denseVectorFieldConfig:
           $ref: "#/components/schemas/DenseVectorFieldConfig"
-        domainType:
-          type: string
         fieldName:
           type: string
         fieldType:
@@ -15281,10 +15171,16 @@ components:
           $ref: "#/components/schemas/DocRef"
         factsStoreRef:
           $ref: "#/components/schemas/DocRef"
+        groups:
+          type: array
+          items:
+            $ref: "#/components/schemas/FloorMapGroup"
         locationIdColumn:
           type: string
         matrix:
           $ref: "#/components/schemas/FloorMapTransformationMatrix"
+        measurementUnits:
+          $ref: "#/components/schemas/FloorMapMeasurementUnits"
         name:
           type: string
         template:
@@ -15335,6 +15231,35 @@ components:
           - FILL
           - OPACITY
           - CUSTOM
+    FloorMapGroup:
+      type: object
+      properties:
+        colour:
+          type: string
+        id:
+          type: string
+        memberIds:
+          type: array
+          items:
+            type: string
+        name:
+          type: string
+    FloorMapMeasurementUnits:
+      type: object
+      properties:
+        unit:
+          type: string
+          enum:
+          - MILLIMETRE
+          - CENTIMETRE
+          - METRE
+          - KILOMETRE
+          - INCH
+          - FOOT
+          - MILE
+        unitsPerMapUnit:
+          type: number
+          format: double
     FloorMapTransformationMatrix:
       type: object
       properties:
@@ -16058,8 +15983,6 @@ components:
           type: boolean
         denseVectorFieldConfig:
           $ref: "#/components/schemas/DenseVectorFieldConfig"
-        domainType:
-          type: string
         fldName:
           type: string
         fldType:
@@ -16694,8 +16617,6 @@ components:
           type: boolean
         denseVectorFieldConfig:
           $ref: "#/components/schemas/DenseVectorFieldConfig"
-        domainType:
-          type: string
         fieldName:
           type: string
         fieldType:
@@ -17515,7 +17436,6 @@ components:
           - DOCUMENT_DATA_GEN
           - DOCUMENT_DICTIONARY
           - DOCUMENT_DOCUMENTATION
-          - DOCUMENT_DOMAIN_TYPE
           - DOCUMENT_ELASTIC_CLUSTER
           - DOCUMENT_ELASTIC_INDEX
           - DOCUMENT_FAVOURITES
@@ -18515,8 +18435,6 @@ components:
           - "'is', 'is not'"
         docRefType:
           type: string
-        domainType:
-          type: string
         fldName:
           type: string
         fldType:
@@ -19048,6 +18966,8 @@ components:
             $ref: "#/components/schemas/Param"
         query:
           type: string
+        queryTablePreferences:
+          $ref: "#/components/schemas/QueryTablePreferences"
         rememberNotifications:
           type: boolean
         reportSettings:
@@ -20256,6 +20176,20 @@ components:
         properties:
           sourceDocRef:
             $ref: "#/components/schemas/DocRef"
+    SetConfigValueRequest:
+      type: object
+      properties:
+        docRefValue:
+          $ref: "#/components/schemas/DocRef"
+        propertyName:
+          type: string
+        stringValue:
+          type: string
+        target:
+          type: string
+          enum:
+          - ANALYTIC_UI_DEFAULT
+          - REPORT_UI_DEFAULT
     SetDocumentUserCreatePermissions:
       type: object
       allOf:
@@ -20518,8 +20452,6 @@ components:
           $ref: "#/components/schemas/DenseVectorFieldConfig"
         docValues:
           type: boolean
-        domainType:
-          type: string
         fieldName:
           type: string
         fieldType:

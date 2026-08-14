@@ -178,6 +178,7 @@ public final class FloorMapGrid {
         //    One tile = one major grid cell. Minor subdivisions (9 lines)
         //    are drawn directly inside the tile — no nested patterns, which
         //    avoids patternTransform compounding issues.
+        //noinspection CodeBlock2Expr
         builder.elem(defs -> {
 
             defs.elem(gridPattern -> {
@@ -366,7 +367,7 @@ public final class FloorMapGrid {
      * scale set (or one whose scale is unusable).
      */
     private static double unitsPerMapUnit(final FloorMapMeasurementUnits units) {
-        return units != null && units.isValid()
+        return units != null && units.checkUnitIsValid()
                 ? units.getUnitsPerMapUnit()
                 : 1.0;
     }

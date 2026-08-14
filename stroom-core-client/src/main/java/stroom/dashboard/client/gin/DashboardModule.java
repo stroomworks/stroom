@@ -18,14 +18,8 @@ package stroom.dashboard.client.gin;
 
 import stroom.core.client.gin.PluginModule;
 import stroom.dashboard.client.DashboardPlugin;
-import stroom.dashboard.client.main.AddDomainTypePresenter;
-import stroom.dashboard.client.main.AddDomainTypePresenter.AddDomainTypeView;
-import stroom.dashboard.client.main.AddDomainTypeViewImpl;
 import stroom.dashboard.client.main.ComponentRegistry;
 import stroom.dashboard.client.main.DashboardPresenter;
-import stroom.dashboard.client.main.DashboardSettingsPresenter;
-import stroom.dashboard.client.main.DashboardSettingsPresenter.DashboardSettingsView;
-import stroom.dashboard.client.main.DashboardSettingsViewImpl;
 import stroom.dashboard.client.main.DashboardViewImpl;
 import stroom.dashboard.client.main.LayoutConstraintPresenter;
 import stroom.dashboard.client.main.LayoutConstraintPresenter.LayoutConstraintView;
@@ -55,14 +49,6 @@ public class DashboardModule extends PluginModule {
                 DashboardPresenter.class,
                 DashboardPresenter.DashboardView.class,
                 DashboardViewImpl.class);
-        bindPresenterWidget(
-                DashboardSettingsPresenter.class,
-                DashboardSettingsView.class,
-                DashboardSettingsViewImpl.class);
-        bindPresenterWidget(
-                AddDomainTypePresenter.class,
-                AddDomainTypeView.class,
-                AddDomainTypeViewImpl.class);
         bindPresenterWidget(
                 RenameTabPresenter.class,
                 RenameTabView.class,

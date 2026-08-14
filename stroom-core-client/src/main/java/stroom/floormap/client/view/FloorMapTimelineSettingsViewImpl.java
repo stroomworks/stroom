@@ -16,6 +16,7 @@
 
 package stroom.floormap.client.view;
 
+import stroom.floormap.client.FloorMapAria;
 import stroom.floormap.client.presenter.FloorMapTimelineSettingsPresenter.FloorMapTimelineSettingsView;
 import stroom.widget.datepicker.client.DateTimeBox;
 import stroom.widget.datepicker.client.DateTimePopup;
@@ -62,6 +63,14 @@ public class FloorMapTimelineSettingsViewImpl extends ViewImpl implements FloorM
 
         startDateTimeBox.setPopupProvider(dateTimePopupProvider);
         endDateTimeBox.setPopupProvider(dateTimePopupProvider);
+
+        // The visible "Start Date" / "End Date" / "Loop Playback" text is a plain
+        // Label beside each control, not a <label for> — and DateTimeBox is a
+        // composite whose root is a div, so there is nothing for a `for` to
+        // reach even if it were one. Name them directly instead.
+        FloorMapAria.group(startDateTimeBox, "Timeline start date and time");
+        FloorMapAria.group(endDateTimeBox, "Timeline end date and time");
+        FloorMapAria.label(loopCheckBox, "Loop playback");
 
         // Registered once and dispatched through a field, so a second
         // setShowAllHandler() call replaces the handler instead of stacking
