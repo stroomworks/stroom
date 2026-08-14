@@ -25,6 +25,4 @@ import java.util.List;
 public interface DashboardStore extends DocumentStore<DashboardDoc> {
 
     List<DocRef> list();
-
-    List<DocRef> findByType(String domainType);
 }

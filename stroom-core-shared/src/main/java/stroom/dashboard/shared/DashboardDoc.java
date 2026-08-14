@@ -21,7 +21,6 @@ import stroom.docs.shared.Description;
 import stroom.docstore.shared.AbstractDoc;
 import stroom.docstore.shared.DocumentType;
 import stroom.docstore.shared.DocumentTypeRegistry;
-import stroom.domaintype.shared.DomainType;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonInclude;
@@ -29,7 +28,6 @@ import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 
-import java.util.List;
 import java.util.Objects;
 
 @Description(
@@ -56,7 +54,6 @@ import java.util.Objects;
         "createUser",
         "updateUser",
         "description",
-        "domainTypes",
         "dashboardConfig"})
 @JsonInclude(Include.NON_NULL)
 public class DashboardDoc extends AbstractDoc {
@@ -66,8 +63,6 @@ public class DashboardDoc extends AbstractDoc {
 
     @JsonProperty
     private final String description;
-    @JsonProperty
-    private final List<DomainType> domainTypes;
     @JsonProperty
     private final DashboardConfig dashboardConfig;
 
@@ -80,11 +75,9 @@ public class DashboardDoc extends AbstractDoc {
                         @JsonProperty("createUser") final String createUser,
                         @JsonProperty("updateUser") final String updateUser,
                         @JsonProperty("description") final String description,
-                        @JsonProperty("domainTypes") final List<DomainType> domainTypes,
                         @JsonProperty("dashboardConfig") final DashboardConfig dashboardConfig) {
         super(TYPE, uuid, name, version, createTimeMs, updateTimeMs, createUser, updateUser);
         this.description = description;
-        this.domainTypes = domainTypes;
         this.dashboardConfig = dashboardConfig;
     }
 
@@ -108,10 +101,6 @@ public class DashboardDoc extends AbstractDoc {
         return description;
     }
 
-    public List<DomainType> getDomainTypes() {
-        return domainTypes;
-    }
-
     public DashboardConfig getDashboardConfig() {
         return dashboardConfig;
     }
@@ -131,20 +120,18 @@ public class DashboardDoc extends AbstractDoc {
 //        final boolean b2 = Objects.equals(dashboardConfig, that.dashboardConfig);
 
         return Objects.equals(description, that.description) &&
-               Objects.equals(domainTypes, that.domainTypes) &&
                Objects.equals(dashboardConfig, that.dashboardConfig);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(super.hashCode(), description, domainTypes, dashboardConfig);
+        return Objects.hash(super.hashCode(), description, dashboardConfig);
     }
 
     @Override
     public String toString() {
         return "DashboardDoc{" +
                "description='" + description + '\'' +
-               ", domainTypes=" + domainTypes +
                ", dashboardConfig=" + dashboardConfig +
                '}';
     }
@@ -160,7 +147,6 @@ public class DashboardDoc extends AbstractDoc {
     public static final class Builder extends AbstractBuilder<DashboardDoc, Builder> {
 
         private String description;
-        private List<DomainType> domainTypes;
         private DashboardConfig dashboardConfig;
 
         private Builder() {
@@ -169,17 +155,11 @@ public class DashboardDoc extends AbstractDoc {
         private Builder(final DashboardDoc dashboardDoc) {
             super(dashboardDoc);
             this.description = dashboardDoc.description;
-            this.domainTypes = dashboardDoc.domainTypes;
             this.dashboardConfig = dashboardDoc.dashboardConfig;
         }
 
         public Builder description(final String description) {
             this.description = description;
-            return self();
-        }
-
-        public Builder domainTypes(final List<DomainType> domainTypes) {
-            this.domainTypes = domainTypes;
             return self();
         }
 
@@ -203,7 +183,6 @@ public class DashboardDoc extends AbstractDoc {
                     createUser,
                     updateUser,
                     description,
-                    domainTypes,
                     dashboardConfig);
         }
     }

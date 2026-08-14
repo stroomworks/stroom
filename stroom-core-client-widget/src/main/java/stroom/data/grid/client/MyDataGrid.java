@@ -78,7 +78,6 @@ public class MyDataGrid<R> extends DataGrid<R> implements NativePreviewHandler {
     private final SimplePanel loadingTableWidget = new SimplePanel();
     private final List<ColSettings> colSettings = new ArrayList<>();
     private final MyDataGridAiSupport<R> aiSupport;
-    private MyDataGridDomainTypeSupport<R> domainTypeSupport;
     private final HasHandlers globalEventBus;
 
     private HeadingListener headingListener;
@@ -141,10 +140,6 @@ public class MyDataGrid<R> extends DataGrid<R> implements NativePreviewHandler {
         sinkEvents(Event.ONCONTEXTMENU);
 
         aiSupport = new MyDataGridAiSupport<>(globalEventBus, this);
-    }
-
-    public void setDomainTypeSupport(final MyDataGridDomainTypeSupport<R> domainTypeSupport) {
-        this.domainTypeSupport = domainTypeSupport;
     }
 
     public String getTableName() {
@@ -439,13 +434,6 @@ public class MyDataGrid<R> extends DataGrid<R> implements NativePreviewHandler {
 
         menuItems.add(aiSupport.createContextMenu(rowIndex, colIndex));
 
-        if (domainTypeSupport != null) {
-            final Item domainTypeMenu = domainTypeSupport.createContextMenu(rowIndex, colIndex);
-            if (domainTypeMenu != null) {
-                menuItems.add(domainTypeMenu);
-            }
-        }
-
         ShowMenuEvent.builder()
                 .items(menuItems)
                 .popupPosition(new PopupPosition(x, y))
@@ -462,16 +450,6 @@ public class MyDataGrid<R> extends DataGrid<R> implements NativePreviewHandler {
             }
         }
         return "";
-    }
-
-    public String getDomainType(final int colIndex) {
-        if (colIndex >= 0 && colIndex < colSettings.size()) {
-            final ColSettings settings = colSettings.get(colIndex);
-            if (settings != null) {
-                return settings.getDomainType();
-            }
-        }
-        return null;
     }
 
     private String escapeCsv(final String text) {
@@ -592,7 +570,7 @@ public class MyDataGrid<R> extends DataGrid<R> implements NativePreviewHandler {
      */
     private void addNewLine(final StringBuilder sb) {
         // GWT does not allow isEmpty()
-        if (!sb.isEmpty()) {
+        if (sb.length() > 0) {
             sb.append("\n");
         }
     }
@@ -1013,17 +991,10 @@ public class MyDataGrid<R> extends DataGrid<R> implements NativePreviewHandler {
 
     public void addResizableColumn(final Column<R, ?> column,
                                    final Header<?> header,
-                                   final int width,
-                                   final String domainType) {
-        colSettings.add(new ColSettings(true, true, false, 0, 0, domainType));
+                                   final int width) {
+        colSettings.add(new ColSettings(true, true));
         super.addColumn(column, header);
         setColumnWidth(column, width, Unit.PX);
-    }
-
-    public void addResizableColumn(final Column<R, ?> column,
-                                   final Header<?> header,
-                                   final int width) {
-        addResizableColumn(column, header, width, null);
     }
 
     public void addEndColumn(final EndColumn<R> column) {

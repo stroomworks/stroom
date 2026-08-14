@@ -29,7 +29,6 @@ import stroom.docstore.api.AbstractDocumentStore;
 import stroom.docstore.api.DependencyRemapFunction;
 import stroom.docstore.api.DependencyRemapper;
 import stroom.docstore.api.StoreFactory;
-import stroom.domaintype.shared.DomainType;
 import stroom.security.api.SecurityContext;
 import stroom.util.shared.NullSafe;
 import stroom.util.shared.Version;
@@ -43,7 +42,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Collectors;
 
 @Singleton
 class DashboardStoreImpl
@@ -203,24 +201,5 @@ class DashboardStoreImpl
         final TextComponentSettings.Builder builder = textComponentSettings.copy();
         builder.pipeline(dependencyRemapper.remap(textComponentSettings.getPipeline()));
         return builder.build();
-    }
-
-    @Override
-    public List<DocRef> findByType(final String domainType) {
-        final DomainType searchDomainType = new DomainType(domainType);
-        return getStore().list().stream()
-                .filter(docRef -> {
-                    final DashboardDoc doc = getStore().readDocument(docRef);
-                    if (doc == null) {
-                        return false;
-                    } else {
-                        final List<DomainType> domainTypes = doc.getDomainTypes();
-                        if (domainTypes == null) {
-                            return false;
-                        }
-                        return domainTypes.stream().anyMatch(dt -> dt.canAccept(searchDomainType));
-                    }
-                })
-                .collect(Collectors.toList());
     }
 }

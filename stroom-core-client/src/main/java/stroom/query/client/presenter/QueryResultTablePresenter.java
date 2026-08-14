@@ -42,7 +42,6 @@ import stroom.dashboard.client.table.cf.RulesPresenter;
 import stroom.data.client.event.AskStroomAiEvent;
 import stroom.data.grid.client.MessagePanel;
 import stroom.data.grid.client.MyDataGrid;
-import stroom.data.grid.client.MyDataGridDomainTypeSupportImpl;
 import stroom.data.grid.client.PagerView;
 import stroom.dispatch.client.ExportFileCompleteUtil;
 import stroom.dispatch.client.RestFactory;
@@ -184,13 +183,8 @@ public class QueryResultTablePresenter
         annotationManager.setTaskMonitorFactory(this);
 
         this.pagerView = pagerView;
-        dataGrid = new MyDataGrid<>(this);
-        dataGrid.setDomainTypeSupport(new MyDataGridDomainTypeSupportImpl<>(restFactory,
-                this,
-                this,
-                dataGrid,
-                this::getDashboardContext));
-        dataGrid.addStyleName("QueryResultTablePresenter");
+        this.dataGrid = new MyDataGrid<>(this);
+        dataGrid.addStyleName("TablePresenter");
         dataGrid.setRowStyles(rowStyles);
         selectionModel = dataGrid.addDefaultSelectionModel(true);
         pagerView.setDataWidget(dataGrid);
@@ -216,7 +210,7 @@ public class QueryResultTablePresenter
                 return row.getExpander();
             }
         };
-        expanderColumn.setFieldUpdater((final int index, final TableRow row, final Expander value) -> {
+        expanderColumn.setFieldUpdater((index, row, value) -> {
             toggle(row);
             refresh();
         });
@@ -625,10 +619,6 @@ public class QueryResultTablePresenter
                 final TableResult tableResult = (TableResult) componentResult;
                 this.currentTableResult = tableResult;
 
-                GWT.log("QueryResultTablePresenter: Received non-null TableResult! Total results in result set: "
-                        + tableResult.getTotalResults() + ", Number of rows returned in this page: "
-                        + (tableResult.getRows() != null ? tableResult.getRows().size() : 0));
-
                 // Get result columns.
                 List<Column> columns = NullSafe.list(tableResult.getColumns());
                 if (queryTablePreferences != null && queryTablePreferences.getColumns() != null) {
@@ -701,7 +691,6 @@ public class QueryResultTablePresenter
                 fireColumnAndDataUpdate();
 
             } else {
-                GWT.log("QueryResultTablePresenter: Received NULL componentResult!");
                 // Disable download of current results.
                 downloadButton.setEnabled(false);
 

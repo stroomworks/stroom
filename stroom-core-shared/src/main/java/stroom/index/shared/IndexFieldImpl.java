@@ -38,8 +38,6 @@ public class IndexFieldImpl implements IndexField {
     @JsonProperty
     private final FieldType fldType;
     @JsonProperty
-    private final String domainType;
-    @JsonProperty
     private final AnalyzerType analyzerType;
     @JsonProperty
     private final boolean indexed;
@@ -55,7 +53,6 @@ public class IndexFieldImpl implements IndexField {
     @JsonCreator
     public IndexFieldImpl(@JsonProperty("fldName") final String fldName,
                           @JsonProperty("fldType") final FieldType fldType,
-                          @JsonProperty("domainType") final String domainType,
                           @JsonProperty("analyzerType") final AnalyzerType analyzerType,
                           @JsonProperty("indexed") final boolean indexed,
                           @JsonProperty("stored") final boolean stored,
@@ -64,7 +61,6 @@ public class IndexFieldImpl implements IndexField {
                           @JsonProperty("denseVectorFieldConfig") final DenseVectorFieldConfig denseVectorFieldConfig) {
         this.fldName = fldName;
         this.fldType = fldType;
-        this.domainType = domainType;
         this.analyzerType = analyzerType;
         this.stored = stored;
         this.indexed = indexed;
@@ -81,11 +77,6 @@ public class IndexFieldImpl implements IndexField {
     @Override
     public FieldType getFldType() {
         return fldType;
-    }
-
-    @Override
-    public String getDomainType() {
-        return domainType;
     }
 
     @Override
@@ -141,7 +132,6 @@ public class IndexFieldImpl implements IndexField {
                caseSensitive == that.caseSensitive &&
                Objects.equals(fldName, that.fldName) &&
                fldType == that.fldType &&
-               Objects.equals(domainType, that.domainType) &&
                analyzerType == that.analyzerType &&
                Objects.equals(denseVectorFieldConfig, that.denseVectorFieldConfig);
     }
@@ -151,7 +141,6 @@ public class IndexFieldImpl implements IndexField {
         return Objects.hash(
                 fldName,
                 fldType,
-                domainType,
                 analyzerType,
                 indexed, stored,
                 termPositions,
@@ -185,7 +174,6 @@ public class IndexFieldImpl implements IndexField {
 
         private String fldName;
         private FieldType fldType = FieldType.TEXT;
-        private String domainType;
         private AnalyzerType analyzerType = AnalyzerType.KEYWORD;
         private boolean indexed = true;
         private boolean stored;
@@ -199,7 +187,6 @@ public class IndexFieldImpl implements IndexField {
         public Builder(final IndexField indexField) {
             this.fldName = indexField.getFldName();
             this.fldType = indexField.getFldType();
-            this.domainType = indexField.getDomainType();
             this.analyzerType = indexField.getAnalyzerType();
             this.indexed = indexField.isIndexed();
             this.stored = indexField.isStored();
@@ -215,11 +202,6 @@ public class IndexFieldImpl implements IndexField {
 
         public Builder fldType(final FieldType fldType) {
             this.fldType = fldType;
-            return this;
-        }
-
-        public Builder domainType(final String domainType) {
-            this.domainType = domainType;
             return this;
         }
 
@@ -257,7 +239,6 @@ public class IndexFieldImpl implements IndexField {
             return new IndexFieldImpl(
                     fldName,
                     fldType,
-                    domainType,
                     analyzerType,
                     indexed,
                     stored,

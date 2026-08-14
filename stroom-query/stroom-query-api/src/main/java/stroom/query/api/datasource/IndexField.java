@@ -38,9 +38,5 @@ public interface IndexField extends Field {
         return false;
     }
 
-    default String getDomainType() {
-        return null;
-    }
-
     DenseVectorFieldConfig getDenseVectorFieldConfig();
 }

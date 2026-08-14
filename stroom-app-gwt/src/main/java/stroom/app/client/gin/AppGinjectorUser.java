@@ -58,8 +58,6 @@ import stroom.document.asset.client.gin.DocumentAssetGinjector;
 import stroom.document.asset.client.gin.DocumentAssetModule;
 import stroom.documentation.client.gin.DocumentationGinjector;
 import stroom.documentation.client.gin.DocumentationModule;
-import stroom.domaintype.client.gin.DomainTypeGinjector;
-import stroom.domaintype.client.gin.DomainTypeModule;
 import stroom.entity.client.gin.EntityGinjector;
 import stroom.entity.client.gin.EntityModule;
 import stroom.explorer.client.presenter.ExplorerNodeEditTagsPresenter;
@@ -151,7 +149,6 @@ import com.gwtplatform.mvp.client.proxy.PlaceManager;
         RestModule.class,
         DashboardModule.class,
         DictionaryModule.class,
-        DomainTypeModule.class,
         DocumentAssetModule.class,
         DocumentationModule.class,
         EntityModule.class,
@@ -204,7 +201,6 @@ public interface AppGinjectorUser extends
         ContentTemplateGinjector,
         DashboardGinjector,
         DictionaryGinjector,
-        DomainTypeGinjector,
         DocumentAssetGinjector,
         DocumentationGinjector,
         EntityGinjector,
