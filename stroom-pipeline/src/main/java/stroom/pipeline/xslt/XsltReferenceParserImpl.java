@@ -46,6 +46,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -107,6 +108,60 @@ class XsltReferenceParserImpl implements XsltReferenceParser {
      */
     private static final Set<String> PATTERN_ATTRIBUTES = Set.of(
             "match", "count", "from", "group-starting-with", "group-ending-with");
+
+    /**
+     * Attributes on XSLT elements that are attribute value templates, so braces in them hold an expression.
+     * <p>
+     * On a literal result element every attribute may be a template, so no list is needed. On an XSLT
+     * element only these are, and the distinction matters in both directions. Scanning an attribute that is
+     * not a template invents references - {@code <xsl:template mode="m{stroom:dictionary('X')}"/>} would
+     * report a dictionary that is not there. Failing to scan one that is loses real references -
+     * {@code <xsl:element name="{stroom:lookup('m', @a)}">} is a lookup, and missing it is the worse of the
+     * two errors, since it needs no invalid input to happen.
+     * <p>
+     * Taken wholesale from the XSLT specification's list rather than filtered down to the ones that look
+     * likely to hold a Stroom call. Including the serialisation parameters costs nothing - they do not
+     * contain braces in practice - and it removes a judgement that could be got wrong.
+     * <p>
+     * Matched by attribute name alone, except where that would be too coarse to be safe - see
+     * {@link #AVT_ATTRIBUTES_BY_ELEMENT}. For the names here, being coarse is harmless: {@code method} is a
+     * template on {@code xsl:result-document} and a fixed value on {@code xsl:output}, where a brace is not
+     * legal anyway, so scanning it there finds nothing.
+     */
+    private static final Set<String> AVT_ATTRIBUTES = Set.of(
+            // xsl:value-of, xsl:attribute
+            "separator",
+            // xsl:analyze-string
+            "regex", "flags",
+            // xsl:result-document
+            "href",
+            // xsl:sort, xsl:merge-key, xsl:for-each-group
+            "lang", "order", "collation", "stable", "case-order", "data-type",
+            // xsl:number
+            "format", "letter-value", "ordinal", "grouping-separator", "grouping-size",
+            // xsl:message
+            "terminate",
+            // xsl:result-document serialisation parameters
+            "method", "byte-order-mark", "cdata-section-elements", "doctype-public", "doctype-system",
+            "encoding", "escape-uri-attributes", "include-content-type", "indent", "media-type",
+            "normalization-form", "omit-xml-declaration", "standalone", "undeclare-prefixes",
+            "output-version", "build-tree", "item-separator", "html-version", "suppress-indentation");
+
+    /**
+     * Attribute value templates that cannot be recognised by attribute name alone, because the same name is
+     * a plain value elsewhere in XSLT.
+     * <p>
+     * {@code name} is the case that forces this. It is a template on {@code xsl:element} and
+     * {@code xsl:attribute}, but a plain QName on {@code xsl:template}, {@code xsl:variable},
+     * {@code xsl:param}, {@code xsl:with-param}, {@code xsl:key} and {@code xsl:function} - which are far
+     * more common. Treating it as a template everywhere reported references from
+     * {@code <xsl:variable name="{...}"/>}, and a half-written stylesheet is exactly where that arises.
+     */
+    private static final Map<String, Set<String>> AVT_ATTRIBUTES_BY_ELEMENT = Map.of(
+            "element", Set.of("name", "namespace"),
+            "attribute", Set.of("name", "namespace"),
+            "processing-instruction", Set.of("name"),
+            "namespace", Set.of("name"));
 
     /**
      * The separator for a chained lookup, e.g. {@code stroom:lookup('MAP1/MAP2', $key)}. Mirrors
@@ -307,14 +362,26 @@ class XsltReferenceParserImpl implements XsltReferenceParser {
                     analyse(element, value, false);
                 } else if (isXsltElement && PATTERN_ATTRIBUTES.contains(name)) {
                     analyse(element, value, true);
-                } else {
-                    // Anything else may be an attribute value template. Scanning one that is not simply
-                    // finds no braces and costs nothing.
+                } else if (!isXsltElement || isAttributeValueTemplate(element, name)) {
+                    // An attribute value template: braces here hold an expression.
                     for (final String embedded : XsltExpressionCompiler.splitAttributeValueTemplate(value)) {
                         analyse(element, embedded, false);
                     }
                 }
+                // Anything else on an XSLT element is neither an expression nor a template - a name, a
+                // mode, a priority - so there is nothing in it to look at.
             }
+        }
+
+        /**
+         * @return true if braces in this attribute hold an expression, i.e. it is an attribute value
+         * template on this particular element.
+         */
+        private boolean isAttributeValueTemplate(final XdmNode element, final String attributeName) {
+            return AVT_ATTRIBUTES.contains(attributeName)
+                   || AVT_ATTRIBUTES_BY_ELEMENT
+                           .getOrDefault(element.getNodeName().getLocalName(), Set.of())
+                           .contains(attributeName);
         }
 
         /**

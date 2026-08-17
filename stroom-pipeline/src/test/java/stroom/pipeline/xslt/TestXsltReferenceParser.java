@@ -872,6 +872,38 @@ class TestXsltReferenceParser {
         }
 
         @Test
+        @DisplayName("finds a lookup in an attribute value template on an XSLT element")
+        void insideXsltAttributeValueTemplate() {
+            // xsl:element/@name and xsl:result-document/@href really are templates, so a lookup in one is
+            // real. Missing these is the failure that matters: unlike a phantom reference from scanning a
+            // non-template attribute, it needs no invalid stylesheet to happen.
+            final XsltReferences result = parse(template("""
+                    <xsl:element name="{stroom:lookup('name_map', @a)}"/>
+                    <xsl:result-document href="{stroom:lookup('href_map', @b)}"/>
+                    <xsl:value-of select="'x'" separator="{stroom:lookup('sep_map', @c)}"/>"""));
+
+            assertThat(result.resolvedValues(XsltReferenceKind.REF_MAP_READ))
+                    .containsExactly("name_map", "href_map", "sep_map");
+        }
+
+        @Test
+        @DisplayName("does not scan XSLT attributes that are not templates")
+        void nonTemplateXsltAttributesAreNotScanned() {
+            // @mode is a name, not a template, so a brace there is not an expression - it is not even legal.
+            // Scanning it anyway reported a dictionary that does not exist, for a stylesheet that could
+            // never run. An author mid-edit is exactly who produces stylesheets that cannot run.
+            final XsltReferences result = parse("""
+                    <xsl:stylesheet version="2.0"
+                                    xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
+                                    xmlns:stroom="stroom">
+                      <xsl:template match="/" mode="m{stroom:dictionary('X')}"/>
+                      <xsl:template name="t{stroom:dictionary('Y')}"/>
+                    </xsl:stylesheet>""");
+
+            assertThat(result.references()).isEmpty();
+        }
+
+        @Test
         @DisplayName("finds a lookup inside a template match pattern's predicate")
         void insidePattern() {
             final XsltReferences result = parse("""
