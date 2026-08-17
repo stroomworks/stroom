@@ -133,8 +133,8 @@ class TestFloorMapHoverDetail {
     /** The returned lists are the caller's to render, not to mutate. */
     @Test
     void testResultsAreImmutable() {
-        final List<String> lines = new java.util.ArrayList<>(FloorMapHoverDetail.lines(
-                "person", Arrays.asList("A", "B"), "X 0 m, Y 0 m", "id", "Alice"));
+        final List<String> lines = FloorMapHoverDetail.lines(
+                "person", Arrays.asList("A", "B"), "X 0 m, Y 0 m", "id", "Alice");
         assertThatThrownBy(() -> lines.add("nope"))
                 .isInstanceOf(UnsupportedOperationException.class);
     }
