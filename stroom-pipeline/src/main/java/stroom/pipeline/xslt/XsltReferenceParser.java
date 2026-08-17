@@ -37,6 +37,20 @@ import org.jspecify.annotations.Nullable;
 public interface XsltReferenceParser {
 
     /**
+     * Create a parser outside Guice.
+     * <p>
+     * For callers that have no injector to draw on - a database migration, or a diagnostic run over
+     * exported content - and which therefore supply their own {@link XsltReferenceLookup}, typically one
+     * backed by direct SQL rather than by the document store.
+     *
+     * @param lookup How to resolve a name or UUID to a document. Must not be null.
+     * @return a parser. Cheap to hold, safe to share, and safe to use concurrently.
+     */
+    static XsltReferenceParser create(final XsltReferenceLookup lookup) {
+        return new XsltReferenceParserImpl(lookup);
+    }
+
+    /**
      * Parse an XSLT body.
      * <p>
      * This method does not throw. Anything it cannot handle comes back as an unresolved finding or, where
