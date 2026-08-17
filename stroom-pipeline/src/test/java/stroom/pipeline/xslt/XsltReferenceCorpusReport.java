@@ -30,6 +30,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -107,22 +108,28 @@ class XsltReferenceCorpusReport {
         final List<String> mapsWritten = new ArrayList<>();
         final List<String> endpoints = new ArrayList<>();
 
-        long totalNanos = 0;
-        long slowestNanos = 0;
-        String slowest = "";
-
+        // Read every stylesheet up front, so file IO is not counted as parse time.
+        final Map<String, String> corpus = new LinkedHashMap<>();
         for (final Path path : stylesheets) {
-            final String label = documentNameOf(path).orElseGet(() -> root.relativize(path).toString());
-            final String data = Files.readString(path);
+            corpus.put(documentNameOf(path).orElseGet(() -> root.relativize(path).toString()),
+                    Files.readString(path));
+        }
+
+        // A warm-up pass, discarded. The first parse in a JVM pays for Saxon class loading and carries no
+        // information about how long parsing a stylesheet takes; reported together with the rest it would
+        // dominate the maximum and make the percentiles meaningless. Its cost is reported separately, since
+        // it is what the first save after a restart actually pays.
+        final long coldStartNanos = warmUp(parser, corpus);
+
+        final List<Timing> timings = new ArrayList<>();
+
+        for (final Map.Entry<String, String> entry : corpus.entrySet()) {
+            final String label = entry.getKey();
+            final String data = entry.getValue();
 
             final long start = System.nanoTime();
             final XsltReferences references = parser.parse(data);
-            final long elapsed = System.nanoTime() - start;
-            totalNanos += elapsed;
-            if (elapsed > slowestNanos) {
-                slowestNanos = elapsed;
-                slowest = label;
-            }
+            timings.add(new Timing(label, System.nanoTime() - start));
 
             if (references.hasParseFailure()) {
                 parseFailures.add(label + " - " + references.parseFailure());
@@ -148,8 +155,41 @@ class XsltReferenceCorpusReport {
             }
         }
 
-        print(stylesheets, byKind, byReason, notFound, ambiguous, unanalysable, parseFailures,
-                mapsRead, mapsWritten, endpoints, totalNanos, slowestNanos, slowest);
+        print(byKind, byReason, notFound, ambiguous, unanalysable, parseFailures,
+                mapsRead, mapsWritten, endpoints, timings, coldStartNanos);
+    }
+
+    /**
+     * Parse everything once and throw the results away.
+     *
+     * @return how long the very first parse took, which is the cost of a cold JVM rather than of a
+     * stylesheet.
+     */
+    private static long warmUp(final XsltReferenceParser parser, final Map<String, String> corpus) {
+        long coldStartNanos = 0;
+        boolean first = true;
+        for (final String data : corpus.values()) {
+            final long start = System.nanoTime();
+            parser.parse(data);
+            if (first) {
+                coldStartNanos = System.nanoTime() - start;
+                first = false;
+            }
+        }
+        return coldStartNanos;
+    }
+
+    private record Timing(String label, long nanos) {
+
+    }
+
+    /**
+     * Nearest-rank percentile, which needs no interpolation and cannot report a duration that was not
+     * actually measured.
+     */
+    private static Timing percentile(final List<Timing> sortedAscending, final double percentile) {
+        final int index = (int) Math.ceil(percentile / 100.0 * sortedAscending.size()) - 1;
+        return sortedAscending.get(Math.max(0, Math.min(index, sortedAscending.size() - 1)));
     }
 
     private static void collectResolved(final XsltReference reference,
@@ -238,8 +278,7 @@ class XsltReferenceCorpusReport {
     }
 
     @SuppressWarnings("checkstyle:ParameterNumber") // A report, assembled in one place on purpose.
-    private static void print(final List<Path> stylesheets,
-                              final Map<String, Integer> byKind,
+    private static void print(final Map<String, Integer> byKind,
                               final Map<String, Integer> byReason,
                               final List<String> notFound,
                               final List<String> ambiguous,
@@ -248,17 +287,12 @@ class XsltReferenceCorpusReport {
                               final List<String> mapsRead,
                               final List<String> mapsWritten,
                               final List<String> endpoints,
-                              final long totalNanos,
-                              final long slowestNanos,
-                              final String slowest) {
+                              final List<Timing> timings,
+                              final long coldStartNanos) {
         final StringBuilder sb = new StringBuilder("\n");
         sb.append("XSLT reference parser - corpus report\n");
         sb.append("=====================================\n\n");
-        sb.append(stylesheets.size()).append(" stylesheets parsed in ")
-                .append(totalNanos / 1_000_000).append(" ms (mean ")
-                .append(stylesheets.isEmpty() ? 0 : totalNanos / stylesheets.size() / 1_000_000)
-                .append(" ms, slowest ").append(slowestNanos / 1_000_000).append(" ms: ")
-                .append(slowest).append(")\n\n");
+        appendTimings(sb, timings, coldStartNanos);
 
         appendCounts(sb, "Findings by kind", byKind);
         appendCounts(sb, "Unresolved by reason", byReason);
@@ -274,6 +308,36 @@ class XsltReferenceCorpusReport {
         appendList(sb, "Parse failures - stylesheets not readable in full", parseFailures);
 
         System.out.println(sb);
+    }
+
+    /**
+     * Durations from the measured pass, which follows a discarded warm-up pass, so these describe parsing a
+     * stylesheet rather than starting a JVM. The cold start is reported alongside because it is what the
+     * first save after a restart pays, and it is a different quantity with a different budget.
+     */
+    private static void appendTimings(final StringBuilder sb,
+                                      final List<Timing> timings,
+                                      final long coldStartNanos) {
+        final List<Timing> sorted = timings.stream()
+                .sorted(Comparator.comparingLong(Timing::nanos))
+                .toList();
+        final long totalNanos = timings.stream().mapToLong(Timing::nanos).sum();
+        final Timing slowest = sorted.getLast();
+
+        sb.append("Parse duration, warm (").append(timings.size()).append(" stylesheets)\n");
+        sb.append("  total  ").append(millis(totalNanos)).append('\n');
+        sb.append("  mean   ").append(millis(totalNanos / Math.max(1, timings.size()))).append('\n');
+        sb.append("  p50    ").append(millis(percentile(sorted, 50).nanos())).append('\n');
+        sb.append("  p95    ").append(millis(percentile(sorted, 95).nanos())).append('\n');
+        sb.append("  p99    ").append(millis(percentile(sorted, 99).nanos())).append('\n');
+        sb.append("  max    ").append(millis(slowest.nanos()))
+                .append("  (").append(slowest.label()).append(")\n");
+        sb.append("  cold start, first parse in the JVM: ").append(millis(coldStartNanos))
+                .append(" - Saxon class loading, paid once\n\n");
+    }
+
+    private static String millis(final long nanos) {
+        return String.format("%.1f ms", nanos / 1_000_000.0);
     }
 
     private static void appendCounts(final StringBuilder sb,

@@ -18,6 +18,7 @@ package stroom.pipeline.xslt;
 
 import stroom.dictionary.shared.DictionaryDoc;
 import stroom.docref.DocRef;
+import stroom.pipeline.filter.XsltConfig;
 import stroom.pipeline.shared.XsltDoc;
 import stroom.pipeline.shared.XsltReferenceCertainty;
 import stroom.pipeline.shared.XsltReferenceDirection;
@@ -27,8 +28,10 @@ import stroom.pipeline.xml.NamespaceConstants;
 import stroom.util.logging.LambdaLogger;
 import stroom.util.logging.LambdaLoggerFactory;
 import stroom.util.shared.NullSafe;
+import stroom.util.time.StroomDuration;
 
 import jakarta.inject.Inject;
+import jakarta.inject.Provider;
 import jakarta.inject.Singleton;
 import net.sf.saxon.expr.Expression;
 import net.sf.saxon.expr.FunctionCall;
@@ -113,11 +116,26 @@ class XsltReferenceParserImpl implements XsltReferenceParser {
 
     private final XsltReferenceLookup lookup;
     private final XsltExpressionCompiler compiler;
-    private final XsltValueResolver valueResolver;
-    private final Duration timeout;
+
+    /**
+     * Read per parse rather than captured at construction, so that changing either property takes effect
+     * without a restart, as operators expect of Stroom configuration. Null where the parser was built
+     * outside Guice - from a migration or a diagnostic - in which case the defaults apply.
+     */
+    private final Provider<XsltConfig> configProvider;
 
     @SuppressWarnings("unused")
     @Inject
+    XsltReferenceParserImpl(final XsltReferenceLookup lookup,
+                            final Provider<XsltConfig> configProvider) {
+        this.lookup = Objects.requireNonNull(lookup, "Null lookup supplied");
+        this.configProvider = Objects.requireNonNull(configProvider, "Null configProvider supplied");
+        this.compiler = new XsltExpressionCompiler();
+    }
+
+    /**
+     * For callers with no configuration to draw on, and for tests that need to pin the bounds.
+     */
     XsltReferenceParserImpl(final XsltReferenceLookup lookup) {
         this(lookup, DEFAULT_TIMEOUT, DEFAULT_MAX_DEPTH);
     }
@@ -126,12 +144,15 @@ class XsltReferenceParserImpl implements XsltReferenceParser {
                             final Duration timeout,
                             final int maxDepth) {
         this.lookup = Objects.requireNonNull(lookup, "Null lookup supplied");
-        this.timeout = Objects.requireNonNull(timeout, "Null timeout supplied");
+        Objects.requireNonNull(timeout, "Null timeout supplied");
         if (timeout.isNegative() || timeout.isZero()) {
             throw new IllegalArgumentException("timeout must be positive, got " + timeout);
         }
+        if (maxDepth < 1) {
+            throw new IllegalArgumentException("maxDepth must be at least 1, got " + maxDepth);
+        }
+        this.configProvider = () -> new XsltConfig(null, null, StroomDuration.of(timeout), maxDepth);
         this.compiler = new XsltExpressionCompiler();
-        this.valueResolver = new XsltValueResolver(compiler, maxDepth);
     }
 
     @Override
@@ -141,7 +162,10 @@ class XsltReferenceParserImpl implements XsltReferenceParser {
             return XsltReferences.empty();
         }
 
-        final Walk walk = new Walk();
+        final XsltConfig config = configProvider.get();
+        final Walk walk = new Walk(
+                config.getReferenceParseTimeout().getDuration(),
+                new XsltValueResolver(compiler, config.getMaxReferenceVariableDepth()));
         try {
             walk.run(compiler.buildTree(xsltData));
         } catch (final SaxonApiException e) {
@@ -165,8 +189,16 @@ class XsltReferenceParserImpl implements XsltReferenceParser {
     private final class Walk {
 
         private final List<XsltReference> references = new ArrayList<>();
-        private final long deadline = System.nanoTime() + timeout.toNanos();
+        private final Duration timeout;
+        private final XsltValueResolver valueResolver;
+        private final long deadline;
         private boolean timedOut;
+
+        Walk(final Duration timeout, final XsltValueResolver valueResolver) {
+            this.timeout = timeout;
+            this.valueResolver = valueResolver;
+            this.deadline = System.nanoTime() + timeout.toNanos();
+        }
 
         void run(final XdmNode document) {
             final java.util.Iterator<XdmNode> iterator = document.axisIterator(Axis.DESCENDANT_OR_SELF);
