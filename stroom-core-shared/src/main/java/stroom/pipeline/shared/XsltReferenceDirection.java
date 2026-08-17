@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package stroom.pipeline.xslt;
+package stroom.pipeline.shared;
 
 /**
  * Which way data flows over an external endpoint, from Stroom's point of view.

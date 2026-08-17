@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package stroom.pipeline.xslt;
+package stroom.pipeline.shared;
 
 /**
  * The kind of thing an XSLT refers to.

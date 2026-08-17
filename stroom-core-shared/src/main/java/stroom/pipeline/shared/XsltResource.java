@@ -54,6 +54,22 @@ public interface XsltResource extends RestResource, DirectRestService, FetchWith
     XsltDoc update(@PathParam("uuid") String uuid,
                    @Parameter(description = "doc", required = true) XsltDoc doc);
 
+    /**
+     * Report what an XSLT refers to, without saving anything.
+     * <p>
+     * Deliberately a request the author makes rather than something reported on save. Someone editing a
+     * stylesheet triggers parse failures constantly, and a warning shown every time is a warning they learn
+     * to dismiss - which then trains them to dismiss the one that matters. Asking on demand gives them a
+     * moment where they actually want the answer.
+     */
+    @POST
+    @Path("/checkReferences")
+    @Operation(
+            summary = "Report the documents, map names and endpoints an XSLT refers to",
+            operationId = "checkXsltReferences")
+    XsltReferenceCheckResult checkReferences(
+            @Parameter(description = "request", required = true) CheckXsltReferencesRequest request);
+
     @POST
     @Operation(
             summary = "Create an xslt doc",

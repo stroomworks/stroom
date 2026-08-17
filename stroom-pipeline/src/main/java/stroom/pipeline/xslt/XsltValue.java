@@ -16,6 +16,9 @@
 
 package stroom.pipeline.xslt;
 
+import stroom.pipeline.shared.XsltReferenceCertainty;
+import stroom.pipeline.shared.XsltReferenceReason;
+
 import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;

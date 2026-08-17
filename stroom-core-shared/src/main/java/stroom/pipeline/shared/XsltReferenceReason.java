@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package stroom.pipeline.xslt;
+package stroom.pipeline.shared;
 
 /**
  * Why a reference could not be resolved to a value, or to a document.

@@ -17,6 +17,10 @@
 package stroom.pipeline.xslt;
 
 import stroom.docref.DocRef;
+import stroom.pipeline.shared.XsltReferenceCertainty;
+import stroom.pipeline.shared.XsltReferenceDirection;
+import stroom.pipeline.shared.XsltReferenceKind;
+import stroom.pipeline.shared.XsltReferenceReason;
 
 import org.jspecify.annotations.Nullable;
 

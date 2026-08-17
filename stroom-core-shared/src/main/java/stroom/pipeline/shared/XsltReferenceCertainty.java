@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package stroom.pipeline.xslt;
+package stroom.pipeline.shared;
 
 /**
  * Whether the parser had to reason about a value, or was simply handed it.

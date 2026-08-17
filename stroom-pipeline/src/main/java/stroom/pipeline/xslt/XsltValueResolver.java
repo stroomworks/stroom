@@ -16,6 +16,9 @@
 
 package stroom.pipeline.xslt;
 
+import stroom.pipeline.shared.XsltReferenceCertainty;
+import stroom.pipeline.shared.XsltReferenceReason;
+
 import net.sf.saxon.expr.AtomicSequenceConverter;
 import net.sf.saxon.expr.Atomizer;
 import net.sf.saxon.expr.AxisExpression;

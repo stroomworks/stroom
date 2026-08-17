@@ -19,6 +19,10 @@ package stroom.pipeline.xslt;
 import stroom.dictionary.shared.DictionaryDoc;
 import stroom.docref.DocRef;
 import stroom.pipeline.shared.XsltDoc;
+import stroom.pipeline.shared.XsltReferenceCertainty;
+import stroom.pipeline.shared.XsltReferenceDirection;
+import stroom.pipeline.shared.XsltReferenceKind;
+import stroom.pipeline.shared.XsltReferenceReason;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;

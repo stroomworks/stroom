@@ -19,7 +19,9 @@ package stroom.pipeline.xslt;
 import stroom.docref.DocRef;
 import stroom.docstore.api.DocumentResourceHelper;
 import stroom.event.logging.rs.api.AutoLogged;
+import stroom.pipeline.shared.CheckXsltReferencesRequest;
 import stroom.pipeline.shared.XsltDoc;
+import stroom.pipeline.shared.XsltReferenceCheckResult;
 import stroom.pipeline.shared.XsltResource;
 import stroom.util.shared.EntityServiceException;
 
@@ -31,12 +33,15 @@ class XsltResourceImpl implements XsltResource {
 
     private final Provider<XsltStore> xsltStoreProvider;
     private final Provider<DocumentResourceHelper> documentResourceHelperProvider;
+    private final Provider<XsltReferenceParser> referenceParserProvider;
 
     @Inject
     XsltResourceImpl(final Provider<XsltStore> xsltStoreProvider,
-                     final Provider<DocumentResourceHelper> documentResourceHelperProvider) {
+                     final Provider<DocumentResourceHelper> documentResourceHelperProvider,
+                     final Provider<XsltReferenceParser> referenceParserProvider) {
         this.xsltStoreProvider = xsltStoreProvider;
         this.documentResourceHelperProvider = documentResourceHelperProvider;
+        this.referenceParserProvider = referenceParserProvider;
     }
 
     @Override
@@ -57,6 +62,29 @@ class XsltResourceImpl implements XsltResource {
         final XsltStore xsltStore = xsltStoreProvider.get();
         final DocRef docRef = xsltStore.createDocument(name);
         return xsltStore.readDocument(docRef);
+    }
+
+    @Override
+    public XsltReferenceCheckResult checkReferences(final CheckXsltReferencesRequest request) {
+        if (request == null || request.getDocRef() == null) {
+            throw new EntityServiceException("A document must be supplied");
+        }
+
+        // Read the document even when the caller supplied the body, so the read permission is checked
+        // against a real document rather than taken on trust from the request.
+        final XsltDoc doc = documentResourceHelperProvider.get()
+                .read(xsltStoreProvider.get(), request.getDocRef());
+        if (doc == null) {
+            throw new EntityServiceException("Document not found: " + request.getDocRef());
+        }
+
+        // The caller's copy wins where there is one, so an author checks what is in front of them rather
+        // than what was last saved.
+        final String data = request.getData() != null
+                ? request.getData()
+                : doc.getData();
+
+        return XsltReferenceInfoMapper.toResult(referenceParserProvider.get().parse(data));
     }
 
     private DocRef getDocRef(final String uuid) {
