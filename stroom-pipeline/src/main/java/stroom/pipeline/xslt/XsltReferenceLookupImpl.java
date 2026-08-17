@@ -33,6 +33,10 @@ import java.util.Optional;
  * and {@code Dictionary} by way of {@code DictionaryStoreImpl} - so going through it is what makes the
  * parser agree with the runtime about which documents a name matches, including the case sensitivity and
  * the read-permission filtering that come with it.
+ * <p>
+ * The permission filtering is a feature of this class, not an inconvenience. Both methods answer only for
+ * documents the current user may view, so neither can be used to establish that a document exists by
+ * naming it. Callers must not restore the missing answers by running this under the processing user.
  */
 @Singleton
 class XsltReferenceLookupImpl implements XsltReferenceLookup {

@@ -78,6 +78,14 @@ class XsltResourceImpl implements XsltResource {
             throw new EntityServiceException("Document not found: " + request.getDocRef());
         }
 
+        // Deliberately NOT run as the processing user, unlike the save path. Resolution here happens with
+        // the caller's permissions, so a document they cannot view is reported as not found and an
+        // ambiguity they cannot see is not reported at all. Wrapping this to make the answers more
+        // complete would turn the panel into a way of discovering documents, and their number, by name.
+        // The cost of getting this right is that the report can differ from what the runtime does: where
+        // two documents share a name and only one is visible, this says "found", while the runtime sees
+        // both and picks the lowest UUID. That asymmetry is accepted; disclosure is not.
+
         // The caller's copy wins where there is one, so an author checks what is in front of them rather
         // than what was last saved.
         final String data = request.getData() != null
