@@ -678,6 +678,90 @@ class TestXsltReferenceParser {
         }
 
         @Test
+        @DisplayName("sibling nodes in content concatenate, they are not alternatives")
+        void contentIsASequenceNotAlternatives() {
+            lookup.with(DictionaryDoc.TYPE, "AB").with(DictionaryDoc.TYPE, "A").with(DictionaryDoc.TYPE, "B");
+
+            final XsltReferences result = parse("""
+                    <xsl:stylesheet version="2.0"
+                                    xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
+                                    xmlns:stroom="stroom">
+                      <xsl:template match="/">
+                        <xsl:variable name="v"><xsl:value-of select="'A'"/><xsl:value-of select="'B'"/></xsl:variable>
+                        <xsl:value-of select="stroom:dictionary($v)"/>
+                      </xsl:template>
+                    </xsl:stylesheet>""");
+
+            // At runtime $v is "AB": sibling nodes in an element's content all execute and their string
+            // values run together. An earlier implementation merged them as though they were the arms of an
+            // xsl:choose, which reported dictionaries A and B - two references that do not exist - and
+            // missed AB, the one that does. Because a dictionary reference becomes a doc_dependency edge,
+            // that wrote false edges into the table this feature exists to populate.
+            assertThat(result.resolvedValues(XsltReferenceKind.DICTIONARY)).containsExactly("AB");
+            assertThat(result.documentTargets()).extracting(DocRef::getName).containsExactly("AB");
+        }
+
+        @Test
+        @DisplayName("text mixed with an element concatenates, and the text is not dropped")
+        void mixedContentKeepsItsText() {
+            final XsltReferences result = parse(template("""
+                    <reference xmlns="reference-data:2">
+                      <map>PREFIX_<xsl:value-of select="'SUFFIX'"/></map>
+                    </reference>"""));
+
+            // The runtime writes to PREFIX_SUFFIX. Reporting SUFFIX would be a false positive - no such map
+            // - and a false negative at the same time.
+            assertThat(result.resolvedValues(XsltReferenceKind.REF_MAP_WRITE)).containsExactly("PREFIX_SUFFIX");
+        }
+
+        @Test
+        @DisplayName("indentation between elements contributes nothing, because XSLT strips it")
+        void whitespaceOnlyTextIsStripped() {
+            lookup.with(DictionaryDoc.TYPE, "AB");
+
+            final XsltReferences result = parse("""
+                    <xsl:stylesheet version="2.0"
+                                    xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
+                                    xmlns:stroom="stroom">
+                      <xsl:template match="/">
+                        <xsl:variable name="v">
+                          <xsl:value-of select="'A'"/>
+                          <xsl:value-of select="'B'"/>
+                        </xsl:variable>
+                        <xsl:value-of select="stroom:dictionary($v)"/>
+                      </xsl:template>
+                    </xsl:stylesheet>""");
+
+            // Pretty printing must not change the answer. A stylesheet's whitespace-only text nodes are
+            // stripped before it runs, so the indentation here is not part of the value - which is why the
+            // parser can take non-blank text verbatim without punishing readable formatting.
+            assertThat(result.resolvedValues(XsltReferenceKind.DICTIONARY)).containsExactly("AB");
+        }
+
+        @Test
+        @DisplayName("xsl:text keeps its whitespace, since there it is deliberate")
+        void xslTextIsVerbatim() {
+            final XsltReferences result = parse(template("""
+                    <xsl:variable name="v">a<xsl:text> </xsl:text>b</xsl:variable>
+                    <xsl:value-of select="stroom:lookup($v, @id)"/>"""));
+
+            assertThat(result.resolvedValues(XsltReferenceKind.REF_MAP_READ)).containsExactly("a b");
+        }
+
+        @Test
+        @DisplayName("an xsl:if in content yields both outcomes, including contributing nothing")
+        void conditionalContentYieldsBothOutcomes() {
+            final XsltReferences result = parse(template("""
+                    <xsl:variable name="v">map<xsl:if test="@live">_live</xsl:if></xsl:variable>
+                    <xsl:value-of select="stroom:lookup($v, @id)"/>"""));
+
+            // Either the test passes and the name is map_live, or it does not and the name is map. Both are
+            // known, so both are reported - the empty outcome is a value, not an unresolvable one.
+            assertThat(result.resolvedValues(XsltReferenceKind.REF_MAP_READ))
+                    .containsExactly("map_live", "map");
+        }
+
+        @Test
         @DisplayName("a partly literal conditional reports the literal AND the reason for the rest")
         void partiallyResolvedConditional() {
             final XsltReferences result = parse(template("""

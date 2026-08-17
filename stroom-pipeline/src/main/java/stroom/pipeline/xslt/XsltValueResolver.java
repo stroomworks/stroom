@@ -77,6 +77,7 @@ class XsltValueResolver {
     private static final String OTHERWISE_ELEMENT = "otherwise";
     private static final String IF_ELEMENT = "if";
     private static final String VALUE_OF_ELEMENT = "value-of";
+    private static final String TEXT_ELEMENT = "text";
     private static final String STYLESHEET_ELEMENT = "stylesheet";
     private static final String TRANSFORM_ELEMENT = "transform";
 
@@ -220,33 +221,61 @@ class XsltValueResolver {
                                     final XdmNode site,
                                     final Set<String> variablesInProgress,
                                     final int depth) {
+        final List<XsltValue> arguments = new ArrayList<>();
+        for (int index = 0; index < functionCall.getArity(); index++) {
+            arguments.add(resolve(functionCall.getArg(index), site, variablesInProgress, depth + 1));
+        }
+        // Inferred whatever the parts were: reaching this method at all means Saxon did not fold the
+        // concat, so the parser is the one constructing the string and the result appears nowhere in the
+        // source.
+        return concatenate(arguments).asInferred();
+    }
+
+    /**
+     * Join parts that will appear one after another in the output.
+     * <p>
+     * Used for the arguments of {@code concat()} and for the nodes of an element's content, which are the
+     * same problem: both are sequences whose string values run together. Not to be confused with
+     * {@link XsltValue#merge}, which is for genuine alternatives such as the arms of an
+     * {@code xsl:choose} - only one of those happens.
+     * <p>
+     * Where a part can take several values the result is the cross product, bounded so that a nest of
+     * conditionals cannot explode.
+     *
+     * @param parts The parts in order. An empty list yields the empty string, which is what empty content
+     *              produces.
+     * @return the joined value, or unresolved if any part is - a string is only known if all of it is.
+     */
+    private static XsltValue concatenate(final List<XsltValue> parts) {
         final int maxCombinations = 16;
+        if (parts.isEmpty()) {
+            return XsltValue.resolved("", XsltReferenceCertainty.STATIC);
+        }
+        if (parts.size() == 1) {
+            // Nothing was joined, so nothing was inferred - a lone literal stays literal.
+            return parts.getFirst();
+        }
+
         List<String> combinations = new ArrayList<>();
         combinations.add("");
-
-        for (int index = 0; index < functionCall.getArity(); index++) {
-            final XsltValue argument =
-                    resolve(functionCall.getArg(index), site, variablesInProgress, depth + 1);
-            if (!argument.hasValues()) {
-                // One unresolvable part makes the whole string unresolvable; its reason is the useful one.
+        for (final XsltValue part : parts) {
+            if (!part.hasValues()) {
+                // One unknown part makes the whole string unknown; its reason is the useful one.
                 return XsltValue.unresolved(
-                        Objects.requireNonNullElse(argument.reason(), XsltReferenceReason.NON_LITERAL_BINDING));
+                        Objects.requireNonNullElse(part.reason(), XsltReferenceReason.NON_LITERAL_BINDING));
             }
-            if (combinations.size() * argument.values().size() > maxCombinations) {
+            if (combinations.size() * part.values().size() > maxCombinations) {
                 return XsltValue.unresolved(XsltReferenceReason.NON_LITERAL_BINDING);
             }
 
             final List<String> expanded = new ArrayList<>();
             for (final String prefix : combinations) {
-                for (final String value : argument.values()) {
+                for (final String value : part.values()) {
                     expanded.add(prefix + value);
                 }
             }
             combinations = expanded;
         }
-        // Always inferred, and there is nothing to accumulate from the parts. Reaching this method at all
-        // means Saxon did not fold the concat, so the parser is the one constructing the string and the
-        // result appears nowhere in the source - which is true however literal each part was.
         return XsltValue.resolved(combinations, XsltReferenceCertainty.INFERRED);
     }
 
@@ -309,9 +338,19 @@ class XsltValueResolver {
     /**
      * Resolve the content of an element to the text it will produce.
      * <p>
-     * Used for an {@code xsl:variable} with a body, and for a {@code <map>} element in the output, which
-     * is the same problem: text is literal, an {@code xsl:choose} or {@code xsl:if} contributes every
-     * branch, and a single {@code xsl:value-of} defers to its {@code @select}.
+     * Used for an {@code xsl:variable} with a body and for a {@code <map>} element in the output, which are
+     * the same problem. The content is a <b>sequence</b>: every node in it contributes, and their string
+     * values run together. So the parts are {@link #concatenate concatenated}, not merged - merging is for
+     * the arms of an {@code xsl:choose}, where only one of them happens.
+     * <p>
+     * Getting that distinction wrong is not a subtle matter of taste. Treating
+     * {@code <xsl:value-of select="'A'"/><xsl:value-of select="'B'"/>} as alternatives yields {@code A} and
+     * {@code B} where the runtime produces {@code AB} - two references that do not exist, and the one that
+     * does missed.
+     * <p>
+     * Whitespace-only text nodes are skipped, because XSLT strips them from a stylesheet before it runs, so
+     * indentation between elements contributes nothing. Text that is not whitespace-only is taken verbatim,
+     * including any surrounding spaces, because the runtime keeps those too.
      */
     XsltValue resolveElementContent(final XdmNode element,
                                     final Set<String> variablesInProgress,
@@ -321,54 +360,77 @@ class XsltValueResolver {
             return XsltValue.unresolved(XsltReferenceReason.NON_LITERAL_BINDING);
         }
 
-        final List<XdmNode> childElements = childElements(element);
-        if (childElements.isEmpty()) {
-            final String text = element.getStringValue();
-            return XsltValue.resolved(text, XsltReferenceCertainty.STATIC);
+        final List<XsltValue> parts = new ArrayList<>();
+        final java.util.Iterator<XdmNode> children = element.axisIterator(Axis.CHILD);
+        while (children.hasNext()) {
+            final XdmNode child = children.next();
+            if (child.getNodeKind() == XdmNodeKind.TEXT) {
+                final String text = child.getStringValue();
+                if (!text.isBlank()) {
+                    parts.add(XsltValue.resolved(text, XsltReferenceCertainty.STATIC));
+                }
+            } else if (child.getNodeKind() == XdmNodeKind.ELEMENT) {
+                parts.add(resolveContentElement(child, variablesInProgress, depth));
+            }
+            // Comments and processing instructions produce no output, so contribute nothing.
+        }
+        return concatenate(parts);
+    }
+
+    /**
+     * Resolve one element within another's content.
+     */
+    private XsltValue resolveContentElement(final XdmNode child,
+                                            final Set<String> variablesInProgress,
+                                            final int depth) {
+        if (!XSLT_NS.equals(child.getNodeName().getNamespaceURI())) {
+            // A literal result element inside the content means the value is structured, not a name.
+            return XsltValue.unresolved(XsltReferenceReason.NON_LITERAL_BINDING);
         }
 
-        final List<XsltValue> branches = new ArrayList<>();
-        for (final XdmNode child : childElements) {
-            if (!XSLT_NS.equals(child.getNodeName().getNamespaceURI())) {
-                // A literal result element inside the content means the value is structured, not a name.
+        switch (child.getNodeName().getLocalName()) {
+            case TEXT_ELEMENT -> {
+                // xsl:text is the one place whitespace in a stylesheet is deliberate, so it is kept as is.
+                return XsltValue.resolved(child.getStringValue(), XsltReferenceCertainty.STATIC);
+            }
+            case CHOOSE_ELEMENT -> {
+                final List<XsltValue> arms = new ArrayList<>();
+                for (final XdmNode arm : childElements(child)) {
+                    final String armName = arm.getNodeName().getLocalName();
+                    if (WHEN_ELEMENT.equals(armName) || OTHERWISE_ELEMENT.equals(armName)) {
+                        arms.add(resolveElementContent(arm, variablesInProgress, depth + 1));
+                    }
+                }
+                // Genuine alternatives, and only here: exactly one arm runs.
+                return XsltValue.merge(arms);
+            }
+            case IF_ELEMENT -> {
+                // Either its content or nothing at all, which is an outcome the caller must allow for. The
+                // empty string is the honest second alternative - not an unresolvable value, since if the
+                // test fails the content contributes precisely nothing.
+                return XsltValue.merge(List.of(
+                        resolveElementContent(child, variablesInProgress, depth + 1),
+                        XsltValue.resolved("", XsltReferenceCertainty.STATIC)));
+            }
+            case VALUE_OF_ELEMENT -> {
+                final String select = child.attribute(SELECT_ATTRIBUTE);
+                if (select == null) {
+                    return XsltValue.unresolved(XsltReferenceReason.NON_LITERAL_BINDING);
+                }
+                try {
+                    return resolve(
+                            compiler.compileExpression(child, select),
+                            child,
+                            variablesInProgress,
+                            depth + 1);
+                } catch (final SaxonApiException e) {
+                    return XsltValue.unresolved(XsltReferenceReason.UNPARSEABLE);
+                }
+            }
+            default -> {
                 return XsltValue.unresolved(XsltReferenceReason.NON_LITERAL_BINDING);
             }
-            final String localName = child.getNodeName().getLocalName();
-            switch (localName) {
-                case CHOOSE_ELEMENT -> {
-                    for (final XdmNode arm : childElements(child)) {
-                        final String armName = arm.getNodeName().getLocalName();
-                        if (WHEN_ELEMENT.equals(armName) || OTHERWISE_ELEMENT.equals(armName)) {
-                            branches.add(resolveElementContent(arm, variablesInProgress, depth + 1));
-                        }
-                    }
-                }
-                case IF_ELEMENT -> {
-                    branches.add(resolveElementContent(child, variablesInProgress, depth + 1));
-                    // An xsl:if may contribute nothing at all, so the empty case is a real outcome and
-                    // the value is not certain to be any of the branches.
-                    branches.add(XsltValue.unresolved(XsltReferenceReason.NON_LITERAL_BINDING));
-                }
-                case VALUE_OF_ELEMENT -> {
-                    final String select = child.attribute(SELECT_ATTRIBUTE);
-                    if (select == null) {
-                        branches.add(XsltValue.unresolved(XsltReferenceReason.NON_LITERAL_BINDING));
-                    } else {
-                        try {
-                            branches.add(resolve(
-                                    compiler.compileExpression(child, select),
-                                    child,
-                                    variablesInProgress,
-                                    depth + 1));
-                        } catch (final SaxonApiException e) {
-                            branches.add(XsltValue.unresolved(XsltReferenceReason.UNPARSEABLE));
-                        }
-                    }
-                }
-                default -> branches.add(XsltValue.unresolved(XsltReferenceReason.NON_LITERAL_BINDING));
-            }
         }
-        return XsltValue.merge(branches);
     }
 
     /**

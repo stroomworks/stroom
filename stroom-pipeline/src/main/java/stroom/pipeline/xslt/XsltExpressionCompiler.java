@@ -23,12 +23,18 @@ import net.sf.saxon.s9api.Processor;
 import net.sf.saxon.s9api.SaxonApiException;
 import net.sf.saxon.s9api.XPathCompiler;
 import net.sf.saxon.s9api.XdmNode;
+import org.xml.sax.InputSource;
+import org.xml.sax.SAXException;
+import org.xml.sax.XMLReader;
 
 import java.io.StringReader;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import javax.xml.transform.stream.StreamSource;
+import javax.xml.XMLConstants;
+import javax.xml.parsers.ParserConfigurationException;
+import javax.xml.parsers.SAXParserFactory;
+import javax.xml.transform.sax.SAXSource;
 
 /**
  * The Saxon plumbing: builds the stylesheet tree, and compiles the expressions found inside it.
@@ -66,17 +72,58 @@ class XsltExpressionCompiler {
 
     /**
      * Read an XSLT body as a tree.
+     * <p>
+     * Parsed through a deliberately restricted reader - see {@link #newSecureXmlReader()} - because this
+     * runs on the save path and the body is whatever a user typed.
      *
      * @param xsltData The body. Must not be null.
      * @return the document node.
-     * @throws SaxonApiException if the body is not well-formed XML.
+     * @throws SaxonApiException if the body is not well-formed XML, or uses XML features that are refused.
      */
     XdmNode buildTree(final String xsltData) throws SaxonApiException {
         Objects.requireNonNull(xsltData, "Null xsltData supplied");
         final DocumentBuilder documentBuilder = processor.newDocumentBuilder();
         // So a finding can point at a line rather than merely describing the value.
         documentBuilder.setLineNumbering(true);
-        return documentBuilder.build(new StreamSource(new StringReader(xsltData)));
+        try {
+            return documentBuilder.build(
+                    new SAXSource(newSecureXmlReader(), new InputSource(new StringReader(xsltData))));
+        } catch (final ParserConfigurationException | SAXException e) {
+            // Cannot configure a safe parser, so decline to parse at all rather than fall back to an
+            // unsafe one. The caller treats this as an unreadable document, which is the safe outcome.
+            throw new SaxonApiException("Unable to create a secure XML reader: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * An XML reader that will not fetch anything and will not expand an entity indefinitely.
+     * <p>
+     * Both matter here in a way they would not for trusted input. This parses on save, so the document is
+     * arbitrary text from any user permitted to edit a stylesheet, and anything the parser extracts is
+     * shown straight back in the editor.
+     * <ul>
+     *     <li><b>External entities are refused.</b> Otherwise
+     *     {@code <!ENTITY x SYSTEM "file:///etc/passwd">} followed by {@code <map>&x;</map>} has the parser
+     *     read that file and report its contents as a map name - arbitrary file disclosure, triggered by
+     *     saving a document and read back from the References tab.</li>
+     *     <li><b>Entity expansion is bounded</b> by secure processing. Otherwise a few nested entity
+     *     definitions expand to gigabytes inside the XML parse, which the parser's own timeout cannot help
+     *     with because it only checks between elements, after the tree has been built.</li>
+     * </ul>
+     * <p>
+     * Internal entities within those limits still work, so a stylesheet using a DTD for its own convenience
+     * is unaffected. A stylesheet that relies on fetching something does not, and that is the intent.
+     */
+    private static XMLReader newSecureXmlReader() throws ParserConfigurationException, SAXException {
+        final SAXParserFactory factory = SAXParserFactory.newInstance();
+        // Namespace awareness is not optional: the parser identifies both XSLT elements and Stroom
+        // functions by namespace URI, never by prefix.
+        factory.setNamespaceAware(true);
+        factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+        factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
+        factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+        factory.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
+        return factory.newSAXParser().getXMLReader();
     }
 
     /**

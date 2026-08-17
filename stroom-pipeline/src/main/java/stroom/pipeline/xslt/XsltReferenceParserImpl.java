@@ -99,7 +99,7 @@ class XsltReferenceParserImpl implements XsltReferenceParser {
      * Attributes on XSLT elements whose value is an XPath expression.
      */
     private static final Set<String> XPATH_ATTRIBUTES = Set.of(
-            "select", "test", "use", "group-by", "group-adjacent", "value", "xpath");
+            "select", "test", "use", "group-by", "group-adjacent", "value", "xpath", "key");
 
     /**
      * Attributes on XSLT elements whose value is a match pattern. Compiled rather than skipped because a
