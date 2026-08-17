@@ -294,6 +294,12 @@ class TestXsltReferenceParser {
             // Only the components are real map names. A store can never be called 'MAP1/MAP2' - Plan B
             // names are constrained to [a-z_0-9] - so recording the joined string would offer a name
             // nothing can ever match.
+            //
+            // Not a hypothetical case, so please do not simplify it away. Running the parser over a real
+            // deployment's content found
+            //     stroom:lookup('USER_ID_TO_STAFF_NO_MAP/STAFF_NO_TO_USER_DETAILS_MAP', ...)
+            // and the second of those two maps was written by another translation in the same export.
+            // Without this split that read matches no writer, and the writer looks like an orphan.
             assertThat(result.resolvedValues(XsltReferenceKind.REF_MAP_READ))
                     .containsExactly("MAP1", "MAP2", "MAP3");
         }
@@ -339,20 +345,45 @@ class TestXsltReferenceParser {
             // The plan-b schema nests <map> in <state>, <temporal-state>, <session> and friends rather
             // than in <reference>. A parser written only for reference-data:2 would find nothing here -
             // and this is the write side the Plan B migration has to recover.
-            final XsltReferences result = parse(template("""
-                    <plan-b xmlns="plan-b:1">
-                      <temporal-state>
-                        <map>user_state</map>
-                        <key>jbloggs</key>
-                        <time>2026-01-01T00:00:00.000Z</time>
-                        <value>active</value>
-                      </temporal-state>
-                      <session>
-                        <map>user_sessions</map>
-                        <key>jbloggs</key>
-                        <time>2026-01-01T00:00:00.000Z</time>
-                      </session>
-                    </plan-b>"""));
+            //
+            // Shaped after a real Plan B translation rather than invented: the default namespace is
+            // declared on the stylesheet element, the root carries xsi:schemaLocation and version, and
+            // the session has a timeout. Real content uses both plan-b:1 and plan-b:2, which makes no
+            // difference here - <map> is matched on local name, in any non-XSLT namespace.
+            final XsltReferences result = parse("""
+                    <xsl:stylesheet xpath-default-namespace="event-logging:3"
+                                    xmlns="plan-b:1"
+                                    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                                    xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
+                                    version="2.0">
+                      <xsl:template match="Events">
+                        <plan-b xsi:schemaLocation="plan-b:1 file://plan-b-v1.0.xsd" version="1.0">
+                          <xsl:apply-templates />
+                        </plan-b>
+                      </xsl:template>
+                      <xsl:template match="Event">
+                        <temporal-state>
+                          <map>user_state</map>
+                          <key>
+                            <xsl:value-of select="EventSource/User/Id" />
+                          </key>
+                          <time>
+                            <xsl:value-of select="EventTime/TimeCreated" />
+                          </time>
+                          <value>active</value>
+                        </temporal-state>
+                        <session>
+                          <map>user_sessions</map>
+                          <key>
+                            <xsl:value-of select="EventSource/User/Id" />
+                          </key>
+                          <time>
+                            <xsl:value-of select="EventTime/TimeCreated" />
+                          </time>
+                          <timeout>15m</timeout>
+                        </session>
+                      </xsl:template>
+                    </xsl:stylesheet>""");
 
             assertThat(result.resolvedValues(XsltReferenceKind.REF_MAP_WRITE))
                     .containsExactly("user_state", "user_sessions");
@@ -696,6 +727,59 @@ class TestXsltReferenceParser {
                     <xsl:value-of select="upper-case(stroom:lookup('geo_ip', stroom:meta('id')))"/>"""));
 
             assertThat(result.resolvedValues(XsltReferenceKind.REF_MAP_READ)).containsExactly("geo_ip");
+        }
+
+        @Test
+        @DisplayName("finds a lookup in an expression using XSLT-only functions")
+        void alongsideXsltOnlyFunctions() {
+            // Found by running the parser over real content, where every expression inside an
+            // xsl:for-each-group came back unanalysable. current-grouping-key() and current-group() are
+            // defined by XSLT, not XPath, so a standalone XPath compiler rejects them - and rejecting the
+            // expression loses whatever the parser was looking for inside it.
+            final XsltReferences result = parse("""
+                    <xsl:stylesheet version="3.0"
+                                    xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
+                                    xmlns:stroom="stroom">
+                      <xsl:template match="/">
+                        <xsl:for-each-group select="record" group-by="@type">
+                          <xsl:value-of select="stroom:lookup('found_anyway', current-grouping-key())"/>
+                          <xsl:if test="count(current-group()) gt 1">
+                            <xsl:value-of select="stroom:dictionary('AlsoFound')"/>
+                          </xsl:if>
+                        </xsl:for-each-group>
+                      </xsl:template>
+                    </xsl:stylesheet>""");
+
+            assertThat(result.references())
+                    .extracting(XsltReference::reason)
+                    .doesNotContain(XsltReferenceReason.UNPARSEABLE);
+            assertThat(result.resolvedValues(XsltReferenceKind.REF_MAP_READ))
+                    .containsExactly("found_anyway");
+            assertThat(result.references())
+                    .extracting(XsltReference::kind, XsltReference::rawValue)
+                    .contains(tuple(XsltReferenceKind.DICTIONARY, "AlsoFound"));
+        }
+
+        @Test
+        @DisplayName("key() and document() are stubbed too, being XSLT-only")
+        void otherXsltOnlyFunctions() {
+            final XsltReferences result = parse(template("""
+                    <xsl:value-of select="stroom:lookup('m1', key('k', @id))"/>
+                    <xsl:value-of select="stroom:lookup('m2', document('other.xml')/root)"/>"""));
+
+            assertThat(result.resolvedValues(XsltReferenceKind.REF_MAP_READ)).containsExactly("m1", "m2");
+            assertThat(result.unresolved()).isEmpty();
+        }
+
+        @Test
+        @DisplayName("concat is NOT stubbed, so folding still works")
+        void concatIsNotStubbed() {
+            // The XSLT-only list is an allow list precisely so that functions Saxon does implement keep
+            // their real behaviour. Stubbing concat would silently disable XP-12's folding.
+            final XsltReferences result = parse(template("""
+                    <xsl:value-of select="stroom:lookup(concat('geo_', 'prod'), @ip)"/>"""));
+
+            assertThat(result.resolvedValues(XsltReferenceKind.REF_MAP_READ)).containsExactly("geo_prod");
         }
 
         @Test

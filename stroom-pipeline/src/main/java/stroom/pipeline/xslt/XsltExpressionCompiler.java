@@ -54,9 +54,14 @@ class XsltExpressionCompiler {
 
     XsltExpressionCompiler() {
         processor = new Processor(false);
+        // Two families of function would otherwise fail to compile, taking the whole expression - and
+        // anything the parser was looking for inside it - with them.
         processor.getUnderlyingConfiguration()
                 .getBuiltInExtensionLibraryList()
-                .addFunctionLibrary(new AnyStroomFunctionLibrary());
+                .addFunctionLibrary(StubFunctionLibrary.anyStroomFunction());
+        processor.getUnderlyingConfiguration()
+                .getBuiltInExtensionLibraryList()
+                .addFunctionLibrary(StubFunctionLibrary.xsltOnlyFunctions());
     }
 
     /**

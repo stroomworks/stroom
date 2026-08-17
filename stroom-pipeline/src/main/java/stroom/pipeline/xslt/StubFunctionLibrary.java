@@ -26,6 +26,7 @@ import net.sf.saxon.functions.FunctionLibrary;
 import net.sf.saxon.functions.IntegratedFunctionCall;
 import net.sf.saxon.lib.ExtensionFunctionCall;
 import net.sf.saxon.lib.ExtensionFunctionDefinition;
+import net.sf.saxon.lib.NamespaceConstant;
 import net.sf.saxon.om.Sequence;
 import net.sf.saxon.om.StructuredQName;
 import net.sf.saxon.trans.SymbolicName;
@@ -35,30 +36,93 @@ import org.jspecify.annotations.Nullable;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
+import java.util.Set;
+import java.util.function.Predicate;
 
 /**
- * Lets <b>any</b> function in the Stroom namespace compile, without knowing which functions exist.
+ * Lets functions compile that a standalone XPath compiler would otherwise reject, by binding them to
+ * signature-only stubs.
  * <p>
- * Saxon rejects an unknown function at compile time, which is a problem for a parser that reads one
- * document in isolation. The runtime avoids it by registering every real function
- * ({@code StroomXsltFunctionLibrary.init}), but each of those definitions is constructed with a
- * {@code Provider} of a pipeline-scoped object, and the parser must work with no pipeline scope - from a
- * migration, or a unit test.
+ * The parser compiles the expressions out of a stylesheet one at a time, which is not the context they were
+ * written for, and two whole families of function are unavailable as a result. Neither is optional: an
+ * expression that will not compile is an expression the parser cannot read, and a {@code stroom:lookup}
+ * nested inside one is simply lost.
  * <p>
- * A fixed list of the functions the parser cares about would not do either. Given
- * {@code stroom:lookup('MAP', stroom:meta('id'))}, an unregistered {@code stroom:meta} fails the whole
- * expression, losing the lookup that was the point. Any list would also drift as functions are added.
- * <p>
- * So this binds every {@code {stroom}*} name to a signature-only stub of the requested arity. Nothing is
- * ever evaluated - {@link StubCall#call} throws if anything tries - and no type checking happens, since
- * every argument and result is {@code item()*}. The parser needs the shape of the call, not its
+ * Nothing is ever evaluated - {@link StubCall#call} throws if anything tries - and no type checking happens,
+ * since every argument and result is {@code item()*}. The parser needs the shape of a call, not its
  * behaviour.
+ *
+ * @see #anyStroomFunction()
+ * @see #xsltOnlyFunctions()
  */
-class AnyStroomFunctionLibrary implements FunctionLibrary {
+class StubFunctionLibrary implements FunctionLibrary {
+
+    /**
+     * Functions defined by XSLT rather than by XPath, so unknown to a standalone XPath compiler. Every name
+     * here was confirmed rejected by Saxon at XPath 3.1, and names it does implement are deliberately
+     * absent - stubbing {@code concat} in particular would break the folding that depends on it.
+     * <p>
+     * Unlike the Stroom namespace, this list is fixed by the XSLT specification rather than by what Stroom
+     * happens to register, so an allow list is appropriate here and a catch-all is not.
+     */
+    private static final Set<String> XSLT_ONLY_FUNCTIONS = Set.of(
+            "current",
+            "current-group",
+            "current-grouping-key",
+            "current-merge-group",
+            "current-merge-key",
+            "key",
+            "regex-group",
+            "system-property",
+            "available-system-properties",
+            "unparsed-entity-uri",
+            "unparsed-entity-public-id",
+            "element-available",
+            "function-available",
+            "type-available",
+            "document",
+            "accumulator-before",
+            "accumulator-after");
+
+    private final Predicate<StructuredQName> matches;
+
+    private StubFunctionLibrary(final Predicate<StructuredQName> matches) {
+        this.matches = Objects.requireNonNull(matches, "Null matches supplied");
+    }
+
+    /**
+     * Binds <b>any</b> function in the Stroom namespace, whatever its name.
+     * <p>
+     * The runtime registers every real one ({@code StroomXsltFunctionLibrary.init}), but each of those
+     * definitions is constructed with a {@code Provider} of a pipeline-scoped object, and the parser must
+     * work with no pipeline scope - from a migration, or a unit test.
+     * <p>
+     * A list of just the functions the parser cares about would not do either. Given
+     * {@code stroom:lookup('MAP', stroom:meta('id'))}, an unregistered {@code stroom:meta} fails the whole
+     * expression, losing the lookup that was the point. Any list would also drift as functions are added.
+     */
+    static StubFunctionLibrary anyStroomFunction() {
+        return new StubFunctionLibrary(name -> NamespaceConstants.STROOM.equals(name.getURI()));
+    }
+
+    /**
+     * Binds the functions XSLT defines but XPath does not, such as {@code current-grouping-key()} inside an
+     * {@code xsl:for-each-group}.
+     * <p>
+     * Found by running the parser over real content: every expression in a stylesheet that grouped its
+     * input came back unanalysable, because those functions exist only within XSLT. Anything the parser
+     * looks for inside such an expression was being missed.
+     */
+    static StubFunctionLibrary xsltOnlyFunctions() {
+        return new StubFunctionLibrary(name ->
+                NamespaceConstant.FN.equals(name.getURI())
+                && XSLT_ONLY_FUNCTIONS.contains(name.getLocalPart()));
+    }
 
     @Override
     public boolean isAvailable(final SymbolicName.F functionName) {
-        return isStroomFunction(functionName);
+        return isStub(functionName);
     }
 
     @Override
@@ -66,9 +130,9 @@ class AnyStroomFunctionLibrary implements FunctionLibrary {
                                      final Expression[] arguments,
                                      final StaticContext env,
                                      final List<String> reasonsForFailure) {
-        if (!isStroomFunction(functionName)) {
-            // Returning null lets Saxon try the next library in the list, which is how an unknown
-            // function in some other namespace still gets reported as an error.
+        if (!isStub(functionName)) {
+            // Returning null lets Saxon try the next library in the list, which is how a function this
+            // library does not claim still gets resolved, or reported as an error.
             return null;
         }
 
@@ -85,7 +149,7 @@ class AnyStroomFunctionLibrary implements FunctionLibrary {
 
     @Override
     public FunctionLibrary copy() {
-        // Stateless, so there is nothing to copy.
+        // Immutable, so there is nothing to copy.
         return this;
     }
 
@@ -94,10 +158,10 @@ class AnyStroomFunctionLibrary implements FunctionLibrary {
         // No configuration needed.
     }
 
-    private static boolean isStroomFunction(final SymbolicName.F functionName) {
+    private boolean isStub(final SymbolicName.F functionName) {
         return functionName != null
                && functionName.getComponentName() != null
-               && NamespaceConstants.STROOM.equals(functionName.getComponentName().getURI());
+               && matches.test(functionName.getComponentName());
     }
 
     /**
@@ -149,8 +213,8 @@ class AnyStroomFunctionLibrary implements FunctionLibrary {
     }
 
     /**
-     * A call that cannot be called. The parser compiles expressions and reads the tree; it never
-     * evaluates anything, and this makes an attempt to do so loud rather than silent.
+     * A call that cannot be called. The parser compiles expressions and reads the tree; it never evaluates
+     * anything, and this makes an attempt to do so loud rather than silent.
      */
     private static class StubCall extends ExtensionFunctionCall {
 
@@ -161,6 +225,7 @@ class AnyStroomFunctionLibrary implements FunctionLibrary {
          * so constrained, and is parameterised.
          */
         @Override
+        @SuppressWarnings("rawtypes")
         public Sequence<?> call(final XPathContext context, final Sequence[] arguments) throws XPathException {
             throw new XPathException("The XSLT reference parser never evaluates expressions");
         }

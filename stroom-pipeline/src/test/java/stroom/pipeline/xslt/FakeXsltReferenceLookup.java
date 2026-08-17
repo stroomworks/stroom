@@ -44,6 +44,13 @@ class FakeXsltReferenceLookup implements XsltReferenceLookup {
         return this;
     }
 
+    /**
+     * @return true if no documents have been registered, so nothing can resolve.
+     */
+    boolean isEmpty() {
+        return documents.isEmpty();
+    }
+
     @Override
     public List<DocRef> findByName(final String type, final String name) {
         return documents.stream()
