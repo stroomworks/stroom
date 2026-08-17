@@ -32,7 +32,10 @@ public enum XsltReferenceReason {
 
     /**
      * The binding in scope is an {@code xsl:param}, whose value comes from the caller or the runtime.
-     * A literal default is deliberately not used - see {@code XP-18}, {@code XP-19}.
+     * <p>
+     * A literal default is deliberately not used, for either a global or a template parameter. A value
+     * supplied from outside says nothing about the value that will actually be used, and proving that no
+     * caller overrides one would need call-graph analysis across {@code apply-templates} with modes.
      */
     PARAMETER,
 

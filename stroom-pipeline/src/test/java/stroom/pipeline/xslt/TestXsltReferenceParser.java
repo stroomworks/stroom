@@ -779,7 +779,8 @@ class TestXsltReferenceParser {
         @DisplayName("concat is NOT stubbed, so folding still works")
         void concatIsNotStubbed() {
             // The XSLT-only list is an allow list precisely so that functions Saxon does implement keep
-            // their real behaviour. Stubbing concat would silently disable XP-12's folding.
+            // their real behaviour. Stubbing concat would replace it with something that returns nothing,
+            // silently disabling the folding of concat over literals.
             final XsltReferences result = parse(template("""
                     <xsl:value-of select="stroom:lookup(concat('geo_', 'prod'), @ip)"/>"""));
 
@@ -1754,8 +1755,10 @@ class TestXsltReferenceParser {
             assertThat(result.unresolved()).isEmpty();
 
             // As with a read, a map write names no document: which store receives the data is settled by
-            // the pipeline, not by the translation. That is the defect Part 2 of the specification exists
-            // to fix, and until it is fixed there is no edge for the parser to record.
+            // the pipeline, not by the translation. For a reference data loader that is harmless, since the
+            // destination feed is declared on the appender. For a PlanBFilter it is the whole problem - the
+            // map name selects the destination document - but nothing in the pipeline declares it, so there
+            // is no edge for the parser to record until that configuration gains one.
             assertThat(result.documentTargets()).isEmpty();
         }
     }
