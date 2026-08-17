@@ -24,6 +24,7 @@ import stroom.documentation.shared.DocumentationDoc;
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 
+import java.util.List;
 import java.util.Map;
 
 @Singleton
@@ -42,8 +43,10 @@ public class DocumentationStoreImpl
     }
 
     @Override
-    public void remapDependencies(final DocRef docRef,
-                                  final Map<DocRef, DocRef> remappings) {
-        // No-op: documentation docs have no dependencies.
+    public List<String> remapDependencies(final DocRef docRef,
+                                          final Map<DocRef, DocRef> remappings) {
+        // No-op: documentation docs have no dependencies, so there is nothing to remap and nothing to
+        // report.
+        return List.of();
     }
 }

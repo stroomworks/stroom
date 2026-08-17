@@ -2,6 +2,7 @@ package stroom.pipeline.xslt;
 
 import stroom.docstore.api.AbstractDocumentStore;
 import stroom.docstore.api.DependencyRemapFunction;
+import stroom.docstore.api.DependencyRemapper;
 import stroom.docstore.api.StoreFactory;
 import stroom.pipeline.shared.XsltDoc;
 import stroom.util.logging.LambdaLogger;
@@ -47,12 +48,14 @@ class XsltStoreImpl
      * then write back a document whose body still pointed at the original target: a silent failure to
      * remap, plus a pointless new version. Recording without claiming a change avoids both.
      * <p>
-     * The consequence to be aware of is unchanged from today's behaviour: copying an XSLT does not
-     * repoint its references, and they resolve by name in their new location. Making that visible to the
-     * user is separate work - it needs a way to ask the remapper whether a substitution would have
-     * applied, which it does not currently offer.
+     * The behaviour is unchanged from before this existed - copying an XSLT does not repoint its
+     * references, and they resolve by name wherever the copy lands - but it is no longer silent. Where a
+     * substitution was called for and could not be applied, the function says so through
+     * {@code DependencyRemapper.warn}, and the copy result carries it to the user. See
+     * {@link #warnAboutUnremappedReferences}.
      *
-     * @return a function that records dependencies and returns the document untouched.
+     * @return a function that records dependencies, warns about the ones it could not repoint, and
+     * returns the document untouched.
      */
     @Override
     protected DependencyRemapFunction<XsltDoc> getDependencyRemapFunction() {
@@ -62,11 +65,66 @@ class XsltStoreImpl
             final XsltReferences references = referenceParser.parse(doc.getData());
             references.documentTargets().forEach(dependencyRemapper::record);
 
+            warnAboutUnremappedReferences(doc, references, dependencyRemapper);
+
             LOGGER.debug(() -> logSummary(doc, references));
 
             // Body returned untouched - see the note above on why nothing is rewritten.
             return doc;
         };
+    }
+
+    /**
+     * Tell the user which of this document's references a copy failed to repoint.
+     * <p>
+     * Two things can go wrong, and they are worth separating because their consequences differ.
+     * <ul>
+     *     <li><b>Still pointing at the original.</b> The name resolves to exactly one document, and that
+     *     document was itself part of the copy. The copy therefore uses the original rather than its
+     *     new sibling, so the two sets of stylesheets are not independent and editing one affects the
+     *     other. This happens when the copy is renamed, i.e. into the same folder.</li>
+     *     <li><b>Now ambiguous.</b> The copy preserved the name of something the original also names,
+     *     so the name matches more than one document. This is the more damaging case: the runtime
+     *     resolves an ambiguous name arbitrarily or not at all - {@code CustomURIResolver} throws for
+     *     an import - and it breaks the <b>original</b> as much as the copy, because both bodies name
+     *     the same thing. It happens when the copy goes to a different folder, where the name is kept.</li>
+     * </ul>
+     * <p>
+     * Nothing here re-resolves anything: it reports on what the parse already found, and the parse ran
+     * with the caller's permissions, so every document named in a warning is one the user may view. That
+     * makes the report incomplete rather than disclosing - a collision with a document they cannot see
+     * is not mentioned - and no wording here should suggest the check saw everything.
+     * <p>
+     * Deliberately quiet about the ordinary case. An XSLT referring to something outside the copy is not
+     * a problem, and warning about it would train the user to dismiss the dialog.
+     */
+    private static void warnAboutUnremappedReferences(final XsltDoc doc,
+                                                      final XsltReferences references,
+                                                      final DependencyRemapper dependencyRemapper) {
+        for (final XsltReference reference : references.references()) {
+            if (reference.target() != null && dependencyRemapper.wouldRemap(reference.target())) {
+                dependencyRemapper.warn(describe(doc, reference)
+                                        + " still refers to '" + reference.target().getName()
+                                        + "' in its original location, because the reference is a name in "
+                                        + "the stylesheet body and cannot be repointed automatically. "
+                                        + "Edit the copy if it should use the copied document instead.");
+
+            } else if (reference.candidates().stream().anyMatch(dependencyRemapper::wouldRemap)) {
+                dependencyRemapper.warn(describe(doc, reference)
+                                        + " now matches " + reference.candidates().size()
+                                        + " documents named '" + reference.rawValue()
+                                        + "', because the copy kept that name. The original stylesheet is "
+                                        + "affected in the same way, and an ambiguous name cannot be "
+                                        + "resolved reliably at runtime. Rename one of them.");
+            }
+        }
+    }
+
+    private static String describe(final XsltDoc doc, final XsltReference reference) {
+        return "XSLT '" + doc.getName() + "'"
+               + (reference.lineNumber() > 0
+                ? " line " + reference.lineNumber()
+                : "");
     }
 
     private static String logSummary(final XsltDoc doc, final XsltReferences references) {

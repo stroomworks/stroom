@@ -30,19 +30,41 @@ public class BulkActionResult {
     private final List<ExplorerNode> explorerNodes;
     @JsonProperty
     private final String message;
+    @JsonProperty
+    private final List<String> warnings;
 
     @JsonCreator
     public BulkActionResult(@JsonProperty("explorerNodes") final List<ExplorerNode> explorerNodes,
-                            @JsonProperty("message") final String message) {
+                            @JsonProperty("message") final String message,
+                            @JsonProperty("warnings") final List<String> warnings) {
         this.explorerNodes = explorerNodes;
         this.message = message;
+        this.warnings = warnings;
+    }
+
+    public BulkActionResult(final List<ExplorerNode> explorerNodes,
+                            final String message) {
+        this(explorerNodes, message, null);
     }
 
     public List<ExplorerNode> getExplorerNodes() {
         return explorerNodes;
     }
 
+    /**
+     * @return why some of the requested items could not be actioned at all, or null/blank if they all
+     * were. Distinct from {@link #getWarnings()}, which reports on items that <i>were</i> actioned.
+     */
     public String getMessage() {
         return message;
+    }
+
+    /**
+     * @return things the action did that the user needs to know about, having succeeded. Chiefly a copy
+     * whose references could not be repointed, since the new document is not the independent duplicate
+     * the user is entitled to assume it is. May be null where there is nothing to say.
+     */
+    public List<String> getWarnings() {
+        return warnings;
     }
 }

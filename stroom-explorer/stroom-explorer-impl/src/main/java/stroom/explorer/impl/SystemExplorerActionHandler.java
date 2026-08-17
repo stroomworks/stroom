@@ -26,6 +26,7 @@ import stroom.util.shared.PermissionException;
 
 import jakarta.inject.Inject;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -98,7 +99,8 @@ class SystemExplorerActionHandler implements ExplorerActionHandler {
     // ---------------------------------------------------------------------
 
     @Override
-    public void remapDependencies(final DocRef docRef, final Map<DocRef, DocRef> remappings) {
+    public List<String> remapDependencies(final DocRef docRef, final Map<DocRef, DocRef> remappings) {
+        return List.of();
     }
 
     // ---------------------------------------------------------------------

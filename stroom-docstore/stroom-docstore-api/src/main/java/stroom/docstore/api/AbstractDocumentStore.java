@@ -142,9 +142,9 @@ public abstract class AbstractDocumentStore<D extends AbstractDoc>
     // -------------------------------------------------------------------------
 
     @Override
-    public void remapDependencies(final DocRef docRef,
-                                  final Map<DocRef, DocRef> remappings) {
-        store.remapDependencies(docRef, remappings);
+    public List<String> remapDependencies(final DocRef docRef,
+                                          final Map<DocRef, DocRef> remappings) {
+        return store.remapDependencies(docRef, remappings);
     }
 
     // -------------------------------------------------------------------------

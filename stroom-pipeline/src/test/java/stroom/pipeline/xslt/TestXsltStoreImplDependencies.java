@@ -102,6 +102,95 @@ class TestXsltStoreImplDependencies {
     }
 
     @Test
+    @DisplayName("on the copy path, a reference left pointing at the original is reported")
+    void copyPathWarnsAboutAReferenceItCouldNotRepoint() {
+        final DocRef original = new DocRef(DictionaryDoc.TYPE, "uuid-GeoIP", "GeoIP");
+        final DocRef copy = new DocRef(DictionaryDoc.TYPE, "uuid-GeoIP-copy", "GeoIP (copy)");
+        lookup.with(DictionaryDoc.TYPE, "GeoIP");
+
+        final DependencyRemapper remapper = new DependencyRemapper(Map.of(original, copy));
+        newStore().getDependencyRemapFunction().remap(xsltDoc(dictionaryStylesheet()), remapper);
+
+        // The whole point: silence here would leave the user believing they had two independent sets of
+        // documents when editing the original dictionary still changes what the copied XSLT reads.
+        assertThat(remapper.getWarnings()).singleElement().asString()
+                .contains("XSLT 'Test XSLT'")
+                .contains("line 5")
+                .contains("still refers to 'GeoIP' in its original location");
+    }
+
+    @Test
+    @DisplayName("on the copy path, a name the copy made ambiguous is reported as such")
+    void copyPathWarnsAboutANameTheCopyMadeAmbiguous() {
+        // Copying to a different folder keeps the name, so afterwards two documents answer to 'GeoIP'.
+        final DocRef original = new DocRef(DictionaryDoc.TYPE, "uuid-1", "GeoIP");
+        final DocRef copy = new DocRef(DictionaryDoc.TYPE, "uuid-2", "GeoIP");
+        lookup.with(DictionaryDoc.TYPE, "GeoIP", "uuid-1").with(DictionaryDoc.TYPE, "GeoIP", "uuid-2");
+
+        final DependencyRemapper remapper = new DependencyRemapper(Map.of(original, copy));
+        newStore().getDependencyRemapFunction().remap(xsltDoc(dictionaryStylesheet()), remapper);
+
+        // Reported differently from the case above because the consequence is different: an ambiguous name
+        // cannot be resolved reliably at all, and it breaks the original stylesheet too.
+        assertThat(remapper.getWarnings()).singleElement().asString()
+                .contains("now matches 2 documents named 'GeoIP'")
+                .contains("The original stylesheet is affected in the same way");
+
+        // Still no change claimed - the warning is the whole of the response.
+        assertThat(remapper.isChanged()).isFalse();
+    }
+
+    @Test
+    @DisplayName("a reference to something outside the copy is not warned about")
+    void referencesOutsideTheCopyAreNotWarnedAbout() {
+        lookup.with(DictionaryDoc.TYPE, "GeoIP");
+        final DocRef unrelated = new DocRef(DictionaryDoc.TYPE, "uuid-Other", "Other");
+
+        final DependencyRemapper remapper = new DependencyRemapper(
+                Map.of(unrelated, new DocRef(DictionaryDoc.TYPE, "uuid-Other-copy", "Other (copy)")));
+        newStore().getDependencyRemapFunction().remap(xsltDoc(dictionaryStylesheet()), remapper);
+
+        // An XSLT naming a document that was not part of the copy is behaving correctly. Warning here would
+        // fire on nearly every copy and teach the user to dismiss the dialog unread.
+        assertThat(remapper.getWarnings()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("the recording path never warns")
+    void recordingPathNeverWarns() {
+        lookup.with(XsltDoc.TYPE, "Common").with(DictionaryDoc.TYPE, "GeoIP");
+        final DependencyRemapper remapper = new DependencyRemapper();
+
+        remapOnRecordingPath(remapper, """
+                <xsl:stylesheet version="2.0"
+                                xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
+                                xmlns:stroom="stroom">
+                  <xsl:import href="Common"/>
+                  <xsl:template match="/">
+                    <xsl:value-of select="stroom:dictionary('GeoIP')"/>
+                  </xsl:template>
+                </xsl:stylesheet>""");
+
+        // Saving is not copying. With no remappings in force nothing was expected to be repointed, so
+        // there is nothing to report, and a warning shown on every save would be noise.
+        assertThat(remapper.getWarnings()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("a remapping of a document to itself is not a change to report")
+    void selfRemappingIsNotReported() {
+        final DocRef original = new DocRef(DictionaryDoc.TYPE, "uuid-GeoIP", "GeoIP");
+        lookup.with(DictionaryDoc.TYPE, "GeoIP");
+
+        final DependencyRemapper remapper = new DependencyRemapper(Map.of(original, original));
+        newStore().getDependencyRemapFunction().remap(xsltDoc(dictionaryStylesheet()), remapper);
+
+        // wouldRemap() asks whether a substitution would change anything, not merely whether the map
+        // mentions the document, so that this degenerate entry cannot produce a warning about nothing.
+        assertThat(remapper.getWarnings()).isEmpty();
+    }
+
+    @Test
     @DisplayName("a malformed stylesheet neither throws nor blocks the save")
     void malformedStylesheetIsHarmless() {
         final DependencyRemapper remapper = new DependencyRemapper();

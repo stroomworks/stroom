@@ -1071,7 +1071,10 @@ class ExplorerServiceImpl
                         remappings,
                         childMap));
 
-        // Remap all dependencies for the copied items.
+        // Remap all dependencies for the copied items. A handler that cannot apply a remapping reports it
+        // rather than failing, since the copy has already happened and is not being undone; those reports
+        // are shown to the user, who would otherwise have no way to know the copy is not self-contained.
+        final List<String> warnings = new ArrayList<>();
         remappings.values().forEach(newExplorerNode -> {
             final ExplorerActionHandler handler = explorerActionHandlers.getHandler(newExplorerNode.getType());
             if (handler != null) {
@@ -1080,7 +1083,10 @@ class ExplorerServiceImpl
                         .collect(Collectors.toMap(
                                 entry -> entry.getKey().getDocRef(),
                                 entry -> entry.getValue().getDocRef()));
-                handler.remapDependencies(newExplorerNode.getDocRef(), docRefRemappings);
+                // NullSafe because a diagnostic must not be able to fail the copy it is describing, and
+                // the copy has already happened by this point in any case.
+                warnings.addAll(NullSafe.list(
+                        handler.remapDependencies(newExplorerNode.getDocRef(), docRefRemappings)));
             }
         });
 
@@ -1094,7 +1100,7 @@ class ExplorerServiceImpl
             EntityEvent.fire(entityEventBus, newNode.getDocRef(), EntityAction.POST_CREATE);
         });
 
-        return new BulkActionResult(new ArrayList<>(remappings.values()), resultMessage.toString());
+        return new BulkActionResult(new ArrayList<>(remappings.values()), resultMessage.toString(), warnings);
     }
 
     /**

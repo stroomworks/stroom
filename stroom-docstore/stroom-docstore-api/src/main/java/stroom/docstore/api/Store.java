@@ -52,7 +52,7 @@ public interface Store<D extends AbstractDoc>
     // START OF HasDependencies
     // ---------------------------------------------------------------------
 
-    void remapDependencies(DocRef docRef, Map<DocRef, DocRef> remappings);
+    List<String> remapDependencies(DocRef docRef, Map<DocRef, DocRef> remappings);
 
     // ---------------------------------------------------------------------
     // END OF HasDependencies

@@ -171,7 +171,8 @@ public class ExecutionScheduleImportExportHandlerImpl implements ImportExportAct
     // ---------------------------------------------------------------------
 
     @Override
-    public void remapDependencies(final DocRef docRef, final Map<DocRef, DocRef> remappings) {
+    public List<String> remapDependencies(final DocRef docRef, final Map<DocRef, DocRef> remappings) {
+        return List.of();
     }
 
     // ---------------------------------------------------------------------

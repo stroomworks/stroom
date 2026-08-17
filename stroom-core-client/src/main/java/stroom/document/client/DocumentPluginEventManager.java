@@ -387,6 +387,16 @@ public class DocumentPluginEventManager extends Plugin {
                                 null);
                     }
 
+                    // Separate from the message above, and a warning rather than information, because
+                    // these items were copied. The copy simply is not the self-contained duplicate the
+                    // user has every reason to assume it is, and only they can decide what to do.
+                    if (NullSafe.hasItems(result.getWarnings())) {
+                        AlertEvent.fireWarn(DocumentPluginEventManager.this,
+                                "Some references were not updated",
+                                String.join("\n\n", result.getWarnings()),
+                                null);
+                    }
+
                     if (NullSafe.hasItems(result.getExplorerNodes())) {
                         highlight(result.getExplorerNodes().get(0));
                     }

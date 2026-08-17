@@ -233,9 +233,23 @@ public class StoreImpl<D extends AbstractDoc, B extends AbstractBuilder<D, ?>> i
     // START OF HasDependencies
     // ---------------------------------------------------------------------
 
+    /**
+     * {@inheritDoc}
+     * <p>
+     * Runs with the caller's own permissions, deliberately and unlike the recording path in
+     * {@code writeDocument}, which uses the processing user so that {@code doc_dependency} is complete
+     * regardless of who saved. Here the result is shown to the caller, so anything a document type
+     * resolves while visiting - and therefore anything it can name in a warning - must be limited to
+     * what that user may view.
+     * <p>
+     * A visitor that throws is logged and yields no warnings. The copy itself has already happened by
+     * this point and is not undone, so the outcome is the present behaviour: the copy stands, its
+     * references were not remapped, and nothing is said about it. That is a known gap rather than a
+     * clean answer of "nothing to report".
+     */
     @Override
-    public void remapDependencies(final DocRef docRef,
-                                  final Map<DocRef, DocRef> remappings) {
+    public List<String> remapDependencies(final DocRef docRef,
+                                          final Map<DocRef, DocRef> remappings) {
         final DependencyRemapFunction<D> mapper = getDependencyRemapFunction();
         if (mapper != null) {
             try {
@@ -246,11 +260,13 @@ public class StoreImpl<D extends AbstractDoc, B extends AbstractBuilder<D, ?>> i
                     if (dependencyRemapper.isChanged()) {
                         writeDocument(doc);
                     }
+                    return dependencyRemapper.getWarnings();
                 }
             } catch (final RuntimeException e) {
                 LOGGER.error(e.getMessage(), e);
             }
         }
+        return List.of();
     }
 
     // ---------------------------------------------------------------------

@@ -51,17 +51,20 @@ public class DependencyRemapper {
 
     private final Map<DocRef, DocRef> remappings;
     private final Set<DocRef> dependencies;
+    private final List<String> warnings;
     private final AtomicBoolean changed;
 
     public DependencyRemapper(final Map<DocRef, DocRef> remappings) {
         this.remappings = remappings;
         this.dependencies = new HashSet<>();
+        this.warnings = new ArrayList<>();
         this.changed = new AtomicBoolean();
     }
 
     public DependencyRemapper() {
         this.remappings = Collections.emptyMap();
         this.dependencies = new HashSet<>();
+        this.warnings = new ArrayList<>();
         this.changed = new AtomicBoolean();
     }
 
@@ -107,6 +110,47 @@ public class DependencyRemapper {
         dependencies.add(docRef);
     }
 
+    /**
+     * Would {@link #remap(DocRef)} substitute something else for {@code docRef}?
+     * <p>
+     * <b>Why this exists.</b> A visitor that uses {@link #record(DocRef)} because it cannot apply a
+     * substitution still needs to know whether one was called for, so that it can tell the user their
+     * copy was not repointed. It cannot find out by calling {@code remap}: that sets the changed flag,
+     * and the copy path would then write back a document that had not in fact been changed.
+     * <p>
+     * Answers false on the recording path, where the remapping map is empty and nothing is being
+     * substituted, so a caller needs no separate test for which path it is on.
+     *
+     * @param docRef The dependency to ask about. Must not be null.
+     * @return true if a substitution is in force for this exact {@link DocRef} and would change it.
+     * @throws NullPointerException if {@code docRef} is null.
+     */
+    public boolean wouldRemap(@NonNull final DocRef docRef) {
+        Objects.requireNonNull(docRef, "Null docRef supplied");
+        final DocRef remap = remappings.get(docRef);
+        return remap != null && !Objects.equals(remap, docRef);
+    }
+
+    /**
+     * Report something about this document that its user should be told, without changing the document.
+     * <p>
+     * Exists because a {@link DependencyRemapFunction} returns only a document, so a visitor that finds
+     * something it cannot fix has no other way to say so. The intended use is the case
+     * {@link #record(DocRef)} creates: a reference that should have been repointed by a copy and could
+     * not be, which is invisible to the user unless something says it out loud.
+     * <p>
+     * Warnings are shown to whoever triggered the operation, so a caller must add nothing here that the
+     * current user is not entitled to see. That is not enforced. It holds for the copy path only because
+     * dependency resolution there runs with the caller's own permissions.
+     *
+     * @param warning The message, phrased for a user rather than an operator. Must not be null.
+     * @throws NullPointerException if {@code warning} is null.
+     */
+    public void warn(@NonNull final String warning) {
+        Objects.requireNonNull(warning, "Null warning supplied");
+        warnings.add(warning);
+    }
+
     public ExpressionOperator remapExpression(final ExpressionOperator expressionOperator) {
         final ExpressionOperator.Builder builder = ExpressionOperator
                 .builder()
@@ -132,6 +176,14 @@ public class DependencyRemapper {
 
     public Set<DocRef> getDependencies() {
         return dependencies;
+    }
+
+    /**
+     * @return everything passed to {@link #warn(String)}, in the order it was reported. Never null;
+     * empty where there is nothing to say, which is the usual case.
+     */
+    public List<String> getWarnings() {
+        return Collections.unmodifiableList(warnings);
     }
 
     public boolean isChanged() {
