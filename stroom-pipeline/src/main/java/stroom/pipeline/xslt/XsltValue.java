@@ -16,7 +16,6 @@
 
 package stroom.pipeline.xslt;
 
-import stroom.pipeline.shared.XsltReferenceCertainty;
 import stroom.pipeline.shared.XsltReferenceReason;
 
 import org.jspecify.annotations.Nullable;
@@ -36,29 +35,26 @@ import java.util.Objects;
  *
  * @param values    The determined values, in a stable order. Never null, possibly empty. More than one
  *                  where an expression can yield several literals.
- * @param certainty Whether the values were written literally or folded. Never null.
  * @param reason    Why part or all of the expression could not be determined, or null if all of it was.
  */
-record XsltValue(List<String> values, XsltReferenceCertainty certainty, @Nullable XsltReferenceReason reason) {
+record XsltValue(List<String> values, @Nullable XsltReferenceReason reason) {
 
     XsltValue {
         Objects.requireNonNull(values, "Null values supplied");
-        Objects.requireNonNull(certainty, "Null certainty supplied");
         values = List.copyOf(values);
     }
 
-    static XsltValue resolved(final String value, final XsltReferenceCertainty certainty) {
-        return new XsltValue(List.of(value), certainty, null);
+    static XsltValue resolved(final String value) {
+        return new XsltValue(List.of(value), null);
     }
 
-    static XsltValue resolved(final List<String> values, final XsltReferenceCertainty certainty) {
-        return new XsltValue(values, certainty, null);
+    static XsltValue resolved(final List<String> values) {
+        return new XsltValue(values, null);
     }
 
     static XsltValue unresolved(final XsltReferenceReason reason) {
         return new XsltValue(
                 List.of(),
-                XsltReferenceCertainty.STATIC,
                 Objects.requireNonNull(reason, "Null reason supplied"));
     }
 
@@ -66,15 +62,6 @@ record XsltValue(List<String> values, XsltReferenceCertainty certainty, @Nullabl
         return !values.isEmpty();
     }
 
-    /**
-     * @return this value, but folded through a variable or conditional, and so no longer written
-     * literally at the point of use.
-     */
-    XsltValue asInferred() {
-        return certainty == XsltReferenceCertainty.INFERRED
-                ? this
-                : new XsltValue(values, XsltReferenceCertainty.INFERRED, reason);
-    }
 
     /**
      * Combine the outcomes of several branches, e.g. the arms of an {@code xsl:choose}.
@@ -105,6 +92,6 @@ record XsltValue(List<String> values, XsltReferenceCertainty certainty, @Nullabl
                 reason = branch.reason();
             }
         }
-        return new XsltValue(values, XsltReferenceCertainty.INFERRED, reason);
+        return new XsltValue(values, reason);
     }
 }

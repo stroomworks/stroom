@@ -20,7 +20,6 @@ import stroom.dictionary.shared.DictionaryDoc;
 import stroom.docref.DocRef;
 import stroom.pipeline.filter.XsltConfig;
 import stroom.pipeline.shared.XsltDoc;
-import stroom.pipeline.shared.XsltReferenceCertainty;
 import stroom.pipeline.shared.XsltReferenceDirection;
 import stroom.pipeline.shared.XsltReferenceKind;
 import stroom.pipeline.shared.XsltReferenceReason;
@@ -339,7 +338,7 @@ class XsltReferenceParserImpl implements XsltReferenceParser {
                 // strips whitespace-only text nodes from a stylesheet, so pretty printing costs nothing.
                 if (!mapName.isEmpty()) {
                     references.add(XsltReference.mapName(
-                            XsltReferenceKind.REF_MAP_WRITE, mapName, value.certainty(), lineNumber));
+                            XsltReferenceKind.REF_MAP_WRITE, mapName, lineNumber));
                 }
             }
             if (value.reason() != null) {
@@ -347,7 +346,6 @@ class XsltReferenceParserImpl implements XsltReferenceParser {
                         XsltReferenceKind.REF_MAP_WRITE,
                         element.getStringValue(),
                         value.reason(),
-                        value.certainty(),
                         lineNumber));
             }
         }
@@ -414,7 +412,6 @@ class XsltReferenceParserImpl implements XsltReferenceParser {
                         XsltReferenceKind.UNANALYSED,
                         expressionText,
                         XsltReferenceReason.UNPARSEABLE,
-                        XsltReferenceCertainty.STATIC,
                         lineNumberOf(element)));
                 return;
             }
@@ -470,7 +467,7 @@ class XsltReferenceParserImpl implements XsltReferenceParser {
             final XsltValue value = valueResolver.resolve(argument, site);
             for (final String name : value.values()) {
                 if (!name.isEmpty()) {
-                    references.add(resolveDictionary(name, value.certainty(), lineNumber));
+                    references.add(resolveDictionary(name, lineNumber));
                 }
             }
             addUnresolved(XsltReferenceKind.DICTIONARY, value, expressionText, lineNumber);
@@ -491,7 +488,7 @@ class XsltReferenceParserImpl implements XsltReferenceParser {
                 for (final String component : mapName.split(MAP_NEST_SEPARATOR, -1)) {
                     if (!component.isEmpty()) {
                         references.add(XsltReference.mapName(
-                                XsltReferenceKind.REF_MAP_READ, component, value.certainty(), lineNumber));
+                                XsltReferenceKind.REF_MAP_READ, component, lineNumber));
                     }
                 }
             }
@@ -506,7 +503,7 @@ class XsltReferenceParserImpl implements XsltReferenceParser {
             final XsltValue value = valueResolver.resolve(argument, site);
             for (final String url : value.values()) {
                 if (!url.isEmpty()) {
-                    references.add(XsltReference.endpoint(url, direction, value.certainty(), lineNumber));
+                    references.add(XsltReference.endpoint(url, direction, lineNumber));
                 }
             }
             addUnresolved(XsltReferenceKind.HTTP, value, expressionText, lineNumber);
@@ -523,7 +520,7 @@ class XsltReferenceParserImpl implements XsltReferenceParser {
                                    final int lineNumber) {
             if (value.reason() != null) {
                 references.add(XsltReference.unresolved(
-                        kind, expressionText, value.reason(), value.certainty(), lineNumber));
+                        kind, expressionText, value.reason(), lineNumber));
             }
         }
 
@@ -539,13 +536,12 @@ class XsltReferenceParserImpl implements XsltReferenceParser {
                         XsltReferenceKind.IMPORT,
                         href,
                         byName.getFirst(),
-                        XsltReferenceCertainty.STATIC,
                         lineNumber);
             }
             if (byName.size() > 1) {
                 // The runtime throws here, so this is a broken stylesheet as well as an ambiguous name.
                 return XsltReference.ambiguous(
-                        XsltReferenceKind.IMPORT, href, byName, XsltReferenceCertainty.STATIC, lineNumber);
+                        XsltReferenceKind.IMPORT, href, byName, lineNumber);
             }
 
             final DocRef parsed = CustomURIResolver.parseDocRef(href);
@@ -555,13 +551,11 @@ class XsltReferenceParserImpl implements XsltReferenceParser {
                             XsltReferenceKind.IMPORT,
                             href,
                             docRef,
-                            XsltReferenceCertainty.STATIC,
                             lineNumber))
                     .orElseGet(() -> XsltReference.unresolved(
                             XsltReferenceKind.IMPORT,
                             href,
                             XsltReferenceReason.NOT_FOUND,
-                            XsltReferenceCertainty.STATIC,
                             lineNumber));
         }
 
@@ -573,30 +567,27 @@ class XsltReferenceParserImpl implements XsltReferenceParser {
          * The runtime does choose - {@code list.getFirst()} - but its choice is the lowest UUID, filtered
          * by the caller's permissions, so it is arbitrary and not reproducible from here.
          */
-        private XsltReference resolveDictionary(final String name,
-                                                final XsltReferenceCertainty certainty,
-                                                final int lineNumber) {
+        private XsltReference resolveDictionary(final String name, final int lineNumber) {
             final Optional<DocRef> byUuid = lookup.findByUuid(DictionaryDoc.TYPE, name);
             if (byUuid.isPresent()) {
                 return XsltReference.document(
-                        XsltReferenceKind.DICTIONARY, name, byUuid.get(), certainty, lineNumber);
+                        XsltReferenceKind.DICTIONARY, name, byUuid.get(), lineNumber);
             }
 
             final List<DocRef> byName = lookup.findByName(DictionaryDoc.TYPE, name);
             if (byName.size() == 1) {
                 return XsltReference.document(
-                        XsltReferenceKind.DICTIONARY, name, byName.getFirst(), certainty, lineNumber);
+                        XsltReferenceKind.DICTIONARY, name, byName.getFirst(), lineNumber);
             }
             if (byName.size() > 1) {
                 return XsltReference.ambiguous(
-                        XsltReferenceKind.DICTIONARY, name, byName, certainty, lineNumber);
+                        XsltReferenceKind.DICTIONARY, name, byName, lineNumber);
             }
             return XsltReference.unresolved(
                     XsltReferenceKind.DICTIONARY,
                     name,
                     XsltReferenceReason.NOT_FOUND,
-                    certainty,
-                    lineNumber);
+                                        lineNumber);
         }
 
         private int lineNumberOf(final XdmNode node) {

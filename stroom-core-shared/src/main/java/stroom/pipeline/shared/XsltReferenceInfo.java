@@ -43,7 +43,6 @@ import java.util.Objects;
         "target",
         "candidates",
         "reason",
-        "certainty",
         "direction",
         "lineNumber"})
 public class XsltReferenceInfo {
@@ -59,8 +58,6 @@ public class XsltReferenceInfo {
     @JsonProperty
     private final XsltReferenceReason reason;
     @JsonProperty
-    private final XsltReferenceCertainty certainty;
-    @JsonProperty
     private final XsltReferenceDirection direction;
     @JsonProperty
     private final int lineNumber;
@@ -71,7 +68,6 @@ public class XsltReferenceInfo {
                              @JsonProperty("target") final DocRef target,
                              @JsonProperty("candidates") final List<DocRef> candidates,
                              @JsonProperty("reason") final XsltReferenceReason reason,
-                             @JsonProperty("certainty") final XsltReferenceCertainty certainty,
                              @JsonProperty("direction") final XsltReferenceDirection direction,
                              @JsonProperty("lineNumber") final int lineNumber) {
         this.kind = kind;
@@ -81,7 +77,6 @@ public class XsltReferenceInfo {
                 ? Collections.emptyList()
                 : candidates;
         this.reason = reason;
-        this.certainty = certainty;
         this.direction = direction;
         this.lineNumber = lineNumber;
     }
@@ -121,10 +116,6 @@ public class XsltReferenceInfo {
         return reason;
     }
 
-    public XsltReferenceCertainty getCertainty() {
-        return certainty;
-    }
-
     /**
      * @return for {@link XsltReferenceKind#HTTP}, which way data flows; null otherwise.
      */
@@ -162,13 +153,12 @@ public class XsltReferenceInfo {
                && Objects.equals(target, that.target)
                && Objects.equals(candidates, that.candidates)
                && reason == that.reason
-               && certainty == that.certainty
                && direction == that.direction;
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(kind, rawValue, target, candidates, reason, certainty, direction, lineNumber);
+        return Objects.hash(kind, rawValue, target, candidates, reason, direction, lineNumber);
     }
 
     @Override

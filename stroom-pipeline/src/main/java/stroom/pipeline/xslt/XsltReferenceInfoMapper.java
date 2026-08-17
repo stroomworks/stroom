@@ -27,8 +27,8 @@ import java.util.Objects;
  * <p>
  * A separate type from the findings themselves because the two have different obligations. The parser's
  * model is free to use records and null annotations; the wire model must be GWT-compilable and stable for
- * clients, and the vocabulary it exposes - the kind, reason, certainty and direction enums - lives in shared
- * code for both sides to agree on.
+ * clients, and the vocabulary it exposes - the kind, reason and direction enums - lives in shared code for
+ * both sides to agree on.
  */
 final class XsltReferenceInfoMapper {
 
@@ -55,7 +55,6 @@ final class XsltReferenceInfoMapper {
                 reference.target(),
                 reference.candidates(),
                 reference.reason(),
-                reference.certainty(),
                 reference.direction(),
                 reference.lineNumber());
     }

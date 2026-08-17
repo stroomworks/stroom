@@ -17,7 +17,6 @@
 package stroom.pipeline.xslt;
 
 import stroom.docref.DocRef;
-import stroom.pipeline.shared.XsltReferenceCertainty;
 import stroom.pipeline.shared.XsltReferenceDirection;
 import stroom.pipeline.shared.XsltReferenceKind;
 import stroom.pipeline.shared.XsltReferenceReason;
@@ -44,7 +43,6 @@ import java.util.Objects;
  *                    name matched, so a report can name the collision and a consumer can record an edge
  *                    to each. Never null; empty for every other reason.
  * @param reason      Why this reference is unresolved, or null if it is resolved.
- * @param certainty   Whether the value was written literally or folded from literals. Never null.
  * @param direction   For {@link XsltReferenceKind#HTTP}, which way data flows; null otherwise.
  * @param lineNumber  The line in the XSLT body the reference was found on, or -1 if unknown. Present so
  *                    a report can point at the source rather than merely describing it.
@@ -55,13 +53,12 @@ public record XsltReference(
         @Nullable DocRef target,
         List<DocRef> candidates,
         @Nullable XsltReferenceReason reason,
-        XsltReferenceCertainty certainty,
         @Nullable XsltReferenceDirection direction,
         int lineNumber) {
 
     /**
      * @throws NullPointerException     if {@code kind}, {@code rawValue}, {@code candidates} or
-     *                                  {@code certainty} is null.
+     *                                  is null.
      * @throws IllegalArgumentException if the finding is internally inconsistent, i.e. it carries both a
      *                                  target and a reason, or carries candidates without being
      *                                  {@link XsltReferenceReason#AMBIGUOUS}.
@@ -70,7 +67,6 @@ public record XsltReference(
         Objects.requireNonNull(kind, "Null kind supplied");
         Objects.requireNonNull(rawValue, "Null rawValue supplied");
         Objects.requireNonNull(candidates, "Null candidates supplied");
-        Objects.requireNonNull(certainty, "Null certainty supplied");
 
         if (target != null && reason != null) {
             throw new IllegalArgumentException(
@@ -97,11 +93,10 @@ public record XsltReference(
     static XsltReference document(final XsltReferenceKind kind,
                                   final String rawValue,
                                   final DocRef target,
-                                  final XsltReferenceCertainty certainty,
                                   final int lineNumber) {
         Objects.requireNonNull(target, "Null target supplied");
         return new XsltReference(
-                kind, rawValue, target, List.of(), null, certainty, null, lineNumber);
+                kind, rawValue, target, List.of(), null, null, lineNumber);
     }
 
     /**
@@ -111,8 +106,7 @@ public record XsltReference(
     static XsltReference ambiguous(final XsltReferenceKind kind,
                                    final String rawValue,
                                    final List<DocRef> candidates,
-                                   final XsltReferenceCertainty certainty,
-                                   final int lineNumber) {
+                                    final int lineNumber) {
         if (Objects.requireNonNull(candidates, "Null candidates supplied").size() < 2) {
             throw new IllegalArgumentException("AMBIGUOUS requires at least two candidates");
         }
@@ -122,7 +116,6 @@ public record XsltReference(
                 null,
                 candidates,
                 XsltReferenceReason.AMBIGUOUS,
-                certainty,
                 null,
                 lineNumber);
     }
@@ -133,14 +126,13 @@ public record XsltReference(
     static XsltReference unresolved(final XsltReferenceKind kind,
                                     final String rawValue,
                                     final XsltReferenceReason reason,
-                                    final XsltReferenceCertainty certainty,
-                                    final int lineNumber) {
+                                      final int lineNumber) {
         Objects.requireNonNull(reason, "Null reason supplied");
         if (reason == XsltReferenceReason.AMBIGUOUS) {
             throw new IllegalArgumentException("Use ambiguous() so the candidates are carried");
         }
         return new XsltReference(
-                kind, rawValue, null, List.of(), reason, certainty, null, lineNumber);
+                kind, rawValue, null, List.of(), reason, null, lineNumber);
     }
 
     /**
@@ -149,13 +141,12 @@ public record XsltReference(
      */
     static XsltReference mapName(final XsltReferenceKind kind,
                                  final String rawValue,
-                                 final XsltReferenceCertainty certainty,
                                  final int lineNumber) {
         if (kind != XsltReferenceKind.REF_MAP_READ && kind != XsltReferenceKind.REF_MAP_WRITE) {
             throw new IllegalArgumentException("Not a map kind: " + kind);
         }
         return new XsltReference(
-                kind, rawValue, null, List.of(), null, certainty, null, lineNumber);
+                kind, rawValue, null, List.of(), null, null, lineNumber);
     }
 
     /**
@@ -163,10 +154,9 @@ public record XsltReference(
      */
     static XsltReference endpoint(final String rawValue,
                                   final XsltReferenceDirection direction,
-                                  final XsltReferenceCertainty certainty,
                                   final int lineNumber) {
         Objects.requireNonNull(direction, "Null direction supplied");
         return new XsltReference(
-                XsltReferenceKind.HTTP, rawValue, null, List.of(), null, certainty, direction, lineNumber);
+                XsltReferenceKind.HTTP, rawValue, null, List.of(), null, direction, lineNumber);
     }
 }

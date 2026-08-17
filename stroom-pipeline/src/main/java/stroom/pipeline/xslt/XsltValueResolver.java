@@ -16,7 +16,6 @@
 
 package stroom.pipeline.xslt;
 
-import stroom.pipeline.shared.XsltReferenceCertainty;
 import stroom.pipeline.shared.XsltReferenceReason;
 
 import net.sf.saxon.expr.AtomicSequenceConverter;
@@ -121,7 +120,7 @@ class XsltValueResolver {
         final Expression unwrapped = unwrap(expression);
 
         if (unwrapped instanceof final StringLiteral stringLiteral) {
-            return XsltValue.resolved(stringLiteral.getStringValue(), XsltReferenceCertainty.STATIC);
+            return XsltValue.resolved(stringLiteral.getStringValue());
         }
         if (unwrapped instanceof final Literal literal) {
             return resolveLiteral(literal);
@@ -177,7 +176,7 @@ class XsltValueResolver {
                 // The empty sequence, or several items. Neither is a name.
                 return XsltValue.unresolved(XsltReferenceReason.NON_LITERAL_BINDING);
             }
-            return XsltValue.resolved(literal.getValue().getStringValue(), XsltReferenceCertainty.STATIC);
+            return XsltValue.resolved(literal.getValue().getStringValue());
         } catch (final Exception e) {
             return XsltValue.unresolved(XsltReferenceReason.NON_LITERAL_BINDING);
         }
@@ -225,10 +224,7 @@ class XsltValueResolver {
         for (int index = 0; index < functionCall.getArity(); index++) {
             arguments.add(resolve(functionCall.getArg(index), site, variablesInProgress, depth + 1));
         }
-        // Inferred whatever the parts were: reaching this method at all means Saxon did not fold the
-        // concat, so the parser is the one constructing the string and the result appears nowhere in the
-        // source.
-        return concatenate(arguments).asInferred();
+        return concatenate(arguments);
     }
 
     /**
@@ -249,10 +245,9 @@ class XsltValueResolver {
     private static XsltValue concatenate(final List<XsltValue> parts) {
         final int maxCombinations = 16;
         if (parts.isEmpty()) {
-            return XsltValue.resolved("", XsltReferenceCertainty.STATIC);
+            return XsltValue.resolved("");
         }
         if (parts.size() == 1) {
-            // Nothing was joined, so nothing was inferred - a lone literal stays literal.
             return parts.getFirst();
         }
 
@@ -276,7 +271,7 @@ class XsltValueResolver {
             }
             combinations = expanded;
         }
-        return XsltValue.resolved(combinations, XsltReferenceCertainty.INFERRED);
+        return XsltValue.resolved(combinations);
     }
 
     private XsltValue resolveVariableReference(final VariableReference variableReference,
@@ -301,7 +296,7 @@ class XsltValueResolver {
 
         final Set<String> nowInProgress = new LinkedHashSet<>(variablesInProgress);
         nowInProgress.add(name);
-        return resolveBoundValue(binding, nowInProgress, depth + 1).asInferred();
+        return resolveBoundValue(binding, nowInProgress, depth + 1);
     }
 
     /**
@@ -367,7 +362,7 @@ class XsltValueResolver {
             if (child.getNodeKind() == XdmNodeKind.TEXT) {
                 final String text = child.getStringValue();
                 if (!text.isBlank()) {
-                    parts.add(XsltValue.resolved(text, XsltReferenceCertainty.STATIC));
+                    parts.add(XsltValue.resolved(text));
                 }
             } else if (child.getNodeKind() == XdmNodeKind.ELEMENT) {
                 parts.add(resolveContentElement(child, variablesInProgress, depth));
@@ -391,7 +386,7 @@ class XsltValueResolver {
         switch (child.getNodeName().getLocalName()) {
             case TEXT_ELEMENT -> {
                 // xsl:text is the one place whitespace in a stylesheet is deliberate, so it is kept as is.
-                return XsltValue.resolved(child.getStringValue(), XsltReferenceCertainty.STATIC);
+                return XsltValue.resolved(child.getStringValue());
             }
             case CHOOSE_ELEMENT -> {
                 final List<XsltValue> arms = new ArrayList<>();
@@ -410,7 +405,7 @@ class XsltValueResolver {
                 // test fails the content contributes precisely nothing.
                 return XsltValue.merge(List.of(
                         resolveElementContent(child, variablesInProgress, depth + 1),
-                        XsltValue.resolved("", XsltReferenceCertainty.STATIC)));
+                        XsltValue.resolved("")));
             }
             case VALUE_OF_ELEMENT -> {
                 final String select = child.attribute(SELECT_ATTRIBUTE);

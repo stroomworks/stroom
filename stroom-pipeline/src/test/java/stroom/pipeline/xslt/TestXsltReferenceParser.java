@@ -19,7 +19,6 @@ package stroom.pipeline.xslt;
 import stroom.dictionary.shared.DictionaryDoc;
 import stroom.docref.DocRef;
 import stroom.pipeline.shared.XsltDoc;
-import stroom.pipeline.shared.XsltReferenceCertainty;
 import stroom.pipeline.shared.XsltReferenceDirection;
 import stroom.pipeline.shared.XsltReferenceKind;
 import stroom.pipeline.shared.XsltReferenceReason;
@@ -472,8 +471,8 @@ class TestXsltReferenceParser {
 
             assertThat(result.references())
                     .filteredOn(reference -> reference.kind() == XsltReferenceKind.REF_MAP_WRITE)
-                    .extracting(XsltReference::rawValue, XsltReference::certainty)
-                    .containsExactly(tuple("geo_ip", XsltReferenceCertainty.INFERRED));
+                    .extracting(XsltReference::rawValue)
+                    .containsExactly("geo_ip");
         }
 
         @Test
@@ -539,18 +538,14 @@ class TestXsltReferenceParser {
             final XsltReferences result = parse(template("""
                     <xsl:value-of select="stroom:lookup(concat('geo_', 'prod'), @ip)"/>"""));
 
-            // STATIC, which is worth explaining because it looks wrong. Saxon evaluates a concat of pure
-            // literals while compiling, so the parser is handed 'geo_prod' already folded and never sees
-            // the concat. Certainty records whether the parser had to reason, not whether the string can
-            // be found in the file - see XsltReferenceCertainty.
-            assertThat(result.references())
-                    .extracting(XsltReference::rawValue, XsltReference::certainty)
-                    .containsExactly(tuple("geo_prod", XsltReferenceCertainty.STATIC));
+            // Saxon evaluates a concat of pure literals while compiling, so the parser is handed
+            // 'geo_prod' already folded and never sees the concat. Either way the answer is the same.
+            assertThat(result.resolvedValues(XsltReferenceKind.REF_MAP_READ)).containsExactly("geo_prod");
         }
 
         @Test
         @DisplayName("folds concat involving a variable, which Saxon cannot pre-evaluate")
-        void concatWithVariableIsInferred() {
+        void concatWithVariable() {
             final XsltReferences result = parse("""
                     <xsl:stylesheet version="2.0"
                                     xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
@@ -561,23 +556,11 @@ class TestXsltReferenceParser {
                       </xsl:template>
                     </xsl:stylesheet>""");
 
-            // Here the parser does the work, because Saxon cannot: it reads the declaration Saxon was
-            // told nothing about. So this one is INFERRED.
-            assertThat(result.references())
-                    .extracting(XsltReference::rawValue, XsltReference::certainty)
-                    .containsExactly(tuple("geo_prod", XsltReferenceCertainty.INFERRED));
+            // The parser does this one itself, because Saxon cannot: folding it needs the declaration
+            // Saxon was told nothing about. Same result, reached a different way.
+            assertThat(result.resolvedValues(XsltReferenceKind.REF_MAP_READ)).containsExactly("geo_prod");
         }
 
-        @Test
-        @DisplayName("a literal at the point of use is static")
-        void literalIsStatic() {
-            final XsltReferences result = parse(template("""
-                    <xsl:value-of select="stroom:lookup('geo_ip', @ip)"/>"""));
-
-            assertThat(result.references())
-                    .extracting(XsltReference::certainty)
-                    .containsExactly(XsltReferenceCertainty.STATIC);
-        }
 
         @Test
         @DisplayName("resolves a global literal variable")
@@ -1915,10 +1898,6 @@ class TestXsltReferenceParser {
             // text rather than walking the tree.
             assertThat(result.references()).hasSize(3);
 
-            // Written as literals in the source, so nothing had to be worked out.
-            assertThat(result.references())
-                    .extracting(XsltReference::certainty)
-                    .containsOnly(XsltReferenceCertainty.STATIC);
             assertThat(result.unresolved()).isEmpty();
 
             // As with a read, a map write names no document: which store receives the data is settled by
