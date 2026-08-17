@@ -25,7 +25,7 @@ before-state; §12 records what changed and what it measures now.
 |---|---|
 | Timeline transport controls (play, step, settings) | **Good** — confirmed in browser |
 | Timeline scrubber (keyboard + ARIA slider) | **Good** — confirmed in browser |
-| Speed badge | **Was Fail** (3.93:1 dark, 2.62:1 light) — **fixed**, now 5.75/6.93 resting (§9.7, §12) |
+| Speed badge | **Was Fail** (3.93:1 dark, 2.62:1 light) — **fixed and verified in browser**: 6.93/5.75 resting, 5.13 hover (§12.2) |
 | Histogram | **Unverified** — no event data on the test document (§8.2) |
 | Tabular panels (Tracking, Fact List, Time List, Groups) | **Adequate** — headers split from cells, no roles (§9.9) |
 | Layers panel | **Mixed** — labels good, keyboard reorder drops focus (§9.1) |
@@ -34,8 +34,8 @@ before-state; §12 records what changed and what it measures now.
 | Map canvas — keyboard operation | **Adequate** — pan/zoom/menu confirmed working; per-entity still no |
 | Cluster membership detail | **Gap** — pointer-only |
 | Reduced motion | **Good** — implemented and reasoned; not triggerable in test env (§8.1) |
-| Colour contrast — text | **Good** after §12; five hidden tooltip/readout rules also fixed |
-| Colour contrast — non-text (icons, 1.4.11) | **Was Fail** in light theme (2.34:1, 2.19:1) — **fixed** (§9.7.1, §12) |
+| Colour contrast — text | **Good** — verified in browser; badge and all five tooltip/readout rules now ≥5.75:1 (§12.2, §12.3) |
+| Colour contrast — non-text (icons, 1.4.11) | **Was Fail** in light theme (2.34:1, 2.19:1) — **fixed and verified**: 3.50:1, 3.20:1 (§12.1) |
 | Colour contrast over user imagery | **Unmanaged** — unchanged |
 | Document tab bars | **Fail** — keyboard works, but no tab/tablist roles (§10.4) |
 | Events Query / Settings tabs | **Fail** — unnamed controls; Value Schema keyboard-inoperable (§9.5, §10.1) |
@@ -515,7 +515,7 @@ never told about.
 keeping. `simplePopup` is shared, so the role/focus part is likely upstream; the
 unlabelled contents (§9.3) are floormap's.
 
-### 9.5 Value Schema editor is unreachable by keyboard — [FM]
+### 9.5 Value Schema editor is unreachable by keyboard — [FM] — **FIXED, see §13**
 
 *Critical. WCAG 2.1.1.* On the Settings tab the six **Role** dropdowns (`TYPE`, `LABEL`,
 `POSITION`, `IMAGE`, `WORLD_TO_MAP`, `MAP_TO_SCREEN`) are visible `<select>` elements
@@ -694,12 +694,14 @@ the explorer-tree icon buttons.
 
 ## 11. Revised priorities after the browser pass
 
-1. **§9.5** — Value Schema is keyboard-inoperable. Nothing else locks a user out of a
-   feature outright.
+1. ~~**§9.5** — Value Schema is keyboard-inoperable.~~ **Done — §13.**
 2. **§9.3 and §9.2** — the `aria-label`-on-a-wrapper pattern. One cheap fix each, and it is
    what makes the map summary inaudible and three dialog controls unnamed. Grep for others.
-3. **§9.1** — Layers reorder focus loss. Small fix; makes a working feature usable.
-4. **§10.1 / §10.2** — unnamed selection boxes and selects on Events Query and Settings.
+   **Now the top item.**
+3. **§9.1** — Layers reorder focus loss. Small fix; makes a working feature usable. Note
+   §13.4 found the same root cause behind it, so the two are related.
+4. ~~**§10.2** — unnamed selects on Settings.~~ **Done — §13**, as a side effect. **§10.1**
+   (Events Query selection boxes) still stands.
 5. ~~**§9.7** — contrast.~~ **Done — §12.**
 6. **§9.4 / §9.6 / §10.4** — dialog and tab-bar roles. Mostly shared-widget work with a
    larger blast radius, so worth doing deliberately rather than quickly.
@@ -712,9 +714,15 @@ the explorer-tree icon buttons.
 
 ## 12. Contrast fixes applied
 
-Applied 2026-08-14 in response to §9.7. **Computed ratios only — not yet verified in a
-browser**, and the shared-token half touches every button in Stroom, so it wants a visual
-check before it goes near a PR.
+Applied 2026-08-14 in response to §9.7, and **verified in a running browser on 2026-08-17**
+— every ratio below was re-measured from computed style in the live app, in both themes,
+with `:hover` states triggered by a real pointer rather than inferred. Measured values
+matched the predicted ones exactly.
+
+Everything in §9.7, §9.7.1 and §9.7.2 is now closed. What is *not* settled is whether the
+darker light-theme accent reads well across the whole product: the shared-token half of
+this touches every button in Stroom, so it still wants a designer's eye before a PR. That
+is a look question, not a compliance one.
 
 ### 12.1 Light-theme accent tokens tightened to `--blue-800`
 
@@ -738,9 +746,21 @@ candidate must clear 4.5:1 on all three backgrounds:
 | `--blue-700` | 4.60 ✓ | 4.13 ✗ | 3.72 ✗ |
 | `--blue-800` (now) | **5.75 ✓** | **5.15 ✓** | **4.64 ✓** |
 
-This also clears §9.7.1 — the icon buttons now measure 3.50:1 (step) and 3.20:1 (gear)
-against a 3:1 requirement, *keeping* their existing opacity fades — and §9.7.2, since the
-five tooltip/readout rules inherit the tightened accent at full opacity (5.75:1).
+This also clears §9.7.1. Browser-measured in light theme, *keeping* the existing opacity
+fades: step buttons **3.50:1**, settings gear **3.20:1**, against the 3:1 of 1.4.11 — up
+from 2.34:1 and 2.19:1.
+
+**It did not, on its own, clear §9.7.2 — and the reason is worth keeping.** An earlier
+revision of this section claimed it did. That was wrong, and the browser caught it. Those
+rules hardcode `var(--blue-500)`, the raw palette entry, whereas §12.1 changed the
+*semantic* tokens that happened to point at the same value. Tightening
+`--icon-button__color` and `--button-*-primary__color` leaves `--blue-500` itself untouched,
+so anything referencing the palette directly was unaffected: all five still computed to
+`rgb(33, 150, 243)`, 3.12:1 on white. Fixed separately in §12.3.
+
+The general lesson: changing a semantic token fixes only the code that *uses* that token.
+Anywhere in the codebase reaching past it to the palette has to be found and changed by
+hand.
 
 ### 12.2 Speed badge: fade removed, hover made neutral
 
@@ -758,12 +778,21 @@ The hover background had to change too, and the reason generalises. The accent t
 it (`--blue-200` reaches only 3.37:1). The neutral wash the sibling step and settings
 buttons already use holds 5.13:1 in **both** themes:
 
+Browser-measured, `:hover` triggered by a real pointer and asserted with
+`el.matches(':hover')`:
+
 | Badge state | Light | Dark |
 |---|---|---|
-| Resting | 5.75:1 ✓ | 6.93:1 ✓ |
-| Hover / focus-visible | 5.13:1 ✓ | 5.13:1 ✓ |
+| Resting | 5.75:1 ✓ (`#1565c0` on `#ffffff`) | 6.93:1 ✓ (`#64b5f6` on `#22252c`) |
+| Hover / focus-visible | 5.13:1 ✓ (on `#f2f2f2`) | 5.13:1 ✓ (on `#373a43`) |
 
-The badge also now matches its neighbours visually, and needed no new token.
+Computed `opacity` is `1`, confirming the fade is gone. The badge also now matches its
+neighbours visually, and needed no new token.
+
+Incidentally, this run resolved a loose end from §9.7.0: computed `font-weight` is `600`,
+as the stylesheet declares. The first pass recorded axe reporting `normal`; the live value
+does not agree, and nothing about the requirement changes either way, since 10px is never
+"large text".
 
 One accepted trade-off: the neutral wash is subtle as a background in its own right —
 1.12:1 against the page in light theme, 1.35:1 in dark — which is presumably why a strong
@@ -772,7 +801,47 @@ accent tint was chosen originally. WCAG does not hold transient pointer-hover st
 faint in review, put the emphasis somewhere that is not behind the text (an accent 1px
 border is 5.75:1 against the page, satisfying 1.4.11 for state on its own).
 
-### 12.3 Not done, deliberately
+### 12.3 Tooltips and readouts moved off the raw palette
+
+`stroom-floormap.css` now contains **zero** references to `var(--blue-500)`. All eleven
+moved to `var(--button-default-primary__color)`:
+
+* **Five text `color:` declarations** — the histogram tooltip, scrub tooltip, area-draw
+  hint, gesture readout and hover-tooltip caption. These were the §9.7.2 failures.
+* **Five tooltip `border: 1px solid` declarations, and the scrub tooltip's
+  `::before` caret (`border-top-color`).** Non-text, so these owed only 3:1 and were
+  already passing at 3.12:1 — but each tooltip is a single visual unit of accent text,
+  matching accent border and accent caret, so changing the text alone would have left them
+  two-tone. They now measure 5.75:1 in light theme.
+
+Browser-measured after the change, all five text rules:
+
+| Rule | Size | Dark | Light (was 3.12:1) |
+|---|---|---|---|
+| `timeline-histogram-tooltip` | 10px | 6.93:1 ✓ | **5.75:1** ✓ |
+| `timeline-scrub-tooltip` | 10px | 6.93:1 ✓ | **5.75:1** ✓ |
+| `area-draw-hint` | 12px | 6.93:1 ✓ | **5.75:1** ✓ |
+| `gesture-readout` | 11px | 6.93:1 ✓ | **5.75:1** ✓ |
+| `hover-tooltip__caption` | 14.4px | 6.93:1 ✓ | **5.75:1** ✓ |
+
+Two counting corrections to §9.7.2, which described this set from a `grep` rather than from
+the file: it is **five** text declarations, not six, and the sixth accent site is the
+caret's `border-top-color`, which is non-text. An earlier revision of §12.3 said "seven
+declarations across six rules"; that was also wrong.
+
+### 12.4 Testing note — CSS edits need a hard reload
+
+Worth knowing before re-testing any of this. `app.css` pulls the stylesheets in with plain
+`@import url("stroom-floormap.css")` — no version query — so browsers hold their cached
+copy across an ordinary reload, and **restarting Stroom does not help**. During this run the
+server served the updated file correctly while the browser rendered the old one for two
+rounds of probing. `Ctrl+Shift+R` clears it.
+
+If you are checking a CSS change, verify both ends: `curl -k https://localhost/ui/css/<file>`
+for what the server has, and the browser's own `document.styleSheets` for what it is
+actually using.
+
+### 12.5 Not done
 
 * **Dark-theme primary tints.** `--button-*-primary__background-color--hover/--selected` are
   40%/30% `--blue-300`, which puts *text* primary buttons elsewhere in the app at 3.03:1 and
@@ -783,3 +852,97 @@ border is 5.75:1 against the page, satisfying 1.4.11 for state on its own).
   `--button-icon-green__color` (`--green-500`) on white are unmeasured and likely carry the
   same defect as `--blue-500` did.
 * **Contrast over user imagery.** Unchanged, and still the open design question from §3.7.
+
+---
+
+## 13. Value Schema keyboard access — fixed
+
+Applied and **verified in a running browser on 2026-08-17**, closing §9.5 (WCAG 2.1.1) and
+the Settings half of §10.2 (WCAG 4.1.2). All four columns of the Value Schema grid are now
+keyboard-operable and individually named.
+
+### 13.1 Why the controls were unreachable
+
+Not an oversight in floormap. GWT's `SelectionCell` and `TextInputCell` both hardcode
+`tabindex="-1"` on the control they render, deliberately: a cell is not meant to be its own
+tab stop, because `AbstractCellTable` is expected to move between cells with the arrow keys.
+
+That expectation does not hold in Stroom.
+[`MyDataGrid.setSelectionModel`](../stroom-core-client-widget/src/main/java/stroom/data/grid/client/MyDataGrid.java)
+enables `KeyboardSelectionPolicy.ENABLED` and then immediately replaces the handler with an
+empty lambda — commented "We need to set this to prevent default keyboard behaviour". So the
+arrow keys never arrive. `DataGridSelectionEventManager` handles only pointer events, so
+there is no substitute path. The controls end up unreachable by any keyboard route at all.
+
+### 13.2 What changed
+
+Two new cells, in `stroom.floormap.client.cell`, each a subclass that overrides only
+`render` — faithfully mirroring the superclass's view-data handling so an in-flight edit
+still survives a redraw:
+
+* **`AccessibleSelectionCell`** — replaces `SelectionCell` for the Role column.
+* **`AccessibleTextInputCell`** — replaces `EditTextCell` for Path, Display Name and Default.
+
+Both drop the `tabindex="-1"`, add an `aria-label`, and render `disabled` when the document
+is read-only, so a control stops presenting itself as editable in a state where the field
+updater discards the edit.
+
+Note the second is a change in *kind*: `EditTextCell` renders static text and swaps to an
+input **on click**, which is a pointer-only affordance — there was nothing for a keyboard
+user to focus in the first place. These cells are always inputs. **The visible consequence
+is that the three text columns now look like the input fields they are.** That is a UI change
+to the Settings tab and deserves a designer's glance, though for a settings grid it is
+arguably clearer than click-to-reveal.
+
+Labels identify the row rather than just the column, since six controls all called "Role"
+are no better than none. `schemaCellLabel` builds them from the row's JSON path, falling
+back to position for a freshly added row with no path yet: `Role for .type`,
+`Path for .tm-world-to-map`, `Default for .coords`.
+
+### 13.3 Two defects the browser found that code review would not have
+
+**A stray tab stop that sent focus backwards.** With the controls tabbable, the tab order
+still jumped back on itself. The cause was GWT marking the keyboard-selected cell's wrapper
+`div` as `tabindex="0"` to give the table a tab stop for the very arrow-key navigation
+`MyDataGrid` disables. The stop led nowhere, and as the selected cell moved it landed
+*before* the control being tabbed away from. Fixed by setting
+`KeyboardSelectionPolicy.DISABLED` on this grid, after `setSelectionModel` turns it on.
+
+**Focus lost to `<body>` after every edit.** A single edit ejected the user from the grid,
+who then had to tab all the way back — up to 24 stops. The first attempt at a fix, removing
+`refreshGrid()` from `replaceMapping`, changed nothing, because the redraw does not come
+from there: `ListDataProvider.getList()` returns a wrapper that flags itself modified and
+flushes on mutation, so `list.set(...)` redraws the row by itself. There is no unnotified
+path, and keeping a shadow model to dodge it would put two sources of truth behind a
+data-bearing grid — not worth it here. Instead `restoreSchemaFocusAfterRedraw` re-focuses
+the cell in a deferred command, and **only if focus was actually lost**: when the user
+commits by tabbing to another row, that control survives and keeps focus, and stealing it
+back would be worse than the problem.
+
+### 13.4 Verified
+
+| Check | Result |
+|---|---|
+| Controls reachable | 24 (6 rows × 4 columns), all in the tab order |
+| Tab order | Strictly row-major, no repeats, no backwards jumps, exits the grid cleanly |
+| Accessible names | 24 unique, row-specific; no duplicates |
+| Keyboard trap (2.1.2) | None — row 6 reachable, focus exits to the next control |
+| Select edit reaches the model | `TYPE` → `LABEL` by ArrowDown; document went dirty |
+| Text edit reaches the model | Typed value committed on Tab |
+| Focus after select edit | Kept on the select |
+| Tab after an edit | Advances normally to the next control |
+
+### 13.5 Known limitations
+
+* **A keystroke can be dropped immediately after an edit.** Focus is restored in a deferred
+  command, so a key pressed in that window lands on `<body>` and is lost. Observed while
+  testing: an ArrowUp sent straight after an ArrowDown did not register. Harmless at human
+  typing speed, but it is a real edge.
+* **The root cause is still there.** The empty keyboard handler in `MyDataGrid` affects
+  *every* grid in Stroom, and §9.1's Layers focus loss is the same family of bug. Restoring
+  proper arrow-key navigation there would fix this class of problem app-wide, but it is a
+  shared-widget change, the empty handler looks deliberate, and it needs its owner. §13 is
+  the contained alternative, not the real fix.
+* **Not run through `./gradlew check`.** `:stroom-core-client:compileJava`,
+  `:stroom-core-client:checkstyleMain` and `:stroom-app-gwt:gwtDraftCompile` all pass. The
+  full suite has not been run.

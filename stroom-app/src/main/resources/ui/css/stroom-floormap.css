@@ -200,13 +200,18 @@
 }
 
 /* Hover tooltip shown above the histogram bars while the user moves over them */
+/* The accent here — and in the scrub tooltip, area-draw hint, gesture readout and hover
+   tooltip below — comes from --button-default-primary__color, not --blue-500. These are
+   small text on the page background, so they owe 4.5:1 (WCAG 1.4.3), and --blue-500
+   measures 3.12:1 on the light theme's white. The border and caret follow the same token
+   to keep each tooltip one colour. See the speed badge above for the full reasoning. */
 .stroom-floormap-timeline-histogram-tooltip {
     position: absolute;
     top: 2px;
     left: 0;
     background-color: var(--page__background-color);
-    color: var(--blue-500);
-    border: 1px solid var(--blue-500);
+    color: var(--button-default-primary__color);
+    border: 1px solid var(--button-default-primary__color);
     border-radius: 3px;
     font-size: 10px;
     font-weight: 500;
@@ -315,12 +320,12 @@
     left: 0;
     transform: translateX(-50%);
     background-color: var(--page__background-color);
-    color: var(--blue-500);
+    color: var(--button-default-primary__color);
     font-size: 10px; /* matches start/end date labels */
     font-weight: 500;
     white-space: nowrap;
     padding: 3px 7px;
-    border: 1px solid var(--blue-500);
+    border: 1px solid var(--button-default-primary__color);
     border-radius: 4px;
     box-shadow: 0 2px 6px rgba(0,0,0,0.15);
     pointer-events: none;
@@ -337,7 +342,7 @@
     left: 50%;
     transform: translateX(-50%);
     border: 5px solid transparent;
-    border-top-color: var(--blue-500);
+    border-top-color: var(--button-default-primary__color);
 }
 
 /* Caret — inner (background colour) layer, sits 1px higher to mask the fill */
@@ -691,12 +696,12 @@
     left: 50%;
     transform: translateX(-50%);
     background-color: var(--page__background-color);
-    color: var(--blue-500);
+    color: var(--button-default-primary__color);
     font-size: 12px;
     font-weight: 500;
     white-space: nowrap;
     padding: 4px 10px;
-    border: 1px solid var(--blue-500);
+    border: 1px solid var(--button-default-primary__color);
     border-radius: 4px;
     box-shadow: 0 2px 6px rgba(0,0,0,0.15);
     pointer-events: none;
@@ -723,12 +728,12 @@
 .stroom-floormap-gesture-readout {
     position: absolute;
     background-color: var(--page__background-color);
-    color: var(--blue-500);
+    color: var(--button-default-primary__color);
     font-size: 11px;
     font-weight: 500;
     white-space: nowrap;
     padding: 3px 7px;
-    border: 1px solid var(--blue-500);
+    border: 1px solid var(--button-default-primary__color);
     border-radius: 4px;
     box-shadow: 0 2px 6px rgba(0,0,0,0.15);
     pointer-events: none;
@@ -760,7 +765,7 @@
     color: var(--text-color);
     font-size: 11px;
     padding: 5px 9px;
-    border: 1px solid var(--blue-500);
+    border: 1px solid var(--button-default-primary__color);
     border-radius: 4px;
     box-shadow: 0 2px 6px rgba(0,0,0,0.15);
     /* The pointer must never enter it: this is driven by mousemove over the
@@ -777,7 +782,7 @@
 }
 
 .stroom-floormap-hover-tooltip__caption {
-    color: var(--blue-500);
+    color: var(--button-default-primary__color);
     font-weight: 600;
     margin-bottom: 3px;
 }
