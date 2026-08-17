@@ -391,8 +391,18 @@ public class FloorMapLayersPresenter extends MyPresenterWidget<FloorMapLayersVie
             return;
         }
         final List<TypeStyle> newList = new ArrayList<>(layers);
-        newList.add(to, newList.remove(from));
-        commitOrder(newList);
+        final TypeStyle moved = newList.remove(from);
+        newList.add(to, moved);
+        if (!commitOrder(newList)) {
+            return;
+        }
+        // Announced only once the commit has been accepted, so the position quoted is
+        // the one that stuck. 1-based, to match what the user sees rather than the index.
+        final String type = moved.getType() == null
+                ? "Layer"
+                : moved.getType();
+        getView().announce(type + " layer moved to position "
+                + (to + 1) + " of " + newList.size());
     }
 
     /**
@@ -400,16 +410,22 @@ public class FloorMapLayersPresenter extends MyPresenterWidget<FloorMapLayersVie
      * path out of both the drag and the keyboard reorder, so they cannot drift.
      * A no-change reorder (dropped back where it started) returns without
      * touching the document.
+     *
+     * @return {@code true} if the order changed and was committed. The keyboard path
+     *         uses this to decide whether to announce a move: announcing one that was
+     *         refused here would tell a screen-reader user something happened when
+     *         nothing did.
      */
-    private void commitOrder(final List<TypeStyle> newList) {
+    private boolean commitOrder(final List<TypeStyle> newList) {
         if (newList.equals(layers)) {
-            return;
+            return false;
         }
         layers = newList;
         rebuild();
         if (typeStylesEditHandler != null) {
             typeStylesEditHandler.accept(new ArrayList<>(newList));
         }
+        return true;
     }
 
     /** True if the pointer is below the vertical midpoint of the given row. */
@@ -649,5 +665,15 @@ public class FloorMapLayersPresenter extends MyPresenterWidget<FloorMapLayersVie
     public interface FloorMapLayersView extends View {
 
         void setList(Widget listWidget);
+
+        /**
+         * Announces {@code message} through the panel's live region.
+         *
+         * <p>A keyboard reorder produces no visible change a screen reader can pick up
+         * — the row simply appears elsewhere in a list it is not reading — so without
+         * this the move is silent and the user cannot tell whether the keystroke did
+         * anything, let alone where the layer ended up.</p>
+         */
+        void announce(String message);
     }
 }

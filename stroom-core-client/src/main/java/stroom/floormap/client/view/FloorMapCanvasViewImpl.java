@@ -394,6 +394,24 @@ public class FloorMapCanvasViewImpl
         // (paint) order they are a stream of disconnected names and numbers. The
         // summary and the Tracking grid say the same thing usefully.
         svgContainer.getElement().setAttribute("role", "img");
+
+        // The focus panel needs a name of its own. A screen reader announces the
+        // element that has focus, and focus lands here rather than on svgContainer, so
+        // the name and role above are never reached: GWT's FocusPanel is a bare
+        // div[tabindex="0"], which computes to `generic`, and ARIA prohibits naming a
+        // generic element — an aria-label without a role is silently dropped. Tabbing
+        // to the map therefore announced nothing at all.
+        //
+        // role="img" cannot simply move up here to fix that. It makes its whole
+        // subtree presentational, and this panel contains statusRegion — the live
+        // region carrying every announcement the map makes — plus the hover tooltip
+        // and scale bar. Moving it would silence all three. So role="img" stays
+        // scoped to the SVG, and the focusable element is named as a group instead,
+        // which takes a name while leaving its descendants exposed.
+        //
+        // See §9.2 and §14.1 of docs/floormap-accessibility.md.
+        focusPanel.getElement().setAttribute("role", "group");
+
         setMapSummary("Floor map");
 
         // role="status" carries an implicit aria-live="polite"; both are set
@@ -414,13 +432,22 @@ public class FloorMapCanvasViewImpl
     /** {@inheritDoc} */
     @Override
     public void setMapSummary(final String summary) {
+        // Both elements: the container so the image itself is named when a screen
+        // reader browses the page, the focus panel so the same summary is spoken when
+        // a keyboard user tabs to the map. Two attribute writes on a path that only
+        // runs when the map's content changes, not per frame.
         svgContainer.getElement().setAttribute("aria-label", summary);
+        focusPanel.getElement().setAttribute("aria-label", summary);
     }
 
     /** {@inheritDoc} */
     @Override
     public void setMapDescribedBy(final String elementId) {
         svgContainer.getElement().setAttribute("aria-describedby", elementId);
+        // On the focus panel too, so the pointer to the Tracking / Fact List grid is
+        // announced at the moment focus arrives — where the summary alone tells the
+        // user there are entities but not how to reach them.
+        focusPanel.getElement().setAttribute("aria-describedby", elementId);
     }
 
     /** {@inheritDoc} */

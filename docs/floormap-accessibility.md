@@ -30,7 +30,7 @@ before-state; §12 records what changed and what it measures now.
 | Tabular panels (Tracking, Fact List, Time List, Groups) | **Adequate** — headers split from cells, no roles (§9.9) |
 | Layers panel | **Mixed** — labels good, keyboard reorder drops focus (§9.1) |
 | Dialogs (Object Edit, Settings, Init, Set Scale, Group Edit, Layer Style) | **Fail** — no dialog role, focus not moved in, labels on wrappers (§9.3, §9.4) |
-| Map canvas — text alternative | **Fail in practice** — summary sits on a child of the focus target (§9.2); omits static facts (§9.8) |
+| Map canvas — text alternative | **Fixed, pending browser check** — summary now also on the focus target (§14.1). Covering only tracked persons is **by design** (§9.8) |
 | Map canvas — keyboard operation | **Adequate** — pan/zoom/menu confirmed working; per-entity still no |
 | Cluster membership detail | **Gap** — pointer-only |
 | Reduced motion | **Good** — implemented and reasoned; not triggerable in test env (§8.1) |
@@ -38,7 +38,9 @@ before-state; §12 records what changed and what it measures now.
 | Colour contrast — non-text (icons, 1.4.11) | **Was Fail** in light theme (2.34:1, 2.19:1) — **fixed and verified**: 3.50:1, 3.20:1 (§12.1) |
 | Colour contrast over user imagery | **Unmanaged** — unchanged |
 | Document tab bars | **Fail** — keyboard works, but no tab/tablist roles (§10.4) |
-| Events Query / Settings tabs | **Fail** — unnamed controls; Value Schema keyboard-inoperable (§9.5, §10.1) |
+| Events Query / Settings tabs | **Fixed** — Value Schema keyboard-operable and named (§13); Events Query column boxes named, pending browser check (§14.4) |
+| Dialogs — Loop Playback checkbox | **Fixed, pending browser check** — name was landing on a wrapper `div` (§14.2) |
+| Layers panel — reorder announcement | **Fixed, pending browser check** — panel had no live region at all (§14.3) |
 | Assets / Documentation / Permissions tabs | **Fail** — shared-component issues (§10.3) |
 
 The single largest change is that the map is no longer opaque. It was previously an
@@ -235,6 +237,12 @@ it is navigable, it filters, and selecting a row centres and follows on the map.
 
 *Consequence:* selecting a specific entity requires going via the grid. Acceptable, but
 it means the canvas alone is not sufficient for the task.
+
+> **Confirmed 2026-08-17: the Tracking grid is the sanctioned route, for now.** The
+> trade-off above is accepted rather than merely observed, so this is a documented design
+> decision and not an open gap. Revisit only if the grid stops being a sufficient
+> substitute. Note this makes §9.2 — naming the canvas so a keyboard user is told what they
+> have landed on — more important rather than less, since the canvas is where they arrive.
 
 ### 3.3 Composite widgets cannot take a real `<label for>`
 
@@ -460,8 +468,27 @@ grip` was true), order captured either side, and `document.activeElement.tagName
 'BODY'` after. The move is also silent — the panel has no live region, so there is no
 confirmation that anything happened, or of the item's new position.
 
-Rows are rebuilt on reorder, destroying the focused element. Restore focus to the moved
-row's grip after the rebuild, and announce the new position.
+> **Correction, 2026-08-17 — the focus half of this finding is probably wrong.**
+> `FloorMapLayersPresenter` already implements the restore, and a trace of the whole path
+> found no defect in it:
+>
+> * the keydown handler sets `focusGripForType`, then `moveBy` → `commitOrder` → `rebuild()`;
+> * `buildRow` — confirmed as the real-layer builder, not the provisional one, so the type
+>   cannot match the wrong row — matches the type, clears the field, and defers
+>   `grip.setFocus(true)` on the freshly built grip, deferred precisely because the widget
+>   is not attached yet;
+> * the edit handler that fires next, `FloorMapEditorPresenter.onLayerTypeStylesEdited`,
+>   stages the styles and touches the canvas and object editor but **never re-enters the
+>   Layers panel**, so no second rebuild wipes the pending focus.
+>
+> All of it present since `2aeb041a47`. The measurement above read `activeElement`
+> **immediately** after the keypress, with no wait, so it most likely observed the gap
+> before the deferred command ran — and the second arrow press was then sent while focus was
+> still on `<body>`, which explains it doing nothing with no defect involved. A browser
+> re-test with a wait is the decider; until then nothing has been changed here.
+>
+> The **announcement** half stands and was independently confirmed: there is no live
+> region anywhere in the Layers panel. Fixed — see §14.3.
 
 ### 9.2 The map's focus target is an unnamed generic — [FM]
 
@@ -604,9 +631,16 @@ so the fix was to tighten the existing tokens rather than add a parallel family.
 The floormap's own contribution was hardcoding `var(--blue-500)` — a raw palette entry,
 identical in both themes — instead of using those theme-aware tokens.
 
-### 9.8 The map's text alternative omits everything that isn't a tracked person — [FM]
+### 9.8 The map's text alternative covers only tracked persons — [FM] — **BY DESIGN**
 
-*Moderate. WCAG 1.1.1.* The summary counts `8 persons`. The map also draws roughly fifteen
+> **Resolved 2026-08-17: this is correct behaviour, not a defect.** The summary describes
+> the tracked population and deliberately does not enumerate the static facts drawn beneath
+> it. Recorded here as a decision so the observation below is not re-raised as a finding.
+> The observation itself is accurate and worth keeping — it documents what the summary does
+> and does not cover, which anyone extending it will want to know.
+
+*Originally logged as: moderate, WCAG 1.1.1.* The summary counts `8 persons`. The map also
+draws roughly fifteen
 labelled glyphs — `C-office-1`, `P-L1-CAFETERIA`, `P-L2-CORRIDOR`, `P-L3-RM4`, `LOBBY`,
 `G-SOUTH-22`, `G-EAST-04` and more, across the `computers` and `gates` layers.
 
@@ -943,6 +977,111 @@ back would be worse than the problem.
   proper arrow-key navigation there would fix this class of problem app-wide, but it is a
   shared-widget change, the empty handler looks deliberate, and it needs its owner. §13 is
   the contained alternative, not the real fix.
-* **Not run through `./gradlew check`.** `:stroom-core-client:compileJava`,
-  `:stroom-core-client:checkstyleMain` and `:stroom-app-gwt:gwtDraftCompile` all pass. The
-  full suite has not been run.
+* **`./gradlew check` is green.** A run with Stroom **stopped** gave `BUILD SUCCESSFUL` in
+  9m 4s: zero failing tasks, zero test failures, and no checkstyle warnings against any file
+  changed by this work. `:stroom-app-gwt:gwtDraftCompile` also succeeds — the only step that
+  validates the UiBinder templates.
+
+  Two earlier runs failed, and that green run settles both as environmental rather than
+  regressions. Neither module has a dependency path to `stroom-core-client`:
+    * `:stroom-proxy:stroom-proxy-app:test` — 13 × WireMock `Failed to bind to /0.0.0.0:8080`
+      (`Address already in use`). A running Stroom holds that port; the tests need it free,
+      and **restarting Stroom does not help — it must be stopped.**
+    * `TestSimpleGuard.testDestroyDuringActiveAcquisitionRace` — flaky, from unrelated
+      `#5364` work. It asserts that some of 100 racing threads acquire before one of them
+      destroys the guard, which nothing orders; it passed 3/3 in isolation, passed in an
+      earlier full run on identical code, and passed again in the green run.
+
+  **Worth remembering for the next full check:** a running Stroom holds `:8080`, and
+  restarting it does not release the port — it has to be stopped, or those 13 proxy tests
+  fail every time and look like a regression.
+
+---
+
+## 14. Naming and announcement fixes applied
+
+Applied 2026-08-17. **Compiled and checkstyle-clean, but not yet verified in a browser** —
+the instance was stopped for a test run. Each item below states what to check.
+
+All four are floormap-owned. Shared-widget findings (§9.4, §9.6, §9.9, §10.3, §10.4, §12.5,
+and the `MyDataGrid` keyboard handler) are deliberately out of scope for this pass.
+
+### 14.1 §9.2 — the map's summary is now announced on focus
+
+The generated summary was correct all along; it was attached to the wrong element.
+`role="img"` and the `aria-label` sat on `svgContainer`, a **child** of the focusable
+`FocusPanel`, and a roleless `div[tabindex="0"]` computes to `generic` — which ARIA forbids
+naming, so tabbing to the map announced nothing.
+
+**The role could not simply be moved up.** `role="img"` makes its whole subtree
+presentational, and `statusRegion` — the live region carrying every announcement the map
+makes — is a descendant of the focus panel, as are the hover tooltip and scale bar. Moving
+it would have silenced the lot. So:
+
+* `role="img"` stays on `svgContainer`, scoped to the SVG.
+* `focusPanel` gets `role="group"`, which takes a name without making descendants
+  presentational.
+* `setMapSummary` and `setMapDescribedBy` now write to both elements — the container so the
+  image is named when browsing, the focus panel so the summary and the pointer to the
+  Tracking grid are spoken on focus.
+
+*Check:* tab to the map; Chrome's tree should show a **named group**, not an unnamed generic.
+Then confirm announcements still fire — select an entity and watch the live region. That
+regression is the one this fix was shaped around.
+
+### 14.2 §9.3 — Loop Playback checkbox was named on its wrapper
+
+`FloorMapAria.label(loopCheckBox, …)` put the name on `CustomCheckBox`'s root, which is a
+`div.SimpleTickBox` wrapping the real `<input>` — exactly what `label()`'s own javadoc warns
+against. Now uses a new `FloorMapAria.labelInnerControl`, which names the first focusable
+descendant and returns whether it found one.
+
+`group()` was the alternative but describes a single checkbox as a group of controls, which
+reads worse than naming the checkbox.
+
+**The two `DateTimeBox`es beside it were already correct** — `group()` there is the
+documented mitigation for a composite whose inner input a `<label for>` cannot reach (§3.3).
+axe still reports their inner inputs as unlabelled; that is the acknowledged trade-off of the
+group pattern, not a new defect.
+
+**The grep for other instances came back almost empty**, which was the useful result: every
+other `FloorMapAria.label()` call in the feature targets a genuine control — `TextBox`,
+`ListBox`, and `ColourBox`, whose root *is* its input. The wrapper mistake was one site, not
+a habit.
+
+*Check:* axe on the Timeline Settings dialog should lose `aria-prohibited-attr` and one of
+its three `label` violations. The two date-box violations are expected to remain.
+
+### 14.3 §9.1 — the Layers reorder is no longer silent
+
+The panel had no live region anywhere, so a keyboard reorder produced nothing a screen
+reader could report. Added one to `FloorMapLayersViewImpl` with an `announce()` on the view
+interface, mirroring the canvas's region.
+
+It is placed **beside** the scroll panel, not inside the list, because `rebuild()` clears the
+list on every reorder and a live region that is destroyed and re-created never announces —
+assistive technology only reports changes to a region it was already watching.
+
+`moveBy` now announces e.g. `computers layer moved to position 2 of 4`, after the commit so
+the position quoted is the one that stuck, and 1-based to match what the user sees.
+
+*Check:* a `MutationObserver` on the region should record exactly one announcement per move,
+and none for a move that is refused at either end of the list.
+
+**Not changed: the focus-restore half.** See the correction in §9.1 — that mechanism already
+exists and the evidence against it was raced. It needs re-testing with a wait before anyone
+touches it.
+
+### 14.4 §10.1 — Events Query column boxes were unnamed
+
+Both `FormGroup`s carry `identity` and a visible label, but `SelectionBox` is a composite
+whose root is a wrapper `div`, so `setIdentity()` lands the id there and the `<label for>`
+resolves to a non-labelable element — naming nothing. This is the exact case `FloorMapAria`'s
+class javadoc describes. Both now name their inner input via `labelInnerControl`.
+
+The label text is duplicated in Java rather than wired to the visible label, because the
+`FormGroup`'s copy cannot reach the inner input. A real fix is label forwarding in
+`BaseSelectionBox` (§3.3) — shared, and out of scope here.
+
+*Check:* axe on the Events Query tab should drop from three `label` violations to one. The
+survivor is the Ace editor's hidden textarea, which is shared.

@@ -89,6 +89,38 @@ public final class FloorMapAria {
     }
 
     /**
+     * Names the real control nested inside a composite widget, rather than the
+     * widget's wrapper element.
+     *
+     * <p>Use for a composite that wraps exactly one control — {@code CustomCheckBox},
+     * whose root is a {@code div.SimpleTickBox} with the {@code <input>} inside it.
+     * {@link #label(UIObject, String)} on such a widget lands the name on the wrapper,
+     * where it is dropped; {@link #group(UIObject, String)} would work but describes a
+     * single checkbox as a group of controls, which is a worse reading than naming the
+     * checkbox itself.</p>
+     *
+     * <p>Prefer this to {@code group()} when there is one control, and {@code group()}
+     * when there are several or none.</p>
+     *
+     * @return {@code true} if an inner control was found and named. A {@code false}
+     *         return means the widget's shape is not what the caller assumed, and the
+     *         control is still anonymous — worth asserting on rather than ignoring.
+     */
+    public static boolean labelInnerControl(final UIObject uiObject, final String label) {
+        if (uiObject == null) {
+            return false;
+        }
+        for (final String tag : FOCUSABLE_TAGS) {
+            final NodeList<Element> candidates = uiObject.getElement().getElementsByTagName(tag);
+            if (candidates.getLength() > 0) {
+                candidates.getItem(0).setAttribute(ARIA_LABEL, label);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * Marks {@code uiObject} as a named group of controls.
      *
      * <p>The explicit {@code role="group"} is the load-bearing half: without it

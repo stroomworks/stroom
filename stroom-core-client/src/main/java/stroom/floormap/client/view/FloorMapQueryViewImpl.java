@@ -16,6 +16,7 @@
 
 package stroom.floormap.client.view;
 
+import stroom.floormap.client.FloorMapAria;
 import stroom.floormap.client.presenter.FloorMapQueryPresenter.FloorMapQueryView;
 import stroom.item.client.SelectionBox;
 
@@ -53,6 +54,16 @@ public class FloorMapQueryViewImpl extends ViewImpl implements FloorMapQueryView
     @Inject
     public FloorMapQueryViewImpl(final Binder binder) {
         widget = binder.createAndBindUi(this);
+
+        // The FormGroups around these two carry identity="entityColumn" /
+        // "locationColumn" and a visible label, but SelectionBox is a composite whose
+        // root is a wrapper div — so setIdentity() puts the id on the wrapper and the
+        // <label for> resolves to a non-labelable element, naming nothing. Both boxes
+        // announced as unnamed. Name the inner input directly instead; the label text
+        // is duplicated here deliberately, since the FormGroup's copy cannot reach it.
+        // See §10.1 of docs/floormap-accessibility.md.
+        FloorMapAria.labelInnerControl(entityIdColumn, "Entity ID Column");
+        FloorMapAria.labelInnerControl(locationIdColumn, "Location ID Column");
     }
 
     @Override
