@@ -394,6 +394,57 @@ class TestXsltReferenceParser {
         }
 
         @Test
+        @DisplayName("a map name indented onto its own line keeps its whitespace, as the runtime sees it")
+        void surroundingWhitespaceIsNotTrimmed() {
+            final XsltReferences result = parse(template("""
+                    <referenceData xmlns="reference-data:2">
+                      <reference>
+                        <map>
+                          geo_ip
+                        </map>
+                      </reference>
+                    </referenceData>"""));
+
+            // Deliberately not trimmed. Neither PlanBFilter nor ReferenceDataFilter trims, so this really
+            // does select a store whose name has whitespace in it, and really does then write nowhere.
+            // Reporting "geo_ip" would hide a live defect behind a name that looks correct; reporting it
+            // verbatim is what makes the problem visible to whoever wrote it.
+            //
+            // Asserted as a property rather than an exact string, so the test says "not trimmed" rather
+            // than encoding how deeply this fixture happens to be indented.
+            assertThat(result.resolvedValues(XsltReferenceKind.REF_MAP_WRITE))
+                    .singleElement()
+                    .satisfies(mapName -> {
+                        assertThat(mapName).contains("geo_ip");
+                        assertThat(mapName).isNotEqualTo("geo_ip");
+                        assertThat(mapName.strip()).isEqualTo("geo_ip");
+                    });
+        }
+
+        @Test
+        @DisplayName("indentation around a nested element costs nothing, since XSLT strips it")
+        void indentationAroundAnElementIsHarmless() {
+            final XsltReferences result = parse("""
+                    <xsl:stylesheet version="2.0"
+                                    xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
+                                    xmlns:stroom="stroom">
+                      <xsl:variable name="MAP" select="'geo_ip'"/>
+                      <xsl:template match="/">
+                        <reference xmlns="reference-data:2">
+                          <map>
+                            <xsl:value-of select="$MAP"/>
+                          </map>
+                        </reference>
+                      </xsl:template>
+                    </xsl:stylesheet>""");
+
+            // The contrast with the case above. Here the whitespace is in whitespace-only text nodes, which
+            // XSLT strips from a stylesheet before it runs, so the name is clean at runtime and the parser
+            // says so. Pretty printing is only harmful when it lands inside the same text node as the name.
+            assertThat(result.resolvedValues(XsltReferenceKind.REF_MAP_WRITE)).containsExactly("geo_ip");
+        }
+
+        @Test
         @DisplayName("matches the element name case-insensitively, as both filters do")
         void elementNameCaseInsensitive() {
             final XsltReferences result = parse(template("""

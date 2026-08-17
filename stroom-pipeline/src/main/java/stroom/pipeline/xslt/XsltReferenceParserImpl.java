@@ -328,19 +328,24 @@ class XsltReferenceParserImpl implements XsltReferenceParser {
             final int lineNumber = lineNumberOf(element);
             final XsltValue value = valueResolver.resolveElementContent(element);
             for (final String mapName : value.values()) {
-                // Trimmed because the surrounding whitespace is the author's formatting rather than part
-                // of the name. Note that the runtime filters do not trim, so a pretty printed <map>
-                // element is a genuine, pre-existing runtime hazard - out of scope here.
-                final String trimmed = mapName.trim();
-                if (!trimmed.isEmpty()) {
+                // Reported exactly as the runtime will see it, whitespace included. Trimming here would be
+                // the parser disagreeing with the runtime, which is the one thing it must not do: neither
+                // PlanBFilter nor ReferenceDataFilter trims, so <map> with a name indented onto its own
+                // line really does select a store whose name has whitespace in it, and really does then
+                // write nowhere. Showing the name verbatim is what makes that visible; tidying it up would
+                // hide a live defect in the author's content behind a name that looks fine.
+                //
+                // Indentation around a nested element is a different case and needs no trimming - XSLT
+                // strips whitespace-only text nodes from a stylesheet, so pretty printing costs nothing.
+                if (!mapName.isEmpty()) {
                     references.add(XsltReference.mapName(
-                            XsltReferenceKind.REF_MAP_WRITE, trimmed, value.certainty(), lineNumber));
+                            XsltReferenceKind.REF_MAP_WRITE, mapName, value.certainty(), lineNumber));
                 }
             }
             if (value.reason() != null) {
                 references.add(XsltReference.unresolved(
                         XsltReferenceKind.REF_MAP_WRITE,
-                        element.getStringValue().trim(),
+                        element.getStringValue(),
                         value.reason(),
                         value.certainty(),
                         lineNumber));
