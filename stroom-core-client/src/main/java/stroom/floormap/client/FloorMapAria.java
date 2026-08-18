@@ -59,9 +59,10 @@ public final class FloorMapAria {
     private static final String ROLE = "role";
 
     /**
-     * Tag names that can take keyboard focus without an explicit tabindex. Used
-     * by {@link #focusFirstFocusable(Element)} to find a real control to focus
-     * inside a container.
+     * Tag names that can take keyboard focus without an explicit tabindex. Used by
+     * {@link #firstFocusable(Element)} to find the real control inside a container, and so
+     * by both {@link #focusFirstFocusable(Element)} and
+     * {@link #labelInnerControl(UIObject, String)}.
      */
     private static final String[] FOCUSABLE_TAGS = {"input", "select", "textarea", "button", "a"};
 
@@ -102,22 +103,52 @@ public final class FloorMapAria {
      * <p>Prefer this to {@code group()} when there is one control, and {@code group()}
      * when there are several or none.</p>
      *
-     * @return {@code true} if an inner control was found and named. A {@code false}
-     *         return means the widget's shape is not what the caller assumed, and the
-     *         control is still anonymous — worth asserting on rather than ignoring.
+     * <p>Skips {@code disabled} and {@code tabindex="-1"} candidates, matching
+     * {@link #focusFirstFocusable(Element)} — a composite that keeps a hidden or disabled
+     * input ahead of its real control would otherwise be named on the wrong element.</p>
+     *
+     * @param label the name to apply; {@code null} is treated as no label and returns
+     *              {@code false} rather than writing "null" into the attribute
+     * @return {@code true} if an inner control was found and named. A {@code false} return
+     *         means the widget's shape was not what the caller assumed and the control is
+     *         still anonymous. Callers that cannot recover should at least log it: a silent
+     *         false is indistinguishable from success.
      */
     public static boolean labelInnerControl(final UIObject uiObject, final String label) {
-        if (uiObject == null) {
+        if (uiObject == null || label == null) {
             return false;
         }
+        final Element control = firstFocusable(uiObject.getElement());
+        if (control == null) {
+            return false;
+        }
+        control.setAttribute(ARIA_LABEL, label);
+        return true;
+    }
+
+    /**
+     * The first natively-focusable descendant of {@code container} that is a legitimate
+     * target — neither {@code disabled} nor removed from the tab order — or {@code null}.
+     *
+     * <p>Shared by {@link #labelInnerControl(UIObject, String)} and
+     * {@link #focusFirstFocusable(Element)} so the two cannot disagree about which element
+     * counts as "the control inside this widget".</p>
+     */
+    private static Element firstFocusable(final Element container) {
+        if (container == null) {
+            return null;
+        }
         for (final String tag : FOCUSABLE_TAGS) {
-            final NodeList<Element> candidates = uiObject.getElement().getElementsByTagName(tag);
-            if (candidates.getLength() > 0) {
-                candidates.getItem(0).setAttribute(ARIA_LABEL, label);
-                return true;
+            final NodeList<Element> candidates = container.getElementsByTagName(tag);
+            for (int i = 0; i < candidates.getLength(); i++) {
+                final Element candidate = candidates.getItem(i);
+                if (!candidate.hasAttribute("disabled")
+                        && !"-1".equals(candidate.getAttribute("tabindex"))) {
+                    return candidate;
+                }
             }
         }
-        return false;
+        return null;
     }
 
     /**
@@ -201,6 +232,29 @@ public final class FloorMapAria {
         }
     }
 
+    /**
+     * Configures {@code uiObject} as a polite, atomic live region.
+     *
+     * <p>{@code role="status"} carries an implicit {@code aria-live="polite"}; both are set
+     * because some screen readers honour only one. {@code aria-atomic} makes the region read
+     * as a whole sentence rather than diffed word by word.</p>
+     *
+     * <p>The caller still owns visibility: a live region must remain rendered, since a hidden
+     * one is dropped from the accessibility tree and never announces. The floor map's regions
+     * use the {@code stroom-floormap-visually-hidden} class for that.</p>
+     *
+     * <p>Exists so the canvas and Layers panels cannot drift apart on the attribute triple —
+     * they had it copied verbatim.</p>
+     */
+    public static void liveRegion(final UIObject uiObject) {
+        if (uiObject != null) {
+            final Element element = uiObject.getElement();
+            element.setAttribute(ROLE, "status");
+            element.setAttribute("aria-live", "polite");
+            element.setAttribute("aria-atomic", "true");
+        }
+    }
+
     /** A document-unique id, for wiring up {@code for} / {@code aria-labelledby}. */
     public static String uniqueId(final String prefix) {
         return prefix + "-" + DOM.createUniqueId();
@@ -219,22 +273,13 @@ public final class FloorMapAria {
      * @return {@code true} if something was focused
      */
     public static boolean focusFirstFocusable(final Element container) {
-        if (container == null) {
+        // A disabled or explicitly-removed control is not a focus target; focusing it would
+        // be another silent no-op. firstFocusable applies that filter.
+        final Element candidate = firstFocusable(container);
+        if (candidate == null) {
             return false;
         }
-        for (final String tag : FOCUSABLE_TAGS) {
-            final NodeList<Element> candidates = container.getElementsByTagName(tag);
-            for (int i = 0; i < candidates.getLength(); i++) {
-                final Element candidate = candidates.getItem(i);
-                // A disabled or explicitly-removed control is not a focus target;
-                // focusing it would be another silent no-op.
-                if (!candidate.hasAttribute("disabled")
-                        && !"-1".equals(candidate.getAttribute("tabindex"))) {
-                    candidate.focus();
-                    return true;
-                }
-            }
-        }
-        return false;
+        candidate.focus();
+        return true;
     }
 }

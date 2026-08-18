@@ -35,10 +35,18 @@
        needs the darker 900; the dark theme needs a *lighter* orange for the same
        reason, hence the per-theme value rather than one shared constant. */
     --floormap-out-of-range__color: #e65100; /* 3.8:1 on white */
+
+    /* Accent for the map's small text: tooltips, readouts, the speed badge, and the
+       borders and caret that go with them. Aliased to the primary button colour because
+       that is the one accent in the palette held to the 4.5:1 text threshold rather than
+       the 3:1 non-text one — --blue-500 is 3.12:1 on white and fails as text. The alias
+       exists so these are not silently restyled by a future button redesign: if the
+       button family moves to white-on-blue, point this at a value of its own instead. */
+    --floormap-accent__color: var(--button-default-primary__color);
 }
 
 .stroom-theme-dark {
-    --floormap-out-of-range__color: #ffa726; /* 8.4:1 on the dark page background */
+    --floormap-out-of-range__color: #ffa726; /* 7.9:1 on the dark page background */
 }
 
 /* ============================================================
@@ -128,7 +136,7 @@
        only 3.12:1 on this theme's white page background. There is deliberately no
        `opacity` here either — fading the text multiplied away what headroom was left
        (0.85 dropped it to 4.29:1). De-emphasis, if wanted, belongs in the colour. */
-    color: var(--button-default-primary__color);
+    color: var(--floormap-accent__color);
     width: 44px;         /* Fixed — wide enough for the longest label (×10,000) */
     flex-shrink: 0;
     text-align: center;
@@ -210,8 +218,8 @@
     top: 2px;
     left: 0;
     background-color: var(--page__background-color);
-    color: var(--button-default-primary__color);
-    border: 1px solid var(--button-default-primary__color);
+    color: var(--floormap-accent__color);
+    border: 1px solid var(--floormap-accent__color);
     border-radius: 3px;
     font-size: 10px;
     font-weight: 500;
@@ -320,12 +328,12 @@
     left: 0;
     transform: translateX(-50%);
     background-color: var(--page__background-color);
-    color: var(--button-default-primary__color);
+    color: var(--floormap-accent__color);
     font-size: 10px; /* matches start/end date labels */
     font-weight: 500;
     white-space: nowrap;
     padding: 3px 7px;
-    border: 1px solid var(--button-default-primary__color);
+    border: 1px solid var(--floormap-accent__color);
     border-radius: 4px;
     box-shadow: 0 2px 6px rgba(0,0,0,0.15);
     pointer-events: none;
@@ -342,7 +350,7 @@
     left: 50%;
     transform: translateX(-50%);
     border: 5px solid transparent;
-    border-top-color: var(--button-default-primary__color);
+    border-top-color: var(--floormap-accent__color);
 }
 
 /* Caret — inner (background colour) layer, sits 1px higher to mask the fill */
@@ -696,12 +704,12 @@
     left: 50%;
     transform: translateX(-50%);
     background-color: var(--page__background-color);
-    color: var(--button-default-primary__color);
+    color: var(--floormap-accent__color);
     font-size: 12px;
     font-weight: 500;
     white-space: nowrap;
     padding: 4px 10px;
-    border: 1px solid var(--button-default-primary__color);
+    border: 1px solid var(--floormap-accent__color);
     border-radius: 4px;
     box-shadow: 0 2px 6px rgba(0,0,0,0.15);
     pointer-events: none;
@@ -728,12 +736,12 @@
 .stroom-floormap-gesture-readout {
     position: absolute;
     background-color: var(--page__background-color);
-    color: var(--button-default-primary__color);
+    color: var(--floormap-accent__color);
     font-size: 11px;
     font-weight: 500;
     white-space: nowrap;
     padding: 3px 7px;
-    border: 1px solid var(--button-default-primary__color);
+    border: 1px solid var(--floormap-accent__color);
     border-radius: 4px;
     box-shadow: 0 2px 6px rgba(0,0,0,0.15);
     pointer-events: none;
@@ -765,7 +773,7 @@
     color: var(--text-color);
     font-size: 11px;
     padding: 5px 9px;
-    border: 1px solid var(--button-default-primary__color);
+    border: 1px solid var(--floormap-accent__color);
     border-radius: 4px;
     box-shadow: 0 2px 6px rgba(0,0,0,0.15);
     /* The pointer must never enter it: this is driven by mousemove over the
@@ -782,7 +790,7 @@
 }
 
 .stroom-floormap-hover-tooltip__caption {
-    color: var(--button-default-primary__color);
+    color: var(--floormap-accent__color);
     font-weight: 600;
     margin-bottom: 3px;
 }

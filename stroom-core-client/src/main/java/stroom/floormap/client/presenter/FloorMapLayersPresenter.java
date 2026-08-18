@@ -398,10 +398,13 @@ public class FloorMapLayersPresenter extends MyPresenterWidget<FloorMapLayersVie
         }
         // Announced only once the commit has been accepted, so the position quoted is
         // the one that stuck. 1-based, to match what the user sees rather than the index.
-        final String type = moved.getType() == null
-                ? "Layer"
-                : moved.getType();
-        getView().announce(type + " layer moved to position "
+        //
+        // getType() is used unguarded: rebuild() only builds a row — and therefore a grip —
+        // for a layer with a non-null type, so a null-typed layer has no control to reorder
+        // from and cannot reach here. An earlier "Layer" fallback implied otherwise, which
+        // contradicted that filtering. The count is of layers, so in Editor mode it will be
+        // smaller than the number of visible rows, which also lists provisional types.
+        getView().announce(moved.getType() + " layer moved to position "
                 + (to + 1) + " of " + newList.size());
     }
 

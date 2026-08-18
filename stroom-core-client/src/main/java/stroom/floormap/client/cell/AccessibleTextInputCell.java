@@ -32,10 +32,12 @@ import com.google.gwt.safehtml.shared.SafeHtmlBuilder;
  * handles arrow-key navigation, which Stroom's {@code MyDataGrid} disables.
  *
  * <p>Note this replaces {@code EditTextCell} at its call sites rather than subclassing it.
- * {@code EditTextCell} renders static text until it is <em>clicked</em>, which is a
- * pointer-only affordance — there is nothing for a keyboard user to focus in the first place.
- * An always-present input is both reachable and, for a small settings grid, less surprising.
- * The visible consequence is that the cells now look like the input fields they are.
+ * {@code EditTextCell} renders static text and swaps to an input on click — or on Enter, but
+ * only for a user who has already reached the cell through the table's own keyboard
+ * navigation. There is nothing in the tab order to focus directly, so in a grid whose
+ * navigation is unavailable it is effectively pointer-only. An always-present input is
+ * reachable by Tab alone and, for a small settings grid, less surprising. The visible
+ * consequence is that the cells now look like the input fields they are.
  */
 public class AccessibleTextInputCell extends TextInputCell {
 
@@ -76,11 +78,19 @@ public class AccessibleTextInputCell extends TextInputCell {
         final String current = viewData == null
                 ? value
                 : viewData.getCurrentValue();
+        // Null-coalesced, not just null-checked for the provider: a provider that returns
+        // null would otherwise reach the generated SafeHtml escaper and throw.
         final String label = labelProvider == null
                 ? ""
-                : labelProvider.getLabel(context.getIndex());
+                : nullToEmpty(labelProvider.getLabel(context.getIndex()));
         sb.append(readOnly
                 ? TEMPLATE.inputDisabled(current == null ? "" : current, label)
                 : TEMPLATE.input(current == null ? "" : current, label));
+    }
+
+    private static String nullToEmpty(final String value) {
+        return value == null
+                ? ""
+                : value;
     }
 }

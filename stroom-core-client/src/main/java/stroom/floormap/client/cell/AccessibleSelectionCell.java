@@ -32,10 +32,15 @@ import java.util.Map;
  *
  * <p>GWT's {@code SelectionCell} renders {@code <select tabindex="-1">}. That is deliberate
  * on GWT's part rather than an oversight: a cell is not meant to be its own tab stop,
- * because {@code AbstractCellTable} is expected to move between cells with the arrow keys.
- * Stroom's {@code MyDataGrid} enables that policy and then immediately replaces the handler
- * with an empty lambda, so in Stroom the arrow keys never arrive — leaving the control
- * unreachable by keyboard by any route. See §9.5 of {@code docs/floormap-accessibility.md}.
+ * because {@code AbstractCellTable} is expected to move between cells with the arrow keys,
+ * marking the keyboard-selected cell's wrapper focusable instead.
+ *
+ * <p>That leaves the control reachable only by first finding the table's own tab stop and
+ * then arrowing to the right row — indirect at best, and unavailable entirely in the grids
+ * where {@code MyDataGrid}'s two-arg {@code setSelectionModel} has replaced the keyboard
+ * handler with an empty lambda. Dropping the {@code tabindex} puts the control in the tab
+ * order directly, which is what a user tabbing through a form expects to find. See §9.5 of
+ * {@code docs/floormap-accessibility.md}.
  *
  * <p>This subclass renders the same markup with the {@code tabindex} dropped, so the select
  * takes its natural place in the tab order, and adds an {@code aria-label} identifying the
@@ -43,10 +48,11 @@ import java.util.Map;
  * it renders {@code disabled}, so the control stops presenting itself as editable in a state
  * where the field updater would discard the edit.
  *
- * <p>The proper fix is in {@code MyDataGrid}, which would restore arrow-key navigation for
- * every grid in Stroom at once. That is a shared-widget change with a much wider blast
- * radius, and the empty handler there looks deliberate, so it needs its owner. This class is
- * the contained alternative.
+ * <p>Restoring arrow-key navigation in {@code MyDataGrid} for the grids that lost it would
+ * be the broader fix, but that is a shared-widget change with a much wider blast radius and
+ * the empty handler there looks deliberate, so it needs its owner. This class is the
+ * contained alternative, and it does not disturb the table's own keyboard handling — a grid
+ * using these cells keeps whatever row navigation and selection it had.
  */
 public class AccessibleSelectionCell extends SelectionCell {
 
@@ -110,9 +116,11 @@ public class AccessibleSelectionCell extends SelectionCell {
             viewData = null;
         }
 
+        // Null-coalesced, not just null-checked for the provider: a provider that returns
+        // null would otherwise reach the generated SafeHtml escaper and throw.
         final String label = labelProvider == null
                 ? ""
-                : labelProvider.getLabel(context.getIndex());
+                : nullToEmpty(labelProvider.getLabel(context.getIndex()));
         sb.append(readOnly
                 ? TEMPLATE.selectDisabled(label)
                 : TEMPLATE.select(label));
@@ -130,5 +138,11 @@ public class AccessibleSelectionCell extends SelectionCell {
             index++;
         }
         sb.appendHtmlConstant("</select>");
+    }
+
+    private static String nullToEmpty(final String value) {
+        return value == null
+                ? ""
+                : value;
     }
 }

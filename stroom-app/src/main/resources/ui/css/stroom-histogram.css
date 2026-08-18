@@ -16,18 +16,26 @@
  *  var() and currentColor mean nothing to it. Everything else in
  *  this file can and does use var() directly.
  *
- *  Keep both in sync with --blue-500 / --blue-600: the peak bar
- *  is the same hue at full opacity, which is what makes the peak
- *  read as "more of the same" rather than as a different series.
+ *  Keep both the same hue, the peak at full opacity: that is what
+ *  makes the peak read as "more of the same" rather than as a
+ *  different series.
+ *
+ *  The light theme uses blue-800 rather than the blue-600 it started
+ *  with. The bars are the chart's content, so WCAG 1.4.11 wants 3:1
+ *  against the panel behind them, and blue-600 at 0.7 alpha measured
+ *  only 2.43:1 on white — the alpha eating the headroom of a colour
+ *  that was already marginal. blue-800 at 0.8 gives 3.87:1 and keeps
+ *  the translucency that lets the scrubber show through.
  * ------------------------------------------------------------ */
 :root {
-    --histogram-bar__color:  rgba(30, 136, 229, 0.7);
-    --histogram-peak__color: rgba(30, 136, 229, 1.0);
+    --histogram-bar__color:  rgba(21, 101, 192, 0.8);  /* blue-800, 3.87:1 on white */
+    --histogram-peak__color: rgba(21, 101, 192, 1.0);  /* blue-800, 5.75:1 on white */
 }
 
-/* Lifted on the dark theme: the same blue at 0.7 alpha over a near-black
-   background loses most of its contrast against the panel, so the bars flatten
-   into the background instead of reading as a distribution. */
+/* Lifted on the dark theme: a dark blue over a near-black background loses most of
+   its contrast against the panel, so the bars flatten into the background instead of
+   reading as a distribution. Measured 4.55:1 against the panel, so this half already
+   satisfied 1.4.11 and is unchanged. */
 .stroom-theme-dark {
     --histogram-bar__color:  rgba(100, 181, 246, 0.75);
     --histogram-peak__color: rgba(144, 202, 249, 1.0);

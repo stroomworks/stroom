@@ -22,6 +22,7 @@ import stroom.document.client.event.DirtyUiHandlers;
 import stroom.entity.client.presenter.DocPresenter;
 import stroom.entity.client.presenter.ReadOnlyChangeHandler;
 import stroom.explorer.client.presenter.DocSelectionBoxPresenter;
+import stroom.floormap.client.FloorMapAria;
 import stroom.floormap.client.cell.AccessibleSelectionCell;
 import stroom.floormap.client.cell.AccessibleTextInputCell;
 import stroom.floormap.client.presenter.FloorMapSettingsPresenter.FloorMapSettingsView;
@@ -35,14 +36,13 @@ import stroom.svg.client.SvgPresets;
 import stroom.widget.button.client.ButtonPanel;
 import stroom.widget.button.client.ButtonView;
 
+import com.google.gwt.core.client.GWT;
 import com.google.gwt.core.client.Scheduler;
 import com.google.gwt.dom.client.Document;
 import com.google.gwt.dom.client.Element;
-import com.google.gwt.dom.client.NodeList;
 import com.google.gwt.dom.client.TableCellElement;
 import com.google.gwt.dom.client.TableRowElement;
 import com.google.gwt.user.cellview.client.Column;
-import com.google.gwt.user.cellview.client.HasKeyboardSelectionPolicy.KeyboardSelectionPolicy;
 import com.google.gwt.user.client.ui.ListBox;
 import com.google.gwt.user.client.ui.Widget;
 import com.google.gwt.view.client.ListDataProvider;
@@ -88,13 +88,6 @@ import java.util.stream.Collectors;
 public class FloorMapSettingsPresenter
         extends DocPresenter<FloorMapSettingsView, FloorMapDoc>
         implements DirtyUiHandlers {
-
-    // Column positions in the Value Schema grid, used to put focus back on the right
-    // control after an edit redraws its row.
-    private static final int COL_ROLE = 0;
-    private static final int COL_PATH = 1;
-    private static final int COL_NAME = 2;
-    private static final int COL_DEFAULT = 3;
 
     private final DocSelectionBoxPresenter eventsStoreRefPresenter;
     private final DocSelectionBoxPresenter factsStoreRefPresenter;
@@ -156,14 +149,22 @@ public class FloorMapSettingsPresenter
         schemaGrid = new MyDataGrid<>(this);
         schemaSelectionModel = new SingleSelectionModel<>();
         schemaGrid.setSelectionModel(schemaSelectionModel);
-        // Must follow setSelectionModel, which turns the policy on. With it on, GWT marks
-        // the keyboard-selected cell's wrapper div `tabindex="0"` to give the table a tab
-        // stop for its own arrow-key navigation — navigation that MyDataGrid disables by
-        // installing an empty keyboard handler. The stop therefore leads nowhere, and as
-        // the selected cell moves it lands *before* the control being tabbed away from,
-        // sending focus backwards. The cells here carry their own focusable controls, so
-        // the table does not need a stop of its own.
-        schemaGrid.setKeyboardSelectionPolicy(KeyboardSelectionPolicy.DISABLED);
+        // Note for anyone tempted to set KeyboardSelectionPolicy.DISABLED here: don't.
+        // An earlier revision did, to remove a stray tab stop — GWT marks the
+        // keyboard-selected cell's wrapper div `tabindex="0"`, and as the selected cell
+        // moves that stop can land before the control being tabbed away from, sending
+        // focus backwards. Disabling the policy does give a clean row-major tab order,
+        // but it also switches off the table's arrow-key and space handling, and this
+        // grid's Remove button is enabled solely by schemaSelectionModel — so row
+        // selection became mouse-only and Remove stopped being operable by keyboard at
+        // all. A worse bargain than the tab order it bought.
+        //
+        // Note also that MyDataGrid's empty keyboard handler does NOT apply to this
+        // grid: it is installed by the two-arg setSelectionModel override, and the
+        // one-arg call above goes straight to AbstractHasData, so the policy here is
+        // GWT's own ENABLED default with GWT's DefaultKeyboardSelectionHandler live.
+        // The stray tab stop is the pre-existing behaviour of every Stroom grid, not
+        // something this feature introduced. See §13.3 of docs/floormap-accessibility.md.
         schemaDataProvider = new ListDataProvider<>();
         schemaDataProvider.addDataDisplay(schemaGrid);
         initSchemaColumns();
@@ -184,8 +185,13 @@ public class FloorMapSettingsPresenter
      * Builds the accessible name for a control in the schema grid.
      *
      * <p>Every row's control would otherwise announce identically ("Role", "Path", …), so the
-     * row's JSON path is included to distinguish them. Rows without a path yet — a freshly
-     * added mapping — fall back to their position.
+     * row's JSON path is included to distinguish them.</p>
+     *
+     * <p>Rows whose path is null or empty fall back to their 1-based position. Note a newly
+     * added row does <em>not</em> take that fallback: {@link #onAddMapping()} seeds the path
+     * with the placeholder {@code "."}, which is non-empty, so it announces as "Role for ."
+     * until the user types a real path. Only a persisted document with a blank path reaches
+     * the positional form.</p>
      */
     private String schemaCellLabel(final String columnName, final int rowIndex) {
         final List<FloorMapFieldMapping> list = schemaDataProvider.getList();
@@ -242,7 +248,7 @@ public class FloorMapSettingsPresenter
             if (!readOnly) {
                 final Role newRole = Role.valueOf(val);
                 replaceMapping(index, new FloorMapFieldMapping(
-                        mapping.getPath(), newRole, mapping.getDisplayName(), mapping.getDefaultValue()), COL_ROLE);
+                        mapping.getPath(), newRole, mapping.getDisplayName(), mapping.getDefaultValue()), roleColumn);
             }
         });
         schemaGrid.addColumn(roleColumn, "Role");
@@ -259,7 +265,7 @@ public class FloorMapSettingsPresenter
         pathColumn.setFieldUpdater((index, mapping, val) -> {
             if (!readOnly) {
                 replaceMapping(index, new FloorMapFieldMapping(
-                        val, mapping.getRole(), mapping.getDisplayName(), mapping.getDefaultValue()), COL_PATH);
+                        val, mapping.getRole(), mapping.getDisplayName(), mapping.getDefaultValue()), pathColumn);
             }
         });
         schemaGrid.addColumn(pathColumn, "Path");
@@ -276,7 +282,7 @@ public class FloorMapSettingsPresenter
         nameColumn.setFieldUpdater((index, mapping, val) -> {
             if (!readOnly) {
                 replaceMapping(index, new FloorMapFieldMapping(
-                        mapping.getPath(), mapping.getRole(), val, mapping.getDefaultValue()), COL_NAME);
+                        mapping.getPath(), mapping.getRole(), val, mapping.getDefaultValue()), nameColumn);
             }
         });
         schemaGrid.addColumn(nameColumn, "Display Name");
@@ -293,7 +299,7 @@ public class FloorMapSettingsPresenter
         defaultColumn.setFieldUpdater((index, mapping, val) -> {
             if (!readOnly) {
                 replaceMapping(index, new FloorMapFieldMapping(
-                        mapping.getPath(), mapping.getRole(), mapping.getDisplayName(), val), COL_DEFAULT);
+                        mapping.getPath(), mapping.getRole(), mapping.getDisplayName(), val), defaultColumn);
             }
         });
         schemaGrid.addColumn(defaultColumn, "Default");
@@ -301,26 +307,41 @@ public class FloorMapSettingsPresenter
 
     /**
      * Replaces the {@link FloorMapFieldMapping} at the given index in the
-     * data provider list with a new instance, refreshes the grid, and marks
-     * the document as dirty.
+     * data provider list with a new instance and marks the document as dirty.
      *
-     * @param index   the zero-based position in the list
-     * @param updated the replacement mapping
+     * <p>It does not refresh the grid: mutating the data provider's list already redraws
+     * the affected row, and a full refresh here would be actively harmful — see the
+     * comment in the body.</p>
+     *
+     * @param index       the zero-based position in the list
+     * @param updated     the replacement mapping
+     * @param column      the column whose control was being edited, so focus can be put
+     *                    back on it if the row redraw drops it. Passed as the column rather
+     *                    than an index so the position is resolved from the grid at the
+     *                    moment it is needed — a hard-coded index would silently point at
+     *                    the wrong cell if a column were ever inserted.
      */
     private void replaceMapping(final int index,
                                 final FloorMapFieldMapping updated,
-                                final int columnIndex) {
+                                final Column<FloorMapFieldMapping, String> column) {
         final List<FloorMapFieldMapping> list = schemaDataProvider.getList();
         if (index >= 0 && index < list.size()) {
             // This redraws the row on its own: getList() hands back a ListDataProvider
-            // wrapper that flags itself modified and flushes on mutation. There is no
-            // unnotified path, and calling refreshGrid() here as well changes nothing.
+            // wrapper that flags itself modified and flushes on mutation, so there is no
+            // unnotified path.
+            //
+            // Do NOT add refreshGrid() back here. The flush above marks only this row and
+            // replaces just its children; refreshGrid()'s setRowData(0, list) covers the
+            // whole range, which sends GWT down its replaceAllChildren path and destroys
+            // every row's DOM. The focus guard below depends on the difference: a control
+            // in another row survives a single-row redraw and keeps focus, and only
+            // because of that can restoreSchemaFocusAfterRedraw leave it alone.
             list.set(index, updated);
             onChange();
             // The redraw replaces the row element, destroying the control being edited and
             // dropping focus to <body>. Without this a keyboard user was ejected from the
             // grid after every single edit and had to tab all the way back in.
-            restoreSchemaFocusAfterRedraw(index, columnIndex);
+            restoreSchemaFocusAfterRedraw(index, schemaGrid.getColumnIndex(column));
         }
     }
 
@@ -357,12 +378,13 @@ public class FloorMapSettingsPresenter
         if (cell == null) {
             return;
         }
-        NodeList<Element> controls = cell.getElementsByTagName("select");
-        if (controls.getLength() == 0) {
-            controls = cell.getElementsByTagName("input");
-        }
-        if (controls.getLength() > 0) {
-            controls.getItem(0).focus();
+        // FloorMapAria rather than a local tag scan: it is the same feature's helper, it
+        // skips disabled and tabindex="-1" candidates that must not be focused, and it
+        // reports whether it found anything — a silent no-op here would look exactly like
+        // a working restore.
+        if (!FloorMapAria.focusFirstFocusable(cell)) {
+            GWT.log("Value Schema: no focusable control in row " + rowIndex
+                    + ", column " + columnIndex + " after redraw");
         }
     }
 
@@ -380,15 +402,17 @@ public class FloorMapSettingsPresenter
      * <p><strong>Why it is duplicated rather than shared.</strong> The obvious home for this
      * already exists — {@code stroom.widget.popup.client.view.CurrentFocus} declares the
      * identical method as {@code public static native}. Its enclosing class is
-     * package-private, though, so nothing outside that package can reach it.
-     * {@code AbstractTabBar} carries its own copy for the same reason, and
-     * {@code AnnotationEditPresenter} a third. This is the fourth. Making {@code CurrentFocus}
-     * public, or lifting the method into a shared client utility, would let all four collapse
-     * into one; that is a change to shared widget code and deliberately not made here.</p>
+     * package-private, though, so nothing outside that package can reach it, and
+     * {@code AbstractTabBar} carries its own copy for the same reason. This is the third such
+     * copy. Making {@code CurrentFocus} public, or lifting the method into a shared client
+     * utility, would let the three collapse into one; that is a change to shared widget code
+     * and deliberately not made here. ({@code AnnotationEditPresenter} also reads
+     * {@code $doc.activeElement}, but inline inside an unrelated clipboard JSNI method, so it
+     * would not be folded in by the same change.)</p>
      *
      * <p><strong>Why it takes a {@link Document} parameter</strong> rather than using
-     * {@code $doc} directly, which would be shorter: it matches the two widget copies above,
-     * and keeps the method testable against a document other than the host page's.</p>
+     * {@code $doc} directly, which would be shorter: purely to match the two widget copies
+     * above, so all three read alike and a future de-duplication is a straight lift.</p>
      *
      * <p>Used by {@link #restoreSchemaFocusAfterRedraw(int, int)} to tell "the redraw threw
      * focus away" from "the user moved focus somewhere deliberately", which decides whether
