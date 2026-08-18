@@ -70,7 +70,11 @@ public class FloorMapTimelineSettingsViewImpl extends ViewImpl implements FloorM
         // reach even if it were one. Name them directly instead.
         FloorMapAria.group(startDateTimeBox, "Timeline start date and time");
         FloorMapAria.group(endDateTimeBox, "Timeline end date and time");
-        FloorMapAria.label(loopCheckBox, "Loop playback");
+        // labelInnerControl, not label: CustomCheckBox's root is a div.SimpleTickBox
+        // wrapping the real <input>, so a name written to the widget itself lands on
+        // the wrapper and ARIA drops it — the checkbox was announced unnamed. Not
+        // group() either, which would describe one checkbox as a group of controls.
+        FloorMapAria.labelInnerControl(loopCheckBox, "Loop Playback");
 
         // Registered once and dispatched through a field, so a second
         // setShowAllHandler() call replaces the handler instead of stacking

@@ -35,10 +35,18 @@
        needs the darker 900; the dark theme needs a *lighter* orange for the same
        reason, hence the per-theme value rather than one shared constant. */
     --floormap-out-of-range__color: #e65100; /* 3.8:1 on white */
+
+    /* Accent for the map's small text: tooltips, readouts, the speed badge, and the
+       borders and caret that go with them. Aliased to the primary button colour because
+       that is the one accent in the palette held to the 4.5:1 text threshold rather than
+       the 3:1 non-text one — --blue-500 is 3.12:1 on white and fails as text. The alias
+       exists so these are not silently restyled by a future button redesign: if the
+       button family moves to white-on-blue, point this at a value of its own instead. */
+    --floormap-accent__color: var(--button-default-primary__color);
 }
 
 .stroom-theme-dark {
-    --floormap-out-of-range__color: #ffa726; /* 8.4:1 on the dark page background */
+    --floormap-out-of-range__color: #ffa726; /* 7.9:1 on the dark page background */
 }
 
 /* ============================================================
@@ -122,24 +130,33 @@
 .stroom-floormap-timeline-speed-badge {
     font-size: 10px;
     font-weight: 600;
-    color: var(--blue-500);
+    /* This is 10px text, so it owes 4.5:1 (WCAG 1.4.3) — not the 3:1 the icon buttons
+       either side of it owe. Take the colour from the primary *text* token, whose
+       contract is that threshold, rather than a raw palette entry: --blue-500 measures
+       only 3.12:1 on this theme's white page background. There is deliberately no
+       `opacity` here either — fading the text multiplied away what headroom was left
+       (0.85 dropped it to 4.29:1). De-emphasis, if wanted, belongs in the colour. */
+    color: var(--floormap-accent__color);
     width: 44px;         /* Fixed — wide enough for the longest label (×10,000) */
     flex-shrink: 0;
     text-align: center;
     overflow: hidden;
-    opacity: 0.85;
     cursor: pointer;
     user-select: none;
     white-space: nowrap;
     padding: 3px 0;
     border-radius: 3px;
-    transition: opacity 0.15s ease, background-color 0.15s ease;
+    transition: background-color 0.15s ease;
 }
 
+/* Neutral hover wash, matching the step and settings buttons beside it — NOT the
+   accent-tinted --button-default-primary__background-color--hover. That tint is the same
+   hue as the text (40% blue-300 in the dark theme), so it collapses the label to 3.03:1
+   on hover; no choice of blue fixes it, because lightening the text lightens the tint
+   with it. The neutral wash holds 5.13:1 in both themes. */
 .stroom-floormap-timeline-speed-badge:hover,
 .stroom-floormap-timeline-speed-badge:focus-visible {
-    opacity: 1;
-    background-color: var(--button-default-primary__background-color--hover);
+    background-color: var(--icon-button__background-color--hover);
 }
 
 /* Settings gear button */
@@ -191,13 +208,18 @@
 }
 
 /* Hover tooltip shown above the histogram bars while the user moves over them */
+/* The accent here — and in the scrub tooltip, area-draw hint, gesture readout and hover
+   tooltip below — comes from --button-default-primary__color, not --blue-500. These are
+   small text on the page background, so they owe 4.5:1 (WCAG 1.4.3), and --blue-500
+   measures 3.12:1 on the light theme's white. The border and caret follow the same token
+   to keep each tooltip one colour. See the speed badge above for the full reasoning. */
 .stroom-floormap-timeline-histogram-tooltip {
     position: absolute;
     top: 2px;
     left: 0;
     background-color: var(--page__background-color);
-    color: var(--blue-500);
-    border: 1px solid var(--blue-500);
+    color: var(--floormap-accent__color);
+    border: 1px solid var(--floormap-accent__color);
     border-radius: 3px;
     font-size: 10px;
     font-weight: 500;
@@ -306,12 +328,12 @@
     left: 0;
     transform: translateX(-50%);
     background-color: var(--page__background-color);
-    color: var(--blue-500);
+    color: var(--floormap-accent__color);
     font-size: 10px; /* matches start/end date labels */
     font-weight: 500;
     white-space: nowrap;
     padding: 3px 7px;
-    border: 1px solid var(--blue-500);
+    border: 1px solid var(--floormap-accent__color);
     border-radius: 4px;
     box-shadow: 0 2px 6px rgba(0,0,0,0.15);
     pointer-events: none;
@@ -328,7 +350,7 @@
     left: 50%;
     transform: translateX(-50%);
     border: 5px solid transparent;
-    border-top-color: var(--blue-500);
+    border-top-color: var(--floormap-accent__color);
 }
 
 /* Caret — inner (background colour) layer, sits 1px higher to mask the fill */
@@ -682,12 +704,12 @@
     left: 50%;
     transform: translateX(-50%);
     background-color: var(--page__background-color);
-    color: var(--blue-500);
+    color: var(--floormap-accent__color);
     font-size: 12px;
     font-weight: 500;
     white-space: nowrap;
     padding: 4px 10px;
-    border: 1px solid var(--blue-500);
+    border: 1px solid var(--floormap-accent__color);
     border-radius: 4px;
     box-shadow: 0 2px 6px rgba(0,0,0,0.15);
     pointer-events: none;
@@ -714,12 +736,12 @@
 .stroom-floormap-gesture-readout {
     position: absolute;
     background-color: var(--page__background-color);
-    color: var(--blue-500);
+    color: var(--floormap-accent__color);
     font-size: 11px;
     font-weight: 500;
     white-space: nowrap;
     padding: 3px 7px;
-    border: 1px solid var(--blue-500);
+    border: 1px solid var(--floormap-accent__color);
     border-radius: 4px;
     box-shadow: 0 2px 6px rgba(0,0,0,0.15);
     pointer-events: none;
@@ -751,7 +773,7 @@
     color: var(--text-color);
     font-size: 11px;
     padding: 5px 9px;
-    border: 1px solid var(--blue-500);
+    border: 1px solid var(--floormap-accent__color);
     border-radius: 4px;
     box-shadow: 0 2px 6px rgba(0,0,0,0.15);
     /* The pointer must never enter it: this is driven by mousemove over the
@@ -768,7 +790,7 @@
 }
 
 .stroom-floormap-hover-tooltip__caption {
-    color: var(--blue-500);
+    color: var(--floormap-accent__color);
     font-weight: 600;
     margin-bottom: 3px;
 }

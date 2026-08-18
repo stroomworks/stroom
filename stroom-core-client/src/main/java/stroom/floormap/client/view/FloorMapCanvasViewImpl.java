@@ -18,6 +18,7 @@ package stroom.floormap.client.view;
 
 import stroom.document.client.event.DirtyUiHandlers;
 import stroom.entity.client.presenter.ReadOnlyChangeHandler;
+import stroom.floormap.client.FloorMapAria;
 import stroom.floormap.client.presenter.FloorMapCanvasPresenter;
 import stroom.floormap.client.presenter.FloorMapCanvasPresenter.FloorMapCanvasView;
 import stroom.floormap.shared.Fact;
@@ -354,6 +355,12 @@ public class FloorMapCanvasViewImpl
      */
     private String lastAnnouncement = "";
 
+    /** The most recent map summary, re-applied to the focus panel when it loses focus. */
+    private String lastSummary;
+
+    /** Whether the focus panel currently holds focus — see {@link #setMapSummary(String)}. */
+    private boolean focusPanelHasFocus;
+
     /**
      * The widest the scale bar may be drawn. The chosen distance is the largest
      * 1-2-5 value that fits within this, so the bar is typically 40–120 px.
@@ -394,15 +401,41 @@ public class FloorMapCanvasViewImpl
         // (paint) order they are a stream of disconnected names and numbers. The
         // summary and the Tracking grid say the same thing usefully.
         svgContainer.getElement().setAttribute("role", "img");
+
+        // The focus panel needs a name of its own. A screen reader announces the
+        // element that has focus, and focus lands here rather than on svgContainer, so
+        // the name and role above are never reached: GWT's FocusPanel is a bare
+        // div[tabindex="0"], which computes to `generic`, and ARIA 1.2 prohibits naming a
+        // generic element. Browsers vary in how strictly they enforce that — Chromium has
+        // historically exposed such labels anyway — so "the label is dropped" is the spec
+        // position rather than a guarantee about every screen reader. Either way an explicit
+        // role is the only way to be sure the name is exposed.
+        //
+        // role="img" cannot simply move up here to fix that. It makes its whole
+        // subtree presentational, and this panel contains statusRegion — the live
+        // region carrying every announcement the map makes — plus the hover tooltip
+        // and scale bar. Moving it would silence all three. So role="img" stays
+        // scoped to the SVG, and the focusable element is named as a group instead,
+        // which takes a name while leaving its descendants exposed.
+        //
+        // See §9.2 and §14.1 of docs/floormap-accessibility.md.
+        focusPanel.getElement().setAttribute("role", "group");
+
+        // Tracked so setMapSummary can avoid renaming the element while it holds focus —
+        // see there for why. Blur re-applies whatever the summary became meanwhile.
+        //noinspection unused e
+        focusPanel.addFocusHandler(e -> focusPanelHasFocus = true);
+        //noinspection unused e
+        focusPanel.addBlurHandler(e -> {
+            focusPanelHasFocus = false;
+            if (lastSummary != null) {
+                focusPanel.getElement().setAttribute("aria-label", lastSummary);
+            }
+        });
+
         setMapSummary("Floor map");
 
-        // role="status" carries an implicit aria-live="polite"; both are set
-        // because some screen readers honour only one. atomic so the region is
-        // re-read as a whole sentence rather than diffed word by word.
-        final Element status = statusRegion.getElement();
-        status.setAttribute("role", "status");
-        status.setAttribute("aria-live", "polite");
-        status.setAttribute("aria-atomic", "true");
+        FloorMapAria.liveRegion(statusRegion);
     }
 
     /** {@inheritDoc} */
@@ -414,12 +447,39 @@ public class FloorMapCanvasViewImpl
     /** {@inheritDoc} */
     @Override
     public void setMapSummary(final String summary) {
+        // The container is named unconditionally: it is never focused, so rewriting its
+        // label is inert until something reads it.
         svgContainer.getElement().setAttribute("aria-label", summary);
+
+        // The focus panel is different, because renaming the element that currently has
+        // focus is an event: screen readers may announce a focused element's new name. The
+        // summary embeds the current time and is refreshed several times a second during
+        // playback, so writing it here unconditionally would narrate the clock at a keyboard
+        // user panning a playing map — reintroducing exactly the chatter that the live
+        // region's `playing` guard exists to suppress.
+        //
+        // So it is only written while the panel does not hold focus, and re-synced on blur.
+        // A focused user's name going briefly stale costs nothing: the live region is already
+        // telling them what changed, and they get the current summary the moment they leave
+        // and come back.
+        lastSummary = summary;
+        if (!focusPanelHasFocus) {
+            focusPanel.getElement().setAttribute("aria-label", summary);
+        }
     }
 
     /** {@inheritDoc} */
     @Override
     public void setMapDescribedBy(final String elementId) {
+        // Container only — deliberately NOT the focus panel. The id names the whole
+        // Tracking / Fact List grid, and an accessible description is that element's
+        // flattened text, re-read after name and role on every visit. Put it on the
+        // focusable element and tabbing to the map recites the entire grid, one row per
+        // entity, every single time. On the container it is reached in browse mode, where
+        // the user is moving through content and can leave whenever they like.
+        //
+        // If the route to the grid should be spoken on focus, it wants a short fixed
+        // sentence of its own, not this id.
         svgContainer.getElement().setAttribute("aria-describedby", elementId);
     }
 
