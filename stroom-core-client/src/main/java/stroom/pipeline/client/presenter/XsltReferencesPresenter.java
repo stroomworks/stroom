@@ -70,7 +70,9 @@ public class XsltReferencesPresenter extends MyPresenterWidget<PagerView> {
 
         dataGrid = new MyDataGrid<>(this);
         dataGrid.setTableName("XSLT References");
-        dataGrid.addDefaultSelectionModel(false);
+        // No selection model, deliberately. Selecting a row here would do nothing, and adding one sets a
+        // pointer cursor over the whole row - inviting a click that only the 'Resolves to' link answers.
+        // MarkerListPresenter, the nearest equivalent beside the pipeline editor, does the same.
         view.setDataWidget(dataGrid);
 
         initTableColumns();
