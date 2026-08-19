@@ -838,7 +838,7 @@ public class FloorMapCanvasViewImpl
                     new Attribute("font-family", "sans-serif"),
                     new Attribute("font-weight", "600"),
                     new Attribute("paint-order", "stroke"),
-                    new Attribute("stroke", "var(--page__background-color)"),
+                    new Attribute("style", "stroke: var(--page__background-color)"),
                     new Attribute("stroke-width", "3"),
                     new Attribute("pointer-events", "none"));
         }

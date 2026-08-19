@@ -66,6 +66,17 @@ public final class FloorMapGrid {
      * {@code --floormap-grid__background-color} so the grid respects
      * light/dark themes.
      */
+    // These three are emitted as `style="stroke: var(...)"` rather than as
+    // `stroke="var(...)"`. CSS Custom Properties defines var() substitution for property
+    // declarations; whether a presentation *attribute* substitutes is not something the
+    // specs clearly guarantee, and implementations have differed. Chromium resolves both
+    // forms (measured), so the attribute form was not broken here - but the style form is
+    // the one that is actually defined, and it costs nothing.
+    //
+    // Safe to raise the precedence this way because nothing in the stylesheet targets these
+    // elements: the grid lines and background rect carry no class, and the tokens below are
+    // already the theme indirection (--floormap-grid__major-stroke -> --vis-axis__color), so
+    // there is no rule for an inline style to override.
     private static final String BG_FILL = "var(--floormap-grid__background-color)";
     /**
      * Major grid line colour — references the CSS variable
@@ -203,7 +214,7 @@ public final class FloorMapGrid {
                                 new Attribute("y1", pos),
                                 new Attribute("x2", formatDouble(majorWorldSpacing)),
                                 new Attribute("y2", pos),
-                                new Attribute("stroke", MINOR_STROKE),
+                                new Attribute("style", "stroke: " + MINOR_STROKE),
                                 new Attribute("stroke-opacity", minorOpacityStr),
                                 new Attribute("stroke-width", minorStrokeWidth));
                         // Vertical minor line
@@ -212,7 +223,7 @@ public final class FloorMapGrid {
                                 new Attribute("y1", "0"),
                                 new Attribute("x2", pos),
                                 new Attribute("y2", formatDouble(majorWorldSpacing)),
-                                new Attribute("stroke", MINOR_STROKE),
+                                new Attribute("style", "stroke: " + MINOR_STROKE),
                                 new Attribute("stroke-opacity", minorOpacityStr),
                                 new Attribute("stroke-width", minorStrokeWidth));
                     }
@@ -225,7 +236,7 @@ public final class FloorMapGrid {
                         new Attribute("y1", "0"),
                         new Attribute("x2", formatDouble(majorWorldSpacing)),
                         new Attribute("y2", "0"),
-                        new Attribute("stroke", MAJOR_STROKE),
+                        new Attribute("style", "stroke: " + MAJOR_STROKE),
                         new Attribute("stroke-width", majorStrokeWidth));
                 // Vertical major line
                 gridPattern.elem(SafeHtmlUtil.from("line"),
@@ -233,7 +244,7 @@ public final class FloorMapGrid {
                         new Attribute("y1", "0"),
                         new Attribute("x2", "0"),
                         new Attribute("y2", formatDouble(majorWorldSpacing)),
-                        new Attribute("stroke", MAJOR_STROKE),
+                        new Attribute("style", "stroke: " + MAJOR_STROKE),
                         new Attribute("stroke-width", majorStrokeWidth));
 
             },
@@ -252,7 +263,7 @@ public final class FloorMapGrid {
         builder.elem(SafeHtmlUtil.from("rect"),
                 new Attribute("width", "100%"),
                 new Attribute("height", "100%"),
-                new Attribute("fill", BG_FILL));
+                new Attribute("style", "fill: " + BG_FILL));
 
         // -- 5. Grid overlay — fills entire viewport ------------------------
         builder.elem(SafeHtmlUtil.from("rect"),
