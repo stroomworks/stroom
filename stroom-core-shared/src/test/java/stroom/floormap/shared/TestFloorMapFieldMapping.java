@@ -219,7 +219,7 @@ class TestFloorMapFieldMapping {
 
         assertThat(merged).hasSize(5);
         // Existing mappings keep their position and settings.
-        assertThat(merged.get(0)).isEqualTo(legacy.get(0));
+        assertThat(merged.getFirst()).isEqualTo(legacy.getFirst());
         assertThat(merged.get(1)).isEqualTo(legacy.get(1));
         assertThat(merged.stream().map(FloorMapFieldMapping::getRole))
                 .contains(Role.GEOMETRY, Role.FILL, Role.OPACITY);
@@ -252,7 +252,7 @@ class TestFloorMapFieldMapping {
 
         // With no existing path to derive from, the format decides the style.
         assertThat(FloorMapFieldMapping.withAreaMappings(null, ValueFormat.XML)
-                .get(0).getPath())
+                .getFirst().getPath())
                 .isEqualTo("/entry/geometry");
     }
 
@@ -269,7 +269,7 @@ class TestFloorMapFieldMapping {
                 FloorMapFieldMapping.withAreaMappings(schema, ValueFormat.JSON);
 
         assertThat(merged).hasSize(3);
-        assertThat(merged.get(0).getPath()).isEqualTo(".poly");
+        assertThat(merged.getFirst().getPath()).isEqualTo(".poly");
         assertThat(merged.stream()
                 .filter(m -> m.getRole() == Role.GEOMETRY))
                 .hasSize(1);

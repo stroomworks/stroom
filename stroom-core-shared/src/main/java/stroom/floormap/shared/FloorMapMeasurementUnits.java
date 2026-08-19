@@ -500,7 +500,7 @@ public class FloorMapMeasurementUnits {
                                                      final Unit enteredIn,
                                                      final Unit displayIn) {
         if (enteredIn == null || displayIn == null
-            || isUsableLength(mapLength) || isUsableLength(realLength)) {
+            || isUnusableLength(mapLength) || isUnusableLength(realLength)) {
             return null;
         }
         // The real length in the display unit, per map unit.
@@ -512,7 +512,12 @@ public class FloorMapMeasurementUnits {
                 : null;
     }
 
-    private static boolean isUsableLength(final double length) {
+    /**
+     * {@code true} if {@code length} cannot be used as a calibration length — i.e. it is
+     * NaN, infinite, zero or negative. Reports the <em>unusable</em> case, so
+     * {@code calibrate} reads as "reject if unusable".
+     */
+    private static boolean isUnusableLength(final double length) {
         return Double.isNaN(length) || Double.isInfinite(length) || !(length > 0);
     }
 

@@ -216,9 +216,9 @@ class TestFloorMapDocSession {
 
         final List<FloorMapGroup> written = session.applyToWrite(d).getGroups();
         assertThat(written).hasSize(1);
-        assertThat(written.get(0).getId()).isEqualTo("g1");
-        assertThat(written.get(0).getName()).isEqualTo("Night Maintenance");
-        assertThat(written.get(0).getMemberIds()).containsExactly("bob@x.com");
+        assertThat(written.getFirst().getId()).isEqualTo("g1");
+        assertThat(written.getFirst().getName()).isEqualTo("Night Maintenance");
+        assertThat(written.getFirst().getMemberIds()).containsExactly("bob@x.com");
     }
 
     // -----------------------------------------------------------------------

@@ -862,6 +862,12 @@ public class FloorMapMapPresenter
      * @param tableResult the query result table to parse
      */
     private void parseFacts(final TableResult tableResult) {
+        // Same guard as publishEventEntities: a facts result already in flight when the
+        // tab was closed has nothing left to update, and this presenter is not unbound
+        // on close so the callback still arrives.
+        if (closed || getEntity() == null) {
+            return;
+        }
         int keyIdx = -1;
         int typeIdx = -1;
         int labelIdx = -1;
@@ -1025,6 +1031,7 @@ public class FloorMapMapPresenter
             && !lastRawEventObjects.isEmpty()
             && lastFacts != null
             && !lastFacts.isEmpty()) {
+            //noinspection SequencedCollectionMethodCanBeUsed
             Console.error("Floor map: none of the " + lastRawEventObjects.size()
                           + " event entities could be placed. Their location column names objects"
                           + " like '" + lastRawEventObjects.get(0).getLocationRef()

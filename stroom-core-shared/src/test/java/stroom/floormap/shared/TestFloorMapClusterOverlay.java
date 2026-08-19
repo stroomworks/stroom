@@ -94,7 +94,7 @@ class TestFloorMapClusterOverlay {
         final FloorMapClusterOverlay overlay = clusterEvents(events);
 
         assertThat(overlay.getClusters()).hasSize(1);
-        final FloorMapCluster cluster = overlay.getClusters().get(0);
+        final FloorMapCluster cluster = overlay.getClusters().getFirst();
         assertThat(cluster.size()).isEqualTo(10);
         assertThat(cluster.getLabel()).isEqualTo("10 people");
         assertThat(cluster.getMapX()).isEqualTo(500);
@@ -140,7 +140,7 @@ class TestFloorMapClusterOverlay {
         final FloorMapClusterOverlay zoomedOut =
                 FloorMapClusterOverlay.compute(null, events, 60, null);
         assertThat(zoomedOut.getClusters()).hasSize(1);
-        assertThat(zoomedOut.getClusters().get(0).getMemberIds())
+        assertThat(zoomedOut.getClusters().getFirst().getMemberIds())
                 .containsExactly("alice", "bob");
     }
 
@@ -175,7 +175,7 @@ class TestFloorMapClusterOverlay {
 
         assertThat(overlay.getClusters()).hasSize(2);
         // Type name order, so the paint order does not depend on query row order.
-        assertThat(overlay.getClusters().get(0).getType()).isEqualTo("device");
+        assertThat(overlay.getClusters().getFirst().getType()).isEqualTo("device");
         assertThat(overlay.getClusters().get(1).getType()).isEqualTo("user");
         assertThat(overlay.getClusters().get(1).getLabel()).isEqualTo("2 users");
     }
@@ -216,7 +216,7 @@ class TestFloorMapClusterOverlay {
                 null, events, THRESHOLD, Set.of("bob"));
 
         assertThat(overlay.getClusters()).hasSize(1);
-        final FloorMapCluster cluster = overlay.getClusters().get(0);
+        final FloorMapCluster cluster = overlay.getClusters().getFirst();
         assertThat(cluster.getMemberIds()).containsExactly("alice", "bob", "carol");
         assertThat(overlay.isClustered("bob")).isTrue();
         assertThat(cluster.getFocusedMemberId()).isEqualTo("bob");
@@ -237,13 +237,13 @@ class TestFloorMapClusterOverlay {
 
         // Unfocused: the centroid of (0,0), (6,8), (0,0) is (2, 2.667).
         final FloorMapCluster unfocused = FloorMapClusterOverlay
-                .compute(null, events, THRESHOLD, null).getClusters().get(0);
+                .compute(null, events, THRESHOLD, null).getClusters().getFirst();
         assertThat(unfocused.getMapX()).isEqualTo(2);
         assertThat(unfocused.getFocusedMemberId()).isNull();
 
         // Focused on bob: anchored exactly on bob.
         final FloorMapCluster focused = FloorMapClusterOverlay
-                .compute(null, events, THRESHOLD, Set.of("bob")).getClusters().get(0);
+                .compute(null, events, THRESHOLD, Set.of("bob")).getClusters().getFirst();
         assertThat(focused.getMapX()).isEqualTo(6);
         assertThat(focused.getMapY()).isEqualTo(8);
     }
@@ -277,7 +277,7 @@ class TestFloorMapClusterOverlay {
                 null, events, THRESHOLD, Set.of("faraway"));
 
         assertThat(overlay.getClusters()).hasSize(1);
-        assertThat(overlay.getClusters().get(0).getFocusedMemberId()).isNull();
+        assertThat(overlay.getClusters().getFirst().getFocusedMemberId()).isNull();
     }
 
     /**
@@ -295,7 +295,7 @@ class TestFloorMapClusterOverlay {
 
         final FloorMapCluster cluster = FloorMapClusterOverlay.compute(
                         null, events, THRESHOLD, Set.of("carol", "bob"))
-                .getClusters().get(0);
+                .getClusters().getFirst();
 
         assertThat(cluster.getFocusedMemberId()).isEqualTo("bob");
     }
@@ -364,7 +364,7 @@ class TestFloorMapClusterOverlay {
         final FloorMapClusterOverlay overlay = clusterEvents(events);
 
         assertThat(overlay.getClusters()).hasSize(1);
-        assertThat(overlay.getClusters().get(0).getMemberIds())
+        assertThat(overlay.getClusters().getFirst().getMemberIds())
                 .containsExactly("a1", "a2", "a3", "b1", "b2", "b3");
     }
 
@@ -388,7 +388,7 @@ class TestFloorMapClusterOverlay {
         final FloorMapClusterOverlay overlay = clusterEvents(events);
 
         assertThat(overlay.getClusters()).hasSize(1);
-        assertThat(overlay.getClusters().get(0).getMemberIds())
+        assertThat(overlay.getClusters().getFirst().getMemberIds())
                 .containsExactly("a1", "a2", "straggler");
         assertThat(overlay.isClustered("straggler")).isTrue();
     }
@@ -450,7 +450,12 @@ class TestFloorMapClusterOverlay {
     void testRepeatedMergingConverges() {
         final List<FloorMapObject> events = new ArrayList<>();
         for (int i = 0; i < 40; i++) {
-            events.add(event(String.format("user%02d", i), (i % 8) * 4, (i / 8) * 4));
+            // An 8-wide grid at 4-unit spacing: 8 columns by 5 rows. The row is a
+            // truncating int division on purpose — casting to double here would give
+            // every entity its own y and turn the grid into a diagonal line.
+            final int col = i % 8;
+            final int row = i / 8;
+            events.add(event(String.format("user%02d", i), col * 4, row * 4));
         }
 
         final FloorMapClusterOverlay overlay = clusterEvents(events);
@@ -586,7 +591,7 @@ class TestFloorMapClusterOverlay {
             events.add(event("user" + i, 0, 0));
         }
         final FloorMapClusterOverlay overlay = clusterEvents(events);
-        final double factor = overlay.getClusters().get(0).getSizeFactor();
+        final double factor = overlay.getClusters().getFirst().getSizeFactor();
         assertThat(factor).isGreaterThan(1.0);
 
         // Just inside the grown glyph, but outside a lone entity's box.
@@ -607,7 +612,7 @@ class TestFloorMapClusterOverlay {
                 event("alice", 500, 500),
                 event("mary", 500, 500)));
 
-        assertThat(overlay.getClusters().get(0).getKey()).isEqualTo("alice");
+        assertThat(overlay.getClusters().getFirst().getKey()).isEqualTo("alice");
 
         // A new member joins; the key still resolves to the same cluster.
         final FloorMapClusterOverlay after = clusterEvents(Arrays.asList(
@@ -624,8 +629,14 @@ class TestFloorMapClusterOverlay {
     void testEveryEntityIsInAtMostOneCluster() {
         final List<FloorMapObject> events = new ArrayList<>();
         for (int i = 0; i < 40; i++) {
-            // A grid tight enough to produce several overlapping candidates.
-            events.add(event("user" + i, (i % 8) * 4, ((double) i / 8) * 4));
+            // A grid tight enough to produce several overlapping candidates: 8
+            // columns by 5 rows at 4-unit spacing. This previously cast i to double
+            // before dividing, which gave all 40 entities a distinct y — a diagonal
+            // line rather than the grid the comment described, and a much weaker
+            // stress case for the overlap the test is about.
+            final int col = i % 8;
+            final int row = i / 8;
+            events.add(event("user" + i, col * 4, row * 4));
         }
 
         final FloorMapClusterOverlay overlay = clusterEvents(events);
@@ -762,7 +773,7 @@ class TestFloorMapClusterOverlay {
                 event("alice", 500, 500),
                 event("mary", 500, 500)));
 
-        assertThat(overlay.getClusters().get(0).getMemberIds())
+        assertThat(overlay.getClusters().getFirst().getMemberIds())
                 .containsExactly("alice", "mary", "zach");
     }
 
@@ -773,8 +784,8 @@ class TestFloorMapClusterOverlay {
                 event("alice", 0, 0),
                 event("bob", 4, 8)));
 
-        assertThat(overlay.getClusters().get(0).getMapX()).isEqualTo(2);
-        assertThat(overlay.getClusters().get(0).getMapY()).isEqualTo(4);
+        assertThat(overlay.getClusters().getFirst().getMapX()).isEqualTo(2);
+        assertThat(overlay.getClusters().getFirst().getMapY()).isEqualTo(4);
     }
 
     // =========================================================================
@@ -792,7 +803,7 @@ class TestFloorMapClusterOverlay {
                 FloorMapClusterOverlay.compute(facts, null, THRESHOLD, null);
 
         assertThat(overlay.getClusters()).hasSize(1);
-        assertThat(overlay.getClusters().get(0).getLabel()).isEqualTo("2 objects");
+        assertThat(overlay.getClusters().getFirst().getLabel()).isEqualTo("2 objects");
     }
 
     /**
@@ -858,7 +869,7 @@ class TestFloorMapClusterOverlay {
         // One cluster of two, not three entities: alice's stale fact position at
         // (900,900) is ignored in favour of her event position.
         assertThat(overlay.getClusters()).hasSize(1);
-        assertThat(overlay.getClusters().get(0).getMemberIds())
+        assertThat(overlay.getClusters().getFirst().getMemberIds())
                 .containsExactly("alice", "bob");
     }
 
@@ -870,8 +881,8 @@ class TestFloorMapClusterOverlay {
                 typedEvent("b", null, 1, 0)));
 
         assertThat(overlay.getClusters()).hasSize(1);
-        assertThat(overlay.getClusters().get(0).getType()).isNull();
-        assertThat(overlay.getClusters().get(0).getLabel()).isEqualTo("2 entities");
+        assertThat(overlay.getClusters().getFirst().getType()).isNull();
+        assertThat(overlay.getClusters().getFirst().getLabel()).isEqualTo("2 entities");
     }
 
     /** An entity with no usable id cannot be tracked back to, so it is skipped. */
@@ -896,7 +907,7 @@ class TestFloorMapClusterOverlay {
                 event("alice", 500, 500),
                 event("bob", 500, 500)));
 
-        final FloorMapCluster cluster = overlay.getClusters().get(0);
+        final FloorMapCluster cluster = overlay.getClusters().getFirst();
         assertThat(overlay.getCluster(cluster.getKey())).isSameAs(cluster);
         assertThat(overlay.getCluster("gone")).isNull();
         assertThat(overlay.getCluster(null)).isNull();

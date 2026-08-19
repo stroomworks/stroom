@@ -27,6 +27,7 @@ import stroom.floormap.shared.FloorMapAreaOverlay;
 import stroom.floormap.shared.FloorMapCluster;
 import stroom.floormap.shared.FloorMapClusterLabel;
 import stroom.floormap.shared.FloorMapClusterOverlay;
+import stroom.floormap.shared.FloorMapEntityList;
 import stroom.floormap.shared.FloorMapGeometry;
 import stroom.floormap.shared.FloorMapHighlight;
 import stroom.floormap.shared.FloorMapIcon;
@@ -1806,7 +1807,10 @@ public class FloorMapCanvasViewImpl
 
         appendStyledGlyph(parent, fact.getKey(), fact.getType(), mapX, mapY,
                 isSelected, highlightColour, typeStyles, scale);
-        collectCaption(fact.getKey(), shortLabel(fact.getKey()), fact.getType(),
+        collectCaption(fact.getKey(),
+                FloorMapEntityList.captionFor(
+                        fact.getKey(), fact.getLabelOrNull(), entityNameResolver),
+                fact.getType(),
                 mapX, mapY, typeStyles, CAPTION_PRIORITY_FACT);
     }
 
@@ -1843,7 +1847,9 @@ public class FloorMapCanvasViewImpl
             // the glyph itself is fixed screen size.
             appendStyledGlyph(parent, obj.getId(), obj.getType(), obj.getX(), obj.getY(),
                     isSelected, highlightColour, typeStyles, scale);
-            collectCaption(obj.getId(), shortLabel(obj.getId()), obj.getType(),
+            collectCaption(obj.getId(),
+                    FloorMapEntityList.captionFor(obj.getId(), null, entityNameResolver),
+                    obj.getType(),
                     obj.getX(), obj.getY(), typeStyles,
                     isSelected
                             ? CAPTION_PRIORITY_FOCUSED
@@ -2285,16 +2291,6 @@ public class FloorMapCanvasViewImpl
     }
 
     /**
-     * Short display label: the part before {@code '@'} for email-like ids, or the
-     * full id otherwise.
-     */
-    private static String shortLabel(final String id) {
-        final String rawId = id != null ? id : "";
-        final int atIdx = rawId.indexOf('@');
-        return atIdx > 0 ? rawId.substring(0, atIdx) : rawId;
-    }
-
-    /**
      * Returns the configured default-graphic shape for the given type. Falls
      * back to a circle for unconfigured {@code person} types (continuity with
      * the traditional person marker), or {@code null} otherwise (the view then
@@ -2352,7 +2348,7 @@ public class FloorMapCanvasViewImpl
                                   final FloorMapIcon icon,
                                   final String id,
                                   final String fillColour,
-                                  final double half,
+                                  @SuppressWarnings("SameParameterValue") final double half,
                                   final String stroke) {
         parent.elem(markerGroup -> {
             if (stroke != null) {

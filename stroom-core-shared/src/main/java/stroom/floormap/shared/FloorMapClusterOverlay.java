@@ -203,7 +203,7 @@ public final class FloorMapClusterOverlay {
      * @return the map-space threshold, or {@code 0} when it cannot be computed
      */
     public static double mapThreshold(final double radiusPx, final double scale) {
-        if (isUsableNumber(radiusPx) || isUsableNumber(scale) || radiusPx <= 0 || scale <= 0) {
+        if (isUnusableNumber(radiusPx) || isUnusableNumber(scale) || radiusPx <= 0 || scale <= 0) {
             return 0;
         }
         return radiusPx / scale;
@@ -230,7 +230,7 @@ public final class FloorMapClusterOverlay {
                                                  final List<FloorMapObject> events,
                                                  final double thresholdMap,
                                                  final Set<String> focusedIds) {
-        if (isUsableNumber(thresholdMap) || thresholdMap <= 0) {
+        if (isUnusableNumber(thresholdMap) || thresholdMap <= 0) {
             return EMPTY;
         }
         // Types are visited in name order so the cluster list — and therefore
@@ -304,6 +304,7 @@ public final class FloorMapClusterOverlay {
         final String key = item.type != null && !item.type.isEmpty()
                 ? item.type
                 : NO_TYPE;
+        //noinspection unused
         byType.computeIfAbsent(key, k -> new ArrayList<>()).add(item);
     }
 
@@ -383,6 +384,7 @@ public final class FloorMapClusterOverlay {
                 ? Integer.compare(a[1], b[1])
                 : Integer.compare(a[0], b[0]));
         for (final List<Node> cell : cells.values()) {
+            //noinspection ComparatorCombinators
             cell.sort((a, b) -> a.id.compareTo(b.id));
         }
 
@@ -546,7 +548,13 @@ public final class FloorMapClusterOverlay {
         return id != null && !id.isEmpty();
     }
 
-    private static boolean isUsableNumber(final double value) {
+    /**
+     * {@code true} if {@code value} cannot be used in the clustering maths — i.e. it is
+     * NaN or infinite. Note the inverted sense relative to {@link #isUsableId(String)}
+     * just above: this one reports the <em>unusable</em> case, which is what every call
+     * site needs as a bail-out guard.
+     */
+    private static boolean isUnusableNumber(final double value) {
         return Double.isNaN(value) || Double.isInfinite(value);
     }
 
@@ -620,7 +628,7 @@ public final class FloorMapClusterOverlay {
     public FloorMapCluster clusterNear(final double mapX,
                                        final double mapY,
                                        final double radiusMap) {
-        if (isUsableNumber(radiusMap) || radiusMap <= 0) {
+        if (isUnusableNumber(radiusMap) || radiusMap <= 0) {
             return null;
         }
         FloorMapCluster nearest = null;

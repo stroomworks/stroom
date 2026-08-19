@@ -32,7 +32,7 @@ class TestFloorMapScreenGeometry {
     private static final double TOL = 1e-6;
 
     /** No aspect ratios known (square fallback). */
-    private static final FloorMapScreenGeometry.AspectRatioSource NO_AR = url -> null;
+    private static final FloorMapScreenGeometry.AspectRatioSource NO_AR = ignored -> null;
 
     private FloorMapScreenGeometry geometry(final double scale, final double ox, final double oy) {
         return new FloorMapScreenGeometry(scale, ox, oy, IMAGE_DISPLAY_WIDTH, OBJECT_SIZE, NO_AR, null);
@@ -54,7 +54,8 @@ class TestFloorMapScreenGeometry {
                 new double[]{x, y});
     }
 
-    private static Fact areaFact(final String key, final double[][] verts) {
+    private static Fact areaFact(@SuppressWarnings("SameParameterValue") final String key,
+                                 final double[][] verts) {
         return new Fact(key, "area", null, FloorMapTransformationMatrix.identity(),
                 null, verts, null, null);
     }

@@ -38,6 +38,19 @@ import java.util.Objects;
 @JsonInclude(Include.NON_NULL)
 public class FloorMapTransformationMatrix {
 
+    /**
+     * Relative tolerance used to decide whether the determinant is
+     * indistinguishable from zero.
+     *
+     * <p>The test is <strong>relative</strong>, not absolute. An absolute
+     * threshold rejects legitimately invertible matrices: a uniform scale of
+     * one part in a million has determinant {@code 1e-12}, which is tiny but
+     * perfectly representable, and inverting it is both well-defined and
+     * necessary. Scaling the tolerance by the magnitude of the terms that
+     * formed the determinant keeps the test meaningful at any scale.</p>
+     */
+    private static final double SINGULARITY_RELATIVE_TOLERANCE = 1e-12;
+
     @JsonProperty
     private final double a;
     @JsonProperty
@@ -267,18 +280,58 @@ public class FloorMapTransformationMatrix {
     }
 
     /**
-     * Computes the inverse of this transformation matrix.
-     * <p>
-     * If the matrix is singular (determinant ≈ 0), the identity matrix is
-     * returned as a safe fallback.
+     * Whether this matrix can be inverted.
      *
-     * @return the inverse matrix, or identity if this matrix is non-invertible
+     * <p>A matrix is non-invertible only if its determinant is zero (to within
+     * {@link #SINGULARITY_RELATIVE_TOLERANCE}, measured relative to the terms
+     * that formed it) or if any of its components is not finite. Within
+     * FloorMap that should never happen: every matrix the UI composes is
+     * invertible by construction, and matrices read from stored data are
+     * rejected at parse time by
+     * {@code FloorMapEntryParser}. Use this where you need to check data
+     * provenance rather than let {@link #inverse()} throw.</p>
+     *
+     * @return {@code true} if {@link #inverse()} will succeed
+     */
+    public boolean isInvertible() {
+        final double det = a * d - b * c;
+        if (Double.isNaN(det) || Double.isInfinite(det)) {
+            return false;
+        }
+        final double magnitude = Math.abs(a * d) + Math.abs(b * c);
+        if (Double.isInfinite(magnitude)) {
+            return false;
+        }
+        return Math.abs(det) > SINGULARITY_RELATIVE_TOLERANCE * magnitude;
+    }
+
+    /**
+     * Computes the inverse of this transformation matrix.
+     *
+     * <p><strong>Throws rather than degrading.</strong> An earlier version of
+     * this method returned {@link #identity()} for a singular matrix. That was
+     * actively harmful: the identity is a perfectly plausible-looking answer,
+     * so every subsequent coordinate conversion appeared to succeed while
+     * silently returning its input unchanged — and in the vertex editor those
+     * unconverted coordinates were written back to the document. A wrong
+     * answer that looks right is worse than no answer.</p>
+     *
+     * <p>There is no circumstance in the FloorMap UI where a matrix legitimately
+     * cannot be inverted, so reaching the exception means bad data got past the
+     * parser or a caller composed a degenerate transform — both bugs worth
+     * surfacing. Call {@link #isInvertible()} first if you are handling data of
+     * uncertain provenance.</p>
+     *
+     * @return the inverse matrix; never {@code null}
+     * @throws IllegalStateException if this matrix is not invertible
      */
     public FloorMapTransformationMatrix inverse() {
-        final double det = a * d - b * c;
-        if (Math.abs(det) < 1e-9) {
-            return identity();
+        if (!isInvertible()) {
+            throw new IllegalStateException(
+                    "Matrix is not invertible (determinant is zero or a component is "
+                            + "not finite): " + this);
         }
+        final double det = a * d - b * c;
         final double invDet = 1.0 / det;
         final double invA = d * invDet;
         final double invB = -b * invDet;

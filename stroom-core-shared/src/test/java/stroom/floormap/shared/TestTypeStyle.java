@@ -114,7 +114,7 @@ class TestTypeStyle {
         final List<TypeStyle> result = TypeStyle.withAreaStyle(existing);
 
         assertThat(result).isEqualTo(existing);
-        assertThat(result.get(0).getColour()).isEqualTo("#123456");
+        assertThat(result.getFirst().getColour()).isEqualTo("#123456");
     }
 
     @Test
@@ -212,6 +212,6 @@ class TestTypeStyle {
     void testMerge_discoveredTypesHaveNoGraphic() {
         final List<TypeStyle> result = TypeStyle.merge(null, List.of("van"));
 
-        assertThat(result.get(0).hasGraphic()).isFalse();
+        assertThat(result.getFirst().hasGraphic()).isFalse();
     }
 }

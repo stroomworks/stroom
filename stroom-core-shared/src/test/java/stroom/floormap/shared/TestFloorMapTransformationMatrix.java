@@ -26,11 +26,13 @@ import org.junit.jupiter.api.TestFactory;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.within;
+import static org.assertj.core.api.Assertions.withinPercentage;
 
 /**
  * Tests for {@link FloorMapTransformationMatrix} — construction, rotation,
- * inversion (including the singular-matrix fallback), SVG formatting,
+ * inversion (including rejection of singular matrices), SVG formatting,
  * equality and JSON serialisation round-trip.
  */
 class TestFloorMapTransformationMatrix {
@@ -177,26 +179,78 @@ class TestFloorMapTransformationMatrix {
     }
 
     /**
-     * A singular matrix (determinant ≈ 0) cannot be inverted; {@code inverse()}
-     * must fall back to the identity rather than dividing by zero.
+     * A genuinely singular matrix cannot be inverted, and {@code inverse()} must
+     * say so rather than return a plausible-looking answer.
+     *
+     * <p>This used to assert the opposite — that {@code inverse()} falls back to
+     * the identity. That fallback was the quiet middle link in a chain that
+     * ended in corrupted stored geometry: the identity is indistinguishable from
+     * a successful inversion, so callers converted coordinates through it,
+     * got their input back unchanged, and persisted it as though it had been
+     * transformed.</p>
      */
     @TestFactory
-    Stream<DynamicTest> testInverseOfSingularMatrixFallsBackToIdentity() {
+    Stream<DynamicTest> testInverseOfSingularMatrixThrows() {
         return TestUtil.buildDynamicTestStream()
                 .withInputType(FloorMapTransformationMatrix.class)
-                .withOutputType(FloorMapTransformationMatrix.class)
-                .withTestFunction(testCase -> testCase.getInput().inverse())
+                .withOutputType(Boolean.class)
+                .withTestFunction(testCase -> {
+                    final FloorMapTransformationMatrix matrix = testCase.getInput();
+                    assertThat(matrix.isInvertible())
+                            .as("isInvertible must agree with inverse()")
+                            .isFalse();
+                    assertThatThrownBy(matrix::inverse)
+                            .isInstanceOf(IllegalStateException.class)
+                            .hasMessageContaining("not invertible");
+                    return Boolean.TRUE;
+                })
                 .withSimpleEqualityAssertion()
                 .addNamedCase("Zero matrix",
-                        new FloorMapTransformationMatrix(0, 0, 0, 0, 0, 0),
-                        FloorMapTransformationMatrix.identity())
+                        new FloorMapTransformationMatrix(0, 0, 0, 0, 0, 0), Boolean.TRUE)
                 .addNamedCase("Linearly dependent rows",
-                        new FloorMapTransformationMatrix(2, 4, 1, 2, 5, 6),
-                        FloorMapTransformationMatrix.identity())
-                .addNamedCase("Determinant below tolerance",
-                        new FloorMapTransformationMatrix(1e-6, 0, 0, 1e-6, 5, 6),
-                        FloorMapTransformationMatrix.identity())
+                        new FloorMapTransformationMatrix(2, 4, 1, 2, 5, 6), Boolean.TRUE)
+                .addNamedCase("Zero scale on one axis",
+                        new FloorMapTransformationMatrix(3, 0, 0, 0, 5, 6), Boolean.TRUE)
+                .addNamedCase("NaN component",
+                        new FloorMapTransformationMatrix(Double.NaN, 0, 0, 1, 0, 0), Boolean.TRUE)
+                .addNamedCase("Infinite component",
+                        new FloorMapTransformationMatrix(
+                                Double.POSITIVE_INFINITY, 0, 0, 1, 0, 0), Boolean.TRUE)
                 .build();
+    }
+
+    /**
+     * A very small <em>uniform</em> scale is invertible and must be inverted, not
+     * written off as singular.
+     *
+     * <p>This is the case the old absolute tolerance ({@code |det| < 1e-9}) got
+     * wrong. The matrix below scales by one part in a million, giving a
+     * determinant of {@code 1e-12} — small, but exactly representable and
+     * perfectly invertible. Asserting the real inverse here is what forces the
+     * singularity test to be <em>relative</em> to the magnitude of the terms
+     * rather than an absolute floor.</p>
+     */
+    @Test
+    void testInverseOfVerySmallUniformScaleIsExact() {
+        final FloorMapTransformationMatrix matrix =
+                new FloorMapTransformationMatrix(1e-6, 0, 0, 1e-6, 5, 6);
+
+        assertThat(matrix.isInvertible()).isTrue();
+
+        final FloorMapTransformationMatrix inverse = matrix.inverse();
+        // Inverse of scale(s) with translation t is scale(1/s) with translation -t/s.
+        assertThat(inverse.getA()).isCloseTo(1e6, withinPercentage(1e-6));
+        assertThat(inverse.getB()).isCloseTo(0, within(TOLERANCE));
+        assertThat(inverse.getC()).isCloseTo(0, within(TOLERANCE));
+        assertThat(inverse.getD()).isCloseTo(1e6, withinPercentage(1e-6));
+        assertThat(inverse.getE()).isCloseTo(-5e6, withinPercentage(1e-6));
+        assertThat(inverse.getF()).isCloseTo(-6e6, withinPercentage(1e-6));
+
+        // And the defining property still holds: the round trip recovers the point.
+        final double[] transformed = apply(matrix, 12.5, -7.25);
+        final double[] recovered = apply(inverse, transformed[0], transformed[1]);
+        assertThat(recovered[0]).isCloseTo(12.5, within(1e-6));
+        assertThat(recovered[1]).isCloseTo(-7.25, within(1e-6));
     }
 
     // -----------------------------------------------------------------------

@@ -365,6 +365,176 @@ class TestFloorMapEntryParser {
     }
 
     /**
+     * A stored world-to-map matrix that is present, entirely numeric, and
+     * degenerate is corrupt data: it collapses the fact to a single point and no
+     * coordinate derived from it can be inverted. The entry must be skipped and
+     * reported, not accepted.
+     *
+     * <p>This is the case that used to be accepted silently. The fact rendered at
+     * the origin with no warning, and because the canvas then converted vertex
+     * drags through the (silently substituted) identity inverse, editing it wrote
+     * coordinates in the wrong space back into the document.</p>
+     */
+    @Test
+    void testParse_degenerateWorldToMapMatrix_skipsEntryAndWarns() {
+        final List<Fact> facts = FloorMapEntryParser.parse(
+                List.of(entry("bad-matrix", 100,
+                                "{\"type\":\"gate\",\"coords\":[1,2],"
+                                        + "\"tm-world-to-map\":[0,0,0,0,0,0]}"),
+                        entry("good", 100, "{\"type\":\"gate\",\"coords\":[3,4]}")),
+                SCHEMA, ACCESSOR, warnings::add);
+
+        assertThat(facts)
+                .as("the degenerate entry must not become a fact")
+                .hasSize(1);
+        assertThat(facts.getFirst().getKey()).isEqualTo("good");
+        assertThat(warnings).hasSize(1);
+        assertThat(warnings.getFirst())
+                .as("the warning must name the offending entry and say why")
+                .contains("bad-matrix")
+                .contains("not invertible");
+    }
+
+    /**
+     * Linearly dependent rows are degenerate too, even though none of the six
+     * values is zero — the check must be on the determinant, not on the presence
+     * of zeroes.
+     */
+    @Test
+    void testParse_linearlyDependentWorldToMapMatrix_skipsEntryAndWarns() {
+        final List<Fact> facts = FloorMapEntryParser.parse(
+                List.of(entry("dependent-rows", 100,
+                        "{\"type\":\"gate\",\"coords\":[1,2],"
+                                + "\"tm-world-to-map\":[2,4,1,2,5,6]}")),
+                SCHEMA, ACCESSOR, warnings::add);
+
+        assertThat(facts).isEmpty();
+        assertThat(warnings).hasSize(1);
+        assertThat(warnings.getFirst()).contains("dependent-rows");
+    }
+
+    /**
+     * A matrix containing a non-numeric token is present but unreadable, which is
+     * corrupt data: the entry is skipped and reported.
+     *
+     * <p>This is the case the author asked to be surfaced rather than absorbed. The
+     * bad token is not silently replaced with a zero (which used to manufacture an
+     * all-zero matrix that looked structurally valid and then behaved as a
+     * degenerate transform), and nor is it quietly treated as "no matrix supplied"
+     * — the user is told which row is wrong.</p>
+     */
+    @Test
+    void testParse_nonNumericTokenInMatrix_skipsEntryAndWarns() {
+        final List<Fact> facts = FloorMapEntryParser.parse(
+                List.of(entry("bad-token", 100,
+                        "{\"type\":\"gate\",\"coords\":[1,2],"
+                                + "\"tm-world-to-map\":[2,0,\"x\",2,10,20]}")),
+                SCHEMA, ACCESSOR, warnings::add);
+
+        assertThat(facts).isEmpty();
+        assertThat(warnings).hasSize(1);
+        assertThat(warnings.getFirst())
+                .contains("bad-token")
+                .contains("not a readable numeric array");
+    }
+
+    /**
+     * A matrix with too few values is present but unusable, and is reported the
+     * same way.
+     */
+    @Test
+    void testParse_shortMatrix_skipsEntryAndWarns() {
+        final List<Fact> facts = FloorMapEntryParser.parse(
+                List.of(entry("short-matrix", 100,
+                        "{\"type\":\"gate\",\"coords\":[1,2],"
+                                + "\"tm-world-to-map\":[1,0,0,1]}")),
+                SCHEMA, ACCESSOR, warnings::add);
+
+        assertThat(facts).isEmpty();
+        assertThat(warnings).hasSize(1);
+        assertThat(warnings.getFirst())
+                .contains("short-matrix")
+                .contains("needs 6 values but has 4");
+    }
+
+    /**
+     * A row that simply carries no matrix is <strong>not</strong> an error. Data
+     * arriving from a stream may legitimately omit fields, so an absent matrix maps
+     * to the identity, silently — the distinction the parser draws is present
+     * versus absent, not null versus non-null.
+     */
+    @Test
+    void testParse_absentMatrix_isIdentityWithNoWarning() {
+        final List<Fact> facts = FloorMapEntryParser.parse(
+                List.of(entry("no-matrix", 100, "{\"type\":\"gate\",\"coords\":[1,2]}")),
+                SCHEMA, ACCESSOR, warnings::add);
+
+        assertThat(facts).hasSize(1);
+        assertThat(facts.getFirst().getWorldToMap())
+                .isEqualTo(FloorMapTransformationMatrix.identity());
+        assertThat(warnings)
+                .as("missing data is normal and must stay silent")
+                .isEmpty();
+    }
+
+    /**
+     * An explicit JSON {@code null} is the format's way of saying "no value", so it
+     * counts as absent rather than as malformed.
+     */
+    @Test
+    void testParse_explicitNullMatrix_isTreatedAsAbsent() {
+        final List<Fact> facts = FloorMapEntryParser.parse(
+                List.of(entry("null-matrix", 100,
+                        "{\"type\":\"gate\",\"coords\":[1,2],"
+                                + "\"tm-world-to-map\":null}")),
+                SCHEMA, ACCESSOR, warnings::add);
+
+        assertThat(facts).hasSize(1);
+        assertThat(facts.getFirst().getWorldToMap())
+                .isEqualTo(FloorMapTransformationMatrix.identity());
+        assertThat(warnings).isEmpty();
+    }
+
+    /**
+     * {@code hasValue} separates the two states the typed getters conflate.
+     */
+    @Test
+    void testHasValue_distinguishesAbsentFromMalformed() {
+        final ParsedValue value = ACCESSOR.parse(
+                "{\"present-but-bad\":[1,\"nope\"],\"explicit-null\":null,\"good\":[1,2]}");
+
+        assertThat(ACCESSOR.hasValue(value, ".present-but-bad"))
+                .as("something is there, it just cannot be read")
+                .isTrue();
+        assertThat(ACCESSOR.getArray(value, ".present-but-bad")).isNull();
+
+        assertThat(ACCESSOR.hasValue(value, ".explicit-null"))
+                .as("an explicit null means no value")
+                .isFalse();
+        assertThat(ACCESSOR.hasValue(value, ".missing-entirely")).isFalse();
+        assertThat(ACCESSOR.hasValue(value, ".good")).isTrue();
+    }
+
+    /**
+     * The {@link ValueAccessor#getArray} contract is all-or-nothing: one
+     * unparseable element makes the whole array {@code null}. Pinned here because
+     * the rest of the parser relies on it — a caller cannot tell a fabricated zero
+     * from a real one.
+     */
+    @Test
+    void testGetArray_malformedElement_yieldsNullNotAZero() {
+        final ParsedValue value = ACCESSOR.parse(
+                "{\"coords\":[1,\"nope\"],\"good\":[1,2]}");
+
+        assertThat(ACCESSOR.getArray(value, ".coords"))
+                .as("a malformed element makes the whole array malformed")
+                .isNull();
+        assertThat(ACCESSOR.getArray(value, ".good"))
+                .as("a well-formed array is still returned")
+                .containsExactly(1d, 2d);
+    }
+
+    /**
      * Passing a {@code null} warning consumer silently skips warning
      * emission rather than throwing a {@code NullPointerException}.
      */
@@ -440,7 +610,7 @@ class TestFloorMapEntryParser {
                 SCHEMA, ACCESSOR, warnings::add);
 
         assertThat(facts).hasSize(2);
-        assertThat(facts.get(0).getKey()).isEqualTo("background");
+        assertThat(facts.getFirst().getKey()).isEqualTo("background");
         assertThat(facts.get(1).getKey()).isEqualTo("gate-1");
     }
 
@@ -535,7 +705,7 @@ class TestFloorMapEntryParser {
                 List.of(entry("area-1", 0L, json)), SCHEMA, ACCESSOR, warnings::add);
 
         assertThat(facts).hasSize(1);
-        final Fact fact = facts.get(0);
+        final Fact fact = facts.getFirst();
         assertThat(fact.hasVertices()).isTrue();
         assertThat(fact.getVertices()).hasDimensions(4, 2);
         assertThat(fact.getVertices()[0]).containsExactly(0, 0);
@@ -556,7 +726,7 @@ class TestFloorMapEntryParser {
         final List<Fact> facts = FloorMapEntryParser.parse(
                 List.of(entry("area-1", 0L, json)), SCHEMA, ACCESSOR, warnings::add);
 
-        assertThat(facts.get(0).getVertices()).hasDimensions(3, 2);
+        assertThat(facts.getFirst().getVertices()).hasDimensions(3, 2);
     }
 
     /**
@@ -570,8 +740,8 @@ class TestFloorMapEntryParser {
                 List.of(entry("area-1", 0L, json)), SCHEMA, ACCESSOR, warnings::add);
 
         assertThat(facts).hasSize(1);
-        assertThat(facts.get(0).hasVertices()).isFalse();
-        assertThat(facts.get(0).getVertices()).isNull();
+        assertThat(facts.getFirst().hasVertices()).isFalse();
+        assertThat(facts.getFirst().getVertices()).isNull();
     }
 
     /**
@@ -584,9 +754,9 @@ class TestFloorMapEntryParser {
         final String plainJson = "{\"type\":\"gate\",\"coords\":[1,2]}";
         final List<Fact> plain = FloorMapEntryParser.parse(
                 List.of(entry("gate-1", 0L, plainJson)), SCHEMA, ACCESSOR, warnings::add);
-        assertThat(plain.get(0).hasVertices()).isFalse();
-        assertThat(plain.get(0).getFill()).isNull();
-        assertThat(plain.get(0).getOpacity()).isNull();
+        assertThat(plain.getFirst().hasVertices()).isFalse();
+        assertThat(plain.getFirst().getFill()).isNull();
+        assertThat(plain.getFirst().getOpacity()).isNull();
 
         // Legacy schema: no GEOMETRY/FILL/OPACITY mappings at all.
         final List<FloorMapFieldMapping> legacySchema = List.of(
@@ -596,7 +766,7 @@ class TestFloorMapEntryParser {
         final List<Fact> legacy = FloorMapEntryParser.parse(
                 List.of(entry("area-1", 0L, areaJson)), legacySchema, ACCESSOR, warnings::add);
         assertThat(legacy).hasSize(1);
-        assertThat(legacy.get(0).hasVertices()).isFalse();
+        assertThat(legacy.getFirst().hasVertices()).isFalse();
         assertThat(warnings).isEmpty();
     }
 
@@ -622,7 +792,7 @@ class TestFloorMapEntryParser {
                 List.of(entry("zone-1", 0L, serialised)), SCHEMA, ACCESSOR, warnings::add);
 
         assertThat(facts).hasSize(1);
-        final Fact fact = facts.get(0);
+        final Fact fact = facts.getFirst();
         assertThat(fact.hasVertices()).isTrue();
         assertThat(fact.getVertices()).hasDimensions(3, 2);
         assertThat(fact.getVertices()[2]).containsExactly(0, 15);
@@ -649,6 +819,36 @@ class TestFloorMapEntryParser {
     // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
+
+    /**
+     * End-to-end: a value carrying the {@code LABEL} role reaches the caption.
+     *
+     * <p>The gap this closes spanned four layers, each individually correct and
+     * individually tested: the default schema maps {@code .name} to
+     * {@link Role#LABEL}, the parser reads it onto the {@link Fact}, and the canvas
+     * then captioned the glyph with the fact's <em>key</em>. Nothing was broken
+     * anywhere — the call between the last two layers was simply missing, which is
+     * precisely what a per-layer suite cannot catch. So this test deliberately runs
+     * the whole way from a stored row to the caption text.</p>
+     */
+    @Test
+    void testParse_labelRoleReachesTheCanvasCaption() {
+        final List<Fact> facts = FloorMapEntryParser.parse(
+                List.of(entry("gate-1@100", 100,
+                        "{\"type\":\"gate\",\"name\":\"Loading Bay\",\"coords\":[1,2]}")),
+                SCHEMA, ACCESSOR, warnings::add);
+
+        assertThat(facts).hasSize(1);
+        final Fact fact = facts.getFirst();
+        assertThat(fact.getLabelOrNull())
+                .as("the parser must carry the LABEL onto the fact")
+                .isEqualTo("Loading Bay");
+        assertThat(FloorMapEntityList.captionFor(
+                fact.getKey(), fact.getLabelOrNull(), FloorMapEntityList::displayName))
+                .as("and the canvas must caption with it, not with the key")
+                .isEqualTo("Loading Bay");
+    }
+
 
     private static TemporalEntry entry(final String key,
                                        @SuppressWarnings("SameParameterValue") final long time,

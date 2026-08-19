@@ -24,17 +24,10 @@ import org.xml.sax.SAXException;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
-import javax.xml.transform.OutputKeys;
-import javax.xml.transform.Transformer;
-import javax.xml.transform.TransformerException;
-import javax.xml.transform.TransformerFactory;
-import javax.xml.transform.dom.DOMSource;
-import javax.xml.transform.stream.StreamResult;
 
 /**
  * A test-only {@link ValueAccessor} implementation backed by the JDK's
@@ -130,21 +123,28 @@ public class DomValueAccessor implements ValueAccessor {
     }
 
     @Override
+    public boolean hasValue(final ParsedValue value, final String path) {
+        final Document doc = asDoc(value);
+        if (doc == null || path == null) {
+            return false;
+        }
+        final PathTarget target = resolvePath(doc, path);
+        if (target == null) {
+            return false;
+        }
+        if (target.isAttribute) {
+            return target.parent.hasAttribute(target.localName);
+        }
+        return findChildElement(target.parent, target.localName) != null;
+    }
+
+    @Override
     public double[] getArray(final ParsedValue value, final String path) {
         final String text = getString(value, path);
         if (text == null || text.isEmpty()) {
             return null;
         }
-        final String[] parts = text.split(",");
-        final double[] result = new double[parts.length];
-        for (int i = 0; i < parts.length; i++) {
-            try {
-                result[i] = Double.parseDouble(parts[i].trim());
-            } catch (final NumberFormatException e) {
-                result[i] = 0;
-            }
-        }
-        return result;
+        return XmlValueText.parseCommaSeparatedNumbers(text);
     }
 
     @Override
@@ -187,15 +187,55 @@ public class DomValueAccessor implements ValueAccessor {
         if (doc == null || doc.getDocumentElement() == null) {
             return null;
         }
-        try {
-            final Transformer transformer = TransformerFactory.newInstance().newTransformer();
-            transformer.setOutputProperty(OutputKeys.OMIT_XML_DECLARATION, "yes");
-            final StringWriter writer = new StringWriter();
-            transformer.transform(new DOMSource(doc), new StreamResult(writer));
-            return writer.toString();
-        } catch (final TransformerException e) {
-            return null;
+        return serializeElement(doc.getDocumentElement());
+    }
+
+    /**
+     * Mirrors production {@code XmlValueAccessor.serializeElement}, deliberately
+     * hand-rolled rather than delegating to a JAXP {@code Transformer}.
+     *
+     * <p>This used to use a {@code Transformer}, which was a trap: the JDK
+     * serialiser is complete and correct, so round-trip tests written against this
+     * double passed while the production serialiser — a hand-written recursion
+     * over node types — silently dropped whole categories of node. The double has
+     * to be as limited as the thing it stands in for, or the tests attest to
+     * nothing.</p>
+     */
+    private static String serializeElement(final Element elem) {
+        final StringBuilder sb = new StringBuilder();
+        sb.append("<").append(elem.getTagName());
+
+        final org.w3c.dom.NamedNodeMap attrs = elem.getAttributes();
+        if (attrs != null) {
+            for (int i = 0; i < attrs.getLength(); i++) {
+                final Node attr = attrs.item(i);
+                sb.append(" ").append(attr.getNodeName())
+                        .append("=\"")
+                        .append(XmlValueText.escapeXml(attr.getNodeValue()))
+                        .append("\"");
+            }
         }
+
+        final NodeList children = elem.getChildNodes();
+        if (children.getLength() == 0) {
+            sb.append("/>");
+        } else {
+            sb.append(">");
+            for (int i = 0; i < children.getLength(); i++) {
+                final Node child = children.item(i);
+                final short type = child.getNodeType();
+                if (type == Node.ELEMENT_NODE) {
+                    sb.append(serializeElement((Element) child));
+                } else if (type == Node.TEXT_NODE
+                        || type == Node.CDATA_SECTION_NODE) {
+                    sb.append(XmlValueText.escapeXml(child.getNodeValue()));
+                } else if (type == Node.COMMENT_NODE) {
+                    sb.append("<!--").append(child.getNodeValue()).append("-->");
+                }
+            }
+            sb.append("</").append(elem.getTagName()).append(">");
+        }
+        return sb.toString();
     }
 
     @Override
@@ -306,12 +346,17 @@ public class DomValueAccessor implements ValueAccessor {
         return colon >= 0 ? qualifiedName.substring(colon + 1) : qualifiedName;
     }
 
+    /**
+     * Mirrors production {@code XmlValueAccessor.getTextContent}, including its
+     * treatment of CDATA sections as character data.
+     */
     private static String getTextContent(final Element elem) {
         final StringBuilder sb = new StringBuilder();
         final NodeList children = elem.getChildNodes();
         for (int i = 0; i < children.getLength(); i++) {
             final Node child = children.item(i);
-            if (child.getNodeType() == Node.TEXT_NODE) {
+            final short type = child.getNodeType();
+            if (type == Node.TEXT_NODE || type == Node.CDATA_SECTION_NODE) {
                 sb.append(child.getNodeValue());
             }
         }

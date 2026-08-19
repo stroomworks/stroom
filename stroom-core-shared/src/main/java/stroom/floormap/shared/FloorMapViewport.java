@@ -42,10 +42,15 @@ public final class FloorMapViewport {
     /** Multiplicative zoom step applied per wheel notch. */
     public static final double ZOOM_STEP = 1.1;
     /**
-     * Default dead-zone margin for {@link #follow} as a fraction of each view
-     * dimension. 0.35 means the tracked point may roam the central 30% of the
-     * view before the camera starts panning — small movements leave the camera
-     * still, larger ones pull it along.
+     * Default dead-zone margin for camera-follow, passed as the
+     * {@code marginFraction} of {@link #followDelta}, as a fraction of each view
+     * dimension. 0.35 means the tracked point may roam the central 30% of the view
+     * before the camera starts panning — small movements leave the camera still,
+     * larger ones pull it along.
+     *
+     * <p>Callers wanting to hard-centre pass 0.5 instead, which collapses the dead
+     * zone to the centre point; {@code FloorMapCanvasPresenter} does this for the
+     * first follow after tracking is switched on.</p>
      */
     public static final double DEFAULT_FOLLOW_MARGIN = 0.35;
 
@@ -105,7 +110,7 @@ public final class FloorMapViewport {
         final double unzoomedX = (screenX - offsetX) / scale;
         final double unzoomedY = (screenY - offsetY) / scale;
 
-        final FloorMapTransformationMatrix inverse = safeInverse(background);
+        final FloorMapTransformationMatrix inverse = inverseOrIdentityIfAbsent(background);
         final double mapX = inverse.getA() * unzoomedX + inverse.getC() * unzoomedY + inverse.getE();
         final double mapY = inverse.getB() * unzoomedX + inverse.getD() * unzoomedY + inverse.getF();
         return new double[]{mapX, mapY};
@@ -170,42 +175,6 @@ public final class FloorMapViewport {
         offsetX = cursorX - (cursorX - offsetX) * effectiveFactor;
         offsetY = cursorY - (cursorY - offsetY) * effectiveFactor;
         scale = newScale;
-    }
-
-    /**
-     * Pans the viewport the minimum amount needed to keep the given map-space
-     * point inside the central "dead zone" rectangle of the view. Used to
-     * follow a tracked person: while they roam within the dead zone the camera
-     * stays still; when they cross a margin the camera pans just enough to
-     * bring them back to the margin edge, rather than re-centering on every
-     * update.
-     *
-     * @param mapX           map-space X of the point to keep in view
-     * @param mapY           map-space Y of the point to keep in view
-     * @param background     the active background's map-to-screen matrix; may
-     *                       be {@code null} (treated as identity)
-     * @param viewWidth      the visible canvas width in screen pixels
-     * @param viewHeight     the visible canvas height in screen pixels
-     * @param marginFraction the dead-zone margin as a fraction of each view
-     *                       dimension, clamped to {@code [0, 0.5]}; 0.5
-     *                       collapses the dead zone to the centre point
-     *                       (hard-centering)
-     * @return {@code true} if the viewport panned
-     */
-    public boolean follow(final double mapX,
-                          final double mapY,
-                          final FloorMapTransformationMatrix background,
-                          final double viewWidth,
-                          final double viewHeight,
-                          final double marginFraction) {
-        final double[] screen = mapToScreen(mapX, mapY, background);
-        final double[] delta = followDelta(
-                screen[0], screen[1], viewWidth, viewHeight, marginFraction);
-        if (delta[0] != 0 || delta[1] != 0) {
-            pan(delta[0], delta[1]);
-            return true;
-        }
-        return false;
     }
 
     /**
@@ -280,33 +249,6 @@ public final class FloorMapViewport {
     // -----------------------------------------------------------------------
 
     /**
-     * Returns a copy of the background matrix translated by a screen drag
-     * delta. Only the translation components ({@code e}, {@code f}) change; the
-     * scale/rotation components ({@code a}, {@code b}, {@code c}, {@code d}) are
-     * preserved.
-     *
-     * @param current     the background matrix being dragged; may be
-     *                    {@code null} (treated as identity)
-     * @param screenDeltaX raw screen X delta
-     * @param screenDeltaY raw screen Y delta
-     * @return a new translated matrix
-     */
-    public FloorMapTransformationMatrix dragBackground(final FloorMapTransformationMatrix current,
-                                                       final double screenDeltaX,
-                                                       final double screenDeltaY) {
-        final FloorMapTransformationMatrix matrix = current != null
-                ? current
-                : FloorMapTransformationMatrix.identity();
-        final double deltaUnzoomedX = screenDeltaX / scale;
-        final double deltaUnzoomedY = screenDeltaY / scale;
-        return new FloorMapTransformationMatrix(
-                matrix.getA(), matrix.getB(),
-                matrix.getC(), matrix.getD(),
-                matrix.getE() + deltaUnzoomedX,
-                matrix.getF() + deltaUnzoomedY);
-    }
-
-    /**
      * Converts a raw screen drag delta into the equivalent delta in map space,
      * for repositioning a plotted (non-background) item. The delta is reduced by
      * the zoom scale and then rotated/scaled by the inverse of the background's
@@ -324,13 +266,25 @@ public final class FloorMapViewport {
         final double deltaUnzoomedX = screenDeltaX / scale;
         final double deltaUnzoomedY = screenDeltaY / scale;
 
-        final FloorMapTransformationMatrix inverse = safeInverse(background);
+        final FloorMapTransformationMatrix inverse = inverseOrIdentityIfAbsent(background);
         final double deltaMapX = inverse.getA() * deltaUnzoomedX + inverse.getC() * deltaUnzoomedY;
         final double deltaMapY = inverse.getB() * deltaUnzoomedX + inverse.getD() * deltaUnzoomedY;
         return new double[]{deltaMapX, deltaMapY};
     }
 
-    private static FloorMapTransformationMatrix safeInverse(final FloorMapTransformationMatrix matrix) {
+    /**
+     * Inverts {@code matrix}, treating a {@code null} matrix as the identity —
+     * "no background transform" is a legitimate state and inverts to itself.
+     *
+     * <p>Named for what it actually does: it is <em>not</em> safe against a
+     * singular matrix, and deliberately so. Every background matrix the UI
+     * composes is invertible by construction (the Y-flip alone has determinant
+     * -1), so a non-invertible one here is a bug and
+     * {@link FloorMapTransformationMatrix#inverse()} will say so rather than
+     * silently returning the identity and mis-converting every drag delta.</p>
+     */
+    private static FloorMapTransformationMatrix inverseOrIdentityIfAbsent(
+            final FloorMapTransformationMatrix matrix) {
         return matrix != null
                 ? matrix.inverse()
                 : FloorMapTransformationMatrix.identity();

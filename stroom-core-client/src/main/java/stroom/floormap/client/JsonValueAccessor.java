@@ -42,6 +42,16 @@ public final class JsonValueAccessor implements ValueAccessor {
         // Singleton
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>In addition to the cases the contract lists, this returns {@code null} for
+     * input that parses perfectly well but is not a JSON <em>object</em> — the
+     * literal {@code null}, an array such as {@code [1,2]}, or a bare scalar. A
+     * value's paths address named fields, so anything without them is unusable
+     * here, and rejecting it up front is better than handing back a
+     * {@link ParsedValue} that fails on first access.</p>
+     */
     @Override
     public ParsedValue parse(final String raw) {
         if (raw == null || raw.isEmpty()) {
@@ -61,6 +71,19 @@ public final class JsonValueAccessor implements ValueAccessor {
         return new ParsedValue(new JSONObject());
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>JSON is typed, so this also returns {@code null} when a value <em>is</em>
+     * present at {@code path} but is not a string — a number, boolean, array or
+     * object. Only {@link JSONValue#isString()} counts.</p>
+     *
+     * <p>Note this is deliberately <strong>not</strong> what the XML accessor does:
+     * XML element text carries no type, so there a numeric {@code 5} is simply the
+     * string {@code "5"}. The two answers differ for the same logical field, and
+     * both are correct for their format. Use {@link #getNumber} when a number is
+     * what you want, regardless of format.</p>
+     */
     @Override
     public String getString(final ParsedValue value, final String path) {
         final JSONObject json = asJson(value);
@@ -108,9 +131,28 @@ public final class JsonValueAccessor implements ValueAccessor {
         for (int i = 0; i < arr.size(); i++) {
             final JSONValue elem = arr.get(i);
             final JSONNumber num = elem != null ? elem.isNumber() : null;
-            result[i] = num != null ? num.doubleValue() : 0;
+            if (num == null) {
+                // Malformed: the interface contract is null for the whole array rather
+                // than a zero for the bad element. Substituting zero used to fabricate
+                // plausible-looking data — a matrix of six unparseable values became six
+                // zeroes, which is a valid-looking but degenerate transform that silently
+                // collapsed the fact to the origin.
+                return null;
+            }
+            result[i] = num.doubleValue();
         }
         return result;
+    }
+
+    @Override
+    public boolean hasValue(final ParsedValue value, final String path) {
+        final JSONObject json = asJson(value);
+        if (json == null || path == null) {
+            return false;
+        }
+        final JSONValue val = json.get(toKey(path));
+        // An explicit JSON null is the format saying "no value", so treat it as absent.
+        return val != null && val.isNull() == null;
     }
 
     @Override

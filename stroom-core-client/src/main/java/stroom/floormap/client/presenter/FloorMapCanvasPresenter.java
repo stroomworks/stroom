@@ -2156,6 +2156,17 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
             gesture = Gesture.NONE;
             return;
         }
+        // Dragging a vertex converts screen coordinates into the fact's local space
+        // through the inverse of this matrix, and persists the result. A
+        // non-invertible matrix would make that conversion meaningless, so refuse the
+        // edit rather than write coordinates in the wrong space back to the document.
+        // FloorMapEntryParser rejects non-invertible matrices at parse time, so this is
+        // defence in depth against a matrix composed in the UI.
+        if (!area.getWorldToMap().isInvertible()) {
+            isDragging = false;
+            gesture = Gesture.NONE;
+            return;
+        }
         final double[][] v = area.getVertices();
         editingAreaKey = area.getKey();
         editingWorldToMap = area.getWorldToMap();
@@ -3092,8 +3103,12 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                 ? name
                 : id;
         final String areaKey = areaMembership.getInnermostAreaKey(id);
+        // Resolve the area's key to its name. The key is an opaque generated id, so
+        // reading it aloud ("in area-7f3a...") is noise; the name is what a sighted
+        // user reads off the map, which is the whole point of this method. The
+        // sibling containingAreaNames already resolves the same way.
         return areaKey != null
-                ? displayName + ", in " + areaKey
+                ? displayName + ", in " + displayNameOrId(areaKey)
                 : displayName;
     }
 
