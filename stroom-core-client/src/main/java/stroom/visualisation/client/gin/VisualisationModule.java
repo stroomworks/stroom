@@ -23,6 +23,11 @@ import stroom.visualisation.client.presenter.VisualisationSettingsPresenter;
 import stroom.visualisation.client.presenter.VisualisationSettingsPresenter.VisualisationSettingsView;
 import stroom.visualisation.client.view.VisualisationSettingsViewImpl;
 
+// STROOMWORKS-LOCAL: KEEP LOCAL ON MERGE FROM master.
+// Part of "Make the Visualisation Asset system generic" - upstream's VisualisationAsset*
+// classes were generalised into the shared stroom.document.asset subsystem so FloorMap can
+// carry assets too. Upstream still has the visualisation-specific version, so a merge will
+// try to reinstate it; keep this side and re-point any new upstream code at document.asset.
 public class VisualisationModule extends PluginModule {
     @Override
     protected void configure() {

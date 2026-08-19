@@ -36,6 +36,10 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Predicate;
 
+// TODO STROOMWORKS-LOCAL WORKAROUND - PREFER UPSTREAM ON MERGE FROM master
+// Local rename (value -> val) from "Change value to val to avoid errors in recent Java versions".
+// A language-compatibility workaround, not a behavioural change, so upstream's version should win
+// once they build against the same JDK.
 public class RowValueFilter {
 
     public static boolean matches(final List<Column> columns) {
