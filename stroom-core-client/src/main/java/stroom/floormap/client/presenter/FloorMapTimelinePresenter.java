@@ -19,6 +19,8 @@ package stroom.floormap.client.presenter;
 import stroom.editor.client.presenter.ChangeCurrentPreferencesEvent;
 import stroom.floormap.client.event.TimeChangeEvent;
 import stroom.floormap.client.presenter.FloorMapTimelinePresenter.FloorMapTimelineView;
+import stroom.floormap.shared.FloorMapPlaybackRange;
+import stroom.floormap.shared.FloorMapQueryThrottle;
 import stroom.svg.client.Preset;
 import stroom.svg.shared.SvgImage;
 import stroom.widget.datepicker.client.UTCDate;
@@ -105,8 +107,13 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
     /** Tracks whether the last programmatic setCurrentTime() was out of the visible range. */
     private OutOfRange outOfRange = OutOfRange.NONE;
     private double lastFrameTime;
-    /** Wall-clock timestamp (ms) of the most recent playback data query, used for throttling. */
-    private double lastQueryWallClockTime;
+    /**
+     * Rate limit on the data queries playback issues, kept separate from the
+     * per-frame visual updates. See {@link FloorMapQueryThrottle} for why this is a
+     * class rather than a timestamp field.
+     */
+    private final FloorMapQueryThrottle queryThrottle =
+            new FloorMapQueryThrottle(PLAYBACK_QUERY_INTERVAL_MS);
 
     /** Optional callback fired whenever the timeline transitions between playing and paused. */
     private java.util.function.Consumer<Boolean> playStateChangeHandler;
@@ -164,22 +171,12 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
         // Forward date changes from the settings popup back to the timeline.
         //noinspection unused e
         registerHandler(settingsPresenter.addStartTimeChangeHandler(e -> {
-            this.startTime = settingsPresenter.getStartTime();
-            updateProgress();
-            updateDateLabels();
-            if (timeRangeChangeHandler != null) {
-                timeRangeChangeHandler.run();
-            }
+            applyRange(settingsPresenter.getStartTime(), this.endTime);
         }));
 
         //noinspection unused e
         registerHandler(settingsPresenter.addEndTimeChangeHandler(e -> {
-            this.endTime = settingsPresenter.getEndTime();
-            updateProgress();
-            updateDateLabels();
-            if (timeRangeChangeHandler != null) {
-                timeRangeChangeHandler.run();
-            }
+            applyRange(this.startTime, settingsPresenter.getEndTime());
         }));
 
         getView().setPlayPauseHandler(() -> {
@@ -289,12 +286,45 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
     }
 
     /**
+     * Applies a range edited in the settings popup, rejecting one that cannot be used.
+     *
+     * <p>On rejection the picker is put back to the range actually in force, so the
+     * boxes never show a range the timeline is not using. Reverting rather than
+     * coercing is deliberate: silently moving the boundary the user did <em>not</em>
+     * touch is more surprising than declining the one they did.</p>
+     *
+     * <p>Restoring the picker cannot loop back into this method —
+     * {@code DateTimeBox.setValue(Long)} delegates to {@code setValue(value, false)}
+     * and fires no change event.</p>
+     */
+    private void applyRange(final long start, final long end) {
+        if (!FloorMapPlaybackRange.isUsable(start, end)) {
+            settingsPresenter.setStartTime(this.startTime);
+            settingsPresenter.setEndTime(this.endTime);
+            return;
+        }
+        this.startTime = start;
+        this.endTime = end;
+        updateProgress();
+        updateDateLabels();
+        if (timeRangeChangeHandler != null) {
+            timeRangeChangeHandler.run();
+        }
+    }
+
+    /**
      * Sets the total time range visible on the timeline.
      *
      * @param start Start time in milliseconds.
      * @param end   End time in milliseconds.
      */
     public void setTimeRange(final long start, final long end) {
+        if (!FloorMapPlaybackRange.isUsable(start, end)) {
+            // Keep whatever range is currently in force. Storing an unusable one makes
+            // the progress bar and the step buttons silently do nothing, and makes
+            // playback wrap on every frame.
+            return;
+        }
         this.startTime = start;
         this.endTime = end;
         settingsPresenter.setStartTime(start);
@@ -532,9 +562,14 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
                         if (settingsPresenter.isLoopPlayback()) {
                             // Loop: wrap back to the start.
                             newTime = startTime;
-                            // Reset the query clock on loop-around so the first frame after
-                            // wrapping always triggers a fresh query.
-                            lastQueryWallClockTime = 0;
+                            // Deliberately NOT resetting the query throttle here. Forcing a
+                            // query on every wrap looks harmless but is the storm: at high
+                            // speed, or over a short or degenerate range, the timeline wraps
+                            // every frame, so the reset fired every frame and the rate limit
+                            // never applied — two searches per frame, each rebuilding a
+                            // server-side result store. The scrubber still moves smoothly
+                            // because the visual position updates every frame regardless;
+                            // fresh data follows within one throttle interval.
                             // Discard in-flight animations — positions jump discontinuously.
                             if (clearAnimationStateHandler != null) {
                                 clearAnimationStateHandler.run();
@@ -550,7 +585,7 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
                             setCurrentTime(newTime);
                             TimeChangeEvent.fire(FloorMapTimelinePresenter.this, newTime);
                             lastFrameTime = 0;
-                            lastQueryWallClockTime = 0;
+                            queryThrottle.reset();
                             if (clearAnimationStateHandler != null) {
                                 clearAnimationStateHandler.run();
                             }
@@ -563,10 +598,8 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
 
                     // Only fire a data query if enough wall-clock time has elapsed since
                     // the last one, preventing the server from being overwhelmed.
-                    if (lastQueryWallClockTime == 0
-                            || timestamp - lastQueryWallClockTime >= PLAYBACK_QUERY_INTERVAL_MS) {
+                    if (queryThrottle.shouldQuery(timestamp)) {
                         TimeChangeEvent.fire(FloorMapTimelinePresenter.this, newTime);
-                        lastQueryWallClockTime = timestamp;
                     }
                 }
 
@@ -574,7 +607,7 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
                 AnimationScheduler.get().requestAnimationFrame(this);
             } else {
                 lastFrameTime = 0;
-                lastQueryWallClockTime = 0;
+                queryThrottle.reset();
             }
         }
     };

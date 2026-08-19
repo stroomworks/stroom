@@ -49,6 +49,7 @@ import stroom.query.api.Result;
 import stroom.query.api.Row;
 import stroom.query.api.TableResult;
 import stroom.query.api.TimeRange;
+import stroom.query.api.token.QuotedStringUtil;
 import stroom.query.client.presenter.DateTimeSettingsFactory;
 import stroom.query.client.presenter.QueryModel;
 import stroom.query.client.presenter.ResultComponent;
@@ -1339,7 +1340,7 @@ public class FloorMapMapPresenter
         for (final Map.Entry<String, String> entry : vars.entrySet()) {
             resolved = resolved.replace(
                     "param('" + entry.getKey() + "')",
-                    "\"" + entry.getValue() + "\"");
+                    "\"" + QuotedStringUtil.escapeDoubleQuoted(entry.getValue()) + "\"");
         }
         return resolved;
     }

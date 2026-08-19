@@ -19,6 +19,7 @@ package stroom.floormap.client.presenter;
 import stroom.floormap.client.ValuePathAccessor;
 import stroom.floormap.shared.FloorMapFieldMapping;
 import stroom.floormap.shared.ValueFormat;
+import stroom.query.api.token.QuotedStringUtil;
 
 import java.util.List;
 
@@ -87,16 +88,20 @@ public final class FloorMapQueryBuilder {
         return switch (format) {
             case JSON -> {
                 final String key = ValuePathAccessor.toKey(path);
-                if (needsQuoting(key)) {
-                    // Field access on a quoted key needs the leading dot:
-                    // ."tm-world-to-map". Without it the jq expression is just
-                    // a string literal that evaluates to itself.
-                    yield "jq(Value, \".\\\"" + key + "\\\"\")";
-                } else {
-                    yield "jq(Value, \"" + path + "\")";
-                }
+                // Build the jq expression first, then escape it once for the
+                // enclosing StroomQL literal. Doing both levels inline produced
+                // backslash soup and, more importantly, escaped neither: a path
+                // containing a quote closed the StroomQL literal early.
+                final String jq = needsQuoting(key)
+                        // Field access on a quoted key needs the leading dot:
+                        // ."tm-world-to-map". Without it the jq expression is just
+                        // a string literal that evaluates to itself.
+                        ? "." + '"' + QuotedStringUtil.escapeDoubleQuoted(key) + '"'
+                        : path;
+                yield "jq(Value, \"" + QuotedStringUtil.escapeDoubleQuoted(jq) + "\")";
             }
-            case XML -> "xpath(Value, \"" + path + "\")";
+            case XML -> "xpath(Value, \""
+                    + QuotedStringUtil.escapeDoubleQuoted(path) + "\")";
         };
     }
 

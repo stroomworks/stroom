@@ -764,7 +764,16 @@ public class FloorMapEditorPresenter
         } else {
             final long min = range.getMinEffectiveTimeMs();
             final long max = range.getMaxEffectiveTimeMs();
-            floorMapTimelinePresenter.setTimeRange(min, max);
+            if (min < max) {
+                floorMapTimelinePresenter.setTimeRange(min, max);
+            } else {
+                // A store holding a single effective time reports min == max, which is not
+                // a usable playback range — a zero-length range leaves the step buttons and
+                // the progress bar with nowhere to move, and makes playback wrap on every
+                // frame. Show a window around that instant instead, matching what the
+                // no-data branch above does.
+                floorMapTimelinePresenter.setTimeRange(min - ONE_DAY_MS, max + ONE_DAY_MS);
+            }
             floorMapTimelinePresenter.setCurrentTime(max);
             model.setSelectedTime(max);
         }
