@@ -37,8 +37,15 @@ import java.util.Set;
  * which handles the standard document CRUD, import/export and dependency delegation.
  * <p>
  * This class adds floor-map specific behaviour: it materialises newly created documents as a
- * processing user, performs a deep copy when duplicating, cleans up associated processor filters
+ * processing user, copies the document when duplicating, cleans up associated processor filters
  * when a floor map document is deleted, and remaps the facts/events store references it depends on.
+ *
+ * <p>The duplicate is a genuine copy rather than an aliasing one: {@code FloorMapDoc.copy()} copies
+ * the document's {@code valueSchema}, {@code typeStyles} and {@code groups} collections, and their
+ * elements expose no setters, so nothing is shared with the original. That was not true when this
+ * class was written — the collections were assigned by reference and a duplicated document shared
+ * list instances with its source — so do not weaken {@code FloorMapDoc.Builder}'s copying without
+ * revisiting this.</p>
  */
 @Singleton
 class FloorMapStoreImpl extends AbstractDocumentStore<FloorMapDoc> implements FloorMapStore {

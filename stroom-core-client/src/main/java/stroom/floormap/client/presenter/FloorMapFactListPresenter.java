@@ -17,6 +17,7 @@
 package stroom.floormap.client.presenter;
 
 import stroom.data.grid.client.MyDataGrid;
+import stroom.floormap.client.FloorMapAria;
 import stroom.floormap.client.FloorMapEditorHelp;
 import stroom.floormap.client.ValuePathAccessor;
 import stroom.floormap.client.presenter.FloorMapFactListPresenter.FloorMapFactListView;
@@ -93,11 +94,23 @@ public class FloorMapFactListPresenter extends MyPresenterWidget<FloorMapFactLis
     private Consumer<String> deleteConsumer;
 
     /**
-     * Element id of the fact grid, so the Editor tab's canvas can name it as its
-     * text alternative via {@code aria-describedby}. A fixed id because the
-     * reference crosses presenters and the Editor tab has a single Fact List.
+     * This grid's element id, so the canvas can name it as the map's text alternative
+     * via {@code aria-describedby}. Minted per instance, not a constant.
+     *
+     * <p>A previous version of this comment argued for a fixed id: the reference
+     * crosses presenters, so threading a handle through "purely to learn a string"
+     * looked like coupling for nothing, and the Editor tab has only one Fact List panel so the id
+     * "cannot collide with itself". The second half is true and beside the point —
+     * Stroom opens documents in tabs, so the collision is with <em>another
+     * document's</em> grid, not with this one's. Two floor maps open at once gave two
+     * elements the same id, and each canvas's {@code aria-describedby} then resolved
+     * to whichever came first in the DOM. Nothing looks wrong to a sighted user; the
+     * screen reader simply describes the wrong map.</p>
+     *
+     * <p>The coupling objection also does not hold: the consumer already holds this
+     * presenter (FloorMapEditorPresenter.floorMapFactListPresenter), so it reads the id from the instance.</p>
      */
-    private static final String GRID_ELEMENT_ID = "floormap-fact-list-grid";
+    private final String gridElementId = FloorMapAria.uniqueId("floormap-fact-list-grid");
 
     /**
      * The fact grid's element id, for the canvas to point
@@ -105,8 +118,8 @@ public class FloorMapFactListPresenter extends MyPresenterWidget<FloorMapFactLis
      *
      * @return the grid's element id
      */
-    public static String getGridElementId() {
-        return GRID_ELEMENT_ID;
+    public String getGridElementId() {
+        return gridElementId;
     }
 
     @Inject
@@ -121,7 +134,7 @@ public class FloorMapFactListPresenter extends MyPresenterWidget<FloorMapFactLis
         // This grid is the Editor canvas's text equivalent — a navigable row per
         // fact — so it needs a stable id for the canvas to point aria-describedby
         // at. See getGridElementId().
-        dataGrid.getElement().setId(GRID_ELEMENT_ID);
+        dataGrid.getElement().setId(gridElementId);
         view.setGridView(dataGrid);
         initGridColumns();
         dataProvider.addDataDisplay(dataGrid);

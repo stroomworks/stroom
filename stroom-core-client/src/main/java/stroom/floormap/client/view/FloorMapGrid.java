@@ -103,8 +103,6 @@ public final class FloorMapGrid {
      */
     static final double TARGET_MAX_PX = 400.0;
 
-    // -- Pattern ID (unique within a single SVG document) ------------------
-    private static final String MAJOR_PATTERN_ID = "grid-major";
 
     private FloorMapGrid() {
         // utility class
@@ -132,13 +130,24 @@ public final class FloorMapGrid {
      *                   {@code null} on a map with no scale set — in which case
      *                   the default scale (one centimetre per map unit) applies.
      *                   Sizes the grid decade; the grid itself carries no text
+     * @param patternId  id for the {@code <pattern>} this appends, and for the
+     *                   {@code url(#...)} that fills the overlay rect with it. Must be
+     *                   unique across the whole page, not merely within the enclosing
+     *                   {@code <svg>}: for inline SVG, id resolution is document-wide,
+     *                   so two canvases using one id makes the second rect pick up the
+     *                   first canvas's pattern — including its {@code patternTransform},
+     *                   which encodes that canvas's pan and zoom. The grid then visibly
+     *                   scrolls with the wrong map. Callers should mint one id per view
+     *                   instance and reuse it across frames rather than generating a
+     *                   fresh one per draw.
      */
     public static void appendGrid(final HtmlBuilder builder,
                                   final FloorMapTransformationMatrix matrix,
                                   final double userZoom,
                                   final double panX,
                                   final double panY,
-                                  final FloorMapMeasurementUnits units) {
+                                  final FloorMapMeasurementUnits units,
+                                  final String patternId) {
 
         // -- 1. Compute effective pixels-per-world-unit ----------------------
         //    matrixScale = scale factor of the map-to-screen affine matrix
@@ -229,7 +238,7 @@ public final class FloorMapGrid {
 
             },
                     SafeHtmlUtil.from("pattern"),
-                    new Attribute("id", MAJOR_PATTERN_ID),
+                    new Attribute("id", patternId),
                     new Attribute("width", formatDouble(majorWorldSpacing)),
                     new Attribute("height", formatDouble(majorWorldSpacing)),
                     new Attribute("patternUnits", "userSpaceOnUse"),
@@ -249,7 +258,7 @@ public final class FloorMapGrid {
         builder.elem(SafeHtmlUtil.from("rect"),
                 new Attribute("width", "100%"),
                 new Attribute("height", "100%"),
-                new Attribute("fill", "url(#" + MAJOR_PATTERN_ID + ")"),
+                new Attribute("fill", "url(#" + patternId + ")"),
                 new Attribute("pointer-events", "none"));
     }
 

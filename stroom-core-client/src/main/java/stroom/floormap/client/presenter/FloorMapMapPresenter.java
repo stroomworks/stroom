@@ -548,7 +548,7 @@ public class FloorMapMapPresenter
         // exposed as a single summarised image; this is what tells a screen-reader
         // user that the row-by-row detail behind that summary exists, and where.
         floorMapCanvasPresenter.setTextAlternativeId(
-                FloorMapTrackingPresenter.getGridElementId());
+                floorMapTrackingPresenter.getGridElementId());
     }
 
     /**

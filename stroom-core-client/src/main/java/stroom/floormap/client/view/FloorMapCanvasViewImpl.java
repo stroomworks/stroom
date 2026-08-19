@@ -249,6 +249,17 @@ public class FloorMapCanvasViewImpl
     private FloorMapMeasurementUnits measurementUnits;
 
     /**
+     * Id for this canvas's grid {@code <pattern>}, minted once per view.
+     *
+     * <p>Per instance rather than a shared constant because inline SVG resolves ids
+     * document-wide: with two canvases attached — two open floor maps, or one
+     * document's Map and Editor tabs — the second would fill its background with the
+     * first's pattern and inherit its pan and zoom. Stable across frames rather than
+     * minted per draw, so redrawing does not leak ids.</p>
+     */
+    private final String gridPatternId = FloorMapAria.uniqueId("floormap-grid-major");
+
+    /**
      * Resolves an entity id to its display name, for captioning a cluster drawn
      * around the tracked entity. Supplied by the presenter; {@code null} until
      * then, which falls the caption back to the id.
@@ -612,7 +623,7 @@ public class FloorMapCanvasViewImpl
             if (showGrid) {
                 FloorMapGrid.appendGrid(
                         svg, FloorMapTransformationMatrix.identity(), scale, x, y,
-                        measurementUnits);
+                        measurementUnits, gridPatternId);
             }
 
             // Pan/zoom group.

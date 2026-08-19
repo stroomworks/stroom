@@ -330,7 +330,7 @@ public class FloorMapEditorPresenter
         // its Tracking grid for the same purpose; on the Editor tab the Fact List
         // is the navigable row-per-object view of what the canvas is drawing.
         floorMapCanvasPresenter.setTextAlternativeId(
-                FloorMapFactListPresenter.getGridElementId());
+                floorMapFactListPresenter.getGridElementId());
         // Properties are shown as a modal dialog — no slot needed.
     }
 
