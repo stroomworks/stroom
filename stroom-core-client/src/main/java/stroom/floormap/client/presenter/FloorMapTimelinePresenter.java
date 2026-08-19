@@ -102,6 +102,22 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
      */
     private int histogramBinCount = 100;
 
+    /**
+     * The pending playback animation frame, or {@code null} when none is scheduled.
+     *
+     * <p>Retained so pause can cancel it. Clearing {@link #playing} alone does not stop
+     * the loop — it only makes the <em>next</em> callback decline to continue — so
+     * pressing play again before that callback fired used to leave two callbacks in
+     * flight, each re-requesting, and playback ran on two concurrent loops.</p>
+     *
+     * <p>That did not double the speed, but only by accident: both callbacks share
+     * {@link #lastFrameTime}, so whichever ran second in a frame computed a delta of
+     * about zero and advanced nothing. Making frame timing per-callback — an innocuous
+     * refactor — would have turned it into a silent speed multiplier. Cancelling removes
+     * the coincidence the correctness rested on.</p>
+     */
+    private AnimationScheduler.AnimationHandle playbackHandle;
+
     private boolean playing;
     private double playbackSpeed;
     /** Tracks whether the last programmatic setCurrentTime() was out of the visible range. */
@@ -183,10 +199,10 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
             playing = !playing;
             if (playing) {
                 getView().setPlayPausePreset(PAUSE_PRESET);
-                lastFrameTime = 0;
-                AnimationScheduler.get().requestAnimationFrame(playbackCallback);
+                startPlayback();
             } else {
                 getView().setPlayPausePreset(PLAY_PRESET);
+                cancelPlayback();
             }
             if (playStateChangeHandler != null) {
                 playStateChangeHandler.accept(playing);
@@ -387,6 +403,7 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
     public void pause() {
         if (playing) {
             playing = false;
+            cancelPlayback();
             getView().setPlayPausePreset(PLAY_PRESET);
             if (playStateChangeHandler != null) {
                 playStateChangeHandler.accept(false);
@@ -550,9 +567,30 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
         return String.valueOf(value);
     }
 
+    /**
+     * Starts the playback loop, cancelling any frame already pending so there is never
+     * more than one callback in flight.
+     */
+    private void startPlayback() {
+        cancelPlayback();
+        lastFrameTime = 0;
+        playbackHandle = AnimationScheduler.get().requestAnimationFrame(playbackCallback);
+    }
+
+    /** Cancels the pending playback frame, if any. Safe to call when none is scheduled. */
+    private void cancelPlayback() {
+        if (playbackHandle != null) {
+            playbackHandle.cancel();
+            playbackHandle = null;
+        }
+    }
+
     private final AnimationScheduler.AnimationCallback playbackCallback = new AnimationScheduler.AnimationCallback() {
         @Override
         public void execute(final double timestamp) {
+            // This invocation consumes the frame that scheduled it, so the field is only
+            // non-null while a frame is genuinely pending.
+            playbackHandle = null;
             if (playing) {
                 if (lastFrameTime > 0) {
                     final double delta = timestamp - lastFrameTime;
@@ -604,7 +642,7 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
                 }
 
                 lastFrameTime = timestamp;
-                AnimationScheduler.get().requestAnimationFrame(this);
+                playbackHandle = AnimationScheduler.get().requestAnimationFrame(this);
             } else {
                 lastFrameTime = 0;
                 queryThrottle.reset();
