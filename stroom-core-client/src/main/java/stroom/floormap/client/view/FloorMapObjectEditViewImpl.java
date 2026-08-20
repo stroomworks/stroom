@@ -267,8 +267,23 @@ public class FloorMapObjectEditViewImpl extends ViewImpl implements FloorMapObje
     }
 
     @Override
+    public boolean isEffectiveTimeValid() {
+        return effectiveTimeBox.getValue() != null;
+    }
+
+    @Override
     public long getEffectiveTime() {
-        return effectiveTimeBox.getValue();
+        final Long value = effectiveTimeBox.getValue();
+        if (value == null) {
+            // Unreachable via the OK path, which checks isEffectiveTimeValid() first.
+            // Fail loudly rather than unboxing null: this used to throw a bare NPE from
+            // inside the dialog's OK handler, before any validation ran and with both
+            // buttons already disabled, so the user was left with a dead dialog and no
+            // message.
+            throw new IllegalStateException(
+                    "Effective time is empty or unparseable; check isEffectiveTimeValid() first");
+        }
+        return value;
     }
 
     @Override

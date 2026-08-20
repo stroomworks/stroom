@@ -350,19 +350,37 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
                 .onShow(e -> getView().setEnabled(true))
                 .onHideRequest(e -> {
                     if (e.isOk()) {
+                        // Every path that declines to close MUST call e.reset(). Clicking OK
+                        // puts the dialog into its in-progress state - both buttons disabled
+                        // and OK showing a spinner (OkCancelContent.onDialogAction) - and only
+                        // reset() or hide() releases it. Returning without either leaves the
+                        // dialog open but dead: Escape is the only way out, and it discards
+                        // everything the user typed. The three sibling dialogs
+                        // (FloorMapSetScalePresenter, FloorMapGroupEditPresenter,
+                        // FloorMapLayerStylePresenter) all pass e::reset for this reason.
                         final String type = getView().getType();
                         if (type == null || type.trim().isEmpty()) {
                             AlertEvent.fireError(this,
                                     "Object type must not be empty. "
                                     + "Please enter a type (e.g. 'gate', 'camera', 'person').",
-                                    null);
+                                    e::reset);
                             return;
                         }
                         if (isArea(type) && !getView().isOpacityValid()) {
                             AlertEvent.fireError(this,
                                     "Area fill opacity must be a number between 0 and 1, "
                                     + "or empty for the default.",
-                                    null);
+                                    e::reset);
+                            return;
+                        }
+                        if (!getView().isEffectiveTimeValid()) {
+                            // Checked before reading the value: DateTimeBox yields null for a
+                            // cleared or unparseable field, and unboxing that threw an NPE from
+                            // inside this handler - before any validation ran, and with the
+                            // buttons already disabled.
+                            AlertEvent.fireError(this,
+                                    "Effective From Time must be a valid date and time.",
+                                    e::reset);
                             return;
                         }
                         final long time = getView().getEffectiveTime();
@@ -373,15 +391,20 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
                                     + "Do you want to move the version to the new time? "
                                     + "(OK to move, Cancel to create a new cloned version at the new time)",
                                     move -> {
-                                        // Keep the dialog open when the handler
-                                        // rejects, so the user's input survives.
+                                        // Keep the dialog open when the handler rejects, so the
+                                        // user's input survives - but reset it, or "open" means
+                                        // "open and unusable".
                                         if (onSave.onSave(buildEntry(time, key), !move)) {
                                             e.hide();
+                                        } else {
+                                            e.reset();
                                         }
                                     });
                         } else {
                             if (onSave.onSave(buildEntry(time, key), false)) {
                                 e.hide();
+                            } else {
+                                e.reset();
                             }
                         }
                     } else {
@@ -623,7 +646,20 @@ public class FloorMapObjectEditPresenter extends MyPresenterWidget<FloorMapObjec
      */
     public interface FloorMapObjectEditView extends View {
 
-        /** Returns the effective-time value entered by the user, in epoch milliseconds. */
+        /**
+         * Whether the effective-time field currently holds a parseable date-time.
+         *
+         * <p>{@code DateTimeBox} yields {@code null} for text it cannot parse and for a
+         * cleared box, so this must be checked before {@link #getEffectiveTime()}.</p>
+         */
+        boolean isEffectiveTimeValid();
+
+        /**
+         * Returns the effective-time value entered by the user, in epoch milliseconds.
+         *
+         * @throws IllegalStateException if the field is empty or unparseable — call
+         *                               {@link #isEffectiveTimeValid()} first
+         */
         long getEffectiveTime();
 
         /** Sets the effective-time field to the given epoch-millisecond value. */
