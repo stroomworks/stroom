@@ -20,6 +20,7 @@ import stroom.data.grid.client.MyDataGrid;
 import stroom.floormap.client.FloorMapEditorHelp;
 import stroom.floormap.client.presenter.FloorMapTimeListPresenter.FloorMapTimeListView;
 import stroom.floormap.shared.FloorMapEditorModel;
+import stroom.preferences.client.DateTimeFormatter;
 import stroom.svg.client.SvgPresets;
 import stroom.util.client.JSONUtil;
 import stroom.util.shared.TemporalEntry;
@@ -40,7 +41,6 @@ import com.gwtplatform.mvp.client.MyPresenterWidget;
 import com.gwtplatform.mvp.client.View;
 
 import java.util.Collections;
-import java.util.Date;
 import java.util.List;
 import java.util.function.Consumer;
 
@@ -71,10 +71,14 @@ public class FloorMapTimeListPresenter extends MyPresenterWidget<FloorMapTimeLis
     private Runnable addConsumer;
     private Consumer<TemporalEntry> deleteConsumer;
 
+    private final DateTimeFormatter dateTimeFormatter;
+
     @Inject
     public FloorMapTimeListPresenter(final EventBus eventBus,
-                                     final FloorMapTimeListView view) {
+                                     final FloorMapTimeListView view,
+                                     final DateTimeFormatter dateTimeFormatter) {
         super(eventBus, view);
+        this.dateTimeFormatter = dateTimeFormatter;
 
         dataGrid = new MyDataGrid<>(this);
         dataGrid.setSelectionModel(selectionModel);
@@ -297,7 +301,12 @@ public class FloorMapTimeListPresenter extends MyPresenterWidget<FloorMapTimeLis
         final Column<TemporalEntry, String> timeColumn = new TextColumn<>() {
             @Override
             public String getValue(final TemporalEntry entry) {
-                return new Date(entry.getEffectiveTimeMs()).toString();
+                // The platform formatter, as every other grid in Stroom uses: it honours
+                // the user's configured time zone and pattern. This column used
+                // new Date(ms).toString(), which is browser-local and verbose, so the
+                // effective times here disagreed with the timeline, the canvas and the
+                // user's own preference.
+                return dateTimeFormatter.format(entry.getEffectiveTimeMs());
             }
         };
         dataGrid.addColumn(timeColumn, "Effective Time");

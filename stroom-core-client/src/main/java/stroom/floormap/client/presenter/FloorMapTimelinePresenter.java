@@ -21,9 +21,9 @@ import stroom.floormap.client.event.TimeChangeEvent;
 import stroom.floormap.client.presenter.FloorMapTimelinePresenter.FloorMapTimelineView;
 import stroom.floormap.shared.FloorMapPlaybackRange;
 import stroom.floormap.shared.FloorMapQueryThrottle;
+import stroom.preferences.client.DateTimeFormatter;
 import stroom.svg.client.Preset;
 import stroom.svg.shared.SvgImage;
-import stroom.widget.datepicker.client.UTCDate;
 import stroom.widget.help.client.HelpButton;
 import stroom.widget.menu.client.presenter.IconMenuItem;
 import stroom.widget.menu.client.presenter.Item;
@@ -140,12 +140,17 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
     /** Optional callback fired when the user changes the visible time range via the settings popup. */
     private Runnable timeRangeChangeHandler;
 
+
+    private final DateTimeFormatter dateTimeFormatter;
+
     @Inject
     public FloorMapTimelinePresenter(final EventBus eventBus,
                                      final FloorMapTimelineView view,
-                                     final FloorMapTimelineSettingsPresenter settingsPresenter) {
+                                     final FloorMapTimelineSettingsPresenter settingsPresenter,
+                                     final DateTimeFormatter dateTimeFormatter) {
         super(eventBus, view);
         this.settingsPresenter = settingsPresenter;
+        this.dateTimeFormatter = dateTimeFormatter;
 
         view.setScrubHandler(percentage -> {
             // Visual-only update during drag — no data query fired.
@@ -516,18 +521,8 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
         if (millis <= 0) {
             return "";
         }
-        // Use GWT's UTCDate to build an ISO-style string without needing DateTimeFormat.
-        final UTCDate date = UTCDate.create(millis);
-        if (date == null) {
-            return "";
-        }
-        // Build "yyyy-MM-dd HH:mm" style
-        final int year = date.getFullYear();
-        final int month = date.getMonth() + 1; // 0-indexed
-        final int day = date.getDate();
-        final int hour = date.getHours();
-        final int min = date.getMinutes();
-        return pad4(year) + "-" + pad2(month) + "-" + pad2(day) + " " + pad2(hour) + ":" + pad2(min);
+        final String formatted = dateTimeFormatter.formatCompact(millis);
+        return formatted != null ? formatted : "";
     }
 
     /**
@@ -552,20 +547,7 @@ public class FloorMapTimelinePresenter extends MyPresenterWidget<FloorMapTimelin
         return "x" + speed;
     }
 
-    private static String pad2(final int value) {
-        return value < 10 ? "0" + value : String.valueOf(value);
-    }
 
-    private static String pad4(final int value) {
-        if (value < 10) {
-            return "000" + value;
-        } else if (value < 100) {
-            return "00" + value;
-        } else if (value < 1000) {
-            return "0" + value;
-        }
-        return String.valueOf(value);
-    }
 
     /**
      * Starts the playback loop, cancelling any frame already pending so there is never
