@@ -2083,7 +2083,13 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
      */
     private boolean selectionTransformable() {
         for (final Fact fact : facts) {
+            // At least one *unlocked* fact must be transformable. A locked one does not
+            // count: the mouseup commit filters it out, so handles shown for an
+            // all-locked selection were live to the touch and could never do anything -
+            // a full gesture with a live preview, then nothing persisted. A mixed
+            // selection still gets handles, correctly, for its unlocked members.
             if (selectedObjectIds.contains(fact.getKey())
+                    && !lockedKeys.contains(fact.getKey())
                     && (fact.hasImage() || fact.hasVertices())) {
                 return true;
             }
@@ -2700,9 +2706,17 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
 
     /**
      * Returns the facts to render, applying any in-progress transform gesture:
-     * each selected fact's world-to-map matrix is composed as
+     * each selected, unlocked fact's world-to-map matrix is composed as
      * {@code pendingTransform · oldMatrix} so a move/scale/rotate is shown live.
      * On release the same transform is persisted via {@link DragHandler#onTransform}.
+     *
+     * <p>Items on a locked layer are excluded, matching the mouseup commit, which
+     * filters {@link #lockedKeys} out of the transform. Without that the preview and
+     * the commit disagreed: a selection containing both locked and unlocked items -
+     * reachable by locking a layer after selecting, or by Shift-clicking a locked
+     * item, which is deliberately allowed - showed the locked ones tracking the drag
+     * and then snapping back on release, with nothing said. Locked now means locked
+     * from the first pixel.</p>
      */
     private List<Fact> factsForDraw() {
         final boolean editingVertices = editingAreaKey != null && workingVertices != null;
@@ -2714,7 +2728,9 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
             if (editingVertices && editingAreaKey.equals(fact.getKey())) {
                 // Live vertex-edit preview.
                 out.add(fact.withVertices(workingVertices));
-            } else if (pendingTransform != null && selectedObjectIds.contains(fact.getKey())) {
+            } else if (pendingTransform != null
+                       && selectedObjectIds.contains(fact.getKey())
+                       && !lockedKeys.contains(fact.getKey())) {
                 out.add(fact.withWorldToMap(
                         pendingTransform.multiply(fact.getWorldToMap())));
             } else {
