@@ -23,11 +23,8 @@ import stroom.docstore.api.StoreFactory;
 import stroom.docstore.api.UniqueNameUtil;
 import stroom.floormap.shared.FloorMapDoc;
 import stroom.security.api.SecurityContext;
-import stroom.util.logging.LambdaLogger;
-import stroom.util.logging.LambdaLoggerFactory;
 
 import jakarta.inject.Inject;
-import jakarta.inject.Provider;
 import jakarta.inject.Singleton;
 
 import java.util.Set;
@@ -37,8 +34,8 @@ import java.util.Set;
  * which handles the standard document CRUD, import/export and dependency delegation.
  * <p>
  * This class adds floor-map specific behaviour: it materialises newly created documents as a
- * processing user, copies the document when duplicating, cleans up associated processor filters
- * when a floor map document is deleted, and remaps the facts/events store references it depends on.
+ * processing user, copies the document when duplicating, and remaps the facts/events store
+ * references it depends on.
  *
  * <p>The duplicate is a genuine copy rather than an aliasing one: {@code FloorMapDoc.copy()} copies
  * the document's {@code valueSchema}, {@code typeStyles} and {@code groups} collections, and their
@@ -50,23 +47,18 @@ import java.util.Set;
 @Singleton
 class FloorMapStoreImpl extends AbstractDocumentStore<FloorMapDoc> implements FloorMapStore {
 
-    private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(FloorMapStoreImpl.class);
-
     private final SecurityContext securityContext;
-    private final Provider<FloorMapProcessors> floorMapProcessorsProvider;
 
     @Inject
     FloorMapStoreImpl(final StoreFactory storeFactory,
                       final FloorMapSerialiser serialiser,
-                      final SecurityContext securityContext,
-                      final Provider<FloorMapProcessors> floorMapProcessorsProvider) {
+                      final SecurityContext securityContext) {
         super(storeFactory,
                 serialiser,
                 FloorMapDoc.TYPE,
                 FloorMapDoc::builder,
                 FloorMapDoc::copy);
         this.securityContext = securityContext;
-        this.floorMapProcessorsProvider = floorMapProcessorsProvider;
     }
 
     @Override
@@ -103,12 +95,6 @@ class FloorMapStoreImpl extends AbstractDocumentStore<FloorMapDoc> implements Fl
     }
 
     @Override
-    public void deleteDocument(final DocRef docRef) {
-        deleteProcessorFilter(docRef);
-        super.deleteDocument(docRef);
-    }
-
-    @Override
     protected DependencyRemapFunction<FloorMapDoc> getDependencyRemapFunction() {
         return (doc, dependencyRemapper) -> {
             final FloorMapDoc.Builder builder = doc.copy();
@@ -120,14 +106,5 @@ class FloorMapStoreImpl extends AbstractDocumentStore<FloorMapDoc> implements Fl
             }
             return builder.build();
         };
-    }
-
-    private void deleteProcessorFilter(final DocRef docRef) {
-        try {
-            final FloorMapDoc floorMapDoc = readDocument(docRef);
-            floorMapProcessorsProvider.get().deleteProcessorFilters(floorMapDoc);
-        } catch (final RuntimeException e) {
-            LOGGER.debug(e::getMessage, e);
-        }
     }
 }
