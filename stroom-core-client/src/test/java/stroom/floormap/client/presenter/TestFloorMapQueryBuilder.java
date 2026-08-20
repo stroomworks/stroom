@@ -47,7 +47,7 @@ class TestFloorMapQueryBuilder {
         assertThat(query).startsWith("from param('FactStore')");
         assertThat(query).contains("Key");
         assertThat(query).contains("EffectiveTime");
-        assertThat(query).contains("jq(Value, \".type\") as type");
+        assertThat(query).contains("jq(Value, \".type\") as \"type\"");
     }
 
     @Test
@@ -62,9 +62,9 @@ class TestFloorMapQueryBuilder {
         final String query = FloorMapQueryBuilder.buildFactsQuery(
                 schema, ValueFormat.JSON);
 
-        assertThat(query).contains("jq(Value, \".type\") as type");
-        assertThat(query).contains("jq(Value, \".coords\") as coords");
-        assertThat(query).contains("jq(Value, \".img\") as img");
+        assertThat(query).contains("jq(Value, \".type\") as \"type\"");
+        assertThat(query).contains("jq(Value, \".coords\") as \"coords\"");
+        assertThat(query).contains("jq(Value, \".img\") as \"img\"");
     }
 
     @Test
@@ -80,7 +80,7 @@ class TestFloorMapQueryBuilder {
         // Hyphenated keys need quoting in jq — with the leading dot for field
         // access (a bare quoted string is a jq literal, not a lookup).
         assertThat(query).contains(
-                "jq(Value, \".\\\"tm-world-to-map\\\"\") as tm_world_to_map");
+                "jq(Value, \".\\\"tm-world-to-map\\\"\") as \"tm-world-to-map\"");
     }
 
     @Test
@@ -96,7 +96,7 @@ class TestFloorMapQueryBuilder {
 
         // Should only contain the coords mapping, not type
         assertThat(query).doesNotContain("type");
-        assertThat(query).contains("jq(Value, \".coords\") as coords");
+        assertThat(query).contains("jq(Value, \".coords\") as \"coords\"");
     }
 
     @Test
@@ -110,8 +110,8 @@ class TestFloorMapQueryBuilder {
         final String query = FloorMapQueryBuilder.buildFactsQuery(
                 schema, ValueFormat.JSON);
 
-        assertThat(query).doesNotContain("as type");
-        assertThat(query).contains("jq(Value, \".coords\") as coords");
+        assertThat(query).doesNotContain("as \"type\"");
+        assertThat(query).contains("jq(Value, \".coords\") as \"coords\"");
     }
 
     // ---- buildFactsQuery (XML) ----
@@ -127,7 +127,7 @@ class TestFloorMapQueryBuilder {
 
         assertThat(query).startsWith("from param('FactStore')");
         assertThat(query).contains(
-                "xpath(Value, \"/entry/type\") as type");
+                "xpath(Value, \"/entry/type\") as \"entry/type\"");
     }
 
     @Test
@@ -140,7 +140,7 @@ class TestFloorMapQueryBuilder {
                 schema, ValueFormat.XML);
 
         assertThat(query).contains(
-                "xpath(Value, \"/entry/@type\") as type");
+                "xpath(Value, \"/entry/@type\") as \"entry/@type\"");
     }
 
     // ---- buildExtractExpression ----
@@ -184,31 +184,37 @@ class TestFloorMapQueryBuilder {
     }
 
     @Test
-    void testBuildColumnAlias_json_hyphenReplaced() {
+    void testBuildColumnAlias_json_keyUsedVerbatim() {
         final String alias = FloorMapQueryBuilder.buildColumnAlias(
                 ".tm-world-to-map", ValueFormat.JSON);
-        assertThat(alias).isEqualTo("tm_world_to_map");
+        assertThat(alias)
+                .as("the key is used verbatim; hyphen mangling made .a-b and .a_b collide")
+                .isEqualTo("tm-world-to-map");
     }
 
     @Test
-    void testBuildColumnAlias_xml_lastSegment() {
+    void testBuildColumnAlias_xml_pathWithoutLeadingSlash() {
         final String alias = FloorMapQueryBuilder.buildColumnAlias(
                 "/entry/type", ValueFormat.XML);
-        assertThat(alias).isEqualTo("type");
+        assertThat(alias).isEqualTo("entry/type");
     }
 
     @Test
     void testBuildColumnAlias_xml_nestedPath() {
         final String alias = FloorMapQueryBuilder.buildColumnAlias(
                 "/entry/nested/prop", ValueFormat.XML);
-        assertThat(alias).isEqualTo("prop");
+        assertThat(alias)
+                .as("the whole path, so /entry/prop and /entry/nested/prop stay distinct")
+                .isEqualTo("entry/nested/prop");
     }
 
     @Test
-    void testBuildColumnAlias_xml_attributeStripsAt() {
+    void testBuildColumnAlias_xml_attributePathKeepsTheAt() {
         final String alias = FloorMapQueryBuilder.buildColumnAlias(
                 "/entry/@type", ValueFormat.XML);
-        assertThat(alias).isEqualTo("type");
+        assertThat(alias)
+                .as("the @ is kept, so /entry/type and /entry/@type stay distinct")
+                .isEqualTo("entry/@type");
     }
 
     @Test
@@ -284,6 +290,101 @@ class TestFloorMapQueryBuilder {
         assertThat(expression).endsWith("\")");
         final String literal = expression.substring(
                 prefix.length(), expression.length() - 1);
+        final char[] chars = literal.toCharArray();
+        assertThat(QuotedStringUtil.unescape(chars, 0, chars.length - 1, '\\'))
+                .as("tokeniser view of " + literal)
+                .isEqualTo(expected);
+    }
+
+    // ---- the alias is injective, and safe once emitted ----
+
+    /**
+     * Distinct paths must give distinct aliases, for every collision the old derivation
+     * allowed.
+     *
+     * <p>This is the assertion that matters. The consumer looks a column up <em>by</em>
+     * alias, so two paths sharing one alias do not merely produce an odd heading — two
+     * roles resolve to the same column index and the map draws with the wrong data,
+     * silently.</p>
+     */
+    @Test
+    void testBuildColumnAlias_isInjective() {
+        // JSON: the old hyphen-to-underscore mangle collapsed these two.
+        assertThat(FloorMapQueryBuilder.buildColumnAlias(".a-b", ValueFormat.JSON))
+                .isNotEqualTo(FloorMapQueryBuilder.buildColumnAlias(".a_b", ValueFormat.JSON));
+
+        // XML: taking only the last segment collapsed all of these.
+        final String a = FloorMapQueryBuilder.buildColumnAlias("/entry/type", ValueFormat.XML);
+        final String b = FloorMapQueryBuilder.buildColumnAlias("/entry/meta/type", ValueFormat.XML);
+        final String c = FloorMapQueryBuilder.buildColumnAlias("/other/type", ValueFormat.XML);
+        final String d = FloorMapQueryBuilder.buildColumnAlias("/entry/@type", ValueFormat.XML);
+        assertThat(List.of(a, b, c, d)).doesNotHaveDuplicates();
+    }
+
+    /**
+     * A path containing characters that would break an unquoted identifier still produces
+     * valid query text, because the alias is quoted where it is emitted.
+     *
+     * <p>The old code claimed to produce a "SQL-safe" alias but only replaced hyphens, and
+     * only for JSON — so a path of {@code .my key} yielded the bare alias {@code my key}
+     * and the whole generated query failed to parse.</p>
+     */
+    @Test
+    void testBuildFactsQuery_aliasWithSpaceIsQuoted() {
+        final String query = FloorMapQueryBuilder.buildFactsQuery(
+                List.of(new FloorMapFieldMapping(".my key", Role.TYPE, "My Key", null)),
+                ValueFormat.JSON);
+
+        assertThat(query).contains(" as \"my key\"");
+        assertUnescapesTo(lastQuotedLiteral(query), "my key");
+    }
+
+    /** A quote in the path cannot terminate the alias literal early. */
+    @Test
+    void testBuildFactsQuery_aliasWithQuoteIsEscaped() {
+        final String query = FloorMapQueryBuilder.buildFactsQuery(
+                List.of(new FloorMapFieldMapping(".a\"b", Role.TYPE, "A B", null)),
+                ValueFormat.JSON);
+
+        assertThat(query).contains(" as \"a\\\"b\"");
+        assertUnescapesTo(lastQuotedLiteral(query), "a\"b");
+    }
+
+    /**
+     * An XML {@code text()} path — which the old derivation emitted verbatim and unquoted,
+     * producing {@code as text()} — is now a quoted alias.
+     */
+    @Test
+    void testBuildFactsQuery_xmlFunctionCallPathIsQuoted() {
+        final String query = FloorMapQueryBuilder.buildFactsQuery(
+                List.of(new FloorMapFieldMapping("/entry/name/text()", Role.LABEL, "Name", null)),
+                ValueFormat.XML);
+
+        assertThat(query).contains(" as \"entry/name/text()\"");
+    }
+
+    /** The alias the query carries is exactly the one the consumer matches against. */
+    @Test
+    void testEmittedAliasUnescapesToTheBareAlias() {
+        for (final String path : List.of(".type", ".tm-world-to-map", ".my key", ".a\"b")) {
+            final String bare = FloorMapQueryBuilder.buildColumnAlias(path, ValueFormat.JSON);
+            final String query = FloorMapQueryBuilder.buildFactsQuery(
+                    List.of(new FloorMapFieldMapping(path, Role.TYPE, "T", null)),
+                    ValueFormat.JSON);
+            assertUnescapesTo(lastQuotedLiteral(query), bare);
+        }
+    }
+
+    /** The text of the last quoted literal in {@code query}, including its quotes. */
+    private static String lastQuotedLiteral(final String query) {
+        final int end = query.lastIndexOf('"');
+        final int start = query.lastIndexOf(" as \"") + " as ".length();
+        assertThat(start).isGreaterThan(0);
+        return query.substring(start, end + 1);
+    }
+
+    /** Asserts the tokeniser reads {@code literal} back as {@code expected}. */
+    private static void assertUnescapesTo(final String literal, final String expected) {
         final char[] chars = literal.toCharArray();
         assertThat(QuotedStringUtil.unescape(chars, 0, chars.length - 1, '\\'))
                 .as("tokeniser view of " + literal)
