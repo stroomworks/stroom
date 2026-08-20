@@ -1135,8 +1135,24 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
                     selectedObjectIds.add(clickSelectId);
                     fireSelectionChanged();
                 } else if (!selectedObjectIds.isEmpty()) {
+                    if (trackedObjectId != null) {
+                        // Tracking owns the highlight, so a click on empty canvas must not
+                        // clear it. Doing so left trackedObjectId set with nothing
+                        // highlighted: the camera kept following, and the Tracking panel's
+                        // row stayed selected while the map showed no selection. That is
+                        // exactly the state handleViewKeys() declines to create, which is
+                        // why Escape is not handled on the Map tab — stopping a follow goes
+                        // through the Tracking panel, which keeps both ends in step.
+                        // A stray click should not be a second, silent way in.
+                        return;
+                    }
                     selectedObjectIds.clear();
                     fireSelectionChanged();
+                    // Repaint explicitly rather than relying on the selection handler:
+                    // only the Editor tab installs one (FloorMapEditorPresenter:293), so on
+                    // the Map tab fireSelectionChanged() notifies nobody and the cleared
+                    // highlight stayed painted until something unrelated redrew.
+                    redraw();
                 }
             }
         }));
