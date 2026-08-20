@@ -291,9 +291,16 @@ public class FloorMapTransformationMatrix {
      * {@code FloorMapEntryParser}. Use this where you need to check data
      * provenance rather than let {@link #inverse()} throw.</p>
      *
+     * <p>Named {@code hasInverse} rather than {@code isInvertible} so Jackson cannot
+     * mistake it for a property: this class is serialised, and Jackson auto-detects
+     * {@code getXxx}/{@code isXxx}. A {@code hasXxx} name keeps it invisible without an
+     * {@code @JsonIgnore}, matching {@link TypeStyle#hasGraphic()} and the other
+     * {@code has*} helpers — and {@code TestJsonSerialisation} fails the build both on an
+     * undeclared extra getter and on a redundant {@code @JsonIgnore}.</p>
+     *
      * @return {@code true} if {@link #inverse()} will succeed
      */
-    public boolean isInvertible() {
+    public boolean hasInverse() {
         final double det = a * d - b * c;
         if (Double.isNaN(det) || Double.isInfinite(det)) {
             return false;
@@ -319,14 +326,14 @@ public class FloorMapTransformationMatrix {
      * <p>There is no circumstance in the FloorMap UI where a matrix legitimately
      * cannot be inverted, so reaching the exception means bad data got past the
      * parser or a caller composed a degenerate transform — both bugs worth
-     * surfacing. Call {@link #isInvertible()} first if you are handling data of
+     * surfacing. Call {@link #hasInverse()} first if you are handling data of
      * uncertain provenance.</p>
      *
      * @return the inverse matrix; never {@code null}
      * @throws IllegalStateException if this matrix is not invertible
      */
     public FloorMapTransformationMatrix inverse() {
-        if (!isInvertible()) {
+        if (!hasInverse()) {
             throw new IllegalStateException(
                     "Matrix is not invertible (determinant is zero or a component is "
                             + "not finite): " + this);

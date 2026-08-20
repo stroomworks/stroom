@@ -213,7 +213,7 @@ public final class FloorMapEntryParser {
         }
         final FloorMapTransformationMatrix matrix = new FloorMapTransformationMatrix(
                 arr[0], arr[1], arr[2], arr[3], arr[4], arr[5]);
-        if (!matrix.isInvertible()) {
+        if (!matrix.hasInverse()) {
             throw new IllegalArgumentException(
                     "world-to-map matrix at '" + path + "' is not invertible: " + matrix);
         }

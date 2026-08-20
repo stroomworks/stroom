@@ -196,8 +196,8 @@ class TestFloorMapTransformationMatrix {
                 .withOutputType(Boolean.class)
                 .withTestFunction(testCase -> {
                     final FloorMapTransformationMatrix matrix = testCase.getInput();
-                    assertThat(matrix.isInvertible())
-                            .as("isInvertible must agree with inverse()")
+                    assertThat(matrix.hasInverse())
+                            .as("hasInverse must agree with inverse()")
                             .isFalse();
                     assertThatThrownBy(matrix::inverse)
                             .isInstanceOf(IllegalStateException.class)
@@ -235,7 +235,7 @@ class TestFloorMapTransformationMatrix {
         final FloorMapTransformationMatrix matrix =
                 new FloorMapTransformationMatrix(1e-6, 0, 0, 1e-6, 5, 6);
 
-        assertThat(matrix.isInvertible()).isTrue();
+        assertThat(matrix.hasInverse()).isTrue();
 
         final FloorMapTransformationMatrix inverse = matrix.inverse();
         // Inverse of scale(s) with translation t is scale(1/s) with translation -t/s.

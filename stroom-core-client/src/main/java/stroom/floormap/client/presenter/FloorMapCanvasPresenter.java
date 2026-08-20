@@ -2162,7 +2162,7 @@ public class FloorMapCanvasPresenter extends MyPresenterWidget<FloorMapCanvasVie
         // edit rather than write coordinates in the wrong space back to the document.
         // FloorMapEntryParser rejects non-invertible matrices at parse time, so this is
         // defence in depth against a matrix composed in the UI.
-        if (!area.getWorldToMap().isInvertible()) {
+        if (!area.getWorldToMap().hasInverse()) {
             isDragging = false;
             gesture = Gesture.NONE;
             return;
