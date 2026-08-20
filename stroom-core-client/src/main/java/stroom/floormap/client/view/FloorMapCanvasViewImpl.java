@@ -513,15 +513,31 @@ public class FloorMapCanvasViewImpl
     /**
      * Handles resize events. If the parent container has no size yet (e.g. during
      * initial attachment), the call is deferred until layout completes.
+     *
+     * <p>The retry stops if the widget is detached. Without that check the deferred
+     * call re-queued itself unconditionally, so a canvas that never gets laid out —
+     * a document opened into a hidden or closed tab — rescheduled forever and kept
+     * the view, and through it the presenter, reachable for the rest of the
+     * session.</p>
      */
     @Override
     public void onResize() {
+        if (!svgContainer.isAttached()) {
+            // Nothing to size, and nothing will ever size it. A later attach fires
+            // onResize again through the normal widget lifecycle.
+            return;
+        }
+
         final Element parent = svgContainer.getElement().getParentElement();
+        if (parent == null) {
+            return;
+        }
         final int width = parent.getOffsetWidth();
         final int height = parent.getOffsetHeight();
 
         // Defer if the parent hasn't been laid out yet — retry once the browser
-        // gives it a size.
+        // gives it a size. Guarded by the isAttached() check above, so a canvas that
+        // is never laid out stops retrying instead of spinning for the session.
         if (width <= 0 || height <= 0) {
             Scheduler.get().scheduleDeferred((this::onResize));
             return;
