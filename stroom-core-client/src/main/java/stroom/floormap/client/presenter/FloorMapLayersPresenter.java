@@ -257,7 +257,12 @@ public class FloorMapLayersPresenter extends MyPresenterWidget<FloorMapLayersVie
         final Set<String> saved = new HashSet<>();
         for (int i = 0; i < layers.size(); i++) {
             final TypeStyle ts = layers.get(i);
-            if (ts.getType() != null) {
+            // Null-tolerant because this runs on every document read: a stored typeStyles
+            // array carrying a literal null would otherwise take out the whole Layers
+            // panel on open, rather than costing one row. Note the filtering here is
+            // load-bearing beyond this loop — moveBy() relies on a null-typed layer having
+            // no row, and therefore no grip to reorder from.
+            if (ts != null && ts.getType() != null) {
                 saved.add(ts.getType());
                 list.add(buildRow(ts, i));
             }

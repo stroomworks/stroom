@@ -20,6 +20,7 @@ import stroom.floormap.shared.TypeStyle.Shape;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.Arrays;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -78,6 +79,30 @@ class TestTypeStyle {
         final List<TypeStyle> existing = List.of(new TypeStyle("gate", null, null));
         final List<TypeStyle> merged = TypeStyle.merge(existing, null);
         assertThat(types(merged)).containsExactly("gate");
+    }
+
+    /**
+     * A null element in the stored list is skipped, not dereferenced.
+     *
+     * <p>Nothing in the application produces one — every producer builds elements
+     * explicitly — so this guards against a hand-edited or badly imported document
+     * carrying a literal {@code null} in its {@code typeStyles} array. The three sibling
+     * walkers over this same list ({@code colourForType}, {@code withAreaStyle},
+     * {@code FloorMapDocSession.hasAreaStyle}) all guard for it; {@code merge} did not.</p>
+     *
+     * <p>Uses {@code Arrays.asList} rather than {@code List.of}, which rejects nulls.</p>
+     */
+    @Test
+    void testMerge_nullElementIsSkipped() {
+        final List<TypeStyle> existing =
+                Arrays.asList(new TypeStyle("gate", null, null), null, new TypeStyle("camera", null, null));
+
+        final List<TypeStyle> merged = TypeStyle.merge(existing, List.of("sensor"));
+
+        assertThat(types(merged))
+                .as("the null is dropped, the real entries and the discovered type survive")
+                .containsExactly("gate", "camera", "sensor");
+        assertThat(merged).doesNotContainNull();
     }
 
     /**
